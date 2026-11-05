@@ -9,5 +9,8 @@ call:
       - {"type":"response.reasoning_summary_part.done","item_id":"rs_a","output_index":1,"part":{"type":"summary_text","text":"hi"},"sequence_number":8}
       - {"type":"response.reasoning_summary_text.done","item_id":"rs_a","output_index":1,"text":"hi","sequence_number":7,"summary_index":3}
       - {"type":"response.reasoning_summary_part.done","item_id":"rs_a","output_index":1,"part":{"type":"other"},"sequence_number":8,"summary_index":3}
+      - {"type":"response.reasoning_summary_text.delta","item_id":"rs_a","output_index":1,"delta":"hi","summary_index":null}
+      - {"type":"response.reasoning_summary_text.done","item_id":"rs_a","output_index":1,"text":"hi","sequence_number":7,"summary_index":null}
+      - {"type":"response.reasoning_summary_part.done","item_id":"rs_a","output_index":1,"part":{"type":"summary_text","text":"hi"},"sequence_number":8,"summary_index":null}
 env: {}
 compare: {ignore: []}

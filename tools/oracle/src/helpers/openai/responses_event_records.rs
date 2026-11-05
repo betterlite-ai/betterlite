@@ -25,6 +25,7 @@ impl Helper for Op {
 
 fn decode_event(input: &Extra) -> HelperResult {
     let bytes = encode_input(input)?;
+    // Null marks validation failure so later events in the batch are still checked.
     let record = decode_responses_event_record(
         &bytes,
         WireDecodeLimits {
@@ -33,16 +34,7 @@ fn decode_event(input: &Extra) -> HelperResult {
             max_items: 10_000,
         },
     )
-    .map_err(|error| {
-        Box::new(HelperError {
-            class: "InvalidInput".to_owned(),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: error.to_string(),
-        })
-    })?;
+    .ok();
     let value = serde_json::to_value(record).map_err(|error| {
         Box::new(HelperError {
             class: "InvalidInput".to_owned(),

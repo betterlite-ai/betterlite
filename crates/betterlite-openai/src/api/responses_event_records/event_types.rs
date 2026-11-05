@@ -33,10 +33,7 @@ event_record!(ResponsePartAddedEvent {
 event_record!(ReasoningSummaryTextDeltaEvent {
     item_id: String,
     output_index: i64,
-    #[serde(
-        default,
-        deserialize_with = "serde_with::As::<serde_with::DefaultOnNull<serde_with::Same>>::deserialize"
-    )]
+    #[serde(default)]
     summary_index: i64,
     delta: String,
 });
@@ -44,10 +41,7 @@ event_record!(ReasoningSummaryTextDoneEvent {
     item_id: String,
     output_index: i64,
     sequence_number: i64,
-    #[serde(
-        default,
-        deserialize_with = "serde_with::As::<serde_with::DefaultOnNull<serde_with::Same>>::deserialize"
-    )]
+    #[serde(default)]
     summary_index: i64,
     text: String,
 });
@@ -55,10 +49,7 @@ event_record!(ReasoningSummaryPartDoneEvent {
     item_id: String,
     output_index: i64,
     sequence_number: i64,
-    #[serde(
-        default,
-        deserialize_with = "serde_with::As::<serde_with::DefaultOnNull<serde_with::Same>>::deserialize"
-    )]
+    #[serde(default)]
     summary_index: i64,
     part: Extra,
 });
@@ -69,22 +60,12 @@ event_record!(OutputItemAddedEvent {
 event_record!(OutputItemDoneEvent {
     output_index: i64,
     #[serde(default = "default_sequence_number")]
-    sequence_number: OutputItemSequence,
+    sequence_number: i64,
     item: Extra,
 });
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(from = "Option<i64>")]
-pub struct OutputItemSequence(pub i64);
-
-impl From<Option<i64>> for OutputItemSequence {
-    fn from(value: Option<i64>) -> Self {
-        value.map_or_else(default_sequence_number, Self)
-    }
-}
-
-const fn default_sequence_number() -> OutputItemSequence {
-    OutputItemSequence(1)
+const fn default_sequence_number() -> i64 {
+    1
 }
 
 event_record!(ContentPartAddedEvent {

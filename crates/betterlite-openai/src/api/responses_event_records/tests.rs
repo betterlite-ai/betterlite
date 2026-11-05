@@ -136,7 +136,7 @@ fn item_content_events() {
     assert!(matches!(
         done,
         ResponsesAPIStreamingResponse::Known(event)
-            if matches!(event.as_ref(), super::records::KnownResponseEvent::OutputItemDone(record) if record.sequence_number.0 == 1)
+            if matches!(event.as_ref(), super::records::KnownResponseEvent::OutputItemDone(record) if record.sequence_number == 1)
     ));
 }
 
@@ -379,29 +379,32 @@ fn replays_corpus() {
 }
 
 #[rstest]
-#[case::delta(r#"{"type":"response.reasoning_summary_text.delta","item_id":"i","output_index":0,"summary_index":null,"delta":""}"#, "summary_index", 0)]
-#[case::text_done(r#"{"type":"response.reasoning_summary_text.done","item_id":"i","output_index":0,"sequence_number":7,"summary_index":null,"text":""}"#, "summary_index", 0)]
-#[case::part_done(r#"{"type":"response.reasoning_summary_part.done","item_id":"i","output_index":0,"sequence_number":8,"summary_index":null,"part":{}}"#, "summary_index", 0)]
-#[case::output_done(
-    r#"{"type":"response.output_item.done","output_index":2,"sequence_number":null,"item":{}}"#,
-    "sequence_number",
-    1
-)]
+#[case::delta(r#"{"type":"response.reasoning_summary_text.delta","item_id":"i","output_index":0,"summary_index":0,"delta":""}"#, "summary_index", 0)]
+#[case::text_done(r#"{"type":"response.reasoning_summary_text.done","item_id":"i","output_index":0,"sequence_number":7,"summary_index":0,"text":""}"#, "summary_index", 0)]
+#[case::part_done(r#"{"type":"response.reasoning_summary_part.done","item_id":"i","output_index":0,"sequence_number":8,"summary_index":0,"part":{}}"#, "summary_index", 0)]
 #[case::explicit_zero(
     r#"{"type":"response.output_item.done","output_index":2,"sequence_number":0,"item":{}}"#,
     "sequence_number",
     0
 )]
-fn null_defaults_preserve_explicit_zero(
-    #[case] input: &str,
-    #[case] field: &str,
-    #[case] expected: i64,
-) {
+fn explicit_indices_are_preserved(#[case] input: &str, #[case] field: &str, #[case] expected: i64) {
     let decoded = decode_responses_event_record(input.as_bytes(), limits()).unwrap();
     assert_eq!(
         serde_json::to_value(decoded).unwrap().get(field),
         Some(&Value::from(expected))
     );
+}
+
+#[rstest]
+#[case::summary_delta(r#"{"type":"response.reasoning_summary_text.delta","item_id":"i","output_index":0,"summary_index":null,"delta":""}"#)]
+#[case::summary_text_done(r#"{"type":"response.reasoning_summary_text.done","item_id":"i","output_index":0,"sequence_number":7,"summary_index":null,"text":""}"#)]
+#[case::summary_part_done(r#"{"type":"response.reasoning_summary_part.done","item_id":"i","output_index":0,"sequence_number":8,"summary_index":null,"part":{}}"#)]
+#[case::output_item_done(r#"{"type":"response.output_item.done","output_index":2,"sequence_number":null,"item":{"type":"message"}}"#)]
+fn null_indices_are_rejected(#[case] input: &str) {
+    assert!(matches!(
+        decode_responses_event_record(input.as_bytes(), limits()).unwrap_err(),
+        super::wire::ResponsesEventDecodeError::Json(_)
+    ));
 }
 
 #[rstest]

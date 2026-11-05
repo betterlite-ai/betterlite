@@ -40,7 +40,7 @@ from litellm.types.llms.openai import (
     WebSearchCallInProgressEvent,
     WebSearchCallSearchingEvent,
 )
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
@@ -86,12 +86,15 @@ EVENT_MODELS: dict[ResponsesAPIStreamEvents, type[BaseModel]] = {
 
 def decode_event(value: dict[str, Json]) -> Json:
     try:
-        event_type = ResponsesAPIStreamEvents(cast(str, value["type"]))
+        event_type = ResponsesAPIStreamEvents(cast(str, value.get("type")))
     except ValueError:
         model = GenericEvent
     else:
         model = EVENT_MODELS.get(event_type, GenericEvent)
-    event = model.model_validate(value)
+    try:
+        event = model.model_validate(value)
+    except ValidationError:
+        return None
     return cast(Json, event.model_dump(exclude_none=False))
 
 
