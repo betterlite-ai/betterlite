@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::future::pending;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use betterlite_config::proxy::ProxyPolicy;
@@ -12,7 +13,7 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 
-use crate::arize::phoenix::client::PhoenixClient;
+use crate::arize::phoenix::client::{PhoenixClient, REQUEST_DEADLINE};
 
 pub(crate) const PROMPT_BODY: &str = r#"{"data":{"id":"UHJvbXB0VmVyc2lvbjox","description":"answers questions","model_provider":"OPENAI","model_name":"gpt-4o","template":{"type":"chat","messages":[{"role":"system","content":[{"type":"text","text":"You answer questions about {{ topic }}."}]},{"role":"user","content":[{"type":"text","text":"{{ question }}"}]}]},"template_type":"CHAT","template_format":"MUSTACHE","invocation_parameters":{"type":"openai","openai":{"temperature":0.5,"max_tokens":256,"top_p":0.9}}}}"#;
 
@@ -88,5 +89,26 @@ pub(crate) fn phoenix_client(base: &str) -> PhoenixClient {
         http: proxied(),
         api_key: SecretString::from("secret-key"),
         api_base: base.to_owned(),
+        deadline: REQUEST_DEADLINE,
+    }
+}
+
+pub(crate) async fn serve_silently() -> FakePhoenix {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let mut tasks = JoinSet::new();
+    tasks.spawn(async move {
+        let mut held = JoinSet::new();
+        while let Ok((stream, _)) = listener.accept().await {
+            held.spawn(async move {
+                let _open = stream;
+                pending::<()>().await;
+            });
+        }
+    });
+    FakePhoenix {
+        base,
+        requests: Arc::default(),
+        _tasks: tasks,
     }
 }

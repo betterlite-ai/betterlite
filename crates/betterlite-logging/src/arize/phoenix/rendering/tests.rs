@@ -105,9 +105,13 @@ fn rendering_sandbox_does_not_reach_host_attributes(#[case] source: &str) {
 
 #[test]
 fn rendering_stops_a_template_that_loops_past_its_fuel() {
-    let part = r#"{"type":"text","text":"{% for i in range(100000000) %}x{% endfor %}"}"#;
-    let error = render_messages(&sandbox(), &template(part), None).unwrap_err();
-    assert!(matches!(error, RenderError::Template { .. }));
+    let part =
+        text_part("{% for i in range(100000) %}{% for j in range(100) %}x{% endfor %}{% endfor %}");
+    let error = render_messages(&sandbox(), &template(&part), None).unwrap_err();
+    let RenderError::Template { source } = error else {
+        panic!("not a template error: {error}")
+    };
+    assert_eq!(source.kind(), minijinja::ErrorKind::OutOfFuel);
 }
 
 #[test]

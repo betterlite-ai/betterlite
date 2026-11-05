@@ -9,6 +9,9 @@ deviations:
   - what: Templates render with minijinja under a fuel limit of 1,000,000 steps, and a template that runs past it fails the compilation.
     why: LiteLLM's sandbox has no step cap, so a template with an endless loop hangs the request; the cap keeps a workspace-authored prompt from stalling the gateway.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix_prompt_manager.py#L107
+  - what: The Phoenix request waits up to 600 seconds, but the connect timeout is the pooled client's own limit (10 seconds by default) instead of LiteLLM's 5 seconds.
+    why: OutboundRequest carries one deadline per request and the connect timeout is set once when the shared ProxiedClient is built, so this client cannot set a connect timeout per request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L164-L167
   - what: Redirect responses from Phoenix are not followed and fail with the "Redirect response" status text.
     why: The pooled outbound client never follows redirects, so a bearer token cannot be replayed to another host.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix_client.py#L56-L72

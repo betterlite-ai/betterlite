@@ -12,8 +12,8 @@ use url::Url;
 use crate::arize::phoenix::records::{PromptVersionData, PromptVersionEnvelope};
 use crate::arize::phoenix::sanitization::{SanitizationError, sanitize_id};
 
-// LiteLLM's HTTPHandler waits as long as its default request timeout, 6000 seconds.
-const REQUEST_DEADLINE: Duration = Duration::from_mins(100);
+// LiteLLM's HTTPHandler default is httpx.Timeout(600.0, connect=5.0); the pooled client sets the connect timeout for every request.
+pub const REQUEST_DEADLINE: Duration = Duration::from_mins(10);
 
 #[derive(Debug, Error)]
 pub enum ClientError {
@@ -61,6 +61,7 @@ pub struct PhoenixClient {
     pub http: ProxiedClient,
     pub api_key: SecretString,
     pub api_base: String,
+    pub deadline: Duration,
 }
 
 impl PhoenixClient {
@@ -89,7 +90,7 @@ impl PhoenixClient {
             query: Vec::new(),
             headers,
             body: RequestBody::Empty,
-            deadline: REQUEST_DEADLINE,
+            deadline: self.deadline,
         })
     }
 

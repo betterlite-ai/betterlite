@@ -1,10 +1,12 @@
 #![cfg(test)]
 
+use std::time::Duration;
+
 use rstest::rstest;
 use tokio::net::TcpListener;
 
 use super::ClientError;
-use crate::arize::phoenix::tests::server::{PROMPT_BODY, phoenix_client, serve};
+use crate::arize::phoenix::tests::server::{PROMPT_BODY, phoenix_client, serve, serve_silently};
 
 #[tokio::test]
 async fn client_fetches_the_version_with_bearer_authentication() {
@@ -169,4 +171,23 @@ async fn client_answer_without_data_is_a_missing_version() {
         .await
         .unwrap();
     assert_eq!(found, None);
+}
+
+#[tokio::test]
+async fn client_error_server_that_never_answers_hits_the_deadline() {
+    let phoenix = serve_silently().await;
+    let mut client = phoenix_client(&phoenix.base);
+    client.deadline = Duration::from_millis(200);
+    let error = client.get_prompt_version("v1").await.unwrap_err();
+    assert!(matches!(error, ClientError::Transport { .. }));
+    assert!(
+        error
+            .to_string()
+            .starts_with("Error fetching prompt version 'v1': ")
+    );
+}
+
+#[test]
+fn client_waits_as_long_as_litellm_for_a_request() {
+    assert_eq!(super::REQUEST_DEADLINE, Duration::from_secs(600));
 }

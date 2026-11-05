@@ -6,7 +6,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 
 use crate::arize::phoenix::caching::TemplateCache;
-use crate::arize::phoenix::client::PhoenixClient;
+use crate::arize::phoenix::client::{PhoenixClient, REQUEST_DEADLINE};
 use crate::arize::phoenix::integration::PhoenixPromptManager;
 use crate::arize::phoenix::rendering::sandbox;
 
@@ -45,6 +45,7 @@ pub fn prompt_initializer(
             http,
             api_key,
             api_base,
+            deadline: REQUEST_DEADLINE,
         },
         prompt_id: litellm_params.prompt_id.clone().filter(|id| !id.is_empty()),
         templates: TemplateCache::default(),
