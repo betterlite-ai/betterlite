@@ -128,7 +128,7 @@ fn transform_parsed_line(wire: Line, state: &mut OpenCodeStreamState) -> Vec<Eve
             };
             vec![Event::Reasoning { delta }]
         }
-        Line::ToolUse { part, .. } => tool_events(part),
+        Line::ToolUse { part, .. } => tool_events(*part),
         Line::Error { error, .. } => {
             let message = error.as_ref().map_or_else(
                 || "opencode reported an error".to_owned(),
