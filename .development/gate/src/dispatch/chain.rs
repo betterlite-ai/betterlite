@@ -62,19 +62,19 @@ impl<'agents> Chain<'agents> {
             return self.links.len();
         };
         let stay = progress.open(ladder, here.index).then_some(here);
-        let climb = self
+        // a rung that a stand-in start skipped gets its turn after the last one
+        let next = self
             .links
             .iter()
             .skip(here.index.saturating_add(1))
-            .find(|link| {
-                link.runner.vendor == here.runner.vendor && progress.open(ladder, link.index)
-            });
-        let other = self.across(progress, here).first().copied();
-        let order = if stuck {
-            [other, stay, climb]
-        } else {
-            [stay, climb, other]
-        };
+            .chain(
+                self.links
+                    .iter()
+                    .take(here.index)
+                    .filter(|link| progress.starts.get(link.index) == Some(&0)),
+            )
+            .find(|link| progress.open(ladder, link.index));
+        let order = if stuck { [next, stay] } else { [stay, next] };
         order
             .into_iter()
             .flatten()

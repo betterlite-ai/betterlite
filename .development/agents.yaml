@@ -39,26 +39,26 @@ roles:
         effort: medium
         attempts: 1
         timeout_minutes: 45
-      - runner: codex-worker
-        model: gpt-6-astra
-        effort: high
-        attempts: 2
-        timeout_minutes: 120
       - runner: claude-worker
-        model: haiku
-        effort: high
-        attempts: 1
-        timeout_minutes: 120
-      - runner: claude-worker
-        model: sonnet
+        model: claude-sonnet-5-5
         effort: high
         attempts: 2
         timeout_minutes: 180
+      - runner: claude-worker
+        model: claude-opus-5-5
+        effort: high
+        attempts: 2
+        timeout_minutes: 180
+      - runner: codex-worker
+        model: gpt-6-astra
+        effort: high
+        attempts: 1
+        timeout_minutes: 120
   reviewer:
     instructions: roles/reviewer.md
     ladder:
       - runner: claude-reviewer
-        model: sonnet
+        model: claude-sonnet-5-5
         effort: high
         attempts: 1
         timeout_minutes: 30
@@ -71,7 +71,7 @@ roles:
     instructions: roles/reviewer.md
     ladder:
       - runner: claude-reviewer
-        model: opus
+        model: claude-opus-5-5
         effort: high
         attempts: 1
         timeout_minutes: 45
@@ -84,7 +84,7 @@ roles:
     instructions: roles/parity-reviewer.md
     ladder:
       - runner: claude-reviewer
-        model: opus
+        model: claude-opus-5-5
         effort: high
         attempts: 1
         timeout_minutes: 45
@@ -102,7 +102,7 @@ roles:
         attempts: 1
         timeout_minutes: 60
       - runner: claude-worker
-        model: sonnet
+        model: claude-sonnet-5-5
         effort: high
         attempts: 1
         timeout_minutes: 60

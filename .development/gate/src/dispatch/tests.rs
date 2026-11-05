@@ -75,7 +75,7 @@ fn a_saved_progress_comes_back_with_the_new_notes_added() {
     saved.granted = 2;
     saved.reviewer = Some(ReviewerPin {
         runner: "claude-reviewer".to_owned(),
-        model: "opus".to_owned(),
+        model: "claude-opus-5-5".to_owned(),
         panel: Panel::Parity,
     });
     saved.save(folder.path()).unwrap();
@@ -345,10 +345,10 @@ fn a_limited_vendor_sends_the_start_to_the_other_vendor_at_the_same_level() {
         "ERROR: You've hit your usage limit.",
     )
     .unwrap();
-    assert_eq!(pick(0).as_deref(), Some("haiku"));
-    assert_eq!(pick(1).as_deref(), Some("sonnet"));
+    assert_eq!(pick(0).as_deref(), Some("claude-sonnet-5-5"));
+    assert_eq!(pick(3).as_deref(), Some("claude-opus-5-5"));
     mark(folder.path(), "anthropic", "You've hit your limit").unwrap();
-    assert_eq!(pick(1), None);
+    assert_eq!(pick(3), None);
 }
 
 #[test]
@@ -366,12 +366,12 @@ fn a_limited_claude_rung_runs_on_the_open_codex_rung_at_its_level() {
             .unwrap()
             .map(|link| link.rung.model.clone())
     };
+    assert_eq!(pick(1).as_deref(), Some("gpt-6-astra"));
     assert_eq!(pick(2).as_deref(), Some("gpt-6-astra"));
-    assert_eq!(pick(3).as_deref(), Some("gpt-6-astra"));
 }
 
 #[test]
-fn a_failed_start_stays_on_its_rung_then_climbs_then_changes_vendor() {
+fn a_failed_start_stays_on_its_rung_then_takes_the_next_one() {
     let (agents, _) = fixtures();
     let chain = Chain::new(&agents).unwrap();
     let mut progress = progress();
@@ -381,22 +381,20 @@ fn a_failed_start_stays_on_its_rung_then_climbs_then_changes_vendor() {
     progress.rung = 1;
     progress.starts = vec![1, 1, 0, 0];
     assert_eq!(chain.next_rung(&progress, false), 1);
-    // a stuck task skips Haiku, since it fails below Astra's level
-    assert_eq!(chain.next_rung(&progress, true), 3);
-    progress.starts = vec![1, 2, 0, 0];
-    assert_eq!(chain.next_rung(&progress, false), 3);
+    assert_eq!(chain.next_rung(&progress, true), 2);
     progress.rung = 3;
-    progress.starts = vec![1, 1, 0, 2];
-    assert_eq!(chain.next_rung(&progress, false), 1);
-    progress.starts = vec![1, 2, 0, 2];
+    progress.starts = vec![1, 1, 1, 1];
     assert_eq!(chain.next_rung(&progress, false), chain.links.len());
+    // while Claude was at its limit Sonnet's start ran on gpt-6-astra, so Sonnet still gets its turn
+    progress.starts = vec![1, 0, 0, 1];
+    assert_eq!(chain.next_rung(&progress, true), 1);
     progress.rung = 0;
     progress.starts = vec![0, 0, 0, 0];
-    assert_eq!(chain.next_rung(&progress, true), 2);
+    assert_eq!(chain.next_rung(&progress, true), 1);
 }
 
 #[test]
-fn the_same_red_at_the_end_of_two_starts_moves_the_task_to_the_other_vendor() {
+fn the_same_red_at_the_end_of_two_starts_moves_the_task_to_the_next_rung() {
     let (agents, task) = fixtures();
     let folder = tempfile::tempdir().unwrap();
     let chain = Chain::new(&agents).unwrap();
@@ -411,7 +409,7 @@ fn the_same_red_at_the_end_of_two_starts_moves_the_task_to_the_other_vendor() {
             red: vec![Red::Check(check.to_owned())],
         })
     };
-    for (check, rung) in [("clippy", 1), ("clippy", 3)] {
+    for (check, rung) in [("clippy", 1), ("clippy", 2)] {
         let flow = apply_step(
             &chain,
             &brief(&task),
@@ -513,15 +511,15 @@ fn the_reviewer_on_the_other_vendor_comes_first() {
     };
     assert_eq!(
         order("codex-worker", ReviewLevel::Standard),
-        ["sonnet", "gpt-6-astra"]
+        ["claude-sonnet-5-5", "gpt-6-astra"]
     );
     assert_eq!(
         order("claude-worker", ReviewLevel::Standard),
-        ["gpt-6-astra", "sonnet"]
+        ["gpt-6-astra", "claude-sonnet-5-5"]
     );
     assert_eq!(
         order("claude-worker", ReviewLevel::Security),
-        ["gpt-6-astra", "opus"]
+        ["gpt-6-astra", "claude-opus-5-5"]
     );
 }
 
@@ -546,16 +544,16 @@ fn the_reviewer_of_the_last_round_comes_first() {
     };
     assert_eq!(
         order("codex-reviewer", "gpt-6-astra"),
-        ["gpt-6-astra", "sonnet"]
+        ["gpt-6-astra", "claude-sonnet-5-5"]
     );
     assert_eq!(
-        order("claude-reviewer", "sonnet"),
-        ["sonnet", "gpt-6-astra"]
+        order("claude-reviewer", "claude-sonnet-5-5"),
+        ["claude-sonnet-5-5", "gpt-6-astra"]
     );
     // a pin whose rung left agents.yaml falls back to the usual order
     assert_eq!(
         order("codex-reviewer", "gpt-retired"),
-        ["sonnet", "gpt-6-astra"]
+        ["claude-sonnet-5-5", "gpt-6-astra"]
     );
 }
 
@@ -586,8 +584,8 @@ fn a_start_whose_vendor_has_no_free_seat_goes_to_the_other_vendor_at_its_level()
     };
     assert_eq!(pick(0).as_deref(), Some("gpt-6-luna"));
     let openai = hold_seats(folder.path(), "openai", 12);
-    assert_eq!(pick(0).as_deref(), Some("haiku"));
-    assert_eq!(pick(1).as_deref(), Some("sonnet"));
+    assert_eq!(pick(0).as_deref(), Some("claude-sonnet-5-5"));
+    assert_eq!(pick(3).as_deref(), Some("claude-opus-5-5"));
     drop(openai);
 }
 
@@ -636,7 +634,7 @@ fn places(folder: &Path) -> Places<'_> {
 fn pin() -> ReviewerPin {
     ReviewerPin {
         runner: "claude-reviewer".to_owned(),
-        model: "sonnet".to_owned(),
+        model: "claude-sonnet-5-5".to_owned(),
         panel: Panel::Standard,
     }
 }
@@ -876,10 +874,10 @@ fn a_fix_turn_does_not_count_as_a_worker_attempt() {
     )
     .unwrap_err();
     assert!(error.to_string().contains("ran out of attempts"), "{error}");
-    // the same red every time moves the task between gpt-6-astra and Sonnet, so Haiku never runs
-    let runs = 5 * agents.policy.max_fix_turns.saturating_add(1);
-    assert_eq!((progress.number, progress.used), (runs, 5));
-    assert_eq!(progress.starts, vec![1, 2, 0, 2]);
+    // the same red every time gives each rung one start
+    let runs = 4 * agents.policy.max_fix_turns.saturating_add(1);
+    assert_eq!((progress.number, progress.used), (runs, 4));
+    assert_eq!(progress.starts, vec![1, 1, 1, 1]);
     assert!(progress.feedback[0].starts_with("The final answer did not match the report format"));
 }
 
@@ -992,7 +990,7 @@ fn a_pin_saved_before_the_parity_pass_loads_as_standard() {
     let folder = tempfile::tempdir().unwrap();
     fs::write(
         folder.path().join("progress.json"),
-        r#"{"feedback":[],"number":1,"used":1,"rung":0,"rung_used":1,"limited":false,"review_rounds":1,"blocked_reports":0,"last_blocked":0,"earlier":null,"litellm":[],"reviewer":{"runner":"claude-reviewer","model":"sonnet"}}"#,
+        r#"{"feedback":[],"number":1,"used":1,"rung":0,"rung_used":1,"limited":false,"review_rounds":1,"blocked_reports":0,"last_blocked":0,"earlier":null,"litellm":[],"reviewer":{"runner":"claude-reviewer","model":"claude-sonnet-5-5"}}"#,
     )
     .unwrap();
     let loaded = Progress::load(folder.path(), Vec::new()).unwrap();
@@ -1013,18 +1011,18 @@ fn the_parity_ladder_ignores_a_standard_pin() {
             .map(|rung| rung.model.clone())
             .collect::<Vec<String>>()
     };
-    assert_eq!(order(None), ["gpt-6-astra", "opus"]);
+    assert_eq!(order(None), ["gpt-6-astra", "claude-opus-5-5"]);
     let standard = ReviewerPin {
         runner: "claude-reviewer".to_owned(),
-        model: "opus".to_owned(),
+        model: "claude-opus-5-5".to_owned(),
         panel: Panel::Standard,
     };
-    assert_eq!(order(Some(&standard)), ["gpt-6-astra", "opus"]);
+    assert_eq!(order(Some(&standard)), ["gpt-6-astra", "claude-opus-5-5"]);
     let parity = ReviewerPin {
         panel: Panel::Parity,
         ..standard
     };
-    assert_eq!(order(Some(&parity)), ["opus", "gpt-6-astra"]);
+    assert_eq!(order(Some(&parity)), ["claude-opus-5-5", "gpt-6-astra"]);
 }
 
 #[test]
@@ -1158,7 +1156,7 @@ fn a_round_after_the_parity_pass_goes_to_the_parity_reviewer() {
     review_answers(&mut agents, APPROVE);
     let pinned = ReviewerPin {
         runner: "claude-reviewer".to_owned(),
-        model: "opus".to_owned(),
+        model: "claude-opus-5-5".to_owned(),
         panel: Panel::Parity,
     };
     let (step, seats) = run_review(&agents, &task, Some(&pinned));
