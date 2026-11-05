@@ -32,7 +32,12 @@ description: >-
 scope:
   paths:
     - Cargo.toml
-    - crates/betterlite-openai/**
+    - crates/betterlite-openai/Cargo.toml
+    - crates/betterlite-openai/src/passthrough/transformation.rs
+    - crates/betterlite-openai/src/passthrough/transformation/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/passthrough_bytes.rs
+    - crates/betterlite-openai/fuzz/corpus/passthrough_bytes/**
     - tools/oracle/cases/passthrough-metadata/**
     - tools/oracle/helpers/b3570.py
     - tools/oracle/helpers/b3570/**
@@ -164,6 +169,10 @@ pitfalls:
   - >-
     PassthroughStreamCollector is a protocol/trait; RawBytesStreamCollector is the default
     but provider configs can override create_stream_collector to return a different collector.
+  - >-
+    All of this task's code lives in crates/betterlite-openai/src/passthrough/transformation.rs
+    and its own folder. The parent file passthrough.rs is a stub the architect creates and
+    declares in lib.rs, not a file this task writes.
 review_level: standard
 budget:
   max_changed_lines: 1500

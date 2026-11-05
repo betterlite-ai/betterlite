@@ -56,8 +56,8 @@ scope:
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/deepinfra_payload.rs
     - crates/betterlite-openai/fuzz/corpus/deepinfra_payload/**
-    - crates/betterlite-config/src/{lib,settings,providers}.rs
-    - crates/betterlite-config/src/providers/{mod,deepinfra}.rs
+    - crates/betterlite-config/src/sections/deepinfra_settings.rs
+    - crates/betterlite-config/src/sections/deepinfra_settings/**
     - crates/betterlite-config/tests/deepinfra_settings.rs
     - tools/oracle/src/helpers/openai/deepinfra_policy.rs
     - tools/oracle/src/helpers/openai/deepinfra_policy/**

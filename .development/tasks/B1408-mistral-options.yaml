@@ -33,9 +33,8 @@ scope:
     - crates/betterlite-openai/src/mistral_options.rs
     - crates/betterlite-openai/src/mistral_options/**
     - crates/betterlite-openai/fixtures/mistral_reasoning.txt
-    - crates/betterlite-config/src/{lib,config,settings,model,env,providers,tests}.rs
-    - crates/betterlite-config/src/providers/mistral.rs
-    - crates/betterlite-config/src/providers/mistral/**
+    - crates/betterlite-config/src/sections/mistral_options.rs
+    - crates/betterlite-config/src/sections/mistral_options/**
     - crates/betterlite-config/src/providers/mistral/options.rs
     - crates/betterlite-config/src/providers/mistral/options/**
     - crates/betterlite-config/src/tests/mistral_options.rs
@@ -96,5 +95,6 @@ pitfalls:
   - Tool cleanup does not remove strict or additionalProperties despite the method documentation.
   - A base ending in /v1/ becomes /v1//v1 under the literal suffix test.
   - The seed option replaces an existing extra_body mapping instead of merging random_seed into it.
+  - Mistral settings use two files. The env lookup lives in crates/betterlite-config/src/providers/mistral/options.rs, shaped like providers/chatgpt/token_store.rs, and the new Section wrapper exposing config.sections.mistral_options lives in crates/betterlite-config/src/sections/mistral_options.rs, shaped like sections/chatgpt_token_store.rs. crates/betterlite-config/src/providers/mistral/resources.rs belongs to B1410, not this task.
 budget: {max_changed_lines: 700, max_new_expects: 0}
 review_level: standard

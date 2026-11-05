@@ -35,8 +35,6 @@ description: >-
   170 tests, 150 HTTP fixtures, 75 adapters, 50 config/corpus and 30 wiring lines, 790 total.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/image_generation_call.rs
   - crates/betterlite-core/src/api/image_generation_call/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/image-generation-call-*

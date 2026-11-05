@@ -3,6 +3,10 @@ name = "betterlite-guardrails-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
 
 [package.metadata]
 cargo-fuzz = true
@@ -47,4 +51,16 @@ test = false
 doc = false
 bench = false
 
-[workspace]
+[[bin]]
+name = "grayswan_response"
+path = "fuzz_targets/grayswan_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "prisma_content"
+path = "fuzz_targets/prisma_content.rs"
+test = false
+doc = false
+bench = false

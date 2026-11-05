@@ -13,7 +13,9 @@ fuzz_target!(|data: &[u8]| {
     let Some((&tag, rest)) = data.split_first() else {
         return;
     };
-    let bytes = &rest[..rest.len().min(MAX_BYTES)];
+    let Some(bytes) = rest.get(..rest.len().min(MAX_BYTES)) else {
+        return;
+    };
     let cipher = StoredCipher {
         settings: CipherSettings {
             signing_key: Some(SecretString::from("salt-one")),
@@ -23,9 +25,9 @@ fuzz_target!(|data: &[u8]| {
         diagnostics: TracingDiagnostics,
     };
     if tag.is_multiple_of(2) {
-        let _ = cipher.decode_stored_secret(bytes);
+        let _outcome = cipher.decode_stored_secret(bytes);
     } else {
-        let _ = str::from_utf8(bytes)
+        let _outcome = str::from_utf8(bytes)
             .map_err(|source| SecretError::Utf8 { source })
             .and_then(|text| secret_map::decode_secret_map(&cipher, Some(text), "fuzz"));
     }

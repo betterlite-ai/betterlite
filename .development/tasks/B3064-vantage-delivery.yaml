@@ -58,7 +58,7 @@ checks:
   commands:
     - id: vantage-filter-tests
       why: the required tests fail or the filter selects no tests
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^vantage_csv_upload_behaviors($|::)/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::vantage::(.*::)?vantage_csv_upload_behaviors($|::)/)'
 oracle_cases: []
 deviations:
   - what: Batching splits by row count (10,000) first, then by size (2 MiB), to match LiteLLM's order of checks.

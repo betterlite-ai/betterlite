@@ -20,14 +20,13 @@ description: >-
   provider adapter. Both implementations issue real HTTP. No new bytes decoder is needed: B173 owns HTTP,
   B900 multipart capture and B2401 the SDK case parser. The two methods total 203 nonblank/non-comment lines;
   budget 190 implementation, 110 tests, 110 fixtures, 80 adapters and 30 wiring, 520 changed lines.
+
+  B997 fills the Image variants that B010 registers in operation.rs, so this task builds on them in
+  crates/betterlite-provider/src/api/image_generation_http.rs and leaves operation.rs as it is.
 scope:
   paths:
-  - crates/betterlite-provider/src/api.rs
-  - crates/betterlite-provider/src/api/**
   - crates/betterlite-provider/src/api/image_generation_http.rs
   - crates/betterlite-provider/src/api/image_generation_http/**
-  - crates/betterlite-provider/src/operation.rs
-  - crates/betterlite-provider/src/operation/**
   - tools/oracle/src/sdk_http.rs
   - tools/oracle/src/sdk_http/image_generation_http.rs
   - tools/oracle/sdk_http/dispatch.py

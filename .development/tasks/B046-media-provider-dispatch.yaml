@@ -37,14 +37,15 @@ description: >-
   expectations and existing endpoint fixtures. Tests under media_providers run in core and server.
   The selector/module surface is 102 nonblank/non-comment lines and main dispatch adds 55; budget
   220 composition, 270 tests and 210 fixtures, capped at 800 changed lines.
+
+  B010 registers Provider::MediaProviders as a stub in crates/betterlite-provider/src/provider/media_providers.rs.
+  Fill it there and leave provider.rs as it is.
 scope:
   paths:
-    - crates/betterlite-core/src/api.rs
-    - crates/betterlite-core/src/api/**
     - crates/betterlite-core/src/api/media_providers.rs
     - crates/betterlite-core/src/api/media_providers/**
-    - crates/betterlite-provider/src/provider.rs
-    - crates/betterlite-provider/src/provider/**
+    - crates/betterlite-provider/src/provider/media_providers.rs
+    - crates/betterlite-provider/src/provider/media_providers/**
     - crates/betterlite-provider/src/dispatch.rs
     - crates/betterlite-provider/src/dispatch/**
     - crates/betterlite-server/src/media_providers.rs

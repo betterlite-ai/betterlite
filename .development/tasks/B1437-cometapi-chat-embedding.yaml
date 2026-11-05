@@ -55,8 +55,8 @@ scope:
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/comet_embedding_reply.rs
     - crates/betterlite-openai/fuzz/corpus/comet_embedding_reply/**
-    - crates/betterlite-config/src/{lib,settings,providers}.rs
-    - crates/betterlite-config/src/providers/{mod,cometapi}.rs
+    - crates/betterlite-config/src/sections/cometapi_embedding_credentials.rs
+    - crates/betterlite-config/src/sections/cometapi_embedding_credentials/**
     - crates/betterlite-config/tests/cometapi_embedding_settings.rs
     - tools/oracle/src/helpers/openai/cometapi_record.rs
     - tools/oracle/src/helpers/openai/cometapi_record/**

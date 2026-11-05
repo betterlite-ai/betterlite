@@ -77,12 +77,12 @@ checks:
   - id: sandbox-registry-tests
     why: the required tests fail or the filter selects no tests
     run: >-
-      cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^sandbox_registry::/) -
+      cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^skills::sandbox::(.*::)?sandbox_registry::/) -
       test(/replays_the_/)'
   - id: sandbox-lifecycle-tests
     why: the required tests fail or the filter selects no tests
     run: >-
-      cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^sandbox_dispatch::/) -
+      cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^skills::sandbox::(.*::)?sandbox_dispatch::/) -
       test(/replays_the_/)'
   - id: config-sandbox-loader
     why: the configured sandbox_tools section is not accepted
@@ -92,7 +92,7 @@ checks:
   - id: sandbox-provider-error
     why: unsupported provider strings do not raise ValueError or the test is missing
     run: >-
-      cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^sandbox_dispatch::.*unsupported_provider/)'
+      cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^skills::sandbox::(.*::)?sandbox_dispatch::.*unsupported_provider/)'
 oracle_cases:
 - tools/oracle/cases/sandbox/create-e2b.yaml
 - tools/oracle/cases/sandbox/create-opensandbox.yaml

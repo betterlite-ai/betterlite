@@ -42,10 +42,13 @@ description: >-
   Native tests cover every exported operation, file-start failure/cancellation and zero Vertex
   auth calls. Plan 240 composition/transport lines, 180 tests and 350 fixtures within 800;
   decoding and configuration acceptance stay with the referenced leaves and route tasks.
+
+  B010 registers Provider::Gemini and the Gemini variants of OperationRequest, OperationResult and PreparedRequest
+  as stubs in crates/betterlite-provider/src/studio_dispatch.rs. Fill them there and leave provider.rs,
+  operation.rs and prepared.rs as they are.
 scope:
   paths:
     - crates/betterlite-provider/Cargo.toml
-    - crates/betterlite-provider/src/{lib,provider,operation,prepared,studio_dispatch}.rs
     - crates/betterlite-provider/src/studio_dispatch.rs
     - crates/betterlite-provider/src/studio_dispatch/**
     - crates/betterlite-core/Cargo.toml

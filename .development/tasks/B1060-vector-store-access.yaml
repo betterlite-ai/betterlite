@@ -22,8 +22,6 @@ description: >-
   195 code, 190 tests, 95 adapters, 120 fixtures, 60 fuzz/replay and 35 wiring, 695 within 740.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/vector_store_access.rs
   - crates/betterlite-core/src/api/vector_store_access/**
   - crates/betterlite-core/fuzz/Cargo.toml

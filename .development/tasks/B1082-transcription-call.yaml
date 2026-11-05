@@ -37,8 +37,6 @@ description: >-
   and B1001's bounded audio-duration decoder handle external bytes.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/transcription_call.rs
   - crates/betterlite-core/src/api/transcription_call/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/transcription-call-*

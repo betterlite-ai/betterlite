@@ -75,8 +75,6 @@ scope:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/batch_route_support.rs
   - crates/betterlite-core/src/api/batch_route_support/**
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-config/Cargo.toml

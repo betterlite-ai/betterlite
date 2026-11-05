@@ -185,7 +185,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::report_record_construct($|::)/) - test(/replays_the_/)'
     - id: behavior-tests
       why: the required behavior tests fail or the filter selects no tests
-      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache_behavior($|::)/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^roi_cache::(.*::)?roi_cache_behavior($|::)/) - test(/replays_the_/)'
 
 oracle_cases: []
 

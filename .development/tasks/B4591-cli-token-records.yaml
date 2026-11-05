@@ -1,0 +1,129 @@
+id: B4591
+title: CLI token records, private files and freshness
+description: >-
+  Own crates/betterlite-cli/src/token_records.rs, the record model, private file and freshness
+  layer underneath B4592's vault orchestration. Define CliTokenRecord, the stored CLI credential:
+  base_url, user_id, user_email and user_role default to empty strings, auth_header_name defaults
+  to "Authorization", jwt_token is a secret string that defaults to empty, timestamp is a number
+  defaulting to 0, and key, expires_at and refresh_token are optional (key and refresh_token carry
+  secret material). The record also carries client_id, token_endpoint, revocation_endpoint,
+  resource and team_id as explicit optional fields: LiteLLM's record lets a sibling record's extra
+  keys ride along on every stored and loaded credential through dynamic field passthrough, and
+  every one of those keys is written to and read from the same token.json in practice, so this
+  task declares them rather than dropping that behavior.
+
+  Define CliTokenSecret, the keychain blob: a required base_url plus key, jwt_token, refresh_token
+  and timestamp, the only fields the OS keychain ever holds. encode_secret builds one from a
+  record's secret fields and serializes it; decode_secret parses a blob back and returns nothing
+  when the JSON is invalid or its base_url does not match the record it is being paired against.
+  holds_secret reports whether a record carries anything that would sign someone in (key, a
+  non-empty jwt_token or refresh_token); without_secret returns a copy with those three cleared,
+  leaving every other field, including the five pass-through fields, untouched.
+
+  token_file_path joins a caller-supplied home directory with .litellm/token.json; this task never
+  resolves the home directory itself. read_token_file parses the file at that path into a
+  CliTokenRecord and returns nothing for a missing file, an unreadable one, or JSON the record
+  cannot parse: a corrupt or absent file means "not logged in," never a panic or a raised error.
+  stage_token_file, commit_token_file and write_token_file call B192's private-file staging,
+  commit and write operations so the file lands owner-only inside an owner-only directory;
+  overwrite_token_file_secret calls B192's in-place rewrite to strip the secret from an existing
+  file when no replacement can be staged. Every one of these returns this task's own typed error
+  on failure, with the underlying I/O error as its source; none of them panics or returns another
+  task's outcome type.
+
+  The freshness buffer is 360 seconds, never read from the environment. is_token_fresh takes a
+  CliTokenRecord plus the caller's current wall-clock seconds and its resolved session-expiration
+  hours, both passed in rather than read from a clock or a config section inside this module: when
+  expires_at is present, the record is fresh while now is more than 360 seconds before it;
+  otherwise it falls back to the record's timestamp and is fresh while its age in hours is below
+  the expiration hours minus 0.1 hours. Both comparisons are strict, so a token at exactly the
+  buffer boundary is stale, not fresh.
+scope:
+  paths:
+    - crates/betterlite-cli/src/token_records.rs
+    - crates/betterlite-cli/src/token_records/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_token_utils.py#L1-L13
+    why: Module intent, splitting non-secret metadata (the file) from secret material (the keychain or, when there is none, the same owner-only file).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_token_utils.py#L86-L105
+    why: CliTokenRecord fields and their defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_token_utils.py#L107-L129
+    why: CliTokenSecret fields, and why base_url and the secret fields are the only ones the keychain ever holds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_token_utils.py#L131
+    why: The 360-second freshness buffer constant.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_token_utils.py#L134-L138
+    why: The token file path, joined from the home directory.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_token_utils.py#L350-L369
+    why: The freshness check, its expires_at branch and its timestamp fallback branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_token_utils.py#L372-L381
+    why: The file decoder that swallows a missing file and invalid JSON to nothing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_token_utils.py#L491-L504
+    why: In-place overwrite that strips the secret when no staged replacement can be written.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_token_utils.py#L511-L518
+    why: Staging a record to a private temporary file ahead of the real write.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_token_utils.py#L520-L526
+    why: Committing a staged file into place.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_token_utils.py#L528-L534
+    why: holds_a_secret and without_secret, the two predicates/transforms the vault layer composes its own fallback logic from.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_token_utils.py#L537-L553
+    why: encode_secret and decode_secret, and the base_url pairing check that rejects a mismatched blob.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/cli_token_utils.py#L556-L559
+    why: The one-shot write used for a fresh file, composed from the same staging and private-directory operations.
+dod:
+  - text: CliTokenRecord declares base_url, user_id, user_email and user_role defaulting to empty strings, auth_header_name defaulting to "Authorization", jwt_token as a secret defaulting to empty, timestamp defaulting to 0, key, expires_at and refresh_token as optional, and client_id, token_endpoint, revocation_endpoint, resource and team_id as optional pass-through fields.
+    proof: [record-model]
+  - text: CliTokenSecret declares a required base_url plus key, jwt_token, refresh_token and timestamp; encode_secret builds one from a record's secret fields, and decode_secret parses one back or returns nothing on invalid JSON or a base_url that does not match the record it is checked against.
+    proof: [record-model]
+  - text: holds_secret is true only when key, jwt_token or refresh_token carries anything, and without_secret clears exactly those three fields while leaving every other field, including the five pass-through fields, unchanged.
+    proof: [record-model]
+  - text: is_token_fresh takes the record plus the caller's current wall-clock seconds and its resolved session-expiration hours, never reading a clock, the environment or a config section inside this module.
+    proof: [freshness-rule]
+  - text: With expires_at present, a record is fresh while now is more than 360 seconds before it, and stale at or after that boundary; without expires_at, a record is fresh while its timestamp age in hours is below the expiration hours minus 0.1 hours, and stale at or after that boundary.
+    proof: [freshness-rule]
+  - text: read_token_file returns the parsed record for valid JSON, and nothing for a missing file, an unreadable one or JSON the record cannot parse; it never panics and never propagates an error for a corrupt or absent file.
+    proof: [file-primitives]
+  - text: stage_token_file, commit_token_file and write_token_file call B192's private-directory, staging, commit and write operations and produce a token.json with owner-only permissions inside an owner-only directory; overwrite_token_file_secret calls B192's in-place rewrite to strip the secret from an existing file without changing its permissions.
+    proof: [file-primitives]
+  - text: Every fallible primitive (stage_token_file, commit_token_file, write_token_file, overwrite_token_file_secret) returns this task's own typed error, carrying the source I/O error, on failure; none of them returns B4592's outcome types.
+    proof: [file-primitives]
+  - text: "Named cases: parses_declared_and_pass_through_fields, round_trips_through_encode_and_decode_secret, decode_secret_rejects_mismatched_base_url, holds_secret_true_only_when_key_jwt_or_refresh_present, without_secret_clears_only_the_three_secret_fields, fresh_before_expires_at_minus_buffer, stale_at_expires_at_minus_buffer, fresh_falls_back_to_timestamp_age, stale_at_expiration_hours_minus_buffer, read_token_file_none_on_missing_file, read_token_file_none_on_corrupt_json, read_token_file_parses_a_valid_record, write_token_file_sets_owner_only_permissions, stage_and_commit_token_file_replaces_existing_content, overwrite_token_file_secret_strips_secret_in_place."
+    proof: [record-model, freshness-rule, file-primitives]
+checks:
+  optional: []
+  commands:
+    - id: record-model
+      why: CliTokenRecord, CliTokenSecret, their pass-through fields or the encode/decode/holds_secret/without_secret helpers do not match the source
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^token_records::/)'
+    - id: freshness-rule
+      why: is_token_fresh does not check expires_at or fall back to timestamp correctly, or reads a clock or a config section directly instead of taking them as parameters
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^token_records::/)'
+    - id: file-primitives
+      why: the token file primitives do not swallow read failures to nothing, do not produce owner-only permissions, or return the wrong error type
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^token_records::/)'
+oracle_cases: []
+deviations:
+  - what: CliTokenRecord declares client_id, token_endpoint, revocation_endpoint, resource and team_id as explicit optional fields.
+    why: LiteLLM's version accepts and stores these through dynamic field passthrough from a sibling record that is never declared on CliTokenRecord itself. Rust has no equivalent passthrough, and every one of these fields is written to and read from token.json in practice, so they become real typed fields instead of being silently dropped.
+  - what: is_token_fresh takes a CliTokenRecord only, not a record or an untyped mapping.
+    why: LiteLLM's version also accepts a plain mapping for a caller that already dumped the record to a dict. The branch that handles a mapping missing its timestamp key is dead code once every real caller holds a typed record, which every caller in this port does.
+  - what: A staging, commit, write or overwrite failure returns this task's own typed error instead of raising an exception or returning B4592's CredentialNotSaved.
+    why: a typed error belongs to the module that defines the operation it reports on. B4592 owns CredentialNotSaved and converts this task's error into it at the call site when it needs that outcome type.
+out_of_scope:
+  - load_cli_token, save_cli_token, clear_cli_token, get_litellm_gateway_api_key and every function that touches the vault (timestamp stamping across both stores, vault-secret resolution, migration, rejoining a split credential, the clear/scrub fallback chain) are B4592's; it builds them from this task's record model and file primitives.
+  - CredentialNotSaved, CredentialNotRecorded, CredentialNotCleared and the SecretSave/SecretClear outcome aliases are B4592's.
+  - SecretVault, KeyringVault and every keyring outcome type are B4590's; this task never calls the vault.
+  - The private-directory, staging, commit, overwrite and write operations this task calls are B192's; this task wraps their failures in its own error and never reimplements them.
+  - CliTokenData, run_pkce_login, renewal, rotation, sibling-detection and revocation orchestration are B4574's; it maps its own fields onto this task's CliTokenRecord when it needs to persist one.
+  - Resolving the home directory, the current time and the session-expiration setting belongs to whichever command calls this task's functions, for example B4575's print-token and whoami; this task only accepts them as parameters.
+  - betterlite-sdk's outbound bearer-header module (B4593) is unrelated proxy-calling code and does not use this task's types.
+pitfalls:
+  - "The freshness buffer is 360 seconds and is never configurable; a token at exactly 360 seconds before expires_at, or exactly the expiration hours minus 360 seconds old by timestamp, is stale under the strict less-than comparison, not fresh."
+  - "The token file is owner-only inside an owner-only directory; without_secret and overwrite_token_file_secret must clear key, jwt_token and refresh_token without touching client_id, token_endpoint, revocation_endpoint, resource or team_id, which stay in the file even once the secret is gone."
+  - "read_token_file must return nothing, never panic or propagate an error, for a missing file, an unreadable one and JSON that CliTokenRecord cannot parse: a corrupt token.json means the same thing as no file at all."
+  - "encode_secret and decode_secret pair a keychain blob to a record by base_url; a blob whose base_url does not match the record it is checked against must come back as nothing, never attached to the wrong server."
+  - "jwt_token is never optional and defaults to empty, not absent; holds_secret must treat it as carrying a secret only when it is non-empty, the same way key and refresh_token carry one only when they are present."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

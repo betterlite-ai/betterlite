@@ -1,0 +1,13 @@
+id: B5142
+milestone: M1 openai data plane
+title: The server builds its routes before it binds, so a bound port can serve
+status: todo
+depends_on: [B011]
+file: tasks/B5142-build-routes-before-bind.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -4,10 +4,11 @@ use betterlite_mcp::envelope::{EnvelopeKeys, open_envelope, open_refresh_envelop
 use chrono::DateTime;
 use libfuzzer_sys::fuzz_target;
 use secrecy::SecretString;
+use std::str;
 
 fuzz_target!(|bytes: &[u8]| {
     let (Ok(candidate), Ok(keys), Some(now)) = (
-        std::str::from_utf8(bytes),
+        str::from_utf8(bytes),
         EnvelopeKeys::new(
             SecretString::from("signing-key-that-is-at-least-32-bytes-long"),
             SecretString::from("encryption-key"),
@@ -16,6 +17,6 @@ fuzz_target!(|bytes: &[u8]| {
     ) else {
         return;
     };
-    let _ = open_envelope(candidate, &keys, now);
-    let _ = open_refresh_envelope(candidate, &keys, now);
+    let _opened = open_envelope(candidate, &keys, now);
+    let _refreshed = open_refresh_envelope(candidate, &keys, now);
 });

@@ -37,10 +37,13 @@ description: >-
   wait_for_import=false doing no import RPC, generic operation rejection and native GenAI/Interactions
   dispatch. Allocate 250 binding lines, 190 native tests and 310 HTTP fixtures, cap 800. All
   decoders, JSONL state machines and settings tests remain in their implementation tasks.
+
+  B010 registers the VertexService variants of OperationRequest, OperationResult and PreparedRequest as stubs in
+  crates/betterlite-provider/src/vertex_service_dispatch.rs. Fill them there and leave provider.rs, operation.rs
+  and prepared.rs as they are.
 scope:
   paths:
     - crates/betterlite-provider/Cargo.toml
-    - crates/betterlite-provider/src/{lib,provider,operation,prepared,vertex_service_dispatch}.rs
     - crates/betterlite-provider/src/vertex_service_dispatch.rs
     - crates/betterlite-provider/src/vertex_service_dispatch/**
     - crates/betterlite-core/Cargo.toml
