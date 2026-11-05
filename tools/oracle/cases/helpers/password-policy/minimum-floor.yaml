@@ -1,0 +1,11 @@
+kind: helper
+name: password-policy-minimum-floor
+call:
+  password_policy:
+    function: strength
+    password: Ab1!xyz
+    general_settings:
+      password_policy_min_length: 3
+env: {}
+compare:
+  ignore: []

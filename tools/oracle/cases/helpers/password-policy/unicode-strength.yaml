@@ -1,0 +1,9 @@
+kind: helper
+name: password-policy-unicode-strength
+call:
+  password_policy:
+    function: strength
+    password: "Ünïcode٣٣٣٣٣٣٣٣"
+env: {}
+compare:
+  ignore: []
