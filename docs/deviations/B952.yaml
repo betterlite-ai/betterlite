@@ -1,2 +1,5 @@
 task: B952
-deviations: []
+deviations:
+  - what: A call whose sequence_start plus an event offset overflows a 64-bit integer returns a McpEventError::SequenceOverflow instead of an event.
+    why: Python integers never overflow and Rust sequence numbers are i64, so the sum has no value to emit. No working setup sends a sequence number near 2^63.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/responses/mcp/mcp_streaming_iterator.py#L208
