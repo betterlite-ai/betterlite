@@ -1706,6 +1706,7 @@ dependencies = [
  "http 1.5.0",
  "indexmap 2.14.2",
  "nix",
+ "percent-encoding",
  "rand 0.10.3",
  "rstest",
  "rust_decimal",
