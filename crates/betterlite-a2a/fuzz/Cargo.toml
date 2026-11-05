@@ -3,6 +3,10 @@ name = "betterlite-a2a-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
 
 [package.metadata]
 cargo-fuzz = true
@@ -20,4 +24,9 @@ test = false
 doc = false
 bench = false
 
-[workspace]
+[[bin]]
+name = "completion_bridge"
+path = "fuzz_targets/completion_bridge.rs"
+test = false
+doc = false
+bench = false

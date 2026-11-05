@@ -17,8 +17,15 @@ use tokio::sync::oneshot;
 use tokio::task::JoinSet;
 use tokio::time::timeout;
 
-use crate::routes::chat::chat_routes;
+use crate::routes::chat::{ErrorLayer, chat_routes_with_call_id, log_normalized_error};
 use crate::server::chat_setup::chat_executor;
+use betterlite_error::normalize::Normalizer;
+use betterlite_openai::chat::execution::ChatError;
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
+use rstest::rstest;
+use std::fs::read_to_string;
+use tempfile::NamedTempFile;
+use tracing::subscriber::with_default;
 
 const FIRST: &str = "data: {\"id\":\"c\",\"object\":\"chat.completion.chunk\",\"created\":7,\"model\":\"g\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"first\"}}]}\n\n";
 const SECOND: &str = "data: {\"id\":\"c\",\"object\":\"chat.completion.chunk\",\"created\":7,\"model\":\"g\",\"choices\":[{\"index\":0,\"delta\":{\"content\":\"second\"}}]}\n\n";
@@ -41,9 +48,12 @@ async fn gateway(upstream: &TcpListener, tasks: &mut JoinSet<()>) -> (ProxiedCli
         listener.local_addr().unwrap()
     );
     tasks.spawn(async move {
-        axum::serve(listener, chat_routes(Arc::new(executor)))
-            .await
-            .unwrap();
+        axum::serve(
+            listener,
+            chat_routes_with_call_id(Arc::new(executor), false).unwrap(),
+        )
+        .await
+        .unwrap();
     });
     let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &environment).unwrap());
     (ProxiedClient::outbound(&policy).unwrap(), url)
@@ -131,4 +141,30 @@ async fn streams_before_next_chunk_and_cancels_on_disconnect() {
         .unwrap()
         .unwrap();
     tasks.shutdown().await;
+}
+
+#[rstest]
+#[case::timeout(ChatError::Timeout, 408, "408_UPSTREAM_TIMEOUT")]
+#[case::authentication(ChatError::MissingApiKey, 401, "401_AUTHENTICATION_FAILED")]
+fn error_normalization_tests_behavior(
+    #[case] error: ChatError,
+    #[case] status: u16,
+    #[case] code: &str,
+) {
+    let log = NamedTempFile::new().unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_writer(Arc::new(log.reopen().unwrap()))
+        .finish();
+    let layer = ErrorLayer {
+        normalizer: Normalizer::new().unwrap(),
+        redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap(),
+    };
+    with_default(subscriber, || {
+        log_normalized_error(&error, "private-message", status, &layer);
+    });
+    let output = read_to_string(log.path()).unwrap();
+    assert!(output.contains(&format!("normalized_error=\"{code}\"")));
+    assert!(!output.contains("private-message"));
 }

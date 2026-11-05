@@ -1,0 +1,5 @@
+kind: helper
+name: pydantic-empty-text
+call: {b4805: {operation: stream, request_id: req-1, response: {result: {history: [{role: user, messageId: q1, parts: [{kind: text, text: question}]}, {role: agent, messageId: a1, parts: [{kind: text, text: ""}]}]}}}}
+env: {}
+compare: {ignore: []}

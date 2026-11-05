@@ -3,6 +3,10 @@ name = "betterlite-models-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
 
 [package.metadata]
 cargo-fuzz = true
@@ -10,6 +14,7 @@ cargo-fuzz = true
 [dependencies]
 betterlite-models = { path = ".." }
 libfuzzer-sys = "0.4.9"
+serde_json = "1.0.154"
 
 [[bin]]
 name = "model_fields"
@@ -59,5 +64,3 @@ path = "fuzz_targets/image_dimensions.rs"
 test = false
 doc = false
 bench = false
-
-[workspace]

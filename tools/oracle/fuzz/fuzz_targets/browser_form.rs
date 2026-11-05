@@ -1,11 +1,13 @@
 #![no_main]
 
-use betterlite_oracle::case::browser_flow::form::{FormCaptureError, parse_form_projection};
 use libfuzzer_sys::fuzz_target;
 use std::str;
 
+#[path = "../../src/case/browser_flow/form.rs"]
+pub mod form;
+
 fuzz_target!(|bytes: &[u8]| {
-    let _ = str::from_utf8(bytes)
-        .map_err(FormCaptureError::Utf8)
-        .and_then(parse_form_projection);
+    let _outcome = str::from_utf8(bytes)
+        .map_err(form::FormCaptureError::Utf8)
+        .and_then(form::parse_form_projection);
 });

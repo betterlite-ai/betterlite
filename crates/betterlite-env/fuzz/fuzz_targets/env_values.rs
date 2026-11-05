@@ -9,8 +9,8 @@ fuzz_target!(|bytes: &[u8]| {
     let Ok(text) = str::from_utf8(bytes) else {
         return;
     };
-    let _ = flag("FUZZ", text);
-    let _ = number::<i64>("FUZZ", text);
-    let _ = number::<u32>("FUZZ", text);
-    let _ = number::<f64>("FUZZ", text);
+    let _flag = flag("FUZZ", text);
+    let _signed = number::<i64>("FUZZ", text);
+    let _unsigned = number::<u32>("FUZZ", text);
+    let _float = number::<f64>("FUZZ", text);
 });

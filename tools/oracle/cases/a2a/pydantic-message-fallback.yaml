@@ -1,0 +1,5 @@
+kind: helper
+name: pydantic-message-fallback
+call: {b4805: {operation: extract, response: {result: {history: [{role: user, messageId: u1, parts: [{kind: text, text: question}]}], message: {role: agent, messageId: msg-1, parts: [{kind: text, text: "from message"}]}}}}}
+env: {}
+compare: {ignore: []}

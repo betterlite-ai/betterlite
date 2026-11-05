@@ -1,0 +1,8 @@
+kind: helper
+name: upload-security-bzip-text
+call:
+  b3452:
+    content_hex: '425a6820706c61696e2074657874'
+env: {}
+compare:
+  ignore: []

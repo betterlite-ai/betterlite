@@ -8,9 +8,8 @@ description: 'Add typed cooldown records and health snapshots to B304''s store, 
   boundary keys introduced or consumed here: enable_health_check_routing, health_check_staleness_threshold,
   health_check_ignore_transient_errors, DEFAULT_COOLDOWN_REDIS_READ_INTERVAL_SECONDS. DEFAULT_COOLDOWN_REDIS_READ_INTERVAL_SECONDS
   defaults to 1 second from the environment; corrected local cooldown TTL is capped at 60 seconds by the
-  source. Implement the owned native service in crates/betterlite-router/src/cooldown_state.rs. Add ProbeOperation::CooldownState
-  in tools/oracle/src/router_probes/mod.rs and the corresponding B307 entry in tools/oracle/litellm/probes/registry.py;
-  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  source. Implement the owned native service in crates/betterlite-router/src/cooldown_state.rs. B301 registers ProbeOperation::CooldownState and its Python entry as stubs, so fill only tools/oracle/src/router_probes/cooldown_state.rs and tools/oracle/litellm/probes/cooldown_state.py and leave mod.rs and registry.py as they are;
+  the adapters only call production services.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
   lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
   exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/router_utils/cooldown_cache.py:
@@ -42,9 +41,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/cooldown_state.rs
   - tools/oracle/src/router_probes/cooldown_state/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/cooldown_state.py
   - tools/oracle/cases/routing/cooldown-state/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/cooldown-state-*

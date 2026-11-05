@@ -1,0 +1,5 @@
+kind: helper
+name: error-normalization-not-found-error
+call: {"error_normalization": {"message": "ordinary", "class": "NotFoundError", "status_code": 418}}
+env: {}
+compare: {ignore: []}

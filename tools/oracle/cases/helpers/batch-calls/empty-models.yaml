@@ -1,0 +1,9 @@
+kind: helper
+name: batch-calls-empty-models
+call:
+  batch_calls:
+    mode: all_responses
+    models: []
+    results: []
+env: {}
+compare: {ignore: []}

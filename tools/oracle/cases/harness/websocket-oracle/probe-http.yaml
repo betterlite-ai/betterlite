@@ -1,0 +1,27 @@
+kind: websocket
+name: probe-http
+path: /v1/realtime
+headers: {}
+requested_subprotocols: []
+expected_http_status: 101
+negotiated_subprotocol: null
+service: realtime_probe
+input:
+  model: realtime-a
+  api_key: sk-test
+  api_base: http://provider.test/
+  query_params:
+    intent: transcription
+    model: realtime-a
+frames:
+- direction: provider_to_client
+  action: expect
+  text: 'ws://provider.test/v1/realtime?intent=transcription&model=realtime-a'
+- direction: provider_to_client
+  action: expect
+  text: '[["intent","transcription"],["model","realtime-a"]]'
+- direction: provider_to_client
+  action: expect
+  text: '{"Authorization":"Bearer sk-test"}'
+execution_seconds: 10
+driver: service
