@@ -4,9 +4,8 @@ description: 'Implement StrategyRegistration over B327 semantic, B334 complexity
   adaptive constructors. Build marker-specific resources from typed immutable config, register/replace/remove
   them atomically and retire owned background work. Complexity construction composes existing classifier,
   session and plugin services; it does not reimplement their algorithms. Implement the owned native service
-  in crates/betterlite-router/src/strategy_registration.rs. Add ProbeOperation::StrategyRegistration in tools/oracle/src/router_probes/mod.rs
-  and the corresponding B400 entry in tools/oracle/litellm/probes/registry.py; the adapters only call
-  production services. Shared exports and dispatch files are explicitly in scope. Budget allocation: at
+  in crates/betterlite-router/src/strategy_registration.rs. B301 registers ProbeOperation::StrategyRegistration and its Python entry as stubs, so fill only tools/oracle/src/router_probes/strategy_registration.rs and tools/oracle/litellm/probes/strategy_registration.py and leave mod.rs and registry.py as they are; the adapters only call
+  production services. Budget allocation: at
   most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration
   lines (800 total); fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor
   services instead of copying their algorithms. Function coverage in litellm/router.py: Router.init_auto_router_deployment
@@ -35,9 +34,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/strategy_registration.rs
   - tools/oracle/src/router_probes/strategy_registration/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/strategy_registration.py
   - tools/oracle/cases/routing/strategy-registration/**
   - tools/oracle/helpers/b400.py

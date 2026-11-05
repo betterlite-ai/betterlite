@@ -1,0 +1,5 @@
+kind: helper
+name: error-normalization-class-before-router-wrapper
+call: {error_normalization: {message: "no fallback model group found", proxy_type: null, class: AuthenticationError, status_code: 500, rate_limit_type: null}}
+env: {}
+compare: {ignore: []}
