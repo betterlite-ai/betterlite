@@ -72,48 +72,40 @@ impl ScriptedTransport {
     }
 }
 
-fn exposed(headers: &[Header]) -> Vec<(String, String)> {
-    headers
-        .iter()
-        .map(|header| (header.name.clone(), header.value.expose_secret().to_owned()))
-        .collect()
+fn call_to(method: &'static str, url: &str, headers: &[Header]) -> Call {
+    Call {
+        method,
+        url: url.to_owned(),
+        headers: headers
+            .iter()
+            .map(|header| (header.name.clone(), header.value.expose_secret().to_owned()))
+            .collect(),
+        form: Vec::new(),
+        payload: None,
+    }
 }
 
 impl Transport for ScriptedTransport {
     fn get(&self, url: &str, headers: &[Header]) -> Reply {
-        self.answer(Call {
-            method: "GET",
-            url: url.to_owned(),
-            headers: exposed(headers),
-            form: Vec::new(),
-            payload: None,
-        })
+        self.answer(call_to("GET", url, headers))
     }
 
     fn post_form(&self, url: &str, headers: &[Header], form: &[(&str, &str)]) -> Reply {
-        self.answer(Call {
-            method: "POST",
-            url: url.to_owned(),
-            headers: exposed(headers),
-            form: form
-                .iter()
-                .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
-                .collect(),
-            payload: None,
-        })
+        let mut call = call_to("POST", url, headers);
+        call.form = form
+            .iter()
+            .map(|(key, value)| ((*key).to_owned(), (*value).to_owned()))
+            .collect();
+        self.answer(call)
     }
 
     fn post_json(&self, url: &str, headers: &[Header], payload: &IndexMap<String, Json>) -> Reply {
         if let Some((delivery, record)) = &self.append_during_post {
             append(delivery, record.clone());
         }
-        self.answer(Call {
-            method: "POST",
-            url: url.to_owned(),
-            headers: exposed(headers),
-            form: Vec::new(),
-            payload: Some(payload.clone()),
-        })
+        let mut call = call_to("POST", url, headers);
+        call.payload = Some(payload.clone());
+        self.answer(call)
     }
 }
 
