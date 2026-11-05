@@ -379,9 +379,9 @@ fn replays_corpus() {
 }
 
 #[rstest]
-#[case::delta(r#"{"type":"response.reasoning_summary_text.delta","item_id":"i","output_index":0,"summary_index":0,"delta":""}"#, "summary_index", 0)]
-#[case::text_done(r#"{"type":"response.reasoning_summary_text.done","item_id":"i","output_index":0,"sequence_number":7,"summary_index":0,"text":""}"#, "summary_index", 0)]
-#[case::part_done(r#"{"type":"response.reasoning_summary_part.done","item_id":"i","output_index":0,"sequence_number":8,"summary_index":0,"part":{}}"#, "summary_index", 0)]
+#[case::delta(r#"{"type":"response.reasoning_summary_text.delta","item_id":"i","output_index":0,"summary_index":3,"delta":""}"#, "summary_index", 3)]
+#[case::text_done(r#"{"type":"response.reasoning_summary_text.done","item_id":"i","output_index":0,"sequence_number":7,"summary_index":3,"text":""}"#, "summary_index", 3)]
+#[case::part_done(r#"{"type":"response.reasoning_summary_part.done","item_id":"i","output_index":0,"sequence_number":8,"summary_index":3,"part":{}}"#, "summary_index", 3)]
 #[case::explicit_zero(
     r#"{"type":"response.output_item.done","output_index":2,"sequence_number":0,"item":{}}"#,
     "sequence_number",
