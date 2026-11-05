@@ -84,6 +84,7 @@ fn compatible_line_maps_finish_reason_with_the_shared_table(
 #[case::object_arguments_win(r#"{"arguments":{"b":2},"parameters":{"a":1}}"#, r#"{"b":2}"#)]
 #[case::non_object_parameters_are_ignored(r#"{"parameters":"text"}"#, "")]
 #[case::empty_object(r#"{"arguments":{}}"#, "{}")]
+#[case::json_string_kept_verbatim(r#"{"arguments":"{\"a\": 1}"}"#, r#"{"a": 1}"#)]
 fn compatible_line_tool_arguments_take_objects_and_parameters(
     #[case] function: &str,
     #[case] expected: &str,
