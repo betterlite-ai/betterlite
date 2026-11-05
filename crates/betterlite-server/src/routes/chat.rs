@@ -113,7 +113,8 @@ async fn chat_completion(
         Ok(request) => request,
         Err(source) => {
             if let RequestError::Body { source: json } = &source {
-                call.include_in_body &= !(json.is_syntax() || json.is_eof());
+                // LiteLLM's _read_request_body treats an empty body as {} instead of raising.
+                call.include_in_body &= body.is_empty() || !(json.is_syntax() || json.is_eof());
             }
             return failure(&ChatError::from(source), call, None);
         }
