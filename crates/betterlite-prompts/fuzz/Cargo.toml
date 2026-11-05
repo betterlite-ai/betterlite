@@ -3,6 +3,10 @@ name = "betterlite-prompts-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
 
 [package.metadata]
 cargo-fuzz = true
@@ -10,6 +14,7 @@ cargo-fuzz = true
 [dependencies]
 betterlite-prompts = { path = ".." }
 chrono = "0.4.45"
+indexmap = "2.14.2"
 libfuzzer-sys = "0.4.9"
 serde_json = { version = "1.0.145", features = ["arbitrary_precision"] }
 
@@ -48,4 +53,9 @@ test = false
 doc = false
 bench = false
 
-[workspace]
+[[bin]]
+name = "tool_schema"
+path = "fuzz_targets/tool_schema.rs"
+test = false
+doc = false
+bench = false

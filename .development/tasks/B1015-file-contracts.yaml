@@ -31,6 +31,10 @@ description: >-
   warn-and-drop branch. Register only pure helper cases; no byte decoder, HTTP case or provider
   call is needed. Count the 193 nonblank, non-comment source lines in the two pinned ranges and
   allow 190 implementation, 110 tests, 80 cases, 80 adapters and 40 operation-wiring lines.
+
+  B010 registers the File variants of OperationRequest, OperationResult and PreparedRequest as stubs in
+  crates/betterlite-provider/src/api/file_contracts.rs. Fill them there and leave provider.rs, operation.rs and
+  prepared.rs as they are.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
@@ -39,12 +43,6 @@ scope:
   - crates/betterlite-provider/Cargo.toml
   - crates/betterlite-provider/src/api/file_contracts.rs
   - crates/betterlite-provider/src/api/file_contracts/**
-  - crates/betterlite-provider/src/provider.rs
-  - crates/betterlite-provider/src/provider/**
-  - crates/betterlite-provider/src/operation.rs
-  - crates/betterlite-provider/src/operation/**
-  - crates/betterlite-provider/src/prepared.rs
-  - crates/betterlite-provider/src/prepared/**
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/provider/file_contracts.rs
   - tools/oracle/src/helpers/provider/file_contracts/**

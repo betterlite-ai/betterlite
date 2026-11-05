@@ -38,12 +38,15 @@ description: >-
   core/server and the named config loader. The remaining owned source is 54 dispatch lines plus
   docstring-only package initializers; allow 190 composition/config, 230 tests, 220 HTTP/helper
   fixtures and 90 SDK fixture lines under an 800-line cap. All parsers remain with their leaf tasks.
+
+  B010 registers Provider::SpeechProviders as a stub in
+  crates/betterlite-provider/src/provider/speech_providers.rs. Fill it there and leave provider.rs as it is.
 scope:
   paths:
     - crates/betterlite-core/src/api/speech_providers.rs
     - crates/betterlite-core/src/api/speech_providers/**
-    - crates/betterlite-provider/src/provider.rs
-    - crates/betterlite-provider/src/provider/**
+    - crates/betterlite-provider/src/provider/speech_providers.rs
+    - crates/betterlite-provider/src/provider/speech_providers/**
     - crates/betterlite-provider/src/dispatch.rs
     - crates/betterlite-provider/src/dispatch/**
     - crates/betterlite-config/src/providers/riva.rs

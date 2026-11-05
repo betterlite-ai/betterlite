@@ -5,9 +5,7 @@ description: 'Adapt B311 commitment and B310 fallback ownership to B080 typed Re
   IDs and headers. Use the endpoint service adapter in betterlite-server; no new SSE parser or provider
   transport belongs here. MAX_HELD_PRE_OUTPUT_RESPONSES_EVENTS=200; the limit is a pinned constant, not
   a new env variable. Implement the owned native service in crates/betterlite-router/src/responses_stream_fallback.rs.
-  Add ProbeOperation::ResponsesStreamFallback in tools/oracle/src/router_probes/mod.rs and the corresponding B370 entry in
-  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
-  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  B301 registers ProbeOperation::ResponsesStreamFallback and its Python entry as stubs, so fill only tools/oracle/src/router_probes/responses_stream_fallback.rs and tools/oracle/litellm/probes/responses_stream_fallback.py and leave mod.rs and registry.py as they are; the adapters only call production services. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
   fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
   of copying their algorithms. Function coverage in litellm/router.py: _responses_stream_holds_event (L615-L620),
@@ -36,9 +34,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/responses_stream_fallback.rs
   - tools/oracle/src/router_probes/responses_stream_fallback/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/responses_stream_fallback.py
   - tools/oracle/cases/routing/responses-stream-fallback/**
   - tools/oracle/helpers/b370.py
