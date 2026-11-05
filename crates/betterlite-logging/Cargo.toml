@@ -56,6 +56,10 @@ name = "sdk_analytics"
 path = "src/analytics/suite.rs"
 
 [[test]]
+name = "mavvrik_delivery"
+path = "src/mavvrik_delivery/tests/suite.rs"
+
+[[test]]
 name = "opik"
 path = "src/opik/tests.rs"
 
