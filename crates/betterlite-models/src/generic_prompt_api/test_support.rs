@@ -4,6 +4,7 @@ use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use indexmap::IndexMap;
 use secrecy::SecretString;
 use thiserror::Error;
 
@@ -75,7 +76,7 @@ pub(crate) fn settings(api_key: Option<&str>) -> GenericPromptSettings {
         api_key: api_key.map(SecretString::from),
         timeout: Duration::from_secs(30),
         prompt_id: None,
-        provider_specific_query_params: None,
+        provider_specific_query_params: IndexMap::new(),
         ignore_flags: PromptIgnoreFlags::default(),
     }
 }

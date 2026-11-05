@@ -8,7 +8,7 @@ use crate::generic_prompt_api::manager::GenericPromptSettings;
 use crate::generic_prompt_api::request::{
     PromptApiRequest, PromptApiResponse, PromptApiTransport, query_pairs,
 };
-use crate::prompt_contracts::{PromptManagementClient, PromptParams};
+use crate::prompt_contracts::PromptParams;
 use crate::prompt_spec::PromptSpec;
 
 use self::Extras::{Own, Spec};
@@ -24,20 +24,6 @@ pub struct ApiPromptResponse {
     pub prompt_template_model: Option<String>,
     #[serde(rename = "prompt_template_optional_params")]
     pub optional_params: Option<PromptParams>,
-}
-
-impl ApiPromptResponse {
-    // the prompt_id is the caller's, as in LiteLLM; the answer's own prompt_id is not read
-    #[must_use]
-    pub fn into_prompt_client(self, prompt_id: Option<&str>) -> PromptManagementClient {
-        PromptManagementClient {
-            prompt_id: prompt_id.map(str::to_owned),
-            prompt_template: self.prompt_template,
-            prompt_template_model: self.prompt_template_model,
-            prompt_optional_params: self.optional_params,
-            completed_messages: None,
-        }
-    }
 }
 
 // LiteLLM's sync fetch reads the manager's extra params and its async fetch reads the spec's
@@ -77,10 +63,9 @@ where
         prompt_id: Option<&str>,
         prompt_spec: Option<&PromptSpec>,
     ) -> ApiResult<Transport::Error> {
-        match self.request(prompt_id, prompt_spec, Own) {
-            Ok(request) => read_response(prompt_id, self.transport.get(&request)),
-            Err(error) => Err(error),
-        }
+        let request = self.request(prompt_id, prompt_spec, Own)?;
+        let response = self.transport.get(&request);
+        read_response(prompt_id, response)
     }
 
     pub async fn async_fetch_prompt_from_api(
@@ -103,7 +88,7 @@ where
             return Err(PromptFetchError::MissingPromptSource);
         }
         let provider_specific = match source {
-            Own => self.settings.provider_specific_query_params.as_ref(),
+            Own => Some(&self.settings.provider_specific_query_params),
             Spec => prompt_spec
                 .and_then(|spec| spec.litellm_params.provider_specific_query_params.as_ref()),
         };
@@ -116,7 +101,7 @@ where
     }
 }
 
-fn read_response<TransportError>(
+pub fn read_response<TransportError>(
     prompt_id: Option<&str>,
     outcome: Result<PromptApiResponse, TransportError>,
 ) -> ApiResult<TransportError> {

@@ -21,7 +21,7 @@ pub struct GenericPromptSettings {
     pub api_key: Option<SecretString>,
     pub timeout: Duration,
     pub prompt_id: Option<String>,
-    pub provider_specific_query_params: Option<IndexMap<String, Json>>,
+    pub provider_specific_query_params: IndexMap<String, Json>,
     pub ignore_flags: PromptIgnoreFlags,
 }
 
@@ -127,7 +127,14 @@ where
             prompt_id: prompt_id.unwrap_or("None").to_owned(),
             source,
         })?;
-        let prompt_client = api_response.into_prompt_client(prompt_id);
+        // the prompt_id is the caller's, as in LiteLLM; the answer's own prompt_id is not read
+        let prompt_client = PromptManagementClient {
+            prompt_id: prompt_id.map(str::to_owned),
+            prompt_template: api_response.prompt_template,
+            prompt_template_model: api_response.prompt_template_model,
+            prompt_optional_params: api_response.optional_params,
+            completed_messages: None,
+        };
         self.prompt_cache.insert(cache_key, prompt_client.clone());
         match prompt_variables {
             Some(variables) if !variables.is_empty() => {

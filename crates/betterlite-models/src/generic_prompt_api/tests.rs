@@ -1,14 +1,20 @@
 #![cfg(test)]
 
+use std::convert::Infallible;
+use std::fs;
+use std::path::Path;
+
+use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
 
 use super::error::{PromptCompileError, PromptFetchError};
+use super::fetch::read_response;
 use super::initializer::{
     GenericPromptInitializerError, prompt_initializer, prompt_initializer_registry,
 };
 use super::manager::GenericPromptManager;
-use super::request::query_pairs;
+use super::request::{PromptApiResponse, query_pairs};
 use super::test_support::{
     FakeFailure, FakeOutcome, FakeTransport, manager_with, settings, system_content,
     template_manager, variables,
@@ -140,7 +146,7 @@ async fn async_fetch_calls_the_prompt_management_endpoint_with_the_prompt_id() {
 fn sync_fetch_takes_extra_query_params_from_the_manager_settings() {
     let mut configured = settings(None);
     configured.provider_specific_query_params =
-        Some(serde_json::from_str(r#"{"workspace":"team-a","tags":["x","y"]}"#).unwrap());
+        serde_json::from_str(r#"{"workspace":"team-a","tags":["x","y"]}"#).unwrap();
     let (manager, requests) = manager_with(
         FakeOutcome::Answer {
             status: 200,
@@ -170,7 +176,7 @@ fn sync_fetch_takes_extra_query_params_from_the_manager_settings() {
 async fn async_fetch_takes_extra_query_params_from_the_prompt_spec() {
     let mut configured = settings(None);
     configured.provider_specific_query_params =
-        Some(serde_json::from_str(r#"{"workspace":"ignored"}"#).unwrap());
+        serde_json::from_str(r#"{"workspace":"ignored"}"#).unwrap();
     let (manager, requests) = manager_with(
         FakeOutcome::Answer {
             status: 200,
@@ -284,23 +290,20 @@ fn assert_fetch_error(error: &PromptFetchError<FakeFailure>, kind: &str) {
 }
 
 #[test]
-fn parsing_takes_the_callers_prompt_id_and_the_template_fields() {
+fn parsing_reads_the_template_fields() {
     let (manager, _) = template_manager();
     let parsed = manager
         .api
         .fetch_prompt_from_api(Some("welcome"), None)
-        .unwrap()
-        .into_prompt_client(Some("welcome"));
-    assert_eq!(parsed.prompt_id.as_deref(), Some("welcome"));
+        .unwrap();
     assert_eq!(parsed.prompt_template.len(), 2);
     assert_eq!(parsed.prompt_template_model.as_deref(), Some("gpt-4"));
-    let optional = parsed.prompt_optional_params.unwrap();
+    let optional = parsed.optional_params.unwrap();
     assert_eq!(optional.len(), 1);
     assert_eq!(
         optional.get("temperature").unwrap(),
         &serde_json::from_str::<Json>("0.7").unwrap()
     );
-    assert_eq!(parsed.completed_messages, None);
 }
 
 #[rstest]
@@ -317,9 +320,10 @@ fn parsing_defaults_a_missing_template_to_empty(#[case] body: &str) {
     let parsed = manager
         .api
         .fetch_prompt_from_api(Some("welcome"), None)
-        .unwrap()
-        .into_prompt_client(None);
-    assert_eq!(parsed, PromptManagementClient::default());
+        .unwrap();
+    assert!(parsed.prompt_template.is_empty());
+    assert_eq!(parsed.prompt_template_model, None);
+    assert!(parsed.optional_params.is_none());
 }
 
 #[rstest]
@@ -508,7 +512,7 @@ fn initializer_builds_a_manager_from_the_prompt_params() {
     );
     assert_eq!(
         manager.api.settings.provider_specific_query_params,
-        serde_json::from_str(r#"{"a":"b"}"#).unwrap()
+        serde_json::from_str::<IndexMap<String, Json>>(r#"{"a":"b"}"#).unwrap()
     );
 }
 
@@ -581,4 +585,32 @@ fn registry_maps_only_the_generic_integration(
         let manager = initializer(&params.litellm_params, &params, transport).unwrap();
         assert_eq!(manager.api.settings.api_base, "https://x");
     }
+}
+
+#[test]
+fn initializer_leaves_the_query_params_empty_when_the_spec_has_none() {
+    let params =
+        spec(r#"{"prompt_integration":"generic_prompt_management","api_base":"https://x"}"#);
+    let transport = template_manager().0.api.transport;
+    let manager = prompt_initializer(&params.litellm_params, &params, transport).unwrap();
+    assert!(
+        manager
+            .api
+            .settings
+            .provider_specific_query_params
+            .is_empty()
+    );
+}
+
+#[rstest]
+fn replays_the_prompt_api_response_corpus() {
+    let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/prompt_api_response");
+    let mut replayed = 0_u32;
+    for entry in fs::read_dir(directory).expect("the prompt_api_response corpus directory exists") {
+        let body = fs::read(entry.expect("a corpus entry is readable").path()).unwrap();
+        let answer = PromptApiResponse { status: 200, body };
+        let _outcome = read_response::<Infallible>(Some("welcome"), Ok(answer));
+        replayed += 1;
+    }
+    assert!(replayed >= 5);
 }

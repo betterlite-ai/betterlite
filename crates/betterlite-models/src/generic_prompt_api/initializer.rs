@@ -50,7 +50,10 @@ where
         api_key: litellm_params.api_key.clone(),
         timeout: Duration::from_secs(timeout_seconds),
         prompt_id: litellm_params.prompt_id.clone(),
-        provider_specific_query_params: litellm_params.provider_specific_query_params.clone(),
+        provider_specific_query_params: litellm_params
+            .provider_specific_query_params
+            .clone()
+            .unwrap_or_default(),
         ignore_flags: PromptIgnoreFlags {
             model: litellm_params.ignore_model,
             optional_params: litellm_params.ignore_optional_params,
