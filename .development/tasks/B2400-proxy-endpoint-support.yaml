@@ -32,14 +32,13 @@ description: >-
   resulting HTTP behavior. No byte decoder is added. The owned spans contain 92 nonblank/non-comment
   Python lines including docstrings; allow 145 implementation, 175 tests, 100 adapters, 90 fixtures and
   30 wiring lines, 540 total.
+  This task adds no server state, so leave state.rs to B1100.
 scope:
   paths:
   - crates/betterlite-server/src/api/proxy_endpoint_support.rs
   - crates/betterlite-server/src/api/proxy_endpoint_support/**
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/Cargo.toml
   - tools/oracle/src/helpers/server/proxy_endpoint_support.rs
   - tools/oracle/src/helpers/server/proxy_endpoint_support/**

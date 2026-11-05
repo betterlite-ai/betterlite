@@ -43,6 +43,7 @@ description: >-
   post_and_common_flags_independent_defaults_false, invalid_bool_rejected and configured_hook_must_load
   use actual nested settings and config_yaml seeds. Reuse B165 decoding/deadline infrastructure; no
   new parser. Allow 210 production, 260 tests, 80 adapters, 90 wiring and 70 config lines, 710 within750.
+  B1100 registers state/custom_auth.rs as a stub slot, so fill only crates/betterlite-server/src/state/custom_auth.rs and leave state.rs as it is.
 scope:
   paths:
     - crates/betterlite-server/src/custom_auth.rs
@@ -50,8 +51,8 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/auth.rs
     - crates/betterlite-server/src/auth/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/state/custom_auth.rs
+    - crates/betterlite-server/src/state/custom_auth/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - crates/betterlite-config/Cargo.toml

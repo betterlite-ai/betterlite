@@ -59,15 +59,14 @@ description: >-
 
   These two functions have 117 nonblank noncomment lines excluding docstrings. Estimate 160 production,
   300 tests and 65 wiring lines, 525 within 575, reusing all B830 response and helper code.
+  B1100 registers routes/customer_update.rs as a stub, so fill only crates/betterlite-server/src/routes/customer_update.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/customer_update.rs
     - crates/betterlite-server/src/customer_update/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/customer_update.rs
+    - crates/betterlite-server/src/routes/customer_update/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/customer-update/**
