@@ -101,17 +101,6 @@ fn assert_lookup(
     "{}",
     "true"
 )]
-fn anthropic_catalog_lookup_cases(
-    #[case] call: Call,
-    #[case] model: &str,
-    #[case] runtime: &str,
-    #[case] packaged: &str,
-    #[case] expected: &str,
-) {
-    assert_lookup(&call, model, runtime, packaged, expected);
-}
-
-#[rstest]
 #[case::bare_prefix_raises(Call::Candidates, "invoke/global", "{}", "{}", r#"["invoke/global"]"#)]
 #[case::bare_prefix_after_bedrock(
     Call::Candidates,
@@ -252,7 +241,7 @@ fn anthropic_catalog_lookup_cases(
     "{}",
     r#""catalog entry m is not an object""#
 )]
-fn anthropic_catalog_lookup_edges(
+fn anthropic_catalog_lookup_cases(
     #[case] call: Call,
     #[case] model: &str,
     #[case] runtime: &str,
