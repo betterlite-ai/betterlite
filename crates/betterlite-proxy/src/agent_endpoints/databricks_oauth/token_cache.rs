@@ -18,11 +18,11 @@ type Clock = Arc<dyn Fn() -> f64 + Send + Sync>;
 pub type KeyLock = Arc<Mutex<()>>;
 
 pub struct DatabricksAppOAuthTokenCache {
-    pub(super) client: ProxiedClient,
-    pub(super) clock: Clock,
-    pub(super) tokens: Mutex<LocalTtlCache>,
+    client: ProxiedClient,
+    clock: Clock,
+    tokens: Mutex<LocalTtlCache>,
     // one lock per live cache key, so concurrent callers share a single token request
-    pub(super) locks: Mutex<BTreeMap<String, KeyLock>>,
+    locks: Mutex<BTreeMap<String, KeyLock>>,
 }
 
 fn new_token_cache(clock: &Clock) -> Result<LocalTtlCache, CacheError> {
@@ -80,6 +80,14 @@ impl DatabricksAppOAuthTokenCache {
             self.locks.lock().await.remove(&cache_key);
         }
         Ok(token)
+    }
+
+    // The number of keys that still hold a token or have a caller waiting.
+    pub async fn live_lock_count(&self) -> usize {
+        let mut tokens = self.tokens.lock().await;
+        let mut locks = self.locks.lock().await;
+        drop_idle_locks(&mut tokens, &mut locks);
+        locks.len()
     }
 
     async fn key_lock(&self, cache_key: &str) -> KeyLock {

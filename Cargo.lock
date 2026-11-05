@@ -1782,6 +1782,7 @@ dependencies = [
  "betterlite-paths",
  "betterlite-postgres-fixture",
  "betterlite-prompts",
+ "betterlite-proxy",
  "betterlite-rate-limit",
  "betterlite-redact",
  "betterlite-redis",

@@ -89,7 +89,7 @@ async fn run(scenario: Scenario) -> (usize, usize) {
         fetch_concurrently(&cache, &credentials, scenario.callers).await;
     }
     let requests = server.requests.lock().unwrap().len();
-    (requests, cache.locks.lock().await.len())
+    (requests, cache.live_lock_count().await)
 }
 
 #[rstest]
