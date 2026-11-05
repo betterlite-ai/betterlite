@@ -55,25 +55,17 @@ impl<T: GitLabTransport> GitLabClient<T> {
         let ref_name = ref_override
             .filter(|name| !name.is_empty())
             .unwrap_or(&self.ref_name);
-        let response = self.request(FileEndpoint::Raw, file_path, ref_name).await?;
-        if response.status == 404 {
-            return self.get_file_content_via_json(file_path, ref_name).await;
+        let raw = self.request(FileEndpoint::Raw, file_path, ref_name).await?;
+        if raw.status != 404 {
+            return Ok(Some(payload::decode_text(&raw.body)));
         }
-        Ok(Some(payload::decode_text(&response.body)))
-    }
-
-    async fn get_file_content_via_json(
-        &self,
-        file_path: &str,
-        ref_name: &str,
-    ) -> Result<Option<String>, GitLabClientError> {
-        let response = self
+        let json = self
             .request(FileEndpoint::Json, file_path, ref_name)
             .await?;
-        if response.status == 404 {
+        if json.status == 404 {
             return Ok(None);
         }
-        payload::decode_file_payload(&response.body).map_err(|source| {
+        payload::decode_file_payload(&json.body).map_err(|source| {
             fetch::classify(
                 FileEndpoint::Json,
                 &self.project,
