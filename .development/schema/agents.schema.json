@@ -48,6 +48,14 @@
     "Policy": {
       "type": "object",
       "properties": {
+        "checks_in_pull_request": {
+          "description": "Check ids the dispatcher's final gate leaves out, because CI runs them on the task's pull request: gate.yml runs mutants on a task pull request labeled mutants-in-ci. Empty runs every check locally.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "type": "string"
+          }
+        },
         "limit_retry_minutes": {
           "description": "Minutes a vendor stays skipped after one of its runs hit the usage limit. The next run after that tries it again.",
           "type": "integer",

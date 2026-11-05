@@ -18,21 +18,16 @@ description: 'Add a per-model scheduler using B360 state and an injected clock/r
   Scheduler.add_request (L42-L50), Scheduler.poll (L52-L85), Scheduler.remove_request (L87-L96), Scheduler.peek
   (L98-L112), Scheduler.get_queue_status (L114-L116), Scheduler.get_queue (L118-L129), Scheduler.save_queue
   (L131-L137). Implement these behaviors through the typed Rust services above; synchronous facades and
-  structural accessors reuse the same primitive instead of separate ports.'
+  structural accessors reuse the same primitive instead of separate ports.
+  B016 registers RouteStage::RequestScheduler as a stub, so replace only that stub and its not-built test in crates/betterlite-router/src/context/request_scheduler.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.'
 scope:
   paths:
   - crates/betterlite-router/src/request_scheduler.rs
   - crates/betterlite-router/src/request_scheduler/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-router/src/context/request_scheduler.rs
+  - crates/betterlite-router/src/context/request_scheduler/**
   - crates/betterlite-server/src/routing/request_scheduler.rs
   - crates/betterlite-server/src/routing/request_scheduler/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/request_scheduler.rs
   - tools/oracle/src/router_probes/request_scheduler/**
   - tools/oracle/litellm/probes/request_scheduler.py

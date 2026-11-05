@@ -16,15 +16,13 @@ description: 'Implement POST /auto_router/test_routing over B379 dry-run authori
   typed Rust services above; synchronous facades and structural accessors reuse the same primitive instead
   of separate ports. Bound the route_probe outside-byte parser to 1048576 bytes before decoding; on excess
   use its typed invalid-input outcome (classifier/observation consumers keep their pinned warning/fallback
-  path).'
+  path). B1100 registers routes/auto_router_preview.rs as a stub, so fill only crates/betterlite-server/src/routes/auto_router_preview.rs and leave routes.rs and state.rs as they are.'
 scope:
   paths:
   - crates/betterlite-server/src/auto_router_preview.rs
   - crates/betterlite-server/src/auto_router_preview/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/routes/auto_router_preview.rs
+  - crates/betterlite-server/src/routes/auto_router_preview/**
   - crates/betterlite-server/src/routing/auto_router_preview.rs
   - crates/betterlite-server/src/routing/auto_router_preview/**
   - tools/oracle/src/router_probes/auto_router_preview.rs

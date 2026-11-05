@@ -62,15 +62,14 @@ description: >-
 
   Keep get_paginated_teams callable by the existing Prometheus integration without importing that
   higher-level caller; only its repository dependency is needed here.
+  B1100 registers routes/team_lists.rs as a stub, so fill only crates/betterlite-server/src/routes/team_lists.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/team_lists.rs
     - crates/betterlite-server/src/team_lists/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/team_lists.rs
+    - crates/betterlite-server/src/routes/team_lists/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/team-lists/**
