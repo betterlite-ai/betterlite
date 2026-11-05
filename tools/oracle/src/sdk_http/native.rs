@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::error::Error;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -22,14 +21,12 @@ use serde_json::Value;
 use tokio::runtime::Builder;
 use tokio::time::timeout;
 
-use super::capture::{Execution, Implementation, Stop};
+use super::capture::{Execution, Stop};
 use super::error::SdkHttpError;
 use super::result::{ChatCompletion, Choice, Failure, Nullable, SdkResult};
 use super::{ChatMessage, OpenaiChat, SdkHttpCall};
 
 const POLL: Duration = Duration::from_millis(10);
-
-pub(crate) struct NativeSdk;
 
 #[derive(Serialize)]
 struct WireChat<'wire> {
@@ -37,18 +34,16 @@ struct WireChat<'wire> {
     messages: &'wire [ChatMessage],
 }
 
-impl Implementation for NativeSdk {
-    fn execute(&self, call: &SdkHttpCall, api_base: &str, stop: &Stop<'_>) -> Execution {
-        let SdkHttpCall::OpenaiChat(chat) = call;
-        let result = Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(SdkHttpError::Io)
-            .and_then(|runtime| runtime.block_on(send_until_stopped(chat, api_base, stop)));
-        Execution {
-            result,
-            log: Vec::new(),
-        }
+pub(crate) fn execute(call: &SdkHttpCall, api_base: &str, stop: &Stop<'_>) -> Execution {
+    let SdkHttpCall::OpenaiChat(chat) = call;
+    let result = Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(SdkHttpError::Io)
+        .and_then(|runtime| runtime.block_on(send_until_stopped(chat, api_base, stop)));
+    Execution {
+        result,
+        log: Vec::new(),
     }
 }
 
@@ -86,10 +81,7 @@ struct Params<'config> {
     timeout: u64,
 }
 
-fn executor(
-    chat: &OpenaiChat,
-    api_base: &str,
-) -> Result<ChatExecutor, Box<dyn Error + Send + Sync>> {
+fn deployments(chat: &OpenaiChat, api_base: &str) -> Result<Vec<ChatDeployment>, SdkHttpError> {
     let config = Config {
         model_list: [Entry {
             model_name: &chat.model,
@@ -110,19 +102,26 @@ fn executor(
         api_keys: Vec::new(),
         organization: None,
     };
-    let deployments = loader
-        .load(&serde_json::to_string(&config)?)?
+    let text = serde_json::to_string(&config).map_err(SdkHttpError::Serialize)?;
+    loader
+        .load(&text)
+        .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?
         .model_list
         .iter()
         .map(|deployment| ChatDeployment::resolve(deployment, &defaults))
-        .collect::<Result<Vec<_>, _>>()?;
-    let policy = Arc::new(ProxyPolicy::resolve(
-        &ProxyTrust::default(),
-        &BTreeMap::new(),
-    )?);
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| SdkHttpError::Deployment(Box::new(error)))
+}
+
+fn executor(chat: &OpenaiChat, api_base: &str) -> Result<ChatExecutor, SdkHttpError> {
+    let policy = Arc::new(
+        ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new())
+            .map_err(SdkHttpError::ProxyPolicy)?,
+    );
     Ok(ChatExecutor {
-        client: ProxiedClient::outbound(&policy)?,
-        deployments,
+        client: ProxiedClient::outbound(&policy)
+            .map_err(|error| SdkHttpError::Client(Box::new(error)))?,
+        deployments: deployments(chat, api_base)?,
         catalog: CatalogCapabilities {
             chat_models: BTreeSet::new(),
             text_models: BTreeSet::new(),
@@ -132,23 +131,23 @@ fn executor(
 }
 
 async fn send(chat: &OpenaiChat, api_base: &str) -> Result<SdkResult, SdkHttpError> {
-    let executor = executor(chat, api_base).map_err(SdkHttpError::Setup)?;
+    let executor = executor(chat, api_base)?;
     let wire = WireChat {
         model: &chat.model,
         messages: &chat.messages,
     };
     let body = serde_json::to_vec(&wire).map_err(SdkHttpError::Serialize)?;
     let request =
-        ChatRequest::parse(&body).map_err(|source| SdkHttpError::Native(Box::new(source)))?;
+        ChatRequest::parse(&body).map_err(|source| SdkHttpError::ChatParse(Box::new(source)))?;
     let deployment = executor
         .pick(&chat.model)
-        .map_err(|source| SdkHttpError::Native(Box::new(source)))?;
+        .map_err(|source| SdkHttpError::Chat(Box::new(source)))?;
     match executor.send(deployment, &request).await {
         Ok(outcome) => Ok(SdkResult::Success {
             value: completion(outcome.response),
         }),
         Err(ChatError::Provider { response }) => project_failure(&chat.model, &response),
-        Err(other) => Err(SdkHttpError::Native(Box::new(other))),
+        Err(other) => Err(SdkHttpError::Chat(Box::new(other))),
     }
 }
 
@@ -171,8 +170,7 @@ fn completion(response: ChatResponse) -> ChatCompletion {
 
 // the OpenAI SDK reads type/param/code from `body["error"]` when it is a mapping, else from the body itself
 fn project_failure(model: &str, response: &UpstreamResponse) -> Result<SdkResult, SdkHttpError> {
-    let text = String::from_utf8(response.body.clone())
-        .map_err(|source| SdkHttpError::Native(Box::new(source)))?;
+    let text = String::from_utf8(response.body.clone()).map_err(SdkHttpError::ErrorBodyUtf8)?;
     let parsed = serde_json::from_str::<Value>(&text).ok();
     let flat = match parsed {
         Some(Value::Object(mut object)) => match object.remove("error") {
@@ -191,7 +189,7 @@ fn project_failure(model: &str, response: &UpstreamResponse) -> Result<SdkResult
         body: flat
             .map(serde_json::from_value::<OpenaiErrorBody>)
             .transpose()
-            .map_err(|source| SdkHttpError::Native(Box::new(source)))?,
+            .map_err(SdkHttpError::ErrorBody)?,
     };
     let class = map_openai_exception(&input);
     let (name, message) = class_name(&class)?;

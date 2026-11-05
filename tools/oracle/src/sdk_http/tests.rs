@@ -3,25 +3,23 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::net::TcpStream;
+use std::os::unix::fs::PermissionsExt as _;
+use std::os::unix::process::ExitStatusExt as _;
 use std::path::Path;
-use std::process::Command;
-use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::process::{Child, Command};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use clap::Parser as _;
-use reqwest::blocking::Client;
 use serde_json::Value;
 
-use super::capture::{Capture, Execution, Implementation, Run, Stop, capture, check_captures};
+use super::capture::{Capture, Run, Sdk, Stop, capture, check_captures};
 use super::error::SdkHttpError;
-use super::native::NativeSdk;
 use super::python::{ProcessEnvironment, PythonSdk};
-use super::result::{ChatCompletion, Choice, Nullable, SdkResult};
+use super::result::{Nullable, SdkResult};
 use super::{
-    OracleLimits, SdkHttpCall, SdkHttpCase, Side, child, decode_sdk_http_case,
-    decode_sdk_http_result, sides,
+    OracleLimits, SdkHttpCase, Side, child, decode_sdk_http_case, decode_sdk_http_result, sides,
 };
 use crate::case::UpstreamAnswer;
 use crate::mock::ProviderRequest;
@@ -69,7 +67,7 @@ fn python_sdk(case: &SdkHttpCase) -> PythonSdk {
 }
 
 fn run(
-    implementation: &dyn Implementation,
+    sdk: &Sdk<'_>,
     case: &SdkHttpCase,
     script: MockScript,
     limits: &OracleLimits,
@@ -81,17 +79,13 @@ fn run(
         limits,
         cancelled,
     };
-    capture(implementation, run).unwrap()
+    capture(sdk, run).unwrap()
 }
 
-fn run_answers(
-    implementation: &dyn Implementation,
-    case: &SdkHttpCase,
-    answers: &[UpstreamAnswer],
-) -> Capture {
+fn run_answers(sdk: &Sdk<'_>, case: &SdkHttpCase, answers: &[UpstreamAnswer]) -> Capture {
     let script = MockScript::try_from(answers).unwrap();
     run(
-        implementation,
+        sdk,
         case,
         script,
         &OracleLimits::default(),
@@ -105,96 +99,84 @@ fn redacted(value: &str) -> String {
     headers.remove("authorization").unwrap()
 }
 
-// posts the chat body the SDK would send, straight over HTTP, to stand in for either implementation
-struct Posting {
-    posts: usize,
-    content: &'static str,
+// stands in for the pinned SDK: the real child runner and setpriv launch a script that posts over HTTP
+const FAKE_DISPATCH: &str = r#"
+import json, os, sys, time, urllib.error, urllib.request
+
+request = json.load(sys.stdin)
+with open(os.environ["FAKE_LOG"], "a") as log:
+    log.write(request["api_base"] + "\n")
+if os.environ["FAKE_SLEEP"]:
+    time.sleep(30)
+body = json.dumps({"model": "gpt-4o-mini", "messages": [{"role": "user", "content": os.environ["FAKE_CONTENT"]}]}).encode()
+answer = None
+for _ in range(int(os.environ["FAKE_POSTS"])):
+    post = urllib.request.Request(
+        request["api_base"] + "/chat/completions",
+        data=body,
+        headers={"content-type": "application/json", "authorization": "Bearer sk-test"},
+    )
+    try:
+        with urllib.request.urlopen(post) as response:
+            answer = answer or json.load(response)
+    except urllib.error.HTTPError as error:
+        error.read()
+value = {key: answer[key] for key in ("id", "created", "object", "model")}
+value["choices"] = [{"content": None, "finish_reason": None}]
+json.dump({"success": {"value": value}}, sys.stdout)
+"#;
+
+struct Fake {
+    directory: tempfile::TempDir,
+    sdk: PythonSdk,
 }
 
-impl Implementation for Posting {
-    fn execute(&self, _call: &SdkHttpCall, api_base: &str, _stop: &Stop<'_>) -> Execution {
-        let content = self.content;
-        let body = format!(
-            r#"{{"model":"gpt-4o-mini","messages":[{{"role":"user","content":"{content}"}}]}}"#
-        );
-        let client = Client::new();
-        let mut answer = Value::Null;
-        for _ in 0..self.posts {
-            let response = client
-                .post(format!("{api_base}/chat/completions"))
-                .header("content-type", "application/json")
-                .bearer_auth("sk-test")
-                .body(body.clone())
-                .send()
-                .unwrap();
-            if answer.is_null() {
-                answer = serde_json::from_slice(&response.bytes().unwrap()).unwrap();
-            }
-        }
-        let text = |name: &str| answer.get(name).and_then(Value::as_str).unwrap().to_owned();
-        Execution {
-            result: Ok(SdkResult::Success {
-                value: ChatCompletion {
-                    id: text("id"),
-                    created: answer.get("created").and_then(Value::as_u64).unwrap(),
-                    object: text("object"),
-                    model: Some(text("model")),
-                    choices: vec![Choice {
-                        content: None,
-                        finish_reason: None,
-                    }],
-                },
-            }),
-            log: Vec::new(),
-        }
+impl Fake {
+    fn new(case: &SdkHttpCase, posts: usize, content: &str, sleep: bool) -> Self {
+        let directory = tempfile::tempdir().unwrap();
+        let python = directory
+            .path()
+            .join("tools/oracle/litellm/.venv/bin/python");
+        let dispatch = directory.path().join("tools/oracle/sdk_http/dispatch.py");
+        fs::create_dir_all(python.parent().unwrap()).unwrap();
+        fs::create_dir_all(dispatch.parent().unwrap()).unwrap();
+        let real = Path::new(env!("CARGO_MANIFEST_DIR")).join("litellm/.venv/bin/python");
+        fs::write(
+            &python,
+            format!("#!/bin/sh\nexec {} \"$@\"\n", real.display()),
+        )
+        .unwrap();
+        fs::set_permissions(&python, fs::Permissions::from_mode(0o755)).unwrap();
+        fs::write(&dispatch, FAKE_DISPATCH).unwrap();
+        let mut sdk = python_sdk(case);
+        sdk.root = directory.path().to_owned();
+        sdk.case_env = BTreeMap::from([
+            (
+                "FAKE_LOG".to_owned(),
+                directory.path().join("log").display().to_string(),
+            ),
+            ("FAKE_POSTS".to_owned(), posts.to_string()),
+            ("FAKE_CONTENT".to_owned(), content.to_owned()),
+            (
+                "FAKE_SLEEP".to_owned(),
+                if sleep { "1" } else { "" }.to_owned(),
+            ),
+        ]);
+        Self { directory, sdk }
+    }
+
+    fn api_bases(&self) -> Vec<String> {
+        fs::read_to_string(self.directory.path().join("log"))
+            .unwrap()
+            .lines()
+            .map(ToOwned::to_owned)
+            .collect()
     }
 }
 
-fn posted(case: &SdkHttpCase, posts: usize, content: &'static str, id: &str) -> Capture {
-    run_answers(&Posting { posts, content }, case, &answering(id))
-}
-
-struct Counting {
-    executions: AtomicUsize,
-}
-
-impl Implementation for Counting {
-    fn execute(&self, call: &SdkHttpCall, api_base: &str, stop: &Stop<'_>) -> Execution {
-        self.executions.fetch_add(1, Ordering::SeqCst);
-        Posting {
-            posts: 1,
-            content: "hello",
-        }
-        .execute(call, api_base, stop)
-    }
-}
-
-// runs a child that outlives every test deadline and remembers where the mock listened
-struct Sleeping {
-    api_bases: Mutex<Vec<String>>,
-}
-
-impl Sleeping {
-    fn new() -> Self {
-        Self {
-            api_bases: Mutex::new(Vec::new()),
-        }
-    }
-}
-
-impl Implementation for Sleeping {
-    fn execute(&self, _call: &SdkHttpCall, api_base: &str, stop: &Stop<'_>) -> Execution {
-        self.api_bases.lock().unwrap().push(api_base.to_owned());
-        sleep_until_stopped(stop)
-    }
-}
-
-fn sleep_until_stopped(stop: &Stop<'_>) -> Execution {
-    let piped = child::run(Command::new("sleep").arg("30"), b"", 16, stop);
-    Execution {
-        result: piped.stdout.and_then(|_bytes| Err(SdkHttpError::Join)),
-        log: piped.stderr,
-    }
+fn posted(case: &SdkHttpCase, posts: usize, content: &str, id: &str) -> Capture {
+    let fake = Fake::new(case, posts, content, false);
+    run_answers(&Sdk::Python(&fake.sdk), case, &answering(id))
 }
 
 fn mock_is_closed(api_base: &str) -> bool {
@@ -254,14 +236,14 @@ fn assert_chat_value(side: &Capture) {
 #[test]
 fn sdk_chat_http() {
     let case = load("chat-success.yaml");
-    let native = run_answers(&NativeSdk, &case, &case.upstream);
-    let python = run_answers(&python_sdk(&case), &case, &case.upstream);
+    let native = run_answers(&Sdk::Native, &case, &case.upstream);
+    let python = run_answers(&Sdk::Python(&python_sdk(&case)), &case, &case.upstream);
     assert_chat_request(&native);
     assert_chat_request(&python);
     assert_chat_value(&native);
     assert_chat_value(&python);
     judge(&python, &native, &case).unwrap();
-    let second = run_answers(&python_sdk(&case), &case, &case.upstream);
+    let second = run_answers(&Sdk::Python(&python_sdk(&case)), &case, &case.upstream);
     judge(&python, &second, &case).unwrap();
 }
 
@@ -293,8 +275,8 @@ fn decoded_kind(text: &str) -> Nullable {
 #[test]
 fn sdk_failure_fields() {
     let case = load("chat-authentication-error.yaml");
-    let native = run_answers(&NativeSdk, &case, &case.upstream);
-    let python = run_answers(&python_sdk(&case), &case, &case.upstream);
+    let native = run_answers(&Sdk::Native, &case, &case.upstream);
+    let python = run_answers(&Sdk::Python(&python_sdk(&case)), &case, &case.upstream);
     assert_authentication_failure(&native);
     assert_authentication_failure(&python);
     judge(&python, &native, &case).unwrap();
@@ -406,17 +388,25 @@ fn assert_stdout_separate_from_stderr() {
     assert_eq!(piped.stderr, b"noise\n");
 }
 
+fn run_normal_mode(fake: &Fake, case: &SdkHttpCase) {
+    for side in sides(false) {
+        let sdk = Sdk::for_side(side, &fake.sdk);
+        run_answers(&sdk, case, &case.upstream)
+            .execution
+            .result
+            .unwrap();
+    }
+}
+
 #[test]
 fn sdk_driver_isolation() {
-    let launched = Counting {
-        executions: AtomicUsize::new(0),
-    };
-    assert_rejected_cases();
-    assert_eq!(launched.executions.load(Ordering::SeqCst), 0);
-
     let case = invalid_case(&format!("call:\n{VALID_CALL}"), "").unwrap();
-    run_answers(&launched, &case, &case.upstream);
-    assert_eq!(launched.executions.load(Ordering::SeqCst), 1);
+    let fake = Fake::new(&case, 1, "hello", false);
+    assert_rejected_cases();
+    assert!(!fake.directory.path().join("log").exists());
+
+    run_normal_mode(&fake, &case);
+    assert_eq!(fake.api_bases().len(), 1);
     assert_eq!(sides(false), [Side::Python, Side::Native]);
     assert_eq!(sides(true), [Side::Python, Side::Python]);
 
@@ -480,36 +470,44 @@ fn assert_capture_limits(limits: &OracleLimits) {
 }
 
 fn assert_stops_children_and_mocks(case: &SdkHttpCase, short: &OracleLimits) {
-    let sleeping = Sleeping::new();
+    let sleeping = Fake::new(case, 1, "hello", true);
     let script = MockScript::try_from(case.upstream.as_slice()).unwrap();
-    let timed_out = run(&sleeping, case, script, short, &AtomicBool::new(false));
+    let timed_out = run(
+        &Sdk::Python(&sleeping.sdk),
+        case,
+        script,
+        short,
+        &AtomicBool::new(false),
+    );
     assert!(matches!(
         timed_out.execution.result,
         Err(SdkHttpError::Deadline)
     ));
 
     let cancelled = AtomicBool::new(false);
-    let cancelling = Sleeping::new();
+    let cancelling = Fake::new(case, 1, "hello", true);
     let cancel_script = MockScript::try_from(case.upstream.as_slice()).unwrap();
     let limits = OracleLimits::default();
     let outcome = thread::scope(|scope| {
         scope.spawn(|| {
-            thread::park_timeout(Duration::from_millis(200));
+            thread::park_timeout(Duration::from_secs(2));
             cancelled.store(true, Ordering::Release);
         });
-        run(&cancelling, case, cancel_script, &limits, &cancelled)
+        run(
+            &Sdk::Python(&cancelling.sdk),
+            case,
+            cancel_script,
+            &limits,
+            &cancelled,
+        )
     });
     assert!(matches!(
         outcome.execution.result,
         Err(SdkHttpError::Cancelled)
     ));
-    for api_base in sleeping
-        .api_bases
-        .lock()
-        .unwrap()
-        .iter()
-        .chain(cancelling.api_bases.lock().unwrap().iter())
-    {
+    let api_bases = [sleeping.api_bases(), cancelling.api_bases()].concat();
+    assert_eq!(api_bases.len(), 2);
+    for api_base in &api_bases {
         assert!(mock_is_closed(api_base));
     }
 }
@@ -518,7 +516,7 @@ fn assert_native_stops_at_deadline(case: &SdkHttpCase, short: &OracleLimits) {
     let delayed = br#"{"deadline_ms":30000,"replies":[{"wait":{"delay":{"millis":20000}},"then":{"answer":{"status":200,"headers":{},"body":{"id":"x"}}}}]}"#;
     let started = Instant::now();
     let script = parse_script(delayed).unwrap();
-    let native = run(&NativeSdk, case, script, short, &AtomicBool::new(false));
+    let native = run(&Sdk::Native, case, script, short, &AtomicBool::new(false));
     assert!(matches!(
         native.execution.result,
         Err(SdkHttpError::Deadline)
@@ -537,7 +535,7 @@ fn sdk_limits() {
         max_result_bytes: limits.max_result_bytes,
         max_body_bytes: limits.max_body_bytes,
         max_requests: limits.max_requests,
-        max_execution: Duration::from_millis(300),
+        max_execution: Duration::from_secs(3),
     };
     assert_stops_children_and_mocks(&case, &short);
     assert_native_stops_at_deadline(&case, &short);
@@ -560,6 +558,48 @@ fn child_is_reaped_at_the_deadline() {
     assert!(matches!(piped.stdout, Err(SdkHttpError::Deadline)));
     let pid = fs::read_to_string(&pid_file).unwrap();
     assert!(!Path::new("/proc").join(pid.trim()).exists());
+}
+
+fn spawn_once_running(command: &mut Command, pid_file: &Path) -> Child {
+    let child = command.spawn().unwrap();
+    let started = Instant::now();
+    while !fs::read_to_string(pid_file).is_ok_and(|text| text.ends_with('\n')) {
+        assert!(started.elapsed() < Duration::from_secs(30));
+        thread::park_timeout(Duration::from_millis(10));
+    }
+    child
+}
+
+// the owner thread ends without killing or waiting, so only setpriv --pdeathsig can stop the child
+#[test]
+fn child_dies_with_its_owner() {
+    let directory = tempfile::tempdir().unwrap();
+    let python = directory
+        .path()
+        .join("tools/oracle/litellm/.venv/bin/python");
+    let pid_file = directory.path().join("pid");
+    fs::create_dir_all(python.parent().unwrap()).unwrap();
+    let script = format!(
+        "#!/bin/sh\necho $$ > {}\nexec sleep 30\n",
+        pid_file.display()
+    );
+    fs::write(&python, script).unwrap();
+    fs::set_permissions(&python, fs::Permissions::from_mode(0o755)).unwrap();
+    let case = load("chat-success.yaml");
+    let mut sdk = python_sdk(&case);
+    sdk.root = directory.path().to_owned();
+    let mut command = sdk.command();
+    let mut child = thread::scope(|scope| {
+        scope
+            .spawn(|| spawn_once_running(&mut command, &pid_file))
+            .join()
+            .unwrap()
+    });
+    let started = Instant::now();
+    let status = child.wait().unwrap();
+    assert_eq!(status.signal(), Some(9_i32));
+    assert!(started.elapsed() < Duration::from_secs(10));
+    assert!(!Path::new("/proc").join(child.id().to_string()).exists());
 }
 
 fn replay_corpus(root: &Path, limits: &OracleLimits) -> usize {

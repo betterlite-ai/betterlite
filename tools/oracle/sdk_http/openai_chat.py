@@ -6,6 +6,18 @@ from pydantic import BaseModel, ConfigDict, Field
 MISSING = object()
 
 
+class ExceptionFieldTypeError(TypeError):
+    def __init__(self, name: str) -> None:
+        super().__init__(f"exception field {name} is neither text nor null")
+
+
+class StreamedResponseError(TypeError):
+    def __init__(self) -> None:
+        super().__init__(
+            "litellm.completion returned a stream for a non-streaming call"
+        )
+
+
 class Message(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -59,8 +71,7 @@ def optional_text(error: openai.APIStatusError, name: str) -> dict[str, str | No
         return {}
     if value is None or isinstance(value, str):
         return {name: value}
-    message = f"exception field {name} is neither text nor null"
-    raise TypeError(message)
+    raise ExceptionFieldTypeError(name)
 
 
 def project_failure(error: openai.APIStatusError) -> Outcome:
@@ -103,6 +114,5 @@ def run_chat(call: ChatCall, api_base: str) -> Outcome:
     except openai.APIStatusError as error:
         return project_failure(error)
     if not isinstance(response, ModelResponse):
-        message = "litellm.completion returned a stream for a non-streaming call"
-        raise TypeError(message)
+        raise StreamedResponseError
     return project_success(response)

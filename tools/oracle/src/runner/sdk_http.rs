@@ -10,10 +10,9 @@ use crate::cli::Options;
 use crate::compare::{self, Difference};
 use crate::paths::artifact_root;
 use crate::routing_mock_scripts::MockScript;
-use crate::sdk_http::capture::{Capture, Implementation, Run, capture, observation};
-use crate::sdk_http::native::NativeSdk;
+use crate::sdk_http::capture::{Capture, Run, Sdk, capture, observation};
 use crate::sdk_http::python::{ProcessEnvironment, PythonSdk};
-use crate::sdk_http::{OracleLimits, SdkHttpCase, Side, sides};
+use crate::sdk_http::{OracleLimits, SdkHttpCase, sides};
 
 pub(crate) fn run_cases(
     options: &Options,
@@ -41,17 +40,14 @@ fn run_case(
     let [first, second] = sides(options.self_check);
     let mut captures = Vec::new();
     for side in [first, second] {
-        let implementation: &dyn Implementation = match side {
-            Side::Python => &python,
-            Side::Native => &NativeSdk,
-        };
+        let sdk = Sdk::for_side(side, &python);
         let run = Run {
             call: &case.call,
             script: MockScript::try_from(case.upstream.as_slice())?,
             limits: &limits,
             cancelled,
         };
-        captures.push(capture(implementation, run)?);
+        captures.push(capture(&sdk, run)?);
     }
     let [left, right] = &*captures else {
         return Ok(false);

@@ -1,7 +1,14 @@
-use std::error::Error as StdError;
 use std::io;
 use std::process::ExitStatus;
 use std::str::Utf8Error;
+use std::string::FromUtf8Error;
+
+use betterlite_config::loader::ConfigError;
+use betterlite_env::EnvError;
+use betterlite_http::error::HttpError;
+use betterlite_openai::chat::RequestError;
+use betterlite_openai::chat::deployment::DeploymentError;
+use betterlite_openai::chat::execution::ChatError;
 
 use thiserror::Error;
 
@@ -41,12 +48,24 @@ pub enum SdkHttpError {
     Exited { status: ExitStatus, stderr: String },
     #[error("SDK process wrote more than {limit} bytes")]
     OutputTooLarge { limit: usize },
-    #[error("cannot serialize the SDK call: {0}")]
+    #[error("cannot serialize an SDK input: {0}")]
     Serialize(#[source] serde_json::Error),
-    #[error("cannot set up the native service: {0}")]
-    Setup(#[source] Box<dyn StdError + Send + Sync>),
+    #[error("cannot load the native service config: {0}")]
+    ConfigLoad(#[source] Box<ConfigError>),
+    #[error("cannot resolve the native deployment: {0}")]
+    Deployment(#[source] Box<DeploymentError>),
+    #[error("cannot resolve the native proxy policy: {0}")]
+    ProxyPolicy(#[source] EnvError),
+    #[error("cannot build the native HTTP client: {0}")]
+    Client(#[source] Box<HttpError>),
+    #[error("the native service rejected the chat request: {0}")]
+    ChatParse(#[source] Box<RequestError>),
     #[error("the native service failed outside a provider answer: {0}")]
-    Native(#[source] Box<dyn StdError + Send + Sync>),
+    Chat(#[source] Box<ChatError>),
+    #[error("the provider error body is not UTF-8: {0}")]
+    ErrorBodyUtf8(#[source] FromUtf8Error),
+    #[error("the provider error body does not decode: {0}")]
+    ErrorBody(#[source] serde_json::Error),
     #[error("the native error class {0} has no LiteLLM SDK projection yet")]
     Unprojected(String),
 }

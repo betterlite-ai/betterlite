@@ -6,8 +6,10 @@ use std::time::Instant;
 use serde_json::Value;
 
 use super::error::SdkHttpError;
+use super::native;
+use super::python::PythonSdk;
 use super::result::SdkResult;
-use super::{OracleLimits, SdkHttpCall};
+use super::{OracleLimits, SdkHttpCall, Side};
 use crate::OracleError;
 use crate::compare::multipart::masked_boundary;
 use crate::mock::{MockProvider, ProviderRequest};
@@ -18,8 +20,25 @@ pub(crate) struct Execution {
     pub(crate) log: Vec<u8>,
 }
 
-pub(crate) trait Implementation {
-    fn execute(&self, call: &SdkHttpCall, api_base: &str, stop: &Stop<'_>) -> Execution;
+pub(crate) enum Sdk<'sdk> {
+    Python(&'sdk PythonSdk),
+    Native,
+}
+
+impl<'sdk> Sdk<'sdk> {
+    pub(crate) const fn for_side(side: Side, python: &'sdk PythonSdk) -> Self {
+        match side {
+            Side::Python => Self::Python(python),
+            Side::Native => Self::Native,
+        }
+    }
+
+    fn execute(&self, call: &SdkHttpCall, api_base: &str, stop: &Stop<'_>) -> Execution {
+        match self {
+            Self::Python(python) => python.execute(call, api_base, stop),
+            Self::Native => native::execute(call, api_base, stop),
+        }
+    }
 }
 
 pub(crate) struct Stop<'flag> {
@@ -53,10 +72,7 @@ pub(crate) struct Run<'run> {
 }
 
 // every implementation gets its own mock, so one side's traffic can never fill the other's answers
-pub(crate) fn capture(
-    implementation: &dyn Implementation,
-    run: Run<'_>,
-) -> Result<Capture, OracleError> {
+pub(crate) fn capture(sdk: &Sdk<'_>, run: Run<'_>) -> Result<Capture, OracleError> {
     let mock = MockProvider::start(run.script)?;
     let api_base = format!("{}/v1", mock.base_url);
     let deadline = Instant::now()
@@ -66,7 +82,7 @@ pub(crate) fn capture(
         deadline,
         cancelled: run.cancelled,
     };
-    let mut execution = implementation.execute(run.call, &api_base, &stop);
+    let mut execution = sdk.execute(run.call, &api_base, &stop);
     let (calls, mock_failure) = mock.finish_recording()?;
     let requests: Vec<ProviderRequest> = calls.into_iter().map(|call| call.request).collect();
     if let Err(error) = check_captures(&requests, run.limits)

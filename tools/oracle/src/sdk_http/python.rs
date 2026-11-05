@@ -5,7 +5,7 @@ use std::process::Command;
 
 use serde::Serialize;
 
-use super::capture::{Execution, Implementation, Stop};
+use super::capture::{Execution, Stop};
 use super::error::SdkHttpError;
 use super::{OracleLimits, SdkHttpCall, child, decode_sdk_http_result};
 
@@ -58,10 +58,8 @@ impl PythonSdk {
         command.env("LITELLM_LOCAL_MODEL_COST_MAP", "True");
         command
     }
-}
 
-impl Implementation for PythonSdk {
-    fn execute(&self, call: &SdkHttpCall, api_base: &str, stop: &Stop<'_>) -> Execution {
+    pub(crate) fn execute(&self, call: &SdkHttpCall, api_base: &str, stop: &Stop<'_>) -> Execution {
         let request = Request { call, api_base };
         let input = match serde_json::to_vec(&request) {
             Ok(input) => input,
