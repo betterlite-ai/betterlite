@@ -13,9 +13,7 @@ description: 'Implement CapabilityForecast, CapabilityPolicy and finite f64 prob
   declaration defaults: threshold_step=0.0; efficient_tier=''SIMPLE''; capable_tier=''REASONING''; calibration=None;
   max_output_tokens=4096; response_format=''json_schema''. Resolve env values once in betterlite-config,
   never in router code. Implement the owned native service in crates/betterlite-router/src/capability_forecast.rs.
-  Add ProbeOperation::CapabilityForecast in tools/oracle/src/router_probes/mod.rs and the corresponding B394 entry in
-  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
-  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  B301 registers ProbeOperation::CapabilityForecast and its Python entry as stubs, so fill only tools/oracle/src/router_probes/capability_forecast.rs and tools/oracle/litellm/probes/capability_forecast.py and leave mod.rs and registry.py as they are; the adapters only call production services. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
   fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
   of copying their algorithms. Function coverage in litellm/router_strategy/complexity_router/capability_classifier.py:
@@ -50,9 +48,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/capability_forecast.rs
   - tools/oracle/src/router_probes/capability_forecast/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/capability_forecast.py
   - tools/oracle/cases/routing/capability-forecast/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/capability-forecast-*

@@ -5,6 +5,7 @@ use betterlite_anthropic::api::messages_errors::decode::{
     WireDecodeLimits, decode_messages_errors,
 };
 use libfuzzer_sys::fuzz_target;
+use std::str;
 
 fuzz_target!(|input: &[u8]| {
     let Some((&selector, payload)) = input.split_first() else {
@@ -15,19 +16,16 @@ fuzz_target!(|input: &[u8]| {
         max_event_bytes: 4096,
         max_items: 100,
     };
-    match selector % 2 {
-        0 => {
-            let _ = decode_messages_errors(payload, limits);
-        }
-        _ => {
-            if let Ok(text) = std::str::from_utf8(payload) {
-                let _ = AnthropicExceptionMapping::transform_to_anthropic_error(
-                    500,
-                    text,
-                    Some("fuzz"),
-                    limits,
-                );
-            }
-        }
+    if selector.is_multiple_of(2) {
+        let _outcome = decode_messages_errors(payload, limits);
+        return;
+    }
+    if let Ok(text) = str::from_utf8(payload) {
+        let _outcome = AnthropicExceptionMapping::transform_to_anthropic_error(
+            500,
+            text,
+            Some("fuzz"),
+            limits,
+        );
     }
 });

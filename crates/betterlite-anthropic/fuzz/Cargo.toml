@@ -3,6 +3,10 @@ name = "betterlite-anthropic-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
 
 [package.metadata]
 cargo-fuzz = true
@@ -31,5 +35,3 @@ path = "fuzz_targets/messages_errors.rs"
 test = false
 doc = false
 bench = false
-
-[workspace]
