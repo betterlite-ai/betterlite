@@ -8,11 +8,11 @@ use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|bytes: &[u8]| {
     if let Ok(message) = serde_json::from_slice::<A2AMessage>(bytes) {
-        let _ = to_openai_messages(&message);
+        let _messages = to_openai_messages(&message);
         let mut completion = CompletionParams::default();
         apply_forward_metadata(&mut completion, &message, None);
     }
-    let _ = serde_json::from_slice::<CompletionParams>(bytes);
-    let _ = serde_json::from_slice::<MessageSendParams>(bytes);
-    let _ = serde_json::from_slice::<ModelResponse>(bytes);
+    let _completion = serde_json::from_slice::<CompletionParams>(bytes);
+    let _send = serde_json::from_slice::<MessageSendParams>(bytes);
+    let _response = serde_json::from_slice::<ModelResponse>(bytes);
 });
