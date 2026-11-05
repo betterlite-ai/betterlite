@@ -1414,9 +1414,11 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "betterlite-config",
+ "betterlite-http",
  "betterlite-prompts",
  "fancy-regex",
  "indexmap 2.14.2",
+ "lru",
  "regex",
  "reqwest",
  "rstest",
@@ -1433,6 +1435,7 @@ dependencies = [
  "ulid",
  "unicode-normalization",
  "url",
+ "uuid",
 ]
 
 [[package]]
