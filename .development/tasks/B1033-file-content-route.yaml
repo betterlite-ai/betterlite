@@ -22,14 +22,13 @@ description: >-
   no helper imports a FastAPI function. Tests use api::file_content_route::tests in both crates.
   The 337 nonblank/non-comment lines including the two moved methods need 285 implementation,
   185 tests, 220 cases and 40 wiring lines, 730 total. Existing body/ID/transport decoders are reused.
+  B1100 registers routes/file_content.rs as a stub, so fill only crates/betterlite-server/src/routes/file_content.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/routes/file_content.rs
+  - crates/betterlite-server/src/routes/file_content/**
   - crates/betterlite-server/src/api/file_content_route.rs
   - crates/betterlite-server/src/api/file_content_route/**
   - crates/betterlite-core/src/api/file_content_route.rs

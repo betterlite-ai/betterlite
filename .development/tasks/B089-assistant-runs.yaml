@@ -23,12 +23,13 @@ description: >-
   fixtures and 40 wiring/corpus seeds, 710 lines. HTTP oracle fixtures use a fixed master key, mock provider,
   assistant_settings, no enterprise package and no SDK retries. Provider frames and hook effects are real;
   no helper case stands in for the stream pump.
+  B1100 registers routes/assistant_runs.rs as a stub, so fill only crates/betterlite-server/src/routes/assistant_runs.rs and leave routes.rs as it is.
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
+  - crates/betterlite-server/src/routes/assistant_runs.rs
+  - crates/betterlite-server/src/routes/assistant_runs/**
   - crates/betterlite-server/src/api/assistant_runs.rs
   - crates/betterlite-server/src/api/assistant_runs/**
   - crates/betterlite-server/fuzz/corpus/assistant_body/run-*

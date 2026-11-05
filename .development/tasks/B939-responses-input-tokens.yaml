@@ -34,6 +34,7 @@ description: >-
   crates/betterlite-server/src/api/responses_input_tokens.rs. Reuse the existing body, auth, compact, and token
   counter ports; do not add a decoder or tokenizer download path. Test every alias through the booted HTTP oracle,
   including compact mock-provider order and each literal validation envelope.
+  B1100 registers routes/responses_input_tokens.rs as a stub, so fill only crates/betterlite-server/src/routes/responses_input_tokens.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
   - crates/betterlite-server/Cargo.toml
@@ -41,10 +42,8 @@ scope:
   - crates/betterlite-server/src/api/responses_input_tokens/**
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/routes/responses_input_tokens.rs
+  - crates/betterlite-server/src/routes/responses_input_tokens/**
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/responses_input_tokens.rs
   - crates/betterlite-core/src/api/responses_input_tokens/**
