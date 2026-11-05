@@ -1,9 +1,10 @@
 #![cfg(test)]
 
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
-use futures_util::StreamExt as _;
+use futures_util::{StreamExt as _, stream};
 use reqwest::header::HeaderMap;
 use reqwest::{Method, Url};
 use rstest::rstest;
@@ -23,6 +24,7 @@ enum Scenario {
     DrainWaitsForAnOpenStream,
     CancellationReleasesCapacity,
     DrainedClientRefusesNewWork,
+    IdleConnectionsAreCapped,
 }
 
 fn get(url: &Url) -> OutboundRequest {
@@ -34,6 +36,17 @@ fn get(url: &Url) -> OutboundRequest {
         body: RequestBody::Empty,
         deadline: Duration::from_secs(5),
     }
+}
+
+const BURST: usize = 40;
+
+async fn burst(client: &ProxiedClient, url: &Url) {
+    let answers: Vec<_> = stream::iter(0..BURST)
+        .map(|_| client.send_buffered(get(url)))
+        .buffer_unordered(BURST)
+        .collect()
+        .await;
+    assert!(answers.iter().all(Result::is_ok));
 }
 
 // The second chunk is only written after the client has read the first, so a client that buffers the body hangs here.
@@ -74,6 +87,7 @@ async fn incremental(client: &ProxiedClient) -> String {
     "cancelled drained"
 )]
 #[case::a_drained_client_refuses_new_work(Scenario::DrainedClientRefusesNewWork, "drained Closed")]
+#[case::idle_connections_are_capped_per_host(Scenario::IdleConnectionsAreCapped, "48 connections")]
 #[tokio::test]
 async fn http_pool_tests_behavior(#[case] scenario: Scenario, #[case] expected: &str) {
     let client = default_client();
@@ -106,6 +120,16 @@ async fn http_pool_tests_behavior(#[case] scenario: Scenario, #[case] expected: 
             client.drain(Duration::from_secs(1)).await.unwrap();
             let refused = client.send(get(&slow.base)).await.err().unwrap();
             format!("drained {}", kind(&refused))
+        }
+        Scenario::IdleConnectionsAreCapped => {
+            let counted = serve(
+                reply(&["200 OK", "content-length: 3"], b"abc"),
+                Duration::from_millis(300),
+            )
+            .await;
+            burst(&client, &counted.base).await;
+            burst(&client, &counted.base).await;
+            format!("{} connections", counted.connections.load(Ordering::SeqCst))
         }
     };
     assert_eq!(observed, expected);

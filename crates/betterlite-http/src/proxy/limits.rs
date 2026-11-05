@@ -13,12 +13,12 @@ pub struct TransportLimits {
 }
 
 impl TransportLimits {
-    // the read timeout matches LiteLLM's default request timeout, so a deployment deadline is what ends a slow answer
+    // body_bytes is 16 MiB and header_bytes 64 KiB; the read timeout matches LiteLLM's default request timeout, so a deployment deadline is what ends a slow answer
     pub const DEFAULT: Self = Self {
         connect_timeout: Duration::from_secs(10),
         read_timeout: Duration::from_mins(100),
-        body_bytes: 16 * 1024 * 1024,
-        header_bytes: 64 * 1024,
+        body_bytes: 0x0100_0000,
+        header_bytes: 0x0001_0000,
     };
 }
 
