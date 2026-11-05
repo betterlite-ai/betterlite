@@ -1,5 +1,6 @@
 use std::{
     future::Future,
+    io,
     pin::Pin,
     sync::{Arc, Mutex},
 };
@@ -16,11 +17,15 @@ pub struct Client {
     pub transport: Arc<dyn DecryptTransport>,
 }
 
-pub type DecryptFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<Vec<u8>, GoogleKmsError>> + Send + 'a>>;
+pub type DecryptFuture<'request> =
+    Pin<Box<dyn Future<Output = Result<Vec<u8>, GoogleKmsError>> + Send + 'request>>;
 
 pub trait DecryptTransport: Send + Sync {
-    fn decrypt<'a>(&'a self, resource_name: &'a str, ciphertext: &'a [u8]) -> DecryptFuture<'a>;
+    fn decrypt<'request>(
+        &'request self,
+        resource_name: &'request str,
+        ciphertext: &'request [u8],
+    ) -> DecryptFuture<'request>;
 }
 
 #[derive(Debug, Error)]
@@ -32,7 +37,7 @@ pub enum GoogleKmsError {
     #[error("Google KMS client initialization failed: {0}")]
     Client(String),
     #[error("Google KMS transport failed")]
-    Transport(#[source] std::io::Error),
+    Transport(#[source] io::Error),
     #[error("Google KMS client state is poisoned")]
     ClientState,
 }

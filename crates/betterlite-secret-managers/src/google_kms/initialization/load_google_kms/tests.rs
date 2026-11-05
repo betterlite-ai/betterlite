@@ -1,17 +1,21 @@
 #![cfg(test)]
 
+use super::tests::Transport;
+use crate::google_kms::Client;
+use std::sync::Arc;
+
 use super::load_google_kms;
 
 #[tokio::test]
 async fn load_google_kms_does_not_initialize_when_disabled() {
-    load_google_kms(Some(false), std::sync::Arc::new(super::tests::Transport)).unwrap();
+    load_google_kms(Some(false), Arc::new(Transport)).unwrap();
 }
 
 #[tokio::test]
 async fn load_google_kms_keeps_the_injected_transport() {
-    let client = crate::google_kms::Client {
+    let client = Client {
         resource_name: "resource".to_owned(),
-        transport: std::sync::Arc::new(super::tests::Transport),
+        transport: Arc::new(Transport),
     };
     assert_eq!(
         client
