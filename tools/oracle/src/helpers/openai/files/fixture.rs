@@ -13,17 +13,13 @@ use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Debug, Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub(super) struct Reply {
     status: u16,
-    #[serde(default)]
     headers: Vec<(String, String)>,
-    #[serde(default)]
     json: Option<Value>,
-    #[serde(default)]
     chunks: Vec<Vec<u8>>,
-    #[serde(default)]
     fail_after: bool,
 }
 
@@ -39,15 +35,14 @@ pub(super) struct Fixture {
 impl Fixture {
     // Without a reply the call is not expected to reach the transport
     pub(super) fn new(given: Option<&Reply>) -> Result<Self, String> {
-        let Some(reply) = given else {
-            return Ok(Self {
-                status: 599,
-                headers: HeaderMap::new(),
-                chunks: Vec::new(),
-                fail_after: false,
-                seen: OnceLock::new(),
-            });
+        let absent = Reply {
+            status: 599,
+            headers: Vec::new(),
+            json: None,
+            chunks: Vec::new(),
+            fail_after: false,
         };
+        let reply = given.unwrap_or(&absent);
         let mut headers = HeaderMap::new();
         for (name, value) in &reply.headers {
             headers.append(

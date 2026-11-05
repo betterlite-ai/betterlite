@@ -13,24 +13,14 @@ use crate::files::error::FilesError;
 use crate::files::records::{FileContentRequest, FileCreate};
 
 // the OpenAI SDK's path_template keeps RFC 3986 sub-delims, ':' and '@' inside a path segment
-const SEGMENT: &AsciiSet = &NON_ALPHANUMERIC
-    .remove(b'-')
-    .remove(b'.')
-    .remove(b'_')
-    .remove(b'~')
-    .remove(b'!')
-    .remove(b'$')
-    .remove(b'&')
-    .remove(b'\'')
-    .remove(b'(')
-    .remove(b')')
-    .remove(b'*')
-    .remove(b'+')
-    .remove(b',')
-    .remove(b';')
-    .remove(b'=')
-    .remove(b':')
-    .remove(b'@');
+const fn keep_safe(set: AsciiSet, safe: &[u8]) -> AsciiSet {
+    match safe {
+        [first, rest @ ..] => keep_safe(set.remove(*first), rest),
+        [] => set,
+    }
+}
+
+const SEGMENT: &AsciiSet = &keep_safe(NON_ALPHANUMERIC.remove(b'-'), b"._~!$&'()*+,;=:@");
 
 const ORGANIZATION: HeaderName = HeaderName::from_static("openai-organization");
 
@@ -91,21 +81,15 @@ fn multipart_parts(data: &FileCreate) -> Vec<MultipartPart> {
             data: value.into_bytes(),
         })
         .collect();
+    let file = &data.file;
+    let content_type = file.content_type.as_deref();
     parts.push(MultipartPart {
         name: "file".to_owned(),
-        file_name: Some(
-            data.file
-                .filename
-                .clone()
-                .unwrap_or_else(|| "upload".to_owned()),
-        ),
-        content_type: Some(
-            data.file
-                .content_type
-                .clone()
-                .unwrap_or_else(|| "application/octet-stream".to_owned()),
-        ),
-        data: data.file.data.clone(),
+        file_name: file.filename.clone().or_else(|| Some("upload".to_owned())),
+        content_type: content_type
+            .or(Some("application/octet-stream"))
+            .map(str::to_owned),
+        data: file.data.clone(),
     });
     parts
 }

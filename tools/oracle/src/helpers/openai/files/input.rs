@@ -40,31 +40,19 @@ pub(super) struct ClientSpec {
 }
 
 #[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub(super) struct Request {
-    #[serde(default)]
     pub(super) file_id: String,
-    #[serde(default)]
     pub(super) purpose: Option<CreatePurpose>,
-    #[serde(default)]
     pub(super) list_purpose: Option<String>,
-    #[serde(default)]
     pub(super) filename: Option<String>,
-    #[serde(default)]
     pub(super) content_type: Option<String>,
-    #[serde(default)]
     pub(super) data: String,
-    #[serde(default)]
     pub(super) expires_after: Option<i64>,
-    #[serde(default)]
     pub(super) extra_headers: IndexMap<String, String>,
-    #[serde(default)]
     pub(super) extra_body: IndexMap<String, String>,
-    #[serde(default)]
     pub(super) timeout: Option<u64>,
-    #[serde(default)]
     pub(super) chunk_size: Option<NonZeroUsize>,
-    #[serde(default)]
     pub(super) read: Option<usize>,
 }
 
@@ -75,6 +63,5 @@ pub(crate) struct Input {
     pub(super) client: ClientSpec,
     #[serde(default)]
     pub(super) request: Request,
-    #[serde(default)]
     pub(super) reply: Option<Reply>,
 }

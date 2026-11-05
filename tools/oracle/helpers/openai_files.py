@@ -4,7 +4,7 @@ import json
 import re
 from collections.abc import AsyncGenerator, AsyncIterator, Iterator
 from types import TracebackType
-from typing import TYPE_CHECKING, TypeAlias, cast
+from typing import TYPE_CHECKING, TypeAlias, TypedDict, cast
 from unittest.mock import patch
 
 import httpx
@@ -201,77 +201,46 @@ def content_request(request: Fields) -> dict[str, object]:
     return with_options({"file_id": request.get("file_id") or ""}, request)
 
 
+class Common(TypedDict):
+    _is_async: bool
+    api_base: str
+    api_key: None
+    timeout: int
+    max_retries: None
+    organization: None
+    client: Client | None
+
+
 def invoke(action: str, client: Client | None, request: Fields, *, is_async: bool) -> object:
     api = OpenAIFilesAPI()
+    common = Common(
+        _is_async=is_async,
+        api_base=DEFAULT_BASE,
+        api_key=None,
+        timeout=SDK_TIMEOUT,
+        max_retries=None,
+        organization=None,
+        client=client,
+    )
     file_id = str(request.get("file_id") or "")
     match action:
         case "create_file":
-            return api.create_file(
-                _is_async=is_async,
-                create_file_data=cast("CreateFileRequest", create_request(request)),
-                api_base=DEFAULT_BASE,
-                api_key=None,
-                timeout=SDK_TIMEOUT,
-                max_retries=None,
-                organization=None,
-                client=client,
-            )
+            data = cast("CreateFileRequest", create_request(request))
+            return api.create_file(create_file_data=data, **common)
         case "file_content":
-            return api.file_content(
-                _is_async=is_async,
-                file_content_request=cast("FileContentRequest", content_request(request)),
-                api_base=DEFAULT_BASE,
-                api_key=None,
-                timeout=SDK_TIMEOUT,
-                max_retries=None,
-                organization=None,
-                client=client,
-            )
+            data = cast("FileContentRequest", content_request(request))
+            return api.file_content(file_content_request=data, **common)
         case "file_content_streaming":
-            return api.file_content_streaming(
-                _is_async=is_async,
-                file_content_request=cast("FileContentRequest", content_request(request)),
-                api_base=DEFAULT_BASE,
-                api_key=None,
-                timeout=SDK_TIMEOUT,
-                max_retries=None,
-                organization=None,
-                chunk_size=cast("int", request.get("chunk_size") or CHUNK_SIZE),
-                client=client,
-            )
+            data = cast("FileContentRequest", content_request(request))
+            size = cast("int", request.get("chunk_size") or CHUNK_SIZE)
+            return api.file_content_streaming(file_content_request=data, chunk_size=size, **common)
         case "retrieve_file":
-            return api.retrieve_file(
-                _is_async=is_async,
-                file_id=file_id,
-                api_base=DEFAULT_BASE,
-                api_key=None,
-                timeout=SDK_TIMEOUT,
-                max_retries=None,
-                organization=None,
-                client=client,
-            )
+            return api.retrieve_file(file_id=file_id, **common)
         case "delete_file":
-            return api.delete_file(
-                _is_async=is_async,
-                file_id=file_id,
-                api_base=DEFAULT_BASE,
-                api_key=None,
-                timeout=SDK_TIMEOUT,
-                max_retries=None,
-                organization=None,
-                client=client,
-            )
+            return api.delete_file(file_id=file_id, **common)
         case _:
-            return api.list_files(
-                _is_async=is_async,
-                api_base=DEFAULT_BASE,
-                api_key=None,
-                timeout=SDK_TIMEOUT,
-                max_retries=None,
-                organization=None,
-                purpose=cast("str | None", request.get("list_purpose")),
-                client=client,
-            )
+            purpose = cast("str | None", request.get("list_purpose"))
+            return api.list_files(purpose=purpose, **common)
 
 
 async def read_chunks(

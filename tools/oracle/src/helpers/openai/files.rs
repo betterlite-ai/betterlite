@@ -31,13 +31,6 @@ fn client_args(spec: &ClientSpec) -> ClientArgs {
     }
 }
 
-const fn kind_name(kind: &ClientKind) -> &'static str {
-    match kind {
-        ClientKind::Async(_) => "async",
-        ClientKind::Sync(_) => "sync",
-    }
-}
-
 fn client_view(spec: &ClientSpec) -> Result<Value, FilesError> {
     let held = match spec.supplied {
         Some(kind) => {
@@ -58,7 +51,7 @@ fn client_view(spec: &ClientSpec) -> Result<Value, FilesError> {
     };
     let (ClientKind::Async(client) | ClientKind::Sync(client)) = &kind;
     Ok(json!({
-        "kind": kind_name(&kind),
+        "kind": if matches!(kind, ClientKind::Async(_)) { "async" } else { "sync" },
         "base_url": client.base_url.as_str(),
         "timeout": client.timeout.as_secs(),
         "max_retries": client.max_retries,

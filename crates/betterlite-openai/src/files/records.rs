@@ -8,26 +8,19 @@ use crate::files::error::FilesError;
 use crate::files::stream::flatten_headers;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum FilesPurpose {
-    #[serde(rename = "assistants")]
     Assistants,
-    #[serde(rename = "assistants_output")]
     AssistantsOutput,
-    #[serde(rename = "batch")]
     Batch,
-    #[serde(rename = "batch_output")]
     BatchOutput,
     #[serde(rename = "fine-tune")]
     FineTune,
     #[serde(rename = "fine-tune-results")]
     FineTuneResults,
-    #[serde(rename = "vision")]
     Vision,
-    #[serde(rename = "user_data")]
     UserData,
-    #[serde(rename = "evals")]
     Evals,
-    #[serde(rename = "messages")]
     Messages,
 }
 
