@@ -75,15 +75,14 @@ description: >-
 
 
   Register team_update using B052 auth and B865's management completion effects at the existing decorator.
+  B1100 registers routes/team_update.rs as a stub, so fill only crates/betterlite-server/src/routes/team_update.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/team_update.rs
     - crates/betterlite-server/src/team_update/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/team_update.rs
+    - crates/betterlite-server/src/routes/team_update/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/team-update/**

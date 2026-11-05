@@ -19,21 +19,14 @@ description: 'Implement ProviderBudget, DeploymentBudget, TagBudget and BudgetWi
   (L819-L844), RouterBudgetLimiting._init_provider_budgets (L846-L867), RouterBudgetLimiting._init_deployment_budgets
   (L869-L897), RouterBudgetLimiting.register_deployment_budget (L899-L906), RouterBudgetLimiting.unregister_deployment_budget
   (L908-L913). Implement these behaviors through the typed Rust services above; synchronous facades and
-  structural accessors reuse the same primitive instead of separate ports.'
+  structural accessors reuse the same primitive instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B020 and B326 call this service.'
 scope:
   paths:
   - crates/betterlite-router/src/budget_windows.rs
   - crates/betterlite-router/src/budget_windows/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/budget_windows.rs
   - crates/betterlite-server/src/routing/budget_windows/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/budget_windows.rs
   - tools/oracle/src/router_probes/budget_windows/**
   - tools/oracle/litellm/probes/budget_windows.py

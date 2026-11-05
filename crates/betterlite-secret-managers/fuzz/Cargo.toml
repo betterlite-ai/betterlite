@@ -1,0 +1,24 @@
+[package]
+name = "betterlite-secret-managers-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+base64 = "0.23.1"
+betterlite-secret-managers = { path = ".." }
+libfuzzer-sys = "0.4.9"
+
+[[bin]]
+name = "oidc_jwt_payload"
+path = "fuzz_targets/oidc_jwt_payload.rs"
+test = false
+doc = false
+bench = false

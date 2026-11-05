@@ -97,15 +97,14 @@ description: >-
   HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
   exercise real virtual-key lookup and permission policy. Apply B865 ManagementEffects to GET only;
   POST /v2/key/info is not decorated. Neither route reads litellm-changed-by.
+  B1100 registers routes/key_info.rs as a stub, so fill only crates/betterlite-server/src/routes/key_info.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/key_info.rs
     - crates/betterlite-server/src/key_info/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/key_info.rs
+    - crates/betterlite-server/src/routes/key_info/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/key-info/**

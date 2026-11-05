@@ -1,0 +1,11 @@
+kind: helper
+name: returned-expiration-ttl
+call:
+  bedrock_assume_role:
+    operation: extract_ttl
+    params:
+      now: '2026-01-01T00:00:00Z'
+      sts_response:
+        Credentials: {AccessKeyId: AKIAFIXTURE, SecretAccessKey: secret, SessionToken: token, Expiration: '2026-01-01T01:00:00+00:00'}
+env: {}
+compare: {ignore: []}

@@ -33,16 +33,15 @@ description: >-
   are rejected at startup under bounded-inputs as recorded below. Count 243 nonblank/non-comment lines for
   the three methods/decorators; budget 230 implementation,180 tests,210 HTTP fixtures,65 fuzz/config and 45 wiring,
   730 total. Cases boot both gateways with master_key=sk-test and isolated B1139/B856 virtual-key fixtures.
+  B1100 registers routes/audio.rs as a stub, so fill only crates/betterlite-server/src/routes/audio.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/api/audio_routes.rs
   - crates/betterlite-server/src/api/audio_routes/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/routes/audio.rs
+  - crates/betterlite-server/src/routes/audio/**
   - crates/betterlite-core/src/api/audio_routes.rs
   - crates/betterlite-core/src/api/audio_routes/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/audio-routes-*

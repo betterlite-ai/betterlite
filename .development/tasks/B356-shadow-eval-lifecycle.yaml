@@ -14,15 +14,13 @@ description: 'Implement shadow evaluation start/stop endpoints using B345 input 
   the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
   instead of separate ports. Bound the shadow_body outside-byte parser to 1048576 bytes before decoding;
   on excess use its typed invalid-input outcome (classifier/observation consumers keep their pinned warning/fallback
-  path).'
+  path). B1100 registers routes/shadow_eval_lifecycle.rs as a stub, so fill only crates/betterlite-server/src/routes/shadow_eval_lifecycle.rs and leave routes.rs and state.rs as they are.'
 scope:
   paths:
   - crates/betterlite-server/src/shadow_eval_lifecycle.rs
   - crates/betterlite-server/src/shadow_eval_lifecycle/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/routes/shadow_eval_lifecycle.rs
+  - crates/betterlite-server/src/routes/shadow_eval_lifecycle/**
   - crates/betterlite-server/src/routing/shadow_eval_lifecycle.rs
   - crates/betterlite-server/src/routing/shadow_eval_lifecycle/**
   - tools/oracle/src/router_probes/shadow_eval_lifecycle.rs
