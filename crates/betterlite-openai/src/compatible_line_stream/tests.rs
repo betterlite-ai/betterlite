@@ -56,6 +56,23 @@ fn compatible_line_ignores_null_finish_reason_and_usage() {
     assert_eq!(chunk.usage, None);
 }
 
+#[rstest]
+#[case::length("max_tokens", "length")]
+#[case::tool_calls("tool_use", "tool_calls")]
+#[case::content_filter("SAFETY", "content_filter")]
+#[case::unmapped("whatever", "stop")]
+fn compatible_line_maps_finish_reason_with_the_shared_table(
+    #[case] raw: &str,
+    #[case] expected: &str,
+) {
+    let line = format!(r#"{{"choices":[{{"delta":{{}},"finish_reason":"{raw}"}}]}}"#);
+    let Outcome::Chunk(chunk) = decode_legacy_compatible_line(&line, Mode::Sync) else {
+        panic!("chunk")
+    };
+    assert!(chunk.is_finished);
+    assert_eq!(chunk.finish_reason, expected);
+}
+
 #[test]
 fn compatible_line_blank_and_invalid_are_empty_chunks() {
     assert!(matches!(

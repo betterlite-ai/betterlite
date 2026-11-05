@@ -7,6 +7,7 @@ call:
       - {kind: line, line: 'data: {"choices":[{"delta":{"content":"hi","tool_calls":[{"index":2,"id":"t","function":{"name":"f","arguments":""}},{"index":4,"id":"ignored","function":{"name":"g","arguments":"x"}}]},"finish_reason":""},{"delta":{"content":"ignored"}}],"provider_field":"ignored"}'}
       - {kind: line, line: 'data: {"choices":[{"delta":{"tool_calls":[{"function":{"name":"f","arguments":null}}]}}]}'}
       - {kind: line, line: 'data: {"choices":[{"delta":{"content":"done","tool_calls":null},"finish_reason":"stop"}]}'}
+      - {kind: line, line: 'data: {"choices":[{"delta":{"content":"cut"},"finish_reason":"max_tokens"}]}'}
 env: {}
 compare:
   ignore: []

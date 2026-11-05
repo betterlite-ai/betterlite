@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 pub mod wire;
+use crate::text_completion_policy::reply::mapped_finish_reason;
 use wire::{Response, Tool, Usage};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
@@ -98,7 +99,7 @@ fn project(response: Response) -> CompatibleLineChunk {
     }
     if let Some(reason) = choice.finish_reason.filter(|reason| !reason.is_empty()) {
         chunk.is_finished = true;
-        chunk.finish_reason = reason;
+        chunk.finish_reason = mapped_finish_reason(&reason).to_owned();
     }
     chunk
 }
