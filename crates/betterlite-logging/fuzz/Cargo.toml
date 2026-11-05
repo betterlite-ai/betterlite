@@ -18,6 +18,13 @@ libfuzzer-sys = "0.4.9"
 serde_json = { version = "1.0.154", features = ["raw_value"] }
 
 [[bin]]
+name = "callback_config"
+path = "fuzz_targets/callback_config.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "otlp_decode"
 path = "fuzz_targets/otlp_decode.rs"
 test = false

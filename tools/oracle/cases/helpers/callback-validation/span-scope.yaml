@@ -1,0 +1,233 @@
+{
+  "kind": "helper",
+  "name": "callback-validation-span-scope",
+  "call": {
+    "callback_validation": {
+      "steps": [
+        {
+          "function": "langfuse_span_scope_error",
+          "callback_name": "langfuse_otel",
+          "callback_vars": {
+            "langfuse_span_scope": "full"
+          }
+        },
+        {
+          "function": "langfuse_span_scope_error",
+          "callback_name": "langfuse_otel",
+          "callback_vars": {
+            "langfuse_span_scope": "llm_only"
+          }
+        },
+        {
+          "function": "langfuse_span_scope_error",
+          "callback_name": "langfuse_otel",
+          "callback_vars": {
+            "langfuse_span_scope": "Full"
+          }
+        },
+        {
+          "function": "langfuse_span_scope_error",
+          "callback_name": "langfuse",
+          "callback_vars": {
+            "langfuse_span_scope": "full"
+          }
+        },
+        {
+          "function": "langfuse_span_scope_error",
+          "callback_vars": {
+            "langfuse_span_scope": "full"
+          }
+        },
+        {
+          "function": "langfuse_span_scope_error",
+          "callback_name": "langfuse",
+          "callback_vars": {
+            "other": "x"
+          }
+        },
+        {
+          "function": "conflicting_span_scope_error",
+          "callback_vars": {
+            "langfuse_span_scope": "full"
+          },
+          "stored": [
+            {
+              "langfuse_span_scope": "full"
+            }
+          ]
+        },
+        {
+          "function": "conflicting_span_scope_error",
+          "callback_vars": {
+            "langfuse_span_scope": "llm_only"
+          },
+          "stored": [
+            {
+              "langfuse_host": "h"
+            },
+            {
+              "langfuse_span_scope": "full"
+            }
+          ]
+        },
+        {
+          "function": "conflicting_span_scope_error",
+          "callback_vars": {
+            "langfuse_host": "h"
+          },
+          "stored": [
+            {
+              "langfuse_span_scope": "full"
+            }
+          ]
+        },
+        {
+          "function": "conflicting_span_scope_error",
+          "callback_vars": {
+            "langfuse_span_scope": "full"
+          },
+          "stored": []
+        },
+        {
+          "function": "logging_metadata_config_error",
+          "metadata": {
+            "logging": [
+              {
+                "callback_name": "langfuse_otel",
+                "callback_vars": {
+                  "langfuse_span_scope": "full"
+                }
+              },
+              {
+                "callback_name": "langfuse_otel",
+                "callback_vars": {
+                  "langfuse_span_scope": "llm_only"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "function": "logging_metadata_config_error",
+          "metadata": {
+            "logging": [
+              {
+                "callback_name": "langfuse_otel",
+                "callback_vars": {
+                  "langfuse_span_scope": "full"
+                }
+              },
+              {
+                "callback_name": "langfuse_otel",
+                "callback_vars": {
+                  "langfuse_span_scope": "full"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "function": "logging_metadata_config_error",
+          "metadata": {
+            "logging": [
+              {
+                "callback_name": "langfuse_otel",
+                "callback_vars": {
+                  "langfuse_span_scope": "full"
+                }
+              },
+              {
+                "callback_name": "langfuse_otel",
+                "callback_vars": {
+                  "langfuse_span_scope": "bad"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "function": "logging_metadata_config_error",
+          "metadata": {
+            "logging": [
+              {
+                "callback_vars": {
+                  "langfuse_span_scope": "full"
+                }
+              },
+              {
+                "callback_vars": {
+                  "langfuse_span_scope": "x"
+                }
+              }
+            ]
+          }
+        },
+        {
+          "function": "logging_metadata_config_error",
+          "metadata": {
+            "logging": "arize"
+          }
+        },
+        {
+          "function": "logging_metadata_config_error",
+          "metadata": {
+            "logging": [
+              1,
+              null,
+              {
+                "callback_name": 3,
+                "callback_vars": {
+                  "arize_error_sampling_rate": "9"
+                }
+              },
+              {
+                "callback_name": "arize",
+                "callback_vars": []
+              }
+            ]
+          }
+        },
+        {
+          "function": "logging_metadata_config_error",
+          "metadata": {}
+        },
+        {
+          "function": "logging_metadata_config_error"
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": [
+      {
+        "pointer": "/value/2/error/message",
+        "why": "betterlite writes its own message"
+      },
+      {
+        "pointer": "/value/3/error/message",
+        "why": "betterlite writes its own message"
+      },
+      {
+        "pointer": "/value/4/error/message",
+        "why": "betterlite writes its own message"
+      },
+      {
+        "pointer": "/value/7/error/message",
+        "why": "betterlite writes its own message"
+      },
+      {
+        "pointer": "/value/10/error/message",
+        "why": "betterlite writes its own message"
+      },
+      {
+        "pointer": "/value/12/error/message",
+        "why": "betterlite writes its own message"
+      },
+      {
+        "pointer": "/value/13/error/message",
+        "why": "betterlite writes its own message"
+      }
+    ]
+  }
+}

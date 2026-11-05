@@ -1,0 +1,8 @@
+task: B246
+deviations:
+  - what: Arize sampling rates are parsed as exact decimals, so 1.00000000000000001 is above one and rejected.
+    why: LiteLLM parses the rate as a float, which rounds that value down to 1.0 and accepts it. The typed Decimal keeps the written value, and the bound check works on what the operator typed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_config_validation.py#L223-L236
+  - what: A callback variable that is a list or an object in a logging entry is a typed parse error that names the variable.
+    why: LiteLLM turns any value into text with str(), so a list becomes its Python repr and reaches the validators as a string no caller meant. The declared type is a scalar, and a wrong type is an error per docs/compatibility.md.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_config_validation.py#L207-L211

@@ -1,0 +1,217 @@
+{
+  "kind": "helper",
+  "name": "callback-validation-sampling-decimal",
+  "call": {
+    "callback_validation": {
+      "steps": [
+        {
+          "function": "arize_sampling_rate_error",
+          "callback_name": "arize",
+          "callback_vars": {
+            "arize_error_sampling_rate": "0"
+          }
+        },
+        {
+          "function": "arize_sampling_rate_error",
+          "callback_name": "arize",
+          "callback_vars": {
+            "arize_success_sampling_rate": "1"
+          }
+        },
+        {
+          "function": "arize_sampling_rate_error",
+          "callback_name": "arize",
+          "callback_vars": {
+            "arize_success_sampling_rate": "0.5"
+          }
+        },
+        {
+          "function": "arize_sampling_rate_error",
+          "callback_name": "arize",
+          "callback_vars": {
+            "arize_success_sampling_rate": "5e-1"
+          }
+        },
+        {
+          "function": "arize_sampling_rate_error",
+          "callback_name": "arize",
+          "callback_vars": {
+            "arize_success_sampling_rate": " 0.25 "
+          }
+        },
+        {
+          "function": "arize_sampling_rate_error",
+          "callback_name": "arize",
+          "callback_vars": {
+            "arize_success_sampling_rate": "1.0001"
+          }
+        },
+        {
+          "function": "arize_sampling_rate_error",
+          "callback_name": "arize",
+          "callback_vars": {
+            "arize_error_sampling_rate": "-0.1"
+          }
+        },
+        {
+          "function": "arize_sampling_rate_error",
+          "callback_name": "arize",
+          "callback_vars": {
+            "arize_error_sampling_rate": "abc"
+          }
+        },
+        {
+          "function": "arize_sampling_rate_error",
+          "callback_name": "arize",
+          "callback_vars": {
+            "arize_error_sampling_rate": "nan"
+          }
+        },
+        {
+          "function": "arize_sampling_rate_error",
+          "callback_name": "arize",
+          "callback_vars": {
+            "arize_error_sampling_rate": "inf"
+          }
+        },
+        {
+          "function": "arize_sampling_rate_error",
+          "callback_name": "arize",
+          "callback_vars": {
+            "arize_error_sampling_rate": "1e400"
+          }
+        },
+        {
+          "function": "arize_sampling_rate_error",
+          "callback_name": "arize",
+          "callback_vars": {
+            "arize_error_sampling_rate": "",
+            "arize_success_sampling_rate": "None"
+          }
+        },
+        {
+          "function": "arize_sampling_rate_error",
+          "callback_name": "arize",
+          "callback_vars": {
+            "arize_success_sampling_rate": "2",
+            "arize_error_sampling_rate": "3"
+          }
+        },
+        {
+          "function": "arize_sampling_rate_error",
+          "callback_name": "langfuse",
+          "callback_vars": {
+            "arize_error_sampling_rate": "0.5"
+          }
+        },
+        {
+          "function": "arize_sampling_rate_error",
+          "callback_vars": {
+            "arize_success_sampling_rate": "0.5"
+          }
+        },
+        {
+          "function": "arize_sampling_rate_error",
+          "callback_name": "datadog",
+          "callback_vars": {
+            "arize_error_sampling_rate": "oops"
+          }
+        },
+        {
+          "function": "arize_sampling_rate_error",
+          "callback_name": "langfuse",
+          "callback_vars": {
+            "arize_error_sampling_rate": "",
+            "arize_success_sampling_rate": "None"
+          }
+        },
+        {
+          "function": "callback_config_error",
+          "callback_name": "arize",
+          "callback_vars": {
+            "arize_error_sampling_rate": "1.5"
+          }
+        },
+        {
+          "function": "logging_metadata_config_error",
+          "metadata": {
+            "logging": [
+              {
+                "callback_name": "arize",
+                "callback_vars": {
+                  "arize_error_sampling_rate": 0.5
+                }
+              }
+            ]
+          }
+        },
+        {
+          "function": "logging_metadata_config_error",
+          "metadata": {
+            "logging": [
+              {
+                "callback_name": "arize",
+                "callback_vars": {
+                  "arize_error_sampling_rate": 7
+                }
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": [
+      {
+        "pointer": "/value/5/error/message",
+        "why": "betterlite writes its own message"
+      },
+      {
+        "pointer": "/value/6/error/message",
+        "why": "betterlite writes its own message"
+      },
+      {
+        "pointer": "/value/7/error/message",
+        "why": "betterlite writes its own message"
+      },
+      {
+        "pointer": "/value/8/error/message",
+        "why": "betterlite writes its own message"
+      },
+      {
+        "pointer": "/value/9/error/message",
+        "why": "betterlite writes its own message"
+      },
+      {
+        "pointer": "/value/10/error/message",
+        "why": "betterlite writes its own message"
+      },
+      {
+        "pointer": "/value/12/error/message",
+        "why": "betterlite writes its own message"
+      },
+      {
+        "pointer": "/value/13/error/message",
+        "why": "betterlite writes its own message"
+      },
+      {
+        "pointer": "/value/14/error/message",
+        "why": "betterlite writes its own message"
+      },
+      {
+        "pointer": "/value/15/error/message",
+        "why": "betterlite writes its own message"
+      },
+      {
+        "pointer": "/value/17/error/message",
+        "why": "betterlite writes its own message"
+      },
+      {
+        "pointer": "/value/19/error/message",
+        "why": "betterlite writes its own message"
+      }
+    ]
+  }
+}
