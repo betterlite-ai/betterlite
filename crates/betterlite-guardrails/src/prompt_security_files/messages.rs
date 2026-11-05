@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::mem::take;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
@@ -28,41 +28,38 @@ async fn process_message(
     let GuardrailValue::Object(mut fields) = message else {
         return Ok(message);
     };
-    match fields.remove("content") {
-        Some(GuardrailValue::Array(items)) => {
-            let mut content = Vec::with_capacity(items.len());
-            for item in items {
-                let GuardrailValue::Object(entry) = item else {
-                    content.push(item);
-                    continue;
-                };
-                let processed = process_content_item(sanitizer, entry, user_api_key_alias).await?;
-                content.push(GuardrailValue::Object(processed));
-            }
-            fields.insert("content".to_owned(), GuardrailValue::Array(content));
-        }
-        Some(other) => {
-            fields.insert("content".to_owned(), other);
-        }
-        None => {}
+    if let Some(GuardrailValue::Array(items)) = fields.get_mut("content") {
+        let pending = take(items);
+        *items = process_content_items(sanitizer, pending, user_api_key_alias).await?;
     }
     Ok(GuardrailValue::Object(fields))
 }
 
-async fn process_content_item(
+async fn process_content_items(
     sanitizer: &FileSanitizer,
-    entry: BTreeMap<String, GuardrailValue>,
+    items: Vec<GuardrailValue>,
     user_api_key_alias: Option<&str>,
-) -> Result<BTreeMap<String, GuardrailValue>, FileSanitizationError> {
-    let item_type = match entry.get("type") {
-        Some(GuardrailValue::Text(item_type)) => item_type.clone(),
-        _ => String::new(),
-    };
-    match item_type.as_str() {
-        "image_url" => process_image_url_item(sanitizer, entry, user_api_key_alias).await,
-        "document" | "file" => process_document_item(sanitizer, entry, user_api_key_alias).await,
-        _ => Ok(entry),
+) -> Result<Vec<GuardrailValue>, FileSanitizationError> {
+    let mut content = Vec::with_capacity(items.len());
+    for item in items {
+        let GuardrailValue::Object(entry) = item else {
+            content.push(item);
+            continue;
+        };
+        let item_type = match entry.get("type") {
+            Some(GuardrailValue::Text(item_type)) => item_type.as_str(),
+            _ => "",
+        };
+        let processed = match item_type {
+            "image_url" => process_image_url_item(sanitizer, entry, user_api_key_alias).await?,
+            "document" | "file" => {
+                process_document_item(sanitizer, entry, user_api_key_alias).await?
+            }
+            _ => entry,
+        };
+        content.push(GuardrailValue::Object(processed));
     }
+    Ok(content)
 }
 
 pub async fn process_standalone_images(
