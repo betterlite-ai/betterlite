@@ -9,10 +9,14 @@ use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse as _, Response};
 use axum::routing::post;
 use axum::{Json, Router};
-use betterlite_openai::chat::ChatRequest;
+use betterlite_error::envelope::{EnvelopeError, error_body_call_id};
+use betterlite_error::normalize::class::Class;
+use betterlite_error::normalize::provider::provider_facts;
+use betterlite_error::normalize::{ErrorFacts, Normalizer};
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
-use betterlite_openai::chat::provider_error::{ErrorBodyKind, classify};
+use betterlite_openai::chat::{ChatRequest, RequestError};
+use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use serde::Serialize;
 use std::sync::Arc;
 use std::time::Instant;
@@ -37,6 +41,8 @@ struct ErrorObject {
     code: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     provider_specific_fields: Option<RouterErrorFields>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    litellm_call_id: Option<String>,
 }
 
 // LiteLLM's router repeats its message here when no deployment matches
@@ -45,7 +51,10 @@ struct RouterErrorFields {
     error: String,
 }
 
-pub(crate) fn chat_routes(executor: Arc<ChatExecutor>) -> Router {
+pub(crate) fn chat_routes_with_call_id(
+    executor: Arc<ChatExecutor>,
+    include_call_id: bool,
+) -> Result<Router, EnvelopeError> {
     let router = Router::new()
         .route("/chat/completions", post(chat_completion))
         .route("/v1/chat/completions", post(chat_completion))
@@ -54,11 +63,37 @@ pub(crate) fn chat_routes(executor: Arc<ChatExecutor>) -> Router {
             "/openai/deployments/{model}/chat/completions",
             post(chat_completion),
         );
-    router.with_state(executor)
+    Ok(router.with_state(ChatRouteState {
+        executor,
+        include_call_id,
+        errors: Arc::new(ErrorLayer {
+            normalizer: Normalizer::new()?,
+            redactor: Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)?,
+        }),
+    }))
+}
+
+struct ErrorLayer {
+    normalizer: Normalizer,
+    redactor: Redactor,
+}
+
+#[derive(Clone)]
+struct ChatRouteState {
+    executor: Arc<ChatExecutor>,
+    include_call_id: bool,
+    errors: Arc<ErrorLayer>,
+}
+
+#[derive(Clone, Copy)]
+pub(super) struct CallContext<'id> {
+    pub(super) id: &'id str,
+    pub(super) include_in_body: bool,
+    errors: &'id ErrorLayer,
 }
 
 async fn chat_completion(
-    State(executor): State<Arc<ChatExecutor>>,
+    State(state): State<ChatRouteState>,
     path_model: Option<Path<String>>,
     request_headers: HeaderMap,
     body: Bytes,
@@ -69,54 +104,74 @@ async fn chat_completion(
         .and_then(|value| value.to_str().ok())
         .filter(|value| (1..=MAX_CALL_ID_LENGTH).contains(&value.len()))
         .map_or_else(|| Uuid::new_v4().to_string(), str::to_owned);
+    let mut call = CallContext {
+        id: &call_id,
+        include_in_body: state.include_call_id,
+        errors: &state.errors,
+    };
     let request = match ChatRequest::parse(&body) {
         Ok(request) => request,
-        Err(source) => return failure(&ChatError::from(source), &call_id, None),
+        Err(source) => {
+            if let RequestError::Body { source: json } = &source {
+                // LiteLLM's _read_request_body treats an empty body as {} instead of raising.
+                call.include_in_body &= body.is_empty() || !(json.is_syntax() || json.is_eof());
+            }
+            return failure(&ChatError::from(source), call, None);
+        }
     };
-    // LiteLLM lets the model in the path win over the one in the body
+    let deployment = match picked_deployment(&state, &request, path_model) {
+        Ok(deployment) => deployment,
+        Err(error) => return failure(&error, call, None),
+    };
+    execute_chat(&state, &request, deployment, call, started).await
+}
+
+fn picked_deployment<'executor>(
+    state: &'executor ChatRouteState,
+    request: &ChatRequest,
+    path_model: Option<Path<String>>,
+) -> Result<&'executor ChatDeployment, ChatError> {
     let model = path_model
         .map(|Path(model)| model)
         .or_else(|| request.model.clone());
-    let deployment = match executor.pick(model.as_deref().unwrap_or("None")) {
-        Ok(deployment) => deployment,
-        Err(error) => return failure(&error, &call_id, None),
-    };
+    state.executor.pick(model.as_deref().unwrap_or("None"))
+}
+
+async fn execute_chat(
+    state: &ChatRouteState,
+    request: &ChatRequest,
+    deployment: &ChatDeployment,
+    call: CallContext<'_>,
+    started: Instant,
+) -> Response {
     if request.stream {
-        return stream_chat(&executor, deployment, &request, &call_id, started).await;
+        return stream_chat(&state.executor, deployment, request, call, started).await;
     }
-    match executor.send(deployment, &request).await {
+    match state.executor.send(deployment, request).await {
         Ok(outcome) => {
             let headers = success_headers(
                 &outcome.upstream.headers,
                 deployment,
-                &call_id,
+                call.id,
                 outcome.upstream_time,
                 started.elapsed(),
             );
             (headers, Json(outcome.response)).into_response()
         }
-        Err(error) => failure(&error, &call_id, Some(deployment)),
+        Err(error) => failure(&error, call, Some(deployment)),
     }
 }
 
-fn failure(error: &ChatError, call_id: &str, deployment: Option<&ChatDeployment>) -> Response {
-    let failure = match error {
-        ChatError::Provider { response } => {
-            classify(response.status, &response.body, ErrorBodyKind::Structured)
-        }
-        ChatError::UnknownModel { .. }
-        | ChatError::Request { .. }
-        | ChatError::Streaming
-        | ChatError::UnsupportedProvider { .. }
-        | ChatError::MissingApiKey
-        | ChatError::Timeout
-        | ChatError::Encode { .. }
-        | ChatError::Decode { .. }
-        | ChatError::TooLarge
-        | ChatError::Http { .. } => error.failure(),
-    };
+fn failure(
+    error: &ChatError,
+    call: CallContext<'_>,
+    deployment: Option<&ChatDeployment>,
+) -> Response {
+    let failure = error.failure();
     let status = StatusCode::from_u16(failure.status).unwrap_or(StatusCode::INTERNAL_SERVER_ERROR);
-    let message = error.to_string();
+    let redactor = &call.errors.redactor;
+    let message = redactor.redact_internal_details(&error.to_string());
+    log_normalized_error(error, &message, status.as_u16(), call.errors);
     let provider_specific_fields =
         matches!(error, ChatError::UnknownModel { .. }).then(|| RouterErrorFields {
             error: message.clone(),
@@ -124,14 +179,47 @@ fn failure(error: &ChatError, call_id: &str, deployment: Option<&ChatDeployment>
     let body = ErrorBody {
         error: ErrorObject {
             message,
-            error_type: failure.error_type,
-            param: failure.param,
+            error_type: redactor.redact_internal_details(&failure.error_type),
+            param: failure
+                .param
+                .map(|param| redactor.redact_internal_details(&param)),
             code: status.as_u16().to_string(),
             provider_specific_fields,
+            litellm_call_id: error_body_call_id(call.include_in_body, Some(call.id))
+                .map(str::to_owned),
         },
     };
-    let headers = failure_headers(Some(error), None, call_id, deployment);
+    let headers = failure_headers(Some(error), None, call.id, deployment);
     (status, headers, Json(body)).into_response()
+}
+
+fn log_normalized_error(error: &ChatError, message: &str, status: u16, layer: &ErrorLayer) {
+    let facts = if let ChatError::Provider { response } = error {
+        provider_facts(response.status, &response.body, &layer.redactor)
+    } else {
+        let class = match error {
+            ChatError::Timeout => Class::Timeout,
+            ChatError::Http { .. } => Class::APIConnectionError,
+            ChatError::UnknownModel { .. }
+            | ChatError::Request { .. }
+            | ChatError::Streaming
+            | ChatError::UnsupportedProvider { .. }
+            | ChatError::MissingApiKey
+            | ChatError::Provider { .. }
+            | ChatError::Encode { .. }
+            | ChatError::Decode { .. }
+            | ChatError::TooLarge => Class::Other,
+        };
+        ErrorFacts {
+            proxy_type: None,
+            message: message.to_owned(),
+            class,
+            status_code: Some(status),
+            rate_limit_type: None,
+        }
+    };
+    let normalized_error = layer.normalizer.normalize(Some(&facts));
+    tracing::warn!(normalized_error, "chat request failed");
 }
 
 mod tests;

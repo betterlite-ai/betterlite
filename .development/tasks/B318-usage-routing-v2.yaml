@@ -5,9 +5,8 @@ description: 'Implement usage-based-routing-v2 candidate selection using B371 ac
   Wire the variant into B016 and consume B013 estimates; no callback or reservation logic is duplicated.
   Configuration boundary keys introduced or consumed here: routing_strategy. Pinned declaration defaults:
   routing_strategy=''simple-shuffle''. Resolve env values once in betterlite-config, never in router code.
-  Implement the owned native service in crates/betterlite-router/src/usage_routing_v2.rs. Add ProbeOperation::UsageRoutingV2
-  in tools/oracle/src/router_probes/mod.rs and the corresponding B318 entry in tools/oracle/litellm/probes/registry.py;
-  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  Implement the owned native service in crates/betterlite-router/src/usage_routing_v2.rs. B301 registers ProbeOperation::UsageRoutingV2 and its Python entry as stubs, so fill only tools/oracle/src/router_probes/usage_routing_v2.rs and tools/oracle/litellm/probes/usage_routing_v2.py and leave mod.rs and registry.py as they are;
+  the adapters only call production services.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
   lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
   exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/router_strategy/lowest_tpm_rpm_v2.py:
@@ -32,9 +31,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/usage_routing_v2.rs
   - tools/oracle/src/router_probes/usage_routing_v2/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/usage_routing_v2.py
   - tools/oracle/cases/routing/usage-routing-v2/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/usage-routing-v2-*

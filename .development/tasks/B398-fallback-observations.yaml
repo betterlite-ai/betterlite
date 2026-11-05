@@ -4,9 +4,8 @@ description: 'Implement redacted fallback error details, success/failure callbac
   headers. Keep errors and hidden stream metadata separate from already-sent HTTP headers, with caller-sensitive
   fields redacted. B310 calls this service; it makes no provider call or authorization decision. ROUTER_FALLBACK_ERROR_DETAIL_MAX_CHARS
   is 2000, with no environment override; retain credential masking before truncation. Implement the owned
-  native service in crates/betterlite-router/src/fallback_observations.rs. Add ProbeOperation::FallbackObservations in
-  tools/oracle/src/router_probes/mod.rs and the corresponding B398 entry in tools/oracle/litellm/probes/registry.py;
-  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  native service in crates/betterlite-router/src/fallback_observations.rs. B301 registers ProbeOperation::FallbackObservations and its Python entry as stubs, so fill only tools/oracle/src/router_probes/fallback_observations.rs and tools/oracle/litellm/probes/fallback_observations.py and leave mod.rs and registry.py as they are;
+  the adapters only call production services.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
   lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
   exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/router_utils/add_retry_fallback_headers.py:
@@ -36,9 +35,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/fallback_observations.rs
   - tools/oracle/src/router_probes/fallback_observations/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/fallback_observations.py
   - tools/oracle/cases/routing/fallback-observations/**
   - tools/oracle/helpers/b398.py

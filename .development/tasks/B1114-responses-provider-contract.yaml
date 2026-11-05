@@ -17,17 +17,15 @@ description: >-
 
   The owned ranges have 265 nonblank, non-comment lines, mostly abstract signatures. Reserve 250 lines
   for native contracts/defaults, 135 tests, 85 adapters, 90 fixtures and 30 wiring: 590 total.
+
+  B010 registers the Responses variants of OperationRequest, OperationResult and PreparedRequest as stubs in
+  crates/betterlite-provider/src/api/responses_provider_contract.rs. Fill them there and leave provider.rs,
+  operation.rs and prepared.rs as they are.
 scope:
   paths:
   - crates/betterlite-provider/Cargo.toml
   - crates/betterlite-provider/src/api/responses_provider_contract.rs
   - crates/betterlite-provider/src/api/responses_provider_contract/**
-  - crates/betterlite-provider/src/provider.rs
-  - crates/betterlite-provider/src/provider/**
-  - crates/betterlite-provider/src/operation.rs
-  - crates/betterlite-provider/src/operation/**
-  - crates/betterlite-provider/src/prepared.rs
-  - crates/betterlite-provider/src/prepared/**
   - Cargo.lock
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/provider/responses_provider_contract.rs

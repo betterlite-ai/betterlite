@@ -19,7 +19,9 @@ description: >-
   branch's special ModifyResponseException response and the separate polling admission error path.
 
   Assemble B1078's CreateInterception port with B955 and B2415's ContinuationExecutor with the
-  public B932 Responses executor. Register B014 operation dispatch; recursive execution returns
+  public B932 Responses executor. B014 registers the Responses entry as a stub, so replace the stub and its not-built test in
+  crates/betterlite-core/src/operation/responses.rs and crates/betterlite-core/src/dispatch/responses.rs and leave
+  dispatch.rs and operation.rs as they are; recursive execution returns
   through these typed ports, never a dependency from lower services to this composer. Re-export
   B921 responses_api_bridge and B935/B936 polling exports from the small package init files.
   The empty file_search initializer has no runtime behavior. Own dispatch.py's six whole public
@@ -36,7 +38,7 @@ description: >-
   Bind the OpenAI provider's Responses create operation into the dispatcher this task extends: the openai
   target uses B507 input preparation and B508 reply and event decoding, which B932's create call executes,
   and keeps response item IDs, tool metadata and streaming event order. The binding lives here, not in the
-  OpenAI provider umbrella B024, because the Responses variant only exists once this task adds it and a
+  OpenAI provider umbrella B024, because the Responses entry stays a B014 stub until this task fills it and a
   provider task must not depend on a route task. Test function openai_provider_operation under
   api::responses_routes::tests drives POST /v1/responses with an openai/ model through the booted proxy and
   asserts the captured upstream /v1/responses request and the returned item IDs and stream events.
@@ -54,10 +56,10 @@ scope:
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/responses_routes.rs
   - crates/betterlite-core/src/api/responses_routes/**
-  - crates/betterlite-core/src/operation.rs
-  - crates/betterlite-core/src/operation/**
-  - crates/betterlite-core/src/dispatch.rs
-  - crates/betterlite-core/src/dispatch/**
+  - crates/betterlite-core/src/operation/responses.rs
+  - crates/betterlite-core/src/operation/responses/**
+  - crates/betterlite-core/src/dispatch/responses.rs
+  - crates/betterlite-core/src/dispatch/responses/**
   - tools/oracle/cases/api/responses-routes/**
   - tools/oracle/fixtures/responses-routes/**
   - tools/oracle/src/sdk_http.rs

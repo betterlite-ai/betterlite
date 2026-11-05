@@ -5,9 +5,7 @@ description: 'Compute the canonical counterfactual baseline through B068 cost ca
   prediction, with bounded count cache, caller/session scope and invalidation on retry or incomplete responses.
   Carry typed evidence to B344 session rollups without retaining plaintext keys. Do not invent a substitute
   baseline when no candidate can be priced. Implement the owned native service in crates/betterlite-router/src/routing_baselines.rs.
-  Add ProbeOperation::RoutingBaselines in tools/oracle/src/router_probes/mod.rs and the corresponding B342 entry in
-  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
-  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  B301 registers ProbeOperation::RoutingBaselines and its Python entry as stubs, so fill only tools/oracle/src/router_probes/routing_baselines.rs and tools/oracle/litellm/probes/routing_baselines.py and leave mod.rs and registry.py as they are; the adapters only call production services. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
   fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
   of copying their algorithms. Function coverage in litellm/proxy/hooks/autorouter_baseline_cache.py:
@@ -36,9 +34,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/routing_baselines.rs
   - tools/oracle/src/router_probes/routing_baselines/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/routing_baselines.py
   - tools/oracle/cases/routing/routing-baselines/**
   - tools/oracle/helpers/b342.py

@@ -149,16 +149,21 @@ impl Progress {
     }
 
     pub(crate) fn open(&self, ladder: &[Rung], index: usize) -> bool {
-        let Some(rung) = ladder.get(index) else {
-            return false;
-        };
         // granted starts go to the last rung
-        let extra = if index.saturating_add(1) == ladder.len() {
-            self.granted
-        } else {
-            0
-        };
-        self.starts.get(index).copied().unwrap_or(0) < rung.attempts.saturating_add(extra)
+        if index.saturating_add(1) == ladder.len() {
+            return self.open_granted(ladder, index);
+        }
+        let started = self.starts.get(index).copied().unwrap_or(0);
+        ladder
+            .get(index)
+            .is_some_and(|rung| started < rung.attempts)
+    }
+
+    pub(crate) fn open_granted(&self, ladder: &[Rung], index: usize) -> bool {
+        let started = self.starts.get(index).copied().unwrap_or(0);
+        ladder
+            .get(index)
+            .is_some_and(|rung| started < rung.attempts.saturating_add(self.granted))
     }
 
     pub(crate) const fn grant(&mut self, ladder: &[Rung], runs: u32) {

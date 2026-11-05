@@ -6,9 +6,7 @@ description: 'Implement IoLimits, IoReservation and UsageTokens with minute-key 
   and reservation rather than executing calls. Configuration boundary keys introduced or consumed here:
   itpm, otpm. Pinned declaration defaults: itpm=None; otpm=None. Resolve env values once in betterlite-config,
   never in router code. Implement the owned native service in crates/betterlite-router/src/io_token_reservations.rs.
-  Add ProbeOperation::IoTokenReservations in tools/oracle/src/router_probes/mod.rs and the corresponding B365 entry in
-  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
-  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  B301 registers ProbeOperation::IoTokenReservations and its Python entry as stubs, so fill only tools/oracle/src/router_probes/io_token_reservations.rs and tools/oracle/litellm/probes/io_token_reservations.py and leave mod.rs and registry.py as they are; the adapters only call production services. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
   fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
   of copying their algorithms. Function coverage in litellm/router_utils/pre_call_checks/io_token_rate_limit_check.py:
@@ -39,9 +37,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/io_token_reservations.rs
   - tools/oracle/src/router_probes/io_token_reservations/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/io_token_reservations.py
   - tools/oracle/cases/routing/io-token-reservations/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/io-token-reservations-*

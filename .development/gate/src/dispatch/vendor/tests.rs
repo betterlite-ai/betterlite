@@ -60,6 +60,23 @@ fn a_claude_run_logged_out_or_offline_marks_its_vendor() {
 }
 
 #[test]
+fn a_codex_json_limit_with_a_curly_apostrophe_marks_its_vendor() {
+    let agents = agents();
+    let codex = find_vendor(&agents, "openai").unwrap();
+    let folder = tempfile::tempdir().unwrap();
+    let stdout = folder.path().join("attempt-1-worker.stdout");
+    let message = "You\u{2019}ve hit your usage limit. Visit https://chatgpt.com/settings/usage to purchase more credits or try again at Nov 10th, 2026 11:31 PM.";
+    fs::write(
+        &stdout,
+        format!(
+            "{{\"type\":\"turn.started\"}}\n{{\"type\":\"error\",\"message\":\"{message}\"}}\n{{\"type\":\"turn.failed\",\"error\":{{\"message\":\"{message}\"}}}}\n"
+        ),
+    )
+    .unwrap();
+    assert!(limit_line(codex, &[&stdout]).unwrap().is_some());
+}
+
+#[test]
 fn a_marker_the_agent_read_earlier_in_its_run_is_no_limit() {
     let folder = tempfile::tempdir().unwrap();
     let log = folder.path().join("attempt-1-worker.log");

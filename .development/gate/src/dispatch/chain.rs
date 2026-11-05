@@ -39,6 +39,8 @@ impl<'agents> Chain<'agents> {
     // a vendor with fewer rungs takes the task on its top rung
     fn across(&self, progress: &Progress, from: &Link<'_>) -> Vec<&Link<'agents>> {
         let ladder = &self.agents.roles.worker.ladder;
+        // a stand-in for the last rung also runs on its granted starts, so a grant still runs while that vendor is limited
+        let last = from.index.saturating_add(1) == ladder.len();
         self.links
             .iter()
             .filter(|link| {
@@ -51,7 +53,8 @@ impl<'agents> Chain<'agents> {
                     .unwrap_or(0);
                 link.runner.vendor != from.runner.vendor
                     && link.level >= from.level.min(top)
-                    && progress.open(ladder, link.index)
+                    && (progress.open(ladder, link.index)
+                        || (last && progress.open_granted(ladder, link.index)))
             })
             .collect()
     }
