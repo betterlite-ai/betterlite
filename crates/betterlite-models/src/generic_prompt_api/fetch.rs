@@ -1,4 +1,3 @@
-use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_with::{DefaultOnNull, serde_as};
@@ -11,6 +10,8 @@ use crate::generic_prompt_api::request::{
 };
 use crate::prompt_contracts::{PromptManagementClient, PromptParams};
 use crate::prompt_spec::PromptSpec;
+
+use self::Extras::{Own, Spec};
 
 pub const PROMPT_MANAGEMENT_PATH: &str = "/beta/litellm_prompt_management";
 
@@ -39,6 +40,15 @@ impl ApiPromptResponse {
     }
 }
 
+// LiteLLM's sync fetch reads the manager's extra params and its async fetch reads the spec's
+#[derive(Clone, Copy)]
+enum Extras {
+    Own,
+    Spec,
+}
+
+pub type ApiResult<TransportError> = Result<ApiPromptResponse, PromptFetchError<TransportError>>;
+
 #[derive(Debug)]
 pub struct PromptApi<Transport> {
     pub settings: GenericPromptSettings,
@@ -66,37 +76,37 @@ where
         &self,
         prompt_id: Option<&str>,
         prompt_spec: Option<&PromptSpec>,
-    ) -> Result<ApiPromptResponse, PromptFetchError<Transport::Error>> {
-        let request = self.build_request(
-            prompt_id,
-            prompt_spec,
-            self.settings.provider_specific_query_params.as_ref(),
-        )?;
-        let outcome = self.transport.get(&request);
-        read_response(prompt_id, outcome)
+    ) -> ApiResult<Transport::Error> {
+        match self.request(prompt_id, prompt_spec, Own) {
+            Ok(request) => read_response(prompt_id, self.transport.get(&request)),
+            Err(error) => Err(error),
+        }
     }
 
     pub async fn async_fetch_prompt_from_api(
         &self,
-        prompt_id: Option<&str>,
-        prompt_spec: Option<&PromptSpec>,
+        id: Option<&str>,
+        spec: Option<&PromptSpec>,
     ) -> Result<ApiPromptResponse, PromptFetchError<Transport::Error>> {
-        let spec_params = prompt_spec
-            .and_then(|spec| spec.litellm_params.provider_specific_query_params.as_ref());
-        let request = self.build_request(prompt_id, prompt_spec, spec_params)?;
-        let outcome = self.transport.get_async(&request).await;
-        read_response(prompt_id, outcome)
+        let api_request = self.request(id, spec, Spec)?;
+        let response = self.transport.get_async(&api_request).await;
+        read_response(id, response)
     }
 
-    fn build_request(
+    fn request(
         &self,
         prompt_id: Option<&str>,
         prompt_spec: Option<&PromptSpec>,
-        provider_specific: Option<&IndexMap<String, Json>>,
+        source: Extras,
     ) -> Result<PromptApiRequest, PromptFetchError<Transport::Error>> {
         if prompt_id.is_none() && prompt_spec.is_none() {
             return Err(PromptFetchError::MissingPromptSource);
         }
+        let provider_specific = match source {
+            Own => self.settings.provider_specific_query_params.as_ref(),
+            Spec => prompt_spec
+                .and_then(|spec| spec.litellm_params.provider_specific_query_params.as_ref()),
+        };
         Ok(PromptApiRequest {
             url: format!("{}{PROMPT_MANAGEMENT_PATH}", self.settings.api_base),
             query: query_pairs(prompt_id, provider_specific)?,
@@ -109,7 +119,7 @@ where
 fn read_response<TransportError>(
     prompt_id: Option<&str>,
     outcome: Result<PromptApiResponse, TransportError>,
-) -> Result<ApiPromptResponse, PromptFetchError<TransportError>> {
+) -> ApiResult<TransportError> {
     let prompt_name = prompt_id.unwrap_or("None").to_owned();
     let response = outcome.map_err(|source| PromptFetchError::Transport {
         prompt_id: prompt_name.clone(),

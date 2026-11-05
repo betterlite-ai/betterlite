@@ -4,8 +4,8 @@ use indexmap::IndexMap;
 use secrecy::SecretString;
 
 use crate::decisions::Json;
-use crate::generic_prompt_api::error::PromptCompileError;
-use crate::generic_prompt_api::fetch::PromptApi;
+use crate::generic_prompt_api::error::{PromptCompileError, PromptFetchError};
+use crate::generic_prompt_api::fetch::{ApiPromptResponse, PromptApi};
 use crate::generic_prompt_api::request::PromptApiTransport;
 use crate::generic_prompt_api::variables::apply_variables;
 use crate::generic_prompt_api_cache::PromptCache;
@@ -63,34 +63,39 @@ where
         &self,
         request: &PromptCompileRequest<'_>,
     ) -> Result<PromptManagementClient, PromptCompileError<Transport::Error>> {
-        if let Some(cached) = self.prompt_cache.common_caching_logic(
+        let cached = self.prompt_cache.common_caching_logic(
             request.prompt_id,
             request.prompt_label,
             request.prompt_version,
             request.prompt_variables,
-        )? {
-            return Ok(cached);
-        }
-        let api_response = self
-            .api
-            .fetch_prompt_from_api(request.prompt_id, request.prompt_spec)
-            .map_err(|source| PromptCompileError::Fetch {
-                prompt_id: request.prompt_id.unwrap_or("None").to_owned(),
-                source,
-            })?;
-        let cache_key = PromptCache::get_cache_key(
-            request.prompt_id,
-            request.prompt_label,
-            request.prompt_version,
-        );
-        let prompt_client = api_response.into_prompt_client(request.prompt_id);
-        self.cache_and_apply(cache_key, request.prompt_variables, prompt_client)
+        )?;
+        cached.map_or_else(
+            || {
+                self.cache_fetched(
+                    request.prompt_id,
+                    PromptCache::get_cache_key(
+                        request.prompt_id,
+                        request.prompt_label,
+                        request.prompt_version,
+                    ),
+                    request.prompt_variables,
+                    self.api
+                        .fetch_prompt_from_api(request.prompt_id, request.prompt_spec),
+                )
+            },
+            Ok,
+        )
     }
 
     pub async fn async_compile_prompt_helper(
         &self,
         request: &PromptAsyncCompileRequest<'_>,
     ) -> Result<PromptManagementClient, PromptCompileError<Transport::Error>> {
+        let cache_key = PromptCache::get_cache_key(
+            request.prompt_id,
+            request.prompt_label,
+            request.prompt_version,
+        );
         if let Some(cached) = self.prompt_cache.common_caching_logic(
             request.prompt_id,
             request.prompt_label,
@@ -99,29 +104,30 @@ where
         )? {
             return Ok(cached);
         }
-        let api_response = self
+        let fetched = self
             .api
             .async_fetch_prompt_from_api(request.prompt_id, request.prompt_spec)
-            .await
-            .map_err(|source| PromptCompileError::Fetch {
-                prompt_id: request.prompt_id.unwrap_or("None").to_owned(),
-                source,
-            })?;
-        let cache_key = PromptCache::get_cache_key(
+            .await;
+        self.cache_fetched(
             request.prompt_id,
-            request.prompt_label,
-            request.prompt_version,
-        );
-        let prompt_client = api_response.into_prompt_client(request.prompt_id);
-        self.cache_and_apply(cache_key, request.prompt_variables, prompt_client)
+            cache_key,
+            request.prompt_variables,
+            fetched,
+        )
     }
 
-    fn cache_and_apply(
+    fn cache_fetched(
         &self,
+        prompt_id: Option<&str>,
         cache_key: String,
         prompt_variables: Option<&PromptParams>,
-        prompt_client: PromptManagementClient,
+        fetched: Result<ApiPromptResponse, PromptFetchError<Transport::Error>>,
     ) -> Result<PromptManagementClient, PromptCompileError<Transport::Error>> {
+        let api_response = fetched.map_err(|source| PromptCompileError::Fetch {
+            prompt_id: prompt_id.unwrap_or("None").to_owned(),
+            source,
+        })?;
+        let prompt_client = api_response.into_prompt_client(prompt_id);
         self.prompt_cache.insert(cache_key, prompt_client.clone());
         match prompt_variables {
             Some(variables) if !variables.is_empty() => {
