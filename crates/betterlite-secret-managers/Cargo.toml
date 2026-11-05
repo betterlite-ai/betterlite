@@ -9,6 +9,7 @@ publish.workspace = true
 aws-sdk-kms = { version = "=1.120.0", default-features = false, features = ["rt-tokio"] }
 base64 = "0.23.1"
 betterlite-env = { path = "../betterlite-env" }
+regex.workspace = true
 secrecy.workspace = true
 serde.workspace = true
 thiserror.workspace = true

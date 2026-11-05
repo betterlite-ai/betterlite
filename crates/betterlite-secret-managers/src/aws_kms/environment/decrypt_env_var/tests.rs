@@ -68,3 +68,38 @@ async fn decrypt_env_var_selects_value_prefix_and_returns_boolean() {
         Some(DecryptedValue::Boolean(true))
     ));
 }
+
+#[tokio::test]
+async fn decrypt_env_var_removes_every_marker_with_python_case_folding() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let mut environment = kms_environment(&listener, "us-east-1");
+    environment.insert(
+        "litellm_secret_aws_kms_A_LITELLM_SECRET_AWS_KMS_B".to_owned(),
+        "aGVsbG8=".to_owned(),
+    );
+    environment.insert(
+        "LITELLM_SECRET_AWS_\u{212a}MS_KELVIN".to_owned(),
+        "aGVsbG8=".to_owned(),
+    );
+    let responses = async {
+        serve(&listener, 200, r#"{"Plaintext":"b25l"}"#).await;
+        serve(&listener, 200, r#"{"Plaintext":"dHdv"}"#).await;
+    };
+    let (decrypted, ()) = tokio::join!(
+        decrypt_env_var(
+            &environment,
+            transport(),
+            Some(credentials()),
+            Duration::from_secs(5)
+        ),
+        responses
+    );
+    assert_eq!(
+        decrypted
+            .unwrap()
+            .keys()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        ["A_B", "KELVIN"]
+    );
+}

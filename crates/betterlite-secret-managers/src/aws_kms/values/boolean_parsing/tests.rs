@@ -21,6 +21,8 @@ use tokio::{
 #[case("false")]
 #[case(" FALSE ")]
 #[case("1")]
+#[case("(True)")]
+#[case("True # flag")]
 fn boolean_parsing_only_accepts_python_case_sensitive_literals(#[case] plaintext: &str) {
     assert!(matches!(
         parse_plaintext(plaintext),
@@ -37,6 +39,10 @@ fn python_boolean_literals_become_boolean_values() {
     assert!(matches!(
         parse_plaintext("False"),
         DecryptedValue::Boolean(false)
+    ));
+    assert!(matches!(
+        parse_plaintext("\u{1c}\u{a0}True\u{1f}\n"),
+        DecryptedValue::Boolean(true)
     ));
 }
 

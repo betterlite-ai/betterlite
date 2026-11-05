@@ -12,3 +12,6 @@ deviations:
   - what: AWS KMS inputs and plaintext have size limits, and requests have a caller-supplied operation timeout.
     why: Startup must reject oversized values and terminate when a KMS endpoint stops answering. Ciphertext allows up to 65536 input bytes including ignored characters and 8192 base64 bytes; plaintext allows 4096 bytes.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/aws_secret_manager.py#L99-L106
+  - what: Only the exact plaintexts True and False, after Python whitespace stripping, become booleans; other Python literal forms such as (True) or True followed by a comment stay strings.
+    why: The task defines boolean parsing as the two exact literals, and betterlite does not evaluate Python expression syntax.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/aws_secret_manager.py#L108-L113

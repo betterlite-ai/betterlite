@@ -38,7 +38,9 @@ pub(crate) async fn decrypt_with(
 }
 
 fn parse_plaintext(plaintext: &str) -> DecryptedValue {
-    let value = plaintext.trim();
+    let value = plaintext.trim_matches(|character: char| {
+        character.is_whitespace() || matches!(character, '\u{1c}'..='\u{1f}')
+    });
     match value {
         "True" => DecryptedValue::Boolean(true),
         "False" => DecryptedValue::Boolean(false),
