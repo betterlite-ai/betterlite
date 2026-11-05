@@ -22,17 +22,16 @@ pub async fn process_message_files(
 
 async fn process_message(
     sanitizer: &FileSanitizer,
-    message: GuardrailValue,
+    mut message: GuardrailValue,
     user_api_key_alias: Option<&str>,
 ) -> Result<GuardrailValue, FileSanitizationError> {
-    let GuardrailValue::Object(mut fields) = message else {
-        return Ok(message);
-    };
-    if let Some(GuardrailValue::Array(items)) = fields.get_mut("content") {
+    if let GuardrailValue::Object(fields) = &mut message
+        && let Some(GuardrailValue::Array(items)) = fields.get_mut("content")
+    {
         let pending = take(items);
         *items = process_content_items(sanitizer, pending, user_api_key_alias).await?;
     }
-    Ok(GuardrailValue::Object(fields))
+    Ok(message)
 }
 
 async fn process_content_items(
