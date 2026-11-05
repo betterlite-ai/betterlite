@@ -15,8 +15,10 @@ description: >-
   Test that case locally, since LiteLLM would use OPENAI_API_KEY and the SDK default public base, outside the HTTP
   mock. Reuse B204 exact decimal parsing with workspace serde_json arbitrary_precision; a finite score not exactly
   representable by Decimal (including below 1e-28) returns a typed provider-response parse error mapped to HTTP
-  502, type bad_gateway, param category_scores, code decimal_out_of_range. Never round such a score to zero. Add
-  the moderation variant to B014 exhaustive dispatch. Write the behavior rstest functions moderations_moderation_tests_behavior
+  502, type bad_gateway, param category_scores, code decimal_out_of_range. Never round such a score to zero. B014
+  registers the Moderation entry as a stub, so replace the stub and its not-built test in
+  crates/betterlite-core/src/operation/moderation.rs and crates/betterlite-core/src/dispatch/moderation.rs only,
+  and leave dispatch.rs and operation.rs as they are. Write the behavior rstest functions moderations_moderation_tests_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
   separate names. Budget 270 endpoint/types, 270 tests, 90 fuzz/replay and 100 dispatch/config wiring (730 total).
 scope:
@@ -40,8 +42,10 @@ scope:
   - crates/betterlite-config/src/sections/moderation_model.rs
   - crates/betterlite-config/src/sections/moderation_model/**
   - "crates/betterlite-config/fuzz/corpus/config_yaml/moderation-model-*"
-  - crates/betterlite-core/src/dispatch.rs
-  - crates/betterlite-core/src/operation.rs
+  - crates/betterlite-core/src/operation/moderation.rs
+  - crates/betterlite-core/src/operation/moderation/**
+  - crates/betterlite-core/src/dispatch/moderation.rs
+  - crates/betterlite-core/src/dispatch/moderation/**
   - tools/oracle/cases/moderations/**
   - tools/oracle/helpers/b015.py
   - tools/oracle/helpers/b015/**

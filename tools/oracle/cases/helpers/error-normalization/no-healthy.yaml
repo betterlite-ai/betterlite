@@ -1,0 +1,5 @@
+kind: helper
+name: error-normalization-no-healthy
+call: {"error_normalization": {"message": "no healthy deployment", "status_code": 418}}
+env: {}
+compare: {ignore: []}

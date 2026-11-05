@@ -1,0 +1,5 @@
+kind: helper
+name: vector-context-shaping-scan-seed
+call: {vector_context_shaping: {operation: scan_request_merge, model: seeded, non_default_params: {x: 1}}}
+env: {}
+compare: {ignore: []}

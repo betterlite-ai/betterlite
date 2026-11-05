@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -46,4 +47,32 @@ pub(super) fn save(
         source,
     })?;
     fs::write(&path, text).map_err(|source| GateError::Write { path, source })
+}
+
+pub(crate) fn runs(log_dir: &Path) -> Result<BTreeSet<PathBuf>, GateError> {
+    let runs = log_dir.join("runs");
+    if !runs.is_dir() {
+        return Ok(BTreeSet::new());
+    }
+    let entries = fs::read_dir(&runs).map_err(|source| GateError::Read {
+        path: runs.clone(),
+        source,
+    })?;
+    let mut found = BTreeSet::new();
+    for entry in entries {
+        let run = entry.map_err(|source| GateError::Read {
+            path: runs.clone(),
+            source,
+        })?;
+        found.insert(run.path());
+    }
+    Ok(found)
+}
+
+pub(crate) fn unfinished(log_dir: &Path, earlier: &BTreeSet<PathBuf>) -> Result<bool, GateError> {
+    Ok(runs(log_dir)?.iter().any(|run| {
+        !earlier.contains(run)
+            && !run.join("result.json").exists()
+            && !run.join("error.txt").exists()
+    }))
 }

@@ -3,6 +3,10 @@ name = "betterlite-core-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
 
 [package.metadata]
 cargo-fuzz = true
@@ -26,11 +30,17 @@ test = false
 doc = false
 bench = false
 
-[workspace]
 
 [[bin]]
 name = "agent_provider"
 path = "fuzz_targets/agent_provider.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "upload_security_content"
+path = "fuzz_targets/upload_security_content.rs"
 test = false
 doc = false
 bench = false

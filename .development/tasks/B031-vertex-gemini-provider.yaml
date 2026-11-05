@@ -37,6 +37,10 @@ description: >-
   legacy wrapper selection, unsupported_operation and counter installation. Allocate 280
   composition, 190 native/config tests and 290 HTTP fixtures/wiring, maximum 800; existing
   request, SSE and cache decoders retain their own fuzz targets.
+
+  B010 registers Provider::VertexAi and the VertexAi variants of OperationRequest, OperationResult and
+  PreparedRequest as stubs in crates/betterlite-provider/src/vertex_dispatch.rs. Fill them there and leave
+  provider.rs, operation.rs and prepared.rs as they are.
 scope:
   paths:
     - crates/betterlite-core/Cargo.toml
@@ -44,7 +48,6 @@ scope:
     - crates/betterlite-core/src/vertex_completion_dispatch.rs
     - crates/betterlite-core/src/vertex_completion_dispatch/**
     - crates/betterlite-provider/Cargo.toml
-    - crates/betterlite-provider/src/{provider,operation,prepared,vertex_dispatch}.rs
     - crates/betterlite-provider/src/vertex_dispatch.rs
     - crates/betterlite-provider/src/vertex_dispatch/**
     - crates/betterlite-config/src/{env,settings}.rs

@@ -5,9 +5,7 @@ description: 'Translate B012 success/failure events into B304 counters and B014 
   Cancellation releases observation ownership without duplicating usage. Pure counter storage and flush
   policy remain B304. Define CounterSink inputs here and inject the implementation from the later B304
   composition; this task has no dependency on B304. Implement the owned native service in crates/betterlite-router/src/router_observations.rs.
-  Add ProbeOperation::RouterObservations in tools/oracle/src/router_probes/mod.rs and the corresponding B397 entry in
-  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
-  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  B301 registers ProbeOperation::RouterObservations and its Python entry as stubs, so fill only tools/oracle/src/router_probes/router_observations.rs and tools/oracle/litellm/probes/router_observations.py and leave mod.rs and registry.py as they are; the adapters only call production services. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
   fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
   of copying their algorithms. Function coverage in litellm/router.py: Router.deployment_callback_on_success
@@ -32,9 +30,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/router_observations.rs
   - tools/oracle/src/router_probes/router_observations/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/router_observations.py
   - tools/oracle/cases/routing/router-observations/**
   - tools/oracle/helpers/b397.py

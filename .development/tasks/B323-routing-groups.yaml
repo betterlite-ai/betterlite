@@ -6,9 +6,8 @@ description: 'Add typed routing_groups that materialize B302 candidates without 
   provenance distinct from an explicitly empty supported set. Wire group selection into B016 and the B019
   selector enum. Configuration boundary keys introduced or consumed here: routing_groups. Pinned declaration
   defaults: routing_groups=None. Resolve env values once in betterlite-config, never in router code. Implement
-  the owned native service in crates/betterlite-router/src/routing_groups.rs. Add ProbeOperation::RoutingGroups
-  in tools/oracle/src/router_probes/mod.rs and the corresponding B323 entry in tools/oracle/litellm/probes/registry.py;
-  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  the owned native service in crates/betterlite-router/src/routing_groups.rs. B301 registers ProbeOperation::RoutingGroups and its Python entry as stubs, so fill only tools/oracle/src/router_probes/routing_groups.rs and tools/oracle/litellm/probes/routing_groups.py and leave mod.rs and registry.py as they are;
+  the adapters only call production services.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
   lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
   exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/router_utils/reasoning_effort_capability.py:
@@ -37,9 +36,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/routing_groups.rs
   - tools/oracle/src/router_probes/routing_groups/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/routing_groups.py
   - tools/oracle/cases/routing/routing-groups/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/routing-groups-*

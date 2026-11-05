@@ -11,9 +11,7 @@ description: 'Add a per-model scheduler using B360 state and an injected clock/r
   (None unless configured); enum High=0, Medium=128, Low=255. Keep the inherited routing deadline. Configuration
   boundary keys introduced or consumed here: polling_interval, default_priority, DEFAULT_POLLING_INTERVAL,
   DEFAULT_IN_MEMORY_TTL. Implement the owned native service in crates/betterlite-router/src/request_scheduler.rs.
-  Add ProbeOperation::RequestScheduler in tools/oracle/src/router_probes/mod.rs and the corresponding B346 entry in
-  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
-  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  B301 registers ProbeOperation::RequestScheduler and its Python entry as stubs, so fill only tools/oracle/src/router_probes/request_scheduler.rs and tools/oracle/litellm/probes/request_scheduler.py and leave mod.rs and registry.py as they are; the adapters only call production services. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
   fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
   of copying their algorithms. Function coverage in litellm/scheduler.py: Scheduler.__init__ (L26-L40),
@@ -37,9 +35,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/request_scheduler.rs
   - tools/oracle/src/router_probes/request_scheduler/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/request_scheduler.py
   - tools/oracle/cases/routing/request-scheduler/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/request-scheduler-*

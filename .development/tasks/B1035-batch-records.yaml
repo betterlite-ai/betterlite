@@ -85,6 +85,10 @@ description: >-
 
   WireDecodeLimits is the leaf record { max_json_bytes: usize, max_event_bytes: usize, max_items: usize }; callers
   convert B1087 limits into it. This record has no dependency on the core crate.
+
+  B010 registers the Batch variants of OperationRequest, OperationResult and PreparedRequest as stubs in
+  crates/betterlite-provider/src/api/batch_records.rs. Fill them there and leave provider.rs, operation.rs and
+  prepared.rs as they are.
 scope:
   paths:
   - crates/betterlite-core/Cargo.toml
@@ -96,12 +100,6 @@ scope:
   - crates/betterlite-provider/Cargo.toml
   - crates/betterlite-provider/src/api/batch_records.rs
   - crates/betterlite-provider/src/api/batch_records/**
-  - crates/betterlite-provider/src/provider.rs
-  - crates/betterlite-provider/src/provider/**
-  - crates/betterlite-provider/src/operation.rs
-  - crates/betterlite-provider/src/operation/**
-  - crates/betterlite-provider/src/prepared.rs
-  - crates/betterlite-provider/src/prepared/**
   - Cargo.toml
   - Cargo.lock
   - crates/betterlite-openai/fuzz/Cargo.toml
