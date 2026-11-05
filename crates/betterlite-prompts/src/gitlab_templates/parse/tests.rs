@@ -50,6 +50,10 @@ fn the_template_content_follows_the_frontmatter_split(
 #[case::empty_list_document("---\n[]\n---\nx", "{}")]
 #[case::zero_document("---\n0\n---\nx", "{}")]
 #[case::comment_only("---\n# nothing\n---\nx", "{}")]
+#[case::non_text_keys_are_a_deviation_and_leave_the_metadata_empty(
+    "---\n1: a\nmodel: m\n---\nx",
+    "{}"
+)]
 fn yaml_frontmatter_becomes_the_metadata(#[case] content: &str, #[case] expected: &str) {
     assert_eq!(metadata_json(content), expected);
 }
