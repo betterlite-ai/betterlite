@@ -33,7 +33,15 @@ pub(super) async fn sts_error() {
         check(&AMBIENT, reply, false, FAILURE_LOG).await;
     }
     let identity = Reply::Identity(SAME_ROLE);
-    check(&AMBIENT[..2], identity, false, FAILURE_LOG).await;
+    check(&AMBIENT[..2], identity, true, &matched).await;
+    let (native, recorder) = sources(&AMBIENT[..2], identity);
+    assert!(is_already_running_as_role(TARGET, &native).await);
+    assert!(
+        recorder
+            .authorizations()
+            .concat()
+            .contains("/us-east-1/sts/aws4_request")
+    );
     check(&AMBIENT, identity, true, &matched).await;
     let (running, text) = probe_with_log(&AMBIENT, Reply::Raw(200, NO_ARN)).await;
     assert!(!running);

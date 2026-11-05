@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use aws_config::{BehaviorVersion, retry::RetryConfig, timeout::TimeoutConfig};
-use aws_sdk_sts::Client;
+use aws_config::{BehaviorVersion, Region, retry::RetryConfig, timeout::TimeoutConfig};
+use aws_sdk_sts::{Client, config::Builder};
 use aws_smithy_types::error::display::DisplayErrorContext;
 use aws_types::os_shim_internal::Env;
 
@@ -53,6 +53,11 @@ async fn default_sts_client(native: &NativeSources) -> Client {
         )
         .load()
         .await;
+    // boto3.client("sts") without a region talks to the global endpoint
+    if shared.region().is_none() {
+        let global = Builder::from(&shared).region(Region::from_static("aws-global"));
+        return Client::from_conf(global.build());
+    }
     Client::new(&shared)
 }
 
