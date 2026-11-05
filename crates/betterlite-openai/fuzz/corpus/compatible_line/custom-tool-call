@@ -1,0 +1,1 @@
+data: {"choices":[{"delta":{"content":"hi","tool_calls":[{"type":"custom","id":"c","custom":{"name":"n","input":"i"}}]},"finish_reason":"stop"}]}
