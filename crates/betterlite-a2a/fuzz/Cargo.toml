@@ -23,3 +23,10 @@ path = "fuzz_targets/normalize_protocol_version.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "completion_bridge"
+path = "fuzz_targets/completion_bridge.rs"
+test = false
+doc = false
+bench = false

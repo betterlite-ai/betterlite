@@ -865,10 +865,13 @@ name = "betterlite-a2a"
 version = "0.1.0"
 dependencies = [
  "betterlite-core",
+ "chrono",
+ "futures-core",
  "rstest",
  "serde",
  "serde_json",
  "serde_with",
+ "uuid",
 ]
 
 [[package]]
@@ -1624,6 +1627,7 @@ dependencies = [
  "axum",
  "base64 0.23.1",
  "betterlite",
+ "betterlite-a2a",
  "betterlite-anthropic",
  "betterlite-auth",
  "betterlite-azure",

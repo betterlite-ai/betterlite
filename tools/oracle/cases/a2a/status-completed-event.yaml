@@ -1,0 +1,5 @@
+kind: helper
+name: a2a-status-completed-event
+call: {b4803: {operation: completed, request_id: req, message: {role: user, parts: []}}}
+env: {}
+compare: {ignore: []}
