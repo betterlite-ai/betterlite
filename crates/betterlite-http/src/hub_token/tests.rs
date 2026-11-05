@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::io;
 use std::path::Path;
 use std::path::PathBuf;
@@ -9,29 +10,50 @@ use secrecy::ExposeSecret as _;
 use secrecy::SecretString;
 use tokio::fs;
 
+use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::sections::huggingface_hub::{OfflineSetting, Settings, TransferSetting};
+use betterlite_config::sections::huggingface_oidc::Settings as OidcSettings;
+use betterlite_config::types::ProxyTrust;
+
+use crate::hub_oauth::clock::SystemHubClock;
+use crate::proxy::ProxiedClient;
 
 use super::{
     HubToken, HubTokenError, HubTokenFileReader, HubTokenResolver, TokioHubTokenFileReader,
 };
 
-fn resolver(token_path: PathBuf, env_token: Option<&str>, disabled: bool) -> HubTokenResolver {
-    HubTokenResolver {
-        settings: Settings {
-            endpoint: "https://huggingface.co".to_owned(),
-            offline: OfflineSetting::Online,
-            etag_timeout: 10,
-            download_timeout: 10,
-            disable_implicit_token: disabled,
-            env_token: env_token.map(SecretString::from),
-            hf_home: PathBuf::new(),
-            hub_cache: PathBuf::new(),
-            token_path,
-            stored_tokens_path: PathBuf::new(),
-            transfer: TransferSetting::Standard,
-        },
-        file_reader: Arc::new(TokioHubTokenFileReader),
+fn settings(token_path: PathBuf, env_token: Option<&str>, disabled: bool) -> Settings {
+    Settings {
+        endpoint: "https://huggingface.co".to_owned(),
+        offline: OfflineSetting::Online,
+        etag_timeout: 10,
+        download_timeout: 10,
+        disable_implicit_token: disabled,
+        env_token: env_token.map(SecretString::from),
+        hf_home: PathBuf::new(),
+        hub_cache: PathBuf::new(),
+        token_path,
+        stored_tokens_path: PathBuf::new(),
+        transfer: TransferSetting::Standard,
     }
+}
+
+fn resolver_with(settings: Settings, reader: Arc<dyn HubTokenFileReader>) -> HubTokenResolver {
+    let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
+    HubTokenResolver::new(
+        settings,
+        OidcSettings::default(),
+        Arc::new(ProxiedClient::outbound(&policy).unwrap()),
+        reader,
+        Arc::new(SystemHubClock::new()),
+    )
+}
+
+fn resolver(token_path: PathBuf, env_token: Option<&str>, disabled: bool) -> HubTokenResolver {
+    resolver_with(
+        settings(token_path, env_token, disabled),
+        Arc::new(TokioHubTokenFileReader),
+    )
 }
 
 #[tokio::test]
@@ -151,25 +173,12 @@ impl HubTokenFileReader for FixedReader {
 }
 
 async fn injected_reader_is_used() {
-    let settings = Settings {
-        endpoint: "https://huggingface.co".to_owned(),
-        offline: OfflineSetting::Online,
-        etag_timeout: 10,
-        download_timeout: 10,
-        disable_implicit_token: false,
-        env_token: None,
-        hf_home: PathBuf::new(),
-        hub_cache: PathBuf::new(),
-        token_path: PathBuf::from("reader-controlled"),
-        stored_tokens_path: PathBuf::new(),
-        transfer: TransferSetting::Standard,
-    };
-    let resolver = HubTokenResolver {
-        settings,
-        file_reader: Arc::new(FixedReader {
+    let resolver = resolver_with(
+        settings(PathBuf::from("reader-controlled"), None, false),
+        Arc::new(FixedReader {
             bytes: b"injected-token".to_vec(),
         }),
-    };
+    );
     assert_eq!(
         resolver
             .resolve(&HubToken::Implicit)
