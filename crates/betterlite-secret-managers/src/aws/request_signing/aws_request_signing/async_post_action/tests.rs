@@ -260,3 +260,27 @@ async fn a_credential_failure_stops_before_any_request_is_sent() {
     ));
     assert!(sending.sent.lock().unwrap().is_empty());
 }
+
+#[tokio::test]
+async fn a_response_of_exactly_the_size_limit_is_accepted() {
+    let mut body = br#"{"SecretString":""#.to_vec();
+    body.resize(0x0010_0000 - 2, b'a');
+    body.extend_from_slice(br#""}"#);
+    assert_eq!(body.len(), 0x0010_0000);
+    let response = client_for(&answer(200, &body))
+        .async_post_action(&get_request(None), None, None)
+        .await
+        .unwrap();
+    assert!(response.fields.contains_key("SecretString"));
+}
+
+#[tokio::test]
+async fn the_debug_text_of_a_response_lists_field_names_without_values() {
+    let response = client_for(&answer(200, br#"{"SecretString":"hunter2"}"#))
+        .async_post_action(&get_request(None), None, None)
+        .await
+        .unwrap();
+    let text = format!("{response:?}");
+    assert!(text.contains("SecretString"));
+    assert!(!text.contains("hunter2"));
+}

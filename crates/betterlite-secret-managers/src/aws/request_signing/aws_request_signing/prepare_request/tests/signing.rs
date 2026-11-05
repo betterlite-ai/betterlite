@@ -230,3 +230,11 @@ fn an_unusable_endpoint_is_a_signing_error() {
         .unwrap_err();
     assert!(matches!(error, AwsRequestError::Signing(_)));
 }
+
+#[test]
+fn credential_headers_are_sensitive_and_the_date_is_not() {
+    let prepared = prepare_get(resolver("us-east-1"));
+    assert!(prepared.headers["authorization"].is_sensitive());
+    assert!(prepared.headers["x-amz-security-token"].is_sensitive());
+    assert!(!prepared.headers["x-amz-date"].is_sensitive());
+}
