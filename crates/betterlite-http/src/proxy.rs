@@ -168,7 +168,13 @@ impl ProxiedClient {
             .await
             .map_err(TransportError::sending)?;
         check_headers(response.headers(), self.limits.header_bytes)?;
-        Ok(StreamResponse::leased(response, self.client.clone(), token))
+        Ok(StreamResponse {
+            response,
+            lease: stream::Lease {
+                _client: self.client.clone(),
+                _token: token,
+            },
+        })
     }
 
     pub async fn send_buffered(

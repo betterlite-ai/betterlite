@@ -14,8 +14,8 @@ use crate::proxy::{StreamResponse, UpstreamResponse};
 
 // Keeps the pooled client and the drain count alive for as long as the body can still be read.
 pub struct Lease {
-    _client: Client,
-    _token: TaskTrackerToken,
+    pub(crate) _client: Client,
+    pub(crate) _token: TaskTrackerToken,
 }
 
 struct LeasedStream {
@@ -32,20 +32,6 @@ impl Stream for LeasedStream {
 }
 
 impl StreamResponse {
-    pub(crate) const fn leased(
-        response: reqwest::Response,
-        client: Client,
-        token: TaskTrackerToken,
-    ) -> Self {
-        Self {
-            response,
-            lease: Lease {
-                _client: client,
-                _token: token,
-            },
-        }
-    }
-
     pub async fn buffered(mut self, limit: usize) -> Result<UpstreamResponse, TransportError> {
         let status = self.response.status().as_u16();
         let headers = mem::take(self.response.headers_mut());

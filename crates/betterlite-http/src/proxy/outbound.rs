@@ -77,9 +77,10 @@ impl OutboundRequest {
             }
             RequestBody::Multipart { boundary, parts } => {
                 let content_type = format!("multipart/form-data; boundary={boundary}");
-                let value = HeaderValue::try_from(content_type).map_err(|_invalid| {
-                    TransportError::MultipartName {
-                        name: boundary.clone(),
+                let value = HeaderValue::try_from(content_type).map_err(|source| {
+                    TransportError::MultipartBoundaryHeader {
+                        boundary: boundary.clone(),
+                        source,
                     }
                 })?;
                 headers.insert(CONTENT_TYPE, value);

@@ -227,9 +227,10 @@ fn servable(deployment: &ChatDeployment) -> Result<(&str, &SecretString), ChatEr
 }
 
 fn header_value(text: &str, name: &str) -> Result<HeaderValue, ChatError> {
-    HeaderValue::try_from(text).map_err(|_invalid| ChatError::Http {
+    HeaderValue::try_from(text).map_err(|source| ChatError::Http {
         source: TransportError::InvalidHeader {
             name: name.to_owned(),
+            source,
         },
     })
 }
@@ -247,6 +248,7 @@ fn http_failure(source: TransportError) -> ChatError {
         | TransportError::Body(_)
         | TransportError::InvalidHeader { .. }
         | TransportError::MultipartName { .. }
+        | TransportError::MultipartBoundaryHeader { .. }
         | TransportError::MultipartBoundary { .. }
         | TransportError::Closed
         | TransportError::DrainTimeout { .. } => ChatError::Http { source },

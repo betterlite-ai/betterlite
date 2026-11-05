@@ -34,6 +34,7 @@ const FORM: &str = "--b\r\nContent-Disposition: form-data; name=\"f\"; filename=
 #[case::empty_body_has_no_content_type(Method::GET, "", &[], RequestBody::Empty, "GET /|none|")]
 #[case::multipart_is_serialized_with_its_boundary(Method::POST, "", &[], multipart(vec![part("f", b"hi")]), &format!("POST /|multipart/form-data; boundary=b|{FORM}"))]
 #[case::multipart_name_with_a_quote_is_refused(Method::POST, "", &[], multipart(vec![part("f\"x", b"hi")]), "MultipartName")]
+#[case::multipart_boundary_a_header_cannot_carry_is_refused(Method::POST, "", &[], RequestBody::Multipart { boundary: "b\n".to_owned(), parts: Vec::new() }, "MultipartBoundaryHeader")]
 #[case::multipart_data_holding_the_boundary_is_refused(Method::POST, "", &[], multipart(vec![part("f", b"--b")]), "MultipartBoundary")]
 #[case::explicit_query_is_appended(Method::GET, "a=1", &[("b", "2")], RequestBody::Empty, "GET /?a=1&b=2|none|")]
 #[case::url_query_wins_a_collision(Method::GET, "a=1", &[("a", "2"), ("b", "3")], RequestBody::Empty, "GET /?a=1&b=3|none|")]

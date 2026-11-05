@@ -1,3 +1,4 @@
+use reqwest::header::InvalidHeaderValue;
 use thiserror::Error;
 
 use crate::error::HttpError;
@@ -24,9 +25,19 @@ pub enum TransportError {
     #[error("the response body is larger than {limit} bytes")]
     BodyTooLarge { limit: usize },
     #[error("the {name} header holds a character a header cannot carry")]
-    InvalidHeader { name: String },
+    InvalidHeader {
+        name: String,
+        #[source]
+        source: InvalidHeaderValue,
+    },
     #[error("the multipart part {name} holds a quote or a line break")]
     MultipartName { name: String },
+    #[error("the multipart boundary {boundary} cannot be carried in a content-type header")]
+    MultipartBoundaryHeader {
+        boundary: String,
+        #[source]
+        source: InvalidHeaderValue,
+    },
     #[error("a multipart part contains the boundary {boundary}")]
     MultipartBoundary { boundary: String },
     #[error("the client is shutting down and takes no new requests")]
