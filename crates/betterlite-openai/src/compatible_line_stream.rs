@@ -99,7 +99,7 @@ fn project(response: Response) -> CompatibleLineChunk {
     }
     if let Some(reason) = choice.finish_reason.filter(|reason| !reason.is_empty()) {
         chunk.is_finished = true;
-        chunk.finish_reason = mapped_finish_reason(&reason).to_owned();
+        chunk.finish_reason = String::from(mapped_finish_reason(&reason));
     }
     chunk
 }
