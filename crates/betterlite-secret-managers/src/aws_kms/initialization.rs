@@ -1,9 +1,11 @@
-use aws_smithy_types::timeout::TimeoutConfig;
 use std::{collections::BTreeMap, sync::Arc, time::Duration};
 
 use aws_sdk_kms::{
     Client,
-    config::{BehaviorVersion, Builder, Region, SharedCredentialsProvider, SharedHttpClient},
+    config::{
+        BehaviorVersion, Builder, Region, SharedCredentialsProvider, SharedHttpClient,
+        timeout::TimeoutConfig,
+    },
 };
 
 use super::{AWS_KMS_CLIENT, AwsKmsError};

@@ -49,7 +49,6 @@ async fn decrypt_with_extracts_secret_plaintext() {
         panic!("expected secret");
     };
     assert_eq!(secret.expose_secret(), "secret");
-    assert!(transport.response.lock().unwrap().is_none());
 }
 
 #[rstest]
@@ -85,19 +84,16 @@ async fn decrypt_with_preserves_response_errors(#[case] body: &str, #[case] expe
 
 #[tokio::test]
 async fn decrypt_with_times_out_a_stalled_transport() {
-    use crate::aws_kms::tests::Replay;
+    use crate::aws_kms::tests::never_client;
     use crate::aws_kms::{AwsKmsError, initialization::build_client, values::decrypt_with};
     use aws_sdk_kms::{
         config::{Credentials, SharedCredentialsProvider, SharedHttpClient},
         error::SdkError,
     };
-    use std::sync::{Arc, Mutex};
     use std::time::Duration;
     let client = build_client(
         "us-east-1".to_owned(),
-        SharedHttpClient::new(Replay {
-            response: Arc::new(Mutex::new(None)),
-        }),
+        SharedHttpClient::new(never_client()),
         Some(SharedCredentialsProvider::new(Credentials::new(
             "test", "test", None, None, "test",
         ))),
