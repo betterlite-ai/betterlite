@@ -68,15 +68,18 @@ impl Snapshot {
     }
 
     pub(super) fn into_params(mut self) -> AwsOptionalParams {
+        let mut take = |key: &str| self.0.remove(key);
+        let web_identity_token = take("web_identity_token").map(SecretString::from);
+        let access_key_id = take("access_key_id").map(SecretString::from);
         AwsOptionalParams {
-            aws_role_name: self.0.remove("role"),
-            aws_session_name: self.0.remove("session_name"),
-            aws_region_name: self.0.remove("region"),
-            aws_external_id: self.0.remove("external_id"),
-            aws_profile_name: self.0.remove("profile"),
-            aws_web_identity_token: self.0.remove("web_identity_token").map(SecretString::from),
-            aws_sts_endpoint: self.0.remove("sts_endpoint"),
-            aws_access_key_id: self.0.remove("access_key_id").map(SecretString::from),
+            aws_role_name: take("role"),
+            aws_session_name: take("session_name"),
+            aws_region_name: take("region"),
+            aws_external_id: take("external_id"),
+            aws_profile_name: take("profile"),
+            aws_web_identity_token: web_identity_token,
+            aws_sts_endpoint: take("sts_endpoint"),
+            aws_access_key_id: access_key_id,
             aws_secret_access_key: None,
             aws_session_token: None,
             aws_bedrock_runtime_endpoint: None,
