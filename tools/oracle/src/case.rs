@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use std::str;
 
 use crate::OracleError;
+use crate::sdk_http::{OracleLimits as SdkHttpLimits, SdkHttpCase, decode_sdk_http_case};
 use crate::websocket_oracle::{
     OracleLimits,
     decode::{FilesystemFixtures, decode_ws_case},
@@ -121,25 +122,57 @@ pub(crate) struct Ignore {
     pub(crate) why: String,
 }
 
-pub(crate) fn load_cases(paths: &[PathBuf]) -> Result<Vec<LoadedCase>, OracleError> {
+fn read_case_files(paths: &[PathBuf]) -> Result<Vec<(PathBuf, String)>, OracleError> {
     let mut files = Vec::new();
     for path in paths {
         collect_yaml(path, &mut files)?;
     }
+    if files.is_empty() {
+        return Err(OracleError::CaseInvalid {
+            path: PathBuf::from("<arguments>"),
+            message: "no YAML cases found".to_owned(),
+        });
+    }
     files.sort();
-    let mut cases = Vec::with_capacity(files.len());
+    let mut texts = Vec::with_capacity(files.len());
     for path in files {
         let text = fs::read_to_string(&path).map_err(|source| OracleError::CaseRead {
             path: path.clone(),
             source,
         })?;
-        cases.push(parse_case(&path, &text)?);
+        texts.push((path, text));
     }
-    if cases.is_empty() {
-        return Err(OracleError::CaseInvalid {
-            path: PathBuf::from("<arguments>"),
-            message: "no YAML cases found".to_owned(),
-        });
+    Ok(texts)
+}
+
+fn is_sdk_http(path: &Path, text: &str) -> Result<bool, OracleError> {
+    let probe: CaseKind =
+        serde_saphyr::from_str(text).map_err(|source| OracleError::CaseParse {
+            path: path.to_owned(),
+            source: Box::new(source),
+        })?;
+    Ok(probe.kind.as_deref() == Some("sdk_http"))
+}
+
+// sdk_http cases run through their own driver, so this list leaves them out
+pub(crate) fn load_cases(paths: &[PathBuf]) -> Result<Vec<LoadedCase>, OracleError> {
+    let mut cases = Vec::new();
+    for (path, text) in read_case_files(paths)? {
+        if !is_sdk_http(&path, &text)? {
+            cases.push(parse_case(&path, &text)?);
+        }
+    }
+    Ok(cases)
+}
+
+pub(crate) fn load_sdk_http_cases(paths: &[PathBuf]) -> Result<Vec<SdkHttpCase>, OracleError> {
+    let mut cases = Vec::new();
+    for (path, text) in read_case_files(paths)? {
+        if is_sdk_http(&path, &text)? {
+            let case = decode_sdk_http_case(text.as_bytes(), &SdkHttpLimits::default())
+                .map_err(|source| OracleError::SdkHttpCase { path, source })?;
+            cases.push(case);
+        }
     }
     Ok(cases)
 }

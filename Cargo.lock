@@ -1780,6 +1780,7 @@ dependencies = [
  "jiff",
  "percent-encoding",
  "quick-xml",
+ "rand 0.10.3",
  "reqwest",
  "rstest",
  "rust_decimal",

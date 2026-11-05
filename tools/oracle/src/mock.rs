@@ -2,6 +2,7 @@ use axum::http::StatusCode;
 use axum::http::request::Parts;
 use std::collections::BTreeMap;
 use std::io::{Error, Write as _};
+use std::mem;
 use std::net::TcpListener;
 use std::str;
 use std::sync::{Arc, Mutex};
@@ -95,6 +96,18 @@ impl MockProvider {
     pub(crate) fn finish(mut self) -> Result<Vec<ProviderCall>, OracleError> {
         self.shutdown()?;
         self.finish_run()
+    }
+
+    pub(crate) fn finish_recording(
+        mut self,
+    ) -> Result<(Vec<ProviderCall>, Option<Error>), OracleError> {
+        self.shutdown()?;
+        let mut recorded = self
+            .recording
+            .lock()
+            .map_err(|error| OracleError::MockIo(Error::other(error.to_string())))?;
+        let failure = recorded.failure.take();
+        Ok((mem::take(&mut recorded.trace), failure))
     }
 
     fn shutdown(&mut self) -> Result<(), OracleError> {
