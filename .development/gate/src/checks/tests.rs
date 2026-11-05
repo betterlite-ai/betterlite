@@ -52,6 +52,7 @@ fn command(id: &str, script: &str) -> Command {
         when_exists: None,
         after_green: false,
         one_at_a_time: false,
+        compiles_nothing: false,
     }
 }
 

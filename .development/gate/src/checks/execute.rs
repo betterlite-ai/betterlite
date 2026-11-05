@@ -131,6 +131,7 @@ fn build_slot(root: &Path, command: &Command) -> Result<Option<File>, GateError>
     }
     let build = if let Some(count) = configured
         && command.run.contains("cargo ")
+        && !command.compiles_nothing
         && env::var("GATE_BUILD_HELD").as_deref() != Ok("1")
     {
         Some(slots::acquire(

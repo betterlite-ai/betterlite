@@ -93,6 +93,11 @@
           "type": "boolean",
           "default": false
         },
+        "compiles_nothing": {
+          "description": "The cargo command compiles nothing, as cargo fmt, cargo deny and cargo shear do, so it runs at once instead of waiting for a build slot like other cargo commands.",
+          "type": "boolean",
+          "default": false
+        },
         "id": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9-]*$"

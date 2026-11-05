@@ -19,6 +19,7 @@ fn run_lock_probe(one_at_a_time: bool) -> Outcome {
         when_exists: None,
         after_green: false,
         one_at_a_time,
+        compiles_nothing: false,
     };
     execute(root.path(), &log_dir, &probe, &[]).unwrap()
 }
