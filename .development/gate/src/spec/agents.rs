@@ -181,4 +181,9 @@ pub(crate) struct Policy {
         description = "Folders a worker may write besides its worktree, like the repository's .git folder and tool caches. {git_common_dir} and {home} expand."
     )]
     pub(crate) writable: Vec<String>,
+    #[serde(default)]
+    #[schemars(
+        description = "Check ids the dispatcher's final gate leaves out, because CI runs them on the task's pull request: gate.yml runs mutants on a task pull request labeled mutants-in-ci. Empty runs every check locally."
+    )]
+    pub(crate) checks_in_pull_request: Vec<String>,
 }
