@@ -193,6 +193,17 @@
           "type": "string",
           "pattern": "^[a-z][a-z0-9-]*$"
         },
+        "tasks": {
+          "description": "The only tasks this worker rung runs for. Every other task's ladder leaves the rung out, so the places their saved progress points at stay the same.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1
+        },
         "timeout_minutes": {
           "type": "integer",
           "format": "uint32",
@@ -217,6 +228,14 @@
           "items": {
             "type": "string"
           }
+        },
+        "env_file": {
+          "description": "A file of NAME=VALUE lines that the run gets as environment variables, so a key stays out of the repository. {home} expands. Blank lines and lines that start with # are skipped, and a value in single quotes loses them.",
+          "type": [
+            "string",
+            "null"
+          ],
+          "minLength": 1
         },
         "id": {
           "type": "string",
