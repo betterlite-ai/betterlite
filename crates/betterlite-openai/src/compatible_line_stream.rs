@@ -33,16 +33,10 @@ pub enum ReceiveError<E> {
 
 #[derive(Debug, Error)]
 pub enum StreamError<E> {
-    #[error("Error receiving chunk from stream: {source}")]
-    Runtime {
-        #[source]
-        source: E,
-    },
-    #[error("{source}")]
-    Other {
-        #[source]
-        source: E,
-    },
+    #[error("Error receiving chunk from stream: {0}")]
+    Runtime(#[source] E),
+    #[error("{0}")]
+    Other(#[source] E),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -72,8 +66,8 @@ pub fn decode_legacy_compatible_line(line: &str, mode: Mode) -> Outcome {
 pub fn receive_failure<E>(error: ReceiveError<E>, mode: Mode) -> StreamError<E> {
     match (error, mode) {
         (ReceiveError::Value(source), Mode::Sync | Mode::Async)
-        | (ReceiveError::Other(source), Mode::Async) => StreamError::Runtime { source },
-        (ReceiveError::Other(source), Mode::Sync) => StreamError::Other { source },
+        | (ReceiveError::Other(source), Mode::Async) => StreamError::Runtime(source),
+        (ReceiveError::Other(source), Mode::Sync) => StreamError::Other(source),
     }
 }
 
@@ -90,13 +84,8 @@ fn project(response: Response) -> CompatibleLineChunk {
         return chunk;
     };
     chunk.text = choice.delta.content.unwrap_or_default();
-    if let Some(ToolCall::Function(call)) = choice.delta.tool_calls.into_iter().next() {
-        chunk.tool_use = Some(Tool {
-            id: call.id,
-            kind: "function".to_owned(),
-            function: call.function,
-            index: call.index,
-        });
+    if let Some(ToolCall::Function(tool)) = choice.delta.tool_calls.into_iter().next() {
+        chunk.tool_use = Some(tool);
     }
     if let Some(reason) = choice.finish_reason.filter(|reason| !reason.is_empty()) {
         chunk.is_finished = true;

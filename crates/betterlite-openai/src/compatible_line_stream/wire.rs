@@ -42,24 +42,13 @@ pub(super) struct Delta {
 #[derive(Debug, Deserialize)]
 #[serde(try_from = "RawCall")]
 pub(super) enum ToolCall {
-    Function(Call),
+    Function(Tool),
     Custom,
 }
 
-#[derive(Debug)]
-pub(super) struct Call {
-    pub id: Option<String>,
-    pub function: Function,
-    pub index: i64,
-}
-
 #[derive(Debug, Error)]
-pub(super) enum CallError {
-    #[error("a function tool call needs a function object")]
-    MissingFunction,
-    #[error("a custom tool call needs a custom object")]
-    MissingCustom,
-}
+#[error("a tool call needs a function object, or a custom object for type custom")]
+pub(super) struct InvalidCall;
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
@@ -90,22 +79,22 @@ enum MaybeFunction {
 }
 
 impl TryFrom<RawCall> for ToolCall {
-    type Error = CallError;
+    type Error = InvalidCall;
 
     fn try_from(raw: RawCall) -> Result<Self, Self::Error> {
         if raw.custom.is_some() {
             return Ok(Self::Custom);
         }
-        if raw.kind.as_deref() == Some("custom") {
-            return Err(CallError::MissingCustom);
-        }
         match raw.function {
-            Some(MaybeFunction::Valid(function)) => Ok(Self::Function(Call {
-                id: raw.id,
-                function,
-                index: raw.index,
-            })),
-            Some(MaybeFunction::Invalid(_)) | None => Err(CallError::MissingFunction),
+            Some(MaybeFunction::Valid(function)) if raw.kind.as_deref() != Some("custom") => {
+                Ok(Self::Function(Tool {
+                    id: raw.id,
+                    kind: "function".to_owned(),
+                    function,
+                    index: raw.index,
+                }))
+            }
+            _ => Err(InvalidCall),
         }
     }
 }
@@ -130,7 +119,7 @@ pub struct Function {
 struct RawFunction {
     name: Option<String>,
     arguments: Option<Arguments>,
-    parameters: Option<Parameters>,
+    parameters: Option<Value>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -140,21 +129,13 @@ enum Arguments {
     Object(Map<String, Value>),
 }
 
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum Parameters {
-    Object(Map<String, Value>),
-    Other(IgnoredAny),
-}
-
 impl From<RawFunction> for Function {
     fn from(raw: RawFunction) -> Self {
         let arguments = match (raw.arguments, raw.parameters) {
             (Some(Arguments::Text(text)), _) => text,
-            (Some(Arguments::Object(object)), _) | (None, Some(Parameters::Object(object))) => {
-                Value::Object(object).to_string()
-            }
-            (None, Some(Parameters::Other(_)) | None) => String::new(),
+            (Some(Arguments::Object(object)), _) => Value::Object(object).to_string(),
+            (None, Some(parameters @ Value::Object(_))) => parameters.to_string(),
+            (None, _) => String::new(),
         };
         Self {
             name: raw.name,

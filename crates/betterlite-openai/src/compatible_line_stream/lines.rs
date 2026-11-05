@@ -1,5 +1,5 @@
 use std::pin::Pin;
-use std::task::{Context, Poll};
+use std::task::{Context, Poll, ready};
 
 use futures_util::Stream;
 
@@ -12,27 +12,12 @@ pub type LineItem<E> = Result<String, ReceiveError<E>>;
 pub type ChunkItem<E> = Result<CompatibleLineChunk, StreamError<E>>;
 
 #[derive(Debug)]
-pub struct SyncLines<S> {
+pub struct Lines<S> {
     pub source: S,
     pub finished: bool,
 }
 
-#[derive(Debug)]
-pub struct AsyncLines<S> {
-    pub source: S,
-    pub finished: bool,
-}
-
-impl<S> From<S> for SyncLines<S> {
-    fn from(source: S) -> Self {
-        Self {
-            source,
-            finished: false,
-        }
-    }
-}
-
-impl<S> From<S> for AsyncLines<S> {
+impl<S> From<S> for Lines<S> {
     fn from(source: S) -> Self {
         Self {
             source,
@@ -51,7 +36,7 @@ fn chunk_item<E>(item: Option<LineItem<E>>, mode: Mode) -> Option<ChunkItem<E>> 
     }
 }
 
-impl<S, E> Iterator for SyncLines<S>
+impl<S, E> Iterator for Lines<S>
 where
     S: Iterator<Item = LineItem<E>>,
 {
@@ -67,7 +52,7 @@ where
     }
 }
 
-impl<S, E> Stream for AsyncLines<S>
+impl<S, E> Stream for Lines<S>
 where
     S: Stream<Item = LineItem<E>> + Unpin,
 {
@@ -78,12 +63,9 @@ where
         if lines.finished {
             return Poll::Ready(None);
         }
-        let polled = Pin::new(&mut lines.source)
-            .poll_next(cx)
-            .map(|item| chunk_item(item, Mode::Async));
-        if let Poll::Ready(produced) = &polled {
-            lines.finished = !matches!(produced, Some(Ok(_)));
-        }
-        polled
+        let item = ready!(Pin::new(&mut lines.source).poll_next(cx));
+        let produced = chunk_item(item, Mode::Async);
+        lines.finished = !matches!(produced, Some(Ok(_)));
+        Poll::Ready(produced)
     }
 }

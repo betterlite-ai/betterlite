@@ -14,17 +14,12 @@ class LineEvent(TypedDict):
     line: str
 
 
-class ValueErrorEvent(TypedDict):
-    kind: Literal["value_error"]
+class ErrorEvent(TypedDict):
+    kind: Literal["value_error", "receive_error"]
     message: str
 
 
-class ReceiveErrorEvent(TypedDict):
-    kind: Literal["receive_error"]
-    message: str
-
-
-Event = LineEvent | ValueErrorEvent | ReceiveErrorEvent
+Event = LineEvent | ErrorEvent
 
 
 class Input(TypedDict):
@@ -32,40 +27,33 @@ class Input(TypedDict):
     events: list[Event]
 
 
-class SyncStream:
+class Stream:
     def __init__(self, events: list[Event]) -> None:
         self.events = events
 
-    def __iter__(self) -> "SyncStream":
+    def __iter__(self) -> "Stream":
+        return self
+
+    def __aiter__(self) -> "Stream":
         return self
 
     def __next__(self) -> str:
         if not self.events:
             raise StopIteration
-        event = self.events.pop(0)
-        return receive(event)
-
-
-class AsyncStream:
-    def __init__(self, events: list[Event]) -> None:
-        self.events = events
-
-    def __aiter__(self) -> "AsyncStream":
-        return self
+        return receive(self.events.pop(0))
 
     async def __anext__(self) -> str:
         if not self.events:
             raise StopAsyncIteration
-        event = self.events.pop(0)
-        return receive(event)
+        return receive(self.events.pop(0))
 
 
 def receive(event: Event) -> str:
+    if event["kind"] == "line":
+        return event["line"]
     if event["kind"] == "value_error":
         raise ValueError(event["message"])
-    if event["kind"] == "receive_error":
-        raise OSError(event["message"])
-    return event["line"]
+    raise OSError(event["message"])
 
 
 def compact_arguments(arguments: str) -> str:
@@ -73,19 +61,14 @@ def compact_arguments(arguments: str) -> str:
         parsed = cast(JsonValue, json.loads(arguments))
     except ValueError:
         return arguments
-    if isinstance(parsed, dict):
-        return json.dumps(parsed, separators=(",", ":"), sort_keys=True, ensure_ascii=False)
-    return arguments
+    return json.dumps(parsed, separators=(",", ":"), sort_keys=True, ensure_ascii=False)
 
 
 def chunk_value(chunk: GenericStreamingChunk) -> dict[str, object]:
     tool_use = cast(JsonValue, to_jsonable_python(chunk.get("tool_use")))
-    if isinstance(tool_use, dict):
-        function = tool_use.get("function")
-        if isinstance(function, dict):
-            arguments = function.get("arguments")
-            if isinstance(arguments, str):
-                function["arguments"] = compact_arguments(arguments)
+    function = tool_use.get("function") if isinstance(tool_use, dict) else None
+    if isinstance(function, dict) and isinstance(arguments := function.get("arguments"), str):
+        function["arguments"] = compact_arguments(arguments)
     raw_usage = cast(JsonValue, to_jsonable_python(chunk["usage"]))
     usage: JsonValue = None
     if isinstance(raw_usage, dict):
@@ -104,7 +87,7 @@ def chunk_value(chunk: GenericStreamingChunk) -> dict[str, object]:
 
 
 async def collect_async(events: list[Event]) -> list[dict[str, object]]:
-    iterator = ModelResponseIterator(AsyncStream(events), sync_stream=False)
+    iterator = ModelResponseIterator(Stream(events), sync_stream=False)
     iterator.__aiter__()
     output: list[dict[str, object]] = []
     while True:
@@ -121,7 +104,7 @@ async def collect_async(events: list[Event]) -> list[dict[str, object]]:
 
 
 def collect_sync(events: list[Event]) -> list[dict[str, object]]:
-    iterator = ModelResponseIterator(SyncStream(events), sync_stream=True)
+    iterator = ModelResponseIterator(Stream(events), sync_stream=True)
     output: list[dict[str, object]] = []
     while True:
         try:
@@ -129,10 +112,7 @@ def collect_sync(events: list[Event]) -> list[dict[str, object]]:
         except StopIteration:
             output.append({"kind": "end"})
             break
-        except RuntimeError as error:
-            output.append({"kind": "error", "value": str(error)})
-            break
-        except OSError as error:
+        except (RuntimeError, OSError) as error:
             output.append({"kind": "error", "value": str(error)})
             break
         output.append({"kind": "chunk", "value": chunk_value(chunk)})

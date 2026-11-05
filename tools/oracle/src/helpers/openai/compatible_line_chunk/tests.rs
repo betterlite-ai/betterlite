@@ -44,7 +44,7 @@ fn helper_records_a_receive_error_and_stops(#[case] mode: &str, #[case] expected
 #[case::object(r#"{"a":1}"#, r#"{"a":1}"#)]
 #[case::spaced(r#"{"a": 1}"#, r#"{"a":1}"#)]
 #[case::plain_text("not json", "not json")]
-fn canonical_arguments_compacts_objects_only(#[case] arguments: &str, #[case] expected: &str) {
+fn canonical_arguments_compacts_valid_json_only(#[case] arguments: &str, #[case] expected: &str) {
     assert_eq!(canonical_arguments(arguments), expected);
 }
 

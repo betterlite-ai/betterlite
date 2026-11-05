@@ -1,5 +1,5 @@
 #![cfg(test)]
-use super::lines::{AsyncLines, SyncLines};
+use super::lines::Lines;
 use super::wire::Usage;
 use super::{
     CompatibleLineChunk, Mode, Outcome, ReceiveError, StreamError, decode_legacy_compatible_line,
@@ -271,7 +271,7 @@ fn replays_the_compatible_line_corpus(#[files("fuzz/corpus/compatible_line/*")] 
 #[case::async_mode(Mode::Async)]
 fn value_receive_errors_keep_the_source(#[case] mode: Mode) {
     let error = receive_failure(ReceiveError::Value(io::Error::other("bad value")), mode);
-    assert!(matches!(error, StreamError::Runtime { .. }));
+    assert!(matches!(error, StreamError::Runtime(_)));
     assert_eq!(
         error.to_string(),
         "Error receiving chunk from stream: bad value"
@@ -284,7 +284,7 @@ fn value_receive_errors_keep_the_source(#[case] mode: Mode) {
 #[case::async_mode(Mode::Async, true)]
 fn other_receive_error_category(#[case] mode: Mode, #[case] runtime: bool) {
     let error = receive_failure(ReceiveError::Other(io::Error::other("reset")), mode);
-    assert_eq!(matches!(error, StreamError::Runtime { .. }), runtime);
+    assert_eq!(matches!(error, StreamError::Runtime(_)), runtime);
     assert_eq!(error.source().unwrap().to_string(), "reset");
 }
 
@@ -321,11 +321,11 @@ fn missing_tool_index_and_arguments_take_model_defaults() {
 type Source = Vec<Result<String, ReceiveError<io::Error>>>;
 
 fn drain_sync(source: Source) -> Vec<Result<CompatibleLineChunk, StreamError<io::Error>>> {
-    SyncLines::from(source.into_iter()).collect()
+    Lines::from(source.into_iter()).collect()
 }
 
 async fn drain_async(source: Source) -> Vec<Result<CompatibleLineChunk, StreamError<io::Error>>> {
-    AsyncLines::from(stream::iter(source)).collect().await
+    Lines::from(stream::iter(source)).collect().await
 }
 
 #[test]
@@ -356,7 +356,7 @@ async fn async_lines_stop_at_done_and_leave_the_rest_of_the_source_unread() {
             r#"{"choices":[{"delta":{"content":"after"}}]}"#,
         )),
     ];
-    let mut lines = AsyncLines::from(stream::iter(source));
+    let mut lines = Lines::from(stream::iter(source));
     assert_eq!(lines.next().await.unwrap().unwrap().text, "before");
     assert!(lines.next().await.is_none());
     assert!(lines.next().await.is_none());
@@ -399,7 +399,7 @@ async fn other_receive_errors_end_the_stream_with_the_mode_error(
     };
     assert_eq!(items.len(), 1);
     let error = items.into_iter().next().unwrap().unwrap_err();
-    assert_eq!(matches!(error, StreamError::Runtime { .. }), runtime);
+    assert_eq!(matches!(error, StreamError::Runtime(_)), runtime);
     assert_eq!(error.to_string(), expected);
 }
 
