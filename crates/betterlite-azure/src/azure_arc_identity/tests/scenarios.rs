@@ -116,18 +116,18 @@ pub(super) fn restricted_key() {
     windows
         .environment
         .insert("ProgramData".to_owned(), "D:\\PD".to_owned());
-    let (outcome, sent) = run(&windows, "Basic realm=C:\\other\\dir\\b.txt", TOKEN_BODY);
-    outcome.unwrap();
-    assert_eq!(sent.recorded()[1].key_secret.as_deref(), Some("win"));
-    for challenge in ["C:b.txt", "b.txt"] {
+    for challenge in ["C:\\other\\dir\\b.txt", "C:b.txt", "b.txt"] {
         let (outcome, sent) = run(&windows, &format!("Basic realm={challenge}"), TOKEN_BODY);
         outcome.unwrap();
         assert_eq!(sent.recorded()[1].key_secret.as_deref(), Some("win"));
     }
     let drive_like = FixtureHost::linux(&[("/var/opt/azcmagent/tokens/C:b.key", "drive")]);
-    let (outcome, sent) = run(&drive_like, "Basic realm=C:b.txt", TOKEN_BODY);
-    outcome.unwrap();
-    assert_eq!(sent.recorded()[1].key_secret.as_deref(), Some("drive"));
+    let (drive_outcome, drive_sent) = run(&drive_like, "Basic realm=C:b.txt", TOKEN_BODY);
+    drive_outcome.unwrap();
+    assert_eq!(
+        drive_sent.recorded()[1].key_secret.as_deref(),
+        Some("drive")
+    );
     key_file_limits();
 }
 
