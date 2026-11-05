@@ -83,13 +83,10 @@ async fn trickle(listener: TcpListener) {
     }
 }
 
-async fn trickled(client: &ProxiedClient) -> String {
-    let (listener, url) = listen().await;
-    let mut server = JoinSet::new();
-    server.spawn(trickle(listener));
+async fn trickled(client: &ProxiedClient, url: &Url) -> String {
     let request = || OutboundRequest {
         deadline: TRICKLE_DEADLINE,
-        ..get(&url)
+        ..get(url)
     };
     let buffered = client.send_buffered(request()).await.unwrap_err();
     let streamed = client
@@ -246,7 +243,12 @@ async fn http_pool_tests_behavior(#[case] scenario: Scenario, #[case] expected: 
             burst(&client, &counted.base).await;
             format!("{} connections", counted.connections.load(Ordering::SeqCst))
         }
-        Scenario::TrickledBodyPastTheDeadline => trickled(&client).await,
+        Scenario::TrickledBodyPastTheDeadline => {
+            let (listener, url) = listen().await;
+            let mut server = JoinSet::new();
+            server.spawn(trickle(listener));
+            trickled(&client, &url).await
+        }
         Scenario::RedirectIsNotFollowed => {
             let target = serve(reply(&["200 OK", "content-length: 0"], b""), Duration::ZERO).await;
             let moved = serve(
