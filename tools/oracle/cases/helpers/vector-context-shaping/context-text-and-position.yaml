@@ -1,0 +1,9 @@
+kind: helper
+name: context-text-and-position
+call:
+  vector_context_shaping:
+    operation: context_text_and_position
+    search_results: [{object: vector_store.search_results.page, search_query: q, data: [{content: [{type: text, text: a}, {type: text, text: ""}, {type: text, text: b}], file_id: file_a, filename: a, score: 1, attributes: {}}]}]
+    messages: [{role: user, content: earlier}, {role: user, content: final}]
+env: {}
+compare: {ignore: []}

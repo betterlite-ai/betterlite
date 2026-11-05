@@ -2,7 +2,8 @@ id: B010
 title: Closed provider framework and existing route integration
 description: >-
   Finish the provider framework by composing the split helpers behind betterlite-provider's closed executable Provider
-  enum in src/provider.rs, initially OpenAi and AiohttpOpenAi. Give the framework concrete chat/stream/embedding
+  enum in src/provider.rs, with OpenAi and AiohttpOpenAi built here and the other providers registered as stubs.
+  Give the framework concrete chat/stream/embedding
   operation types, prepared request/result metadata and typed unsupported-operation errors, reusing existing betterlite-openai
   models rather than creating a duplicate wire crate. Keep transformation, configured HTTP execution and response
   decoding as explicit stages; the server resolves a deployment before passing its trusted inputs to the provider.
@@ -17,9 +18,19 @@ description: >-
   copied into the response (no upstream usage). B010 wires B176 ControlOptions constructors from config/server.
   Expose the provider transform-on-422 hook with explicit bounded attempt count; default is disabled and B026 Azure
   AI is its first user. This hook is separate from B017 router retry. Budget 300 framework/variant, 130 server integration,
-  340 tests (770 total). Write the behavior rstest functions provider_framework_tests_behavior in adjacent
-  tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have separate
-  names.
+  340 tests (770 total); the stubs and their registry lines add about 800 lines outside it. Write the behavior
+  rstest functions provider_framework_tests_behavior in adjacent tests.rs files, with a named case for each
+  behavior and failure in the DoD; corpus replay tests have separate names.
+
+  Register every entry that the provider-stubs check lists up front, so a later provider task fills only its own
+  module and never edits provider.rs, operation.rs or prepared.rs. A provider row is a Provider variant wrapping a
+  unit-struct stub in that module, and calling it answers the typed unavailable-adapter error. An operation row is
+  an OperationRequest, OperationResult and PreparedRequest variant wrapping unit-struct stubs in that module, and
+  its dispatch call answers the typed unsupported-operation error. A provider that does not run an operation answers
+  that error for the whole variant and never matches inside it, so filling one stub never breaks another task's
+  match. Declare the three provider/<module>.rs stubs in provider.rs; lib.rs and api.rs already declare every other
+  module. Provider::OpenAi stays real, and its OpenAi operation row routes the operations B024 adds to
+  openai_dispatch.rs.
 
 
   Shared provider base helper implementations are B2202: use its owned primitives directly when called by these
@@ -35,6 +46,41 @@ scope:
   - crates/betterlite-provider/src/operation/**
   - crates/betterlite-provider/src/prepared.rs
   - crates/betterlite-provider/src/prepared/**
+  - crates/betterlite-provider/src/openai_dispatch.rs
+  - crates/betterlite-provider/src/azure_dispatch.rs
+  - crates/betterlite-provider/src/foundry_dispatch.rs
+  - crates/betterlite-provider/src/anthropic_dispatch.rs
+  - crates/betterlite-provider/src/bedrock_dispatch_contract.rs
+  - crates/betterlite-provider/src/vertex_dispatch.rs
+  - crates/betterlite-provider/src/studio_dispatch.rs
+  - crates/betterlite-provider/src/xai_mistral.rs
+  - crates/betterlite-provider/src/embedding_rerank_providers.rs
+  - crates/betterlite-provider/src/compatible_providers.rs
+  - crates/betterlite-provider/src/legacy_dispatch.rs
+  - crates/betterlite-provider/src/api/image_contracts.rs
+  - crates/betterlite-provider/src/api/rerank_contracts.rs
+  - crates/betterlite-provider/src/api/file_contracts.rs
+  - crates/betterlite-provider/src/api/batch_records.rs
+  - crates/betterlite-provider/src/api/responses_provider_contract.rs
+  - crates/betterlite-provider/src/api/transcription_contract.rs
+  - crates/betterlite-provider/src/api/speech_provider_contract.rs
+  - crates/betterlite-provider/src/api/messages_native_prepare.rs
+  - crates/betterlite-provider/src/openai_media_dispatch.rs
+  - crates/betterlite-provider/src/openai_resource_dispatch.rs
+  - crates/betterlite-provider/src/openai_assistant_dispatch.rs
+  - crates/betterlite-provider/src/azure_media_dispatch.rs
+  - crates/betterlite-provider/src/azure_resource_dispatch.rs
+  - crates/betterlite-provider/src/foundry_resource_dispatch.rs
+  - crates/betterlite-provider/src/bedrock_dispatch.rs
+  - crates/betterlite-provider/src/bedrock_other_dispatch.rs
+  - crates/betterlite-provider/src/bedrock_services_dispatch.rs
+  - crates/betterlite-provider/src/bedrock_image_dispatch.rs
+  - crates/betterlite-provider/src/bedrock_agent_dispatch.rs
+  - crates/betterlite-provider/src/bedrock_interactive_dispatch.rs
+  - crates/betterlite-provider/src/vertex_partner_dispatch.rs
+  - crates/betterlite-provider/src/vertex_media_dispatch.rs
+  - crates/betterlite-provider/src/vertex_service_dispatch.rs
+  - crates/betterlite-provider/src/vertex_embedding_binding.rs
   - crates/betterlite-provider/src/transform_retry.rs
   - crates/betterlite-provider/src/transform_retry/**
   - crates/betterlite-provider/src/aiohttp_openai_dispatch.rs
@@ -82,6 +128,13 @@ dod:
     request/settings state.
   proof:
   - provider-framework-tests
+- text: >-
+    Every entry in the provider-stubs list has its Provider variant, or its OperationRequest, OperationResult and
+    PreparedRequest variants, and a stub in its module, and provider_framework_tests_behavior asserts that a stub
+    answers the typed unavailable-adapter or unsupported-operation error before HTTP.
+  proof:
+  - provider-stubs
+  - provider-framework-tests
 - text: Disconnects drop the upstream stream and decoding remains incremental under a slow provider.
   proof:
   - provider-framework-tests
@@ -97,6 +150,70 @@ checks:
     why: the required tests fail or the filter selects no tests
     run: cargo nextest run --locked -p betterlite-provider -p betterlite-server --no-tests=fail -E 'test(/::provider_framework_tests_behavior($|::)/)
       - test(/replays_the_/)'
+  - id: provider-stubs
+    why: a planned provider or operation has no registry variant or stub module, so its task would have to edit provider.rs, operation.rs or prepared.rs
+    run: |-
+      while read -r registry variant module; do
+        file="crates/betterlite-provider/src/$module.rs"
+        name="${module##*/}"
+        case "$registry" in
+          provider) lists="crates/betterlite-provider/src/provider.rs" ;;
+          *) lists="crates/betterlite-provider/src/operation.rs crates/betterlite-provider/src/prepared.rs" ;;
+        esac
+        grep -q . "$file" || { echo "$file has no stub for $variant"; exit 1; }
+        for list in $lists; do
+          grep -qw "$variant" "$list" && grep -qw "$name" "$list" || { echo "$list does not register $variant from $module"; exit 1; }
+        done
+      done <<'EOF'
+      provider Azure azure_dispatch
+      provider AzureAi foundry_dispatch
+      provider Anthropic anthropic_dispatch
+      provider Bedrock bedrock_dispatch_contract
+      provider VertexAi vertex_dispatch
+      provider Gemini studio_dispatch
+      provider XaiMistral xai_mistral
+      provider EmbeddingRerank embedding_rerank_providers
+      provider Compatible compatible_providers
+      provider Legacy legacy_dispatch
+      provider Subscription provider/subscription
+      provider MediaProviders provider/media_providers
+      provider SpeechProviders provider/speech_providers
+      operation OpenAi openai_dispatch
+      operation Azure azure_dispatch
+      operation AzureAi foundry_dispatch
+      operation Anthropic anthropic_dispatch
+      operation Bedrock bedrock_dispatch_contract
+      operation VertexAi vertex_dispatch
+      operation Gemini studio_dispatch
+      operation XaiMistral xai_mistral
+      operation EmbeddingRerank embedding_rerank_providers
+      operation Compatible compatible_providers
+      operation Legacy legacy_dispatch
+      operation Image api/image_contracts
+      operation Rerank api/rerank_contracts
+      operation File api/file_contracts
+      operation Batch api/batch_records
+      operation Responses api/responses_provider_contract
+      operation Transcription api/transcription_contract
+      operation Speech api/speech_provider_contract
+      operation Messages api/messages_native_prepare
+      operation OpenAiMedia openai_media_dispatch
+      operation OpenAiResource openai_resource_dispatch
+      operation OpenAiAssistant openai_assistant_dispatch
+      operation AzureMedia azure_media_dispatch
+      operation AzureResource azure_resource_dispatch
+      operation FoundryResource foundry_resource_dispatch
+      operation BedrockChat bedrock_dispatch
+      operation BedrockOther bedrock_other_dispatch
+      operation BedrockServices bedrock_services_dispatch
+      operation BedrockImage bedrock_image_dispatch
+      operation BedrockAgent bedrock_agent_dispatch
+      operation BedrockInteractive bedrock_interactive_dispatch
+      operation VertexPartner vertex_partner_dispatch
+      operation VertexMedia vertex_media_dispatch
+      operation VertexService vertex_service_dispatch
+      operation VertexEmbedding vertex_embedding_binding
+      EOF
 oracle_cases:
 - tools/oracle/cases/chat/openai-basic.yaml
 - tools/oracle/cases/chat/openai-tools.yaml
@@ -112,7 +229,7 @@ out_of_scope:
 - Router retry policy is B017; the provider-local transform-on-422 seam belongs here and B026 supplies Azure AI
   behavior.
 - Python dynamic extension classes and synchronous wrappers are B157-B165.
-- Additional endpoints are represented only when their owning tasks implement their concrete types.
+- The stub entries carry no endpoint behavior; each owning task fills its own module's types and calls.
 - base_llm.bridges chat-to-Responses conversion is B080; B010 defines its typed seam only, because Responses models
   are not yet available.
 - Base transformation tool/role/thinking helpers delegate to B175-B182; iterator SSE parsing is B005 and endpoint-specific
@@ -125,7 +242,11 @@ pitfalls:
   but never the reverse.
 - A catalog ProviderId is metadata and must not be used as proof that an executable adapter exists.
 - Do not buffer streams to make all operation result types look alike.
+- The 770-line budget covers the framework, server integration and tests but not the stubs and their registry lines.
+- >-
+  A stub dispatch call is not an async fn, since an async fn without an await fails clippy::unused_async; it returns
+  std::future::ready(Err(...)) so its owner can make it async later without touching the registry.
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2400
   max_new_expects: 0
