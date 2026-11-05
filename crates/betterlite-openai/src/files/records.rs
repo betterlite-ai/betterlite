@@ -129,6 +129,18 @@ pub struct FileQuery {
     pub purpose: Option<String>,
 }
 
+impl FileQuery {
+    // The SDK's query encoder drops an empty purpose
+    #[must_use]
+    pub fn pairs(&self) -> Vec<(String, String)> {
+        self.purpose
+            .iter()
+            .filter(|purpose| !purpose.is_empty())
+            .map(|purpose| ("purpose".to_owned(), purpose.clone()))
+            .collect()
+    }
+}
+
 // LiteLLM's HttpxBinaryResponseContent: the raw file bytes with the response status and headers
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BinaryContent {

@@ -23,6 +23,8 @@ pub mod request;
 pub mod stream;
 pub mod transport;
 
+type JsonReply = Result<Value, FilesError>;
+
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1/";
 
 // the OpenAI SDK's default request timeout
@@ -179,44 +181,26 @@ impl<T: FileTransport> FilesApi<T> {
         method: Method,
         path: String,
         query: Vec<(String, String)>,
-    ) -> Result<Value, FilesError> {
+    ) -> JsonReply {
         let reply = self
             .buffered(client.bare_request(method, path, query)?)
             .await?;
         serde_json::from_slice(&reply.body).map_err(|source| FilesError::Decode { source })
     }
 
-    pub async fn retrieve_file(
-        &self,
-        client: &FilesClient,
-        file_id: &str,
-    ) -> Result<Value, FilesError> {
+    pub async fn retrieve_file(&self, client: &FilesClient, file_id: &str) -> JsonReply {
         self.json_call(client, Method::GET, file_path(file_id, "")?, Vec::new())
             .await
     }
 
-    pub async fn delete_file(
-        &self,
-        client: &FilesClient,
-        file_id: &str,
-    ) -> Result<Value, FilesError> {
+    pub async fn delete_file(&self, client: &FilesClient, file_id: &str) -> JsonReply {
         self.json_call(client, Method::DELETE, file_path(file_id, "")?, Vec::new())
             .await
     }
 
-    // Only purpose is forwarded, and the SDK's query encoder drops an empty one; after, limit and order are not arguments of this wrapper
-    pub async fn list_files(
-        &self,
-        client: &FilesClient,
-        query: &FileQuery,
-    ) -> Result<Value, FilesError> {
-        let pairs = query
-            .purpose
-            .iter()
-            .filter(|purpose| !purpose.is_empty())
-            .map(|purpose| ("purpose".to_owned(), purpose.clone()))
-            .collect();
-        self.json_call(client, Method::GET, "/files".to_owned(), pairs)
+    // Only purpose is forwarded; after, limit and order are not arguments of this wrapper
+    pub async fn list_files(&self, client: &FilesClient, query: &FileQuery) -> JsonReply {
+        self.json_call(client, Method::GET, "/files".to_owned(), query.pairs())
             .await
     }
 }
