@@ -70,9 +70,9 @@ fn pooled_client() -> ProxiedClient {
     ProxiedClient::outbound(&Arc::new(policy)).unwrap()
 }
 
-async fn probe(routes: Vec<Route>, path: Option<&str>, headers: &HeaderMap) -> Probe {
+async fn probe(routes: Vec<Route>, path: Option<&str>, headers: &HeaderMap, prefix: &str) -> Probe {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let base = format!("http://{}", listener.local_addr().unwrap());
+    let base = format!("http://{}{prefix}", listener.local_addr().unwrap());
     let canned = Arc::new(Canned {
         routes,
         hits: Mutex::new(Vec::new()),
@@ -141,6 +141,7 @@ async fn card_resolver_returns_first_probe_that_succeeds() {
         vec![(AGENT_CARD, StatusCode::OK, FIRST_CARD)],
         None,
         &HeaderMap::new(),
+        "",
     )
     .await;
     let card = probed.result.unwrap();
@@ -169,7 +170,7 @@ async fn card_resolver_falls_through_probes_until_one_succeeds(
     #[case] expected_hits: Vec<&str>,
     #[case] expected_name: &str,
 ) {
-    let probed = probe(routes, None, &HeaderMap::new()).await;
+    let probed = probe(routes, None, &HeaderMap::new(), "").await;
     let card = probed.result.unwrap();
     assert_eq!(name_of(&card), Some(expected_name));
     assert_eq!(paths(&probed.hits), expected_hits);
@@ -181,7 +182,7 @@ async fn card_resolver_supplied_path_bypasses_probing() {
         (AGENT_CARD, StatusCode::OK, FIRST_CARD),
         (CUSTOM, StatusCode::OK, CUSTOM_CARD),
     ];
-    let probed = probe(routes, Some(CUSTOM), &HeaderMap::new()).await;
+    let probed = probe(routes, Some(CUSTOM), &HeaderMap::new(), "").await;
     let card = probed.result.unwrap();
     assert_eq!(name_of(&card), Some("custom"));
     assert_eq!(paths(&probed.hits), vec![CUSTOM]);
@@ -193,7 +194,7 @@ async fn card_resolver_empty_supplied_path_uses_the_default_card_path() {
         (AGENT_CARD, StatusCode::OK, FIRST_CARD),
         (AGENT_JSON, StatusCode::OK, SECOND_CARD),
     ];
-    let probed = probe(routes, Some(""), &HeaderMap::new()).await;
+    let probed = probe(routes, Some(""), &HeaderMap::new(), "").await;
     let card = probed.result.unwrap();
     assert_eq!(name_of(&card), Some("first"));
     assert_eq!(paths(&probed.hits), vec![AGENT_CARD]);
@@ -201,7 +202,7 @@ async fn card_resolver_empty_supplied_path_uses_the_default_card_path() {
 
 #[tokio::test]
 async fn card_resolver_supplied_path_failure_names_only_that_path() {
-    let probed = probe(Vec::new(), Some(CUSTOM), &HeaderMap::new()).await;
+    let probed = probe(Vec::new(), Some(CUSTOM), &HeaderMap::new(), "").await;
     let error = probed.result.unwrap_err();
     assert_eq!(error.status_code(), 404);
     assert_eq!(
@@ -218,6 +219,7 @@ async fn card_resolver_supplied_path_failure_names_only_that_path() {
 #[case::first_non_404_wins([StatusCode::BAD_GATEWAY, StatusCode::SERVICE_UNAVAILABLE, StatusCode::NOT_FOUND], 502)]
 #[case::forbidden_after_missing([StatusCode::NOT_FOUND, StatusCode::NOT_FOUND, StatusCode::FORBIDDEN], 403)]
 #[case::all_missing([StatusCode::NOT_FOUND, StatusCode::NOT_FOUND, StatusCode::NOT_FOUND], 404)]
+#[case::redirect_is_recorded([StatusCode::FOUND, StatusCode::NOT_FOUND, StatusCode::NOT_FOUND], 302)]
 #[tokio::test]
 async fn card_resolver_discovery_failure_lists_every_attempt_in_order(
     #[case] statuses: [StatusCode; 3],
@@ -229,7 +231,7 @@ async fn card_resolver_discovery_failure_lists_every_attempt_in_order(
         (AGENT_JSON, second, "second failure"),
         (FOUNDRY, third, "third failure"),
     ];
-    let probed = probe(routes, None, &HeaderMap::new()).await;
+    let probed = probe(routes, None, &HeaderMap::new(), "").await;
     let error = probed.result.unwrap_err();
     assert_eq!(error.status_code(), expected_status);
     assert_eq!(paths(&probed.hits), vec![AGENT_CARD, AGENT_JSON, FOUNDRY]);
@@ -240,6 +242,27 @@ async fn card_resolver_discovery_failure_lists_every_attempt_in_order(
         .map(|path| message.find(path).unwrap())
         .collect();
     assert!(order.is_sorted());
+}
+
+#[tokio::test]
+async fn card_resolver_redirect_is_a_failed_probe_and_probing_continues() {
+    let routes = vec![
+        (AGENT_CARD, StatusCode::FOUND, FIRST_CARD),
+        (AGENT_JSON, StatusCode::OK, SECOND_CARD),
+    ];
+    let probed = probe(routes, None, &HeaderMap::new(), "").await;
+    let card = probed.result.unwrap();
+    assert_eq!(name_of(&card), Some("second"));
+    assert_eq!(paths(&probed.hits), vec![AGENT_CARD, AGENT_JSON]);
+}
+
+#[tokio::test]
+async fn card_resolver_root_path_on_trailing_slash_base_requests_the_bare_base() {
+    let routes = vec![("/a2a", StatusCode::OK, FIRST_CARD)];
+    let probed = probe(routes, Some("/"), &HeaderMap::new(), "/a2a/").await;
+    let card = probed.result.unwrap();
+    assert_eq!(name_of(&card), Some("first"));
+    assert_eq!(paths(&probed.hits), vec!["/a2a"]);
 }
 
 #[tokio::test]
@@ -266,7 +289,7 @@ async fn card_resolver_unreachable_agent_lists_every_probe_without_a_status() {
 async fn card_resolver_sends_extra_headers_with_every_probe() {
     let mut headers = HeaderMap::new();
     headers.insert("x-team", HeaderValue::from_static("search"));
-    let probed = probe(Vec::new(), None, &headers).await;
+    let probed = probe(Vec::new(), None, &headers, "").await;
     probed.result.unwrap_err();
     assert_eq!(
         probed.hits,

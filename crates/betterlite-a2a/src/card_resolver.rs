@@ -58,11 +58,12 @@ impl CardResolver {
         path: &str,
         extra_headers: &HeaderMap,
     ) -> Result<AgentCard, CardFetchError> {
+        let base = self.base_url.trim_end_matches('/');
         let relative = path.trim_start_matches('/');
         let target = if relative.is_empty() {
-            self.base_url.clone()
+            base.to_owned()
         } else {
-            format!("{}/{relative}", self.base_url.trim_end_matches('/'))
+            format!("{base}/{relative}")
         };
         let url = Url::parse(&target).map_err(CardFetchError::InvalidUrl)?;
         let request = OutboundRequest {
@@ -78,7 +79,7 @@ impl CardResolver {
             .send_buffered(request)
             .await
             .map_err(CardFetchError::Transport)?;
-        if response.status >= 400 {
+        if !(200..300).contains(&response.status) {
             return Err(CardFetchError::Status {
                 status: response.status,
             });
