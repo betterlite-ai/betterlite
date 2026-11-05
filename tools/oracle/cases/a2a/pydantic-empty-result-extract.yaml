@@ -1,0 +1,5 @@
+kind: helper
+name: pydantic-empty-result-extract
+call: {b4805: {operation: extract, response: {}}}
+env: {}
+compare: {ignore: []}
