@@ -4,6 +4,7 @@ call:
   b3452:
     content_hex: '68656c6c6f'
     scanner: infected
+    signature: Test.Sig
     max_size_bytes: 536870912
     uuid: 550e8400-e29b-41d4-a716-446655440000
 env: {}
