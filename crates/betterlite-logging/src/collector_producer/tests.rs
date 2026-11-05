@@ -13,30 +13,20 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::task::Poll;
 use std::time::Duration;
-use tokio::io::{AsyncRead, AsyncReadExt as _, AsyncWriteExt as _, DuplexStream, duplex};
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _, DuplexStream, duplex};
 use tokio::sync::{Notify, oneshot};
 use tokio::task::yield_now;
 use tokio::time::{advance, timeout};
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
 
-async fn expect_bytes<Stream>(stream: &mut Stream, buffer: &mut [u8])
+async fn expect_io<Fut, Output>(read: Fut, message: &str) -> Output
 where
-    Stream: AsyncRead + Unpin,
+    Fut: Future<Output = io::Result<Output>>,
 {
-    timeout(Duration::from_secs(5), stream.read_exact(buffer))
+    timeout(Duration::from_secs(5), read)
         .await
-        .expect("socket never received the expected bytes")
-        .unwrap();
-}
-
-async fn expect_to_end<Stream>(stream: &mut Stream, buffer: &mut Vec<u8>)
-where
-    Stream: AsyncRead + Unpin,
-{
-    timeout(Duration::from_secs(5), stream.read_to_end(buffer))
-        .await
-        .expect("socket never closed")
-        .unwrap();
+        .expect(message)
+        .unwrap()
 }
 
 async fn close_producer(producer: &mut SpendEventProducer) {
@@ -138,7 +128,7 @@ async fn retains_fifo_and_never_replays_complete_lines() {
         PublishOutcome::Queued
     );
     let mut first = [0; 4];
-    expect_bytes(&mut rig.peer, &mut first).await;
+    expect_io(rig.peer.read_exact(&mut first), "socket read timed out").await;
     assert_eq!(&first, b"one\n");
     assert_eq!(
         rig.producer
@@ -149,7 +139,7 @@ async fn retains_fifo_and_never_replays_complete_lines() {
     );
     rig.finish().await;
     let mut last = Vec::new();
-    expect_to_end(&mut rig.peer, &mut last).await;
+    expect_io(rig.peer.read_to_end(&mut last), "socket close timed out").await;
     assert_eq!(last, b"two\n");
     assert_eq!(rig.producer.stats().queued, 2);
     assert_eq!(rig.producer.stats().sent, 2);
@@ -167,7 +157,7 @@ async fn pressure_and_partial_close_apply_policy_once() {
         .await
         .unwrap();
     let mut prefix = [0; 1];
-    expect_bytes(&mut rig.peer, &mut prefix).await;
+    expect_io(rig.peer.read_exact(&mut prefix), "socket read timed out").await;
     rig.producer
         .publish(b"queued\n".to_vec(), &rig.cancel)
         .await
@@ -181,7 +171,11 @@ async fn pressure_and_partial_close_apply_policy_once() {
     );
     rig.finish().await;
     let mut remaining = Vec::new();
-    expect_to_end(&mut rig.peer, &mut remaining).await;
+    expect_io(
+        rig.peer.read_to_end(&mut remaining),
+        "socket close timed out",
+    )
+    .await;
     assert!(remaining.len() < partial.len());
     assert_eq!(
         *rig.events.lock().unwrap(),
@@ -199,7 +193,7 @@ async fn half_close_reconnects_without_reusing_old_socket() {
         .await
         .unwrap();
     let mut bytes = [0; 4];
-    expect_bytes(&mut rig.peer, &mut bytes).await;
+    expect_io(rig.peer.read_exact(&mut bytes), "socket read timed out").await;
     rig.peer.shutdown().await.unwrap();
     assert!(rig.producer.stats().connected);
     let (socket, mut next_peer) = duplex(8);
@@ -208,7 +202,7 @@ async fn half_close_reconnects_without_reusing_old_socket() {
         .publish(b"two\n".to_vec(), &rig.cancel)
         .await
         .unwrap();
-    expect_bytes(&mut next_peer, &mut bytes).await;
+    expect_io(next_peer.read_exact(&mut bytes), "socket read timed out").await;
     assert_eq!(&bytes, b"two\n");
     rig.finish().await;
     assert!(rig.events.lock().unwrap().is_empty());
@@ -242,7 +236,7 @@ async fn reconnect_backoff_uses_injected_tokio_time() {
         PublishOutcome::Queued
     );
     let mut received = [0; 6];
-    expect_bytes(&mut peer, &mut received).await;
+    expect_io(peer.read_exact(&mut received), "socket read timed out").await;
     assert_eq!(&received, b"retry\n");
     rig.finish().await;
 }
@@ -392,7 +386,7 @@ async fn broken_partial_write_disconnects_and_enters_backoff() {
         .await
         .unwrap();
     let mut prefix = [0];
-    expect_bytes(&mut rig.peer, &mut prefix).await;
+    expect_io(rig.peer.read_exact(&mut prefix), "socket read timed out").await;
     drop(rig.peer);
     yield_now().await;
     assert_eq!(
@@ -555,12 +549,12 @@ async fn tcp_does_not_wait_for_collector_response() {
         .unwrap();
     let (mut stream, _) = listener.accept().await.unwrap();
     let mut bytes = [0; 6];
-    expect_bytes(&mut stream, &mut bytes).await;
+    expect_io(stream.read_exact(&mut bytes), "socket read timed out").await;
     producer
         .publish(b"other\n".to_vec(), &cancel)
         .await
         .unwrap();
-    expect_bytes(&mut stream, &mut bytes).await;
+    expect_io(stream.read_exact(&mut bytes), "socket read timed out").await;
     assert_eq!(&bytes, b"other\n");
     close_producer(&mut producer).await;
     tasks.close();
