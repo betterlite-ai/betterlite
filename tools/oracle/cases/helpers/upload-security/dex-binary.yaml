@@ -1,0 +1,8 @@
+kind: helper
+name: upload-security-dex-binary
+call:
+  b3452:
+    content_hex: '6465780a00'
+env: {}
+compare:
+  ignore: []
