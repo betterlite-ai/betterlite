@@ -1,7 +1,7 @@
 id: B027
 title: Anthropic provider composition
 description: >-
-  Register Provider::Anthropic and compose all native Anthropic operations and exported typed records. Consume the
+  Fill B010's Provider::Anthropic stub and compose all native Anthropic operations and exported typed records. Consume the
   already selected anthropic_text or anthropic dispatch branch; expose file/batch/count methods for later public
   API tasks. Keep native Messages public endpoint translation in B081 and cache prediction in B075. Exercise installed
   operations through the closed dispatcher and existing text/chat bridges.
@@ -103,18 +103,16 @@ description: >-
   docstrings; SDK overloads share an async implementation): 180 production lines, 280 behavior/config-test lines,
   125 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 35 module/dispatch/shared-seed
   wiring lines; 620 planned, 625 maximum changed lines.
+
+  B010 registers Provider::Anthropic and the Anthropic variants of OperationRequest, OperationResult and
+  PreparedRequest as stubs in crates/betterlite-provider/src/anthropic_dispatch.rs. Fill them there and leave
+  provider.rs, operation.rs and prepared.rs as they are.
 scope:
   paths:
   - crates/betterlite-provider/Cargo.toml
   - crates/betterlite-provider/src/anthropic_dispatch.rs
   - crates/betterlite-provider/src/anthropic_dispatch/**
   - crates/betterlite-anthropic/Cargo.toml
-  - crates/betterlite-provider/src/provider.rs
-  - crates/betterlite-provider/src/provider/**
-  - crates/betterlite-provider/src/operation.rs
-  - crates/betterlite-provider/src/operation/**
-  - crates/betterlite-provider/src/prepared.rs
-  - crates/betterlite-provider/src/prepared/**
   - crates/betterlite-core/Cargo.toml
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/provider/anthropic_provider.rs

@@ -40,13 +40,13 @@ description: >-
   loads every new Aleph Alpha key/base spelling and global through B002. Fuzz decode_custom_output and
   replay custom_output alongside the existing config corpus. Source ownership totals 293 nonblank/non-comment
   lines; plan 290 dispatch, 220 tests, 95 adapters, 75 parser/fuzz and 110 config/composition lines (790).
+
+  B010 registers Provider::Legacy and the Legacy variants of OperationRequest, OperationResult and PreparedRequest
+  as stubs in crates/betterlite-provider/src/legacy_dispatch.rs. Fill them there and leave provider.rs,
+  operation.rs and prepared.rs as they are.
 scope:
   paths:
     - crates/betterlite-provider/Cargo.toml
-    - crates/betterlite-provider/src/provider.rs
-    - crates/betterlite-provider/src/provider/**
-    - crates/betterlite-provider/src/operation.rs
-    - crates/betterlite-provider/src/operation/**
     - crates/betterlite-provider/src/legacy_dispatch.rs
     - crates/betterlite-provider/src/legacy_dispatch/**
     - crates/betterlite-provider/fuzz/Cargo.toml
