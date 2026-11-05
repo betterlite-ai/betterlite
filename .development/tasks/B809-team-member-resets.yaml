@@ -59,15 +59,14 @@ description: >-
 
 
   Install B052 and B865 on the two member-reset registrations, retaining each handler's separate catch behavior.
+  B1100 registers routes/team_member_resets.rs as a stub, so fill only crates/betterlite-server/src/routes/team_member_resets.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/team_member_resets.rs
     - crates/betterlite-server/src/team_member_resets/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/team_member_resets.rs
+    - crates/betterlite-server/src/routes/team_member_resets/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/team-member-resets/**

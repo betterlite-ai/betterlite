@@ -74,15 +74,14 @@ description: >-
 
   HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
   exercise real virtual-key lookup and permission policy. Apply B865 only to members/me, block and unblock.
+  B1100 registers routes/team_state.rs as a stub, so fill only crates/betterlite-server/src/routes/team_state.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/team_state.rs
     - crates/betterlite-server/src/team_state/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/team_state.rs
+    - crates/betterlite-server/src/routes/team_state/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/team-state/**

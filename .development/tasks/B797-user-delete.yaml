@@ -78,15 +78,14 @@ description: >-
 
 
   Wire user_delete behind B052 bearer authentication and the source's B865 management decorator.
+  B1100 registers routes/user_delete.rs as a stub, so fill only crates/betterlite-server/src/routes/user_delete.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/user_delete.rs
     - crates/betterlite-server/src/user_delete/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/user_delete.rs
+    - crates/betterlite-server/src/routes/user_delete/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/user-delete/**

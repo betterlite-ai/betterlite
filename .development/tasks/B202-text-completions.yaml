@@ -22,6 +22,7 @@ description: >-
   plus the text config selector; B2238 owns completion/handler.py. Call these leaves directly, including config
   defaults, prompt preparation, optional chat conversion and sync/async send/stream behavior. Public routes and
   bridges remain with B202/B203.
+  B1100 registers routes/completions.rs as a stub, so fill crates/betterlite-server/src/routes/completions.rs and leave routes.rs as it is.
 scope:
   paths:
   - Cargo.toml
@@ -38,7 +39,6 @@ scope:
   - crates/betterlite-openai/fuzz/corpus/text_request/**
   - crates/betterlite-openai/fuzz/corpus/text_response/**
   - crates/betterlite-server/src/server.rs
-  - crates/betterlite-server/src/routes.rs
   - crates/betterlite-server/src/routes/completions.rs
   - crates/betterlite-server/src/routes/completions/**
   - crates/betterlite-core/src/operation/text_completion.rs

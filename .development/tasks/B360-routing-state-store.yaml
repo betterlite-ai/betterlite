@@ -20,21 +20,14 @@ description: 'Implement the Redis adapter for B390 typed routing state using a m
   (L607-L674), RedisCache.async_increment (L1419-L1476), RedisCache.async_get_cache (L1648-L1693), RedisCache.async_batch_get_cache
   (L1696-L1768), RedisCache.async_increment_pipeline (L1954-L2017), RedisCache.async_get_ttl (L2020-L2042),
   RedisCache.async_refresh_ttl (L2045-L2050). Implement these behaviors through the typed Rust services
-  above; synchronous facades and structural accessors reuse the same primitive instead of separate ports.'
+  above; synchronous facades and structural accessors reuse the same primitive instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B304, B307, B325, B346, B362, B365, B372, B382 and B383 call this service.'
 scope:
   paths:
   - crates/betterlite-router/src/routing_state_store.rs
   - crates/betterlite-router/src/routing_state_store/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/routing_state_store.rs
   - crates/betterlite-server/src/routing/routing_state_store/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/routing_state_store.rs
   - tools/oracle/src/router_probes/routing_state_store/**
   - tools/oracle/litellm/probes/routing_state_store.py

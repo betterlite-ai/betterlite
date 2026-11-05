@@ -33,6 +33,7 @@ description: >-
   testcontainers only when that variable is absent; a configured connection failure fails the test.
   Sizing: 119 nonblank, noncomment source lines, including docstrings; allow 120 production,
   260 behavior/database tests and 65 route wiring lines, 445 within a 475-line gate.
+  B1100 registers routes/user_activity.rs as a stub, so fill only crates/betterlite-server/src/routes/user_activity.rs and leave routes.rs and state.rs as they are.
 
 
 scope:
@@ -40,10 +41,8 @@ scope:
     - crates/betterlite-server/src/user_activity.rs
     - crates/betterlite-server/src/user_activity/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/user_activity.rs
+    - crates/betterlite-server/src/routes/user_activity/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/user-activity/**

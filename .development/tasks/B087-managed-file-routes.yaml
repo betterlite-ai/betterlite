@@ -3,8 +3,7 @@ title: File deletion and file route composition
 description: >-
   Implement whole delete_file in betterlite-server::api::managed_file_routes with typed lifecycle
   policy in betterlite-core::api::managed_file_routes. Register DELETE /files/{file_id:path},
-  /v1/files/{file_id:path} and /{provider}/v1/files/{file_id:path}. Compose B1032's upload,
-  B1033's content and B1034's metadata/list factories exactly once; those parts remain the sole
+  /v1/files/{file_id:path} and /{provider}/v1/files/{file_id:path}. B1032's upload, B1033's content and B1034's metadata/list factories mount from their own route stubs, so do not mount them here; those parts remain the sole
   owners of their routes. Route ordering must keep the content suffix ahead of generic catch-all ids.
 
   Preserve MIT behavior without the managed_files hook. Requirements run before raw-cloud role
@@ -19,14 +18,13 @@ description: >-
   api::managed_file_routes::tests in server/core; no helper oracle or new decoder. Complete handler
   plus decorators has 191 nonblank/non-comment lines. Budget 190 implementation, 145 tests,
   195 cases and 40 composition/wiring lines, totaling 570.
+  B1100 registers routes/managed_file.rs as a stub, so fill only crates/betterlite-server/src/routes/managed_file.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/routes/managed_file.rs
+  - crates/betterlite-server/src/routes/managed_file/**
   - crates/betterlite-server/src/api/managed_file_routes.rs
   - crates/betterlite-server/src/api/managed_file_routes/**
   - crates/betterlite-core/src/api/managed_file_routes.rs
@@ -107,7 +105,7 @@ deviations:
   why: Max's managed files and batches decision is open; preserve the absent-hook MIT behavior without importing enterprise code or imposing a license check.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/openai_files_endpoints/files_endpoints.py#L1561-L1569
 out_of_scope:
-- B1031 owns upload helpers, B1032 upload registration, B1033 content registration/pump and B1034 get/list registration/page projection. This task only composes those factories.
+- B1031 owns upload helpers, B1032 upload registration, B1033 content registration/pump and B1034 get/list registration/page projection. Those factories mount from their own route stubs.
 - The managed continuation L1570-L1593 has no reachable MIT caller. Router/type checks and managed_files.afile_delete are not replaced with a fabricated hook, repository cleanup or B1018 owner policy.
 - B1020/B1021/B1019 own credential/requirement/ID rules, B2208 cloud classification, B003/B004 error/custom-header policy, B124 proxy callbacks and B1103 authenticated data preparation.
 pitfalls:
