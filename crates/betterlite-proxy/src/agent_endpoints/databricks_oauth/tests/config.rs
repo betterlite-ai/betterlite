@@ -90,8 +90,12 @@ fn databricks_oauth_tests_behavior(#[case] params: &str, #[case] expected: &str)
         ("SCOPE".to_owned(), "sql".to_owned()),
     ]);
     let litellm_params: AgentLitellmParams = serde_json::from_str(params).unwrap();
+    assert!(!format!("{litellm_params:?}").contains("s3cret"));
     let observed = match parse_databricks_oauth_config(&litellm_params, &environment) {
-        Ok(Some(config)) => config.cache_key(),
+        Ok(Some(config)) => {
+            assert!(!format!("{config:?}").contains("s3cret"));
+            config.cache_key()
+        }
         Ok(None) => "none".to_owned(),
         Err(error) => error.to_string(),
     };

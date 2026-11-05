@@ -213,7 +213,7 @@ async fn drive(
     for round in rounds {
         headers.push(run_round(&rig, round).await?);
     }
-    let locks = rig.cache.live_lock_count().await;
+    let locks = rig.cache.live_lock_count();
     server.abort();
     let seen = mock.seen.lock().unwrap_or_else(PoisonError::into_inner);
     Ok(json!({"headers": headers, "locks": locks, "requests": *seen}))

@@ -82,14 +82,14 @@ async fn run(scenario: Scenario) -> (usize, usize) {
             match scenario.between {
                 Between::Nothing => {}
                 Between::RotateSecret => secret.push('!'),
-                Between::FlushCache => cache.flush_cache().await.unwrap(),
+                Between::FlushCache => cache.flush_cache().unwrap(),
             }
         }
         let credentials = config(&server.url, &secret);
         fetch_concurrently(&cache, &credentials, scenario.callers).await;
     }
     let requests = server.requests.lock().unwrap().len();
-    (requests, cache.live_lock_count().await)
+    (requests, cache.live_lock_count())
 }
 
 #[rstest]

@@ -50,7 +50,6 @@ fn truncate(number: Decimal) -> i64 {
     i64::try_from(number.trunc()).unwrap_or(saturated)
 }
 
-// A value int() cannot read falls back to the default lifetime.
 fn seconds(expires_in: Option<&ExpiresIn>) -> i64 {
     let parsed = match expires_in {
         Some(ExpiresIn::Flag(flag)) => Some(i64::from(*flag)),
@@ -61,7 +60,6 @@ fn seconds(expires_in: Option<&ExpiresIn>) -> i64 {
     parsed.unwrap_or(DEFAULT_TTL_SECONDS)
 }
 
-// The cache lifetime ends 60 seconds before the token does and never goes below zero.
 #[must_use]
 pub fn cache_ttl(expires_in: Option<&ExpiresIn>) -> u32 {
     let lifetime = seconds(expires_in)

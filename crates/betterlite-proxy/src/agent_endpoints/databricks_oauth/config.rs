@@ -16,7 +16,7 @@ const SECRET_DIGEST_LENGTH: usize = 16;
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 pub enum SettingValue {
-    Text(String),
+    Text(SecretString),
     Other(IgnoredAny),
 }
 
@@ -64,8 +64,10 @@ pub fn resolve_secret(
     let Some(SettingValue::Text(text)) = value else {
         return None;
     };
-    text.strip_prefix(ENVIRONMENT_PREFIX)
-        .map_or_else(|| Some(text.clone()), |name| environment.lookup(name))
+    let literal = text.expose_secret();
+    literal
+        .strip_prefix(ENVIRONMENT_PREFIX)
+        .map_or_else(|| Some(literal.to_owned()), |name| environment.lookup(name))
 }
 
 #[must_use]
