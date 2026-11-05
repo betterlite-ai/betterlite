@@ -7,7 +7,7 @@ use betterlite_prompts::definitions::sanitize::sanitize_for_anthropic;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|bytes: &[u8]| {
-    if bytes.len() > 65_536 {
+    if bytes.len() > 0x0001_0000 {
         return;
     }
     let Ok(schema) = serde_json::from_slice::<Object>(bytes) else {

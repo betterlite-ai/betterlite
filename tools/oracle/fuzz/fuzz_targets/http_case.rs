@@ -5,5 +5,5 @@ use libfuzzer_sys::fuzz_target;
 use std::path::Path;
 
 fuzz_target!(|bytes: &[u8]| {
-    let _ = decode_case(Path::new("<bytes>"), bytes);
+    let _outcome = decode_case(Path::new("<bytes>"), bytes);
 });
