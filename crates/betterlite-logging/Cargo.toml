@@ -14,10 +14,17 @@ betterlite-redact = { path = "../betterlite-redact" }
 chrono.workspace = true
 flate2 = "1.1.5"
 hex.workspace = true
+http = "1.5.0"
 indexmap = { version = "2.14.2", features = ["serde"] }
+opentelemetry = { version = "0.33.1", default-features = false, features = ["logs", "metrics", "trace"] }
+opentelemetry-http = { version = "0.33.1", default-features = false }
+opentelemetry-otlp = { version = "0.33.1", default-features = false, features = ["grpc-tonic", "http-json", "http-proto", "logs", "metrics", "trace"] }
+opentelemetry-stdout = { version = "0.33.1", default-features = false, features = ["logs", "metrics", "trace"] }
+opentelemetry_sdk = { version = "0.33.1", default-features = false, features = ["logs", "metrics", "testing", "trace"] }
 parquet-format-safe = "0.2.4"
 parquet2 = { version = "0.17.2", default-features = false, features = ["snappy"] }
 pep440_rs = "0.7.3"
+percent-encoding.workspace = true
 prost = "0.14.4"
 regex.workspace = true
 rust_decimal.workspace = true
@@ -36,12 +43,14 @@ url = "2.5.8"
 uuid.workspace = true
 
 [dev-dependencies]
+async-trait = "0.1.92"
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-privacy-openai = { path = "src/logging_privacy/openai" }
 insta = { version = "1.49.0", default-features = false, features = ["yaml"] }
 rstest = "=0.27.0"
 serde-saphyr.workspace = true
 serde_json = { version = "1.0.154", features = ["arbitrary_precision", "raw_value"] }
+tokio.workspace = true
 tracing-subscriber.workspace = true
 
 [[test]]
