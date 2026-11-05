@@ -70,7 +70,7 @@ async fn the_configured_method_picks_the_header_sent_with_each_request(
     #[case] header: &str,
     #[case] value: &str,
 ) {
-    let transport = FakeTransport::scripted(vec![answer(200, "x")]);
+    let transport = FakeTransport::scripted(vec![answer!(200, "x")]);
     let client = GitLabClient::new(&config_from(json_text), transport.clone()).unwrap();
     client.get_file_content("a.prompt", None).await.unwrap();
     let sent = transport.requests();
@@ -102,7 +102,7 @@ fn set_ref_rejects_an_empty_ref_and_keeps_the_old_one() {
 
 #[tokio::test]
 async fn set_ref_changes_the_ref_of_later_requests() {
-    let transport = FakeTransport::scripted(vec![answer(200, "x")]);
+    let transport = FakeTransport::scripted(vec![answer!(200, "x")]);
     let mut client = GitLabClient::new(
         &config_from(r#"{"project": "g/r", "access_token": "t", "tag": "v1"}"#),
         transport.clone(),

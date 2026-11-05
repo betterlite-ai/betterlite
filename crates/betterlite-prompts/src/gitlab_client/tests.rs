@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::VecDeque;
+use std::future::{Future, ready};
 use std::io;
 use std::sync::{Arc, Mutex};
 
@@ -37,12 +38,12 @@ impl FakeTransport {
 }
 
 impl GitLabTransport for FakeTransport {
-    async fn get(
+    fn get(
         &self,
         url: &str,
         headers: &[RequestHeader],
         max_body_bytes: usize,
-    ) -> Result<GitLabResponse, io::Error> {
+    ) -> impl Future<Output = Result<GitLabResponse, io::Error>> + Send {
         self.log.lock().unwrap().push(RecordedRequest {
             url: url.to_owned(),
             headers: headers
@@ -56,20 +57,26 @@ impl GitLabTransport for FakeTransport {
                 .collect(),
             max_body_bytes,
         });
-        self.script
-            .lock()
-            .unwrap()
-            .pop_front()
-            .unwrap_or_else(|| Err(io::Error::other("no scripted response left")))
+        ready(
+            self.script
+                .lock()
+                .unwrap()
+                .pop_front()
+                .unwrap_or_else(|| Err(io::Error::other("no scripted response left"))),
+        )
     }
 }
 
-pub(crate) fn answer(status: u16, body: &str) -> Result<GitLabResponse, io::Error> {
-    Ok(GitLabResponse {
-        status,
-        body: body.as_bytes().to_vec(),
-    })
+macro_rules! answer {
+    ($status:expr, $body:expr $(,)?) => {
+        Ok($crate::gitlab_client::transport::GitLabResponse {
+            status: $status,
+            body: String::from($body).into_bytes(),
+        })
+    };
 }
+
+pub(crate) use answer;
 
 pub(crate) fn config_from(json_text: &str) -> GitLabConfig {
     serde_json::from_str(json_text).unwrap()

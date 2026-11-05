@@ -1,6 +1,6 @@
 use base64::alphabet;
 use base64::engine::general_purpose::{GeneralPurpose, GeneralPurposeConfig};
-use base64::{DecodeError, Engine};
+use base64::{DecodeError, Engine as _};
 use serde::Deserialize;
 use thiserror::Error;
 

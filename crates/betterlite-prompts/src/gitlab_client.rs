@@ -10,7 +10,7 @@ pub mod error;
 mod fetch;
 mod init;
 pub mod payload;
-mod tests;
+pub(crate) mod tests;
 pub mod transport;
 mod url;
 

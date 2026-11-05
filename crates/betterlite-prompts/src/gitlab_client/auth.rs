@@ -1,4 +1,4 @@
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::{ExposeSecret as _, SecretString};
 
 #[derive(Clone, Debug)]
 pub struct RequestHeader {

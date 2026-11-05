@@ -6,7 +6,7 @@ use super::{PayloadError, decode_file_payload, decode_text};
 
 #[rstest]
 #[case::ascii(b"abc".as_slice(), "abc")]
-#[case::unicode("é✓".as_bytes(), "é✓")]
+#[case::unicode("\u{e9}\u{2713}".as_bytes(), "\u{e9}\u{2713}")]
 #[case::lone_invalid_byte(b"a\xffb".as_slice(), "a\u{FFFD}b")]
 #[case::truncated_sequence(b"a\xe2\x82".as_slice(), "a\u{FFFD}")]
 #[case::empty(b"".as_slice(), "")]

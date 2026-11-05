@@ -10,15 +10,21 @@ pub(super) fn classify(
     file_path: &str,
     failure: FetchFailure,
 ) -> GitLabClientError {
-    let file_path = file_path.to_owned();
+    let path = file_path.to_owned();
     match (failure, endpoint) {
         (FetchFailure::Status(401), _) => GitLabClientError::Unauthorized,
         (FetchFailure::Status(403), _) => GitLabClientError::AccessDenied {
-            file_path,
+            file_path: path,
             project: project.to_owned(),
         },
-        (source, FileEndpoint::Raw) => GitLabClientError::Fetch { file_path, source },
-        (source, FileEndpoint::Json) => GitLabClientError::JsonFetch { file_path, source },
+        (source, FileEndpoint::Raw) => GitLabClientError::Fetch {
+            file_path: path,
+            source,
+        },
+        (source, FileEndpoint::Json) => GitLabClientError::JsonFetch {
+            file_path: path,
+            source,
+        },
     }
 }
 

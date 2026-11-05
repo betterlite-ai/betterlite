@@ -11,7 +11,7 @@ use crate::gitlab_client::tests::{FakeTransport, answer, config_from};
 #[case::space("a b", "a%20b")]
 #[case::unreserved_stay("A-z_0.9~", "A-z_0.9~")]
 #[case::plus_and_percent("a+b%", "a%2Bb%25")]
-#[case::unicode("é", "%C3%A9")]
+#[case::unicode("\u{e9}", "%C3%A9")]
 #[case::colon_and_at("g:r@h", "g%3Ar%40h")]
 #[case::empty("", "")]
 fn paths_are_encoded_but_for_unreserved_characters(#[case] text: &str, #[case] expected: &str) {
@@ -56,8 +56,11 @@ fn the_ref_is_encoded_with_no_safe_characters() {
 
 #[tokio::test]
 async fn a_per_call_ref_beats_the_client_ref_and_an_empty_one_is_ignored() {
-    let transport =
-        FakeTransport::scripted(vec![answer(200, "x"), answer(200, "x"), answer(200, "x")]);
+    let transport = FakeTransport::scripted(vec![
+        answer!(200, "x"),
+        answer!(200, "x"),
+        answer!(200, "x"),
+    ]);
     let client = GitLabClient::new(
         &config_from(
             r#"{"project": "group/repo", "access_token": "t", "branch": "dev", "base_url": "https://git.example/api/v4"}"#,

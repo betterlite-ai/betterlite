@@ -1,4 +1,4 @@
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::{ExposeSecret as _, SecretString};
 
 use super::config::{GitLabConfig, ProjectId};
 use super::error::GitLabClientError;
@@ -12,11 +12,11 @@ pub(super) fn require_credentials(
     if project.is_blank() || access_token.expose_secret().is_empty() {
         return Err(GitLabClientError::MissingCredentials);
     }
-    let project = match project {
+    let project_id = match project {
         ProjectId::Path(path) => path.clone(),
         ProjectId::Number(number) => number.to_string(),
     };
-    Ok((project, access_token))
+    Ok((project_id, access_token))
 }
 
 mod tests;

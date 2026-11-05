@@ -44,7 +44,7 @@ async fn a_project_is_stored_and_url_encoded(
     #[case] project: &str,
     #[case] encoded: &str,
 ) {
-    let transport = FakeTransport::scripted(vec![answer(200, "x")]);
+    let transport = FakeTransport::scripted(vec![answer!(200, "x")]);
     let client = GitLabClient::new(&config_from(json_text), transport.clone()).unwrap();
     client.get_file_content("a", None).await.unwrap();
     assert_eq!(client.project, project);
