@@ -1525,6 +1525,8 @@ dependencies = [
  "betterlite-config",
  "betterlite-env",
  "betterlite-models",
+ "betterlite-openai",
+ "betterlite-privacy-openai",
  "betterlite-prometheus",
  "betterlite-redact",
  "chrono",
@@ -1831,6 +1833,20 @@ dependencies = [
  "tokio-postgres-rustls-improved",
  "url",
  "uuid",
+]
+
+[[package]]
+name = "betterlite-privacy-openai"
+version = "0.1.0"
+dependencies = [
+ "betterlite-logging",
+ "betterlite-openai",
+ "betterlite-redact",
+ "indexmap 2.14.2",
+ "rstest",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]
