@@ -24,7 +24,7 @@ const ID: uuid::Uuid = uuid::Uuid::from_u128(0x550e_8400_e29b_41d4_a716_4466_554
 
 #[test]
 fn empty_file() {
-    assert!(matches!(
+    assert_eq!(
         validate_upload(
             b"",
             &Scanner(ScanVerdict::Clean),
@@ -33,19 +33,19 @@ fn empty_file() {
         ),
         UploadValidation::Rejected(RejectedUpload {
             reason: RejectionReason::EmptyFile,
-            ..
+            message: "Uploaded file is empty.".to_owned(),
         })
-    ));
+    );
 }
 #[test]
 fn oversized_file() {
-    assert!(matches!(
+    assert_eq!(
         validate_upload(b"xx", &Scanner(ScanVerdict::Clean), || ID, 1),
         UploadValidation::Rejected(RejectedUpload {
             reason: RejectionReason::FileTooLarge,
-            ..
+            message: "Uploaded file is 2 bytes, exceeding the 1-byte limit.".to_owned(),
         })
-    ));
+    );
 }
 #[test]
 fn zip_archive() {
@@ -115,29 +115,52 @@ fn unknown_binary() {
 #[test]
 fn pdf_allowed() {
     assert_eq!(
-        inspect_content(b"%PDF-1.7"),
-        ContentInspection::Allowed(AllowedContent {
-            format: DetectedFormat::Pdf
+        validate_upload(
+            b"%PDF-1.7\n",
+            &Scanner(ScanVerdict::Clean),
+            || ID,
+            MAX_UPLOAD_SIZE_BYTES
+        ),
+        UploadValidation::Secured(super::SecuredUpload {
+            safe_filename: "550e8400e29b41d4a716446655440000.pdf".to_owned(),
+            content_type: "application/pdf".to_owned(),
+            detected_format: DetectedFormat::Pdf,
+            size_bytes: 9,
         })
     );
 }
 #[test]
 fn utf8_text_allowed() {
     assert_eq!(
-        inspect_content("hello \u{3bb}".as_bytes()),
-        ContentInspection::Allowed(AllowedContent {
-            format: DetectedFormat::Text
+        validate_upload(
+            "hello \u{3bb}".as_bytes(),
+            &Scanner(ScanVerdict::Clean),
+            || ID,
+            MAX_UPLOAD_SIZE_BYTES
+        ),
+        UploadValidation::Secured(super::SecuredUpload {
+            safe_filename: "550e8400e29b41d4a716446655440000.txt".to_owned(),
+            content_type: "text/plain".to_owned(),
+            detected_format: DetectedFormat::Text,
+            size_bytes: 8,
         })
     );
 }
-#[test]
-fn inspect_content_classifies() {
-    assert!(matches!(
-        inspect_content(b"#!%PDF-"),
-        ContentInspection::Disallowed(DisallowedContent {
-            kind: DisallowedKind::Executable
-        })
-    ));
+#[rstest::rstest]
+#[case::shebang_before_pdf(b"#!%PDF-", Err(DisallowedKind::Executable))]
+#[case::pdf(b"%PDF-1.4", Ok(DetectedFormat::Pdf))]
+#[case::text(b"plain text", Ok(DetectedFormat::Text))]
+#[case::zip(b"PK\x03\x04", Err(DisallowedKind::Archive))]
+#[case::elf(b"\x7fELF\x02", Err(DisallowedKind::Executable))]
+fn inspect_content_classifies(
+    #[case] content: &[u8],
+    #[case] expected: Result<DetectedFormat, DisallowedKind>,
+) {
+    let inspection = match expected {
+        Ok(format) => ContentInspection::Allowed(AllowedContent { format }),
+        Err(kind) => ContentInspection::Disallowed(DisallowedContent { kind }),
+    };
+    assert_eq!(inspect_content(content), inspection);
 }
 #[test]
 fn unique_safe_filenames() {
@@ -154,7 +177,7 @@ fn unique_safe_filenames() {
 }
 #[test]
 fn malware_detected() {
-    assert!(matches!(
+    assert_eq!(
         validate_upload(
             b"hello",
             &Scanner(ScanVerdict::Infected),
@@ -163,13 +186,14 @@ fn malware_detected() {
         ),
         UploadValidation::Rejected(RejectedUpload {
             reason: RejectionReason::MalwareDetected,
-            ..
+            message: "Uploaded file was flagged by malware scanning (unknown signature)."
+                .to_owned(),
         })
-    ));
+    );
 }
 #[test]
 fn scan_error_fails_closed() {
-    assert!(matches!(
+    assert_eq!(
         validate_upload(
             b"hello",
             &Scanner(ScanVerdict::Error),
@@ -178,9 +202,9 @@ fn scan_error_fails_closed() {
         ),
         UploadValidation::Rejected(RejectedUpload {
             reason: RejectionReason::MalwareScanError,
-            ..
+            message: "Malware scanning could not complete; upload rejected.".to_owned(),
         })
-    ));
+    );
 }
 #[test]
 fn clean_scanner_allows() {
