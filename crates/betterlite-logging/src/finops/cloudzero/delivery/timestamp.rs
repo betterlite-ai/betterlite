@@ -6,6 +6,7 @@ use super::error::TimestampError;
 use crate::finops::cloudzero::records::{CbfRecord, CbfValue};
 
 pub(super) const USAGE_START: &str = "time/usage_start";
+pub(super) const NAIVE_FORMAT: &str = "%Y-%m-%dT%H:%M:%S%.f";
 
 pub(super) fn parse_timestamp(
     timestamp: &str,
@@ -44,7 +45,11 @@ pub(super) fn usage_start(
         None | Some(CbfValue::None) => Ok(None),
         Some(CbfValue::Text(text)) if text.is_empty() => Ok(None),
         Some(CbfValue::Text(text)) => parse_timestamp(text, user_timezone).map(Some),
-        Some(CbfValue::DateTime(moment)) => Ok(Some(*moment)),
+        Some(CbfValue::DateTime(moment)) => parse_timestamp(
+            &moment.naive_utc().format(NAIVE_FORMAT).to_string(),
+            user_timezone,
+        )
+        .map(Some),
         Some(CbfValue::Integer(number)) => Err(TimestampError::NotText {
             timestamp: number.to_string(),
         }),

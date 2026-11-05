@@ -225,18 +225,26 @@ fn a_non_text_usage_start_is_skipped_with_a_warning(#[case] start: CbfValue, #[c
     );
 }
 
-#[test]
-fn a_datetime_usage_start_groups_and_formats_in_utc() {
-    let moment = Utc.with_ymd_and_hms(2025, 4, 19, 23, 59, 59).unwrap();
-    let posts = posts_of(
-        Some("Asia/Tokyo"),
-        &[row(CbfValue::DateTime(moment), Decimal::ONE)],
-        None,
-    );
-    assert_eq!(
-        posts[0].body.data[0]["time/usage_start"],
-        "2025-04-19T23:59:59Z"
-    );
+#[rstest]
+#[case::tokyo_midnight(Some("Asia/Tokyo"), (2025, 4, 19, 0, 0, 0), "2025-04-18T15:00:00Z", "2025-04")]
+#[case::tokyo_month_start(Some("Asia/Tokyo"), (2025, 5, 1, 0, 0, 0), "2025-04-30T15:00:00Z", "2025-04")]
+#[case::tokyo_evening(Some("Asia/Tokyo"), (2025, 4, 19, 23, 59, 59), "2025-04-19T14:59:59Z", "2025-04")]
+#[case::new_york_midnight(Some("America/New_York"), (2025, 7, 1, 0, 0, 0), "2025-07-01T04:00:00Z", "2025-07")]
+#[case::utc(Some("UTC"), (2025, 4, 19, 0, 0, 0), "2025-04-19T00:00:00Z", "2025-04")]
+#[case::unset(None, (2025, 4, 19, 0, 0, 0), "2025-04-19T00:00:00Z", "2025-04")]
+fn a_datetime_usage_start_is_wall_clock_time_in_the_user_timezone(
+    #[case] zone: Option<&str>,
+    #[case] wall_clock: (i32, u32, u32, u32, u32, u32),
+    #[case] expected: &str,
+    #[case] month: &str,
+) {
+    let (year, month_number, day, hour, minute, second) = wall_clock;
+    let moment = Utc
+        .with_ymd_and_hms(year, month_number, day, hour, minute, second)
+        .unwrap();
+    let posts = posts_of(zone, &[row(CbfValue::DateTime(moment), Decimal::ONE)], None);
+    assert_eq!(posts[0].body.data[0]["time/usage_start"], expected);
+    assert_eq!(posts[0].body.month, month);
 }
 
 #[rstest]

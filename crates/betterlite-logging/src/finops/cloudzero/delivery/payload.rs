@@ -4,7 +4,7 @@ use jiff::tz::TimeZone;
 use rust_decimal::Decimal;
 use serde::Serialize;
 
-use super::timestamp::{USAGE_START, parse_timestamp, utc_iso};
+use super::timestamp::{NAIVE_FORMAT, USAGE_START, parse_timestamp, utc_iso};
 use super::transport::Clock;
 use crate::finops::cloudzero::records::{CbfRecord, CbfValue};
 
@@ -41,6 +41,9 @@ where
             CbfValue::Text(text) => text.clone(),
             CbfValue::Integer(number) => number.to_string(),
             CbfValue::Money(amount) => format_decimal(*amount),
+            CbfValue::DateTime(moment) if key == USAGE_START => {
+                moment.naive_utc().format(NAIVE_FORMAT).to_string()
+            }
             CbfValue::DateTime(moment) => utc_iso(*moment),
         };
         record.insert(key.clone(), text);
