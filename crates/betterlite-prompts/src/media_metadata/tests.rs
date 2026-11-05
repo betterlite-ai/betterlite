@@ -137,6 +137,16 @@ fn run(scenario: Scenario) {
     expected_filename: Some("archive.zzz"),
     expected_content_type: "application/octet-stream",
 })]
+#[case::javascript_extension_guesses_text_javascript(Scenario::Metadata {
+    file_data: FileData::Tuple2 { filename: Some("app.js".to_owned()), content: bytes(b"x") },
+    expected_filename: Some("app.js"),
+    expected_content_type: "text/javascript",
+})]
+#[case::gzip_encoded_pdf_strips_the_encoding_suffix(Scenario::Metadata {
+    file_data: FileData::Tuple2 { filename: Some("report.pdf.gz".to_owned()), content: bytes(b"x") },
+    expected_filename: Some("report.pdf.gz"),
+    expected_content_type: "application/pdf",
+})]
 #[case::in_memory_file_uses_its_own_content_type(Scenario::Metadata {
     file_data: FileData::InMemoryFile {
         name: "batch.jsonl".to_owned(),
@@ -215,6 +225,14 @@ fn run(scenario: Scenario) {
     url: "https://example.com/file",
     expected: None,
 })]
+#[case::image_mime_type_from_url_query_before_any_slash_has_no_path(Scenario::ImageMimeFromUrl {
+    url: "https://api.example.com?file=/img.png",
+    expected: None,
+})]
+#[case::image_mime_type_from_url_strips_params_from_the_last_segment(Scenario::ImageMimeFromUrl {
+    url: "https://x.com/a.png;v=1",
+    expected: Some("image/png"),
+})]
 #[case::infer_content_type_prefers_declared_type(Scenario::InferOk {
     url: "https://example.com/image.png",
     content: b"ignored",
@@ -226,6 +244,24 @@ fn run(scenario: Scenario) {
     content: b"",
     current_content_type: Some("application/octet-stream"),
     expected: "image/png",
+})]
+#[case::infer_content_type_skips_binary_octet_stream_declared_type(Scenario::InferOk {
+    url: "https://x/a.png",
+    content: b"",
+    current_content_type: Some("binary/octet-stream"),
+    expected: "image/png",
+})]
+#[case::infer_content_type_skips_empty_declared_type(Scenario::InferOk {
+    url: "https://x/a.png",
+    content: b"",
+    current_content_type: Some(""),
+    expected: "image/png",
+})]
+#[case::infer_content_type_prefers_url_extension_over_sniffed_magic_bytes(Scenario::InferOk {
+    url: "https://x/a.pdf",
+    content: b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a",
+    current_content_type: None,
+    expected: "application/pdf",
 })]
 #[case::infer_content_type_from_url_extension_with_query(Scenario::InferOk {
     url: "https://cdn.example.com/document.pdf?sig=abc",
@@ -250,6 +286,18 @@ fn run(scenario: Scenario) {
     content: b"GIF8zz",
     current_content_type: None,
     expected_error: MediaMetadataError::ContentTypeUndetermined { url: String::new() },
+})]
+#[case::infer_content_type_sniffs_jpeg_magic_bytes(Scenario::InferOk {
+    url: "",
+    content: b"\xff\xd8\xff\xe0",
+    current_content_type: None,
+    expected: "image/jpeg",
+})]
+#[case::infer_content_type_sniffs_heic_magic_bytes(Scenario::InferOk {
+    url: "",
+    content: b"0000ftypheic",
+    current_content_type: None,
+    expected: "image/heic",
 })]
 #[case::infer_content_type_sniffs_webp_magic_bytes(Scenario::InferOk {
     url: "",
