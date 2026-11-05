@@ -1,9 +1,10 @@
+mod request;
 mod scrub;
 
 use betterlite_openai::chat::response::ChatChoice;
 use betterlite_openai::chat::response::ChatResponse;
-use betterlite_openai::chat::{ChatMessage, ChatRequest, MessageContent, Role};
-use betterlite_openai::embedding::EmbeddingResponse;
+use betterlite_openai::chat::{ChatMessage, ChatRequest, MessageContent, Role, ToolCall};
+use betterlite_openai::embedding::{EmbeddingResponse, EmbeddingVector};
 use betterlite_openai::stream::chunk::Choice;
 use betterlite_openai::stream::chunk::Chunk;
 use betterlite_redact::secret::Redactor;
@@ -29,10 +30,7 @@ impl Payload for ChatRequest {
                 passthrough: IndexMap::new(),
             }];
         }
-        scrub::passthrough(&mut output.passthrough, redactor)?;
-        for message in &mut output.messages {
-            scrub_message(message, private, redactor)?;
-        }
+        request::scrub(&mut output, redactor)?;
         Ok(output)
     }
 }
@@ -40,6 +38,11 @@ impl Payload for ChatRequest {
 impl Payload for ChatResponse {
     fn snapshot(&self, private: bool, redactor: &Redactor) -> Result<Self, SnapshotError> {
         let mut output = self.clone();
+        for value in [&mut output.id, &mut output.object, &mut output.model] {
+            *value = redactor.redact_string(value);
+        }
+        text(&mut output.system_fingerprint, false, redactor);
+        text(&mut output.service_tier, false, redactor);
         for choice in &mut output.choices {
             answer(choice, private, redactor)?;
         }
@@ -50,6 +53,11 @@ impl Payload for ChatResponse {
 impl Payload for Chunk {
     fn snapshot(&self, private: bool, redactor: &Redactor) -> Result<Self, SnapshotError> {
         let mut output: Self = serde_json::from_slice(&serde_json::to_vec(self)?)?;
+        for value in [&mut output.id, &mut output.object, &mut output.model] {
+            *value = redactor.redact_string(value);
+        }
+        text(&mut output.system_fingerprint, false, redactor);
+        text(&mut output.service_tier, false, redactor);
         for choice in &mut output.choices {
             chunk(choice, private, redactor);
         }
@@ -64,6 +72,13 @@ impl Payload for EmbeddingResponse {
             output.data.clear();
         }
         output.model = redactor.redact_string(&output.model);
+        output.object = redactor.redact_string(&output.object);
+        for record in &mut output.data {
+            record.object = redactor.redact_string(&record.object);
+            if let EmbeddingVector::Base64(encoded) = &mut record.embedding {
+                *encoded = redactor.redact_string(encoded);
+            }
+        }
         Ok(output)
     }
 }
@@ -78,30 +93,13 @@ fn text(value: &mut Option<String>, private: bool, redactor: &Redactor) {
     }
 }
 
-fn scrub_message(
-    message: &mut ChatMessage,
-    _private: bool,
-    redactor: &Redactor,
-) -> Result<(), SnapshotError> {
-    match &mut message.content {
-        Some(MessageContent::Text(content)) => *content = redactor.redact_string(content),
-        Some(MessageContent::Parts(parts)) => {
-            for part in parts {
-                scrub::passthrough(&mut part.fields, redactor)?;
-            }
-        }
-        None => {}
-    }
-    scrub::passthrough(&mut message.passthrough, redactor)?;
-
-    Ok(())
-}
-
 fn answer(
     choice: &mut ChatChoice,
     private: bool,
     redactor: &Redactor,
 ) -> Result<(), SnapshotError> {
+    text(&mut choice.finish_reason, false, redactor);
+    choice.message.role = redactor.redact_string(&choice.message.role);
     scrub::passthrough(&mut choice.provider_specific_fields, redactor)?;
     scrub::passthrough(&mut choice.logprobs, redactor)?;
     scrub::passthrough(&mut choice.message.audio, redactor)?;
@@ -113,11 +111,7 @@ fn answer(
         private,
         redactor,
     );
-    if let Some(calls) = &mut choice.message.tool_calls {
-        for call in calls {
-            call.function.arguments = content(&call.function.arguments, private, redactor);
-        }
-    }
+    calls(&mut choice.message.tool_calls, private, redactor);
     if private {
         choice.logprobs = None;
         choice.message.audio = None;
@@ -128,6 +122,8 @@ fn answer(
 }
 
 fn chunk(choice: &mut Choice, private: bool, redactor: &Redactor) {
+    text(&mut choice.finish_reason, false, redactor);
+    text(&mut choice.delta.role, false, redactor);
     if let Some(probabilities) = &mut choice.logprobs {
         scrub::logprobs(probabilities, redactor);
     }
@@ -135,16 +131,29 @@ fn chunk(choice: &mut Choice, private: bool, redactor: &Redactor) {
     text(&mut choice.delta.refusal, private, redactor);
     if let Some(calls) = &mut choice.delta.tool_calls {
         for call in calls {
+            text(&mut call.id, false, redactor);
+            text(&mut call.kind, false, redactor);
             if let Some(function) = &mut call.function {
+                text(&mut function.name, false, redactor);
                 function.arguments = content(&function.arguments, private, redactor);
             }
         }
     }
     if let Some(function) = &mut choice.delta.function_call {
+        text(&mut function.name, false, redactor);
         function.arguments = content(&function.arguments, private, redactor);
     }
     if private {
         choice.logprobs = None;
+    }
+}
+
+fn calls(values: &mut Option<Vec<ToolCall>>, private: bool, redactor: &Redactor) {
+    for call in values.iter_mut().flatten() {
+        for value in [&mut call.id, &mut call.kind, &mut call.function.name] {
+            *value = redactor.redact_string(value);
+        }
+        call.function.arguments = content(&call.function.arguments, private, redactor);
     }
 }
 

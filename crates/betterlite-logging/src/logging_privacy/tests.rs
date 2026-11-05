@@ -488,7 +488,7 @@ fn test_child(_input: &str, _expected: &str) {
 
 fn test_credentials(_input: &str, _expected: &str) {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let payload = serde_json::from_str(r#"{"api_key":42,"authorization":{"nested":"private"},"password":false,"secret":null,"safe":[{"token":"private"}]}"#).unwrap();
+    let payload = serde_json::from_str(r#"{"api_key":42,"authorization":{"nested":"private"},"password":false,"secret":null,"note":"sk-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","safe":[{"token":"private"}]}"#).unwrap();
     let safe = super::snapshot::callback_snapshot(
         payload,
         Decision {
@@ -497,7 +497,7 @@ fn test_credentials(_input: &str, _expected: &str) {
         },
         &redactor,
     );
-    let expected = serde_json::from_str::<Json>(r#"{"api_key":"REDACTED","authorization":"REDACTED","password":"REDACTED","secret":null,"safe":[{"token":"REDACTED"}]}"#).unwrap();
+    let expected = serde_json::from_str::<Json>(r#"{"api_key":"REDACTED","authorization":"REDACTED","password":"REDACTED","secret":null,"note":"REDACTED","safe":[{"token":"REDACTED"}]}"#).unwrap();
     assert_eq!(safe, expected);
 }
 
@@ -643,7 +643,7 @@ fn test_depth_boundary(input: &str, expected: &str) {
     let payload = (0..depth).fold(Json::Text("public".to_owned()), |child, _depth| {
         Json::List(vec![child])
     });
-    let expected_payload = (0..100).fold(Json::Text(expected.to_owned()), |child, _depth| {
+    let expected_payload = (0_usize..100).fold(Json::Text(expected.to_owned()), |child, _depth| {
         Json::List(vec![child])
     });
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
@@ -667,9 +667,9 @@ fn test_snapshot<P>(
 where
     P: Payload,
 {
-    let payload = source
-        .snapshot(decision.content, redactor)
-        .map_err(|SnapshotError::Json { source }| CallbackMetadataError::Json { source })?;
+    let payload = source.snapshot(decision.content, redactor).map_err(
+        |SnapshotError::Json { source: error }| CallbackMetadataError::Json { source: error },
+    )?;
     let mut safe_metadata = redact_user_api_key_info(metadata, decision.key_info);
     super::credentials::scrub(&mut safe_metadata, redactor);
     Ok((
