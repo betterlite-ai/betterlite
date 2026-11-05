@@ -1,9 +1,8 @@
 #![cfg(test)]
 
-use super::{Op, Recorded, StreamEvent, StreamInput, run_stream};
+use super::{Op, canonical_arguments};
 use crate::case::{HelperCase, helper::validate_helper};
 use crate::helpers::Helper as _;
-use betterlite_openai::compatible_line_stream::{Mode, Outcome};
 use rstest::rstest;
 use serde_json::json;
 use std::fs;
@@ -27,49 +26,26 @@ fn helper_runs_the_compatible_line_stream() {
     );
 }
 
-#[test]
-fn compatible_line_stream_stops_after_async_done_and_emits_exhaustion() {
-    let input = StreamInput {
-        mode: Mode::Async,
-        events: vec![
-            StreamEvent::Line {
-                line: String::from(r#"{"choices":[{"delta":{"content":"before"}}]}"#),
-            },
-            StreamEvent::Line {
-                line: String::from("data: [DONE]"),
-            },
-            StreamEvent::Line {
-                line: String::from(r#"{"choices":[{"delta":{"content":"after"}}]}"#),
-            },
-        ],
-    };
-    let outcomes = run_stream(&input);
-    assert_eq!(outcomes.len(), 2);
-    assert_eq!(outcomes.last(), Some(&Recorded::Line(Outcome::End)));
+#[rstest]
+#[case::sync("sync", "connection reset")]
+#[case::async_mode("async", "Error receiving chunk from stream: connection reset")]
+fn helper_records_a_receive_error_and_stops(#[case] mode: &str, #[case] expected: &str) {
+    let input = json!({"mode":mode,"events":[
+        {"kind":"receive_error","message":"connection reset"},
+        {"kind":"line","line":"{\"choices\":[{\"delta\":{\"content\":\"after\"}}]}"}
+    ]});
+    assert_eq!(
+        Op::decode_and_run(&input).unwrap(),
+        json!([{"kind":"error","value":expected}])
+    );
 }
 
 #[rstest]
-#[case::sync(Mode::Sync, "connection reset")]
-#[case::async_receive(Mode::Async, "Error receiving chunk from stream: connection reset")]
-fn compatible_line_stream_stops_after_receive_error(#[case] mode: Mode, #[case] expected: &str) {
-    let input = StreamInput {
-        mode,
-        events: vec![
-            StreamEvent::ReceiveError {
-                message: String::from("connection reset"),
-            },
-            StreamEvent::Line {
-                line: String::from(r#"{"choices":[{"delta":{"content":"after"}}]}"#),
-            },
-        ],
-    };
-    assert_eq!(
-        run_stream(&input),
-        vec![Recorded::Error {
-            kind: "error",
-            value: expected.to_owned()
-        }]
-    );
+#[case::object(r#"{"a":1}"#, r#"{"a":1}"#)]
+#[case::spaced(r#"{"a": 1}"#, r#"{"a":1}"#)]
+#[case::plain_text("not json", "not json")]
+fn canonical_arguments_compacts_objects_only(#[case] arguments: &str, #[case] expected: &str) {
+    assert_eq!(canonical_arguments(arguments), expected);
 }
 
 #[rstest]

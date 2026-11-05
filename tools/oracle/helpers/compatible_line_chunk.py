@@ -1,4 +1,5 @@
 import asyncio
+import json
 from copy import deepcopy
 from typing import Literal, TypedDict, cast
 
@@ -67,8 +68,24 @@ def receive(event: Event) -> str:
     return event["line"]
 
 
+def compact_arguments(arguments: str) -> str:
+    try:
+        parsed = cast(JsonValue, json.loads(arguments))
+    except ValueError:
+        return arguments
+    if isinstance(parsed, dict):
+        return json.dumps(parsed, separators=(",", ":"), sort_keys=True, ensure_ascii=False)
+    return arguments
+
+
 def chunk_value(chunk: GenericStreamingChunk) -> dict[str, object]:
     tool_use = cast(JsonValue, to_jsonable_python(chunk.get("tool_use")))
+    if isinstance(tool_use, dict):
+        function = tool_use.get("function")
+        if isinstance(function, dict):
+            arguments = function.get("arguments")
+            if isinstance(arguments, str):
+                function["arguments"] = compact_arguments(arguments)
     raw_usage = cast(JsonValue, to_jsonable_python(chunk["usage"]))
     usage: JsonValue = None
     if isinstance(raw_usage, dict):

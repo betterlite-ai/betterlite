@@ -1,5 +1,8 @@
+use serde::de::IgnoredAny;
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use serde_with::{DefaultOnNull, serde_as};
+use thiserror::Error;
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
@@ -33,17 +36,78 @@ pub(super) struct Delta {
     pub content: Option<String>,
     #[serde(default)]
     #[serde_as(as = "DefaultOnNull")]
-    pub tool_calls: Vec<Call>,
+    pub tool_calls: Vec<ToolCall>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(try_from = "RawCall")]
+pub(super) enum ToolCall {
+    Function(Call),
+    Custom,
+}
+
+#[derive(Debug)]
+pub(super) struct Call {
+    pub id: Option<String>,
+    pub function: Function,
+    pub index: i64,
+}
+
+#[derive(Debug, Error)]
+pub(super) enum CallError {
+    #[error("a function tool call needs a function object")]
+    MissingFunction,
+    #[error("a custom tool call needs a custom object")]
+    MissingCustom,
 }
 
 #[serde_as]
 #[derive(Debug, Deserialize)]
-pub(super) struct Call {
-    pub id: Option<String>,
-    pub function: Function,
+struct RawCall {
+    id: Option<String>,
+    #[serde(rename = "type")]
+    kind: Option<String>,
+    custom: Option<CustomPayload>,
+    function: Option<MaybeFunction>,
     #[serde(default)]
     #[serde_as(as = "DefaultOnNull")]
-    pub index: i64,
+    index: i64,
+}
+
+#[derive(Debug, Deserialize)]
+struct CustomPayload {
+    #[serde(rename = "name")]
+    _name: Option<String>,
+    #[serde(rename = "input")]
+    _input: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum MaybeFunction {
+    Valid(Function),
+    Invalid(IgnoredAny),
+}
+
+impl TryFrom<RawCall> for ToolCall {
+    type Error = CallError;
+
+    fn try_from(raw: RawCall) -> Result<Self, Self::Error> {
+        if raw.custom.is_some() {
+            return Ok(Self::Custom);
+        }
+        if raw.kind.as_deref() == Some("custom") {
+            return Err(CallError::MissingCustom);
+        }
+        match raw.function {
+            Some(MaybeFunction::Valid(function)) => Ok(Self::Function(Call {
+                id: raw.id,
+                function,
+                index: raw.index,
+            })),
+            Some(MaybeFunction::Invalid(_)) | None => Err(CallError::MissingFunction),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -55,13 +119,48 @@ pub struct Tool {
     pub index: i64,
 }
 
-#[serde_as]
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(from = "RawFunction")]
 pub struct Function {
     pub name: Option<String>,
-    #[serde(default)]
-    #[serde_as(as = "DefaultOnNull")]
     pub arguments: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct RawFunction {
+    name: Option<String>,
+    arguments: Option<Arguments>,
+    parameters: Option<Parameters>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum Arguments {
+    Text(String),
+    Object(Map<String, Value>),
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum Parameters {
+    Object(Map<String, Value>),
+    Other(IgnoredAny),
+}
+
+impl From<RawFunction> for Function {
+    fn from(raw: RawFunction) -> Self {
+        let arguments = match (raw.arguments, raw.parameters) {
+            (Some(Arguments::Text(text)), _) => text,
+            (Some(Arguments::Object(object)), _) | (None, Some(Parameters::Object(object))) => {
+                Value::Object(object).to_string()
+            }
+            (None, Some(Parameters::Other(_)) | None) => String::new(),
+        };
+        Self {
+            name: raw.name,
+            arguments,
+        }
+    }
 }
 
 #[serde_as]

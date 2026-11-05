@@ -1569,6 +1569,7 @@ dependencies = [
  "betterlite-http",
  "betterlite-models",
  "betterlite-prompts",
+ "futures-util",
  "hex",
  "indexmap 2.14.2",
  "nix",

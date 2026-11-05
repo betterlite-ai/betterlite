@@ -1,0 +1,5 @@
+task: B1427
+deviations:
+  - what: A first tool call of type custom (a "type" of "custom" or a non-null "custom" key) produces no tool_use, and the chunk keeps its text, finish_reason and usage.
+    why: LiteLLM reads function.arguments on it and raises AttributeError, which ends the whole stream on a line a working setup receives from OpenAI-compatible servers, so no setup can depend on that failure.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/databricks/streaming_utils.py#L54-L57

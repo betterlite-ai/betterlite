@@ -1,9 +1,12 @@
 #![cfg(test)]
+use super::lines::{AsyncLines, SyncLines};
 use super::wire::Usage;
 use super::{
     CompatibleLineChunk, Mode, Outcome, ReceiveError, StreamError, decode_legacy_compatible_line,
     receive_failure,
 };
+use futures_util::StreamExt as _;
+use futures_util::stream;
 use rstest::rstest;
 use serde_json::Value;
 use std::error::Error as _;
@@ -71,6 +74,88 @@ fn compatible_line_maps_finish_reason_with_the_shared_table(
     };
     assert!(chunk.is_finished);
     assert_eq!(chunk.finish_reason, expected);
+}
+
+#[rstest]
+#[case::object_arguments(r#"{"arguments":{"a":1}}"#, r#"{"a":1}"#)]
+#[case::parameters_without_arguments(r#"{"parameters":{"a":1}}"#, r#"{"a":1}"#)]
+#[case::parameters_with_null_arguments(r#"{"arguments":null,"parameters":{"a":1}}"#, r#"{"a":1}"#)]
+#[case::string_arguments_win(r#"{"arguments":"raw","parameters":{"a":1}}"#, "raw")]
+#[case::object_arguments_win(r#"{"arguments":{"b":2},"parameters":{"a":1}}"#, r#"{"b":2}"#)]
+#[case::non_object_parameters_are_ignored(r#"{"parameters":"text"}"#, "")]
+#[case::empty_object(r#"{"arguments":{}}"#, "{}")]
+fn compatible_line_tool_arguments_take_objects_and_parameters(
+    #[case] function: &str,
+    #[case] expected: &str,
+) {
+    let line = format!(
+        r#"{{"choices":[{{"delta":{{"content":"hi","tool_calls":[{{"index":2,"id":"t","function":{function}}}]}}}}]}}"#
+    );
+    let Outcome::Chunk(chunk) = decode_legacy_compatible_line(&line, Mode::Sync) else {
+        panic!("chunk")
+    };
+    assert_eq!(chunk.text, "hi");
+    assert_eq!(chunk.tool_use.unwrap().function.arguments, expected);
+}
+
+#[rstest]
+#[case::number(r#"{"arguments":1}"#)]
+#[case::array(r#"{"arguments":[1]}"#)]
+#[case::name_number(r#"{"arguments":"x","name":3}"#)]
+fn compatible_line_tool_arguments_of_another_type_empty_the_chunk(#[case] function: &str) {
+    let line = format!(
+        r#"{{"choices":[{{"delta":{{"content":"hi","tool_calls":[{{"function":{function}}}]}}}}]}}"#
+    );
+    assert_eq!(
+        decode_legacy_compatible_line(&line, Mode::Sync),
+        decode_legacy_compatible_line("", Mode::Sync)
+    );
+}
+
+#[rstest]
+#[case::type_custom(r#"{"type":"custom","id":"c","custom":{"name":"n","input":"i"}}"#)]
+#[case::custom_key_only(r#"{"id":"c","custom":{"name":"n","input":"i"}}"#)]
+#[case::custom_with_function(
+    r#"{"type":"custom","custom":{"input":"i"},"function":{"arguments":"x"}}"#
+)]
+#[case::custom_with_null_function(r#"{"custom":{},"function":null}"#)]
+fn custom_first_tool_call_keeps_text_finish_reason_and_usage(#[case] tool_call: &str) {
+    let line = format!(
+        r#"{{"choices":[{{"delta":{{"content":"hi","tool_calls":[{tool_call},{{"function":{{"arguments":"second"}}}}]}},"finish_reason":"tool_calls"}}],"usage":{{"prompt_tokens":1,"completion_tokens":2,"total_tokens":3}}}}"#
+    );
+    let Outcome::Chunk(chunk) = decode_legacy_compatible_line(&line, Mode::Sync) else {
+        panic!("chunk")
+    };
+    assert_eq!(chunk.text, "hi");
+    assert_eq!(chunk.tool_use, None);
+    assert!(chunk.is_finished);
+    assert_eq!(chunk.finish_reason, "tool_calls");
+    assert_eq!(chunk.usage.unwrap().total_tokens, 3_i64);
+}
+
+#[rstest]
+#[case::type_custom_without_payload(r#"{"type":"custom","function":{"arguments":"x"}}"#)]
+#[case::type_custom_null_payload(r#"{"type":"custom","custom":null}"#)]
+#[case::payload_name_number(r#"{"custom":{"name":3}}"#)]
+#[case::payload_not_object(r#"{"custom":"text"}"#)]
+#[case::custom_index_text(r#"{"custom":{},"index":"x"}"#)]
+fn invalid_custom_tool_call_empties_the_chunk(#[case] tool_call: &str) {
+    let line = format!(
+        r#"{{"choices":[{{"delta":{{"content":"hi","tool_calls":[{tool_call}]}},"finish_reason":"stop"}}]}}"#
+    );
+    assert_eq!(
+        decode_legacy_compatible_line(&line, Mode::Sync),
+        decode_legacy_compatible_line("", Mode::Sync)
+    );
+}
+
+#[test]
+fn second_custom_tool_call_is_not_projected_and_does_not_fail() {
+    let line = r#"{"choices":[{"delta":{"tool_calls":[{"id":"f","function":{"arguments":"x"}},{"custom":{"name":"n"}}]}}]}"#;
+    let Outcome::Chunk(chunk) = decode_legacy_compatible_line(line, Mode::Sync) else {
+        panic!("chunk")
+    };
+    assert_eq!(chunk.tool_use.unwrap().id.unwrap(), "f");
 }
 
 #[test]
@@ -242,4 +327,116 @@ fn missing_tool_index_and_arguments_take_model_defaults() {
     assert_eq!(tool.id, None);
     assert_eq!(tool.function.name, None);
     assert_eq!(tool.function.arguments, "");
+}
+
+type Source = Vec<Result<String, ReceiveError<io::Error>>>;
+
+fn drain_sync(source: Source) -> Vec<Result<CompatibleLineChunk, StreamError<io::Error>>> {
+    SyncLines::from(source.into_iter()).collect()
+}
+
+async fn drain_async(source: Source) -> Vec<Result<CompatibleLineChunk, StreamError<io::Error>>> {
+    AsyncLines::from(stream::iter(source)).collect().await
+}
+
+#[test]
+fn sync_lines_turn_done_into_an_empty_chunk_and_end_on_exhaustion() {
+    let items = drain_sync(vec![
+        Ok(String::from(r#"{"choices":[{"delta":{"content":"a"}}]}"#)),
+        Ok(String::from("data: [DONE]")),
+        Ok(String::from(r#"{"choices":[{"delta":{"content":"b"}}]}"#)),
+    ]);
+    let texts: Vec<_> = items.into_iter().map(|item| item.unwrap().text).collect();
+    assert_eq!(texts, ["a", "", "b"]);
+}
+
+#[test]
+fn sync_lines_keep_a_blank_line_apart_from_exhaustion() {
+    assert_eq!(drain_sync(vec![Ok(String::new())]).len(), 1);
+    assert!(drain_sync(Vec::new()).is_empty());
+}
+
+#[tokio::test]
+async fn async_lines_stop_at_done_and_leave_the_rest_of_the_source_unread() {
+    let source: Source = vec![
+        Ok(String::from(
+            r#"{"choices":[{"delta":{"content":"before"}}]}"#,
+        )),
+        Ok(String::from("data: [DONE]")),
+        Ok(String::from(
+            r#"{"choices":[{"delta":{"content":"after"}}]}"#,
+        )),
+    ];
+    let mut lines = AsyncLines::from(stream::iter(source));
+    assert_eq!(lines.next().await.unwrap().unwrap().text, "before");
+    assert!(lines.next().await.is_none());
+    assert!(lines.next().await.is_none());
+    assert_eq!(lines.source.count().await, 1);
+}
+
+#[tokio::test]
+async fn async_lines_emit_blank_chunks_and_end_on_exhaustion() {
+    assert_eq!(
+        drain_async(vec![Ok(String::new()), Ok(String::from("  "))])
+            .await
+            .len(),
+        2
+    );
+    assert!(drain_async(Vec::new()).await.is_empty());
+}
+
+#[rstest]
+#[case::sync(Mode::Sync, "connection reset", false)]
+#[case::async_mode(
+    Mode::Async,
+    "Error receiving chunk from stream: connection reset",
+    true
+)]
+#[tokio::test]
+async fn other_receive_errors_end_the_stream_with_the_mode_error(
+    #[case] mode: Mode,
+    #[case] expected: &str,
+    #[case] runtime: bool,
+) {
+    let source: Source = vec![
+        Err(ReceiveError::Other(io::Error::other("connection reset"))),
+        Ok(String::from(
+            r#"{"choices":[{"delta":{"content":"after"}}]}"#,
+        )),
+    ];
+    let items = match mode {
+        Mode::Sync => drain_sync(source),
+        Mode::Async => drain_async(source).await,
+    };
+    assert_eq!(items.len(), 1);
+    let error = items.into_iter().next().unwrap().unwrap_err();
+    assert_eq!(matches!(error, StreamError::Runtime { .. }), runtime);
+    assert_eq!(error.to_string(), expected);
+}
+
+#[rstest]
+#[case::sync(Mode::Sync)]
+#[case::async_mode(Mode::Async)]
+#[tokio::test]
+async fn value_receive_errors_end_the_stream_as_runtime_errors(#[case] mode: Mode) {
+    let source: Source = vec![
+        Ok(String::from(
+            r#"{"choices":[{"delta":{"content":"before"}}]}"#,
+        )),
+        Err(ReceiveError::Value(io::Error::other("bad value"))),
+        Ok(String::from(
+            r#"{"choices":[{"delta":{"content":"after"}}]}"#,
+        )),
+    ];
+    let items = match mode {
+        Mode::Sync => drain_sync(source),
+        Mode::Async => drain_async(source).await,
+    };
+    assert_eq!(items.len(), 2);
+    assert_eq!(items[0].as_ref().unwrap().text, "before");
+    let error = items.into_iter().nth(1).unwrap().unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Error receiving chunk from stream: bad value"
+    );
 }

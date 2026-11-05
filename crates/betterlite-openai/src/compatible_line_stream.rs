@@ -1,9 +1,10 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+pub mod lines;
 pub mod wire;
 use crate::text_completion_policy::reply::mapped_finish_reason;
-use wire::{Response, Tool, Usage};
+use wire::{Response, Tool, ToolCall, Usage};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
 pub struct CompatibleLineChunk {
@@ -89,7 +90,7 @@ fn project(response: Response) -> CompatibleLineChunk {
         return chunk;
     };
     chunk.text = choice.delta.content.unwrap_or_default();
-    if let Some(call) = choice.delta.tool_calls.into_iter().next() {
+    if let Some(ToolCall::Function(call)) = choice.delta.tool_calls.into_iter().next() {
         chunk.tool_use = Some(Tool {
             id: call.id,
             kind: "function".to_owned(),
