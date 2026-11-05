@@ -29,7 +29,10 @@ use super::records::{
 };
 use super::stream::{DEFAULT_CHUNK_SIZE, FileContentStreamingResult, StreamExit, flatten_headers};
 use super::transport::{FileTransport, StreamReply};
-use super::{ClientArgs, ClientKind, FilesApi, FilesClient, get_openai_client, select_client};
+use super::{
+    ClientArgs, ClientKind, DEFAULT_MAX_RETRIES, DEFAULT_TIMEOUT, FilesApi, FilesClient,
+    get_openai_client, select_client,
+};
 
 const FILE_JSON: &str = r#"{"id":"file-1","bytes":3,"created_at":7,"filename":"a.jsonl","object":"file","purpose":"batch"}"#;
 
@@ -442,8 +445,8 @@ fn client_projection() {
         panic!("async client expected");
     };
     assert_eq!(built.base_url.as_str(), "https://x.test/v1/");
-    assert_eq!(built.timeout, Some(Duration::ZERO));
-    assert_eq!(built.max_retries, Some(0));
+    assert_eq!(built.timeout, Duration::ZERO);
+    assert_eq!(built.max_retries, 0);
     assert_eq!(built.organization.as_deref(), Some(""));
 
     let bare = ClientArgs {
@@ -458,8 +461,8 @@ fn client_projection() {
         panic!("sync client expected");
     };
     assert_eq!(defaults.base_url.as_str(), "https://api.openai.com/v1/");
-    assert_eq!(defaults.timeout, None);
-    assert_eq!(defaults.max_retries, None);
+    assert_eq!(defaults.timeout, DEFAULT_TIMEOUT);
+    assert_eq!(defaults.max_retries, DEFAULT_MAX_RETRIES);
     assert_eq!(defaults.organization, None);
     supplied_client_wins();
 }

@@ -8,9 +8,9 @@ use indexmap::IndexMap;
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use secrecy::ExposeSecret as _;
 
+use crate::files::FilesClient;
 use crate::files::error::FilesError;
 use crate::files::records::{FileContentRequest, FileCreate};
-use crate::files::{DEFAULT_TIMEOUT, FilesClient};
 
 // the OpenAI SDK's path_template keeps RFC 3986 sub-delims, ':' and '@' inside a path segment
 const SEGMENT: &AsciiSet = &NON_ALPHANUMERIC
@@ -138,7 +138,7 @@ impl FilesClient {
             query: wire.query,
             headers,
             body: wire.body,
-            deadline: wire.timeout.or(self.timeout).unwrap_or(DEFAULT_TIMEOUT),
+            deadline: wire.timeout.unwrap_or(self.timeout),
         })
     }
 

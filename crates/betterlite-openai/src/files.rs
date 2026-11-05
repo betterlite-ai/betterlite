@@ -28,6 +28,9 @@ const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1/";
 // the OpenAI SDK's default request timeout
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
 
+// the OpenAI SDK's default retry count
+pub const DEFAULT_MAX_RETRIES: u32 = 2;
+
 // The arguments LiteLLM's get_openai_client forwards to the SDK constructor; None is left out of the call
 #[derive(Debug, Clone, Default)]
 pub struct ClientArgs {
@@ -44,8 +47,8 @@ pub struct FilesClient {
     pub api_key: SecretString,
     pub base_url: Url,
     pub organization: Option<String>,
-    pub timeout: Option<Duration>,
-    pub max_retries: Option<u32>,
+    pub timeout: Duration,
+    pub max_retries: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -76,8 +79,8 @@ pub fn get_openai_client(
         api_key,
         base_url,
         organization: args.organization,
-        timeout: args.timeout,
-        max_retries: args.max_retries,
+        timeout: args.timeout.unwrap_or(DEFAULT_TIMEOUT),
+        max_retries: args.max_retries.unwrap_or(DEFAULT_MAX_RETRIES),
     };
     Ok(Some(if is_async {
         ClientKind::Async(client)

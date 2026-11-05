@@ -55,11 +55,11 @@ pub struct FileObject {
     pub filename: String,
     pub object: FileKind,
     pub purpose: FilesPurpose,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<FileStatus>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<i64>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status_details: Option<String>,
 }
 
@@ -70,7 +70,8 @@ pub fn decode_file_object(body: &[u8]) -> Result<FileObject, FilesError> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum CreatePurpose {
     Assistants,
     Batch,
