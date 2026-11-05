@@ -29,16 +29,11 @@ fn missing_payload_data_is_absent(#[case] body: &str) {
     assert!(decode_payload(body).unwrap().is_none());
 }
 
-#[test]
-fn malformed_base64_is_an_error() {
-    let error = decode_payload(r#"{"payload":{"data":"c2Vj*"}}"#).unwrap_err();
-
-    assert!(matches!(error, GoogleSecretManagerError::Base64(_)));
-}
-
-#[test]
-fn missing_padding_is_an_error() {
-    let error = decode_payload(r#"{"payload":{"data":"c2VjcmV0cw"}}"#).unwrap_err();
+#[rstest]
+#[case::bad_character(r#"{"payload":{"data":"c2Vj*"}}"#)]
+#[case::missing_padding(r#"{"payload":{"data":"c2VjcmV0cw"}}"#)]
+fn malformed_base64_is_an_error(#[case] body: &str) {
+    let error = decode_payload(body).unwrap_err();
 
     assert!(matches!(error, GoogleSecretManagerError::Base64(_)));
 }

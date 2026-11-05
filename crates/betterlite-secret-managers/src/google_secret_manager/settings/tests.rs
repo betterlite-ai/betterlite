@@ -73,12 +73,13 @@ fn refresh_interval_resolution(
 }
 
 #[rstest]
-#[case::word("soon")]
-#[case::negative("-5")]
-fn invalid_refresh_interval_names_the_variable(#[case] text: &str) {
+#[case::word("GOOGLE_SECRET_MANAGER_REFRESH_INTERVAL", "soon")]
+#[case::negative("GOOGLE_SECRET_MANAGER_REFRESH_INTERVAL", "-5")]
+#[case::not_a_flag("GOOGLE_SECRET_MANAGER_ALWAYS_READ_SECRET_MANAGER", "maybe")]
+fn invalid_text_names_the_variable(#[case] name: &str, #[case] text: &str) {
     let variables = environment(&[
         ("GOOGLE_SECRET_MANAGER_PROJECT_ID", "project-one"),
-        ("GOOGLE_SECRET_MANAGER_REFRESH_INTERVAL", text),
+        (name, text),
     ]);
 
     let error = Settings::resolve(&variables, Options::default()).unwrap_err();
@@ -88,25 +89,7 @@ fn invalid_refresh_interval_names_the_variable(#[case] text: &str) {
         error::Error::source(&error)
             .unwrap()
             .to_string()
-            .contains("GOOGLE_SECRET_MANAGER_REFRESH_INTERVAL")
-    );
-}
-
-#[test]
-fn invalid_always_read_text_names_the_variable() {
-    let variables = environment(&[
-        ("GOOGLE_SECRET_MANAGER_PROJECT_ID", "project-one"),
-        ("GOOGLE_SECRET_MANAGER_ALWAYS_READ_SECRET_MANAGER", "maybe"),
-    ]);
-
-    let error = Settings::resolve(&variables, Options::default()).unwrap_err();
-
-    assert!(matches!(error, GoogleSecretManagerError::Environment(_)));
-    assert!(
-        error::Error::source(&error)
-            .unwrap()
-            .to_string()
-            .contains("GOOGLE_SECRET_MANAGER_ALWAYS_READ_SECRET_MANAGER")
+            .contains(name)
     );
 }
 

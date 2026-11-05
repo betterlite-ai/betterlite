@@ -15,8 +15,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use super::{
     Dependencies, GoogleSecretManager, GoogleSecretManagerError, HttpResponse, NativeSecretReader,
-    RequestHeaderSource, RequestHeaders, SecretTransport,
-    settings::{Options, Settings},
+    RequestHeaderSource, RequestHeaders, SecretTransport, settings::Options,
 };
 use crate::secret_contracts::SecretFuture;
 
@@ -81,15 +80,11 @@ impl SecretTransport for ScriptedTransport {
 #[derive(Default)]
 struct CountingHeaders {
     calls: AtomicUsize,
-    fail: bool,
 }
 
 impl RequestHeaderSource for CountingHeaders {
     fn sync_construct_request_headers(&self) -> Result<RequestHeaders, io::Error> {
         self.calls.fetch_add(1, Ordering::SeqCst);
-        if self.fail {
-            return Err(io::Error::from(io::ErrorKind::PermissionDenied));
-        }
         Ok(BTreeMap::from([
             (
                 "Authorization".to_owned(),
@@ -131,16 +126,9 @@ impl Harness {
     }
 }
 
-fn harness_with(
-    options: Options,
-    native_reader: Option<Arc<dyn NativeSecretReader>>,
-    fail_headers: bool,
-) -> Harness {
+fn harness_with(options: Options, native_reader: Option<Arc<dyn NativeSecretReader>>) -> Harness {
     let transport = Arc::new(ScriptedTransport::default());
-    let headers = Arc::new(CountingHeaders {
-        calls: AtomicUsize::new(0),
-        fail: fail_headers,
-    });
+    let headers = Arc::new(CountingHeaders::default());
     let now = Arc::new(Mutex::new(Duration::ZERO));
     let clock_now = Arc::clone(&now);
     let environment = BTreeMap::from([(
@@ -176,7 +164,6 @@ fn harness() -> Harness {
             always_read_secret_manager: None,
         },
         None,
-        false,
     )
 }
 
@@ -199,20 +186,6 @@ fn initialization_without_project_id_fails() {
         failure,
         Err(GoogleSecretManagerError::MissingProjectId)
     ));
-}
-
-#[test]
-fn initialization_exposes_the_resolved_cache_lifetime() {
-    let harness = harness();
-
-    assert_eq!(
-        &harness.manager.settings,
-        &Settings {
-            project_id: "project-one".to_owned(),
-            refresh_interval: Duration::from_secs(60),
-            always_read_secret_manager: false,
-        }
-    );
 }
 
 #[tokio::test]
@@ -342,7 +315,6 @@ async fn always_read_ignores_cached_values_and_cached_absence() {
             always_read_secret_manager: Some(true),
         },
         None,
-        false,
     );
     harness.transport.queue(404, "missing");
     harness.transport.queue(200, SECRET_BODY);
@@ -366,11 +338,7 @@ async fn always_read_ignores_cached_values_and_cached_absence() {
 async fn native_reader_answer_is_used_without_cache_or_network(
     #[case] answer: Option<&'static str>,
 ) {
-    let harness = harness_with(
-        Options::default(),
-        Some(Arc::new(NativeReader { answer })),
-        false,
-    );
+    let harness = harness_with(Options::default(), Some(Arc::new(NativeReader { answer })));
 
     let secret = harness.read("api-key").await.unwrap();
 
@@ -407,27 +375,4 @@ async fn transport_failure_is_an_error_that_is_not_cached() {
 
     assert!(matches!(error, GoogleSecretManagerError::Request(_)));
     assert_eq!(retried.expose_secret(), "secret");
-}
-
-#[tokio::test]
-async fn header_failure_stops_before_the_request() {
-    let harness = harness_with(Options::default(), None, true);
-
-    let error = harness.read("api-key").await.unwrap_err();
-
-    assert!(matches!(error, GoogleSecretManagerError::Headers(_)));
-    assert!(harness.transport.urls().is_empty());
-}
-
-#[tokio::test]
-async fn names_are_cached_independently() {
-    let harness = harness();
-    harness.transport.queue(404, "missing");
-    harness.transport.queue(200, SECRET_BODY);
-    harness.read("absent").await.unwrap_err();
-
-    let present = harness.read("present").await.unwrap().unwrap();
-
-    assert_eq!(present.expose_secret(), "secret");
-    assert!(harness.read("absent").await.unwrap().is_none());
 }

@@ -30,7 +30,7 @@ pub(crate) struct Input {
     steps: Vec<Step>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 struct NativeAnswer {
     value: Option<String>,
 }
@@ -48,7 +48,7 @@ enum Step {
     Advance(u64),
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 struct Request {
     url: String,
     headers: BTreeMap<String, String>,
@@ -63,18 +63,12 @@ enum StepResult {
 }
 
 #[derive(Serialize)]
-#[serde(untagged)]
-enum Output {
-    Failed {
-        initialized: bool,
-    },
-    Ready {
-        initialized: bool,
-        refresh_interval_seconds: u64,
-        always_read: bool,
-        steps: Vec<StepResult>,
-        requests: Vec<Request>,
-    },
+struct Output {
+    initialized: bool,
+    refresh_interval_seconds: u64,
+    always_read: bool,
+    steps: Vec<StepResult>,
+    requests: Vec<Request>,
 }
 
 struct ScriptedTransport {
@@ -131,11 +125,9 @@ impl RequestHeaderSource for FixedHeaders {
     }
 }
 
-struct FixedNative(Option<String>);
-
-impl NativeSecretReader for FixedNative {
+impl NativeSecretReader for NativeAnswer {
     fn sync_read_secret(&self, _secret_name: &str) -> Result<Option<SecretString>, io::Error> {
-        Ok(self.0.clone().map(SecretString::from))
+        Ok(self.value.clone().map(SecretString::from))
     }
 }
 
@@ -155,7 +147,7 @@ fn open_session(input: &Input) -> Result<Session, GoogleSecretManagerError> {
     let transport_dependency: Arc<dyn SecretTransport> =
         Arc::<ScriptedTransport>::clone(&transport);
     let native_reader = input.native.as_ref().map(|native| {
-        let reader: Arc<dyn NativeSecretReader> = Arc::new(FixedNative(native.value.clone()));
+        let reader: Arc<dyn NativeSecretReader> = Arc::new(native.clone());
         reader
     });
     let manager = GoogleSecretManager::initialize(
@@ -191,12 +183,10 @@ fn play(runtime: &tokio::runtime::Runtime, session: &Session, steps: &[Step]) ->
                 results.push(StepResult::Advanced(*seconds));
             }
             Step::Read(name) => {
-                results.push(runtime.block_on(session.manager.get_secret(name)).map_or(
-                    StepResult::Error(true),
-                    |secret| {
-                        StepResult::Value(secret.map(|value| value.expose_secret().to_owned()))
-                    },
-                ))
+                let outcome = runtime.block_on(session.manager.get_secret(name));
+                results.push(outcome.map_or(StepResult::Error(true), |secret| {
+                    StepResult::Value(secret.map(|value| value.expose_secret().to_owned()))
+                }));
             }
         }
     }
@@ -210,34 +200,20 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         let Ok(session) = open_session(input) else {
-            return serde_json::to_value(Output::Failed { initialized: false })
-                .map_err(runtime_failure);
+            return Ok(serde_json::json!({"initialized": false}));
         };
         let runtime = tokio::runtime::Builder::new_current_thread()
             .build()
             .map_err(runtime_failure)?;
         let steps = play(&runtime, &session, &input.steps);
-        let requests = session
-            .transport
-            .requests
-            .lock()
-            .map(|recorded| {
-                recorded
-                    .iter()
-                    .map(|request| Request {
-                        url: request.url.clone(),
-                        headers: request.headers.clone(),
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
+        let requests = session.transport.requests.lock().map(|sent| sent.clone());
         let settings = &session.manager.settings;
-        serde_json::to_value(Output::Ready {
+        serde_json::to_value(Output {
             initialized: true,
             refresh_interval_seconds: settings.refresh_interval.as_secs(),
             always_read: settings.always_read_secret_manager,
             steps,
-            requests,
+            requests: requests.unwrap_or_default(),
         })
         .map_err(runtime_failure)
     }

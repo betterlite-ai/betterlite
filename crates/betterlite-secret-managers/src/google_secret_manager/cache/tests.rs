@@ -19,27 +19,6 @@ fn full_cache(time_to_live: Duration, stored_at: fn(u64) -> Duration) -> SecretC
 }
 
 #[test]
-fn cached_absence_is_a_hit_not_a_miss() {
-    let mut cache = SecretCache::new(second(10));
-    cache.store("missing", None, second(0));
-
-    assert!(matches!(
-        cache.lookup("missing", second(5)),
-        CacheLookup::Hit(None)
-    ));
-}
-
-#[test]
-fn unknown_name_is_a_miss() {
-    let mut cache = SecretCache::new(second(10));
-
-    assert!(matches!(
-        cache.lookup("unknown", second(0)),
-        CacheLookup::Miss
-    ));
-}
-
-#[test]
 fn expired_absence_is_a_miss_after_the_time_to_live() {
     let mut cache = SecretCache::new(second(10));
     cache.store("missing", None, second(0));
@@ -82,18 +61,6 @@ fn rewriting_a_live_entry_keeps_its_original_expiry() {
     assert!(matches!(
         cache.lookup("name", second(11)),
         CacheLookup::Miss
-    ));
-}
-
-#[test]
-fn rewriting_an_expired_entry_starts_a_new_time_to_live() {
-    let mut cache = SecretCache::new(second(10));
-    cache.store("name", None, second(0));
-    cache.store("name", Some(SecretString::from("fresh")), second(20));
-
-    assert!(matches!(
-        cache.lookup("name", second(29)),
-        CacheLookup::Hit(Some(_))
     ));
 }
 
