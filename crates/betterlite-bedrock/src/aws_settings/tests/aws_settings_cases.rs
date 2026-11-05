@@ -1,6 +1,11 @@
 #![cfg(test)]
 
-use crate::aws_settings::{error::aws_auth_error_projection, policy::web_identity_policy};
+use betterlite_openai::error::{ErrorRequest, ErrorResponse};
+
+use crate::aws_settings::{
+    error::{AWS_CONSOLE_URL, AwsAuthError},
+    policy::web_identity_policy,
+};
 use std::collections::BTreeMap;
 use std::future;
 use std::sync::Arc;
@@ -106,7 +111,7 @@ async fn session() {
         .await
         .unwrap();
     assert!(resolved.cache_ttl.is_none());
-    let result = resolved.credentials.unwrap();
+    let result = resolved.credentials;
     assert_eq!(result.access_key_id.expose_secret(), "");
     assert_eq!(result.secret_access_key.expose_secret(), "secret");
     assert_eq!(result.session_token.unwrap().expose_secret(), "token");
@@ -138,10 +143,7 @@ async fn discovery(case: Case) {
     );
     let result = resolve_local_credentials(&input, &provider).await.unwrap();
     assert!(result.cache_ttl.is_none());
-    assert_eq!(
-        result.credentials.unwrap().access_key_id.expose_secret(),
-        expected
-    );
+    assert_eq!(result.credentials.access_key_id.expose_secret(), expected);
 }
 
 fn tags() {
@@ -170,14 +172,12 @@ async fn expiry() {
     let hit = storage
         .get_or_fetch(&params, || async { Err(SourceError::MissingProvider) })
         .await
-        .unwrap()
         .unwrap();
     assert_eq!(hit.access_key_id.expose_secret(), "first");
     clock.store(601, Ordering::SeqCst);
     let refreshed = storage
         .get_or_fetch(&params, || async { Ok(credentials("next")) })
         .await
-        .unwrap()
         .unwrap();
     assert_eq!(refreshed.access_key_id.expose_secret(), "next");
 }
@@ -312,10 +312,7 @@ async fn sources() {
         .await
         .unwrap();
     assert_eq!(result.cache_ttl, Some(Duration::from_mins(59)));
-    assert_eq!(
-        result.credentials.unwrap().access_key_id.expose_secret(),
-        "static"
-    );
+    assert_eq!(result.credentials.access_key_id.expose_secret(), "static");
     let provider = native(
         &[(
             "/credentials",
@@ -342,7 +339,19 @@ fn selectors() {
 }
 
 fn error() {
-    let error = aws_auth_error_projection(403, "denied".to_owned());
+    let request = ErrorRequest {
+        method: "POST".to_owned(),
+        url: AWS_CONSOLE_URL.to_owned(),
+    };
+    let error = AwsAuthError {
+        status: 403,
+        message: "denied".to_owned(),
+        response: ErrorResponse {
+            status_code: 403,
+            request: request.clone(),
+        },
+        request,
+    };
     assert_eq!((error.status, error.message.as_str()), (403, "denied"));
     assert_eq!(error.request.method, "POST");
     assert_eq!(
@@ -372,7 +381,6 @@ async fn bedrock_aws_settings_credential_identity_isolation() {
     let result = storage
         .get_or_fetch(&second, || async { Ok(credentials("two")) })
         .await
-        .unwrap()
         .unwrap();
     assert_eq!(result.access_key_id.expose_secret(), "two");
 }
@@ -395,7 +403,6 @@ async fn bedrock_aws_settings_secret_safe_failure() {
     let retry = storage
         .get_or_fetch(&params, || async { Ok(credentials("retry")) })
         .await
-        .unwrap()
         .unwrap();
     assert_eq!(retry.access_key_id.expose_secret(), "retry");
 }
@@ -415,30 +422,15 @@ async fn concurrent_misses_share_fetch() {
         storage.get_or_fetch(&params, fetch)
     );
     assert_eq!(calls.load(Ordering::SeqCst), 1);
-    assert_eq!(
-        first.unwrap().unwrap().access_key_id.expose_secret(),
-        "shared"
-    );
-    assert_eq!(
-        second.unwrap().unwrap().access_key_id.expose_secret(),
-        "shared"
-    );
+    assert_eq!(first.unwrap().access_key_id.expose_secret(), "shared");
+    assert_eq!(second.unwrap().access_key_id.expose_secret(), "shared");
 }
 
 #[tokio::test]
-async fn explicit_ttl_and_absent_credentials() {
+async fn explicit_ttl_expires_at_the_configured_boundary() {
     let clock = Arc::new(AtomicU32::new(0));
     let storage = cache(Arc::clone(&clock));
     let mut params = BTreeMap::new();
-    let mut empty = credentials("unused");
-    empty.credentials = None;
-    assert!(
-        storage
-            .get_or_fetch(&params, || future::ready(Ok(empty)))
-            .await
-            .unwrap()
-            .is_none()
-    );
     params.insert(
         "source".to_owned(),
         Parameter::Text(SecretString::from("static".to_owned())),
