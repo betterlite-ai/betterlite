@@ -62,7 +62,8 @@ pub(crate) struct Captured(Arc<Mutex<Vec<u8>>>);
 
 impl Captured {
     pub(crate) fn text(&self) -> String {
-        match String::from_utf8(self.0.lock().unwrap().clone()) {
+        let bytes = self.0.lock().unwrap().clone();
+        match String::from_utf8(bytes) {
             Ok(text) => text,
             Err(error) => panic!("the captured output is not UTF-8: {error}"),
         }
