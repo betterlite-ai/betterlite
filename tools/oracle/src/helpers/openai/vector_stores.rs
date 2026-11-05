@@ -241,13 +241,13 @@ fn invoke(input: &Call) -> HelperResult {
             Ok(json!(files::list_request(params, api_base)))
         }
         Call::FileItemRequest(fields) => requested(files::file_request(
-            fields.operation,
+            &fields.operation,
             &fields.file_id,
             &fields.api_base,
         )),
-        Call::FileUpdateRequest(fields) => requested(files::update_request(
+        Call::FileUpdateRequest(fields) => requested(files::file_request(
+            &FileOperation::Update(fields.params.clone()),
             &fields.file_id,
-            &fields.params,
             &fields.api_base,
         )),
         Call::Reply(fields) => reply(fields),

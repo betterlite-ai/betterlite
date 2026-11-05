@@ -62,12 +62,13 @@ pub struct FileUpdateParams {
     pub attributes: Attributes,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FileOperation {
     Retrieve,
     Content,
     Delete,
+    Update(FileUpdateParams),
 }
 
 fn project(attributes: &Attributes) -> Option<Projected> {
@@ -98,30 +99,23 @@ pub fn list_request(params: &FileListParams, api_base: &str) -> Request {
 }
 
 pub fn file_request(
-    operation: FileOperation,
+    operation: &FileOperation,
     file_id: &str,
     api_base: &str,
 ) -> Result<Request, VectorStoreError> {
     let encoded = encode_segment(file_id, "file_id")?;
-    let suffix = if operation == FileOperation::Content {
-        "/content"
-    } else {
-        ""
+    let (suffix, body) = match operation {
+        FileOperation::Content => ("/content", Value::Object(Map::new())),
+        FileOperation::Retrieve | FileOperation::Delete => ("", Value::Object(Map::new())),
+        FileOperation::Update(params) => (
+            "",
+            json!(UpdateBody {
+                attributes: project(&params.attributes),
+            }),
+        ),
     };
     Ok(Request {
         url: format!("{api_base}/{encoded}{suffix}"),
-        body: Value::Object(Map::new()),
-    })
-}
-
-pub fn update_request(
-    file_id: &str,
-    params: &FileUpdateParams,
-    api_base: &str,
-) -> Result<Request, VectorStoreError> {
-    let attributes = project(&params.attributes);
-    file_request(FileOperation::Retrieve, file_id, api_base).map(|request| Request {
-        body: json!(UpdateBody { attributes }),
-        ..request
+        body,
     })
 }

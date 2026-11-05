@@ -155,8 +155,8 @@ fn file_list_pagination() {
 }
 
 fn file_retrieve_content() {
-    let retrieve = files::file_request(FileOperation::Retrieve, "f/1", BASE).expect("retrieve");
-    let content = files::file_request(FileOperation::Content, "f/1", BASE).expect("content");
+    let retrieve = files::file_request(&FileOperation::Retrieve, "f/1", BASE).expect("retrieve");
+    let content = files::file_request(&FileOperation::Content, "f/1", BASE).expect("content");
     assert_eq!(
         (retrieve.url, retrieve.body),
         (format!("{BASE}/f%2F1"), parse("{}"))
@@ -178,8 +178,8 @@ fn file_update_attributes() {
         (String::from("b"), Value::from(true)),
     ]);
     let update = |attributes| {
-        let params = files::FileUpdateParams { attributes };
-        files::update_request("f1", &params, BASE).expect("update")
+        let operation = FileOperation::Update(files::FileUpdateParams { attributes });
+        files::file_request(&operation, "f1", BASE).expect("update")
     };
     let kept = update(Attributes::Map(many)).body;
     assert_eq!(kept, parse(r#"{"attributes": {"a": "1"}}"#));
@@ -193,7 +193,7 @@ fn file_update_attributes() {
 }
 
 fn file_delete() {
-    let request = files::file_request(FileOperation::Delete, "f 1", BASE).expect("delete");
+    let request = files::file_request(&FileOperation::Delete, "f 1", BASE).expect("delete");
     assert_eq!(
         (request.url, request.body),
         (format!("{BASE}/f%201"), parse("{}"))
@@ -290,7 +290,7 @@ fn encoded_ids_query() {
         "https://h.example/vector_stores/a%2Fb/files"
     );
     for bad in ["", ".", ".."] {
-        let file = files::file_request(FileOperation::Retrieve, bad, BASE);
+        let file = files::file_request(&FileOperation::Retrieve, bad, BASE);
         assert!(matches!(file, Err(VectorStoreError::Segment(_))));
         let store = complete_url(None, None, &settings(), Some(bad));
         assert!(matches!(store, Err(VectorStoreError::Segment(_))));
@@ -379,7 +379,7 @@ fn openai_vector_stores_secret_safe_failure() {
     let headers = validate_environment(Headers::new(), Some(key("sk-fixture")), none(), None);
     let missing = get_auth_credentials(None).expect_err("missing key");
     let invalid = transform_response(ReplyKind::Search, &response(401, b"{")).expect_err("bad");
-    let segment = files::file_request(FileOperation::Retrieve, "..", BASE).expect_err("dot");
+    let segment = files::file_request(&FileOperation::Retrieve, "..", BASE).expect_err("dot");
     let shown =
         format!("{headers:?} {missing:?} {missing} {invalid:?} {invalid} {segment:?} {segment}");
     assert!(!shown.contains("sk-fixture"));
