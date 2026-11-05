@@ -37,10 +37,7 @@ enum Flag {
 }
 
 impl Flag {
-    fn truthiness<L>(self, lookup: &L, index: usize) -> Result<bool, ConfigError>
-    where
-        L: EnvironmentLookup,
-    {
+    fn truthiness(self, lookup: &dyn EnvironmentLookup, index: usize) -> Result<bool, ConfigError> {
         let text = match self {
             Self::Bool(flag) => return Ok(flag),
             Self::Integer(number) => return Ok(number != 0),
