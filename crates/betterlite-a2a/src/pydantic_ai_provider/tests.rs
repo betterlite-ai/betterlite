@@ -96,7 +96,7 @@ async fn pydantic_ai_provider_treats_null_kwargs_as_absent() {
 #[case::timeout_text(r#"{"timeout": "slow"}"#)]
 #[case::headers_list(r#"{"agent_extra_headers": ["a"]}"#)]
 #[case::zero_chunk(r#"{"chunk_size": 0}"#)]
-#[case::negative_delay(r#"{"delay_ms": -1}"#)]
+#[case::delay_text(r#"{"delay_ms": "slow"}"#)]
 #[tokio::test]
 async fn pydantic_ai_provider_rejects_wrong_typed_kwargs(#[case] text: &str) {
     let mut provider = provider(&[COMPLETED]);
@@ -114,6 +114,29 @@ async fn pydantic_ai_provider_rejects_wrong_typed_kwargs(#[case] text: &str) {
             .recorded()
             .is_empty()
     );
+}
+
+#[tokio::test]
+async fn pydantic_ai_provider_non_streaming_ignores_the_pacing_kwargs() {
+    let mut provider = provider(&[COMPLETED]);
+    let params = json(r#"{"message": {"parts": []}}"#);
+    let extra = kwargs(r#"{"chunk_size": 0, "delay_ms": -1}"#);
+    provider
+        .handle::<ProjectedMessage>(&call(&params, AGENT, &extra))
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn pydantic_ai_provider_streaming_treats_a_negative_delay_as_no_delay() {
+    let mut provider = provider(&[COMPLETED]);
+    let params = json(r#"{"message": {"parts": []}}"#);
+    let extra = kwargs(r#"{"delay_ms": -5}"#);
+    let steps = provider
+        .handle::<ReplayedStream>(&call(&params, AGENT, &extra))
+        .await
+        .unwrap();
+    assert!(steps.iter().all(|step| step.delay_after == Duration::ZERO));
 }
 
 #[tokio::test]

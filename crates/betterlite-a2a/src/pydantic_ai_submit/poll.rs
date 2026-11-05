@@ -1,7 +1,7 @@
 use betterlite_core::agents::json::AgentJson;
 
 use super::error::SubmitError;
-use super::wire::{JsonRpcRequest, RpcParams};
+use super::wire::{JsonRpcRequest, RpcParams, TaskState};
 use super::{AgentTransport, Dispatch, POLL_INTERVAL, exchange};
 
 pub(super) const MAX_POLL_ATTEMPTS: u32 = 30;
@@ -24,16 +24,15 @@ where
             },
         };
         let (raw, progress) = exchange(transport, dispatch, &poll_request).await?;
-        let state = progress.result.status.state;
-        match state.as_str() {
-            "completed" => return Ok(raw),
-            "failed" | "canceled" => {
+        match progress.result.status.state {
+            TaskState::Completed => return Ok(raw),
+            state @ (TaskState::Failed | TaskState::Canceled) => {
                 return Err(SubmitError::TaskEnded {
                     task_id: task_id.to_owned(),
                     state,
                 });
             }
-            _ => transport.pause(POLL_INTERVAL).await,
+            TaskState::Other => transport.pause(POLL_INTERVAL).await,
         }
     }
     Err(SubmitError::PollTimeout {

@@ -39,10 +39,23 @@ pub struct ProgressResult {
     pub status: ProgressStatus,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, strum::Display)]
+#[serde(rename_all = "lowercase")]
+#[strum(serialize_all = "lowercase")]
+pub enum TaskState {
+    Completed,
+    Failed,
+    Canceled,
+    // Any other state keeps the poll loop going
+    #[default]
+    #[serde(other)]
+    Other,
+}
+
 #[serde_as]
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq)]
 pub struct ProgressStatus {
     #[serde(default)]
     #[serde_as(as = "DefaultOnNull")]
-    pub state: String,
+    pub state: TaskState,
 }

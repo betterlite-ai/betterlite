@@ -1,4 +1,8 @@
-use serde::{Deserialize as _, Serialize};
+use std::num::NonZeroUsize;
+use std::time::Duration;
+
+use betterlite_core::agents::json::AgentJson;
+use serde::{Deserialize, Serialize};
 
 use super::fake_streaming::{SimulatedEvent, StreamPacing, fake_streaming_from_response};
 use super::transform::{ResponseMessage, transform_to_a2a_response};
@@ -21,12 +25,14 @@ pub struct Polled<'polled, S> {
     pub source: &'polled mut S,
 }
 
-// How the raw task leaves the transformation: projected to one message or replayed as a stream
-pub trait Delivery: From<StreamPacing> {
+pub trait Delivery: Sized {
     type Output;
 
     // LiteLLM refuses an empty api_base only on the streaming path
     const REFUSES_EMPTY_API_BASE: bool;
+
+    // Each delivery reads only the request kwargs it uses
+    fn from_kwargs(kwargs: &AgentJson) -> Result<Self, serde_json::Error>;
 
     fn deliver<S>(self, polled: Polled<'_, S>) -> Self::Output
     where
@@ -35,15 +41,13 @@ pub trait Delivery: From<StreamPacing> {
 
 pub struct ProjectedMessage;
 
-impl From<StreamPacing> for ProjectedMessage {
-    fn from(_pacing: StreamPacing) -> Self {
-        Self
-    }
-}
-
 impl Delivery for ProjectedMessage {
     type Output = Event<ResponseMessage>;
     const REFUSES_EMPTY_API_BASE: bool = false;
+
+    fn from_kwargs(_kwargs: &AgentJson) -> Result<Self, serde_json::Error> {
+        Ok(Self)
+    }
 
     fn deliver<S>(self, polled: Polled<'_, S>) -> Self::Output
     where
@@ -56,15 +60,29 @@ impl Delivery for ProjectedMessage {
 // Streaming replays the raw task's history and artifacts, so nothing is projected first
 pub struct ReplayedStream(pub StreamPacing);
 
-impl From<StreamPacing> for ReplayedStream {
-    fn from(pacing: StreamPacing) -> Self {
-        Self(pacing)
-    }
+#[derive(Deserialize)]
+struct PacingKwargs {
+    #[serde(default)]
+    chunk_size: Option<NonZeroUsize>,
+    // LiteLLM declares an int, and asyncio.sleep returns at once for a negative one
+    #[serde(default)]
+    delay_ms: Option<i64>,
 }
 
 impl Delivery for ReplayedStream {
     type Output = Vec<SimulatedEvent>;
     const REFUSES_EMPTY_API_BASE: bool = true;
+
+    fn from_kwargs(kwargs: &AgentJson) -> Result<Self, serde_json::Error> {
+        let parsed = PacingKwargs::deserialize(kwargs)?;
+        let defaults = StreamPacing::default();
+        Ok(Self(StreamPacing {
+            chunk_size: parsed.chunk_size.unwrap_or(defaults.chunk_size),
+            delay: parsed.delay_ms.map_or(defaults.delay, |milliseconds| {
+                Duration::from_millis(u64::try_from(milliseconds).unwrap_or(0))
+            }),
+        }))
+    }
 
     fn deliver<S>(self, polled: Polled<'_, S>) -> Self::Output
     where

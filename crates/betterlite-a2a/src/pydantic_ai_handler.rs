@@ -40,7 +40,6 @@ where
     T: AgentTransport,
     S: EventSource,
 {
-    // The delivery picks the entry point: ProjectedMessage answers once, ReplayedStream paces events
     pub async fn handle<D>(
         &mut self,
         request: &HandlerRequest<'_>,

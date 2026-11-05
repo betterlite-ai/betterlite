@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use thiserror::Error;
 
+use super::wire::TaskState;
 use crate::pydantic_ai_transformation::request::ParamsError;
 
 #[derive(Debug, Error)]
@@ -21,7 +22,7 @@ where
     #[error("the Pydantic AI agent response is not a valid task response")]
     Response(#[source] serde_json::Error),
     #[error("Task {task_id} ended with state: {state}")]
-    TaskEnded { task_id: String, state: String },
+    TaskEnded { task_id: String, state: TaskState },
     #[error("Task {task_id} did not complete within {:.1} seconds", .waited.as_secs_f64())]
     PollTimeout { task_id: String, waited: Duration },
 }

@@ -7,7 +7,7 @@ use betterlite_core::agents::json::AgentJson;
 use error::SubmitError;
 use poll::poll_for_completion;
 use serde::{Deserialize as _, Serialize};
-use wire::{JsonRpcRequest, RpcParams, TaskProgress};
+use wire::{JsonRpcRequest, RpcParams, TaskProgress, TaskState};
 
 use crate::pydantic_ai_transformation::request::build_send_params;
 
@@ -111,8 +111,10 @@ where
     };
     let (raw, progress) = exchange(transport, &dispatch, &request).await?;
     let task_id = progress.result.id;
-    if progress.result.status.state == "completed" || task_id.is_empty() {
-        return Ok(raw);
+    match (progress.result.status.state, task_id.is_empty()) {
+        (TaskState::Completed, _) | (_, true) => Ok(raw),
+        (TaskState::Failed | TaskState::Canceled | TaskState::Other, false) => {
+            poll_for_completion(transport, &dispatch, &task_id).await
+        }
     }
-    poll_for_completion(transport, &dispatch, &task_id).await
 }
