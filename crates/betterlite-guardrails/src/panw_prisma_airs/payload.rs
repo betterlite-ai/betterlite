@@ -64,29 +64,45 @@ pub fn build_payload<'req>(
     settings: &'req Configured,
     request: &ScanRequest<'req>,
 ) -> ScanPayload<'req> {
-    let contents = match (request.tool_event, request.direction) {
+    ScanPayload {
+        metadata: payload_metadata(settings, request),
+        contents: [scan_content(request)],
+        tr_id: request.call_id,
+        ai_profile: ai_profile(settings, request.metadata),
+    }
+}
+
+const fn scan_content<'req>(request: &ScanRequest<'req>) -> Content<'req> {
+    match (request.tool_event, request.direction) {
         (Some(tool_event), _) => Content::ToolEvent(tool_event),
         (None, Direction::Response) => Content::Response(request.content),
         (None, Direction::Request) => Content::Prompt(request.content),
-    };
-    // Per-request profile_id wins, then per-request profile_name, then the configured profile_name.
-    let profile_id = request
-        .metadata
-        .and_then(|found| found.profile_id.as_deref());
-    let profile_name = request
-        .metadata
+    }
+}
+
+// Per-request profile_id wins, then per-request profile_name, then the configured profile_name.
+fn ai_profile<'req>(
+    settings: &'req Configured,
+    metadata: Option<&'req ScanMetadata>,
+) -> Option<AiProfile<'req>> {
+    let profile_id = metadata.and_then(|found| found.profile_id.as_deref());
+    let profile_name = metadata
         .and_then(|found| found.profile_name.as_deref())
         .or(settings.profile_name.as_deref());
-    let ai_profile = (profile_id.is_some() || profile_name.is_some()).then_some(AiProfile {
+    (profile_id.is_some() || profile_name.is_some()).then_some(AiProfile {
         profile_id,
         profile_name,
-    });
-    ScanPayload {
-        metadata: payload_metadata(settings, request),
-        contents: [contents],
-        tr_id: request.call_id,
-        ai_profile,
-    }
+    })
+}
+
+// A per-request app_name gets the LiteLLM- prefix; the configured one already carries it.
+fn prefixed_app_name(settings: &Configured, metadata: Option<&ScanMetadata>) -> String {
+    metadata
+        .and_then(|found| found.app_name.as_deref())
+        .map_or_else(
+            || settings.app_name.clone(),
+            |name| format!("LiteLLM-{name}"),
+        )
 }
 
 fn payload_metadata<'req>(
@@ -94,18 +110,12 @@ fn payload_metadata<'req>(
     request: &ScanRequest<'req>,
 ) -> PayloadMetadata<'req> {
     let metadata = request.metadata;
-    let app_name = metadata
-        .and_then(|found| found.app_name.as_deref())
-        .map_or_else(
-            || settings.app_name.clone(),
-            |name| format!("LiteLLM-{name}"),
-        );
     PayloadMetadata {
         app_user: metadata.map_or(DEFAULT_USER, |found| {
             found.app_user.as_deref().unwrap_or(&found.user)
         }),
         ai_model: metadata.map_or(DEFAULT_MODEL, |found| &found.model),
-        app_name,
+        app_name: prefixed_app_name(settings, metadata),
         source: "litellm_builtin_guardrail",
         user_ip: metadata.and_then(|found| {
             found

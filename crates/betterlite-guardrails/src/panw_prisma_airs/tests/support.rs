@@ -43,14 +43,16 @@ pub(super) fn settings(api_base: &str) -> Configured {
     }
 }
 
+fn twelve_seconds_in() -> SystemTime {
+    SystemTime::UNIX_EPOCH
+        .checked_add(Duration::from_secs(12))
+        .expect("time in range")
+}
+
 pub(super) fn guardrail(settings: Configured) -> PanwPrismaAirs {
-    let mut guardrail = PanwPrismaAirs::new(settings).expect("client builds");
-    guardrail.now = || {
-        SystemTime::UNIX_EPOCH
-            .checked_add(Duration::from_secs(12))
-            .expect("time in range")
-    };
-    guardrail
+    let mut built = PanwPrismaAirs::new(settings).expect("client builds");
+    built.now = twelve_seconds_in;
+    built
 }
 
 pub(super) fn metadata() -> ScanMetadata {
