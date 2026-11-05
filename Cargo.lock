@@ -2070,6 +2070,18 @@ dependencies = [
 [[package]]
 name = "betterlite-sdk"
 version = "0.1.0"
+dependencies = [
+ "betterlite-config",
+ "betterlite-http",
+ "http 1.5.0",
+ "rstest",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "url",
+]
 
 [[package]]
 name = "betterlite-secret-managers"
