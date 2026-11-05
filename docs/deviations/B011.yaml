@@ -1,0 +1,13 @@
+task: B011
+deviations:
+- what: Credentials and private infrastructure details in error type and param fields are redacted with B187's redactor.
+  why: Provider-controlled error fields must not leak secrets through the client envelope.
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3698-L3700
+- what: >-
+    A body with a NaN or Infinity literal, or invalid UTF-8, loses its litellm_call_id like any other malformed
+    body. LiteLLM's _read_request_body falls back from orjson to json.loads for exactly these two cases and keeps
+    going, so a working LiteLLM setup can rely on both parsing and the call id surviving them.
+  why: >-
+    serde_json has no such fallback, and ChatRequest::parse lives in betterlite-openai, outside this task's scope
+    (crates/betterlite-server/src/routes/chat.rs decides only whether to keep the call id, not how the body parses).
+  link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/http_parsing_utils.py#L226-L278
