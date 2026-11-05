@@ -60,7 +60,15 @@ impl crate::helpers::Helper for Op {
                 Ok(json!(identifiers))
             }
             Input::SetEventField { field, value } => {
-                let mut events = call_events(&sample_call(), Vec::new())?;
+                let sample = McpCallRequest {
+                    tool_name: "w".to_owned(),
+                    arguments: "{}".to_owned(),
+                    result: None,
+                    base_item_id: Some("mcp_x".to_owned()),
+                    sequence_start: 1,
+                    output_index: 1,
+                };
+                let mut events = call_events(&sample, Vec::new())?;
                 let mut event = events.remove(0);
                 set_event_field(&mut event, field, value.clone())
                     .map_err(|error| helper_error(&error.to_string()))?;
@@ -99,17 +107,6 @@ fn list_tools_projection(
         })
         .collect();
     json!({"events": outcome.events, "diagnostics": diagnostics})
-}
-
-fn sample_call() -> McpCallRequest {
-    McpCallRequest {
-        tool_name: "w".to_owned(),
-        arguments: "{}".to_owned(),
-        result: None,
-        base_item_id: Some("mcp_x".to_owned()),
-        sequence_start: 1,
-        output_index: 1,
-    }
 }
 
 fn call_events(

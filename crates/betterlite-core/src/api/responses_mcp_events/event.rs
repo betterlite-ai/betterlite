@@ -91,8 +91,8 @@ pub fn set_event_field(
     };
     match (name, input) {
         ("type", kind) => {
-            event.kind =
-                serde_json::from_value(kind).map_err(|_unused| wrong_type("an MCP event type"))?;
+            event.kind = serde_json::from_value(kind)
+                .map_err(|source| McpEventError::EventType { source })?;
         }
         ("sequence_number", number) => {
             event.sequence_number = number.as_i64().ok_or_else(|| wrong_type("an integer"))?;

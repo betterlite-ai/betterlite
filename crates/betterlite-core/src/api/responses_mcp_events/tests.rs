@@ -169,12 +169,21 @@ fn set_event_field(
 #[rstest]
 #[case::integer_expected("output_index", json!("4"))]
 #[case::string_expected("item_id", json!(4))]
-#[case::unknown_type("type", json!("response.unknown"))]
 fn set_event_field_rejects_wrong_types(#[case] name: &str, #[case] value: Value) {
     let mut event = sample_call_event();
     let before = event.clone();
     let error = assign_field(&mut event, name, value).expect_err("wrong type");
     assert!(matches!(error, McpEventError::FieldType { field, .. } if field == name));
+    assert_eq!(event, before);
+}
+
+#[test]
+fn set_event_field_rejects_an_unknown_event_type() {
+    let mut event = sample_call_event();
+    let before = event.clone();
+    let error =
+        assign_field(&mut event, "type", json!("response.unknown")).expect_err("event type");
+    assert!(matches!(error, McpEventError::EventType { source } if source.is_data()));
     assert_eq!(event, before);
 }
 
