@@ -4,9 +4,7 @@ description: 'Build DeploymentSpec and stable IDs from B002 config and B010 prov
   explicit IDs, secret-sensitive identity and ordered parameter normalization. Own deployment construction
   and pass-through model substitution; do not publish catalog snapshots or create clients. Use typed fields
   instead of Python dictionary façade methods. Implement the owned native service in crates/betterlite-router/src/deployment_identity.rs.
-  Add ProbeOperation::DeploymentIdentity in tools/oracle/src/router_probes/mod.rs and the corresponding B401 entry in
-  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
-  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  B301 registers ProbeOperation::DeploymentIdentity and its Python entry as stubs, so fill only tools/oracle/src/router_probes/deployment_identity.rs and tools/oracle/litellm/probes/deployment_identity.py and leave mod.rs and registry.py as they are; the adapters only call production services. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
   fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
   of copying their algorithms. Function coverage in litellm/router.py: Router._add_deployment_model_to_endpoint_for_llm_passthrough_route
@@ -34,9 +32,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/deployment_identity.rs
   - tools/oracle/src/router_probes/deployment_identity/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/deployment_identity.py
   - tools/oracle/cases/routing/deployment-identity/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/deployment-identity-*

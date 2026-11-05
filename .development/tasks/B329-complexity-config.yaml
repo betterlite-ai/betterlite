@@ -8,9 +8,8 @@ description: 'Finish complexity cross-field validation over B374 tier definition
   hybrid_boundary_margin. Pinned declaration defaults: escalation_keywords=None; plan_mode_min_tier=None;
   plan_mode_patterns=None; housekeeping_patterns=None; heuristic_first_max_tier=None; hybrid_boundary_margin=None.
   Resolve env values once in betterlite-config, never in router code. Implement the owned native service
-  in crates/betterlite-router/src/complexity_config.rs. Add ProbeOperation::ComplexityConfig in tools/oracle/src/router_probes/mod.rs
-  and the corresponding B329 entry in tools/oracle/litellm/probes/registry.py; the adapters only call
-  production services. Shared exports and dispatch files are explicitly in scope. Budget allocation: at
+  in crates/betterlite-router/src/complexity_config.rs. B301 registers ProbeOperation::ComplexityConfig and its Python entry as stubs, so fill only tools/oracle/src/router_probes/complexity_config.rs and tools/oracle/litellm/probes/complexity_config.py and leave mod.rs and registry.py as they are; the adapters only call
+  production services. Budget allocation: at
   most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration
   lines (800 total); fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor
   services instead of copying their algorithms. Function coverage in litellm/router_strategy/complexity_router/config.py:
@@ -41,9 +40,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/complexity_config.rs
   - tools/oracle/src/router_probes/complexity_config/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/complexity_config.py
   - tools/oracle/cases/routing/complexity-config/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/complexity-config-*
