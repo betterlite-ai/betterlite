@@ -50,9 +50,6 @@ const EXTENSION_TO_MIME: &[(&str, &str)] = &[
 pub(super) fn guess_mime_type(filename: &str) -> Option<&'static str> {
     let basename_start = filename.rfind('/').map_or(0, |sep| sep.saturating_add(1));
     let dot = filename.rfind('.')?;
-    if dot < basename_start {
-        return None;
-    }
     let basename_prefix = filename.get(basename_start..dot)?;
     if basename_prefix.chars().all(|character| character == '.') {
         return None;
