@@ -1,115 +1,66 @@
 #![cfg(test)]
 
-use super::{
-    CallType, RouteMetadataError, get_call_types_for_route, get_routes_for_call_type, parse_route,
-    route_catalog,
-};
-use std::fs;
-use std::path::Path;
-use std::str;
+use super::{CallType, get_call_types_for_route, pattern::parse_route};
+use std::{fs, path::Path, str};
+
+const CHAT: &[CallType] = &[CallType::Acompletion, CallType::Completion];
+const RESPONSE: &[CallType] = &[CallType::Aresponses, CallType::Responses];
+const GEN: &[CallType] = &[CallType::AgenerateContent, CallType::GenerateContent];
+const STREAM: &[CallType] = &[
+    CallType::AgenerateContentStream,
+    CallType::GenerateContentStream,
+];
+const ANTHROPIC: &[CallType] = &[CallType::AnthropicMessages];
 
 #[rstest::rstest]
-#[case::catalog("catalog")]
-#[case::empty_path("empty_path")]
-#[case::bounded_segments("bounded_segments")]
-#[case::exact_precedence("exact")]
-#[case::chat_tools_exact("chat_tools_exact")]
-#[case::chat_tools_versioned("chat_tools_versioned")]
-#[case::chat_tools_engine("chat_tools_engine")]
-#[case::chat_tools_deployment("chat_tools_deployment")]
-#[case::single_placeholder("placeholder")]
-#[case::suffixed_segment("suffix")]
-#[case::multi_segment_tail("tail")]
-#[case::empty_suffix_value("empty_suffix")]
-#[case::trailing_slashes("trailing")]
-#[case::inverse_lookup("inverse")]
-#[case::unknown_route("unknown")]
-#[case::bounded_route("bounds")]
-fn call_route_metadata_route_metadata_tests_behavior(#[case] behavior: &str) {
-    match behavior {
-        "catalog" => {
-            let catalog = route_catalog().unwrap();
-            assert_eq!(catalog.call_types.len(), 153);
-            assert_eq!(catalog.routes.len(), 120);
-            assert!(
-                catalog
-                    .routes
-                    .iter()
-                    .all(|entry| !entry.call_types.is_empty())
-            );
-            assert!(
-                catalog
-                    .source
-                    .contains("d665dc1a6315847fcad6cc2c1264ceb47c06abce")
-            );
-        }
-        "empty_path" => assert!(parse_route("").unwrap().is_empty()),
-        "bounded_segments" => {
-            let route = format!("/{}", vec!["x"; 257].join("/"));
-            assert!(matches!(
-                parse_route(&route),
-                Err(RouteMetadataError::TooManySegments)
-            ));
-        }
-        "exact" => assert_eq!(
-            get_call_types_for_route("/videos/characters").unwrap(),
-            Some(vec![
-                CallType::AvideoCreateCharacter,
-                CallType::VideoCreateCharacter
-            ]),
-        ),
-        "chat_tools_exact" => assert_eq!(
-            get_call_types_for_route("/chat/completions").unwrap(),
-            Some(vec![CallType::Acompletion, CallType::Completion]),
-        ),
-        "chat_tools_versioned" => assert_eq!(
-            get_call_types_for_route("/v1/chat/completions").unwrap(),
-            Some(vec![CallType::Acompletion, CallType::Completion]),
-        ),
-        "chat_tools_engine" => assert_eq!(
-            get_call_types_for_route("/engines/gpt/chat/completions").unwrap(),
-            Some(vec![CallType::Acompletion, CallType::Completion]),
-        ),
-        "chat_tools_deployment" => assert_eq!(
-            get_call_types_for_route("/openai/deployments/deploy/chat/completions").unwrap(),
-            Some(vec![CallType::Acompletion, CallType::Completion]),
-        ),
-        "placeholder" => assert!(
-            get_call_types_for_route("/v1/threads/thread-1")
-                .unwrap()
-                .is_some()
-        ),
-        "suffix" => assert!(
-            get_call_types_for_route("/models/gpt:generateContent")
-                .unwrap()
-                .is_some()
-        ),
-        "tail" => assert!(
-            get_call_types_for_route("/models/org/model:generateContent")
-                .unwrap()
-                .is_some()
-        ),
-        "empty_suffix" => assert_eq!(
-            get_call_types_for_route("/models/:generateContent").unwrap(),
-            None
-        ),
-        "trailing" => assert!(
-            get_call_types_for_route("/v1/chat/completions/")
-                .unwrap()
-                .is_some()
-        ),
-        "inverse" => assert!(
-            get_routes_for_call_type(CallType::Completion)
-                .unwrap()
-                .contains(&"/chat/completions".to_owned())
-        ),
-        "unknown" => assert_eq!(get_call_types_for_route("/no-such-route").unwrap(), None),
-        "bounds" => assert!(matches!(
-            parse_route(&"x".repeat(4097)),
-            Err(RouteMetadataError::RouteTooLong)
-        )),
-        _ => assert_eq!(behavior, "bounds"),
-    }
+#[case::chat("/chat/completions", Some(CHAT))]
+#[case::chat_versioned("/v1/chat/completions", Some(CHAT))]
+#[case::chat_engine("/engines/gpt/chat/completions", Some(CHAT))]
+#[case::chat_deployment("/openai/deployments/deploy/chat/completions", Some(CHAT))]
+#[case::responses("/responses", Some(RESPONSE))]
+#[case::responses_versioned("/v1/responses", Some(RESPONSE))]
+#[case::responses_openai("/openai/v1/responses", Some(RESPONSE))]
+#[case::response_id("/responses/resp", Some(RESPONSE))]
+#[case::response_id_versioned("/v1/responses/resp", Some(RESPONSE))]
+#[case::response_id_openai("/openai/v1/responses/resp", Some(RESPONSE))]
+#[case::anthropic("/anthropic/v1/messages", Some(ANTHROPIC))]
+#[case::messages("/v1/messages", Some(ANTHROPIC))]
+#[case::generate("/generate_content", Some(GEN))]
+#[case::generate_model("/models/model:generateContent", Some(GEN))]
+#[case::generate_beta("/v1beta/models/model:generateContent", Some(GEN))]
+#[case::mcp("/mcp/call_tool", Some(&[CallType::CallMcpTool][..]))]
+#[case::stream("/generate_content_stream", Some(STREAM))]
+#[case::stream_model("/models/model:streamGenerateContent", Some(STREAM))]
+#[case::stream_beta("/v1beta/models/org/model:streamGenerateContent", Some(STREAM))]
+#[case::multi_segment_tail("/models/org/model:generateContent", Some(GEN))]
+#[case::suffix_slash_value("/models//:generateContent", Some(GEN))]
+#[case::empty_suffix("/models/:generateContent", None)]
+#[case::suffix_boundary("/models/model:generateContentExtra", None)]
+#[case::suffix_wrong_case("/models/model:generatecontent", None)]
+#[case::suffix_extra_segment("/models/model:generateContent/extra", None)]
+#[case::empty_placeholder("/engines//chat/completions", Some(CHAT))]
+#[case::bare_no_multisegment("/engines/org/model/chat/completions", None)]
+#[case::trailing_slashes("///v1/chat/completions///", Some(CHAT))]
+#[case::missing_leading_slash("v1/chat/completions", Some(CHAT))]
+#[case::unknown("/no-such-route", None)]
+#[case::empty("", None)]
+#[case::slashes("///", None)]
+#[case::short_route("/engines/gpt/chat", None)]
+#[case::long_route("/v1/chat/completions/extra", None)]
+#[case::wrong_literal("/engines/gpt/wrong/completions", None)]
+#[case::query_not_stripped("/v1/chat/completions?x=1", None)]
+#[case::exact_precedence("/videos/characters", Some(&[CallType::AvideoCreateCharacter, CallType::VideoCreateCharacter][..]))]
+#[case::pattern_order("/videos/characters/", Some(&[CallType::AvideoRetrieve, CallType::VideoRetrieve, CallType::AvideoDelete, CallType::VideoDelete][..]))]
+#[case::single_placeholder("/v1/threads/thread-1", Some(&[CallType::AgetThread, CallType::GetThread][..]))]
+#[case::batch("/v1/batches/batch-1", Some(&[CallType::AretrieveBatch, CallType::RetrieveBatch][..]))]
+fn call_route_metadata_route_metadata_tests_behavior(
+    #[case] route: &str,
+    #[case] expected: Option<&[CallType]>,
+) {
+    assert_eq!(
+        get_call_types_for_route(route).unwrap().as_deref(),
+        expected
+    );
 }
 
 #[rstest::rstest]

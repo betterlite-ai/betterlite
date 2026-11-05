@@ -8,6 +8,4 @@ call:
     }
 env: {}
 compare:
-  ignore:
-    - pointer: /value
-      why: Rust tests assert the None lookup; oracle HelperOutput omits a null value when deserializing Python None.
+  ignore: []

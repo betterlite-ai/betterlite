@@ -2,7 +2,7 @@
 
 use std::str;
 
-use betterlite_core::routes::{get_call_types_for_route, parse_route};
+use betterlite_core::routes::{get_call_types_for_route, pattern::parse_route};
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|bytes: &[u8]| {

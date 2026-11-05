@@ -161,25 +161,14 @@ pub enum CallType {
     AcreateSkill,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-pub struct RouteEntry {
-    pub route: String,
-    pub call_types: Vec<CallType>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
-pub struct RouteCatalog {
-    pub source: String,
-    pub call_types: Vec<String>,
-    pub routes: Vec<RouteEntry>,
-}
-
 #[derive(Debug, Error)]
 pub enum RouteMetadataError {
     #[error("route exceeds the 4096 byte limit")]
     RouteTooLong,
     #[error("route has more than 256 segments")]
     TooManySegments,
+    #[error("pinned route metadata fixture exceeds the 128 KiB limit")]
+    CatalogTooLong,
     #[error("pinned route metadata fixture is invalid: {0}")]
     Fixture(#[from] serde_json::Error),
     #[error("pinned route metadata fixture contains an undeclared call type")]
@@ -188,97 +177,11 @@ pub enum RouteMetadataError {
     EmptyRouteTypes,
 }
 
-const ROUTE_CATALOG: &str = include_str!("../fixtures/route_metadata.json");
-
-pub fn route_catalog() -> Result<RouteCatalog, RouteMetadataError> {
-    let catalog: RouteCatalog = serde_json::from_str(ROUTE_CATALOG)?;
-    for entry in &catalog.routes {
-        if entry.call_types.is_empty() {
-            return Err(RouteMetadataError::EmptyRouteTypes);
-        }
-        for call_type in &entry.call_types {
-            let value = serde_json::to_value(call_type)?;
-            if !value
-                .as_str()
-                .is_some_and(|name| catalog.call_types.iter().any(|known| known == name))
-            {
-                return Err(RouteMetadataError::UndeclaredCallType);
-            }
-        }
-    }
-    Ok(catalog)
-}
-
-pub fn parse_route(route: &str) -> Result<Vec<&str>, RouteMetadataError> {
-    if route.len() > 4096 {
-        return Err(RouteMetadataError::RouteTooLong);
-    }
-    let trimmed = route.trim_matches('/');
-    if trimmed.is_empty() {
-        return Ok(Vec::new());
-    }
-    let segments = trimmed.split('/').collect::<Vec<_>>();
-    if segments.len() > 256 {
-        return Err(RouteMetadataError::TooManySegments);
-    }
-    Ok(segments)
-}
-
-fn segment_matches(route: &str, pattern: &str) -> bool {
-    if !pattern.starts_with('{') {
-        return route == pattern;
-    }
-    let Some(end) = pattern.find('}') else {
-        return route == pattern;
-    };
-    let Some(suffix) = pattern
-        .get(end..)
-        .and_then(|segment| segment.strip_prefix('}'))
-    else {
-        return route == pattern;
-    };
-    if suffix.is_empty() {
-        return true;
-    }
-    route.ends_with(suffix) && route.len() > suffix.len()
-}
-
-fn pattern_matches(route: &str, pattern: &str) -> Result<bool, RouteMetadataError> {
-    let route_parts = parse_route(route)?;
-    let pattern_parts = parse_route(pattern)?;
-    if pattern_parts.is_empty() || route_parts.len() < pattern_parts.len() {
-        return Ok(false);
-    }
-    let Some(tail) = pattern_parts.last() else {
-        return Ok(false);
-    };
-    let spans = tail.starts_with('{') && tail.contains('}') && !tail.ends_with('}');
-    if route_parts.len() > pattern_parts.len() && !spans {
-        return Ok(false);
-    }
-    let Some(head_count) = pattern_parts.len().checked_sub(1) else {
-        return Ok(false);
-    };
-    for (route_part, pattern_part) in route_parts
-        .iter()
-        .take(head_count)
-        .zip(pattern_parts.iter())
-    {
-        if !segment_matches(route_part, pattern_part) {
-            return Ok(false);
-        }
-    }
-    let tail_value = route_parts
-        .iter()
-        .skip(head_count)
-        .copied()
-        .collect::<Vec<_>>()
-        .join("/");
-    Ok(segment_matches(&tail_value, tail))
-}
+pub mod catalog;
+pub mod pattern;
 
 pub fn get_call_types_for_route(route: &str) -> Result<Option<Vec<CallType>>, RouteMetadataError> {
-    let catalog = route_catalog()?;
+    let catalog = catalog::RouteCatalog::parse(catalog::CATALOG)?;
     if route.len() > 4096 {
         return Err(RouteMetadataError::RouteTooLong);
     }
@@ -286,7 +189,7 @@ pub fn get_call_types_for_route(route: &str) -> Result<Option<Vec<CallType>>, Ro
         return Ok(Some(exact.call_types.clone()));
     }
     for entry in &catalog.routes {
-        if pattern_matches(route, &entry.route)? {
+        if pattern::pattern_matches(route, &entry.route)? {
             return Ok(Some(entry.call_types.clone()));
         }
     }
@@ -294,7 +197,7 @@ pub fn get_call_types_for_route(route: &str) -> Result<Option<Vec<CallType>>, Ro
 }
 
 pub fn get_routes_for_call_type(call_type: CallType) -> Result<Vec<String>, RouteMetadataError> {
-    let catalog = route_catalog()?;
+    let catalog = catalog::RouteCatalog::parse(catalog::CATALOG)?;
     Ok(catalog
         .routes
         .into_iter()

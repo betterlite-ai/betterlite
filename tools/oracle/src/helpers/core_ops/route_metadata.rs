@@ -17,9 +17,11 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         match input.function.as_str() {
-            "full_table" => betterlite_core::routes::route_catalog()
-                .and_then(|catalog| serde_json::to_value(catalog).map_err(Into::into))
-                .map_err(route_metadata_error),
+            "full_table" => betterlite_core::routes::catalog::RouteCatalog::parse(
+                betterlite_core::routes::catalog::CATALOG,
+            )
+            .and_then(|catalog| serde_json::to_value(catalog).map_err(Into::into))
+            .map_err(route_metadata_error),
             "get_call_types" => {
                 let route = input.route.as_deref().unwrap_or_default();
                 match betterlite_core::routes::get_call_types_for_route(route) {
