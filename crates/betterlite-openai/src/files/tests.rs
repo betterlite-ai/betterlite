@@ -3,8 +3,9 @@
 use std::ffi::OsStr;
 use std::fs;
 use std::future::{Future, ready};
+use std::io;
 use std::num::NonZeroUsize;
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
@@ -564,30 +565,45 @@ fn status_error_parsing() {
     assert_eq!(flat.code.as_deref(), Some("c"));
 }
 
-#[rstest::rstest]
-#[case::first_with_marker("sk-first", "org-first", true)]
-#[case::second_without_marker("sk-second", "org-second", false)]
-#[case::first_again_without_marker("sk-first", "org-first", false)]
 #[tokio::test]
-async fn openai_files_credential_identity_isolation(
-    #[case] key: &str,
-    #[case] organization: &str,
-    #[case] marked: bool,
-) {
-    let fixture = Fixture::answering(200, FILE_JSON);
-    let mut data = create_data();
-    if marked {
-        data.extra_headers
-            .insert("x-only-first".to_owned(), "1".to_owned());
-    }
-    api(&fixture)
-        .create_file(&client(key, Some(organization)), &data)
+async fn openai_files_credential_identity_isolation() {
+    let first = Fixture::answering(200, FILE_JSON);
+    let mut marked = create_data();
+    marked
+        .extra_headers
+        .insert("x-only-first".to_owned(), "1".to_owned());
+    api(&first)
+        .create_file(&client("sk-first", Some("org-first")), &marked)
         .await
         .expect("created");
-    let request = fixture.only_request();
-    assert_eq!(header(&request, "authorization"), format!("Bearer {key}"));
-    assert_eq!(header(&request, "openai-organization"), organization);
-    assert_eq!(request.headers.contains_key("x-only-first"), marked);
+    let second = Fixture::answering(200, FILE_JSON);
+    api(&second)
+        .create_file(&client("sk-second", Some("org-second")), &create_data())
+        .await
+        .expect("created");
+    let again = Fixture::answering(200, FILE_JSON);
+    api(&again)
+        .create_file(&client("sk-first", Some("org-first")), &create_data())
+        .await
+        .expect("created");
+    let seen: Vec<(String, String, bool)> = [first, second, again]
+        .iter()
+        .map(|fixture| {
+            let request = fixture.only_request();
+            (
+                header(&request, "authorization"),
+                header(&request, "openai-organization"),
+                request.headers.contains_key("x-only-first"),
+            )
+        })
+        .collect();
+    let expected = [
+        ("Bearer sk-first", "org-first", true),
+        ("Bearer sk-second", "org-second", false),
+        ("Bearer sk-first", "org-first", false),
+    ]
+    .map(|(auth, org, marker)| (auth.to_owned(), org.to_owned(), marker));
+    assert_eq!(seen, expected);
 }
 
 #[tokio::test]
@@ -618,17 +634,25 @@ async fn openai_files_secret_safe_failure() {
     assert!(!format!("{request:?}").contains(secret));
 }
 
-#[rstest::rstest]
-fn replays_the_openai_files_corpus(#[files("fuzz/corpus/openai_files/*")] path: PathBuf) {
-    let bytes = fs::read(&path).expect("corpus file");
-    let name = path
-        .file_name()
-        .and_then(OsStr::to_str)
-        .expect("utf-8 file name");
-    let decoded = decode_file_object(&bytes);
-    if name.starts_with("valid") || name.starts_with("boundary_ok") {
-        decoded.expect("this seed is a file object");
-    } else {
-        assert!(matches!(decoded, Err(FilesError::Decode { .. })), "{name}");
-    }
+#[test]
+fn replays_the_openai_files_corpus() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/openai_files");
+    fs::read_dir(corpus)
+        .expect("corpus folder")
+        .try_for_each(|entry| {
+            let path = entry?.path();
+            let bytes = fs::read(&path)?;
+            let name = path
+                .file_name()
+                .and_then(OsStr::to_str)
+                .expect("utf-8 file name");
+            let decoded = decode_file_object(&bytes);
+            if name.starts_with("valid") || name.starts_with("boundary_ok") {
+                decoded.expect("this seed is a file object");
+            } else {
+                assert!(matches!(decoded, Err(FilesError::Decode { .. })), "{name}");
+            }
+            Ok::<(), io::Error>(())
+        })
+        .expect("readable corpus");
 }
