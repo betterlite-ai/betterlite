@@ -1,0 +1,14 @@
+task: B4411
+deviations:
+  - what: An OIDC token payload segment longer than 1 MiB is not decoded and the TTL falls back to max_ttl.
+    why: Decoding and parsing must not allocate in proportion to an untrusted token without a cap, and real OIDC payloads are a few KiB.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L38-L40
+  - what: An exp claim sent as a JSON string such as "1700000300" is unreadable and the TTL falls back to max_ttl.
+    why: RFC 7519 makes exp a number, and the declared field type is float, so betterlite does not coerce strings the way pydantic's lax mode does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L25-L27
+  - what: A requested or configured path longer than 4096 bytes is refused with an error, and a path the file system cannot resolve (a symlink loop) is an error naming the path.
+    why: No file name can be longer than the kernel limit, and an unresolved path must not be compared against the allowlist.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L82-L88
+  - what: The OIDC HTTP factory returns the timeouts (5 second connect, 600 second read) instead of an HTTPHandler.
+    why: betterlite-http depends on betterlite-config, which depends on betterlite-secret-managers, so this crate cannot build the pooled client; the caller that holds it builds the client from these timeouts.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L96-L109
