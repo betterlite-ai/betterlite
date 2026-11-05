@@ -9,6 +9,7 @@ use aws_smithy_runtime_api::{
 };
 use aws_smithy_types::body::SdkBody;
 use secrecy::ExposeSecret as _;
+use std::error::Error as _;
 
 use super::support::{native, settings};
 use crate::aws_settings::sources::resolve_local_credentials;
@@ -46,6 +47,32 @@ async fn container_credentials_use_injected_transport() {
         credentials.session_token.unwrap().expose_secret(),
         "session"
     );
+}
+
+#[tokio::test]
+async fn sso_profile_is_not_rejected_as_unsupported() {
+    let source = native(
+        &[(
+            "/config",
+            "[profile sso]\nsso_session = dev\nsso_account_id = 123456789012\nsso_role_name = Admin\nregion = us-west-2\n\n[sso-session dev]\nsso_start_url = https://example.awsapps.com/start\nsso_region = us-west-2\nsso_registration_scopes = sso:account:access\n",
+        )],
+        &[
+            ("AWS_CONFIG_FILE", "/config"),
+            ("AWS_EC2_METADATA_DISABLED", "true"),
+        ],
+    );
+    let error = resolve_local_credentials(&settings("aws_profile_name: sso"), &source)
+        .await
+        .unwrap_err();
+    let mut chain = error.source();
+    let mut messages = Vec::new();
+    while let Some(cause) = chain {
+        messages.push(cause.to_string());
+        chain = cause.source();
+    }
+    let joined = messages.join(" | ").to_lowercase();
+    assert!(!joined.contains("not enabled"));
+    assert!(!joined.contains("feature"));
 }
 
 #[tokio::test]
