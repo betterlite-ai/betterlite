@@ -420,6 +420,32 @@ dependencies = [
 ]
 
 [[package]]
+name = "aws-sdk-kms"
+version = "1.120.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d6b0fe38fee2ba5b6cd24d32d08365b314ae1adea123649e061a7eb6300b6f5b"
+dependencies = [
+ "arc-swap",
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-smithy-async",
+ "aws-smithy-http",
+ "aws-smithy-json",
+ "aws-smithy-observability",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-schema",
+ "aws-smithy-types",
+ "aws-types",
+ "bytes",
+ "fastrand",
+ "http 0.2.12",
+ "http 1.5.0",
+ "regex-lite",
+ "tracing",
+]
+
+[[package]]
 name = "aws-sdk-s3"
 version = "1.146.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2026,7 +2052,12 @@ version = "0.1.0"
 name = "betterlite-secret-managers"
 version = "0.1.0"
 dependencies = [
+ "aws-sdk-kms",
+ "aws-smithy-http-client",
+ "axum",
+ "base64 0.23.1",
  "betterlite-env",
+ "regex",
  "rstest",
  "secrecy",
  "serde",
