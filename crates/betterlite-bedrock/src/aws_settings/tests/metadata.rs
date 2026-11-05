@@ -63,5 +63,6 @@ async fn source_errors_do_not_echo_credentials() {
     let error = resolve_local_credentials(&settings("aws_profile_name: broken"), &source)
         .await
         .unwrap_err();
+    assert_eq!(format!("{error:?}"), "AWS credential source failed");
     assert!(!format!("{error} {error:?}").contains("fixture-secret-never-log"));
 }
