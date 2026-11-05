@@ -119,11 +119,9 @@ pub fn update_request(
     params: &FileUpdateParams,
     api_base: &str,
 ) -> Result<Request, VectorStoreError> {
-    let encoded = encode_segment(file_id, "file_id")?;
-    Ok(Request {
-        url: format!("{api_base}/{encoded}"),
-        body: json!(UpdateBody {
-            attributes: project(&params.attributes),
-        }),
-    })
+    let mut request = file_request(FileOperation::Retrieve, file_id, api_base)?;
+    request.body = json!(UpdateBody {
+        attributes: project(&params.attributes),
+    });
+    Ok(request)
 }

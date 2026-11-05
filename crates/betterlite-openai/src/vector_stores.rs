@@ -83,34 +83,43 @@ pub fn complete_url(
     Ok(format!("{base}/vector_stores/{encoded}/files"))
 }
 
-#[must_use]
-pub fn store_endpoints() -> VectorStoreIndexEndpoints {
+fn endpoints(read: &[(&str, &str)], write: &[(&str, &str)]) -> VectorStoreIndexEndpoints {
+    let owned = |routes: &[(&str, &str)]| {
+        routes
+            .iter()
+            .map(|(method, path)| ((*method).to_owned(), (*path).to_owned()))
+            .collect()
+    };
     VectorStoreIndexEndpoints {
-        read: Some(vec![(
-            "GET".to_owned(),
-            "/vector_stores/{index_name}/search".to_owned(),
-        )]),
-        write: Some(vec![("POST".to_owned(), "/vector_stores".to_owned())]),
+        read: Some(owned(read)),
+        write: Some(owned(write)),
         extra: BTreeMap::new(),
     }
 }
 
 #[must_use]
+pub fn store_endpoints() -> VectorStoreIndexEndpoints {
+    endpoints(
+        &[("GET", "/vector_stores/{index_name}/search")],
+        &[("POST", "/vector_stores")],
+    )
+}
+
+#[must_use]
 pub fn file_endpoints() -> VectorStoreIndexEndpoints {
-    let base = "/vector_stores/{vector_store_id}/files";
-    let item = format!("{base}/{{file_id}}");
-    let listed = |method: &str, path: String| (method.to_owned(), path);
-    VectorStoreIndexEndpoints {
-        read: Some(vec![
-            listed("GET", base.to_owned()),
-            listed("GET", item.clone()),
-            listed("GET", format!("{item}/content")),
-        ]),
-        write: Some(vec![
-            listed("POST", base.to_owned()),
-            listed("POST", item.clone()),
-            listed("DELETE", item),
-        ]),
-        extra: BTreeMap::new(),
-    }
+    endpoints(
+        &[
+            ("GET", "/vector_stores/{vector_store_id}/files"),
+            ("GET", "/vector_stores/{vector_store_id}/files/{file_id}"),
+            (
+                "GET",
+                "/vector_stores/{vector_store_id}/files/{file_id}/content",
+            ),
+        ],
+        &[
+            ("POST", "/vector_stores/{vector_store_id}/files"),
+            ("POST", "/vector_stores/{vector_store_id}/files/{file_id}"),
+            ("DELETE", "/vector_stores/{vector_store_id}/files/{file_id}"),
+        ],
+    )
 }
