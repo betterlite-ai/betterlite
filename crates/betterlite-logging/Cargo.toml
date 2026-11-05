@@ -36,6 +36,8 @@ url = "2.5.8"
 uuid.workspace = true
 
 [dev-dependencies]
+betterlite-openai = { path = "../betterlite-openai" }
+betterlite-privacy-openai = { path = "src/logging_privacy/openai" }
 insta = { version = "1.49.0", default-features = false, features = ["yaml"] }
 rstest = "=0.27.0"
 serde-saphyr.workspace = true

@@ -57,3 +57,10 @@ path = "fuzz_targets/grayswan_response.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "prisma_content"
+path = "fuzz_targets/prisma_content.rs"
+test = false
+doc = false
+bench = false

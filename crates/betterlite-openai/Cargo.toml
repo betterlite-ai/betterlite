@@ -11,6 +11,7 @@ betterlite-config = { path = "../betterlite-config" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-prompts = { path = "../betterlite-prompts" }
+futures-util = { version = "0.3.34", default-features = false }
 hex.workspace = true
 http = "1.5.0"
 indexmap = { version = "2.14.2", features = ["serde"] }

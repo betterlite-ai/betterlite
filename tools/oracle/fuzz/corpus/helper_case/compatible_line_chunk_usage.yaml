@@ -1,0 +1,9 @@
+kind: helper
+name: compatible-line-chunk-seed-usage
+call:
+  compatible_line_chunk:
+    mode: async
+    events:
+      - {kind: line, line: 'data: {"choices":[],"usage":{"prompt_tokens":0,"completion_tokens":0,"total_tokens":0}}'}
+env: {}
+compare: {ignore: []}

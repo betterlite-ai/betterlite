@@ -1,0 +1,3 @@
+litellm_settings:
+  turn_off_message_logging: os.environ/LOG_PRIVATE
+  redact_user_api_key_info: os.environ/LOG_PRIVATE

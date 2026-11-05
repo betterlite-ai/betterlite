@@ -1,0 +1,11 @@
+task: B590
+deviations:
+  - what: Invalid session tags are rejected without including the supplied value in the error.
+    why: LiteLLM echoes the complete invalid value, which can expose secrets.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L66-L69
+  - what: AWS credential_process and other subprocess credential sources are disabled.
+    why: Gateway code never executes subprocess providers; native injected environment, profiles and metadata remain supported.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1393-L1402
+  - what: A profile naming sso_session or sso_start_url fails closed with a feature-not-enabled error instead of resolving through an SSO token exchange.
+    why: aws-config's sso feature pulls sha1 "0.10", which conflicts with the sha1 "0.11" aws-sdk-s3 already requires through aws-smithy-checksums; cargo deny's multiple-versions ban has no release of either crate that reconciles the two ranges, so SSO profile support is excluded rather than carrying two sha1 versions.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/base_aws_llm.py#L1393-L1402

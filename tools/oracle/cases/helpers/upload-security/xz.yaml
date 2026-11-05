@@ -1,0 +1,8 @@
+kind: helper
+name: upload-security-xz
+call:
+  b3452:
+    content_hex: 'fd377a585a00'
+env: {}
+compare:
+  ignore: []

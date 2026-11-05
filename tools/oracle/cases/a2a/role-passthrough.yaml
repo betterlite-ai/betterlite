@@ -1,0 +1,5 @@
+kind: helper
+name: a2a-role-passthrough
+call: {b4803: {operation: roles, message: {role: developer, parts: [{kind: text, text: hello}]}}}
+env: {}
+compare: {ignore: []}

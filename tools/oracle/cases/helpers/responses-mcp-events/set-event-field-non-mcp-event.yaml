@@ -1,0 +1,10 @@
+kind: helper
+name: set-event-field-non-mcp-event
+call:
+  responses_mcp_events:
+    operation: set_event_field
+    event: {type: response.output_text.delta, item_id: msg_1, output_index: 0, content_index: 0, delta: hi}
+    field: sequence_number
+    value: 7
+env: {}
+compare: {ignore: []}
