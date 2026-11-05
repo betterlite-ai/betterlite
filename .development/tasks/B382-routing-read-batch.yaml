@@ -4,9 +4,7 @@ description: 'Implement RoutingReadBatch and RoutingPrefetch ownership over B360
   cooldown and usage key sets, settle or roll back reservations on cancellation, backfill local cache
   and consume each result once per request. Keep this service independent of selector implementations
   by passing typed key groups. Implement the owned native service in crates/betterlite-router/src/routing_read_batch.rs.
-  Add ProbeOperation::RoutingReadBatch in tools/oracle/src/router_probes/mod.rs and the corresponding B382 entry in
-  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
-  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  B301 registers ProbeOperation::RoutingReadBatch and its Python entry as stubs, so fill only tools/oracle/src/router_probes/routing_read_batch.rs and tools/oracle/litellm/probes/routing_read_batch.py and leave mod.rs and registry.py as they are; the adapters only call production services. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
   fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
   of copying their algorithms. Function coverage in litellm/router_utils/routing_read_batch.py: _backfill_prefetched_cache
@@ -32,9 +30,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/routing_read_batch.rs
   - tools/oracle/src/router_probes/routing_read_batch/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/routing_read_batch.py
   - tools/oracle/cases/routing/routing-read-batch/**
   - tools/oracle/helpers/b382.py

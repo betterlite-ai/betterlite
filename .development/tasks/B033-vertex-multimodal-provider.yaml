@@ -34,14 +34,17 @@ description: >-
   verify all video capability arms and reject unsupported operations without creating routes.
   Estimated work is 230 bindings/dispatch, 180 native assertions and 350 protocol fixtures,
   capped at 800; byte parsing remains with the named media and route tasks.
+
+  B010 registers the VertexMedia variants of OperationRequest, OperationResult and PreparedRequest as stubs in
+  crates/betterlite-provider/src/vertex_media_dispatch.rs. Fill them there and leave provider.rs, operation.rs and
+  prepared.rs as they are.
 scope:
   paths:
     - crates/betterlite-provider/Cargo.toml
-    - crates/betterlite-provider/src/{lib,provider,operation,prepared,vertex_media_dispatch}.rs
     - crates/betterlite-provider/src/vertex_media_dispatch.rs
     - crates/betterlite-provider/src/vertex_media_dispatch/**
     - crates/betterlite-core/Cargo.toml
-    - crates/betterlite-core/src/{lib,dispatch,operation}.rs
+    - crates/betterlite-core/src/{dispatch,operation}.rs
     - crates/betterlite-core/src/api/{mod,vertex_media_bindings}.rs
     - crates/betterlite-core/src/api/vertex_media_bindings.rs
     - crates/betterlite-core/src/api/vertex_media_bindings/**

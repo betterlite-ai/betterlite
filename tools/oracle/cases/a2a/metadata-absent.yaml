@@ -1,0 +1,5 @@
+kind: helper
+name: a2a-metadata-absent
+call: {"b4803": {"operation": "metadata", "completion_params": {"extra_body": {"keep": 1}, "metadata": {"spend": 1}}}}
+env: {}
+compare: {ignore: []}

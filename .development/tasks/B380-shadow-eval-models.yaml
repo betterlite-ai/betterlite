@@ -4,9 +4,7 @@ description: 'Implement typed ShadowJob, ShadowLeg and lifecycle response constr
   job rows. Derive pending/running/exhausted/stopped status, budget spent and immutable arm/target configuration.
   Keep Decimal spend and omit key secrets. Share these types with B356 writes and B357 reads; no endpoint
   or scheduler is added. Implement the owned native service in crates/betterlite-server/src/shadow_eval_models.rs.
-  Add ProbeOperation::ShadowEvalModels in tools/oracle/src/router_probes/mod.rs and the corresponding B380 entry in
-  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
-  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  B301 registers ProbeOperation::ShadowEvalModels and its Python entry as stubs, so fill only tools/oracle/src/router_probes/shadow_eval_models.rs and tools/oracle/litellm/probes/shadow_eval_models.py and leave mod.rs and registry.py as they are; the adapters only call production services. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
   fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
   of copying their algorithms. Function coverage in litellm/types/management_endpoints/auto_router_endpoints.py:
@@ -17,7 +15,6 @@ scope:
   paths:
   - crates/betterlite-server/src/shadow_eval_models.rs
   - crates/betterlite-server/src/shadow_eval_models/**
-  - crates/betterlite-server/src/error.rs
   - crates/betterlite-server/src/routes.rs
   - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
@@ -26,9 +23,6 @@ scope:
   - crates/betterlite-server/src/routing/shadow_eval_models/**
   - tools/oracle/src/router_probes/shadow_eval_models.rs
   - tools/oracle/src/router_probes/shadow_eval_models/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/shadow_eval_models.py
   - tools/oracle/cases/routing/shadow-eval-models/**
   - tools/oracle/helpers/b380.py

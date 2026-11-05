@@ -22,7 +22,6 @@ description: >-
   Budget 330 records/transforms, 200 tests, 115 adapters and 80 config wiring, cap 800.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,vertex_text_embeddings}.rs
     - crates/betterlite-vertex/src/vertex_text_embeddings.rs
     - crates/betterlite-vertex/src/vertex_text_embeddings/**
     - crates/betterlite-config/src/providers/vertex.rs

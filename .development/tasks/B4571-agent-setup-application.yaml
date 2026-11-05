@@ -1,7 +1,7 @@
 id: B4571
 title: Validate and apply agent gateway setup
 description: >-
-  Build the setup flow behind lite configure and lite reconfigure in Rust, ported from LiteLLM's litellm/proxy/client/cli/commands/configure_setup.py: resolve_credential, the model listing with key repair, the per-target prepare step, the target and model pickers, and configure_targets. The code lives in tools/management-cli/src/agent_setup.rs and agent_setup/**, and exports resolve_credential, pick_targets, configure_targets and MODEL_OPTION_HELP for B4572's commands. configure_targets takes B4560's context values (base_url, base_url_explicit, api_key and api_key_from_token_file), the process environment as a map, a prompter, whether stdin is a terminal (std::io::IsTerminal at the call site) and two writers for stdout and stderr, and returns Ok or this module's error enum. The enum has a Usage variant for LiteLLM's click.UsageError (the root prints it on stderr and exits 2) and plain variants for every click.ClickException (the root prints the text as one line on stderr and exits 1). The prompter is a trait for LiteLLM's prompts (the target checkbox, the Claude Code and Codex model pickers, the gateway URL and the hidden key entries); the real one uses dialoguer and tests pass a scripted one that records what it was asked.
+  Build the setup flow behind lite configure and lite reconfigure in Rust, ported from LiteLLM's litellm/proxy/client/cli/commands/configure_setup.py: resolve_credential, the model listing with key repair, the per-target prepare step, the target and model pickers, and configure_targets. The code lives in crates/betterlite-cli/src/agent_setup.rs and agent_setup/**, and exports resolve_credential, pick_targets, configure_targets and MODEL_OPTION_HELP for B4572's commands. configure_targets takes B4560's context values (base_url, base_url_explicit, api_key and api_key_from_token_file), the process environment as a map, a prompter, whether stdin is a terminal (std::io::IsTerminal at the call site) and two writers for stdout and stderr, and returns Ok or this module's error enum. The enum has a Usage variant for LiteLLM's click.UsageError (the root prints it on stderr and exits 2) and plain variants for every click.ClickException (the root prints the text as one line on stderr and exits 1). The prompter is a trait for LiteLLM's prompts (the target checkbox, the Claude Code and Codex model pickers, the gateway URL and the hidden key entries); the real one uses dialoguer and tests pass a scripted one that records what it was asked.
 
   docs/compatibility.md decides what is ported. The order of preflight, prepare, save and apply, the request sent, the saved values it reuses, the prompts' messages, choices and defaults, the lines printed on stdout, the two symlink notes on stderr, the exit codes and the streams stay LiteLLM's. Python's habits are not copied. The context comes typed from B4560 instead of pydantic's model_validate of ctx.obj, picker answers come back typed instead of through TypeAdapter.validate_python, and a model name in an error is plain text, not a repr. ListedModel declares id and source_model as non-empty strings (pi.py L58-L62), so LiteLLM's "source_model or id" and "source or ..." are None checks here and give the same result for every listing of the declared type. Error texts are betterlite's own words, as rule errors-match-litellm says, and each carries LiteLLM's facts: the value at fault, the base URL, the HTTP status, and the option or command that fixes it.
 
@@ -18,10 +18,10 @@ description: >-
   Tests. Test functions live in tests.rs files under agent_setup/ with the name prefixes the checks select: credential_, listing_, prepare_, apply_ and pickers_. They run against a local HTTP server on 127.0.0.1:0 (axum is in Cargo.lock) that serves /v1/models with canned statuses, bodies and redirects and records the request headers. They use a scripted prompter, an explicit terminal flag, and temp directories named in the environment map, so no test touches the real home directory or a terminal. They compare the exact stdout and stderr bytes for the lines LiteLLM prints, and assert the returned error variant and the facts its message carries for betterlite's own error texts.
 scope:
   paths:
-    - tools/management-cli/Cargo.toml
+    - crates/betterlite-cli/Cargo.toml
     - Cargo.lock
-    - tools/management-cli/src/agent_setup.rs
-    - tools/management-cli/src/agent_setup/**
+    - crates/betterlite-cli/src/agent_setup.rs
+    - crates/betterlite-cli/src/agent_setup/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_setup.py#L54-L94
@@ -50,8 +50,8 @@ references:
     why: normalize_base_url raises click.UsageError for a bad gateway URL.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure.py#L80-L147
     why: How lite configure and lite reconfigure call pick_targets and configure_targets.
-  - url: https://docs.rs/dialoguer/latest/dialoguer/
-    why: MultiSelect, FuzzySelect, Input and Password for the real prompter.
+  - url: https://docs.rs/inquire/0.9.4/inquire/
+    why: MultiSelect, Select with its fuzzy filter, Text and Password for the real prompter; B4583's autoroute wizard uses the same crate.
 dod:
   - text: >-
       resolve_credential takes the given key, else the context key unless it came from the token file, and rejects a missing, blank or control-character key with errors that carry LiteLLM's facts.
@@ -73,23 +73,23 @@ checks:
   commands:
     - id: setup-credential
       why: the credential tests are missing or the key choice or a rejection differs from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^agent_setup::.*tests::credential_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^agent_setup::.*tests::credential_/)'
     - id: setup-listing
       why: the listing tests are missing or the headers, redirects, an error kind, the repair rule or model validation differs from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^agent_setup::.*tests::listing_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^agent_setup::.*tests::listing_/)'
     - id: setup-prepare
       why: the prepare tests are missing or the default, base URL, key reuse, picker trigger or saved profile differs from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^agent_setup::.*tests::prepare_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^agent_setup::.*tests::prepare_/)'
     - id: setup-apply
       why: the apply tests are missing or the preflight, prepare, save and apply order, a printed line or the saved-setup error differs from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^agent_setup::.*tests::apply_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^agent_setup::.*tests::apply_/)'
     - id: setup-pickers
       why: the picker tests are missing or a message, choice, preselected row or the returned order differs from the description
-      run: cargo nextest run --locked -p betterlite-management-cli --no-tests=fail -E 'test(/^agent_setup::.*tests::pickers_/)'
+      run: cargo nextest run --locked -p betterlite-cli --no-tests=fail -E 'test(/^agent_setup::.*tests::pickers_/)'
 oracle_cases: []
 deviations:
   - what: >-
-      The target checkbox, the two model pickers and the URL and key prompts are drawn by dialoguer. Their messages, choices, preselected rows, the empty-answer rules and the hidden key entry are LiteLLM's, but the look, the key bindings and the fuzzy match ranking differ from InquirerPy's and click's.
+      The target checkbox, the two model pickers and the URL and key prompts are drawn by inquire. Their messages, choices, preselected rows, the empty-answer rules and the hidden key entry are LiteLLM's, but the look, the key bindings and the fuzzy match ranking differ from InquirerPy's and click's.
     why: >-
       Porting InquirerPy's terminal widgets is a large job for screens only a person reads. Every non-interactive path takes its values from options and the saved setup, and those stay LiteLLM's.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/client/cli/commands/configure_setup.py#L224-L259
@@ -117,7 +117,7 @@ pitfalls:
   - >-
     The symlink notes print the link target as Path.resolve gives it, and only after the settings were written and the stdout lines printed.
   - >-
-    dialoguer pulls console and fuzzy-matcher, and neither is in Cargo.lock yet. Turn its default features off, enable fuzzy-select and password, and pick a release whose dependencies cargo deny accepts.
+    Use inquire 0.9.4, the prompt crate B4583 uses too, so the CLI carries one. It pulls crossterm and fuzzy-matcher, and neither is in Cargo.lock yet. Turn its default features off and enable crossterm and fuzzy only; cargo deny must accept what they pull.
 review_level: security
 budget:
   max_changed_lines: 1500

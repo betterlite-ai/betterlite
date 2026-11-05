@@ -1,0 +1,9 @@
+kind: helper
+name: cohere-stream-record-bytes-retain-data-prefix
+call:
+  cohere_stream_record:
+    version: v1
+    record: 'data: {"text":"hello"}'
+    bytes: true
+compare: {ignore: []}
+env: {}

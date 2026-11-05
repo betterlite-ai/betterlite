@@ -100,7 +100,7 @@ checks:
   commands:
     - id: databricks-oauth-tests
       why: Required databricks_oauth module tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-proxy --no-tests=fail -E 'test(/^databricks_oauth_tests_behavior($|::)/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-proxy --no-tests=fail -E 'test(/^agent_endpoints::databricks_oauth::(.*::)?databricks_oauth_tests_behavior($|::)/) - test(/replays_the_/)'
     - id: helper-python
       why: the oracle adapters fail strict Python checks
       run: >-

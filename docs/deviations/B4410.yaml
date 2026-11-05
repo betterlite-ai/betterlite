@@ -1,0 +1,14 @@
+task: B4410
+deviations:
+  - what: Secret-name validation also rejects ASCII spaces.
+    why: B4410 explicitly requires this; the pinned regex rejects controls and Unicode line separators but permits ASCII spaces.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/base_secret_manager.py#L9-L21
+  - what: Rotation rejects identical old and new names before making provider calls.
+    why: The upstream algorithm would create and then delete the same secret, losing the newly written value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/base_secret_manager.py#L154-L178
+  - what: Rotation preserves typed provider errors as causes without logging or displaying provider response bodies.
+    why: Provider responses can contain secrets; copying them into logs and exception messages leaks credentials.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/base_secret_manager.py#L180-L189
+  - what: Custom-manager selection requires a nonblank class path at config conversion.
+    why: B4410 requires the path; the settings model documents this constraint without enforcing it itself.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/secret_managers/main.py#L53-L57

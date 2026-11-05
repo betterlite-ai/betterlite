@@ -26,18 +26,16 @@ description: >-
   the remainder entering the production decoder; replay malformed records and decimal boundaries. Count 203
   nonblank/non-comment source lines; budget 210 implementation,130 tests,95 cases,90 adapters,65 fuzz and 30
   wiring, 620 lines. Cost computation makes this a security review.
+
+  B010 registers the Rerank variants of OperationRequest, OperationResult and PreparedRequest as stubs in
+  crates/betterlite-provider/src/api/rerank_contracts.rs. Fill them there and leave provider.rs, operation.rs and
+  prepared.rs as they are.
 scope:
   paths:
-  - crates/betterlite-openai/src/api.rs
-  - crates/betterlite-openai/src/api/**
   - crates/betterlite-openai/src/api/rerank_contracts.rs
   - crates/betterlite-openai/src/api/rerank_contracts/**
-  - crates/betterlite-provider/src/api.rs
-  - crates/betterlite-provider/src/api/**
   - crates/betterlite-provider/src/api/rerank_contracts.rs
   - crates/betterlite-provider/src/api/rerank_contracts/**
-  - crates/betterlite-provider/src/operation.rs
-  - crates/betterlite-provider/src/operation/**
   - crates/betterlite-openai/fuzz/Cargo.toml
   - crates/betterlite-openai/fuzz/fuzz_targets/rerank_contracts.rs
   - crates/betterlite-openai/fuzz/corpus/rerank_contracts/**

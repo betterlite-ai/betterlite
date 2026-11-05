@@ -30,7 +30,6 @@ description: >-
   upload-stream selection. Target 320 code, 185 tests, 100 adapters and 95 fuzz lines, cap 775.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,vertex_files}.rs
     - crates/betterlite-vertex/src/vertex_files.rs
     - crates/betterlite-vertex/src/vertex_files/**
     - crates/betterlite-vertex/fuzz/Cargo.toml

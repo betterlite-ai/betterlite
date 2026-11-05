@@ -1,7 +1,7 @@
 id: B198
 milestone: M1 openai data plane
 title: Injected call context and shared settings
-status: todo
+status: done
 depends_on: [B002, B171]
 file: tasks/B198-call-context.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/main.py"
 parent: B014
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 670

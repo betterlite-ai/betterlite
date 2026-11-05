@@ -12,6 +12,7 @@ pub mod normalize;
 pub mod openai;
 pub mod openai_like;
 pub mod parse;
+pub mod proxy_rate_limit_error;
 pub mod rate_limit;
 pub mod status;
 pub mod vertex_errors;

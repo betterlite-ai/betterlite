@@ -63,7 +63,7 @@ checks:
   commands:
     - id: behavior-tests
       why: batching, timestamp handling, credential security, operation defaults, conversion or HTTP behavior differs from source
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^cloudzero_delivery_behaviors($|::)/) - test(/replays_the_/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^finops::cloudzero::delivery::(.*::)?cloudzero_delivery_behaviors($|::)/) - test(/replays_the_/)'
 oracle_cases: []
 deviations:
   - what: Timezone fallback uses UTC without a warning, instead of logging via the Rich console like LiteLLM does.

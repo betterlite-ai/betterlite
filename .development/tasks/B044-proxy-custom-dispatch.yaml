@@ -8,7 +8,7 @@ description: >-
   (4982-5042), the litellm_proxy embedding branch (6504-6555) and custom embedding branch (7274-7296).
   Own custom_chat_llm_router in custom_llm.py; its ten CustomLLM methods and error class remain B164.
   Reuse B1500 forwarding and B1501's legacy adapter, and expose B1502-B1506's hosted skill services
-  through the core's operation composition without adding skills routes or a second injection hook.
+  through core::skills::composition without adding skills routes or a second injection hook.
 
   Aleph Alpha key precedence is explicit api_key, litellm.aleph_alpha_key, ALEPH_ALPHA_API_KEY,
   ALEPHALPHA_API_KEY, litellm.api_key; base is explicit, litellm.api_base, ALEPH_ALPHA_API_BASE,
@@ -40,24 +40,18 @@ description: >-
   loads every new Aleph Alpha key/base spelling and global through B002. Fuzz decode_custom_output and
   replay custom_output alongside the existing config corpus. Source ownership totals 293 nonblank/non-comment
   lines; plan 290 dispatch, 220 tests, 95 adapters, 75 parser/fuzz and 110 config/composition lines (790).
+
+  B010 registers Provider::Legacy and the Legacy variants of OperationRequest, OperationResult and PreparedRequest
+  as stubs in crates/betterlite-provider/src/legacy_dispatch.rs. Fill them there and leave provider.rs,
+  operation.rs and prepared.rs as they are.
 scope:
   paths:
     - crates/betterlite-provider/Cargo.toml
-    - crates/betterlite-provider/src/provider.rs
-    - crates/betterlite-provider/src/provider/**
-    - crates/betterlite-provider/src/operation.rs
-    - crates/betterlite-provider/src/operation/**
     - crates/betterlite-provider/src/legacy_dispatch.rs
     - crates/betterlite-provider/src/legacy_dispatch/**
     - crates/betterlite-provider/fuzz/Cargo.toml
     - crates/betterlite-provider/fuzz/fuzz_targets/custom_output.rs
     - crates/betterlite-provider/fuzz/corpus/custom_output/**
-    - crates/betterlite-core/src/operation.rs
-    - crates/betterlite-core/src/operation/**
-    - crates/betterlite-core/src/dispatch.rs
-    - crates/betterlite-core/src/dispatch/**
-    - crates/betterlite-core/src/skills.rs
-    - crates/betterlite-core/src/skills/**
     - crates/betterlite-core/src/skills/composition.rs
     - crates/betterlite-core/src/skills/composition/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/legacy_provider*

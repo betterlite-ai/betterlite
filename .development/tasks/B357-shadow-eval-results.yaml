@@ -3,9 +3,8 @@ title: Shadow evaluation listings and aggregate results
 description: 'Implement GET /auto_router/shadow_eval and GET /auto_router/shadow_eval/{job_id} using B381
   aggregates and B380 response types. Apply B052 admin-viewer authorization, parameterized target filters
   and newest-job pagination before loading all legs for each selected job. Never mutate state during reads.
-  Implement the owned native service in crates/betterlite-server/src/shadow_eval_results.rs. Add ProbeOperation::ShadowEvalResults
-  in tools/oracle/src/router_probes/mod.rs and the corresponding B357 entry in tools/oracle/litellm/probes/registry.py;
-  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  Implement the owned native service in crates/betterlite-server/src/shadow_eval_results.rs. B301 registers ProbeOperation::ShadowEvalResults and its Python entry as stubs, so fill only tools/oracle/src/router_probes/shadow_eval_results.rs and tools/oracle/litellm/probes/shadow_eval_results.py and leave mod.rs and registry.py as they are;
+  the adapters only call production services.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
   lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
   exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/proxy/management_endpoints/auto_router_endpoints.py:
@@ -18,7 +17,6 @@ scope:
   paths:
   - crates/betterlite-server/src/shadow_eval_results.rs
   - crates/betterlite-server/src/shadow_eval_results/**
-  - crates/betterlite-server/src/error.rs
   - crates/betterlite-server/src/routes.rs
   - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
@@ -27,9 +25,6 @@ scope:
   - crates/betterlite-server/src/routing/shadow_eval_results/**
   - tools/oracle/src/router_probes/shadow_eval_results.rs
   - tools/oracle/src/router_probes/shadow_eval_results/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/shadow_eval_results.py
   - tools/oracle/cases/routing/shadow-eval-results/**
   - crates/betterlite-server/fuzz/Cargo.toml

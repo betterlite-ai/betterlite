@@ -9,9 +9,7 @@ description: 'Add the JEV classifier adapter through B099 Decisions dispatch or 
   jev-latest, timeout_ms=3000, circuit_breaker_enabled=true and circuit_breaker_cooldown_seconds=30.0.
   Direct API configuration falls back to TYPESAFE_API_KEY and TYPESAFE_API_BASE (then https://api.typesafe.ai);
   an explicit new base requires an explicit key. Implement the owned native service in crates/betterlite-router/src/jev_classifier.rs.
-  Add ProbeOperation::JevClassifier in tools/oracle/src/router_probes/mod.rs and the corresponding B333 entry in
-  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
-  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  B301 registers ProbeOperation::JevClassifier and its Python entry as stubs, so fill only tools/oracle/src/router_probes/jev_classifier.rs and tools/oracle/litellm/probes/jev_classifier.py and leave mod.rs and registry.py as they are; the adapters only call production services. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
   fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
   of copying their algorithms. Function coverage in litellm/router_strategy/complexity_router/jev_classifier.py:
@@ -38,9 +36,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/jev_classifier.rs
   - tools/oracle/src/router_probes/jev_classifier/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/jev_classifier.py
   - tools/oracle/cases/routing/jev-classifier/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/jev-classifier-*

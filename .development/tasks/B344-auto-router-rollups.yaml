@@ -6,9 +6,7 @@ description: 'Use B051/B070 repository and write-queue infrastructure to persist
   updates. Store costs as Decimal at the Rust boundary and reuse B051''s approved conversion for the unchanged
   database schema. Add real Postgres integration cases for concurrent and out-of-order turns; typed repository
   probes also compare the pinned transaction builder. Implement the owned native service in crates/betterlite-server/src/auto_router_rollups.rs.
-  Add ProbeOperation::AutoRouterRollups in tools/oracle/src/router_probes/mod.rs and the corresponding B344 entry in
-  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
-  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  B301 registers ProbeOperation::AutoRouterRollups and its Python entry as stubs, so fill only tools/oracle/src/router_probes/auto_router_rollups.rs and tools/oracle/litellm/probes/auto_router_rollups.py and leave mod.rs and registry.py as they are; the adapters only call production services. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
   fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
   of copying their algorithms. Function coverage in litellm/models/autorouter_session.py: LiteLLM_AutoRouterSession.baseline_model
@@ -28,7 +26,6 @@ scope:
   paths:
   - crates/betterlite-server/src/auto_router_rollups.rs
   - crates/betterlite-server/src/auto_router_rollups/**
-  - crates/betterlite-server/src/error.rs
   - crates/betterlite-server/src/routes.rs
   - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
@@ -37,9 +34,6 @@ scope:
   - crates/betterlite-server/src/routing/auto_router_rollups/**
   - tools/oracle/src/router_probes/auto_router_rollups.rs
   - tools/oracle/src/router_probes/auto_router_rollups/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/auto_router_rollups.py
   - tools/oracle/cases/routing/auto-router-rollups/**
   - tools/oracle/helpers/b344.py

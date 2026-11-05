@@ -25,14 +25,12 @@ description: >-
   strategy_router_verdicts to settle dependency faults and finalize_strategy_router_endpoints
   to apply verdicts and drop the probed-only deployments from results.
 
-  Add ProbeOperation::StrategyRouterHealth in tools/oracle/src/router_probes/mod.rs and the
-  corresponding B4442 entry in tools/oracle/litellm/probes/registry.py; the adapters only call
+  B301 registers ProbeOperation::StrategyRouterHealth and its Python entry as stubs, so fill only tools/oracle/src/router_probes/strategy_router_health.rs and tools/oracle/litellm/probes/strategy_router_health.py and leave mod.rs and registry.py as they are; the adapters only call
   production services and do not repeat vendor-specific logic.
 scope:
   paths:
   - crates/betterlite-server/src/health/router.rs
   - crates/betterlite-server/src/health/router/**
-  - crates/betterlite-server/src/error.rs
   - crates/betterlite-server/src/routes.rs
   - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
@@ -40,9 +38,6 @@ scope:
   - tools/oracle/cases/routing/router-health/**
   - tools/oracle/src/router_probes/strategy_router_health.rs
   - tools/oracle/src/router_probes/strategy_router_health/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/strategy_router_health.py
   - tools/oracle/helpers/b4442.py
   - tools/oracle/helpers/b4442/**

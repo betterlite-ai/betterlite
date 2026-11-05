@@ -20,14 +20,13 @@ description: >-
   Add B2401 sdk_http transcription_http using finite config transforms and real mock HTTP. Count 228 nonblank/
   non-comment lines across four complete functions; budget 210 implementation,125 tests,120 fixtures,85 adapters
   and 35 wiring, 575 lines.
+
+  B1122 fills the Transcription variants that B010 registers in operation.rs, so this task builds on them in
+  crates/betterlite-provider/src/api/transcription_http.rs and leaves operation.rs as it is.
 scope:
   paths:
-  - crates/betterlite-provider/src/api.rs
-  - crates/betterlite-provider/src/api/**
   - crates/betterlite-provider/src/api/transcription_http.rs
   - crates/betterlite-provider/src/api/transcription_http/**
-  - crates/betterlite-provider/src/operation.rs
-  - crates/betterlite-provider/src/operation/**
   - tools/oracle/src/sdk_http.rs
   - tools/oracle/src/sdk_http/transcription_http.rs
   - tools/oracle/sdk_http/dispatch.py

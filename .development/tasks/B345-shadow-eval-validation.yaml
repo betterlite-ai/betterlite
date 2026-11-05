@@ -5,9 +5,7 @@ description: 'Add the typed shadow-evaluation request model and pure validation 
   Enforce direction-specific model scope and reject judge/candidate overlap before any work is queued.
   Keep Decimal budgets and explicit target kinds throughout, and fuzz the management request parser. This
   part creates no jobs and runs no judge calls. Implement the owned native service in crates/betterlite-server/src/shadow_eval_validation.rs.
-  Add ProbeOperation::ShadowEvalValidation in tools/oracle/src/router_probes/mod.rs and the corresponding B345 entry in
-  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
-  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  B301 registers ProbeOperation::ShadowEvalValidation and its Python entry as stubs, so fill only tools/oracle/src/router_probes/shadow_eval_validation.rs and tools/oracle/litellm/probes/shadow_eval_validation.py and leave mod.rs and registry.py as they are; the adapters only call production services. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
   fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
   of copying their algorithms. Function coverage in litellm/proxy/management_endpoints/auto_router_endpoints.py:
@@ -29,7 +27,6 @@ scope:
   paths:
   - crates/betterlite-server/src/shadow_eval_validation.rs
   - crates/betterlite-server/src/shadow_eval_validation/**
-  - crates/betterlite-server/src/error.rs
   - crates/betterlite-server/src/routes.rs
   - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
@@ -38,9 +35,6 @@ scope:
   - crates/betterlite-server/src/routing/shadow_eval_validation/**
   - tools/oracle/src/router_probes/shadow_eval_validation.rs
   - tools/oracle/src/router_probes/shadow_eval_validation/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/shadow_eval_validation.py
   - tools/oracle/cases/routing/shadow-eval-validation/**
   - crates/betterlite-server/fuzz/Cargo.toml

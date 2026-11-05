@@ -22,13 +22,10 @@ description: >-
   policy/decoder, 160 tests, 110 adapters and 100 config/fuzz lines.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,studio_identity}.rs
     - crates/betterlite-vertex/src/studio_identity.rs
     - crates/betterlite-vertex/src/studio_identity/**
-    - crates/betterlite-config/src/{lib,config,model,settings,env,providers}.rs
-    - crates/betterlite-config/src/providers/{vertex,gemini}.rs
-    - crates/betterlite-config/src/providers/gemini.rs
-    - crates/betterlite-config/src/providers/gemini/**
+    - crates/betterlite-config/src/sections/studio_identity.rs
+    - crates/betterlite-config/src/sections/studio_identity/**
     - crates/betterlite-vertex/fuzz/Cargo.toml
     - crates/betterlite-vertex/fuzz/fuzz_targets/studio_models.rs
     - crates/betterlite-vertex/fuzz/corpus/studio_models/**

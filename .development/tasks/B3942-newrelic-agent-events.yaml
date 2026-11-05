@@ -84,16 +84,16 @@ checks:
   commands:
     - id: agent-init-tests
       why: agent initialization, credential resolution, registration and backoff state tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_agent_init_behavior($|::)/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_agent::(.*::)?newrelic_agent_init_behavior($|::)/)'
     - id: event-tests
       why: summary and message event emission tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_agent_events_behavior($|::)/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_agent::(.*::)?newrelic_agent_events_behavior($|::)/)'
     - id: error-tests
       why: error metric recording tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_agent_error_behavior($|::)/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_agent::(.*::)?newrelic_agent_error_behavior($|::)/)'
     - id: health-check-tests
       why: health check tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_agent_health_behavior($|::)/)'
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_agent::(.*::)?newrelic_agent_health_behavior($|::)/)'
 deviations:
   - what: "When newrelic Python agent is not installed or cannot be imported, the integration disables silently (enabled=False) without raising ImportError; requests skip event emission."
     why: LiteLLM gracefully disables New Relic when the agent is absent; betterlite retains the same fallback behavior for compatibility.

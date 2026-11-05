@@ -132,10 +132,10 @@ checks:
   commands:
     - id: scrape-request-tests
       why: ScrapeRequest, parse_scrape_request, render_scrape or _chunks are missing or fail tests
-      run: cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^scrape_request::/)'
+      run: cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^(scrape_endpoint|scrape_endpoint::tests)::(.*::)?scrape_request::/)'
     - id: coalesced-scrape-tests
       why: CoalescedScrapeRenderer tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^coalesced_scrape_renderer::/)'
+      run: cargo nextest run --locked -p betterlite-prometheus --no-tests=fail -E 'test(/^(scrape_endpoint|scrape_endpoint::tests)::(.*::)?coalesced_scrape_renderer::/)'
     - id: auth-middleware-tests
       why: PrometheusAuthMiddleware tests fail or do not exist
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prometheus_auth_middleware::/)'

@@ -58,18 +58,25 @@ description: >-
   307 in dispatch, embedding and OCR bodies, the rest initializers. Allocate 325 binding
   and translation lines, 245 behavior/config-test lines, 135 adapter and 75 wiring lines
   within 800. Provider fixtures and HTTP case data are excluded by the repository budget.
+
+  B010 registers Provider::XaiMistral and the XaiMistral variants of OperationRequest, OperationResult and
+  PreparedRequest as stubs in crates/betterlite-provider/src/xai_mistral.rs. Fill them there and leave
+  provider.rs, operation.rs and prepared.rs as they are.
 scope:
   paths:
-    - crates/betterlite-provider/src/{lib,error,provider,operation,prepared,xai_mistral}.rs
     - crates/betterlite-provider/src/xai_mistral.rs
     - crates/betterlite-provider/src/xai_mistral/**
     - crates/betterlite-provider/Cargo.toml
-    - crates/betterlite-core/src/{lib,dispatch,operation,error,xai_mistral,mistral_ocr_guardrail}.rs
+    - crates/betterlite-core/src/{dispatch,operation}.rs
+    - crates/betterlite-core/src/xai_mistral.rs
+    - crates/betterlite-core/src/mistral_ocr_guardrail.rs
     - crates/betterlite-core/src/{xai_mistral,mistral_ocr_guardrail}/**
     - crates/betterlite-core/Cargo.toml
-    - crates/betterlite-openai/src/{lib,mistral_embedding}.rs
-    - crates/betterlite-config/src/{lib,settings,providers}.rs
-    - crates/betterlite-config/src/providers/{mod,xai_mistral}.rs
+    - crates/betterlite-openai/src/mistral_embedding.rs
+    - crates/betterlite-config/src/sections/mistral_credentials.rs
+    - crates/betterlite-config/src/sections/mistral_credentials/**
+    - crates/betterlite-config/src/sections/codestral_credentials.rs
+    - crates/betterlite-config/src/sections/codestral_credentials/**
     - crates/betterlite-config/tests/xai_mistral_settings.rs
     - Cargo.lock
     - tools/oracle/src/helpers/core_ops/mistral_ocr_translation.rs
@@ -144,6 +151,7 @@ out_of_scope:
   - B104 owns generic guardrail metadata conversion, B151 the login command and B068 final pricing integration; no managed-file hook is introduced here.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as mistral_ocr_translation in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/mistral_ocr_translation.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/mistral_ocr_translation.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
+  - Mistral and Codestral key and base precedence settings belong in their own sections, crates/betterlite-config/src/sections/mistral_credentials.rs and sections/codestral_credentials.rs, each a Section over its own env keys. They do not belong under src/providers, since providers/xai.rs and providers/mistral.rs there are leaf settings owned by B1400 through B1413.
   - The public xAI web_search_options path bypasses the chat leaf's warning-and-drop branch.
   - Existing litellm_metadata=null blocks OCR metadata insertion because the code tests key presence.
   - A FIM api_base override prevents later optional aliases from being popped.

@@ -110,6 +110,14 @@ base:
     - id: shear
       why: no unused dependencies
       run: cargo shear
+    - id: corpus-replays
+      why: every fuzz corpus file the change touches still passes the replays_the_ tests of the package that owns the corpus, since task checks leave those tests out
+      run: |-
+        dirs=$(git diff --name-only "$GATE_BASE" -- ':(glob)**/fuzz/corpus/**' | sed 's#/fuzz/corpus/.*##' | sort -u)
+        if [ -z "$dirs" ]; then echo "the change touches no fuzz corpus"; exit 0; fi
+        packages=$(cargo metadata --locked --offline --no-deps --format-version 1 | jq -r --arg root "$(pwd -P)/" '.packages[] | select(.manifest_path | ltrimstr($root) | rtrimstr("/Cargo.toml") | IN($ARGS.positional[])) | "-p \(.name)"' --args $dirs)
+        if [ -z "$packages" ]; then echo "no package owns the corpus in $dirs"; exit 1; fi
+        cargo nextest run --locked --no-tests=warn $packages -E 'test(/replays_the_/)'
     - id: hooks
       why: the prek pre-commit hooks pass on every file (hygiene, test placement, ast-grep rules, typos, rustfmt)
       run: prek run --all-files

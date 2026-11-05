@@ -98,13 +98,13 @@ checks:
   commands:
     - id: verdict-parser-tests
       why: parse_json_verdict tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^judge_verdict_parsing::/)'
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^judge_primitives::(.*::)?judge_verdict_parsing::/)'
     - id: content-text-tests
       why: extract_text_from_content tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^content_text_extraction::/)'
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^judge_primitives::(.*::)?content_text_extraction::/)'
     - id: provider-qualified-tests
       why: _provider_qualified tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^provider_qualified::/)'
+      run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^judge_primitives::(.*::)?provider_qualified::/)'
     - id: judge-target-tests
       why: judge_target and JudgeTarget tests fail or do not exist
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^judge_targets::/)'

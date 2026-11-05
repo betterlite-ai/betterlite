@@ -41,7 +41,6 @@ description: >-
   budget 280 implementation, 240 tests, 135 adapters and 70 wiring lines, maximum 775.
 scope:
   paths:
-    - crates/betterlite-provider/src/{lib,error,compatible_chat_call}.rs
     - crates/betterlite-provider/src/compatible_chat_call.rs
     - crates/betterlite-provider/src/compatible_chat_call/**
     - crates/betterlite-provider/Cargo.toml

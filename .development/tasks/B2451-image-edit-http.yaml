@@ -18,14 +18,13 @@ description: >-
   finalizer and trusted URL. Tests record callback order rather than treating expected captures as results.
   Count 191 nonblank/non-comment lines; allocate 175 implementation, 120 tests, 100 fixtures, 75 adapters and
   30 wiring lines, 500 total. Reuse existing HTTP/multipart and SDK decoders with new SDK parser seeds.
+
+  B997 fills the Image variants that B010 registers in operation.rs, so this task builds on them in
+  crates/betterlite-provider/src/api/image_edit_http.rs and leaves operation.rs as it is.
 scope:
   paths:
-  - crates/betterlite-provider/src/api.rs
-  - crates/betterlite-provider/src/api/**
   - crates/betterlite-provider/src/api/image_edit_http.rs
   - crates/betterlite-provider/src/api/image_edit_http/**
-  - crates/betterlite-provider/src/operation.rs
-  - crates/betterlite-provider/src/operation/**
   - tools/oracle/src/sdk_http.rs
   - tools/oracle/src/sdk_http/image_edit_http.rs
   - tools/oracle/sdk_http/dispatch.py

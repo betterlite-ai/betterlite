@@ -38,13 +38,13 @@ description: >-
 scope:
   paths:
     - crates/betterlite-openai/Cargo.toml
-    - crates/betterlite-openai/src/{lib,error,xai_tokens}.rs
     - crates/betterlite-openai/src/xai_tokens.rs
     - crates/betterlite-openai/src/xai_tokens/**
     - crates/betterlite-openai/fuzz/Cargo.toml
     - crates/betterlite-openai/fuzz/fuzz_targets/xai_oauth.rs
     - crates/betterlite-openai/fuzz/corpus/xai_oauth/**
-    - crates/betterlite-config/src/{lib,config,settings,model,env,providers,tests}.rs
+    - crates/betterlite-config/src/sections/xai_oauth_settings.rs
+    - crates/betterlite-config/src/sections/xai_oauth_settings/**
     - crates/betterlite-config/src/providers/xai.rs
     - crates/betterlite-config/src/providers/xai/**
     - crates/betterlite-config/src/providers/xai/oauth.rs

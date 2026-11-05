@@ -20,10 +20,8 @@ description: >-
   planning/composition, 140 tests and 100 oracle lines, maximum 450.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,model_garden}.rs
     - crates/betterlite-vertex/src/model_garden.rs
     - crates/betterlite-vertex/src/model_garden/**
-    - crates/betterlite-provider/src/{lib,model_garden_call}.rs
     - crates/betterlite-provider/src/model_garden_call.rs
     - crates/betterlite-provider/src/model_garden_call/**
     - crates/betterlite-provider/Cargo.toml

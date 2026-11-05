@@ -14,8 +14,6 @@ description: >-
   corpus only. No helper adapter, route registration or new outside-byte parser belongs here.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/assistant_read_delete.rs
   - crates/betterlite-core/src/api/assistant_read_delete/**
   - tools/oracle/src/sdk_http.rs

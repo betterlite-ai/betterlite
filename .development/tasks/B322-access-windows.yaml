@@ -6,9 +6,8 @@ description: 'Add typed team candidate filtering and model_info.access_windows, 
   errors. Add config corpus cases for IANA zones, overnight windows, overlapping windows and invalid bounds.
   Configuration boundary keys introduced or consumed here: access_windows. Pinned declaration defaults:
   access_windows=None. Resolve env values once in betterlite-config, never in router code. Implement the
-  owned native service in crates/betterlite-router/src/access_windows.rs. Add ProbeOperation::AccessWindows in
-  tools/oracle/src/router_probes/mod.rs and the corresponding B322 entry in tools/oracle/litellm/probes/registry.py;
-  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  owned native service in crates/betterlite-router/src/access_windows.rs. B301 registers ProbeOperation::AccessWindows and its Python entry as stubs, so fill only tools/oracle/src/router_probes/access_windows.rs and tools/oracle/litellm/probes/access_windows.py and leave mod.rs and registry.py as they are;
+  the adapters only call production services.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
   lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
   exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/router_utils/access_windows.py:
@@ -34,9 +33,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/access_windows.rs
   - tools/oracle/src/router_probes/access_windows/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/access_windows.py
   - tools/oracle/cases/routing/access-windows/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/access-windows-*

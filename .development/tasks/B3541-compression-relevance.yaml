@@ -19,7 +19,14 @@ description: >-
   The larger task budget accounts for behavior test cases, integration with B014's executor, and parameter handling fixtures.
 scope:
   paths:
-    - crates/betterlite-compression/**
+    - crates/betterlite-compression/src/bm25_scoring.rs
+    - crates/betterlite-compression/src/bm25_scoring/**
+    - crates/betterlite-compression/src/embedding_scoring.rs
+    - crates/betterlite-compression/src/embedding_scoring/**
+    - crates/betterlite-compression/src/score_combination.rs
+    - crates/betterlite-compression/src/score_combination/**
+    - crates/betterlite-compression/src/scoring.rs
+    - crates/betterlite-compression/src/scoring/**
     - tools/oracle/cases/compression/**
   lint_tables: false
 references:
@@ -66,6 +73,7 @@ out_of_scope:
   - B014 owns the embedding executor and its caching contracts; this task only calls it with supplied parameters.
   - Embedding caching behavior and DualCache semantics belong to B2226; this task only passes the cache instance to detect whether caching should be enabled.
 pitfalls:
+  - This task owns four flat top-level modules, bm25_scoring.rs, embedding_scoring.rs, score_combination.rs and scoring.rs (the re-export module standing in for litellm's scoring/__init__.py), with no nested scoring submodule folder.
   - BM25 prefix expansion only applies to terms with 4+ characters; shorter terms use exact matching only.
   - Cosine similarity with zero norms must return 0.0, not NaN or panic on zero division.
   - Text truncation keeps first 15,000 and last 15,000 characters of a 30,000-char max; the middle "...\n" marker is extra overhead (output can be 5 chars over the stated max, e.g. 30,005 for a 30,000 cap).

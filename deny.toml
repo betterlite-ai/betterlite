@@ -72,7 +72,7 @@ deny = [
   { crate = "native-tls", use-instead = "rustls" },
   { crate = "sqlx", use-instead = "tokio-postgres" },
   { crate = "reqwest", wrappers = ["betterlite-http", "betterlite-oracle", "betterlite-guardrails"] },
-  { crate = "betterlite-server", wrappers = ["betterlite", "betterlite-oracle"] },
+  { crate = "betterlite-server", wrappers = ["betterlite", "betterlite-oracle", "betterlite-server-fuzz"] },
 ]
 
 [sources]

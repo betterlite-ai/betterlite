@@ -22,7 +22,6 @@ description: >-
   190 tests, 110 adapters and 50 wiring lines, maximum 750.
 scope:
   paths:
-    - crates/betterlite-vertex/src/{lib,error,gemini_tools}.rs
     - crates/betterlite-vertex/src/gemini_tools.rs
     - crates/betterlite-vertex/src/gemini_tools/**
     - tools/oracle/src/helpers/vertex/gemini_tools.rs
