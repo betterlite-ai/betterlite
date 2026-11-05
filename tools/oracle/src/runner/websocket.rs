@@ -15,10 +15,6 @@ use crate::websocket_driver::{
 use crate::websocket_oracle::{WebSocketBounds, WebSocketCase, output_matches, upstream_matches};
 use crate::{
     OracleError,
-    case::{
-        HelperCase,
-        helper::{HelperCompare, HelperKind},
-    },
     cli::Options,
     helpers::{self, HelperCall},
     paths::safe_name,
@@ -48,17 +44,11 @@ fn run_service_case(
         service,
         input: case.input.clone(),
     };
-    let helper = HelperCase {
-        kind: HelperKind::Helper,
-        name: case.name.clone(),
-        env: case.env.clone(),
-        compare: HelperCompare::default(),
-        call: HelperCall {
-            operation: "websocket_oracle".to_owned(),
-            input: serde_json::to_value(service_input.to_wire()).map_err(OracleError::Json)?,
-        },
+    let call = HelperCall {
+        operation: "websocket_oracle".to_owned(),
+        input: serde_json::to_value(service_input.to_wire()).map_err(OracleError::Json)?,
     };
-    let (left, right) = helpers::run_pair(&helper, options.self_check)?;
+    let (left, right) = helpers::run_pair(&call, &case.env, options.self_check)?;
     let fixture = output_matches(case, &left).and_then(|()| output_matches(case, &right));
     let pair = compare::compare_helper(&left, &right, &[]).map(|difference| difference.pointer);
     let Some(pointer) = fixture.err().or(pair) else {
