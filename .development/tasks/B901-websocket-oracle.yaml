@@ -123,6 +123,8 @@ scope:
   - tools/oracle/src/helpers/oracle/websocket_oracle/**
   - tools/oracle/helpers/websocket_oracle.py
   - tools/oracle/helpers/websocket_oracle/**
+  - tools/oracle/src/helpers/server/b3693/tests.rs
+  - tools/oracle/src/helpers/mod.rs
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/realtime_api/README.md#L1-L8
@@ -307,7 +309,7 @@ pitfalls:
   oracle_cases stays empty on purpose. The gate adds its oracle check for every listed case and runs it against a
   built betterlite, and betterlite has no realtime route until B1125. legacy-self-check runs the twelve fixtures with
   LiteLLM on both sides; the tasks that build the native side list the fixtures they make pass.
-- 'The oracle helper for this task is pre-registered as websocket_oracle in the oracle group. Replace the stub Op in tools/oracle/src/helpers/oracle/websocket_oracle.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/websocket_oracle.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit. There is no websocket_dispatch.py: the service child is that dispatch.py run, so add no second dispatcher. websocket_oracle.py imports its service halves only from tools/oracle/helpers/websocket_oracle/; realtime_connect_websocket and the core_ops helpers belong to other tasks.'
+- 'The oracle helper for this task is pre-registered as websocket_oracle in the oracle group. Replace the stub Op in tools/oracle/src/helpers/oracle/websocket_oracle.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/websocket_oracle.py. The group files and dispatch.py are not this task''s to edit. In helpers/mod.rs the one allowed change is moving run_case''s body into a run_pair that returns both HelperOutput values, so the service driver can check a fixture''s pinned transcript; run_case keeps its behavior. There is no websocket_dispatch.py: the service child is that dispatch.py run, so add no second dispatcher. websocket_oracle.py imports its service halves only from tools/oracle/helpers/websocket_oracle/; realtime_connect_websocket and the core_ops helpers belong to other tasks.'
 - >-
   A preaccept refusal is reported by the HTTP handshake, so storing the route's attempted 1008 as an accepted client
   close makes a valid 403 transcript fail.
@@ -323,7 +325,11 @@ pitfalls:
 - >-
   The refusal table's 503 entry is the default 1011 branch rather than an explicit dictionary entry; a status-only
   lookup that handles only the listed 401, 403 and 429 keys produces the wrong transcript.
+- >-
+  B3693's tools/oracle/src/helpers/server/b3693/tests.rs matches every LoadedCase variant, so the new WebSocket
+  variant needs its own arm there (next to Helper, Http and Scenario returning None) or the oracle tests stop
+  compiling. Change only that arm in that file.
 review_level: security
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 1700
   max_new_expects: 0

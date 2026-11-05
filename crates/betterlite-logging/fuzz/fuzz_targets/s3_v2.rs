@@ -10,7 +10,7 @@ use serde_json::value::RawValue;
 use std::collections::BTreeMap;
 
 fuzz_target!(|bytes: &[u8]| {
-    if bytes.len() > 65_536 {
+    if bytes.len() > 0x0001_0000 {
         return;
     }
     if let Ok((source, payload)) =

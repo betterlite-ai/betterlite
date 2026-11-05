@@ -31,8 +31,11 @@ description: >-
 scope:
   paths:
   - Cargo.toml
-  - crates/betterlite-error/**
-  - crates/betterlite-rate-limit/**
+  - crates/betterlite-error/src/proxy_rate_limit_error.rs
+  - crates/betterlite-error/src/proxy_rate_limit_error/**
+  - crates/betterlite-rate-limit/src/provider_attribution.rs
+  - crates/betterlite-rate-limit/src/provider_attribution/**
+  - crates/betterlite-rate-limit/Cargo.toml
   - tools/oracle/Cargo.toml
   - tools/oracle/cases/helpers/provider-attribution/**
   - "tools/oracle/fuzz/corpus/helper_case/b3030-*"
@@ -131,6 +134,11 @@ out_of_scope:
 - Prometheus metric label mapping is handled at the error emission point; this task supplies the interface
   values only.
 pitfalls:
+- 'Error classification (map_v3_rate_limit_type, detail coercion, the proxy rate-limit error builder) lives
+  in crates/betterlite-error/src/proxy_rate_limit_error.rs. Provider attribution and priority conversion
+  (resolve_llm_provider_for_rate_limit, router alias fallback, convert_priority_to_percent) live in
+  crates/betterlite-rate-limit/src/provider_attribution.rs. rate_limit.rs and error/details.rs already
+  carry RateLimitCategory and RateLimitDimension from B184: read them, do not edit them.'
 - 'Name every corpus seed tools/oracle/fuzz/corpus/helper_case/b3030-<case>.yaml. The rest of that folder belongs to other tasks.'
 - 'The oracle helper for this task is pre-registered as b3030 in the oracle group. Replace
   the stub Op in tools/oracle/src/helpers/oracle/b3030.rs with an impl Helper whose Input

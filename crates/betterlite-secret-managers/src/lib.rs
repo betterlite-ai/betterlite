@@ -1,8 +1,10 @@
 pub mod aws;
+pub mod aws_kms;
 pub mod aws_secrets;
 pub mod custom_interface;
 pub mod custom_loader;
 pub mod cyberark;
+pub mod google_kms;
 pub mod google_secret_manager;
 pub mod oidc;
 pub mod secret_contracts;

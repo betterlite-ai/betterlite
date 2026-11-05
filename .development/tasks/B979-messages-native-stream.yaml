@@ -26,8 +26,6 @@ description: >-
   790 total. Tests use api::messages_native_stream in core and config. No new byte parser is introduced.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/messages_native_stream.rs
   - crates/betterlite-core/src/api/messages_native_stream/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/messages-native-stream-*

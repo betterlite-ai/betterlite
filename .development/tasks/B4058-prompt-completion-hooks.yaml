@@ -64,7 +64,7 @@ checks:
   commands:
     - id: orchestration-tests
       why: orchestration and completion hook tests fail or do not exist
-      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^prompt_orchestration::|^completion_hooks::/)'
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^orchestration::(.*::)?prompt_orchestration::|^completion_hooks::/)'
 oracle_cases: []
 deviations:
   - what: GitLab and Bitbucket sync completion hooks forward prompt_spec unchanged but omit the ignore_prompt_manager_model and ignore_prompt_manager_optional_params parameters when calling PromptManagementBase.get_chat_completion_prompt. These parameters default to False in the base method, while resolve_prompt_manager_ignore_flags still runs unconditionally with the real prompt_spec.

@@ -6,18 +6,13 @@ use std::path::PathBuf;
 use thiserror::Error;
 
 use crate::providers::bedrock::request_policy::metadata_fields;
-use crate::raw::{
-    RawConfig, RawDeployment, RawGeneral, RawInfo, RawLiteLlm, RawNumber, RawParams, RawRouter,
-};
-use crate::resolve::{
-    parse_float, parse_integer, resolve_number as number, resolve_secret, resolve_string,
-};
+use crate::raw::{RawConfig, RawGeneral, RawLiteLlm, RawNumber, RawRouter};
+use crate::resolve::{parse_float, parse_integer, resolve_number as number, resolve_secret};
 use crate::secret_codec::general_settings;
 use crate::sections::{RawSections, Sections};
-use crate::types::{
-    Config, GeneralSettings, LiteLlmParams, LiteLlmSettings, ModelDeployment, ModelInfo,
-    ProxyTrust, RouterSettings,
-};
+use crate::types::{Config, GeneralSettings, LiteLlmSettings, ProxyTrust, RouterSettings};
+mod deployment;
+use deployment::convert_deployment;
 pub trait EnvironmentLookup {
     fn lookup(&self, name: &str) -> Option<String>;
     fn system_home(&self) -> Option<PathBuf> {
@@ -134,7 +129,6 @@ pub(crate) fn unknown_paths(views: &[BTreeSet<String>]) -> Vec<String> {
         .map(|path| (*path).to_owned())
         .collect()
 }
-
 type Lookup<'lookup> = &'lookup dyn EnvironmentLookup;
 
 fn convert(raw: RawConfig, sections: Sections, lookup: Lookup<'_>) -> Result<Config, ConfigError> {
@@ -151,71 +145,6 @@ fn convert(raw: RawConfig, sections: Sections, lookup: Lookup<'_>) -> Result<Con
         sections,
     })
 }
-
-fn convert_deployment(
-    raw: RawDeployment,
-    index: usize,
-    lookup: Lookup<'_>,
-) -> Result<ModelDeployment, ConfigError> {
-    let litellm_params = convert_params(raw.litellm_params, index, lookup)?;
-    let model_info = convert_info(raw.model_info, index, lookup)?;
-    let model_name = resolve_string(
-        raw.model_name,
-        &format!("model_list.{index}.model_name"),
-        lookup,
-    )?;
-    Ok(ModelDeployment {
-        model_name,
-        litellm_params,
-        model_info,
-    })
-}
-
-fn convert_params(
-    raw: RawParams,
-    index: usize,
-    lookup: Lookup<'_>,
-) -> Result<LiteLlmParams, ConfigError> {
-    let prefix = format!("model_list.{index}.litellm_params");
-    let optional = |value: Option<String>, path: &str| {
-        value
-            .map(|text| resolve_string(text, path, lookup))
-            .transpose()
-    };
-    let model = optional(raw.model, &format!("{prefix}.model"))?;
-    let api_base = optional(raw.api_base, &format!("{prefix}.api_base"))?;
-    let api_key = resolve_secret(raw.api_key, &format!("{prefix}.api_key"), lookup)?;
-    let api_version = optional(raw.api_version, &format!("{prefix}.api_version"))?;
-    let float = |value: Option<RawNumber>, path: &str| number(value, path, lookup, parse_float);
-    let integer = |value: Option<RawNumber>, path: &str| number(value, path, lookup, parse_integer);
-    let timeout = float(raw.timeout, &format!("{prefix}.timeout"))?;
-    let stream_timeout = float(raw.stream_timeout, &format!("{prefix}.stream_timeout"))?;
-    let max_retries = integer(raw.max_retries, &format!("{prefix}.max_retries"))?;
-    let rpm = integer(raw.rpm, &format!("{prefix}.rpm"))?;
-    let tpm = integer(raw.tpm, &format!("{prefix}.tpm"))?;
-    let weight = integer(raw.weight, &format!("{prefix}.weight"))?;
-    Ok(LiteLlmParams {
-        model,
-        api_base,
-        api_key,
-        api_version,
-        timeout,
-        stream_timeout,
-        max_retries,
-        rpm,
-        tpm,
-        weight,
-    })
-}
-
-fn convert_info(raw: RawInfo, index: usize, lookup: Lookup<'_>) -> Result<ModelInfo, ConfigError> {
-    let id = raw
-        .id
-        .map(|text| resolve_string(text, &format!("model_list.{index}.model_info.id"), lookup))
-        .transpose()?;
-    Ok(ModelInfo { id })
-}
-
 fn convert_general(raw: RawGeneral, lookup: Lookup<'_>) -> Result<GeneralSettings, ConfigError> {
     let master_key = resolve_secret(raw.master_key, "general_settings.master_key", lookup)?;
     Ok(general_settings(
@@ -249,6 +178,11 @@ fn convert_litellm(raw: RawLiteLlm, lookup: Lookup<'_>) -> Result<LiteLlmSetting
     let request_timeout = number(raw.request_timeout, timeout_path, lookup, parse_float)?;
     let (modify_params, default_max_tokens) = environment_defaults(raw.modify_params, lookup)?;
     Ok(LiteLlmSettings {
+        ssl_verify: raw.ssl_verify,
+        ssl_certificate: raw.ssl_certificate,
+        http2: raw.http2,
+        ssl_ecdh_curve: raw.ssl_ecdh_curve,
+        ssl_security_level: raw.ssl_security_level,
         num_retries,
         request_timeout,
         drop_params: raw.drop_params,

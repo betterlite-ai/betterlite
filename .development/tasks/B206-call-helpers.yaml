@@ -29,7 +29,7 @@ scope:
   - crates/betterlite-models/Cargo.toml
   - crates/betterlite-models/src/call_helpers.rs
   - crates/betterlite-models/src/call_helpers/**
-  - crates/betterlite-openai/**
+  - crates/betterlite-openai/fuzz/corpus/chat_request/**
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/models/call_helpers.rs
   - tools/oracle/src/helpers/models/call_helpers/**
@@ -37,7 +37,10 @@ scope:
   - tools/oracle/helpers/call_helpers/**
   - tools/oracle/cases/helpers/call-helpers/**
   - "tools/oracle/fuzz/corpus/helper_case/call_helpers-*"
-  - crates/betterlite-config/**
+  - crates/betterlite-config/src/types.rs
+  - crates/betterlite-config/src/loader.rs
+  - crates/betterlite-config/src/tests/provider_base_config.rs
+  - crates/betterlite-config/fuzz/corpus/config_yaml/**
   lint_tables: false
 references:
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L54-L194
@@ -130,6 +133,8 @@ pitfalls:
 - A typed source exception is retained inside Rust even when omitted from a serializable logging projection.
 - Do not let a request set the proxy-stamped OAuth or budget reservation markers.
 - Provider headers are broadly forwarded with prefixing; an allowlist would wrongly drop rate-limit and vendor metadata.
+- The LITELLM_DROP_PARAMS config resolution is a loader.rs and types.rs change next to the existing modify_params
+  fallback, with its load cases added to tests/provider_base_config.rs. It is not a new config section.
 review_level: standard
 budget:
   max_changed_lines: 1500

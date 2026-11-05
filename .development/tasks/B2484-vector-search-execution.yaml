@@ -21,8 +21,6 @@ description: >-
   170 tests, 95 adapters, 120 fixtures, 35 wiring/corpus, 670 total within 710.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/vector_search_execution.rs
   - crates/betterlite-core/src/api/vector_search_execution/**
   - tools/oracle/src/sdk_http.rs

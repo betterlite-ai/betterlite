@@ -31,7 +31,8 @@ description: >-
 
 scope:
   paths:
-    - crates/betterlite-guardrails/src/**
+    - crates/betterlite-guardrails/src/purview_dlp_evaluation.rs
+    - crates/betterlite-guardrails/src/purview_dlp_evaluation/**
   lint_tables: false
 
 references:

@@ -40,8 +40,6 @@ description: >-
   lines, leaving more than half for the authorization and SQL regression cases.
 scope:
   paths:
-    - crates/betterlite-server/src/spend.rs
-    - crates/betterlite-server/src/spend/**
     - crates/betterlite-server/src/spend/log_list.rs
     - crates/betterlite-server/src/spend/log_list/**
     - tools/oracle/cases/http/spend-log-list/**

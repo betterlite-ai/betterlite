@@ -102,7 +102,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::stored_skill_reads::tests::/) - test(/replays_the_/)'
   - id: missing-principal-invariant
     why: Identity-less list_skills and get_skill succeed without requiring an auth check.
-    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^stored_skill_reads_missing_principal$/)'
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::stored_skill_reads::(.*::)?stored_skill_reads_missing_principal$/)'
   - id: postgres-tests
     why: Real Postgres skill row reads with ownership filtering are absent or fail.
     run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/::stored_skill_reads_postgres$/)'

@@ -224,7 +224,7 @@ checks:
       why: >-
         Object permission hydration and permission resolution functions not implemented,
         fail to load from DB, raise incorrect errors, or return wrong permission scope.
-      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^auth::permission/) or test(/^mcp::permission/) or test(/^object_permission_hydration::/)' 2>&1 | tail -5
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^auth::permission/) or test(/^auth::(.*::)?mcp::permission/) or test(/^auth::(.*::)?object_permission_hydration::/)' 2>&1 | tail -5
     - id: unloadable-error-sentinel
       why: >-
         UnloadableEntitlementError is not raised when a principal names an object_permission_id

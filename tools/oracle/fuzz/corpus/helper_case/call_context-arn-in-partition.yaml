@@ -1,0 +1,5 @@
+kind: helper
+name: arn-in-partition
+call: {aws_partition: {region: us-east-1, value: 'arn:aws-barn:bedrock:x'}}
+env: {}
+compare: {ignore: []}

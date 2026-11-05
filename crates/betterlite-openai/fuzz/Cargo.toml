@@ -3,6 +3,10 @@ name = "betterlite-openai-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
 
 [package.metadata]
 cargo-fuzz = true
@@ -62,6 +66,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "voyage_embedding_reply"
+path = "fuzz_targets/voyage_embedding_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "vector_store_records"
 path = "fuzz_targets/vector_store_records.rs"
 test = false
@@ -75,4 +86,9 @@ test = false
 doc = false
 bench = false
 
-[workspace]
+[[bin]]
+name = "cohere_line"
+path = "fuzz_targets/cohere_line.rs"
+test = false
+doc = false
+bench = false

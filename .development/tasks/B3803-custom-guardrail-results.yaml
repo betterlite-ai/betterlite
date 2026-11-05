@@ -86,46 +86,46 @@ checks:
   commands:
     - id: custom-code-error-types
       why: CustomCodeGuardrailError and subclasses must exist with message and details
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code_errors::/)' && grep -q "CustomCodeGuardrailError" crates/betterlite-guardrails/src/custom_code.rs
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code::(.*::)?custom_code_errors::/)' && grep -q "CustomCodeGuardrailError" crates/betterlite-guardrails/src/custom_code.rs
     - id: custom-code-config-tests
       why: config model must load custom_code and optional timeout
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code_config::/)' && grep -q "custom_code" crates/betterlite-guardrails/src/custom_code.rs
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code::(.*::)?custom_code_config::/)' && grep -q "custom_code" crates/betterlite-guardrails/src/custom_code.rs
     - id: custom-code-init-tests
       why: __init__ must validate timeout and initialize compilation lock
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code_guardrail_init::/)' && grep -q "_compile_lock" crates/betterlite-guardrails/src/custom_code.rs
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code::(.*::)?custom_code_guardrail_init::/)' && grep -q "_compile_lock" crates/betterlite-guardrails/src/custom_code.rs
     - id: custom-code-compilation-tests
       why: compilation caching must compile once and reuse cached result
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code_compilation::/)' && grep -q "compile_sandboxed" crates/betterlite-guardrails/src/custom_code.rs
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code::(.*::)?custom_code_compilation::/)' && grep -q "compile_sandboxed" crates/betterlite-guardrails/src/custom_code.rs
     - id: custom-code-apply-tests
       why: apply_guardrail must handle allow/block/flag/modify correctly
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code_apply::/)' && grep -q "fn apply_guardrail" crates/betterlite-guardrails/src/custom_code.rs
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code::(.*::)?custom_code_apply::/)' && grep -q "fn apply_guardrail" crates/betterlite-guardrails/src/custom_code.rs
     - id: custom-code-dispatch-tests
       why: _call_compiled must dispatch sync/async and manage deadlines
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code_dispatch::/)' && grep -q "fn _call_compiled" crates/betterlite-guardrails/src/custom_code.rs
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code::(.*::)?custom_code_dispatch::/)' && grep -q "fn _call_compiled" crates/betterlite-guardrails/src/custom_code.rs
     - id: custom-code-metadata-tests
       why: metadata preparation must extract safe fields only
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code_metadata::/)' && grep -q "_prepare_safe_request_data" crates/betterlite-guardrails/src/custom_code.rs
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code::(.*::)?custom_code_metadata::/)' && grep -q "_prepare_safe_request_data" crates/betterlite-guardrails/src/custom_code.rs
     - id: custom-code-result-tests
       why: result processing must handle all actions correctly
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code_result::/)' && grep -q "_process_result" crates/betterlite-guardrails/src/custom_code.rs
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code::(.*::)?custom_code_result::/)' && grep -q "_process_result" crates/betterlite-guardrails/src/custom_code.rs
     - id: custom-code-error-handling-tests
       why: timeout and execution errors must be logged and converted to CustomCodeExecutionError
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code_error_handling::/)' && grep -q "ExecutionTimeoutError" crates/betterlite-guardrails/src/custom_code.rs
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code::(.*::)?custom_code_error_handling::/)' && grep -q "ExecutionTimeoutError" crates/betterlite-guardrails/src/custom_code.rs
     - id: custom-code-event-hooks-tests
       why: get_supported_event_hooks must return correct event types
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code_event_hooks::/)' && grep -q "get_supported_event_hooks" crates/betterlite-guardrails/src/custom_code.rs
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code::(.*::)?custom_code_event_hooks::/)' && grep -q "get_supported_event_hooks" crates/betterlite-guardrails/src/custom_code.rs
     - id: custom-code-config-model-tests
       why: get_config_model must return CustomCodeGuardrailConfigModel
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code_config_model::/)' && grep -q "CustomCodeGuardrailConfigModel" crates/betterlite-guardrails/src/custom_code.rs
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code::(.*::)?custom_code_config_model::/)' && grep -q "CustomCodeGuardrailConfigModel" crates/betterlite-guardrails/src/custom_code.rs
     - id: custom-code-init-validation-name-tests
       why: initialize_guardrail must validate guardrail_name and raise ValueError
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code_init_validation_name::/)' && grep -q "guardrail_name" crates/betterlite-guardrails/src/custom_code.rs
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code::(.*::)?custom_code_init_validation_name::/)' && grep -q "guardrail_name" crates/betterlite-guardrails/src/custom_code.rs
     - id: custom-code-init-validation-code-tests
       why: initialize_guardrail must validate custom_code and raise ValueError
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code_init_validation_code::/)' && grep -q "custom_code" crates/betterlite-guardrails/src/custom_code.rs
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code::(.*::)?custom_code_init_validation_code::/)' && grep -q "custom_code" crates/betterlite-guardrails/src/custom_code.rs
     - id: custom-code-init-guardrail-tests
       why: initialize_guardrail must instantiate and register via callback manager
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code_init_guardrail::/)' && grep -q "fn initialize_guardrail" crates/betterlite-guardrails/src/custom_code.rs
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^custom_code::(.*::)?custom_code_init_guardrail::/)' && grep -q "fn initialize_guardrail" crates/betterlite-guardrails/src/custom_code.rs
     - id: response-rejection-program-tests
       why: RESPONSE_REJECTION_CODE must be a complete program constant with rejection phrase matching
       run: grep -q "RESPONSE_REJECTION_CODE" crates/betterlite-guardrails/src/custom_code.rs && grep -q "rejection.*phrase" crates/betterlite-guardrails/src/custom_code.rs

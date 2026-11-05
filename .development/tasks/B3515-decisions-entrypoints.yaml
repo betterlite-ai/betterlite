@@ -138,22 +138,22 @@ checks:
       run: grep -qE 'pub (fn|use) asystemone\b' crates/betterlite-core/src/systemone.rs && grep -qE 'pub (fn|use) systemone\b' crates/betterlite-core/src/systemone.rs
     - id: request-fields-tests
       why: request field detection and state deprecation tests must pass
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^decisions_entrypoint::request_fields::/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^(decisions|systemone)::(.*::)?decisions_entrypoint::request_fields::/)'
     - id: prepare-tests
       why: decisions call preparation tests must pass
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^decisions_entrypoint::prepare::/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^(decisions|systemone)::(.*::)?decisions_entrypoint::prepare::/)'
     - id: systemone-prepare-tests
       why: systemone call preparation and response validation tests must pass
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^systemone_entrypoint::/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^(decisions|systemone)::(.*::)?systemone_entrypoint::/)'
     - id: async-tests
       why: async entrypoint tests must pass
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^decisions_entrypoint::async/) | test(/^systemone_entrypoint::async/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^(decisions|systemone)::(.*::)?decisions_entrypoint::async/) | test(/^(decisions|systemone)::(.*::)?systemone_entrypoint::async/)'
     - id: sync-tests
       why: sync entrypoint tests must pass
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^decisions_entrypoint::sync/) | test(/^systemone_entrypoint::sync/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^(decisions|systemone)::(.*::)?decisions_entrypoint::sync/) | test(/^(decisions|systemone)::(.*::)?systemone_entrypoint::sync/)'
     - id: signature-tests
       why: entrypoint function signatures and decorator application must match spec
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^decisions_entrypoint::signature/) | test(/^systemone_entrypoint::signature/)'
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^(decisions|systemone)::(.*::)?decisions_entrypoint::signature/) | test(/^(decisions|systemone)::(.*::)?systemone_entrypoint::signature/)'
 
 oracle_cases: []
 

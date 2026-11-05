@@ -18,8 +18,6 @@ description: >-
   byte decoding; extend B2401's case corpus without introducing a second job decoder.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/fine_tuning_create.rs
   - crates/betterlite-core/src/api/fine_tuning_create/**
   - tools/oracle/src/sdk_http.rs

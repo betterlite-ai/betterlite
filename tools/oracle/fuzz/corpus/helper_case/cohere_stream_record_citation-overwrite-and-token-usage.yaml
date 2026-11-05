@@ -1,0 +1,8 @@
+kind: helper
+name: cohere-stream-record-citation-overwrite-and-token-usage
+call:
+  cohere_stream_record:
+    version: v2
+    record: '{"event":"message-end","citations":[],"data":{"delta":{"finish_reason":"COMPLETE","usage":{"tokens":{"input_tokens":3,"output_tokens":4}}}}}'
+compare: {ignore: []}
+env: {}
