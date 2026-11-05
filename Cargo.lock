@@ -1567,6 +1567,7 @@ version = "0.1.0"
 dependencies = [
  "betterlite-config",
  "betterlite-env",
+ "betterlite-http",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-privacy-openai",
@@ -1594,6 +1595,7 @@ dependencies = [
  "sha2 0.11.1",
  "strum",
  "thiserror",
+ "tokio",
  "tracing",
  "tracing-subscriber",
  "unicode-properties",

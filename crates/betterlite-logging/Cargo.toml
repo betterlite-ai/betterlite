@@ -8,6 +8,7 @@ publish.workspace = true
 [dependencies]
 betterlite-config = { path = "../betterlite-config" }
 betterlite-env = { path = "../betterlite-env" }
+betterlite-http = { path = "../betterlite-http" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-prometheus = { path = "../betterlite-prometheus" }
 betterlite-redact = { path = "../betterlite-redact" }
@@ -42,6 +43,7 @@ insta = { version = "1.49.0", default-features = false, features = ["yaml"] }
 rstest = "=0.27.0"
 serde-saphyr.workspace = true
 serde_json = { version = "1.0.154", features = ["arbitrary_precision", "raw_value"] }
+tokio.workspace = true
 tracing-subscriber.workspace = true
 
 [[test]]
