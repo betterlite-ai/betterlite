@@ -1,0 +1,5 @@
+task: B517
+deviations:
+  - what: The built-in HTTP client accepts max_retries but never retries a request.
+    why: Outbound calls go through the shared pooled client, which does not retry. The value still reaches the injected client constructor, so a constructor can apply it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L2038-L2090
