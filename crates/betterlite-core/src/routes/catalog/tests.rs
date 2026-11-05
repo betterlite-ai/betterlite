@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::{CATALOG, RouteCatalog};
-use crate::routes::{CallType, RouteMetadataError, get_routes_for_call_type};
+use crate::routes::{CallType, RouteMetadataError};
 
 #[rstest::rstest]
 #[case::pinned_catalog(CATALOG, None)]
@@ -44,7 +44,7 @@ fn call_route_metadata_route_metadata_tests_behavior(
                 "litellm@d665dc1a6315847fcad6cc2c1264ceb47c06abce"
             );
             assert_eq!(
-                get_routes_for_call_type(CallType::Completion).unwrap(),
+                catalog.routes_for(CallType::Completion),
                 [
                     "/chat/completions",
                     "/v1/chat/completions",
@@ -52,11 +52,7 @@ fn call_route_metadata_route_metadata_tests_behavior(
                     "/openai/deployments/{model}/chat/completions"
                 ]
             );
-            assert!(
-                get_routes_for_call_type(CallType::AcreateSkill)
-                    .unwrap()
-                    .is_empty()
-            );
+            assert!(catalog.routes_for(CallType::AcreateSkill).is_empty());
         }
     }
 }

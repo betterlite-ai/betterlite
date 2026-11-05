@@ -1,6 +1,10 @@
 #![cfg(test)]
 
-use super::{CallType, get_call_types_for_route, pattern::parse_route};
+use super::{
+    CallType,
+    catalog::{CATALOG, RouteCatalog},
+    pattern::parse_route,
+};
 use std::{fs, path::Path, str};
 
 const CHAT: &[CallType] = &[CallType::Acompletion, CallType::Completion];
@@ -58,10 +62,8 @@ fn call_route_metadata_route_metadata_tests_behavior(
     #[case] route: &str,
     #[case] expected: Option<&[CallType]>,
 ) {
-    assert_eq!(
-        get_call_types_for_route(route).unwrap().as_deref(),
-        expected
-    );
+    let catalog = RouteCatalog::parse(CATALOG).unwrap();
+    assert_eq!(catalog.call_types_for(route).unwrap(), expected);
 }
 
 #[rstest::rstest]
@@ -73,5 +75,5 @@ fn replays_the_route_pattern_corpus(#[case] seed: &str) {
     let bytes = fs::read(path).unwrap();
     let route = str::from_utf8(&bytes).unwrap();
     drop(parse_route(route));
-    drop(get_call_types_for_route(route));
+    drop(RouteCatalog::parse(CATALOG).unwrap().call_types_for(route));
 }

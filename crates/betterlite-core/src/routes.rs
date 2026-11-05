@@ -180,30 +180,4 @@ pub enum RouteMetadataError {
 pub mod catalog;
 pub mod pattern;
 
-pub fn get_call_types_for_route(route: &str) -> Result<Option<Vec<CallType>>, RouteMetadataError> {
-    let catalog = catalog::RouteCatalog::parse(catalog::CATALOG)?;
-    if route.len() > 4096 {
-        return Err(RouteMetadataError::RouteTooLong);
-    }
-    if let Some(exact) = catalog.routes.iter().find(|entry| entry.route == route) {
-        return Ok(Some(exact.call_types.clone()));
-    }
-    for entry in &catalog.routes {
-        if pattern::pattern_matches(route, &entry.route)? {
-            return Ok(Some(entry.call_types.clone()));
-        }
-    }
-    Ok(None)
-}
-
-pub fn get_routes_for_call_type(call_type: CallType) -> Result<Vec<String>, RouteMetadataError> {
-    let catalog = catalog::RouteCatalog::parse(catalog::CATALOG)?;
-    Ok(catalog
-        .routes
-        .into_iter()
-        .filter(|entry| entry.call_types.contains(&call_type))
-        .map(|entry| entry.route)
-        .collect())
-}
-
 mod tests;

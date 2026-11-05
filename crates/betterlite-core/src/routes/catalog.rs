@@ -15,7 +15,7 @@ pub struct RouteEntry {
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct RouteCatalog {
     pub source: String,
-    pub call_types: Vec<String>,
+    pub call_types: Vec<CallType>,
     pub routes: Vec<RouteEntry>,
 }
 
@@ -25,33 +25,47 @@ impl RouteCatalog {
             return Err(RouteMetadataError::CatalogTooLong);
         }
         let catalog: Self = serde_json::from_slice(bytes)?;
-        for name in &catalog.call_types {
-            serde_json::from_value::<CallType>(serde_json::Value::String(name.clone()))?;
-        }
         for entry in &catalog.routes {
             validate_entry(entry, &catalog.call_types)?;
         }
         Ok(catalog)
     }
+
+    pub fn call_types_for(&self, route: &str) -> Result<Option<&[CallType]>, RouteMetadataError> {
+        if route.len() > 4096 {
+            return Err(RouteMetadataError::RouteTooLong);
+        }
+        if let Some(exact) = self.routes.iter().find(|entry| entry.route == route) {
+            return Ok(Some(&exact.call_types));
+        }
+        for entry in &self.routes {
+            if super::pattern::pattern_matches(route, &entry.route)? {
+                return Ok(Some(&entry.call_types));
+            }
+        }
+        Ok(None)
+    }
+
+    #[must_use]
+    pub fn routes_for(&self, call_type: CallType) -> Vec<&str> {
+        self.routes
+            .iter()
+            .filter(|entry| entry.call_types.contains(&call_type))
+            .map(|entry| entry.route.as_str())
+            .collect()
+    }
 }
 
-fn validate_entry(entry: &RouteEntry, declared: &[String]) -> Result<(), RouteMetadataError> {
+fn validate_entry(entry: &RouteEntry, declared: &[CallType]) -> Result<(), RouteMetadataError> {
     if entry.call_types.is_empty() {
         return Err(RouteMetadataError::EmptyRouteTypes);
     }
     for call_type in &entry.call_types {
-        if !is_declared(*call_type, declared)? {
+        if !declared.contains(call_type) {
             return Err(RouteMetadataError::UndeclaredCallType);
         }
     }
     Ok(())
-}
-
-fn is_declared(call_type: CallType, declared: &[String]) -> Result<bool, RouteMetadataError> {
-    let value = serde_json::to_value(call_type)?;
-    Ok(value
-        .as_str()
-        .is_some_and(|name| declared.iter().any(|known| known == name)))
 }
 
 mod tests;

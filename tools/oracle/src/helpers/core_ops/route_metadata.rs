@@ -1,6 +1,9 @@
 use std::fmt::Display;
 
-use betterlite_core::routes::{CallType, RouteMetadataError};
+use betterlite_core::routes::{
+    CallType,
+    catalog::{CATALOG, RouteCatalog},
+};
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
@@ -10,35 +13,28 @@ pub(crate) enum Input {
     GetRoutes { call_type: CallType },
 }
 
+#[derive(serde::Serialize)]
+struct CallTypesOutput<'catalog> {
+    call_types: Option<&'catalog [CallType]>,
+}
+
 pub(crate) struct Op;
 
 impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        match input {
-            Input::FullTable => betterlite_core::routes::catalog::RouteCatalog::parse(
-                betterlite_core::routes::catalog::CATALOG,
-            )
-            .and_then(|catalog| serde_json::to_value(catalog).map_err(RouteMetadataError::Fixture))
-            .map_err(route_metadata_error),
-            Input::GetCallTypes { route } => {
-                match betterlite_core::routes::get_call_types_for_route(route) {
-                    Ok(Some(types)) => serde_json::to_value(serde_json::json!({
-                        "call_types": types
-                    }))
-                    .map_err(RouteMetadataError::Fixture)
-                    .map_err(route_metadata_error),
-                    Ok(None) => Ok(serde_json::json!({"call_types": null})),
-                    Err(error) => Err(route_metadata_error(error)),
-                }
-            }
-            Input::GetRoutes { call_type } => serde_json::to_value(
-                betterlite_core::routes::get_routes_for_call_type(*call_type),
-            )
-            .map_err(RouteMetadataError::Fixture)
-            .map_err(route_metadata_error),
-        }
+        let catalog = RouteCatalog::parse(CATALOG).map_err(route_metadata_error)?;
+        let output = match input {
+            Input::FullTable => serde_json::to_value(&catalog),
+            Input::GetCallTypes { route } => serde_json::to_value(CallTypesOutput {
+                call_types: catalog
+                    .call_types_for(route)
+                    .map_err(route_metadata_error)?,
+            }),
+            Input::GetRoutes { call_type } => serde_json::to_value(catalog.routes_for(*call_type)),
+        };
+        output.map_err(route_metadata_error)
     }
 }
 
