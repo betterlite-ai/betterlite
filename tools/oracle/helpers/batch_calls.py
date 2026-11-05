@@ -82,6 +82,6 @@ def run(input_value: dict[str, Json]) -> Json:
             return call_all(models=models)
         call_models = cast(Callable[..., Json], batch_main.batch_completion_models)
         if mode == "models":
-            return call_models(models=models)
+            return {"selected": call_models(models=models)}
         deployments = [{"model": model} for model in models]
-        return call_models(deployments=deployments, model_list=[])
+        return {"selected": call_models(deployments=deployments, model_list=[])}

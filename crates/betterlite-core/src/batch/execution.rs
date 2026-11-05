@@ -145,11 +145,12 @@ where
             break;
         };
         let (index, result) = joined.map_err(BatchError::Join)?;
-        if batch.mode == Mode::Race && result.is_ok() {
-            return Ok(vec![result]);
-        }
-        if batch.mode == Mode::Ordered {
-            ordered.insert(index, result);
+        match (batch.mode, result) {
+            (Mode::Race, success @ Ok(_)) => return Ok(vec![success]),
+            (Mode::Race, Err(_)) => {}
+            (Mode::Ordered, outcome) => {
+                ordered.insert(index, outcome);
+            }
         }
     }
     Ok(ordered.into_values().collect())

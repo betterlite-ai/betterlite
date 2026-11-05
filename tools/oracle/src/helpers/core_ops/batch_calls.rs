@@ -47,12 +47,19 @@ enum ProbeError {
     Overflow,
 }
 
+#[derive(Serialize)]
+struct Selection {
+    // The helper envelope treats top-level null as an absent value.
+    selected: Option<String>,
+}
+
 pub(crate) struct Op;
 impl crate::helpers::Helper for Op {
     type Input = Input;
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_time()
+            .start_paused(true)
             .build()
             .map_err(failure)?;
         runtime.block_on(run(input))
@@ -163,10 +170,10 @@ fn encode(
             serde_json::to_value(results.into_iter().map(Result::ok).collect::<Vec<_>>())
                 .map_err(failure)
         }
-        Operation::Models | Operation::Deployments => {
-            serde_json::to_value(first_ordered_model_result(results).map_err(failure)?)
-                .map_err(failure)
-        }
+        Operation::Models | Operation::Deployments => serde_json::to_value(Selection {
+            selected: first_ordered_model_result(results).map_err(failure)?,
+        })
+        .map_err(failure),
         Operation::AllResponses => serde_json::to_value(all_responses(results)).map_err(failure),
     }
 }
