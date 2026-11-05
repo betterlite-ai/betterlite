@@ -36,7 +36,7 @@ async fn decrypt_env_var_builds_its_own_client_and_preserves_environment() {
     assert_eq!(result.len(), 1);
     assert_eq!(source, original);
     assert!(AWS_KMS_CLIENT.lock().unwrap().is_none());
-    transport.assert_requests_match(&[]);
+    assert!(transport.response.lock().unwrap().is_none());
 }
 
 #[tokio::test]
@@ -72,5 +72,5 @@ async fn decrypt_env_var_selects_value_prefix_and_returns_boolean() {
         result.get("FLAG"),
         Some(DecryptedValue::Boolean(true))
     ));
-    transport.assert_requests_match(&[]);
+    assert!(transport.response.lock().unwrap().is_none());
 }
