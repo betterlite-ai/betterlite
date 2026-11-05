@@ -35,57 +35,48 @@ pub(super) enum ResolverFailure {
     Unavailable,
 }
 
+const TEXT_KEYS: [&str; 7] = [
+    "role",
+    "session_name",
+    "region",
+    "external_id",
+    "profile",
+    "web_identity_token",
+    "sts_endpoint",
+];
+
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
-pub(super) struct Snapshot {
-    pub(super) role: Option<String>,
-    pub(super) session_name: Option<String>,
-    pub(super) region: Option<String>,
-    pub(super) external_id: Option<String>,
-    pub(super) profile: Option<String>,
-    pub(super) web_identity_token: Option<String>,
-    pub(super) sts_endpoint: Option<String>,
-    pub(super) access_key_id: Option<String>,
-}
+pub(super) struct Snapshot(pub(super) BTreeMap<&'static str, String>);
 
 impl Snapshot {
     pub(super) fn filled(prefix: &str) -> Self {
-        let text = |name: &str| Some(format!("{prefix}-{name}"));
-        Self {
-            role: text("role"),
-            session_name: text("session"),
-            region: text("region"),
-            external_id: text("external"),
-            profile: text("profile"),
-            web_identity_token: text("token"),
-            sts_endpoint: text("sts"),
-            access_key_id: None,
-        }
+        Self(
+            TEXT_KEYS
+                .into_iter()
+                .map(|key| (key, format!("{prefix}-{key}")))
+                .collect(),
+        )
     }
 
     pub(super) fn empty_strings() -> Self {
-        let empty = || Some(String::new());
-        Self {
-            role: empty(),
-            session_name: empty(),
-            region: empty(),
-            external_id: empty(),
-            profile: empty(),
-            web_identity_token: empty(),
-            sts_endpoint: empty(),
-            access_key_id: None,
-        }
+        Self(
+            TEXT_KEYS
+                .into_iter()
+                .map(|key| (key, String::new()))
+                .collect(),
+        )
     }
 
-    pub(super) fn into_params(self) -> AwsOptionalParams {
+    pub(super) fn into_params(mut self) -> AwsOptionalParams {
         AwsOptionalParams {
-            aws_role_name: self.role,
-            aws_session_name: self.session_name,
-            aws_region_name: self.region,
-            aws_external_id: self.external_id,
-            aws_profile_name: self.profile,
-            aws_web_identity_token: self.web_identity_token.map(SecretString::from),
-            aws_sts_endpoint: self.sts_endpoint,
-            aws_access_key_id: self.access_key_id.map(SecretString::from),
+            aws_role_name: self.0.remove("role"),
+            aws_session_name: self.0.remove("session_name"),
+            aws_region_name: self.0.remove("region"),
+            aws_external_id: self.0.remove("external_id"),
+            aws_profile_name: self.0.remove("profile"),
+            aws_web_identity_token: self.0.remove("web_identity_token").map(SecretString::from),
+            aws_sts_endpoint: self.0.remove("sts_endpoint"),
+            aws_access_key_id: self.0.remove("access_key_id").map(SecretString::from),
             aws_secret_access_key: None,
             aws_session_token: None,
             aws_bedrock_runtime_endpoint: None,
@@ -93,22 +84,30 @@ impl Snapshot {
     }
 
     pub(super) fn of(params: &AwsOptionalParams) -> Self {
-        Self {
-            role: params.aws_role_name.clone(),
-            session_name: params.aws_session_name.clone(),
-            region: params.aws_region_name.clone(),
-            external_id: params.aws_external_id.clone(),
-            profile: params.aws_profile_name.clone(),
-            web_identity_token: params
-                .aws_web_identity_token
-                .as_ref()
-                .map(|token| token.expose_secret().to_owned()),
-            sts_endpoint: params.aws_sts_endpoint.clone(),
-            access_key_id: params
-                .aws_access_key_id
-                .as_ref()
-                .map(|key| key.expose_secret().to_owned()),
-        }
+        let secret_text =
+            |secret: Option<&SecretString>| secret.map(|value| value.expose_secret().to_owned());
+        let present = [
+            ("role", params.aws_role_name.clone()),
+            ("session_name", params.aws_session_name.clone()),
+            ("region", params.aws_region_name.clone()),
+            ("external_id", params.aws_external_id.clone()),
+            ("profile", params.aws_profile_name.clone()),
+            (
+                "web_identity_token",
+                secret_text(params.aws_web_identity_token.as_ref()),
+            ),
+            ("sts_endpoint", params.aws_sts_endpoint.clone()),
+            (
+                "access_key_id",
+                secret_text(params.aws_access_key_id.as_ref()),
+            ),
+        ];
+        Self(
+            present
+                .into_iter()
+                .filter_map(|(key, value)| value.map(|text| (key, text)))
+                .collect(),
+        )
     }
 }
 
@@ -188,13 +187,17 @@ pub(super) fn manager_with_instance_settings(
     settings: &Snapshot,
 ) -> AwsSecretsManager<FakeResolver> {
     let mut client = manager(resolver, BTreeMap::new());
-    client.aws_role_name.clone_from(&settings.role);
-    client.aws_session_name.clone_from(&settings.session_name);
-    client.aws_region_name.clone_from(&settings.region);
-    client.aws_external_id.clone_from(&settings.external_id);
-    client.aws_profile_name.clone_from(&settings.profile);
-    client.aws_web_identity_token = settings.web_identity_token.clone().map(SecretString::from);
-    client.aws_sts_endpoint.clone_from(&settings.sts_endpoint);
+    client.aws_role_name = settings.0.get("role").cloned();
+    client.aws_session_name = settings.0.get("session_name").cloned();
+    client.aws_region_name = settings.0.get("region").cloned();
+    client.aws_external_id = settings.0.get("external_id").cloned();
+    client.aws_profile_name = settings.0.get("profile").cloned();
+    client.aws_web_identity_token = settings
+        .0
+        .get("web_identity_token")
+        .cloned()
+        .map(SecretString::from);
+    client.aws_sts_endpoint = settings.0.get("sts_endpoint").cloned();
     client
 }
 

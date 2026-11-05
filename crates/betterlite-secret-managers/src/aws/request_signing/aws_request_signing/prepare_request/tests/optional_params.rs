@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+
 use secrecy::SecretString;
 
 use super::super::support::{
@@ -51,28 +53,15 @@ fn empty_instance_settings_are_not_copied() {
 
 #[test]
 fn only_the_missing_keys_are_filled_from_the_instance() {
-    let mut caller = Snapshot {
-        role: Some("caller-role".to_owned()),
-        region: Some("caller-region".to_owned()),
-        session_name: None,
-        external_id: None,
-        profile: None,
-        web_identity_token: None,
-        sts_endpoint: None,
-        access_key_id: None,
-    }
+    let mut caller = Snapshot(BTreeMap::from([
+        ("role", "caller-role".to_owned()),
+        ("region", "caller-region".to_owned()),
+    ]))
     .into_params();
     let seen = seen_after_prepare(&Snapshot::filled("instance"), Some(&mut caller));
-    let expected = Snapshot {
-        role: Some("caller-role".to_owned()),
-        region: Some("caller-region".to_owned()),
-        session_name: Some("instance-session".to_owned()),
-        external_id: Some("instance-external".to_owned()),
-        profile: Some("instance-profile".to_owned()),
-        web_identity_token: Some("instance-token".to_owned()),
-        sts_endpoint: Some("instance-sts".to_owned()),
-        access_key_id: None,
-    };
+    let mut expected = Snapshot::filled("instance");
+    expected.0.insert("role", "caller-role".to_owned());
+    expected.0.insert("region", "caller-region".to_owned());
     assert_eq!(seen, [expected]);
 }
 
@@ -92,10 +81,8 @@ fn keys_the_instance_does_not_manage_pass_through_untouched() {
         aws_sts_endpoint: None,
     };
     let seen = seen_after_prepare(&Snapshot::filled("instance"), Some(&mut caller));
-    let expected = Snapshot {
-        access_key_id: Some("AKIDCALLER".to_owned()),
-        ..Snapshot::filled("instance")
-    };
+    let mut expected = Snapshot::filled("instance");
+    expected.0.insert("access_key_id", "AKIDCALLER".to_owned());
     assert_eq!(seen, [expected]);
 }
 
@@ -103,9 +90,7 @@ fn keys_the_instance_does_not_manage_pass_through_untouched() {
 fn the_callers_optional_params_keep_the_merge_and_lose_what_the_resolver_consumed() {
     let mut caller = AwsOptionalParams::default();
     seen_after_prepare(&Snapshot::filled("instance"), Some(&mut caller));
-    let expected = Snapshot {
-        role: None,
-        ..Snapshot::filled("instance")
-    };
+    let mut expected = Snapshot::filled("instance");
+    expected.0.remove("role");
     assert_eq!(Snapshot::of(&caller), expected);
 }

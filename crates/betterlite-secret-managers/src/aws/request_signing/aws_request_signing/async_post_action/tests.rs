@@ -186,7 +186,10 @@ async fn optional_params_reach_the_credential_resolver() {
         client.dependencies.resolver.seen.lock().unwrap().clone()
     })
     .await;
-    assert_eq!(seen[0].profile.as_deref(), Some("caller-profile"));
+    assert_eq!(
+        seen[0].0.get("profile").map(String::as_str),
+        Some("caller-profile")
+    );
 }
 
 #[rstest]
