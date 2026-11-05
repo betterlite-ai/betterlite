@@ -117,3 +117,14 @@ async fn image_url_raises_a_400_naming_the_violations(#[case] action: &str) {
         "File blocked by Prompt Security. Violations: secret, pii"
     );
 }
+
+#[tokio::test]
+async fn image_url_drops_whitespace_inside_the_base64_payload() {
+    let server = vendor(UPLOADED, &[DONE_ALLOW.to_owned()]).await;
+    let item = image_item("data:image/png;base64,cGl4\n ZWxz\r\n");
+    process_image_url_item(&sanitizer(&server.base), item, None)
+        .await
+        .expect("allowed");
+    let uploads = server.requests("POST");
+    assert!(body_text(uploads.first().expect("upload")).contains("pixels"));
+}

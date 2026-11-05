@@ -155,6 +155,7 @@ pub(super) fn sanitizer(base: &str) -> FileSanitizer {
             block_on_file_modify: true,
             max_poll_attempts: 30,
             poll_interval: Duration::from_millis(2),
+            max_response_bytes: 1024 * 1024,
         },
         client,
     }

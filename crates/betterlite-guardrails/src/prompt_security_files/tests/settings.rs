@@ -30,6 +30,7 @@ fn settings_default_to_the_litellm_values() {
     assert!(settings.block_on_file_modify);
     assert_eq!(settings.max_poll_attempts, 30);
     assert_eq!(settings.poll_interval, Duration::from_secs(2));
+    assert_eq!(settings.max_response_bytes, 64 * 1024 * 1024);
 }
 
 #[test]

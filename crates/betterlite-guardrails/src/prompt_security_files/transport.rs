@@ -11,7 +11,6 @@ use super::error::FileSanitizationError;
 use super::log::{log_api_request, log_api_response};
 use super::wire::{SanitizeResult, StatusResponse, UploadResponse};
 
-const MAX_RESPONSE_BYTES: usize = 64 * 1024 * 1024;
 const QUEUED_STATUSES: [&str; 2] = ["created", "in progress"];
 
 fn request_headers(
@@ -54,7 +53,8 @@ pub(super) async fn upload_and_poll(
         .timeout(sanitizer.settings.request_timeout);
     let response = upload.send().await.map_err(request_error)?;
     let status = response.status();
-    let uploaded: UploadResponse = read_json(response).await?;
+    let uploaded: UploadResponse =
+        read_json(response, sanitizer.settings.max_response_bytes).await?;
     let returned = uploaded.job_id.filter(|job_id| !job_id.is_empty());
     log_api_response(&url, status.as_u16(), &format!("jobId={returned:?}"));
     let job_id = returned.ok_or(FileSanitizationError::MissingJobId)?;
@@ -80,7 +80,8 @@ async fn poll(
             .timeout(sanitizer.settings.request_timeout);
         let response = request.send().await.map_err(request_error)?;
         let status_code = response.status().as_u16();
-        let polled: StatusResponse = read_json(response).await?;
+        let polled: StatusResponse =
+            read_json(response, sanitizer.settings.max_response_bytes).await?;
         let status = polled.status.clone();
         log_api_response(
             url,
@@ -116,7 +117,7 @@ fn request_error(source: reqwest::Error) -> FileSanitizationError {
     }
 }
 
-async fn read_json<T>(mut response: Response) -> Result<T, FileSanitizationError>
+async fn read_json<T>(mut response: Response, limit: usize) -> Result<T, FileSanitizationError>
 where
     T: DeserializeOwned,
 {
@@ -126,10 +127,8 @@ where
     }
     let mut body = Vec::new();
     while let Some(chunk) = response.chunk().await.map_err(request_error)? {
-        if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
-            return Err(FileSanitizationError::ResponseTooLarge {
-                limit: MAX_RESPONSE_BYTES,
-            });
+        if body.len().saturating_add(chunk.len()) > limit {
+            return Err(FileSanitizationError::ResponseTooLarge { limit });
         }
         body.extend_from_slice(&chunk);
     }

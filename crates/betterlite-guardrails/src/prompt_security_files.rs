@@ -19,6 +19,7 @@ pub mod wire;
 const FILE_SANITIZATION_TIMEOUT: Duration = Duration::from_secs(30);
 const MAX_POLL_ATTEMPTS: u32 = 30;
 const POLL_INTERVAL: Duration = Duration::from_secs(2);
+const MAX_RESPONSE_BYTES: usize = 64 * 1024 * 1024;
 
 #[derive(Debug, Clone)]
 pub struct FileSanitizerConfig {
@@ -40,6 +41,7 @@ pub struct FileSanitizerSettings {
     pub block_on_file_modify: bool,
     pub max_poll_attempts: u32,
     pub poll_interval: Duration,
+    pub max_response_bytes: usize,
 }
 
 impl TryFrom<FileSanitizerConfig> for FileSanitizerSettings {
@@ -65,6 +67,7 @@ impl TryFrom<FileSanitizerConfig> for FileSanitizerSettings {
             block_on_file_modify: config.block_on_file_modify.unwrap_or(true),
             max_poll_attempts: MAX_POLL_ATTEMPTS,
             poll_interval: POLL_INTERVAL,
+            max_response_bytes: MAX_RESPONSE_BYTES,
         })
     }
 }

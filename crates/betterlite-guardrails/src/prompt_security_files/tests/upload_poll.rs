@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use super::shared::{DONE_ALLOW, UPLOADED, body_text, sanitizer, vendor};
+use crate::prompt_security_files::error::FileSanitizationError;
 use crate::prompt_security_files::wire::Action;
 
 #[tokio::test]
@@ -54,4 +55,20 @@ async fn upload_poll_omits_the_alias_header_when_absent_or_empty() {
             .iter()
             .all(|upload| !upload.headers.contains_key("x-litellm-key-alias"))
     );
+}
+
+#[tokio::test]
+async fn upload_poll_refuses_an_answer_over_the_response_cap() {
+    let server = vendor(UPLOADED, &[DONE_ALLOW.to_owned()]).await;
+    let mut guardrail = sanitizer(&server.base);
+    guardrail.settings.max_response_bytes = 8;
+    let error = guardrail
+        .sanitize_file_content(b"hello", "image.png", None)
+        .await
+        .expect_err("too large");
+    assert!(matches!(
+        error,
+        FileSanitizationError::ResponseTooLarge { limit: 8 }
+    ));
+    assert!(server.requests("GET").is_empty());
 }

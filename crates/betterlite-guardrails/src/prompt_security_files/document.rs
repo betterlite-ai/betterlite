@@ -87,11 +87,13 @@ fn read_fields(item: &Item, nested: Option<&str>) -> Result<DocumentFields, File
     match nested.and_then(|key| item.get(key)) {
         None => document_fields(item),
         Some(GuardrailValue::Object(inner)) => document_fields(inner),
-        Some(other) => Ok(DocumentFields {
-            url: match other {
-                GuardrailValue::Text(url) => url.clone(),
-                _ => String::new(),
-            },
+        Some(GuardrailValue::Text(url)) => Ok(DocumentFields {
+            url: url.clone(),
+            data: String::new(),
+            mime_type: None,
+        }),
+        Some(_) => Ok(DocumentFields {
+            url: String::new(),
             data: String::new(),
             mime_type: None,
         }),
