@@ -32,11 +32,21 @@ const CI_RESULTS = [
   { key: "failure", label: "Failed", color: "--c2" },
   { key: "cancelled", label: "Cancelled", color: "--other" },
 ];
-const SHELL_KINDS = [
-  { key: "test_s", label: "Tests", color: "--c1" },
-  { key: "build_s", label: "Builds", color: "--c2" },
-  { key: "lint_s", label: "Lint and checks", color: "--c3" },
-  { key: "other_s", label: "Other", color: "--other" },
+const WAIT_KINDS = [
+  { keys: ["reply_s"], label: "Model replies", color: "--c4" },
+  { keys: ["compact_s"], label: "Compaction", color: "--c5" },
+  { keys: ["test_s"], label: "Tests", color: "--c1" },
+  { keys: ["build_s"], label: "Builds", color: "--c2" },
+  { keys: ["lint_s"], label: "Lint and checks", color: "--c3" },
+  { keys: ["other_s"], label: "Other commands", color: "--c6" },
+  { keys: ["tool_s", "error_s", "rest_s"], label: "Other tools, API errors and the rest", color: "--other" },
+];
+const WAIT_KEYS = WAIT_KINDS.flatMap((kind) => kind.keys);
+const REPLY_SIZES = [
+  { key: "short", label: "Under 500" },
+  { key: "mid", label: "500 to 1,999" },
+  { key: "long", label: "2,000 to 4,999" },
+  { key: "xlong", label: "5,000 and up" },
 ];
 const VIOLIN = { lane: 34, label: 64, axis: 18, points: 80, gap: 44 };
 const VIOLIN_ABOUT = {
@@ -91,6 +101,10 @@ function sum(values) {
 function mean(values) {
   const known = values.filter((value) => value !== null);
   return known.length === 0 ? null : sum(known) / known.length;
+}
+
+function totals(runs, keys) {
+  return sum(runs.flatMap((run) => keys.map((key) => run[key])));
 }
 
 function weighted(hours, key) {
@@ -210,6 +224,7 @@ function historyFacts(data) {
     { key: 2, label: "Stage 2", from: cutover ?? now, to: now, empty: cutover === null },
     { key: 0, label: "All", from: first, to: now, empty: false },
   ];
+  const agentRuns = data.agentRuns.map((run) => ({ ...run, model: String(run.model).replace(/-\d{8}$/, ""), stage: stageOf(run.start, cutover) }));
   return {
     ...data,
     now,
@@ -222,7 +237,8 @@ function historyFacts(data) {
     live: periods.filter((period) => period.key !== 0 && !period.empty),
     columns: cutover === null ? periods.slice(0, 1) : periods,
     runs: data.runs.map((run) => ({ ...run, stage: stageOf(run.created, cutover) })),
-    agentRuns: data.agentRuns.map((run) => ({ ...run, model: String(run.model).replace(/-\d{8}$/, ""), stage: stageOf(run.start, cutover) })),
+    agentRuns,
+    traced: agentRuns.filter((run) => run.role === "w" && run.calls !== null),
     hours: data.hours.map((hour) => ({ ...hour, stage: stageOf(hour.hour, cutover) })),
     views: historyViews(data.merges, data.milestones, data.pulls, data.byPull),
   };
@@ -251,8 +267,9 @@ function periodStats(facts, period) {
   const prs = facts.rows.filter((row) => inStage(period, row.mergedStage)).length;
   const runs = facts.runs.filter((run) => inStage(period, run.stage));
   const agents = facts.agentRuns.filter((run) => inStage(period, run.stage));
-  const workers = agents.filter((run) => run.role === "w" && run.test_s !== null);
-  const shell = sum(workers.map((run) => run.test_s + run.build_s + run.lint_s + run.other_s));
+  const workers = facts.traced.filter((run) => inStage(period, run.stage));
+  const active = totals(workers, WAIT_KEYS);
+  const replies = totals(workers, ["reply_s"]);
   const disk = facts.targets.filter((target) => inStage(period, target.stage)).map((target) => target.gb);
   return {
     length,
@@ -273,7 +290,9 @@ function periodStats(facts, period) {
     agentRuns: agents.length,
     agentHours: sum(agents.map((run) => (run.end - run.start) / 3600)),
     tokensPerTask: tasks === 0 ? null : sum(agents.map((run) => run.output_tokens)) / tasks,
-    shellHeavy: shell === 0 ? null : sum(workers.map((run) => run.test_s + run.build_s)) / shell,
+    heavy: active === 0 ? null : totals(workers, ["test_s", "build_s"]) / active,
+    model: active === 0 ? null : totals(workers, ["reply_s", "compact_s", "error_s"]) / active,
+    speed: replies === 0 ? null : totals(workers, ["output_tokens"]) / replies,
     target: quantile(disk, 0.5),
     ssd: ssdPerDay(facts, period),
   };
@@ -335,14 +354,16 @@ function renderCompare(facts, stats) {
     ["Agent runs", "agentRuns", number.format],
     ["Agent hours", "agentHours", (value) => number.format(Math.round(value))],
     ["Output tokens per merged task", "tokensPerTask", compact.format],
-    ["Worker shell time in tests and builds", "shellHeavy", share],
+    ["Claude worker time in tests and builds", "heavy", share],
+    ["Claude worker time waiting on the model", "model", share],
+    ["Output tokens a second of model wait", "speed", (value) => number.format(Math.round(value))],
     ["Build folder per task checkout, median", "target", gigabytes],
     ["SSD written a day", "ssd", gigabytes],
   ];
   const head = `<thead><tr><th>Measure</th>${facts.columns.map((period) => `<th class="num">${esc(period.label)}</th>`).join("")}</tr></thead>`;
   const body = rows.map(([label, key, format]) => `<tr><td>${esc(label)}</td>${facts.columns.map((period) => `<td class="num">${cell(stats.get(period.key)[key], format, "none yet")}</td>`).join("")}</tr>`).join("");
   const since = facts.boot ? ` Stage 1 SSD writes start from the laptop's own counter since ${esc(yearDate.format(facts.boot.from * 1000))} and add the 5-minute samples from ${esc(yearDate.format(facts.boot.to * 1000))} on.` : "";
-  document.getElementById("stage-compare").innerHTML = `<table>${head}<tbody>${body}</tbody></table><p class="table-note">CI runs count every gate run on the pull request and in the merge queue, cancelled ones included. Worker shell time comes from Claude Code transcripts only.${since}</p>`;
+  document.getElementById("stage-compare").innerHTML = `<table>${head}<tbody>${body}</tbody></table><p class="table-note">CI runs count every gate run on the pull request and in the merge queue, cancelled ones included. Claude worker time and model speed come from Claude Code transcripts only.${since}</p>`;
 }
 
 function renderPace(facts, stats) {
@@ -402,19 +423,60 @@ function renderCiTable(facts) {
   document.getElementById("ci-table").innerHTML = `<table>${groupHead("Event", facts.live, ["Runs", "Failed", "Median time"])}<tbody>${rows}</tbody></table>`;
 }
 
-function renderShell(facts) {
+function renderWait(facts) {
   const parts = facts.live.map((period) => {
-    const workers = facts.agentRuns.filter((run) => run.role === "w" && run.test_s !== null && run.stage === period.key);
-    const seconds = SHELL_KINDS.map((kind) => sum(workers.map((run) => run[kind.key])));
+    const workers = facts.traced.filter((run) => run.stage === period.key);
+    const seconds = WAIT_KINDS.map((kind) => totals(workers, kind.keys));
     const total = sum(seconds);
     if (total === 0) {
-      return `<h4>${esc(period.label)}</h4><p class="empty">No Claude worker shell time yet.</p>`;
+      return `<h4>${esc(period.label)}</h4><p class="empty">No Claude worker transcript yet.</p>`;
     }
-    const bar = SHELL_KINDS.map((kind, i) => (seconds[i] === 0 ? "" : `<span style="flex-grow:${seconds[i]};background:var(${kind.color})" title="${esc(kind.label)}: ${share(seconds[i] / total)}"></span>`)).join("");
-    const keys = SHELL_KINDS.map((kind, i) => `<span><i style="background:var(${kind.color})"></i>${esc(kind.label)} <b>${share(seconds[i] / total)}</b> ${oneDecimal.format(seconds[i] / 3600)} h</span>`).join("");
-    return `<h4>${esc(period.label)}, ${plural(workers.length, "worker run")}, ${oneDecimal.format(total / 3600)} shell hours</h4><div class="split" aria-hidden="true">${bar}</div><div class="keys">${keys}</div>`;
+    const bar = WAIT_KINDS.map((kind, i) => (seconds[i] === 0 ? "" : `<span style="flex-grow:${seconds[i]};background:var(${kind.color})" title="${esc(kind.label)}: ${share(seconds[i] / total)}"></span>`)).join("");
+    const keys = WAIT_KINDS.map((kind, i) => `<span><i style="background:var(${kind.color})"></i>${esc(kind.label)} <b>${share(seconds[i] / total)}</b> ${number.format(Math.round(seconds[i] / 3600))} h</span>`).join("");
+    return `<h4>${esc(period.label)}, ${plural(workers.length, "worker run")}, ${number.format(Math.round(total / 3600))} hours</h4><div class="split" aria-hidden="true">${bar}</div><div class="keys">${keys}</div>`;
   });
-  document.getElementById("shell").innerHTML = parts.join("");
+  document.getElementById("wait").innerHTML = parts.join("");
+
+  const replies = totals(facts.traced, ["reply_s"]);
+  if (replies > 0) {
+    const calls = totals(facts.traced, ["calls"]);
+    const tokens = totals(facts.traced, ["output_tokens"]);
+    const first = yearDate.format(Math.min(...facts.traced.map((run) => run.start)) * 1000);
+    document.getElementById("wait-note").innerHTML = [
+      `The transcripts start on ${esc(first)}, so older runs and Codex runs are not here. Gaps over 15 minutes and the time between a worker's attempts are left out.`,
+      `${share(totals(facts.traced, ["first_s"]) / replies)} of the reply time passes before the first part of a reply shows up. The model thinks in that time, and ${share(totals(facts.traced, ["thinking_tokens"]) / tokens)} of all output tokens are thinking.`,
+      `Replies of 2,000 output tokens or more are ${share(totals(facts.traced, ["long_n", "xlong_n"]) / calls)} of the replies and take ${share(totals(facts.traced, ["long_s", "xlong_s"]) / replies)} of the reply time.`,
+    ].join(" ");
+  }
+
+  const sizeRows = REPLY_SIZES.map((size) => {
+    const cells = facts.live.map((period) => {
+      const workers = facts.traced.filter((run) => run.stage === period.key);
+      const count = totals(workers, [`${size.key}_n`]);
+      const seconds = totals(workers, [`${size.key}_s`]);
+      const all = totals(workers, ["reply_s"]);
+      return `<td class="num">${number.format(count)}</td><td class="num">${number.format(Math.round(seconds / 3600))}</td><td class="num">${cell(all === 0 ? null : seconds / all, share, "none")}</td><td class="num">${cell(count === 0 ? null : seconds / count, (value) => `${oneDecimal.format(value)} s`, "none")}</td>`;
+    }).join("");
+    return `<tr><td>${esc(size.label)}</td>${cells}</tr>`;
+  }).join("");
+  document.getElementById("reply-sizes").innerHTML = `<table>${groupHead("Output tokens in a reply", facts.live, ["Replies", "Hours", "Of reply time", "Mean wait"])}<tbody>${sizeRows}</tbody></table>`;
+
+  const calls = new Map();
+  for (const run of facts.traced) {
+    calls.set(run.model, (calls.get(run.model) ?? 0) + run.calls);
+  }
+  const models = [...calls.keys()].filter((model) => calls.get(model) > 0).sort((a, b) => calls.get(b) - calls.get(a));
+  const speedRows = models.map((model) => {
+    const cells = facts.live.map((period) => {
+      const workers = facts.traced.filter((run) => run.model === model && run.stage === period.key);
+      const count = totals(workers, ["calls"]);
+      const tokens = totals(workers, ["output_tokens"]);
+      const seconds = totals(workers, ["reply_s"]);
+      return `<td class="num">${number.format(count)}</td><td class="num">${cell(count === 0 ? null : tokens / count, (value) => number.format(Math.round(value)), "none")}</td><td class="num">${cell(seconds === 0 ? null : tokens / seconds, (value) => number.format(Math.round(value)), "none")}</td><td class="num">${cell(tokens === 0 ? null : totals(workers, ["thinking_tokens"]) / tokens, share, "none")}</td>`;
+    }).join("");
+    return `<tr><td>${esc(model)}</td>${cells}</tr>`;
+  }).join("");
+  document.getElementById("speeds").innerHTML = `<table>${groupHead("Worker model", facts.live, ["Replies", "Tokens each", "Tokens a second", "Thinking"])}<tbody>${speedRows}</tbody></table><p class="table-note">Tokens a second divides a model's output tokens by the time spent waiting for its replies, so the wait before the first token counts too.</p>`;
 }
 
 function machineValue(value, unit) {
@@ -947,7 +1009,7 @@ export function renderHistory(data) {
   renderStageNote(facts.cutover);
   renderMilestonePace(facts);
   if (facts.rows.length === 0) {
-    for (const id of ["burnup", "daily", "hours", "stages", "violins", "ci", "agents"]) {
+    for (const id of ["burnup", "daily", "hours", "stages", "violins", "ci", "agents", "wait"]) {
       document.getElementById(id).innerHTML = `<p class="empty">No pull request has merged yet.</p>`;
     }
     return;
@@ -959,7 +1021,7 @@ export function renderHistory(data) {
   renderDailyTable(facts);
   renderSizes(facts);
   renderCiTable(facts);
-  renderShell(facts);
+  renderWait(facts);
   renderMachine(facts);
 
   const charts = new Map();

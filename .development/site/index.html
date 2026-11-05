@@ -174,7 +174,7 @@
     <div class="block">
       <header>
         <h3>Agent runs</h3>
-        <p>Worker and reviewer runs started each day, by model. Under the chart, the workers' shell time split by what each command did. That split covers Claude workers only, since it reads Claude Code transcripts.</p>
+        <p>Worker and reviewer runs started each day, by model.</p>
         <div class="modes" data-chart="agents" role="group" aria-label="Agent runs as">
           <button type="button" value="runs" aria-pressed="true">Runs</button>
           <button type="button" value="hours" aria-pressed="false">Hours</button>
@@ -182,7 +182,20 @@
       </header>
       <div>
         <div class="chart" id="agents"></div>
-        <div id="shell"></div>
+      </div>
+    </div>
+    <div class="block">
+      <header>
+        <h3>Where a worker's time goes</h3>
+        <p>Each Claude worker run split by what it waited on: the model's replies, compaction (the model summarizing a long session to free room), the commands it ran and its other tools. The tables split the reply time by reply size and by model.</p>
+      </header>
+      <div>
+        <div id="wait"></div>
+        <p class="table-note" id="wait-note"></p>
+        <h4>Reply size</h4>
+        <div class="table-scroll" id="reply-sizes"></div>
+        <h4>Model speed</h4>
+        <div class="table-scroll" id="speeds"></div>
       </div>
     </div>
     <div class="block">
