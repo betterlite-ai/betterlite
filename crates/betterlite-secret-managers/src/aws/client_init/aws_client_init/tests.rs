@@ -25,7 +25,7 @@ struct NoResolver;
 impl CredentialResolver for NoResolver {
     type Error = RuntimeFailure;
 
-    fn get_boto_credentials_from_optional_params(
+    fn resolve_credentials(
         &self,
         _optional_params: &mut AwsOptionalParams,
     ) -> Result<AwsCredentialsInfo, RuntimeFailure> {
