@@ -6,7 +6,7 @@ use thiserror::Error;
 mod tests;
 
 #[serde_as]
-#[derive(Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub struct WxoLitellmParams {
     #[serde(default)]
     #[serde_as(as = "DefaultOnNull")]
