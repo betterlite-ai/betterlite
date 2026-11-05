@@ -1,26 +1,32 @@
-use std::collections::BTreeMap;
+use aws_sdk_kms::config::{SharedCredentialsProvider, SharedHttpClient};
+use std::{collections::BTreeMap, time::Duration};
 
-use super::{AwsKmsError, DecryptedValue, environment_snapshot, values::decrypt_value};
+use super::{
+    AwsKmsError, DecryptedValue,
+    initialization::{build_client, validate_environment},
+    values::decrypt_with,
+};
 
-pub async fn decrypt_env_var() -> Result<BTreeMap<String, DecryptedValue>, AwsKmsError> {
+pub async fn decrypt_env_var(
+    environment: &BTreeMap<String, String>,
+    transport: SharedHttpClient,
+    credentials: Option<SharedCredentialsProvider>,
+    operation_timeout: Duration,
+) -> Result<BTreeMap<String, DecryptedValue>, AwsKmsError> {
+    let region = validate_environment(environment)?;
+    let client = build_client(region, transport, credentials, operation_timeout);
     let mut decrypted_values = BTreeMap::new();
-    let encrypted_values = encrypted_environment(environment_snapshot());
-    for (key, _) in encrypted_values {
-        let decrypted = decrypt_value(&key).await?;
-        decrypted_values.insert(remove_secret_prefix(&key), decrypted);
+    for (key, value) in environment {
+        if key
+            .to_ascii_lowercase()
+            .starts_with("litellm_secret_aws_kms")
+            || value.starts_with("aws_kms/")
+        {
+            let decrypted = decrypt_with(&client, value).await?;
+            decrypted_values.insert(remove_secret_prefix(key), decrypted);
+        }
     }
     Ok(decrypted_values)
-}
-
-fn encrypted_environment(environment: BTreeMap<String, String>) -> Vec<(String, String)> {
-    environment
-        .into_iter()
-        .filter(|(key, value)| {
-            key.to_ascii_lowercase()
-                .starts_with("litellm_secret_aws_kms_")
-                || value.starts_with("aws_kms/")
-        })
-        .collect()
 }
 
 fn remove_secret_prefix(key: &str) -> String {

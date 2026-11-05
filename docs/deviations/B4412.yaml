@@ -6,3 +6,9 @@ deviations:
   - what: KMS transports and AWS credentials are supplied by the caller.
     why: The requested bootstrap boundary avoids SDK default HTTP stacks; Google request-time decryption belongs to B4421.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/google_kms.py#L34
+  - what: Google credential file loading and authentication are deferred to B4421's injected decrypt transport.
+    why: B4412 retains GOOGLE_APPLICATION_CREDENTIALS as credentials_path and passes it to the transport; B4421 owns reading that file with maintained Google authentication facilities and authenticating decrypt requests. Bootstrap validates presence but does not validate the file contents.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/google_kms.py#L34
+  - what: AWS KMS inputs and plaintext have size limits, and requests have a caller-supplied operation timeout.
+    why: Startup must reject oversized values and terminate when a KMS endpoint stops answering. Ciphertext allows up to 65536 input bytes including ignored characters and 8192 base64 bytes; plaintext allows 4096 bytes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/aws_secret_manager.py#L99-L106

@@ -1,22 +1,32 @@
 #![cfg(test)]
 
-use super::tests::Transport;
-use crate::google_kms::Client;
-use std::sync::Arc;
-
-use super::store_client;
+use super::{load_google_kms, tests::Transport};
 use crate::google_kms::{GOOGLE_KMS_CLIENT, GOOGLE_KMS_RESOURCE_NAME};
+use std::{collections::BTreeMap, sync::Arc};
 
-#[tokio::test]
-async fn client_storage_keeps_client_and_resource_name_in_process_wide_cells() {
-    let client = Client {
-        resource_name: "projects/p/locations/l/keyRings/r/cryptoKeys/k".to_owned(),
-        transport: Arc::new(Transport),
-    };
-    store_client(client).unwrap();
-    assert!(GOOGLE_KMS_CLIENT.lock().unwrap().is_some());
+#[test]
+fn client_storage_replaces_client_and_resource_name() {
+    let mut environment = BTreeMap::from([
+        (
+            "GOOGLE_APPLICATION_CREDENTIALS".to_owned(),
+            "credentials.json".to_owned(),
+        ),
+        ("GOOGLE_KMS_RESOURCE_NAME".to_owned(), "first".to_owned()),
+    ]);
+    load_google_kms(Some(true), &environment, Arc::new(Transport)).unwrap();
+    environment.insert("GOOGLE_KMS_RESOURCE_NAME".to_owned(), "second".to_owned());
+    load_google_kms(Some(true), &environment, Arc::new(Transport)).unwrap();
+    assert_eq!(
+        GOOGLE_KMS_CLIENT
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .resource_name,
+        "second"
+    );
     assert_eq!(
         GOOGLE_KMS_RESOURCE_NAME.lock().unwrap().as_deref(),
-        Some("projects/p/locations/l/keyRings/r/cryptoKeys/k")
+        Some("second")
     );
 }

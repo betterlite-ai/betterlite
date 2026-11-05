@@ -1,12 +1,12 @@
-use std::sync::Arc;
+use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
 
 use super::{
     Client, DecryptTransport, GOOGLE_KMS_CLIENT, GOOGLE_KMS_RESOURCE_NAME, GoogleKmsError,
 };
-use crate::aws_kms::environment_snapshot;
 
-pub fn validate_environment() -> Result<(String, String), GoogleKmsError> {
-    let environment = environment_snapshot();
+pub fn validate_environment(
+    environment: &BTreeMap<String, String>,
+) -> Result<(String, String), GoogleKmsError> {
     validate_values(
         environment
             .get("GOOGLE_APPLICATION_CREDENTIALS")
@@ -28,13 +28,15 @@ fn validate_values(
 
 pub fn load_google_kms(
     use_google_kms: Option<bool>,
+    environment: &BTreeMap<String, String>,
     transport: Arc<dyn DecryptTransport>,
 ) -> Result<(), GoogleKmsError> {
     if use_google_kms != Some(true) {
         return Ok(());
     }
-    let (_credentials_path, resource_name) = validate_environment()?;
+    let (credentials_path, resource_name) = validate_environment(environment)?;
     store_client(Client {
+        credentials_path: PathBuf::from(credentials_path),
         resource_name,
         transport,
     })
@@ -47,11 +49,6 @@ fn store_client(client: Client) -> Result<(), GoogleKmsError> {
     let mut stored_resource_name = GOOGLE_KMS_RESOURCE_NAME
         .lock()
         .map_err(|_poisoned| GoogleKmsError::ClientState)?;
-    if stored_client.is_some() || stored_resource_name.is_some() {
-        return Err(GoogleKmsError::Client(
-            "Google KMS client is already initialized".to_owned(),
-        ));
-    }
     *stored_resource_name = Some(client.resource_name.clone());
     *stored_client = Some(Arc::new(client));
     drop(stored_resource_name);
