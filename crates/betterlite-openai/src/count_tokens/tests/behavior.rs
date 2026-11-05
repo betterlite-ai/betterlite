@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::slice;
 use std::time::Duration;
 
 use rstest::rstest;
@@ -8,7 +9,11 @@ use secrecy::SecretString;
 use super::super::counter::TokenCounter as _;
 use super::super::error::CountTokensError;
 use super::super::handler::HandlerRequest;
-use super::super::request::ResponsesInput;
+use super::super::messages::{
+    ChatMessage, ContentRole, ResponsesContent, blocks_to_content, messages_to_responses_input,
+};
+use super::super::python_text::{PyValue, display_text};
+use super::super::request::{ResponsesInput, flatten_tools};
 use super::{KEY, OK, counter, run};
 
 #[rstest]
@@ -140,4 +145,47 @@ fn prepares_the_request_url_headers_and_deadline(
         format!("Bearer {KEY}").as_str()
     );
     assert!(outbound.headers["authorization"].is_sensitive());
+}
+
+#[rstest]
+#[case::both_quotes(r#"["it's \"x\""]"#, r#"['it\'s "x"']"#)]
+#[case::low_control(r#"["a\u0007b"]"#, r"['a\x07b']")]
+#[case::high_control(r#"["a\u0085b"]"#, r"['a\x85b']")]
+fn prints_awkward_strings_like_python(#[case] value: &str, #[case] printed: &str) {
+    let parsed: PyValue = serde_json::from_str(value).unwrap();
+    assert_eq!(display_text(&parsed), printed);
+}
+
+#[test]
+fn a_tool_with_a_function_key_but_another_type_passes_through() {
+    let tool: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_str(r#"{"type":"custom","function":{"name":"x"}}"#).unwrap();
+    let flattened = flatten_tools(slice::from_ref(&tool)).unwrap();
+    assert_eq!(flattened, vec![serde_json::Value::Object(tool)]);
+}
+
+#[test]
+fn an_empty_image_url_string_is_dropped() {
+    let blocks: Vec<PyValue> =
+        serde_json::from_str(r#"[{"type":"image_url","image_url":""}]"#).unwrap();
+    assert_eq!(
+        blocks_to_content(&blocks, ContentRole::User),
+        ResponsesContent::Text(String::new())
+    );
+}
+
+#[test]
+fn an_assistant_with_tool_calls_and_no_text_sends_only_the_calls() {
+    let message: ChatMessage = serde_json::from_str(
+        r#"{"role":"assistant","content":"","tool_calls":[{"id":"c","function":{"name":"f","arguments":"{}"}}]}"#,
+    )
+    .unwrap();
+    let (items, _) = messages_to_responses_input(&[message]);
+    assert_eq!(
+        serde_json::to_value(items).unwrap(),
+        serde_json::from_str::<serde_json::Value>(
+            r#"[{"type":"function_call","call_id":"c","name":"f","arguments":"{}"}]"#
+        )
+        .unwrap()
+    );
 }
