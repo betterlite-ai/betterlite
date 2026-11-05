@@ -13,7 +13,10 @@ fn replays_pattern_matching_oracle_cases() {
         .iter()
         .filter_map(|case| match case {
             LoadedCase::Helper(helper) if helper.call.operation == "b3693" => Some(helper),
-            LoadedCase::Helper(_) | LoadedCase::Http(_) | LoadedCase::Scenario(_) => None,
+            LoadedCase::Helper(_)
+            | LoadedCase::Http(_)
+            | LoadedCase::Scenario(_)
+            | LoadedCase::WebSocket(_) => None,
         })
         .collect();
     assert!(!selected.is_empty());

@@ -1,0 +1,5 @@
+kind: helper
+name: error-normalization-router-failure
+call: {"error_normalization": {"message": "error doing the fallback", "status_code": 418}}
+env: {}
+compare: {ignore: []}

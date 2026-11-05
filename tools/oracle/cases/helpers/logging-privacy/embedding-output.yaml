@@ -1,0 +1,6 @@
+kind: helper
+name: logging-privacy-embedding-output
+call:
+  logging_privacy: {"global": true, "payload": {"messages": [], "prompt": "", "input": "input", "response": {"object": "list", "data": [{"object": "embedding", "index": 0, "embedding": [1]}], "model": "m", "usage": {"completion_tokens": 0, "prompt_tokens": 1, "total_tokens": 1}}}, "key_info": {"user_api_key_hash": "hash", "team": "a"}, "redact_key_info": true}
+env: {}
+compare: {ignore: []}

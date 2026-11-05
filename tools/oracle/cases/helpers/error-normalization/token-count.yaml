@@ -1,0 +1,5 @@
+kind: helper
+name: error-normalization-token-count
+call: {"error_normalization": {"message": "tokens > 12 maximum", "status_code": 418}}
+env: {}
+compare: {ignore: []}

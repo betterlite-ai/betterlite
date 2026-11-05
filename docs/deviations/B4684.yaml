@@ -1,0 +1,5 @@
+task: B4684
+deviations:
+  - what: MCP tool search settings reject unknown keys instead of ignoring them.
+    why: Rule no-silent-drops requires unsupported config keys to produce an error naming the key; settings_reject_invalid_fields::unknown verifies this behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp.py#L125-L150

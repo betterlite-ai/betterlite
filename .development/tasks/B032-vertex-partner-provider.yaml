@@ -34,10 +34,13 @@ description: >-
   single-response iterator to B1336 through its factory; test native_messages_binding and
   gemma_stream_factory there. No server handler is changed. Budget 260 composition,
   260 HTTP/unit assertions and 240 helpers/wiring/fixtures, maximum 800.
+
+  B010 registers the VertexPartner variants of OperationRequest, OperationResult and PreparedRequest as stubs in
+  crates/betterlite-provider/src/vertex_partner_dispatch.rs. Fill them there and leave provider.rs, operation.rs
+  and prepared.rs as they are.
 scope:
   paths:
     - crates/betterlite-provider/Cargo.toml
-    - crates/betterlite-provider/src/{provider,operation,prepared,vertex_partner_dispatch}.rs
     - crates/betterlite-provider/src/vertex_partner_dispatch.rs
     - crates/betterlite-provider/src/vertex_partner_dispatch/**
     - crates/betterlite-core/src/{dispatch,operation}.rs

@@ -1,0 +1,8 @@
+kind: helper
+name: upload-security-mach64-reverse
+call:
+  b3452:
+    content_hex: 'cffaedfe'
+env: {}
+compare:
+  ignore: []

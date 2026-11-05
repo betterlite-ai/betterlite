@@ -1,6 +1,7 @@
 #![no_main]
 
 use std::collections::BTreeMap;
+use std::str;
 
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
@@ -8,7 +9,7 @@ use libfuzzer_sys::fuzz_target;
 use url::Url;
 
 fuzz_target!(|bytes: &[u8]| {
-    let Ok(text) = std::str::from_utf8(bytes.get(..4096).unwrap_or(bytes)) else {
+    let Ok(text) = str::from_utf8(bytes.get(..4096).unwrap_or(bytes)) else {
         return;
     };
     let (proxy, no_proxy) = text.split_once('\n').unwrap_or((text, ""));

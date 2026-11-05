@@ -9,9 +9,10 @@ use betterlite_secrets::secret_codec::{
 };
 use libfuzzer_sys::fuzz_target;
 use secrecy::SecretString;
+use std::str;
 
 fuzz_target!(|bytes: &[u8]| {
-    let Ok(value) = std::str::from_utf8(bytes) else {
+    let Ok(value) = str::from_utf8(bytes) else {
         return;
     };
     let key = SecretString::from("salt-one");
@@ -27,15 +28,15 @@ fuzz_target!(|bytes: &[u8]| {
         log: FailureLog::Error,
         value: FailureValue::Original,
     };
-    let _ = cipher.decrypt_value(
+    let _decrypted = cipher.decrypt_value(
         StoredValue::<()>::Text(SecretString::from(value)),
         "fuzz",
         policy,
     );
-    let _ = decrypt_if_encrypted_with(value, &key);
-    let _ = decrypt_bearer_token(&cipher, value, "litellm_login_");
-    let _ = decode_secret_map(&cipher, Some(value), "fuzz");
+    let _maybe_decrypted = decrypt_if_encrypted_with(value, &key);
+    let _bearer = decrypt_bearer_token(&cipher, value, "litellm_login_");
+    let _secret_map = decode_secret_map(&cipher, Some(value), "fuzz");
     if let Ok(text) = serde_json::to_string(value) {
-        let _ = decode_secret_map(&cipher, Some(&text), "fuzz");
+        let _secret_map_quoted = decode_secret_map(&cipher, Some(&text), "fuzz");
     }
 });

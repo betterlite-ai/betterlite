@@ -1,0 +1,9 @@
+kind: helper
+name: message-normalization-continuation
+call:
+  message_normalization:
+    operation: get_completion_messages
+    messages: [{role: assistant, content: hello}]
+    ensure_alternating_roles: true
+env: {}
+compare: {ignore: []}

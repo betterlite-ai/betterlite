@@ -1,0 +1,9 @@
+kind: helper
+name: batch-calls-all-responses-filtered
+call:
+  batch_calls:
+    mode: all_responses
+    models: [m0, m1, m2, m3]
+    results: [{value: first}, {error: unavailable}, {value: null}, {value: last}]
+env: {}
+compare: {ignore: []}

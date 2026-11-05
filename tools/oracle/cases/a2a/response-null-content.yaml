@@ -1,0 +1,5 @@
+kind: helper
+name: a2a-response-null-content
+call: {"b4803": {"operation": "response", "response": {"choices": [{"message": {"content": null}}, {"message": {"content": "ignored"}}]}}}
+env: {}
+compare: {ignore: []}
