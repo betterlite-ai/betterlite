@@ -79,6 +79,44 @@ fn rejects_invalid_settings(#[case] field: &str, #[case] value: &str) {
     load_collector_settings(&environment).unwrap_err();
 }
 
+#[test]
+fn accepts_buffer_size_at_the_shift_boundary() {
+    let settings = CollectorSettings {
+        enabled: false,
+        address: String::new(),
+        buffer_size: usize::MAX >> 3,
+        on_unavailable: UnavailablePolicy::Fallback,
+        drain_timeout_seconds: Decimal::ONE,
+        connect_timeout_seconds: Decimal::ONE,
+        job_role: None,
+    };
+    settings.validate().unwrap();
+}
+
+#[test]
+fn rejects_buffer_size_one_past_the_shift_boundary() {
+    let settings = CollectorSettings {
+        enabled: false,
+        address: String::new(),
+        buffer_size: (usize::MAX >> 3) + 1,
+        on_unavailable: UnavailablePolicy::Fallback,
+        drain_timeout_seconds: Decimal::ONE,
+        connect_timeout_seconds: Decimal::ONE,
+        job_role: None,
+    };
+    settings.validate().unwrap_err();
+}
+
+#[test]
+fn loads_the_fallback_policy_explicitly() {
+    let environment = BTreeMap::from([(
+        "LITELLM_COLLECTOR_ON_UNAVAILABLE".to_owned(),
+        "fallback".to_owned(),
+    )]);
+    let settings = load_collector_settings(&environment).unwrap();
+    assert_eq!(settings.on_unavailable, UnavailablePolicy::Fallback);
+}
+
 #[rstest::rstest]
 #[case::yes(Some("yes"), true)]
 #[case::blank_spaces(Some(" TRUE "), true)]

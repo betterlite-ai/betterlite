@@ -9,14 +9,47 @@ use rust_decimal::Decimal;
 use std::collections::VecDeque;
 use std::future::{Future, pending, poll_fn, ready};
 use std::io;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::task::Poll;
 use std::time::Duration;
-use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _, DuplexStream, duplex};
+use tokio::io::{AsyncRead, AsyncReadExt as _, AsyncWriteExt as _, DuplexStream, duplex};
 use tokio::sync::{Notify, oneshot};
 use tokio::task::yield_now;
-use tokio::time::advance;
+use tokio::time::{advance, timeout};
 use tokio_util::{sync::CancellationToken, task::TaskTracker};
+
+async fn expect_bytes<Stream>(stream: &mut Stream, buffer: &mut [u8])
+where
+    Stream: AsyncRead + Unpin,
+{
+    timeout(Duration::from_secs(5), stream.read_exact(buffer))
+        .await
+        .expect("socket never received the expected bytes")
+        .unwrap();
+}
+
+async fn expect_to_end<Stream>(stream: &mut Stream, buffer: &mut Vec<u8>)
+where
+    Stream: AsyncRead + Unpin,
+{
+    timeout(Duration::from_secs(5), stream.read_to_end(buffer))
+        .await
+        .expect("socket never closed")
+        .unwrap();
+}
+
+async fn close_producer(producer: &mut SpendEventProducer) {
+    timeout(Duration::from_secs(5), producer.close())
+        .await
+        .expect("producer close hung");
+}
+
+async fn wait_for_tasks(tasks: &TaskTracker) {
+    timeout(Duration::from_secs(5), tasks.wait())
+        .await
+        .expect("writer task never finished");
+}
 
 struct Controlled {
     sockets: Mutex<VecDeque<DuplexStream>>,
@@ -31,6 +64,16 @@ impl Connector for Arc<Controlled> {
                 .pop_front()
                 .ok_or_else(|| io::Error::from(io::ErrorKind::ConnectionRefused)),
         )
+    }
+}
+struct CountingRefusals {
+    attempts: Arc<AtomicUsize>,
+}
+impl Connector for CountingRefusals {
+    type Stream = DuplexStream;
+    fn open(&self) -> impl Future<Output = io::Result<DuplexStream>> + Send {
+        self.attempts.fetch_add(1, Ordering::SeqCst);
+        ready(Err(io::Error::from(io::ErrorKind::ConnectionRefused)))
     }
 }
 struct Harness {
@@ -78,9 +121,9 @@ impl Harness {
         }
     }
     async fn finish(&mut self) {
-        self.producer.close().await;
+        close_producer(&mut self.producer).await;
         self.tasks.close();
-        self.tasks.wait().await;
+        wait_for_tasks(&self.tasks).await;
     }
 }
 
@@ -95,7 +138,7 @@ async fn retains_fifo_and_never_replays_complete_lines() {
         PublishOutcome::Queued
     );
     let mut first = [0; 4];
-    rig.peer.read_exact(&mut first).await.unwrap();
+    expect_bytes(&mut rig.peer, &mut first).await;
     assert_eq!(&first, b"one\n");
     assert_eq!(
         rig.producer
@@ -106,7 +149,7 @@ async fn retains_fifo_and_never_replays_complete_lines() {
     );
     rig.finish().await;
     let mut last = Vec::new();
-    rig.peer.read_to_end(&mut last).await.unwrap();
+    expect_to_end(&mut rig.peer, &mut last).await;
     assert_eq!(last, b"two\n");
     assert_eq!(rig.producer.stats().queued, 2);
     assert_eq!(rig.producer.stats().sent, 2);
@@ -124,7 +167,7 @@ async fn pressure_and_partial_close_apply_policy_once() {
         .await
         .unwrap();
     let mut prefix = [0; 1];
-    rig.peer.read_exact(&mut prefix).await.unwrap();
+    expect_bytes(&mut rig.peer, &mut prefix).await;
     rig.producer
         .publish(b"queued\n".to_vec(), &rig.cancel)
         .await
@@ -138,7 +181,7 @@ async fn pressure_and_partial_close_apply_policy_once() {
     );
     rig.finish().await;
     let mut remaining = Vec::new();
-    rig.peer.read_to_end(&mut remaining).await.unwrap();
+    expect_to_end(&mut rig.peer, &mut remaining).await;
     assert!(remaining.len() < partial.len());
     assert_eq!(
         *rig.events.lock().unwrap(),
@@ -156,7 +199,7 @@ async fn half_close_reconnects_without_reusing_old_socket() {
         .await
         .unwrap();
     let mut bytes = [0; 4];
-    rig.peer.read_exact(&mut bytes).await.unwrap();
+    expect_bytes(&mut rig.peer, &mut bytes).await;
     rig.peer.shutdown().await.unwrap();
     assert!(rig.producer.stats().connected);
     let (socket, mut next_peer) = duplex(8);
@@ -165,7 +208,7 @@ async fn half_close_reconnects_without_reusing_old_socket() {
         .publish(b"two\n".to_vec(), &rig.cancel)
         .await
         .unwrap();
-    next_peer.read_exact(&mut bytes).await.unwrap();
+    expect_bytes(&mut next_peer, &mut bytes).await;
     assert_eq!(&bytes, b"two\n");
     rig.finish().await;
     assert!(rig.events.lock().unwrap().is_empty());
@@ -199,9 +242,73 @@ async fn reconnect_backoff_uses_injected_tokio_time() {
         PublishOutcome::Queued
     );
     let mut received = [0; 6];
-    peer.read_exact(&mut received).await.unwrap();
+    expect_bytes(&mut peer, &mut received).await;
     assert_eq!(&received, b"retry\n");
     rig.finish().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn backoff_window_skips_an_already_queued_reconnect_attempt() {
+    let settings = CollectorSettings {
+        enabled: true,
+        address: String::new(),
+        buffer_size: 2,
+        on_unavailable: UnavailablePolicy::Drop,
+        drain_timeout_seconds: Decimal::ONE,
+        connect_timeout_seconds: Decimal::ONE,
+        job_role: None,
+    };
+    let tasks = TaskTracker::new();
+    let cancel = CancellationToken::new();
+    let attempts = Arc::new(AtomicUsize::new(0));
+    let mut producer = SpendEventProducer::start(
+        &settings,
+        Arc::new(|_| Box::pin(async { Ok(()) })),
+        &tasks,
+        CountingRefusals {
+            attempts: Arc::clone(&attempts),
+        },
+    )
+    .unwrap();
+    producer.publish(b"one".to_vec(), &cancel).await.unwrap();
+    producer.publish(b"two".to_vec(), &cancel).await.unwrap();
+    let mut polls_left = 10_000_u32;
+    while producer.stats().dropped < 2 {
+        polls_left -= 1;
+        assert!(polls_left > 0, "dropped count never reached 2");
+        yield_now().await;
+    }
+    assert_eq!(attempts.load(Ordering::SeqCst), 1);
+    close_producer(&mut producer).await;
+    tasks.close();
+    wait_for_tasks(&tasks).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn dropping_the_producer_lets_the_writer_task_finish() {
+    let settings = CollectorSettings {
+        enabled: true,
+        address: String::new(),
+        buffer_size: 1,
+        on_unavailable: UnavailablePolicy::Drop,
+        drain_timeout_seconds: Decimal::ONE,
+        connect_timeout_seconds: Decimal::ONE,
+        job_role: None,
+    };
+    let tasks = TaskTracker::new();
+    let connect = Arc::new(Controlled {
+        sockets: Mutex::new(VecDeque::new()),
+    });
+    let producer = SpendEventProducer::start(
+        &settings,
+        Arc::new(|_| Box::pin(async { Ok(()) })),
+        &tasks,
+        connect,
+    )
+    .unwrap();
+    drop(producer);
+    tasks.close();
+    wait_for_tasks(&tasks).await;
 }
 
 #[tokio::test(start_paused = true)]
@@ -285,7 +392,7 @@ async fn broken_partial_write_disconnects_and_enters_backoff() {
         .await
         .unwrap();
     let mut prefix = [0];
-    rig.peer.read_exact(&mut prefix).await.unwrap();
+    expect_bytes(&mut rig.peer, &mut prefix).await;
     drop(rig.peer);
     yield_now().await;
     assert_eq!(
@@ -295,9 +402,9 @@ async fn broken_partial_write_disconnects_and_enters_backoff() {
             .unwrap(),
         PublishOutcome::Fallback
     );
-    rig.producer.close().await;
+    close_producer(&mut rig.producer).await;
     rig.tasks.close();
-    rig.tasks.wait().await;
+    wait_for_tasks(&rig.tasks).await;
     assert_eq!(rig.producer.stats().sent, 0);
     assert_eq!(rig.producer.stats().fallback, 2);
     assert!(!rig.producer.stats().connected);
@@ -339,14 +446,14 @@ async fn connect_timeout_applies_drop_and_close_stops_admission() {
         .publish(b"timeout".to_vec(), &cancel)
         .await
         .unwrap();
-    producer.close().await;
+    close_producer(&mut producer).await;
     assert_eq!(producer.stats().dropped, 1);
     assert_eq!(
         producer.publish(b"closed".to_vec(), &cancel).await.unwrap(),
         PublishOutcome::Dropped
     );
     tasks.close();
-    tasks.wait().await;
+    wait_for_tasks(&tasks).await;
     assert_eq!(producer.stats().dropped, 2);
 }
 
@@ -378,7 +485,10 @@ async fn drop_policy_logs_only_milestones() {
     let mut rig = Harness::new(UnavailablePolicy::Drop);
     rig.finish().await;
     let dispatch = tracing::Dispatch::new(subscriber);
+    let mut publishes_left = 10_000_u32;
     while rig.producer.stats().dropped < 2001 {
+        publishes_left -= 1;
+        assert!(publishes_left > 0, "dropped count never reached 2001");
         rig.producer
             .publish(Vec::new(), &rig.cancel)
             .with_subscriber(dispatch.clone())
@@ -445,16 +555,16 @@ async fn tcp_does_not_wait_for_collector_response() {
         .unwrap();
     let (mut stream, _) = listener.accept().await.unwrap();
     let mut bytes = [0; 6];
-    stream.read_exact(&mut bytes).await.unwrap();
+    expect_bytes(&mut stream, &mut bytes).await;
     producer
         .publish(b"other\n".to_vec(), &cancel)
         .await
         .unwrap();
-    stream.read_exact(&mut bytes).await.unwrap();
+    expect_bytes(&mut stream, &mut bytes).await;
     assert_eq!(&bytes, b"other\n");
-    producer.close().await;
+    close_producer(&mut producer).await;
     tasks.close();
-    tasks.wait().await;
+    wait_for_tasks(&tasks).await;
     assert_eq!(producer.stats().sent, 2);
     assert_eq!(producer.stats().dropped, 0);
 }
