@@ -1,0 +1,5 @@
+kind: helper
+name: catalog-precedence
+call: {anthropic_catalog_lookup: {function: capability, model: claude-sonnet-4.6-20260219, key: supports_flag, runtime: {claude-sonnet-4-6: {supports_flag: false}}, packaged: {claude-sonnet-4.6-20260219: {supports_flag: true}}}}
+env: {}
+compare: {ignore: []}
