@@ -1,6 +1,7 @@
-use serde_json::Value;
+use crate::arguments::json::Json;
 
-pub fn drop_unsignable(blocks: &[Value]) -> Vec<Value> {
+#[must_use]
+pub fn drop_unsignable(blocks: &[Json]) -> Vec<Json> {
     blocks
         .iter()
         .filter(|block| !is_unsignable_thinking_block(block))
@@ -8,26 +9,30 @@ pub fn drop_unsignable(blocks: &[Value]) -> Vec<Value> {
         .collect()
 }
 
-fn is_unsignable_thinking_block(block: &Value) -> bool {
-    let Some(object) = block.as_object() else {
+fn is_unsignable_thinking_block(block: &Json) -> bool {
+    let Some(fields) = block.as_object() else {
         return false;
     };
-    let field = match object.get("type").and_then(Value::as_str) {
-        Some("thinking") => object.get("signature"),
-        Some("redacted_thinking") => object.get("data"),
+    let kind = fields.get("type").and_then(Json::as_str);
+    let encrypted_value = match kind {
+        Some("thinking") => fields.get("signature"),
+        Some("redacted_thinking") => fields.get("data"),
         _ => None,
     };
-    if field
-        .and_then(Value::as_str)
-        .is_some_and(|signature| signature.starts_with("litellm_encrypted_reasoning:"))
-    {
+    if has_encrypted_marker(encrypted_value) {
         return true;
     }
-    if object.get("type").and_then(Value::as_str) != Some("thinking") {
+    if kind != Some("thinking") {
         return false;
     }
-    let signature = object.get("signature").and_then(Value::as_str);
-    let thinking = object.get("thinking").and_then(Value::as_str);
-    !signature.is_some_and(|signature| !signature.is_empty())
-        || !thinking.is_some_and(|thinking| !thinking.trim().is_empty())
+    let signature_value = fields.get("signature").and_then(Json::as_str);
+    let thinking_value = fields.get("thinking").and_then(Json::as_str);
+    signature_value.is_none_or(str::is_empty)
+        || thinking_value.is_none_or(|thinking_text| thinking_text.trim().is_empty())
+}
+
+fn has_encrypted_marker(value: Option<&Json>) -> bool {
+    value
+        .and_then(Json::as_str)
+        .is_some_and(|signature| signature.starts_with("litellm_encrypted_reasoning:"))
 }
