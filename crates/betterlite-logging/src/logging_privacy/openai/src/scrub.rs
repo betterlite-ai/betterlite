@@ -35,3 +35,13 @@ pub(super) fn logprobs(probabilities: &mut Logprobs, redactor: &Redactor) {
         }
     }
 }
+
+pub(super) fn identifiers(
+    strings: [&mut String; 3],
+    optional: [&mut Option<String>; 2],
+    redactor: &Redactor,
+) {
+    for value in strings.into_iter().chain(optional.into_iter().flatten()) {
+        *value = redactor.redact_string(value);
+    }
+}

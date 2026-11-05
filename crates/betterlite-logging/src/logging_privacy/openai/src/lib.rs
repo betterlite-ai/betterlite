@@ -3,93 +3,121 @@ mod scrub;
 
 use betterlite_openai::chat::response::ChatChoice;
 use betterlite_openai::chat::response::ChatResponse;
-use betterlite_openai::chat::{ChatMessage, ChatRequest, MessageContent, Role, ToolCall};
+use betterlite_openai::chat::{ChatRequest, ToolCall};
 use betterlite_openai::embedding::{EmbeddingResponse, EmbeddingVector};
 use betterlite_openai::stream::chunk::Choice;
 use betterlite_openai::stream::chunk::Chunk;
 use betterlite_redact::secret::Redactor;
-use indexmap::IndexMap;
-use serde::Serialize;
+use serde::{Serialize, de::DeserializeOwned};
 
 const REDACTED: &str = "redacted-by-litellm";
 
-pub trait Payload: Sized + Serialize {
-    fn snapshot(&self, private: bool, redactor: &Redactor) -> Result<Self, SnapshotError>;
+pub trait Payload: Sized + Serialize + DeserializeOwned {
+    fn snapshot(&self, private: bool, redactor: &Redactor) -> Result<Self, SnapshotError> {
+        let mut output = self.copy_for_callback()?;
+        redact(output.view(), private, redactor)?;
+        Ok(output)
+    }
+
+    fn copy_for_callback(&self) -> Result<Self, SnapshotError> {
+        Ok(serde_json::from_slice(&serde_json::to_vec(self)?)?)
+    }
+
+    fn view(&mut self) -> View<'_>;
+}
+
+pub enum View<'payload> {
+    Request(&'payload mut ChatRequest),
+    Response(&'payload mut ChatResponse),
+    Stream(&'payload mut Chunk),
+    Embedding(&'payload mut EmbeddingResponse),
 }
 
 impl Payload for ChatRequest {
-    fn snapshot(&self, private: bool, redactor: &Redactor) -> Result<Self, SnapshotError> {
-        let mut output = self.clone();
-        if private {
-            output.messages = vec![ChatMessage {
-                role: Role::User,
-                content: Some(MessageContent::Text(REDACTED.to_owned())),
-                name: None,
-                tool_calls: None,
-                tool_call_id: None,
-                passthrough: IndexMap::new(),
-            }];
-        }
-        request::scrub(&mut output, redactor)?;
-        Ok(output)
+    fn copy_for_callback(&self) -> Result<Self, SnapshotError> {
+        Ok(self.clone())
+    }
+
+    fn view(&mut self) -> View<'_> {
+        View::Request(self)
     }
 }
 
 impl Payload for ChatResponse {
-    fn snapshot(&self, private: bool, redactor: &Redactor) -> Result<Self, SnapshotError> {
-        let mut output = self.clone();
-        for value in [&mut output.id, &mut output.object, &mut output.model] {
-            *value = redactor.redact_string(value);
-        }
-        text(&mut output.system_fingerprint, false, redactor);
-        text(&mut output.service_tier, false, redactor);
-        for choice in &mut output.choices {
-            answer(choice, private, redactor)?;
-        }
-        Ok(output)
+    fn copy_for_callback(&self) -> Result<Self, SnapshotError> {
+        Ok(self.clone())
+    }
+
+    fn view(&mut self) -> View<'_> {
+        View::Response(self)
     }
 }
 
 impl Payload for Chunk {
-    fn snapshot(&self, private: bool, redactor: &Redactor) -> Result<Self, SnapshotError> {
-        let mut output: Self = serde_json::from_slice(&serde_json::to_vec(self)?)?;
-        for value in [&mut output.id, &mut output.object, &mut output.model] {
-            *value = redactor.redact_string(value);
-        }
-        text(&mut output.system_fingerprint, false, redactor);
-        text(&mut output.service_tier, false, redactor);
-        for choice in &mut output.choices {
-            chunk(choice, private, redactor);
-        }
-        Ok(output)
+    fn view(&mut self) -> View<'_> {
+        View::Stream(self)
     }
 }
 
 impl Payload for EmbeddingResponse {
-    fn snapshot(&self, private: bool, redactor: &Redactor) -> Result<Self, SnapshotError> {
-        let mut output = self.clone();
-        if private {
-            output.data.clear();
+    fn copy_for_callback(&self) -> Result<Self, SnapshotError> {
+        Ok(self.clone())
+    }
+
+    fn view(&mut self) -> View<'_> {
+        View::Embedding(self)
+    }
+}
+
+fn redact(view: View<'_>, private: bool, redactor: &Redactor) -> Result<(), SnapshotError> {
+    match view {
+        View::Request(request) => request::redact(request, private, redactor),
+        View::Response(response) => {
+            scrub::identifiers(
+                [&mut response.id, &mut response.object, &mut response.model],
+                [&mut response.system_fingerprint, &mut response.service_tier],
+                redactor,
+            );
+            response
+                .choices
+                .iter_mut()
+                .try_for_each(|choice| answer(choice, private, redactor))
         }
-        output.model = redactor.redact_string(&output.model);
-        output.object = redactor.redact_string(&output.object);
-        for record in &mut output.data {
-            record.object = redactor.redact_string(&record.object);
-            if let EmbeddingVector::Base64(encoded) = &mut record.embedding {
-                *encoded = redactor.redact_string(encoded);
+        View::Stream(stream) => {
+            scrub::identifiers(
+                [&mut stream.id, &mut stream.object, &mut stream.model],
+                [&mut stream.system_fingerprint, &mut stream.service_tier],
+                redactor,
+            );
+            for choice in &mut stream.choices {
+                chunk(choice, private, redactor);
             }
+            Ok(())
         }
-        Ok(output)
+        View::Embedding(response) => {
+            embedding(response, private, redactor);
+            Ok(())
+        }
+    }
+}
+
+fn embedding(response: &mut EmbeddingResponse, private: bool, redactor: &Redactor) {
+    if private {
+        response.data.clear();
+    }
+    response.model = redactor.redact_string(&response.model);
+    response.object = redactor.redact_string(&response.object);
+    for record in &mut response.data {
+        record.object = redactor.redact_string(&record.object);
+        if let EmbeddingVector::Base64(encoded) = &mut record.embedding {
+            *encoded = redactor.redact_string(encoded);
+        }
     }
 }
 
 fn text(value: &mut Option<String>, private: bool, redactor: &Redactor) {
-    if let Some(content) = value {
-        *content = if private {
-            REDACTED.to_owned()
-        } else {
-            redactor.redact_string(content)
-        };
+    if let Some(current) = value {
+        *current = content(current, private, redactor);
     }
 }
 
