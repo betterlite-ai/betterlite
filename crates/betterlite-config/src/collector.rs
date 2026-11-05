@@ -1,30 +1,60 @@
+use std::collections::{BTreeMap, BTreeSet};
 use std::net::IpAddr;
+use std::time::Duration;
 
+use rust_decimal::{Decimal, prelude::ToPrimitive as _};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+mod tests;
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum UnavailablePolicy {
+    #[default]
     Fallback,
     Drop,
 }
 
-impl Default for UnavailablePolicy {
-    fn default() -> Self {
-        Self::Fallback
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(default)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "RawSettings")]
 pub struct CollectorSettings {
     pub enabled: bool,
     pub address: String,
     pub buffer_size: usize,
     pub on_unavailable: UnavailablePolicy,
-    pub drain_timeout_seconds: f64,
-    pub connect_timeout_seconds: f64,
+    pub drain_timeout_seconds: Decimal,
+    pub connect_timeout_seconds: Decimal,
     pub job_role: Option<String>,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawSettings {
+    enabled: Option<bool>,
+    address: Option<String>,
+    buffer_size: Option<usize>,
+    on_unavailable: Option<UnavailablePolicy>,
+    drain_timeout_seconds: Option<Decimal>,
+    connect_timeout_seconds: Option<Decimal>,
+    job_role: Option<String>,
+}
+impl From<RawSettings> for CollectorSettings {
+    fn from(raw: RawSettings) -> Self {
+        let defaults = Self::default();
+        Self {
+            enabled: raw.enabled.unwrap_or(defaults.enabled),
+            address: raw.address.unwrap_or(defaults.address),
+            buffer_size: raw.buffer_size.unwrap_or(defaults.buffer_size),
+            on_unavailable: raw.on_unavailable.unwrap_or(defaults.on_unavailable),
+            drain_timeout_seconds: raw
+                .drain_timeout_seconds
+                .unwrap_or(defaults.drain_timeout_seconds),
+            connect_timeout_seconds: raw
+                .connect_timeout_seconds
+                .unwrap_or(defaults.connect_timeout_seconds),
+            job_role: raw.job_role,
+        }
+    }
 }
 
 impl Default for CollectorSettings {
@@ -34,103 +64,121 @@ impl Default for CollectorSettings {
             address: "unix:///var/run/litellm/collector.sock".to_owned(),
             buffer_size: 1000,
             on_unavailable: UnavailablePolicy::Fallback,
-            drain_timeout_seconds: 10.0,
-            connect_timeout_seconds: 1.0,
+            drain_timeout_seconds: Decimal::TEN,
+            connect_timeout_seconds: Decimal::ONE,
             job_role: None,
         }
     }
 }
 
 impl CollectorSettings {
-    pub fn validate(&self) -> Result<(), SettingsError> {
-        if self.buffer_size == 0 {
-            return Err(SettingsError::BufferSize);
+    pub fn validate(&self) -> Result<(Duration, Duration), SettingsError> {
+        if self.buffer_size == 0 || self.buffer_size > (usize::MAX >> 3_u32) {
+            return Err(SettingsError::Value("buffer_size".to_owned()));
         }
-        if !self.drain_timeout_seconds.is_finite() || self.drain_timeout_seconds <= 0.0 {
-            return Err(SettingsError::DrainTimeout);
-        }
-        if !self.connect_timeout_seconds.is_finite() || self.connect_timeout_seconds <= 0.0 {
-            return Err(SettingsError::ConnectTimeout);
+        Ok((
+            duration(self.drain_timeout_seconds, "drain_timeout_seconds")?,
+            duration(self.connect_timeout_seconds, "connect_timeout_seconds")?,
+        ))
+    }
+
+    fn assign(&mut self, name: &str, value: &str) -> Result<(), SettingsError> {
+        match name {
+            "enabled" => self.enabled = betterlite_env::flag(name, value)?.unwrap_or(false),
+            "address" => value.clone_into(&mut self.address),
+            "buffer_size" => {
+                self.buffer_size = betterlite_env::number(name, value)?.unwrap_or(self.buffer_size);
+            }
+            "on_unavailable" => {
+                self.on_unavailable = match value {
+                    "fallback" => UnavailablePolicy::Fallback,
+                    "drop" => UnavailablePolicy::Drop,
+                    _ => return Err(SettingsError::Value(name.to_owned())),
+                }
+            }
+            "drain_timeout_seconds" => {
+                self.drain_timeout_seconds =
+                    betterlite_env::number(name, value)?.unwrap_or(self.drain_timeout_seconds);
+            }
+            "connect_timeout_seconds" => {
+                self.connect_timeout_seconds =
+                    betterlite_env::number(name, value)?.unwrap_or(self.connect_timeout_seconds);
+            }
+            _ => return Err(SettingsError::Value(name.to_owned())),
         }
         Ok(())
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum SettingsError {
-    #[error("collector buffer_size must be at least one")]
-    BufferSize,
-    #[error("collector drain_timeout_seconds must be positive")]
-    DrainTimeout,
-    #[error("collector connect_timeout_seconds must be positive")]
-    ConnectTimeout,
-    #[error("invalid collector environment variable {0}")]
-    Environment(String),
+fn duration(seconds: Decimal, field: &str) -> Result<Duration, SettingsError> {
+    let nanos = seconds
+        .checked_mul(Decimal::from(1_000_000_000_u64))
+        .and_then(|value| value.to_u64());
+    match nanos {
+        Some(value) if value > 0 => Ok(Duration::from_nanos(value)),
+        Some(_) | None => Err(SettingsError::Value(field.to_owned())),
+    }
 }
 
-pub fn load_collector_settings<L>(lookup: L) -> Result<CollectorSettings, SettingsError>
-where
-    L: Fn(&str) -> Option<String>,
-{
-    let mut result = CollectorSettings::default();
-    for (name, value) in [
-        "LITELLM_COLLECTOR_ENABLED",
-        "LITELLM_COLLECTOR_ADDRESS",
-        "LITELLM_COLLECTOR_BUFFER_SIZE",
-        "LITELLM_COLLECTOR_ON_UNAVAILABLE",
-        "LITELLM_COLLECTOR_DRAIN_TIMEOUT_SECONDS",
-        "LITELLM_COLLECTOR_CONNECT_TIMEOUT_SECONDS",
-        "LITELLM_JOB_ROLE",
-    ]
-    .into_iter()
-    .filter_map(|name| {
+#[derive(Debug, thiserror::Error)]
+pub enum SettingsError {
+    #[error("invalid collector {0}")]
+    Value(String),
+    #[error(transparent)]
+    Environment(#[from] betterlite_env::EnvError),
+}
+
+pub fn load_collector_settings(
+    environment: &BTreeMap<String, String>,
+) -> Result<CollectorSettings, SettingsError> {
+    let mut settings = CollectorSettings::default();
+    let mut seen = BTreeSet::new();
+    for (name, value) in environment {
+        if value.trim().is_empty() {
+            continue;
+        }
         let lowercase = name.to_ascii_lowercase();
-        lookup(name)
-            .or_else(|| lookup(&lowercase))
-            .map(|value| (name, value))
-    }) {
-        let invalid = || SettingsError::Environment(name.to_owned());
-        match name {
-            "LITELLM_COLLECTOR_ENABLED" => {
-                result.enabled = betterlite_env::flag(name, &value)
-                    .map_err(|_| invalid())?
-                    .unwrap_or(result.enabled)
-            }
-            "LITELLM_COLLECTOR_ADDRESS" => result.address = value,
-            "LITELLM_COLLECTOR_BUFFER_SIZE" => {
-                result.buffer_size = betterlite_env::number::<usize>(name, &value)
-                    .map_err(|_| invalid())?
-                    .ok_or_else(invalid)?
-            }
-            "LITELLM_COLLECTOR_ON_UNAVAILABLE" => {
-                result.on_unavailable = match value.to_ascii_lowercase().as_str() {
-                    "fallback" => UnavailablePolicy::Fallback,
-                    "drop" => UnavailablePolicy::Drop,
-                    _ => return Err(invalid()),
-                }
-            }
-            "LITELLM_COLLECTOR_DRAIN_TIMEOUT_SECONDS" => {
-                result.drain_timeout_seconds = betterlite_env::number::<f64>(name, &value)
-                    .map_err(|_| invalid())?
-                    .ok_or_else(invalid)?
-            }
-            "LITELLM_COLLECTOR_CONNECT_TIMEOUT_SECONDS" => {
-                result.connect_timeout_seconds = betterlite_env::number::<f64>(name, &value)
-                    .map_err(|_| invalid())?
-                    .ok_or_else(invalid)?
-            }
-            "LITELLM_JOB_ROLE" => result.job_role = (!value.is_empty()).then_some(value),
-            _ => {}
+        let field = if lowercase == "litellm_job_role" {
+            "job_role"
+        } else if let Some(field) = lowercase.strip_prefix("litellm_collector_") {
+            field
+        } else {
+            continue;
+        };
+        if !seen.insert(field.to_owned()) {
+            return Err(SettingsError::Value(format!("duplicate {field}")));
+        }
+        if lowercase == "litellm_job_role" {
+            settings.job_role = Some(value.clone());
+        } else {
+            settings.assign(field, value)?;
         }
     }
-    result.validate()?;
-    Ok(result)
+    settings.validate()?;
+    Ok(settings)
+}
+
+#[derive(Debug, Default, Clone, Copy)]
+pub struct TracebackPolicy {
+    pub suppress: bool,
+}
+
+pub fn load_spend_traceback_policy(
+    value: Option<&str>,
+) -> Result<TracebackPolicy, betterlite_env::EnvError> {
+    let suppress = betterlite_env::flag(
+        "LITELLM_SUPPRESS_SPEND_LOG_TRACEBACKS",
+        value.unwrap_or_default(),
+    )?
+    .unwrap_or(false);
+    Ok(TracebackPolicy { suppress })
 }
 
 #[derive(Debug, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case")]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
 pub enum CollectorConfigInput {
     Settings { config: CollectorSettings },
+    Address { value: String },
     Suppression { value: Option<String> },
 }
 
@@ -145,13 +193,11 @@ pub enum CollectorDecodeError {
 pub fn decode_collector_settings(
     bytes: &[u8],
 ) -> Result<CollectorConfigInput, CollectorDecodeError> {
-    match serde_json::from_slice(bytes)? {
-        CollectorConfigInput::Settings { config } => {
-            config.validate()?;
-            Ok(CollectorConfigInput::Settings { config })
-        }
-        input @ CollectorConfigInput::Suppression { .. } => Ok(input),
+    let input = serde_json::from_slice(bytes)?;
+    if let CollectorConfigInput::Settings { config } = &input {
+        config.validate()?;
     }
+    Ok(input)
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -162,37 +208,48 @@ pub enum CollectorAddress {
 
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum AddressError {
-    #[error("invalid collector URL syntax: {0}")]
-    Syntax(String),
-    #[error("tcp collector address must be a loopback host, got '{0}'")]
-    RemoteHost(String),
+    #[error("invalid collector URL syntax")]
+    Syntax(#[source] url::ParseError),
+    #[error("tcp collector address must use loopback")]
+    RemoteHost,
     #[error("expected unix:///path or tcp://127.0.0.1:port")]
     Invalid,
 }
 
 pub fn parse_collector_address(address: &str) -> Result<CollectorAddress, AddressError> {
-    let parsed =
-        url::Url::parse(address).map_err(|error| AddressError::Syntax(error.to_string()))?;
-    match parsed.scheme() {
-        "unix" if !parsed.path().is_empty() => Ok(CollectorAddress::Unix {
-            path: parsed.path().to_owned(),
-        }),
-        "tcp" => {
-            let host = parsed.host_str().ok_or(AddressError::Invalid)?;
-            let port = parsed.port().ok_or(AddressError::Invalid)?;
-            let loopback =
-                host == "localhost" || host.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback());
-            if !loopback {
-                return Err(AddressError::RemoteHost(address.to_owned()));
-            }
-            Ok(CollectorAddress::Tcp {
-                host: host.to_owned(),
-                port,
-            })
+    let Some((scheme, rest)) = address.split_once(':') else {
+        return Err(AddressError::Invalid);
+    };
+    if scheme.eq_ignore_ascii_case("unix") {
+        let suffix = rest.split(['?', '#']).next().unwrap_or("");
+        if suffix.contains('[') {
+            url::Url::parse(address).map_err(AddressError::Syntax)?;
         }
-        _ => Err(AddressError::Invalid),
+        let path = suffix.strip_prefix("//").map_or(suffix, |authority| {
+            authority
+                .find('/')
+                .and_then(|offset| authority.get(offset..))
+                .unwrap_or("")
+        });
+        if !path.is_empty() {
+            return Ok(CollectorAddress::Unix {
+                path: path.to_owned(),
+            });
+        }
+        return Err(AddressError::Invalid);
     }
+    let parsed = url::Url::parse(address).map_err(AddressError::Syntax)?;
+    if parsed.scheme() != "tcp" {
+        return Err(AddressError::Invalid);
+    }
+    let host = parsed
+        .host_str()
+        .ok_or(AddressError::Invalid)?
+        .trim_matches(['[', ']'])
+        .to_ascii_lowercase();
+    let port = parsed.port().ok_or(AddressError::Invalid)?;
+    if host != "localhost" && !host.parse::<IpAddr>().is_ok_and(|ip| ip.is_loopback()) {
+        return Err(AddressError::RemoteHost);
+    }
+    Ok(CollectorAddress::Tcp { host, port })
 }
-
-#[path = "collector/tests.rs"]
-mod collector_tests;

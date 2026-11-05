@@ -1,278 +1,460 @@
 #![cfg(test)]
 
-use super::*;
-use std::sync::atomic::{AtomicUsize, Ordering};
-use tokio::io::AsyncReadExt;
+use super::{
+    Fallback, FallbackError, ProducerError, PublishOutcome, SpendEventProducer,
+    transport::Connector,
+};
+use betterlite_config::collector::{CollectorSettings, UnavailablePolicy};
+use rust_decimal::Decimal;
+use std::collections::VecDeque;
+use std::future::{Future, pending, poll_fn, ready};
+use std::io;
+use std::sync::{Arc, Mutex, PoisonError};
+use std::task::Poll;
+use std::time::Duration;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _, DuplexStream, duplex};
+use tokio::sync::{Notify, oneshot};
+use tokio::task::yield_now;
+use tokio::time::advance;
+use tokio_util::{sync::CancellationToken, task::TaskTracker};
 
-fn fallback(counter: Arc<AtomicUsize>) -> Fallback {
-    Arc::new(move |_| {
-        let counter = Arc::clone(&counter);
-        Box::pin(async move {
-            counter.fetch_add(1, Ordering::SeqCst);
-            Ok(())
-        })
-    })
+struct Controlled {
+    sockets: Mutex<VecDeque<DuplexStream>>,
 }
-
-#[tokio::test]
-async fn falls_back_when_closed() {
-    let counter = Arc::new(AtomicUsize::new(0));
-    let producer = SpendEventProducer::new(
-        CollectorAddress::Unix {
-            path: "/missing".to_owned(),
-        },
-        1,
-        0.1,
-        UnavailablePolicy::Fallback,
-        fallback(Arc::clone(&counter)),
-    );
-    producer.close(Duration::ZERO).await;
-    assert_eq!(
-        producer.publish(b"line".to_vec()).await,
-        PublishOutcome::Fallback
-    );
-    assert_eq!(counter.load(Ordering::SeqCst), 1);
+impl Connector for Arc<Controlled> {
+    type Stream = DuplexStream;
+    fn open(&self) -> impl Future<Output = io::Result<DuplexStream>> + Send {
+        ready(
+            self.sockets
+                .lock()
+                .unwrap()
+                .pop_front()
+                .ok_or_else(|| io::Error::from(io::ErrorKind::ConnectionRefused)),
+        )
+    }
 }
-
-#[tokio::test]
-async fn drains_queued_lines_in_order_before_close() {
-    let path =
-        std::env::temp_dir().join(format!("betterlite-collector-{}.sock", std::process::id()));
-    let _removed = std::fs::remove_file(&path);
-    let listener = tokio::net::UnixListener::bind(&path).unwrap();
-    let server = tokio::spawn(async move {
-        let (mut stream, _) = listener.accept().await.unwrap();
-        let mut received = vec![0; 12];
-        stream.read_exact(&mut received).await.unwrap();
-        received
-    });
-    let counter = Arc::new(AtomicUsize::new(0));
-    let producer = SpendEventProducer::new(
-        CollectorAddress::Unix {
-            path: path.to_string_lossy().into_owned(),
-        },
-        4,
-        1.0,
-        UnavailablePolicy::Fallback,
-        fallback(Arc::clone(&counter)),
-    );
-    assert_eq!(
-        producer.publish(b"first\n".to_vec()).await,
-        PublishOutcome::Queued
-    );
-    assert_eq!(
-        producer.publish(b"other\n".to_vec()).await,
-        PublishOutcome::Queued
-    );
-    producer.close(Duration::from_secs(2)).await;
-    assert_eq!(server.await.unwrap(), b"first\nother\n");
-    assert_eq!(counter.load(Ordering::SeqCst), 0);
-    let _removed = std::fs::remove_file(path);
+struct Harness {
+    producer: SpendEventProducer,
+    peer: DuplexStream,
+    connect: Arc<Controlled>,
+    events: Arc<Mutex<Vec<Vec<u8>>>>,
+    tasks: TaskTracker,
+    cancel: CancellationToken,
 }
-
-#[tokio::test]
-async fn applies_fallback_to_queued_lines_after_drain_timeout() {
-    let counter = Arc::new(AtomicUsize::new(0));
-    let producer = SpendEventProducer::new(
-        CollectorAddress::Unix {
-            path: "/missing-collector.sock".to_owned(),
-        },
-        4,
-        1.0,
-        UnavailablePolicy::Fallback,
-        fallback(Arc::clone(&counter)),
-    );
-    assert_eq!(
-        producer.publish(b"first\n".to_vec()).await,
-        PublishOutcome::Queued
-    );
-    assert_eq!(
-        producer.publish(b"other\n".to_vec()).await,
-        PublishOutcome::Queued
-    );
-    producer.close(Duration::ZERO).await;
-    assert_eq!(counter.load(Ordering::SeqCst), 2);
-}
-
-#[tokio::test]
-async fn fallback_finishes_after_publish_is_cancelled() {
-    let (started_tx, started_rx) = tokio::sync::oneshot::channel();
-    let (continue_tx, continue_rx) = tokio::sync::oneshot::channel();
-    let (finished_tx, finished_rx) = tokio::sync::oneshot::channel();
-    let started_tx = Arc::new(tokio::sync::Mutex::new(Some(started_tx)));
-    let continue_rx = Arc::new(tokio::sync::Mutex::new(Some(continue_rx)));
-    let finished_tx = Arc::new(tokio::sync::Mutex::new(Some(finished_tx)));
-    let fallback: Fallback = Arc::new(
-        move |_| -> Pin<Box<dyn Future<Output = Result<(), FallbackError>> + Send>> {
-            let started_tx = Arc::clone(&started_tx);
-            let continue_rx = Arc::clone(&continue_rx);
-            let finished_tx = Arc::clone(&finished_tx);
+impl Harness {
+    fn new(policy: UnavailablePolicy) -> Self {
+        let (socket, peer) = duplex(8);
+        let connect = Arc::new(Controlled {
+            sockets: Mutex::new(VecDeque::from([socket])),
+        });
+        let events = Arc::new(Mutex::new(Vec::new()));
+        let captured = Arc::clone(&events);
+        let fallback: Fallback = Arc::new(move |line| {
+            let output = Arc::clone(&captured);
             Box::pin(async move {
-                if let Some(started_tx) = started_tx.lock().await.take() {
-                    let _sent = started_tx.send(());
-                }
-                if let Some(continue_rx) = continue_rx.lock().await.take() {
-                    let _continued = continue_rx.await;
-                }
-                if let Some(finished_tx) = finished_tx.lock().await.take() {
-                    let _sent = finished_tx.send(());
-                }
+                output.lock().unwrap().push(line);
                 Ok(())
             })
-        },
-    );
-    let producer = SpendEventProducer::new(
-        CollectorAddress::Unix {
-            path: "/missing-collector.sock".to_owned(),
-        },
-        1,
-        1.0,
-        UnavailablePolicy::Fallback,
-        fallback,
-    );
-    producer.close(Duration::ZERO).await;
-    let producer = Arc::new(producer);
-    let publishing = {
-        let producer = Arc::clone(&producer);
-        tokio::spawn(async move { producer.publish(b"event\n".to_vec()).await })
-    };
-    let _started = started_rx.await;
-    publishing.abort();
-    let _continued = continue_tx.send(());
-    let _finished = finished_rx.await;
+        });
+        let tasks = TaskTracker::new();
+        let settings = CollectorSettings {
+            enabled: true,
+            address: String::new(),
+            buffer_size: 1,
+            on_unavailable: policy,
+            drain_timeout_seconds: Decimal::new(1, 1),
+            connect_timeout_seconds: Decimal::ONE,
+            job_role: None,
+        };
+        let producer =
+            SpendEventProducer::start(&settings, fallback, &tasks, Arc::clone(&connect)).unwrap();
+        Self {
+            producer,
+            peer,
+            connect,
+            events,
+            tasks,
+            cancel: CancellationToken::new(),
+        }
+    }
+    async fn finish(&mut self) {
+        self.producer.close().await;
+        self.tasks.close();
+        self.tasks.wait().await;
+    }
 }
 
-#[tokio::test]
-async fn applies_policy_to_full_queue_and_partially_written_line_on_close() {
-    let path = std::env::temp_dir().join(format!(
-        "betterlite-collector-full-{}.sock",
-        std::process::id()
-    ));
-    let _removed = std::fs::remove_file(&path);
-    let listener = tokio::net::UnixListener::bind(&path).unwrap();
-    let (release_tx, release_rx) = tokio::sync::oneshot::channel();
-    let (accepted_tx, accepted_rx) = tokio::sync::oneshot::channel();
-    let accepted = tokio::spawn(async move {
-        let (stream, _) = listener.accept().await.unwrap();
-        let _sent = accepted_tx.send(());
-        let _release = release_rx.await;
-        drop(stream);
-    });
-    let counter = Arc::new(AtomicUsize::new(0));
-    let producer = SpendEventProducer::new(
-        CollectorAddress::Unix {
-            path: path.to_string_lossy().into_owned(),
-        },
-        1,
-        1.0,
-        UnavailablePolicy::Fallback,
-        fallback(Arc::clone(&counter)),
-    );
+#[tokio::test(start_paused = true)]
+async fn retains_fifo_and_never_replays_complete_lines() {
+    let mut rig = Harness::new(UnavailablePolicy::Fallback);
     assert_eq!(
-        producer.publish(vec![b'x'; 32 * 1024 * 1024]).await,
+        rig.producer
+            .publish(b"one\n".to_vec(), &rig.cancel)
+            .await
+            .unwrap(),
         PublishOutcome::Queued
     );
-    tokio::time::timeout(Duration::from_secs(1), accepted_rx)
+    let mut first = [0; 4];
+    rig.peer.read_exact(&mut first).await.unwrap();
+    assert_eq!(&first, b"one\n");
+    assert_eq!(
+        rig.producer
+            .publish(b"two\n".to_vec(), &rig.cancel)
+            .await
+            .unwrap(),
+        PublishOutcome::Queued
+    );
+    rig.finish().await;
+    let mut last = Vec::new();
+    rig.peer.read_to_end(&mut last).await.unwrap();
+    assert_eq!(last, b"two\n");
+    assert_eq!(rig.producer.stats().queued, 2);
+    assert_eq!(rig.producer.stats().sent, 2);
+    assert!(!rig.producer.stats().connected);
+    assert!(rig.events.lock().unwrap().is_empty());
+    rig.producer.close().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn pressure_and_partial_close_apply_policy_once() {
+    let mut rig = Harness::new(UnavailablePolicy::Fallback);
+    let partial = vec![b'x'; 100];
+    rig.producer
+        .publish(partial.clone(), &rig.cancel)
         .await
-        .unwrap()
+        .unwrap();
+    let mut prefix = [0; 1];
+    rig.peer.read_exact(&mut prefix).await.unwrap();
+    rig.producer
+        .publish(b"queued\n".to_vec(), &rig.cancel)
+        .await
         .unwrap();
     assert_eq!(
-        producer.publish(b"queued\n".to_vec()).await,
-        PublishOutcome::Queued
-    );
-    assert_eq!(
-        producer.publish(b"full\n".to_vec()).await,
+        rig.producer
+            .publish(b"full\n".to_vec(), &rig.cancel)
+            .await
+            .unwrap(),
         PublishOutcome::Fallback
     );
-    producer.close(Duration::ZERO).await;
-    assert_eq!(counter.load(Ordering::SeqCst), 3);
-    let _released = release_tx.send(());
-    let _accepted = accepted.await;
-    let _removed = std::fs::remove_file(path);
+    rig.finish().await;
+    let mut remaining = Vec::new();
+    rig.peer.read_to_end(&mut remaining).await.unwrap();
+    assert!(remaining.len() < partial.len());
+    assert_eq!(
+        *rig.events.lock().unwrap(),
+        [b"full\n".to_vec(), partial, b"queued\n".to_vec()]
+    );
+    assert_eq!(rig.producer.stats().sent, 0);
+    assert_eq!(rig.producer.stats().fallback, 3);
 }
 
-#[tokio::test]
-async fn applies_policy_after_peer_half_close() {
-    let path = std::env::temp_dir().join(format!(
-        "betterlite-collector-eof-{}.sock",
-        std::process::id()
-    ));
-    let _removed = std::fs::remove_file(&path);
-    let listener = tokio::net::UnixListener::bind(&path).unwrap();
-    let (half_closed_tx, half_closed_rx) = tokio::sync::oneshot::channel();
-    let server = tokio::spawn(async move {
-        let mut stream = listener.accept().await.unwrap().0;
-        let mut received = [0; 6];
-        stream.read_exact(&mut received).await.unwrap();
-        tokio::io::AsyncWriteExt::shutdown(&mut stream)
-            .await
-            .unwrap();
-        let _sent = half_closed_tx.send(());
-    });
-    let counter = Arc::new(AtomicUsize::new(0));
-    let producer = SpendEventProducer::new(
-        CollectorAddress::Unix {
-            path: path.to_string_lossy().into_owned(),
-        },
-        1,
-        1.0,
-        UnavailablePolicy::Fallback,
-        fallback(Arc::clone(&counter)),
-    );
-    assert_eq!(
-        producer.publish(b"event\n".to_vec()).await,
-        PublishOutcome::Queued
-    );
-    let _half_closed = half_closed_rx.await;
-    assert_eq!(
-        producer.publish(b"next\n".to_vec()).await,
-        PublishOutcome::Queued
-    );
-    producer.close(Duration::from_secs(1)).await;
-    server.await.unwrap();
-    assert_eq!(counter.load(Ordering::SeqCst), 1);
-    let _removed = std::fs::remove_file(path);
+#[tokio::test(start_paused = true)]
+async fn half_close_reconnects_without_reusing_old_socket() {
+    let mut rig = Harness::new(UnavailablePolicy::Fallback);
+    rig.producer
+        .publish(b"one\n".to_vec(), &rig.cancel)
+        .await
+        .unwrap();
+    let mut bytes = [0; 4];
+    rig.peer.read_exact(&mut bytes).await.unwrap();
+    rig.peer.shutdown().await.unwrap();
+    assert!(rig.producer.stats().connected);
+    let (socket, mut next_peer) = duplex(8);
+    rig.connect.sockets.lock().unwrap().push_back(socket);
+    rig.producer
+        .publish(b"two\n".to_vec(), &rig.cancel)
+        .await
+        .unwrap();
+    next_peer.read_exact(&mut bytes).await.unwrap();
+    assert_eq!(&bytes, b"two\n");
+    rig.finish().await;
+    assert!(rig.events.lock().unwrap().is_empty());
 }
 
 #[tokio::test(start_paused = true)]
 async fn reconnect_backoff_uses_injected_tokio_time() {
-    let counter = Arc::new(AtomicUsize::new(0));
-    let notify = Arc::new(tokio::sync::Notify::new());
-    let callback_counter = Arc::clone(&counter);
-    let callback_notify = Arc::clone(&notify);
-    let fallback: Fallback = Arc::new(move |_| {
-        let counter = Arc::clone(&callback_counter);
-        let notify = Arc::clone(&callback_notify);
+    let mut rig = Harness::new(UnavailablePolicy::Drop);
+    rig.connect.sockets.lock().unwrap().clear();
+    rig.producer
+        .publish(b"lost\n".to_vec(), &rig.cancel)
+        .await
+        .unwrap();
+    yield_now().await;
+    assert_eq!(
+        rig.producer
+            .publish(b"backoff\n".to_vec(), &rig.cancel)
+            .await
+            .unwrap(),
+        PublishOutcome::Dropped
+    );
+    assert_eq!(rig.producer.stats().dropped, 2);
+    advance(Duration::from_secs(1)).await;
+    let (socket, mut peer) = duplex(8);
+    rig.connect.sockets.lock().unwrap().push_back(socket);
+    assert_eq!(
+        rig.producer
+            .publish(b"retry\n".to_vec(), &rig.cancel)
+            .await
+            .unwrap(),
+        PublishOutcome::Queued
+    );
+    let mut received = [0; 6];
+    peer.read_exact(&mut received).await.unwrap();
+    assert_eq!(&received, b"retry\n");
+    rig.finish().await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn fallback_completes_before_cancellation_propagates() {
+    let mut rig = Harness::new(UnavailablePolicy::Fallback);
+    rig.finish().await;
+    rig.cancel.cancel();
+    assert!(matches!(
+        rig.producer
+            .publish(b"cancelled\n".to_vec(), &rig.cancel)
+            .await,
+        Err(ProducerError::Cancelled)
+    ));
+    assert_eq!(*rig.events.lock().unwrap(), [b"cancelled\n".to_vec()]);
+}
+
+#[tokio::test(start_paused = true)]
+async fn dropped_request_keeps_fallback_owned_and_contains_failure() {
+    let mut rig = Harness::new(UnavailablePolicy::Fallback);
+    rig.finish().await;
+    let release = Arc::new(Notify::new());
+    let trigger = Arc::clone(&release);
+    let (finished, completed) = oneshot::channel();
+    let completion = Arc::new(Mutex::new(Some(finished)));
+    Arc::get_mut(&mut rig.producer.outage).unwrap().fallback = Arc::new(move |_| {
+        let released = Arc::clone(&trigger);
+        let output = Arc::clone(&completion);
         Box::pin(async move {
-            counter.fetch_add(1, Ordering::SeqCst);
-            notify.notify_one();
-            Ok(())
+            released.notified().await;
+            output.lock().unwrap().take().unwrap().send(()).unwrap();
+            Err(FallbackError::Callback {
+                source: io::Error::from(io::ErrorKind::Other),
+            })
         })
     });
-    let producer = SpendEventProducer::new(
-        CollectorAddress::Unix {
-            path: "/missing-collector.sock".to_owned(),
-        },
-        4,
-        1.0,
-        UnavailablePolicy::Fallback,
-        fallback,
-    );
+    let mut publish = Box::pin(rig.producer.publish(b"event".to_vec(), &rig.cancel));
+    assert!(poll_fn(|context| Poll::Ready(publish.as_mut().poll(context).is_pending())).await);
+    drop(publish);
+    assert_eq!(rig.tasks.len(), 1);
+    release.notify_one();
+    completed.await.unwrap();
+    rig.tasks.wait().await;
+    assert_eq!(rig.producer.stats().fallback, 1);
+}
+
+#[rstest::rstest]
+#[case::disabled(false, None, "tcp://localhost:bad", false)]
+#[case::collector(true, Some("collector"), "tcp://localhost:bad", false)]
+#[case::semantic(true, None, "tcp://example.com:1", false)]
+#[case::syntax(true, None, "tcp://localhost:bad", true)]
+#[tokio::test]
+async fn construction_preserves_error_boundaries(
+    #[case] enabled: bool,
+    #[case] role: Option<&str>,
+    #[case] address: &str,
+    #[case] syntax: bool,
+) {
+    let settings = CollectorSettings {
+        enabled,
+        address: address.to_owned(),
+        buffer_size: 1,
+        on_unavailable: UnavailablePolicy::Fallback,
+        drain_timeout_seconds: Decimal::ONE,
+        connect_timeout_seconds: Decimal::ONE,
+        job_role: role.map(str::to_owned),
+    };
+    let tasks = TaskTracker::new();
+    let result =
+        SpendEventProducer::build(&settings, Arc::new(|_| Box::pin(async { Ok(()) })), &tasks);
+    assert_eq!(result.is_err(), syntax);
+    if let Ok(producer) = result {
+        assert!(producer.is_none());
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn broken_partial_write_disconnects_and_enters_backoff() {
+    let mut rig = Harness::new(UnavailablePolicy::Fallback);
+    rig.producer
+        .publish(vec![b'x'; 100], &rig.cancel)
+        .await
+        .unwrap();
+    let mut prefix = [0];
+    rig.peer.read_exact(&mut prefix).await.unwrap();
+    drop(rig.peer);
+    yield_now().await;
     assert_eq!(
-        producer.publish(b"first\n".to_vec()).await,
-        PublishOutcome::Queued
-    );
-    notify.notified().await;
-    assert_eq!(
-        producer.publish(b"backoff\n".to_vec()).await,
+        rig.producer
+            .publish(b"backoff".to_vec(), &rig.cancel)
+            .await
+            .unwrap(),
         PublishOutcome::Fallback
     );
-    tokio::time::advance(Duration::from_secs(1)).await;
+    rig.producer.close().await;
+    rig.tasks.close();
+    rig.tasks.wait().await;
+    assert_eq!(rig.producer.stats().sent, 0);
+    assert_eq!(rig.producer.stats().fallback, 2);
+    assert!(!rig.producer.stats().connected);
     assert_eq!(
-        producer.publish(b"after\n".to_vec()).await,
-        PublishOutcome::Queued
+        *rig.events.lock().unwrap(),
+        [vec![b'x'; 100], b"backoff".to_vec()]
     );
-    notify.notified().await;
-    producer.close(Duration::ZERO).await;
-    assert_eq!(counter.load(Ordering::SeqCst), 3);
+}
+
+struct Pending;
+impl Connector for Pending {
+    type Stream = DuplexStream;
+    async fn open(&self) -> io::Result<DuplexStream> {
+        pending().await
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn connect_timeout_applies_drop_and_close_stops_admission() {
+    let settings = CollectorSettings {
+        enabled: true,
+        address: String::new(),
+        buffer_size: 1,
+        on_unavailable: UnavailablePolicy::Drop,
+        drain_timeout_seconds: Decimal::TEN,
+        connect_timeout_seconds: Decimal::ONE,
+        job_role: None,
+    };
+    let tasks = TaskTracker::new();
+    let cancel = CancellationToken::new();
+    let mut producer = SpendEventProducer::start(
+        &settings,
+        Arc::new(|_| Box::pin(async { Ok(()) })),
+        &tasks,
+        Pending,
+    )
+    .unwrap();
+    producer
+        .publish(b"timeout".to_vec(), &cancel)
+        .await
+        .unwrap();
+    producer.close().await;
+    assert_eq!(producer.stats().dropped, 1);
+    assert_eq!(
+        producer.publish(b"closed".to_vec(), &cancel).await.unwrap(),
+        PublishOutcome::Dropped
+    );
+    tasks.close();
+    tasks.wait().await;
+    assert_eq!(producer.stats().dropped, 2);
+}
+
+#[derive(Clone, Default)]
+struct Captured(Arc<Mutex<Vec<u8>>>);
+impl io::Write for Captured {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn drop_policy_logs_only_milestones() {
+    use tracing::instrument::WithSubscriber as _;
+    let captured = Captured::default();
+    let writer = captured.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_writer(move || writer.clone())
+        .finish();
+    let mut rig = Harness::new(UnavailablePolicy::Drop);
+    rig.finish().await;
+    let dispatch = tracing::Dispatch::new(subscriber);
+    while rig.producer.stats().dropped < 2001 {
+        rig.producer
+            .publish(Vec::new(), &rig.cancel)
+            .with_subscriber(dispatch.clone())
+            .await
+            .unwrap();
+    }
+    let logs = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
+    assert_eq!(logs.lines().count(), 3);
+    assert!(logs.contains("dropped=1\n"));
+    assert!(logs.contains("dropped=1001\n"));
+    assert!(logs.contains("dropped=2001\n"));
+}
+
+#[test]
+fn spend_logging_preserves_supplied_or_active_trace() {
+    use crate::spend_error::log_spend_error;
+    use betterlite_config::collector::TracebackPolicy;
+    use tokio::sync::watch;
+    use tracing::subscriber::with_default;
+    let captured = Captured::default();
+    let writer = captured.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_max_level(tracing::Level::INFO)
+        .with_writer(move || writer.clone())
+        .finish();
+    let (sender, settings) = watch::channel(TracebackPolicy { suppress: true });
+    with_default(subscriber, || {
+        log_spend_error(&settings, "suppressed", Some("hidden"), None);
+        sender.send_replace(TracebackPolicy { suppress: false });
+        log_spend_error(&settings, "explicit", Some("supplied"), Some("unused"));
+        log_spend_error(&settings, "implicit", None, Some("active"));
+    });
+    let logs = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
+    assert!(!logs.contains("hidden"));
+    assert!(!logs.contains("unused"));
+    assert!(logs.contains("supplied"));
+    assert!(logs.contains("active"));
+}
+
+#[tokio::test]
+async fn tcp_does_not_wait_for_collector_response() {
+    use tokio::net::TcpListener;
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let settings = CollectorSettings {
+        enabled: true,
+        address: format!("tcp://{}", listener.local_addr().unwrap()),
+        buffer_size: 2,
+        on_unavailable: UnavailablePolicy::Drop,
+        drain_timeout_seconds: Decimal::ONE,
+        connect_timeout_seconds: Decimal::ONE,
+        job_role: None,
+    };
+    let tasks = TaskTracker::new();
+    let cancel = CancellationToken::new();
+    let mut producer =
+        SpendEventProducer::build(&settings, Arc::new(|_| Box::pin(async { Ok(()) })), &tasks)
+            .unwrap()
+            .unwrap();
+    producer
+        .publish(b"first\n".to_vec(), &cancel)
+        .await
+        .unwrap();
+    let (mut stream, _) = listener.accept().await.unwrap();
+    let mut bytes = [0; 6];
+    stream.read_exact(&mut bytes).await.unwrap();
+    producer
+        .publish(b"other\n".to_vec(), &cancel)
+        .await
+        .unwrap();
+    stream.read_exact(&mut bytes).await.unwrap();
+    assert_eq!(&bytes, b"other\n");
+    producer.close().await;
+    tasks.close();
+    tasks.wait().await;
+    assert_eq!(producer.stats().sent, 2);
+    assert_eq!(producer.stats().dropped, 0);
 }

@@ -1,12 +1,9 @@
 kind: helper
-name: collector-remote-address
+name: traceback-opt-in-with-debug-override
 call:
   collector_policy:
-    address: tcp://collector.example:4312
-    enabled: true
-    job_role: worker
-    suppress: 'true'
-    debug: true
+    addresses: []
+    policies: [{value: null, debug: false}, {value: 'true', debug: false}, {value: ' TRUE ', debug: false}, {value: 'true', debug: true}, {value: 'false', debug: false}, {value: '', debug: false}]
 env: {}
 compare:
   ignore: []

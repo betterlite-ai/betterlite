@@ -1,48 +1,44 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use betterlite_config::collector::TracebackPolicy;
+use tokio::sync::watch;
 
-const SUPPRESS_ENV: &str = "LITELLM_SUPPRESS_SPEND_LOG_TRACEBACKS";
-pub static SUPPRESS_TRACEBACKS: AtomicBool = AtomicBool::new(false);
+mod tests;
 
-pub fn load_spend_traceback_policy(value: Option<&str>) -> bool {
-    betterlite_env::flag(SUPPRESS_ENV, value.unwrap_or_default())
-        .ok()
-        .flatten()
-        .unwrap_or(false)
-}
-
-pub fn should_suppress_tracebacks(debug_logging_enabled: bool) -> bool {
-    if debug_logging_enabled {
-        return false;
+#[must_use]
+pub fn should_suppress_tracebacks(
+    settings: &watch::Receiver<TracebackPolicy>,
+    debug_logging: bool,
+) -> bool {
+    if debug_logging {
+        false
+    } else {
+        settings.borrow().suppress
     }
-    SUPPRESS_TRACEBACKS.load(Ordering::SeqCst)
 }
 
+#[must_use]
 pub fn failure_row_traceback(
+    settings: &watch::Receiver<TracebackPolicy>,
     traceback: Option<String>,
-    debug_logging_enabled: bool,
+    debug_logging: bool,
 ) -> Option<String> {
-    if should_suppress_tracebacks(debug_logging_enabled) {
+    if should_suppress_tracebacks(settings, debug_logging) {
         None
     } else {
         traceback
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
-pub enum SpendError {
-    #[error("spend error: {0}")]
-    Error(String),
-}
-
-pub fn log_spend_error(message: &str, trace: Option<&str>, debug_logging_enabled: bool) {
-    if should_suppress_tracebacks(debug_logging_enabled) {
-        tracing::error!("{message}");
-    } else if let Some(trace) = trace {
-        tracing::error!("{message}\n{trace}");
+pub fn log_spend_error(
+    settings: &watch::Receiver<TracebackPolicy>,
+    message: &str,
+    supplied_trace: Option<&str>,
+    active_trace: Option<&str>,
+) {
+    if should_suppress_tracebacks(settings, tracing::enabled!(tracing::Level::DEBUG)) {
+        tracing::error!(message);
+    } else if let Some(trace) = supplied_trace.or(active_trace) {
+        tracing::error!(message, traceback = trace);
     } else {
-        tracing::error!("{message}");
+        tracing::error!(message);
     }
 }
-
-#[path = "spend_error/tests.rs"]
-mod spend_error_tests;
