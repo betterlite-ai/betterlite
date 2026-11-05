@@ -37,9 +37,11 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let configured = |value: Option<String>, name: &str| match value {
-            Some(text) => resolve_string(text, &format!("general_settings.{name}"), lookup),
-            None => Ok(lookup.lookup(name).unwrap_or_default()),
+        let configured = |value: Option<String>, name: &str| {
+            value.map_or_else(
+                || Ok(lookup.lookup(name).unwrap_or_default()),
+                |text| resolve_string(text, &format!("general_settings.{name}"), lookup),
+            )
         };
         let root_paths = configured(self.general_settings.server_root_paths, ROOT_PATHS_NAME)?;
         Ok(Settings {
