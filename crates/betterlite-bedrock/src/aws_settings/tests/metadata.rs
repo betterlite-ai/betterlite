@@ -50,7 +50,7 @@ async fn container_credentials_use_injected_transport() {
 }
 
 #[tokio::test]
-async fn sso_profile_is_not_rejected_as_unsupported() {
+async fn sso_profile_fails_closed_instead_of_silently_misreading() {
     let source = native(
         &[(
             "/config",
@@ -71,8 +71,7 @@ async fn sso_profile_is_not_rejected_as_unsupported() {
         chain = cause.source();
     }
     let joined = messages.join(" | ").to_lowercase();
-    assert!(!joined.contains("not enabled"));
-    assert!(!joined.contains("feature"));
+    assert!(joined.contains("feature"));
 }
 
 #[tokio::test]
