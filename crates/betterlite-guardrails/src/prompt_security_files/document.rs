@@ -84,20 +84,22 @@ pub(super) async fn process_document_item(
 }
 
 fn read_fields(item: &Item, nested: Option<&str>) -> Result<DocumentFields, FileSanitizationError> {
-    match nested.and_then(|key| item.get(key)) {
-        None => document_fields(item),
-        Some(GuardrailValue::Object(inner)) => document_fields(inner),
-        Some(GuardrailValue::Text(url)) => Ok(DocumentFields {
-            url: url.clone(),
-            data: String::new(),
-            mime_type: None,
-        }),
-        Some(_) => Ok(DocumentFields {
-            url: String::new(),
-            data: String::new(),
-            mime_type: None,
-        }),
+    let Some(key) = nested else {
+        return document_fields(item);
+    };
+    if let Some(GuardrailValue::Object(inner)) = item.get(key) {
+        return document_fields(inner);
     }
+    let url = if let Some(GuardrailValue::Text(url)) = item.get(key) {
+        url.clone()
+    } else {
+        String::new()
+    };
+    Ok(DocumentFields {
+        url,
+        data: String::new(),
+        mime_type: None,
+    })
 }
 
 fn apply_replacement(item: &mut Item, nested: Option<&str>, outcome: Option<Replacement>) {
