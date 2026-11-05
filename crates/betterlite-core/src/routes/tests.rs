@@ -52,6 +52,7 @@ const ANTHROPIC: &[CallType] = &[CallType::AnthropicMessages];
 #[case::exact_precedence("/videos/characters", Some(&[CallType::AvideoCreateCharacter, CallType::VideoCreateCharacter][..]))]
 #[case::pattern_order("/videos/characters/", Some(&[CallType::AvideoRetrieve, CallType::VideoRetrieve, CallType::AvideoDelete, CallType::VideoDelete][..]))]
 #[case::single_placeholder("/v1/threads/thread-1", Some(&[CallType::AgetThread, CallType::GetThread][..]))]
+#[case::single_placeholder_extra_segment("/v1/threads/thread-1/extra", None)]
 #[case::batch("/v1/batches/batch-1", Some(&[CallType::AretrieveBatch, CallType::RetrieveBatch][..]))]
 fn call_route_metadata_route_metadata_tests_behavior(
     #[case] route: &str,

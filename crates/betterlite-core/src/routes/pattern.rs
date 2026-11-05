@@ -15,17 +15,16 @@ pub fn parse_route(route: &str) -> Result<Vec<&str>, RouteMetadataError> {
     Ok(segments)
 }
 
-fn segment_matches(route: &str, pattern: &str) -> bool {
+fn placeholder_suffix(pattern: &str) -> Option<&str> {
     if !pattern.starts_with('{') {
-        return route == pattern;
+        return None;
     }
-    let Some(end) = pattern.find('}') else {
-        return route == pattern;
-    };
-    let Some(suffix) = pattern
-        .get(end..)
-        .and_then(|segment| segment.strip_prefix('}'))
-    else {
+    let end = pattern.find('}')?;
+    pattern.get(end..)?.strip_prefix('}')
+}
+
+fn segment_matches(route: &str, pattern: &str) -> bool {
+    let Some(suffix) = placeholder_suffix(pattern) else {
         return route == pattern;
     };
     if suffix.is_empty() {
@@ -43,7 +42,7 @@ pub(super) fn pattern_matches(route: &str, pattern: &str) -> Result<bool, RouteM
     let Some(tail) = pattern_parts.last() else {
         return Ok(false);
     };
-    let spans = tail.starts_with('{') && tail.contains('}') && !tail.ends_with('}');
+    let spans = placeholder_suffix(tail).is_some_and(|suffix| !suffix.is_empty());
     if route_parts.len() > pattern_parts.len() && !spans {
         return Ok(false);
     }
