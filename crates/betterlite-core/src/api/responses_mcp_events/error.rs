@@ -4,19 +4,4 @@ pub enum McpEventError {
     ToolAttribute { message: String },
     #[error("sequence number {start} plus {offset} overflows")]
     SequenceOverflow { start: i64, offset: i64 },
-    #[error("event field {field} must be {expected}")]
-    FieldType {
-        field: String,
-        expected: &'static str,
-    },
-    #[error("event field type is not an MCP event type")]
-    EventType {
-        #[source]
-        source: serde_json::Error,
-    },
-    #[error("event field item is not an MCP list or call item")]
-    ItemShape {
-        #[source]
-        source: serde_json::Error,
-    },
 }

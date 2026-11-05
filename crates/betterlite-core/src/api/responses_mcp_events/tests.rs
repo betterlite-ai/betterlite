@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+
 use betterlite_openai::api::responses_objects::{ResponseOutputItem, ResponsesApiResponse};
 use betterlite_openai::api::responses_shapes::{GenericResponseOutputItem, OutputFunctionToolCall};
 use rstest::rstest;
@@ -7,7 +9,7 @@ use serde_json::{Value, json};
 
 use super::call::{McpCallRequest, create_mcp_call_events};
 use super::error::McpEventError;
-use super::event::{McpEvent, set_event_field as assign_field};
+use super::event::{EventField, StreamEvent};
 use super::function_call::function_call_id;
 use super::list_tools::{
     DiagnosticLevel, DiscoveredTool, ServerEntry, ToolAttribute, create_mcp_list_tools_events,
@@ -17,7 +19,7 @@ fn call_request(request: Value) -> McpCallRequest {
     serde_json::from_value(request).expect("call request")
 }
 
-fn call_events(request: Value, ids: &[&str]) -> Vec<McpEvent> {
+fn call_events(request: Value, ids: &[&str]) -> Vec<StreamEvent> {
     let mut remaining = ids.iter();
     create_mcp_call_events(&call_request(request), || {
         (*remaining.next().expect("unused id requested")).to_owned()
@@ -31,13 +33,13 @@ fn servers(entries: Value) -> Vec<ServerEntry> {
 
 fn named_tool(name: &str) -> DiscoveredTool {
     DiscoveredTool {
-        name: ToolAttribute::Value(name.to_owned()),
+        name: ToolAttribute::Value(Some(name.to_owned())),
         description: ToolAttribute::Absent,
         input_schema: ToolAttribute::Absent,
     }
 }
 
-fn to_json(events: &[McpEvent]) -> Value {
+fn to_json(events: &[StreamEvent]) -> Value {
     serde_json::to_value(events).expect("events serialize")
 }
 
@@ -59,6 +61,22 @@ fn to_json(events: &[McpEvent]) -> Value {
     vec![None]
 )]
 #[case::missing_both_ids(json!([{"type": "function_call"}]), vec![None])]
+#[case::numeric_call_id_wins_and_is_not_text(
+    json!([{"type": "function_call", "call_id": 5, "id": "fc_5"}]),
+    vec![None]
+)]
+#[case::zero_call_id_falls_back_to_id(
+    json!([{"type": "function_call", "call_id": 0, "id": "fc_6"}]),
+    vec![Some("fc_6")]
+)]
+#[case::null_call_id_falls_back_to_id(
+    json!([{"type": "function_call", "call_id": null, "id": "fc_7"}]),
+    vec![Some("fc_7")]
+)]
+#[case::empty_list_call_id_falls_back_to_id(
+    json!([{"type": "function_call", "call_id": [], "id": "fc_8"}]),
+    vec![Some("fc_8")]
+)]
 #[case::empty_call_id_and_empty_id_stay_empty(
     json!([{"type": "function_call", "call_id": "", "id": ""}]),
     vec![Some("")]
@@ -111,6 +129,8 @@ fn output_items_and_function_call_id_reads_an_object_item(
 #[rstest]
 #[case::message_without_call_id(json!({}), Some("msg_1"))]
 #[case::message_with_call_id(json!({"call_id": "c1"}), Some("c1"))]
+#[case::message_with_numeric_call_id(json!({"call_id": 5}), None)]
+#[case::message_with_zero_call_id(json!({"call_id": 0}), Some("msg_1"))]
 fn output_items_and_function_call_id_reads_a_message_shaped_call(
     #[case] extra: Value,
     #[case] expected: Option<&str>,
@@ -126,7 +146,7 @@ fn output_items_and_function_call_id_reads_a_message_shaped_call(
     assert_eq!(function_call_id(&item), expected);
 }
 
-fn sample_call_event() -> McpEvent {
+fn sample_call_event() -> StreamEvent {
     call_events(
         json!({"tool_name": "w", "arguments": "{}", "base_item_id": "mcp_x", "output_index": 1}),
         &[],
@@ -140,6 +160,9 @@ fn sample_call_event() -> McpEvent {
 #[case::new_field_is_serialized("custom_marker", json!("kept"), "/custom_marker", json!("kept"))]
 #[case::object_valued_new_field("flag", json!({"a": [1]}), "/flag/a/0", json!(1))]
 #[case::item_id("item_id", json!("mcp_other"), "/item_id", json!("mcp_other"))]
+#[case::null_item_id("item_id", Value::Null, "/item_id", Value::Null)]
+#[case::wrong_typed_output_index("output_index", json!("4"), "/output_index", json!("4"))]
+#[case::wrong_typed_item_id("item_id", json!(4), "/item_id", json!(4))]
 #[case::delta_on_event_without_one("delta", json!("{}"), "/delta", json!("{}"))]
 #[case::type_change(
     "type",
@@ -147,6 +170,7 @@ fn sample_call_event() -> McpEvent {
     "/type",
     json!("response.mcp_call.completed")
 )]
+#[case::unlisted_event_type("type", json!("response.unknown"), "/type", json!("response.unknown"))]
 #[case::item(
     "item",
     json!({"type": "mcp_list_tools", "id": "i", "server_label": "s", "tools": []}),
@@ -160,38 +184,31 @@ fn set_event_field(
     #[case] expected: Value,
 ) {
     let mut event = sample_call_event();
-    assert_eq!(event.output_index, 1);
-    assign_field(&mut event, name, value).expect("field set");
+    event
+        .fields
+        .insert(name.to_owned(), EventField::Json(value));
     let serialized = serde_json::to_value(&event).expect("serialize");
     assert_eq!(serialized.pointer(pointer), Some(&expected));
 }
 
-#[rstest]
-#[case::integer_expected("output_index", json!("4"))]
-#[case::string_expected("item_id", json!(4))]
-fn set_event_field_rejects_wrong_types(#[case] name: &str, #[case] value: Value) {
-    let mut event = sample_call_event();
-    let before = event.clone();
-    let error = assign_field(&mut event, name, value).expect_err("wrong type");
-    assert!(matches!(error, McpEventError::FieldType { field, .. } if field == name));
-    assert_eq!(event, before);
-}
-
 #[test]
-fn set_event_field_rejects_an_unknown_event_type() {
-    let mut event = sample_call_event();
-    let before = event.clone();
-    let error =
-        assign_field(&mut event, "type", json!("response.unknown")).expect_err("event type");
-    assert!(matches!(error, McpEventError::EventType { source } if source.is_data()));
-    assert_eq!(event, before);
-}
-
-#[test]
-fn set_event_field_rejects_a_malformed_item() {
-    let mut event = sample_call_event();
-    let error = assign_field(&mut event, "item", json!({"type": "other"})).expect_err("item");
-    assert!(matches!(error, McpEventError::ItemShape { .. }));
+fn set_event_field_updates_a_non_mcp_event() {
+    let mut event = StreamEvent {
+        fields: BTreeMap::from([
+            (
+                "type".to_owned(),
+                EventField::from("response.output_text.delta"),
+            ),
+            ("delta".to_owned(), EventField::from("hi")),
+        ]),
+    };
+    event
+        .fields
+        .insert("sequence_number".to_owned(), EventField::from(7));
+    assert_eq!(
+        serde_json::to_value(&event).expect("serialize"),
+        json!({"type": "response.output_text.delta", "delta": "hi", "sequence_number": 7})
+    );
 }
 
 #[rstest]
@@ -205,12 +222,15 @@ fn set_event_field_rejects_a_malformed_item() {
 #[case::no_servers(json!([]), "")]
 #[case::missing_label(json!([{"server_url": "litellm_proxy/mcp/x"}]), "")]
 #[case::null_label(json!([{"server_label": null}]), "")]
+#[case::numeric_label(json!([{"server_label": 123}]), "123")]
+#[case::float_label(json!([{"server_label": 1.5}]), "1.5")]
+#[case::true_label(json!([{"server_label": true}]), "True")]
 #[case::only_the_first_mapping_counts(json!([{}, {"server_label": "later"}]), "")]
 fn list_tools_success(#[case] entries: Value, #[case] label: &str) {
     let tools = [
         DiscoveredTool {
-            name: ToolAttribute::Value("search".to_owned()),
-            description: ToolAttribute::Value("find".to_owned()),
+            name: ToolAttribute::Value(Some("search".to_owned())),
+            description: ToolAttribute::Value(Some("find".to_owned())),
             input_schema: ToolAttribute::Value(json!({"type": "object"})),
         },
         DiscoveredTool {
@@ -241,6 +261,23 @@ fn list_tools_success(#[case] entries: Value, #[case] label: &str) {
     let diagnostic = outcome.diagnostics.first().expect("diagnostic");
     assert_eq!(diagnostic.level, DiagnosticLevel::Debug);
     assert_eq!(diagnostic.message, "Created 3 MCP discovery events");
+}
+
+#[test]
+fn list_tools_success_keeps_null_attributes() {
+    let tools = [DiscoveredTool {
+        name: ToolAttribute::Value(None),
+        description: ToolAttribute::Value(None),
+        input_schema: ToolAttribute::Value(Value::Null),
+    }];
+    let outcome = create_mcp_list_tools_events(&servers(json!([])), "mcp_null01", &tools);
+    assert_eq!(
+        to_json(&outcome.events)
+            .pointer("/2/item/tools")
+            .expect("tools"),
+        &json!([{"name": null, "description": null,
+                 "annotations": {"read_only": false}, "input_schema": null}])
+    );
 }
 
 #[rstest]

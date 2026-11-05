@@ -1,9 +1,7 @@
-use std::collections::BTreeMap;
-
 use serde::Deserialize;
 
 use super::error::McpEventError;
-use super::event::{EventItem, McpEvent, McpEventKind};
+use super::event::{EventField, EventItem, McpEventKind, StreamEvent};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct McpCallRequest {
@@ -28,7 +26,7 @@ fn call_event(
     item_id: &str,
     kind: McpEventKind,
     offset: i64,
-) -> Result<McpEvent, McpEventError> {
+) -> Result<StreamEvent, McpEventError> {
     let sequence_number =
         request
             .sequence_start
@@ -37,26 +35,27 @@ fn call_event(
                 start: request.sequence_start,
                 offset,
             })?;
-    Ok(McpEvent {
-        kind,
-        sequence_number,
-        output_index: request.output_index,
-        item_id: Some(item_id.to_owned()),
-        delta: None,
-        arguments: None,
-        item: None,
-        extra: BTreeMap::new(),
-    })
+    let mut event = StreamEvent::new(kind, sequence_number, request.output_index);
+    event
+        .fields
+        .insert("item_id".to_owned(), EventField::from(item_id));
+    Ok(event)
 }
 
 fn argument_events(
     request: &McpCallRequest,
     item_id: &str,
-) -> Result<Vec<McpEvent>, McpEventError> {
+) -> Result<Vec<StreamEvent>, McpEventError> {
     let mut delta = call_event(request, item_id, McpEventKind::CallArgumentsDelta, 1)?;
-    delta.delta = Some(request.arguments.clone());
+    delta.fields.insert(
+        "delta".to_owned(),
+        EventField::from(request.arguments.as_str()),
+    );
     let mut done = call_event(request, item_id, McpEventKind::CallArgumentsDone, 2)?;
-    done.arguments = Some(request.arguments.clone());
+    done.fields.insert(
+        "arguments".to_owned(),
+        EventField::from(request.arguments.as_str()),
+    );
     Ok(vec![
         call_event(request, item_id, McpEventKind::CallInProgress, 0)?,
         delta,
@@ -69,26 +68,27 @@ fn output_item_done(
     item_id: &str,
     output: &str,
     approval_request_id: String,
-) -> Result<McpEvent, McpEventError> {
-    let mut done = call_event(request, item_id, McpEventKind::OutputItemDone, 0)?;
-    done.sequence_number = 1;
-    done.item_id = None;
-    done.item = Some(EventItem::Call {
-        id: item_id.to_owned(),
-        approval_request_id,
-        arguments: request.arguments.clone(),
-        error: None,
-        name: request.tool_name.clone(),
-        output: output.to_owned(),
-        server_label: "litellm".to_owned(),
-    });
-    Ok(done)
+) -> StreamEvent {
+    let mut done = StreamEvent::new(McpEventKind::OutputItemDone, 1, request.output_index);
+    done.fields.insert(
+        "item".to_owned(),
+        EventField::from(EventItem::Call {
+            id: item_id.to_owned(),
+            approval_request_id,
+            arguments: request.arguments.clone(),
+            error: None,
+            name: request.tool_name.clone(),
+            output: output.to_owned(),
+            server_label: "litellm".to_owned(),
+        }),
+    );
+    done
 }
 
 pub fn create_mcp_call_events<Id>(
     request: &McpCallRequest,
     mut next_id: Id,
-) -> Result<Vec<McpEvent>, McpEventError>
+) -> Result<Vec<StreamEvent>, McpEventError>
 where
     Id: FnMut() -> String,
 {
@@ -112,7 +112,7 @@ where
                 &item_id,
                 output,
                 approval_request_id,
-            )?);
+            ));
         }
     }
     Ok(events)

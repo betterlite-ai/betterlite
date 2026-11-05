@@ -1,19 +1,18 @@
-use std::collections::BTreeMap;
-
 use serde::Deserialize;
 use serde_json::Value;
 
 use super::error::McpEventError;
-use super::event::{EventItem, ListedTool, McpEvent, McpEventKind, ToolAnnotations};
+use super::event::{EventField, EventItem, ListedTool, McpEventKind, StreamEvent, ToolAnnotations};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct ServerEntry {
     #[serde(default)]
-    pub server_label: Option<String>,
+    pub server_label: Value,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub enum ToolAttribute<Content> {
+    #[default]
     Absent,
     Value(Content),
     Raises(String),
@@ -21,8 +20,8 @@ pub enum ToolAttribute<Content> {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DiscoveredTool {
-    pub name: ToolAttribute<String>,
-    pub description: ToolAttribute<String>,
+    pub name: ToolAttribute<Option<String>>,
+    pub description: ToolAttribute<Option<String>>,
     pub input_schema: ToolAttribute<Value>,
 }
 
@@ -41,7 +40,7 @@ pub struct Diagnostic {
 
 #[derive(Debug)]
 pub struct ListToolsOutcome {
-    pub events: Vec<McpEvent>,
+    pub events: Vec<StreamEvent>,
     pub diagnostics: Vec<Diagnostic>,
 }
 
@@ -64,8 +63,8 @@ fn format_tools(tools: &[DiscoveredTool]) -> Result<Vec<ListedTool>, McpEventErr
     let mut formatted = Vec::with_capacity(tools.len());
     for tool in tools {
         formatted.push(ListedTool {
-            name: read_attribute(&tool.name)?.unwrap_or_else(|| "unknown".to_owned()),
-            description: read_attribute(&tool.description)?.unwrap_or_default(),
+            name: read_attribute(&tool.name)?.unwrap_or_else(|| Some("unknown".to_owned())),
+            description: read_attribute(&tool.description)?.unwrap_or_else(|| Some(String::new())),
             annotations: ToolAnnotations { read_only: false },
             input_schema: read_attribute(&tool.input_schema)?,
         });
@@ -73,46 +72,50 @@ fn format_tools(tools: &[DiscoveredTool]) -> Result<Vec<ListedTool>, McpEventErr
     Ok(formatted)
 }
 
-fn status_events(item_id: &str, statuses: &[(McpEventKind, i64)]) -> Vec<McpEvent> {
+fn status_events(item_id: &str, statuses: &[(McpEventKind, i64)]) -> Vec<StreamEvent> {
     statuses
         .iter()
-        .map(|&(kind, sequence_number)| McpEvent {
-            kind,
-            sequence_number,
-            output_index: 0,
-            item_id: Some(item_id.to_owned()),
-            delta: None,
-            arguments: None,
-            item: None,
-            extra: BTreeMap::new(),
+        .map(|&(kind, sequence_number)| {
+            let mut event = StreamEvent::new(kind, sequence_number, 0);
+            event
+                .fields
+                .insert("item_id".to_owned(), EventField::from(item_id));
+            event
         })
         .collect()
 }
 
 fn push_done_item(
-    events: &mut Vec<McpEvent>,
+    events: &mut Vec<StreamEvent>,
     item_id: &str,
     server_label: String,
     tools: Vec<ListedTool>,
 ) {
-    events.push(McpEvent {
-        kind: McpEventKind::OutputItemDone,
-        sequence_number: 1,
-        output_index: 0,
-        item_id: None,
-        delta: None,
-        arguments: None,
-        item: Some(EventItem::ListTools {
+    let mut done = StreamEvent::new(McpEventKind::OutputItemDone, 1, 0);
+    done.fields.insert(
+        "item".to_owned(),
+        EventField::from(EventItem::ListTools {
             id: item_id.to_owned(),
             server_label,
             tools,
         }),
-        extra: BTreeMap::new(),
-    });
+    );
+    events.push(done);
+}
+
+fn label_text(label: &Value) -> String {
+    match label {
+        Value::Null => String::new(),
+        Value::Bool(true) => "True".to_owned(),
+        Value::Bool(false) => "False".to_owned(),
+        Value::String(text) => text.clone(),
+        Value::Number(number) => number.to_string(),
+        Value::Array(_) | Value::Object(_) => label.to_string(),
+    }
 }
 
 fn failure_outcome(
-    mut events: Vec<McpEvent>,
+    mut events: Vec<StreamEvent>,
     item_id: &str,
     error: &McpEventError,
 ) -> ListToolsOutcome {
@@ -153,7 +156,7 @@ pub fn create_mcp_list_tools_events(
         Ok(formatted) => {
             let server_label = servers
                 .first()
-                .and_then(|server| server.server_label.clone())
+                .map(|server| label_text(&server.server_label))
                 .unwrap_or_default();
             push_done_item(&mut events, base_item_id, server_label, formatted);
             let message = format!("Created {} MCP discovery events", events.len());

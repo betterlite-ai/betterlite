@@ -8,7 +8,11 @@ from unittest.mock import patch
 
 from litellm._logging import verbose_logger
 from litellm.responses.mcp import mcp_streaming_iterator as streaming
-from litellm.types.llms.openai import ResponsesAPIResponse, ResponsesAPIStreamingResponse
+from litellm.types.llms.openai import (
+    OutputTextDeltaEvent,
+    ResponsesAPIResponse,
+    ResponsesAPIStreamingResponse,
+)
 from pydantic import BaseModel
 
 if TYPE_CHECKING:
@@ -58,7 +62,8 @@ def _sample_event(ids: list[str]) -> BaseModel:
 
 
 def _set_event_field(value: dict[str, Json]) -> Json:
-    event = _sample_event([])
+    supplied = cast("dict[str, Json] | None", value.get("event"))
+    event = _sample_event([]) if supplied is None else OutputTextDeltaEvent.model_validate(supplied)
     streaming._set_event_field(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
         cast("ResponsesAPIStreamingResponse", event), cast("str", value["field"]), value["value"]
     )

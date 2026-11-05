@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use betterlite_core::api::responses_mcp_events::call::{McpCallRequest, create_mcp_call_events};
 use betterlite_core::api::responses_mcp_events::error::McpEventError;
-use betterlite_core::api::responses_mcp_events::event::{McpEvent, set_event_field};
+use betterlite_core::api::responses_mcp_events::event::{EventField, StreamEvent};
 use betterlite_core::api::responses_mcp_events::function_call::function_call_id;
 use betterlite_core::api::responses_mcp_events::list_tools::{
     DiagnosticLevel, DiscoveredTool, ServerEntry, ToolAttribute, create_mcp_list_tools_events,
@@ -20,6 +20,8 @@ pub(crate) enum Input {
     SetEventField {
         field: String,
         value: Value,
+        #[serde(default)]
+        event: Option<BTreeMap<String, Value>>,
     },
     ListTools {
         servers: Vec<ServerEntry>,
@@ -36,11 +38,10 @@ pub(crate) enum Input {
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct ToolInput {
-    name: Option<String>,
-    description: Option<String>,
-    input_schema: Option<Value>,
     #[serde(default)]
     raises: BTreeMap<String, String>,
+    #[serde(flatten)]
+    attributes: BTreeMap<String, Value>,
 }
 
 pub(crate) struct Op;
@@ -59,21 +60,11 @@ impl crate::helpers::Helper for Op {
                     response.output.iter().map(function_call_id).collect();
                 Ok(json!(identifiers))
             }
-            Input::SetEventField { field, value } => {
-                let sample = McpCallRequest {
-                    tool_name: "w".to_owned(),
-                    arguments: "{}".to_owned(),
-                    result: None,
-                    base_item_id: Some("mcp_x".to_owned()),
-                    sequence_start: 1,
-                    output_index: 1,
-                };
-                let mut events = call_events(&sample, Vec::new())?;
-                let mut event = events.remove(0);
-                set_event_field(&mut event, field, value.clone())
-                    .map_err(|error| helper_error(&error.to_string()))?;
-                Ok(json!(event))
-            }
+            Input::SetEventField {
+                field,
+                value,
+                event,
+            } => assign_event_field(field, value, event.as_ref()),
             Input::ListTools {
                 servers,
                 base_item_id,
@@ -85,6 +76,35 @@ impl crate::helpers::Helper for Op {
             }
         }
     }
+}
+
+fn assign_event_field(
+    field: &str,
+    value: &Value,
+    event: Option<&BTreeMap<String, Value>>,
+) -> crate::helpers::HelperResult {
+    let mut target = if let Some(fields) = event {
+        StreamEvent {
+            fields: fields
+                .iter()
+                .map(|(name, content)| (name.clone(), EventField::Json(content.clone())))
+                .collect(),
+        }
+    } else {
+        let sample = McpCallRequest {
+            tool_name: "w".to_owned(),
+            arguments: "{}".to_owned(),
+            result: None,
+            base_item_id: Some("mcp_x".to_owned()),
+            sequence_start: 1,
+            output_index: 1,
+        };
+        call_events(&sample, Vec::new())?.remove(0)
+    };
+    target
+        .fields
+        .insert(field.to_owned(), EventField::Json(value.clone()));
+    Ok(json!(target))
 }
 
 fn list_tools_projection(
@@ -112,7 +132,7 @@ fn list_tools_projection(
 fn call_events(
     request: &McpCallRequest,
     ids: Vec<String>,
-) -> Result<Vec<McpEvent>, Box<crate::helpers::HelperError>> {
+) -> Result<Vec<StreamEvent>, Box<crate::helpers::HelperError>> {
     let mut remaining = ids.into_iter();
     create_mcp_call_events(request, || remaining.next().unwrap_or_default())
         .map_err(|error: McpEventError| helper_error(&error.to_string()))
@@ -120,21 +140,26 @@ fn call_events(
 
 fn discovered_tool(tool: &ToolInput) -> DiscoveredTool {
     DiscoveredTool {
-        name: attribute(tool, "name", tool.name.clone()),
-        description: attribute(tool, "description", tool.description.clone()),
-        input_schema: attribute(tool, "input_schema", tool.input_schema.clone()),
+        name: attribute(tool, "name", |value| value.as_str().map(str::to_owned)),
+        description: attribute(tool, "description", |value| {
+            value.as_str().map(str::to_owned)
+        }),
+        input_schema: attribute(tool, "input_schema", Value::clone),
     }
 }
 
-fn attribute<Content>(
-    tool: &ToolInput,
-    field: &str,
-    value: Option<Content>,
-) -> ToolAttribute<Content> {
+fn attribute<Content, Read>(tool: &ToolInput, field: &str, read: Read) -> ToolAttribute<Content>
+where
+    Read: Fn(&Value) -> Content,
+{
     if let Some(message) = tool.raises.get(field) {
         return ToolAttribute::Raises(message.clone());
     }
-    value.map_or(ToolAttribute::Absent, ToolAttribute::Value)
+    tool.attributes
+        .get(field)
+        .map_or(ToolAttribute::Absent, |value| {
+            ToolAttribute::Value(read(value))
+        })
 }
 
 fn helper_error(message: &str) -> Box<crate::helpers::HelperError> {

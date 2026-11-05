@@ -3,28 +3,34 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use super::error::McpEventError;
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum McpEventKind {
-    #[serde(rename = "response.mcp_list_tools.in_progress")]
     ListToolsInProgress,
-    #[serde(rename = "response.mcp_list_tools.completed")]
     ListToolsCompleted,
-    #[serde(rename = "response.mcp_list_tools.failed")]
     ListToolsFailed,
-    #[serde(rename = "response.mcp_call.in_progress")]
     CallInProgress,
-    #[serde(rename = "response.mcp_call_arguments.delta")]
     CallArgumentsDelta,
-    #[serde(rename = "response.mcp_call_arguments.done")]
     CallArgumentsDone,
-    #[serde(rename = "response.mcp_call.completed")]
     CallCompleted,
-    #[serde(rename = "response.mcp_call.failed")]
     CallFailed,
-    #[serde(rename = "response.output_item.done")]
     OutputItemDone,
+}
+
+impl McpEventKind {
+    #[must_use]
+    pub const fn wire_name(self) -> &'static str {
+        match self {
+            Self::ListToolsInProgress => "response.mcp_list_tools.in_progress",
+            Self::ListToolsCompleted => "response.mcp_list_tools.completed",
+            Self::ListToolsFailed => "response.mcp_list_tools.failed",
+            Self::CallInProgress => "response.mcp_call.in_progress",
+            Self::CallArgumentsDelta => "response.mcp_call_arguments.delta",
+            Self::CallArgumentsDone => "response.mcp_call_arguments.done",
+            Self::CallCompleted => "response.mcp_call.completed",
+            Self::CallFailed => "response.mcp_call.failed",
+            Self::OutputItemDone => "response.output_item.done",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -34,8 +40,8 @@ pub struct ToolAnnotations {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ListedTool {
-    pub name: String,
-    pub description: String,
+    pub name: Option<String>,
+    pub description: Option<String>,
     pub annotations: ToolAnnotations,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub input_schema: Option<Value>,
@@ -63,56 +69,49 @@ pub enum EventItem {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-pub struct McpEvent {
-    #[serde(rename = "type")]
-    pub kind: McpEventKind,
-    pub sequence_number: i64,
-    pub output_index: i64,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub item_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub delta: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub arguments: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub item: Option<EventItem>,
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, Value>,
+#[serde(untagged)]
+pub enum EventField {
+    Item(EventItem),
+    Json(Value),
 }
 
-pub fn set_event_field(
-    event: &mut McpEvent,
-    name: &str,
-    input: Value,
-) -> Result<(), McpEventError> {
-    let wrong_type = |expected| McpEventError::FieldType {
-        field: name.to_owned(),
-        expected,
-    };
-    match (name, input) {
-        ("type", kind) => {
-            event.kind = serde_json::from_value(kind)
-                .map_err(|source| McpEventError::EventType { source })?;
-        }
-        ("sequence_number", number) => {
-            event.sequence_number = number.as_i64().ok_or_else(|| wrong_type("an integer"))?;
-        }
-        ("output_index", number) => {
-            event.output_index = number.as_i64().ok_or_else(|| wrong_type("an integer"))?;
-        }
-        ("item_id", Value::String(text)) => event.item_id = Some(text),
-        ("delta", Value::String(text)) => event.delta = Some(text),
-        ("arguments", Value::String(text)) => event.arguments = Some(text),
-        ("item_id" | "delta" | "arguments", _) => return Err(wrong_type("a string")),
-        ("item", item) => {
-            event.item = Some(
-                serde_json::from_value(item)
-                    .map_err(|source| McpEventError::ItemShape { source })?,
-            );
-        }
-        (_, other) => {
-            event.extra.insert(name.to_owned(), other);
+impl From<&str> for EventField {
+    fn from(text: &str) -> Self {
+        Self::Json(Value::String(text.to_owned()))
+    }
+}
+
+impl From<i64> for EventField {
+    fn from(number: i64) -> Self {
+        Self::Json(Value::from(number))
+    }
+}
+
+impl From<EventItem> for EventField {
+    fn from(item: EventItem) -> Self {
+        Self::Item(item)
+    }
+}
+
+// LiteLLM events allow extra fields, so setattr stores any value under any name, as an insert here does
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[serde(transparent)]
+pub struct StreamEvent {
+    pub fields: BTreeMap<String, EventField>,
+}
+
+impl StreamEvent {
+    #[must_use]
+    pub fn new(kind: McpEventKind, sequence_number: i64, output_index: i64) -> Self {
+        Self {
+            fields: BTreeMap::from([
+                ("type".to_owned(), EventField::from(kind.wire_name())),
+                (
+                    "sequence_number".to_owned(),
+                    EventField::from(sequence_number),
+                ),
+                ("output_index".to_owned(), EventField::from(output_index)),
+            ]),
         }
     }
-    Ok(())
 }
