@@ -1,0 +1,5 @@
+kind: helper
+name: pydantic-stream-user-without-parts
+call: {b4805: {operation: stream, response: {result: {history: [{role: user, messageId: q1}, {role: agent, messageId: a1, parts: [{kind: text, text: answer}]}]}}}}
+env: {}
+compare: {ignore: []}

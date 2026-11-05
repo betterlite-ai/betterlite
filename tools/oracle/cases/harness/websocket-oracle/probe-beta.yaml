@@ -1,0 +1,26 @@
+kind: websocket
+name: probe-beta
+path: /v1/realtime
+headers: {}
+requested_subprotocols: []
+expected_http_status: 101
+negotiated_subprotocol: null
+service: realtime_probe
+input:
+  model: realtime-a
+  api_key: sk-test
+  api_base: https://api.openai.com/
+  query_params: null
+  openai_beta_realtime: true
+frames:
+- direction: provider_to_client
+  action: expect
+  text: 'wss://api.openai.com/v1/realtime?model=realtime-a'
+- direction: provider_to_client
+  action: expect
+  text: '[["model","realtime-a"]]'
+- direction: provider_to_client
+  action: expect
+  text: '{"Authorization":"Bearer sk-test","OpenAI-Beta":"realtime=v1"}'
+execution_seconds: 10
+driver: service

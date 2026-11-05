@@ -19,12 +19,14 @@ betterlite-ocr = { path = "../betterlite-ocr" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-redact = { path = "../betterlite-redact" }
 betterlite-roi = { path = "../betterlite-roi" }
+betterlite-semantic = { path = "../betterlite-semantic" }
 caseless = "0.2.2"
 chrono = { workspace = true }
 email_address = "0.2.9"
 encoding_rs = "0.8.42"
 form_urlencoded = "1.2.2"
 futures-util = { version = "0.3.34", default-features = false, features = ["alloc", "async-await"] }
+hex.workspace = true
 hyper-util = { workspace = true, features = ["server-auto", "tokio", "service"] }
 indexmap = { version = "2.14.2", features = ["serde"] }
 multipart-rs = "0.2.3"
@@ -49,6 +51,7 @@ url = "2.5.8"
 uuid.workspace = true
 
 [dev-dependencies]
+async-trait = "0.1.92"
 betterlite-postgres-fixture = { path = "../../tools/postgres-fixture" }
 clap = { version = "4.6.7", features = ["derive", "env"] }
 deadpool-postgres.workspace = true

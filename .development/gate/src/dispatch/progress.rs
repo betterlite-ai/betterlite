@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::fs;
 use std::io::ErrorKind;
 use std::path::Path;
@@ -16,6 +17,17 @@ pub(crate) enum NextRun {
     #[default]
     Fresh,
     Fix,
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum Red {
+    Check(String),
+    Report,
+    Edits,
+    Unfinished,
+    Timeout,
+    Silent,
 }
 
 #[derive(Serialize, Deserialize, Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -52,6 +64,8 @@ pub(crate) struct Progress {
     pub(crate) number: u32,
     pub(crate) used: u32,
     pub(crate) rung: usize,
+    // only read to fill starts in a file saved before they existed
+    #[serde(default, skip_serializing)]
     pub(crate) rung_used: u32,
     pub(crate) limited: bool,
     pub(crate) review_rounds: u32,
@@ -69,6 +83,10 @@ pub(crate) struct Progress {
     pub(crate) reviewer: Option<ReviewerPin>,
     #[serde(default)]
     pub(crate) session: Option<WorkerSession>,
+    #[serde(default)]
+    pub(crate) starts: Vec<u32>,
+    #[serde(default)]
+    pub(crate) red: Vec<Red>,
 }
 
 impl Progress {
@@ -105,19 +123,53 @@ impl Progress {
                 granted: 0,
                 reviewer: None,
                 session: None,
+                starts: Vec::new(),
+                red: Vec::new(),
             }),
             Err(source) => Err(GateError::Read { path, source }),
         }
     }
 
+    pub(crate) fn fit(&mut self, ladder: &[Rung]) {
+        // a file saved before starts existed has used up every rung below its own, granted starts included
+        if self.starts.is_empty() {
+            let last = ladder.len().saturating_sub(1);
+            self.starts = ladder
+                .iter()
+                .enumerate()
+                .map(|(index, rung)| match index.cmp(&self.rung) {
+                    Ordering::Less if index == last => rung.attempts.saturating_add(self.granted),
+                    Ordering::Less => rung.attempts,
+                    Ordering::Equal => self.rung_used,
+                    Ordering::Greater => 0,
+                })
+                .collect();
+        }
+        self.starts.resize(ladder.len(), 0);
+    }
+
+    pub(crate) fn open(&self, ladder: &[Rung], index: usize) -> bool {
+        // granted starts go to the last rung
+        if index.saturating_add(1) == ladder.len() {
+            return self.open_granted(ladder, index);
+        }
+        let started = self.starts.get(index).copied().unwrap_or(0);
+        ladder
+            .get(index)
+            .is_some_and(|rung| started < rung.attempts)
+    }
+
+    pub(crate) fn open_granted(&self, ladder: &[Rung], index: usize) -> bool {
+        let started = self.starts.get(index).copied().unwrap_or(0);
+        ladder
+            .get(index)
+            .is_some_and(|rung| started < rung.attempts.saturating_add(self.granted))
+    }
+
     pub(crate) const fn grant(&mut self, ladder: &[Rung], runs: u32) {
-        // a used-up ladder goes back to its last rung with its attempts and earlier grants spent, so only the new runs happen
-        if let Some(last) = ladder.last()
-            && runs > 0
-            && self.rung >= ladder.len()
-        {
+        // granted starts go to the last rung, so a used-up ladder goes back to it
+        if runs > 0 && self.rung >= ladder.len() {
             self.rung = ladder.len().saturating_sub(1);
-            self.rung_used = last.attempts.saturating_add(self.granted);
         }
         self.granted = self.granted.saturating_add(runs);
     }

@@ -11,9 +11,7 @@ description: 'Add classifier_type llm_v2 to B331''s classifier transport and B33
   tolerance is for diagnostic scores only, never a different selection. Configuration boundary keys introduced
   or consumed here: llm_v2_config. Pinned declaration defaults: llm_v2_config=None. Resolve env values
   once in betterlite-config, never in router code. Implement the owned native service in crates/betterlite-router/src/two_solver_classifier.rs.
-  Add ProbeOperation::TwoSolverClassifier in tools/oracle/src/router_probes/mod.rs and the corresponding B353 entry in
-  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
-  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  B301 registers ProbeOperation::TwoSolverClassifier and its Python entry as stubs, so fill only tools/oracle/src/router_probes/two_solver_classifier.rs and tools/oracle/litellm/probes/two_solver_classifier.py and leave mod.rs and registry.py as they are; the adapters only call production services. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
   fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
   of copying their algorithms. Function coverage in litellm/router_strategy/complexity_router/fuse_presets.py:
@@ -45,9 +43,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/two_solver_classifier.rs
   - tools/oracle/src/router_probes/two_solver_classifier/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/two_solver_classifier.py
   - tools/oracle/cases/routing/two-solver-classifier/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/two-solver-classifier-*
