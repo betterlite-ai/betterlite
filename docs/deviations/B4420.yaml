@@ -1,0 +1,8 @@
+task: B4420
+deviations:
+  - what: The Google Secret Manager reader does not require an Enterprise license.
+    why: betterlite has no premium-user gate, so the check would always fail or always pass for no reason.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/google_secret_manager.py#L26-L31
+  - what: 'A 200 response with `"payload": null` is treated as missing payload data and the absence is cached.'
+    why: LiteLLM raises an AttributeError on `None.get` and caches nothing, which no working setup can rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/google_secret_manager.py#L90-L94

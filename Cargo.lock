@@ -1781,6 +1781,7 @@ dependencies = [
  "betterlite-redact",
  "betterlite-redis",
  "betterlite-router",
+ "betterlite-secret-managers",
  "betterlite-secrets",
  "betterlite-server",
  "betterlite-streaming",
@@ -2080,6 +2081,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
