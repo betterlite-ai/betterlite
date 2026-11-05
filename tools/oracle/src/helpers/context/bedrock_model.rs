@@ -1,9 +1,9 @@
-use std::cell::Cell;
-use std::sync::Arc;
+use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
 use betterlite_context::bedrock_model::model_info::{
-    LazyBinding, LazyFallibleCache, local_model_cost_map,
+    LOCAL_MODEL_COST_MAP, LazyBinding, cached_catalog,
 };
 use betterlite_context::bedrock_model::regions::{
     AmazonBedrockGlobalConfig, CROSS_REGION_PREFIXES,
@@ -13,7 +13,7 @@ use betterlite_context::bedrock_model::{
     extract_model_from_arn, get_bedrock_base_model, split_bedrock_region_path,
     strip_bedrock_routing_prefix, strip_throughput_suffix,
 };
-use betterlite_models::catalog::ModelCatalog;
+use betterlite_models::catalog::{BundledCatalog, CatalogError, ModelCatalog};
 use serde::Deserialize;
 use serde_json::{Map, json};
 
@@ -50,6 +50,12 @@ fn insert_model_results(output: &mut Map<String, serde_json::Value>, model: &str
 
 // Call counts prove caching; a `fn() -> F` binder can't capture a counter, so it needs a static one.
 static BINDER_CALLS: AtomicUsize = AtomicUsize::new(0);
+static FAILURE_LOAD_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+fn failing_asset() -> Result<Vec<u8>, CatalogError> {
+    FAILURE_LOAD_CALLS.fetch_add(1, Ordering::SeqCst);
+    Err(CatalogError::Asset(io::Error::other("forced")))
+}
 
 fn lazy_catalog_binding_facts() -> serde_json::Value {
     let binder: fn() -> usize = || {
@@ -65,22 +71,23 @@ fn lazy_catalog_binding_facts() -> serde_json::Value {
         .saturating_sub(calls_before)
         == 1;
 
-    let first = local_model_cost_map();
-    let second = local_model_cost_map();
+    let first = cached_catalog(&LOCAL_MODEL_COST_MAP, BundledCatalog::default().asset);
+    let second = cached_catalog(&LOCAL_MODEL_COST_MAP, BundledCatalog::default().asset);
     let cost_map_loads_without_net = match (&first, &second) {
         (Ok(loaded), Ok(cached)) => !loaded.entries.is_empty() && Arc::ptr_eq(loaded, cached),
         _ => false,
     };
 
-    let failure_calls = Cell::new(0_usize);
-    let mut failing = LazyFallibleCache::from(|| {
-        failure_calls.set(failure_calls.get().saturating_add(1));
-        Err::<Arc<ModelCatalog>, &'static str>("forced")
-    });
-    let first_failure = failing.get();
-    let second_failure = failing.get();
-    let cost_map_failure_uncached =
-        first_failure.is_err() && second_failure.is_err() && failure_calls.get() == 2;
+    let failure_cache: Mutex<Option<Arc<ModelCatalog>>> = Mutex::new(None);
+    let failure_calls_before = FAILURE_LOAD_CALLS.load(Ordering::SeqCst);
+    let first_failure = cached_catalog(&failure_cache, failing_asset);
+    let second_failure = cached_catalog(&failure_cache, failing_asset);
+    let cost_map_failure_uncached = first_failure.is_err()
+        && second_failure.is_err()
+        && FAILURE_LOAD_CALLS
+            .load(Ordering::SeqCst)
+            .saturating_sub(failure_calls_before)
+            == 2;
 
     json!({
         "get_model_info_is_cached": get_model_info_is_cached,

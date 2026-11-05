@@ -1,11 +1,13 @@
 #![cfg(test)]
 
-use std::sync::Arc;
+use std::io;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
+use betterlite_models::catalog::{BundledCatalog, CatalogError, ModelCatalog};
 use rstest::rstest;
 
-use super::model_info::{LazyBinding, LazyFallibleCache, local_model_cost_map};
+use super::model_info::{LOCAL_MODEL_COST_MAP, LazyBinding, cached_catalog};
 use super::regions::{AmazonBedrockGlobalConfig, CROSS_REGION_PREFIXES};
 use super::runtime_arn::encode_runtime_modelid_arn;
 use super::{
@@ -167,8 +169,10 @@ fn lazy_binding_is_cached() {
 }
 
 fn cost_map_success_is_cached() {
-    let loaded = local_model_cost_map().expect("the packaged map parses");
-    let cached = local_model_cost_map().expect("the cached map parses");
+    let loaded = cached_catalog(&LOCAL_MODEL_COST_MAP, BundledCatalog::default().asset)
+        .expect("the packaged map parses");
+    let cached = cached_catalog(&LOCAL_MODEL_COST_MAP, BundledCatalog::default().asset)
+        .expect("the cached map parses");
     assert_eq!(
         loaded.entries.len(),
         4458,
@@ -177,17 +181,24 @@ fn cost_map_success_is_cached() {
     assert!(Arc::ptr_eq(&loaded, &cached), "a successful load is cached");
 }
 
+fn failing_asset() -> Result<Vec<u8>, CatalogError> {
+    FAILING_LOAD_CALLS.fetch_add(1, Ordering::SeqCst);
+    Err(CatalogError::Asset(io::Error::other("forced")))
+}
+
 fn cost_map_failure_is_never_cached() {
-    let mut failing = LazyFallibleCache::from(|| {
-        FAILING_LOAD_CALLS.fetch_add(1, Ordering::SeqCst);
-        Err::<Vec<&'static str>, &'static str>("forced")
-    });
-    assert_eq!(failing.get(), Err("forced"));
-    assert_eq!(failing.get(), Err("forced"));
+    let cache: Mutex<Option<Arc<ModelCatalog>>> = Mutex::new(None);
+    let first = cached_catalog(&cache, failing_asset);
+    let second = cached_catalog(&cache, failing_asset);
+    assert!(first.is_err(), "a load error is returned, not swallowed");
+    assert!(
+        second.is_err(),
+        "the second call also sees the error, not a cached fallback"
+    );
     assert_eq!(
         FAILING_LOAD_CALLS.load(Ordering::SeqCst),
         2,
-        "an error is never cached into a fabricated fallback value, so the loader runs again"
+        "an error is never cached, so the loader runs again on the production caching path"
     );
 }
 

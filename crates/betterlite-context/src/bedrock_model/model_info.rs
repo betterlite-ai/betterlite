@@ -1,21 +1,25 @@
 use std::sync::{Arc, Mutex, PoisonError};
 
-use betterlite_models::catalog::{BundledCatalog, CatalogError, ModelCatalog, UnknownFields};
+use betterlite_models::catalog::{CatalogError, ModelCatalog, UnknownFields};
 
-static LOCAL_MODEL_COST_MAP: Mutex<Option<Arc<ModelCatalog>>> = Mutex::new(None);
+pub static LOCAL_MODEL_COST_MAP: Mutex<Option<Arc<ModelCatalog>>> = Mutex::new(None);
 
 // matches _get_local_model_cost_map's lru_cache(maxsize=1): a success is cached forever, a failure is retried.
-pub fn local_model_cost_map() -> Result<Arc<ModelCatalog>, CatalogError> {
-    let mut cached = LOCAL_MODEL_COST_MAP
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner);
-    if let Some(catalog) = cached.as_ref() {
+pub fn cached_catalog<F>(
+    cache: &Mutex<Option<Arc<ModelCatalog>>>,
+    asset: F,
+) -> Result<Arc<ModelCatalog>, CatalogError>
+where
+    F: FnOnce() -> Result<Vec<u8>, CatalogError>,
+{
+    let mut slot = cache.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(catalog) = slot.as_ref() {
         return Ok(Arc::clone(catalog));
     }
-    let bytes = (BundledCatalog::default().asset)()?;
+    let bytes = asset()?;
     let catalog = Arc::new(ModelCatalog::parse(&bytes, UnknownFields::Reject)?);
-    *cached = Some(Arc::clone(&catalog));
-    drop(cached);
+    *slot = Some(Arc::clone(&catalog));
+    drop(slot);
     Ok(catalog)
 }
 
@@ -42,31 +46,5 @@ impl<F: Copy> LazyBinding<F> {
         let value = (self.binder)();
         self.cached = Some(value);
         value
-    }
-}
-
-pub struct LazyFallibleCache<T, F> {
-    loader: F,
-    cached: Option<T>,
-}
-
-impl<T, F> From<F> for LazyFallibleCache<T, F> {
-    fn from(loader: F) -> Self {
-        Self {
-            loader,
-            cached: None,
-        }
-    }
-}
-
-impl<T: Clone, E, F: FnMut() -> Result<T, E>> LazyFallibleCache<T, F> {
-    // matches _get_local_model_cost_map's lru_cache: a success is cached forever, a failure is retried, never faked
-    pub fn get(&mut self) -> Result<T, E> {
-        if let Some(value) = &self.cached {
-            return Ok(value.clone());
-        }
-        let value = (self.loader)()?;
-        self.cached = Some(value.clone());
-        Ok(value)
     }
 }
