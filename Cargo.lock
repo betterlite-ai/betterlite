@@ -329,6 +329,32 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
+name = "aws-config"
+version = "1.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b8d7b388a9fc3a6db15a5ec778c38b354eff1364882c94d08e0252f7a47dcaa4"
+dependencies = [
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-sdk-sts",
+ "aws-smithy-async",
+ "aws-smithy-http",
+ "aws-smithy-json",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-schema",
+ "aws-smithy-types",
+ "aws-types",
+ "bytes",
+ "fastrand",
+ "http 1.5.0",
+ "time",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
 name = "aws-credential-types"
 version = "1.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -388,8 +414,35 @@ dependencies = [
  "http-body 1.1.0",
  "percent-encoding",
  "pin-project-lite",
+ "regex-lite",
  "tracing",
  "uuid",
+]
+
+[[package]]
+name = "aws-sdk-kms"
+version = "1.120.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d6b0fe38fee2ba5b6cd24d32d08365b314ae1adea123649e061a7eb6300b6f5b"
+dependencies = [
+ "arc-swap",
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-smithy-async",
+ "aws-smithy-http",
+ "aws-smithy-json",
+ "aws-smithy-observability",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-schema",
+ "aws-smithy-types",
+ "aws-types",
+ "bytes",
+ "fastrand",
+ "http 0.2.12",
+ "http 1.5.0",
+ "regex-lite",
+ "tracing",
 ]
 
 [[package]]
@@ -427,6 +480,33 @@ dependencies = [
  "sha2 0.11.1",
  "tracing",
  "url",
+]
+
+[[package]]
+name = "aws-sdk-sts"
+version = "1.116.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "035c7392e751d20bf1060d625d023587eb14099646110a9cff7c697bfe4b253a"
+dependencies = [
+ "arc-swap",
+ "aws-credential-types",
+ "aws-runtime",
+ "aws-smithy-async",
+ "aws-smithy-http",
+ "aws-smithy-json",
+ "aws-smithy-observability",
+ "aws-smithy-query",
+ "aws-smithy-runtime",
+ "aws-smithy-runtime-api",
+ "aws-smithy-schema",
+ "aws-smithy-types",
+ "aws-smithy-xml",
+ "aws-types",
+ "fastrand",
+ "http 0.2.12",
+ "http 1.5.0",
+ "regex-lite",
+ "tracing",
 ]
 
 [[package]]
@@ -558,6 +638,19 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8e86338c869539a581bf161247762a6e87f92c5c075060057b5ed6d06632ed0c"
 dependencies = [
  "aws-smithy-runtime-api",
+]
+
+[[package]]
+name = "aws-smithy-query"
+version = "0.62.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1d1d71f6562be974caa85442ecd90194c40fdb5df045f182a6c2e872ce95056"
+dependencies = [
+ "aws-smithy-runtime-api",
+ "aws-smithy-schema",
+ "aws-smithy-types",
+ "aws-smithy-xml",
+ "urlencoding",
 ]
 
 [[package]]
@@ -865,10 +958,13 @@ name = "betterlite-a2a"
 version = "0.1.0"
 dependencies = [
  "betterlite-core",
+ "chrono",
+ "futures-core",
  "rstest",
  "serde",
  "serde_json",
  "serde_with",
+ "uuid",
 ]
 
 [[package]]
@@ -948,10 +1044,20 @@ dependencies = [
 name = "betterlite-bedrock"
 version = "0.1.0"
 dependencies = [
+ "aws-config",
+ "aws-credential-types",
+ "aws-smithy-async",
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
+ "aws-types",
  "betterlite-config",
+ "betterlite-context",
+ "betterlite-env",
  "betterlite-openai",
+ "betterlite-redact",
  "encoding_rs",
  "futures-util",
+ "hex",
  "indexmap 2.14.2",
  "mime",
  "percent-encoding",
@@ -959,7 +1065,9 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "sha2 0.11.1",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]
@@ -1443,6 +1551,8 @@ dependencies = [
  "betterlite-config",
  "betterlite-env",
  "betterlite-models",
+ "betterlite-openai",
+ "betterlite-privacy-openai",
  "betterlite-prometheus",
  "betterlite-redact",
  "chrono",
@@ -1621,9 +1731,13 @@ name = "betterlite-oracle"
 version = "0.1.0"
 dependencies = [
  "aws-credential-types",
+ "aws-smithy-async",
+ "aws-smithy-runtime-api",
+ "aws-types",
  "axum",
  "base64 0.23.1",
  "betterlite",
+ "betterlite-a2a",
  "betterlite-anthropic",
  "betterlite-auth",
  "betterlite-azure",
@@ -1746,6 +1860,20 @@ dependencies = [
  "tokio-postgres-rustls-improved",
  "url",
  "uuid",
+]
+
+[[package]]
+name = "betterlite-privacy-openai"
+version = "0.1.0"
+dependencies = [
+ "betterlite-logging",
+ "betterlite-openai",
+ "betterlite-redact",
+ "indexmap 2.14.2",
+ "rstest",
+ "serde",
+ "serde_json",
+ "thiserror",
 ]
 
 [[package]]
@@ -1925,7 +2053,12 @@ version = "0.1.0"
 name = "betterlite-secret-managers"
 version = "0.1.0"
 dependencies = [
+ "aws-sdk-kms",
+ "aws-smithy-http-client",
+ "axum",
+ "base64 0.23.1",
  "betterlite-env",
+ "regex",
  "rstest",
  "secrecy",
  "serde",
@@ -6937,6 +7070,12 @@ dependencies = [
  "serde",
  "serde_derive",
 ]
+
+[[package]]
+name = "urlencoding"
+version = "2.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "daf8dba3b7eb870caf1ddeed7bc9d2a049f3cfdfae7cb521b087cc33ae4c49da"
 
 [[package]]
 name = "utf8_iter"

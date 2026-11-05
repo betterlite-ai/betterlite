@@ -1,0 +1,6 @@
+kind: helper
+name: logging-privacy-blocked-gcs-bucket
+call:
+  logging_privacy: {"action": "metadata", "request": {"gcs_bucket_name": "attacker", "langsmith_project": "project"}}
+env: {}
+compare: {ignore: []}
