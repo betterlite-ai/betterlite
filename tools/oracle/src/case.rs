@@ -154,27 +154,32 @@ fn is_sdk_http(path: &Path, text: &str) -> Result<bool, OracleError> {
     Ok(probe.kind.as_deref() == Some("sdk_http"))
 }
 
-// sdk_http cases run through their own driver, so this list leaves them out
-pub(crate) fn load_cases(paths: &[PathBuf]) -> Result<Vec<LoadedCase>, OracleError> {
-    let mut cases = Vec::new();
+fn files_of_kind(paths: &[PathBuf], sdk_http: bool) -> Result<Vec<(PathBuf, String)>, OracleError> {
+    let mut selected = Vec::new();
     for (path, text) in read_case_files(paths)? {
-        if !is_sdk_http(&path, &text)? {
-            cases.push(parse_case(&path, &text)?);
+        if is_sdk_http(&path, &text)? == sdk_http {
+            selected.push((path, text));
         }
     }
-    Ok(cases)
+    Ok(selected)
+}
+
+// sdk_http cases run through their own driver, so this list leaves them out
+pub(crate) fn load_cases(paths: &[PathBuf]) -> Result<Vec<LoadedCase>, OracleError> {
+    files_of_kind(paths, false)?
+        .iter()
+        .map(|(path, text)| parse_case(path, text))
+        .collect()
 }
 
 pub(crate) fn load_sdk_http_cases(paths: &[PathBuf]) -> Result<Vec<SdkHttpCase>, OracleError> {
-    let mut cases = Vec::new();
-    for (path, text) in read_case_files(paths)? {
-        if is_sdk_http(&path, &text)? {
-            let case = decode_sdk_http_case(text.as_bytes(), &SdkHttpLimits::default())
-                .map_err(|source| OracleError::SdkHttpCase { path, source })?;
-            cases.push(case);
-        }
-    }
-    Ok(cases)
+    files_of_kind(paths, true)?
+        .into_iter()
+        .map(|(path, text)| {
+            decode_sdk_http_case(text.as_bytes(), &SdkHttpLimits::default())
+                .map_err(|source| OracleError::SdkHttpCase { path, source })
+        })
+        .collect()
 }
 
 pub(crate) fn parse_case(path: &Path, text: &str) -> Result<LoadedCase, OracleError> {

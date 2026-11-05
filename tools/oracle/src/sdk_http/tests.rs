@@ -185,11 +185,15 @@ impl Sleeping {
 impl Implementation for Sleeping {
     fn execute(&self, _call: &SdkHttpCall, api_base: &str, stop: &Stop<'_>) -> Execution {
         self.api_bases.lock().unwrap().push(api_base.to_owned());
-        let piped = child::run(Command::new("sleep").arg("30"), b"", 16, stop);
-        Execution {
-            result: piped.stdout.and_then(|_bytes| Err(SdkHttpError::Join)),
-            log: piped.stderr,
-        }
+        sleep_until_stopped(stop)
+    }
+}
+
+fn sleep_until_stopped(stop: &Stop<'_>) -> Execution {
+    let piped = child::run(Command::new("sleep").arg("30"), b"", 16, stop);
+    Execution {
+        result: piped.stdout.and_then(|_bytes| Err(SdkHttpError::Join)),
+        log: piped.stderr,
     }
 }
 
