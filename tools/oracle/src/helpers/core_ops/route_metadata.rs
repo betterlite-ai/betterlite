@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
@@ -41,7 +43,10 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn route_metadata_error<E: std::fmt::Display>(error: E) -> Box<crate::helpers::HelperError> {
+fn route_metadata_error<E>(error: E) -> Box<crate::helpers::HelperError>
+where
+    E: Display,
+{
     Box::new(crate::helpers::HelperError {
         class: "ValueError".to_owned(),
         status: None,

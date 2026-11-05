@@ -1,8 +1,12 @@
 #![cfg(test)]
+
 use super::{
     CallType, RouteMetadataError, get_call_types_for_route, get_routes_for_call_type, parse_route,
     route_catalog,
 };
+use std::fs;
+use std::path::Path;
+use std::str;
 
 #[rstest::rstest]
 #[case::catalog("catalog")]
@@ -111,11 +115,11 @@ fn call_route_metadata_route_metadata_tests_behavior(#[case] behavior: &str) {
 #[rstest::rstest]
 #[case::suffixed_multi_tail("suffixed-multi-tail")]
 fn replays_the_route_pattern_corpus(#[case] seed: &str) {
-    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("fuzz/corpus/route_pattern")
         .join(seed);
-    let bytes = std::fs::read(path).unwrap();
-    let route = std::str::from_utf8(&bytes).unwrap();
+    let bytes = fs::read(path).unwrap();
+    let route = str::from_utf8(&bytes).unwrap();
     drop(parse_route(route));
     drop(get_call_types_for_route(route));
 }
