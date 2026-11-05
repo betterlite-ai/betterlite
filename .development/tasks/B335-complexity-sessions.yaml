@@ -21,21 +21,14 @@ description: 'Add the complexity router session/user-turn lifecycle around B334 
   (L4148-L4153), ComplexityRouter._uses_deployment_pin (L4156-L4160), ComplexityRouter._with_session_deployment_affinity
   (L4162-L4167), ComplexityRouter.async_pre_routing_hook (L4169-L4425). Implement these behaviors through
   the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
-  instead of separate ports.'
+  instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B366 composes this service.'
 scope:
   paths:
   - crates/betterlite-router/src/complexity_sessions.rs
   - crates/betterlite-router/src/complexity_sessions/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/complexity_sessions.rs
   - crates/betterlite-server/src/routing/complexity_sessions/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/complexity_sessions.rs
   - tools/oracle/src/router_probes/complexity_sessions/**
   - tools/oracle/litellm/probes/complexity_sessions.py

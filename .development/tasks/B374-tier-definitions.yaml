@@ -22,21 +22,14 @@ description: 'Implement TierDefinition, TierModelEntry, TierLabels and NonReason
   (L2075-L2104), ComplexityRouterConfig.tier_label (L2156-L2158), ComplexityRouterConfig.labeled_tiers
   (L2160-L2162), ComplexityRouterConfig.tier_for_label (L2164-L2171). Implement these behaviors through
   the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
-  instead of separate ports.'
+  instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B329, B334, B375 and B386 call this service.'
 scope:
   paths:
   - crates/betterlite-router/src/tier_definitions.rs
   - crates/betterlite-router/src/tier_definitions/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/tier_definitions.rs
   - crates/betterlite-server/src/routing/tier_definitions/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/tier_definitions.rs
   - tools/oracle/src/router_probes/tier_definitions/**
   - tools/oracle/litellm/probes/tier_definitions.py

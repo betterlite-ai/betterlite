@@ -13,21 +13,14 @@ description: 'Translate B012 success/failure events into B304 counters and B014 
   (L8145-L8203), Router.deployment_callback_on_failure (L8242-L8341), Router.async_deployment_callback_on_failure
   (L8343-L8373), Router._update_usage (L8422-L8439), Router._track_deployment_metrics (L14622-L14633).
   Implement these behaviors through the typed Rust services above; synchronous facades and structural
-  accessors reuse the same primitive instead of separate ports.'
+  accessors reuse the same primitive instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B304 calls this service.'
 scope:
   paths:
   - crates/betterlite-router/src/router_observations.rs
   - crates/betterlite-router/src/router_observations/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/router_observations.rs
   - crates/betterlite-server/src/routing/router_observations/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/router_observations.rs
   - tools/oracle/src/router_probes/router_observations/**
   - tools/oracle/litellm/probes/router_observations.py

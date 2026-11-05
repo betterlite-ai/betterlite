@@ -20,21 +20,16 @@ description: 'Add the typed LAR-1 metadata parser and async deployment selector 
   the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
   instead of separate ports. Bound the lar1_meta outside-byte parser to 1048576 bytes before decoding;
   on excess use its typed invalid-input outcome (classifier/observation consumers keep their pinned warning/fallback
-  path).'
+  path).
+  B016 registers Strategy::Lar1 as a stub, so replace only that stub and its not-built test in crates/betterlite-router/src/strategy/lar1_routing.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.'
 scope:
   paths:
   - crates/betterlite-router/src/lar1_routing.rs
   - crates/betterlite-router/src/lar1_routing/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-router/src/strategy/lar1_routing.rs
+  - crates/betterlite-router/src/strategy/lar1_routing/**
   - crates/betterlite-server/src/routing/lar1_routing.rs
   - crates/betterlite-server/src/routing/lar1_routing/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/lar1_routing.rs
   - tools/oracle/src/router_probes/lar1_routing/**
   - tools/oracle/litellm/probes/lar1_routing.py

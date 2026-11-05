@@ -29,21 +29,16 @@ description: 'Implement B051 repository adapters for LiteLLM_AdaptiveRouterState
   of separate ports. If floating diagnostics differ, a case may use absolute_tolerance=0.000000000001
   only on its explicitly named score/probability pointer. Selection, tie order, counts, statuses, money
   and provider requests remain exact. Six-decimal wire signals are compared after the source rounding,
-  without widening tolerance.'
+  without widening tolerance.
+  B016 registers the AdaptivePersistence server state entry as a stub, so replace only that stub and its not-built test in crates/betterlite-server/src/state/adaptive_persistence.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.'
 scope:
   paths:
   - crates/betterlite-router/src/adaptive_persistence.rs
   - crates/betterlite-router/src/adaptive_persistence/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/state/adaptive_persistence.rs
+  - crates/betterlite-server/src/state/adaptive_persistence/**
   - crates/betterlite-server/src/routing/adaptive_persistence.rs
   - crates/betterlite-server/src/routing/adaptive_persistence/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/adaptive_persistence.rs
   - tools/oracle/src/router_probes/adaptive_persistence/**
   - tools/oracle/litellm/probes/adaptive_persistence.py
