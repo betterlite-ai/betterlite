@@ -77,7 +77,7 @@ impl Snapshot {
                 "external_id" => params.aws_external_id = Some(text),
                 "profile" => params.aws_profile_name = Some(text),
                 "web_identity_token" => {
-                    params.aws_web_identity_token = Some(SecretString::from(text))
+                    params.aws_web_identity_token = Some(SecretString::from(text));
                 }
                 "sts_endpoint" => params.aws_sts_endpoint = Some(text),
                 _ => params.aws_access_key_id = Some(SecretString::from(text)),
