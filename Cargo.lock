@@ -972,10 +972,18 @@ dependencies = [
  "betterlite-core",
  "chrono",
  "futures-core",
+ "hex",
+ "lru",
+ "num-traits",
  "rstest",
+ "secrecy",
  "serde",
  "serde_json",
  "serde_with",
+ "sha2 0.11.1",
+ "thiserror",
+ "tokio",
+ "url",
  "uuid",
 ]
 
