@@ -25,11 +25,9 @@ async fn batch_calls_batch_call_tests_behavior(#[case] blocked: u8) {
             &mut owners,
         )
         .unwrap();
-    assert!(
-        timeout(Duration::from_secs(1), &mut receiver)
-            .await
-            .is_err()
-    );
+    timeout(Duration::from_secs(1), &mut receiver)
+        .await
+        .unwrap_err();
     release.notify_one();
     let report = receiver.await.unwrap().unwrap();
     assert_eq!(first_ordered_model_result(report.results), Ok(Some(0)));
