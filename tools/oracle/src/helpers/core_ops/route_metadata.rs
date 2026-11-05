@@ -1,13 +1,13 @@
 use std::fmt::Display;
 
+use betterlite_core::routes::{CallType, RouteMetadataError};
+
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Input {
-    pub(crate) function: String,
-    #[serde(default)]
-    pub(crate) route: Option<String>,
-    #[serde(default)]
-    pub(crate) call_type: Option<String>,
+#[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
+pub(crate) enum Input {
+    FullTable,
+    GetCallTypes { route: String },
+    GetRoutes { call_type: CallType },
 }
 
 pub(crate) struct Op;
@@ -16,31 +16,28 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        match input.function.as_str() {
-            "full_table" => betterlite_core::routes::catalog::RouteCatalog::parse(
+        match input {
+            Input::FullTable => betterlite_core::routes::catalog::RouteCatalog::parse(
                 betterlite_core::routes::catalog::CATALOG,
             )
-            .and_then(|catalog| serde_json::to_value(catalog).map_err(Into::into))
+            .and_then(|catalog| serde_json::to_value(catalog).map_err(RouteMetadataError::Fixture))
             .map_err(route_metadata_error),
-            "get_call_types" => {
-                let route = input.route.as_deref().unwrap_or_default();
+            Input::GetCallTypes { route } => {
                 match betterlite_core::routes::get_call_types_for_route(route) {
-                    Ok(Some(types)) => serde_json::to_value(types).map_err(route_metadata_error),
-                    Ok(None) => Ok(serde_json::Value::Null),
+                    Ok(Some(types)) => serde_json::to_value(serde_json::json!({
+                        "call_types": types
+                    }))
+                    .map_err(RouteMetadataError::Fixture)
+                    .map_err(route_metadata_error),
+                    Ok(None) => Ok(serde_json::json!({"call_types": null})),
                     Err(error) => Err(route_metadata_error(error)),
                 }
             }
-            "get_routes" => {
-                let encoded = serde_json::to_value(input.call_type.as_deref().unwrap_or_default())
-                    .map_err(route_metadata_error)?;
-                let call_type = serde_json::from_value(encoded).map_err(route_metadata_error)?;
-                betterlite_core::routes::get_routes_for_call_type(call_type)
-                    .and_then(|routes| serde_json::to_value(routes).map_err(Into::into))
-                    .map_err(route_metadata_error)
-            }
-            _ => Err(route_metadata_error(std::io::Error::other(
-                "unknown function",
-            ))),
+            Input::GetRoutes { call_type } => serde_json::to_value(
+                betterlite_core::routes::get_routes_for_call_type(*call_type),
+            )
+            .map_err(RouteMetadataError::Fixture)
+            .map_err(route_metadata_error),
         }
     }
 }

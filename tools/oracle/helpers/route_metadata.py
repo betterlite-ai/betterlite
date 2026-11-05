@@ -39,8 +39,8 @@ def run(input_value: Input) -> object:
         route = input_value.get("route", "")
         result = get_call_types_for_route(route)
         if result is None:
-            return None
-        return [item.value for item in result]
+            return {"call_types": None}
+        return {"call_types": [item.value for item in result]}
     call_type_name = input_value.get("call_type", "")
     call_type = CallTypes(call_type_name)
     return cast(list[str], get_routes_for_call_type(call_type))
