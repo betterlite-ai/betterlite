@@ -15,7 +15,8 @@ description: >-
 
 scope:
   paths:
-    - crates/betterlite-db/**
+    - crates/betterlite-db/src/budget_cascade.rs
+    - crates/betterlite-db/src/budget_cascade/**
     - Cargo.toml
   lint_tables: true
 

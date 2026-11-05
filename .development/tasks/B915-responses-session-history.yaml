@@ -24,15 +24,11 @@ description: >-
   175 tests, 95 cases, 80 adapters, 55 fuzz/replay, 45 config/seeds and 25 wiring: 755 lines.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/responses_session_history.rs
   - crates/betterlite-core/src/api/responses_session_history/**
   - crates/betterlite-core/fuzz/Cargo.toml
   - crates/betterlite-core/fuzz/fuzz_targets/session_log_json.rs
   - crates/betterlite-core/fuzz/corpus/session_log_json/**
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/**
   - crates/betterlite-config/src/api/responses_session_history.rs
   - crates/betterlite-config/src/api/responses_session_history/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/responses-session-history-*

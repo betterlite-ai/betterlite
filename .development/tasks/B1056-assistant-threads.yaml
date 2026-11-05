@@ -15,8 +15,6 @@ description: >-
   150 tests, 85 adapters, 130 fixtures and 40 corpus/wiring, 600 total. B520 owns external response decoding.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/assistant_threads.rs
   - crates/betterlite-core/src/api/assistant_threads/**
   - tools/oracle/src/sdk_http.rs

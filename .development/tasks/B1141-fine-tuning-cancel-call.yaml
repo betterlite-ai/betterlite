@@ -15,16 +15,12 @@ description: >-
   total. Reuse B002/B171/B2401 decoders and B518 response records, without adding a parser.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/fine_tuning_cancel_call.rs
   - crates/betterlite-core/src/api/fine_tuning_cancel_call/**
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/api/fine_tuning_provider_config.rs
   - crates/betterlite-server/src/api/fine_tuning_provider_config/**
-  - crates/betterlite-config/src/api.rs
-  - crates/betterlite-config/src/api/**
   - crates/betterlite-config/src/api/fine_tuning_provider_config.rs
   - crates/betterlite-config/src/api/fine_tuning_provider_config/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/finetune-settings-*

@@ -108,27 +108,27 @@ checks:
       why: >-
         get_supported_event_hooks does not return [pre_call, post_call] or the lifecycle
         is wrong
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^text_moderation_lifecycle::/)' && grep -q "fn get_supported_event_hooks" crates/betterlite-guardrails/src/azure_text_moderation.rs && grep -A 5 "get_supported_event_hooks" crates/betterlite-guardrails/src/azure_text_moderation.rs | grep -q "pre_call.*post_call"
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_text_moderation::(.*::)?text_moderation_lifecycle::/)' && grep -q "fn get_supported_event_hooks" crates/betterlite-guardrails/src/azure_text_moderation.rs && grep -A 5 "get_supported_event_hooks" crates/betterlite-guardrails/src/azure_text_moderation.rs | grep -q "pre_call.*post_call"
     - id: text-mod-init-cases
       why: __init__ does not store severity thresholds and optional params correctly
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^text_moderation_initialization::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_text_moderation::(.*::)?text_moderation_initialization::/)'
     - id: text-mod-submission-cases
       why: async_make_request does not iterate chunks or check severity on each chunk
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^text_moderation_submission::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_text_moderation::(.*::)?text_moderation_submission::/)'
     - id: text-mod-threshold-cases
       why: >-
         check_severity_threshold does not implement correct evaluation order or truthiness
         distinction
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^text_moderation_thresholds::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_text_moderation::(.*::)?text_moderation_thresholds::/)'
     - id: text-mod-pre-call-cases
       why: async_pre_call_hook does not extract prompt or scan correctly
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^text_moderation_pre_call::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_text_moderation::(.*::)?text_moderation_pre_call::/)'
     - id: text-mod-post-call-cases
       why: async_post_call_success_hook does not extract response content or scan correctly
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^text_moderation_post_call::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_text_moderation::(.*::)?text_moderation_post_call::/)'
     - id: text-mod-streaming-cases
       why: async_post_call_streaming_hook does not emit error frame or returns wrong format
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^text_moderation_streaming::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_text_moderation::(.*::)?text_moderation_streaming::/)'
 
 oracle_cases: []
 

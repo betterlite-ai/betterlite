@@ -97,34 +97,34 @@ checks:
   commands:
     - id: cost-tier-cases
       why: Cost tier normalization fails or validation of paid tier missing price is absent
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_shield_cost_tier::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_prompt_shield::(.*::)?prompt_shield_cost_tier::/)'
     - id: secret-resolution-cases
       why: Environment variable resolution for 'os.environ/' credentials is missing or fails
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_shield_credential_resolution::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_prompt_shield::(.*::)?prompt_shield_credential_resolution::/)'
     - id: update-param-cases
       why: update_in_memory_litellm_params does not validate before mutation or allows invalid updates
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_shield_param_update::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_prompt_shield::(.*::)?prompt_shield_param_update::/)'
     - id: make-request-cases
       why: async_make_request does not chunk correctly, accumulate usage, or detect attacks properly
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_shield_make_request::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_prompt_shield::(.*::)?prompt_shield_make_request::/)'
     - id: billing-stash-cases
       why: Per-invocation billing counters are not isolated or do not survive context switches
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_shield_billing_stash::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_prompt_shield::(.*::)?prompt_shield_billing_stash::/)'
     - id: cost-calc-cases
       why: azure_prompt_shield_guardrail_cost returns wrong costs or does not handle missing prices
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_shield_cost_calculation::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_prompt_shield::(.*::)?prompt_shield_cost_calculation::/)'
     - id: process-override-cases
       why: _process_response or _process_error does not attach GuardrailTracingDetail or record billing correctly
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_shield_process_override::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_prompt_shield::(.*::)?prompt_shield_process_override::/)'
     - id: event-hook-cases
       why: Event hook support or guardrail application to pre-call and during-call events is missing
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_shield_event_hooks::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_prompt_shield::(.*::)?prompt_shield_event_hooks::/)'
     - id: config-model-cases
       why: get_config_model does not return AzurePromptShieldGuardrailConfigModel or ui_friendly_name returns wrong string
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_shield_config_model::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_prompt_shield::(.*::)?prompt_shield_config_model::/)'
     - id: warn-and-drop-cases
       why: async_pre_call_hook does not log warnings on missing messages or user prompt, or does not skip scanning appropriately
-      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_shield_warn_and_drop::/)'
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^azure_prompt_shield::(.*::)?prompt_shield_warn_and_drop::/)'
 oracle_cases: []
 deviations:
   - what: Azure Prompt Shield billing usage is tracked in a per-invocation ContextVar instead of request metadata, so concurrent guardrail tasks running in separate asyncio tasks with their own context copy see isolated counters.

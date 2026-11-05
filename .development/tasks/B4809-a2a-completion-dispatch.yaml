@@ -78,13 +78,13 @@ checks:
   commands:
     - id: bridge-handler-tests
       why: Completion bridge handler tests are missing or fail.
-      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^a2a_completion_dispatch($|::)/)'
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^(completion_bridge|langflow_config|provider_selector)::(.*::)?a2a_completion_dispatch($|::)/)'
     - id: provider-selector-tests
       why: Provider selector tests are missing or fail.
-      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^a2a_provider_selector($|::)/)'
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^(completion_bridge|langflow_config|provider_selector)::(.*::)?a2a_provider_selector($|::)/)'
     - id: langflow-config-tests
       why: LangFlow config tests are missing or fail.
-      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^a2a_langflow_config($|::)/)'
+      run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^(completion_bridge|langflow_config|provider_selector)::(.*::)?a2a_langflow_config($|::)/)'
 
 oracle_cases: []
 

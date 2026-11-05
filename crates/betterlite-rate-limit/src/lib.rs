@@ -5,6 +5,7 @@ pub mod dynamic_priority;
 pub mod identity_descriptors;
 pub mod post_call_settlement;
 pub mod project_admission;
+pub mod provider_attribution;
 pub mod reconciliation_operations;
 pub mod session_iteration_limits;
 pub mod settlement_and_rollback;

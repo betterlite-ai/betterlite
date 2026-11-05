@@ -4,6 +4,10 @@ version = "0.0.0"
 publish = false
 edition = "2024"
 metadata.cargo-fuzz = true
+license.workspace = true
+
+[lints]
+workspace = true
 
 [dependencies]
 betterlite-redis = { path = ".." }
@@ -16,5 +20,3 @@ path = "fuzz_targets/redis_settings.rs"
 test = false
 doc = false
 bench = false
-
-[workspace]

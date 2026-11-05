@@ -1,0 +1,9 @@
+general_settings:
+  key_management_system: custom
+  key_management_settings:
+    custom_secret_manager: package.Manager
+    access_mode: null
+    hosted_keys: []
+    store_virtual_keys: true
+    tags: {Environment: Prod}
+    unknown_future_option: {nested: [true, 1, null]}

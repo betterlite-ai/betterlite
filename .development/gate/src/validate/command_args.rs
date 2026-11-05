@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 use nextest_filtering::{ParsedExpr, errors::ParseSingleError};
 
 const AFTER_SEPARATOR: [&str; 5] = [
@@ -9,11 +11,28 @@ const AFTER_SEPARATOR: [&str; 5] = [
 ];
 const LIBTEST_ONLY: [&str; 4] = ["--exact", "--skip", "--ignored", "--include-ignored"];
 const FILTERSET_OPTIONS: [&str; 3] = ["-E", "--filterset", "--filter-expr"];
+const PACKAGE_OPTIONS: [&str; 2] = ["-p", "--package"];
+const TARGET_OPTIONS: [&str; 8] = [
+    "--test",
+    "--tests",
+    "--bin",
+    "--bins",
+    "--example",
+    "--examples",
+    "--bench",
+    "--benches",
+];
+const BINARY_FILTERS: [&str; 3] = ["binary(", "binary_id(", "kind("];
 
 struct ShellWord {
     text: String,
     option: String,
     quoted: bool,
+}
+
+pub(crate) struct FilteredRun {
+    pub(crate) packages: Vec<String>,
+    pub(crate) modules: BTreeSet<String>,
 }
 
 // Reads quoting only; variables, globs and $(...) stay as written
@@ -38,24 +57,28 @@ fn quoted_letters(run: &str) -> Vec<(char, bool)> {
     letters
 }
 
-fn filterset_problems(before: &[ShellWord]) -> Vec<String> {
-    let mut filtersets = Vec::new();
+fn option_values<'words>(before: &'words [ShellWord], options: &[&str]) -> Vec<&'words str> {
+    let mut values = Vec::new();
     for pair in before.windows(2) {
         if let [flag, value] = pair
-            && FILTERSET_OPTIONS.contains(&flag.text.as_str())
+            && options.contains(&flag.text.as_str())
         {
-            filtersets.push(value.text.as_str());
+            values.push(value.text.as_str());
         }
     }
     for word in before {
         if let Some((option, value)) = word.text.split_once('=')
-            && FILTERSET_OPTIONS.contains(&option)
+            && options.contains(&option)
         {
-            filtersets.push(value);
+            values.push(value);
         }
     }
+    values
+}
+
+fn filterset_problems(before: &[ShellWord]) -> Vec<String> {
     let mut problems = Vec::new();
-    for filterset in filtersets {
+    for filterset in option_values(before, &FILTERSET_OPTIONS) {
         for error in ParsedExpr::parse(filterset).err().unwrap_or_default() {
             let detail = if let ParseSingleError::InvalidRegex { message, .. } = &error {
                 format!("{error}: {message}")
@@ -70,7 +93,7 @@ fn filterset_problems(before: &[ShellWord]) -> Vec<String> {
     problems
 }
 
-fn nextest_problems(words: &[ShellWord]) -> Vec<String> {
+fn nextest_arguments(words: &[ShellWord]) -> (&[ShellWord], &[ShellWord]) {
     let arguments = words
         .windows(3)
         .position(|three| {
@@ -85,7 +108,11 @@ fn nextest_problems(words: &[ShellWord]) -> Vec<String> {
         .iter()
         .position(|word| word.text == "--")
         .unwrap_or(arguments.len());
-    let (before, after) = arguments.split_at_checked(separator).unwrap_or_default();
+    arguments.split_at_checked(separator).unwrap_or_default()
+}
+
+fn nextest_problems(words: &[ShellWord]) -> Vec<String> {
+    let (before, after) = nextest_arguments(words);
     let early = before
         .iter()
         .filter(|word| LIBTEST_ONLY.contains(&word.option.as_str()))
@@ -131,30 +158,81 @@ fn grep_problem(words: &[ShellWord]) -> Option<String> {
     None
 }
 
+fn shell_commands(run: &str) -> Vec<Vec<ShellWord>> {
+    let letters = quoted_letters(run);
+    letters
+        .split(|&(letter, quoted)| !quoted && ";|&()`\n".contains(letter))
+        .map(|command| {
+            command
+                .split(|&(letter, quoted)| {
+                    !quoted && (letter.is_whitespace() || letter == '<' || letter == '>')
+                })
+                .filter_map(|word| {
+                    let &(_, quoted) = word.first()?;
+                    let text: String = word.iter().map(|&(letter, _)| letter).collect();
+                    let option = text
+                        .split_once('=')
+                        .map_or(text.as_str(), |(name, _)| name)
+                        .to_owned();
+                    Some(ShellWord {
+                        text,
+                        option,
+                        quoted,
+                    })
+                })
+                .collect()
+        })
+        .collect()
+}
+
 pub(crate) fn argument_problems(run: &str) -> Vec<String> {
     let mut problems = Vec::new();
-    let letters = quoted_letters(run);
-    for command in letters.split(|&(letter, quoted)| !quoted && ";|&()`\n".contains(letter)) {
-        let words: Vec<ShellWord> = command
-            .split(|&(letter, quoted)| {
-                !quoted && (letter.is_whitespace() || letter == '<' || letter == '>')
-            })
-            .filter_map(|word| {
-                let &(_, quoted) = word.first()?;
-                let text: String = word.iter().map(|&(letter, _)| letter).collect();
-                let option = text
-                    .split_once('=')
-                    .map_or(text.as_str(), |(name, _)| name)
-                    .to_owned();
-                Some(ShellWord {
-                    text,
-                    option,
-                    quoted,
-                })
-            })
-            .collect();
+    for words in shell_commands(run) {
         problems.extend(nextest_problems(&words));
         problems.extend(grep_problem(&words));
     }
     problems
+}
+
+// A run that picks test binaries may name modules of an integration test, not of src
+pub(crate) fn filtered_runs(run: &str) -> Vec<FilteredRun> {
+    let mut runs = Vec::new();
+    for words in shell_commands(run) {
+        let (before, _) = nextest_arguments(&words);
+        let filtersets = option_values(before, &FILTERSET_OPTIONS);
+        let targeted = before
+            .iter()
+            .any(|word| TARGET_OPTIONS.contains(&word.option.as_str()))
+            || filtersets
+                .iter()
+                .any(|filterset| BINARY_FILTERS.iter().any(|leaf| filterset.contains(leaf)));
+        if targeted {
+            continue;
+        }
+        let mut modules = BTreeSet::new();
+        for argument in filtersets
+            .iter()
+            .flat_map(|filterset| filterset.split("test(").skip(1))
+        {
+            let anchored = argument
+                .strip_prefix("/^")
+                .or_else(|| argument.strip_prefix('='));
+            if let Some((module, _)) = anchored.and_then(|path| path.split_once("::"))
+                && !module.is_empty()
+                && module.chars().all(|letter| {
+                    letter.is_ascii_lowercase() || letter.is_ascii_digit() || letter == '_'
+                })
+            {
+                modules.insert(module.to_owned());
+            }
+        }
+        let packages: Vec<String> = option_values(before, &PACKAGE_OPTIONS)
+            .into_iter()
+            .map(str::to_owned)
+            .collect();
+        if !modules.is_empty() && !packages.is_empty() {
+            runs.push(FilteredRun { packages, modules });
+        }
+    }
+    runs
 }

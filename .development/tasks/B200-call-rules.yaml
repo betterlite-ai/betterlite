@@ -18,8 +18,9 @@ scope:
   - crates/betterlite-core/src/rules/**
   - crates/betterlite-core/src/schema.rs
   - crates/betterlite-core/src/schema/**
-  - crates/betterlite-core/fuzz/**
-  - crates/betterlite-openai/**
+  - crates/betterlite-core/fuzz/Cargo.toml
+  - crates/betterlite-core/fuzz/fuzz_targets/response_schema.rs
+  - crates/betterlite-core/fuzz/corpus/response_schema/**
   - tools/oracle/Cargo.toml
   - tools/oracle/src/helpers/core_ops/rule_decision.rs
   - tools/oracle/src/helpers/core_ops/rule_decision/**

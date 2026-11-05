@@ -1,0 +1,5 @@
+kind: helper
+name: child-inheritance
+call: {call_context: {function: child_inheritance}}
+env: {}
+compare: {ignore: []}

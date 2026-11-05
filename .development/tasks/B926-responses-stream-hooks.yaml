@@ -19,8 +19,6 @@ description: >-
   125 fixtures, 95 adapters and 25 wiring lines: 765 total.
 scope:
   paths:
-  - crates/betterlite-core/src/api.rs
-  - crates/betterlite-core/src/api/**
   - crates/betterlite-core/src/api/responses_stream_hooks.rs
   - crates/betterlite-core/src/api/responses_stream_hooks/**
   - tools/oracle/src/helpers/core_ops/responses_stream_hooks.rs

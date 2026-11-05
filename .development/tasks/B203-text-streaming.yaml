@@ -24,12 +24,21 @@ description: >-
 scope:
   paths:
   - Cargo.toml
-  - crates/betterlite-openai/**
-  - crates/betterlite-provider/**
-  - crates/betterlite-server/**
+  - crates/betterlite-openai/src/text_completion_stream.rs
+  - crates/betterlite-openai/src/text_completion_stream/**
+  - crates/betterlite-openai/src/completion_chat_bridge.rs
+  - crates/betterlite-openai/src/completion_chat_bridge/**
+  - crates/betterlite-openai/fuzz/Cargo.toml
+  - crates/betterlite-openai/fuzz/fuzz_targets/text_stream.rs
+  - crates/betterlite-openai/fuzz/corpus/text_stream/**
+  - crates/betterlite-server/tests/text_streaming.rs
+  - crates/betterlite-server/tests/text_streaming/**
   - tools/oracle/cases/completions/**
   - tools/oracle/cases/chat-text-bridge/**
-  - crates/betterlite-core/**
+  - crates/betterlite-core/src/dispatch.rs
+  - crates/betterlite-core/src/dispatch/**
+  - crates/betterlite-core/src/operation.rs
+  - crates/betterlite-core/src/operation/**
   - crates/betterlite-logging/src/stream.rs
   - crates/betterlite-logging/src/stream/**
   - tools/oracle/helpers/b203.py
