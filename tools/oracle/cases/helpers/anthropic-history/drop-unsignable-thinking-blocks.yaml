@@ -1,0 +1,13 @@
+kind: helper
+name: anthropic-history-drop-unsignable-thinking-blocks
+call:
+  anthropic_history:
+    function: drop_unsignable_thinking_blocks
+    thinking_blocks:
+      - {type: thinking, thinking: unsigned}
+      - {type: thinking, thinking: signed, signature: signature}
+      - {type: redacted_thinking, data: "litellm_encrypted_reasoning:opaque"}
+      - {type: text, text: keep}
+env: {}
+compare:
+  ignore: []

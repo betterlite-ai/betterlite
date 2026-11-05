@@ -24,6 +24,7 @@ mod config;
 mod fixtures;
 pub(crate) mod native_feature_eligibility;
 mod scenario;
+mod websocket;
 
 #[derive(Debug, clap::Parser)]
 pub(crate) struct DatabaseEnvironment {
@@ -40,6 +41,7 @@ pub(crate) fn run_cases(
     }
     let mut groups = BTreeMap::<String, Vec<Case>>::new();
     let mut scenarios = Vec::new();
+    let mut websocket_cases = Vec::new();
     let mut helper_outcome = helpers::HelperRun::Match;
     for loaded_case in cases {
         match loaded_case {
@@ -57,6 +59,7 @@ pub(crate) fn run_cases(
                     helper_outcome = helpers::HelperRun::Difference;
                 }
             }
+            LoadedCase::WebSocket(websocket_case) => websocket_cases.push(*websocket_case),
         }
     }
     let root = artifact_root()?;
@@ -68,6 +71,7 @@ pub(crate) fn run_cases(
     for scenario_case in &scenarios {
         outcomes.push(scenario::run_scenario_case(options, &root, scenario_case)?);
     }
+    outcomes.extend(websocket::run_cases(options, &root, &websocket_cases)?);
     if matches!(helper_outcome, helpers::HelperRun::Difference) {
         return Ok(exit_status(true));
     }

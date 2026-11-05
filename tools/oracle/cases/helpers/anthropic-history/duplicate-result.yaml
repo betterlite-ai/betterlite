@@ -1,0 +1,22 @@
+kind: helper
+name: anthropic-history-duplicate-result
+call:
+  anthropic_history:
+    function: sanitize_messages_for_tool_calling
+    modify_params: true
+    messages:
+      - role: assistant
+        content: null
+        tool_calls:
+          - id: reused
+            type: function
+            function: {name: lookup, arguments: "{}"}
+      - role: tool
+        tool_call_id: reused
+        content: first
+      - role: tool
+        tool_call_id: reused
+        content: last
+env: {}
+compare:
+  ignore: []
