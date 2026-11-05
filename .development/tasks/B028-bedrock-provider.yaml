@@ -129,18 +129,16 @@ description: >-
   docstrings; SDK overloads share an async implementation): 215 production lines, 285 behavior/config-test lines,
   125 combined Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 35 module/dispatch/shared-seed
   wiring lines; 660 planned, 675 maximum changed lines.
+
+  B010 registers the BedrockChat variants of OperationRequest, OperationResult and PreparedRequest as stubs in
+  crates/betterlite-provider/src/bedrock_dispatch.rs. Fill them there and leave provider.rs, operation.rs and
+  prepared.rs as they are.
 scope:
   paths:
   - crates/betterlite-provider/Cargo.toml
   - crates/betterlite-provider/src/bedrock_dispatch.rs
   - crates/betterlite-provider/src/bedrock_dispatch/**
   - crates/betterlite-bedrock/Cargo.toml
-  - crates/betterlite-provider/src/provider.rs
-  - crates/betterlite-provider/src/provider/**
-  - crates/betterlite-provider/src/operation.rs
-  - crates/betterlite-provider/src/operation/**
-  - crates/betterlite-provider/src/prepared.rs
-  - crates/betterlite-provider/src/prepared/**
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-bedrock/fixtures/whitelisted_bedrock_models.txt
   - tools/oracle/Cargo.toml
