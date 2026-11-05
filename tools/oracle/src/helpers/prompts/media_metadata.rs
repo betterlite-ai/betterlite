@@ -51,7 +51,7 @@ fn file_body(wire: WireBody) -> Result<FileBody, Box<HelperError>> {
         WireBody::Bytes { content_base64 } => BASE64
             .decode(content_base64)
             .map(FileBody::Bytes)
-            .map_err(|error| input_error(error.to_string())),
+            .map_err(|error| error_of_class("InvalidInput", error.to_string())),
         WireBody::BareString { content } => Ok(FileBody::BareString(content)),
     }
 }
@@ -81,7 +81,7 @@ fn file_data(wire: WireFileData) -> Result<FileData, Box<HelperError>> {
         } => {
             let bytes = BASE64
                 .decode(content_base64)
-                .map_err(|error| input_error(error.to_string()))?;
+                .map_err(|error| error_of_class("InvalidInput", error.to_string()))?;
             (
                 Some(name),
                 Some(content_type),
@@ -129,8 +129,8 @@ impl Helper for Op {
             }
             Input::Data { file_data: wire } => {
                 let parsed = file_data(wire.clone())?;
-                let extracted =
-                    extract_file_data(&parsed).map_err(|error| value_error(error.to_string()))?;
+                let extracted = extract_file_data(&parsed)
+                    .map_err(|error| error_of_class("ValueError", error.to_string()))?;
                 Ok(json!({
                     "filename": extracted.filename,
                     "content_base64": BASE64.encode(extracted.content),
@@ -146,29 +146,18 @@ impl Helper for Op {
             } => {
                 let content = BASE64
                     .decode(content_base64)
-                    .map_err(|error| input_error(error.to_string()))?;
+                    .map_err(|error| error_of_class("InvalidInput", error.to_string()))?;
                 let mime = infer_content_type(url, &content, current_content_type.as_deref())
-                    .map_err(|error| value_error(error.to_string()))?;
+                    .map_err(|error| error_of_class("ValueError", error.to_string()))?;
                 Ok(Value::String(mime))
             }
         }
     }
 }
 
-fn input_error(message: String) -> Box<HelperError> {
+fn error_of_class(class: &str, message: String) -> Box<HelperError> {
     Box::new(HelperError {
-        class: "InvalidInput".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    })
-}
-
-fn value_error(message: String) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: "ValueError".to_owned(),
+        class: class.to_owned(),
         status: None,
         error_type: None,
         param: None,
