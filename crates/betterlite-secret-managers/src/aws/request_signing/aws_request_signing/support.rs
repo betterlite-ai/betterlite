@@ -3,7 +3,7 @@ use std::sync::Mutex;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use aws_credential_types::Credentials;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 use thiserror::Error;
 
 use crate::aws::request_signing::{
@@ -43,6 +43,29 @@ const TEXT_KEYS: [&str; 7] = [
     "profile",
     "web_identity_token",
     "sts_endpoint",
+];
+
+type Reader = fn(&AwsOptionalParams) -> Option<&str>;
+
+const READERS: [(&str, Reader); 8] = [
+    ("role", |params| params.aws_role_name.as_deref()),
+    ("session_name", |params| params.aws_session_name.as_deref()),
+    ("region", |params| params.aws_region_name.as_deref()),
+    ("external_id", |params| params.aws_external_id.as_deref()),
+    ("profile", |params| params.aws_profile_name.as_deref()),
+    ("web_identity_token", |params| {
+        params
+            .aws_web_identity_token
+            .as_ref()
+            .map(ExposeSecret::expose_secret)
+    }),
+    ("sts_endpoint", |params| params.aws_sts_endpoint.as_deref()),
+    ("access_key_id", |params| {
+        params
+            .aws_access_key_id
+            .as_ref()
+            .map(ExposeSecret::expose_secret)
+    }),
 ];
 
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
@@ -87,28 +110,10 @@ impl Snapshot {
     }
 
     pub(super) fn of(params: &AwsOptionalParams) -> Self {
-        let secret_text =
-            |secret: Option<&SecretString>| secret.map(|value| value.expose_secret().to_owned());
-        let present = [
-            ("role", params.aws_role_name.clone()),
-            ("session_name", params.aws_session_name.clone()),
-            ("region", params.aws_region_name.clone()),
-            ("external_id", params.aws_external_id.clone()),
-            ("profile", params.aws_profile_name.clone()),
-            (
-                "web_identity_token",
-                secret_text(params.aws_web_identity_token.as_ref()),
-            ),
-            ("sts_endpoint", params.aws_sts_endpoint.clone()),
-            (
-                "access_key_id",
-                secret_text(params.aws_access_key_id.as_ref()),
-            ),
-        ];
         Self(
-            present
-                .into_iter()
-                .filter_map(|(key, value)| value.map(|text| (key, text)))
+            READERS
+                .iter()
+                .filter_map(|(key, read)| read(params).map(|text| (*key, text.to_owned())))
                 .collect(),
         )
     }
