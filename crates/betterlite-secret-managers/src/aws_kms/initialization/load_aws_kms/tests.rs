@@ -68,7 +68,7 @@ async fn load_aws_kms_sends_signed_decrypt_calls_to_the_configured_endpoint(
         Some(true),
         &environment,
         transport(),
-        credentials(),
+        Some(credentials()),
         Duration::from_secs(5),
     )
     .unwrap();

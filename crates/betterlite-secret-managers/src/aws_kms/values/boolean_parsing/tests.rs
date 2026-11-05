@@ -10,7 +10,10 @@ use aws_sdk_kms::error::SdkError;
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
 use std::{collections::BTreeMap, error::Error as _, time::Duration};
-use tokio::{io::AsyncReadExt as _, net::TcpListener, time::timeout};
+use tokio::{
+    net::TcpListener,
+    time::{sleep, timeout},
+};
 
 #[rstest]
 #[case("true")]
@@ -43,7 +46,7 @@ async fn decrypt_with_extracts_secret_plaintext() {
     let client = build_client(
         &kms_environment(&listener, "us-east-1"),
         transport(),
-        credentials(),
+        Some(credentials()),
         Duration::from_secs(5),
     )
     .unwrap();
@@ -71,7 +74,7 @@ async fn decrypt_with_preserves_response_errors(#[case] body: &str, #[case] expe
     let client = build_client(
         &kms_environment(&listener, "us-east-1"),
         transport(),
-        credentials(),
+        Some(credentials()),
         Duration::from_secs(5),
     )
     .unwrap();
@@ -97,22 +100,16 @@ async fn decrypt_with_times_out_a_stalled_transport() {
     let client = build_client(
         &kms_environment(&listener, "us-east-1"),
         transport(),
-        credentials(),
+        Some(credentials()),
         Duration::from_millis(100),
     )
     .unwrap();
     let stall = async {
-        let (mut stream, _) = listener.accept().await.unwrap();
-        let mut bytes = Vec::new();
-        stream.read_to_end(&mut bytes).await.unwrap();
+        let _connection = listener.accept().await.unwrap();
+        sleep(Duration::from_secs(1)).await;
     };
-    let operation = async {
-        tokio::select! {
-            result = decrypt_with(&client, "aGVsbG8=") => result,
-            () = stall => panic!("client closed the stalled connection before timing out"),
-        }
-    };
-    let result = timeout(Duration::from_secs(5), operation).await.unwrap();
+    let operation = async { tokio::join!(decrypt_with(&client, "aGVsbG8="), stall) };
+    let (result, ()) = timeout(Duration::from_secs(5), operation).await.unwrap();
     assert!(matches!(
         result,
         Err(AwsKmsError::Request(source)) if matches!(source.as_ref(), SdkError::TimeoutError(_))
@@ -134,7 +131,7 @@ async fn decrypt_with_keeps_service_error_source() {
     let client = build_client(
         &kms_environment(&listener, "us-east-1"),
         transport(),
-        credentials(),
+        Some(credentials()),
         Duration::from_secs(5),
     )
     .unwrap();

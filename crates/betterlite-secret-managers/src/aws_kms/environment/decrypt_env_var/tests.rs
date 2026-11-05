@@ -20,11 +20,16 @@ async fn decrypt_env_var_builds_its_own_client_and_preserves_environment() {
     source.insert("ignored".to_owned(), "plain".to_owned());
     let original = source.clone();
     assert!(AWS_KMS_CLIENT.lock().unwrap().is_none());
-    let (result, request) = tokio::join!(
-        decrypt_env_var(&source, transport(), credentials(), Duration::from_secs(5)),
+    let (decrypted, request) = tokio::join!(
+        decrypt_env_var(
+            &source,
+            transport(),
+            Some(credentials()),
+            Duration::from_secs(5)
+        ),
         serve(&listener, 200, r#"{"Plaintext":"ICBzZWNyZXQgIA=="}"#)
     );
-    let result = result.unwrap();
+    let result = decrypted.unwrap();
     let Some(DecryptedValue::String(secret)) = result.get("TOKEN") else {
         panic!("expected secret");
     };
@@ -53,7 +58,7 @@ async fn decrypt_env_var_selects_value_prefix_and_returns_boolean() {
         decrypt_env_var(
             &environment,
             transport(),
-            credentials(),
+            Some(credentials()),
             Duration::from_secs(5)
         ),
         serve(&listener, 200, r#"{"Plaintext":"VHJ1ZQ=="}"#)

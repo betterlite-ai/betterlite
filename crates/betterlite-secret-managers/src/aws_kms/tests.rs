@@ -15,10 +15,8 @@ pub(super) fn transport() -> SharedHttpClient {
     )
 }
 
-pub(super) fn credentials() -> Option<SharedCredentialsProvider> {
-    Some(SharedCredentialsProvider::new(Credentials::new(
-        "test", "test", None, None, "test",
-    )))
+pub(super) fn credentials() -> SharedCredentialsProvider {
+    SharedCredentialsProvider::new(Credentials::new("test", "test", None, None, "test"))
 }
 
 pub(super) fn kms_environment(listener: &TcpListener, region: &str) -> BTreeMap<String, String> {
@@ -42,7 +40,7 @@ pub(super) async fn serve(listener: &TcpListener, status: u16, body: &str) -> St
         bytes.extend_from_slice(&chunk[..count]);
         assert!(bytes.len() < 0x0001_0000);
         if let Some(position) = bytes.windows(4).position(|window| window == b"\r\n\r\n") {
-            break position + 4;
+            break position.checked_add(4).unwrap();
         }
     };
     let head = String::from_utf8(bytes[..header_end].to_vec())
@@ -54,7 +52,8 @@ pub(super) async fn serve(listener: &TcpListener, status: u16, body: &str) -> St
         .unwrap()
         .parse()
         .unwrap();
-    while bytes.len() < header_end + length {
+    let request_end = header_end.checked_add(length).unwrap();
+    while bytes.len() < request_end {
         let mut chunk = [0; 4096];
         let count = stream.read(&mut chunk).await.unwrap();
         assert!(count > 0);
