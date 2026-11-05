@@ -6,8 +6,8 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::write;
-use crate::cyberark::fake_transport::{POLICY_ROUTE, Reply, TOKEN_HEADER, capture_logs, keyed};
 use crate::cyberark::operation::OperationStatus;
+use crate::cyberark::tests::{POLICY_ROUTE, Reply, TOKEN_HEADER, capture_logs, keyed};
 use crate::cyberark::yaml_scalar::double_quoted;
 
 const SECRET_ROUTE: &str = "POST http://127.0.0.1:8080/secrets/default/variable/db";

@@ -3,8 +3,8 @@
 use secrecy::{ExposeSecret as _, SecretString};
 
 use super::{delete, rotate};
-use crate::cyberark::fake_transport::{POLICY_ROUTE, Reply, capture_logs, keyed};
 use crate::cyberark::operation::OperationStatus;
+use crate::cyberark::tests::{POLICY_ROUTE, Reply, capture_logs, keyed};
 use crate::secret_contracts::options::{DeleteOptions, SecretOptions, SecretRotation, SecretWrite};
 use crate::secret_contracts::{BaseSecretManager as _, RotationError};
 

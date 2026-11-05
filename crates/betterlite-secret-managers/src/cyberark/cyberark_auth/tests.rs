@@ -8,7 +8,7 @@ use tokio::time::advance;
 
 use crate::cyberark::cyberark_write::write;
 use crate::cyberark::error::CyberArkInitError;
-use crate::cyberark::fake_transport::{
+use crate::cyberark::tests::{
     AUTH_ROUTE, FakeTransport, Reply, TOKEN_HEADER, TOKEN_JSON, capture_logs, environment, keyed,
     scripted,
 };

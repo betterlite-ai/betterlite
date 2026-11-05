@@ -7,7 +7,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use tokio::time::advance;
 
 use super::secret_url;
-use crate::cyberark::fake_transport::{AUTH_ROUTE, Reply, capture_logs, keyed};
+use crate::cyberark::tests::{AUTH_ROUTE, Reply, capture_logs, keyed};
 use crate::cyberark::ttl_cache::TtlCache;
 
 const SECRET_ROUTE: &str = "GET http://127.0.0.1:8080/secrets/default/variable/db";
