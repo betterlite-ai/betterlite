@@ -64,14 +64,11 @@ pub async fn process_standalone_images(
     user_api_key_alias: Option<&str>,
 ) -> Result<(), FileSanitizationError> {
     for image_url in images.iter().filter(|url| url.starts_with("data:")) {
-        let Err(error) = sanitize_standalone_image(sanitizer, image_url, user_api_key_alias).await
-        else {
-            continue;
-        };
-        if error.is_http_exception() {
-            return Err(error);
+        match sanitize_standalone_image(sanitizer, image_url, user_api_key_alias).await {
+            Err(error) if error.is_http_exception() => return Err(error),
+            Err(error) => tracing::error!(%error, "Error processing image"),
+            Ok(()) => {}
         }
-        tracing::error!(%error, "Error processing image");
     }
     Ok(())
 }
