@@ -238,7 +238,7 @@ fn apply_step(
         Step::Fix(failure) | Step::Retry(failure) => {
             progress.fix_turns = 0;
             progress.next = NextRun::Fresh;
-            // the same red at the end of two starts in a row moves the task to another vendor
+            // the same red at the end of two starts in a row moves the task to the next rung
             let stuck = failure.red.iter().any(|red| progress.red.contains(red));
             progress.feedback = failure.feedback;
             progress.red = failure.red;
