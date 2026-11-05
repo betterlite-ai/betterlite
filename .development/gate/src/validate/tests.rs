@@ -50,6 +50,7 @@ fn check_commands_run_python_only_as_the_pinned_litellm() {
         "uv run --locked --project tools/oracle/litellm basedpyright tools/oracle/helpers",
         "awk '/^\\[/{t=1}' Cargo.toml",
         "f=$(mktemp) && cargo run -p betterlite-oracle > \"$f\"",
+        "cd .development/templates && cmp -s \"$file\" \"../../$file\"",
     ] {
         assert!(banned_tooling(good).is_empty(), "{good}");
     }
@@ -68,6 +69,14 @@ fn check_commands_run_python_only_as_the_pinned_litellm() {
             vec!["a home directory path"],
         ),
         ("cat > /tmp/a.json", vec!["/tmp"]),
+        (
+            "grep -q \"BATCH_SIZE.*10\" ../betterlite-worktrees/litellm/litellm/constants.py",
+            vec!["a LiteLLM checkout outside the repository"],
+        ),
+        (
+            "sha256sum ../litellm/litellm/proxy/openapi_registry.json",
+            vec!["a LiteLLM checkout outside the repository"],
+        ),
     ] {
         assert_eq!(banned_tooling(bad), expected, "{bad}");
     }

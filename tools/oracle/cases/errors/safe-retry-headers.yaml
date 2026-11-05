@@ -1,0 +1,21 @@
+name: errors-safe-retry-headers
+config: |
+  model_list:
+    - model_name: error-model
+      litellm_params: {model: openai/gpt-retry, api_base: "{{upstream}}", api_key: oracle-key}
+  router_settings: {num_retries: 0}
+env: {}
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers: {content-type: application/json, authorization: Bearer oracle-master, x-litellm-call-id: retry-header-id}
+  body: {model: error-model, messages: [{role: user, content: hi}]}
+upstream:
+  - status: 429
+    headers: {content-type: application/json, retry-after: "5", x-ratelimit-limit-requests: "100", set-cookie: session=unsafe}
+    body: {error: {message: "rate limit", type: rate_limit_error, param: null, code: null}}
+compare:
+  headers: [content-type, llm_provider-content-type, llm_provider-retry-after, x-ratelimit-limit-requests, x-litellm-call-id]
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore: [{pointer: /error/message, why: betterlite writes its own message}]

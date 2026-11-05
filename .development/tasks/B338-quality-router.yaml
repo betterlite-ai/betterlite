@@ -9,9 +9,8 @@ description: 'Add the quality_router marker with its typed config and per-deploy
   default_model=None; keywords=(); order=None. Resolve env values once in betterlite-config, never in
   router code. QualityRouterConfig and RoutingPreferences accept extra fields at the pin: preserve accepted
   values and warn about ignored extras, rather than turning them into a startup failure. Implement the
-  owned native service in crates/betterlite-router/src/quality_router.rs. Add ProbeOperation::QualityRouter in
-  tools/oracle/src/router_probes/mod.rs and the corresponding B338 entry in tools/oracle/litellm/probes/registry.py;
-  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  owned native service in crates/betterlite-router/src/quality_router.rs. B301 registers ProbeOperation::QualityRouter and its Python entry as stubs, so fill only tools/oracle/src/router_probes/quality_router.rs and tools/oracle/litellm/probes/quality_router.py and leave mod.rs and registry.py as they are;
+  the adapters only call production services.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
   lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
   exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/router_strategy/quality_router/quality_router.py:
@@ -38,9 +37,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/quality_router.rs
   - tools/oracle/src/router_probes/quality_router/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/quality_router.py
   - tools/oracle/cases/routing/quality-router/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/quality-router-*

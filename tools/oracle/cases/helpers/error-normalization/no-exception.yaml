@@ -1,0 +1,5 @@
+kind: helper
+name: error-normalization-no-exception
+call: {error_normalization: {message: other, proxy_type: null, class: null, status_code: null, rate_limit_type: null, error_present: false}}
+env: {}
+compare: {ignore: []}

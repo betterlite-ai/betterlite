@@ -10,9 +10,8 @@ description: 'Wire B376 feedback signals to B339 learning cells using B012 final
   any opt-in tolerance is for diagnostic scores only, never a different selection. Keep OWNER_CACHE_TTL_SECONDS=86400
   and sweep threshold 1024. Add a hard cap of 1024 live session records; evict the least recently used
   record after sweeping expired entries, warn and continue without altering the served model. Implement
-  the owned native service in crates/betterlite-router/src/adaptive_feedback.rs. Add ProbeOperation::AdaptiveFeedback
-  in tools/oracle/src/router_probes/mod.rs and the corresponding B340 entry in tools/oracle/litellm/probes/registry.py;
-  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  the owned native service in crates/betterlite-router/src/adaptive_feedback.rs. B301 registers ProbeOperation::AdaptiveFeedback and its Python entry as stubs, so fill only tools/oracle/src/router_probes/adaptive_feedback.rs and tools/oracle/litellm/probes/adaptive_feedback.py and leave mod.rs and registry.py as they are;
+  the adapters only call production services.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
   lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
   exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/router_strategy/adaptive_router/adaptive_router.py:
@@ -46,9 +45,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/adaptive_feedback.rs
   - tools/oracle/src/router_probes/adaptive_feedback/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/adaptive_feedback.py
   - tools/oracle/cases/routing/adaptive-feedback/**
   - crates/betterlite-router/src/feedback_math.rs

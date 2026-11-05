@@ -14,8 +14,8 @@ use betterlite_openai::stream::chunk::Chunk;
 use futures_util::StreamExt as _;
 use futures_util::stream::{self, BoxStream};
 
-use super::failure;
 use super::headers::stream_headers;
+use super::{CallContext, failure};
 
 struct RelayState {
     upstream: BoxStream<'static, Result<Vec<u8>, HttpError>>,
@@ -30,7 +30,7 @@ pub(super) async fn stream_chat(
     executor: &ChatExecutor,
     deployment: &ChatDeployment,
     request: &ChatRequest,
-    call_id: &str,
+    call: CallContext<'_>,
     started: Instant,
 ) -> Response {
     let upstream_started = Instant::now();
@@ -40,14 +40,14 @@ pub(super) async fn stream_chat(
             let headers = stream_headers(
                 upstream.response.headers(),
                 deployment,
-                call_id,
+                call.id,
                 upstream_time,
                 started.elapsed(),
             );
             let stream_body = Body::from_stream(relay_sse(upstream, request));
             (headers, stream_body).into_response()
         }
-        Err(error) => failure(&error, call_id, Some(deployment)),
+        Err(error) => failure(&error, call, Some(deployment)),
     }
 }
 
