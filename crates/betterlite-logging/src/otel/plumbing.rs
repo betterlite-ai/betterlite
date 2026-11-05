@@ -1,5 +1,10 @@
 pub mod context;
 pub mod endpoints;
+pub mod events;
+pub mod exporters;
 pub mod headers;
 pub mod metrics;
+pub mod processors;
+pub mod providers;
 pub mod routing;
+pub mod sinks;
