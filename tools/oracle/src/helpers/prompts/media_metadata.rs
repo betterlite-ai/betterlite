@@ -46,56 +46,56 @@ pub(crate) enum WireFileData {
     },
 }
 
+fn decode_base64(content_base64: String) -> Result<Vec<u8>, Box<HelperError>> {
+    BASE64
+        .decode(content_base64)
+        .map_err(|error| error_of_class("InvalidInput", error.to_string()))
+}
+
 fn file_body(wire: WireBody) -> Result<FileBody, Box<HelperError>> {
     match wire {
-        WireBody::Bytes { content_base64 } => BASE64
-            .decode(content_base64)
-            .map(FileBody::Bytes)
-            .map_err(|error| error_of_class("InvalidInput", error.to_string())),
+        WireBody::Bytes { content_base64 } => decode_base64(content_base64).map(FileBody::Bytes),
         WireBody::BareString { content } => Ok(FileBody::BareString(content)),
     }
 }
 
-// Every shape maps onto FileData::Tuple4; the production parts_of() flattens all five the same way.
 fn file_data(wire: WireFileData) -> Result<FileData, Box<HelperError>> {
-    let (filename, content_type, headers, content) = match wire {
-        WireFileData::Direct { content } => (None, None, BTreeMap::new(), file_body(content)?),
-        WireFileData::Tuple2 { filename, content } => {
-            (filename, None, BTreeMap::new(), file_body(content)?)
-        }
+    match wire {
+        WireFileData::Direct { content } => Ok(FileData::Direct(file_body(content)?)),
+        WireFileData::Tuple2 { filename, content } => Ok(FileData::Tuple2 {
+            filename,
+            content: file_body(content)?,
+        }),
         WireFileData::Tuple3 {
             filename,
             content,
             content_type,
-        } => (filename, content_type, BTreeMap::new(), file_body(content)?),
+        } => Ok(FileData::Tuple3 {
+            filename,
+            content: file_body(content)?,
+            content_type,
+        }),
         WireFileData::Tuple4 {
             filename,
             content,
             content_type,
             headers,
-        } => (filename, content_type, headers, file_body(content)?),
+        } => Ok(FileData::Tuple4 {
+            filename,
+            content: file_body(content)?,
+            content_type,
+            headers,
+        }),
         WireFileData::InMemoryFile {
             name,
             content_type,
             content_base64,
-        } => {
-            let bytes = BASE64
-                .decode(content_base64)
-                .map_err(|error| error_of_class("InvalidInput", error.to_string()))?;
-            (
-                Some(name),
-                Some(content_type),
-                BTreeMap::new(),
-                FileBody::Bytes(bytes),
-            )
-        }
-    };
-    Ok(FileData::Tuple4 {
-        filename,
-        content,
-        content_type,
-        headers,
-    })
+        } => Ok(FileData::InMemoryFile {
+            name,
+            content_type,
+            content: decode_base64(content_base64)?,
+        }),
+    }
 }
 
 #[derive(Debug, Deserialize)]
