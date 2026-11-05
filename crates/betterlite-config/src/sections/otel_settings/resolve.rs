@@ -82,8 +82,10 @@ impl CoreSettings {
         ] = string_settings(raw, lookup);
         let excluded_services = resolve_exclusions(raw, lookup);
         let features = FeatureSettings::resolve(raw, lookup)?;
-        let shorthand_explicit =
-            configured_exporter.is_some() || endpoint.is_some() || headers.is_some();
+        let shorthand_explicit = configured_exporter.is_some()
+            || endpoint.is_some()
+            || traces_endpoint.is_some()
+            || headers.is_some();
         let exporter = configured_exporter.unwrap_or_else(|| "console".to_owned());
         Ok(Self {
             shorthand_explicit,
@@ -119,19 +121,22 @@ impl FeatureSettings {
         Ok(Self {
             enable_metrics: setting_bool(
                 lookup,
-                "LITELLM_OTEL_INTEGRATION_ENABLE_METRICS",
+                &["LITELLM_OTEL_INTEGRATION_ENABLE_METRICS", "enable_metrics"],
                 raw.enable_metrics,
                 false,
             )?,
             enable_events: setting_bool(
                 lookup,
-                "LITELLM_OTEL_INTEGRATION_ENABLE_EVENTS",
+                &["LITELLM_OTEL_INTEGRATION_ENABLE_EVENTS", "enable_events"],
                 raw.enable_events,
                 false,
             )?,
             capture_message_content: environment_or(
                 lookup,
-                &["OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"],
+                &[
+                    "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT",
+                    "capture_message_content",
+                ],
                 raw.capture_message_content.clone(),
                 |value| value,
             )
@@ -139,7 +144,7 @@ impl FeatureSettings {
             .to_lowercase(),
             legacy_compat: setting_bool(
                 lookup,
-                "LITELLM_OTEL_LEGACY_COMPAT",
+                &["LITELLM_OTEL_LEGACY_COMPAT", "legacy_compat"],
                 raw.legacy_compat,
                 true,
             )?,

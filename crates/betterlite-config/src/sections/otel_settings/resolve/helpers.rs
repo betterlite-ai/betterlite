@@ -60,7 +60,7 @@ where
 
 pub(super) fn setting_bool<L>(
     lookup: &L,
-    name: &str,
+    names: &[&str],
     configured: Option<bool>,
     default: bool,
 ) -> Result<bool, ConfigError>
@@ -70,8 +70,18 @@ where
     if let Some(explicit) = configured {
         return Ok(explicit);
     }
-    let Some(value) = lookup.lookup(name) else {
-        return Ok(configured.unwrap_or(default));
+    let found = names.iter().find_map(|name| {
+        lookup
+            .lookup(name)
+            .or_else(|| {
+                lookup
+                    .lookup(&name.to_ascii_lowercase())
+                    .or_else(|| lookup.lookup(&name.to_ascii_uppercase()))
+            })
+            .map(|value| (*name, value))
+    });
+    let Some((name, value)) = found else {
+        return Ok(default);
     };
     betterlite_env::flag(name, &value)
         .map_err(|source| ConfigError::Environment { source })
@@ -140,31 +150,29 @@ pub(super) fn string_settings<L>(raw: &RawOtel, lookup: &L) -> [Option<String>; 
 where
     L: EnvironmentLookup,
 {
-    [
-        (
-            ["OTEL_EXPORTER", "OTEL_EXPORTER_OTLP_PROTOCOL"],
-            raw.exporter.clone(),
-        ),
-        (
-            ["OTEL_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT"],
-            raw.endpoint.clone(),
-        ),
-        (
-            ["OTEL_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT"],
-            raw.traces_endpoint.clone(),
-        ),
-        (
-            ["OTEL_HEADERS", "OTEL_EXPORTER_OTLP_HEADERS"],
-            raw.headers.clone(),
-        ),
-        (
-            ["OTEL_SERVICE_NAME", "service_name"],
-            raw.service_name.clone(),
-        ),
-        (
-            ["OTEL_ENVIRONMENT_NAME", "deployment_environment"],
-            raw.deployment_environment.clone(),
-        ),
-    ]
-    .map(|(names, configured)| environment_or(lookup, &names, configured, |value| value))
+    let configured = [
+        raw.exporter.clone(),
+        raw.endpoint.clone(),
+        raw.traces_endpoint.clone(),
+        raw.headers.clone(),
+        raw.service_name.clone(),
+        raw.deployment_environment.clone(),
+    ];
+    let aliases: [&[&str]; 6] = [
+        &["OTEL_EXPORTER", "OTEL_EXPORTER_OTLP_PROTOCOL", "exporter"],
+        &["OTEL_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT", "endpoint"],
+        &[
+            "OTEL_TRACES_ENDPOINT",
+            "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+            "traces_endpoint",
+        ],
+        &["OTEL_HEADERS", "OTEL_EXPORTER_OTLP_HEADERS", "headers"],
+        &["OTEL_SERVICE_NAME", "service_name"],
+        &["OTEL_ENVIRONMENT_NAME", "deployment_environment"],
+    ];
+    let mut values: [Option<String>; 6] = Default::default();
+    for ((output, configured_value), names) in values.iter_mut().zip(configured).zip(aliases) {
+        *output = environment_or(lookup, names, configured_value, |value| value);
+    }
+    values
 }
