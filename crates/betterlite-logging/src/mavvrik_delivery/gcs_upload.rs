@@ -98,50 +98,59 @@ async fn upload_chunks<Http>(
 where
     Http: Transport,
 {
-    let total = gzip_bytes.len();
     let mut offset = 0_usize;
     for chunk in gzip_bytes.chunks(CHUNK_SIZE) {
-        let next_offset = offset.saturating_add(chunk.len());
-        let last_byte = next_offset.saturating_sub(1);
-        let is_final = next_offset >= total;
-        let total_range = if is_final {
-            total.to_string()
-        } else {
-            "*".to_owned()
-        };
-        let request = TransportRequest {
-            method: Method::Put,
-            url: session_uri.to_owned(),
-            headers: vec![
-                ("Content-Type", "application/gzip".to_owned()),
-                (
-                    "Content-Range",
-                    format!("bytes {offset}-{last_byte}/{total_range}"),
-                ),
-            ],
-            api_key: None,
-            body: chunk.to_vec(),
-            timeout: CHUNK_TIMEOUT,
-        };
-        let response = destination.send(request).await?;
-        let expected = if is_final { "{200, 201}" } else { "{308}" };
-        if !chunk_accepted(response.status, is_final) {
-            return Err(MavvrikDeliveryError::ChunkFailed {
-                offset,
-                expected,
-                status: response.status,
-                body: response.text_prefix(GCS_ERROR_BODY_BYTES),
-            });
-        }
-        offset = next_offset;
+        send_chunk(destination, session_uri, chunk, offset, gzip_bytes.len()).await?;
+        offset = offset.saturating_add(chunk.len());
     }
     Ok(())
 }
 
-const fn chunk_accepted(status: u16, is_final: bool) -> bool {
-    if is_final {
-        matches!(status, 200 | 201)
+async fn send_chunk<Http>(
+    destination: &FocusMavvrikDestination<Http>,
+    session_uri: &str,
+    chunk: &[u8],
+    offset: usize,
+    total: usize,
+) -> Result<(), MavvrikDeliveryError<Http::Error>>
+where
+    Http: Transport,
+{
+    let next_offset = offset.saturating_add(chunk.len());
+    let last_byte = next_offset.saturating_sub(1);
+    let is_final = next_offset >= total;
+    let total_range = if is_final {
+        total.to_string()
     } else {
-        status == 308
+        "*".to_owned()
+    };
+    let request = TransportRequest {
+        method: Method::Put,
+        url: session_uri.to_owned(),
+        headers: vec![
+            ("Content-Type", "application/gzip".to_owned()),
+            (
+                "Content-Range",
+                format!("bytes {offset}-{last_byte}/{total_range}"),
+            ),
+        ],
+        api_key: None,
+        body: chunk.to_vec(),
+        timeout: CHUNK_TIMEOUT,
+    };
+    let response = destination.send(request).await?;
+    let (accepted, expected) = if is_final {
+        (matches!(response.status, 200 | 201), "{200, 201}")
+    } else {
+        (response.status == 308, "{308}")
+    };
+    if !accepted {
+        return Err(MavvrikDeliveryError::ChunkFailed {
+            offset,
+            expected,
+            status: response.status,
+            body: response.text_prefix(GCS_ERROR_BODY_BYTES),
+        });
     }
+    Ok(())
 }
