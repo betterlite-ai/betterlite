@@ -5,12 +5,15 @@ use betterlite_bedrock::aws_settings::{
     s3_static_key_pair,
 };
 use betterlite_bedrock::aws_settings::{
-    credential_cache::cache_key, error::aws_auth_error_projection, policy::web_identity_policy,
+    credential_cache::cache_key,
+    error::{AWS_CONSOLE_URL, AwsAuthError},
+    policy::web_identity_policy,
     sources::auth_selector_presence,
 };
 use betterlite_config::sections::{
     bedrock_aws_settings::AwsS3Settings, bedrock_settings::AwsSettings,
 };
+use betterlite_openai::error::{ErrorRequest, ErrorResponse};
 use input::Input;
 use secrecy::ExposeSecret as _;
 use serde_json::json;
@@ -94,9 +97,20 @@ fn auth_error(input: &input::AuthError) -> HelperResult {
         Verification::Disabled => json!(false),
         Verification::CaFile(path) => json!(path),
     };
-    Ok(
-        json!({"error": aws_auth_error_projection(input.status, input.message.clone()), "ssl_verify": verification}),
-    )
+    let request = ErrorRequest {
+        method: "POST".to_owned(),
+        url: AWS_CONSOLE_URL.to_owned(),
+    };
+    let error = AwsAuthError {
+        status: input.status,
+        message: input.message.clone(),
+        response: ErrorResponse {
+            status_code: input.status,
+            request: request.clone(),
+        },
+        request,
+    };
+    Ok(json!({"error": error, "ssl_verify": verification}))
 }
 
 fn pair(input: &input::Pair) -> Value {
