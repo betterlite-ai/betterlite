@@ -197,3 +197,17 @@ async fn sign_refreshes_credentials_close_to_their_expiry() {
     assert!(authorization(&refreshed).contains("Credential=AKIDROTATE1/"));
     assert_eq!(calls.load(Ordering::SeqCst), 2);
 }
+
+#[tokio::test]
+async fn sign_reads_a_plus_in_the_query_as_a_space() {
+    let (auth, _recorder, _clock) = built(vector_settings(), &[], Reply::Refused).await;
+    let with_plus = Request::get("https://example.amazonaws.com/?Param1=value+1")
+        .body(Bytes::new())
+        .unwrap();
+    let with_space = Request::get("https://example.amazonaws.com/?Param1=value%201")
+        .body(Bytes::new())
+        .unwrap();
+    let plus = auth.auth_flow(with_plus).await.unwrap();
+    let space = auth.auth_flow(with_space).await.unwrap();
+    assert_eq!(authorization(&plus), authorization(&space));
+}
