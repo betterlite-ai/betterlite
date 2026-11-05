@@ -80,6 +80,26 @@ fn rejects_invalid_settings(#[case] field: &str, #[case] value: &str) {
 }
 
 #[rstest::rstest]
+#[case::yes(Some("yes"), true)]
+#[case::blank_spaces(Some(" TRUE "), true)]
+#[case::false_value(Some("false"), false)]
+#[case::absent(None, false)]
+fn loads_spend_traceback_policy_from_the_env_value(
+    #[case] value: Option<&str>,
+    #[case] expected: bool,
+) {
+    assert_eq!(
+        load_spend_traceback_policy(value).unwrap().suppress,
+        expected
+    );
+}
+
+#[test]
+fn rejects_an_invalid_spend_traceback_value() {
+    load_spend_traceback_policy(Some("invalid")).unwrap_err();
+}
+
+#[rstest::rstest]
 #[case::ipv6("tcp://[::1]:123", CollectorAddress::Tcp {host: "::1".to_owned(), port: 123})]
 #[case::local_case("tcp://LOCALHOST:0", CollectorAddress::Tcp {host: "localhost".to_owned(), port: 0})]
 #[case::ipv4("tcp://127.5.4.3:65535", CollectorAddress::Tcp {host: "127.5.4.3".to_owned(), port: u16::MAX})]
