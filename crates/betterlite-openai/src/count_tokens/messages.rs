@@ -119,20 +119,6 @@ fn image_part(image_url: Option<&PyValue>) -> Option<ResponsesPart> {
     })
 }
 
-fn file_part(file: Option<&PyValue>) -> Option<ResponsesPart> {
-    let Some(PyValue::Dict(fields)) = file else {
-        return None;
-    };
-    Some(ResponsesPart::InputFile {
-        filename: text_field(fields, "filename")
-            .filter(|text| !text.is_empty())?
-            .to_owned(),
-        file_data: text_field(fields, "file_data")
-            .filter(|text| !text.is_empty())?
-            .to_owned(),
-    })
-}
-
 fn block_to_part(block: &PyValue, role: ContentRole) -> Option<ResponsesPart> {
     let fields = match block {
         PyValue::Text(text) => {
@@ -146,7 +132,19 @@ fn block_to_part(block: &PyValue, role: ContentRole) -> Option<ResponsesPart> {
             text: text_field(fields, "text").unwrap_or_default().to_owned(),
         }),
         (Some("image_url"), ContentRole::User) => image_part(fields.get("image_url")),
-        (Some("file"), ContentRole::User) => file_part(fields.get("file")),
+        (Some("file"), ContentRole::User) => {
+            let Some(PyValue::Dict(file)) = fields.get("file") else {
+                return None;
+            };
+            Some(ResponsesPart::InputFile {
+                filename: text_field(file, "filename")
+                    .filter(|text| !text.is_empty())?
+                    .to_owned(),
+                file_data: text_field(file, "file_data")
+                    .filter(|text| !text.is_empty())?
+                    .to_owned(),
+            })
+        }
         _ => None,
     }
 }
@@ -236,15 +234,6 @@ fn push_assistant(message: &ChatMessage, input_items: &mut Vec<InputItem>) {
     }
 }
 
-fn tool_output(content: Option<&MessageContent>) -> String {
-    match content {
-        None => String::new(),
-        Some(MessageContent::Text(text)) => text.clone(),
-        Some(MessageContent::Blocks(blocks)) if blocks.is_empty() => String::new(),
-        Some(MessageContent::Blocks(blocks)) => display_text(&PyValue::List(blocks.clone())),
-    }
-}
-
 #[must_use]
 pub fn messages_to_responses_input(messages: &[ChatMessage]) -> (Vec<InputItem>, Option<String>) {
     let mut input_items = Vec::new();
@@ -260,7 +249,13 @@ pub fn messages_to_responses_input(messages: &[ChatMessage]) -> (Vec<InputItem>,
             "assistant" => push_assistant(message, &mut input_items),
             "tool" => input_items.push(InputItem::Call(CallItem::FunctionCallOutput {
                 call_id: message.tool_call_id.clone(),
-                output: tool_output(content),
+                output: match content {
+                    Some(MessageContent::Text(text)) => text.clone(),
+                    Some(MessageContent::Blocks(blocks)) if !blocks.is_empty() => {
+                        display_text(&PyValue::List(blocks.clone()))
+                    }
+                    Some(MessageContent::Blocks(_)) | None => String::new(),
+                },
             })),
             _ => {}
         }
