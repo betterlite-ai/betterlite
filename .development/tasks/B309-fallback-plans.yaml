@@ -23,21 +23,14 @@ description: 'Add typed ordinary, context-window and content-policy fallback pla
   (L388-L394), fallback_lookup_groups (L397-L413), _resolved_a_specific_chain (L416-L423), get_fallback_model_group_for_lookup_groups
   (L426-L438), get_fallback_model_group (L441-L480). Implement these behaviors through the typed Rust
   services above; synchronous facades and structural accessors reuse the same primitive instead of separate
-  ports.'
+  ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B310 and B018 call this service.'
 scope:
   paths:
   - crates/betterlite-router/src/fallback_plans.rs
   - crates/betterlite-router/src/fallback_plans/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/fallback_plans.rs
   - crates/betterlite-server/src/routing/fallback_plans/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/fallback_plans.rs
   - tools/oracle/src/router_probes/fallback_plans/**
   - tools/oracle/litellm/probes/fallback_plans.py

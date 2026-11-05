@@ -127,6 +127,7 @@ description: >-
   projections remain helper cases until B053 installs the complete JWT identity backend; do not use a
   fabricated HTTP success. Server registration tests live at auth::jwt_keys::tests::stage_is_registered
   and failure_stops_downstream, within the existing behavior-test allowance.
+  B1100 registers state/jwt_keys.rs as a stub slot, so fill only crates/betterlite-server/src/state/jwt_keys.rs and leave state.rs as it is.
 scope:
   paths:
     - crates/betterlite-auth/src/jwt_keys.rs
@@ -147,8 +148,8 @@ scope:
     - tools/oracle/cases/auth/jwt-keys/**
     - crates/betterlite-server/src/auth.rs
     - crates/betterlite-server/src/auth/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/state/jwt_keys.rs
+    - crates/betterlite-server/src/state/jwt_keys/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - crates/betterlite-server/src/auth/jwt_keys.rs

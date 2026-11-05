@@ -144,6 +144,7 @@ description: >-
   _enforce_responses_ws_first_frame_model_auth (1431-1471), and
   responses_websocket_endpoint (1474-1620). The owned slice is 252 nonblank,
   non-comment, non-docstring Python lines; budget 760 changed lines.
+  B1100 registers routes/responses_ws_auth.rs as a stub, so fill only crates/betterlite-server/src/routes/responses_ws_auth.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
   - crates/betterlite-server/Cargo.toml
@@ -151,10 +152,8 @@ scope:
   - crates/betterlite-server/src/api/responses_ws_auth/**
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/routes/responses_ws_auth.rs
+  - crates/betterlite-server/src/routes/responses_ws_auth/**
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/responses_ws_auth.rs
   - crates/betterlite-core/src/api/responses_ws_auth/**
