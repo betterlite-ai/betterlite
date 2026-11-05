@@ -1,4 +1,4 @@
-mod error;
+pub mod error;
 mod tests;
 
 use betterlite_config::sections::xai_identity::Settings;
@@ -6,8 +6,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 
 use crate::openai_base_config::Headers;
-
-pub use error::XaiIdentityError;
+use error::XaiIdentityError;
 
 const DEFAULT_API_BASE: &str = "https://api.x.ai";
 const MODEL_LIST_LIMIT: usize = 4 * 1024 * 1024;
@@ -97,7 +96,10 @@ pub fn decode_xai_models(status: u16, bytes: &[u8]) -> Result<Vec<String>, XaiId
     if !(200..300).contains(&status) {
         return Err(XaiIdentityError::Status {
             status,
-            body: String::from_utf8_lossy(bytes).into_owned(),
+            body: str::from_utf8(bytes).map_or_else(
+                |_| format!("{} bytes that are not UTF-8", bytes.len()),
+                str::to_owned,
+            ),
         });
     }
     let list: ModelList = serde_json::from_slice(bytes)?;

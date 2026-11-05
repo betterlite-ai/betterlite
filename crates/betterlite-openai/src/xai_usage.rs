@@ -1,5 +1,5 @@
-mod error;
-mod reconcile;
+pub mod error;
+pub mod reconcile;
 mod tests;
 
 use std::collections::BTreeMap;
@@ -8,19 +8,19 @@ use betterlite_models::cost_usage::CostUsage;
 use betterlite_models::price_fields::decimal_lexeme::parse_decimal_lexeme;
 use betterlite_models::price_fields::nested::SearchContextPricing;
 use betterlite_models::token_cost::GenericCostResult;
+use betterlite_models::token_cost::error::TokenCostError;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive as _;
 use serde_json::Value;
 
-pub use error::XaiUsageError;
-pub use reconcile::{fold_reasoning, normalize_totals, usage_restated_from_xai_ticks};
+use error::XaiUsageError;
 
 const USD_TICKS_PER_DOLLAR: u64 = 10_000_000_000;
 // https://docs.x.ai/developers/pricing#tools-pricing: five dollars per thousand calls
 const DEFAULT_SEARCH_RATE: (i64, u32) = (5, 3);
 
 // xAI usage as the chat transformation sees it: the token counts plus the extras xAI adds to Usage
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct XaiUsage {
     pub tokens: CostUsage,
     pub cost: Option<Decimal>,
@@ -34,7 +34,7 @@ pub trait GenericTokenPricing {
         model: &str,
         custom_llm_provider: &str,
         usage: &CostUsage,
-    ) -> Result<GenericCostResult, betterlite_models::token_cost::error::TokenCostError>;
+    ) -> Result<GenericCostResult, TokenCostError>;
 }
 
 // a JSON integer that is not a boolean and not negative, in ticks of a ten-billionth of a dollar
@@ -104,17 +104,17 @@ pub fn web_search_calls(details: &BTreeMap<String, Value>) -> Option<i64> {
 }
 
 pub fn attach_tool_details(usage: &mut XaiUsage, details: Option<BTreeMap<String, Value>>) {
-    let Some(details) = details else {
+    let Some(attached) = details else {
         return;
     };
-    let calls = web_search_calls(&details);
-    usage.server_side_tool_usage_details = Some(details);
-    if let Some(calls) = calls.filter(|calls| *calls > 0) {
+    let converted = web_search_calls(&attached);
+    usage.server_side_tool_usage_details = Some(attached);
+    if let Some(count) = converted.filter(|count| *count > 0) {
         usage
             .tokens
             .prompt_details
             .get_or_insert_default()
-            .web_search_requests = Some(calls);
+            .web_search_requests = Some(count);
     }
 }
 

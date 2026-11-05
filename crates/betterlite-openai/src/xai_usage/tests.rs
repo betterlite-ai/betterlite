@@ -11,10 +11,11 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 use serde_json::{Value, json};
 
+use super::error::XaiUsageError;
+use super::reconcile::{fold_reasoning, normalize_totals, usage_restated_from_xai_ticks};
 use super::{
-    GenericTokenPricing, XaiUsage, XaiUsageError, attach_tool_details, cost_per_token,
-    cost_per_web_search_request, fold_reasoning, normalize_totals, usage_restated_from_xai_ticks,
-    web_search_calls, xai_reported_cost_in_usd,
+    GenericTokenPricing, XaiUsage, attach_tool_details, cost_per_token,
+    cost_per_web_search_request, web_search_calls, xai_reported_cost_in_usd,
 };
 
 struct RecordingPricing {
@@ -102,19 +103,19 @@ fn pricing(medium: Option<&str>, low: Option<&str>, high: Option<&str>) -> Searc
 
 #[rstest]
 #[case::whole_dollar(json!(10_000_000_000_u64), Some("1"))]
-#[case::one_tick(json!(1), Some("0.0000000001"))]
-#[case::zero(json!(0), Some("0"))]
+#[case::one_tick(json!(1_i32), Some("0.0000000001"))]
+#[case::zero(json!(0_i32), Some("0"))]
 #[case::negative_zero(serde_json::from_str("-0").unwrap(), Some("0"))]
 #[case::beyond_double_precision(json!(123_456_789_012_345_678_u64), Some("12345678.9012345678"))]
-#[case::negative(json!(-1), None)]
+#[case::negative(json!(-1_i32), None)]
 #[case::boolean_true(json!(true), None)]
 #[case::boolean_false(json!(false), None)]
-#[case::float(json!(5.0), None)]
+#[case::float(json!(5.0_f64), None)]
 #[case::exponent(serde_json::from_str("1e3").unwrap(), None)]
 #[case::text(json!("100"), None)]
 #[case::null(Value::Null, None)]
-#[case::array(json!([1]), None)]
-#[case::object(json!({"ticks": 1}), None)]
+#[case::array(json!([1_i32]), None)]
+#[case::object(serde_json::from_str(r#"{"ticks":1}"#).unwrap(), None)]
 #[case::beyond_decimal_range(serde_json::from_str("100000000000000000000000000000000000000000").unwrap(), None)]
 fn xai_usage_ticks_divide_exactly_and_reject_non_integers(
     #[case] ticks: Value,
@@ -202,24 +203,23 @@ fn xai_usage_pricing_surfaces_delegate_errors_and_overflow() {
 }
 
 #[rstest]
-#[case::raw_shape_is_folded(100, 50, 160, Some(10), 60, 160)]
-#[case::folded_shape_stays(100, 60, 160, Some(10), 60, 160)]
-#[case::visible_total_stays(100, 50, 150, Some(10), 50, 150)]
-#[case::total_is_neither(100, 50, 175, Some(10), 50, 175)]
-#[case::no_reasoning(100, 50, 160, None, 50, 160)]
-#[case::negative_reasoning(100, 50, 140, Some(-10), 50, 140)]
+#[case::raw_shape_is_folded(100, 50, 160, Some(10), 60)]
+#[case::folded_shape_stays(100, 60, 160, Some(10), 60)]
+#[case::visible_total_stays(100, 50, 150, Some(10), 50)]
+#[case::total_is_neither(100, 50, 175, Some(10), 50)]
+#[case::no_reasoning(100, 50, 160, None, 50)]
+#[case::negative_reasoning(100, 50, 140, Some(-10), 50)]
 fn xai_usage_fold_adds_reasoning_only_when_the_total_includes_it(
     #[case] prompt: i64,
     #[case] completion: i64,
     #[case] total: i64,
     #[case] reasoning: Option<i64>,
     #[case] folded_completion: i64,
-    #[case] folded_total: i64,
 ) {
     let mut folding = usage(prompt, completion, total, reasoning);
     fold_reasoning(&mut folding).unwrap();
     assert_eq!(folding.tokens.completion_tokens, folded_completion);
-    assert_eq!(folding.tokens.total_tokens, folded_total);
+    assert_eq!(folding.tokens.total_tokens, total);
 }
 
 #[rstest]
@@ -268,8 +268,8 @@ fn xai_usage_reconciliation_reports_overflow() {
 fn xai_usage_restated_cost_replaces_only_the_cost() {
     let mut original = usage(100, 50, 150, Some(10));
     original.cost = Some(decimal("9"));
-    original.cost_in_usd_ticks = Some(json!(25_000_000));
-    original.server_side_tool_usage_details = Some(details(json!(2)));
+    original.cost_in_usd_ticks = Some(json!(25_000_000_i32));
+    original.server_side_tool_usage_details = Some(details(json!(2_i32)));
     let restated = usage_restated_from_xai_ticks(&original).unwrap();
     assert_eq!(restated.cost, Some(decimal("0.0025")));
     assert_eq!(
@@ -284,8 +284,8 @@ fn xai_usage_restated_cost_replaces_only_the_cost() {
 #[rstest]
 #[case::no_ticks(None)]
 #[case::boolean_ticks(Some(json!(true)))]
-#[case::negative_ticks(Some(json!(-5)))]
-#[case::float_ticks(Some(json!(2.5)))]
+#[case::negative_ticks(Some(json!(-5_i32)))]
+#[case::float_ticks(Some(json!(2.5_f64)))]
 fn xai_usage_restated_cost_needs_valid_ticks(#[case] ticks: Option<Value>) {
     let mut original = usage(1, 1, 2, None);
     original.cost_in_usd_ticks = ticks;
@@ -295,26 +295,28 @@ fn xai_usage_restated_cost_needs_valid_ticks(#[case] ticks: Option<Value>) {
 #[test]
 fn xai_usage_restated_cost_accepts_zero_ticks() {
     let mut original = usage(1, 1, 2, None);
-    original.cost_in_usd_ticks = Some(json!(0));
+    original.cost_in_usd_ticks = Some(json!(0_i32));
     original.cost = Some(decimal("4"));
     let restated = usage_restated_from_xai_ticks(&original).unwrap();
     assert_eq!(restated.cost, Some(Decimal::ZERO));
 }
 
 #[rstest]
-#[case::integer(json!(3), Some(3))]
-#[case::zero(json!(0), Some(0))]
+#[case::integer(json!(3_i32), Some(3))]
+#[case::zero(json!(0_i32), Some(0))]
 #[case::null(Value::Null, Some(0))]
-#[case::float_truncates(json!(2.9), Some(2))]
+#[case::float_truncates(json!(2.9_f64), Some(2))]
 #[case::numeric_text(json!("4"), Some(4))]
 #[case::padded_text(json!(" 4 "), Some(4))]
 #[case::empty_text(json!(""), Some(0))]
 #[case::decimal_text(json!("2.5"), None)]
 #[case::word(json!("many"), None)]
+#[case::underscored_text(json!("1_0"), None)]
+#[case::arabic_indic_digits(json!("\u{663}"), None)]
 #[case::boolean_true(json!(true), Some(1))]
 #[case::boolean_false(json!(false), Some(0))]
-#[case::array(json!([1]), None)]
-#[case::object(json!({"n": 1}), None)]
+#[case::array(json!([1_i32]), None)]
+#[case::object(serde_json::from_str(r#"{"n":1}"#).unwrap(), None)]
 #[case::beyond_i64(serde_json::from_str("100000000000000000000").unwrap(), None)]
 fn xai_usage_search_count_converts_like_an_integer(
     #[case] calls: Value,
@@ -329,9 +331,9 @@ fn xai_usage_search_count_defaults_to_zero_when_missing() {
 }
 
 #[rstest]
-#[case::positive(json!(2), Some(2))]
-#[case::zero(json!(0), None)]
-#[case::negative(json!(-1), None)]
+#[case::positive(json!(2_i32), Some(2))]
+#[case::zero(json!(0_i32), None)]
+#[case::negative(json!(-1_i32), None)]
 #[case::malformed(json!("many"), None)]
 fn xai_usage_search_details_attach_even_when_the_count_is_malformed(
     #[case] calls: Value,
@@ -352,7 +354,7 @@ fn xai_usage_search_details_attach_even_when_the_count_is_malformed(
 fn xai_usage_search_details_keep_existing_prompt_details() {
     let mut attaching = usage(1, 1, 2, None);
     attaching.tokens.prompt_details = Some(prompt_details(7, None));
-    attach_tool_details(&mut attaching, Some(details(json!(3))));
+    attach_tool_details(&mut attaching, Some(details(json!(3_i32))));
     let prompt = attaching.tokens.prompt_details.unwrap();
     assert_eq!(
         (prompt.text_tokens, prompt.web_search_requests),
@@ -379,7 +381,7 @@ fn xai_usage_search_rate_tries_medium_low_high_then_the_default(
     #[case] expected: &str,
 ) {
     let mut searching = usage(1, 1, 2, None);
-    searching.server_side_tool_usage_details = Some(details(json!(3)));
+    searching.server_side_tool_usage_details = Some(details(json!(3_i32)));
     let cost = cost_per_web_search_request(&searching, Some(&rates)).unwrap();
     assert_eq!(cost, decimal(expected));
 }
@@ -387,18 +389,18 @@ fn xai_usage_search_rate_tries_medium_low_high_then_the_default(
 #[test]
 fn xai_usage_search_rate_defaults_without_model_pricing() {
     let mut searching = usage(1, 1, 2, None);
-    searching.server_side_tool_usage_details = Some(details(json!(2)));
+    searching.server_side_tool_usage_details = Some(details(json!(2_i32)));
     let cost = cost_per_web_search_request(&searching, None).unwrap();
     assert_eq!(cost, decimal("0.01"));
 }
 
 #[rstest]
 #[case::no_details(None, None)]
-#[case::zero_calls(Some(json!(0)), None)]
-#[case::negative_calls(Some(json!(-2)), None)]
+#[case::zero_calls(Some(json!(0_i32)), None)]
+#[case::negative_calls(Some(json!(-2_i32)), None)]
 #[case::malformed_calls(Some(json!("many")), None)]
-#[case::reported_zero(Some(json!(4)), Some("0"))]
-#[case::reported_positive(Some(json!(4)), Some("1.5"))]
+#[case::reported_zero(Some(json!(4_i32)), Some("0"))]
+#[case::reported_positive(Some(json!(4_i32)), Some("1.5"))]
 fn xai_usage_search_charge_is_zero_when_nothing_is_billable(
     #[case] calls: Option<Value>,
     #[case] reported: Option<&str>,

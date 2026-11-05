@@ -1,15 +1,15 @@
 #![cfg(test)]
 
-use std::fs;
 use std::path::PathBuf;
+use std::{fs, iter};
 
 use betterlite_config::sections::xai_identity::Settings;
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 
+use super::error::XaiIdentityError;
 use super::{
-    KeyOrder, XaiIdentityError, decode_xai_models, get_api_base, get_api_key, models_request,
-    validate_environment,
+    KeyOrder, decode_xai_models, get_api_base, get_api_key, models_request, validate_environment,
 };
 use crate::openai_base_config::Headers;
 
@@ -48,8 +48,8 @@ fn xai_identity_key_precedence_prefers_explicit_then_xai_key(
     #[case] expected: Option<&str>,
 ) {
     let settings = settings(Some("module"), Some("generic"), Some("environment"));
-    let key = get_api_key(explicit.map(secret).as_ref(), order, &settings);
-    assert_eq!(key.as_ref().map(|key| key.expose_secret()), expected);
+    let found = get_api_key(explicit.map(secret).as_ref(), order, &settings);
+    assert_eq!(found.as_ref().map(ExposeSecret::expose_secret), expected);
 }
 
 #[rstest]
@@ -60,8 +60,8 @@ fn xai_identity_key_precedence_places_generic_key_by_mode(
     #[case] expected: Option<&str>,
 ) {
     let settings = settings(None, Some("generic"), Some("environment"));
-    let key = get_api_key(None, order, &settings);
-    assert_eq!(key.as_ref().map(|key| key.expose_secret()), expected);
+    let found = get_api_key(None, order, &settings);
+    assert_eq!(found.as_ref().map(ExposeSecret::expose_secret), expected);
 }
 
 #[rstest]
@@ -187,8 +187,10 @@ fn xai_identity_decode_models_prefixes_every_id(#[case] body: &[u8], #[case] exp
 }
 
 #[rstest]
-#[case::missing_data(br#"{}"#)]
+#[case::missing_data(b"{}")]
 #[case::null_data(br#"{"data":null}"#)]
+#[case::empty_object_data(br#"{"data":{}}"#)]
+#[case::empty_string_data(br#"{"data":""}"#)]
 #[case::missing_id(br#"{"data":[{"name":"grok-4"}]}"#)]
 #[case::numeric_id(br#"{"data":[{"id":4}]}"#)]
 #[case::null_id(br#"{"data":[{"id":null}]}"#)]
@@ -205,6 +207,15 @@ fn xai_identity_decode_models_reports_the_status_and_body() {
     assert_eq!(
         error.to_string(),
         "Failed to fetch models from XAI. Status code: 503, Response: overloaded"
+    );
+}
+
+#[test]
+fn xai_identity_decode_models_reports_a_non_utf8_error_body_by_length() {
+    let error = decode_xai_models(502, &[0xff, 0xfe, 0xfd]).unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Failed to fetch models from XAI. Status code: 502, Response: 3 bytes that are not UTF-8"
     );
 }
 
@@ -227,8 +238,8 @@ fn xai_identity_decode_models_rejects_an_oversized_body() {
 #[test]
 fn xai_identity_decode_models_rejects_deeply_nested_input() {
     let mut body = br#"{"data":"#.to_vec();
-    body.extend(std::iter::repeat_n(b'[', 100_000));
-    assert!(decode_xai_models(200, &body).is_err());
+    body.extend(iter::repeat_n(b'[', 100_000));
+    decode_xai_models(200, &body).unwrap_err();
 }
 
 #[rstest]
