@@ -1,7 +1,8 @@
 use betterlite_openai::api::vector_file_contracts::records::{
-    VectorStoreFileAuthCredentials, VectorStoreFileContentResponse, VectorStoreFileCreateRequest,
-    VectorStoreFileDeleteResponse, VectorStoreFileListQueryParams, VectorStoreFileListResponse,
-    VectorStoreFileObject, VectorStoreFileUpdateRequest,
+    VectorStoreFileAuthCredentials, VectorStoreFileContentResponse,
+    VectorStoreFileCreateRequest as CreateBody, VectorStoreFileDeleteResponse,
+    VectorStoreFileListQueryParams as ListQuery, VectorStoreFileListResponse,
+    VectorStoreFileObject, VectorStoreFileUpdateRequest as UpdateBody,
 };
 use betterlite_provider::api::vector_file_contracts::config::{
     EndpointsByType, Params, PreparedRequest, VectorStoreFileResponse, VectorStoreFilesConfig,
@@ -21,6 +22,9 @@ fn unsupported() -> VectorStoreFilesError {
     })
 }
 
+type Prepared = Result<PreparedRequest, VectorStoreFilesError>;
+type Reply<T> = Result<T, VectorStoreFilesError>;
+
 impl VectorStoreFilesConfig for MinimalConfig {
     fn auth_credentials(&self, _litellm_params: &Params) -> VectorStoreFileAuthCredentials {
         VectorStoreFileAuthCredentials::default()
@@ -30,100 +34,69 @@ impl VectorStoreFilesConfig for MinimalConfig {
         EndpointsByType::new()
     }
 
-    fn transform_create_request(
-        &self,
-        _vector_store_id: &str,
-        _create_request: &VectorStoreFileCreateRequest,
-        _api_base: &str,
-    ) -> Result<PreparedRequest, VectorStoreFilesError> {
+    fn transform_create_request(&self, _: &str, _: &CreateBody, _: &str) -> Prepared {
         Err(unsupported())
     }
 
     fn transform_create_response(
         &self,
-        _response: &VectorStoreFileResponse,
-    ) -> Result<VectorStoreFileObject, VectorStoreFilesError> {
+        _: &VectorStoreFileResponse,
+    ) -> Reply<VectorStoreFileObject> {
         Err(unsupported())
     }
 
-    fn transform_list_request(
-        &self,
-        _vector_store_id: &str,
-        _query_params: &VectorStoreFileListQueryParams,
-        _api_base: &str,
-    ) -> Result<PreparedRequest, VectorStoreFilesError> {
+    fn transform_list_request(&self, _: &str, _: &ListQuery, _: &str) -> Prepared {
         Err(unsupported())
     }
 
     fn transform_list_response(
         &self,
-        _response: &VectorStoreFileResponse,
-    ) -> Result<VectorStoreFileListResponse, VectorStoreFilesError> {
+        _: &VectorStoreFileResponse,
+    ) -> Reply<VectorStoreFileListResponse> {
         Err(unsupported())
     }
 
-    fn transform_retrieve_request(
-        &self,
-        _vector_store_id: &str,
-        _file_id: &str,
-        _api_base: &str,
-    ) -> Result<PreparedRequest, VectorStoreFilesError> {
+    fn transform_retrieve_request(&self, _: &str, _: &str, _: &str) -> Prepared {
         Err(unsupported())
     }
 
     fn transform_retrieve_response(
         &self,
-        _response: &VectorStoreFileResponse,
-    ) -> Result<VectorStoreFileObject, VectorStoreFilesError> {
+        _: &VectorStoreFileResponse,
+    ) -> Reply<VectorStoreFileObject> {
         Err(unsupported())
     }
 
-    fn transform_content_request(
-        &self,
-        _vector_store_id: &str,
-        _file_id: &str,
-        _api_base: &str,
-    ) -> Result<PreparedRequest, VectorStoreFilesError> {
+    fn transform_content_request(&self, _: &str, _: &str, _: &str) -> Prepared {
         Err(unsupported())
     }
 
     fn transform_content_response(
         &self,
-        _response: &VectorStoreFileResponse,
-    ) -> Result<VectorStoreFileContentResponse, VectorStoreFilesError> {
+        _: &VectorStoreFileResponse,
+    ) -> Reply<VectorStoreFileContentResponse> {
         Err(unsupported())
     }
 
-    fn transform_update_request(
-        &self,
-        _vector_store_id: &str,
-        _file_id: &str,
-        _update_request: &VectorStoreFileUpdateRequest,
-        _api_base: &str,
-    ) -> Result<PreparedRequest, VectorStoreFilesError> {
+    fn transform_update_request(&self, _: &str, _: &str, _: &UpdateBody, _: &str) -> Prepared {
         Err(unsupported())
     }
 
     fn transform_update_response(
         &self,
-        _response: &VectorStoreFileResponse,
-    ) -> Result<VectorStoreFileObject, VectorStoreFilesError> {
+        _: &VectorStoreFileResponse,
+    ) -> Reply<VectorStoreFileObject> {
         Err(unsupported())
     }
 
-    fn transform_delete_request(
-        &self,
-        _vector_store_id: &str,
-        _file_id: &str,
-        _api_base: &str,
-    ) -> Result<PreparedRequest, VectorStoreFilesError> {
+    fn transform_delete_request(&self, _: &str, _: &str, _: &str) -> Prepared {
         Err(unsupported())
     }
 
     fn transform_delete_response(
         &self,
-        _response: &VectorStoreFileResponse,
-    ) -> Result<VectorStoreFileDeleteResponse, VectorStoreFilesError> {
+        _: &VectorStoreFileResponse,
+    ) -> Reply<VectorStoreFileDeleteResponse> {
         Err(unsupported())
     }
 }
