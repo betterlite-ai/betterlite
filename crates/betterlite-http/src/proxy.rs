@@ -36,6 +36,8 @@ pub struct ProxiedClient {
     pub policy: Arc<ProxyPolicy>,
     pub limits: TransportLimits,
     pub tracker: TaskTracker,
+    // clients for deployments whose ssl_verify differs from this client's TLS policy, keyed by deployment id
+    pub deployments: Arc<BTreeMap<String, Self>>,
 }
 
 pub fn base_builder() -> ClientBuilder {
@@ -119,6 +121,7 @@ impl ProxiedClient {
             policy: Arc::clone(policy),
             limits,
             tracker: TaskTracker::new(),
+            deployments: Arc::default(),
         })
     }
 

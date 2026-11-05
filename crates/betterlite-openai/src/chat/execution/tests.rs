@@ -293,15 +293,23 @@ const SMALL_HEADERS: TransportLimits = TransportLimits {
 };
 
 #[rstest]
-#[case::answer_within_the_limits(false, OK, TransportLimits::DEFAULT, "ok")]
-#[case::success_body_over_the_limit(false, OK, SMALL_BODY, "larger than betterlite accepts")]
-#[case::error_body_over_the_limit(false, Wire { status: 500, ..OK }, SMALL_BODY, "larger than betterlite accepts")]
-#[case::headers_over_the_limit(false, OK, SMALL_HEADERS, "larger than betterlite accepts")]
-#[case::deployment_deadline_covers_the_answer(false, Wire { delay: Duration::from_secs(2), ..OK }, TransportLimits::DEFAULT, "within the deployment timeout")]
-#[case::stream_reads_chunk_by_chunk(true, OK, TransportLimits::DEFAULT, "data: 1|data: 2")]
+#[case::answer_within_the_limits(false, false, OK, TransportLimits::DEFAULT, "ok")]
+#[case::success_body_over_the_limit(false, false, OK, SMALL_BODY, "larger than betterlite accepts")]
+#[case::error_body_over_the_limit(false, false, Wire { status: 500, ..OK }, SMALL_BODY, "larger than betterlite accepts")]
+#[case::headers_over_the_limit(false, false, OK, SMALL_HEADERS, "larger than betterlite accepts")]
+#[case::the_deployment_client_applies_its_limits(
+    false,
+    true,
+    OK,
+    SMALL_BODY,
+    "larger than betterlite accepts"
+)]
+#[case::deployment_deadline_covers_the_answer(false, false, Wire { delay: Duration::from_secs(2), ..OK }, TransportLimits::DEFAULT, "within the deployment timeout")]
+#[case::stream_reads_chunk_by_chunk(true, false, OK, TransportLimits::DEFAULT, "data: 1|data: 2")]
 #[tokio::test]
 async fn http_pool_chat_regression_behavior(
     #[case] stream: bool,
+    #[case] own_client: bool,
     #[case] wire: Wire,
     #[case] limits: TransportLimits,
     #[case] expected: &str,
@@ -311,7 +319,16 @@ async fn http_pool_chat_regression_behavior(
         "[{{model_name: g, litellm_params: {{model: openai/up, api_base: '{base}', api_key: k, timeout: 0.3}}}}]"
     );
     let mut chat = executor(&entries, 1);
-    chat.client.limits = limits;
+    if own_client {
+        let model_id = chat.pick("g").unwrap().model_id.clone();
+        let sibling = ProxiedClient {
+            limits,
+            ..chat.client.clone()
+        };
+        chat.client.deployments = Arc::new(BTreeMap::from([(model_id, sibling)]));
+    } else {
+        chat.client.limits = limits;
+    }
     let deployment = chat.pick("g").unwrap();
     let observed = if stream {
         let go = Arc::new(Notify::new());

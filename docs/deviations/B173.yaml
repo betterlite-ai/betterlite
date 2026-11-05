@@ -12,3 +12,6 @@ deviations:
   - what: Redirects are never followed by the shared transport, and a 3xx answer is returned as it came.
     why: Following a redirect would replay the provider API key to another host; B009 owns explicit redirect replay.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L713-L798
+  - what: Embedding requests use the default TLS policy; only chat requests honor a deployment's ssl_verify.
+    why: The embedding adapter is outside this task and still sends through the executor's default client.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1713-L1810

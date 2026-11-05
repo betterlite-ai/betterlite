@@ -1,6 +1,7 @@
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::{TlsPolicy, TlsPolicyError};
 use betterlite_config::types::Config;
+use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::pool::{ClientPool, PoolError};
 use betterlite_openai::chat::deployment::{ChatDeployment, DeploymentError, OpenAiDefaults};
@@ -64,14 +65,9 @@ pub fn chat_executor(
         .iter()
         .map(|deployment| ChatDeployment::resolve(deployment, &defaults))
         .collect::<Result<Vec<_>, _>>()?;
-    let policy = Arc::new(ProxyPolicy::resolve(
-        &config.litellm_settings.proxy_trust,
-        environment,
-    )?);
-    let tls = TlsPolicy::resolve(config, environment, None)?;
-    let pool = ClientPool::new(deployments.len().max(1), TransportLimits::DEFAULT);
+    let client = outbound_client(config, environment, &deployments)?;
     Ok(ChatExecutor {
-        client: pool.client(&tls, &policy)?,
+        client,
         deployments,
         // the model cost map is not loaded yet, so no model counts as a catalog model
         catalog: CatalogCapabilities {
@@ -81,3 +77,29 @@ pub fn chat_executor(
         random: Mutex::new(random),
     })
 }
+
+fn outbound_client(
+    config: &Config,
+    environment: &BTreeMap<String, String>,
+    deployments: &[ChatDeployment],
+) -> Result<ProxiedClient, ChatSetupError> {
+    let policy = Arc::new(ProxyPolicy::resolve(
+        &config.litellm_settings.proxy_trust,
+        environment,
+    )?);
+    // one entry for the default policy and one more for each deployment whose ssl_verify differs
+    let pool = ClientPool::new(
+        deployments.len().saturating_add(1),
+        TransportLimits::DEFAULT,
+    );
+    let mut client = pool.client(&TlsPolicy::resolve(config, environment, None)?, &policy)?;
+    let mut by_deployment = BTreeMap::new();
+    for (resolved, entry) in deployments.iter().zip(&config.model_list) {
+        let tls = TlsPolicy::resolve(config, environment, entry.litellm_params.ssl_verify)?;
+        by_deployment.insert(resolved.model_id.clone(), pool.client(&tls, &policy)?);
+    }
+    client.deployments = Arc::new(by_deployment);
+    Ok(client)
+}
+
+mod tests;

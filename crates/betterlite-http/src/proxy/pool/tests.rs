@@ -7,11 +7,27 @@ use std::time::Duration;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::{TlsPolicy, Verification};
 use betterlite_config::types::ProxyTrust;
+use reqwest::header::HeaderMap;
+use reqwest::{Method, Url};
 use rstest::rstest;
+use rustls::ServerConfig;
+use rustls::crypto::aws_lc_rs;
+use rustls::pki_types::pem::PemObject as _;
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::net::TcpListener;
+use tokio_rustls::TlsAcceptor;
 
 use super::{ClientChoice, ClientPool, PoolError};
+use crate::proxy::ProxiedClient;
 use crate::proxy::limits::TransportLimits;
+use crate::proxy::outbound::{OutboundRequest, RequestBody};
 use crate::proxy::tests::{default_client, kind};
+
+const SERVER_CERT: &[u8] =
+    include_bytes!("../../../../../tools/postgres-fixture/fixtures/tls/server.pem");
+const SERVER_KEY: &[u8] =
+    include_bytes!("../../../../../tools/postgres-fixture/fixtures/tls/server.key");
 
 fn tls(verification: Verification) -> TlsPolicy {
     TlsPolicy {
@@ -37,6 +53,75 @@ enum Scenario {
     EnabledThenDisabled,
     Broken,
     DrainedThenDisabled,
+    DeploymentTls,
+}
+
+async fn status(client: &ProxiedClient, url: &Url) -> String {
+    let request = OutboundRequest {
+        method: Method::GET,
+        url: url.clone(),
+        query: Vec::new(),
+        headers: HeaderMap::new(),
+        body: RequestBody::Empty,
+        deadline: Duration::from_secs(5),
+    };
+    match client.send_buffered(request).await {
+        Ok(response) => response.status.to_string(),
+        Err(error) => kind(&error),
+    }
+}
+
+async fn serve_tls(listener: &TcpListener, acceptor: &TlsAcceptor) {
+    let (socket, _) = listener.accept().await.unwrap();
+    if let Ok(mut stream) = acceptor.accept(socket).await {
+        let mut head = Vec::new();
+        while !head.ends_with(b"\r\n\r\n") {
+            head.push(stream.read_u8().await.unwrap());
+        }
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\nconnection: close\r\n\r\nok")
+            .await
+            .unwrap();
+        stream.shutdown().await.unwrap();
+    }
+}
+
+async fn deployment_tls(
+    pool: &ClientPool,
+    routing: &Arc<ProxyPolicy>,
+    default: &TlsPolicy,
+    lax: &TlsPolicy,
+) -> String {
+    let mut base = pool.client(default, routing).unwrap();
+    let sibling = pool.client(lax, routing).unwrap();
+    base.deployments = Arc::new(BTreeMap::from([("lax".to_owned(), sibling)]));
+    let certificates = CertificateDer::pem_slice_iter(SERVER_CERT)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    let origin = ServerConfig::builder_with_provider(Arc::new(aws_lc_rs::default_provider()))
+        .with_safe_default_protocol_versions()
+        .unwrap()
+        .with_no_client_auth()
+        .with_single_cert(
+            certificates,
+            PrivateKeyDer::from_pem_slice(SERVER_KEY).unwrap(),
+        )
+        .unwrap();
+    let acceptor = TlsAcceptor::from(Arc::new(origin));
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url: Url = format!("https://{}/", listener.local_addr().unwrap())
+        .parse()
+        .unwrap();
+    let served = async {
+        serve_tls(&listener, &acceptor).await;
+        serve_tls(&listener, &acceptor).await;
+    };
+    let requests = async {
+        let strict = status(base.deployments.get("other").unwrap_or(&base), &url).await;
+        let relaxed = status(base.deployments.get("lax").unwrap_or(&base), &url).await;
+        format!("{strict} {relaxed}")
+    };
+    tokio::join!(served, requests).1
 }
 
 #[rstest]
@@ -65,6 +150,11 @@ enum Scenario {
     2,
     Scenario::DrainedThenDisabled,
     "Pooled drained Closed clients=1"
+)]
+#[case::a_deployment_ssl_verify_selects_its_own_client(
+    2,
+    Scenario::DeploymentTls,
+    "Connect 200 clients=2"
 )]
 #[tokio::test]
 async fn http_pool_tests_behavior(
@@ -108,6 +198,7 @@ async fn http_pool_tests_behavior(
             let refused = outcome(pool.select(None, false, &disabled, &routing));
             format!("{first} drained {refused}")
         }
+        Scenario::DeploymentTls => deployment_tls(&pool, &routing, &enabled, &disabled).await,
     };
     assert_eq!(
         format!("{observed} clients={}", pool.client_count()),
