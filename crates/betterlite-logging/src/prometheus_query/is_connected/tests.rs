@@ -4,6 +4,7 @@ use crate::prometheus_query::PrometheusSettings;
 use crate::prometheus_query::error::QueryError;
 use crate::prometheus_query::fake_transport::FakeFailure;
 use rstest::rstest;
+use std::collections::BTreeMap;
 
 #[rstest]
 #[case::set(Some("http://prometheus:9090"), true)]
@@ -40,4 +41,55 @@ fn an_unset_url_fails_with_the_litellm_message() {
         error.to_string(),
         "PROMETHEUS_URL not set please set 'PROMETHEUS_URL=<>' in .env"
     );
+}
+
+fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+    pairs
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect()
+}
+
+#[rstest]
+#[case::set(Some("http://prometheus:9090"), Some("http://prometheus:9090"))]
+#[case::unset(None, None)]
+#[case::empty(Some(""), None)]
+fn from_lookup_reads_prometheus_url(#[case] value: Option<&str>, #[case] expected: Option<&str>) {
+    let pairs: Vec<(&str, &str)> = value
+        .map(|url| ("PROMETHEUS_URL", url))
+        .into_iter()
+        .collect();
+    let settings = PrometheusSettings::from_lookup(&environment(&pairs));
+    assert_eq!(settings.url.as_deref(), expected);
+    assert_eq!(settings.selected_instance, None);
+}
+
+#[rstest]
+#[case::set(Some("web-1:8000"), Some("web-1:8000"))]
+#[case::unset(None, None)]
+#[case::empty(Some(""), None)]
+fn from_lookup_reads_prometheus_selected_instance(
+    #[case] value: Option<&str>,
+    #[case] expected: Option<&str>,
+) {
+    let pairs: Vec<(&str, &str)> = value
+        .map(|instance| ("PROMETHEUS_SELECTED_INSTANCE", instance))
+        .into_iter()
+        .collect();
+    let settings = PrometheusSettings::from_lookup(&environment(&pairs));
+    assert_eq!(settings.selected_instance.as_deref(), expected);
+    assert_eq!(settings.url, None);
+}
+
+#[test]
+fn from_lookup_feeds_the_endpoint_a_litellm_style_environment() {
+    let settings = PrometheusSettings::from_lookup(&environment(&[
+        ("PROMETHEUS_URL", "http://prometheus:9090"),
+        ("PROMETHEUS_SELECTED_INSTANCE", "web-1:8000"),
+    ]));
+    assert_eq!(
+        settings.endpoint::<FakeFailure>().unwrap(),
+        "http://prometheus:9090"
+    );
+    assert_eq!(settings.selected_instance.as_deref(), Some("web-1:8000"));
 }
