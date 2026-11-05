@@ -389,7 +389,7 @@ fn absent_masked_data_has_no_replacement(#[case] input: &str, #[case] expected: 
 }
 
 #[test]
-fn replays_prisma_content_corpus() {
+fn replays_the_prisma_content_corpus() {
     let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/prisma_content");
     let entries: Vec<_> = read_dir(folder).expect("corpus").collect();
     assert!(!entries.is_empty());
