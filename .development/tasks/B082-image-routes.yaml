@@ -7,6 +7,9 @@ description: >-
   UploadFile-to-named-buffer helpers; the two package initializers add no executable behavior. No variation
   route exists. Use B756 authentication, B124 proxy hooks, B1103 authenticated request enrichment, B1102 model
   precedence/destination checks, B014 routing, B1121/B999 SDK calls and B004 common request/error processing.
+  B014 registers the ImageGeneration and ImageEdit entries as stubs, so replace the stubs and their not-built tests
+  in the image_generation and image_edit modules under crates/betterlite-core/src/operation/ and
+  crates/betterlite-core/src/dispatch/, and leave dispatch.rs and operation.rs as they are.
 
   Generation creates a call id from x-litellm-call-id before its try; parsed JSON is merged with that id so a
   body litellm_call_id cannot override it. Enrich before resolving model, reject URL-valued path models, then
@@ -42,10 +45,14 @@ scope:
   - crates/betterlite-server/src/state/**
   - crates/betterlite-core/src/api/image_routes.rs
   - crates/betterlite-core/src/api/image_routes/**
-  - crates/betterlite-core/src/operation.rs
-  - crates/betterlite-core/src/operation/**
-  - crates/betterlite-core/src/dispatch.rs
-  - crates/betterlite-core/src/dispatch/**
+  - crates/betterlite-core/src/operation/image_generation.rs
+  - crates/betterlite-core/src/operation/image_generation/**
+  - crates/betterlite-core/src/operation/image_edit.rs
+  - crates/betterlite-core/src/operation/image_edit/**
+  - crates/betterlite-core/src/dispatch/image_generation.rs
+  - crates/betterlite-core/src/dispatch/image_generation/**
+  - crates/betterlite-core/src/dispatch/image_edit.rs
+  - crates/betterlite-core/src/dispatch/image_edit/**
   - crates/betterlite-server/fuzz/Cargo.toml
   - crates/betterlite-server/fuzz/fuzz_targets/image_routes.rs
   - crates/betterlite-server/fuzz/corpus/image_routes/**
