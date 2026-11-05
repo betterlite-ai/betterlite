@@ -36,7 +36,7 @@ pub struct Credentials {
 
 #[derive(Debug, Clone)]
 pub struct ResolvedCredentials {
-    pub credentials: Option<Credentials>,
+    pub credentials: Credentials,
     pub cache_ttl: Option<Duration>,
 }
 
@@ -105,7 +105,7 @@ pub async fn resolve_local_credentials(
 ) -> Result<ResolvedCredentials, SourceError> {
     if settings.profile_name.is_some() {
         return Ok(ResolvedCredentials {
-            credentials: Some(native.load(settings).await?),
+            credentials: native.load(settings).await?,
             cache_ttl: None,
         });
     }
@@ -113,11 +113,11 @@ pub async fn resolve_local_credentials(
         && (settings.session_token.is_some() || settings.region_name.is_some())
     {
         return Ok(ResolvedCredentials {
-            credentials: Some(Credentials {
+            credentials: Credentials {
                 access_key_id: access.clone(),
                 secret_access_key: secret.clone(),
                 session_token: settings.session_token.clone(),
-            }),
+            },
             cache_ttl: settings
                 .session_token
                 .is_none()
@@ -125,7 +125,7 @@ pub async fn resolve_local_credentials(
         });
     }
     Ok(ResolvedCredentials {
-        credentials: Some(native.load(settings).await?),
+        credentials: native.load(settings).await?,
         cache_ttl: None,
     })
 }

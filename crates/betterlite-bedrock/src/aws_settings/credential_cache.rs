@@ -93,7 +93,7 @@ impl CredentialCache {
         &self,
         parameters: &BTreeMap<String, Parameter>,
         fetch: F,
-    ) -> Result<Option<Credentials>, CacheError>
+    ) -> Result<Credentials, CacheError>
     where
         F: FnOnce() -> Fut,
         Fut: Future<Output = Result<ResolvedCredentials, SourceError>>,
@@ -107,18 +107,12 @@ impl CredentialCache {
         let lock = self.stripes.get(stripe).ok_or(CacheError::Unavailable)?;
         let _guard = lock.lock().await;
         if let Some(CacheValue::Credential(handle)) = self.storage.get(&key) {
-            return Credentials::try_from(handle).map(Some);
+            return Credentials::try_from(handle);
         }
         let resolved = fetch().await?;
-        let value = resolved
-            .credentials
-            .clone()
-            .map_or(CacheValue::Null, |credentials| {
-                CacheValue::Credential(CredentialHandle::from(credentials))
-            });
         self.storage.set(
             &key,
-            value,
+            CacheValue::Credential(CredentialHandle::from(resolved.credentials.clone())),
             Ttl::Explicit(resolved.cache_ttl.map(|ttl| ttl.as_secs_f64())),
         );
         Ok(resolved.credentials)

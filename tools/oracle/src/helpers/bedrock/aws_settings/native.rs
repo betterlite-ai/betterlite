@@ -46,7 +46,13 @@ pub(super) async fn local(input: &Local) -> HelperResult {
     let result = resolve_local_credentials(&AwsSettings::from(&input.settings), &sources)
         .await
         .map_err(failure)?;
-    Ok(
-        json!({"credentials": result.credentials.map(|value| (value.access_key_id.expose_secret().to_owned(), value.secret_access_key.expose_secret().to_owned(), value.session_token.map(|token| token.expose_secret().to_owned()))), "ttl": result.cache_ttl.map(|ttl| ttl.as_secs())}),
-    )
+    let value = result.credentials;
+    Ok(json!({
+        "credentials": (
+            value.access_key_id.expose_secret().to_owned(),
+            value.secret_access_key.expose_secret().to_owned(),
+            value.session_token.map(|token| token.expose_secret().to_owned()),
+        ),
+        "ttl": result.cache_ttl.map(|ttl| ttl.as_secs()),
+    }))
 }

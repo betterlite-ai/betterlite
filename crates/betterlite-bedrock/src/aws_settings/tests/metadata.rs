@@ -40,7 +40,7 @@ async fn container_credentials_use_injected_transport() {
         .await
         .unwrap();
     assert!(result.cache_ttl.is_none());
-    let credentials = result.credentials.unwrap();
+    let credentials = result.credentials;
     assert_eq!(credentials.access_key_id.expose_secret(), "container");
     assert_eq!(
         credentials.session_token.unwrap().expose_secret(),

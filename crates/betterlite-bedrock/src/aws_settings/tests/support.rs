@@ -96,11 +96,11 @@ pub(super) fn cache(clock: Arc<AtomicU32>) -> CredentialCache {
 
 pub(super) fn credentials(access: &str) -> ResolvedCredentials {
     ResolvedCredentials {
-        credentials: Some(Credentials {
+        credentials: Credentials {
             access_key_id: SecretString::from(access.to_owned()),
             secret_access_key: SecretString::from("secret-fixture".to_owned()),
             session_token: Some(SecretString::from("token-fixture".to_owned())),
-        }),
+        },
         cache_ttl: None,
     }
 }

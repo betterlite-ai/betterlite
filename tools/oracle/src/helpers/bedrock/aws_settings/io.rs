@@ -53,19 +53,22 @@ async fn replay(input: &Cache, storage: &CredentialCache, clock: &AtomicU32) -> 
                 if step.fail {
                     return Err(SourceError::MissingProvider);
                 }
+                let Some(access) = step.access.clone() else {
+                    return Err(SourceError::MissingProvider);
+                };
                 Ok(ResolvedCredentials {
-                    credentials: step.access.as_ref().map(|access| Credentials {
-                        access_key_id: SecretString::from(access.clone()),
+                    credentials: Credentials {
+                        access_key_id: SecretString::from(access),
                         secret_access_key: SecretString::from("fixture".to_owned()),
                         session_token: None,
-                    }),
+                    },
                     cache_ttl: step.ttl.map(|ttl| Duration::from_secs(u64::from(ttl))),
                 })
             })
             .await;
         results.push(result.map_or_else(
             |_error| json!({"error": true}),
-            |value| json!({"access": value.map(|credentials| credentials.access_key_id.expose_secret().to_owned())}),
+            |credentials| json!({"access": credentials.access_key_id.expose_secret().to_owned()}),
         ));
     }
     Ok(json!({"fetches": fetches, "results": results}))
