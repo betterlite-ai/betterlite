@@ -205,16 +205,6 @@ async fn integration_fails_a_compilation_when_the_configured_prompt_cannot_load(
     );
 }
 
-#[tokio::test]
-async fn integration_ignores_an_empty_configured_prompt_id() {
-    let phoenix = serve(200, PROMPT_BODY).await;
-    manager(&phoenix.base, Some(""))
-        .compile_prompt_helper(Some("v1"), None)
-        .await
-        .unwrap();
-    assert_eq!(phoenix.request_heads().len(), 1);
-}
-
 #[test]
 fn integration_name_is_arize() {
     assert_eq!(PhoenixPromptManager::INTEGRATION_NAME, "arize");

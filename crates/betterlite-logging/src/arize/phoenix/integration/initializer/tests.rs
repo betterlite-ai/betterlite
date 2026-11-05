@@ -56,15 +56,37 @@ fn integration_initializer_requires_one_combined_message_for_key_and_base(
     );
 }
 
-#[test]
-fn integration_initializer_keeps_the_configured_prompt_id() {
+#[rstest]
+#[case::configured(Some("v1"), Some("v1"))]
+#[case::empty_counts_as_unset(Some(""), None)]
+#[case::absent(None, None)]
+fn integration_initializer_keeps_the_configured_prompt_id(
+    #[case] configured: Option<&str>,
+    #[case] kept: Option<&str>,
+) {
     let manager = prompt_initializer(
-        &params(Some("k"), Some("http://phoenix"), Some("v1")),
+        &params(Some("k"), Some("http://phoenix"), configured),
         &environment(None),
         proxied(),
     )
     .unwrap();
-    assert_eq!(manager.prompt_id.as_deref(), Some("v1"));
+    assert_eq!(manager.prompt_id.as_deref(), kept);
+}
+
+#[tokio::test]
+async fn integration_initializer_with_an_empty_prompt_id_fetches_only_the_requested_prompt() {
+    let phoenix = serve(200, PROMPT_BODY).await;
+    let manager = prompt_initializer(
+        &params(Some("k"), Some(&phoenix.base), Some("")),
+        &environment(None),
+        proxied(),
+    )
+    .unwrap();
+    manager
+        .compile_prompt_helper(Some("v1"), None)
+        .await
+        .unwrap();
+    assert_eq!(phoenix.request_heads().len(), 1);
 }
 
 #[rstest]

@@ -17,10 +17,6 @@ const REQUEST_DEADLINE: Duration = Duration::from_mins(100);
 
 #[derive(Debug, Error)]
 pub enum ClientError {
-    #[error("api_key is required")]
-    MissingApiKey,
-    #[error("api_base is required")]
-    MissingApiBase,
     #[error(transparent)]
     Sanitization(#[from] SanitizationError),
     #[error(
@@ -62,28 +58,12 @@ pub enum ClientError {
 
 #[derive(Debug)]
 pub struct PhoenixClient {
-    http: ProxiedClient,
-    api_key: SecretString,
-    api_base: String,
+    pub http: ProxiedClient,
+    pub api_key: SecretString,
+    pub api_base: String,
 }
 
 impl PhoenixClient {
-    pub fn new(
-        http: ProxiedClient,
-        api_key: Option<SecretString>,
-        api_base: Option<String>,
-    ) -> Result<Self, ClientError> {
-        Ok(Self {
-            http,
-            api_key: api_key
-                .filter(|key| !key.expose_secret().is_empty())
-                .ok_or(ClientError::MissingApiKey)?,
-            api_base: api_base
-                .filter(|base| !base.is_empty())
-                .ok_or(ClientError::MissingApiBase)?,
-        })
-    }
-
     fn build_request(&self, prompt_version_id: &str) -> Result<OutboundRequest, ClientError> {
         let safe_id = sanitize_id(prompt_version_id)?;
         let url = Url::parse(&format!("{}/v1/prompt_versions/{safe_id}", self.api_base)).map_err(

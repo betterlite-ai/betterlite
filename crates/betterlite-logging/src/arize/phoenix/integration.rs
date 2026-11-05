@@ -51,7 +51,7 @@ impl PhoenixPromptManager {
             source,
         };
         // LiteLLM builds its template manager on first use, and that build fetches the configured prompt.
-        if let Some(configured) = self.prompt_id.as_deref().filter(|id| !id.is_empty()) {
+        if let Some(configured) = self.prompt_id.as_deref() {
             self.templates
                 .load(&self.client, configured)
                 .await

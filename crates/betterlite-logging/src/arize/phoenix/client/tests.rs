@@ -1,11 +1,10 @@
 #![cfg(test)]
 
 use rstest::rstest;
-use secrecy::SecretString;
 use tokio::net::TcpListener;
 
-use super::{ClientError, PhoenixClient};
-use crate::arize::phoenix::tests::server::{PROMPT_BODY, phoenix_client, proxied, serve};
+use super::ClientError;
+use crate::arize::phoenix::tests::server::{PROMPT_BODY, phoenix_client, serve};
 
 #[tokio::test]
 async fn client_fetches_the_version_with_bearer_authentication() {
@@ -48,26 +47,6 @@ async fn client_error_rejects_an_unsafe_identifier_before_any_request(
         .unwrap_err();
     assert_eq!(error.to_string(), message);
     assert!(phoenix.request_heads().is_empty());
-}
-
-#[rstest]
-#[case::no_key(None, Some("http://x"), "api_key is required")]
-#[case::empty_key(Some(""), Some("http://x"), "api_key is required")]
-#[case::no_base(Some("k"), None, "api_base is required")]
-#[case::empty_base(Some("k"), Some(""), "api_base is required")]
-#[case::key_is_checked_first(None, None, "api_key is required")]
-fn client_error_requires_a_key_and_a_base(
-    #[case] key: Option<&str>,
-    #[case] base: Option<&str>,
-    #[case] message: &str,
-) {
-    let error = PhoenixClient::new(
-        proxied(),
-        key.map(SecretString::from),
-        base.map(str::to_owned),
-    )
-    .unwrap_err();
-    assert_eq!(error.to_string(), message);
 }
 
 #[rstest]

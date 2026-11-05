@@ -84,10 +84,9 @@ pub(crate) fn proxied() -> ProxiedClient {
 }
 
 pub(crate) fn phoenix_client(base: &str) -> PhoenixClient {
-    PhoenixClient::new(
-        proxied(),
-        Some(SecretString::from("secret-key")),
-        Some(base.to_owned()),
-    )
-    .unwrap()
+    PhoenixClient {
+        http: proxied(),
+        api_key: SecretString::from("secret-key"),
+        api_base: base.to_owned(),
+    }
 }
