@@ -107,6 +107,8 @@ fn held(family: &str, var: &str) -> String {
 #[case::rate_below_zero(Scenario::Arize(Some("arize"), &[("arize_error_sampling_rate", "-0.1")]), &rate("arize_error_sampling_rate", "-0.1"))]
 #[case::rate_not_a_number(Scenario::Arize(Some("arize"), &[("arize_error_sampling_rate", "abc")]), &rate("arize_error_sampling_rate", "abc"))]
 #[case::rate_nan(Scenario::Arize(Some("arize"), &[("arize_error_sampling_rate", "nan")]), &rate("arize_error_sampling_rate", "nan"))]
+#[case::rate_empty_negative_exponent(Scenario::Arize(Some("arize"), &[("arize_error_sampling_rate", "1e-")]), &rate("arize_error_sampling_rate", "1e-"))]
+#[case::rate_text_negative_exponent(Scenario::Arize(Some("arize"), &[("arize_error_sampling_rate", "1e-x")]), &rate("arize_error_sampling_rate", "1e-x"))]
 #[case::rate_overflowing_exponent(Scenario::Arize(Some("arize"), &[("arize_error_sampling_rate", "1e400")]), &rate("arize_error_sampling_rate", "1e400"))]
 #[case::rate_decimal_not_rounded_to_float(Scenario::Arize(Some("arize"), &[("arize_error_sampling_rate", "1.00000000000000001")]), &rate("arize_error_sampling_rate", "1.00000000000000001"))]
 #[case::rate_error_var_is_checked_first(Scenario::Arize(Some("arize"), &[("arize_success_sampling_rate", "2"), ("arize_error_sampling_rate", "3")]), &rate("arize_error_sampling_rate", "3"))]
