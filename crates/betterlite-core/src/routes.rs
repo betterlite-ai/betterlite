@@ -231,7 +231,12 @@ fn segment_matches(route: &str, pattern: &str) -> bool {
     let Some(end) = pattern.find('}') else {
         return route == pattern;
     };
-    let suffix = &pattern[end + 1..];
+    let Some(suffix) = pattern
+        .get(end..)
+        .and_then(|segment| segment.strip_prefix('}'))
+    else {
+        return route == pattern;
+    };
     if suffix.is_empty() {
         return true;
     }
@@ -251,7 +256,9 @@ fn pattern_matches(route: &str, pattern: &str) -> Result<bool, RouteMetadataErro
     if route_parts.len() > pattern_parts.len() && !spans {
         return Ok(false);
     }
-    let head_count = pattern_parts.len() - 1;
+    let Some(head_count) = pattern_parts.len().checked_sub(1) else {
+        return Ok(false);
+    };
     for (route_part, pattern_part) in route_parts
         .iter()
         .take(head_count)
