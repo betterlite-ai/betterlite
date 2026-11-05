@@ -29,11 +29,8 @@ enum RawFlag {
     Float(f64),
     Text(String),
     List(Vec<IgnoredAny>),
-    #[expect(
-        clippy::zero_sized_map_values,
-        reason = "only whether the mapping is empty matters"
-    )]
-    Mapping(BTreeMap<String, IgnoredAny>),
+    Mapping(BTreeMap<String, Self>),
+    Null(()),
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -79,6 +76,7 @@ where
         RawFlag::Text(text) => !resolve_string(text, path, lookup)?.is_empty(),
         RawFlag::List(items) => !items.is_empty(),
         RawFlag::Mapping(entries) => !entries.is_empty(),
+        RawFlag::Null(()) => false,
     })
 }
 

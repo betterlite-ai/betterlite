@@ -62,14 +62,12 @@ impl Helper for Op {
                     .map_err(|error| failure("RuntimeError", error.to_string()))?;
                 let validated = runtime
                     .block_on(validator.validate_url(url))
-                    .map_err(|error| match error {
-                        UserUrlError::Ssrf(_) => failure("SSRFError", error.to_string()),
-                        UserUrlError::Parse(_)
-                        | UserUrlError::InvalidUrl(_)
-                        | UserUrlError::LocationHeader(_)
-                        | UserUrlError::Unrequestable { .. }
-                        | UserUrlError::TooManyRedirects
-                        | UserUrlError::Transport(_) => failure("ValueError", error.to_string()),
+                    .map_err(|error| {
+                        let ssrf = matches!(error, UserUrlError::Ssrf(_));
+                        failure(
+                            if ssrf { "SSRFError" } else { "ValueError" },
+                            error.to_string(),
+                        )
                     })?;
                 Ok(serde_json::json!({
                     "url": validated.url,

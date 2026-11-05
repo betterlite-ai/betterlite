@@ -86,33 +86,27 @@ fn check_bracketed_host(hostname: &str) -> Result<(), UrlParseError> {
     }
 }
 
+fn check_after_bracket(bracketed: &str) -> Result<(), UrlParseError> {
+    match bracketed.split_once(']') {
+        Some((hostname, "")) => check_bracketed_host(hostname),
+        Some((hostname, after)) if after.starts_with(':') => check_bracketed_host(hostname),
+        None => check_bracketed_host(bracketed),
+        Some(_) => Err(UrlParseError::InvalidIpv6Url),
+    }
+}
+
 fn check_bracketed_netloc(netloc: &str) -> Result<(), UrlParseError> {
     let host_and_port = netloc.rsplit_once('@').map_or(netloc, |(_, tail)| tail);
-    let Some((before_bracket, bracketed)) = host_and_port.split_once('[') else {
-        let hostname = host_and_port
-            .split_once(':')
-            .map_or(host_and_port, |(head, _)| head);
-        return check_bracketed_host(hostname);
-    };
-    if !before_bracket.is_empty() {
-        return Err(UrlParseError::InvalidIpv6Url);
+    match host_and_port.split_once('[') {
+        None => check_bracketed_host(host_and_port.split(':').next().unwrap_or_default()),
+        Some(("", bracketed)) => check_after_bracket(bracketed),
+        Some(_) => Err(UrlParseError::InvalidIpv6Url),
     }
-    let (hostname, after) = bracketed.split_once(']').unwrap_or((bracketed, ""));
-    if !after.is_empty() && !after.starts_with(':') {
-        return Err(UrlParseError::InvalidIpv6Url);
-    }
-    check_bracketed_host(hostname)
 }
 
 // Characters like U+2100 expand to 'a/c' under the NFKC step IDNA applies to a host
 fn check_netloc(netloc: &str) -> Result<(), UrlParseError> {
-    if netloc.is_ascii() {
-        return Ok(());
-    }
-    let stripped: String = netloc
-        .chars()
-        .filter(|letter| !matches!(letter, '@' | ':' | '#' | '?'))
-        .collect();
+    let stripped = netloc.replace(['@', ':', '#', '?'], "");
     let normalized: String = stripped.nfkc().collect();
     if stripped != normalized && normalized.contains(['/', '?', '#', '@', ':']) {
         return Err(UrlParseError::NetlocNfkc {
