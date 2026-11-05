@@ -8,13 +8,16 @@ pub struct MultipartPart {
     pub data: Vec<u8>,
 }
 
-fn quoted(name: &str) -> Result<&str, TransportError> {
-    if name.contains(['"', '\r', '\n']) {
-        return Err(TransportError::MultipartName {
-            name: name.to_owned(),
-        });
-    }
-    Ok(name)
+// the HTML5 form-encoding rules httpx applies to a field name or file name
+fn escaped(text: &str) -> String {
+    text.chars()
+        .map(|letter| match letter {
+            '"' => "%22".to_owned(),
+            '\\' => "\\\\".to_owned(),
+            '\u{0}'..='\u{1a}' | '\u{1c}'..='\u{1f}' => format!("%{:02X}", u32::from(letter)),
+            other => other.to_string(),
+        })
+        .collect()
 }
 
 pub fn encode(boundary: &str, parts: &[MultipartPart]) -> Result<Vec<u8>, TransportError> {
@@ -31,19 +34,24 @@ pub fn encode(boundary: &str, parts: &[MultipartPart]) -> Result<Vec<u8>, Transp
             });
         }
         body.extend_from_slice(format!("{delimiter}\r\n").as_bytes());
-        let file_name = match &part.file_name {
-            Some(file_name) => format!("; filename=\"{}\"", quoted(file_name)?),
-            None => String::new(),
-        };
+        let file_name = part
+            .file_name
+            .as_ref()
+            .map_or_else(String::new, |file_name| {
+                format!("; filename=\"{}\"", escaped(file_name))
+            });
         let disposition = format!(
             "Content-Disposition: form-data; name=\"{}\"{file_name}",
-            quoted(&part.name)?
+            escaped(&part.name)
         );
         body.extend_from_slice(format!("{disposition}\r\n").as_bytes());
         if let Some(content_type) = &part.content_type {
-            body.extend_from_slice(
-                format!("Content-Type: {}\r\n", quoted(content_type)?).as_bytes(),
-            );
+            if content_type.contains(['\r', '\n']) {
+                return Err(TransportError::MultipartContentType {
+                    content_type: content_type.clone(),
+                });
+            }
+            body.extend_from_slice(format!("Content-Type: {content_type}\r\n").as_bytes());
         }
         body.extend_from_slice(b"\r\n");
         body.extend_from_slice(&part.data);

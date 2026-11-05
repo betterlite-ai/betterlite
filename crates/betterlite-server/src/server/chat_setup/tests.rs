@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_openai::chat::ChatRequest;
@@ -14,6 +15,7 @@ use rustls::pki_types::pem::PemObject as _;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
+use tokio::time::timeout;
 use tokio_rustls::TlsAcceptor;
 
 use super::chat_executor;
@@ -85,4 +87,24 @@ async fn http_pool_tests_behavior(#[case] verify: &str, #[case] expected: &str) 
     );
     let observed = answered.map_or_else(|error| error.to_string(), |_outcome| "ok".to_owned());
     assert!(observed.contains(expected), "{observed}");
+}
+
+#[tokio::test]
+async fn a_mocked_network_answers_without_opening_a_connection() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let yaml = format!(
+        "litellm_settings:\n  network_mock: true\nmodel_list:\n  - model_name: g\n    litellm_params:\n      model: openai/up\n      api_key: k\n      api_base: http://127.0.0.1:{port}/v1\n"
+    );
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(&yaml)
+    .unwrap();
+    let chat = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).unwrap();
+    let request = ChatRequest::parse(br#"{"messages":[]}"#).unwrap();
+    let answered = chat.send(chat.pick("g").unwrap(), &request).await.unwrap();
+    assert!(answered.response.id.starts_with("chatcmpl-mock-"));
+    let connected = timeout(Duration::from_millis(200), listener.accept()).await;
+    connected.unwrap_err();
 }

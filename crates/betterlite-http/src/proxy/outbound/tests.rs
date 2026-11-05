@@ -19,6 +19,21 @@ fn part(name: &str, data: &[u8]) -> MultipartPart {
     }
 }
 
+fn described(name: &str, file_name: &str, content_type: &str) -> MultipartPart {
+    MultipartPart {
+        name: name.to_owned(),
+        file_name: Some(file_name.to_owned()),
+        content_type: Some(content_type.to_owned()),
+        data: b"hi".to_vec(),
+    }
+}
+
+fn framed(name: &str, file_name: &str, content_type: &str) -> String {
+    format!(
+        "POST /|multipart/form-data; boundary=b|--b\r\nContent-Disposition: form-data; name=\"{name}\"; filename=\"{file_name}\"\r\nContent-Type: {content_type}\r\n\r\nhi\r\n--b--\r\n"
+    )
+}
+
 fn multipart(parts: Vec<MultipartPart>) -> RequestBody {
     RequestBody::Multipart {
         boundary: "b".to_owned(),
@@ -33,7 +48,11 @@ const FORM: &str = "--b\r\nContent-Disposition: form-data; name=\"f\"; filename=
 #[case::bytes_keep_their_content_type(Method::PUT, "", &[], RequestBody::Bytes { content_type: "text/plain".parse().unwrap(), data: b"raw".to_vec() }, "PUT /|text/plain|raw")]
 #[case::empty_body_has_no_content_type(Method::GET, "", &[], RequestBody::Empty, "GET /|none|")]
 #[case::multipart_is_serialized_with_its_boundary(Method::POST, "", &[], multipart(vec![part("f", b"hi")]), &format!("POST /|multipart/form-data; boundary=b|{FORM}"))]
-#[case::multipart_name_with_a_quote_is_refused(Method::POST, "", &[], multipart(vec![part("f\"x", b"hi")]), "MultipartName")]
+#[case::multipart_name_with_a_quote_is_escaped(Method::POST, "", &[], multipart(vec![part("f\"x", b"hi")]), &framed("f%22x", "a.txt", "text/plain"))]
+#[case::multipart_file_name_with_quotes_is_escaped(Method::POST, "", &[], multipart(vec![described("f", "report \"final\".pdf", "text/plain")]), &framed("f", "report %22final%22.pdf", "text/plain"))]
+#[case::multipart_backslash_and_control_bytes_are_escaped(Method::POST, "", &[], multipart(vec![described("f", "a\\b\r\nc\u{1b}d\u{7}", "text/plain")]), &framed("f", "a\\\\b%0D%0Ac\u{1b}d%07", "text/plain"))]
+#[case::multipart_content_type_is_written_as_given(Method::POST, "", &[], multipart(vec![described("f", "a.txt", "text/plain; charset=\"utf-8\"")]), &framed("f", "a.txt", "text/plain; charset=\"utf-8\""))]
+#[case::multipart_content_type_with_a_line_break_is_refused(Method::POST, "", &[], multipart(vec![described("f", "a.txt", "text/plain\r\nx: y")]), "MultipartContentType")]
 #[case::multipart_boundary_a_header_cannot_carry_is_refused(Method::POST, "", &[], RequestBody::Multipart { boundary: "b\n".to_owned(), parts: Vec::new() }, "MultipartBoundaryHeader")]
 #[case::multipart_data_holding_the_boundary_is_refused(Method::POST, "", &[], multipart(vec![part("f", b"--b")]), "MultipartBoundary")]
 #[case::explicit_query_is_appended(Method::GET, "a=1", &[("b", "2")], RequestBody::Empty, "GET /?a=1&b=2|none|")]

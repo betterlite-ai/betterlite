@@ -195,6 +195,24 @@ pub(crate) fn reply(head: &[&str], body: &[u8]) -> Vec<u8> {
     bytes
 }
 
+// content-length is the compressed size, as on the wire
+fn encoded(encoding: &str, body_hex: &str) -> Vec<u8> {
+    let body = hex::decode(body_hex).unwrap();
+    reply(
+        &[
+            "200 OK",
+            &format!("content-encoding: {encoding}"),
+            &format!("content-length: {}", body.len()),
+        ],
+        &body,
+    )
+}
+
+const GZIP_OK: &str = "1f8b08000000000002ffcbcf060047dddc7902000000";
+const DEFLATE_OK: &str = "789ccbcf0600014b00db";
+const GZIP_4096_ZEROS: &str =
+    "1f8b08000000000002ffedc1010d000000c2a0f74f6d0f0714000000f06e11001cc700100000";
+
 fn header_end(buffer: &[u8]) -> Option<usize> {
     buffer
         .windows(4)
@@ -381,6 +399,14 @@ const ONE: Run = Run {
 #[case::malformed_chunk_encoding(Some(reply(&["200 OK", "transfer-encoding: chunked", "connection: close"], b"zz\r\nabc")), Duration::ZERO, ONE, "Body conn=1")]
 #[case::total_deadline(Some(reply(&["200 OK", "content-length: 2"], b"ok")), Duration::from_secs(2), Run { deadline: Duration::from_millis(300), ..ONE }, "Deadline conn=1")]
 #[case::read_timeout_on_a_stalled_body(Some(reply(&["200 OK", "content-length: 10"], b"abc")), Duration::ZERO, Run { limits: TransportLimits { read_timeout: Duration::from_millis(300), ..TransportLimits::DEFAULT }, ..ONE }, "Deadline conn=1")]
+#[case::gzip_body_is_decoded(Some(encoded("gzip", GZIP_OK)), Duration::ZERO, ONE, "200:ok conn=1")]
+#[case::deflate_body_is_decoded(
+    Some(encoded("deflate", DEFLATE_OK)),
+    Duration::ZERO,
+    ONE,
+    "200:ok conn=1"
+)]
+#[case::gzip_body_inflating_past_the_limit(Some(encoded("gzip", GZIP_4096_ZEROS)), Duration::ZERO, Run { limits: TransportLimits { body_bytes: 64, ..TransportLimits::DEFAULT }, ..ONE }, "BodyTooLarge conn=1")]
 #[case::connect_timeout(None, Duration::ZERO, Run { limits: TransportLimits { connect_timeout: Duration::from_millis(300), ..TransportLimits::DEFAULT }, ..ONE }, "ConnectTimeout conn=0")]
 #[case::no_retry_after_a_dropped_connection(
     Some(Vec::new()),

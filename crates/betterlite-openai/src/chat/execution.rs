@@ -253,9 +253,10 @@ fn http_failure(source: TransportError) -> ChatError {
         | TransportError::Request(_)
         | TransportError::Body(_)
         | TransportError::InvalidHeader { .. }
-        | TransportError::MultipartName { .. }
+        | TransportError::MultipartContentType { .. }
         | TransportError::MultipartBoundaryHeader { .. }
         | TransportError::MultipartBoundary { .. }
+        | TransportError::Mock(_)
         | TransportError::Closed
         | TransportError::DrainTimeout { .. } => ChatError::Http { source },
     }

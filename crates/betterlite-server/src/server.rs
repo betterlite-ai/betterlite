@@ -164,3 +164,5 @@ async fn drain_connections(connections: &mut JoinSet<()>) {
         connections.shutdown().await;
     }
 }
+
+mod tests;

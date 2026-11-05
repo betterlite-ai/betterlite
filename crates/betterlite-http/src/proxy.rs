@@ -21,6 +21,7 @@ use crate::proxy::transport_error::TransportError;
 use crate::tls::{TlsError, apply_policy};
 
 pub mod limits;
+pub mod mock;
 pub mod multipart;
 pub mod outbound;
 pub mod pool;
@@ -38,6 +39,8 @@ pub struct ProxiedClient {
     pub tracker: TaskTracker,
     // clients for deployments whose ssl_verify differs from this client's TLS policy, keyed by deployment id
     pub deployments: Arc<BTreeMap<String, Self>>,
+    // litellm_settings.network_mock: requests are answered by the OpenAI mock transport and never leave the host
+    pub network_mock: bool,
 }
 
 pub fn base_builder() -> ClientBuilder {
@@ -122,6 +125,7 @@ impl ProxiedClient {
             limits,
             tracker: TaskTracker::new(),
             deployments: Arc::default(),
+            network_mock: false,
         })
     }
 
@@ -162,14 +166,17 @@ impl ProxiedClient {
         }
         let token = self.tracker.token();
         let built = request.build(&self.client)?;
-        if let Some(rejection) = self.rejected(built.url()) {
-            return Err(TransportError::Rejected(rejection));
-        }
-        let response = self
-            .client
-            .execute(built)
-            .await
-            .map_err(TransportError::sending)?;
+        let response = if self.network_mock {
+            mock::respond(&built).map_err(TransportError::Mock)?
+        } else {
+            if let Some(rejection) = self.rejected(built.url()) {
+                return Err(TransportError::Rejected(rejection));
+            }
+            self.client
+                .execute(built)
+                .await
+                .map_err(TransportError::sending)?
+        };
         check_headers(response.headers(), self.limits.header_bytes)?;
         Ok(StreamResponse {
             response,

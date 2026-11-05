@@ -3,6 +3,7 @@ use thiserror::Error;
 
 use crate::error::HttpError;
 use crate::proxy::limits::{HeadersTooLarge, ReadError};
+use crate::proxy::mock::MockError;
 
 #[derive(Debug, Error)]
 pub enum TransportError {
@@ -30,8 +31,8 @@ pub enum TransportError {
         #[source]
         source: InvalidHeaderValue,
     },
-    #[error("the multipart part {name} holds a quote or a line break")]
-    MultipartName { name: String },
+    #[error("the multipart content type {content_type:?} holds a line break")]
+    MultipartContentType { content_type: String },
     #[error("the multipart boundary {boundary} cannot be carried in a content-type header")]
     MultipartBoundaryHeader {
         boundary: String,
@@ -40,6 +41,8 @@ pub enum TransportError {
     },
     #[error("a multipart part contains the boundary {boundary}")]
     MultipartBoundary { boundary: String },
+    #[error("the mocked provider answer failed")]
+    Mock(#[source] MockError),
     #[error("the client is shutting down and takes no new requests")]
     Closed,
     #[error("{remaining} requests were still running at the drain deadline")]

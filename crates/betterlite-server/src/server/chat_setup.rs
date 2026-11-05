@@ -3,7 +3,7 @@ use betterlite_config::tls::{TlsPolicy, TlsPolicyError};
 use betterlite_config::types::Config;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::limits::TransportLimits;
-use betterlite_http::proxy::pool::{ClientPool, PoolError};
+use betterlite_http::proxy::pool::{ClientChoice, ClientPool, PoolError};
 use betterlite_openai::chat::deployment::{ChatDeployment, DeploymentError, OpenAiDefaults};
 use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::openai_base_config::CatalogCapabilities;
@@ -92,7 +92,16 @@ fn outbound_client(
         deployments.len().saturating_add(1),
         TransportLimits::DEFAULT,
     );
-    let mut client = pool.client(&TlsPolicy::resolve(config, environment, None)?, &policy)?;
+    let default_tls = TlsPolicy::resolve(config, environment, None)?;
+    let network_mock = config.sections.openai_mock_transport.network_mock;
+    let mut client = match pool.select(None, network_mock, &default_tls, &policy)? {
+        ClientChoice::Supplied(client) | ClientChoice::Pooled(client) => client,
+        ClientChoice::Mock => {
+            let mut mocked = pool.client(&default_tls, &policy)?;
+            mocked.network_mock = true;
+            return Ok(mocked);
+        }
+    };
     let mut by_deployment = BTreeMap::new();
     for (resolved, entry) in deployments.iter().zip(&config.model_list) {
         let tls = TlsPolicy::resolve(config, environment, entry.litellm_params.ssl_verify)?;
