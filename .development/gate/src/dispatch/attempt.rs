@@ -9,8 +9,9 @@ use crate::checks::history;
 use crate::dependencies::added_dependencies;
 use crate::development::Development;
 use crate::deviations;
+use crate::dispatch::progress::Red;
 use crate::dispatch::seat::{Run, Seat, invoke};
-use crate::dispatch::{Attempt, Step, prompt, review};
+use crate::dispatch::{Attempt, Failure, Step, prompt, review};
 use crate::error::GateError;
 use crate::facts::resolve_base;
 use crate::gate_lock;
@@ -52,7 +53,7 @@ fn failures(
     worktree: &Development,
     task_id: &str,
     report: &Report,
-) -> Result<Vec<String>, GateError> {
+) -> Result<Option<Failure>, GateError> {
     let task = worktree.task(task_id)?;
     let added = added_dependencies(&worktree.root, &resolve_base(&worktree.root)?)?;
     let mut problems = report_problems(report, &task, &added);
@@ -63,17 +64,24 @@ fn failures(
         problems.extend(deviations::file_problems(&log, &worktree.backlog));
     }
     if !problems.is_empty() {
-        return Ok(problems);
+        return Ok(Some(Failure {
+            feedback: problems,
+            red: vec![Red::Report],
+        }));
     }
     let verdict = checks::run(worktree, &task, &Selection::default())?;
     if verdict.passed {
-        return Ok(Vec::new());
+        return Ok(None);
     }
-    let failing = verdict
+    let feedback = verdict
         .lines
         .into_iter()
-        .filter(|line| !line.starts_with("PASS") && !line.starts_with("SKIP"));
-    Ok(failing.chain(problems).collect())
+        .filter(|line| !line.starts_with("PASS") && !line.starts_with("SKIP"))
+        .collect();
+    Ok(Some(Failure {
+        feedback,
+        red: verdict.failed.into_iter().map(Red::Check).collect(),
+    }))
 }
 
 fn worker_edits(worktree: &Path, start: &str) -> Result<Vec<String>, GateError> {
@@ -148,14 +156,20 @@ fn answered(
     let report = match parse_answer::<Report>(text, "the report") {
         Ok(report) => report,
         Err(error) => {
-            return Ok(Some(Step::Fix(vec![format!(
-                "The final answer did not match the report format: {error}"
-            )])));
+            return Ok(Some(Step::Fix(Failure {
+                feedback: vec![format!(
+                    "The final answer did not match the report format: {error}"
+                )],
+                red: vec![Red::Report],
+            })));
         }
     };
     if report.status == ReportStatus::Blocked {
         if history::unfinished(&attempt.places.journal.join("gate"), earlier)? {
-            return Ok(Some(Step::Fix(vec![UNFINISHED_NOTE.to_owned()])));
+            return Ok(Some(Step::Fix(Failure {
+                feedback: vec![UNFINISHED_NOTE.to_owned()],
+                red: vec![Red::Unfinished],
+            })));
         }
         return Ok(Some(Step::Blocked(vec![format!(
             "The last run reported blocked: {}",
@@ -164,12 +178,14 @@ fn answered(
     }
     let touched = worker_edits(attempt.places.worktree, start)?;
     if !touched.is_empty() {
-        return Ok(Some(Step::Fix(touched)));
+        return Ok(Some(Step::Fix(Failure {
+            feedback: touched,
+            red: vec![Red::Edits],
+        })));
     }
     let worktree = Development::open(attempt.places.worktree)?;
-    let failing = failures(&worktree, &attempt.brief.task.id, &report)?;
-    if !failing.is_empty() {
-        return Ok(Some(Step::Fix(failing)));
+    if let Some(failure) = failures(&worktree, &attempt.brief.task.id, &report)? {
+        return Ok(Some(Step::Fix(failure)));
     }
     review::review(attempt, runner, &worktree.root).map(Some)
 }
@@ -187,35 +203,30 @@ pub(crate) fn attempt_once(
 ) -> Result<Turn, GateError> {
     let start = git(attempt.places.worktree, &["rev-parse", "HEAD"])?;
     let earlier = history::runs(&attempt.places.journal.join("gate"))?;
-    let note = match worker_run(attempt, runner, rung, feedback)? {
+    let retry = match worker_run(attempt, runner, rung, feedback)? {
         Run::Answer { text, session } => {
             let step = answered(attempt, runner, &text, start.trim(), &earlier)?;
             return Ok(Turn { step, session });
         }
-        Run::Silent => "The previous run ended without a final answer.".to_owned(),
-        Run::TimedOut => format!(
-            "The previous run hit its {} minute timeout before its final answer; its work stays in the worktree.",
-            rung.timeout_minutes
-        ),
-        Run::Limited => {
-            return Ok(Turn {
-                step: None,
-                session: super::checkpoint::session(
-                    &attempt
-                        .places
-                        .journal
-                        .join(format!("attempt-{}-worker.json", attempt.number)),
-                )?,
-            });
-        }
+        Run::Silent => Some(Failure {
+            feedback: vec!["The previous run ended without a final answer.".to_owned()],
+            red: vec![Red::Silent],
+        }),
+        Run::TimedOut => Some(Failure {
+            feedback: vec![format!(
+                "The previous run hit its {} minute timeout before its final answer; its work stays in the worktree.",
+                rung.timeout_minutes
+            )],
+            red: vec![Red::Timeout],
+        }),
+        Run::Limited => None,
     };
+    let saved = attempt
+        .places
+        .journal
+        .join(format!("attempt-{}-worker.json", attempt.number));
     Ok(Turn {
-        step: Some(Step::Retry(vec![note])),
-        session: super::checkpoint::session(
-            &attempt
-                .places
-                .journal
-                .join(format!("attempt-{}-worker.json", attempt.number)),
-        )?,
+        step: retry.map(Step::Retry),
+        session: super::checkpoint::session(&saved)?,
     })
 }

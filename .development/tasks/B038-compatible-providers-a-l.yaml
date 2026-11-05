@@ -68,10 +68,13 @@ description: >-
   not a live service-account exchange. The nine dispatchers contain 356 nonblank/noncomment
   lines; allow 275 binding/orchestration, 290 tests, 105 configuration and 105 shared
   exports/operation wiring lines, capped at 800. All byte parsers remain in the leaves.
+
+  B010 registers Provider::Compatible and the Compatible variants of OperationRequest, OperationResult and
+  PreparedRequest as stubs in crates/betterlite-provider/src/compatible_providers.rs. Fill them there and leave
+  provider.rs, operation.rs and prepared.rs as they are.
 scope:
   paths:
     - crates/betterlite-provider/Cargo.toml
-    - crates/betterlite-provider/src/{provider,operation,prepared}.rs
     - crates/betterlite-provider/src/compatible_providers.rs
     - crates/betterlite-provider/src/compatible_providers/**
     - crates/betterlite-core/Cargo.toml

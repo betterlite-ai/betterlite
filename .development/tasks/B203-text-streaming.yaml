@@ -11,8 +11,11 @@ description: >-
   a whole completion.  Own the reverse direction too: /v1/completions on openai/gpt-4o or another installed chat
   provider builds chat messages and converts chat responses to text with convert_chat_to_text_completion; streaming
   uses TextCompletionStreamWrapper semantics. Native providers added later reuse this same direction. Match completion-to-chat
-  dispatch for ft:babbage-002, ft:davinci-002 and openai_text_completion_compatible_providers. Add the text-stream
-  variants to B014 and text-stream privacy/logging to B188/B252 seams. Budget 290 stream/bridges, 120 integration,
+  dispatch for ft:babbage-002, ft:davinci-002 and openai_text_completion_compatible_providers. B014 registers the TextStream
+  entry as a stub, so replace the stub and its not-built test in crates/betterlite-core/src/operation/text_stream.rs
+  and crates/betterlite-core/src/dispatch/text_stream.rs, put the two bridge selections in
+  crates/betterlite-core/src/dispatch/chat.rs and crates/betterlite-core/src/dispatch/text_completion.rs, and
+  leave dispatch.rs and operation.rs as they are. Add text-stream privacy/logging to B188/B252 seams. Budget 290 stream/bridges, 120 integration,
   330 tests/fuzz (740 total). Write the behavior rstest functions text_streaming_text_stream_tests_behavior in adjacent tests.rs
   files, with a named case for each behavior and failure in the DoD; corpus replay tests have separate names.
 
@@ -35,10 +38,12 @@ scope:
   - crates/betterlite-server/tests/text_streaming/**
   - tools/oracle/cases/completions/**
   - tools/oracle/cases/chat-text-bridge/**
-  - crates/betterlite-core/src/dispatch.rs
-  - crates/betterlite-core/src/dispatch/**
-  - crates/betterlite-core/src/operation.rs
-  - crates/betterlite-core/src/operation/**
+  - crates/betterlite-core/src/operation/text_stream.rs
+  - crates/betterlite-core/src/operation/text_stream/**
+  - crates/betterlite-core/src/dispatch/text_stream.rs
+  - crates/betterlite-core/src/dispatch/text_stream/**
+  - crates/betterlite-core/src/dispatch/chat.rs
+  - crates/betterlite-core/src/dispatch/text_completion.rs
   - crates/betterlite-logging/src/stream.rs
   - crates/betterlite-logging/src/stream/**
   - tools/oracle/helpers/b203.py

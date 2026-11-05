@@ -1,0 +1,5 @@
+kind: helper
+name: vector-context-shaping-failure-seed
+call: {vector_context_shaping: {operation: failure_policy, configured: annotate}}
+env: {}
+compare: {ignore: []}

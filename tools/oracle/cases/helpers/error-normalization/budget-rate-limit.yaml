@@ -1,0 +1,5 @@
+kind: helper
+name: error-normalization-budget-rate-limit
+call: {error_normalization: {message: "rate limit", proxy_type: null, class: RateLimitError, status_code: 429, rate_limit_type: budget}}
+env: {}
+compare: {ignore: []}

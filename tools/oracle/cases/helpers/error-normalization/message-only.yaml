@@ -1,0 +1,5 @@
+kind: helper
+name: error-normalization-message-only
+call: {"error_normalization": {"message": "ordinary", "status_code": null}}
+env: {}
+compare: {ignore: []}

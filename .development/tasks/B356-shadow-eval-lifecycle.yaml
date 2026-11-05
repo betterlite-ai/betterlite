@@ -5,9 +5,8 @@ description: 'Implement shadow evaluation start/stop endpoints using B345 input 
   and stop-state behavior. Authenticate before repository access and never retry an ambiguous write by
   generating a second job ID. Keep the integration adapter in betterlite-server in this task module; consume
   predecessor public interfaces without editing their implementation crates. Implement the owned native
-  service in crates/betterlite-server/src/shadow_eval_lifecycle.rs. Add ProbeOperation::ShadowEvalLifecycle in tools/oracle/src/router_probes/mod.rs
-  and the corresponding B356 entry in tools/oracle/litellm/probes/registry.py; the adapters only call
-  production services. Shared exports and dispatch files are explicitly in scope. Budget allocation: at
+  service in crates/betterlite-server/src/shadow_eval_lifecycle.rs. B301 registers ProbeOperation::ShadowEvalLifecycle and its Python entry as stubs, so fill only tools/oracle/src/router_probes/shadow_eval_lifecycle.rs and tools/oracle/litellm/probes/shadow_eval_lifecycle.py and leave mod.rs and registry.py as they are; the adapters only call
+  production services. Budget allocation: at
   most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration
   lines (800 total); fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor
   services instead of copying their algorithms. Function coverage in litellm/proxy/management_endpoints/auto_router_endpoints.py:
@@ -28,9 +27,6 @@ scope:
   - crates/betterlite-server/src/routing/shadow_eval_lifecycle/**
   - tools/oracle/src/router_probes/shadow_eval_lifecycle.rs
   - tools/oracle/src/router_probes/shadow_eval_lifecycle/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/shadow_eval_lifecycle.py
   - tools/oracle/cases/routing/shadow-eval-lifecycle/**
   - crates/betterlite-server/fuzz/Cargo.toml

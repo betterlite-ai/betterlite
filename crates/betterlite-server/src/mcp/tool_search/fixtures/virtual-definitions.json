@@ -1,0 +1,137 @@
+[
+  {
+    "name": "mcp_tool_search",
+    "description": "Search for MCP tools by describing what you need. Returns top matching tools with names, descriptions, and input schemas.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "What the tool should do, matched against names and descriptions."
+        },
+        "top_k": {
+          "type": "integer",
+          "description": "Maximum number of results to return.",
+          "default": 5
+        }
+      },
+      "required": [
+        "query"
+      ]
+    }
+  },
+  {
+    "name": "mcp_tool_call",
+    "description": "Call an MCP tool by name with the given arguments.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tool_name": {
+          "type": "string",
+          "description": "The exact name of the MCP tool to call."
+        },
+        "arguments": {
+          "type": "object",
+          "description": "Arguments to pass to the tool."
+        }
+      },
+      "required": [
+        "tool_name"
+      ]
+    }
+  },
+  {
+    "name": "agent_search",
+    "description": "Find A2A agents by describing the task in natural language. Returns the best matching agents you can access, ranked by semantic similarity, each with its agent_id, name, description, skills, and score.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "The task the agent should be able to do, in natural language."
+        },
+        "top_k": {
+          "type": "integer",
+          "description": "Maximum number of agents to return.",
+          "default": 5
+        }
+      },
+      "required": [
+        "query"
+      ]
+    }
+  },
+  {
+    "name": "skill_search",
+    "description": "Find registered skills by describing what you need in natural language. Returns the best matching skills you can access, ranked by semantic similarity, each with its skill_id, display_title, description, and score.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "What you need the skill to do, in natural language."
+        },
+        "top_k": {
+          "type": "integer",
+          "description": "Maximum number of skills to return.",
+          "default": 5
+        }
+      },
+      "required": [
+        "query"
+      ]
+    }
+  },
+  {
+    "name": "search_tools",
+    "description": "Search accessible MCP tools by describing what you need. Returns opaque tool IDs.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "What the tool should do."
+        }
+      },
+      "required": [
+        "query"
+      ]
+    }
+  },
+  {
+    "name": "get_tool_schema",
+    "description": "Return the complete schema for an accessible MCP tool ID.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tool_id": {
+          "type": "string",
+          "description": "Opaque ID from search_tools."
+        }
+      },
+      "required": [
+        "tool_id"
+      ]
+    }
+  },
+  {
+    "name": "call_tool",
+    "description": "Call an accessible MCP tool by opaque ID with schema-valid arguments.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "tool_id": {
+          "type": "string",
+          "description": "Opaque ID from search_tools."
+        },
+        "arguments": {
+          "type": "object",
+          "description": "Arguments validated against the selected tool schema."
+        }
+      },
+      "required": [
+        "tool_id"
+      ]
+    }
+  }
+]

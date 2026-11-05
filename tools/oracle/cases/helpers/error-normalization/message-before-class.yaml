@@ -1,0 +1,5 @@
+kind: helper
+name: error-normalization-message-before-class
+call: {error_normalization: {message: "upstream timed out", proxy_type: null, class: null, status_code: 400, rate_limit_type: null}}
+env: {}
+compare: {ignore: []}
