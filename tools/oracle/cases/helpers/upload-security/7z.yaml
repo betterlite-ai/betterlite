@@ -1,0 +1,8 @@
+kind: helper
+name: upload-security-7z
+call:
+  b3452:
+    content_hex: '377abcaf271c'
+env: {}
+compare:
+  ignore: []

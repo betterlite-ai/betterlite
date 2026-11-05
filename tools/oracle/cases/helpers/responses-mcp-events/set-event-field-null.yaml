@@ -1,0 +1,9 @@
+kind: helper
+name: set-event-field-null
+call:
+  responses_mcp_events:
+    operation: set_event_field
+    field: item_id
+    value: null
+env: {}
+compare: {ignore: []}

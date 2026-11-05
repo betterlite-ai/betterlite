@@ -16,12 +16,14 @@ description: >-
   these bodies; the tests invoke finite subclasses, not network clients. Register speech_provider_contract in
   B171 helper dispatch. Source ownership is 105 nonblank/non-comment lines including abstract documentation;
   budget 100 interface/default code, 110 tests, 75 cases, 90 adapters and 25 wiring, 400 lines.
+
+  B010 registers the Speech variants of OperationRequest, OperationResult and PreparedRequest as stubs in
+  crates/betterlite-provider/src/api/speech_provider_contract.rs. Fill them there and leave provider.rs,
+  operation.rs and prepared.rs as they are.
 scope:
   paths:
   - crates/betterlite-provider/src/api/speech_provider_contract.rs
   - crates/betterlite-provider/src/api/speech_provider_contract/**
-  - crates/betterlite-provider/src/operation.rs
-  - crates/betterlite-provider/src/operation/**
   - crates/betterlite-openai/src/api/speech_provider_contract.rs
   - crates/betterlite-openai/src/api/speech_provider_contract/**
   - tools/oracle/src/helpers/provider/speech_provider_contract.rs

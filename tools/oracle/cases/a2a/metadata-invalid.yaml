@@ -1,0 +1,5 @@
+kind: helper
+name: a2a-metadata-invalid
+call: {"b4803": {"operation": "metadata", "message": {"metadata": {"a": 1}}, "params": {"message": {}, "metadata": []}, "completion_params": {"extra_body": {"metadata": 5, "keep": 1}}}}
+env: {}
+compare: {ignore: []}

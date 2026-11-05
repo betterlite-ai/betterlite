@@ -1,0 +1,5 @@
+kind: helper
+name: error-call-id-disabled
+call: {error_call_id: {enabled: false, call_id: oracle-call}}
+env: {}
+compare: {ignore: []}

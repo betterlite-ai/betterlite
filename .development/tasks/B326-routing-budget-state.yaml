@@ -4,9 +4,7 @@ description: 'Implement Decimal router spend increments and synchronization over
   B068 normalized cost and B304 callbacks. Preserve the budget limiter''s pinned detach/requeue behavior,
   which differs from the generic B304 counter failure path. Retain in-flight increments and flush server-owned
   work on shutdown; B020 owns filtering. Implement the owned native service in crates/betterlite-router/src/routing_budget_state.rs.
-  Add ProbeOperation::RoutingBudgetState in tools/oracle/src/router_probes/mod.rs and the corresponding B326 entry in
-  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
-  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  B301 registers ProbeOperation::RoutingBudgetState and its Python entry as stubs, so fill only tools/oracle/src/router_probes/routing_budget_state.rs and tools/oracle/litellm/probes/routing_budget_state.py and leave mod.rs and registry.py as they are; the adapters only call production services. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
   fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
   of copying their algorithms. Function coverage in litellm/router_strategy/budget_limiter.py: _sum_increments_by_key
@@ -36,9 +34,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/routing_budget_state.rs
   - tools/oracle/src/router_probes/routing_budget_state/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/routing_budget_state.py
   - tools/oracle/cases/routing/routing-budget-state/**
   - tools/oracle/helpers/b326.py

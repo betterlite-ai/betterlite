@@ -1,0 +1,66 @@
+use std::{collections::BTreeMap, path::PathBuf, sync::Arc};
+
+use super::{
+    Client, DecryptTransport, GOOGLE_KMS_CLIENT, GOOGLE_KMS_RESOURCE_NAME, GoogleKmsError,
+};
+
+pub fn validate_environment(
+    environment: &BTreeMap<String, String>,
+) -> Result<(String, String), GoogleKmsError> {
+    validate_values(
+        environment
+            .get("GOOGLE_APPLICATION_CREDENTIALS")
+            .map(String::as_str),
+        environment
+            .get("GOOGLE_KMS_RESOURCE_NAME")
+            .map(String::as_str),
+    )
+}
+
+fn validate_values(
+    credentials_path: Option<&str>,
+    configured_resource_name: Option<&str>,
+) -> Result<(String, String), GoogleKmsError> {
+    let credentials = credentials_path.ok_or(GoogleKmsError::MissingCredentials)?;
+    let resource_name = configured_resource_name.ok_or(GoogleKmsError::MissingResourceName)?;
+    Ok((credentials.to_owned(), resource_name.to_owned()))
+}
+
+pub fn load_google_kms(
+    use_google_kms: Option<bool>,
+    environment: &BTreeMap<String, String>,
+    transport: Arc<dyn DecryptTransport>,
+) -> Result<(), GoogleKmsError> {
+    if use_google_kms != Some(true) {
+        return Ok(());
+    }
+    let (credentials_path, resource_name) = validate_environment(environment)?;
+    store_client(Client {
+        credentials_path: PathBuf::from(credentials_path),
+        resource_name,
+        transport,
+    })
+}
+
+fn store_client(client: Client) -> Result<(), GoogleKmsError> {
+    let mut stored_client = GOOGLE_KMS_CLIENT
+        .lock()
+        .map_err(|_poisoned| GoogleKmsError::ClientState)?;
+    let mut stored_resource_name = GOOGLE_KMS_RESOURCE_NAME
+        .lock()
+        .map_err(|_poisoned| GoogleKmsError::ClientState)?;
+    *stored_resource_name = Some(client.resource_name.clone());
+    *stored_client = Some(Arc::new(client));
+    drop(stored_resource_name);
+    drop(stored_client);
+    Ok(())
+}
+
+#[path = "initialization/client_storage/tests.rs"]
+mod client_storage;
+#[path = "initialization/load_google_kms/tests.rs"]
+mod load_google_kms;
+#[path = "initialization/validate_environment/tests.rs"]
+mod validate_environment;
+
+mod tests;

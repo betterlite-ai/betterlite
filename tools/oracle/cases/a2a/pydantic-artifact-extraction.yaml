@@ -1,0 +1,5 @@
+kind: helper
+name: pydantic-artifact-extraction
+call: {b4805: {operation: extract, response: {result: {artifacts: [{parts: [{kind: data, data: {a: 1}}]}, {parts: [{kind: file, file: {uri: "file:///a"}}, {kind: text, text: ""}, {kind: text, text: "from artifact"}, {kind: text, text: "ignored"}]}], history: [{role: agent, messageId: h1, parts: [{kind: text, text: "from history"}]}]}}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,9 @@
+kind: helper
+name: scan-request-merge
+call:
+  vector_context_shaping:
+    operation: scan_request_merge
+    model: argument
+    non_default_params: {proxy_server_request: {body: {model: body, x: 1, guardrails: [g]}}, x: 2, policies: [p], guardrail_config: {a: b}, include_guardrail_response: true}
+env: {}
+compare: {ignore: []}

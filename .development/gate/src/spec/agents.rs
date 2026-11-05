@@ -115,7 +115,7 @@ pub(crate) struct Role {
     pub(crate) instructions: String,
     #[schemars(
         length(min = 1),
-        description = "Rungs tried in order. A worker climbs to the next rung when a rung's attempts run out. While a worker rung's vendor is at its usage limit, its tries go to the first later rung on another vendor and the rung keeps its own attempts; with no such rung the dispatch stops and keeps its progress. A reviewer skips a rung whose vendor is at its usage limit."
+        description = "Rungs tried in order. A worker rung's level is its place among its own vendor's rungs. After a failed start the worker stays on its rung while it has attempts left, then moves to its vendor's next rung, then to the first open rung of another vendor at the same level or above. A start that fails the same way as the start before it (the same red check, or the same timeout, silent run or rejected report) goes to that other vendor first. While a worker rung's vendor is at its usage limit, its runs go to that other vendor and the rung keeps its own attempts; with no such rung the dispatch stops and keeps its progress. A reviewer skips a rung whose vendor is at its usage limit."
     )]
     pub(crate) ladder: Vec<Rung>,
 }
@@ -144,7 +144,7 @@ pub(crate) struct Policy {
     pub(crate) review_by_other_vendor: bool,
     #[schemars(
         range(min = 1),
-        description = "Fresh worker starts across the whole ladder, tries lent to a later rung included. Fix turns and runs that hit a usage limit don't count. cargo gate dispatch --grant adds starts on the last rung once these are used."
+        description = "Fresh worker starts across the whole ladder, runs on another vendor's rung included. Fix turns and runs that hit a usage limit don't count. cargo gate dispatch --grant adds starts on the last rung once these are used."
     )]
     pub(crate) max_worker_attempts: u32,
     #[schemars(
@@ -158,7 +158,7 @@ pub(crate) struct Policy {
     )]
     pub(crate) max_parallel: u32,
     #[schemars(
-        description = "When every seat of a worker rung's vendor is taken, the try runs on the first later rung of another vendor that has a free seat. It still counts as a try on its own rung."
+        description = "When every worker seat of a rung's vendor is taken, the start runs on another vendor's open rung at the same level that has a free seat, and counts there."
     )]
     pub(crate) overflow: bool,
     #[schemars(

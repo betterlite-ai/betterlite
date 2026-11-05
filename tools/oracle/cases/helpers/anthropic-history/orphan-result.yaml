@@ -1,0 +1,10 @@
+kind: helper
+name: anthropic-history-orphan-result
+call:
+  anthropic_history:
+    function: is_orphaned_tool_result
+    current_message: {role: tool, tool_call_id: missing, content: discarded}
+    sanitized_messages: [{role: assistant, content: ready}]
+env: {}
+compare:
+  ignore: []

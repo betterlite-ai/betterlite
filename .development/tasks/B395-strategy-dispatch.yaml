@@ -4,9 +4,7 @@ description: 'Implement StrategyChoice, selector lifecycle and request/group ove
   B008 simple-shuffle and typed selector interfaces. Own selector construction/retirement and request-local
   strategy binding; later selectors add enum variants. B016 composes this service with eligibility and
   provider dispatch. Implement the owned native service in crates/betterlite-router/src/strategy_dispatch.rs.
-  Add ProbeOperation::StrategyDispatch in tools/oracle/src/router_probes/mod.rs and the corresponding B395 entry in
-  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
-  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  B301 registers ProbeOperation::StrategyDispatch and its Python entry as stubs, so fill only tools/oracle/src/router_probes/strategy_dispatch.rs and tools/oracle/litellm/probes/strategy_dispatch.py and leave mod.rs and registry.py as they are; the adapters only call production services. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
   fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
   of copying their algorithms. Function coverage in litellm/router.py: Router._validate_routing_strategy
@@ -35,9 +33,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/strategy_dispatch.rs
   - tools/oracle/src/router_probes/strategy_dispatch/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/strategy_dispatch.py
   - tools/oracle/cases/routing/strategy-dispatch/**
   - tools/oracle/helpers/b395.py

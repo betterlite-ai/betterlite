@@ -46,6 +46,8 @@ scope:
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_batch_logger.py#L28-L32
     why: clickhouse_storage_from_env reads CLICKHOUSE_DATABASE and CLICKHOUSE_URL from environment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L49-L52
+    why: the batch size, flush interval, buffer cap and retry defaults that a clickhouse test pins.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_batch_logger.py#L38-L49
     why: ClickHouseBatchLogger.__init__ initializes storage, row tracking and parent batch logger.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_batch_logger.py#L51-L53
@@ -94,9 +96,9 @@ references:
     why: ensure_schema forwards to storage.ensure_schema with retention parameters.
 dod:
   - text: ClickHouseBatchLogger reads CLICKHOUSE_DATABASE (default "litellm") and CLICKHOUSE_URL (default "") via clickhouse_storage_from_env when no storage is injected.
-    proof: [clickhouse-env-defaults]
+    proof: [clickhouse-tests]
   - text: ClickHouseBatchLogger uses CLICKHOUSE_BATCH_SIZE (default 10,000), CLICKHOUSE_FLUSH_INTERVAL_SECONDS (default 1.0), CLICKHOUSE_MAX_BUFFERED_ROWS (default 200,000) and CLICKHOUSE_MAX_RETRIES (default 3) from environment or constants.
-    proof: [clickhouse-env-defaults]
+    proof: [clickhouse-tests]
   - text: periodic_flush waits for CLICKHOUSE_FLUSH_INTERVAL_SECONDS timeout or stop signal, then calls flush_queue.
     proof: [clickhouse-tests]
   - text: enqueue extends log_queue and creates an early flush task when queue size reaches batch_size.
@@ -140,13 +142,6 @@ dod:
 checks:
   optional: []
   commands:
-    - id: clickhouse-env-defaults
-      why: environment defaults do not match pinned LiteLLM constants
-      run: >-
-        grep -q "CLICKHOUSE_BATCH_SIZE.*10.?000" ../betterlite-worktrees/litellm/litellm/constants.py &&
-        grep -q "CLICKHOUSE_FLUSH_INTERVAL_SECONDS.*1\\.0" ../betterlite-worktrees/litellm/litellm/constants.py &&
-        grep -q "CLICKHOUSE_MAX_RETRIES.*3" ../betterlite-worktrees/litellm/litellm/constants.py &&
-        grep -q "CLICKHOUSE_MAX_BUFFERED_ROWS.*200.?000" ../betterlite-worktrees/litellm/litellm/constants.py
     - id: clickhouse-tests
       why: clickhouse tests fail or do not exist
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^clickhouse::(.*::)?clickhouse_logging::/) - test(/replays_the_/)'

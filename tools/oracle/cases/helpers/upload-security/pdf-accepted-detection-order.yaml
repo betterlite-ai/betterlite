@@ -1,0 +1,11 @@
+kind: helper
+name: upload-security-pdf-accepted-detection-order
+call:
+  b3452:
+    content_hex: '255044462d312e37'
+    scanner: clean
+    max_size_bytes: 536870912
+    uuid: 550e8400-e29b-41d4-a716-446655440000
+env: {}
+compare:
+  ignore: []

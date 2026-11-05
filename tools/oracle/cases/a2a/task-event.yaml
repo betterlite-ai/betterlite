@@ -1,0 +1,5 @@
+kind: helper
+name: a2a-task-event
+call: {b4803: {operation: task, request_id: req, message: {role: user, messageId: message-id, parts: [{kind: text, text: hello}]}}}
+env: {}
+compare: {ignore: []}

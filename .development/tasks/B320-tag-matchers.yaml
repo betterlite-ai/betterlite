@@ -8,9 +8,8 @@ description: 'Implement typed tag tokens, positive/required/excluded matching an
   constructs or exhausted work produce a named warning and skip the pattern; never silently reinterpret
   it. Configuration boundary keys introduced or consumed here: tag_regex, tags. Pinned declaration defaults:
   tag_regex=None; tags=None. Resolve env values once in betterlite-config, never in router code. Implement
-  the owned native service in crates/betterlite-router/src/tag_matchers.rs. Add ProbeOperation::TagMatchers in
-  tools/oracle/src/router_probes/mod.rs and the corresponding B320 entry in tools/oracle/litellm/probes/registry.py;
-  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  the owned native service in crates/betterlite-router/src/tag_matchers.rs. B301 registers ProbeOperation::TagMatchers and its Python entry as stubs, so fill only tools/oracle/src/router_probes/tag_matchers.rs and tools/oracle/litellm/probes/tag_matchers.py and leave mod.rs and registry.py as they are;
+  the adapters only call production services.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
   lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
   exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/router_strategy/tag_based_routing.py:
@@ -44,9 +43,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/tag_matchers.rs
   - tools/oracle/src/router_probes/tag_matchers/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/tag_matchers.py
   - tools/oracle/cases/routing/tag-matchers/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/tag-matchers-*
