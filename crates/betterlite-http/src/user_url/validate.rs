@@ -46,16 +46,21 @@ struct Target {
     host_header: String,
 }
 
+// An IPv6 host goes between brackets wherever it sits next to a port
+fn bracketed(host: &str) -> String {
+    if host.contains(':') {
+        format!("[{host}]")
+    } else {
+        host.to_owned()
+    }
+}
+
 fn format_host_header(hostname: &str, port: u16, default_port: u16) -> String {
-    let bracketed = if hostname.contains(':') {
-        format!("[{hostname}]")
-    } else {
-        hostname.to_owned()
-    };
+    let host = bracketed(hostname);
     if port == default_port {
-        bracketed
+        host
     } else {
-        format!("{bracketed}:{port}")
+        format!("{host}:{port}")
     }
 }
 
@@ -99,12 +104,7 @@ where
     }
 
     fn is_allowlisted(&self, hostname: &str, port: u16) -> bool {
-        let host = hostname.to_lowercase().trim_end_matches('.').to_owned();
-        let shown = if host.contains(':') {
-            format!("[{host}]")
-        } else {
-            host
-        };
+        let shown = bracketed(hostname.to_lowercase().trim_end_matches('.'));
         let with_port = format!("{shown}:{port}");
         self.allowed_hosts
             .iter()
@@ -145,11 +145,7 @@ where
                 host_header: target.host_header,
             });
         }
-        let ip_host = if first.is_ipv6() {
-            format!("[{}]", first.ip())
-        } else {
-            first.ip().to_string()
-        };
+        let ip_host = bracketed(&first.ip().to_string());
         let netloc = target.port.map_or_else(
             || ip_host.clone(),
             |explicit| format!("{ip_host}:{explicit}"),
