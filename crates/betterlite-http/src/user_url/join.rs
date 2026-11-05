@@ -1,6 +1,6 @@
 use crate::user_url::error::{UrlParseError, UserUrlError};
 use crate::user_url::httpx_url::HttpxUrl;
-use crate::user_url::split::{USES_NETLOC, urlparse};
+use crate::user_url::split::{urlparse, uses_netloc};
 
 // Python 3.13 urllib.parse.uses_relative
 const USES_RELATIVE: [&str; 20] = [
@@ -59,7 +59,7 @@ pub fn urljoin(base: &str, url: &str) -> Result<String, UrlParseError> {
     if target.scheme != base_parts.scheme || !USES_RELATIVE.contains(&target.scheme.as_str()) {
         return Ok(url.to_owned());
     }
-    if USES_NETLOC.contains(&target.scheme.as_str()) {
+    if uses_netloc(&target.scheme) {
         if !target.netloc.is_empty() {
             return Ok(target.unparse());
         }

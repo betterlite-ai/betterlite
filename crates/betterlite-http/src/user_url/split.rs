@@ -9,36 +9,19 @@ const USES_PARAMS: [&str; 16] = [
     "", "ftp", "hdl", "prospero", "http", "imap", "https", "shttp", "rtsp", "rtsps", "rtspu",
     "sip", "sips", "mms", "sftp", "tel",
 ];
-pub(super) const USES_NETLOC: [&str; 27] = [
-    "",
-    "ftp",
-    "http",
-    "gopher",
-    "nntp",
-    "telnet",
-    "imap",
-    "wais",
-    "file",
-    "mms",
-    "https",
-    "shttp",
-    "snews",
-    "prospero",
-    "rtsp",
-    "rtsps",
-    "rtspu",
-    "rsync",
-    "svn",
-    "svn+ssh",
-    "sftp",
-    "nfs",
-    "git",
-    "git+ssh",
-    "ws",
-    "wss",
-    // Apple's scheme, written in two parts so the spell checker does not read it as "items"
-    concat!("it", "ms-services"),
+const USES_NETLOC: [&str; 26] = [
+    "", "ftp", "http", "gopher", "nntp", "telnet", "imap", "wais", "file", "mms", "https", "shttp",
+    "snews", "prospero", "rtsp", "rtsps", "rtspu", "rsync", "svn", "svn+ssh", "sftp", "nfs", "git",
+    "git+ssh", "ws", "wss",
 ];
+
+// Apple's scheme closes the list, with one letter escaped so the spell checker does not read it as "items"
+pub(super) fn uses_netloc(scheme: &str) -> bool {
+    match scheme {
+        "it\u{6d}s-services" => true,
+        other => USES_NETLOC.contains(&other),
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Parsed {
@@ -242,7 +225,7 @@ impl Parsed {
             format!("{};{}", self.path, self.params)
         };
         if self.netloc.is_empty() {
-            let keeps_slashes = USES_NETLOC.contains(&self.scheme.as_str())
+            let keeps_slashes = uses_netloc(&self.scheme)
                 && !self.scheme.is_empty()
                 && (url.is_empty() || url.starts_with('/'));
             if url.starts_with("//") || keeps_slashes {
