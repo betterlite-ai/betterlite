@@ -99,8 +99,8 @@ fn exact_and_casefold_keys() {
 fn catalog_invalidation() {
     let mut model_cost = catalog(&["Alpha"]);
     let mut keys = ModelCostKeys::default();
-    let mut full = HashMap::from([("a", 1)]);
-    let mut helper = HashMap::from([("b", 2)]);
+    let mut full = HashMap::from([("a", 1_i32)]);
+    let mut helper = HashMap::from([("b", 2_i32)]);
     assert_eq!(keys.generation, 0);
     assert_eq!(
         keys.get_model_cost_key(&model_cost, "alpha").as_deref(),
@@ -133,12 +133,6 @@ fn provider_matching() {
     assert!(!matches(EntryProvider::Text("cohere"), Some("azure_ai")));
     assert!(!matches(EntryProvider::NotText, Some("azure_ai")));
     assert!(matches(EntryProvider::NotText, Some("github")));
-    assert!(matches!(
-        check_provider_match(EntryProvider::NotText, Some("bedrock_converse")),
-        Err(ModelCatalogKeysError::ProviderNotText)
-    ));
-    assert!(check_provider_match(EntryProvider::NotText, Some("vertex_ai")).is_err());
-    assert!(check_provider_match(EntryProvider::NotText, Some("fireworks_ai")).is_err());
 }
 
 fn direct_and_potential_lookup() {
@@ -153,7 +147,7 @@ fn direct_and_potential_lookup() {
         Err(ModelCatalogKeysError::MissingModel { key }) if key == "known"
     ));
     let present =
-        |keys: &mut ModelCostKeys, names| keys.has_potential_model_name(&model_cost, &names);
+        |state: &mut ModelCostKeys, names| state.has_potential_model_name(&model_cost, &names);
     assert!(!present(&mut keys, names("a", "c", Some("d"))));
     assert!(present(&mut keys, names("a", "c", Some("BEDROCK"))));
     assert!(present(&mut keys, names("KNOWN", "c", Some("d"))));
@@ -188,7 +182,7 @@ fn model_catalog_keys_cases(#[case] scenario: Scenario) {
 
 #[rstest]
 #[case::trailing_digits("a-1", "a")]
-#[case::unicode_digits("a-١٢", "a")]
+#[case::unicode_digits("a-\u{661}\u{662}", "a")]
 #[case::no_hyphen("a1", "a1")]
 #[case::hyphen_only("a-", "a-")]
 #[case::inner_digits("a-1-b", "a-1-b")]
@@ -207,7 +201,7 @@ fn vertex_version_strip(#[case] model: &str, #[case] expected: &str) {
 #[case::too_short("2024-08-06", "2024-08-06")]
 #[case::wrong_dash("gpt_2024-08-06", "gpt_2024-08-06")]
 #[case::letters("gpt-abcd-08-06", "gpt-abcd-08-06")]
-#[case::multibyte("é-2024-08-06", "é")]
+#[case::multibyte("\u{e9}-2024-08-06", "\u{e9}")]
 fn dated_snapshot_strip(#[case] model: &str, #[case] expected: &str) {
     assert_eq!(strip_dated_snapshot_suffix(model), expected);
 }
@@ -254,4 +248,15 @@ fn provider_mismatch_rules(#[case] requested: &str, #[case] entry: &str, #[case]
         check_provider_match(EntryProvider::Text(entry), Some(requested)).unwrap(),
         expected
     );
+}
+
+#[rstest]
+#[case::bedrock_converse("bedrock_converse")]
+#[case::vertex("vertex_ai")]
+#[case::fireworks("fireworks_ai")]
+fn not_text_entry_provider_raises(#[case] provider: &str) {
+    assert!(matches!(
+        check_provider_match(EntryProvider::NotText, Some(provider)),
+        Err(ModelCatalogKeysError::ProviderNotText)
+    ));
 }

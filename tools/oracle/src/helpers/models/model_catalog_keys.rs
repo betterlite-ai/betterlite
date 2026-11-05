@@ -56,7 +56,25 @@ struct Session {
     helper_cache: HashMap<&'static str, usize>,
 }
 
+fn provider_match(litellm_provider: Option<&Value>, custom_llm_provider: Option<&str>) -> Value {
+    let entry = match litellm_provider {
+        None | Some(Value::Null) => EntryProvider::Unconstrained,
+        Some(Value::String(text)) => EntryProvider::Text(text),
+        Some(_) => EntryProvider::NotText,
+    };
+    check_provider_match(entry, custom_llm_provider)
+        .map_or_else(|_| json!({"error": "raised"}), |matched| json!(matched))
+}
+
 impl Session {
+    fn invalidate(&mut self) -> Value {
+        let before = [self.full_cache.len(), self.helper_cache.len()];
+        self.keys
+            .invalidate(&mut self.full_cache, &mut self.helper_cache);
+        let after = [self.full_cache.len(), self.helper_cache.len()];
+        json!({"before": before, "after": after, "index": self.keys.lowercase_index, "generation": self.keys.generation})
+    }
+
     fn apply(&mut self, step: &Step) -> Value {
         match step {
             Step::StripModelName {
@@ -80,25 +98,11 @@ impl Session {
             }
             Step::Index => json!(self.keys.lowercase_index),
             Step::Generation => json!(self.keys.generation),
-            Step::Invalidate => {
-                let before = [self.full_cache.len(), self.helper_cache.len()];
-                self.keys
-                    .invalidate(&mut self.full_cache, &mut self.helper_cache);
-                let after = [self.full_cache.len(), self.helper_cache.len()];
-                json!({"before": before, "after": after, "index": self.keys.lowercase_index, "generation": self.keys.generation})
-            }
+            Step::Invalidate => self.invalidate(),
             Step::CheckProviderMatch {
                 litellm_provider,
                 custom_llm_provider,
-            } => {
-                let entry = match litellm_provider {
-                    None | Some(Value::Null) => EntryProvider::Unconstrained,
-                    Some(Value::String(text)) => EntryProvider::Text(text),
-                    Some(_) => EntryProvider::NotText,
-                };
-                check_provider_match(entry, custom_llm_provider.as_deref())
-                    .map_or_else(|_| json!({"error": "raised"}), |matched| json!(matched))
-            }
+            } => provider_match(litellm_provider.as_ref(), custom_llm_provider.as_deref()),
             Step::Direct { key } => get_model_info_from_model_cost(&self.model_cost, key)
                 .map_or_else(
                     |_| json!({"error": "raised"}),

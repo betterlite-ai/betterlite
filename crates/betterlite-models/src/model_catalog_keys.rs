@@ -21,9 +21,9 @@ pub trait ClearableCache {
     fn clear(&mut self);
 }
 
-impl<Key, Value> ClearableCache for HashMap<Key, Value> {
+impl<Key, Value, State> ClearableCache for HashMap<Key, Value, State> {
     fn clear(&mut self) {
-        HashMap::clear(self);
+        Self::clear(self);
     }
 }
 
@@ -52,14 +52,15 @@ pub struct ModelCostKeys {
 
 #[must_use]
 pub fn strip_stable_vertex_version(model: &str) -> String {
-    let (body, newline) = model
-        .strip_suffix('\n')
-        .map_or((model, ""), |body| (body, "\n"));
-    let without_digits = body.trim_end_matches(DECIMAL_DIGIT);
-    match without_digits.strip_suffix('-') {
-        Some(name) if without_digits.len() < body.len() => format!("{name}{newline}"),
-        _ => model.to_owned(),
-    }
+    let body = model.strip_suffix('\n').unwrap_or(model);
+    let name = body
+        .trim_end_matches(DECIMAL_DIGIT)
+        .strip_suffix('-')
+        .filter(|stem| stem.len() < body.len().saturating_sub(1));
+    name.map_or_else(
+        || model.to_owned(),
+        |stem| format!("{stem}{}", model.get(body.len()..).unwrap_or_default()),
+    )
 }
 
 #[must_use]
@@ -70,7 +71,7 @@ pub fn strip_dated_snapshot_suffix(model: &str) -> String {
     let suffix_start = body
         .char_indices()
         .rev()
-        .nth(DATED_SNAPSHOT_SHAPE.len() - 1)
+        .nth(DATED_SNAPSHOT_SHAPE.len().saturating_sub(1))
         .and_then(|(index, _)| body.split_at_checked(index));
     match suffix_start {
         Some((name, suffix))
@@ -144,11 +145,14 @@ pub fn check_provider_match(
 }
 
 impl ModelCostKeys {
-    pub fn invalidate<Full: ClearableCache, Helper: ClearableCache>(
+    pub fn invalidate<Full, Helper>(
         &mut self,
         full_model_info: &mut Full,
         helper_model_info: &mut Helper,
-    ) {
+    ) where
+        Full: ClearableCache,
+        Helper: ClearableCache,
+    {
         self.lowercase_index = None;
         self.generation = self.generation.saturating_add(1);
         full_model_info.clear();
