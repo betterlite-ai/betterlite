@@ -911,6 +911,44 @@ fn a_granted_start_runs_on_the_last_rung_once_the_attempts_ran_out() {
     );
 }
 
+#[test]
+fn a_granted_start_runs_on_a_stand_in_while_the_last_rung_vendor_is_limited() {
+    let (mut agents, task) = fixtures();
+    answer_with(&mut agents, "not a report");
+    let folder = tempfile::tempdir().unwrap();
+    worktree(folder.path());
+    mark(
+        folder.path(),
+        "openai",
+        "ERROR: You've hit your usage limit.",
+    )
+    .unwrap();
+    let chain = Chain::new(&agents).unwrap();
+    let ladder = &agents.roles.worker.ladder;
+    let last = ladder.len() - 1;
+    let mut progress = progress();
+    progress.used = agents.policy.max_worker_attempts;
+    progress.rung = last;
+    progress.starts = ladder.iter().map(|rung| rung.attempts).collect();
+    let places = places(folder.path());
+    let stand_in = chain.pick(&places, &progress, &chain.links[last]).unwrap();
+    assert!(stand_in.is_none());
+    run_ladder(&agents, &brief(&task), &places, &mut progress, 2).unwrap_err();
+    assert_eq!(ladder[last - 1].model, "claude-opus-5-5");
+    assert_eq!(
+        (
+            progress.used,
+            progress.starts[last - 1],
+            progress.starts[last]
+        ),
+        (
+            agents.policy.max_worker_attempts + 2,
+            ladder[last - 1].attempts + 2,
+            ladder[last].attempts
+        )
+    );
+}
+
 fn claude_answers(agents: &mut Agents, report: &str) {
     let answer = format!(r#"printf '{{"structured_output":{report},"session_id":"s1"}}'"#);
     for runner in &mut agents.runners {
