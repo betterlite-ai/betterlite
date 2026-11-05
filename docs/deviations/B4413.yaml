@@ -1,9 +1,9 @@
 task: B4413
 deviations:
   - what: A timeout given as separate connect, read, write and pool phases is applied as one request limit equal to the sum of the four phases, and the 600 second default is used when any phase is unset.
-    why: reqwest takes a single per-request timeout, while httpx tracks each phase on its own. Summing the phases keeps the whole request within the total httpx could spend.
+    why: A transport takes a single per-request timeout, while httpx tracks each phase on its own. Summing the phases keeps the whole request within the total httpx could spend.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/aws_secret_manager_v2.py#L415-L440
-  - what: The response of a Secrets Manager action is read in chunks and rejected once it passes 1 MiB.
+  - what: The response of a Secrets Manager action is rejected once it passes 1 MiB. The transport receives the limit and stops reading at it, and the client checks the body it gets back.
     why: LiteLLM reads the whole body into memory with no limit. A secrets response is a few kilobytes, so a cap protects the gateway from a misbehaving endpoint without affecting a working setup.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/aws_secret_manager_v2.py#L415-L440
   - what: The AWS_BEDROCK_RUNTIME_ENDPOINT override and the region variables are read from an environment map handed in by the caller instead of from os.environ and the secret manager chain.

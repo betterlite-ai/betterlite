@@ -6,7 +6,8 @@ use aws_sigv4::http_request::{
 };
 use aws_sigv4::sign::v4;
 use aws_smithy_runtime_api::client::identity::Identity;
-use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
+use http::header::CONTENT_TYPE;
+use http::{HeaderMap, HeaderName, HeaderValue};
 
 use crate::aws::request_signing::{AwsCredentialsInfo, AwsRequestError};
 

@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt::Debug;
+use std::future::ready;
 use std::sync::{Arc, Mutex};
 
 use rstest::rstest;
@@ -16,7 +17,10 @@ use crate::aws::client_init::{
     AwsKeyManagementSettings, AwsSecretManagerRuntime, load_aws_secret_manager,
     validate_environment,
 };
-use crate::aws::request_signing::{AwsCredentialsInfo, AwsOptionalParams, CredentialResolver};
+use crate::aws::request_signing::{
+    AwsCredentialsInfo, AwsOptionalParams, AwsTransport, CredentialResolver, TransportError,
+    TransportFuture, TransportRequest,
+};
 use crate::aws::{AwsDependencies, AwsSecretsManager};
 use crate::secret_types::KeyManagementSystem;
 
@@ -101,6 +105,18 @@ where
     }
 }
 
+#[derive(Debug)]
+struct NoTransport;
+
+impl AwsTransport for NoTransport {
+    fn post<'request>(
+        &'request self,
+        _request: TransportRequest<'request>,
+    ) -> TransportFuture<'request> {
+        Box::pin(ready(Err(TransportError::Timeout)))
+    }
+}
+
 fn environment(names: &[&str]) -> BTreeMap<String, String> {
     names
         .iter()
@@ -111,7 +127,7 @@ fn environment(names: &[&str]) -> BTreeMap<String, String> {
 fn dependencies(names: &[&str]) -> AwsDependencies<NoResolver> {
     AwsDependencies {
         environment: environment(names),
-        http_client: reqwest::Client::default(),
+        transport: Arc::new(NoTransport),
         resolver: NoResolver,
         dns_suffix: |_region| "amazonaws.com",
     }

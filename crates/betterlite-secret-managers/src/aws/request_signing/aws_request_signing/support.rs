@@ -1,13 +1,16 @@
 use std::collections::BTreeMap;
-use std::sync::Mutex;
+use std::future::ready;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use aws_credential_types::Credentials;
+use http::{HeaderMap, StatusCode};
 use secrecy::{ExposeSecret, SecretString};
 use thiserror::Error;
 
 use crate::aws::request_signing::{
-    ActionRequest, AwsCredentialsInfo, AwsOptionalParams, CredentialResolver,
+    ActionRequest, AwsCredentialsInfo, AwsOptionalParams, AwsTransport, CredentialResolver,
+    TransportError, TransportFuture, TransportRequest, TransportResponse,
 };
 use crate::aws::{AwsDependencies, AwsSecretsManager};
 
@@ -157,6 +160,52 @@ impl CredentialResolver for FakeResolver {
     }
 }
 
+#[derive(Debug)]
+pub(super) struct Sent {
+    pub(super) url: String,
+    pub(super) headers: HeaderMap,
+    pub(super) body: Vec<u8>,
+    pub(super) timeout: Duration,
+    pub(super) max_response_bytes: usize,
+}
+
+#[derive(Debug)]
+pub(super) struct FakeTransport {
+    reply: Mutex<Option<Result<TransportResponse, TransportError>>>,
+    pub(super) sent: Mutex<Vec<Sent>>,
+}
+
+impl AwsTransport for FakeTransport {
+    fn post<'request>(
+        &'request self,
+        request: TransportRequest<'request>,
+    ) -> TransportFuture<'request> {
+        self.sent.lock().unwrap().push(Sent {
+            url: request.url.to_owned(),
+            headers: request.headers,
+            body: request.body.to_vec(),
+            timeout: request.timeout,
+            max_response_bytes: request.max_response_bytes,
+        });
+        let reply = self.reply.lock().unwrap().take().unwrap();
+        Box::pin(ready(reply))
+    }
+}
+
+pub(super) fn transport(reply: Result<TransportResponse, TransportError>) -> Arc<FakeTransport> {
+    Arc::new(FakeTransport {
+        reply: Mutex::new(Some(reply)),
+        sent: Mutex::new(Vec::new()),
+    })
+}
+
+pub(super) fn answer(status: u16, body: &[u8]) -> Arc<FakeTransport> {
+    transport(Ok(TransportResponse {
+        status: StatusCode::from_u16(status).unwrap(),
+        body: body.to_vec(),
+    }))
+}
+
 pub(super) fn resolver(region: &str) -> FakeResolver {
     FakeResolver {
         region: region.to_owned(),
@@ -183,7 +232,7 @@ pub(super) fn manager(
         kms_key_id: None,
         dependencies: AwsDependencies {
             environment,
-            http_client: reqwest::Client::default(),
+            transport: answer(200, b"{}"),
             resolver,
             dns_suffix,
         },

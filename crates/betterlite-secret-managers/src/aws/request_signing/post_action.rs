@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::error::Error;
 use std::time::{Duration, SystemTime};
 
 use secrecy::ExposeSecret as _;
@@ -8,6 +7,7 @@ use serde_json::value::RawValue;
 use crate::aws::AwsSecretsManager;
 use crate::aws::request_signing::{
     ActionRequest, AwsActionResponse, AwsOptionalParams, AwsRequestError, CredentialResolver,
+    TransportError, TransportRequest,
 };
 use crate::secret_contracts::options::SecretTimeout;
 
@@ -32,35 +32,6 @@ fn request_timeout(timeout: Option<SecretTimeout>) -> Duration {
     }
 }
 
-fn send_failure<ResolverError>(error: reqwest::Error) -> AwsRequestError<ResolverError>
-where
-    ResolverError: Error + 'static,
-{
-    if error.is_timeout() {
-        AwsRequestError::Timeout
-    } else {
-        AwsRequestError::Transport(error)
-    }
-}
-
-async fn read_bounded<ResolverError>(
-    mut response: reqwest::Response,
-) -> Result<Vec<u8>, AwsRequestError<ResolverError>>
-where
-    ResolverError: Error + 'static,
-{
-    let mut collected = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(send_failure)? {
-        if collected.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
-            return Err(AwsRequestError::ResponseTooLarge {
-                limit: MAX_RESPONSE_BYTES,
-            });
-        }
-        collected.extend_from_slice(&chunk);
-    }
-    Ok(collected)
-}
-
 impl<Resolver> AwsSecretsManager<Resolver>
 where
     Resolver: CredentialResolver + Sync,
@@ -74,21 +45,32 @@ where
         let prepared = self.prepare_request(request, None, optional_params, SystemTime::now())?;
         let response = self
             .dependencies
-            .http_client
-            .post(&prepared.endpoint_url)
-            .headers(prepared.headers)
-            .body(prepared.body.expose_secret().to_vec())
-            .timeout(request_timeout(timeout))
-            .send()
+            .transport
+            .post(TransportRequest {
+                url: &prepared.endpoint_url,
+                headers: prepared.headers,
+                body: prepared.body.expose_secret(),
+                timeout: request_timeout(timeout),
+                max_response_bytes: MAX_RESPONSE_BYTES,
+            })
             .await
-            .map_err(send_failure)?;
-        let status = response.status();
-        let bytes = read_bounded(response).await?;
-        if !status.is_success() {
-            let text = String::from_utf8(bytes).map_err(AwsRequestError::ErrorText)?;
+            .map_err(|error| match error {
+                TransportError::Timeout => AwsRequestError::Timeout,
+                TransportError::ResponseTooLarge => AwsRequestError::ResponseTooLarge {
+                    limit: MAX_RESPONSE_BYTES,
+                },
+                TransportError::Failed(source) => AwsRequestError::Transport(source),
+            })?;
+        if response.body.len() > MAX_RESPONSE_BYTES {
+            return Err(AwsRequestError::ResponseTooLarge {
+                limit: MAX_RESPONSE_BYTES,
+            });
+        }
+        if !response.status.is_success() {
+            let text = String::from_utf8(response.body).map_err(AwsRequestError::ErrorText)?;
             return Err(AwsRequestError::Http { text });
         }
-        let fields = serde_json::from_slice::<BTreeMap<String, Box<RawValue>>>(&bytes)
+        let fields = serde_json::from_slice::<BTreeMap<String, Box<RawValue>>>(&response.body)
             .map_err(AwsRequestError::Response)?;
         Ok(AwsActionResponse { fields })
     }

@@ -1,98 +1,35 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::future::{IntoFuture as _, pending};
+use std::io;
+use std::mem::take;
+use std::sync::Arc;
 use std::time::Duration;
 
-use axum::Router;
-use axum::body::to_bytes;
-use axum::extract::{Request, State};
-use axum::http::StatusCode;
-use axum::http::request::Parts;
-use axum::response::{IntoResponse as _, Response};
 use rstest::rstest;
 use serde_json::value::RawValue;
-use tokio::net::TcpListener;
-use tokio::sync::{mpsc, oneshot};
 
-use super::support::{FakeResolver, ResolverFailure, manager, resolver};
+use super::support::{
+    FakeResolver, FakeTransport, ResolverFailure, answer, manager, resolver, transport,
+};
 use crate::aws::AwsSecretsManager;
-use crate::aws::request_signing::{ActionRequest, AwsOptionalParams, AwsRequestError};
+use crate::aws::request_signing::{
+    ActionRequest, AwsOptionalParams, AwsRequestError, TransportError,
+};
 use crate::secret_contracts::options::SecretTimeout;
 
-struct Captured {
-    head: Parts,
-    body: String,
-}
+const ENDPOINT: &str = "http://127.0.0.1:9/bedrock-runtime";
 
-#[derive(Clone)]
-struct Answer {
-    status: StatusCode,
-    body: Vec<u8>,
-    hang: bool,
-    captured: mpsc::Sender<Captured>,
-}
-
-async fn answer(State(answer): State<Answer>, request: Request) -> Response {
-    let (head, body) = request.into_parts();
-    let bytes = to_bytes(body, 0x0001_0000).await.unwrap();
-    let text = String::from_utf8(bytes.to_vec()).unwrap();
-    answer
-        .captured
-        .send(Captured { head, body: text })
-        .await
-        .unwrap();
-    if answer.hang {
-        pending::<()>().await;
-    }
-    (answer.status, answer.body).into_response()
-}
-
-async fn with_server<Call, Make>(
-    status: u16,
-    body: Vec<u8>,
-    hang: bool,
-    call: Make,
-) -> (Call::Output, Vec<Captured>)
-where
-    Make: FnOnce(String) -> Call,
-    Call: Future,
-{
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let endpoint = format!("http://{}/bedrock-runtime", listener.local_addr().unwrap());
-    let (captured, mut received) = mpsc::channel(16);
-    let (stop, stopped) = oneshot::channel();
-    let router = Router::new().fallback(answer).with_state(Answer {
-        status: StatusCode::from_u16(status).unwrap(),
-        body,
-        hang,
-        captured,
-    });
-    let serving = axum::serve(listener, router)
-        .with_graceful_shutdown(async { stopped.await.unwrap() })
-        .into_future();
-    let caller = async {
-        let output = call(endpoint).await;
-        stop.send(()).unwrap();
-        output
-    };
-    let (output, shutdown) = tokio::join!(caller, serving);
-    shutdown.unwrap();
-    let mut requests = Vec::new();
-    while let Ok(request) = received.try_recv() {
-        requests.push(request);
-    }
-    (output, requests)
-}
-
-fn client_for(endpoint: String) -> AwsSecretsManager<FakeResolver> {
-    manager(
+fn client_for(transport: &Arc<FakeTransport>) -> AwsSecretsManager<FakeResolver> {
+    let mut client = manager(
         FakeResolver {
-            endpoint: Some(endpoint),
+            endpoint: Some(ENDPOINT.to_owned()),
             ..resolver("us-east-1")
         },
         BTreeMap::new(),
-    )
+    );
+    client.dependencies.transport = Arc::<FakeTransport>::clone(transport);
+    client
 }
 
 fn get_request(data: Option<&BTreeMap<String, Box<RawValue>>>) -> ActionRequest<'_> {
@@ -105,27 +42,20 @@ fn get_request(data: Option<&BTreeMap<String, Box<RawValue>>>) -> ActionRequest<
 
 #[tokio::test]
 async fn posts_the_signed_request_and_returns_the_json_object() {
-    let (response, requests) = with_server(
-        200,
-        br#"{"Name":"my/secret","SecretString":"hunter2"}"#.to_vec(),
-        false,
-        |endpoint| async move {
-            client_for(endpoint)
-                .async_post_action(&get_request(None), None, None)
-                .await
-                .unwrap()
-        },
-    )
-    .await;
+    let sending = answer(200, br#"{"Name":"my/secret","SecretString":"hunter2"}"#);
+    let response = client_for(&sending)
+        .async_post_action(&get_request(None), None, None)
+        .await
+        .unwrap();
     assert_eq!(response.fields["SecretString"].get(), r#""hunter2""#);
     assert_eq!(response.fields["Name"].get(), r#""my/secret""#);
-    let [request] = requests.as_slice() else {
-        panic!("expected exactly one request, got {}", requests.len());
+    let sent = take(&mut *sending.sent.lock().unwrap());
+    let [request] = sent.as_slice() else {
+        panic!("expected exactly one request, got {}", sent.len());
     };
-    assert_eq!(request.head.method, "POST");
-    assert_eq!(request.head.uri.path(), "/secretsmanager");
-    assert_eq!(request.body, r#"{"SecretId":"my/secret"}"#);
-    let headers = &request.head.headers;
+    assert_eq!(request.url, "http://127.0.0.1:9/secretsmanager");
+    assert_eq!(request.body, br#"{"SecretId":"my/secret"}"#);
+    let headers = &request.headers;
     assert_eq!(headers["content-type"], "application/x-amz-json-1.1");
     assert_eq!(headers["x-amz-target"], "secretsmanager.GetSecretValue");
     assert_eq!(headers["x-amz-security-token"], "session-token");
@@ -149,16 +79,14 @@ async fn posts_request_data_as_the_body() {
         "VersionStage".to_owned(),
         RawValue::from_string(r#""AWSPREVIOUS""#.to_owned()).unwrap(),
     );
-    let (_response, requests) = with_server(200, b"{}".to_vec(), false, |endpoint| async move {
-        client_for(endpoint)
-            .async_post_action(&get_request(Some(&data)), None, None)
-            .await
-            .unwrap()
-    })
-    .await;
+    let sending = answer(200, b"{}");
+    client_for(&sending)
+        .async_post_action(&get_request(Some(&data)), None, None)
+        .await
+        .unwrap();
     assert_eq!(
-        requests[0].body,
-        r#"{"SecretId":"my/secret","VersionStage":"AWSPREVIOUS"}"#
+        sending.sent.lock().unwrap()[0].body,
+        br#"{"SecretId":"my/secret","VersionStage":"AWSPREVIOUS"}"#
     );
 }
 
@@ -177,15 +105,12 @@ async fn optional_params_reach_the_credential_resolver() {
         aws_web_identity_token: None,
         aws_sts_endpoint: None,
     };
-    let (seen, _requests) = with_server(200, b"{}".to_vec(), false, |endpoint| async move {
-        let client = client_for(endpoint);
-        client
-            .async_post_action(&get_request(None), Some(&mut params), None)
-            .await
-            .unwrap();
-        client.dependencies.resolver.seen.lock().unwrap().clone()
-    })
-    .await;
+    let client = client_for(&answer(200, b"{}"));
+    client
+        .async_post_action(&get_request(None), Some(&mut params), None)
+        .await
+        .unwrap();
+    let seen = client.dependencies.resolver.seen.lock().unwrap().clone();
     assert_eq!(
         seen[0].0.get("profile").map(String::as_str),
         Some("caller-profile")
@@ -204,39 +129,57 @@ async fn an_error_status_becomes_a_message_with_the_response_text(
     #[case] status: u16,
     #[case] text: &str,
 ) {
-    let (error, _requests) = with_server(
-        status,
-        text.as_bytes().to_vec(),
-        false,
-        |endpoint| async move {
-            client_for(endpoint)
-                .async_post_action(&get_request(None), None, None)
-                .await
-                .unwrap_err()
-        },
-    )
-    .await;
+    let error = client_for(&answer(status, text.as_bytes()))
+        .async_post_action(&get_request(None), None, None)
+        .await
+        .unwrap_err();
     assert!(matches!(error, AwsRequestError::Http { .. }));
     assert_eq!(error.to_string(), format!("HTTP error occurred: {text}"));
 }
 
 #[rstest]
-#[case::total(SecretTimeout::Total(Duration::from_millis(100)))]
-#[case::every_phase(SecretTimeout::Phases {
-    connect: Some(Duration::from_millis(25)),
-    read: Some(Duration::from_millis(25)),
-    write: Some(Duration::from_millis(25)),
-    pool: Some(Duration::from_millis(25)),
-})]
+#[case::total(
+    Some(SecretTimeout::Total(Duration::from_millis(100))),
+    Duration::from_millis(100)
+)]
+#[case::every_phase(
+    Some(SecretTimeout::Phases {
+        connect: Some(Duration::from_millis(25)),
+        read: Some(Duration::from_millis(25)),
+        write: Some(Duration::from_millis(25)),
+        pool: Some(Duration::from_millis(25)),
+    }),
+    Duration::from_millis(100)
+)]
+#[case::an_unset_phase(
+    Some(SecretTimeout::Phases {
+        connect: Some(Duration::from_millis(25)),
+        read: None,
+        write: Some(Duration::from_millis(25)),
+        pool: Some(Duration::from_millis(25)),
+    }),
+    Duration::from_secs(600)
+)]
+#[case::none(None, Duration::from_secs(600))]
 #[tokio::test]
-async fn a_slow_server_becomes_a_timeout_message(#[case] timeout: SecretTimeout) {
-    let (error, _requests) = with_server(200, b"{}".to_vec(), true, |endpoint| async move {
-        client_for(endpoint)
-            .async_post_action(&get_request(None), None, Some(timeout))
-            .await
-            .unwrap_err()
-    })
-    .await;
+async fn the_timeout_option_reaches_the_transport(
+    #[case] timeout: Option<SecretTimeout>,
+    #[case] expected: Duration,
+) {
+    let sending = answer(200, b"{}");
+    client_for(&sending)
+        .async_post_action(&get_request(None), None, timeout)
+        .await
+        .unwrap();
+    assert_eq!(sending.sent.lock().unwrap()[0].timeout, expected);
+}
+
+#[tokio::test]
+async fn a_slow_server_becomes_a_timeout_message() {
+    let error = client_for(&transport(Err(TransportError::Timeout)))
+        .async_post_action(&get_request(None), None, None)
+        .await
+        .unwrap_err();
     assert!(matches!(error, AwsRequestError::Timeout));
     assert_eq!(error.to_string(), "Timeout error occurred");
 }
@@ -247,13 +190,10 @@ async fn a_slow_server_becomes_a_timeout_message(#[case] timeout: SecretTimeout)
 #[case::empty(Vec::new())]
 #[tokio::test]
 async fn a_success_body_that_is_not_a_json_object_is_a_response_error(#[case] body: Vec<u8>) {
-    let (error, _requests) = with_server(200, body, false, |endpoint| async move {
-        client_for(endpoint)
-            .async_post_action(&get_request(None), None, None)
-            .await
-            .unwrap_err()
-    })
-    .await;
+    let error = client_for(&answer(200, &body))
+        .async_post_action(&get_request(None), None, None)
+        .await
+        .unwrap_err();
     assert!(matches!(error, AwsRequestError::Response(_)));
 }
 
@@ -262,13 +202,27 @@ async fn a_response_past_the_size_limit_is_refused() {
     let mut oversized = br#"{"SecretString":""#.to_vec();
     oversized.resize(0x0010_0001, b'a');
     oversized.extend_from_slice(br#""}"#);
-    let (error, _requests) = with_server(200, oversized, false, |endpoint| async move {
-        client_for(endpoint)
-            .async_post_action(&get_request(None), None, None)
-            .await
-            .unwrap_err()
-    })
-    .await;
+    let sending = answer(200, &oversized);
+    let error = client_for(&sending)
+        .async_post_action(&get_request(None), None, None)
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        AwsRequestError::ResponseTooLarge { limit: 0x0010_0000 }
+    ));
+    assert_eq!(
+        sending.sent.lock().unwrap()[0].max_response_bytes,
+        0x0010_0000
+    );
+}
+
+#[tokio::test]
+async fn a_transport_that_stops_reading_at_the_limit_is_a_size_error() {
+    let error = client_for(&transport(Err(TransportError::ResponseTooLarge)))
+        .async_post_action(&get_request(None), None, None)
+        .await
+        .unwrap_err();
     assert!(matches!(
         error,
         AwsRequestError::ResponseTooLarge { limit: 0x0010_0000 }
@@ -277,10 +231,9 @@ async fn a_response_past_the_size_limit_is_refused() {
 
 #[tokio::test]
 async fn an_unreachable_server_is_a_transport_error() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let endpoint = format!("http://{}/bedrock-runtime", listener.local_addr().unwrap());
-    drop(listener);
-    let error = client_for(endpoint)
+    let refused =
+        TransportError::Failed(Box::new(io::Error::from(io::ErrorKind::ConnectionRefused)));
+    let error = client_for(&transport(Err(refused)))
         .async_post_action(&get_request(None), None, None)
         .await
         .unwrap_err();
@@ -289,21 +242,21 @@ async fn an_unreachable_server_is_a_transport_error() {
 
 #[tokio::test]
 async fn a_credential_failure_stops_before_any_request_is_sent() {
-    let (error, requests) = with_server(200, b"{}".to_vec(), false, |endpoint| async move {
-        let failing = FakeResolver {
-            endpoint: Some(endpoint),
-            fail: true,
-            ..resolver("us-east-1")
-        };
-        manager(failing, BTreeMap::new())
-            .async_post_action(&get_request(None), None, None)
-            .await
-            .unwrap_err()
-    })
-    .await;
+    let sending = answer(200, b"{}");
+    let failing = FakeResolver {
+        endpoint: Some(ENDPOINT.to_owned()),
+        fail: true,
+        ..resolver("us-east-1")
+    };
+    let mut client = manager(failing, BTreeMap::new());
+    client.dependencies.transport = Arc::<FakeTransport>::clone(&sending);
+    let error = client
+        .async_post_action(&get_request(None), None, None)
+        .await
+        .unwrap_err();
     assert!(matches!(
         error,
         AwsRequestError::Credentials(ResolverFailure::Unavailable)
     ));
-    assert!(requests.is_empty());
+    assert!(sending.sent.lock().unwrap().is_empty());
 }

@@ -1,12 +1,16 @@
 use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
+use std::future::Future;
+use std::pin::Pin;
 use std::string::FromUtf8Error;
+use std::time::Duration;
 
 use aws_credential_types::Credentials;
 use aws_sigv4::http_request::SigningError;
 use aws_sigv4::sign::v4::signing_params::BuildError;
-use reqwest::header::{HeaderMap, InvalidHeaderName, InvalidHeaderValue};
+use http::header::{InvalidHeaderName, InvalidHeaderValue};
+use http::{HeaderMap, StatusCode};
 use secrecy::{SecretSlice, SecretString};
 use serde_json::value::RawValue;
 use thiserror::Error;
@@ -61,6 +65,41 @@ pub struct PreparedRequest {
     pub body: SecretSlice<u8>,
 }
 
+#[derive(Debug)]
+pub struct TransportRequest<'borrowed> {
+    pub url: &'borrowed str,
+    pub headers: HeaderMap,
+    pub body: &'borrowed [u8],
+    pub timeout: Duration,
+    pub max_response_bytes: usize,
+}
+
+#[derive(Debug)]
+pub struct TransportResponse {
+    pub status: StatusCode,
+    pub body: Vec<u8>,
+}
+
+#[derive(Debug, Error)]
+pub enum TransportError {
+    #[error("the request timed out")]
+    Timeout,
+    #[error("the response is larger than the allowed size")]
+    ResponseTooLarge,
+    #[error("the request failed: {0}")]
+    Failed(#[source] Box<dyn Error + Send + Sync>),
+}
+
+pub type TransportFuture<'request> =
+    Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send + 'request>>;
+
+pub trait AwsTransport: fmt::Debug + Send + Sync {
+    fn post<'request>(
+        &'request self,
+        request: TransportRequest<'request>,
+    ) -> TransportFuture<'request>;
+}
+
 pub struct AwsActionResponse {
     pub fields: BTreeMap<String, Box<RawValue>>,
 }
@@ -95,7 +134,7 @@ where
     #[error("Timeout error occurred")]
     Timeout,
     #[error("Secrets Manager request failed: {0}")]
-    Transport(#[source] reqwest::Error),
+    Transport(#[source] Box<dyn Error + Send + Sync>),
     #[error("Secrets Manager response exceeds {limit} bytes")]
     ResponseTooLarge { limit: usize },
     #[error("Secrets Manager error text is not UTF-8: {0}")]

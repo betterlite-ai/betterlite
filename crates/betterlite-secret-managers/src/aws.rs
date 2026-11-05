@@ -1,6 +1,9 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use secrecy::SecretString;
+
+use crate::aws::request_signing::AwsTransport;
 
 pub mod client_init;
 pub mod request_signing;
@@ -8,7 +11,7 @@ pub mod request_signing;
 #[derive(Debug)]
 pub struct AwsDependencies<Resolver> {
     pub environment: BTreeMap<String, String>,
-    pub http_client: reqwest::Client,
+    pub transport: Arc<dyn AwsTransport>,
     pub resolver: Resolver,
     pub dns_suffix: fn(&str) -> &'static str,
 }
