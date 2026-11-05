@@ -232,6 +232,24 @@ async fn pydantic_ai_submit_fails_on_a_task_that_ended(#[case] state: &str) {
 }
 
 #[rstest]
+#[case::failed("failed")]
+#[case::canceled("canceled")]
+#[tokio::test]
+async fn pydantic_ai_submit_polls_a_first_answer_that_already_ended(#[case] state: &str) {
+    let ended = format!(r#"{{"result": {{"id": "task-1", "status": {{"state": "{state}"}}}}}}"#);
+    let transport = ScriptedTransport::answering(&[&ended, COMPLETED]);
+    let raw = send(&transport, "http://agent.test", &BTreeMap::new())
+        .await
+        .unwrap();
+    assert_eq!(raw, json(COMPLETED));
+    let recorded = transport.recorded();
+    assert_eq!(recorded.len(), 2);
+    assert_eq!(recorded[1].body["method"], json(r#""tasks/get""#));
+    assert_eq!(recorded[1].body["id"], json(r#""req-1-poll-0""#));
+    assert_eq!(transport.pause_count(), 0);
+}
+
+#[rstest]
 #[case::no_result("{}")]
 #[case::null_result(r#"{"result": null}"#)]
 #[case::empty_task_id(r#"{"result": {"id": "", "status": {"state": "working"}}}"#)]

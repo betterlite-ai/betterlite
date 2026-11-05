@@ -11,6 +11,7 @@ use std::path::Path;
 #[case::poll_exhaustion("pydantic-ai-poll-exhaustion")]
 #[case::no_task_id("pydantic-ai-no-task-id")]
 #[case::failed_task("pydantic-ai-failed-task")]
+#[case::failed_submit("pydantic-ai-failed-submit")]
 #[case::streaming("pydantic-ai-streaming")]
 #[case::transport_timeout("pydantic-ai-transport-timeout")]
 #[case::none_removal("pydantic-ai-none-removal")]

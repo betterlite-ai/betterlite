@@ -66,7 +66,30 @@ async fn pydantic_ai_handler_streams_the_simulated_events() {
         )
         .await
         .unwrap();
-    assert!(!events.is_empty());
+    let values: Vec<AgentJson> = events
+        .iter()
+        .map(|step| serde_json::to_value(&step.event).unwrap())
+        .collect();
+    assert!(values.iter().all(|event| event["id"] == "req-1"));
+    let shape: Vec<_> = values
+        .iter()
+        .map(|event| {
+            (
+                event["result"]["kind"].as_str().unwrap(),
+                event["result"]["status"]["state"].as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        shape,
+        [
+            ("task", Some("submitted")),
+            ("status-update", Some("working")),
+            ("artifact-update", None),
+            ("status-update", Some("completed")),
+        ]
+    );
+    assert_eq!(values[2]["result"]["artifact"]["parts"][0]["text"], "hello");
 }
 
 #[tokio::test]
