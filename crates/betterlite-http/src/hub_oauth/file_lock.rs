@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use thiserror::Error;
 use tokio::fs::{self, OpenOptions};
-use tokio::time::{Instant, sleep};
+use tokio::time::{sleep, timeout as within};
 
 const LOCK_FILE_MODE: u32 = 0o664;
 const POLL_INTERVAL: Duration = Duration::from_millis(50);
@@ -47,25 +47,11 @@ async fn open_lock_file(path: &Path) -> Result<File, io::Error> {
     Ok(file.into_std().await)
 }
 
-// huggingface_hub's WeakFileLock: an flock on a group-writable lock file, polled every 50 ms until the timeout; dropping the file releases it
-pub async fn acquire(path: &Path, timeout: Duration) -> Result<File, LockError> {
-    let open = |source| LockError::Open {
-        path: path.to_path_buf(),
-        source,
-    };
-    let file = open_lock_file(path).await.map_err(open)?;
-    let started = Instant::now();
+async fn lock_when_free(file: &File, path: &Path) -> Result<(), LockError> {
     loop {
         match file.try_lock() {
-            Ok(()) => break,
-            Err(TryLockError::WouldBlock) if started.elapsed() < timeout => {
-                sleep(POLL_INTERVAL).await;
-            }
-            Err(TryLockError::WouldBlock) => {
-                return Err(LockError::Timeout {
-                    path: path.to_path_buf(),
-                });
-            }
+            Ok(()) => return Ok(()),
+            Err(TryLockError::WouldBlock) => sleep(POLL_INTERVAL).await,
             Err(TryLockError::Error(source)) => {
                 return Err(LockError::Lock {
                     path: path.to_path_buf(),
@@ -74,6 +60,20 @@ pub async fn acquire(path: &Path, timeout: Duration) -> Result<File, LockError> 
             }
         }
     }
+}
+
+// huggingface_hub's WeakFileLock: an flock on a group-writable lock file, polled every 50 ms until the timeout; dropping the file releases it
+pub async fn acquire(path: &Path, timeout: Duration) -> Result<File, LockError> {
+    let open = |source| LockError::Open {
+        path: path.to_path_buf(),
+        source,
+    };
+    let file = open_lock_file(path).await.map_err(open)?;
+    within(timeout, lock_when_free(&file, path))
+        .await
+        .map_err(|_elapsed| LockError::Timeout {
+            path: path.to_path_buf(),
+        })??;
     file.set_permissions(Permissions::from_mode(LOCK_FILE_MODE))
         .map_err(open)?;
     Ok(file)

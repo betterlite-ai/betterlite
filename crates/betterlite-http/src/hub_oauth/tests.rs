@@ -7,6 +7,8 @@ use rstest::rstest;
 
 use crate::hub_oauth::stored_tokens::parse::parse;
 
+mod clock;
+mod lock;
 mod oauth;
 mod oidc;
 mod parser;

@@ -1,0 +1,26 @@
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use tokio::time::sleep;
+
+use crate::hub_oauth::clock::{HubClock as _, SystemHubClock};
+
+#[test]
+fn system_clock_reads_the_wall_clock() {
+    let clock = SystemHubClock::new();
+    let wall = i64::try_from(
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs(),
+    )
+    .unwrap();
+    assert!(clock.unix_seconds().abs_diff(wall) <= 5);
+}
+
+#[tokio::test]
+async fn system_clock_counts_seconds_since_it_started() {
+    let clock = SystemHubClock::new();
+    assert_eq!(clock.monotonic_seconds(), 0);
+    sleep(Duration::from_millis(2100)).await;
+    assert_eq!(clock.monotonic_seconds(), 2);
+}
