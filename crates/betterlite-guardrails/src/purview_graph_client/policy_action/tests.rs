@@ -1,9 +1,9 @@
 #![cfg(test)]
 
-use betterlite_prompts::arguments::json::Object;
 use rstest::rstest;
 
 use super::should_block;
+use crate::purview_graph_client::wire::ProcessContentResponse;
 
 #[rstest]
 #[case::no_actions_key("{}", false)]
@@ -37,12 +37,12 @@ use super::should_block;
     r#"{"policyActions": [{"action": "restrictAccess", "restrictionAction": "Block"}]}"#,
     false
 )]
-#[case::entries_that_are_not_objects_are_skipped(
-    r#"{"policyActions": ["block", {"action": "restrictAccess", "restrictionAction": "block"}]}"#,
+#[case::unrelated_fields_are_ignored(
+    r#"{"id": "x", "policyActions": [{"action": "restrictAccess", "restrictionAction": "block", "extra": 1}]}"#,
     true
 )]
 fn should_block_finds_a_blocking_restriction(#[case] raw: &str, #[case] expected: bool) {
-    let response: Object = serde_json::from_str(raw).unwrap();
+    let response: ProcessContentResponse = serde_json::from_str(raw).unwrap();
 
     assert_eq!(should_block(&response), expected);
 }

@@ -1,12 +1,13 @@
 use std::sync::PoisonError;
 use std::time::{Duration, SystemTime};
 
+use betterlite_http::proxy::limits::read_bounded;
 use reqwest::header::CONTENT_TYPE;
 use secrecy::{ExposeSecret as _, SecretString};
 use url::form_urlencoded;
 
 use crate::purview_graph_client::error::PurviewGraphError;
-use crate::purview_graph_client::graph_api::read_limited_body;
+use crate::purview_graph_client::graph_api::MAX_RESPONSE_BYTES;
 use crate::purview_graph_client::wire::GraphTokenResponse;
 use crate::purview_graph_client::{GRAPH_SCOPE, PurviewGuardrailBase, TOKEN_EXPIRY_MARGIN};
 
@@ -40,7 +41,7 @@ async fn request_token(
         .append_pair("client_secret", base.client_secret.expose_secret())
         .append_pair("scope", GRAPH_SCOPE)
         .finish();
-    let response = base
+    let mut response = base
         .client
         .post(url)
         .header(CONTENT_TYPE, "application/x-www-form-urlencoded")
@@ -53,7 +54,9 @@ async fn request_token(
     if !status.is_success() {
         return Err(PurviewGraphError::TokenStatus { status });
     }
-    let body = read_limited_body(response).await?;
+    let body = read_bounded(&mut response, MAX_RESPONSE_BYTES)
+        .await
+        .map_err(|source| PurviewGraphError::Body { source })?;
     serde_json::from_slice(&body).map_err(|source| PurviewGraphError::ResponseJson { source })
 }
 

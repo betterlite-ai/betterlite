@@ -1,45 +1,30 @@
-use betterlite_prompts::arguments::json::Object;
+use std::fmt::Debug;
+
+use betterlite_http::proxy::limits::read_bounded;
 use reqwest::header::{HeaderMap, RETRY_AFTER};
 use secrecy::ExposeSecret as _;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 use crate::purview_graph_client::PurviewGuardrailBase;
 use crate::purview_graph_client::error::PurviewGraphError;
 use crate::purview_graph_client::token_cache::get_access_token;
 
-const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
+pub const MAX_RESPONSE_BYTES: usize = 16 * 1024 * 1024;
 
-pub async fn read_limited_body(
-    mut response: reqwest::Response,
-) -> Result<Vec<u8>, PurviewGraphError> {
-    let mut body = Vec::new();
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|source| PurviewGraphError::Request { source })?
-    {
-        if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
-            return Err(PurviewGraphError::ResponseTooLarge {
-                limit: MAX_RESPONSE_BYTES,
-            });
-        }
-        body.extend_from_slice(&chunk);
-    }
-    Ok(body)
-}
-
-pub async fn graph_post<B>(
+pub async fn graph_post<B, R>(
     base: &PurviewGuardrailBase,
     url: &str,
     json_body: &B,
     extra_headers: &HeaderMap,
-) -> Result<(Object, HeaderMap), PurviewGraphError>
+) -> Result<(R, HeaderMap), PurviewGraphError>
 where
     B: Serialize + Sync,
+    R: DeserializeOwned + Debug,
 {
     let token = get_access_token(base).await?;
     tracing::debug!(url, "Purview Graph POST");
-    let response = base
+    let mut response = base
         .client
         .post(url)
         .bearer_auth(token.expose_secret())
@@ -62,8 +47,10 @@ where
         });
     }
     let response_headers = response.headers().clone();
-    let body = read_limited_body(response).await?;
-    let response_json: Object = serde_json::from_slice(&body)
+    let body = read_bounded(&mut response, MAX_RESPONSE_BYTES)
+        .await
+        .map_err(|source| PurviewGraphError::Body { source })?;
+    let response_json: R = serde_json::from_slice(&body)
         .map_err(|source| PurviewGraphError::ResponseJson { source })?;
     tracing::debug!(?response_json, "Purview Graph response");
     Ok((response_json, response_headers))

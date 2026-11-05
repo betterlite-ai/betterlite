@@ -1,7 +1,7 @@
 use std::sync::PoisonError;
 
 use betterlite_http::url_path::encode_segment;
-use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::arguments::json::Object;
 use reqwest::header::{HeaderMap, HeaderValue, IF_NONE_MATCH};
 
 use crate::purview_graph_client::PurviewGuardrailBase;
@@ -9,7 +9,8 @@ use crate::purview_graph_client::error::PurviewGraphError;
 use crate::purview_graph_client::graph_api::graph_post;
 use crate::purview_graph_client::wire::{
     Activity, ActivityMetadata, ContentEntry, ContentToProcess, IntegratedAppMetadata,
-    PolicyLocation, ProcessContentRequest, ProtectedAppMetadata, TextContent,
+    PolicyLocation, ProcessContentRequest, ProcessContentResponse, ProtectedAppMetadata,
+    ProtectionScopeState, TextContent,
 };
 
 pub struct ContentRequest<'req> {
@@ -64,7 +65,7 @@ fn content_body<'req>(
 pub async fn process_content(
     base: &PurviewGuardrailBase,
     request: &ContentRequest<'_>,
-) -> Result<Object, PurviewGraphError> {
+) -> Result<ProcessContentResponse, PurviewGraphError> {
     let encoded_user_id = encode_segment(request.user_id, "user_id")
         .map_err(|source| PurviewGraphError::UserId { source })?;
     let url = format!(
@@ -83,17 +84,18 @@ pub async fn process_content(
         extra_headers.insert(IF_NONE_MATCH, etag);
     }
 
-    let (response_json, _) = graph_post(base, &url, &body, &extra_headers).await?;
+    let (answer, _): (ProcessContentResponse, HeaderMap) =
+        graph_post(base, &url, &body, &extra_headers).await?;
 
     // A changed policy makes the cached scopes stale, so the next call fetches them again.
-    if response_json.get("protectionScopeState") == Some(&Json::Text("modified".to_owned())) {
+    if answer.protection_scope_state == Some(ProtectionScopeState::Modified) {
         base.scope_and_token_cache_lock
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .protection_scope_cache
             .pop(request.user_id);
     }
-    Ok(response_json)
+    Ok(answer)
 }
 
 mod tests;

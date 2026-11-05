@@ -1,4 +1,5 @@
 use betterlite_http::error::HttpError;
+use betterlite_http::proxy::limits::ReadError;
 use reqwest::StatusCode;
 use reqwest::header::InvalidHeaderValue;
 use thiserror::Error;
@@ -21,8 +22,11 @@ pub enum PurviewGraphError {
         status: StatusCode,
         retry_after: Option<String>,
     },
-    #[error("the Graph answer is larger than {limit} bytes")]
-    ResponseTooLarge { limit: usize },
+    #[error("the Graph answer body could not be read")]
+    Body {
+        #[source]
+        source: ReadError,
+    },
     #[error("the Graph answer is not the expected JSON")]
     ResponseJson { source: serde_json::Error },
     #[error("the Entra token expires too far in the future to track")]

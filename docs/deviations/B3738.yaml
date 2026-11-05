@@ -5,7 +5,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/base.py#L76-L83
   - what: Graph response bodies are read in chunks and refused above 16 MiB.
     why: LiteLLM reads the whole body with no limit, so a misbehaving endpoint could exhaust memory.
-    link: ""
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/base.py#L149-L151
   - what: A non-success Graph answer becomes a typed error that carries the status code and the Retry-After header value.
     why: LiteLLM raises the raw httpx status error. The retry layer built on top of this task needs the status and the delay without parsing text.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/base.py#L126-L158

@@ -88,3 +88,28 @@ pub struct IntegratedAppMetadata<'req> {
     pub name: &'req str,
     pub version: &'static str,
 }
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessContentResponse {
+    pub policy_actions: Option<Vec<PolicyAction>>,
+    pub protection_scope_state: Option<ProtectionScopeState>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PolicyAction {
+    #[serde(rename = "@odata.type")]
+    pub odata_type: Option<String>,
+    pub action: Option<String>,
+    pub restriction_action: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum ProtectionScopeState {
+    Modified,
+    NotModified,
+    #[serde(other)]
+    Other,
+}

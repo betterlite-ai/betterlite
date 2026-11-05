@@ -32,10 +32,7 @@ pub const DEFAULT_USER_ID_FIELD: &str = "user_id";
 // One hour, the cache lifetime Microsoft recommends for protection scopes.
 pub const SCOPE_CACHE_TTL: Duration = Duration::from_secs(3600);
 pub const TOKEN_EXPIRY_MARGIN: Duration = Duration::from_secs(60);
-const SCOPE_CACHE_CAPACITY: NonZeroUsize = match NonZeroUsize::new(1000) {
-    Some(capacity) => capacity,
-    None => NonZeroUsize::MIN,
-};
+const SCOPE_CACHE_CAPACITY: NonZeroUsize = NonZeroUsize::new(1000).unwrap();
 
 #[derive(Debug)]
 pub struct CacheState {

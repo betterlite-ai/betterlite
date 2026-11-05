@@ -56,7 +56,7 @@ pub async fn compute_protection_scopes(
             value: &base.client_id,
         }],
     };
-    let (response_json, response_headers) =
+    let (response_json, response_headers): (Object, HeaderMap) =
         graph_post(base, &url, &body, &HeaderMap::new()).await?;
     let etag = response_headers
         .get(ETAG)

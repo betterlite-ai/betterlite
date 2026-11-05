@@ -1,12 +1,13 @@
 #![cfg(test)]
 
 use axum::http::StatusCode;
-use betterlite_prompts::arguments::json::Json;
+use betterlite_http::proxy::limits::ReadError;
+use betterlite_prompts::arguments::json::{Json, Object};
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde::Serialize;
 
 use crate::purview_graph_client::error::PurviewGraphError;
-use crate::purview_graph_client::graph_api::graph_post;
+use crate::purview_graph_client::graph_api::{MAX_RESPONSE_BYTES, graph_post};
 use crate::purview_graph_client::test_support::{
     MockReply, RecordedRequest, guardrail, json_reply, standard_reply, start,
 };
@@ -33,9 +34,10 @@ async fn graph_api_returns_the_json_and_the_response_headers() {
     let base = guardrail(&mock.base);
     let url = format!("{}/probe", mock.base);
 
-    let (json, headers) = graph_post(&base, &url, &Probe { probe: "x" }, &HeaderMap::new())
-        .await
-        .unwrap();
+    let (json, headers): (Object, HeaderMap) =
+        graph_post(&base, &url, &Probe { probe: "x" }, &HeaderMap::new())
+            .await
+            .unwrap();
 
     assert_eq!(json.get("answer"), Some(&Json::Text("yes".to_owned())));
     assert_eq!(headers.get("etag").unwrap(), "\"abc\"");
@@ -49,7 +51,7 @@ async fn graph_api_sends_the_bearer_token_json_and_extra_headers() {
     let mut extra = HeaderMap::new();
     extra.insert("if-none-match", HeaderValue::from_static("\"tag\""));
 
-    graph_post(&base, &url, &Probe { probe: "x" }, &extra)
+    graph_post::<_, Object>(&base, &url, &Probe { probe: "x" }, &extra)
         .await
         .unwrap();
 
@@ -82,7 +84,7 @@ async fn graph_api_keeps_the_status_and_retry_after_of_a_failed_call() {
     let base = guardrail(&mock.base);
     let url = format!("{}/probe", mock.base);
 
-    let error = graph_post(&base, &url, &Probe { probe: "x" }, &HeaderMap::new())
+    let error = graph_post::<_, Object>(&base, &url, &Probe { probe: "x" }, &HeaderMap::new())
         .await
         .unwrap_err();
 
@@ -106,7 +108,7 @@ async fn graph_api_refuses_an_answer_that_is_not_a_json_object() {
     let base = guardrail(&mock.base);
     let url = format!("{}/probe", mock.base);
 
-    let error = graph_post(&base, &url, &Probe { probe: "x" }, &HeaderMap::new())
+    let error = graph_post::<_, Object>(&base, &url, &Probe { probe: "x" }, &HeaderMap::new())
         .await
         .unwrap_err();
 
@@ -119,12 +121,37 @@ async fn graph_api_does_not_call_graph_when_the_token_request_fails() {
     let base = guardrail(&mock.base);
     let url = format!("{}/probe", mock.base);
 
-    let error = graph_post(&base, &url, &Probe { probe: "x" }, &HeaderMap::new())
+    let error = graph_post::<_, Object>(&base, &url, &Probe { probe: "x" }, &HeaderMap::new())
         .await
         .unwrap_err();
 
     assert!(matches!(error, PurviewGraphError::TokenStatus { .. }));
     assert_eq!(mock.count("/probe"), 0);
+}
+
+fn oversized(request: &RecordedRequest) -> MockReply {
+    if request.path.ends_with("/token") {
+        return standard_reply(request);
+    }
+    let padding = "x".repeat(MAX_RESPONSE_BYTES);
+    json_reply(&format!("{{\"pad\":\"{padding}\"}}"))
+}
+
+#[tokio::test]
+async fn graph_api_refuses_an_answer_over_the_size_limit() {
+    let mock = start(oversized).await;
+    let base = guardrail(&mock.base);
+    let url = format!("{}/probe", mock.base);
+
+    let error = graph_post::<_, Object>(&base, &url, &Probe { probe: "x" }, &HeaderMap::new())
+        .await
+        .unwrap_err();
+
+    assert!(matches!(
+        error,
+        PurviewGraphError::Body { source: ReadError::TooLarge { limit } }
+            if limit == MAX_RESPONSE_BYTES
+    ));
 }
 
 fn throttled_token(_request: &RecordedRequest) -> MockReply {
