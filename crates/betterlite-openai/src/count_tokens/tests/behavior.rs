@@ -1,0 +1,143 @@
+#![cfg(test)]
+
+use std::time::Duration;
+
+use rstest::rstest;
+use secrecy::SecretString;
+
+use super::super::counter::TokenCounter as _;
+use super::super::error::CountTokensError;
+use super::super::handler::HandlerRequest;
+use super::super::request::ResponsesInput;
+use super::{KEY, OK, counter, run};
+
+#[rstest]
+#[case::empty_messages(r#"{"model":"m","key":"k","messages":[]}"#)]
+#[case::no_key_anywhere(
+    r#"{"model":"m","no_key":true,"messages":[{"role":"user","content":"hi"}]}"#
+)]
+#[tokio::test]
+async fn returns_none_before_any_http(#[case] scenario: &str) {
+    let (rendered, request) = run(scenario, 200, OK).await;
+    assert_eq!(rendered, "none");
+    assert!(request.is_none());
+}
+
+#[rstest]
+#[case::text(
+    r#"{"model":"m","key":"k","system":"plain","messages":[{"role":"user","content":"hi"}]}"#,
+    "plain"
+)]
+#[case::object(r#"{"model":"m","key":"k","system":{"b":1,"a":[null,false]},"messages":[{"role":"user","content":"hi"}]}"#, "{'b': 1, 'a': [None, False]}")]
+#[tokio::test]
+async fn stringifies_the_system_fallback(#[case] scenario: &str, #[case] instructions: &str) {
+    let (_, request) = run(scenario, 200, OK).await;
+    assert_eq!(request.unwrap().1["instructions"], instructions);
+}
+
+#[rstest]
+#[case::openai(Some("openai"), true)]
+#[case::azure(Some("azure"), false)]
+#[case::absent(None, false)]
+fn only_openai_selects_the_native_counter(#[case] provider: Option<&str>, #[case] native: bool) {
+    assert_eq!(
+        counter(None).should_use_token_counting_api(provider),
+        native
+    );
+}
+
+#[rstest]
+#[case::null_tokens(r#"{"input_tokens":null}"#)]
+#[case::text_tokens(r#"{"input_tokens":"7"}"#)]
+#[tokio::test]
+async fn a_non_integer_input_tokens_is_an_error_record(#[case] answer: &str) {
+    let scenario = r#"{"model":"m","key":"k","messages":[{"role":"user","content":"hi"}]}"#;
+    let (rendered, _) = run(scenario, 200, answer).await;
+    assert_eq!(rendered, "error 500: input_tokens is not an integer");
+}
+
+#[tokio::test]
+async fn the_handler_wraps_validation_and_transport_failures_as_500() {
+    let handler = counter(None).handler;
+    let key = SecretString::from(KEY.to_owned());
+    let items = ResponsesInput::Items(Vec::new());
+    let request = HandlerRequest {
+        model: "m",
+        input: &items,
+        api_key: &key,
+        api_base: None,
+        timeout: None,
+        tools: None,
+        instructions: None,
+    };
+    let invalid = handler
+        .handle_count_tokens_request(&request)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&invalid, CountTokensError::Api(api) if api.status_code == 500
+        && api.message == "CountTokens processing error: input parameter is required")
+    );
+    let text = ResponsesInput::Text(String::from("hi"));
+    let unreachable = HandlerRequest {
+        api_base: Some("http://127.0.0.1:1/v1"),
+        input: &text,
+        ..request
+    };
+    let error = handler
+        .handle_count_tokens_request(&unreachable)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&error, CountTokensError::Api(api) if api.status_code == 500
+        && api.message.starts_with("CountTokens processing error: "))
+    );
+}
+
+#[rstest]
+#[case::default_base_and_injected_timeout(
+    None,
+    None,
+    "https://api.openai.com/v1/responses/input_tokens",
+    6000
+)]
+#[case::trimmed_base_and_explicit_timeout(
+    Some("http://h/v1///"),
+    Some(3),
+    "http://h/v1/responses/input_tokens",
+    3
+)]
+#[case::empty_base_is_the_default(
+    Some(""),
+    None,
+    "https://api.openai.com/v1/responses/input_tokens",
+    6000
+)]
+fn prepares_the_request_url_headers_and_deadline(
+    #[case] base: Option<&str>,
+    #[case] timeout: Option<u64>,
+    #[case] url: &str,
+    #[case] seconds: u64,
+) {
+    let handler = counter(None).handler;
+    let key = SecretString::from(KEY.to_owned());
+    let input = ResponsesInput::Text(String::from("hi"));
+    let request = HandlerRequest {
+        model: "m",
+        input: &input,
+        api_key: &key,
+        api_base: base,
+        timeout: timeout.map(Duration::from_secs),
+        tools: None,
+        instructions: None,
+    };
+    let outbound = handler.prepare(&request).unwrap();
+    assert_eq!(outbound.url.as_str(), url);
+    assert_eq!(outbound.deadline, Duration::from_secs(seconds));
+    assert_eq!(outbound.headers["content-type"], "application/json");
+    assert_eq!(
+        outbound.headers["authorization"],
+        format!("Bearer {KEY}").as_str()
+    );
+    assert!(outbound.headers["authorization"].is_sensitive());
+}
