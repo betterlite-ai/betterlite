@@ -20,9 +20,11 @@ impl crate::helpers::Helper for Op {
                 .map_err(route_metadata_error),
             "get_call_types" => {
                 let route = input.route.as_deref().unwrap_or_default();
-                betterlite_core::routes::get_call_types_for_route(route)
-                    .and_then(|types| serde_json::to_value(types).map_err(Into::into))
-                    .map_err(route_metadata_error)
+                match betterlite_core::routes::get_call_types_for_route(route) {
+                    Ok(Some(types)) => serde_json::to_value(types).map_err(route_metadata_error),
+                    Ok(None) => Ok(serde_json::Value::Null),
+                    Err(error) => Err(route_metadata_error(error)),
+                }
             }
             "get_routes" => {
                 let encoded = serde_json::to_value(input.call_type.as_deref().unwrap_or_default())
