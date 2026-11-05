@@ -96,21 +96,18 @@ fn deployments(chat: &OpenaiChat, api_base: &str) -> Result<Vec<ChatDeployment>,
     let loader = ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
     };
-    let defaults = OpenAiDefaults {
-        request_timeout: None,
-        api_bases: Vec::new(),
-        api_keys: Vec::new(),
-        organization: None,
-    };
+    let defaults = OpenAiDefaults::default();
     let text = serde_json::to_string(&config).map_err(SdkHttpError::Serialize)?;
-    loader
+    let parsed = loader
         .load(&text)
-        .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?
-        .model_list
-        .iter()
-        .map(|deployment| ChatDeployment::resolve(deployment, &defaults))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| SdkHttpError::Deployment(Box::new(error)))
+        .map_err(|error| SdkHttpError::ConfigLoad(Box::new(error)))?;
+    let mut resolved = Vec::new();
+    for entry in &parsed.model_list {
+        let deployment = ChatDeployment::resolve(entry, &defaults)
+            .map_err(|error| SdkHttpError::Deployment(Box::new(error)))?;
+        resolved.push(deployment);
+    }
+    Ok(resolved)
 }
 
 fn executor(chat: &OpenaiChat, api_base: &str) -> Result<ChatExecutor, SdkHttpError> {
