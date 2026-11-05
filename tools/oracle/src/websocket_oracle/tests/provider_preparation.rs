@@ -2,7 +2,6 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::io;
 use std::path::Path;
 
 use secrecy::ExposeSecret as _;
@@ -55,7 +54,7 @@ fn prepare(args: &Arguments) -> Result<Preparation, DriverError> {
         .api_base
         .replacen("https://", "wss://", 1)
         .replacen("http://", "ws://", 1);
-    let mut url = Url::parse(&base).map_err(|source| DriverError::Io(io::Error::other(source)))?;
+    let mut url = Url::parse(&base).unwrap();
     url.set_path("/v1/realtime");
     if !query.is_empty() {
         url.query_pairs_mut().extend_pairs(&query);
