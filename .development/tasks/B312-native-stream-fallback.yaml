@@ -22,21 +22,16 @@ description: 'Adapt B311 commitment and B310 fallback ownership to B081 typed Me
   (L5521-L5619), Router._aanthropic_messages_recover_stream_error (L5627-L5655), Router._aanthropic_messages_fallback_attempt
   (L5657-L5734), Router._aanthropic_messages_with_streaming_fallbacks (L5736-L5751), Router._ageneric_api_call_with_fallbacks_anthropic_messages_attempt
   (L5753-L5778). Implement these behaviors through the typed Rust services above; synchronous facades
-  and structural accessors reuse the same primitive instead of separate ports.'
+  and structural accessors reuse the same primitive instead of separate ports.
+  B016 registers RouteStage::NativeStreamFallback as a stub, so replace only that stub and its not-built test in crates/betterlite-router/src/context/native_stream_fallback.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.'
 scope:
   paths:
   - crates/betterlite-router/src/native_stream_fallback.rs
   - crates/betterlite-router/src/native_stream_fallback/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-router/src/context/native_stream_fallback.rs
+  - crates/betterlite-router/src/context/native_stream_fallback/**
   - crates/betterlite-server/src/routing/native_stream_fallback.rs
   - crates/betterlite-server/src/routing/native_stream_fallback/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/native_stream_fallback.rs
   - tools/oracle/src/router_probes/native_stream_fallback/**
   - tools/oracle/litellm/probes/native_stream_fallback.py

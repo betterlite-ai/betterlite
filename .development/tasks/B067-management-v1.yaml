@@ -1,8 +1,7 @@
 id: B067
 title: Mount management v1 and expose bulk team-member actions
 description: >-
-  Finish betterlite-server::management::v1 by composing B1703's budget collection, B1705's
-  spend facets and B1222's existing bulk-user router exactly once. The user routes' complete
+  Finish betterlite-server::management::v1 by composing B1703's budget collection and B1705's spend facets exactly once. B1222 already mounts its bulk-user router from routes/bulk_user.rs, so do not mount it again. The user routes' complete
   paths are /management/v1/users/bulk and /management/v1/users/bulk_delete; the shorter
   strings in B1222 are relative route declarations, not additional public aliases. Own
   management_v1/__init__.py and teams.py; users.py is already implemented by B1222.
@@ -31,14 +30,15 @@ description: >-
   isolation and row order; underlying transaction concurrency remains with B802/B1202.
   Teams owns 163 nonblank source lines and composition 21; allocate 190 handlers/wiring,
   230 integration tests and 200 HTTP fixtures, capped at 700 changed lines.
+  B1100 registers routes/management_v1.rs as a stub, so fill only crates/betterlite-server/src/routes/management_v1.rs and leave routes.rs as it is.
 scope:
   paths:
     - crates/betterlite-server/src/management/v1.rs
     - crates/betterlite-server/src/management/v1/**
     - crates/betterlite-server/src/management/member_actions.rs
     - crates/betterlite-server/src/management/member_actions/**
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
+    - crates/betterlite-server/src/routes/management_v1.rs
+    - crates/betterlite-server/src/routes/management_v1/**
     - tools/oracle/cases/http/management-member-actions/**
     - tools/oracle/cases/http/management-v1-mount/**
     - tools/oracle/helpers/b067.py

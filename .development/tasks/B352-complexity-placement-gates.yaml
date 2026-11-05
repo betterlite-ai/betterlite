@@ -19,21 +19,14 @@ description: 'Finish the post-placement modality and speculative health gates ar
   (L3748-L3892), ComplexityRouter._gate_response_health.recover_tier (L3785-L3848), ComplexityRouter._placed_default_model
   (L3894-L3900), ComplexityRouter._restamp_adaptive_choice (L3903-L3913). Implement these behaviors through
   the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
-  instead of separate ports.'
+  instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B366 composes this service.'
 scope:
   paths:
   - crates/betterlite-router/src/complexity_placement_gates.rs
   - crates/betterlite-router/src/complexity_placement_gates/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/complexity_placement_gates.rs
   - crates/betterlite-server/src/routing/complexity_placement_gates/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/complexity_placement_gates.rs
   - tools/oracle/src/router_probes/complexity_placement_gates/**
   - tools/oracle/litellm/probes/complexity_placement_gates.py

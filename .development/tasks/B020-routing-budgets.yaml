@@ -23,7 +23,8 @@ description: 'Finish policy routing by filtering B016''s eligible pool against B
   (L715-L736), RouterBudgetLimiting._track_provider_remaining_budget_prometheus (L738-L751), RouterBudgetLimiting._get_current_provider_spend
   (L753-L777), RouterBudgetLimiting._get_current_provider_budget_reset_at (L779-L793), RouterBudgetLimiting._init_tag_budgets
   (L915-L935). Implement these behaviors through the typed Rust services above; synchronous facades and
-  structural accessors reuse the same primitive instead of separate ports.'
+  structural accessors reuse the same primitive instead of separate ports.
+  B326 and B383 build only in their own modules, so this task also installs the B326 budget state in the server state, reads its B383 budget configuration and calls the B326 shutdown flush.'
 scope:
   paths:
   - crates/betterlite-router/src/routing_budgets.rs

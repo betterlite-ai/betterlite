@@ -81,6 +81,7 @@ description: >-
   Sizing after splitting B2340's 159 helper lines: 211 nonblank, noncomment handler lines plus write alias
   declarations; allow 240 production, 350 behavior/Postgres tests, 0 helper adapters, 75 route/wiring,
   0 decoder/fuzz and 0 config lines, 665 changed lines within a 700-line gate.
+  B1100 registers routes/access_group_write.rs as a stub, so fill only crates/betterlite-server/src/routes/access_group_write.rs and leave routes.rs and state.rs as they are.
 
 
 scope:
@@ -88,10 +89,8 @@ scope:
     - crates/betterlite-server/src/access_group_write.rs
     - crates/betterlite-server/src/access_group_write/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/access_group_write.rs
+    - crates/betterlite-server/src/routes/access_group_write/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/access-group-write/**

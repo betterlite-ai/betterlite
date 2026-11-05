@@ -1,0 +1,29 @@
+task: B4800
+deviations:
+  - what: 'Error messages have no "litellm.A2AError: " prefix, and the discovery and localhost messages use betterlite''s own wording.'
+    why: 'Errors name betterlite''s own components and do not credit LiteLLM in their text.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/exceptions.py#L31
+  - what: 'Retry counts render as " (retried N times)", " (max retries M)" or both, not as " LiteLLM Retried: N times" and ", LiteLLM Max Retries: M".'
+    why: 'Same wording rule as the messages above.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/exceptions.py#L43-L49
+  - what: 'The discovery error reads "no agent card found at {base_url}. Tried {attempts}" instead of "Failed to fetch agent card from {base_url}. Tried {attempts}".'
+    why: 'Same wording rule. The message still names the requested base URL and every attempt.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/exceptions.py#L121-L123
+  - what: 'The localhost error reads "the agent card points at the internal URL ''{localhost_url}''; retry with ''{base_url}''".'
+    why: 'Same wording rule. The message still carries both URLs.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/exceptions.py#L154
+  - what: 'Errors do not carry an httpx response object. An HTTP answer is kept as its status code only, and transport and parse failures carry no status.'
+    why: 'betterlite does not model httpx. The status code is the part of the response that the error contract and the discovery status selection use.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/exceptions.py#L37-L40
+  - what: 'A supplied relative path that fails raises A2AAgentCardDiscoveryError with that one attempt listed. LiteLLM lets the SDK''s own exception through.'
+    why: 'One error type for every card fetch failure, so callers match one variant. The message still names the requested URL and the path.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/card_resolver.py#L177-L181
+  - what: 'The card fetch takes extra request headers as a typed HeaderMap instead of an http_kwargs mapping.'
+    why: 'LiteLLM passes only headers through http_kwargs. A typed map keeps the header names and values validated at the boundary.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/card_resolver.py#L171-L174
+  - what: 'set_agent_card_url writes the top-level url only when the card already carries one. LiteLLM always writes it.'
+    why: 'betterlite keeps absent fields absent, so a card served without a top-level url does not gain one. When the card has an interface, the endpoint read back by get_agent_card_url is the same. A card with neither a url nor an interface keeps no url, where LiteLLM sets one and reads it back.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/card_resolver.py#L119-L127
+  - what: 'The localhost error keeps its original error only when it is an A2AError. LiteLLM accepts any exception.'
+    why: 'Typed errors end to end. The connection errors B4813 wraps are all A2AError values.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/exceptions.py#L147

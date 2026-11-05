@@ -18,21 +18,14 @@ description: 'Integrate B100 compaction with B385 typed summary inputs and B386 
   (L157-L159), compaction_pending (L162-L164), _reject (L167-L170), _generate_summary (L317-L336), compact_to_fit
   (L360-L371), _check_client_managed_admission (L374-L387), _compact_to_fit (L416-L515). Implement these
   behaviors through the typed Rust services above; synchronous facades and structural accessors reuse
-  the same primitive instead of separate ports.'
+  the same primitive instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B366 composes this service.'
 scope:
   paths:
   - crates/betterlite-router/src/router_compaction.rs
   - crates/betterlite-router/src/router_compaction/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/router_compaction.rs
   - crates/betterlite-server/src/routing/router_compaction/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/router_compaction.rs
   - tools/oracle/src/router_probes/router_compaction/**
   - tools/oracle/litellm/probes/router_compaction.py
