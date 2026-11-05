@@ -27,7 +27,7 @@ use crate::sections::settings::JsonValue;
 )]
 #[case::invalid_number(
     "litellm_settings:\n  vector_store_search_failure_mode: 1\n",
-    json!(1),
+    json!(1_i32),
     BTreeMap::new()
 )]
 #[case::invalid_null(
