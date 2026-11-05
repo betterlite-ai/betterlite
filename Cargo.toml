@@ -1,6 +1,6 @@
 [workspace]
-members = ["crates/*", "crates/*/fuzz", "tools/*", "tools/*/fuzz"]
 exclude = ["crates/betterlite-openapi/fuzz", "tools/management-cli"]
+members = ["crates/*", "crates/*/fuzz", "tools/*", "tools/*/fuzz"]
 resolver = "3"
 
 [workspace.package]

@@ -1,0 +1,6 @@
+kind: helper
+name: logging-privacy-nested-private
+call:
+  logging_privacy: {"action": "metadata", "inherited": true, "request": {"turn_off_message_logging": false}}
+env: {}
+compare: {ignore: []}
