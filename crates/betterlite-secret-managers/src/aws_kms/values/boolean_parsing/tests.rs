@@ -3,17 +3,14 @@
 use crate::aws_kms::{
     AwsKmsError, DecryptedValue,
     initialization::build_client,
-    tests::{credentials, kms_environment, serve, transport},
+    tests::{credentials, kms_environment, transport, with_kms},
     values::{decrypt_value, decrypt_with, parse_plaintext},
 };
 use aws_sdk_kms::error::SdkError;
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
 use std::{collections::BTreeMap, error::Error as _, time::Duration};
-use tokio::{
-    net::TcpListener,
-    time::{sleep, timeout},
-};
+use tokio::{net::TcpListener, time::timeout};
 
 #[rstest]
 #[case("true")]
@@ -56,18 +53,17 @@ async fn decrypt_with_extracts_secret_plaintext() {
         Duration::from_secs(5),
     )
     .unwrap();
-    let (result, request) = tokio::join!(
-        decrypt_with(&client, "aGVsbG8="),
-        serve(&listener, 200, r#"{"Plaintext":"IHNlY3JldCA="}"#)
-    );
+    let decrypt = Box::pin(decrypt_with(&client, "aGVsbG8="));
+    let (result, requests) =
+        with_kms(listener, 200, r#"{"Plaintext":"IHNlY3JldCA="}"#, decrypt).await;
     let DecryptedValue::String(secret) = result.unwrap() else {
         panic!("expected secret");
     };
     assert_eq!(secret.expose_secret(), "secret");
-    assert!(
-        request.ends_with(r#"{"CiphertextBlob":"aGVsbG8="}"#),
-        "{request}"
-    );
+    let [request] = requests.as_slice() else {
+        panic!("expected one request");
+    };
+    assert_eq!(request.body, r#"{"CiphertextBlob":"aGVsbG8="}"#);
 }
 
 #[rstest]
@@ -84,10 +80,13 @@ async fn decrypt_with_preserves_response_errors(#[case] body: &str, #[case] expe
         Duration::from_secs(5),
     )
     .unwrap();
-    let (result, _request) = tokio::join!(
-        decrypt_with(&client, "aGVsbG8="),
-        serve(&listener, 200, body)
-    );
+    let (result, _requests) = with_kms(
+        listener,
+        200,
+        body,
+        Box::pin(decrypt_with(&client, "aGVsbG8=")),
+    )
+    .await;
     let error = result.err().unwrap();
     match expected {
         "missing" => assert!(matches!(error, AwsKmsError::MissingPlaintext)),
@@ -110,12 +109,10 @@ async fn decrypt_with_times_out_a_stalled_transport() {
         Duration::from_millis(100),
     )
     .unwrap();
-    let stall = async {
-        let _connection = listener.accept().await.unwrap();
-        sleep(Duration::from_secs(1)).await;
-    };
-    let operation = async { tokio::join!(decrypt_with(&client, "aGVsbG8="), stall) };
-    let (result, ()) = timeout(Duration::from_secs(5), operation).await.unwrap();
+    let result = timeout(Duration::from_secs(5), decrypt_with(&client, "aGVsbG8="))
+        .await
+        .unwrap();
+    drop(listener);
     assert!(matches!(
         result,
         Err(AwsKmsError::Request(source)) if matches!(source.as_ref(), SdkError::TimeoutError(_))
@@ -141,14 +138,13 @@ async fn decrypt_with_keeps_service_error_source() {
         Duration::from_secs(5),
     )
     .unwrap();
-    let (result, _request) = tokio::join!(
-        decrypt_with(&client, "aGVsbG8="),
-        serve(
-            &listener,
-            400,
-            r#"{"__type":"InvalidCiphertextException","message":"invalid ciphertext"}"#
-        )
-    );
+    let (result, _requests) = with_kms(
+        listener,
+        400,
+        r#"{"__type":"InvalidCiphertextException","message":"invalid ciphertext"}"#,
+        Box::pin(decrypt_with(&client, "aGVsbG8=")),
+    )
+    .await;
     let error = result.err().unwrap();
     assert!(error.source().is_some());
     let AwsKmsError::Request(source) = error else {

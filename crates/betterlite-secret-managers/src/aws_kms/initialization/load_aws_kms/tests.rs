@@ -3,9 +3,10 @@
 use super::load_aws_kms;
 use crate::aws_kms::{
     AWS_KMS_CLIENT,
-    tests::{credentials, serve, transport},
+    tests::{credentials, transport, with_kms},
 };
 use aws_sdk_kms::primitives::Blob;
+use axum::http::{Method, header::AUTHORIZATION};
 use rstest::rstest;
 use std::{collections::BTreeMap, time::Duration};
 use tokio::net::TcpListener;
@@ -73,19 +74,24 @@ async fn load_aws_kms_sends_signed_decrypt_calls_to_the_configured_endpoint(
     )
     .unwrap();
     let client = AWS_KMS_CLIENT.lock().unwrap().clone().unwrap();
-    let (response, request) = tokio::join!(
+    let decrypt = Box::pin(
         client
             .decrypt()
             .ciphertext_blob(Blob::new(b"hello".to_vec()))
             .send(),
-        serve(&listener, 200, r#"{"Plaintext":"aGk="}"#)
     );
+    let (response, requests) = with_kms(listener, 200, r#"{"Plaintext":"aGk="}"#, decrypt).await;
     assert_eq!(response.unwrap().plaintext().unwrap().as_ref(), b"hi");
-    let headers = request.to_lowercase();
-    assert!(request.starts_with("POST / HTTP/1.1\r\n"), "{request}");
+    let [request] = requests.as_slice() else {
+        panic!("expected one request");
+    };
+    assert_eq!(request.head.method, Method::POST);
+    assert_eq!(request.head.uri, "/");
+    assert_eq!(request.head.headers["x-amz-target"], "TrentService.Decrypt");
     assert!(
-        headers.contains("x-amz-target: trentservice.decrypt\r\n"),
-        "{request}"
+        request.head.headers[AUTHORIZATION]
+            .to_str()
+            .unwrap()
+            .contains("/us-west-2/kms/aws4_request")
     );
-    assert!(headers.contains("/us-west-2/kms/aws4_request"), "{request}");
 }
