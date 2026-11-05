@@ -233,7 +233,7 @@ fn assert_upload_parts(parts: &[MultipartPart]) {
 async fn list_purpose() {
     for (purpose, expected) in [
         (Some("batch"), vec![("purpose", "batch")]),
-        (Some(""), vec![("purpose", "")]),
+        (Some(""), Vec::new()),
         (None, Vec::new()),
     ] {
         let fixture = Fixture::answering(200, r#"{"object":"list","data":[],"has_more":false}"#);

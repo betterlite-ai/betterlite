@@ -1,0 +1,20 @@
+task: B516
+deviations:
+  - what: A client built without an api_key is reported as missing, and OPENAI_API_KEY is not read. An empty api_key builds a client.
+    why: The SDK constructor raises OpenAIError for a missing key after reading OPENAI_API_KEY, and for an empty key. betterlite takes credentials from config only, and the caller gets the same "client is not initialized" error LiteLLM's own None check raises.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L1683-L1711
+  - what: max_retries is carried on the client but a failed request is never retried by the files API.
+    why: Retries belong to the shared HTTP client (B173), so the SDK's retry loop is not repeated here. The SDK's default of 2 is still reported.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L1683-L1711
+  - what: A status error message holds the response body as compact JSON, where the SDK prints a Python dict repr.
+    why: Python repr text is not part of the declared types. The status code, type, param and code fields match the SDK.
+    link: ""
+  - what: A file_content_streaming result that is dropped before its first read still releases the connection.
+    why: LiteLLM's async generator never starts, so its context manager never exits until garbage collection. Rust drops the response with the stream.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L1827-L1890
+  - what: A chunk_size of 0 cannot be expressed, because the argument is a NonZeroUsize.
+    why: The chunk size type makes an invalid value unrepresentable, where httpx would fail while iterating.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L1827-L1890
+  - what: The file object does not carry LiteLLM's litellm_batch_guardrail field.
+    why: Only the proxy sets it, after guardrails scan a batch upload, and OpenAI never returns it. The proxy task that runs the scan owns it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L402-L417

@@ -197,7 +197,7 @@ impl<T: FileTransport> FilesApi<T> {
         serde_json::from_slice(&reply.body).map_err(|source| FilesError::Decode { source })
     }
 
-    // Only purpose is forwarded; after, limit and order are not arguments of this wrapper
+    // Only purpose is forwarded, and the SDK's query encoder drops an empty one; after, limit and order are not arguments of this wrapper
     pub async fn list_files(
         &self,
         client: &FilesClient,
@@ -206,6 +206,7 @@ impl<T: FileTransport> FilesApi<T> {
         let pairs = query
             .purpose
             .iter()
+            .filter(|purpose| !purpose.is_empty())
             .map(|purpose| ("purpose".to_owned(), purpose.clone()))
             .collect();
         let reply = self
