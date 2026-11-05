@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/*", "tools/*"]
+members = ["crates/*", "tools/*", "crates/betterlite-logging/src/logging_privacy/openai"]
 exclude = ["tools/management-cli"]
 resolver = "3"
 

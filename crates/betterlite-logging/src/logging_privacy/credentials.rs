@@ -1,49 +1,45 @@
+use std::iter;
+
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::Redactor;
-use betterlite_redact::structured::{REDACTED, SensitiveDataMasker};
+use betterlite_redact::structured::Payload;
+use betterlite_redact::structured::REDACTED;
+use betterlite_redact::structured::redact::redact_credentials_in_payload;
 
 pub(super) fn scrub(value: &mut Json, redactor: &Redactor) {
-    let mut walker = Scrubber {
-        redactor,
-        masker: SensitiveDataMasker::default(),
-        remaining: 1_000_000,
+    let Ok(mut encoded) = serde_json::to_value(&*value) else {
+        *value = Json::Text(REDACTED.to_owned());
+        return;
     };
-    walker.visit(value, None, 0);
+    scrub_value(&mut encoded, redactor);
+    *value = serde_json::from_value(encoded).unwrap_or_else(|_| Json::Text(REDACTED.to_owned()));
 }
 
-struct Scrubber<'redactor> {
-    redactor: &'redactor Redactor,
-    masker: SensitiveDataMasker,
-    remaining: usize,
+pub fn scrub_value(value: &mut Payload, redactor: &Redactor) {
+    let wrapper = iter::once(("payload".to_owned(), value.take())).collect();
+    let mut safe = redact_credentials_in_payload(&wrapper);
+    scrub_text(&mut safe, redactor);
+    *value = match safe {
+        Payload::Object(mut fields) => fields
+            .remove("payload")
+            .unwrap_or_else(|| Payload::String(REDACTED.to_owned())),
+        other @ (Payload::Null
+        | Payload::Bool(_)
+        | Payload::Number(_)
+        | Payload::String(_)
+        | Payload::Array(_)) => other,
+    };
 }
 
-impl Scrubber<'_> {
-    fn visit(&mut self, value: &mut Json, key: Option<&str>, depth: usize) {
-        let Some(remaining) = self.remaining.checked_sub(1) else {
-            *value = Json::Text(REDACTED.to_owned());
-            return;
-        };
-        self.remaining = remaining;
-        if depth > 100
-            || (!matches!(value, Json::Null)
-                && key.is_some_and(|name| self.masker.is_sensitive_key(name, &[])))
-        {
-            *value = Json::Text(REDACTED.to_owned());
-            return;
-        }
-        match value {
-            Json::Object(fields) => {
-                for (name, child) in fields {
-                    self.visit(child, Some(name), depth.saturating_add(1));
-                }
-            }
-            Json::List(values) => {
-                for child in values {
-                    self.visit(child, None, depth.saturating_add(1));
-                }
-            }
-            Json::Text(text) => *text = self.redactor.redact_string(text),
-            Json::Null | Json::Bool(_) | Json::Number(_) => {}
-        }
+fn scrub_text(value: &mut Payload, redactor: &Redactor) {
+    match value {
+        Payload::String(text) => *text = redactor.redact_string(text),
+        Payload::Array(values) => values
+            .iter_mut()
+            .for_each(|child| scrub_text(child, redactor)),
+        Payload::Object(fields) => fields
+            .values_mut()
+            .for_each(|child| scrub_text(child, redactor)),
+        Payload::Null | Payload::Bool(_) | Payload::Number(_) => {}
     }
 }

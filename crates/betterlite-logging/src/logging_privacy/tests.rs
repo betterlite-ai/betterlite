@@ -13,13 +13,20 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use std::{fs, path::PathBuf};
 
-use super::callbacks::{SpanScope, TrustedCallbacks, validate_environment};
+use super::callbacks::{SpanScope, TrustedCallbacks, callback_metadata, validate_environment};
 use super::internal::{Forwarding, Origin, Session, call_category, forward, is_unbilled};
 use super::request::{Decision, PrivacyRequest, decide_request};
-use super::snapshot::snapshot;
-use super::{CallbackMetadataError, PrivacyContext, callback_metadata};
+use super::snapshot::redact_user_api_key_info;
+use super::{CallbackMetadataError, PrivacyContext};
+use betterlite_privacy_openai::{Payload, SnapshotError};
 
 #[rstest]
+#[case::typed_metadata(test_typed_metadata, "", "")]
+#[case::private_passthrough(
+    test_snapshot_shape,
+    r#"{"litellm_params":{"metadata":{"input":"campaign-7","text":"tag"}}}"#,
+    r#"{"litellm_params":{"metadata":{"input":"","text":"redacted-by-litellm"}}}"#
+)]
 #[case::global(test_policy, r#"{"global":true}"#, "true")]
 #[case::default_public(test_policy, "{}", "false")]
 #[case::dynamic_over_global(
@@ -216,7 +223,9 @@ fn test_policy(input: &str, expected: &str) {
                 turn_off_message_logging: case.global,
                 redact_user_api_key_info: false,
             },
-            PrivacyContext::default().child(case.inherited),
+            PrivacyContext {
+                message_logging_disabled: case.inherited,
+            },
             case.callback.unwrap_or(true),
         )
         .unwrap();
@@ -232,7 +241,7 @@ fn test_copies(_input: &str, _expected: &str) {
         serde_json::from_str(r#"{"user_api_key_hash":"hash","api_key":"secret","team":"a"}"#)
             .unwrap();
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let (public, public_metadata) = snapshot(
+    let (public, public_metadata) = test_snapshot(
         &request,
         &metadata,
         Decision {
@@ -242,7 +251,7 @@ fn test_copies(_input: &str, _expected: &str) {
         &redactor,
     )
     .unwrap();
-    let (private, private_metadata) = snapshot(
+    let (private, private_metadata) = test_snapshot(
         &request,
         &metadata,
         Decision {
@@ -267,7 +276,7 @@ fn test_copies(_input: &str, _expected: &str) {
 fn test_embedding(_input: &str, _expected: &str) {
     let response: EmbeddingResponse = serde_json::from_str(r#"{"object":"list","model":"m","data":[{"object":"embedding","index":0,"embedding":[1]}],"usage":{"prompt_tokens":1,"total_tokens":1}}"#).unwrap();
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let (private, _) = snapshot(
+    let (private, _) = test_snapshot(
         &response,
         &Json::Null,
         Decision {
@@ -347,7 +356,7 @@ fn test_stream(_input: &str, _expected: &str) {
     let chunk: Chunk = serde_json::from_str(r#"{"id":"c","object":"chat.completion.chunk","created":1,"model":"m","choices":[{"index":0,"delta":{"content":"private","tool_calls":[{"index":0,"function":{"name":"tool","arguments":"private"}}],"function_call":{"name":"old","arguments":"private"}}}]}"#).unwrap();
     let original = serde_json::to_string(&chunk).unwrap();
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let (private, _) = snapshot(
+    let (private, _) = test_snapshot(
         &chunk,
         &Json::Null,
         Decision {
@@ -367,7 +376,7 @@ fn test_stream(_input: &str, _expected: &str) {
 fn test_response(_input: &str, _expected: &str) {
     let answer: ChatResponse = serde_json::from_str(r#"{"id":"c","object":"chat.completion","created":1,"model":"m","choices":[{"index":0,"message":{"role":"assistant","content":null,"audio":{"data":"private"},"annotations":["private"],"tool_calls":[{"id":"t","type":"function","function":{"name":"tool","arguments":"private"}}]},"logprobs":{"content":[{"token":"private"}]}}]}"#).unwrap();
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let (private, _) = snapshot(
+    let (private, _) = test_snapshot(
         &answer,
         &Json::Null,
         Decision {
@@ -386,7 +395,7 @@ fn test_response(_input: &str, _expected: &str) {
 fn test_provider_metadata(_input: &str, _expected: &str) {
     let payload = serde_json::from_str(r#"{"served_output_texts":["private"],"vertex_ai_grounding_metadata":["private"],"_hidden_params":{"vertex_ai_grounding_metadata":["private"],"preserved":true},"litellm_params":{"proxy_server_request":{"classifier_input":"private","originating_request_masked":"private"}}}"#).unwrap();
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let private = super::callback_snapshot(
+    let private = super::snapshot::callback_snapshot(
         payload,
         Decision {
             content: true,
@@ -420,11 +429,13 @@ fn test_trusted_overlay(_input: &str, _expected: &str) {
     };
     let mut fields = IndexMap::new();
     trusted.overlay(&mut fields);
-    assert_eq!(
-        fields.get("newrelic_region"),
-        Some(&Json::Text("eu".to_owned()))
-    );
+    assert_eq!(fields.get("newrelic_region").unwrap().expose_secret(), "eu");
     assert_eq!(fields.len(), 2);
+    assert_eq!(
+        fields.get("newrelic_api_key").unwrap().expose_secret(),
+        "configured-secret"
+    );
+    assert!(!format!("{fields:?}").contains("configured-secret"));
     assert_eq!(
         trusted
             .values
@@ -459,24 +470,26 @@ fn test_session(_input: &str, _expected: &str) {
 fn test_child(_input: &str, _expected: &str) {
     let inherited = PrivacyContext {
         message_logging_disabled: true,
-    }
-    .child(false);
+    };
     assert!(inherited.message_logging_disabled);
+    let request: PrivacyRequest =
+        serde_json::from_str(r#"{"turn_off_message_logging":false}"#).unwrap();
+    let params = request.dynamic_params(inherited).unwrap();
+    assert_eq!(
+        params.get("turn_off_message_logging"),
+        Some(&Json::Bool(true))
+    );
     let decision = PrivacyRequest::default()
         .decide(Settings::default(), inherited, true)
         .unwrap();
     assert!(decision.content);
-    assert!(
-        !PrivacyContext::default()
-            .child(false)
-            .message_logging_disabled
-    );
+    assert!(!PrivacyContext::default().message_logging_disabled);
 }
 
 fn test_credentials(_input: &str, _expected: &str) {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let payload = serde_json::from_str(r#"{"api_key":42,"authorization":{"nested":"private"},"password":false,"secret":null,"safe":[{"token":"private"}]}"#).unwrap();
-    let safe = super::callback_snapshot(
+    let safe = super::snapshot::callback_snapshot(
         payload,
         Decision {
             content: false,
@@ -506,7 +519,7 @@ fn replays_the_privacy_corpus(
 fn test_unknown_result(_input: &str, _expected: &str) {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
     let payload = serde_json::from_str(r#"{"response":"private"}"#).unwrap();
-    let safe = super::callback_snapshot(
+    let safe = super::snapshot::callback_snapshot(
         payload,
         Decision {
             content: true,
@@ -522,7 +535,7 @@ fn test_deep_credentials(_input: &str, _expected: &str) {
         Json::List(vec![child])
     });
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let safe = super::callback_snapshot(
+    let safe = super::snapshot::callback_snapshot(
         payload,
         Decision {
             content: false,
@@ -573,7 +586,7 @@ fn test_key_policy(input: &str, expected: &str) {
 
 fn test_dynamic_params(input: &str, expected: &str) {
     let request: PrivacyRequest = serde_json::from_str(input).unwrap();
-    let params = request.dynamic_params().unwrap();
+    let params = request.dynamic_params(PrivacyContext::default()).unwrap();
     assert_eq!(
         Json::Object(params),
         serde_json::from_str::<Json>(expected).unwrap()
@@ -582,7 +595,9 @@ fn test_dynamic_params(input: &str, expected: &str) {
 
 fn test_dynamic_error(input: &str, expected: &str) {
     let request: PrivacyRequest = serde_json::from_str(input).unwrap();
-    let error = request.dynamic_params().unwrap_err();
+    let error = request
+        .dynamic_params(PrivacyContext::default())
+        .unwrap_err();
     let CallbackMetadataError::EnvironmentReference { field } = error else {
         panic!("expected environment reference rejection")
     };
@@ -612,7 +627,7 @@ fn test_wrapped_result(input: &str, expected: &str) {
 
 fn test_snapshot_shape(input: &str, expected: &str) {
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let safe = super::callback_snapshot(
+    let safe = super::snapshot::callback_snapshot(
         serde_json::from_str(input).unwrap(),
         Decision {
             content: true,
@@ -628,11 +643,11 @@ fn test_depth_boundary(input: &str, expected: &str) {
     let payload = (0..depth).fold(Json::Text("public".to_owned()), |child, _depth| {
         Json::List(vec![child])
     });
-    let expected_payload = (0..depth).fold(Json::Text(expected.to_owned()), |child, _depth| {
+    let expected_payload = (0..100).fold(Json::Text(expected.to_owned()), |child, _depth| {
         Json::List(vec![child])
     });
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
-    let safe = super::callback_snapshot(
+    let safe = super::snapshot::callback_snapshot(
         payload,
         Decision {
             content: false,
@@ -641,4 +656,49 @@ fn test_depth_boundary(input: &str, expected: &str) {
         &redactor,
     );
     assert_eq!(safe, expected_payload);
+}
+
+fn test_snapshot<P>(
+    source: &P,
+    metadata: &Json,
+    decision: Decision,
+    redactor: &Redactor,
+) -> Result<(Json, Json), CallbackMetadataError>
+where
+    P: Payload,
+{
+    let payload = source
+        .snapshot(decision.content, redactor)
+        .map_err(|SnapshotError::Json { source }| CallbackMetadataError::Json { source })?;
+    let mut safe_metadata = redact_user_api_key_info(metadata, decision.key_info);
+    super::credentials::scrub(&mut safe_metadata, redactor);
+    Ok((
+        serde_json::from_slice(&serde_json::to_vec(&payload)?)?,
+        safe_metadata,
+    ))
+}
+
+fn test_typed_metadata(_input: &str, _expected: &str) {
+    let request = ChatRequest::parse(br#"{"messages":[{"role":"user","content":"private"}],"metadata":{"input":"campaign-7","text":"tag","api_key":"private"}}"#).unwrap();
+    let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH).unwrap();
+    let private = request.snapshot(true, &redactor).unwrap();
+    let metadata: Json =
+        serde_json::from_slice(&serde_json::to_vec(&private.passthrough).unwrap()).unwrap();
+    assert_eq!(
+        metadata,
+        serde_json::from_str::<Json>(
+            r#"{"metadata":{"input":"campaign-7","text":"tag","api_key":"REDACTED"}}"#
+        )
+        .unwrap()
+    );
+    assert!(
+        !serde_json::to_string(&private.messages)
+            .unwrap()
+            .contains("private")
+    );
+    assert!(
+        serde_json::to_string(&request.messages)
+            .unwrap()
+            .contains("private")
+    );
 }

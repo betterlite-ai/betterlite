@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use crate::logging_privacy::callback_metadata;
+use crate::logging_privacy::callbacks::callback_metadata;
 use betterlite_models::decisions::Json;
 use rstest::rstest;
 use std::io::{self, Write};

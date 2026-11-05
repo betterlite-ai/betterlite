@@ -2,7 +2,8 @@ use betterlite_config::sections::logging_privacy::Settings;
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-use super::{CallbackMetadataError, PrivacyContext, callback_metadata};
+use super::callbacks::callback_metadata;
+use super::{CallbackMetadataError, PrivacyContext};
 use betterlite_models::decisions::Json;
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -76,7 +77,10 @@ impl PrivacyRequest {
         ]
     }
 
-    pub fn dynamic_params(&self) -> Result<IndexMap<String, Json>, CallbackMetadataError> {
+    pub fn dynamic_params(
+        &self,
+        context: PrivacyContext,
+    ) -> Result<IndexMap<String, Json>, CallbackMetadataError> {
         let slots = self.slots();
         let mut output = IndexMap::new();
         for slot in slots.iter().flatten() {
@@ -91,6 +95,9 @@ impl PrivacyRequest {
                     .entry("turn_off_message_logging".to_owned())
                     .or_insert(Json::Bool(disabled));
             }
+        }
+        if context.message_logging_disabled {
+            output.insert("turn_off_message_logging".to_owned(), Json::Bool(true));
         }
         Ok(output)
     }

@@ -18,3 +18,6 @@ deviations:
   - what: Typed request privacy metadata can opt into user-key information redaction without disabling the global setting.
     why: B188 requires request-level privacy metadata; the pinned helper reads only the global user-key redaction flag.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/redact_messages.py#L410-L437
+  - what: Opaque private callback envelopes redact content keys at every depth, including metadata, and clear data in nested list-shaped objects.
+    why: Passthrough metadata can hold provider-specific copies of private inputs or outputs; private callbacks must not expose these copies. Typed OpenAI snapshots redact typed fields directly.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/redact_messages.py#L255-L280

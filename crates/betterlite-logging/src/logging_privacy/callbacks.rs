@@ -1,8 +1,8 @@
 use indexmap::IndexMap;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 use serde::Deserialize;
 
-use super::CallbackMetadataError;
+use super::{CallbackMetadata, CallbackMetadataError};
 use betterlite_models::decisions::Json;
 
 pub const TRUSTED_FIELDS: [&str; 5] = [
@@ -56,7 +56,7 @@ pub struct TrustedCallbacks {
 }
 
 impl TrustedCallbacks {
-    pub fn overlay(&self, dynamic: &mut IndexMap<String, Json>) {
+    pub fn overlay(&self, dynamic: &mut IndexMap<String, SecretString>) {
         for (name, value) in &self.values {
             if matches!(
                 name.as_str(),
@@ -65,7 +65,7 @@ impl TrustedCallbacks {
                     | "signoz_ingestion_key"
                     | "signoz_ingestion_endpoint"
             ) {
-                dynamic.insert(name.clone(), Json::Text(value.expose_secret().to_owned()));
+                dynamic.insert(name.clone(), value.clone());
             }
         }
     }
@@ -94,3 +94,81 @@ pub fn validate_environment(value: &str) -> Result<(), CallbackMetadataError> {
 }
 
 mod tests;
+
+const BLOCKED_EXPORT_FIELDS: [&str; 10] = [
+    "gcs_bucket_name",
+    "gcs_path_service_account",
+    "dd_api_key",
+    "dd_site",
+    "dd_agent_host",
+    "dd_agent_port",
+    "newrelic_api_key",
+    "newrelic_region",
+    "signoz_ingestion_endpoint",
+    "signoz_ingestion_key",
+];
+
+pub fn callback_metadata(metadata: &Json) -> Result<CallbackMetadata, CallbackMetadataError> {
+    let mut fields = IndexMap::new();
+    let mut skipped_fields = Vec::new();
+    let Json::Object(input) = metadata else {
+        return Ok(CallbackMetadata {
+            fields,
+            skipped_fields,
+        });
+    };
+    for (field, field_value) in input {
+        if !SUPPORTED.contains(&field.as_str())
+            && !BLOCKED_EXPORT_FIELDS.contains(&field.as_str())
+            && !TRUSTED_FIELDS.contains(&field.as_str())
+        {
+            continue;
+        }
+        validate_request_field(field, field_value)?;
+        if BLOCKED_EXPORT_FIELDS.contains(&field.as_str()) || DESTINATIONS.contains(&field.as_str())
+        {
+            tracing::warn!(field = %field, "request-supplied callback field ignored for export");
+            skipped_fields.push(field.clone());
+        } else {
+            fields.insert(field.clone(), field_value.clone());
+        }
+    }
+    Ok(CallbackMetadata {
+        fields,
+        skipped_fields,
+    })
+}
+
+fn validate_request_field(field: &str, value: &Json) -> Result<(), CallbackMetadataError> {
+    if TRUSTED_FIELDS.contains(&field) {
+        return Err(CallbackMetadataError::TrustedField {
+            field: field.to_owned(),
+        });
+    }
+    if BLOCKED_EXPORT_FIELDS.contains(&field) || DESTINATIONS.contains(&field) {
+        return Ok(());
+    }
+    if contains_environment_reference(value) {
+        return Err(CallbackMetadataError::EnvironmentReference {
+            field: field.to_owned(),
+        });
+    }
+    if field == "langfuse_environment" {
+        let Json::Text(environment) = value else {
+            return Err(CallbackMetadataError::InvalidField {
+                field: field.to_owned(),
+            });
+        };
+        validate_environment(environment)?;
+    }
+    Ok(())
+}
+
+fn contains_environment_reference(value: &Json) -> bool {
+    match value {
+        Json::Text(text) => text.contains("os.environ/"),
+        Json::List(values) => values.iter().any(contains_environment_reference),
+        Json::Object(values) => values.values().any(contains_environment_reference),
+        Json::Null | Json::Bool(_) | Json::Number(_) => false,
+    }
+}

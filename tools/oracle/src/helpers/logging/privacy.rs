@@ -2,9 +2,8 @@ use crate::compare::helper::HelperError;
 use crate::helpers::{Helper, HelperResult};
 use betterlite_config::sections::logging_privacy::Settings;
 use betterlite_logging::logging_privacy::request::{Decision, Flag, PrivacyRequest};
-use betterlite_logging::logging_privacy::{
-    CallbackMetadataError, PrivacyContext, callback_snapshot, redact_user_api_key_info,
-};
+use betterlite_logging::logging_privacy::snapshot::{callback_snapshot, redact_user_api_key_info};
+use betterlite_logging::logging_privacy::{CallbackMetadataError, PrivacyContext};
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use indexmap::IndexMap;
@@ -28,7 +27,7 @@ struct Flags {
     redact_key_info: bool,
 }
 
-#[derive(Default, Deserialize)]
+#[derive(Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub(crate) struct Input {
     action: Action,
@@ -38,8 +37,8 @@ pub(crate) struct Input {
     headers: IndexMap<String, Flag>,
     request: PrivacyRequest,
     inherited: bool,
-    payload: Option<Json>,
-    key_info: Option<Json>,
+    payload: Json,
+    key_info: Json,
 }
 
 impl Helper for Op {
@@ -47,13 +46,12 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         if matches!(input.action, Action::Metadata) {
-            let mut params = input
+            let params = input
                 .request
-                .dynamic_params()
+                .dynamic_params(PrivacyContext {
+                    message_logging_disabled: input.inherited,
+                })
                 .map_err(|error| failure(&error))?;
-            if input.inherited {
-                params.insert("turn_off_message_logging".to_owned(), Json::Bool(true));
-            }
             return Ok(serde_json::json!(params));
         }
         snapshots(input)
@@ -85,14 +83,10 @@ fn snapshots(input: &Input) -> HelperResult {
     let privacy = decision(input)?;
     let redactor = Redactor::new(MINIMUM_CUSTOM_KEY_LENGTH)
         .map_err(|source| failure(&CallbackMetadataError::Redactor { source }))?;
-    let snapshot = callback_snapshot(
-        input.payload.clone().unwrap_or(Json::Null),
-        privacy,
-        &redactor,
-    );
+    let snapshot = callback_snapshot(input.payload.clone(), privacy, &redactor);
     if matches!(input.action, Action::Copies) {
         let public = callback_snapshot(
-            input.payload.clone().unwrap_or(Json::Null),
+            input.payload.clone(),
             Decision {
                 content: false,
                 key_info: false,
@@ -101,9 +95,7 @@ fn snapshots(input: &Input) -> HelperResult {
         );
         return Ok(serde_json::json!({"private":snapshot,"public":public,"source":input.payload}));
     }
-    let key_info = input.key_info.as_ref().map_or(Json::Null, |metadata| {
-        redact_user_api_key_info(metadata, privacy.key_info)
-    });
+    let key_info = redact_user_api_key_info(&input.key_info, privacy.key_info);
     Ok(serde_json::json!({"should_redact":privacy.content,"snapshot":snapshot,"key_info":key_info}))
 }
 
@@ -116,4 +108,19 @@ fn failure(error: &CallbackMetadataError) -> Box<HelperError> {
         code: None,
         message: error.to_string(),
     })
+}
+
+impl Default for Input {
+    fn default() -> Self {
+        Self {
+            action: Action::default(),
+            flags: Flags::default(),
+            dynamic: None,
+            headers: IndexMap::new(),
+            request: PrivacyRequest::default(),
+            inherited: false,
+            payload: Json::Null,
+            key_info: Json::Null,
+        }
+    }
 }
