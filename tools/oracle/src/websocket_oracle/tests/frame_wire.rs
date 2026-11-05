@@ -31,6 +31,7 @@ fn helper_roundtrip(#[case] payload: &str) {
         handshake: HandshakeObservation {
             status: 101,
             negotiated_subprotocol: None,
+            body: None,
         },
         frames: decoded.input.frames,
         close: None,

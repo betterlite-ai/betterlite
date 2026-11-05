@@ -17,8 +17,7 @@ use super::{
     socket::{Peer, config},
 };
 use crate::websocket_oracle::{
-    AuthObservation, Close, Direction, Frame, OracleLimits, RealtimeSettings, RouteObservation,
-    WebSocketCase,
+    Close, Direction, Frame, OracleLimits, RealtimeSettings, WebSocketCase,
 };
 
 pub(crate) struct ProviderHandle {
@@ -33,8 +32,7 @@ pub(crate) struct ProviderObservation {
     pub(crate) request_uri: String,
     pub(crate) frames: Vec<Frame>,
     pub(crate) close: Option<Close>,
-    pub(crate) route: RouteObservation,
-    pub(crate) auth: AuthObservation,
+    pub(crate) authorization: Option<String>,
 }
 
 pub(crate) async fn start<C>(
@@ -94,7 +92,7 @@ impl ProviderHandle {
 }
 
 struct Handshake<'input> {
-    uri: &'input mut String,
+    observation: &'input mut ProviderObservation,
     case: &'input WebSocketCase,
 }
 
@@ -104,11 +102,17 @@ impl Callback for Handshake<'_> {
         request: &Request,
         mut response: Response,
     ) -> Result<Response, ErrorResponse> {
-        *self.uri = request.uri().to_string();
+        self.observation.request_uri = request.uri().to_string();
+        self.observation.authorization = request
+            .headers()
+            .get("authorization")
+            .map(|value| value.to_str().map(str::to_owned))
+            .transpose()
+            .map_err(|source| ErrorResponse::new(Some(source.to_string())))?;
         if let Some(status) = self.case.upstream_status
             && status != 101
         {
-            let mut refusal = ErrorResponse::new(Some("upstream refused".to_owned()));
+            let mut refusal = ErrorResponse::new(self.case.expected_refusal_body.clone());
             *refusal.status_mut() = StatusCode::from_u16(status).unwrap_or_else(|source| {
                 *refusal.body_mut() = Some(source.to_string());
                 StatusCode::BAD_REQUEST
@@ -142,17 +146,10 @@ async fn serve(
         request_uri: String::new(),
         frames: Vec::new(),
         close: None,
-        route: RouteObservation {
-            model: case.route_model.clone(),
-            guardrails: case.route_guardrails.clone(),
-        },
-        auth: AuthObservation {
-            detail: case.authentication_detail.clone(),
-            attempted_close_code: case.attempted_close_code,
-        },
+        authorization: None,
     };
     let handshake = Handshake {
-        uri: &mut observation.request_uri,
+        observation: &mut observation,
         case,
     };
     match accept_hdr_async_with_config(tcp, handshake, Some(config(&limits, &settings))).await {

@@ -1,9 +1,10 @@
 use std::fs;
+use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 use tokio::runtime::{Builder, Runtime};
 
-use crate::compare::helper::HelperOutput;
+use crate::compare;
 use crate::gateway::{GatewayInput, start as start_gateway};
 use crate::websocket_driver::{
     DriverError, TokioClock, TranscriptObservation, compare_transcript,
@@ -11,10 +12,7 @@ use crate::websocket_driver::{
     provider::{ProviderHandle, ProviderObservation, start},
     service::{ServiceInput, ServiceTag},
 };
-use crate::websocket_oracle::{
-    AuthObservation, RouteObservation, WebSocketBounds, WebSocketCase, close_matches,
-    direction_matches, route_auth_matches,
-};
+use crate::websocket_oracle::{WebSocketBounds, WebSocketCase, output_matches, upstream_matches};
 use crate::{
     OracleError,
     case::{
@@ -22,7 +20,7 @@ use crate::{
         helper::{HelperCompare, HelperKind},
     },
     cli::Options,
-    helpers::{self, HelperCall, HelperRun},
+    helpers::{self, HelperCall},
     paths::safe_name,
 };
 
@@ -60,11 +58,15 @@ fn run_service_case(
             input: serde_json::to_value(service_input.to_wire()).map_err(OracleError::Json)?,
         },
     };
-    verify_native_against_fixture(case, service, &helpers::invoke(&helper.call))?;
-    Ok(matches!(
-        helpers::run_case(&helper, options.self_check)?,
-        HelperRun::Difference
-    ))
+    let (left, right) = helpers::run_pair(&helper, options.self_check)?;
+    let fixture = output_matches(case, &left).and_then(|()| output_matches(case, &right));
+    let pair = compare::compare_helper(&left, &right, &[]).map(|difference| difference.pointer);
+    let Some(pointer) = fixture.err().or(pair) else {
+        writeln!(io::stdout().lock(), "PASS {}", case.name).map_err(OracleError::Output)?;
+        return Ok(false);
+    };
+    writeln!(io::stderr().lock(), "FAIL {}: {pointer}", case.name).map_err(OracleError::Output)?;
+    Ok(true)
 }
 
 fn prepare_gateway_group(
@@ -102,34 +104,6 @@ fn scenario_invalid(case: &WebSocketCase, detail: &str) -> OracleError {
     OracleError::ScenarioInvalid {
         message: format!("{}: {detail}", case.name),
     }
-}
-
-fn verify_native_against_fixture(
-    case: &WebSocketCase,
-    service: ServiceTag,
-    output: &HelperOutput,
-) -> Result<(), OracleError> {
-    if output.ok {
-        let Some(value) = &output.value else {
-            return Ok(());
-        };
-        let observed: TranscriptObservation =
-            serde_json::from_value(value.clone()).map_err(OracleError::Json)?;
-        return compare_transcript(case, &observed)
-            .map_err(|pointer| scenario_invalid(case, &pointer));
-    }
-    let expected_missing = DriverError::AdapterMissing(service).to_string();
-    let is_adapter_missing = output
-        .error
-        .as_ref()
-        .is_some_and(|error| error.class == "ServiceError" && error.message == expected_missing);
-    if is_adapter_missing {
-        return Ok(());
-    }
-    Err(scenario_invalid(
-        case,
-        &format!("native service adapter failed: {:?}", output.error),
-    ))
 }
 
 fn config_path(
@@ -181,22 +155,11 @@ fn attempt(
     let (observed, upstream) = result?;
     stopped?;
     compare_transcript(case, &observed).map_err(|pointer| scenario_invalid(case, &pointer))?;
-    if let Some(record) = &upstream {
-        route_auth_matches(
-            &RouteObservation {
-                model: case.route_model.clone(),
-                guardrails: case.route_guardrails.clone(),
-            },
-            &record.route,
-            &AuthObservation {
-                detail: case.authentication_detail.clone(),
-                attempted_close_code: case.attempted_close_code,
-            },
-            &record.auth,
-        )
-        .map_err(|pointer| scenario_invalid(case, &pointer))?;
-    }
-    Ok(upstream.is_some_and(|record| upstream_differs(case, &record)))
+    let Some(Err(pointer)) = upstream.map(|record| upstream_matches(case, &record)) else {
+        return Ok(false);
+    };
+    writeln!(io::stderr().lock(), "FAIL {}: {pointer}", case.name).map_err(OracleError::Output)?;
+    Ok(true)
 }
 
 async fn capture(
@@ -228,16 +191,4 @@ async fn capture(
         None
     };
     Ok((observed, upstream))
-}
-
-fn upstream_differs(case: &WebSocketCase, record: &ProviderObservation) -> bool {
-    let query = record
-        .request_uri
-        .split_once('?')
-        .map_or("", |(_, query)| query);
-    record.connection_count != 1
-        || query != case.expected_upstream_query.as_deref().unwrap_or("")
-        || (case.upstream_status.is_none()
-            && (direction_matches(&case.frames, &record.frames).is_err()
-                || close_matches(case.close.as_ref(), record.close.as_ref()).is_err()))
 }

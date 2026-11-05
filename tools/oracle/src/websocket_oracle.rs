@@ -1,3 +1,6 @@
+use crate::compare::helper::HelperOutput;
+use crate::websocket_driver::compare_transcript;
+use crate::websocket_driver::provider::ProviderObservation;
 use crate::websocket_driver::service::{Arguments, ServiceTag};
 use serde::{Deserialize, Serialize};
 use serde_with::{As, FromInto, Same};
@@ -87,25 +90,18 @@ pub struct WebSocketCase {
     #[serde(default)]
     pub upstream_status: Option<u16>,
     #[serde(default)]
-    pub route_model: Option<String>,
+    pub expected_upstream_auth: Option<String>,
     #[serde(default)]
-    pub route_guardrails: Vec<String>,
+    pub expected_refusal_body: Option<String>,
     #[serde(default)]
-    pub authentication_detail: Option<String>,
-    #[serde(default)]
-    pub attempted_close_code: Option<u16>,
+    pub expected_error: Option<ExpectedError>,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-pub struct RouteObservation {
-    pub model: Option<String>,
-    pub guardrails: Vec<String>,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-pub struct AuthObservation {
-    pub detail: Option<String>,
-    pub attempted_close_code: Option<u16>,
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct ExpectedError {
+    pub class: String,
+    pub message: String,
 }
 
 fn first_mismatch(checks: &[(bool, &str)]) -> Result<(), String> {
@@ -117,24 +113,44 @@ fn first_mismatch(checks: &[(bool, &str)]) -> Result<(), String> {
     Ok(())
 }
 
-pub fn route_auth_matches(
-    expected_route: &RouteObservation,
-    observed_route: &RouteObservation,
-    expected_auth: &AuthObservation,
-    observed_auth: &AuthObservation,
+pub(crate) fn upstream_matches(
+    case: &WebSocketCase,
+    record: &ProviderObservation,
 ) -> Result<(), String> {
+    let query = record
+        .request_uri
+        .split_once('?')
+        .map_or("", |(_, query)| query);
     first_mismatch(&[
-        (expected_route.model == observed_route.model, "/route/model"),
+        (record.connection_count == 1, "/upstream/connection_count"),
         (
-            expected_route.guardrails == observed_route.guardrails,
-            "/route/guardrails",
+            query == case.expected_upstream_query.as_deref().unwrap_or(""),
+            "/upstream/query",
         ),
-        (expected_auth.detail == observed_auth.detail, "/auth/detail"),
         (
-            expected_auth.attempted_close_code == observed_auth.attempted_close_code,
-            "/auth/attempted_close_code",
+            record.authorization == case.expected_upstream_auth,
+            "/upstream/authorization",
         ),
-    ])
+    ])?;
+    if case.upstream_status.is_none() {
+        direction_matches(&case.frames, &record.frames)?;
+        close_matches(case.close.as_ref(), record.close.as_ref())?;
+    }
+    Ok(())
+}
+
+pub(crate) fn output_matches(case: &WebSocketCase, output: &HelperOutput) -> Result<(), String> {
+    match (&output.value, &output.error, &case.expected_error) {
+        (Some(value), None, None) => compare_transcript(
+            case,
+            &serde_json::from_value(value.clone()).map_err(|error| format!("/value: {error}"))?,
+        ),
+        (None, Some(error), Some(expected)) => first_mismatch(&[
+            (error.class == expected.class, "/error/class"),
+            (error.message == expected.message, "/error/message"),
+        ]),
+        _ => Err("/ok".to_owned()),
+    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]

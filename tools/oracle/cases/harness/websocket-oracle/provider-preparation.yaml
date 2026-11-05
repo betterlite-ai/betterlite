@@ -11,6 +11,15 @@ input:
   api_key: sk-test
   api_base: https://api.openai.com/
   query_params: null
-frames: []
+frames:
+- direction: provider_to_client
+  action: expect
+  text: 'wss://api.openai.com/v1/realtime?model=realtime-a'
+- direction: provider_to_client
+  action: expect
+  text: '[["model","realtime-a"]]'
+- direction: provider_to_client
+  action: expect
+  text: '{"Authorization":"Bearer sk-test"}'
 execution_seconds: 10
 driver: service

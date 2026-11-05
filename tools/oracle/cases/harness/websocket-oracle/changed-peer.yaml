@@ -17,6 +17,7 @@ execution_seconds: 10
 env:
   LITELLM_MASTER_KEY: sk-test
 expected_upstream_query: model=realtime-a
+expected_upstream_auth: Bearer sk-provider
 close:
   initiator: provider
   code: 1000

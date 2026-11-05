@@ -1,6 +1,6 @@
 kind: websocket
 name: realtime-route-inputs
-path: /realtime?intent=transcription
+path: /realtime?intent=transcription&guardrails=%20first,%20,second%20
 headers:
   Authorization: Bearer sk-test
 requested_subprotocols:
@@ -9,6 +9,7 @@ requested_subprotocols:
 expected_http_status: 101
 negotiated_subprotocol: realtime
 expected_upstream_query: intent=transcription
+expected_upstream_auth: Bearer sk-whisper
 frames:
 - direction: client_to_provider
   action: send

@@ -12,6 +12,15 @@ input:
   api_base: https://api.openai.com/
   query_params: null
   openai_beta_realtime: true
-frames: []
+frames:
+- direction: provider_to_client
+  action: expect
+  text: 'wss://api.openai.com/v1/realtime?model=realtime-a'
+- direction: provider_to_client
+  action: expect
+  text: '[["model","realtime-a"]]'
+- direction: provider_to_client
+  action: expect
+  text: '{"Authorization":"Bearer sk-test","OpenAI-Beta":"realtime=v1"}'
 execution_seconds: 10
 driver: service

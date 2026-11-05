@@ -230,8 +230,23 @@ pub(crate) const fn left_side(self_check: bool) -> HelperLeft {
 }
 
 pub(crate) fn run_case(case: &HelperCase, self_check: bool) -> Result<HelperRun, OracleError> {
+    let (left, right) = run_pair(case, self_check)?;
+    if let Some(difference) = compare::compare_helper(&left, &right, &case.compare.ignore) {
+        let pointer = difference.pointer;
+        writeln!(io::stderr().lock(), "FAIL {}: {pointer}", case.name)
+            .map_err(OracleError::Output)?;
+        return Ok(HelperRun::Difference);
+    }
+    writeln!(io::stdout().lock(), "PASS {}", case.name).map_err(OracleError::Output)?;
+    Ok(HelperRun::Match)
+}
+
+pub(crate) fn run_pair(
+    case: &HelperCase,
+    self_check: bool,
+) -> Result<(HelperOutput, HelperOutput), OracleError> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    let (left, right) = match left_side(self_check) {
+    Ok(match left_side(self_check) {
         HelperLeft::Native => {
             let answers = Answers::from_env(&root)?;
             (
@@ -253,15 +268,7 @@ pub(crate) fn run_case(case: &HelperCase, self_check: bool) -> Result<HelperRun,
                 })?,
             )
         }
-    };
-    if let Some(difference) = compare::compare_helper(&left, &right, &case.compare.ignore) {
-        let pointer = difference.pointer;
-        writeln!(io::stderr().lock(), "FAIL {}: {pointer}", case.name)
-            .map_err(OracleError::Output)?;
-        return Ok(HelperRun::Difference);
-    }
-    writeln!(io::stdout().lock(), "PASS {}", case.name).map_err(OracleError::Output)?;
-    Ok(HelperRun::Match)
+    })
 }
 
 pub(crate) fn invoke(call: &HelperCall) -> HelperOutput {

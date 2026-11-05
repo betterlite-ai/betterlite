@@ -12,5 +12,8 @@ input:
   api_base: https://api.openai.com/
   query_params: null
 frames: []
+expected_error:
+  class: ValueError
+  message: api_key is required for OpenAI realtime calls
 execution_seconds: 10
 driver: service

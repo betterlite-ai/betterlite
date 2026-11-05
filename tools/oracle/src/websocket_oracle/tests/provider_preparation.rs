@@ -12,7 +12,8 @@ use super::{
     Arguments, DriverError, Frame, ServiceInput, ServiceTag, Services, TranscriptObservation,
 };
 use super::{compare_transcript, decode_ws_case, fixtures, limits, run_adapter, valid};
-use crate::websocket_oracle::{Action, Direction};
+use crate::compare::helper::HelperOutput;
+use crate::websocket_oracle::{Action, Direction, output_matches};
 
 struct Preparation {
     url: String,
@@ -111,6 +112,16 @@ fn pinned_observations(
             .collect(),
         headers,
     };
+    assert_eq!(case.frames, expected.frames());
+    let texts: Vec<_> = case.frames.iter().map(|frame| frame.text.clone()).collect();
+    let mut output = python_output(&texts);
+    output_matches(&case, &output).unwrap();
+    output.value.as_mut().unwrap()["frames"][changed]["text"] =
+        serde_json::Value::String("changed".to_owned());
+    assert_eq!(
+        output_matches(&case, &output),
+        Err(format!("/provider/frames/{changed}/text"))
+    );
     case.frames = decode_ws_case(valid().as_bytes(), &limits(), &fixtures())
         .unwrap()
         .frames;
@@ -145,8 +156,46 @@ fn pinned_observations(
     );
 }
 
+fn python_output(texts: &[Option<String>]) -> HelperOutput {
+    let frames: Vec<_> = texts
+        .iter()
+        .map(|text| {
+            let encoded = serde_json::to_string(text).unwrap();
+            format!(r#"{{"direction":"provider_to_client","action":"expect","text":{encoded}}}"#)
+        })
+        .collect();
+    let joined = frames.join(",");
+    serde_json::from_str(&format!(
+        r#"{{"ok":true,"value":{{"handshake":{{"status":101,"negotiated_subprotocol":null}},"frames":[{joined}],"close":null}}}}"#
+    ))
+    .unwrap()
+}
+
 #[test]
 fn missing_key() {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("cases/harness/websocket-oracle/probe-missing-key.yaml");
+    let case = decode_ws_case(&fs::read(path).unwrap(), &limits(), &fixtures()).unwrap();
+    let error = |message: &str| -> HelperOutput {
+        let encoded = serde_json::to_string(message).unwrap();
+        serde_json::from_str(&format!(
+            r#"{{"ok":false,"error":{{"class":"ValueError","status":null,"type":null,"param":null,"code":null,"message":{encoded}}}}}"#
+        ))
+        .unwrap()
+    };
+    output_matches(
+        &case,
+        &error("api_key is required for OpenAI realtime calls"),
+    )
+    .unwrap();
+    assert_eq!(
+        output_matches(&case, &error("changed")),
+        Err("/error/message".to_owned())
+    );
+    assert_eq!(
+        output_matches(&case, &python_output(&[])),
+        Err("/ok".to_owned())
+    );
     let mut registry = Services::default();
     registry
         .register_service(ServiceTag::RealtimeProbe, preparation_adapter)

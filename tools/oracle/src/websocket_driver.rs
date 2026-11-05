@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 use service::ServiceTag;
 use std::future::Future;
 use std::io;
+use std::string::FromUtf8Error;
 use std::time::Duration;
 use tokio::{task::JoinError, time::error::Elapsed, time::timeout};
 use tokio_tungstenite::tungstenite::{
@@ -24,6 +25,8 @@ mod socket;
 pub struct HandshakeObservation {
     pub status: u16,
     pub negotiated_subprotocol: Option<String>,
+    #[serde(default)]
+    pub body: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -69,6 +72,9 @@ pub fn compare_transcript(
     if expected.negotiated_subprotocol != observed.handshake.negotiated_subprotocol {
         return Err("/handshake/negotiated_subprotocol".to_owned());
     }
+    if expected.expected_refusal_body != observed.handshake.body {
+        return Err("/handshake/body".to_owned());
+    }
     direction_matches(&expected.frames, &observed.frames)?;
     close_matches(expected.close.as_ref(), observed.close.as_ref())
 }
@@ -93,6 +99,8 @@ pub enum DriverError {
     HeaderValue(#[from] InvalidHeaderValue),
     #[error("WebSocket transcript: {0}")]
     Transport(String),
+    #[error("refusal body: {0}")]
+    RefusalBody(#[from] FromUtf8Error),
     #[error("service adapter {0:?} is not registered")]
     AdapterMissing(ServiceTag),
     #[error("service adapter {0:?} is already registered")]

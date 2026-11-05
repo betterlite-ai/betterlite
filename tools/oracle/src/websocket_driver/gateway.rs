@@ -102,16 +102,16 @@ async fn exchange_bounded<T>(
 where
     T: Transport,
 {
-    let (stream, response) = match transport
-        .connect(request(base_url, case)?, limits, settings)
-        .await
-    {
+    let upgrade = request(base_url, case)?;
+    let (stream, response) = match transport.connect(upgrade, limits, settings).await {
         Ok(connection) => connection,
         Err(Error::Http(response)) => {
+            let bytes = response.body().clone().filter(|bytes| !bytes.is_empty());
             return Ok(TranscriptObservation {
                 handshake: HandshakeObservation {
                     status: response.status().as_u16(),
                     negotiated_subprotocol: None,
+                    body: bytes.map(String::from_utf8).transpose()?,
                 },
                 frames: Vec::new(),
                 close: None,
@@ -126,6 +126,7 @@ where
             .get("sec-websocket-protocol")
             .map(|value| value.to_str().map(str::to_owned))
             .transpose()?,
+        body: None,
     };
     let mut socket = Peer {
         stream,

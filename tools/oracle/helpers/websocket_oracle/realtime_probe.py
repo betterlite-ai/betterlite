@@ -1,4 +1,5 @@
 import asyncio
+import json
 
 # ruff: noqa: INP001 - websocket_oracle.py supplies this service namespace via __path__.
 from collections.abc import Callable
@@ -40,10 +41,16 @@ def run(input_value: Input) -> object:
     headers_method = "_get_additional_headers"
     construct_url = cast(Callable[[str, dict[str, str]], str], getattr(handler, url_method))
     headers = cast(Headers, getattr(handler, headers_method))
+    sent = headers(key, openai_beta_realtime=input_value.get("openai_beta_realtime", False))
+    texts = [
+        construct_url(base, query),
+        json.dumps(list(query.items()), separators=(",", ":")),
+        json.dumps(sent, separators=(",", ":"), sort_keys=True),
+    ]
     return {
-        "url": construct_url(base, query),
-        "query": query,
-        "headers": headers(
-            key, openai_beta_realtime=input_value.get("openai_beta_realtime", False)
-        ),
+        "handshake": {"status": 101, "negotiated_subprotocol": None},
+        "frames": [
+            {"direction": "provider_to_client", "action": "expect", "text": text} for text in texts
+        ],
+        "close": None,
     }

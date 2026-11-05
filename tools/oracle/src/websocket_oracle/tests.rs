@@ -11,8 +11,8 @@ use tokio::time::timeout;
 
 use super::decode::{FilesystemFixtures, FixtureRepository as _, decode_ws_case};
 use super::{
-    AuthObservation, Close, Frame, Initiator, OracleLimits, RealtimeSettings, RouteObservation,
-    WebSocketBounds, WebSocketCase, close_matches, direction_matches, route_auth_matches,
+    Close, Frame, Initiator, OracleLimits, RealtimeSettings, WebSocketBounds, WebSocketCase,
+    close_matches, direction_matches, upstream_matches,
 };
 use crate::websocket_driver::gateway::{TokioTransport, exchange as exchange_gateway};
 use crate::websocket_driver::provider::{ProviderObservation, start as start_provider};
@@ -309,25 +309,30 @@ async fn run_scripted_exchange(
 }
 
 #[rstest::rstest]
-#[case::model("/realtime?model=realtime-a", None, "realtime-a", &[])]
+#[case::model(
+    "/realtime?model=realtime-a",
+    None,
+    "Bearer sk-provider",
+    "model=realtime-a"
+)]
 #[case::transcription(
     "/v1/realtime?intent=transcription",
     None,
-    "gpt-realtime-whisper",
-    &[]
+    "Bearer sk-whisper",
+    "intent=transcription"
 )]
-#[case::guardrails(
-    "/openai/v1/realtime?model=realtime-a&guardrails=%20first,%20,second%20",
+#[case::protocol(
+    "/openai/v1/realtime?model=realtime-a",
     Some("realtime"),
-    "realtime-a",
-    &["first", "second"]
+    "Bearer sk-provider",
+    "model=realtime-a"
 )]
 #[tokio::test]
 async fn realtime_route_inputs(
     #[case] path: &str,
     #[case] protocol: Option<&str>,
-    #[case] model: &str,
-    #[case] guardrails: &[&str],
+    #[case] authorization: &str,
+    #[case] query: &str,
 ) {
     let mut case =
         decode_ws_case(valid().as_bytes(), &OracleLimits::default(), &fixtures()).unwrap();
@@ -335,9 +340,30 @@ async fn realtime_route_inputs(
     case.negotiated_subprotocol = protocol.map(str::to_owned);
     case.requested_subprotocols =
         protocol.map_or_else(Vec::new, |name| vec![name.to_owned(), "second".to_owned()]);
-    case.route_model = Some(model.to_owned());
-    case.route_guardrails = guardrails.iter().map(|&value| value.to_owned()).collect();
+    case.headers
+        .insert("Authorization".to_owned(), authorization.to_owned());
+    case.expected_upstream_auth = Some(authorization.to_owned());
+    case.expected_upstream_query = Some(query.to_owned());
+    let mut guarded = case.clone();
+    guarded.path = format!("{path}&guardrails=%20first,%20,second%20");
     matching_peer(case).await;
+    let peer = start_provider(guarded.clone(), limits(), settings(), &TokioClock)
+        .await
+        .unwrap();
+    exchange_gateway(
+        &format!("ws://{}", peer.address),
+        &guarded,
+        &bounds(),
+        &TokioClock,
+        &TokioTransport,
+    )
+    .await
+    .unwrap();
+    let capture = peer.finish(Duration::from_secs(2)).await.unwrap();
+    assert_eq!(
+        upstream_matches(&guarded, &capture),
+        Err("/upstream/query".to_owned())
+    );
 }
 
 mod frame_wire;
@@ -371,8 +397,8 @@ async fn websocket_auth(
             case.negotiated_subprotocol = Some("realtime".to_owned());
         }
     }
-    case.authentication_detail = Some(detail.to_owned());
-    case.attempted_close_code = (status != 101).then_some(1008);
+    case.expected_upstream_auth = case.headers.get("Authorization").cloned();
+    case.expected_refusal_body = (status != 101).then(|| format!(r#"{{"detail":"{detail}"}}"#));
     matching_peer(case).await;
 }
 
@@ -414,15 +440,20 @@ async fn matching_peer(case: WebSocketCase) {
     .await
     .unwrap();
     let capture = peer.finish(Duration::from_secs(2)).await.unwrap();
-    assert_eq!(capture.connection_count, 1);
     assert_eq!(capture.request_uri, case.path);
-    assert_route_auth_mismatches(&case, &capture);
+    assert_upstream_mismatches(&case, capture);
     compare_transcript(&case, &observed).unwrap();
     if let Some(close) = observed.close.as_mut() {
         close.reason = "changed".to_owned();
         assert_eq!(
             compare_transcript(&case, &observed),
             Err("/close/reason".to_owned())
+        );
+    } else if observed.handshake.body.is_some() {
+        observed.handshake.body = Some("changed".to_owned());
+        assert_eq!(
+            compare_transcript(&case, &observed),
+            Err("/handshake/body".to_owned())
         );
     } else {
         observed.handshake.status = 418;
@@ -433,54 +464,19 @@ async fn matching_peer(case: WebSocketCase) {
     }
 }
 
-type RouteAuthMutation = fn(&mut RouteObservation, &mut AuthObservation);
-
-fn route_auth_mutations() -> [(RouteAuthMutation, &'static str); 4] {
-    [
-        (
-            |route, _| route.model = Some("changed".to_owned()),
-            "/route/model",
-        ),
-        (
-            |route, _| route.guardrails.push("changed".to_owned()),
-            "/route/guardrails",
-        ),
-        (
-            |_, auth| auth.detail = Some("changed".to_owned()),
-            "/auth/detail",
-        ),
-        (
-            |_, auth| auth.attempted_close_code = Some(4000),
-            "/auth/attempted_close_code",
-        ),
-    ]
-}
-
-fn assert_route_auth_mismatches(case: &WebSocketCase, capture: &ProviderObservation) {
-    let expected_route = RouteObservation {
-        model: case.route_model.clone(),
-        guardrails: case.route_guardrails.clone(),
-    };
-    let expected_auth = AuthObservation {
-        detail: case.authentication_detail.clone(),
-        attempted_close_code: case.attempted_close_code,
-    };
-    route_auth_matches(
-        &expected_route,
-        &capture.route,
-        &expected_auth,
-        &capture.auth,
-    )
-    .unwrap();
-    for (mutate, pointer) in route_auth_mutations() {
-        let mut route = capture.route.clone();
-        let mut auth = capture.auth.clone();
-        mutate(&mut route, &mut auth);
-        assert_eq!(
-            route_auth_matches(&expected_route, &route, &expected_auth, &auth),
-            Err(pointer.to_owned())
-        );
-    }
+fn assert_upstream_mismatches(case: &WebSocketCase, mut capture: ProviderObservation) {
+    upstream_matches(case, &capture).unwrap();
+    let authorization = capture.authorization.replace("changed".to_owned());
+    assert_eq!(
+        upstream_matches(case, &capture),
+        Err("/upstream/authorization".to_owned())
+    );
+    capture.authorization = authorization;
+    capture.connection_count = 2;
+    assert_eq!(
+        upstream_matches(case, &capture),
+        Err("/upstream/connection_count".to_owned())
+    );
 }
 
 #[rstest::rstest]

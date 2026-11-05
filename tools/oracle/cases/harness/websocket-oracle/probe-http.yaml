@@ -13,6 +13,15 @@ input:
   query_params:
     intent: transcription
     model: realtime-a
-frames: []
+frames:
+- direction: provider_to_client
+  action: expect
+  text: 'ws://provider.test/v1/realtime?intent=transcription&model=realtime-a'
+- direction: provider_to_client
+  action: expect
+  text: '[["intent","transcription"],["model","realtime-a"]]'
+- direction: provider_to_client
+  action: expect
+  text: '{"Authorization":"Bearer sk-test"}'
 execution_seconds: 10
 driver: service
