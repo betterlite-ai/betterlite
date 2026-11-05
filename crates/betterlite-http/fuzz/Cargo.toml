@@ -44,3 +44,10 @@ path = "fuzz_targets/skill_archive_zip.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "user_url"
+path = "fuzz_targets/user_url.rs"
+test = false
+doc = false
+bench = false

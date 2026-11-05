@@ -29,6 +29,10 @@ enum RawFlag {
     Float(f64),
     Text(String),
     List(Vec<IgnoredAny>),
+    #[expect(
+        clippy::zero_sized_map_values,
+        reason = "only whether the mapping is empty matters"
+    )]
     Mapping(BTreeMap<String, IgnoredAny>),
 }
 
