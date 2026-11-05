@@ -117,6 +117,21 @@ fn run(scenario: Scenario) {
     expected_filename: Some("photo.png"),
     expected_content_type: "image/png",
 })]
+#[case::leading_dot_filename_has_no_extension(Scenario::Metadata {
+    file_data: FileData::Tuple2 { filename: Some(".png".to_owned()), content: bytes(b"abc") },
+    expected_filename: Some(".png"),
+    expected_content_type: "application/octet-stream",
+})]
+#[case::nested_path_with_leading_dot_basename_has_no_extension(Scenario::Metadata {
+    file_data: FileData::Tuple2 { filename: Some("dir/..gif".to_owned()), content: bytes(b"abc") },
+    expected_filename: Some("dir/..gif"),
+    expected_content_type: "application/octet-stream",
+})]
+#[case::dot_after_a_real_character_in_the_basename_still_splits(Scenario::Metadata {
+    file_data: FileData::Tuple2 { filename: Some("dir/.a.png".to_owned()), content: bytes(b"abc") },
+    expected_filename: Some("dir/.a.png"),
+    expected_content_type: "image/png",
+})]
 #[case::unknown_extension_falls_back_to_octet_stream(Scenario::Metadata {
     file_data: FileData::Tuple2 { filename: Some("archive.zzz".to_owned()), content: bytes(b"abc") },
     expected_filename: Some("archive.zzz"),

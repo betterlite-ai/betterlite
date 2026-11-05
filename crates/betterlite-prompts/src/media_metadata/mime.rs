@@ -45,10 +45,18 @@ const EXTENSION_TO_MIME: &[(&str, &str)] = &[
     ("zip", "application/zip"),
 ];
 
-// Mirrors os.path.splitext: no dot, or a dot with nothing after it, yields no extension.
+// Mirrors posixpath.splitext: a leading dot in the basename is not an extension marker.
 #[must_use]
 pub(super) fn guess_mime_type(filename: &str) -> Option<&'static str> {
+    let basename_start = filename.rfind('/').map_or(0, |sep| sep.saturating_add(1));
     let dot = filename.rfind('.')?;
+    if dot < basename_start {
+        return None;
+    }
+    let basename_prefix = filename.get(basename_start..dot)?;
+    if basename_prefix.chars().all(|character| character == '.') {
+        return None;
+    }
     let extension = filename.get(dot.saturating_add(1)..)?;
     if extension.is_empty() {
         return None;
