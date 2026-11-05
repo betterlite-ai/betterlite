@@ -1,4 +1,3 @@
-use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use betterlite_openai::files::error::FilesError;
@@ -9,91 +8,18 @@ use betterlite_openai::files::stream::StreamExit;
 use betterlite_openai::files::{
     ClientArgs, ClientKind, FilesApi, FilesClient, get_openai_client, select_client,
 };
-use fixture::{Fixture, Reply};
+use fixture::Fixture;
 use futures_util::StreamExt as _;
-use indexmap::IndexMap;
+use input::{Action, ClientSpec, Input, Request, Supplied};
 use secrecy::{ExposeSecret as _, SecretString};
-use serde::Deserialize;
 use serde_json::{Value, json};
 use uuid::Uuid;
 
 mod fixture;
+mod input;
 mod tests;
 
 pub(crate) struct Op;
-
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum Action {
-    CreateFile,
-    FileContent,
-    FileContentStreaming,
-    RetrieveFile,
-    DeleteFile,
-    ListFiles,
-    Client,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum Supplied {
-    Sync,
-    Async,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ClientSpec {
-    api_key: Option<String>,
-    api_base: Option<String>,
-    timeout: Option<u64>,
-    max_retries: Option<u32>,
-    organization: Option<String>,
-    supplied: Option<Supplied>,
-    is_async: bool,
-    #[serde(default)]
-    missing: bool,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct Request {
-    #[serde(default)]
-    file_id: String,
-    #[serde(default)]
-    purpose: Option<CreatePurpose>,
-    #[serde(default)]
-    list_purpose: Option<String>,
-    #[serde(default)]
-    filename: Option<String>,
-    #[serde(default)]
-    content_type: Option<String>,
-    #[serde(default)]
-    data: String,
-    #[serde(default)]
-    expires_after: Option<i64>,
-    #[serde(default)]
-    extra_headers: IndexMap<String, String>,
-    #[serde(default)]
-    extra_body: IndexMap<String, String>,
-    #[serde(default)]
-    timeout: Option<u64>,
-    #[serde(default)]
-    chunk_size: Option<NonZeroUsize>,
-    #[serde(default)]
-    read: Option<usize>,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Input {
-    action: Action,
-    client: ClientSpec,
-    #[serde(default)]
-    request: Request,
-    #[serde(default)]
-    reply: Option<Reply>,
-}
 
 fn client_args(spec: &ClientSpec) -> ClientArgs {
     ClientArgs {
