@@ -92,3 +92,10 @@ path = "fuzz_targets/cohere_line.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "responses_event_records"
+path = "fuzz_targets/responses_event_records.rs"
+test = false
+doc = false
+bench = false
