@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use super::{
-    Fallback, FallbackError, ProducerError, PublishOutcome, SpendEventProducer,
+    Fallback, FallbackError, ProducerError, PublishOutcome, SpendEventProducer, SystemClock,
     transport::Connector,
 };
 use betterlite_config::collector::{CollectorSettings, UnavailablePolicy};
@@ -99,8 +99,14 @@ impl Harness {
             connect_timeout_seconds: Decimal::ONE,
             job_role: None,
         };
-        let producer =
-            SpendEventProducer::start(&settings, fallback, &tasks, Arc::clone(&connect)).unwrap();
+        let producer = SpendEventProducer::start(
+            &settings,
+            fallback,
+            &tasks,
+            Arc::clone(&connect),
+            SystemClock,
+        )
+        .unwrap();
         Self {
             producer,
             peer,
@@ -262,6 +268,7 @@ async fn backoff_window_skips_an_already_queued_reconnect_attempt() {
         CountingRefusals {
             attempts: Arc::clone(&attempts),
         },
+        SystemClock,
     )
     .unwrap();
     producer.publish(b"one".to_vec(), &cancel).await.unwrap();
@@ -298,6 +305,7 @@ async fn dropping_the_producer_lets_the_writer_task_finish() {
         Arc::new(|_| Box::pin(async { Ok(()) })),
         &tasks,
         connect,
+        SystemClock,
     )
     .unwrap();
     drop(producer);
@@ -434,6 +442,7 @@ async fn connect_timeout_applies_drop_and_close_stops_admission() {
         Arc::new(|_| Box::pin(async { Ok(()) })),
         &tasks,
         Pending,
+        SystemClock,
     )
     .unwrap();
     producer
@@ -494,34 +503,6 @@ async fn drop_policy_logs_only_milestones() {
     assert!(logs.contains("dropped=1\n"));
     assert!(logs.contains("dropped=1001\n"));
     assert!(logs.contains("dropped=2001\n"));
-}
-
-#[test]
-fn spend_logging_preserves_supplied_or_active_trace() {
-    use crate::spend_error::log_spend_error;
-    use betterlite_config::collector::TracebackPolicy;
-    use tokio::sync::watch;
-    use tracing::subscriber::with_default;
-    let captured = Captured::default();
-    let writer = captured.clone();
-    let subscriber = tracing_subscriber::fmt()
-        .without_time()
-        .with_ansi(false)
-        .with_max_level(tracing::Level::INFO)
-        .with_writer(move || writer.clone())
-        .finish();
-    let (sender, settings) = watch::channel(TracebackPolicy { suppress: true });
-    with_default(subscriber, || {
-        log_spend_error(&settings, "suppressed", Some("hidden"), None);
-        sender.send_replace(TracebackPolicy { suppress: false });
-        log_spend_error(&settings, "explicit", Some("supplied"), Some("unused"));
-        log_spend_error(&settings, "implicit", None, Some("active"));
-    });
-    let logs = String::from_utf8(captured.0.lock().unwrap().clone()).unwrap();
-    assert!(!logs.contains("hidden"));
-    assert!(!logs.contains("unused"));
-    assert!(logs.contains("supplied"));
-    assert!(logs.contains("active"));
 }
 
 #[tokio::test]

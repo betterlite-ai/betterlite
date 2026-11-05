@@ -56,6 +56,19 @@ pub struct ProducerStats {
     pub connected: bool,
 }
 
+pub trait Clock: Send + Sync {
+    fn now(&self) -> Instant;
+}
+
+#[derive(Debug, Default)]
+pub struct SystemClock;
+
+impl Clock for SystemClock {
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
+}
+
 struct State {
     stats: ProducerStats,
     sender: Option<mpsc::Sender<Vec<u8>>>,
@@ -63,8 +76,8 @@ struct State {
 }
 
 impl State {
-    fn admit(&mut self, line: Vec<u8>) -> Result<(), (Vec<u8>, &'static str)> {
-        if self.reconnect_at.is_some_and(|at| Instant::now() < at) {
+    fn admit(&mut self, line: Vec<u8>, now: Instant) -> Result<(), (Vec<u8>, &'static str)> {
+        if self.reconnect_at.is_some_and(|at| now < at) {
             return Err((line, "reconnect backoff"));
         }
         let Some(sender) = &self.sender else {
@@ -83,6 +96,7 @@ struct Outage {
     fallback: Fallback,
     policy: UnavailablePolicy,
     tasks: TaskTracker,
+    clock: Arc<dyn Clock>,
 }
 
 impl Outage {
@@ -139,7 +153,14 @@ impl SpendEventProducer {
                     buffer = settings.buffer_size,
                     "offloading spend to collector"
                 );
-                Self::start(settings, fallback, tasks, transport::Network { address }).map(Some)
+                Self::start(
+                    settings,
+                    fallback,
+                    tasks,
+                    transport::Network { address },
+                    SystemClock,
+                )
+                .map(Some)
             }
             Err(error @ AddressError::Syntax(_)) => Err(ProducerError::Address(error)),
             Err(error @ (AddressError::Invalid | AddressError::RemoteHost)) => {
@@ -149,14 +170,16 @@ impl SpendEventProducer {
         }
     }
 
-    fn start<Connect>(
+    fn start<Connect, Clk>(
         settings: &CollectorSettings,
         fallback: Fallback,
         tasks: &TaskTracker,
         connect: Connect,
+        clock: Clk,
     ) -> Result<Self, ProducerError>
     where
         Connect: transport::Connector,
+        Clk: Clock + 'static,
     {
         let (drain_timeout, connect_timeout) = settings.validate()?;
         let (sender, receiver) = mpsc::channel(settings.buffer_size);
@@ -170,6 +193,7 @@ impl SpendEventProducer {
             fallback,
             policy: settings.on_unavailable,
             tasks: tasks.clone(),
+            clock: Arc::new(clock),
         });
         let shutdown = CancellationToken::new();
         let worker = writer::Writer {
@@ -194,12 +218,13 @@ impl SpendEventProducer {
         line: Vec<u8>,
         cancel: &CancellationToken,
     ) -> Result<PublishOutcome, ProducerError> {
+        let now = self.outage.clock.now();
         let unsent = self
             .outage
             .state
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .admit(line);
+            .admit(line, now);
         match unsent {
             Ok(()) => Ok(PublishOutcome::Queued),
             Err((event, reason)) => {

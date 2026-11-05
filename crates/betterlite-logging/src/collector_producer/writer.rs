@@ -6,7 +6,7 @@ use std::sync::{Arc, PoisonError};
 use std::time::Duration;
 use tokio::io::AsyncWriteExt as _;
 use tokio::sync::mpsc;
-use tokio::time::{Instant, timeout};
+use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
 pub(super) struct Writer {
@@ -103,7 +103,10 @@ impl Writer {
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner);
             state.stats.connected = false;
-            if state.reconnect_at.is_some_and(|at| Instant::now() < at) {
+            if state
+                .reconnect_at
+                .is_some_and(|at| self.outage.clock.now() < at)
+            {
                 return None;
             }
         }
@@ -129,6 +132,6 @@ impl Writer {
             .state
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        state.reconnect_at = Instant::now().checked_add(Duration::from_secs(1));
+        state.reconnect_at = self.outage.clock.now().checked_add(Duration::from_secs(1));
     }
 }
