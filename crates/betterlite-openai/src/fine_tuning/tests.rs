@@ -16,9 +16,7 @@ use super::client::{
 use super::error::FineTuneError;
 use super::job::{FineTuneCreate, decode_fine_tune_job};
 use super::normalize::normalize_fine_tuning_job_dict;
-use super::{
-    cancel_fine_tuning_job, create_fine_tuning_job, list_fine_tuning_jobs, retrieve_fine_tuning_job,
-};
+use super::{JobRequest, list_fine_tuning_jobs, request_fine_tuning_job};
 
 type Log = Arc<Mutex<Vec<Value>>>;
 type Reply = Result<Vec<u8>, SdkError>;
@@ -288,9 +286,12 @@ fn dispatch(
             return serde_json::from_slice(&page)
                 .map_err(|source| FineTuneError::Decode { source });
         }
-        "create" => create_fine_tuning_job(connection, &step.data.clone().unwrap_or_default()),
-        "retrieve" => retrieve_fine_tuning_job(connection, job_id),
-        _ => cancel_fine_tuning_job(connection, job_id),
+        "create" => {
+            let data = step.data.clone().unwrap_or_default();
+            request_fine_tuning_job(connection, &JobRequest::Create(&data))
+        }
+        "retrieve" => request_fine_tuning_job(connection, &JobRequest::Retrieve(job_id)),
+        _ => request_fine_tuning_job(connection, &JobRequest::Cancel(job_id)),
     }?;
     serde_json::to_value(job).map_err(|source| FineTuneError::Decode { source })
 }
@@ -452,7 +453,8 @@ fn openai_fine_tuning_secret_safe_failure() {
         litellm_params: serde_json::from_str(r#"{"api_key":"sk-fixture-secret"}"#).ok(),
     };
     let missing = silent_builder("none", &Log::default());
-    let failure = retrieve_fine_tuning_job(connect(&missing, configured.clone()), "ft_1");
+    let request = JobRequest::Retrieve("ft_1");
+    let failure = request_fine_tuning_job(connect(&missing, configured.clone()), &request);
     let message = failure.as_ref().err().map(ToString::to_string);
     let text = format!("{configured:?} {args:?} {failure:?} {message:?}");
     assert!(!text.contains("sk-fixture-secret"), "{text}");

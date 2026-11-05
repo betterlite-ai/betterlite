@@ -7,15 +7,26 @@ use client::Connection;
 use error::FineTuneError;
 use job::{FineTuneCreate, FineTuneJob};
 
-pub fn create_fine_tuning_job(
+pub enum JobRequest<'request> {
+    Create(&'request FineTuneCreate),
+    Retrieve(&'request str),
+    Cancel(&'request str),
+}
+
+pub fn request_fine_tuning_job(
     connection: Connection<'_>,
-    data: &FineTuneCreate,
+    request: &JobRequest<'_>,
 ) -> Result<FineTuneJob, FineTuneError> {
-    let reply = connection
-        .open()?
-        .create(data)
-        .map_err(|source| FineTuneError::Sdk { source })?;
-    job::decode_fine_tune_job(&reply, false)
+    let client = connection.open()?;
+    let reply = match request {
+        JobRequest::Create(data) => client.create(data),
+        JobRequest::Retrieve(job_id) => client.retrieve(job_id),
+        JobRequest::Cancel(job_id) => client.cancel(job_id),
+    };
+    job::decode_fine_tune_job(
+        &reply.map_err(|source| FineTuneError::Sdk { source })?,
+        false,
+    )
 }
 
 pub fn list_fine_tuning_jobs(
@@ -27,28 +38,6 @@ pub fn list_fine_tuning_jobs(
         .open()?
         .list(after, limit)
         .map_err(|source| FineTuneError::Sdk { source })
-}
-
-pub fn retrieve_fine_tuning_job(
-    connection: Connection<'_>,
-    job_id: &str,
-) -> Result<FineTuneJob, FineTuneError> {
-    let reply = connection
-        .open()?
-        .retrieve(job_id)
-        .map_err(|source| FineTuneError::Sdk { source })?;
-    job::decode_fine_tune_job(&reply, false)
-}
-
-pub fn cancel_fine_tuning_job(
-    connection: Connection<'_>,
-    job_id: &str,
-) -> Result<FineTuneJob, FineTuneError> {
-    let reply = connection
-        .open()?
-        .cancel(job_id)
-        .map_err(|source| FineTuneError::Sdk { source })?;
-    job::decode_fine_tune_job(&reply, false)
 }
 
 mod tests;

@@ -6,9 +6,7 @@ use betterlite_openai::fine_tuning::client::{
 use betterlite_openai::fine_tuning::error::FineTuneError;
 use betterlite_openai::fine_tuning::job::FineTuneCreate;
 use betterlite_openai::fine_tuning::normalize::normalize_fine_tuning_job_dict;
-use betterlite_openai::fine_tuning::{
-    cancel_fine_tuning_job, create_fine_tuning_job, list_fine_tuning_jobs, retrieve_fine_tuning_job,
-};
+use betterlite_openai::fine_tuning::{JobRequest, list_fine_tuning_jobs, request_fine_tuning_job};
 use secrecy::ExposeSecret;
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
@@ -182,14 +180,18 @@ fn perform(
                 .unwrap_or_else(|| json!({ "supplied": true }))
         }),
         "create" => {
-            create_fine_tuning_job(connection, &step.data.unwrap_or_default()).map(|job| json!(job))
+            let data = step.data.unwrap_or_default();
+            request_fine_tuning_job(connection, &JobRequest::Create(&data)).map(|job| json!(job))
         }
         "list" => {
             let page = list_fine_tuning_jobs(connection, step.after.as_deref(), step.limit)?;
             serde_json::from_slice(&page).map_err(|source| FineTuneError::Decode { source })
         }
-        "retrieve" => retrieve_fine_tuning_job(connection, &job_id).map(|job| json!(job)),
-        _ => cancel_fine_tuning_job(connection, &job_id).map(|job| json!(job)),
+        "retrieve" => request_fine_tuning_job(connection, &JobRequest::Retrieve(&job_id))
+            .map(|job| json!(job)),
+        _ => {
+            request_fine_tuning_job(connection, &JobRequest::Cancel(&job_id)).map(|job| json!(job))
+        }
     }
 }
 
