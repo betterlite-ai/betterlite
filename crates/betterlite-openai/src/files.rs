@@ -173,16 +173,26 @@ impl<T: FileTransport> FilesApi<T> {
         ))
     }
 
+    async fn json_call(
+        &self,
+        client: &FilesClient,
+        method: Method,
+        path: String,
+        query: Vec<(String, String)>,
+    ) -> Result<Value, FilesError> {
+        let reply = self
+            .buffered(client.bare_request(method, path, query)?)
+            .await?;
+        serde_json::from_slice(&reply.body).map_err(|source| FilesError::Decode { source })
+    }
+
     pub async fn retrieve_file(
         &self,
         client: &FilesClient,
         file_id: &str,
     ) -> Result<Value, FilesError> {
-        let path = file_path(file_id, "")?;
-        let reply = self
-            .buffered(client.bare_request(Method::GET, path, Vec::new())?)
-            .await?;
-        serde_json::from_slice(&reply.body).map_err(|source| FilesError::Decode { source })
+        self.json_call(client, Method::GET, file_path(file_id, "")?, Vec::new())
+            .await
     }
 
     pub async fn delete_file(
@@ -190,11 +200,8 @@ impl<T: FileTransport> FilesApi<T> {
         client: &FilesClient,
         file_id: &str,
     ) -> Result<Value, FilesError> {
-        let path = file_path(file_id, "")?;
-        let reply = self
-            .buffered(client.bare_request(Method::DELETE, path, Vec::new())?)
-            .await?;
-        serde_json::from_slice(&reply.body).map_err(|source| FilesError::Decode { source })
+        self.json_call(client, Method::DELETE, file_path(file_id, "")?, Vec::new())
+            .await
     }
 
     // Only purpose is forwarded, and the SDK's query encoder drops an empty one; after, limit and order are not arguments of this wrapper
@@ -209,10 +216,8 @@ impl<T: FileTransport> FilesApi<T> {
             .filter(|purpose| !purpose.is_empty())
             .map(|purpose| ("purpose".to_owned(), purpose.clone()))
             .collect();
-        let reply = self
-            .buffered(client.bare_request(Method::GET, "/files".to_owned(), pairs)?)
-            .await?;
-        serde_json::from_slice(&reply.body).map_err(|source| FilesError::Decode { source })
+        self.json_call(client, Method::GET, "/files".to_owned(), pairs)
+            .await
     }
 }
 

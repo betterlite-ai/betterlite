@@ -78,6 +78,27 @@ impl Fixture {
         json!(picked)
     }
 
+    fn buffered_reply(&self) -> UpstreamResponse {
+        UpstreamResponse {
+            status: self.status,
+            headers: self.headers.clone(),
+            body: self.chunks.concat(),
+        }
+    }
+
+    fn stream_reply(&self) -> StreamReply {
+        let mut items: Vec<Result<Vec<u8>, HttpError>> =
+            self.chunks.iter().cloned().map(Ok).collect();
+        if self.fail_after {
+            items.push(Err(HttpError::Timeout));
+        }
+        StreamReply {
+            status: self.status,
+            headers: self.headers.clone(),
+            body: stream::iter(items).boxed(),
+        }
+    }
+
     pub(super) fn request_view(&self, extra_headers: &IndexMap<String, String>) -> Value {
         let Some(request) = self.seen.get() else {
             return Value::Null;
@@ -126,11 +147,7 @@ impl FileTransport for &Fixture {
         request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
         drop(self.seen.set(request));
-        ready(Ok(UpstreamResponse {
-            status: self.status,
-            headers: self.headers.clone(),
-            body: self.chunks.concat(),
-        }))
+        ready(Ok(self.buffered_reply()))
     }
 
     fn send_stream(
@@ -138,15 +155,6 @@ impl FileTransport for &Fixture {
         request: OutboundRequest,
     ) -> impl Future<Output = Result<StreamReply, TransportError>> + Send {
         drop(self.seen.set(request));
-        let mut items: Vec<Result<Vec<u8>, HttpError>> =
-            self.chunks.iter().cloned().map(Ok).collect();
-        if self.fail_after {
-            items.push(Err(HttpError::Timeout));
-        }
-        ready(Ok(StreamReply {
-            status: self.status,
-            headers: self.headers.clone(),
-            body: stream::iter(items).boxed(),
-        }))
+        ready(Ok(self.stream_reply()))
     }
 }

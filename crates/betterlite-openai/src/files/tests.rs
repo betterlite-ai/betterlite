@@ -67,6 +67,27 @@ impl Fixture {
         map
     }
 
+    fn buffered_reply(&self) -> UpstreamResponse {
+        UpstreamResponse {
+            status: self.status,
+            headers: self.headers(),
+            body: self.chunks.concat(),
+        }
+    }
+
+    fn stream_reply(&self) -> StreamReply {
+        let mut items: Vec<Result<Vec<u8>, HttpError>> =
+            self.chunks.iter().cloned().map(Ok).collect();
+        if self.fail_after {
+            items.push(Err(HttpError::Timeout));
+        }
+        StreamReply {
+            status: self.status,
+            headers: self.headers(),
+            body: stream::iter(items).boxed(),
+        }
+    }
+
     fn only_request(&self) -> OutboundRequest {
         let mut seen = self.seen.lock().expect("fixture lock");
         assert_eq!(seen.len(), 1, "exactly one request");
@@ -80,11 +101,7 @@ impl FileTransport for Arc<Fixture> {
         request: OutboundRequest,
     ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
         self.seen.lock().expect("fixture lock").push(request);
-        ready(Ok(UpstreamResponse {
-            status: self.status,
-            headers: self.headers(),
-            body: self.chunks.concat(),
-        }))
+        ready(Ok(self.buffered_reply()))
     }
 
     fn send_stream(
@@ -92,16 +109,7 @@ impl FileTransport for Arc<Fixture> {
         request: OutboundRequest,
     ) -> impl Future<Output = Result<StreamReply, TransportError>> + Send {
         self.seen.lock().expect("fixture lock").push(request);
-        let mut items: Vec<Result<Vec<u8>, HttpError>> =
-            self.chunks.iter().cloned().map(Ok).collect();
-        if self.fail_after {
-            items.push(Err(HttpError::Timeout));
-        }
-        ready(Ok(StreamReply {
-            status: self.status,
-            headers: self.headers(),
-            body: stream::iter(items).boxed(),
-        }))
+        ready(Ok(self.stream_reply()))
     }
 }
 
