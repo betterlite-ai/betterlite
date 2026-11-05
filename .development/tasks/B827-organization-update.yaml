@@ -78,15 +78,14 @@ description: >-
   parser or setting is introduced here. The retained functions own 166 nonblank/noncomment lines, or
   178 including route decorators; estimate 195 production, 320 tests and 65 registration lines, 580
   within 600. Keep the legacy patch, deletion and tests in domain submodules under the 300-line limit.
+  B1100 registers routes/organization_update.rs as a stub, so fill only crates/betterlite-server/src/routes/organization_update.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/organization_update.rs
     - crates/betterlite-server/src/organization_update/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/organization_update.rs
+    - crates/betterlite-server/src/routes/organization_update/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/organization-update/**

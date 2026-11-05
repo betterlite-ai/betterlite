@@ -27,14 +27,11 @@ description: >-
 
   B301 registers ProbeOperation::StrategyRouterHealth and its Python entry as stubs, so fill only tools/oracle/src/router_probes/strategy_router_health.rs and tools/oracle/litellm/probes/strategy_router_health.py and leave mod.rs and registry.py as they are; the adapters only call
   production services and do not repeat vendor-specific logic.
+  This task adds no route or server state, so leave routes.rs and state.rs to B1100.
 scope:
   paths:
   - crates/betterlite-server/src/health/router.rs
   - crates/betterlite-server/src/health/router/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - tools/oracle/cases/routing/router-health/**
   - tools/oracle/src/router_probes/strategy_router_health.rs
   - tools/oracle/src/router_probes/strategy_router_health/**
