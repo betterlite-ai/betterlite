@@ -1,0 +1,5 @@
+kind: helper
+name: text-and-content-array
+call: {openai_count_tokens: {"count": {"model": "gpt-5", "messages": [{"role": "system", "content": "be brief"}, {"role": "developer", "content": [{"type": "text", "text": "line"}, "bare", {"type": "text", "text": 5}, {"type": "other"}]}, {"role": "user", "content": ["bare", {"type": "text", "text": "hi"}, {"type": "text", "text": 5}]}, {"role": "alien", "content": "ignored"}], "api_key": "sk-deployment"}}}
+env: {}
+compare: {ignore: []}

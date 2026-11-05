@@ -1,0 +1,5 @@
+kind: helper
+name: count-failure-zero-status
+call: {openai_count_tokens: {"count": {"model": "gpt-5", "messages": [{"role": "user", "content": "hi"}], "status": 429, "body": "slow down", "api_key": "sk-deployment"}}}
+env: {}
+compare: {ignore: []}

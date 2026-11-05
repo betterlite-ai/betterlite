@@ -1,0 +1,5 @@
+kind: helper
+name: python-string-tool-output
+call: {openai_count_tokens: {"count": {"model": "gpt-5", "messages": [{"role": "tool", "tool_call_id": "a", "content": [{"type": "text", "text": "it's"}]}, {"role": "tool", "tool_call_id": "b", "content": [{"z": null, "a": true, "n": 1.5, "l": [1, "x"]}]}, {"role": "tool", "tool_call_id": "c", "content": []}], "api_key": "sk-deployment"}}}
+env: {}
+compare: {ignore: []}
