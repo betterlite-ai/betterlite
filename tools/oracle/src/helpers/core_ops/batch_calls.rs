@@ -80,25 +80,28 @@ where
     })
 }
 
-fn schedule(input: &Input) -> Result<Vec<usize>, Box<crate::helpers::HelperError>> {
-    if !matches!(input.mode, Operation::Messages) && input.models.len() != input.results.len() {
-        return Err(failure("models and results must have equal lengths"));
-    }
-    let order = if input.completion_order.is_empty() {
-        (0..input.results.len()).collect()
+fn schedule(
+    requested: &[usize],
+    count: usize,
+) -> Result<Vec<usize>, Box<crate::helpers::HelperError>> {
+    let order = if requested.is_empty() {
+        (0..count).collect()
     } else {
-        input.completion_order.clone()
+        requested.to_vec()
     };
     let mut sorted = order.clone();
     sorted.sort_unstable();
-    if sorted != (0..input.results.len()).collect::<Vec<_>>() || input.results.len() > 100 {
+    if sorted != (0..count).collect::<Vec<_>>() || count > 100 {
         return Err(failure("invalid completion_order or batch size"));
     }
     Ok(order)
 }
 
 fn prepare(input: &Input) -> Result<Batch<Outcome, usize>, Box<crate::helpers::HelperError>> {
-    let order = schedule(input)?;
+    if !matches!(input.mode, Operation::Messages) && input.models.len() != input.results.len() {
+        return Err(failure("models and results must have equal lengths"));
+    }
+    let order = schedule(&input.completion_order, input.results.len())?;
     let mut items = Vec::new();
     for (index, outcome) in input.results.iter().enumerate() {
         let rank = order
