@@ -1,0 +1,5 @@
+kind: helper
+name: suffix-rewrite-order
+call: {bedrock_model: {model: 'anthropic.claude-3-5-sonnet-20241022-v2:0:51k'}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+kind: helper
+name: region-groups
+call: {bedrock_model: {}}
+env: {}
+compare: {ignore: []}
