@@ -195,6 +195,16 @@ use betterlite_privacy_openai::{Payload, SnapshotError};
     r#"{"object":"other","data":[1]}"#
 )]
 #[case::embedding_without_data(test_snapshot_shape, r#"{"object":"list"}"#, r#"{"object":"list"}"#)]
+#[case::opaque_fields_cleared(
+    test_snapshot_shape,
+    r#"{"thinking_blocks":["private"],"audio":{"data":"x"},"logprobs":{"token":"y"},"annotations":["note"],"keep":"public"}"#,
+    r#"{"thinking_blocks":null,"audio":null,"logprobs":null,"annotations":null,"keep":"public"}"#
+)]
+#[case::opaque_null_content_preserved(
+    test_snapshot_shape,
+    r#"{"content":null,"reasoning_content":null,"text":null,"refusal":null,"arguments":null,"keep":"public"}"#,
+    r#"{"content":null,"reasoning_content":null,"text":null,"refusal":null,"arguments":null,"keep":"public"}"#
+)]
 #[case::credential_depth_boundary(test_depth_boundary, "100", "public")]
 #[case::credential_depth_exceeded(test_depth_boundary, "101", "REDACTED")]
 fn logging_privacy_tests_behavior(
