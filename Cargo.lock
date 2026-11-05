@@ -1763,6 +1763,7 @@ dependencies = [
  "betterlite-paths",
  "betterlite-postgres-fixture",
  "betterlite-prompts",
+ "betterlite-provider",
  "betterlite-rate-limit",
  "betterlite-redact",
  "betterlite-redis",
@@ -1921,6 +1922,13 @@ dependencies = [
 [[package]]
 name = "betterlite-provider"
 version = "0.1.0"
+dependencies = [
+ "betterlite-openai",
+ "rstest",
+ "secrecy",
+ "serde_json",
+ "thiserror",
+]
 
 [[package]]
 name = "betterlite-proxy"
