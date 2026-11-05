@@ -19,6 +19,13 @@ libfuzzer-sys = "0.4.9"
 serde_json = { version = "1.0.145", features = ["arbitrary_precision"] }
 
 [[bin]]
+name = "gitlab_templates"
+path = "fuzz_targets/gitlab_templates.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "dotprompt_templates"
 path = "fuzz_targets/dotprompt_templates.rs"
 test = false

@@ -1,0 +1,5 @@
+---
+model: gpt-4
+stop: [a, b]
+---
+{% if x %}{{ x.__class__ }}{{ items.append(1) }}{% endif %}
