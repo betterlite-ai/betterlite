@@ -1,3 +1,4 @@
+use std::collections::HashSet;
 use std::iter;
 
 use crate::arguments::json::Json;
@@ -10,6 +11,7 @@ pub fn declared_tool_call_ids(message: &Json) -> Vec<String> {
     else {
         return Vec::new();
     };
+    let mut seen = HashSet::new();
     let mut ids = Vec::new();
     for call in calls {
         let Some(id) = call
@@ -20,7 +22,7 @@ pub fn declared_tool_call_ids(message: &Json) -> Vec<String> {
         else {
             continue;
         };
-        if !ids.iter().any(|existing| existing == id) {
+        if seen.insert(id.to_owned()) {
             ids.push(id.to_owned());
         }
     }
@@ -30,7 +32,7 @@ pub fn declared_tool_call_ids(message: &Json) -> Vec<String> {
 #[must_use]
 pub fn group_tool_exchanges(messages: &[Json]) -> Vec<Vec<usize>> {
     let mut groups = Vec::new();
-    let mut active_ids = Vec::new();
+    let mut active_ids = HashSet::new();
     for (index, message) in messages.iter().enumerate() {
         let role = message
             .as_object()
@@ -41,11 +43,10 @@ pub fn group_tool_exchanges(messages: &[Json]) -> Vec<Vec<usize>> {
             .and_then(|fields| fields.get("tool_call_id"))
             .and_then(Json::as_str);
         let belongs_to_active = matches!(role, Some("tool" | "function"))
-            && tool_id
-                .is_some_and(|candidate_id| active_ids.iter().any(|active| active == candidate_id));
+            && tool_id.is_some_and(|candidate_id| active_ids.contains(candidate_id));
         if !belongs_to_active {
             groups.push(Vec::new());
-            active_ids = declared_tool_call_ids(message);
+            active_ids = declared_tool_call_ids(message).into_iter().collect();
         }
         if let Some(group) = groups.last_mut() {
             group.push(index);
@@ -58,7 +59,7 @@ pub fn iter_tool_exchange_groups(messages: &[Json]) -> impl Iterator<Item = Vec<
     let mut index = 0_usize;
     iter::from_fn(move || {
         let message = messages.get(index)?;
-        let ids = declared_tool_call_ids(message);
+        let ids: HashSet<String> = declared_tool_call_ids(message).into_iter().collect();
         let start = index;
         index = index.checked_add(1)?;
         while let Some(next_message) = messages.get(index) {
@@ -71,7 +72,7 @@ pub fn iter_tool_exchange_groups(messages: &[Json]) -> impl Iterator<Item = Vec<
                 .and_then(|fields| fields.get("tool_call_id"))
                 .and_then(Json::as_str);
             let belongs_to_active = matches!(role, Some("tool" | "function"))
-                && tool_id.is_some_and(|candidate_id| ids.iter().any(|id| id == candidate_id));
+                && tool_id.is_some_and(|candidate_id| ids.contains(candidate_id));
             if !belongs_to_active {
                 break;
             }

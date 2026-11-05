@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 
 use crate::arguments::json::{Json, Object};
 
@@ -6,10 +6,13 @@ use super::HistoryError;
 use super::groups::declared_tool_call_ids;
 use super::text::sanitize_empty_text_content;
 
+pub const MAX_HISTORY_MESSAGES: usize = 1024;
+pub const MAX_TOOL_CALLS_PER_MESSAGE: usize = 1024;
+
 struct MatchingResults {
     messages: Vec<Json>,
     indices: Vec<usize>,
-    ids: Vec<String>,
+    ids: HashSet<String>,
 }
 
 struct MissingRepair {
@@ -24,7 +27,9 @@ pub fn add_missing_tool_results(
     messages: &[Json],
     current_index: usize,
 ) -> (Vec<Json>, usize) {
-    let Some(repair) = missing_repair(current_message, messages, current_index) else {
+    let expected_ids = declared_tool_call_ids(current_message);
+    let Some(repair) = missing_repair(current_message, &expected_ids, messages, current_index)
+    else {
         return (vec![current_message.clone()], 0);
     };
     (repair.messages, repair.consumed_count)
@@ -32,6 +37,15 @@ pub fn add_missing_tool_results(
 
 #[must_use]
 pub fn is_orphaned_tool_result(message: &Json, previous: &[Json]) -> bool {
+    let latest_assistant_ids = previous
+        .iter()
+        .rev()
+        .find(|item| message_field_text(item, "role") == Some("assistant"))
+        .map(|assistant| declared_tool_call_ids(assistant).into_iter().collect());
+    tool_result_is_orphaned(message, latest_assistant_ids.as_ref())
+}
+
+fn tool_result_is_orphaned(message: &Json, latest_assistant_ids: Option<&HashSet<String>>) -> bool {
     if !matches!(
         message_field_text(message, "role"),
         Some("tool" | "function")
@@ -42,16 +56,7 @@ pub fn is_orphaned_tool_result(message: &Json, previous: &[Json]) -> bool {
     else {
         return false;
     };
-    let Some(assistant) = previous
-        .iter()
-        .rev()
-        .find(|item| message_field_text(item, "role") == Some("assistant"))
-    else {
-        return true;
-    };
-    !declared_tool_call_ids(assistant)
-        .iter()
-        .any(|declared_id| declared_id == tool_id)
+    latest_assistant_ids.is_none_or(|declared_ids| !declared_ids.contains(tool_id))
 }
 
 pub fn sanitize_messages(
@@ -61,8 +66,10 @@ pub fn sanitize_messages(
     if !modify_params {
         return Ok(messages.to_vec());
     }
+    enforce_input_caps(messages)?;
     let mut sanitized = Vec::new();
     let mut consumed = BTreeSet::new();
+    let mut latest_assistant_ids: Option<HashSet<String>> = None;
     for (index, message) in messages.iter().enumerate() {
         if consumed.contains(&index) {
             continue;
@@ -71,14 +78,18 @@ pub fn sanitize_messages(
             return Err(HistoryError::MessageNotObject { index });
         }
         let normalized = sanitize_empty_text_content(message);
-        if message_field_text(message, "role") == Some("assistant")
-            && let Some(repair) = missing_repair(&normalized, messages, index)
-        {
-            consumed.extend(repair.consumed_indices);
-            sanitized.extend(repair.messages);
+        if message_field_text(message, "role") == Some("assistant") {
+            let expected_ids = declared_tool_call_ids(&normalized);
+            latest_assistant_ids = Some(expected_ids.iter().cloned().collect());
+            if let Some(repair) = missing_repair(&normalized, &expected_ids, messages, index) {
+                consumed.extend(repair.consumed_indices);
+                sanitized.extend(repair.messages);
+                continue;
+            }
+            sanitized.push(normalized);
             continue;
         }
-        if is_orphaned_tool_result(message, &sanitized) {
+        if tool_result_is_orphaned(&normalized, latest_assistant_ids.as_ref()) {
             continue;
         }
         sanitized.push(normalized);
@@ -86,19 +97,40 @@ pub fn sanitize_messages(
     Ok(deduplicate_results(sanitized))
 }
 
+fn enforce_input_caps(messages: &[Json]) -> Result<(), HistoryError> {
+    if messages.len() > MAX_HISTORY_MESSAGES {
+        return Err(HistoryError::TooManyMessages {
+            limit: MAX_HISTORY_MESSAGES,
+        });
+    }
+    for message in messages {
+        if let Some(Json::List(calls)) = message
+            .as_object()
+            .and_then(|fields| fields.get("tool_calls"))
+            && calls.len() > MAX_TOOL_CALLS_PER_MESSAGE
+        {
+            return Err(HistoryError::TooManyToolCalls {
+                limit: MAX_TOOL_CALLS_PER_MESSAGE,
+            });
+        }
+    }
+    Ok(())
+}
+
 fn missing_repair(
     current_message: &Json,
+    expected_ids: &[String],
     messages: &[Json],
     current_index: usize,
 ) -> Option<MissingRepair> {
-    let expected_ids = declared_tool_call_ids(current_message);
     if expected_ids.is_empty() {
         return None;
     }
-    let actual = collect_matching_results(messages, current_index, &expected_ids);
+    let expected_id_set: HashSet<&str> = expected_ids.iter().map(String::as_str).collect();
+    let actual = collect_matching_results(messages, current_index, &expected_id_set);
     let missing_ids = expected_ids
         .iter()
-        .filter(|expected_id| !actual.ids.contains(expected_id))
+        .filter(|expected_id| !actual.ids.contains(expected_id.as_str()))
         .collect::<Vec<_>>();
     if missing_ids.is_empty() {
         return None;
@@ -116,11 +148,11 @@ fn missing_repair(
 fn collect_matching_results(
     messages: &[Json],
     current_index: usize,
-    expected_ids: &[String],
+    expected_ids: &HashSet<&str>,
 ) -> MatchingResults {
     let mut matching_messages = Vec::new();
     let mut matching_indices = Vec::new();
-    let mut matching_ids = Vec::new();
+    let mut matching_ids = HashSet::new();
     for (candidate_index, candidate) in messages
         .iter()
         .enumerate()
@@ -138,15 +170,12 @@ fn collect_matching_results(
         let Some(tool_id) = message_field_text(candidate, "tool_call_id") else {
             continue;
         };
-        if !expected_ids
-            .iter()
-            .any(|expected_id| expected_id == tool_id)
-        {
+        if !expected_ids.contains(tool_id) {
             continue;
         }
         matching_messages.push(candidate.clone());
         matching_indices.push(candidate_index);
-        matching_ids.push(tool_id.to_owned());
+        matching_ids.insert(tool_id.to_owned());
     }
     MatchingResults {
         messages: matching_messages,
