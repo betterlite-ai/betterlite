@@ -17,3 +17,12 @@ deviations:
       repaired values and dropped rows are covered by behavior tests.
     link: >-
       https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L2011-L2320
+  - what: >-
+      sanitize_messages rejects input with more than 1024 messages, or an assistant row with more than 1024
+      tool_calls, with a typed HistoryError. LiteLLM's sanitize_messages_for_tool_calling has no such limit.
+    why: >-
+      declared_tool_call_ids and the tool-row scans it feeds are linear in the size of a single message or turn;
+      without a cap, a sub-1MB request with tens of thousands of tool_calls or tool rows costs the worker
+      quadratic time. The cap mirrors the MAX_COMPLETION_MESSAGES bound sibling messages.rs already applies to
+      completion history.
+    link: ""
