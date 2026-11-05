@@ -8,7 +8,7 @@ description: >-
   (4982-5042), the litellm_proxy embedding branch (6504-6555) and custom embedding branch (7274-7296).
   Own custom_chat_llm_router in custom_llm.py; its ten CustomLLM methods and error class remain B164.
   Reuse B1500 forwarding and B1501's legacy adapter, and expose B1502-B1506's hosted skill services
-  through the core's operation composition without adding skills routes or a second injection hook.
+  through core::skills::composition without adding skills routes or a second injection hook.
 
   Aleph Alpha key precedence is explicit api_key, litellm.aleph_alpha_key, ALEPH_ALPHA_API_KEY,
   ALEPHALPHA_API_KEY, litellm.api_key; base is explicit, litellm.api_base, ALEPH_ALPHA_API_BASE,
@@ -52,10 +52,6 @@ scope:
     - crates/betterlite-provider/fuzz/Cargo.toml
     - crates/betterlite-provider/fuzz/fuzz_targets/custom_output.rs
     - crates/betterlite-provider/fuzz/corpus/custom_output/**
-    - crates/betterlite-core/src/operation.rs
-    - crates/betterlite-core/src/operation/**
-    - crates/betterlite-core/src/dispatch.rs
-    - crates/betterlite-core/src/dispatch/**
     - crates/betterlite-core/src/skills/composition.rs
     - crates/betterlite-core/src/skills/composition/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/legacy_provider*
