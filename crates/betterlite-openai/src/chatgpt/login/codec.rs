@@ -135,18 +135,12 @@ pub struct Tokens {
 
 impl TokenReply {
     pub fn exchanged(self) -> Result<Tokens, DecodeError> {
-        match (
-            self.access.filter(|text| !text.expose_secret().is_empty()),
-            self.refresh.filter(|text| !text.expose_secret().is_empty()),
-            self.id.filter(|text| !text.expose_secret().is_empty()),
-        ) {
-            (Some(access_token), Some(refresh_token), Some(id_token)) => Ok(Tokens {
-                access_token,
-                refresh_token,
-                id_token,
-            }),
-            _ => Err(DecodeError::Missing),
-        }
+        let issued = self
+            .refresh
+            .clone()
+            .filter(|text| !text.expose_secret().is_empty())
+            .ok_or(DecodeError::Missing)?;
+        self.refreshed(issued)
     }
 
     pub fn refreshed(self, previous: SecretString) -> Result<Tokens, DecodeError> {

@@ -6,8 +6,8 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::Serialize;
 
 use self::codec::{
-    AuthorizationCode, AuthorizationReply, DeviceCode, DeviceReply, TokenReply, Tokens,
-    decode_chatgpt_oauth,
+    AuthorizationCode, AuthorizationReply, DecodeError, DeviceCode, DeviceReply, TokenReply,
+    Tokens, decode_chatgpt_oauth,
 };
 use self::error::{Failure, LoginError};
 use self::http::{AuthPost, AuthTransport, Body};
@@ -157,16 +157,15 @@ where
                     client_id: CLIENT_ID,
                 },
             )?));
-            let response = self
+            let reply = self
                 .http
                 .post(AuthPost {
                     url: DEVICE_CODE_URL,
                     body,
                 })
-                .await?;
-            Ok::<_, Failure>(
-                decode_chatgpt_oauth::<DeviceReply>(&response.into_body()?)?.into_code()?,
-            )
+                .await?
+                .into_body()?;
+            Ok::<_, Failure>(decode_chatgpt_oauth::<DeviceReply>(&reply)?.into_code()?)
         };
         attempt.await.map_err(LoginError::DeviceCode)
     }
@@ -222,29 +221,34 @@ where
         }
     }
 
+    async fn token_call<Finish>(&mut self, body: Body, finish: Finish) -> Result<Tokens, Failure>
+    where
+        Finish: FnOnce(TokenReply) -> Result<Tokens, DecodeError>,
+    {
+        let reply = self
+            .http
+            .post(AuthPost {
+                url: OAUTH_TOKEN_URL,
+                body,
+            })
+            .await?
+            .into_body()?;
+        Ok(finish(decode_chatgpt_oauth::<TokenReply>(&reply)?)?)
+    }
+
     async fn exchange_code_for_tokens(
         &mut self,
         code: &AuthorizationCode,
     ) -> Result<Tokens, LoginError> {
-        let attempt = async {
-            // the source concatenates these values without form escaping
-            let body = Body::Form(SecretString::from(format!(
-                "grant_type=authorization_code&code={}&redirect_uri={REDIRECT_URI}&client_id={CLIENT_ID}&code_verifier={}",
-                code.authorization_code.expose_secret(),
-                code.code_verifier.expose_secret(),
-            )));
-            let response = self
-                .http
-                .post(AuthPost {
-                    url: OAUTH_TOKEN_URL,
-                    body,
-                })
-                .await?;
-            Ok::<_, Failure>(
-                decode_chatgpt_oauth::<TokenReply>(&response.into_body()?)?.exchanged()?,
-            )
-        };
-        attempt.await.map_err(LoginError::AccessToken)
+        // the source concatenates these values without form escaping
+        let body = Body::Form(SecretString::from(format!(
+            "grant_type=authorization_code&code={}&redirect_uri={REDIRECT_URI}&client_id={CLIENT_ID}&code_verifier={}",
+            code.authorization_code.expose_secret(),
+            code.code_verifier.expose_secret(),
+        )));
+        self.token_call(body, TokenReply::exchanged)
+            .await
+            .map_err(LoginError::AccessToken)
     }
 
     pub async fn refresh_tokens(
@@ -258,17 +262,8 @@ where
                 refresh_token: refresh_token.expose_secret(),
                 scope: "openid profile email",
             })?));
-            let response = self
-                .http
-                .post(AuthPost {
-                    url: OAUTH_TOKEN_URL,
-                    body,
-                })
-                .await?;
-            Ok::<_, Failure>(
-                decode_chatgpt_oauth::<TokenReply>(&response.into_body()?)?
-                    .refreshed(refresh_token.clone())?,
-            )
+            self.token_call(body, |reply| reply.refreshed(refresh_token.clone()))
+                .await
         };
         let refreshed = attempt.await.map_err(LoginError::Refresh)?;
         self.store.write(&stored_record(&refreshed));
