@@ -1,0 +1,8 @@
+task: B519
+deviations:
+  - what: The OpenAI SDK's implicit retries of 408, 409, 429 and 5xx replies are not repeated. A failed call returns the first status error.
+    why: Retry and backoff policy belongs to the shared transport task B173, so this module sends each request once and the max_retries option is carried on the client but not acted on here.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L2254-L2277
+  - what: A missing api_key or an unparsable api_base fails when the first request is sent, not when the client is built.
+    why: Building the client is plain data here and cannot fail, so get_openai_client keeps one signature for the sync and async paths. The caller still gets an error before any bytes leave, with the same missing-key outcome the SDK constructor gives.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L2273

@@ -34,7 +34,7 @@ const LIST_CASES: [ListCase; 5] = [
         params: "{}",
         flag: None,
         direct: false,
-        query: "?order=desc&limit=20",
+        query: "?limit=20&order=desc",
     },
     ListCase {
         params: r#"{"order":null,"limit":null,"before":"","after":"x"}"#,
@@ -46,19 +46,19 @@ const LIST_CASES: [ListCase; 5] = [
         params: ALL_PARAMS,
         flag: Some(true),
         direct: false,
-        query: "?order=desc&limit=20",
+        query: "?limit=20&order=desc",
     },
     ListCase {
         params: ALL_PARAMS,
         flag: Some(false),
         direct: false,
-        query: "?order=asc&limit=5&before=b&after=a",
+        query: "?after=a&before=b&limit=5&order=asc",
     },
     ListCase {
         params: ALL_PARAMS,
         flag: None,
         direct: true,
-        query: "?order=asc&limit=5&before=b&after=a",
+        query: "?after=a&before=b&limit=5&order=asc",
     },
 ];
 

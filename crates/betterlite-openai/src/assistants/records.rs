@@ -212,21 +212,21 @@ impl Default for ListParams {
 }
 
 impl ListParams {
-    // order and limit are sent unless None; before and after only when non-empty.
+    // The SDK sends the query in key order; order and limit unless None, before and after when non-empty.
     #[must_use]
     pub fn request_params(&self) -> Vec<(String, String)> {
         let mut request_params = Vec::new();
-        if let Some(order) = &self.order {
-            request_params.push((String::from("order"), order.clone()));
-        }
-        if let Some(limit) = self.limit {
-            request_params.push((String::from("limit"), limit.to_string()));
+        if let Some(after) = self.after.as_ref().filter(|after| !after.is_empty()) {
+            request_params.push((String::from("after"), after.clone()));
         }
         if let Some(before) = self.before.as_ref().filter(|before| !before.is_empty()) {
             request_params.push((String::from("before"), before.clone()));
         }
-        if let Some(after) = self.after.as_ref().filter(|after| !after.is_empty()) {
-            request_params.push((String::from("after"), after.clone()));
+        if let Some(limit) = self.limit {
+            request_params.push((String::from("limit"), limit.to_string()));
+        }
+        if let Some(order) = &self.order {
+            request_params.push((String::from("order"), order.clone()));
         }
         request_params
     }
