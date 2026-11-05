@@ -80,6 +80,19 @@
               }
             ]
           }
+        },
+        {
+          "function": "logging_metadata_config_error",
+          "metadata": {
+            "logging": [
+              {
+                "callback_name": "langfuse",
+                "callback_vars": {
+                  "turn_off_message_logging": true
+                }
+              }
+            ]
+          }
         }
       ]
     }

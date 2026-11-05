@@ -1,10 +1,12 @@
+use std::slice::from_ref;
+
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 use serde_json::Number;
 
 use super::error::{ParseError, PayloadError, ValidationError};
-use super::family::conflicting_span_scope_error;
+use super::family::{SPAN_SCOPE_VAR, conflicting_span_scope_error};
 use super::options::callback_config_error;
 use super::{CallbackVars, FeatureFlags};
 
@@ -21,6 +23,7 @@ enum Lenient<T> {
 enum RawValue {
     Text(String),
     Number(Number),
+    Flag(bool),
     Null,
     Other(IgnoredAny),
 }
@@ -75,6 +78,8 @@ fn text_variables(raw: IndexMap<String, RawValue>) -> Result<CallbackVars, Parse
         let text = match value {
             RawValue::Text(text) => text,
             RawValue::Number(number) => number.to_string(),
+            RawValue::Flag(true) => "True".to_owned(),
+            RawValue::Flag(false) => "False".to_owned(),
             RawValue::Null => "None".to_owned(),
             RawValue::Other(_) => return Err(ParseError::VariableType { var }),
         };
@@ -129,10 +134,15 @@ pub fn logging_metadata_config_error(
             callback_config_error(Some(name), &entry.callback_vars, flags)?;
         }
     }
-    let mut earlier = Vec::new();
+    let mut first_scoped: Option<&CallbackVars> = None;
     for entry in entries {
-        conflicting_span_scope_error(&entry.callback_vars, &earlier)?;
-        earlier.push(entry.callback_vars.clone());
+        conflicting_span_scope_error(&entry.callback_vars, first_scoped.map_or(&[], from_ref))?;
+        first_scoped = first_scoped.or_else(|| {
+            entry
+                .callback_vars
+                .contains_key(SPAN_SCOPE_VAR)
+                .then_some(&entry.callback_vars)
+        });
     }
     Ok(())
 }

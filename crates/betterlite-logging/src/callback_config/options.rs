@@ -58,23 +58,35 @@ pub fn langfuse_span_scope_error(
     }
 }
 
-// An exponent below Decimal's 28-digit scale underflows to zero, or to the smallest negative value.
+// A magnitude below Decimal's 28-digit scale rounds to zero, so a negative one is kept just below it.
 fn parse_sampling_rate(input: &str) -> Result<Decimal, rust_decimal::Error> {
     let text = input.trim();
-    let Some((mantissa, exponent)) = text.split_once(['e', 'E']) else {
-        return Decimal::from_str(text);
+    let (mantissa, exponent) = text
+        .split_once(['e', 'E'])
+        .map_or((text, None), |(mantissa, exponent)| {
+            (mantissa, Some(exponent))
+        });
+    let parsed = match exponent {
+        Some(_) => Decimal::from_scientific(text),
+        None => Decimal::from_str(text),
     };
-    let parsed = Decimal::from_scientific(text);
-    let tiny_exponent = exponent.strip_prefix('-').is_some_and(|digits| {
-        !digits.is_empty() && digits.chars().all(|digit| digit.is_ascii_digit())
-    });
-    if parsed.is_ok() || !tiny_exponent || Decimal::from_str(mantissa).is_err() {
-        return parsed;
-    }
-    if mantissa.starts_with('-') && mantissa.contains(|digit| matches!(digit, '1'..='9')) {
+    let tiny_exponent = exponent
+        .and_then(|digits| digits.strip_prefix('-'))
+        .is_some_and(|digits| {
+            !digits.is_empty() && digits.chars().all(|digit| digit.is_ascii_digit())
+        });
+    let rate = if parsed.is_err() && tiny_exponent && Decimal::from_str(mantissa).is_ok() {
+        Decimal::ZERO
+    } else {
+        parsed?
+    };
+    if rate.is_zero()
+        && mantissa.starts_with('-')
+        && mantissa.contains(|digit| matches!(digit, '1'..='9'))
+    {
         return Ok(Decimal::new(-1, 28));
     }
-    Ok(Decimal::ZERO)
+    Ok(rate)
 }
 
 fn sampling_rate_in_bounds(var: &str, value: &str) -> Result<(), ValidationError> {

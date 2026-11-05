@@ -22,6 +22,7 @@ enum Scenario {
     Team(&'static str, bool),
     TeamType(&'static str),
     TypedRate(&'static str),
+    ManyScoped(usize),
 }
 
 fn vars(pairs: &[(&str, &str)]) -> CallbackVars {
@@ -72,6 +73,11 @@ fn run(scenario: &Scenario) -> String {
                 other => format!("unexpected {other:?}"),
             }
         }
+        Scenario::ManyScoped(count) => {
+            let entry = r#"{"callback_vars": {"langfuse_span_scope": "full"}}"#;
+            let json = format!(r#"{{"logging": [{}]}}"#, vec![entry; *count].join(","));
+            outcome(validate_logging_metadata(json.as_bytes(), flags(false)))
+        }
         Scenario::Team(json, v2) => outcome(validate_team_callback(json.as_bytes(), flags(*v2))),
     }
 }
@@ -109,6 +115,9 @@ fn held(family: &str, var: &str) -> String {
 #[case::rate_nan(Scenario::Arize(Some("arize"), &[("arize_error_sampling_rate", "nan")]), &rate("arize_error_sampling_rate", "nan"))]
 #[case::rate_empty_negative_exponent(Scenario::Arize(Some("arize"), &[("arize_error_sampling_rate", "1e-")]), &rate("arize_error_sampling_rate", "1e-"))]
 #[case::rate_text_negative_exponent(Scenario::Arize(Some("arize"), &[("arize_error_sampling_rate", "1e-x")]), &rate("arize_error_sampling_rate", "1e-x"))]
+#[case::rate_tiny_negative_plain_decimal_is_below_zero(Scenario::Arize(Some("arize"), &[("arize_error_sampling_rate", "-0.00000000000000000000000000001")]), &rate("arize_error_sampling_rate", "-0.00000000000000000000000000001"))]
+#[case::rate_tiny_positive_plain_decimal_is_in_range(Scenario::Arize(Some("arize"), &[("arize_error_sampling_rate", "0.00000000000000000000000000001")]), "ok")]
+#[case::rate_negative_zero_is_in_range(Scenario::Arize(Some("arize"), &[("arize_error_sampling_rate", "-0.000")]), "ok")]
 #[case::rate_overflowing_exponent(Scenario::Arize(Some("arize"), &[("arize_error_sampling_rate", "1e400")]), &rate("arize_error_sampling_rate", "1e400"))]
 #[case::rate_decimal_not_rounded_to_float(Scenario::Arize(Some("arize"), &[("arize_error_sampling_rate", "1.00000000000000001")]), &rate("arize_error_sampling_rate", "1.00000000000000001"))]
 #[case::rate_error_var_is_checked_first(Scenario::Arize(Some("arize"), &[("arize_success_sampling_rate", "2"), ("arize_error_sampling_rate", "3")]), &rate("arize_error_sampling_rate", "3"))]
@@ -163,6 +172,9 @@ fn held(family: &str, var: &str) -> String {
 #[case::metadata_scope_conflict_across_entries(Scenario::Metadata(r#"{"logging": [{"callback_name": "langfuse_otel", "callback_vars": {"langfuse_span_scope": "full"}}, {"callback_name": "langfuse_otel", "callback_vars": {"langfuse_span_scope": "llm_only"}}]}"#, false), SCOPE_CONFLICT)]
 #[case::metadata_entry_errors_come_before_conflicts(Scenario::Metadata(r#"{"logging": [{"callback_name": "langfuse_otel", "callback_vars": {"langfuse_span_scope": "full"}}, {"callback_name": "langfuse_otel", "callback_vars": {"langfuse_span_scope": "bad"}}]}"#, false), "Invalid langfuse_span_scope 'bad': must be one of ['full', 'llm_only']")]
 #[case::metadata_conflict_needs_no_callback_name(Scenario::Metadata(r#"{"logging": [{"callback_vars": {"langfuse_span_scope": "full"}}, {"callback_vars": {"langfuse_span_scope": "x"}}]}"#, false), SCOPE_CONFLICT)]
+#[case::metadata_boolean_variable_becomes_text(Scenario::Metadata(r#"{"logging": [{"callback_name": "langfuse", "callback_vars": {"turn_off_message_logging": true}}]}"#, false), "ok")]
+#[case::metadata_boolean_rate_is_text(Scenario::Metadata(r#"{"logging": [{"callback_name": "arize", "callback_vars": {"arize_error_sampling_rate": false}}]}"#, false), &rate("arize_error_sampling_rate", "False"))]
+#[case::metadata_many_entries_share_one_scope(Scenario::ManyScoped(100_000), "ok")]
 #[case::metadata_list_variable_is_rejected(
     Scenario::Metadata(
         r#"{"logging": [{"callback_name": "arize", "callback_vars": {"arize_api_key": ["k"]}}]}"#,
