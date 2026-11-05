@@ -371,6 +371,7 @@ fn yaml_aliases_and_csv_preserve_punctuation() {
 #[rstest::rstest]
 #[case::otel_exporter("OTEL_EXPORTER")]
 #[case::otel_exporter_otlp_protocol("OTEL_EXPORTER_OTLP_PROTOCOL")]
+#[case::bare_field_name("EXPORTER")]
 fn exporter_alias_env_var_sets_shorthand_exporter(#[case] name: &str) {
     let config = load("", &[(name, "otlp_grpc")]);
     assert_eq!(config.sections.otel_settings.exporter, "otlp_grpc");
@@ -379,6 +380,7 @@ fn exporter_alias_env_var_sets_shorthand_exporter(#[case] name: &str) {
 #[rstest::rstest]
 #[case::otel_endpoint("OTEL_ENDPOINT")]
 #[case::otel_exporter_otlp_endpoint("OTEL_EXPORTER_OTLP_ENDPOINT")]
+#[case::bare_field_name("ENDPOINT")]
 fn endpoint_alias_env_var_sets_shorthand_endpoint(#[case] name: &str) {
     let config = load("", &[(name, "https://collector")]);
     assert_eq!(
@@ -390,6 +392,7 @@ fn endpoint_alias_env_var_sets_shorthand_endpoint(#[case] name: &str) {
 #[rstest::rstest]
 #[case::otel_traces_endpoint("OTEL_TRACES_ENDPOINT")]
 #[case::otel_exporter_otlp_traces_endpoint("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")]
+#[case::bare_field_name("TRACES_ENDPOINT")]
 fn traces_endpoint_alias_env_var_sets_shorthand_traces_endpoint(#[case] name: &str) {
     let config = load("", &[(name, "https://collector/v1/traces")]);
     assert_eq!(
@@ -401,6 +404,7 @@ fn traces_endpoint_alias_env_var_sets_shorthand_traces_endpoint(#[case] name: &s
 #[rstest::rstest]
 #[case::otel_headers("OTEL_HEADERS")]
 #[case::otel_exporter_otlp_headers("OTEL_EXPORTER_OTLP_HEADERS")]
+#[case::bare_field_name("HEADERS")]
 fn headers_alias_env_var_sets_shorthand_headers(#[case] name: &str) {
     let config = load("", &[(name, "api-key=secret")]);
     assert_eq!(
@@ -409,9 +413,19 @@ fn headers_alias_env_var_sets_shorthand_headers(#[case] name: &str) {
     );
 }
 
-#[test]
-fn otel_environment_name_env_var_sets_deployment_environment() {
-    let config = load("", &[("OTEL_ENVIRONMENT_NAME", "prod")]);
+#[rstest::rstest]
+#[case::otel_service_name("OTEL_SERVICE_NAME")]
+#[case::bare_field_name("SERVICE_NAME")]
+fn service_name_env_var_takes_effect(#[case] name: &str) {
+    let config = load("", &[(name, "gateway")]);
+    assert_eq!(config.sections.otel_settings.service_name, "gateway");
+}
+
+#[rstest::rstest]
+#[case::otel_environment_name("OTEL_ENVIRONMENT_NAME")]
+#[case::bare_field_name("DEPLOYMENT_ENVIRONMENT")]
+fn otel_environment_name_env_var_sets_deployment_environment(#[case] name: &str) {
+    let config = load("", &[(name, "prod")]);
     assert_eq!(
         config
             .sections
@@ -422,42 +436,46 @@ fn otel_environment_name_env_var_sets_deployment_environment() {
     );
 }
 
-#[test]
-fn enable_metrics_env_var_takes_effect() {
-    let config = load("", &[("LITELLM_OTEL_INTEGRATION_ENABLE_METRICS", "true")]);
+#[rstest::rstest]
+#[case::explicit_alias("LITELLM_OTEL_INTEGRATION_ENABLE_METRICS")]
+#[case::bare_field_name("ENABLE_METRICS")]
+fn enable_metrics_env_var_takes_effect(#[case] name: &str) {
+    let config = load("", &[(name, "true")]);
     assert!(config.sections.otel_settings.enable_metrics);
 }
 
-#[test]
-fn enable_events_env_var_takes_effect() {
-    let config = load("", &[("LITELLM_OTEL_INTEGRATION_ENABLE_EVENTS", "true")]);
+#[rstest::rstest]
+#[case::explicit_alias("LITELLM_OTEL_INTEGRATION_ENABLE_EVENTS")]
+#[case::bare_field_name("ENABLE_EVENTS")]
+fn enable_events_env_var_takes_effect(#[case] name: &str) {
+    let config = load("", &[(name, "true")]);
     assert!(config.sections.otel_settings.enable_events);
 }
 
-#[test]
-fn capture_message_content_env_var_takes_effect() {
-    let config = load(
-        "",
-        &[(
-            "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT",
-            "SPAN_ONLY",
-        )],
-    );
+#[rstest::rstest]
+#[case::explicit_alias("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT")]
+#[case::bare_field_name("CAPTURE_MESSAGE_CONTENT")]
+fn capture_message_content_env_var_takes_effect(#[case] name: &str) {
+    let config = load("", &[(name, "SPAN_ONLY")]);
     assert_eq!(
         config.sections.otel_settings.capture_message_content,
         "span_only"
     );
 }
 
-#[test]
-fn legacy_compat_env_var_takes_effect() {
-    let config = load("", &[("LITELLM_OTEL_LEGACY_COMPAT", "false")]);
+#[rstest::rstest]
+#[case::explicit_alias("LITELLM_OTEL_LEGACY_COMPAT")]
+#[case::bare_field_name("LEGACY_COMPAT")]
+fn legacy_compat_env_var_takes_effect(#[case] name: &str) {
+    let config = load("", &[(name, "false")]);
     assert!(!config.sections.otel_settings.legacy_compat);
 }
 
-#[test]
-fn langfuse_span_scope_env_var_takes_effect() {
-    let config = load("", &[("LITELLM_OTEL_LANGFUSE_SPAN_SCOPE", "llm_only")]);
+#[rstest::rstest]
+#[case::explicit_alias("LITELLM_OTEL_LANGFUSE_SPAN_SCOPE")]
+#[case::bare_field_name("LANGFUSE_SPAN_SCOPE")]
+fn langfuse_span_scope_env_var_takes_effect(#[case] name: &str) {
+    let config = load("", &[(name, "llm_only")]);
     assert_eq!(
         config.sections.otel_settings.langfuse_span_scope,
         "llm_only"
@@ -473,41 +491,35 @@ fn excluded_services_env_var_takes_effect() {
     );
 }
 
-#[test]
-fn baggage_promoted_keys_env_var_takes_effect() {
-    let config = load(
-        "",
-        &[(
-            "LITELLM_OTEL_BAGGAGE_PROMOTED_KEYS",
-            "litellm.team.id,litellm.api_key.hash",
-        )],
-    );
+#[rstest::rstest]
+#[case::explicit_alias("LITELLM_OTEL_BAGGAGE_PROMOTED_KEYS")]
+#[case::bare_field_name("BAGGAGE_PROMOTED_KEYS")]
+fn baggage_promoted_keys_env_var_takes_effect(#[case] name: &str) {
+    let config = load("", &[(name, "litellm.team.id,litellm.api_key.hash")]);
     assert_eq!(
         config.sections.otel_settings.baggage_promoted_keys,
         ["litellm.team.id", "litellm.api_key.hash"]
     );
 }
 
-#[test]
-fn baggage_metadata_keys_env_var_takes_effect() {
-    let config = load(
-        "",
-        &[("LITELLM_OTEL_BAGGAGE_METADATA_KEYS", "user_api_key_org_id")],
-    );
+#[rstest::rstest]
+#[case::explicit_alias("LITELLM_OTEL_BAGGAGE_METADATA_KEYS")]
+#[case::bare_field_name("BAGGAGE_METADATA_KEYS")]
+fn baggage_metadata_keys_env_var_takes_effect(#[case] name: &str) {
+    let config = load("", &[(name, "user_api_key_org_id, requester_ip_address")]);
     assert_eq!(
         config.sections.otel_settings.baggage_metadata_keys,
-        ["user_api_key_org_id"]
+        ["user_api_key_org_id", "requester_ip_address"]
     );
 }
 
-#[test]
-fn baggage_team_metadata_keys_env_var_takes_effect() {
-    let config = load(
-        "",
-        &[("LITELLM_OTEL_BAGGAGE_TEAM_METADATA_KEYS", "region:zone")],
-    );
+#[rstest::rstest]
+#[case::explicit_alias("LITELLM_OTEL_BAGGAGE_TEAM_METADATA_KEYS")]
+#[case::bare_field_name("BAGGAGE_TEAM_METADATA_KEYS")]
+fn baggage_team_metadata_keys_env_var_takes_effect(#[case] name: &str) {
+    let config = load("", &[(name, "region:zone,team.id")]);
     assert_eq!(
         config.sections.otel_settings.baggage_team_metadata_keys,
-        ["region:zone"]
+        ["region:zone", "team.id"]
     );
 }
