@@ -1137,10 +1137,12 @@ version = "0.1.0"
 dependencies = [
  "betterlite-auth",
  "betterlite-config",
+ "betterlite-context",
  "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "chrono",
+ "futures-util",
  "indexmap 2.14.2",
  "lopdf",
  "rstest",
@@ -1150,6 +1152,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "thiserror",
+ "tokio",
  "url",
  "uuid",
 ]
@@ -1297,6 +1300,7 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "serde_with",
  "temp-env",
  "thiserror",
  "tokio",

@@ -58,9 +58,12 @@ description: >-
   307 in dispatch, embedding and OCR bodies, the rest initializers. Allocate 325 binding
   and translation lines, 245 behavior/config-test lines, 135 adapter and 75 wiring lines
   within 800. Provider fixtures and HTTP case data are excluded by the repository budget.
+
+  B010 registers Provider::XaiMistral and the XaiMistral variants of OperationRequest, OperationResult and
+  PreparedRequest as stubs in crates/betterlite-provider/src/xai_mistral.rs. Fill them there and leave
+  provider.rs, operation.rs and prepared.rs as they are.
 scope:
   paths:
-    - crates/betterlite-provider/src/{provider,operation,prepared}.rs
     - crates/betterlite-provider/src/xai_mistral.rs
     - crates/betterlite-provider/src/xai_mistral/**
     - crates/betterlite-provider/Cargo.toml

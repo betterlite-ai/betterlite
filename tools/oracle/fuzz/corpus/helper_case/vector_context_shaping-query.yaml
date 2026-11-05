@@ -1,0 +1,5 @@
+kind: helper
+name: vector-context-shaping-query-seed
+call: {vector_context_shaping: {operation: query_uses_last_message, messages: [{role: user, content: seeded}]}}
+env: {}
+compare: {ignore: []}
