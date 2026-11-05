@@ -7,13 +7,14 @@ use std::ops::ControlFlow;
 use std::path::Path;
 
 use crate::dispatch::attempt::{UNFINISHED_NOTE, remove_extra_targets};
-use crate::dispatch::progress::{NextRun, Panel, Progress, ReviewerPin, WorkerSession};
+use crate::dispatch::chain::Chain;
+use crate::dispatch::progress::{NextRun, Panel, Progress, Red, ReviewerPin, WorkerSession};
 use crate::dispatch::prompt::Brief;
 use crate::dispatch::review::{Bench, PARITY_RULES, review, reviewer_rungs};
 use crate::dispatch::vendor::mark;
 use crate::dispatch::{
-    Attempt, BLOCKED_NOTE, EarlierReview, Places, Round, Step, apply_step, climb_rung, find_runner,
-    note_blocked, overflow_rung, pick_rung, run_ladder,
+    Attempt, BLOCKED_NOTE, EarlierReview, Failure, Places, Round, Step, apply_step, find_runner,
+    note_blocked, run_ladder,
 };
 use crate::error::GateError;
 use crate::git::git;
@@ -49,6 +50,8 @@ fn progress() -> Progress {
         granted: 0,
         reviewer: None,
         session: None,
+        starts: Vec::new(),
+        red: Vec::new(),
     }
 }
 
@@ -60,7 +63,8 @@ fn a_saved_progress_comes_back_with_the_new_notes_added() {
     saved.number = 4;
     saved.used = 4;
     saved.rung = 1;
-    saved.rung_used = 1;
+    saved.starts = vec![1, 1, 0, 0];
+    saved.red = vec![Red::Check("tests".to_owned()), Red::Timeout];
     saved.review_rounds = 2;
     saved.earlier = Some(EarlierReview {
         commit: "abc123".to_owned(),
@@ -71,7 +75,7 @@ fn a_saved_progress_comes_back_with_the_new_notes_added() {
     saved.granted = 2;
     saved.reviewer = Some(ReviewerPin {
         runner: "claude-reviewer".to_owned(),
-        model: "opus".to_owned(),
+        model: "claude-opus-5-5".to_owned(),
         panel: Panel::Parity,
     });
     saved.save(folder.path()).unwrap();
@@ -96,6 +100,27 @@ fn a_progress_saved_before_the_budgets_loads_with_their_defaults() {
     expected.rung = 1;
     expected.review_rounds = 4;
     assert_eq!(Progress::load(folder.path(), Vec::new()).unwrap(), expected);
+}
+
+#[test]
+fn a_progress_saved_before_starts_counts_every_rung_below_its_own_as_used() {
+    let (agents, _) = fixtures();
+    let ladder = &agents.roles.worker.ladder;
+    let folder = tempfile::tempdir().unwrap();
+    fs::write(
+        folder.path().join("progress.json"),
+        r#"{"feedback":[],"number":4,"used":4,"rung":2,"rung_used":1,"limited":false,"review_rounds":0,"blocked_reports":0,"last_blocked":0,"earlier":null,"litellm":[]}"#,
+    )
+    .unwrap();
+    let mut loaded = Progress::load(folder.path(), Vec::new()).unwrap();
+    loaded.fit(ladder);
+    assert_eq!(
+        loaded.starts,
+        [ladder[0].attempts, ladder[1].attempts, 1, 0]
+    );
+    loaded.save(folder.path()).unwrap();
+    let text = fs::read_to_string(folder.path().join("progress.json")).unwrap();
+    assert!(!text.contains("rung_used"), "{text}");
 }
 
 #[test]
@@ -201,14 +226,13 @@ fn a_blocked_worker_resumes_its_session_once_then_stops_on_its_rung() {
     );
     let folder = tempfile::tempdir().unwrap();
     worktree(folder.path());
-    let first = &agents.roles.worker.ladder[0];
     let mut progress = progress();
-    let error = climb_rung(
+    let error = run_ladder(
         &agents,
         &brief(&task),
         &places(folder.path()),
-        first,
         &mut progress,
+        0,
     )
     .unwrap_err();
     assert!(error.to_string().contains(
@@ -218,15 +242,8 @@ fn a_blocked_worker_resumes_its_session_once_then_stops_on_its_rung() {
     assert_eq!(resumed, "s1\n");
     let prompts = fs::read_to_string(folder.path().join("prompts")).unwrap();
     assert!(prompts.contains(BLOCKED_NOTE), "{prompts}");
-    assert_eq!(
-        (
-            progress.number,
-            progress.used,
-            progress.rung,
-            progress.rung_used
-        ),
-        (2, 1, 0, 1)
-    );
+    assert_eq!((progress.number, progress.used, progress.rung), (2, 1, 0));
+    assert_eq!(progress.starts, [1, 0, 0, 0]);
     assert_eq!(progress.next, NextRun::Fresh);
 }
 
@@ -242,14 +259,13 @@ fn a_blocked_answer_while_its_own_gate_run_is_unfinished_is_not_counted() {
     }
     let folder = tempfile::tempdir().unwrap();
     worktree(folder.path());
-    let first = &agents.roles.worker.ladder[0];
     let mut progress = progress();
-    let error = climb_rung(
+    let error = run_ladder(
         &agents,
         &brief(&task),
         &places(folder.path()),
-        first,
         &mut progress,
+        0,
     )
     .unwrap_err();
     assert!(error.to_string().contains("2 blocked reports in a row"));
@@ -303,79 +319,110 @@ fn a_rung_pauses_without_a_run_while_every_vendor_it_can_use_is_at_its_limit() {
         writable: &[],
     };
     let mut progress = progress();
-    let first = &agents.roles.worker.ladder[0];
-    let lines = climb_rung(&agents, &brief, &places, first, &mut progress).unwrap();
-    assert_eq!(lines, None);
+    let error = run_ladder(&agents, &brief, &places, &mut progress, 0).unwrap_err();
+    assert!(matches!(error, GateError::Unavailable { .. }));
     assert!(progress.limited);
     assert_eq!((progress.number, progress.used), (0, 0));
 }
 
 #[test]
-fn a_limited_rung_lends_its_try_to_a_later_rung_and_keeps_its_attempts() {
+fn a_limited_vendor_sends_the_start_to_the_other_vendor_at_the_same_level() {
     let (agents, _) = fixtures();
     let folder = tempfile::tempdir().unwrap();
-    let places = Places {
-        worktree: folder.path(),
-        journal: folder.path(),
-        git_common_dir: folder.path(),
-        home: folder.path(),
-        writable: &[],
+    let chain = Chain::new(&agents).unwrap();
+    let mut progress = progress();
+    progress.fit(&agents.roles.worker.ladder);
+    let pick = |own: usize| {
+        chain
+            .pick(&places(folder.path()), &progress, &chain.links[own])
+            .unwrap()
+            .map(|link| link.rung.model.clone())
     };
-    let ladder = &agents.roles.worker.ladder;
-    let own = pick_rung(&agents, &places, 0, &ladder[0]).unwrap().unwrap();
-    assert_eq!(
-        (own.runner.id.as_str(), own.rung.model.as_str(), own.counted),
-        (ladder[0].runner.as_str(), ladder[0].model.as_str(), true)
-    );
+    assert_eq!(pick(0).as_deref(), Some("gpt-6-luna"));
     mark(
         folder.path(),
         "openai",
         "ERROR: You've hit your usage limit.",
     )
     .unwrap();
-    let borrowed = pick_rung(&agents, &places, 0, &ladder[0]).unwrap().unwrap();
-    assert_eq!(
-        (
-            borrowed.runner.id.as_str(),
-            borrowed.rung.model.as_str(),
-            borrowed.counted
-        ),
-        ("claude-worker", "sonnet", false)
-    );
-    let last = ladder.len() - 1;
+    assert_eq!(pick(0).as_deref(), Some("claude-sonnet-5-5"));
+    assert_eq!(pick(3).as_deref(), Some("claude-opus-5-5"));
     mark(folder.path(), "anthropic", "You've hit your limit").unwrap();
-    assert!(
-        pick_rung(&agents, &places, last, &ladder[last])
-            .unwrap()
-            .is_none()
-    );
+    assert_eq!(pick(3), None);
 }
 
 #[test]
-fn an_unavailable_claude_rung_borrows_the_final_astra_rung() {
+fn a_limited_claude_rung_runs_on_the_open_codex_rung_at_its_level() {
     let (agents, _) = fixtures();
     let folder = tempfile::tempdir().unwrap();
-    let places = Places {
-        worktree: folder.path(),
-        journal: folder.path(),
-        git_common_dir: folder.path(),
-        home: folder.path(),
-        writable: &[],
-    };
-    let ladder = &agents.roles.worker.ladder;
-    let claude_rung = ladder.len() - 2;
     mark(folder.path(), "anthropic", "You've hit your limit").unwrap();
-    let borrowed = pick_rung(&agents, &places, claude_rung, &ladder[claude_rung])
-        .unwrap()
+    let chain = Chain::new(&agents).unwrap();
+    let mut progress = progress();
+    progress.fit(&agents.roles.worker.ladder);
+    progress.starts = vec![1, 0, 0, 0];
+    let pick = |own: usize| {
+        chain
+            .pick(&places(folder.path()), &progress, &chain.links[own])
+            .unwrap()
+            .map(|link| link.rung.model.clone())
+    };
+    assert_eq!(pick(1).as_deref(), Some("gpt-6-astra"));
+    assert_eq!(pick(2).as_deref(), Some("gpt-6-astra"));
+}
+
+#[test]
+fn a_failed_start_stays_on_its_rung_then_takes_the_next_one() {
+    let (agents, _) = fixtures();
+    let chain = Chain::new(&agents).unwrap();
+    let mut progress = progress();
+    progress.fit(&agents.roles.worker.ladder);
+    progress.starts = vec![1, 0, 0, 0];
+    assert_eq!(chain.next_rung(&progress, false), 1);
+    progress.rung = 1;
+    progress.starts = vec![1, 1, 0, 0];
+    assert_eq!(chain.next_rung(&progress, false), 1);
+    assert_eq!(chain.next_rung(&progress, true), 2);
+    progress.rung = 3;
+    progress.starts = vec![1, 1, 1, 1];
+    assert_eq!(chain.next_rung(&progress, false), chain.links.len());
+    // while Claude was at its limit Sonnet's start ran on gpt-6-astra, so Sonnet still gets its turn
+    progress.starts = vec![1, 0, 0, 1];
+    assert_eq!(chain.next_rung(&progress, true), 1);
+    progress.rung = 0;
+    progress.starts = vec![0, 0, 0, 0];
+    assert_eq!(chain.next_rung(&progress, true), 1);
+}
+
+#[test]
+fn the_same_red_at_the_end_of_two_starts_moves_the_task_to_the_next_rung() {
+    let (agents, task) = fixtures();
+    let folder = tempfile::tempdir().unwrap();
+    let chain = Chain::new(&agents).unwrap();
+    let mut progress = progress();
+    progress.fit(&agents.roles.worker.ladder);
+    progress.rung = 1;
+    progress.starts = vec![1, 1, 0, 0];
+    progress.red = vec![Red::Check("tests".to_owned())];
+    let retry = |check: &str| {
+        Step::Retry(Failure {
+            feedback: vec![format!("{check} is red")],
+            red: vec![Red::Check(check.to_owned())],
+        })
+    };
+    for (check, rung) in [("clippy", 1), ("clippy", 2)] {
+        let flow = apply_step(
+            &chain,
+            &brief(&task),
+            &places(folder.path()),
+            &mut progress,
+            retry(check),
+        )
         .unwrap();
-    assert_eq!(
-        (
-            borrowed.runner.id.as_str(),
-            borrowed.rung.model.as_str(),
-            borrowed.counted
-        ),
-        ("codex-worker", "gpt-6-astra", false)
-    );
+        assert_eq!(flow, ControlFlow::Continue(()));
+        assert_eq!(progress.rung, rung);
+    }
+    assert_eq!(progress.red, [Red::Check("clippy".to_owned())]);
+    assert_eq!(progress.feedback, ["clippy is red".to_owned()]);
 }
 
 #[test]
@@ -407,7 +454,7 @@ fn a_dispatch_stopped_by_a_usage_limit_keeps_its_place() {
     saved.number = 2;
     saved.used = 2;
     saved.rung = 1;
-    saved.rung_used = 1;
+    saved.starts = vec![1, 1, 0, 0];
     saved.save(folder.path()).unwrap();
     let mut loaded = Progress::load(folder.path(), Vec::new()).unwrap();
     let error = run_ladder(&agents, &brief, &places, &mut loaded, 0).unwrap_err();
@@ -438,10 +485,12 @@ fn no_rung_runs_once_the_worker_attempts_are_used_up() {
     };
     let mut progress = progress();
     progress.used = agents.policy.max_worker_attempts;
-    for rung in &agents.roles.worker.ladder {
-        let lines = climb_rung(&agents, &brief, &places, rung, &mut progress).unwrap();
-        assert_eq!(lines, None);
-    }
+    let error = run_ladder(&agents, &brief, &places, &mut progress, 0).unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("the worker ladder ran out of attempts")
+    );
     assert_eq!(progress.number, 0);
     assert!(!progress.limited);
 }
@@ -462,15 +511,15 @@ fn the_reviewer_on_the_other_vendor_comes_first() {
     };
     assert_eq!(
         order("codex-worker", ReviewLevel::Standard),
-        ["sonnet", "gpt-6-astra"]
+        ["claude-sonnet-5-5", "gpt-6-astra"]
     );
     assert_eq!(
         order("claude-worker", ReviewLevel::Standard),
-        ["gpt-6-astra", "sonnet"]
+        ["gpt-6-astra", "claude-sonnet-5-5"]
     );
     assert_eq!(
         order("claude-worker", ReviewLevel::Security),
-        ["gpt-6-astra", "opus"]
+        ["gpt-6-astra", "claude-opus-5-5"]
     );
 }
 
@@ -495,16 +544,16 @@ fn the_reviewer_of_the_last_round_comes_first() {
     };
     assert_eq!(
         order("codex-reviewer", "gpt-6-astra"),
-        ["gpt-6-astra", "sonnet"]
+        ["gpt-6-astra", "claude-sonnet-5-5"]
     );
     assert_eq!(
-        order("claude-reviewer", "sonnet"),
-        ["sonnet", "gpt-6-astra"]
+        order("claude-reviewer", "claude-sonnet-5-5"),
+        ["claude-sonnet-5-5", "gpt-6-astra"]
     );
     // a pin whose rung left agents.yaml falls back to the usual order
     assert_eq!(
         order("codex-reviewer", "gpt-retired"),
-        ["sonnet", "gpt-6-astra"]
+        ["claude-sonnet-5-5", "gpt-6-astra"]
     );
 }
 
@@ -521,46 +570,45 @@ fn hold_seats(git: &Path, name: &str, count: u32) -> Vec<File> {
 }
 
 #[test]
-fn a_try_whose_vendor_has_no_free_seat_goes_to_a_free_rung_of_another_vendor() {
+fn a_start_whose_vendor_has_no_free_seat_goes_to_the_other_vendor_at_its_level() {
     let (agents, _) = fixtures();
     let folder = tempfile::tempdir().unwrap();
-    let places = Places {
-        worktree: folder.path(),
-        journal: folder.path(),
-        git_common_dir: folder.path(),
-        home: folder.path(),
-        writable: &[],
+    let chain = Chain::new(&agents).unwrap();
+    let mut progress = progress();
+    progress.fit(&agents.roles.worker.ladder);
+    let pick = |own: usize| {
+        chain
+            .pick(&places(folder.path()), &progress, &chain.links[own])
+            .unwrap()
+            .map(|link| link.rung.model.clone())
     };
-    let codex = find_runner(&agents, "codex-worker").unwrap();
-    assert!(overflow_rung(&agents, &places, 0, codex).unwrap().is_none());
+    assert_eq!(pick(0).as_deref(), Some("gpt-6-luna"));
     let openai = hold_seats(folder.path(), "openai", 12);
-    let (runner, rung) = overflow_rung(&agents, &places, 0, codex).unwrap().unwrap();
-    assert_eq!(
-        (runner.id.as_str(), rung.model.as_str()),
-        ("claude-worker", "sonnet")
-    );
+    assert_eq!(pick(0).as_deref(), Some("claude-sonnet-5-5"));
+    assert_eq!(pick(3).as_deref(), Some("claude-opus-5-5"));
     drop(openai);
 }
 
 #[test]
-fn no_try_moves_while_the_other_vendor_is_full_or_at_its_limit() {
+fn no_start_moves_while_the_other_vendor_is_full_or_at_its_limit() {
     let (agents, _) = fixtures();
     let folder = tempfile::tempdir().unwrap();
-    let places = Places {
-        worktree: folder.path(),
-        journal: folder.path(),
-        git_common_dir: folder.path(),
-        home: folder.path(),
-        writable: &[],
+    let chain = Chain::new(&agents).unwrap();
+    let mut progress = progress();
+    progress.fit(&agents.roles.worker.ladder);
+    let pick = || {
+        chain
+            .pick(&places(folder.path()), &progress, &chain.links[0])
+            .unwrap()
+            .map(|link| link.rung.model.clone())
     };
-    let codex = find_runner(&agents, "codex-worker").unwrap();
     let openai = hold_seats(folder.path(), "openai", 12);
-    // a worker try takes a writer seat first, and Claude has 12 of those beside 16 run seats
+    // a worker start takes a writer seat first, and Claude has 12 of those beside 16 run seats
     let anthropic = hold_seats(folder.path(), "anthropic-writer", 12);
-    assert!(overflow_rung(&agents, &places, 0, codex).unwrap().is_none());
+    assert_eq!(pick().as_deref(), Some("gpt-6-luna"));
     drop(anthropic);
     mark(folder.path(), "anthropic", "You've hit your limit").unwrap();
-    assert!(overflow_rung(&agents, &places, 0, codex).unwrap().is_none());
+    assert_eq!(pick().as_deref(), Some("gpt-6-luna"));
     drop(openai);
 }
 
@@ -586,7 +634,7 @@ fn places(folder: &Path) -> Places<'_> {
 fn pin() -> ReviewerPin {
     ReviewerPin {
         runner: "claude-reviewer".to_owned(),
-        model: "sonnet".to_owned(),
+        model: "claude-sonnet-5-5".to_owned(),
         panel: Panel::Standard,
     }
 }
@@ -609,9 +657,12 @@ fn a_red_gate_gets_two_fix_turns_then_a_fresh_start() {
     let folder = tempfile::tempdir().unwrap();
     let mut progress = progress();
     for expected in [(1, NextRun::Fix), (2, NextRun::Fix), (0, NextRun::Fresh)] {
-        let step = Step::Fix(vec!["a red check".to_owned()]);
+        let step = Step::Fix(Failure {
+            feedback: vec!["a red check".to_owned()],
+            red: vec![Red::Check("tests".to_owned())],
+        });
         let flow = apply_step(
-            &agents,
+            &Chain::new(&agents).unwrap(),
             &brief(&task),
             &places(folder.path()),
             &mut progress,
@@ -631,9 +682,12 @@ fn a_run_without_an_answer_starts_fresh_on_the_same_rung() {
     let mut progress = progress();
     progress.next = NextRun::Fix;
     progress.fix_turns = 1;
-    let step = Step::Retry(vec!["no answer".to_owned()]);
+    let step = Step::Retry(Failure {
+        feedback: vec!["no answer".to_owned()],
+        red: vec![Red::Silent],
+    });
     let flow = apply_step(
-        &agents,
+        &Chain::new(&agents).unwrap(),
         &brief(&task),
         &places(folder.path()),
         &mut progress,
@@ -653,7 +707,7 @@ fn a_review_with_changes_keeps_its_findings_and_its_reviewer() {
     progress.fix_turns = 2;
     let step = reviewed(ReviewVerdict::Changes, &["a finding"]);
     let flow = apply_step(
-        &agents,
+        &Chain::new(&agents).unwrap(),
         &brief(&task),
         &places(folder.path()),
         &mut progress,
@@ -683,7 +737,7 @@ fn the_last_review_round_stops_the_task_with_its_findings_kept() {
     progress.review_rounds = agents.policy.max_review_rounds;
     let step = reviewed(ReviewVerdict::Changes, &["still wrong"]);
     let error = apply_step(
-        &agents,
+        &Chain::new(&agents).unwrap(),
         &brief(&task),
         &places(folder.path()),
         &mut progress,
@@ -709,7 +763,7 @@ fn an_approval_clears_the_feedback_and_keeps_the_approved_commit() {
     progress.litellm = vec!["an earlier LiteLLM bug".to_owned()];
     let step = reviewed(ReviewVerdict::Approve, &[]);
     let flow = apply_step(
-        &agents,
+        &Chain::new(&agents).unwrap(),
         &brief(&task),
         &places(folder.path()),
         &mut progress,
@@ -722,11 +776,11 @@ fn an_approval_clears_the_feedback_and_keeps_the_approved_commit() {
     );
     assert_eq!(
         flow,
-        ControlFlow::Break(Some(vec![
+        ControlFlow::Break(vec![
             ready,
             "an earlier LiteLLM bug".to_owned(),
             "a LiteLLM bug".to_owned(),
-        ]))
+        ])
     );
     assert!(progress.feedback.is_empty());
     assert!(progress.litellm.is_empty());
@@ -747,27 +801,20 @@ fn a_grant_on_a_used_up_ladder_goes_back_to_its_last_rung() {
     let last = ladder.len() - 1;
     let mut progress = progress();
     progress.rung = ladder.len();
+    progress.starts = ladder.iter().map(|rung| rung.attempts).collect();
     progress.grant(ladder, 0);
     assert_eq!((progress.rung, progress.granted), (ladder.len(), 0));
+    assert!(!progress.open(ladder, last));
     progress.grant(ladder, 2);
-    assert_eq!(
-        (progress.rung, progress.rung_used, progress.granted),
-        (last, ladder[last].attempts, 2)
-    );
+    assert_eq!((progress.rung, progress.granted), (last, 2));
+    assert!(progress.open(ladder, last));
     progress.rung = ladder.len();
     progress.grant(ladder, 1);
-    assert_eq!(
-        (progress.rung, progress.rung_used, progress.granted),
-        (last, ladder[last].attempts + 2, 3)
-    );
+    assert_eq!((progress.rung, progress.granted), (last, 3));
     let mut climbing = self::progress();
     climbing.rung = 1;
-    climbing.rung_used = 1;
     climbing.grant(ladder, 1);
-    assert_eq!(
-        (climbing.rung, climbing.rung_used, climbing.granted),
-        (1, 1, 1)
-    );
+    assert_eq!((climbing.rung, climbing.granted), (1, 1));
 }
 
 fn answer_with(agents: &mut Agents, answer: &str) {
@@ -818,23 +865,19 @@ fn a_fix_turn_does_not_count_as_a_worker_attempt() {
     let folder = tempfile::tempdir().unwrap();
     worktree(folder.path());
     let mut progress = progress();
-    let first = &agents.roles.worker.ladder[0];
-    let lines = climb_rung(
+    let error = run_ladder(
         &agents,
         &brief(&task),
         &places(folder.path()),
-        first,
         &mut progress,
+        0,
     )
-    .unwrap();
-    assert_eq!(lines, None);
-    let runs = first
-        .attempts
-        .saturating_mul(agents.policy.max_fix_turns.saturating_add(1));
-    assert_eq!(
-        (progress.number, progress.used, progress.rung_used),
-        (runs, first.attempts, first.attempts)
-    );
+    .unwrap_err();
+    assert!(error.to_string().contains("ran out of attempts"), "{error}");
+    // the same red every time gives each rung one start
+    let runs = 4 * agents.policy.max_fix_turns.saturating_add(1);
+    assert_eq!((progress.number, progress.used), (runs, 4));
+    assert_eq!(progress.starts, vec![1, 1, 1, 1]);
     assert!(progress.feedback[0].starts_with("The final answer did not match the report format"));
 }
 
@@ -849,25 +892,59 @@ fn a_granted_start_runs_on_the_last_rung_once_the_attempts_ran_out() {
     let mut progress = progress();
     progress.used = agents.policy.max_worker_attempts;
     progress.rung = last;
-    progress.rung_used = ladder[last].attempts;
-    progress.grant(ladder, 1);
-    for _ in 0..2_u32 {
-        let lines = climb_rung(
-            &agents,
-            &brief(&task),
-            &places(folder.path()),
-            &ladder[last],
-            &mut progress,
-        )
-        .unwrap();
-        assert_eq!(lines, None);
-    }
+    progress.starts = ladder.iter().map(|rung| rung.attempts).collect();
+    run_ladder(
+        &agents,
+        &brief(&task),
+        &places(folder.path()),
+        &mut progress,
+        1,
+    )
+    .unwrap_err();
     assert_eq!(
-        (progress.number, progress.used, progress.rung_used),
+        (progress.number, progress.used, progress.starts[last]),
         (
             agents.policy.max_fix_turns + 1,
             agents.policy.max_worker_attempts + 1,
             ladder[last].attempts + 1
+        )
+    );
+}
+
+#[test]
+fn a_granted_start_runs_on_a_stand_in_while_the_last_rung_vendor_is_limited() {
+    let (mut agents, task) = fixtures();
+    answer_with(&mut agents, "not a report");
+    let folder = tempfile::tempdir().unwrap();
+    worktree(folder.path());
+    mark(
+        folder.path(),
+        "openai",
+        "ERROR: You've hit your usage limit.",
+    )
+    .unwrap();
+    let chain = Chain::new(&agents).unwrap();
+    let ladder = &agents.roles.worker.ladder;
+    let last = ladder.len() - 1;
+    let mut progress = progress();
+    progress.used = agents.policy.max_worker_attempts;
+    progress.rung = last;
+    progress.starts = ladder.iter().map(|rung| rung.attempts).collect();
+    let places = places(folder.path());
+    let stand_in = chain.pick(&places, &progress, &chain.links[last]).unwrap();
+    assert!(stand_in.is_none());
+    run_ladder(&agents, &brief(&task), &places, &mut progress, 2).unwrap_err();
+    assert_eq!(ladder[last - 1].model, "claude-opus-5-5");
+    assert_eq!(
+        (
+            progress.used,
+            progress.starts[last - 1],
+            progress.starts[last]
+        ),
+        (
+            agents.policy.max_worker_attempts + 2,
+            ladder[last - 1].attempts + 2,
+            ladder[last].attempts
         )
     );
 }
@@ -889,18 +966,19 @@ fn claude_answers(agents: &mut Agents, report: &str) {
 fn fix_turns_go_on_in_the_session_of_the_run_before_them() {
     let (mut agents, task) = fixtures();
     claude_answers(&mut agents, "{}");
+    agents.roles.worker.ladder.truncate(1);
     let folder = tempfile::tempdir().unwrap();
     worktree(folder.path());
-    let first = &agents.roles.worker.ladder[0];
     let mut progress = progress();
-    climb_rung(
+    run_ladder(
         &agents,
         &brief(&task),
         &places(folder.path()),
-        first,
         &mut progress,
+        0,
     )
-    .unwrap();
+    .unwrap_err();
+    let first = &agents.roles.worker.ladder[0];
     let fix_turns = first.attempts.saturating_mul(agents.policy.max_fix_turns);
     let resumed = fs::read_to_string(folder.path().join("resumed")).unwrap();
     assert_eq!(resumed, "s1\n".repeat(usize::try_from(fix_turns).unwrap()));
@@ -922,25 +1000,25 @@ fn fix_turns_go_on_in_the_session_of_the_run_before_them() {
 fn a_session_from_another_model_starts_a_new_one() {
     let (mut agents, task) = fixtures();
     claude_answers(&mut agents, "{}");
+    agents.roles.worker.ladder.truncate(1);
     let folder = tempfile::tempdir().unwrap();
     worktree(folder.path());
-    let first = &agents.roles.worker.ladder[0];
     let mut progress = progress();
     progress.next = NextRun::Fix;
     progress.feedback = vec!["a red check".to_owned()];
     progress.session = Some(WorkerSession {
-        runner: first.runner.clone(),
+        runner: agents.roles.worker.ladder[0].runner.clone(),
         model: "another".to_owned(),
         id: "s0".to_owned(),
     });
-    climb_rung(
+    run_ladder(
         &agents,
         &brief(&task),
         &places(folder.path()),
-        first,
         &mut progress,
+        0,
     )
-    .unwrap();
+    .unwrap_err();
     let resumed = fs::read_to_string(folder.path().join("resumed")).unwrap();
     assert!(!resumed.contains("s0"), "{resumed}");
 }
@@ -950,7 +1028,7 @@ fn a_pin_saved_before_the_parity_pass_loads_as_standard() {
     let folder = tempfile::tempdir().unwrap();
     fs::write(
         folder.path().join("progress.json"),
-        r#"{"feedback":[],"number":1,"used":1,"rung":0,"rung_used":1,"limited":false,"review_rounds":1,"blocked_reports":0,"last_blocked":0,"earlier":null,"litellm":[],"reviewer":{"runner":"claude-reviewer","model":"sonnet"}}"#,
+        r#"{"feedback":[],"number":1,"used":1,"rung":0,"rung_used":1,"limited":false,"review_rounds":1,"blocked_reports":0,"last_blocked":0,"earlier":null,"litellm":[],"reviewer":{"runner":"claude-reviewer","model":"claude-sonnet-5-5"}}"#,
     )
     .unwrap();
     let loaded = Progress::load(folder.path(), Vec::new()).unwrap();
@@ -971,18 +1049,18 @@ fn the_parity_ladder_ignores_a_standard_pin() {
             .map(|rung| rung.model.clone())
             .collect::<Vec<String>>()
     };
-    assert_eq!(order(None), ["gpt-6-astra", "opus"]);
+    assert_eq!(order(None), ["gpt-6-astra", "claude-opus-5-5"]);
     let standard = ReviewerPin {
         runner: "claude-reviewer".to_owned(),
-        model: "opus".to_owned(),
+        model: "claude-opus-5-5".to_owned(),
         panel: Panel::Standard,
     };
-    assert_eq!(order(Some(&standard)), ["gpt-6-astra", "opus"]);
+    assert_eq!(order(Some(&standard)), ["gpt-6-astra", "claude-opus-5-5"]);
     let parity = ReviewerPin {
         panel: Panel::Parity,
         ..standard
     };
-    assert_eq!(order(Some(&parity)), ["opus", "gpt-6-astra"]);
+    assert_eq!(order(Some(&parity)), ["claude-opus-5-5", "gpt-6-astra"]);
 }
 
 #[test]
@@ -1006,7 +1084,7 @@ fn the_parity_pass_counts_its_review_rounds_from_zero() {
             litellm: Vec::new(),
         });
         let flow = apply_step(
-            &agents,
+            &Chain::new(&agents).unwrap(),
             &brief(&task),
             &places(folder.path()),
             &mut progress,
@@ -1116,7 +1194,7 @@ fn a_round_after_the_parity_pass_goes_to_the_parity_reviewer() {
     review_answers(&mut agents, APPROVE);
     let pinned = ReviewerPin {
         runner: "claude-reviewer".to_owned(),
-        model: "opus".to_owned(),
+        model: "claude-opus-5-5".to_owned(),
         panel: Panel::Parity,
     };
     let (step, seats) = run_review(&agents, &task, Some(&pinned));

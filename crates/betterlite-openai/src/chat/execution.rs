@@ -1,13 +1,14 @@
 use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
-use betterlite_http::error::HttpError;
-use betterlite_http::proxy::{
-    JsonPost, ProxiedClient, StreamResponse, UpstreamResponse, timed_out,
-};
+use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
+use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_http::proxy::{ProxiedClient, StreamResponse, UpstreamResponse};
+use http::header::{ACCEPT, AUTHORIZATION};
+use http::{HeaderMap, HeaderName, HeaderValue, Method};
 use rand::RngExt as _;
 use rand::rngs::StdRng;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Map, Value};
 use thiserror::Error;
 
@@ -17,9 +18,6 @@ use crate::chat::{ChatRequest, RequestError};
 use crate::openai_base_config::{
     CatalogCapabilities, ConfigFamily, Headers, OpenAiConfig, OpenAiSettings,
 };
-
-// a provider answer past 32 MiB is refused instead of buffered
-const RESPONSE_LIMIT: usize = 0x0200_0000;
 
 // LiteLLM's DEFAULT_CHAT_COMPLETION_PARAM_VALUES: these go through the OpenAI parameter policy, the rest are forwarded
 const KNOWN_PARAMS: &str = "functions function_call temperature top_p n stream stream_options stop max_tokens max_completion_tokens modalities prediction audio presence_penalty frequency_penalty logit_bias user model custom_llm_provider response_format seed tools tool_choice max_retries logprobs top_logprobs extra_headers api_version parallel_tool_calls drop_params allowed_openai_params additional_drop_params messages reasoning_effort verbosity thinking web_search_options include_server_side_tool_invocations service_tier safety_identifier prompt_cache_key prompt_cache_retention store metadata context_management";
@@ -58,7 +56,7 @@ pub enum ChatError {
     #[error("the provider could not be reached: {source}")]
     Http {
         #[source]
-        source: HttpError,
+        source: TransportError,
     },
 }
 
@@ -104,9 +102,14 @@ impl ChatExecutor {
         if request.stream {
             return Err(ChatError::Streaming);
         }
-        let post = self.post(deployment, request)?;
+        let outbound = self.outbound(deployment, request, "application/json")?;
         let started = Instant::now();
-        let upstream = self.client.post_json(post).await.map_err(http_failure)?;
+        let client = self
+            .client
+            .deployments
+            .get(&deployment.model_id)
+            .unwrap_or(&self.client);
+        let upstream = client.send_buffered(outbound).await.map_err(http_failure)?;
         let upstream_time = started.elapsed();
         if upstream.status >= 400 {
             return Err(ChatError::Provider {
@@ -127,48 +130,51 @@ impl ChatExecutor {
         deployment: &ChatDeployment,
         request: &ChatRequest,
     ) -> Result<StreamResponse, ChatError> {
-        let post = self.post(deployment, request)?;
-        let upstream_request = self
+        let outbound = self.outbound(deployment, request, "text/event-stream")?;
+        let client = self
             .client
-            .json_request(post, "text/event-stream")
-            .map_err(http_failure)?;
-        let response = self
-            .client
-            .execute(upstream_request)
-            .await
-            .map_err(timed_out)
-            .map_err(http_failure)?;
-        if !response.status().is_success() {
-            let upstream = StreamResponse::from(response)
-                .buffered(RESPONSE_LIMIT)
+            .deployments
+            .get(&deployment.model_id)
+            .unwrap_or(&self.client);
+        let response = client.send(outbound).await.map_err(http_failure)?;
+        if !response.response.status().is_success() {
+            let upstream = response
+                .buffered(client.limits.body_bytes)
                 .await
                 .map_err(http_failure)?;
             return Err(ChatError::Provider {
                 response: Box::new(upstream),
             });
         }
-        Ok(StreamResponse::from(response))
+        Ok(response)
     }
 
-    fn post<'key>(
+    fn outbound(
         &self,
-        deployment: &'key ChatDeployment,
+        deployment: &ChatDeployment,
         request: &ChatRequest,
-    ) -> Result<JsonPost<'key>, ChatError> {
+        accept: &'static str,
+    ) -> Result<OutboundRequest, ChatError> {
         let (model, api_key) = servable(deployment)?;
         let body = serde_json::to_vec(&self.body(request, model)?)
             .map_err(|source| ChatError::Encode { source })?;
-        Ok(JsonPost {
+        let mut headers = HeaderMap::new();
+        let bearer = format!("Bearer {}", api_key.expose_secret());
+        headers.insert(AUTHORIZATION, header_value(&bearer, "authorization")?);
+        headers.insert(ACCEPT, HeaderValue::from_static(accept));
+        if let Some(organization) = &deployment.organization {
+            headers.insert(
+                HeaderName::from_static("openai-organization"),
+                header_value(organization, "openai-organization")?,
+            );
+        }
+        Ok(OutboundRequest {
+            method: Method::POST,
             url: deployment.endpoint.clone(),
-            bearer: api_key,
-            headers: deployment
-                .organization
-                .iter()
-                .map(|organization| ("OpenAI-Organization", organization.clone()))
-                .collect(),
-            body,
-            timeout: deployment.timeout,
-            body_limit: RESPONSE_LIMIT,
+            query: Vec::new(),
+            headers,
+            body: RequestBody::Json(body),
+            deadline: deployment.timeout,
         })
     }
 
@@ -226,16 +232,33 @@ fn servable(deployment: &ChatDeployment) -> Result<(&str, &SecretString), ChatEr
     Ok((model, api_key))
 }
 
-fn http_failure(source: HttpError) -> ChatError {
+fn header_value(text: &str, name: &str) -> Result<HeaderValue, ChatError> {
+    HeaderValue::try_from(text).map_err(|source| ChatError::Http {
+        source: TransportError::InvalidHeader {
+            name: name.to_owned(),
+            source,
+        },
+    })
+}
+
+fn http_failure(source: TransportError) -> ChatError {
     match source {
-        HttpError::Timeout => ChatError::Timeout,
-        HttpError::TooLarge { .. } => ChatError::TooLarge,
-        HttpError::Required { .. }
-        | HttpError::DotSegment { .. }
-        | HttpError::UnsupportedProxyScheme { .. }
-        | HttpError::InvalidProxyUrl { .. }
-        | HttpError::Client(_)
-        | HttpError::Request(_) => ChatError::Http { source },
+        TransportError::ConnectTimeout(_) | TransportError::Deadline(_) => ChatError::Timeout,
+        TransportError::BodyTooLarge { .. } | TransportError::HeadersTooLarge { .. } => {
+            ChatError::TooLarge
+        }
+        TransportError::Rejected(_)
+        | TransportError::Build(_)
+        | TransportError::Connect(_)
+        | TransportError::Request(_)
+        | TransportError::Body(_)
+        | TransportError::InvalidHeader { .. }
+        | TransportError::MultipartContentType { .. }
+        | TransportError::MultipartBoundaryHeader { .. }
+        | TransportError::MultipartBoundary { .. }
+        | TransportError::Mock(_)
+        | TransportError::Closed
+        | TransportError::DrainTimeout { .. } => ChatError::Http { source },
     }
 }
 

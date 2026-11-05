@@ -4,6 +4,10 @@ use std::path::{Path, PathBuf};
 use std::str;
 
 use crate::OracleError;
+use crate::websocket_oracle::{
+    OracleLimits,
+    decode::{FilesystemFixtures, decode_ws_case},
+};
 use betterlite_postgres_fixture::seed::DatabaseFixture;
 use serde::Deserialize;
 use serde_json::Value;
@@ -57,7 +61,7 @@ impl Case {
 
 #[derive(Deserialize)]
 struct CaseKind {
-    kind: Option<helper::HelperKind>,
+    kind: Option<String>,
     scenario: Option<IgnoredAny>,
 }
 
@@ -147,6 +151,17 @@ pub(crate) fn parse_case(path: &Path, text: &str) -> Result<LoadedCase, OracleEr
     };
     // the case says what it is, so its folder never decides
     let probe: CaseKind = serde_saphyr::from_str(text).map_err(parse_error)?;
+    if probe.kind.as_deref() == Some("websocket") {
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fixtures/websocket-oracle");
+        let fixtures = FilesystemFixtures { root };
+        let case = decode_ws_case(text.as_bytes(), &OracleLimits::default(), &fixtures).map_err(
+            |source| OracleError::WebSocketCase {
+                path: path.to_owned(),
+                source,
+            },
+        )?;
+        return Ok(LoadedCase::WebSocket(Box::new(case)));
+    }
     if probe.kind.is_some() {
         let case: HelperCase = serde_saphyr::from_str(text).map_err(parse_error)?;
         helper::validate_helper(path, &case)?;

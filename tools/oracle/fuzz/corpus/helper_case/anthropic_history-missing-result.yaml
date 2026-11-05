@@ -1,0 +1,5 @@
+kind: helper
+name: anthropic-history-corpus-seed
+call: {anthropic_history: {function: sanitize_messages_for_tool_calling, modify_params: true, messages: [{role: assistant, tool_calls: [{id: seed, type: function, function: {name: tool, arguments: "{}"}}]}]}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,8 @@
+kind: helper
+name: auth-selector-presence
+call:
+  bedrock_aws_settings:
+    operation: auth_selector
+    params: {'aws_web_identity_token': 'token', 'aws_role_name': 'role', 'aws_session_name': 'session'}
+env: {}
+compare: {ignore: []}

@@ -20,6 +20,7 @@ use crate::spec::task::Task;
 pub(crate) struct Verdict {
     pub(crate) lines: Vec<String>,
     pub(crate) passed: bool,
+    pub(crate) failed: Vec<String>,
 }
 
 #[derive(Default)]
@@ -185,8 +186,10 @@ fn render(
         log_dir.display()
     )];
     let mut passed = !outcomes.is_empty();
+    let mut failed = Vec::new();
     if outcomes.is_empty() {
         lines.push("FAIL selection: no checks selected".to_owned());
+        failed.push("selection".to_owned());
     }
     for (id, seconds, outcome) in outcomes {
         match outcome {
@@ -195,6 +198,7 @@ fn render(
             Outcome::Fail { why, hints } => {
                 passed = false;
                 lines.push(format!("FAIL {id} ({seconds}s): {why}"));
+                failed.push(id);
                 lines.extend(
                     hints
                         .iter()
@@ -204,5 +208,9 @@ fn render(
         }
     }
     lines.push(if passed { "gate passed" } else { "gate failed" }.to_owned());
-    Verdict { lines, passed }
+    Verdict {
+        lines,
+        passed,
+        failed,
+    }
 }

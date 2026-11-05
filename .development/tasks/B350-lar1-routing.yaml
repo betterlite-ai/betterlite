@@ -9,9 +9,7 @@ description: 'Add the typed LAR-1 metadata parser and async deployment selector 
   default to 0.3/0.5/0.7. Non-numeric arguments fall back to defaults; normalized numeric thresholds must
   satisfy 0 < low < medium < high < 1. metadata.lar1 defaults act=INF, time=NOW, mind=REF, confidence=0.5,
   evidence=[]. Malformed metadata warns and uses defaults. Implement the owned native service in crates/betterlite-router/src/lar1_routing.rs.
-  Add ProbeOperation::Lar1Routing in tools/oracle/src/router_probes/mod.rs and the corresponding B350 entry in
-  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
-  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  B301 registers ProbeOperation::Lar1Routing and its Python entry as stubs, so fill only tools/oracle/src/router_probes/lar1_routing.rs and tools/oracle/litellm/probes/lar1_routing.py and leave mod.rs and registry.py as they are; the adapters only call production services. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
   fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
   of copying their algorithms. Function coverage in litellm/router_strategy/lar1_routing.py: _coerce_threshold
@@ -39,9 +37,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/lar1_routing.rs
   - tools/oracle/src/router_probes/lar1_routing/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/lar1_routing.py
   - tools/oracle/cases/routing/lar1-routing/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/lar1-routing-*

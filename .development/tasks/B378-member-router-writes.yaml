@@ -3,9 +3,8 @@ title: Member-owned automatic router writes
 description: 'Implement MemberRouterAccess using B052 principal, B057 team membership and B060 model write
   services. Validate ownership metadata, team opt-in, allowed member config fields and each B377 model
   dependency before create/update. Preserve old state on repository failure. No license quota is enforced.
-  Implement the owned native service in crates/betterlite-server/src/member_router_writes.rs. Add ProbeOperation::MemberRouterWrites
-  in tools/oracle/src/router_probes/mod.rs and the corresponding B378 entry in tools/oracle/litellm/probes/registry.py;
-  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  Implement the owned native service in crates/betterlite-server/src/member_router_writes.rs. B301 registers ProbeOperation::MemberRouterWrites and its Python entry as stubs, so fill only tools/oracle/src/router_probes/member_router_writes.rs and tools/oracle/litellm/probes/member_router_writes.py and leave mod.rs and registry.py as they are;
+  the adapters only call production services.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
   lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
   exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/proxy/management_helpers/auto_router_permissions.py:
@@ -25,9 +24,6 @@ scope:
   - crates/betterlite-server/src/routing/member_router_writes/**
   - tools/oracle/src/router_probes/member_router_writes.rs
   - tools/oracle/src/router_probes/member_router_writes/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/member_router_writes.py
   - tools/oracle/cases/routing/member-router-writes/**
   - tools/oracle/helpers/b378.py

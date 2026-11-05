@@ -1,0 +1,23 @@
+kind: websocket
+name: realtime-route-inputs
+path: /realtime?intent=transcription&guardrails=%20first,%20,second%20
+headers:
+  Authorization: Bearer sk-test
+requested_subprotocols:
+- realtime
+- second
+expected_http_status: 101
+negotiated_subprotocol: realtime
+expected_upstream_query: intent=transcription
+expected_upstream_auth: Bearer sk-whisper
+frames:
+- direction: client_to_provider
+  action: send
+  text: '{"type": "test.setup"}'
+execution_seconds: 10
+env:
+  LITELLM_MASTER_KEY: sk-test
+close:
+  initiator: provider
+  code: 1000
+  reason: finished

@@ -1,0 +1,5 @@
+kind: helper
+name: error-normalization-content-policy-violation-error
+call: {"error_normalization": {"message": "ordinary", "class": "ContentPolicyViolationError", "status_code": 418}}
+env: {}
+compare: {ignore: []}

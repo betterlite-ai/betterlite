@@ -18,12 +18,13 @@ description: >-
   Add sdk_http rerank_http with a finite injected config, actual mock HTTP and callback-effect observations.
   Existing SDK/HTTP decoders suffice. Count 117 nonblank/non-comment lines in the two complete methods;
   budget 115 implementation,110 tests,95 fixtures,80 adapters and 30 wiring, 430 lines.
+
+  B1013 fills the Rerank variants that B010 registers in operation.rs, so this task builds on them in
+  crates/betterlite-provider/src/api/rerank_http.rs and leaves operation.rs as it is.
 scope:
   paths:
   - crates/betterlite-provider/src/api/rerank_http.rs
   - crates/betterlite-provider/src/api/rerank_http/**
-  - crates/betterlite-provider/src/operation.rs
-  - crates/betterlite-provider/src/operation/**
   - tools/oracle/src/sdk_http.rs
   - tools/oracle/src/sdk_http/rerank_http.rs
   - tools/oracle/sdk_http/dispatch.py

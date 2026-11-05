@@ -1,7 +1,7 @@
 id: B4412
 milestone: M8 platform
 title: Initialize KMS clients and decrypt startup environment values
-status: todo
+status: done
 depends_on: [B002, B4410]
 file: tasks/B4412-kms-environment.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/secret_managers/google_kms.py"
 parent: B129
 split_from: B129
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 701

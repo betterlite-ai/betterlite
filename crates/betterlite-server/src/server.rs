@@ -1,12 +1,13 @@
 pub mod chat_setup;
 
 use crate::auth::auth_route_patterns::AuthSettings;
-use crate::routes::chat::chat_routes;
+use crate::routes::chat::chat_routes_with_call_id;
 use crate::routes::embeddings::embedding_routes;
 use crate::routes::router;
 use crate::shutdown::build_shutdown_signal;
 use axum::Router;
 use betterlite_config::types::Config;
+use betterlite_error::envelope::EnvelopeError;
 use betterlite_openai::chat::execution::ChatExecutor;
 use hyper_util::rt::{TokioExecutor, TokioIo, TokioTimer};
 use hyper_util::server::conn::auto::Builder;
@@ -24,9 +25,15 @@ const MAX_CONNECTIONS: usize = 1024;
 const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(1);
 const ACCEPT_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const CONNECTION_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
+const OUTBOUND_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Error)]
 pub enum ServerError {
+    #[error(transparent)]
+    ErrorLayer {
+        #[from]
+        source: EnvelopeError,
+    },
     #[error("failed to register {signal} handler: {source}")]
     SignalRegistration {
         signal: &'static str,
@@ -53,7 +60,8 @@ pub async fn run(
         .map_err(|source| ServerError::Bind { address, source })?;
     tracing::info!(host, port, "betterlite server listening");
     let shutting_down = Arc::new(AtomicBool::new(false));
-    let application = application(&config, chat, Arc::clone(&shutting_down));
+    let outbound = chat.client.clone();
+    let application = application(&config, chat, Arc::clone(&shutting_down))?;
     let mut connections = JoinSet::new();
     let connection_builder = configure_connection_builder();
     connections.spawn(shutdown_signal.wait(Arc::clone(&shutting_down)));
@@ -79,21 +87,34 @@ pub async fn run(
         ));
     }
     drain_connections(&mut connections).await;
+    if let Err(error) = outbound.drain(OUTBOUND_DRAIN_TIMEOUT).await {
+        tracing::warn!(error = %error, "outbound requests did not finish before shutdown");
+    }
     Ok(())
 }
 
-fn application(config: &Config, chat: ChatExecutor, shutting_down: Arc<AtomicBool>) -> Router {
+pub(crate) fn application(
+    config: &Config,
+    chat: ChatExecutor,
+    shutting_down: Arc<AtomicBool>,
+) -> Result<Router, ServerError> {
     let executor = Arc::new(chat);
-    router(
+    Ok(router(
         AuthSettings {
             master_key: config.general_settings.master_key.clone(),
             routes: config.sections.auth_route_patterns.clone(),
         },
         shutting_down,
         &config.model_list,
-        chat_routes(Arc::clone(&executor)),
+        chat_routes_with_call_id(
+            Arc::clone(&executor),
+            config
+                .sections
+                .error_body_call_id
+                .include_call_id_in_error_body,
+        )?,
         embedding_routes(executor),
-    )
+    ))
 }
 async fn accept_connection(listener: &TcpListener) -> Option<(TcpStream, SocketAddr)> {
     match timeout(ACCEPT_POLL_INTERVAL, listener.accept()).await {
@@ -143,3 +164,5 @@ async fn drain_connections(connections: &mut JoinSet<()>) {
         connections.shutdown().await;
     }
 }
+
+mod tests;

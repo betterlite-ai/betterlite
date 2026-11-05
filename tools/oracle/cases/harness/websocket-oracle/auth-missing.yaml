@@ -1,0 +1,11 @@
+kind: websocket
+name: auth-missing
+path: /v1/realtime?model=realtime-a
+headers: {}
+requested_subprotocols: []
+expected_http_status: 403
+negotiated_subprotocol: null
+frames: []
+execution_seconds: 10
+env:
+  LITELLM_MASTER_KEY: sk-test
