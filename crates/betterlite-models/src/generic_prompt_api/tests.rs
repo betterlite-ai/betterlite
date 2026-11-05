@@ -605,12 +605,11 @@ fn initializer_leaves_the_query_params_empty_when_the_spec_has_none() {
 #[rstest]
 fn replays_the_prompt_api_response_corpus() {
     let directory = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/prompt_api_response");
-    let mut replayed = 0_u32;
+    let seeds = fs::read_dir(&directory).expect("the prompt_api_response corpus directory exists");
+    assert!(seeds.count() >= 5);
     for entry in fs::read_dir(directory).expect("the prompt_api_response corpus directory exists") {
         let body = fs::read(entry.expect("a corpus entry is readable").path()).unwrap();
         let answer = PromptApiResponse { status: 200, body };
         let _outcome = read_response::<Infallible>(Some("welcome"), Ok(answer));
-        replayed += 1;
     }
-    assert!(replayed >= 5);
 }
