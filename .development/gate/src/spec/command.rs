@@ -27,12 +27,16 @@ pub(crate) struct Command {
     pub(crate) after_green: bool,
     #[serde(default)]
     #[schemars(
-        description = "Run while holding a lock in the git common directory, so gates in other worktrees of this clone wait their turn instead of running it at the same time. For tools such as cargo deny that lock a cache in the home directory and give up after a short wait."
+        description = "When the command starts. build, the default, makes a cargo command wait for one of the GATE_BUILD_SLOTS build slots and starts any other command at once. now starts it at once, for cargo commands that compile nothing, such as cargo fmt and cargo shear. alone waits for a lock in the git common directory instead of a build slot, so gates in other worktrees of this clone take turns, for tools such as cargo deny that lock a cache in the home directory and give up after a short wait."
     )]
-    pub(crate) one_at_a_time: bool,
-    #[serde(default)]
-    #[schemars(
-        description = "The cargo command compiles nothing, as cargo fmt, cargo deny and cargo shear do, so it runs at once instead of waiting for a build slot like other cargo commands."
-    )]
-    pub(crate) compiles_nothing: bool,
+    pub(crate) turn: Turn,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "kebab-case")]
+pub(crate) enum Turn {
+    #[default]
+    Build,
+    Now,
+    Alone,
 }

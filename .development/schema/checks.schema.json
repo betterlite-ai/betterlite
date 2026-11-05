@@ -93,23 +93,17 @@
           "type": "boolean",
           "default": false
         },
-        "compiles_nothing": {
-          "description": "The cargo command compiles nothing, as cargo fmt, cargo deny and cargo shear do, so it runs at once instead of waiting for a build slot like other cargo commands.",
-          "type": "boolean",
-          "default": false
-        },
         "id": {
           "type": "string",
           "pattern": "^[a-z][a-z0-9-]*$"
         },
-        "one_at_a_time": {
-          "description": "Run while holding a lock in the git common directory, so gates in other worktrees of this clone wait their turn instead of running it at the same time. For tools such as cargo deny that lock a cache in the home directory and give up after a short wait.",
-          "type": "boolean",
-          "default": false
-        },
         "run": {
           "type": "string",
           "minLength": 1
+        },
+        "turn": {
+          "description": "When the command starts. build, the default, makes a cargo command wait for one of the GATE_BUILD_SLOTS build slots and starts any other command at once. now starts it at once, for cargo commands that compile nothing, such as cargo fmt and cargo shear. alone waits for a lock in the git common directory instead of a build slot, so gates in other worktrees of this clone take turns, for tools such as cargo deny that lock a cache in the home directory and give up after a short wait.",
+          "$ref": "#/$defs/Turn"
         },
         "when_exists": {
           "description": "Path from the repository root. When it does not exist the check is skipped.",
@@ -218,6 +212,14 @@
         "name",
         "version_command",
         "expect"
+      ]
+    },
+    "Turn": {
+      "type": "string",
+      "enum": [
+        "build",
+        "now",
+        "alone"
       ]
     }
   }

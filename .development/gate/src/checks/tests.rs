@@ -8,7 +8,7 @@ use crate::development::Development;
 use crate::git::git;
 use crate::spec::backlog::Backlog;
 use crate::spec::catalog::Catalog;
-use crate::spec::command::Command;
+use crate::spec::command::{Command, Turn};
 use crate::spec::task::Task;
 use crate::yaml::read_yaml;
 
@@ -51,8 +51,7 @@ fn command(id: &str, script: &str) -> Command {
         run: script.to_owned(),
         when_exists: None,
         after_green: false,
-        one_at_a_time: false,
-        compiles_nothing: false,
+        turn: Turn::Build,
     }
 }
 

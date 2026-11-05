@@ -98,7 +98,7 @@ base:
     - id: fmt
       why: rustfmt decides the layout
       run: cargo fmt --all --check
-      compiles_nothing: true
+      turn: now
     - id: clippy
       why: the lint table is the code standard and warnings are errors in every package the change can affect, and a push to main lints the whole workspace
       run: |-
@@ -107,12 +107,11 @@ base:
     - id: deny
       why: licenses, advisories, bans, crate layering and sources follow deny.toml
       run: cargo deny --locked check
-      one_at_a_time: true
-      compiles_nothing: true
+      turn: alone
     - id: shear
       why: no unused dependencies
       run: cargo shear
-      compiles_nothing: true
+      turn: now
     - id: corpus-replays
       why: every fuzz corpus file the change touches still passes the replays_the_ tests of the package that owns the corpus, since task checks leave those tests out
       run: |-

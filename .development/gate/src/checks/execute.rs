@@ -11,7 +11,7 @@ use crate::checks::Outcome;
 use crate::error::GateError;
 use crate::git::coordinator;
 use crate::process::check_command;
-use crate::spec::command::Command;
+use crate::spec::command::{Command, Turn};
 
 const HINT_WORDS: [&str; 6] = ["error", "fail", "panicked", "denied", "banned", "mismatch"];
 
@@ -74,7 +74,7 @@ pub(crate) fn execute(
     environment: &[(&str, String)],
 ) -> Result<Outcome, GateError> {
     let log_path = log_dir.join(format!("{}.log", command.id));
-    let turn = if command.one_at_a_time {
+    let lock = if command.turn == Turn::Alone {
         let path = coordinator(root)?
             .join("betterlite")
             .join(format!("{}.lock", command.id));
@@ -91,7 +91,7 @@ pub(crate) fn execute(
     let build = build_slot(root, command)?;
     let status = run_logged(root, &log_path, command, environment)?;
     drop(build);
-    drop(turn);
+    drop(lock);
     if status.success() {
         return Ok(Outcome::Pass);
     }
@@ -130,8 +130,8 @@ fn build_slot(root: &Path, command: &Command) -> Result<Option<File>, GateError>
         ));
     }
     let build = if let Some(count) = configured
+        && command.turn == Turn::Build
         && command.run.contains("cargo ")
-        && !command.compiles_nothing
         && env::var("GATE_BUILD_HELD").as_deref() != Ok("1")
     {
         Some(slots::acquire(
