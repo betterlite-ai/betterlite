@@ -53,6 +53,7 @@ fn failures(
     worktree: &Development,
     task_id: &str,
     report: &Report,
+    in_pull_request: &[String],
 ) -> Result<Option<Failure>, GateError> {
     let task = worktree.task(task_id)?;
     let added = added_dependencies(&worktree.root, &resolve_base(&worktree.root)?)?;
@@ -69,7 +70,11 @@ fn failures(
             red: vec![Red::Report],
         }));
     }
-    let verdict = checks::run(worktree, &task, &Selection::default())?;
+    let selection = Selection {
+        only: Vec::new(),
+        skip: in_pull_request.to_vec(),
+    };
+    let verdict = checks::run(worktree, &task, &selection)?;
     if verdict.passed {
         return Ok(None);
     }
@@ -184,7 +189,12 @@ fn answered(
         })));
     }
     let worktree = Development::open(attempt.places.worktree)?;
-    if let Some(failure) = failures(&worktree, &attempt.brief.task.id, &report)? {
+    if let Some(failure) = failures(
+        &worktree,
+        &attempt.brief.task.id,
+        &report,
+        &attempt.agents.policy.checks_in_pull_request,
+    )? {
         return Ok(Some(Step::Fix(failure)));
     }
     review::review(attempt, runner, &worktree.root).map(Some)
