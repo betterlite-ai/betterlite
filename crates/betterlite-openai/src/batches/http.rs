@@ -113,6 +113,26 @@ fn status_error(response: &UpstreamResponse) -> SdkError {
 }
 
 impl HttpBatchesClient {
+    async fn on_batch(
+        &self,
+        request: &BatchQuery,
+        method: Method,
+        suffix: &str,
+        body: RequestBody,
+    ) -> Result<Vec<u8>, SdkError> {
+        let id = encode_segment(&request.batch_id, "batch_id")
+            .map_err(|source| SdkError::Path { source })?;
+        self.send(Call {
+            method,
+            path: format!("/batches/{id}{suffix}"),
+            query: Vec::new(),
+            body,
+            extra_headers: request.extra_headers.as_ref(),
+            timeout: request.timeout,
+        })
+        .await
+    }
+
     fn headers(&self, extra: Option<&IndexMap<String, String>>) -> Result<HeaderMap, SdkError> {
         let mut headers = HeaderMap::new();
         let bearer = format!("Bearer {}", self.api_key.expose_secret());
@@ -176,20 +196,18 @@ impl BatchesSdk for HttpBatchesClient {
         let mut body =
             serde_json::to_value(request).map_err(|source| SdkError::Encode { source })?;
         if let Value::Object(fields) = &mut body {
-            fields.remove("extra_headers");
-            fields.remove("timeout");
-            fields.remove("extra_body");
-            for (name, value) in request.extra_body.iter().flatten() {
-                fields.insert(name.clone(), Value::String(value.clone()));
-            }
+            fields.retain(|name, _| {
+                !matches!(name.as_str(), "extra_headers" | "timeout" | "extra_body")
+            });
+            let merged = request.extra_body.iter().flatten();
+            fields.extend(merged.map(|(name, value)| (name.clone(), Value::String(value.clone()))));
         }
+        let json = serde_json::to_vec(&body).map_err(|source| SdkError::Encode { source })?;
         self.send(Call {
             method: Method::POST,
             path: String::from("/batches"),
             query: Vec::new(),
-            body: RequestBody::Json(
-                serde_json::to_vec(&body).map_err(|source| SdkError::Encode { source })?,
-            ),
+            body: RequestBody::Json(json),
             extra_headers: request.extra_headers.as_ref(),
             timeout: request.timeout,
         })
@@ -197,34 +215,15 @@ impl BatchesSdk for HttpBatchesClient {
     }
 
     async fn retrieve(&self, request: &BatchQuery) -> Result<Vec<u8>, SdkError> {
-        let id = encode_segment(&request.batch_id, "batch_id")
-            .map_err(|source| SdkError::Path { source })?;
-        self.send(Call {
-            method: Method::GET,
-            path: format!("/batches/{id}"),
-            query: Vec::new(),
-            body: RequestBody::Empty,
-            extra_headers: request.extra_headers.as_ref(),
-            timeout: request.timeout,
-        })
-        .await
+        self.on_batch(request, Method::GET, "", RequestBody::Empty)
+            .await
     }
 
     async fn cancel(&self, request: &BatchQuery) -> Result<Vec<u8>, SdkError> {
-        let id = encode_segment(&request.batch_id, "batch_id")
-            .map_err(|source| SdkError::Path { source })?;
         let extra = request.extra_body.clone().unwrap_or_default();
-        self.send(Call {
-            method: Method::POST,
-            path: format!("/batches/{id}/cancel"),
-            query: Vec::new(),
-            body: RequestBody::Json(
-                serde_json::to_vec(&extra).map_err(|source| SdkError::Encode { source })?,
-            ),
-            extra_headers: request.extra_headers.as_ref(),
-            timeout: request.timeout,
-        })
-        .await
+        let body = serde_json::to_vec(&extra).map_err(|source| SdkError::Encode { source })?;
+        self.on_batch(request, Method::POST, "/cancel", RequestBody::Json(body))
+            .await
     }
 
     async fn list(&self, after: Option<&str>, limit: Option<u32>) -> Result<BatchPage, SdkError> {

@@ -7,6 +7,7 @@ use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
+use crate::batches::BatchOperation;
 use crate::batches::decode::{BatchDecodeError, decode_batch_object};
 use crate::batches::error::BatchesError;
 use crate::batches::records::{BatchStatus, ExpiryAnchor, OutputExpiry};
@@ -43,7 +44,7 @@ async fn create_window_endpoint() {
     });
     let created = fixture
         .api
-        .create_batch(connection(false, None), &request)
+        .batch(connection(false, None), BatchOperation::Create(&request))
         .await
         .unwrap();
     assert_eq!(created.id, "batch_1");
@@ -60,7 +61,7 @@ async fn metadata() {
     );
     let found = fixture
         .api
-        .retrieve_batch(connection(false, None), &query())
+        .batch(connection(false, None), BatchOperation::Retrieve(&query()))
         .await
         .unwrap();
     assert_eq!(found.metadata, Some(pairs(&[("team", "ml")])));
@@ -75,7 +76,10 @@ async fn metadata() {
     let bare = self::fixture(true, Answer::Batch(batch("batch_2", "validating")));
     let created = bare
         .api
-        .create_batch(connection(false, None), &create_request())
+        .batch(
+            connection(false, None),
+            BatchOperation::Create(&create_request()),
+        )
         .await
         .unwrap();
     assert_eq!((created.metadata, created.usage), (None, None));
@@ -87,7 +91,7 @@ async fn retrieve_status_counts() {
     let fixture = fixture(true, answer);
     let found = fixture
         .api
-        .retrieve_batch(connection(true, None), &query())
+        .batch(connection(true, None), BatchOperation::Retrieve(&query()))
         .await
         .unwrap();
     assert_eq!(found.status, BatchStatus::InProgress);
@@ -106,7 +110,7 @@ async fn cancel_batch() {
     let fixture = fixture(true, Answer::Batch(batch("batch_1", "cancelling")));
     let cancelled = fixture
         .api
-        .cancel_batch(connection(true, None), &query())
+        .batch(connection(true, None), BatchOperation::Cancel(&query()))
         .await
         .unwrap();
     assert_eq!(cancelled.status, BatchStatus::Cancelling);
@@ -142,7 +146,7 @@ async fn batch_error() {
     let fixture = fixture(true, Answer::Batch(batch_with("batch_1", "failed", extra)));
     let found = fixture
         .api
-        .retrieve_batch(connection(false, None), &query())
+        .batch(connection(false, None), BatchOperation::Retrieve(&query()))
         .await
         .unwrap();
     let failures = found.errors.unwrap().data.unwrap();
@@ -151,7 +155,7 @@ async fn batch_error() {
     let unknown = self::fixture(true, Answer::Batch(batch("batch_1", "exploded")));
     let error = unknown
         .api
-        .retrieve_batch(connection(false, None), &query())
+        .batch(connection(false, None), BatchOperation::Retrieve(&query()))
         .await
         .unwrap_err();
     assert!(matches!(error, BatchesError::Invalid { .. }));
@@ -159,27 +163,25 @@ async fn batch_error() {
 
 async fn sdk_client_argument_projection() {
     let fixture = fixture(true, Answer::Batch(batch("batch_1", "validating")));
+    let lookup = query();
+    let retrieve = |connection| {
+        fixture
+            .api
+            .batch(connection, BatchOperation::Retrieve(&lookup))
+    };
     let mut asynchronous = connection(true, None);
     asynchronous.settings.api_key = Some(SecretString::from(""));
     asynchronous.settings.api_base = Some(String::from("https://example.test/v1"));
     asynchronous.settings.max_retries = Some(0);
     asynchronous.settings.organization = Some(String::new());
-    fixture
-        .api
-        .retrieve_batch(asynchronous, &query())
-        .await
-        .unwrap();
+    retrieve(asynchronous).await.unwrap();
     let mut synchronous = connection(false, None);
     synchronous.settings.timeout = Some(Timeout::Seconds(30.0));
-    fixture
-        .api
-        .retrieve_batch(synchronous, &query())
-        .await
-        .unwrap();
+    retrieve(synchronous).await.unwrap();
     let answer = Answer::Batch(batch("batch_1", "validating"));
     let client = supplied(&fixture, ClientKind::Sync, answer);
     let own = connection(false, Some(client));
-    fixture.api.retrieve_batch(own, &query()).await.unwrap();
+    retrieve(own).await.unwrap();
     let built = fixture.built.lock().unwrap().clone();
     assert_eq!(built.len(), 2);
     let (first, first_kind) = &built[0];
@@ -200,11 +202,19 @@ async fn sdk_client_missing() {
     let fixture = fixture(false, Answer::Batch(batch("batch_1", "validating")));
     let error = fixture
         .api
-        .create_batch(connection(false, None), &create_request())
+        .batch(
+            connection(false, None),
+            BatchOperation::Create(&create_request()),
+        )
         .await
         .unwrap_err();
     assert!(matches!(error, BatchesError::NotInitialized));
     assert_eq!(error.to_string(), NOT_INITIALIZED);
+    let listing = fixture
+        .api
+        .list_batches(connection(false, None), None, None)
+        .await;
+    assert!(matches!(listing, Err(BatchesError::NotInitialized)));
 }
 
 async fn sdk_client_wrong_async() {
@@ -212,7 +222,10 @@ async fn sdk_client_wrong_async() {
     let sync_client = supplied(&fixture, ClientKind::Sync, Answer::Failure);
     let error = fixture
         .api
-        .retrieve_batch(connection(true, Some(sync_client)), &query())
+        .batch(
+            connection(true, Some(sync_client)),
+            BatchOperation::Retrieve(&query()),
+        )
         .await
         .unwrap_err();
     assert_eq!(error.to_string(), NOT_ASYNC);
@@ -223,13 +236,16 @@ async fn sdk_error_passthrough() {
     let fixture = fixture(true, Answer::Failure);
     let api = &fixture.api;
     let errors = [
-        api.create_batch(connection(false, None), &create_request())
+        api.batch(
+            connection(false, None),
+            BatchOperation::Create(&create_request()),
+        )
+        .await
+        .unwrap_err(),
+        api.batch(connection(false, None), BatchOperation::Retrieve(&query()))
             .await
             .unwrap_err(),
-        api.retrieve_batch(connection(false, None), &query())
-            .await
-            .unwrap_err(),
-        api.cancel_batch(connection(false, None), &query())
+        api.batch(connection(false, None), BatchOperation::Cancel(&query()))
             .await
             .unwrap_err(),
         api.list_batches(connection(false, None), None, None)
@@ -253,15 +269,19 @@ async fn cancel_sync_client_type() {
     };
     let error = fixture
         .api
-        .cancel_batch(wrong(), &query())
+        .batch(wrong(), BatchOperation::Cancel(&query()))
         .await
         .unwrap_err();
     assert_eq!(error.to_string(), NOT_SYNC);
     assert!(fixture.calls.lock().unwrap().is_empty());
-    fixture.api.retrieve_batch(wrong(), &query()).await.unwrap();
     fixture
         .api
-        .create_batch(wrong(), &create_request())
+        .batch(wrong(), BatchOperation::Retrieve(&query()))
+        .await
+        .unwrap();
+    fixture
+        .api
+        .batch(wrong(), BatchOperation::Create(&create_request()))
         .await
         .unwrap();
     fixture.api.list_batches(wrong(), None, None).await.unwrap();

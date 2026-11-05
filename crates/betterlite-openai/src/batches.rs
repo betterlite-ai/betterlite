@@ -9,6 +9,14 @@ pub mod http;
 pub mod records;
 pub mod sdk;
 
+// The three calls that answer with a batch
+#[derive(Debug, Clone, Copy)]
+pub enum BatchOperation<'request> {
+    Create(&'request BatchCreate),
+    Retrieve(&'request BatchQuery),
+    Cancel(&'request BatchQuery),
+}
+
 // LiteLLM's OpenAIBatchesAPI over an injected SDK client
 #[derive(Debug)]
 pub struct BatchesApi<Constructor> {
@@ -63,33 +71,19 @@ impl<Constructor: ClientConstructor> BatchesApi<Constructor> {
         Ok(client)
     }
 
-    pub async fn create_batch(
+    // create, retrieve and cancel decode the SDK's model_dump into a batch; only cancel checks the sync class
+    pub async fn batch(
         &self,
         connection: Connection<Constructor::Client>,
-        request: &BatchCreate,
+        operation: BatchOperation<'_>,
     ) -> Result<BatchObject, BatchesError> {
-        let client = self.checked_client(connection, false)?;
-        let body = client.create(request).await?;
-        Ok(decode_batch_object(&body)?)
-    }
-
-    pub async fn retrieve_batch(
-        &self,
-        connection: Connection<Constructor::Client>,
-        request: &BatchQuery,
-    ) -> Result<BatchObject, BatchesError> {
-        let client = self.checked_client(connection, false)?;
-        let body = client.retrieve(request).await?;
-        Ok(decode_batch_object(&body)?)
-    }
-
-    pub async fn cancel_batch(
-        &self,
-        connection: Connection<Constructor::Client>,
-        request: &BatchQuery,
-    ) -> Result<BatchObject, BatchesError> {
-        let client = self.checked_client(connection, true)?;
-        let body = client.cancel(request).await?;
+        let client =
+            self.checked_client(connection, matches!(operation, BatchOperation::Cancel(_)))?;
+        let body = match operation {
+            BatchOperation::Create(request) => client.create(request).await,
+            BatchOperation::Retrieve(request) => client.retrieve(request).await,
+            BatchOperation::Cancel(request) => client.cancel(request).await,
+        }?;
         Ok(decode_batch_object(&body)?)
     }
 
