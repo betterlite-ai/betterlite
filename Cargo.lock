@@ -1058,6 +1058,7 @@ version = "0.1.0"
 dependencies = [
  "aws-config",
  "aws-credential-types",
+ "aws-sdk-sts",
  "aws-smithy-async",
  "aws-smithy-runtime-api",
  "aws-smithy-types",
@@ -1067,6 +1068,7 @@ dependencies = [
  "betterlite-env",
  "betterlite-openai",
  "betterlite-redact",
+ "chrono",
  "encoding_rs",
  "futures-util",
  "hex",
@@ -1080,6 +1082,8 @@ dependencies = [
  "sha2 0.11.1",
  "thiserror",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -1748,6 +1752,7 @@ dependencies = [
  "aws-credential-types",
  "aws-smithy-async",
  "aws-smithy-runtime-api",
+ "aws-smithy-types",
  "aws-types",
  "axum",
  "base64 0.23.1",

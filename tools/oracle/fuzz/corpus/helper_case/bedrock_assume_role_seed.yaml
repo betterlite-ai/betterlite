@@ -1,0 +1,8 @@
+kind: helper
+name: bedrock-assume-role-seed
+call:
+  bedrock_assume_role:
+    operation: parse_arn
+    params: {'arn': 'arn:aws:iam::123456789012:role/path/MyRole'}
+env: {}
+compare: {ignore: []}
