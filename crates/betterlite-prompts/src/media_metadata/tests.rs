@@ -224,6 +224,30 @@ fn run(scenario: Scenario) {
     current_content_type: None,
     expected: "image/png",
 })]
+#[case::infer_content_type_sniffs_gif_magic_bytes(Scenario::InferOk {
+    url: "",
+    content: b"GIF89a",
+    current_content_type: None,
+    expected: "image/gif",
+})]
+#[case::infer_content_type_rejects_gif8_without_a_marker(Scenario::InferErr {
+    url: "",
+    content: b"GIF8zz",
+    current_content_type: None,
+    expected_error: MediaMetadataError::ContentTypeUndetermined { url: String::new() },
+})]
+#[case::infer_content_type_sniffs_webp_magic_bytes(Scenario::InferOk {
+    url: "",
+    content: b"RIFF0000WEBP",
+    current_content_type: None,
+    expected: "image/webp",
+})]
+#[case::infer_content_type_rejects_riff_without_webp_marker(Scenario::InferErr {
+    url: "",
+    content: b"RIFF0000XYZZ",
+    current_content_type: None,
+    expected_error: MediaMetadataError::ContentTypeUndetermined { url: String::new() },
+})]
 #[case::infer_content_type_errors_when_undetermined(Scenario::InferErr {
     url: "https://example.com/file",
     content: b"nope",
