@@ -7,7 +7,7 @@ use crate::user_url::error::InvalidUrl;
 use crate::user_url::split::parse_ipv6;
 
 const MAX_URL_LENGTH: usize = 0x0001_0000;
-const HOST_SAFE: &str = "-._~!$&'()*+,;=\"`{}%|\\";
+const HOST_ESCAPED: &str = " #/:<>?@[]^";
 
 // The characters httpx leaves unescaped are the printable ASCII ones outside the WHATWG percent-encode set of the component
 const QUERY_ESCAPED: &str = " \"#<>";
@@ -27,39 +27,27 @@ pub struct HttpxUrl {
     pub fragment: Option<String>,
 }
 
-fn percent_encoded_at(letters: &[char], index: usize) -> bool {
-    letters.get(index) == Some(&'%')
-        && letters
-            .get(index.saturating_add(1)..index.saturating_add(3))
-            .is_some_and(|pair| pair.len() == 2 && pair.iter().all(char::is_ascii_hexdigit))
-}
-
-// httpx quote(): a character the `safe` test refuses is percent-encoded as UTF-8, an existing %XX is kept
-fn quote<F>(text: &str, safe: F) -> String
-where
-    F: Fn(char) -> bool,
-{
-    let letters: Vec<char> = text.chars().collect();
+// httpx quote(): a character outside printable ASCII or in `escaped` is percent-encoded as UTF-8, an existing %XX is kept
+fn quote(text: &str, escaped: &str) -> String {
     let mut quoted = String::with_capacity(text.len());
-    let mut index = 0_usize;
-    while let Some(letter) = letters.get(index).copied() {
-        if percent_encoded_at(&letters, index) {
-            quoted.extend(letters.iter().skip(index).take(3));
-            index = index.saturating_add(3);
-            continue;
-        }
-        if safe(letter) {
-            quoted.push(letter);
+    let mut rest = text;
+    while let Some(letter) = rest.chars().next() {
+        let escape = rest.get(..3).filter(|piece| {
+            let mut chars = piece.chars();
+            chars.next() == Some('%') && chars.all(|digit| digit.is_ascii_hexdigit())
+        });
+        let width = if escape.is_some() {
+            3
         } else {
-            let mut buffer = [0_u8; 4];
-            quoted.extend(
-                letter
-                    .encode_utf8(&mut buffer)
-                    .bytes()
-                    .map(|byte| format!("%{byte:02X}")),
-            );
+            letter.len_utf8()
+        };
+        let (taken, tail) = rest.split_at_checked(width).unwrap_or((rest, ""));
+        if escape.is_some() || ((' '..='~').contains(&letter) && !escaped.contains(letter)) {
+            quoted.push_str(taken);
+        } else {
+            quoted.extend(taken.bytes().map(|byte| format!("%{byte:02X}")));
         }
-        index = index.saturating_add(1);
+        rest = tail;
     }
     quoted
 }
@@ -106,9 +94,7 @@ fn encode_host(host: &str) -> Result<String, InvalidUrl> {
                 host: inner.to_owned(),
             })
     } else if host.is_ascii() {
-        Ok(quote(&host.to_lowercase(), |letter| {
-            letter.is_ascii_alphanumeric() || HOST_SAFE.contains(letter)
-        }))
+        Ok(quote(&host.to_lowercase(), HOST_ESCAPED))
     } else {
         // IDNA2008 as the idna package does it; the idna crate maps by UTS 46, which agrees on lowercase input
         idna::domain_to_ascii_cow(host.to_lowercase().as_bytes(), AsciiDenyList::EMPTY)
@@ -222,9 +208,7 @@ impl HttpxUrl {
         let (raw_scheme, authority, raw_path, query, fragment) = split_reference(url);
         let (raw_userinfo, raw_host, raw_port) = split_authority(authority);
         let scheme = raw_scheme.to_lowercase();
-        let userinfo = quote(raw_userinfo, |letter| {
-            (' '..='~').contains(&letter) && !USERINFO_ESCAPED.contains(letter)
-        });
+        let userinfo = quote(raw_userinfo, USERINFO_ESCAPED);
         let host = encode_host(raw_host)?;
         let port = normalize_port(raw_port, raw_scheme)?;
         let has_authority = !userinfo.is_empty() || !host.is_empty() || port.is_some();
@@ -239,19 +223,9 @@ impl HttpxUrl {
             userinfo,
             host,
             port,
-            path: quote(&path, |letter| {
-                (' '..='~').contains(&letter) && !PATH_ESCAPED.contains(letter)
-            }),
-            query: query.map(|text| {
-                quote(text, |letter| {
-                    (' '..='~').contains(&letter) && !QUERY_ESCAPED.contains(letter)
-                })
-            }),
-            fragment: fragment.map(|text| {
-                quote(text, |letter| {
-                    (' '..='~').contains(&letter) && !FRAGMENT_ESCAPED.contains(letter)
-                })
-            }),
+            path: quote(&path, PATH_ESCAPED),
+            query: query.map(|text| quote(text, QUERY_ESCAPED)),
+            fragment: fragment.map(|text| quote(text, FRAGMENT_ESCAPED)),
         })
     }
 
