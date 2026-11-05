@@ -1,8 +1,11 @@
+use std::collections::BTreeMap;
 use std::mem;
 use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_config::proxy::{ProxyPolicy, ProxyRoute, ProxyServer};
+use betterlite_config::tls::TlsPolicy;
+use betterlite_config::types::{Config, ModelDeployment};
 use reqwest::header::{ACCEPT, CONTENT_TYPE, HeaderMap};
 use reqwest::redirect::Policy;
 use reqwest::retry::never;
@@ -15,6 +18,7 @@ use crate::error::HttpError;
 use crate::proxy::limits::{ReadError, TransportLimits, check_headers, read_bounded};
 use crate::proxy::outbound::OutboundRequest;
 use crate::proxy::transport_error::TransportError;
+use crate::tls::{TlsError, apply_policy};
 
 pub mod limits;
 pub mod multipart;
@@ -61,12 +65,30 @@ fn forward_proxy(policy: &Arc<ProxyPolicy>, server: &Arc<ProxyServer>) -> Proxy 
 }
 
 impl ProxiedClient {
+    pub fn outbound_for_deployment(
+        proxy: &Arc<ProxyPolicy>,
+        config: &Config,
+        deployment: &ModelDeployment,
+        environment: &BTreeMap<String, String>,
+    ) -> Result<Self, TlsError> {
+        let tls = TlsPolicy::resolve(config, environment, deployment.litellm_params.ssl_verify)?;
+        let builder = apply_policy(base_builder(), &tls)?;
+        Self::build(builder, proxy, TransportLimits::DEFAULT).map_err(TlsError::Http)
+    }
+
     pub fn outbound(policy: &Arc<ProxyPolicy>) -> Result<Self, HttpError> {
         Self::build(
             base_builder().http1_only(),
             policy,
             TransportLimits::DEFAULT,
         )
+    }
+
+    pub fn outbound_with_tls(policy: &Arc<ProxyPolicy>, tls: &TlsPolicy) -> Result<Self, TlsError> {
+        let builder = apply_policy(base_builder(), tls)?;
+        let client =
+            Self::build(builder, policy, TransportLimits::DEFAULT).map_err(TlsError::Http)?;
+        Ok(client)
     }
 
     pub fn build(

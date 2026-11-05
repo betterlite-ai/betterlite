@@ -23,8 +23,6 @@ use tokio_rustls::server::TlsStream;
 
 use super::{TEST_CA, TIMEOUT, server_config};
 use crate::proxy::ProxiedClient;
-use crate::proxy::limits::TransportLimits;
-use crate::proxy::pool::ClientPool;
 
 #[rstest]
 #[case::http1_default("default", Version::HTTP_11)]
@@ -61,9 +59,7 @@ fn http_policy_tests_behavior(#[case] mode: &str, #[case] expected: Version) {
     .unwrap();
     let policy = TlsPolicy::resolve(&config, &environment, None).unwrap();
     let routing = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &environment).unwrap());
-    let client = ClientPool::new(1, TransportLimits::DEFAULT)
-        .client(&policy, &routing)
-        .unwrap();
+    let client = ProxiedClient::outbound_with_tls(&routing, &policy).unwrap();
     let listener = StdListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let url = format!(

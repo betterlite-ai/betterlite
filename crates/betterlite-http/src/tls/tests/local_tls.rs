@@ -21,8 +21,6 @@ use rustls::{NamedGroup, RootCertStore, ServerConfig, ServerConnection, StreamOw
 use tokio::runtime::Builder;
 
 use crate::proxy::ProxiedClient;
-use crate::proxy::limits::TransportLimits;
-use crate::proxy::pool::ClientPool;
 
 const SERVER_CERT: &[u8] =
     include_bytes!("../../../../../tools/postgres-fixture/fixtures/tls/server.pem");
@@ -81,18 +79,19 @@ fn http_policy_tests_behavior(#[case] mode: &str, #[case] host: &str, #[case] su
         .unwrap();
         let policy = TlsPolicy::resolve(&config, &environment, None).unwrap();
         let routing = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &environment).unwrap());
-        let deployment_verify = config
-            .model_list
-            .first()
-            .and_then(|deployment| deployment.litellm_params.ssl_verify);
-        let client = if mode == "legacy" && deployment_verify.is_none() {
-            ProxiedClient::outbound(&routing).unwrap()
-        } else {
-            let pooled = TlsPolicy::resolve(&config, &environment, deployment_verify).unwrap();
-            ClientPool::new(1, TransportLimits::DEFAULT)
-                .client(&pooled, &routing)
-                .unwrap()
-        };
+        let client = config.model_list.first().map_or_else(
+            || {
+                if mode == "legacy" {
+                    ProxiedClient::outbound(&routing).unwrap()
+                } else {
+                    ProxiedClient::outbound_with_tls(&routing, &policy).unwrap()
+                }
+            },
+            |deployment| {
+                ProxiedClient::outbound_for_deployment(&routing, &config, deployment, &environment)
+                    .unwrap()
+            },
+        );
         let runtime = Builder::new_current_thread().enable_all().build().unwrap();
         let _entered = runtime.enter();
         let response = runtime.block_on(
