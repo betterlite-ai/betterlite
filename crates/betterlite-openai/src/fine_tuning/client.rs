@@ -40,7 +40,7 @@ pub trait ClientBuilder {
     ) -> Result<Option<Box<dyn JobsApi>>, BuildError>;
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
 pub struct ClientSettings {
     pub api_key: Option<SecretString>,
@@ -63,9 +63,8 @@ pub struct ClientArgs {
 }
 
 impl fmt::Debug for ClientArgs {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        formatter
-            .debug_struct("ClientArgs")
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ClientArgs")
             .field("base_url", &self.base_url)
             .finish_non_exhaustive()
     }

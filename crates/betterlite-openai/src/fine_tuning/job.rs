@@ -11,7 +11,7 @@ type Extra = Map<String, Value>;
 
 macro_rules! record {
     ($name:ident { $($field:ident: $kind:ty),* $(,)? }) => {
-        #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+        #[derive(Debug, Clone, Deserialize, Serialize)]
         pub struct $name {
             $(pub $field: $kind,)*
             #[serde(flatten)]
@@ -26,7 +26,7 @@ pub enum Auto {
     Auto,
 }
 
-#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(untagged)]
 pub enum AutoOr<T> {
     Auto(Auto),
@@ -99,7 +99,7 @@ record!(FineTuneJob {
 });
 
 #[skip_serializing_none]
-#[derive(Debug, Clone, PartialEq, Default, Deserialize, Serialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct FineTuneCreate {
     pub model: String,
     pub training_file: String,
