@@ -1416,6 +1416,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-prompts",
  "fancy-regex",
+ "futures-util",
  "indexmap 2.14.2",
  "regex",
  "reqwest",
