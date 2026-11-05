@@ -39,6 +39,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "runway_task"
+path = "fuzz_targets/runway_task.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "upload_security_content"
 path = "fuzz_targets/upload_security_content.rs"
 test = false

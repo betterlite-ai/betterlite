@@ -8,17 +8,21 @@ publish.workspace = true
 [dependencies]
 betterlite-auth = { path = "../betterlite-auth" }
 betterlite-config = { path = "../betterlite-config" }
+betterlite-env = { path = "../betterlite-env" }
+betterlite-http = { path = "../betterlite-http" }
 betterlite-logging = { path = "../betterlite-logging" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
 chrono = { version = "0.4.45", default-features = false, features = ["serde"] }
 futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
+http = "1.5.0"
 indexmap = { version = "2.14.2", features = ["serde"] }
 lopdf = { version = "0.46.0", default-features = false }
 rust_decimal.workspace = true
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
-serde_json = { version = "1.0.154", features = ["arbitrary_precision"] }
+serde_json = { version = "1.0.154", features = ["arbitrary_precision", "raw_value"] }
+serde_path_to_error = "0.1.20"
 serde_with = { version = "3.24.0", default-features = false, features = ["macros"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
