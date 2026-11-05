@@ -1,9 +1,8 @@
 #![cfg(test)]
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use rstest::rstest;
 use secrecy::SecretString;
 
 use super::super::error::CountTokensError;
@@ -63,26 +62,26 @@ async fn openai_count_tokens_secret_safe_failure() {
     assert!(!everything.contains(secret), "{everything}");
 }
 
-#[rstest]
-fn replays_the_openai_count_tokens_corpus(
-    #[files("fuzz/corpus/openai_count_tokens/*")] path: PathBuf,
-) {
-    let bytes = fs::read(&path).unwrap();
+fn replays(path: &Path) -> bool {
+    let bytes = fs::read(path).unwrap();
     let name = path.file_name().unwrap().to_str().unwrap().to_owned();
     let decoded = decode_input_token_count(&bytes);
     match name.split('-').next().unwrap() {
-        "valid" => assert!(matches!(decoded, Ok(Some(_))), "{name}"),
-        "null" => assert!(matches!(decoded, Ok(None)), "{name}"),
-        "scalar" => assert!(
-            matches!(decoded, Err(CountTokensError::NotAnObject)),
-            "{name}"
-        ),
-        "malformed" | "truncated" => {
-            assert!(
-                matches!(decoded, Err(CountTokensError::Decode { .. })),
-                "{name}"
-            );
-        }
+        "valid" => matches!(decoded, Ok(Some(_))),
+        "null" => matches!(decoded, Ok(None)),
+        "scalar" => matches!(decoded, Err(CountTokensError::NotAnObject)),
+        "malformed" | "truncated" => matches!(decoded, Err(CountTokensError::Decode { .. })),
         other => panic!("unknown corpus category {other}"),
     }
+}
+
+#[test]
+fn replays_the_openai_count_tokens_corpus() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/openai_count_tokens");
+    let seeds: Vec<PathBuf> = fs::read_dir(corpus)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect();
+    assert!(!seeds.is_empty());
+    assert_eq!(seeds.iter().find(|path| !replays(path)), None);
 }
