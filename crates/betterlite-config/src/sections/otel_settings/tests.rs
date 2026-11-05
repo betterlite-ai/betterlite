@@ -74,6 +74,18 @@ fn folds_empty_export_list_to_single_exporter_spec() {
 }
 
 #[test]
+fn exporter_only_shorthand_folds_without_endpoint_or_headers() {
+    let config = load(
+        "callback_settings:\n  otel:\n    exporter: otlp_grpc\n",
+        &[],
+    );
+    assert_eq!(
+        config.sections.otel_settings.exporters[0].kind.as_deref(),
+        Some("otlp_grpc")
+    );
+}
+
+#[test]
 fn headers_only_shorthand_keeps_console_kind() {
     let config = load(
         "callback_settings:\n  otel:\n    headers: api-key=secret\n",
