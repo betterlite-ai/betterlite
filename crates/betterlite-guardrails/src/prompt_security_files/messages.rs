@@ -28,37 +28,34 @@ async fn process_message(
     if let GuardrailValue::Object(fields) = &mut message
         && let Some(GuardrailValue::Array(items)) = fields.get_mut("content")
     {
-        let pending = take(items);
-        *items = process_content_items(sanitizer, pending, user_api_key_alias).await?;
+        process_content_items(sanitizer, items, user_api_key_alias).await?;
     }
     Ok(message)
 }
 
 async fn process_content_items(
     sanitizer: &FileSanitizer,
-    items: Vec<GuardrailValue>,
+    items: &mut [GuardrailValue],
     user_api_key_alias: Option<&str>,
-) -> Result<Vec<GuardrailValue>, FileSanitizationError> {
-    let mut content = Vec::with_capacity(items.len());
-    for item in items {
-        let GuardrailValue::Object(entry) = item else {
-            content.push(item);
+) -> Result<(), FileSanitizationError> {
+    for slot in items {
+        let GuardrailValue::Object(entry) = slot else {
             continue;
         };
-        let item_type = match entry.get("type") {
-            Some(GuardrailValue::Text(item_type)) => item_type.as_str(),
-            _ => "",
+        let fields = take(entry);
+        let item_type = match fields.get("type") {
+            Some(GuardrailValue::Text(item_type)) => item_type.clone(),
+            _ => String::new(),
         };
-        let processed = match item_type {
-            "image_url" => process_image_url_item(sanitizer, entry, user_api_key_alias).await?,
+        *entry = match item_type.as_str() {
+            "image_url" => process_image_url_item(sanitizer, fields, user_api_key_alias).await?,
             "document" | "file" => {
-                process_document_item(sanitizer, entry, user_api_key_alias).await?
+                process_document_item(sanitizer, fields, user_api_key_alias).await?
             }
-            _ => entry,
+            _ => fields,
         };
-        content.push(GuardrailValue::Object(processed));
     }
-    Ok(content)
+    Ok(())
 }
 
 pub async fn process_standalone_images(
