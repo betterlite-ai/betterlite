@@ -99,20 +99,6 @@ fn compatible_line_tool_arguments_take_objects_and_parameters(
 }
 
 #[rstest]
-#[case::number(r#"{"arguments":1}"#)]
-#[case::array(r#"{"arguments":[1]}"#)]
-#[case::name_number(r#"{"arguments":"x","name":3}"#)]
-fn compatible_line_tool_arguments_of_another_type_empty_the_chunk(#[case] function: &str) {
-    let line = format!(
-        r#"{{"choices":[{{"delta":{{"content":"hi","tool_calls":[{{"function":{function}}}]}}}}]}}"#
-    );
-    assert_eq!(
-        decode_legacy_compatible_line(&line, Mode::Sync),
-        decode_legacy_compatible_line("", Mode::Sync)
-    );
-}
-
-#[rstest]
 #[case::type_custom(r#"{"type":"custom","id":"c","custom":{"name":"n","input":"i"}}"#)]
 #[case::custom_key_only(r#"{"id":"c","custom":{"name":"n","input":"i"}}"#)]
 #[case::custom_with_function(
@@ -134,12 +120,15 @@ fn custom_first_tool_call_keeps_text_finish_reason_and_usage(#[case] tool_call: 
 }
 
 #[rstest]
+#[case::arguments_number(r#"{"function":{"arguments":1}}"#)]
+#[case::arguments_array(r#"{"function":{"arguments":[1]}}"#)]
+#[case::name_number(r#"{"function":{"arguments":"x","name":3}}"#)]
 #[case::type_custom_without_payload(r#"{"type":"custom","function":{"arguments":"x"}}"#)]
 #[case::type_custom_null_payload(r#"{"type":"custom","custom":null}"#)]
 #[case::payload_name_number(r#"{"custom":{"name":3}}"#)]
 #[case::payload_not_object(r#"{"custom":"text"}"#)]
 #[case::custom_index_text(r#"{"custom":{},"index":"x"}"#)]
-fn invalid_custom_tool_call_empties_the_chunk(#[case] tool_call: &str) {
+fn invalid_tool_call_empties_the_chunk(#[case] tool_call: &str) {
     let line = format!(
         r#"{{"choices":[{{"delta":{{"content":"hi","tool_calls":[{tool_call}]}},"finish_reason":"stop"}}]}}"#
     );
