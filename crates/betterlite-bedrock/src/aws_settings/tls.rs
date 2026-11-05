@@ -12,10 +12,13 @@ pub fn resolve_tls(
 ) -> Result<TlsPolicy, TlsPolicyError> {
     let boolean = match explicit {
         Some(VerifySetting::Bool(value)) => Some(*value),
-        Some(VerifySetting::Path(_)) | None => None,
+        Some(VerifySetting::Path(path)) => betterlite_env::flag("SSL_VERIFY", path).unwrap_or(None),
+        None => None,
     };
     let mut policy = TlsPolicy::resolve(config, environment, boolean)?;
-    if let Some(VerifySetting::Path(path)) = explicit {
+    if boolean.is_none()
+        && let Some(VerifySetting::Path(path)) = explicit
+    {
         policy.verification = Verification::CaFile(path.clone());
         policy.ca_file = Some(path.clone());
     }
