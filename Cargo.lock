@@ -2068,18 +2068,24 @@ version = "0.1.0"
 name = "betterlite-secret-managers"
 version = "0.1.0"
 dependencies = [
+ "aws-credential-types",
  "aws-sdk-kms",
+ "aws-sigv4",
  "aws-smithy-http-client",
+ "aws-smithy-runtime-api",
  "axum",
  "base64 0.23.1",
  "betterlite-env",
  "regex",
+ "reqwest",
  "rstest",
  "secrecy",
  "serde",
  "serde_json",
  "thiserror",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
