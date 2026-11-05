@@ -161,6 +161,12 @@ pub(crate) fn banned_tooling(run: &str) -> Vec<&'static str> {
             banned.push(name);
         }
     }
+    if words
+        .iter()
+        .any(|word| word.starts_with("../") && word.contains("litellm"))
+    {
+        banned.push("a LiteLLM checkout outside the repository");
+    }
     banned
 }
 
