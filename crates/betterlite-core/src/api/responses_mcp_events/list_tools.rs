@@ -70,29 +70,20 @@ fn format_tools(tools: &[DiscoveredTool]) -> Result<Vec<ListedTool>, McpEventErr
     Ok(formatted)
 }
 
-fn opening_events(item_id: &str) -> Vec<McpEvent> {
-    vec![
-        McpEvent {
-            kind: McpEventKind::ListToolsInProgress,
-            sequence_number: 1,
+fn status_events(item_id: &str, statuses: &[(McpEventKind, i64)]) -> Vec<McpEvent> {
+    statuses
+        .iter()
+        .map(|&(kind, sequence_number)| McpEvent {
+            kind,
+            sequence_number,
             output_index: 0,
             item_id: Some(item_id.to_owned()),
             delta: None,
             arguments: None,
             item: None,
             extra: BTreeMap::new(),
-        },
-        McpEvent {
-            kind: McpEventKind::ListToolsCompleted,
-            sequence_number: 2,
-            output_index: 0,
-            item_id: Some(item_id.to_owned()),
-            delta: None,
-            arguments: None,
-            item: None,
-            extra: BTreeMap::new(),
-        },
-    ]
+        })
+        .collect()
 }
 
 fn push_done_item(
@@ -122,16 +113,10 @@ fn failure_outcome(
     item_id: &str,
     error: &McpEventError,
 ) -> ListToolsOutcome {
-    events.push(McpEvent {
-        kind: McpEventKind::ListToolsFailed,
-        sequence_number: 2,
-        output_index: 0,
-        item_id: Some(item_id.to_owned()),
-        delta: None,
-        arguments: None,
-        item: None,
-        extra: BTreeMap::new(),
-    });
+    events.extend(status_events(
+        item_id,
+        &[(McpEventKind::ListToolsFailed, 2)],
+    ));
     push_done_item(&mut events, item_id, String::new(), Vec::new());
     ListToolsOutcome {
         events,
@@ -153,7 +138,13 @@ pub fn create_mcp_list_tools_events(
     base_item_id: &str,
     tools: &[DiscoveredTool],
 ) -> ListToolsOutcome {
-    let mut events = opening_events(base_item_id);
+    let mut events = status_events(
+        base_item_id,
+        &[
+            (McpEventKind::ListToolsInProgress, 1),
+            (McpEventKind::ListToolsCompleted, 2),
+        ],
+    );
     match format_tools(tools) {
         Ok(formatted) => {
             let server_label = servers
