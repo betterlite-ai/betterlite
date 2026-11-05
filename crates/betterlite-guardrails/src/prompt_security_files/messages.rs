@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 use super::FileSanitizer;
@@ -30,7 +32,12 @@ async fn process_message(
         Some(GuardrailValue::Array(items)) => {
             let mut content = Vec::with_capacity(items.len());
             for item in items {
-                content.push(process_content_item(sanitizer, item, user_api_key_alias).await?);
+                let GuardrailValue::Object(entry) = item else {
+                    content.push(item);
+                    continue;
+                };
+                let processed = process_content_item(sanitizer, entry, user_api_key_alias).await?;
+                content.push(GuardrailValue::Object(processed));
             }
             fields.insert("content".to_owned(), GuardrailValue::Array(content));
         }
@@ -44,22 +51,18 @@ async fn process_message(
 
 async fn process_content_item(
     sanitizer: &FileSanitizer,
-    item: GuardrailValue,
+    entry: BTreeMap<String, GuardrailValue>,
     user_api_key_alias: Option<&str>,
-) -> Result<GuardrailValue, FileSanitizationError> {
-    let GuardrailValue::Object(fields) = item else {
-        return Ok(item);
-    };
-    let item_type = match fields.get("type") {
+) -> Result<BTreeMap<String, GuardrailValue>, FileSanitizationError> {
+    let item_type = match entry.get("type") {
         Some(GuardrailValue::Text(item_type)) => item_type.clone(),
         _ => String::new(),
     };
-    let processed = match item_type.as_str() {
-        "image_url" => process_image_url_item(sanitizer, fields, user_api_key_alias).await?,
-        "document" | "file" => process_document_item(sanitizer, fields, user_api_key_alias).await?,
-        _ => fields,
-    };
-    Ok(GuardrailValue::Object(processed))
+    match item_type.as_str() {
+        "image_url" => process_image_url_item(sanitizer, entry, user_api_key_alias).await,
+        "document" | "file" => process_document_item(sanitizer, entry, user_api_key_alias).await,
+        _ => Ok(entry),
+    }
 }
 
 pub async fn process_standalone_images(
