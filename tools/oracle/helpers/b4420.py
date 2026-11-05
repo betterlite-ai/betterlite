@@ -1,8 +1,10 @@
 import json
 import os
+import sys
 from collections.abc import Callable
 from contextlib import ExitStack
 from functools import partial
+from types import ModuleType
 from typing import TypeAlias, cast
 from unittest.mock import patch
 
@@ -74,7 +76,9 @@ def run(input_value: dict[str, Json]) -> Json:
     native = cast(dict[str, str | None] | None, input_value.get("native"))
     with ExitStack() as patches:
         patches.enter_context(patch.dict(os.environ, {**scrubbed, **environment}, clear=True))
-        patches.enter_context(patch("litellm.proxy.proxy_server.premium_user", new=True))
+        licensed = ModuleType("litellm.proxy.proxy_server")
+        licensed.__dict__["premium_user"] = True
+        patches.enter_context(patch.dict(sys.modules, {licensed.__name__: licensed}))
         patches.enter_context(patch.object(litellm, "secret_manager_client", None))
         patches.enter_context(patch.object(litellm, "_key_management_system", None))
         patches.enter_context(patch.object(GCSBucketBase, "__init__", _no_init))
