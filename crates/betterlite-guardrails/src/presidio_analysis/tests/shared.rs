@@ -148,13 +148,19 @@ pub(super) enum Trigger {
     ApplyToOutput,
 }
 
+impl Trigger {
+    fn close(self, configured: &mut AnalyzerSettings) {
+        match self {
+            Self::PiiEntities => configured.pii_entities = vec!["PERSON".to_owned()],
+            Self::OutputParsePii => configured.output_parse_pii = true,
+            Self::ApplyToOutput => configured.apply_to_output = true,
+        }
+    }
+}
+
 pub(super) fn closed_settings(base: &str, trigger: Trigger) -> AnalyzerSettings {
     let mut configured = settings(base);
-    match trigger {
-        Trigger::PiiEntities => configured.pii_entities = vec!["PERSON".to_owned()],
-        Trigger::OutputParsePii => configured.output_parse_pii = true,
-        Trigger::ApplyToOutput => configured.apply_to_output = true,
-    }
+    trigger.close(&mut configured);
     configured
 }
 
