@@ -119,9 +119,9 @@ pub fn update_request(
     params: &FileUpdateParams,
     api_base: &str,
 ) -> Result<Request, VectorStoreError> {
-    let mut request = file_request(FileOperation::Retrieve, file_id, api_base)?;
-    request.body = json!(UpdateBody {
-        attributes: project(&params.attributes),
-    });
-    Ok(request)
+    let attributes = project(&params.attributes);
+    file_request(FileOperation::Retrieve, file_id, api_base).map(|request| Request {
+        body: json!(UpdateBody { attributes }),
+        ..request
+    })
 }
