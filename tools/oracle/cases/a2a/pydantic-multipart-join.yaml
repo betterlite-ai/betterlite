@@ -1,0 +1,5 @@
+kind: helper
+name: pydantic-multipart-join
+call: {b4805: {operation: extract, response: {result: {history: [{role: agent, messageId: multi, parts: [{kind: text, text: "first "}, {kind: data, data: {}}, {kind: text, text: second}, {kind: text, text: " third"}]}]}}}}
+env: {}
+compare: {ignore: []}

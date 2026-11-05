@@ -1,0 +1,5 @@
+kind: helper
+name: pydantic-history-skips-blank-agent
+call: {b4805: {operation: extract, response: {result: {history: [{role: agent, messageId: kept, parts: [{kind: text, text: kept}]}, {role: agent, messageId: tool, parts: [{kind: data, data: {x: 1}}]}, {role: agent, messageId: blank, parts: []}]}}}}
+env: {}
+compare: {ignore: []}
