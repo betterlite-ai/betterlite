@@ -19,6 +19,28 @@ pub(crate) struct Input {
 
 pub(crate) struct Op;
 
+fn insert_model_results(output: &mut Map<String, serde_json::Value>, model: &str) {
+    let (region, model_id) = split_bedrock_region_path(model);
+    output.insert(
+        "routing_prefix_stripped".to_owned(),
+        json!(strip_bedrock_routing_prefix(model)),
+    );
+    output.insert(
+        "arn_extracted_model".to_owned(),
+        json!(extract_model_from_arn(model)),
+    );
+    output.insert("region_path_region".to_owned(), json!(region));
+    output.insert("region_path_model_id".to_owned(), json!(model_id));
+    output.insert(
+        "suffix_rewritten".to_owned(),
+        json!(strip_throughput_suffix(model)),
+    );
+    output.insert(
+        "base_model".to_owned(),
+        json!(get_bedrock_base_model(model)),
+    );
+}
+
 fn lazy_catalog_binding_facts() -> serde_json::Value {
     let binder: fn() -> usize = || 42;
     let mut binding = LazyBinding::from(binder);
@@ -59,25 +81,7 @@ impl crate::helpers::Helper for Op {
         );
 
         if let Some(model) = input.model.as_deref() {
-            let (region, model_id) = split_bedrock_region_path(model);
-            output.insert(
-                "routing_prefix_stripped".to_owned(),
-                json!(strip_bedrock_routing_prefix(model)),
-            );
-            output.insert(
-                "arn_extracted_model".to_owned(),
-                json!(extract_model_from_arn(model)),
-            );
-            output.insert("region_path_region".to_owned(), json!(region));
-            output.insert("region_path_model_id".to_owned(), json!(model_id));
-            output.insert(
-                "suffix_rewritten".to_owned(),
-                json!(strip_throughput_suffix(model)),
-            );
-            output.insert(
-                "base_model".to_owned(),
-                json!(get_bedrock_base_model(model)),
-            );
+            insert_model_results(&mut output, model);
         }
 
         if let Some(endpoint) = input.endpoint.as_deref() {
