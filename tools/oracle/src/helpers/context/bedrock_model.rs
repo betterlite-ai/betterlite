@@ -1,4 +1,10 @@
-use betterlite_context::bedrock_model::model_info::{LazyBinding, LazyFallibleCache};
+use std::cell::Cell;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+use betterlite_context::bedrock_model::model_info::{
+    LazyBinding, LazyFallibleCache, local_model_cost_map,
+};
 use betterlite_context::bedrock_model::regions::{
     AmazonBedrockGlobalConfig, CROSS_REGION_PREFIXES,
 };
@@ -7,6 +13,7 @@ use betterlite_context::bedrock_model::{
     extract_model_from_arn, get_bedrock_base_model, split_bedrock_region_path,
     strip_bedrock_routing_prefix, strip_throughput_suffix,
 };
+use betterlite_models::catalog::ModelCatalog;
 use serde::Deserialize;
 use serde_json::{Map, json};
 
@@ -41,18 +48,39 @@ fn insert_model_results(output: &mut Map<String, serde_json::Value>, model: &str
     );
 }
 
+// Call counts prove caching; a `fn() -> F` binder can't capture a counter, so it needs a static one.
+static BINDER_CALLS: AtomicUsize = AtomicUsize::new(0);
+
 fn lazy_catalog_binding_facts() -> serde_json::Value {
-    let binder: fn() -> usize = || 42;
+    let binder: fn() -> usize = || {
+        BINDER_CALLS.fetch_add(1, Ordering::SeqCst);
+        42
+    };
+    let calls_before = BINDER_CALLS.load(Ordering::SeqCst);
     let mut binding = LazyBinding::from(binder);
-    let get_model_info_is_cached = binding.get() == binding.get();
+    binding.get();
+    binding.get();
+    let get_model_info_is_cached = BINDER_CALLS
+        .load(Ordering::SeqCst)
+        .saturating_sub(calls_before)
+        == 1;
 
-    let mut succeeding =
-        LazyFallibleCache::from(|| Ok::<Vec<&'static str>, &'static str>(vec!["loaded"]));
-    let loaded = succeeding.get();
-    let cost_map_loads_without_net = loaded.is_ok_and(|value| !value.is_empty());
+    let first = local_model_cost_map();
+    let second = local_model_cost_map();
+    let cost_map_loads_without_net = match (&first, &second) {
+        (Ok(loaded), Ok(cached)) => !loaded.entries.is_empty() && Arc::ptr_eq(loaded, cached),
+        _ => false,
+    };
 
-    let mut failing = LazyFallibleCache::from(|| Err::<Vec<&'static str>, &'static str>("forced"));
-    let cost_map_failure_uncached = failing.get().is_err() && failing.get().is_err();
+    let failure_calls = Cell::new(0_usize);
+    let mut failing = LazyFallibleCache::from(|| {
+        failure_calls.set(failure_calls.get().saturating_add(1));
+        Err::<Arc<ModelCatalog>, &'static str>("forced")
+    });
+    let first_failure = failing.get();
+    let second_failure = failing.get();
+    let cost_map_failure_uncached =
+        first_failure.is_err() && second_failure.is_err() && failure_calls.get() == 2;
 
     json!({
         "get_model_info_is_cached": get_model_info_is_cached,

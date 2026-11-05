@@ -1,10 +1,11 @@
 #![cfg(test)]
 
+use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use rstest::rstest;
 
-use super::model_info::{LazyBinding, LazyFallibleCache};
+use super::model_info::{LazyBinding, LazyFallibleCache, local_model_cost_map};
 use super::regions::{AmazonBedrockGlobalConfig, CROSS_REGION_PREFIXES};
 use super::runtime_arn::encode_runtime_modelid_arn;
 use super::{
@@ -99,6 +100,20 @@ fn suffix_rewrite_order_case() {
         "anthropic.claude:1:20k:2",
         "only the trailing throughput suffix is removed; an earlier one is not re-scanned"
     );
+    assert_eq!(
+        strip_throughput_suffix("anthropic.claude-3-5-sonnet-20241022-v2:0:51k[1m]"),
+        "anthropic.claude-3-5-sonnet-20241022-v2:0:51k",
+        "a throughput suffix before a context suffix survives because the throughput strip does not run again"
+    );
+    assert_eq!(
+        strip_throughput_suffix("anthropic.claude-v2:0:51k\n"),
+        "anthropic.claude-v2:0\n",
+        "Python's unanchored $ also matches just before a trailing newline"
+    );
+    assert_eq!(
+        strip_throughput_suffix("us.anthropic.claude-opus-4-6-v1[1m]\n"),
+        "us.anthropic.claude-opus-4-6-v1\n"
+    );
 }
 
 fn base_model_nova_and_regions_case() {
@@ -127,19 +142,21 @@ fn base_model_nova_and_regions_case() {
     );
 }
 
-fn lazy_catalog_binding_case() {
-    static BINDER_CALLS: AtomicUsize = AtomicUsize::new(0);
-    static LOAD_CALLS: AtomicUsize = AtomicUsize::new(0);
-    fn marker() -> usize {
-        BINDER_CALLS.fetch_add(1, Ordering::SeqCst);
-        42
-    }
+static BINDER_CALLS: AtomicUsize = AtomicUsize::new(0);
+static FAILING_LOAD_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+fn marker() -> usize {
+    BINDER_CALLS.fetch_add(1, Ordering::SeqCst);
+    42
+}
+
+fn lazy_binding_is_cached() {
     let binder: fn() -> usize = marker;
     let mut binding = LazyBinding::from(binder);
-    let first = binding.get();
-    let second = binding.get();
+    let bound = binding.get();
+    let bound_again = binding.get();
     assert_eq!(
-        first, second,
+        bound, bound_again,
         "the same bound callable is returned on every call"
     );
     assert_eq!(
@@ -147,26 +164,37 @@ fn lazy_catalog_binding_case() {
         1,
         "the import is cached, not repeated"
     );
+}
 
-    let mut succeeding = LazyFallibleCache::from(|| {
-        LOAD_CALLS.fetch_add(1, Ordering::SeqCst);
-        Ok::<Vec<&'static str>, &'static str>(vec!["loaded"])
-    });
-    assert_eq!(succeeding.get(), Ok(vec!["loaded"]));
-    assert_eq!(succeeding.get(), Ok(vec!["loaded"]));
+fn cost_map_success_is_cached() {
+    let loaded = local_model_cost_map().expect("the packaged map parses");
+    let cached = local_model_cost_map().expect("the cached map parses");
     assert_eq!(
-        LOAD_CALLS.load(Ordering::SeqCst),
-        1,
-        "a successful load is cached"
+        loaded.entries.len(),
+        4458,
+        "the real packaged catalog is returned, not a fabricated map"
     );
+    assert!(Arc::ptr_eq(&loaded, &cached), "a successful load is cached");
+}
 
-    let mut failing = LazyFallibleCache::from(|| Err::<Vec<&'static str>, &'static str>("forced"));
+fn cost_map_failure_is_never_cached() {
+    let mut failing = LazyFallibleCache::from(|| {
+        FAILING_LOAD_CALLS.fetch_add(1, Ordering::SeqCst);
+        Err::<Vec<&'static str>, &'static str>("forced")
+    });
+    assert_eq!(failing.get(), Err("forced"));
     assert_eq!(failing.get(), Err("forced"));
     assert_eq!(
-        failing.get(),
-        Err("forced"),
-        "an error is never cached into a fabricated fallback value and the loader runs again"
+        FAILING_LOAD_CALLS.load(Ordering::SeqCst),
+        2,
+        "an error is never cached into a fabricated fallback value, so the loader runs again"
     );
+}
+
+fn lazy_catalog_binding_case() {
+    lazy_binding_is_cached();
+    cost_map_success_is_cached();
+    cost_map_failure_is_never_cached();
 }
 
 fn runtime_arn_resource_encoding_case() {

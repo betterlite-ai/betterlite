@@ -40,17 +40,18 @@ pub fn extract_model_from_arn(model: &str) -> String {
         .map_or_else(|| model.to_owned(), str::to_owned)
 }
 
-const THROUGHPUT_SUFFIX_PATTERN: &str = r"(:\d+):\d+k$";
-const CONTEXT_SUFFIX_PATTERN: &str = r"\[\w+\]$";
+// Python's unanchored `$` also matches just before a trailing newline, unlike Rust's end-only `$`.
+const THROUGHPUT_SUFFIX_PATTERN: &str = r"(:\d+):\d+k(\n?)\z";
+const CONTEXT_SUFFIX_PATTERN: &str = r"\[\w+\](\n?)\z";
 
 #[must_use]
 pub fn strip_throughput_suffix(model: &str) -> String {
     let mut result = model.to_owned();
     if let Ok(throughput) = Regex::new(THROUGHPUT_SUFFIX_PATTERN) {
-        result = throughput.replace(&result, "$1").into_owned();
+        result = throughput.replace(&result, "${1}${2}").into_owned();
     }
     if let Ok(context) = Regex::new(CONTEXT_SUFFIX_PATTERN) {
-        result = context.replace(&result, "").into_owned();
+        result = context.replace(&result, "$1").into_owned();
     }
     result
 }

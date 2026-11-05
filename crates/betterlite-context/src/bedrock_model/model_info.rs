@@ -1,3 +1,24 @@
+use std::sync::{Arc, Mutex, PoisonError};
+
+use betterlite_models::catalog::{BundledCatalog, CatalogError, ModelCatalog, UnknownFields};
+
+static LOCAL_MODEL_COST_MAP: Mutex<Option<Arc<ModelCatalog>>> = Mutex::new(None);
+
+// matches _get_local_model_cost_map's lru_cache(maxsize=1): a success is cached forever, a failure is retried.
+pub fn local_model_cost_map() -> Result<Arc<ModelCatalog>, CatalogError> {
+    let mut cached = LOCAL_MODEL_COST_MAP
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    if let Some(catalog) = cached.as_ref() {
+        return Ok(Arc::clone(catalog));
+    }
+    let bytes = (BundledCatalog::default().asset)()?;
+    let catalog = Arc::new(ModelCatalog::parse(&bytes, UnknownFields::Reject)?);
+    *cached = Some(Arc::clone(&catalog));
+    drop(cached);
+    Ok(catalog)
+}
+
 pub struct LazyBinding<F> {
     binder: fn() -> F,
     cached: Option<F>,
