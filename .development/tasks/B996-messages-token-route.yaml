@@ -19,8 +19,7 @@ description: >-
 
 
   Register exactly these routes in this task: POST /v1/messages/count_tokens; POST /api/event_logging/batch; POST
-  /claude_code_gateway/v1/messages/count_tokens. Each alias is exercised through the booted proxy. Every route factory
-  is mounted once; a family composer mounts its child factories without re-registering their methods/paths.
+  /claude_code_gateway/v1/messages/count_tokens. Each alias is exercised through the booted proxy. Every route factory is mounted once, from its own route stub; no family composer mounts it again.
 
 
   Route input projections: request.headers.x-litellm-call-id (absent None); data.model (absent None); data.messages
@@ -85,6 +84,7 @@ description: >-
   still uses FastAPI detail, while explicit JSONResponse helpers keep their own code/null fields; do not coerce
   those into ProxyException semantics. The constructor inventory above is not a claim that the raw HTTPException
   reaches the client unchanged.
+  B1100 registers routes/messages_token.rs as a stub, so fill only crates/betterlite-server/src/routes/messages_token.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
   - crates/betterlite-server/Cargo.toml
@@ -92,10 +92,8 @@ scope:
   - crates/betterlite-server/src/api/messages_token_route/**
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/routes/messages_token.rs
+  - crates/betterlite-server/src/routes/messages_token/**
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/messages_token_route.rs
   - crates/betterlite-core/src/api/messages_token_route/**

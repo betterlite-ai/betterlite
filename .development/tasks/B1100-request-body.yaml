@@ -63,6 +63,23 @@ description: >-
   above, with typed values passed to the following stage.
 
 
+  Register every entry in the server-route-stubs check list up front, so the route and server-state tasks after
+  this one never edit routes.rs or state.rs. A routes entry is a module crates/betterlite-server/src/routes/<module>.rs
+  declared in routes.rs. Its routes function takes &Arc<ServerState> and returns a Router, and router() merges it
+  before the auth layers. A stub routes function returns an empty Router, so its owner's paths keep answering the
+  existing Not Found fallback until the owner fills the module. The existing empty completions.rs and moderations.rs
+  get stub routes functions the same way. A state entry is a module crates/betterlite-server/src/state/<module>.rs
+  declared in state.rs. It defines a Slot type with a constructor that takes the loaded Config, and ServerState
+  carries one field per entry of type <module>::Slot. A stub Slot holds nothing. ServerState lives in state.rs and
+  holds the loaded Config, the executor that application() already builds and the slots. It is built once in
+  server.rs application(). router() takes it as an Arc, hands it to each routes function and adds it as the
+  outermost Extension layer, so auth stages and chat handlers read their slot from the request. Update the router()
+  callers in server.rs and in the auth and model_list router tests to pass it. The test
+  routes::tests::stub_routes_answer_not_found builds router() with every stub merged and asserts that the health
+  route still answers and that a path no task serves gets the Not Found body. The stubs, their registry lines and
+  the ServerState wiring sit outside the line estimate below.
+
+
   Sizing: 164 owned nonblank/non-comment/non-docstring Python lines (190 nonblank/non-comment physical lines, including
   signatures/docstrings), counted from the linked spans without overlap. Estimated changed lines: 184 implementation,
   76 behavior tests, 72 oracle fixtures, 90 Rust/Python adapters, 60 decoder fuzz/replay, 33 config tests/seeds
@@ -85,6 +102,11 @@ scope:
   - crates/betterlite-server/src/routes/**
   - crates/betterlite-server/src/state.rs
   - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/server.rs
+  - crates/betterlite-server/src/auth/auth_identity/tests.rs
+  - crates/betterlite-server/src/auth/route_match/tests.rs
+  - crates/betterlite-server/src/auth/auth_route_patterns/tests.rs
+  - crates/betterlite-server/src/model_list/tests.rs
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/request_body.rs
   - crates/betterlite-core/src/api/request_body/**
@@ -155,6 +177,13 @@ dod:
   - oracle
   - helper-python
   - helper-corpus
+- text: >-
+    Every entry in the server-route-stubs list has its module file and its mod line, each routes entry is merged in
+    router() and each state entry is a ServerState field, and the merged stubs leave a path no task serves on the
+    Not Found fallback.
+  proof:
+  - server-route-stubs
+  - case-stub-routes-not-found
 checks:
   optional:
   - mutants
@@ -205,6 +234,186 @@ checks:
   - id: new-oracle-cases
     why: no new domain case exists on this branch
     run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/request-body)"
+  - id: case-stub-routes-not-found
+    why: router() does not merge the stub routes, or a merged stub answers anything but the Not Found fallback
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::tests::stub_routes_answer_not_found($|::)/)'
+  - id: server-route-stubs
+    why: a planned route or state entry has no module file or registry line, so its task would have to edit routes.rs or state.rs
+    run: |-
+      while read -r kind module; do
+        case "$kind" in
+          routes) test -f "crates/betterlite-server/src/routes/$module.rs" && grep -qE "^(pub(\([a-z]+\))? )?mod $module;" crates/betterlite-server/src/routes.rs && grep -qF "$module::routes(" crates/betterlite-server/src/routes.rs ;;
+          state) test -f "crates/betterlite-server/src/state/$module.rs" && grep -qE "^(pub(\([a-z]+\))? )?mod $module;" crates/betterlite-server/src/state.rs && grep -qF "$module::Slot" crates/betterlite-server/src/state.rs ;;
+        esac || { echo "$kind entry $module is not registered"; exit 1; }
+      done <<'EOF'
+      routes moderations
+      routes key_management
+      routes user_management
+      routes team_callbacks
+      routes organization_activity
+      routes customer_read
+      routes model_management
+      routes tool_policy
+      routes management_v1
+      routes responses
+      routes anthropic_messages
+      routes image
+      routes audio
+      routes realtime
+      routes rerank
+      routes batch
+      routes managed_file
+      routes assistant_runs
+      routes completions
+      routes router_settings
+      routes auto_router_preview
+      routes auto_router_read_api
+      routes shadow_eval_lifecycle
+      routes shadow_eval_results
+      routes router_preview_validation
+      routes jwt_mapping_api
+      routes key_update
+      routes key_bulk_update
+      routes key_delete
+      routes key_info
+      routes key_list
+      routes key_block
+      routes master_key_rotation
+      routes ui_sessions
+      routes user_fields
+      routes user_info
+      routes user_update
+      routes user_bulk_update
+      routes user_list
+      routes user_delete
+      routes user_activity
+      routes team_create
+      routes team_update
+      routes team_member_writes
+      routes team_member_resets
+      routes team_member_bulk
+      routes team_delete
+      routes team_info
+      routes team_lists
+      routes team_models
+      routes team_activity
+      routes access_group_read
+      routes access_group_write
+      routes model_group_write
+      routes model_group_budget
+      routes organization_create
+      routes organization_update
+      routes organization_members
+      routes budget_api
+      routes customer_create
+      routes customer_update
+      routes model_patch
+      routes model_write
+      routes model_public_settings
+      routes model_prompt_preview
+      routes model_info_v2
+      routes model_info_v1
+      routes key_regenerate
+      routes login
+      routes responses_read
+      routes responses_input_tokens
+      routes cursor_responses_compat
+      routes responses_ws_auth
+      routes claude_gateway_oauth
+      routes claude_gateway_settings
+      routes claude_plugin_access
+      routes claude_plugin_write
+      routes claude_plugin_read
+      routes claude_skill_write
+      routes claude_skill_read
+      routes messages_token
+      routes file_upload
+      routes file_content
+      routes file_read
+      routes batch_create
+      routes batch_read
+      routes assistant_object
+      routes assistant_thread
+      routes realtime_websocket
+      routes realtime_secret
+      routes batch_list
+      routes user_search_scope
+      routes team_member_delete
+      routes team_state
+      routes team_logging_controls
+      routes organization_read
+      routes model_block
+      routes model_create
+      routes bulk_user
+      routes credentials
+      routes tag_writes
+      routes tag_reads
+      routes tool_reports
+      routes callback_replay
+      routes model_group_read
+      routes organization_patch_v2
+      routes team_merge_patch
+      routes debug_report
+      routes mcp_byok_consent
+      state virtual_key_auth
+      state jwt_auth
+      state custom_auth
+      state cost_service
+      state spend_runtime
+      state auth_key_lookup
+      state auth_end_users
+      state auth_tag_budgets
+      state auth_route_policy
+      state trusted_network
+      state auth_request_policy
+      state auth_request_models
+      state auth_model_patterns
+      state auth_model_grants
+      state auth_resource_grants
+      state auth_pricing
+      state auth_key_budgets
+      state auth_tenant_budgets
+      state auth_model_budgets
+      state auth_common_checks
+      state auth_key_validation
+      state auth_headers
+      state auth_errors
+      state auth_model_lists
+      state jwt_keys
+      state jwt_verification
+      state jwt_permissions
+      state jwt_team_selection
+      state jwt_provisioning
+      state jwt_key_resolution
+      state oauth_tokens
+      state key_rotation
+      state auth_admission
+      state identity_store
+      state auth_backend_dispatch
+      state auth_cached_sessions
+      state jwt_team_authorization
+      state auth_org_lookup
+      state end_user_identity
+      state auth_context_sources
+      state virtual_key_routes
+      state request_body_safety
+      state model_grant_intersection
+      state entity_model_access
+      state team_budget_admission
+      state auth_policy_support
+      state key_context
+      state jwt_db_teams
+      state request_setup
+      state request_intake
+      state central_auth_checks
+      state budget_admission_handoff
+      state organization_route_policy
+      state credentials
+      state ptu_rollup
+      state current_spend
+      state master_database_auth
+      state adaptive_persistence
+      EOF
 oracle_cases:
 - tools/oracle/cases/helpers/request-body/cached-body-single-read.yaml
 - tools/oracle/cases/helpers/request-body/repair-small-json.yaml
@@ -230,7 +439,14 @@ pitfalls:
   and fallback instead of turning it into a hard error.
 - http_parsing_utils.py:327 emits the diagnostic 'Unexpected error reading request query params - %s'; retain its
   level and fallback instead of turning it into a hard error.
+- >-
+  The 560-line estimate covers the request body work only. The 109 route stubs, the 58 state slots, their registry
+  lines and the ServerState wiring add about 1900 lines outside it.
+- >-
+  A stub routes function or Slot constructor has a one-line body because it is a placeholder its owner replaces,
+  not a wrapper to inline. Do not prefill a stub with its owner's paths, handlers or fields.
+- Router::merge panics when two routers register the same method and path, so an empty stub router registers nothing.
 review_level: security
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 3400
   max_new_expects: 1

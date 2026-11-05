@@ -21,21 +21,14 @@ description: 'Implement classifier system-prompt construction from built-in rubr
   (L2106-L2157). Implement these behaviors through the typed Rust services above; synchronous facades
   and structural accessors reuse the same primitive instead of separate ports. Bound the class_reply outside-byte
   parser to 1048576 bytes before decoding; on excess use its typed invalid-input outcome (classifier/observation
-  consumers keep their pinned warning/fallback path).'
+  consumers keep their pinned warning/fallback path).
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B331 calls this service.'
 scope:
   paths:
   - crates/betterlite-router/src/classifier_verdict.rs
   - crates/betterlite-router/src/classifier_verdict/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/classifier_verdict.rs
   - crates/betterlite-server/src/routing/classifier_verdict/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/classifier_verdict.rs
   - tools/oracle/src/router_probes/classifier_verdict/**
   - tools/oracle/litellm/probes/classifier_verdict.py

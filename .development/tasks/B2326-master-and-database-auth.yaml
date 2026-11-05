@@ -42,6 +42,7 @@ description: >-
   the scheduled cache and nullable-field mutation order. No helper adapter may call the builder with
   fake global route state. Source ownership has 98 nonblank non-comment lines; budget
   170 production, 260 tests, 100 HTTP fixture/wiring lines, 530 within 600. Keep files below 300 lines.
+  B1100 registers state/master_database_auth.rs as a stub slot, so fill only crates/betterlite-server/src/state/master_database_auth.rs and leave state.rs as it is.
 scope:
   paths:
     - crates/betterlite-auth/src/master_database_auth.rs
@@ -51,8 +52,8 @@ scope:
     - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/auth/master_database_auth.rs
     - crates/betterlite-server/src/auth/master_database_auth/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/state/master_database_auth.rs
+    - crates/betterlite-server/src/state/master_database_auth/**
     - tools/oracle/cases/auth/master-database-auth/**
     - tools/oracle/helpers/b2326.py
     - tools/oracle/helpers/b2326/**

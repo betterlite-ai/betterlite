@@ -119,6 +119,7 @@ description: >-
   snapshot_and_metadata_order, query_version_and_cache, principal_budget_projection,
   turn_off_logging_and_agentic_drop, and final_handoff_order. Add config tests named loads_settings. Corpus replay, if
   needed by B002, keeps the separate name replays_corpus.
+  B1100 registers state/request_intake.rs as a stub slot, so fill only crates/betterlite-server/src/state/request_intake.rs, install the stage in crates/betterlite-server/src/routes/chat.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
   - crates/betterlite-server/Cargo.toml
@@ -126,10 +127,10 @@ scope:
   - crates/betterlite-server/src/api/request_intake/**
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/routes/chat.rs
+  - crates/betterlite-server/src/routes/chat/**
+  - crates/betterlite-server/src/state/request_intake.rs
+  - crates/betterlite-server/src/state/request_intake/**
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/request_intake.rs
   - crates/betterlite-core/src/api/request_intake/**

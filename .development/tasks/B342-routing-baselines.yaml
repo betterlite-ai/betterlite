@@ -17,21 +17,14 @@ description: 'Compute the canonical counterfactual baseline through B068 cost ca
   canonical_model (L48-L70), _models_in (L73-L101), _models_in.candidate (L87-L99), _priced (L104-L134),
   _most_expensive (L137-L143), resolve_baseline (L146-L162). Implement these behaviors through the typed
   Rust services above; synchronous facades and structural accessors reuse the same primitive instead of
-  separate ports.'
+  separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B344 calls this service.'
 scope:
   paths:
   - crates/betterlite-router/src/routing_baselines.rs
   - crates/betterlite-router/src/routing_baselines/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/routing_baselines.rs
   - crates/betterlite-server/src/routing/routing_baselines/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/routing_baselines.rs
   - tools/oracle/src/router_probes/routing_baselines/**
   - tools/oracle/litellm/probes/routing_baselines.py

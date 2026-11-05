@@ -59,6 +59,7 @@ description: >-
   and 40 wiring. Reusing the dependency-owned config tests leaves room for coercion edge cases.
   Typed services and shared multipart fixtures keep the complete function
   together instead of dividing its control flow across tasks.
+  B1100 registers routes/file_upload.rs as a stub, so fill only crates/betterlite-server/src/routes/file_upload.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
   - crates/betterlite-server/Cargo.toml
@@ -66,10 +67,8 @@ scope:
   - crates/betterlite-server/src/api/file_upload_route/**
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/routes/file_upload.rs
+  - crates/betterlite-server/src/routes/file_upload/**
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/file_upload_route.rs
   - crates/betterlite-core/src/api/file_upload_route/**
