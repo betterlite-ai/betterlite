@@ -34,7 +34,7 @@ pub enum EntryProvider<'entry> {
     NotText,
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize)]
 pub struct PotentialModelNames {
     pub split_model: String,
     pub combined_model_name: String,
