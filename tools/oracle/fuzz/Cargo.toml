@@ -3,9 +3,16 @@ name = "betterlite-oracle-fuzz"
 version = "0.0.0"
 publish = false
 edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
 
 [package.metadata]
 cargo-fuzz = true
+
+[package.metadata.cargo-shear]
+ignored = ["chrono", "quick-xml", "serde", "thiserror", "tl"]
 
 [dependencies]
 betterlite-oracle = { path = ".." }
@@ -15,6 +22,7 @@ quick-xml = "0.41.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde-saphyr = "2.0.0"
 thiserror = "2.0.17"
+tl = "0.7.8"
 
 [[bin]]
 name = "helper_case"
@@ -78,5 +86,3 @@ path = "fuzz_targets/scenario.rs"
 test = false
 doc = false
 bench = false
-
-[workspace]

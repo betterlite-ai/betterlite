@@ -37,7 +37,7 @@ roles:
       - runner: codex-worker
         model: gpt-6-luna
         effort: medium
-        attempts: 2
+        attempts: 1
         timeout_minutes: 45
       - runner: codex-worker
         model: gpt-6-astra
@@ -45,15 +45,15 @@ roles:
         attempts: 2
         timeout_minutes: 120
       - runner: claude-worker
-        model: sonnet
-        effort: high
-        attempts: 3
-        timeout_minutes: 180
-      - runner: codex-worker
-        model: gpt-6-astra
+        model: haiku
         effort: high
         attempts: 1
         timeout_minutes: 120
+      - runner: claude-worker
+        model: sonnet
+        effort: high
+        attempts: 2
+        timeout_minutes: 180
   reviewer:
     instructions: roles/reviewer.md
     ladder:
