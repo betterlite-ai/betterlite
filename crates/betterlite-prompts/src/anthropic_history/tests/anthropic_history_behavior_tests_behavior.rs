@@ -138,6 +138,15 @@ fn anthropic_history_behavior_tests_behavior_group_recomputes_ids_after_break() 
 }
 
 #[test]
+fn anthropic_history_behavior_tests_behavior_at_limit_history_is_accepted() {
+    let messages = vec![json!({"role":"user","content":"hi"}); tools::MAX_HISTORY_MESSAGES];
+    assert_eq!(
+        tools::sanitize_messages(&messages, true).unwrap().len(),
+        tools::MAX_HISTORY_MESSAGES
+    );
+}
+
+#[test]
 fn anthropic_history_behavior_tests_behavior_oversized_history_is_rejected() {
     let messages = vec![json!({"role":"user","content":"hi"}); tools::MAX_HISTORY_MESSAGES + 1];
     assert!(matches!(
@@ -146,9 +155,8 @@ fn anthropic_history_behavior_tests_behavior_oversized_history_is_rejected() {
     ));
 }
 
-#[test]
-fn anthropic_history_behavior_tests_behavior_oversized_tool_calls_is_rejected() {
-    let tool_calls = (0..=tools::MAX_TOOL_CALLS_PER_MESSAGE)
+fn tool_calls_assistant(count: usize) -> Json {
+    let tool_calls = (0..count)
         .map(|index| {
             let mut fields = Object::new();
             fields.insert("id".to_owned(), Json::Text(index.to_string()));
@@ -158,7 +166,18 @@ fn anthropic_history_behavior_tests_behavior_oversized_tool_calls_is_rejected() 
     let mut assistant_fields = Object::new();
     assistant_fields.insert("role".to_owned(), Json::Text("assistant".to_owned()));
     assistant_fields.insert("tool_calls".to_owned(), Json::List(tool_calls));
-    let messages = vec![Json::Object(assistant_fields)];
+    Json::Object(assistant_fields)
+}
+
+#[test]
+fn anthropic_history_behavior_tests_behavior_at_limit_tool_calls_is_accepted() {
+    let messages = vec![tool_calls_assistant(tools::MAX_TOOL_CALLS_PER_MESSAGE)];
+    tools::sanitize_messages(&messages, true).unwrap();
+}
+
+#[test]
+fn anthropic_history_behavior_tests_behavior_oversized_tool_calls_is_rejected() {
+    let messages = vec![tool_calls_assistant(tools::MAX_TOOL_CALLS_PER_MESSAGE + 1)];
     assert!(matches!(
         tools::sanitize_messages(&messages, true),
         Err(HistoryError::TooManyToolCalls { limit }) if limit == tools::MAX_TOOL_CALLS_PER_MESSAGE
