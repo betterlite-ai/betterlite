@@ -1,7 +1,7 @@
 id: B173
 milestone: M1 openai data plane
 title: Pooled outbound requests and response limits
-status: todo
+status: done
 depends_on: [B172, B005, B2236]
 file: tasks/B173-http-pool.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/openai/common_utils.py"
 parent: B009
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 705

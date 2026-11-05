@@ -57,8 +57,11 @@ clap = { version = "4.6.7", features = ["derive", "env"] }
 deadpool-postgres.workspace = true
 rquickjs = "0.14.0"
 rstest = "=0.27.0"
+rustls = { workspace = true, features = ["std", "tls12"] }
+signal-hook = { version = "0.4.6", default-features = false }
 tempfile = "3.27.0"
 tokio-postgres = { workspace = true, features = ["with-chrono-0_4"] }
+tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "tls12"] }
 tower = { workspace = true, features = ["util"] }
 tracing-subscriber.workspace = true
 
