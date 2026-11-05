@@ -25,7 +25,6 @@ struct Params {
     use_xai_oauth: Option<Flag>,
 }
 
-// LiteLLM tests the flag with bool(...), so any YAML value has a truth value; the task keeps that rule.
 #[derive(Debug, Deserialize)]
 #[serde(untagged)]
 enum Flag {
@@ -79,14 +78,15 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         let paths = environment::resolve(lookup);
-        let mut deployments = Vec::with_capacity(self.model_list.len());
-        for (index, deployment) in self.model_list.into_iter().enumerate() {
-            let enabled = match deployment.litellm_params.use_xai_oauth {
-                None => false,
-                Some(flag) => flag.truthiness(lookup, index)?,
-            };
-            deployments.push(enabled);
-        }
+        let deployments = self
+            .model_list
+            .into_iter()
+            .enumerate()
+            .map(|(index, deployment)| {
+                let flag = deployment.litellm_params.use_xai_oauth;
+                flag.map_or(Ok(false), |set| set.truthiness(lookup, index))
+            })
+            .collect::<Result<_, _>>()?;
         Ok(Settings {
             token_dir: paths.token_dir,
             auth_file: paths.auth_file,

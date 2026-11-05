@@ -22,7 +22,6 @@ pub struct OauthRecord {
     pub expires_at: i64,
 }
 
-// The auth file layout, with the secrets written out. Only the file write sees it.
 #[derive(Serialize)]
 pub struct StoredRecord<'record> {
     access_token: &'record str,
@@ -47,7 +46,6 @@ impl OauthRecord {
     }
 }
 
-// A missing or unconvertible expiry is expired; the token also renews 120 seconds early.
 #[must_use]
 pub fn is_expired(now: Decimal, expires_at: Option<&Numeric>) -> bool {
     expires_at

@@ -17,7 +17,6 @@ pub enum DecodeError {
     Json(#[source] serde_json::Error),
 }
 
-// A number or numeric text keeps its value; any other type counts as unconvertible.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum Numeric {
@@ -41,7 +40,6 @@ impl Numeric {
         }
     }
 
-    // int(value) for a truthy value; None when the value is falsy or cannot be converted.
     #[must_use]
     pub fn seconds(&self) -> Option<i64> {
         match self {
@@ -95,7 +93,6 @@ where
     serde_json::from_slice(bytes).map_err(DecodeError::Json)
 }
 
-// The first byte picks the document: 0 auth file, 1 discovery, 2 token response.
 pub fn decode_tagged(bytes: &[u8]) -> Result<Document, DecodeError> {
     match bytes.split_first() {
         Some((0, rest)) => decode_xai_oauth(rest).map(Document::Auth),

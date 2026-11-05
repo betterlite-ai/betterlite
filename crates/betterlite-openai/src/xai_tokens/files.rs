@@ -38,7 +38,6 @@ impl FileAccess for LocalFiles {
         Ok(bytes)
     }
 
-    // Write, flush and fsync a private temp file, then rename it over the target and chmod.
     fn replace(&self, directory: &Path, target: &Path, contents: &[u8]) -> io::Result<()> {
         let mut name = OsString::from(".");
         name.push(target.file_name().unwrap_or_default());

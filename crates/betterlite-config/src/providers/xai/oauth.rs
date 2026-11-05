@@ -27,14 +27,10 @@ pub(crate) fn resolve(lookup: &dyn EnvironmentLookup) -> OauthPaths {
 fn default_token_dir(lookup: &dyn EnvironmentLookup) -> String {
     let home = lookup
         .lookup("HOME")
-        .or_else(|| lookup.system_home()?.to_str().map(str::to_owned));
-    home.map_or_else(
-        || format!("~/{DEFAULT_TOKEN_DIR_UNDER_HOME}"),
-        |directory| {
-            format!(
-                "{}/{DEFAULT_TOKEN_DIR_UNDER_HOME}",
-                directory.trim_end_matches('/')
-            )
-        },
+        .or_else(|| lookup.system_home()?.to_str().map(str::to_owned))
+        .unwrap_or_else(|| "~".to_owned());
+    format!(
+        "{}/{DEFAULT_TOKEN_DIR_UNDER_HOME}",
+        home.trim_end_matches('/')
     )
 }

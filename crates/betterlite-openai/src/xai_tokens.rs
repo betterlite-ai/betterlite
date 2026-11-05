@@ -1,6 +1,6 @@
 use std::io;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 
 use betterlite_config::sections::xai_oauth_settings::Settings;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
@@ -28,19 +28,6 @@ pub mod transport;
 
 pub trait Clock: Send + Sync {
     fn now(&self) -> Decimal;
-}
-
-pub struct SystemClock;
-
-impl Clock for SystemClock {
-    fn now(&self) -> Decimal {
-        let elapsed = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default();
-        Decimal::new(i64::from(elapsed.subsec_nanos()), 9)
-            .checked_add(Decimal::from(elapsed.as_secs()))
-            .unwrap_or(Decimal::MAX)
-    }
 }
 
 pub struct XaiOauth<F, C, T> {

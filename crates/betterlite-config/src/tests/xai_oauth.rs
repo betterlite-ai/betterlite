@@ -107,12 +107,20 @@ fn deployments(params: &[&str]) -> String {
 #[case::non_empty_mapping("      use_xai_oauth: {a: 0}\n", Ok(true))]
 #[case::empty_mapping("      use_xai_oauth: {}\n", Ok(false))]
 #[case::environment_true("      use_xai_oauth: os.environ/XAI_FLAG\n", Ok(true))]
+#[case::environment_false("      use_xai_oauth: os.environ/FALSE_FLAG\n", Ok(false))]
+#[case::environment_off("      use_xai_oauth: os.environ/OFF_FLAG\n", Ok(false))]
+#[case::environment_empty("      use_xai_oauth: os.environ/EMPTY_FLAG\n", Ok(false))]
 fn xai_oauth_settings_read_the_deployment_flag(
     #[case] param: &str,
     #[case] expected: Result<bool, ()>,
 ) {
     let config = ConfigLoader {
-        lookup: lookup(&[("XAI_FLAG", "yes")]),
+        lookup: lookup(&[
+            ("XAI_FLAG", "yes"),
+            ("FALSE_FLAG", "false"),
+            ("OFF_FLAG", "off"),
+            ("EMPTY_FLAG", ""),
+        ]),
     }
     .load(&deployments(&[param]))
     .expect("the flag loads");
@@ -123,31 +131,20 @@ fn xai_oauth_settings_read_the_deployment_flag(
     );
 }
 
-#[rstest]
-#[case::environment_false("false", Ok(false))]
-#[case::environment_off("off", Ok(false))]
-#[case::environment_empty("", Ok(false))]
-#[case::environment_garbage("sometimes", Err("XAI_FLAG"))]
-fn xai_oauth_settings_read_the_flag_from_the_environment(
-    #[case] value: &str,
-    #[case] expected: Result<bool, &str>,
-) {
-    let loaded = ConfigLoader {
-        lookup: lookup(&[("XAI_FLAG", value)]),
+#[test]
+fn xai_oauth_settings_reject_an_unreadable_flag_variable() {
+    let error = ConfigLoader {
+        lookup: lookup(&[("XAI_FLAG", "sometimes")]),
     }
     .load(&deployments(&[
         "      use_xai_oauth: os.environ/XAI_FLAG\n",
-    ]));
+    ]))
+    .expect_err("a value that is not a flag is rejected");
 
-    match (loaded, expected) {
-        (Ok(config), Ok(flag)) => {
-            assert_eq!(config.sections.xai_oauth_settings.deployments, [flag]);
-        }
-        (Err(ConfigError::Environment { source }), Err(name)) => {
-            assert!(source.to_string().contains(name));
-        }
-        (outcome, expectation) => panic!("{outcome:?} does not match {expectation:?}"),
-    }
+    let ConfigError::Environment { source } = &error else {
+        panic!("{error:?} is not an environment error");
+    };
+    assert!(source.to_string().contains("XAI_FLAG"));
 }
 
 #[test]

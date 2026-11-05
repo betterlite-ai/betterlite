@@ -25,19 +25,10 @@ class Record(TypedDict):
     fallback: str | None
 
 
-class ExpiredInput(TypedDict):
+class Input(TypedDict, total=False):
     expired: Expired
-
-
-class EndpointInput(TypedDict):
     endpoint: str
-
-
-class RecordInput(TypedDict):
     record: Record
-
-
-Input = ExpiredInput | EndpointInput | RecordInput
 
 
 class Fixture(XAIOAuthAuthenticator):
@@ -53,15 +44,17 @@ class Fixture(XAIOAuthAuthenticator):
             auth = cast(XAIOAuthRecord, {"expires_at": case.get("expires_at")})
             with patch("litellm.llms.xai.oauth.time.time", lambda: case["now"]):
                 return {"expired": self._is_expired(auth)}
-        record = input_value["record"]
-        with patch("litellm.llms.xai.oauth.time.time", lambda: record["now"]):
-            try:
-                built = self._build_auth_record(
-                    record["payload"], record["token_endpoint"], record["fallback"]
-                )
-            except XAIOAuthError as error:
-                return {"error": str(error)}
-        return {"record": cast(JsonValue, dict(built))}
+        if "record" in input_value:
+            record = input_value["record"]
+            with patch("litellm.llms.xai.oauth.time.time", lambda: record["now"]):
+                try:
+                    built = self._build_auth_record(
+                        record["payload"], record["token_endpoint"], record["fallback"]
+                    )
+                except XAIOAuthError as error:
+                    return {"error": str(error)}
+            return {"record": cast(JsonValue, dict(built))}
+        raise ValueError("xai_oauth_tokens input needs endpoint, expired or record")
 
 
 def run(input_value: Input) -> JsonValue:
