@@ -93,7 +93,8 @@ pub(crate) fn find_runner<'agents>(
 pub(crate) fn availability(development: &Development) -> Result<(), GateError> {
     let git = coordinator(&development.root)?;
     maintenance::check(&git, "")?;
-    let agents: Agents = read_yaml(&development.root.join(".development/agents.yaml"))?;
+    let mut agents: Agents = read_yaml(&development.root.join(".development/agents.yaml"))?;
+    agents.roles.worker.keep_rungs_for("");
     vendor::available(&git, &agents, "")
 }
 
@@ -388,7 +389,8 @@ pub(crate) fn dispatch(
     grant: u32,
 ) -> Result<Vec<String>, GateError> {
     maintenance::check(&coordinator(&development.root)?, task_id)?;
-    let agents: Agents = read_yaml(&development.root.join(".development/agents.yaml"))?;
+    let mut agents: Agents = read_yaml(&development.root.join(".development/agents.yaml"))?;
+    agents.roles.worker.keep_rungs_for(task_id);
     vendor::available(&coordinator(&development.root)?, &agents, task_id)?;
     let file = ready_file(development, task_id)?;
     let task: Task = development.task(task_id)?;

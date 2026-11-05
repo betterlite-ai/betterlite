@@ -18,12 +18,13 @@ description: >-
   Cases boot both proxies with a non-secret master key, assistant_settings pointing at the mock provider,
   no enterprise package and SDK retries disabled. They compare real client responses and provider captures;
   the callback recorder observes production hooks without calling FastAPI functions as helper cases.
+  B1100 registers routes/assistant_object.rs as a stub, so fill only crates/betterlite-server/src/routes/assistant_object.rs and leave routes.rs as it is.
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
+  - crates/betterlite-server/src/routes/assistant_object.rs
+  - crates/betterlite-server/src/routes/assistant_object/**
   - crates/betterlite-server/src/api/assistant_object_routes.rs
   - crates/betterlite-server/src/api/assistant_object_routes/**
   - crates/betterlite-server/fuzz/corpus/assistant_body/object-*
