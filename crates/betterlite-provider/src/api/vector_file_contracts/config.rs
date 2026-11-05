@@ -39,9 +39,15 @@ pub struct VectorStoreFileResponse {
     pub body: Vec<u8>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SupportedParams(pub &'static [&'static str]);
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EnvironmentHeaders(pub Headers);
+
 pub trait VectorStoreFilesConfig {
-    fn supported_params(&self, _operation: FileOperation) -> &'static [&'static str] {
-        &[]
+    fn supported_params(&self, _operation: FileOperation) -> SupportedParams {
+        SupportedParams(&[])
     }
 
     fn map_params(
@@ -62,8 +68,8 @@ pub trait VectorStoreFilesConfig {
         &self,
         _headers: &Headers,
         _litellm_params: Option<&Params>,
-    ) -> Headers {
-        Headers::new()
+    ) -> EnvironmentHeaders {
+        EnvironmentHeaders(Headers::new())
     }
 
     fn complete_url(

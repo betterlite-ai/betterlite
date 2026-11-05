@@ -124,7 +124,7 @@ fn param_reports(input: &DefaultsInput) -> (Object, Object) {
     let supported = OPERATIONS
         .iter()
         .map(|(name, operation)| {
-            let params = MinimalConfig.supported_params(*operation);
+            let params = MinimalConfig.supported_params(*operation).0;
             ((*name).to_owned(), json!(params))
         })
         .collect();
@@ -174,7 +174,7 @@ fn provider_defaults(input: &DefaultsInput) -> Value {
     json!({
         "supported": supported,
         "mapped": mapped,
-        "environment": config.validate_environment(&input.headers, None),
+        "environment": config.validate_environment(&input.headers, None).0,
         "urls": urls,
         "signed_headers": signed_headers,
         "signed_body": signed_body,

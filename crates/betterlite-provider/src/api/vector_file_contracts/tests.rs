@@ -115,7 +115,7 @@ fn params(text: &str) -> Params {
 #[case::update(FileOperation::Update)]
 #[case::delete(FileOperation::Delete)]
 fn supported_params_are_empty_for_every_operation(#[case] operation: FileOperation) {
-    assert!(MinimalConfig.supported_params(operation).is_empty());
+    assert!(MinimalConfig.supported_params(operation).0.is_empty());
 }
 
 #[rstest]
@@ -139,6 +139,7 @@ fn validate_environment_returns_no_headers() {
     assert!(
         MinimalConfig
             .validate_environment(&incoming, None)
+            .0
             .is_empty()
     );
 }
