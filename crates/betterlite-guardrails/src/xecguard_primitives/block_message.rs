@@ -5,17 +5,37 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use super::RATIONALE_TRUNCATE_CHARS;
 use super::wire::ScanResult;
 
+const UNKNOWN: &str = "unknown";
+
 #[must_use]
 pub fn scan_block_message(result: &ScanResult) -> String {
     let violations = match &result.xecguard_result {
         Some(GuardrailValue::Array(items)) => items.as_slice(),
         _ => &[],
     };
-    let policies = unique_policies(violations);
-    let rationale = violations
-        .iter()
-        .find_map(non_empty_rationale)
-        .unwrap_or_default();
+    let mut names: Vec<&str> = Vec::new();
+    let mut rationale = String::new();
+    for violation in violations {
+        let GuardrailValue::Object(fields) = violation else {
+            continue;
+        };
+        if let Some(name) = fields.get("violated_policy_name").and_then(text_value)
+            && !name.is_empty()
+            && !names.contains(&name)
+        {
+            names.push(name);
+        }
+        if rationale.is_empty()
+            && let Some(candidate) = non_empty_rationale(fields)
+        {
+            rationale = candidate;
+        }
+    }
+    let policies = if names.is_empty() {
+        UNKNOWN.to_owned()
+    } else {
+        names.join(",")
+    };
     format!(
         "Blocked by XecGuard: policies=[{policies}] trace_id={} rationale={rationale}",
         result.trace_id_text()
@@ -24,20 +44,21 @@ pub fn scan_block_message(result: &ScanResult) -> String {
 
 #[must_use]
 pub fn grounding_block_message(result: &ScanResult) -> String {
-    let (rules, rationale) = match &result.xecguard_result {
-        Some(GuardrailValue::Object(fields)) => {
-            (grounding_rules(fields), grounding_rationale(fields))
-        }
-        _ => (Vec::new(), String::new()),
+    let trace_id = result.trace_id_text();
+    let Some(GuardrailValue::Object(fields)) = &result.xecguard_result else {
+        return format!(
+            "Blocked by XecGuard grounding: rules=[{UNKNOWN}] trace_id={trace_id} rationale="
+        );
     };
+    let rules = grounding_rules(fields);
     let rules_text = if rules.is_empty() {
-        "unknown".to_owned()
+        UNKNOWN.to_owned()
     } else {
         rules.join(",")
     };
     format!(
-        "Blocked by XecGuard grounding: rules=[{rules_text}] trace_id={} rationale={rationale}",
-        result.trace_id_text()
+        "Blocked by XecGuard grounding: rules=[{rules_text}] trace_id={trace_id} rationale={}",
+        grounding_rationale(fields)
     )
 }
 
@@ -49,30 +70,7 @@ fn text_value(value: &GuardrailValue) -> Option<&str> {
     }
 }
 
-fn unique_policies(violations: &[GuardrailValue]) -> String {
-    let mut names: Vec<&str> = Vec::new();
-    for violation in violations {
-        let GuardrailValue::Object(fields) = violation else {
-            continue;
-        };
-        let Some(name) = fields.get("violated_policy_name").and_then(text_value) else {
-            continue;
-        };
-        if !name.is_empty() && !names.contains(&name) {
-            names.push(name);
-        }
-    }
-    if names.is_empty() {
-        "unknown".to_owned()
-    } else {
-        names.join(",")
-    }
-}
-
-fn non_empty_rationale(violation: &GuardrailValue) -> Option<String> {
-    let GuardrailValue::Object(fields) = violation else {
-        return None;
-    };
+fn non_empty_rationale(fields: &BTreeMap<String, GuardrailValue>) -> Option<String> {
     fields
         .get("rationale")
         .and_then(text_value)

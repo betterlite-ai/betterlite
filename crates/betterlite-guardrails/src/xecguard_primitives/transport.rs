@@ -46,7 +46,21 @@ pub async fn call_scan(
     scan_type: ScanType,
     suppress_errors: bool,
 ) -> Result<Option<ScanResult>, XecGuardError> {
-    let payload = ScanPayload {
+    post(
+        client,
+        settings,
+        &RequestBody::Scan(&scan_payload(settings, messages, scan_type)),
+        suppress_errors,
+    )
+    .await
+}
+
+fn scan_payload(
+    settings: &XecGuardSettings,
+    messages: &[XecGuardMessage],
+    scan_type: ScanType,
+) -> ScanPayload {
+    ScanPayload {
         model: settings.model.clone(),
         scan_type,
         messages: messages.to_vec(),
@@ -56,14 +70,7 @@ pub async fn call_scan(
                 .map(|policy| (*policy).to_owned())
                 .collect()
         }),
-    };
-    post(
-        client,
-        settings,
-        &RequestBody::Scan(&payload),
-        suppress_errors,
-    )
-    .await
+    }
 }
 
 pub async fn call_grounding(
