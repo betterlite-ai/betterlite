@@ -250,6 +250,8 @@ async fn expired_file_without_a_refresh_token_asks_for_login() {
 #[case::numeric_text(Some("\"1121\""), false)]
 #[case::numeric_text_boundary(Some("\"1120\""), true)]
 #[case::exponent(Some("1.121e3"), false)]
+#[case::infinity(Some("\"inf\""), true)]
+#[case::not_a_number(Some("\"nan\""), true)]
 fn expiry_renews_120_seconds_early(#[case] json: Option<&'static str>, #[case] expired: bool) {
     let value: Option<Numeric> = json.map(|text| serde_json::from_str(text).unwrap());
     assert_eq!(is_expired(Decimal::from(NOW), value.as_ref()), expired);
@@ -261,6 +263,7 @@ fn expiry_renews_120_seconds_early(#[case] json: Option<&'static str>, #[case] e
 #[case::deep("https://a.b.x.ai/token", true)]
 #[case::uppercase("https://AUTH.X.AI/token", true)]
 #[case::port("https://auth.x.ai:8443/token", true)]
+#[case::port_out_of_range("https://auth.x.ai:99999/token", false)]
 #[case::http("http://auth.x.ai/token", false)]
 #[case::suffix("https://evilx.ai/token", false)]
 #[case::prefix("https://x.ai.evil.com/token", false)]
@@ -395,6 +398,7 @@ async fn failed_exchange_leaves_the_file_alone(#[case] reply: Reply) {
             .count(),
         1
     );
+    assert!(!format!("{error} {error:?}").contains("new-access"));
     assert!(!format!("{error:?}").contains("old-refresh"));
 }
 

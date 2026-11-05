@@ -18,7 +18,7 @@ pub enum DecodeError {
 }
 
 // A number or numeric text keeps its value; any other type counts as unconvertible.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub enum Numeric {
     Number(Number),
@@ -69,7 +69,7 @@ pub struct DiscoveryDocument {
     pub token_endpoint: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct TokenPayload {
     pub access_token: Option<SecretString>,
     pub refresh_token: Option<SecretString>,
