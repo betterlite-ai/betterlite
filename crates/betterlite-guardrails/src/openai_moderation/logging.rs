@@ -83,48 +83,24 @@ pub fn build_tracing_detail(guardrail_response: &GuardrailResponse) -> Option<Tr
     })
 }
 
-pub fn process_response(guardrail_name: &str, metadata: &mut RequestMetadata, timing: CallTiming) {
-    let guardrail_response = metadata.openai_moderation_response.take().map_or_else(
-        || GuardrailResponse::Text(ALLOW.to_owned()),
-        GuardrailResponse::Moderation,
-    );
-    add_log_record(
-        guardrail_name,
-        metadata,
-        (guardrail_response, GuardrailStatus::Success),
-        timing,
-    );
-}
-
-pub fn process_error(
+// LiteLLM's _process_response and _process_error differ only in the fallback response and the status.
+pub fn process_outcome(
     guardrail_name: &str,
-    error: &ModerationError,
+    outcome: Result<(), &ModerationError>,
     metadata: &mut RequestMetadata,
     timing: CallTiming,
 ) {
-    let status = if INTERVENTION_STATUSES.contains(&error.status_code()) {
-        GuardrailStatus::GuardrailIntervened
-    } else {
-        GuardrailStatus::GuardrailFailedToRespond
+    let (fallback, guardrail_status) = match outcome {
+        Ok(()) => (ALLOW.to_owned(), GuardrailStatus::Success),
+        Err(error) if INTERVENTION_STATUSES.contains(&error.status_code()) => {
+            (error.to_string(), GuardrailStatus::GuardrailIntervened)
+        }
+        Err(error) => (error.to_string(), GuardrailStatus::GuardrailFailedToRespond),
     };
-    let guardrail_response = metadata.openai_moderation_response.take().map_or_else(
-        || GuardrailResponse::Text(error.to_string()),
+    let guardrail_response = metadata.openai_moderation_response.take().map_or(
+        GuardrailResponse::Text(fallback),
         GuardrailResponse::Moderation,
     );
-    add_log_record(
-        guardrail_name,
-        metadata,
-        (guardrail_response, status),
-        timing,
-    );
-}
-
-fn add_log_record(
-    guardrail_name: &str,
-    metadata: &mut RequestMetadata,
-    (guardrail_response, guardrail_status): (GuardrailResponse, GuardrailStatus),
-    timing: CallTiming,
-) {
     let tracing_detail = build_tracing_detail(&guardrail_response);
     metadata.guardrail_records.push(GuardrailLogRecord {
         guardrail_name: guardrail_name.to_owned(),

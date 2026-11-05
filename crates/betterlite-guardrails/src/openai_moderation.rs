@@ -158,21 +158,13 @@ impl OpenAiModerationGuardrail {
             started,
             ended: (self.clock)(),
         };
-        match outcome {
-            Ok(()) => {
-                logging::process_response(&self.guardrail_name, &mut request_data.metadata, timing);
-                Ok(inputs)
-            }
-            Err(error) => {
-                logging::process_error(
-                    &self.guardrail_name,
-                    &error,
-                    &mut request_data.metadata,
-                    timing,
-                );
-                Err(error)
-            }
-        }
+        logging::process_outcome(
+            &self.guardrail_name,
+            outcome.as_ref().map(drop),
+            &mut request_data.metadata,
+            timing,
+        );
+        outcome.map(|()| inputs)
     }
 
     async fn moderate(

@@ -22,7 +22,7 @@ use super::config::{BaseModerationConfigModel, OpenAiModerationConfigModel};
 use super::error::ModerationError;
 use super::logging::{
     CallTiming, GuardrailResponse, RequestMetadata, TracingDetail, build_tracing_detail,
-    process_error, process_response,
+    process_outcome,
 };
 use super::transport::async_make_request;
 use super::wire::ModerationResponse;
@@ -595,9 +595,9 @@ fn process_error_prefers_a_stashed_response_over_the_error_text() {
         started: Duration::from_secs(1),
         ended: Duration::from_secs(4),
     };
-    process_error(
+    process_outcome(
         "moderation",
-        &ModerationError::MissingApiKey,
+        Err(&ModerationError::MissingApiKey),
         &mut metadata,
         timing,
     );
@@ -622,7 +622,7 @@ fn process_response_falls_back_to_allow_when_nothing_was_stashed() {
         started: Duration::from_secs(2),
         ended: Duration::from_secs(5),
     };
-    process_response("moderation", &mut metadata, timing);
+    process_outcome("moderation", Ok(()), &mut metadata, timing);
     let record = &metadata.guardrail_records[0];
     assert_eq!(
         record.guardrail_response,
