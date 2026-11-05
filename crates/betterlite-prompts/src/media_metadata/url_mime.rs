@@ -45,16 +45,46 @@ const URL_EXTENSION_TO_MIME: &[(&str, &str)] = &[
 
 const GENERIC_CONTENT_TYPES: &[&str] = &["binary/octet-stream", "application/octet-stream"];
 
-// Lenient stand-in for Python's urlparse(url).path, up to the first "?" or "#".
+// urllib.parse.uses_params: schemes whose last path segment may carry a ";params" suffix.
+const USES_PARAMS: &[&str] = &[
+    "", "ftp", "hdl", "prospero", "http", "imap", "https", "shttp", "rtsp", "rtsps", "rtspu",
+    "sip", "sips", "mms", "sftp", "tel",
+];
+
+// A ";params" suffix on the last path segment is not part of the path itself.
+fn strip_last_segment_params(path: &str) -> &str {
+    let segment_start = path.rfind('/').map_or(0, |slash| slash.saturating_add(1));
+    let segment = path.get(segment_start..).unwrap_or_default();
+    segment.find(';').map_or(path, |semicolon| {
+        path.get(..segment_start.saturating_add(semicolon))
+            .unwrap_or(path)
+    })
+}
+
+// Lenient stand-in for Python's urlparse(url).path, including the uses_params trailing-segment strip.
 fn url_path(url: &str) -> &str {
-    let after_scheme = url.find("://").map_or(url, |scheme_end| {
-        let rest = url.get(scheme_end.saturating_add(3)..).unwrap_or_default();
-        rest.find('/')
-            .and_then(|slash| rest.get(slash..))
-            .unwrap_or_default()
+    let scheme_end = url.find("://");
+    let after_scheme = scheme_end.map_or(url, |end| {
+        url.get(end.saturating_add(3)..).unwrap_or_default()
     });
-    let end = after_scheme.find(['?', '#']).unwrap_or(after_scheme.len());
-    after_scheme.get(..end).unwrap_or_default()
+    let path = if scheme_end.is_some() {
+        match after_scheme.find(['/', '?', '#']) {
+            Some(boundary) if after_scheme.as_bytes().get(boundary) == Some(&b'/') => {
+                after_scheme.get(boundary..).unwrap_or_default()
+            }
+            _ => "",
+        }
+    } else {
+        after_scheme
+    };
+    let query_or_fragment = path.find(['?', '#']).unwrap_or(path.len());
+    let truncated = path.get(..query_or_fragment).unwrap_or_default();
+    let scheme = scheme_end.map_or("", |scheme_len| url.get(..scheme_len).unwrap_or_default());
+    if USES_PARAMS.contains(&scheme) {
+        strip_last_segment_params(truncated)
+    } else {
+        truncated
+    }
 }
 
 #[must_use]
