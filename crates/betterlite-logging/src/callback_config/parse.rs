@@ -58,7 +58,7 @@ pub enum CallbackType {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LoggingEntry {
     pub callback_name: Option<String>,
-    pub callback_vars: Option<CallbackVars>,
+    pub callback_vars: CallbackVars,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -93,7 +93,7 @@ pub fn parse_logging_metadata(bytes: &[u8]) -> Result<Vec<LoggingEntry>, ParseEr
         let Lenient::Value(raw) = candidate else {
             entries.push(LoggingEntry {
                 callback_name: None,
-                callback_vars: None,
+                callback_vars: CallbackVars::new(),
             });
             continue;
         };
@@ -103,8 +103,8 @@ pub fn parse_logging_metadata(bytes: &[u8]) -> Result<Vec<LoggingEntry>, ParseEr
                 Some(Lenient::Other(_)) | None => None,
             },
             callback_vars: match raw.callback_vars {
-                Some(Lenient::Value(vars)) => Some(text_variables(vars)?),
-                Some(Lenient::Other(_)) | None => None,
+                Some(Lenient::Value(vars)) => text_variables(vars)?,
+                Some(Lenient::Other(_)) | None => CallbackVars::new(),
             },
         });
     }
@@ -125,15 +125,14 @@ pub fn logging_metadata_config_error(
     flags: FeatureFlags,
 ) -> Result<(), ValidationError> {
     for entry in entries {
-        if let (Some(name), Some(vars)) = (&entry.callback_name, &entry.callback_vars) {
-            callback_config_error(Some(name), vars, flags)?;
+        if let Some(name) = &entry.callback_name {
+            callback_config_error(Some(name), &entry.callback_vars, flags)?;
         }
     }
     let mut earlier = Vec::new();
     for entry in entries {
-        let vars = entry.callback_vars.clone().unwrap_or_default();
-        conflicting_span_scope_error(&vars, &earlier)?;
-        earlier.push(vars);
+        conflicting_span_scope_error(&entry.callback_vars, &earlier)?;
+        earlier.push(entry.callback_vars.clone());
     }
     Ok(())
 }

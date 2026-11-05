@@ -157,6 +157,27 @@
               }
             ]
           }
+        },
+        {
+          "function": "arize_sampling_rate_error",
+          "callback_name": "arize",
+          "callback_vars": {
+            "arize_error_sampling_rate": "1e-30"
+          }
+        },
+        {
+          "function": "arize_sampling_rate_error",
+          "callback_name": "arize",
+          "callback_vars": {
+            "arize_error_sampling_rate": "1e-400"
+          }
+        },
+        {
+          "function": "arize_sampling_rate_error",
+          "callback_name": "arize",
+          "callback_vars": {
+            "arize_error_sampling_rate": "-1e-30"
+          }
         }
       ]
     }
@@ -210,6 +231,10 @@
       },
       {
         "pointer": "/value/19/error/message",
+        "why": "betterlite writes its own message"
+      },
+      {
+        "pointer": "/value/22/error/message",
         "why": "betterlite writes its own message"
       }
     ]

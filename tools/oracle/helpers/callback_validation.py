@@ -38,6 +38,10 @@ ERROR_KINDS = (
 SDK_PREFIXES = ("opentelemetry.sdk", "opentelemetry.exporter")
 
 
+class InputError(ValueError):
+    pass
+
+
 class StubModule(ModuleType):
     def __getattr__(self, name: str) -> type:
         if name.startswith("__"):
@@ -102,11 +106,11 @@ FUNCTIONS: dict[str, Callable[[Arguments], str | None]] = {
 
 def string_map(value: Json, name: str) -> dict[str, str]:
     if not isinstance(value, dict):
-        raise ValueError(f"{name} must be an object")
+        raise InputError(f"{name} must be an object")
     texts: dict[str, str] = {}
     for key, item in value.items():
         if not isinstance(item, str):
-            raise ValueError(f"{name}.{key} must be a string")
+            raise InputError(f"{name}.{key} must be a string")
         texts[key] = item
     return texts
 
@@ -124,7 +128,7 @@ def error_facts(message: str) -> Json:
                     "message": message,
                 }
             }
-    raise ValueError(f"unclassified validator message: {message}")
+    raise InputError(f"unclassified validator message: {message}")
 
 
 @contextmanager
@@ -144,27 +148,27 @@ def otel_v2(*, enabled: bool) -> Generator[None]:
 def check(step: dict[str, Json]) -> str | None:
     name = step.get("callback_name")
     if name is not None and not isinstance(name, str):
-        raise ValueError("callback_name must be a string or null")
+        raise InputError("callback_name must be a string or null")
     callback_vars = string_map(step.get("callback_vars", {}), "callback_vars")
     stored_value = step.get("stored", [])
     if not isinstance(stored_value, list):
-        raise ValueError("stored must be a list")
+        raise InputError("stored must be a list")
     stored = [string_map(entry, "stored") for entry in stored_value]
     metadata = step.get("metadata")
     if metadata is not None and not isinstance(metadata, dict):
-        raise ValueError("metadata must be an object or null")
+        raise InputError("metadata must be an object or null")
     function = step.get("function")
     if not isinstance(function, str) or function not in FUNCTIONS:
-        raise ValueError(f"unknown callback_validation function: {function}")
+        raise InputError(f"unknown callback_validation function: {function}")
     return FUNCTIONS[function](Arguments(name, callback_vars, stored, metadata))
 
 
 def run_step(step: Json) -> Json:
     if not isinstance(step, dict) or not set(step) <= STEP_FIELDS:
-        raise ValueError(f"each step is an object with fields from {sorted(STEP_FIELDS)}")
+        raise InputError(f"each step is an object with fields from {sorted(STEP_FIELDS)}")
     enabled = step.get("otel_v2", False)
     if not isinstance(enabled, bool):
-        raise ValueError("otel_v2 must be a boolean")
+        raise InputError("otel_v2 must be a boolean")
     with otel_v2(enabled=enabled):
         message = check(step)
     return {"ok": True} if message is None else error_facts(message)
@@ -172,8 +176,8 @@ def run_step(step: Json) -> Json:
 
 def run(input_value: Json) -> Json:
     if not isinstance(input_value, dict) or set(input_value) != {"steps"}:
-        raise ValueError("input fields must be ['steps']")
+        raise InputError("input fields must be ['steps']")
     steps = input_value["steps"]
     if not isinstance(steps, list):
-        raise ValueError("steps must be a list")
+        raise InputError("steps must be a list")
     return [run_step(step) for step in steps]

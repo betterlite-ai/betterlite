@@ -81,14 +81,7 @@ fn run_step(step: &Step) -> Result<Value, Box<HelperError>> {
         Function::NewrelicConfig => newrelic_config_error(vars, flags),
         Function::CrossEntryFamily => cross_entry_family_error(vars, &step.stored),
         Function::ConflictingSpanScope => conflicting_span_scope_error(vars, &step.stored),
-        Function::LoggingMetadataConfig => {
-            let bytes = serde_json::to_vec(&step.metadata).map_err(|error| failure(&error))?;
-            match validate_logging_metadata(&bytes, flags) {
-                Err(PayloadError::Parse(error)) => return Err(failure(&error)),
-                Err(PayloadError::Rejected(error)) => Err(error),
-                Ok(()) => Ok(()),
-            }
-        }
+        Function::LoggingMetadataConfig => logging_metadata_outcome(step, flags)?,
     };
     Ok(match outcome {
         Ok(()) => json!({"ok": true}),
@@ -96,15 +89,26 @@ fn run_step(step: &Step) -> Result<Value, Box<HelperError>> {
     })
 }
 
-fn failure(error: &dyn std::error::Error) -> Box<HelperError> {
-    Box::new(HelperError {
+fn logging_metadata_outcome(
+    step: &Step,
+    flags: FeatureFlags,
+) -> Result<Result<(), ValidationError>, Box<HelperError>> {
+    let message = match serde_json::to_vec(&step.metadata) {
+        Err(error) => error.to_string(),
+        Ok(bytes) => match validate_logging_metadata(&bytes, flags) {
+            Err(PayloadError::Parse(error)) => error.to_string(),
+            Err(PayloadError::Rejected(error)) => return Ok(Err(error)),
+            Ok(()) => return Ok(Ok(())),
+        },
+    };
+    Err(Box::new(HelperError {
         class: "ParseError".to_owned(),
         status: None,
         error_type: None,
         param: None,
         code: None,
-        message: error.to_string(),
-    })
+        message,
+    }))
 }
 
 fn error_facts(error: &ValidationError) -> Value {
