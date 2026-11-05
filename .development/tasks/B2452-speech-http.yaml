@@ -19,12 +19,13 @@ description: >-
   The two methods contain 191 nonblank/non-comment lines; allocate 170 implementation,120 tests,100 fixtures,
   80 adapters and 30 wiring, 500 total. This is buffered binary execution; streaming cancellation is B083's
   consuming route concern and is not a method in this range.
+
+  B1135 fills the Speech variants that B010 registers in operation.rs, so this task builds on them in
+  crates/betterlite-provider/src/api/speech_http.rs and leaves operation.rs as it is.
 scope:
   paths:
   - crates/betterlite-provider/src/api/speech_http.rs
   - crates/betterlite-provider/src/api/speech_http/**
-  - crates/betterlite-provider/src/operation.rs
-  - crates/betterlite-provider/src/operation/**
   - tools/oracle/src/sdk_http.rs
   - tools/oracle/src/sdk_http/speech_http.rs
   - tools/oracle/sdk_http/dispatch.py

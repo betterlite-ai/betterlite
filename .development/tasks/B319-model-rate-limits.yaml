@@ -6,9 +6,8 @@ description: 'Add the enforce_model_rate_limits optional pre-call check to the B
   checks. Reuse the existing token accounting rather than add a second estimator. Configuration boundary
   keys introduced or consumed here: optional_pre_call_checks. Pinned declaration defaults: optional_pre_call_checks=None.
   Resolve env values once in betterlite-config, never in router code. Implement the owned native service
-  in crates/betterlite-router/src/model_rate_limits.rs. Add ProbeOperation::ModelRateLimits in tools/oracle/src/router_probes/mod.rs
-  and the corresponding B319 entry in tools/oracle/litellm/probes/registry.py; the adapters only call
-  production services. Shared exports and dispatch files are explicitly in scope. Budget allocation: at
+  in crates/betterlite-router/src/model_rate_limits.rs. B301 registers ProbeOperation::ModelRateLimits and its Python entry as stubs, so fill only tools/oracle/src/router_probes/model_rate_limits.rs and tools/oracle/litellm/probes/model_rate_limits.py and leave mod.rs and registry.py as they are; the adapters only call
+  production services. Budget allocation: at
   most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration
   lines (800 total); fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor
   services instead of copying their algorithms. Function coverage in litellm/router_utils/pre_call_checks/model_rate_limit_check.py:
@@ -37,9 +36,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/model_rate_limits.rs
   - tools/oracle/src/router_probes/model_rate_limits/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/model_rate_limits.py
   - tools/oracle/cases/routing/model-rate-limits/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/model-rate-limits-*

@@ -1,0 +1,5 @@
+kind: helper
+name: a2a-parts-empty
+call: {"b4803": {"operation": "extract", "parts": []}}
+env: {}
+compare: {ignore: []}

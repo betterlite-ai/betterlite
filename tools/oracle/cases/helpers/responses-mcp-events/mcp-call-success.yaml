@@ -1,0 +1,11 @@
+kind: helper
+name: mcp-call-success
+call:
+  responses_mcp_events:
+    operation: mcp_call
+    tool_name: weather
+    arguments: '{"city":"Paris"}'
+    result: sunny
+    ids: [abcd1234, wxyz5678]
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,11 @@
+kind: helper
+name: upload-security-safe-filename-unique-format
+call:
+  b3452:
+    content_hex: '706c61696e2074657874'
+    scanner: clean
+    max_size_bytes: 536870912
+    uuid: 123e4567-e89b-12d3-a456-426614174000
+env: {}
+compare:
+  ignore: []

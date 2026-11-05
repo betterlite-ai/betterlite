@@ -9,11 +9,20 @@ description: >-
   separate from executable support. The huge main.py/utils.py/init modules also contain routing, caches, spend,
   guardrails and Python wrappers owned by existing backlog tasks; this part covers only the common orchestration
   boundary and existing route integration. Add real-server lifecycle tests and run HTTP regression cases for both
-  operations, including stream cancellation and batch execution.  B202 and B015 add text-completion and moderation
-  request/result variants afterwards, and must update every exhaustive match. Keep the pipeline in betterlite-core
-  above B198 leaf context/AWS types. Write the behavior rstest functions call_dispatch_tests_behavior in adjacent
-  tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have separate
-  names. Budget 300 dispatch, 280 tests and 100 server wiring (680 total).
+  operations, including stream cancellation and batch execution. Register every entry in the core-stubs check list
+  up front. An entry is a request variant and a result variant in operation.rs, a module
+  crates/betterlite-core/src/operation/<module>.rs with its request and result types, and a module
+  crates/betterlite-core/src/dispatch/<module>.rs whose execute function the dispatch.rs arm calls. Chat and
+  embedding are the real entries. The other six are stubs: each execute answers DispatchError::NotBuilt naming its
+  entry, and each stub module has an adjacent tests.rs whose call_dispatch_tests_behavior case asserts that error.
+  TextStream carries the text_completion request type, so B202's route can send a requested stream before B203
+  lands. Every match on the request or result enum has one arm per entry that only calls into that entry's module,
+  with no wildcard arm. B202, B015, B080 and B082 then replace only their own stubs and stub tests; B203 also adds
+  the bridge selection to dispatch/chat.rs and dispatch/text_completion.rs. None of them edits dispatch.rs or
+  operation.rs. Keep the pipeline in betterlite-core above B198 leaf context/AWS types. Write the behavior rstest
+  functions call_dispatch_tests_behavior in adjacent tests.rs files, with a named case for each behavior and failure
+  in the DoD; corpus replay tests have separate names. Budget 300 dispatch, 280 tests and 100 server wiring (680
+  total); the six stubs, their tests and their registry lines add about 250 lines outside it.
 scope:
   paths:
   - Cargo.toml
@@ -61,6 +70,12 @@ dod:
 - text: Unknown operations fail before HTTP and concurrent per-call state remains isolated.
   proof:
   - call-dispatch-tests
+- text: >-
+    Every entry in the core-stubs list has its request and result variants, an operation module and a dispatch
+    module, and each of the six stubs answers DispatchError::NotBuilt in its own call_dispatch_tests_behavior case.
+  proof:
+  - core-stubs
+  - call-dispatch-tests
 checks:
   optional:
   - mutants
@@ -70,6 +85,21 @@ checks:
     run: >-
       cargo nextest run --locked -p betterlite-core -p betterlite-server --no-tests=fail -E 'test(/::call_dispatch_tests_behavior($|::)/)
       - test(/replays_the_/)'
+  - id: core-stubs
+    why: a planned core entry has no variant or module file, so its task would have to edit dispatch.rs or operation.rs
+    run: |-
+      while read -r variant module; do
+        test -f "crates/betterlite-core/src/operation/$module.rs" && test -f "crates/betterlite-core/src/dispatch/$module.rs" && grep -qw "$variant" crates/betterlite-core/src/operation.rs && grep -qE "^(pub(\([a-z]+\))? )?mod $module;" crates/betterlite-core/src/operation.rs && grep -qE "^(pub(\([a-z]+\))? )?mod $module;" crates/betterlite-core/src/dispatch.rs || { echo "core entry $variant ($module) is not registered"; exit 1; }
+      done <<'EOF'
+      Chat chat
+      Embedding embedding
+      TextCompletion text_completion
+      TextStream text_stream
+      Moderation moderation
+      Responses responses
+      ImageGeneration image_generation
+      ImageEdit image_edit
+      EOF
 oracle_cases:
 - tools/oracle/cases/chat/openai-basic.yaml
 - tools/oracle/cases/chat/openai-stream.yaml
@@ -81,13 +111,17 @@ out_of_scope:
 - Python global settings, import machinery, batch wrappers and response object methods are B157-B167.
 - Endpoint-specific schemas and routes outside the two implemented operations stay in their endpoint tasks.
 - >-
-  Text-completion and moderation dispatch variants and their regression cases are added by B202/B203 and B015; no
-  dependency on those tasks here.
+  The text-completion, text-stream, moderation, Responses and image entries are only stubs here; B202, B203, B015,
+  B080 and B082 fill them and add their regression cases, with no dependency on those tasks here.
 pitfalls:
 - The provider framework must remain below core so adapters do not call back into the orchestration layer.
 - A route table match is metadata, not proof the server installed that route.
 - Do not reintroduce two independent logging/error pipelines when moving existing handlers into core.
+- The 680-line budget covers dispatch, tests and server wiring but not the six stubs, their tests and their registry lines.
+- >-
+  A stub execute is not an async fn, since an async fn without an await fails clippy::unused_async; it returns
+  std::future::ready(Err(...)) so its owner can make it async later without touching the dispatch.rs arm.
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 1750
   max_new_expects: 0

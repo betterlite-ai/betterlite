@@ -37,3 +37,10 @@ path = "fuzz_targets/agent_provider.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "upload_security_content"
+path = "fuzz_targets/upload_security_content.rs"
+test = false
+doc = false
+bench = false

@@ -9,9 +9,8 @@ description: 'Implement LatencySamples and callback updates over B304 state, pre
   f64 only in latency_sample_math with one module-level #[expect(clippy::float_arithmetic, reason = "pinned
   statistical routing arithmetic")], counted in max_new_expects. Keep every price/spend/budget Decimal
   and compare selected model/tier exactly; diagnostic score tolerances cannot hide a selection difference.
-  Implement the owned native service in crates/betterlite-router/src/latency_observations.rs. Add ProbeOperation::LatencyObservations
-  in tools/oracle/src/router_probes/mod.rs and the corresponding B389 entry in tools/oracle/litellm/probes/registry.py;
-  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  Implement the owned native service in crates/betterlite-router/src/latency_observations.rs. B301 registers ProbeOperation::LatencyObservations and its Python entry as stubs, so fill only tools/oracle/src/router_probes/latency_observations.rs and tools/oracle/litellm/probes/latency_observations.py and leave mod.rs and registry.py as they are;
+  the adapters only call production services.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
   lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
   exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/router_strategy/lowest_latency.py:
@@ -39,9 +38,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/latency_observations.rs
   - tools/oracle/src/router_probes/latency_observations/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/latency_observations.py
   - tools/oracle/cases/routing/latency-observations/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/latency-observations-*

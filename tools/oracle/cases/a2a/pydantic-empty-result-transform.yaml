@@ -1,0 +1,5 @@
+kind: helper
+name: pydantic-empty-result-transform
+call: {b4805: {operation: transform, response: {result: {}}}}
+env: {}
+compare: {ignore: []}
