@@ -32,6 +32,15 @@ impl Default for Role {
     }
 }
 
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct MessageSendParams {
+    pub message: A2AMessage,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<AgentJson>,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, AgentJson>,
+}
+
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct CompletionParams {
     #[serde(default, skip_serializing_if = "Option::is_none")]

@@ -4,7 +4,7 @@ use betterlite_core::agents::json::AgentJson;
 use chrono::{DateTime, Utc};
 use uuid::Uuid;
 use wire::{
-    A2AMessage, CompletionParams, ModelResponse, OpenAIMessage, ResponseMessage,
+    A2AMessage, CompletionParams, MessageSendParams, ModelResponse, OpenAIMessage, ResponseMessage,
     SendMessageResponse, TextPart,
 };
 
@@ -68,7 +68,7 @@ pub fn extract_text(parts: &[AgentJson]) -> String {
 #[must_use]
 pub fn forward_metadata(
     message: &A2AMessage,
-    params: Option<&CompletionParams>,
+    params: Option<&MessageSendParams>,
 ) -> Option<BTreeMap<String, AgentJson>> {
     let mut merged = BTreeMap::new();
     if let Some(metadata) = params
@@ -86,7 +86,7 @@ pub fn forward_metadata(
 pub fn apply_forward_metadata(
     completion: &mut CompletionParams,
     message: &A2AMessage,
-    params: Option<&CompletionParams>,
+    params: Option<&MessageSendParams>,
 ) {
     let Some(forwarded) = forward_metadata(message, params) else {
         return;

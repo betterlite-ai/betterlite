@@ -1,5 +1,5 @@
 kind: helper
 name: a2a-metadata-empty
-call: {"b4803": {"operation": "metadata", "message": {"metadata": {}}, "params": {"metadata": {}}, "completion_params": {"extra_body": "untouched"}}}
+call: {"b4803": {"operation": "metadata", "message": {"metadata": {}}, "params": {"message": {}, "metadata": {}}, "completion_params": {"extra_body": "untouched"}}}
 env: {}
 compare: {ignore: []}

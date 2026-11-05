@@ -6,7 +6,7 @@ use betterlite_core::agents::json::AgentJson;
 use futures_core::Stream;
 
 use super::events::StreamEvent;
-use super::wire::{CompletionParams, SendMessageResponse};
+use super::wire::{MessageSendParams, SendMessageResponse};
 
 pub trait BaseA2AProviderConfig: Send + Sync {
     type Error: Error + Send + Sync;
@@ -15,7 +15,7 @@ pub trait BaseA2AProviderConfig: Send + Sync {
     fn handle_non_streaming(
         &self,
         request_id: &str,
-        params: &CompletionParams,
+        params: &MessageSendParams,
         api_base: Option<&str>,
         kwargs: &BTreeMap<String, AgentJson>,
     ) -> impl Future<Output = Result<SendMessageResponse, Self::Error>> + Send;
@@ -23,7 +23,7 @@ pub trait BaseA2AProviderConfig: Send + Sync {
     fn handle_streaming(
         &self,
         request_id: &str,
-        params: &CompletionParams,
+        params: &MessageSendParams,
         api_base: Option<&str>,
         kwargs: &BTreeMap<String, AgentJson>,
     ) -> impl Future<Output = Result<Self::EventStream, Self::Error>> + Send;

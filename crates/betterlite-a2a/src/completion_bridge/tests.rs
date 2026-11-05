@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::collections::VecDeque;
+use std::collections::{BTreeMap, VecDeque};
 
 use betterlite_core::agents::json::AgentJson;
 use chrono::{DateTime, Utc};
@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use super::events::StreamResult;
 use super::streaming::{EventContent, stream_event};
-use super::wire::{A2AMessage, CompletionParams, ModelResponse};
+use super::wire::{A2AMessage, CompletionParams, MessageSendParams, ModelResponse};
 use super::{
     A2AStreamingContext, EventSource, apply_forward_metadata, extract_text, forward_metadata,
     response_to_a2a, to_openai_messages,
@@ -118,8 +118,10 @@ fn merges_metadata_with_owner_precedence() {
     )
     .unwrap();
     let params = serde_json::from_value(
-        serde_json::from_str::<AgentJson>(r#"{"metadata":{"params":true,"same":"params"}}"#)
-            .unwrap(),
+        serde_json::from_str::<AgentJson>(
+            r#"{"message":{},"metadata":{"params":true,"same":"params"}}"#,
+        )
+        .unwrap(),
     )
     .unwrap();
     let mut completion = serde_json::from_value(serde_json::from_str::<AgentJson>(r#"{"metadata":{"spend":true},"model":"agent","extra_body":{"custom":1,"metadata":{"same":"configured","owner":2}}}"#).unwrap()).unwrap();
@@ -141,8 +143,12 @@ fn merges_metadata_with_owner_precedence() {
 #[case::null(r#"{"metadata":null}"#)]
 #[case::non_object(r#"{"metadata":[1]}"#)]
 fn empty_metadata_leaves_completion(#[case] input: &str) {
-    let message = serde_json::from_str(input).unwrap();
-    let params = serde_json::from_str(input).unwrap();
+    let message: A2AMessage = serde_json::from_str(input).unwrap();
+    let params = MessageSendParams {
+        message: message.clone(),
+        metadata: message.metadata.clone(),
+        extra: BTreeMap::new(),
+    };
     assert!(forward_metadata(&message, Some(&params)).is_none());
     let mut completion: CompletionParams = serde_json::from_value(
         serde_json::from_str::<AgentJson>(r#"{"extra_body":"untouched"}"#).unwrap(),
@@ -334,5 +340,6 @@ fn replays_completion_corpus(#[files("fuzz/corpus/completion_bridge/*")] path: P
         apply_forward_metadata(&mut completion, &message, None);
     }
     drop(serde_json::from_slice::<CompletionParams>(&bytes));
+    drop(serde_json::from_slice::<MessageSendParams>(&bytes));
     drop(serde_json::from_slice::<ModelResponse>(&bytes));
 }

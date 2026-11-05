@@ -1,5 +1,7 @@
 use betterlite_a2a::completion_bridge::streaming::{EventContent, stream_event};
-use betterlite_a2a::completion_bridge::wire::{A2AMessage, CompletionParams, ModelResponse};
+use betterlite_a2a::completion_bridge::wire::{
+    A2AMessage, CompletionParams, MessageSendParams, ModelResponse,
+};
 use betterlite_a2a::completion_bridge::{
     A2AStreamingContext, EventSource, apply_forward_metadata, extract_text, response_to_a2a,
     to_openai_messages,
@@ -39,7 +41,7 @@ pub(crate) struct Input {
     #[serde(default)]
     parts: Vec<AgentJson>,
     #[serde(default)]
-    params: Option<CompletionParams>,
+    params: Option<MessageSendParams>,
     #[serde(default)]
     completion_params: CompletionParams,
     #[serde(default)]
