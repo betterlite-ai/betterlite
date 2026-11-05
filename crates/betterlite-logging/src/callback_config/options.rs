@@ -3,6 +3,7 @@ use std::str::FromStr as _;
 use rust_decimal::Decimal;
 use serde::Deserialize as _;
 use serde::de::IntoDeserializer as _;
+use serde::de::value::Error as ValueError;
 
 use super::error::ValidationError;
 use super::family::{SAMPLING_RATE_VARS, SPAN_SCOPE_VAR};
@@ -42,26 +43,24 @@ pub fn langfuse_span_scope_error(
     callback_name: Option<&str>,
     callback_vars: &CallbackVars,
 ) -> Result<(), ValidationError> {
-    let Some(value) = callback_vars.get(SPAN_SCOPE_VAR) else {
-        return Ok(());
-    };
-    if callback_name != Some("langfuse_otel") {
-        return Err(ValidationError::SpanScopeCallback {
-            callback_name: callback_name.map(str::to_owned),
-        });
-    }
-    SpanScope::deserialize(value.as_str().into_deserializer())
-        .map(drop)
-        .map_err(
-            |_: serde::de::value::Error| ValidationError::SpanScopeValue {
+    match (callback_vars.get(SPAN_SCOPE_VAR), callback_name) {
+        (None, _) => Ok(()),
+        (Some(_), name) if name != Some("langfuse_otel") => {
+            Err(ValidationError::SpanScopeCallback {
+                callback_name: name.map(str::to_owned),
+            })
+        }
+        (Some(value), _) => SpanScope::deserialize(value.as_str().into_deserializer())
+            .map(drop)
+            .map_err(|_ignored: ValueError| ValidationError::SpanScopeValue {
                 value: value.clone(),
-            },
-        )
+            }),
+    }
 }
 
 // Exponent forms go through from_scientific because Decimal::from_str reads plain digits only.
-fn parse_sampling_rate(text: &str) -> Result<Decimal, rust_decimal::Error> {
-    let text = text.trim();
+fn parse_sampling_rate(input: &str) -> Result<Decimal, rust_decimal::Error> {
+    let text = input.trim();
     if text.contains(['e', 'E']) {
         Decimal::from_scientific(text)
     } else {
@@ -69,37 +68,41 @@ fn parse_sampling_rate(text: &str) -> Result<Decimal, rust_decimal::Error> {
     }
 }
 
+fn sampling_rate_in_bounds(var: &str, value: &str) -> Result<(), ValidationError> {
+    let rate =
+        parse_sampling_rate(value).map_err(|source| ValidationError::SamplingRateUnparsable {
+            var: var.to_owned(),
+            value: value.to_owned(),
+            source,
+        })?;
+    if (Decimal::ZERO..=Decimal::ONE).contains(&rate) {
+        return Ok(());
+    }
+    Err(ValidationError::SamplingRateOutOfRange {
+        var: var.to_owned(),
+        value: value.to_owned(),
+        rate,
+    })
+}
+
 pub fn arize_sampling_rate_error(
     callback_name: Option<&str>,
     callback_vars: &CallbackVars,
 ) -> Result<(), ValidationError> {
-    for var in SAMPLING_RATE_VARS {
-        let Some(value) = callback_vars.get(var) else {
-            continue;
-        };
-        if value.is_empty() || value == "None" {
-            continue;
-        }
+    let set_rates = SAMPLING_RATE_VARS.into_iter().filter_map(|var| {
+        callback_vars
+            .get(var)
+            .filter(|value| !value.is_empty() && *value != "None")
+            .map(|value| (var, value))
+    });
+    for (var, value) in set_rates {
         if callback_name != Some("arize") {
             return Err(ValidationError::SamplingRateCallback {
                 var: var.to_owned(),
                 callback_name: callback_name.map(str::to_owned),
             });
         }
-        let rate = parse_sampling_rate(value).map_err(|source| {
-            ValidationError::SamplingRateUnparsable {
-                var: var.to_owned(),
-                value: value.clone(),
-                source,
-            }
-        })?;
-        if !(Decimal::ZERO..=Decimal::ONE).contains(&rate) {
-            return Err(ValidationError::SamplingRateOutOfRange {
-                var: var.to_owned(),
-                value: value.clone(),
-                rate,
-            });
-        }
+        sampling_rate_in_bounds(var, value)?;
     }
     Ok(())
 }
@@ -115,11 +118,11 @@ pub fn newrelic_config_error(
         return Err(ValidationError::NewRelicRequiresOtelV2);
     }
     let region = callback_vars.get("newrelic_region");
-    if let Some(region) = region
-        && !NEWRELIC_REGIONS.contains(&region.to_lowercase().as_str())
+    if let Some(given) = region
+        && !NEWRELIC_REGIONS.contains(&given.to_lowercase().as_str())
     {
         return Err(ValidationError::NewRelicRegion {
-            region: region.clone(),
+            region: given.clone(),
         });
     }
     // A JSON null reaches this layer as the text "None", so it counts as absent like "".

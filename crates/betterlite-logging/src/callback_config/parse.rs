@@ -38,9 +38,12 @@ struct RawMetadata {
 
 #[derive(Deserialize)]
 struct RawTeamCallback {
-    callback_name: String,
-    callback_type: Option<CallbackType>,
-    callback_vars: IndexMap<String, RawValue>,
+    #[serde(rename = "callback_name")]
+    name: String,
+    #[serde(rename = "callback_type")]
+    kind: Option<CallbackType>,
+    #[serde(rename = "callback_vars")]
+    variables: IndexMap<String, RawValue>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize)]
@@ -81,13 +84,13 @@ fn text_variables(raw: IndexMap<String, RawValue>) -> Result<CallbackVars, Parse
 }
 
 pub fn parse_logging_metadata(bytes: &[u8]) -> Result<Vec<LoggingEntry>, ParseError> {
-    let metadata: Option<RawMetadata> = serde_json::from_slice(bytes)?;
-    let Some(Lenient::Value(raw_entries)) = metadata.and_then(|metadata| metadata.logging) else {
+    let parsed: Option<RawMetadata> = serde_json::from_slice(bytes)?;
+    let Some(Lenient::Value(raw_entries)) = parsed.and_then(|found| found.logging) else {
         return Ok(Vec::new());
     };
     let mut entries = Vec::new();
-    for raw in raw_entries {
-        let Lenient::Value(raw) = raw else {
+    for candidate in raw_entries {
+        let Lenient::Value(raw) = candidate else {
             entries.push(LoggingEntry {
                 callback_name: None,
                 callback_vars: None,
@@ -111,9 +114,9 @@ pub fn parse_logging_metadata(bytes: &[u8]) -> Result<Vec<LoggingEntry>, ParseEr
 pub fn parse_team_callback(bytes: &[u8]) -> Result<TeamCallback, ParseError> {
     let raw: RawTeamCallback = serde_json::from_slice(bytes)?;
     Ok(TeamCallback {
-        callback_name: raw.callback_name,
-        callback_type: raw.callback_type.unwrap_or_default(),
-        callback_vars: text_variables(raw.callback_vars)?,
+        callback_name: raw.name,
+        callback_type: raw.kind.unwrap_or_default(),
+        callback_vars: text_variables(raw.variables)?,
     })
 }
 

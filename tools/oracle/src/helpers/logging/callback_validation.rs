@@ -16,16 +16,23 @@ use crate::helpers::{Helper, HelperError, HelperResult};
 pub(crate) struct Op;
 
 #[derive(Deserialize)]
-#[serde(rename_all = "snake_case")]
 enum Function {
-    CallbackConfigError,
-    ArizeSamplingRateError,
-    LangfuseEnvironmentError,
-    LangfuseSpanScopeError,
-    NewrelicConfigError,
-    CrossEntryFamilyError,
-    ConflictingSpanScopeError,
-    LoggingMetadataConfigError,
+    #[serde(rename = "callback_config_error")]
+    CallbackConfig,
+    #[serde(rename = "arize_sampling_rate_error")]
+    ArizeSamplingRate,
+    #[serde(rename = "langfuse_environment_error")]
+    LangfuseEnvironment,
+    #[serde(rename = "langfuse_span_scope_error")]
+    LangfuseSpanScope,
+    #[serde(rename = "newrelic_config_error")]
+    NewrelicConfig,
+    #[serde(rename = "cross_entry_family_error")]
+    CrossEntryFamily,
+    #[serde(rename = "conflicting_span_scope_error")]
+    ConflictingSpanScope,
+    #[serde(rename = "logging_metadata_config_error")]
+    LoggingMetadataConfig,
 }
 
 #[derive(Deserialize)]
@@ -67,14 +74,14 @@ fn run_step(step: &Step) -> Result<Value, Box<HelperError>> {
     let name = step.callback_name.as_deref();
     let vars = &step.callback_vars;
     let outcome = match step.function {
-        Function::CallbackConfigError => callback_config_error(name, vars, flags),
-        Function::ArizeSamplingRateError => arize_sampling_rate_error(name, vars),
-        Function::LangfuseEnvironmentError => langfuse_environment_error(vars),
-        Function::LangfuseSpanScopeError => langfuse_span_scope_error(name, vars),
-        Function::NewrelicConfigError => newrelic_config_error(vars, flags),
-        Function::CrossEntryFamilyError => cross_entry_family_error(vars, &step.stored),
-        Function::ConflictingSpanScopeError => conflicting_span_scope_error(vars, &step.stored),
-        Function::LoggingMetadataConfigError => {
+        Function::CallbackConfig => callback_config_error(name, vars, flags),
+        Function::ArizeSamplingRate => arize_sampling_rate_error(name, vars),
+        Function::LangfuseEnvironment => langfuse_environment_error(vars),
+        Function::LangfuseSpanScope => langfuse_span_scope_error(name, vars),
+        Function::NewrelicConfig => newrelic_config_error(vars, flags),
+        Function::CrossEntryFamily => cross_entry_family_error(vars, &step.stored),
+        Function::ConflictingSpanScope => conflicting_span_scope_error(vars, &step.stored),
+        Function::LoggingMetadataConfig => {
             let bytes = serde_json::to_vec(&step.metadata).map_err(|error| failure(&error))?;
             match validate_logging_metadata(&bytes, flags) {
                 Err(PayloadError::Parse(error)) => return Err(failure(&error)),

@@ -6,18 +6,11 @@ use crate::logging_privacy::CallbackMetadataError;
 
 const SAMPLING_RATE_RULE: &str = "must be a number between 0.0 and 1.0 (inclusive)";
 
-fn quoted(name: &Option<String>) -> String {
-    match name {
-        Some(text) => format!("'{text}'"),
-        None => "None".to_owned(),
-    }
-}
-
 #[derive(Debug, Error)]
 pub enum ValidationError {
     #[error(
         "{var} applies to the arize callback only, not {}",
-        quoted(callback_name)
+        callback_name.as_deref().map_or_else(|| "None".to_owned(), |text| format!("'{text}'"))
     )]
     SamplingRateCallback {
         var: String,
@@ -46,7 +39,7 @@ pub enum ValidationError {
     },
     #[error(
         "langfuse_span_scope applies to the langfuse_otel callback only, not {}",
-        quoted(callback_name)
+        callback_name.as_deref().map_or_else(|| "None".to_owned(), |text| format!("'{text}'"))
     )]
     SpanScopeCallback { callback_name: Option<String> },
     #[error("Invalid langfuse_span_scope '{value}': must be one of ['full', 'llm_only']")]

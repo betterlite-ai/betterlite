@@ -38,30 +38,29 @@ where
     result.map_or_else(|error| error.to_string(), |()| "ok".to_owned())
 }
 
+fn flags(v2: bool) -> FeatureFlags {
+    FeatureFlags {
+        otel_v2_enabled: v2,
+    }
+}
+
 fn run(scenario: &Scenario) -> String {
     match scenario {
-        Scenario::Config(name, pairs, v2) => outcome(callback_config_error(
-            *name,
-            &vars(pairs),
-            FeatureFlags {
-                otel_v2_enabled: *v2,
-            },
-        )),
+        Scenario::Config(name, pairs, v2) => {
+            outcome(callback_config_error(*name, &vars(pairs), flags(*v2)))
+        }
         Scenario::Arize(name, pairs) => outcome(arize_sampling_rate_error(*name, &vars(pairs))),
-        Scenario::Family(incoming, stored) => {
-            let stored: Vec<CallbackVars> = stored.iter().map(|entry| vars(entry)).collect();
-            outcome(cross_entry_family_error(&vars(incoming), &stored))
+        Scenario::Family(incoming, entries) => {
+            let held: Vec<CallbackVars> = entries.iter().map(|entry| vars(entry)).collect();
+            outcome(cross_entry_family_error(&vars(incoming), &held))
         }
-        Scenario::Scope(incoming, stored) => {
-            let stored: Vec<CallbackVars> = stored.iter().map(|entry| vars(entry)).collect();
-            outcome(conflicting_span_scope_error(&vars(incoming), &stored))
+        Scenario::Scope(incoming, entries) => {
+            let held: Vec<CallbackVars> = entries.iter().map(|entry| vars(entry)).collect();
+            outcome(conflicting_span_scope_error(&vars(incoming), &held))
         }
-        Scenario::Metadata(json, v2) => outcome(validate_logging_metadata(
-            json.as_bytes(),
-            FeatureFlags {
-                otel_v2_enabled: *v2,
-            },
-        )),
+        Scenario::Metadata(json, v2) => {
+            outcome(validate_logging_metadata(json.as_bytes(), flags(*v2)))
+        }
         Scenario::TeamType(json) => format!(
             "{:?}",
             parse_team_callback(json.as_bytes()).unwrap().callback_type
@@ -73,12 +72,7 @@ fn run(scenario: &Scenario) -> String {
                 other => format!("unexpected {other:?}"),
             }
         }
-        Scenario::Team(json, v2) => outcome(validate_team_callback(
-            json.as_bytes(),
-            FeatureFlags {
-                otel_v2_enabled: *v2,
-            },
-        )),
+        Scenario::Team(json, v2) => outcome(validate_team_callback(json.as_bytes(), flags(*v2))),
     }
 }
 

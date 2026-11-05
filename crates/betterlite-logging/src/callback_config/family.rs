@@ -39,6 +39,7 @@ const PREFIXES: [(&str, Family); 10] = [
 ];
 
 // Options pick what a family exports, not where it exports to, so they carry no credentials.
+#[must_use]
 pub fn family_of(var: &str) -> Option<Family> {
     if var == SPAN_SCOPE_VAR || SAMPLING_RATE_VARS.contains(&var) {
         return None;
@@ -66,10 +67,10 @@ pub fn cross_entry_family_error(
         let Some(family) = family_of(var).filter(|family| held_families.contains(family)) else {
             continue;
         };
-        let changed = match stored_by_var.get(var.as_str()) {
-            Some(stored) => stored != value,
-            None => !family_values.contains(&(family, value.as_str())),
-        };
+        let changed = stored_by_var.get(var.as_str()).map_or_else(
+            || !family_values.contains(&(family, value.as_str())),
+            |stored| stored != value,
+        );
         if changed {
             return Err(ValidationError::FamilyConflict {
                 family,
