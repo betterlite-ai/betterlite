@@ -1,11 +1,7 @@
 use aws_sdk_kms::config::{SharedCredentialsProvider, SharedHttpClient};
 use std::{collections::BTreeMap, time::Duration};
 
-use super::{
-    AwsKmsError, DecryptedValue,
-    initialization::{build_client, validate_environment},
-    values::decrypt_with,
-};
+use super::{AwsKmsError, DecryptedValue, initialization::build_client, values::decrypt_with};
 
 pub async fn decrypt_env_var(
     environment: &BTreeMap<String, String>,
@@ -13,8 +9,7 @@ pub async fn decrypt_env_var(
     credentials: Option<SharedCredentialsProvider>,
     operation_timeout: Duration,
 ) -> Result<BTreeMap<String, DecryptedValue>, AwsKmsError> {
-    let region = validate_environment(environment)?;
-    let client = build_client(region, transport, credentials, operation_timeout);
+    let client = build_client(environment, transport, credentials, operation_timeout)?;
     let mut decrypted_values = BTreeMap::new();
     for (key, value) in environment {
         if key

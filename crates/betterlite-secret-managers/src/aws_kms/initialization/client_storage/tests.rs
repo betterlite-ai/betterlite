@@ -1,8 +1,7 @@
 #![cfg(test)]
 
 use super::load_aws_kms;
-use crate::aws_kms::{AWS_KMS_CLIENT, tests::replay};
-use aws_sdk_kms::config::SharedHttpClient;
+use crate::aws_kms::{AWS_KMS_CLIENT, tests::transport};
 use std::{collections::BTreeMap, time::Duration};
 
 #[test]
@@ -11,7 +10,7 @@ fn client_storage_replaces_a_previously_loaded_client() {
     load_aws_kms(
         Some(true),
         &environment,
-        SharedHttpClient::new(replay("{}", 200)),
+        transport(),
         None,
         Duration::from_secs(1),
     )
@@ -20,7 +19,7 @@ fn client_storage_replaces_a_previously_loaded_client() {
     load_aws_kms(
         Some(true),
         &environment,
-        SharedHttpClient::new(replay("{}", 200)),
+        transport(),
         None,
         Duration::from_secs(1),
     )

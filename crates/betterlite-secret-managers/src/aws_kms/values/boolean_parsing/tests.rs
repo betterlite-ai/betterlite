@@ -1,9 +1,16 @@
 #![cfg(test)]
 
-use crate::aws_kms::DecryptedValue;
-use crate::aws_kms::values::parse_plaintext;
+use crate::aws_kms::{
+    AwsKmsError, DecryptedValue,
+    initialization::build_client,
+    tests::{credentials, kms_environment, serve, transport},
+    values::{decrypt_value, decrypt_with, parse_plaintext},
+};
+use aws_sdk_kms::error::SdkError;
 use rstest::rstest;
-use tokio::time::timeout;
+use secrecy::ExposeSecret as _;
+use std::{collections::BTreeMap, error::Error as _, time::Duration};
+use tokio::{io::AsyncReadExt as _, net::TcpListener, time::timeout};
 
 #[rstest]
 #[case("true")]
@@ -32,23 +39,26 @@ fn python_boolean_literals_become_boolean_values() {
 
 #[tokio::test]
 async fn decrypt_with_extracts_secret_plaintext() {
-    use crate::aws_kms::{initialization::build_client, tests::replay, values::decrypt_with};
-    use aws_sdk_kms::config::{Credentials, SharedCredentialsProvider, SharedHttpClient};
-    use secrecy::ExposeSecret as _;
-    use std::time::Duration;
-    let transport = replay(r#"{"Plaintext":"IHNlY3JldCA="}"#, 200);
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let client = build_client(
-        "us-east-1".to_owned(),
-        SharedHttpClient::new(transport.clone()),
-        Some(SharedCredentialsProvider::new(Credentials::new(
-            "test", "test", None, None, "test",
-        ))),
-        Duration::from_secs(1),
+        &kms_environment(&listener, "us-east-1"),
+        transport(),
+        credentials(),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    let (result, request) = tokio::join!(
+        decrypt_with(&client, "aGVsbG8="),
+        serve(&listener, 200, r#"{"Plaintext":"IHNlY3JldCA="}"#)
     );
-    let DecryptedValue::String(secret) = decrypt_with(&client, "aGVsbG8=").await.unwrap() else {
+    let DecryptedValue::String(secret) = result.unwrap() else {
         panic!("expected secret");
     };
     assert_eq!(secret.expose_secret(), "secret");
+    assert!(
+        request.ends_with(r#"{"CiphertextBlob":"aGVsbG8="}"#),
+        "{request}"
+    );
 }
 
 #[rstest]
@@ -57,20 +67,19 @@ async fn decrypt_with_extracts_secret_plaintext() {
 #[case::bad_json("{", "request")]
 #[tokio::test]
 async fn decrypt_with_preserves_response_errors(#[case] body: &str, #[case] expected: &str) {
-    use crate::aws_kms::{
-        AwsKmsError, initialization::build_client, tests::replay, values::decrypt_with,
-    };
-    use aws_sdk_kms::config::{Credentials, SharedCredentialsProvider, SharedHttpClient};
-    use std::{error::Error as _, time::Duration};
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let client = build_client(
-        "us-east-1".to_owned(),
-        SharedHttpClient::new(replay(body, 200)),
-        Some(SharedCredentialsProvider::new(Credentials::new(
-            "test", "test", None, None, "test",
-        ))),
-        Duration::from_secs(1),
+        &kms_environment(&listener, "us-east-1"),
+        transport(),
+        credentials(),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    let (result, _request) = tokio::join!(
+        decrypt_with(&client, "aGVsbG8="),
+        serve(&listener, 200, body)
     );
-    let error = decrypt_with(&client, "aGVsbG8=").await.err().unwrap();
+    let error = result.err().unwrap();
     match expected {
         "missing" => assert!(matches!(error, AwsKmsError::MissingPlaintext)),
         "utf8" => assert!(matches!(error, AwsKmsError::Utf8(_))),
@@ -84,24 +93,26 @@ async fn decrypt_with_preserves_response_errors(#[case] body: &str, #[case] expe
 
 #[tokio::test]
 async fn decrypt_with_times_out_a_stalled_transport() {
-    use crate::aws_kms::tests::never_client;
-    use crate::aws_kms::{AwsKmsError, initialization::build_client, values::decrypt_with};
-    use aws_sdk_kms::{
-        config::{Credentials, SharedCredentialsProvider, SharedHttpClient},
-        error::SdkError,
-    };
-    use std::time::Duration;
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let client = build_client(
-        "us-east-1".to_owned(),
-        SharedHttpClient::new(never_client()),
-        Some(SharedCredentialsProvider::new(Credentials::new(
-            "test", "test", None, None, "test",
-        ))),
-        Duration::from_millis(10),
-    );
-    let result = timeout(Duration::from_secs(1), decrypt_with(&client, "aGVsbG8="))
-        .await
-        .unwrap();
+        &kms_environment(&listener, "us-east-1"),
+        transport(),
+        credentials(),
+        Duration::from_millis(100),
+    )
+    .unwrap();
+    let stall = async {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut bytes = Vec::new();
+        stream.read_to_end(&mut bytes).await.unwrap();
+    };
+    let operation = async {
+        tokio::select! {
+            result = decrypt_with(&client, "aGVsbG8=") => result,
+            () = stall => panic!("client closed the stalled connection before timing out"),
+        }
+    };
+    let result = timeout(Duration::from_secs(5), operation).await.unwrap();
     assert!(matches!(
         result,
         Err(AwsKmsError::Request(source)) if matches!(source.as_ref(), SdkError::TimeoutError(_))
@@ -110,42 +121,32 @@ async fn decrypt_with_times_out_a_stalled_transport() {
 
 #[tokio::test]
 async fn decrypt_value_requires_the_named_environment_entry() {
-    use crate::aws_kms::{
-        AwsKmsError, initialization::build_client, tests::replay, values::decrypt_value,
-    };
-    use aws_sdk_kms::config::SharedHttpClient;
-    use std::{collections::BTreeMap, time::Duration};
-    let client = build_client(
-        "us-east-1".to_owned(),
-        SharedHttpClient::new(replay("{}", 200)),
-        None,
-        Duration::from_secs(1),
-    );
+    let environment = BTreeMap::from([("AWS_REGION_NAME".to_owned(), "us-east-1".to_owned())]);
+    let client = build_client(&environment, transport(), None, Duration::from_secs(1)).unwrap();
     assert!(
-        matches!(decrypt_value(&client, &BTreeMap::new(), "TOKEN").await, Err(AwsKmsError::MissingValue(name)) if name == "TOKEN")
+        matches!(decrypt_value(&client, &environment, "TOKEN").await, Err(AwsKmsError::MissingValue(name)) if name == "TOKEN")
     );
 }
 
 #[tokio::test]
 async fn decrypt_with_keeps_service_error_source() {
-    use crate::aws_kms::{
-        AwsKmsError, initialization::build_client, tests::replay, values::decrypt_with,
-    };
-    use aws_sdk_kms::config::{Credentials, SharedCredentialsProvider, SharedHttpClient};
-    use std::{error::Error as _, time::Duration};
-    let transport = replay(
-        r#"{"__type":"InvalidCiphertextException","message":"invalid ciphertext"}"#,
-        400,
-    );
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let client = build_client(
-        "us-east-1".to_owned(),
-        SharedHttpClient::new(transport),
-        Some(SharedCredentialsProvider::new(Credentials::new(
-            "test", "test", None, None, "test",
-        ))),
-        Duration::from_secs(1),
+        &kms_environment(&listener, "us-east-1"),
+        transport(),
+        credentials(),
+        Duration::from_secs(5),
+    )
+    .unwrap();
+    let (result, _request) = tokio::join!(
+        decrypt_with(&client, "aGVsbG8="),
+        serve(
+            &listener,
+            400,
+            r#"{"__type":"InvalidCiphertextException","message":"invalid ciphertext"}"#
+        )
     );
-    let error = decrypt_with(&client, "aGVsbG8=").await.err().unwrap();
+    let error = result.err().unwrap();
     assert!(error.source().is_some());
     let AwsKmsError::Request(source) = error else {
         panic!("expected SDK error");

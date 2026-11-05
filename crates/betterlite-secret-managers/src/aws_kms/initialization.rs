@@ -27,17 +27,17 @@ pub fn load_aws_kms(
     if use_aws_kms != Some(true) {
         return Ok(());
     }
-    let region = validate_environment(environment)?;
-    let client = build_client(region, transport, credentials, operation_timeout);
+    let client = build_client(environment, transport, credentials, operation_timeout)?;
     store_client(client)
 }
 
 pub(crate) fn build_client(
-    region: String,
+    environment: &BTreeMap<String, String>,
     transport: SharedHttpClient,
     credentials: Option<SharedCredentialsProvider>,
     operation_timeout: Duration,
-) -> Arc<Client> {
+) -> Result<Arc<Client>, AwsKmsError> {
+    let region = validate_environment(environment)?;
     let mut config = Builder::new()
         .behavior_version(BehaviorVersion::latest())
         .http_client(transport)
@@ -48,7 +48,12 @@ pub(crate) fn build_client(
                 .build(),
         );
     config.set_credentials_provider(credentials);
-    Arc::new(Client::from_conf(config.build()))
+    let endpoint_url = ["AWS_ENDPOINT_URL_KMS", "AWS_ENDPOINT_URL"]
+        .into_iter()
+        .filter_map(|name| environment.get(name))
+        .find(|value| !value.is_empty());
+    config.set_endpoint_url(endpoint_url.cloned());
+    Ok(Arc::new(Client::from_conf(config.build())))
 }
 
 fn store_client(client: Arc<Client>) -> Result<(), AwsKmsError> {
