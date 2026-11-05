@@ -114,27 +114,23 @@ impl HubTokenResolver {
 
     // huggingface_hub's get_token order: the OIDC exchange, the env token, then the token file with its OAuth refresh
     pub async fn resolve(&self, token: &HubToken) -> Result<Option<SecretString>, HubTokenError> {
-        match token {
-            HubToken::Explicit(value) => {
-                Ok(Some(SecretString::from(value.expose_secret().to_owned())))
-            }
-            HubToken::Implicit if self.settings.disable_implicit_token => Ok(None),
-            HubToken::Implicit => {
-                if let Some(exchanged) = self.oidc.token().await? {
-                    return Ok(Some(exchanged));
-                }
-                if let Some(environment_token) = &self.settings.env_token {
-                    return Ok(Some(SecretString::from(
-                        environment_token.expose_secret().to_owned(),
-                    )));
-                }
-                let Some(file_token) =
-                    read_token_file(&*self.file_reader, &self.settings.token_path).await?
-                else {
-                    return Ok(None);
-                };
-                Ok(Some(self.oauth.refresh_if_needed(file_token).await?))
-            }
+        if let HubToken::Explicit(value) = token {
+            return Ok(Some(SecretString::from(value.expose_secret().to_owned())));
+        }
+        if self.settings.disable_implicit_token {
+            return Ok(None);
+        }
+        if let Some(exchanged) = self.oidc.token().await? {
+            return Ok(Some(exchanged));
+        }
+        if let Some(environment_token) = &self.settings.env_token {
+            return Ok(Some(SecretString::from(
+                environment_token.expose_secret().to_owned(),
+            )));
+        }
+        match read_token_file(&*self.file_reader, &self.settings.token_path).await? {
+            Some(file_token) => self.oauth.refresh_if_needed(file_token).await.map(Some),
+            None => Ok(None),
         }
     }
 }
