@@ -73,6 +73,33 @@ fn folds_empty_export_list_to_single_exporter_spec() {
     );
 }
 
+#[test]
+fn headers_only_shorthand_keeps_console_kind() {
+    let config = load(
+        "callback_settings:\n  otel:\n    headers: api-key=secret\n",
+        &[],
+    );
+    assert_eq!(
+        config.sections.otel_settings.exporters[0].kind.as_deref(),
+        Some("console")
+    );
+}
+
+#[test]
+fn reads_resource_attributes_from_environment() {
+    let config = load("", &[("RESOURCE_ATTRIBUTES", "deployment.tier: prod")]);
+    assert_eq!(
+        config.sections.otel_settings.resource_attributes,
+        BTreeMap::from([("deployment.tier".to_owned(), "prod".to_owned())])
+    );
+}
+
+#[test]
+fn empty_resource_attributes_environment_is_ignored() {
+    let config = load("", &[("RESOURCE_ATTRIBUTES", "")]);
+    assert!(config.sections.otel_settings.resource_attributes.is_empty());
+}
+
 #[rstest::rstest]
 #[case::console("console")]
 #[case::in_memory("in_memory")]
