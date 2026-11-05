@@ -18,16 +18,6 @@ fn base_error(message: &str) -> A2AError {
     }
 }
 
-fn connection_error(message: &str) -> A2AError {
-    A2AError::Connection {
-        message: message.to_owned(),
-        url: None,
-        model: None,
-        debug_info: None,
-        retries: RetryCounts::default(),
-    }
-}
-
 fn failure(path: &str, status: u16) -> ProbeFailure {
     ProbeFailure {
         path: path.to_owned(),
@@ -37,7 +27,16 @@ fn failure(path: &str, status: u16) -> ProbeFailure {
 
 #[rstest]
 #[case::base(base_error("boom"), 500)]
-#[case::connection(connection_error("refused"), 503)]
+#[case::connection(
+    A2AError::Connection {
+        message: "refused".to_owned(),
+        url: None,
+        model: None,
+        debug_info: None,
+        retries: RetryCounts::default(),
+    },
+    503
+)]
 #[case::agent_card(
     A2AError::AgentCard { message: "bad card".to_owned(), url: None, status_code: 404 },
     404
@@ -124,7 +123,13 @@ fn errors_localhost_error_carries_both_urls_and_the_original_error() {
         localhost_url: "http://localhost:8000/".to_owned(),
         base_url: "https://agent.example/".to_owned(),
         model: None,
-        original_error: Some(Box::new(connection_error("refused"))),
+        original_error: Some(Box::new(A2AError::Connection {
+            message: "refused".to_owned(),
+            url: None,
+            model: None,
+            debug_info: None,
+            retries: RetryCounts::default(),
+        })),
     };
     assert_eq!(error.status_code(), 503);
     assert_eq!(error.url(), Some("http://localhost:8000/"));
