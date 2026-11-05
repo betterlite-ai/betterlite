@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 use url::Url;
 
 use super::{
@@ -40,10 +40,7 @@ impl Preparation {
     }
 }
 
-fn prepare(args: &Arguments) -> Result<Preparation, DriverError> {
-    let key = args.api_key.as_ref().ok_or_else(|| {
-        DriverError::Transport("api_key is required for OpenAI realtime calls".to_owned())
-    })?;
+fn prepare(args: &Arguments, key: &SecretString) -> Preparation {
     let query: Vec<_> = args
         .query_params
         .clone()
@@ -66,15 +63,18 @@ fn prepare(args: &Arguments) -> Result<Preparation, DriverError> {
     if args.openai_beta_realtime {
         headers.insert("OpenAI-Beta".to_owned(), "realtime=v1".to_owned());
     }
-    Ok(Preparation {
+    Preparation {
         url: url.to_string(),
         query,
         headers,
-    })
+    }
 }
 
 fn preparation_adapter(args: &Arguments) -> Result<TranscriptObservation, DriverError> {
-    let actual = prepare(args)?;
+    let key = args.api_key.as_ref().ok_or_else(|| {
+        DriverError::Transport("api_key is required for OpenAI realtime calls".to_owned())
+    })?;
+    let actual = prepare(args, key);
     run_adapter(args, |script| {
         script
             .frames
