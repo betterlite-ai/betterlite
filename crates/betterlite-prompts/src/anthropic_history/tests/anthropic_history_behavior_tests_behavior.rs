@@ -122,6 +122,18 @@ fn anthropic_history_behavior_tests_behavior_missing_tool_result_gets_named_plac
 }
 
 #[test]
+fn anthropic_history_behavior_tests_behavior_single_matching_result_is_not_duplicated() {
+    let messages = vec![
+        json!({"role":"assistant","tool_calls":[{"id":"x","function":{"name":"only"}}]}),
+        json!({"role":"tool","tool_call_id":"x","content":"done"}),
+    ];
+    let (repair, consumed) =
+        tools::add_missing_tool_results(messages.first().unwrap(), &messages, 0);
+    assert_eq!(repair, vec![messages[0].clone()]);
+    assert_eq!(consumed, 0);
+}
+
+#[test]
 fn anthropic_history_behavior_tests_behavior_orphan_tool_result_is_dropped() {
     let messages = vec![json!({"role":"tool","tool_call_id":"missing","content":"secret"})];
     assert!(
