@@ -9,12 +9,15 @@ use betterlite_config::loader::ConfigLoader;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
+use betterlite_http::proxy::limits::TransportLimits;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rstest::rstest;
 use serde_json::Value;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
+use tokio::sync::Notify;
+use tokio::task::JoinSet;
 use tokio::time::sleep;
 
 use super::{ChatError, ChatExecutor};
@@ -239,7 +242,7 @@ async fn stream_distinguishes_status(#[case] status: u16) {
     if status == 200 {
         let response = result
             .unwrap()
-            .buffered(super::RESPONSE_LIMIT)
+            .buffered(chat.client.limits.body_bytes)
             .await
             .unwrap();
         assert_eq!(response.status, status);
@@ -250,4 +253,85 @@ async fn stream_distinguishes_status(#[case] status: u16) {
         assert_eq!(failure.error_type, "throttling_error");
         assert_eq!(failure.param.as_deref(), Some("p"));
     }
+}
+
+async fn staged_provider(listener: TcpListener, go: Arc<Notify>) {
+    let (mut stream, _) = listener.accept().await.unwrap();
+    let mut received = Vec::new();
+    while !received.ends_with(b"\r\n\r\n") {
+        received.push(stream.read_u8().await.unwrap());
+    }
+    let first = "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ntransfer-encoding: chunked\r\n\r\n8\r\ndata: 1\n\r\n";
+    stream.write_all(first.as_bytes()).await.unwrap();
+    go.notified().await;
+    stream
+        .write_all(b"8\r\ndata: 2\n\r\n0\r\n\r\n")
+        .await
+        .unwrap();
+}
+
+struct Wire {
+    status: u16,
+    answer: &'static str,
+    delay: Duration,
+}
+
+const OK: Wire = Wire {
+    status: 200,
+    answer: ANSWER,
+    delay: Duration::ZERO,
+};
+
+const SMALL_BODY: TransportLimits = TransportLimits {
+    body_bytes: 10,
+    ..TransportLimits::DEFAULT
+};
+
+const SMALL_HEADERS: TransportLimits = TransportLimits {
+    header_bytes: 10,
+    ..TransportLimits::DEFAULT
+};
+
+#[rstest]
+#[case::answer_within_the_limits(false, OK, TransportLimits::DEFAULT, "ok")]
+#[case::success_body_over_the_limit(false, OK, SMALL_BODY, "larger than betterlite accepts")]
+#[case::error_body_over_the_limit(false, Wire { status: 500, ..OK }, SMALL_BODY, "larger than betterlite accepts")]
+#[case::headers_over_the_limit(false, OK, SMALL_HEADERS, "larger than betterlite accepts")]
+#[case::deployment_deadline_covers_the_answer(false, Wire { delay: Duration::from_secs(2), ..OK }, TransportLimits::DEFAULT, "within the deployment timeout")]
+#[case::stream_reads_chunk_by_chunk(true, OK, TransportLimits::DEFAULT, "data: 1|data: 2")]
+#[tokio::test]
+async fn http_pool_chat_regression_behavior(
+    #[case] stream: bool,
+    #[case] wire: Wire,
+    #[case] limits: TransportLimits,
+    #[case] expected: &str,
+) {
+    let (listener, base) = listen().await;
+    let entries = format!(
+        "[{{model_name: g, litellm_params: {{model: openai/up, api_base: '{base}', api_key: k, timeout: 0.3}}}}]"
+    );
+    let mut chat = executor(&entries, 1);
+    chat.client.limits = limits;
+    let deployment = chat.pick("g").unwrap();
+    let observed = if stream {
+        let go = Arc::new(Notify::new());
+        let mut server = JoinSet::new();
+        server.spawn(staged_provider(listener, Arc::clone(&go)));
+        let request = ChatRequest::parse(br#"{"messages":[],"stream":true}"#).unwrap();
+        let mut response = chat.stream(deployment, &request).await.unwrap();
+        let mut chunks = Vec::new();
+        while let Some(chunk) = response.response.chunk().await.unwrap() {
+            chunks.push(String::from_utf8(chunk.to_vec()).unwrap().trim().to_owned());
+            go.notify_one();
+        }
+        chunks.join("|")
+    } else {
+        let request = ChatRequest::parse(br#"{"messages":[]}"#).unwrap();
+        let (_sent, answered) = tokio::join!(
+            provider(listener, wire.status, wire.answer, wire.delay),
+            chat.send(deployment, &request)
+        );
+        answered.map_or_else(|error| error.to_string(), |_outcome| "ok".to_owned())
+    };
+    assert!(observed.contains(expected), "{observed}");
 }

@@ -25,6 +25,7 @@ const MAX_CONNECTIONS: usize = 1024;
 const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(1);
 const ACCEPT_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const CONNECTION_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
+const OUTBOUND_DRAIN_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Error)]
 pub enum ServerError {
@@ -59,6 +60,7 @@ pub async fn run(
         .map_err(|source| ServerError::Bind { address, source })?;
     tracing::info!(host, port, "betterlite server listening");
     let shutting_down = Arc::new(AtomicBool::new(false));
+    let outbound = chat.client.clone();
     let application = application(&config, chat, Arc::clone(&shutting_down))?;
     let mut connections = JoinSet::new();
     let connection_builder = configure_connection_builder();
@@ -85,6 +87,9 @@ pub async fn run(
         ));
     }
     drain_connections(&mut connections).await;
+    if let Err(error) = outbound.drain(OUTBOUND_DRAIN_TIMEOUT).await {
+        tracing::warn!(error = %error, "outbound requests did not finish before shutdown");
+    }
     Ok(())
 }
 

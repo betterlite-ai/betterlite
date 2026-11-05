@@ -1,0 +1,14 @@
+task: B173
+deviations:
+  - what: litellm_settings.disable_aiohttp_transport and DISABLE_AIOHTTP_TRANSPORT are accepted no-ops.
+    why: The selected Python engine has no Rust equivalent; B208 explicitly owns environment proxy semantics.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1213-L1242
+  - what: Repeated query values from one source remain ordered; URL values still win collisions with explicit params.
+    why: Avoid silent loss within a caller-provided sequence while matching source precedence.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1459-L1469
+  - what: Buffered bodies have a 16 MiB limit and decoded response headers a 64 KiB acceptance limit.
+    why: Bound untrusted provider responses; HTTP/1 parser allocation is governed by its separate library ceiling.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L713-L798
+  - what: Redirects are never followed by the shared transport, and a 3xx answer is returned as it came.
+    why: Following a redirect would replay the provider API key to another host; B009 owns explicit redirect replay.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L713-L798

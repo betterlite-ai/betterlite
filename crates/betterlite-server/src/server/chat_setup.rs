@@ -1,7 +1,8 @@
 use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::tls::{TlsPolicy, TlsPolicyError};
 use betterlite_config::types::Config;
-use betterlite_http::error::HttpError;
-use betterlite_http::proxy::ProxiedClient;
+use betterlite_http::proxy::limits::TransportLimits;
+use betterlite_http::proxy::pool::{ClientPool, PoolError};
 use betterlite_openai::chat::deployment::{ChatDeployment, DeploymentError, OpenAiDefaults};
 use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::openai_base_config::CatalogCapabilities;
@@ -22,10 +23,15 @@ pub enum ChatSetupError {
         #[from]
         source: DeploymentError,
     },
+    #[error(transparent)]
+    Tls {
+        #[from]
+        source: TlsPolicyError,
+    },
     #[error("cannot build the outbound HTTP client: {source}")]
     Client {
         #[from]
-        source: HttpError,
+        source: PoolError,
     },
 }
 
@@ -62,8 +68,10 @@ pub fn chat_executor(
         &config.litellm_settings.proxy_trust,
         environment,
     )?);
+    let tls = TlsPolicy::resolve(config, environment, None)?;
+    let pool = ClientPool::new(deployments.len().max(1), TransportLimits::DEFAULT);
     Ok(ChatExecutor {
-        client: ProxiedClient::outbound(&policy)?,
+        client: pool.client(&tls, &policy)?,
         deployments,
         // the model cost map is not loaded yet, so no model counts as a catalog model
         catalog: CatalogCapabilities {
