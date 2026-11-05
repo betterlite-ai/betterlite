@@ -2,6 +2,7 @@ use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use betterlite_a2a::completion_bridge::EventSource;
+use betterlite_a2a::completion_bridge::events::Event;
 use betterlite_a2a::pydantic_ai_transformation::fake_streaming::StreamPacing;
 use betterlite_a2a::watsonx_credentials::params::{WxoLitellmParams, extract_litellm_params};
 use betterlite_a2a::watsonx_transform::extract::{
@@ -95,7 +96,7 @@ fn config_value(raw: &WxoLitellmParams) -> HelperResult {
     }))
 }
 
-fn pace(steps: &[WxoStreamStep]) -> Vec<Step<'_, WxoStreamResult>> {
+fn pace(steps: &[WxoStreamStep]) -> Vec<Step<'_, Event<WxoStreamResult>>> {
     steps
         .iter()
         .map(|step| Step {
