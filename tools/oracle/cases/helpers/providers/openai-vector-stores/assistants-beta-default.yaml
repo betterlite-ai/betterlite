@@ -1,0 +1,5 @@
+kind: helper
+name: assistants-beta-default
+call: {"openai_vector_stores": {"validate_environment": {"headers": {"OpenAI-Beta": ""}, "api_key": "k1"}}}
+env: {}
+compare: {ignore: []}
