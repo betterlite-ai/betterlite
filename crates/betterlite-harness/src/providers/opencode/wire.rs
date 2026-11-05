@@ -32,7 +32,7 @@ pub(crate) enum Line {
     ToolUse {
         #[serde(rename = "sessionID")]
         session_id: Option<String>,
-        part: Box<ToolPart>,
+        part: ToolPart,
     },
     #[serde(rename = "error")]
     Error {
