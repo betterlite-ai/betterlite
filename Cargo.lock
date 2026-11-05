@@ -1048,8 +1048,19 @@ dependencies = [
  "betterlite-error",
  "indexmap 2.14.2",
  "rstest",
+ "secrecy",
  "serde",
  "serde_json",
+ "serde_path_to_error",
+ "thiserror",
+]
+
+[[package]]
+name = "betterlite-azure-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-azure",
+ "libfuzzer-sys",
 ]
 
 [[package]]
