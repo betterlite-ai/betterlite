@@ -2,12 +2,14 @@ use std::future::{Future, ready};
 use std::io;
 use std::sync::{Arc, Mutex};
 
+use chrono::DateTime;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::finops::vantage::destination::VantageDestination;
 use crate::finops::vantage::error::DeliveryError;
 use crate::finops::vantage::sender::{CsvSender, MultipartPost};
 use crate::finops::vantage::settings::VantageSettings;
+use crate::focus_records::destinations::{FocusDestination as _, FocusTimeWindow};
 
 pub(super) const HEADER: &str = "ServiceName";
 pub(super) const FILENAME: &str = "usage.csv";
@@ -115,12 +117,22 @@ pub(super) fn uploads(posted: &[Posted]) -> Vec<(String, Vec<u8>)> {
         .collect()
 }
 
+pub(super) fn window() -> FocusTimeWindow {
+    FocusTimeWindow {
+        start_time: DateTime::from_timestamp(0, 0).unwrap(),
+        end_time: DateTime::from_timestamp(3_600, 0).unwrap(),
+        frequency: "daily".to_owned(),
+    }
+}
+
 pub(super) async fn deliver(
     sender: FakeSender,
     content: &[u8],
 ) -> (Result<(), DeliveryError<NetworkDown>>, Vec<Posted>) {
     let shared = Arc::clone(&sender.posted);
-    let result = destination(sender).deliver(content, FILENAME).await;
+    let result = destination(sender)
+        .deliver(content, &window(), FILENAME)
+        .await;
     let posted = shared.lock().unwrap().clone();
     (result, posted)
 }

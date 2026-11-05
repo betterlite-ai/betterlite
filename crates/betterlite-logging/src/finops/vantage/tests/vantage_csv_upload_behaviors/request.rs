@@ -5,7 +5,8 @@ use secrecy::SecretString;
 
 use crate::finops::vantage::destination::VantageDestination;
 use crate::finops::vantage::settings::VantageSettings;
-use crate::finops::vantage::tests::support::{FILENAME, FakeSender, Posted};
+use crate::finops::vantage::tests::support::{FILENAME, FakeSender, Posted, window};
+use crate::focus_records::destinations::FocusDestination as _;
 
 async fn post_with(base_url: Option<&str>) -> Posted {
     let sender = FakeSender::default();
@@ -17,7 +18,7 @@ async fn post_with(base_url: Option<&str>) -> Posted {
     };
     let destination = VantageDestination::new(sender, settings).unwrap();
     destination
-        .deliver(b"ServiceName\nCompute\n", FILENAME)
+        .deliver(b"ServiceName\nCompute\n", &window(), FILENAME)
         .await
         .unwrap();
     let captured = posted.lock().unwrap();

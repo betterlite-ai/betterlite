@@ -7,6 +7,7 @@ use crate::finops::vantage::records::{is_blank, split_records};
 use crate::finops::vantage::sender::{CSV_FIELD_NAME, CSV_MEDIA_TYPE, CsvSender, MultipartPost};
 use crate::finops::vantage::settings::{DEFAULT_BASE_URL, SettingsError, VantageSettings};
 use crate::finops::vantage::upload_batches::upload_batched;
+use crate::focus_records::destinations::{FocusDestination, FocusTimeWindow};
 
 pub const MAX_ROWS_PER_UPLOAD: usize = 10_000;
 pub const MAX_BYTES_PER_UPLOAD: usize = 2 * 1024 * 1024;
@@ -37,28 +38,6 @@ impl<Sender: CsvSender> VantageDestination<Sender> {
             integration_token,
             base_url,
         })
-    }
-
-    pub async fn deliver(
-        &self,
-        content: &[u8],
-        filename: &str,
-    ) -> Result<(), DeliveryError<Sender::Error>> {
-        if content.is_empty() {
-            tracing::debug!("Vantage destination: empty content, skipping upload");
-            return Ok(());
-        }
-        let stripped = strip_unsupported_columns(content).map_err(DeliveryError::Columns)?;
-        let records = split_records(&stripped);
-        let data_rows = records
-            .iter()
-            .skip(1)
-            .filter(|record| !is_blank(record))
-            .count();
-        if stripped.len() <= MAX_BYTES_PER_UPLOAD && data_rows <= MAX_ROWS_PER_UPLOAD {
-            return self.upload_csv(&stripped, filename).await;
-        }
-        upload_batched(self, &records, filename).await
     }
 
     pub(super) async fn upload_csv(
@@ -94,5 +73,33 @@ impl<Sender: CsvSender> VantageDestination<Sender> {
             csv.len()
         );
         Ok(())
+    }
+}
+
+impl<Sender: CsvSender> FocusDestination for VantageDestination<Sender> {
+    type Error = DeliveryError<Sender::Error>;
+
+    // Vantage names the export by filename; the window itself never reaches the request
+    async fn deliver<'delivery>(
+        &'delivery self,
+        content: &'delivery [u8],
+        _time_window: &'delivery FocusTimeWindow,
+        filename: &'delivery str,
+    ) -> Result<(), Self::Error> {
+        if content.is_empty() {
+            tracing::debug!("Vantage destination: empty content, skipping upload");
+            return Ok(());
+        }
+        let stripped = strip_unsupported_columns(content).map_err(DeliveryError::Columns)?;
+        let records = split_records(&stripped);
+        let data_rows = records
+            .iter()
+            .skip(1)
+            .filter(|record| !is_blank(record))
+            .count();
+        if stripped.len() <= MAX_BYTES_PER_UPLOAD && data_rows <= MAX_ROWS_PER_UPLOAD {
+            return self.upload_csv(&stripped, filename).await;
+        }
+        upload_batched(self, &records, filename).await
     }
 }

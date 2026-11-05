@@ -1,3 +1,4 @@
+mod contract;
 mod direct;
 mod failures;
 mod filter;
