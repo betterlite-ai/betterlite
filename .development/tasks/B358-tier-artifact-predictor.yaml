@@ -12,9 +12,7 @@ description: 'Implement heuristic_v2 as a pure typed artifact predictor over B32
   or consumed here: heuristic_v2_artifact, heuristic_v2_success_threshold. Pinned declaration defaults:
   heuristic_v2_artifact=''ultrafeedback''; heuristic_v2_success_threshold=None. Resolve env values once
   in betterlite-config, never in router code. Implement the owned native service in crates/betterlite-router/src/tier_artifact_predictor.rs.
-  Add ProbeOperation::TierArtifactPredictor in tools/oracle/src/router_probes/mod.rs and the corresponding B358 entry in
-  tools/oracle/litellm/probes/registry.py; the adapters only call production services. Shared exports
-  and dispatch files are explicitly in scope. Budget allocation: at most 360 implementation lines, 220
+  B301 registers ProbeOperation::TierArtifactPredictor and its Python entry as stubs, so fill only tools/oracle/src/router_probes/tier_artifact_predictor.rs and tools/oracle/litellm/probes/tier_artifact_predictor.py and leave mod.rs and registry.py as they are; the adapters only call production services. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
   fixture/corpus files use only the existing checks.yaml exclusions. Reuse predecessor services instead
   of copying their algorithms. Function coverage in litellm/router_strategy/complexity_router/tier_predictor.py:
@@ -45,9 +43,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/tier_artifact_predictor.rs
   - tools/oracle/src/router_probes/tier_artifact_predictor/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/tier_artifact_predictor.py
   - tools/oracle/cases/routing/tier-artifact-predictor/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/tier-artifact-predictor-*
