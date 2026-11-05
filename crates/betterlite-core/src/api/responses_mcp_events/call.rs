@@ -64,38 +64,25 @@ fn argument_events(
     ])
 }
 
-fn outcome_events<Id>(
+fn output_item_done(
     request: &McpCallRequest,
     item_id: &str,
-    mut next_id: Id,
-) -> Result<Vec<McpEvent>, McpEventError>
-where
-    Id: FnMut() -> String,
-{
-    let Some(output) = &request.result else {
-        return Ok(vec![call_event(
-            request,
-            item_id,
-            McpEventKind::CallFailed,
-            3,
-        )?]);
-    };
+    output: &str,
+    approval_request_id: String,
+) -> Result<McpEvent, McpEventError> {
     let mut done = call_event(request, item_id, McpEventKind::OutputItemDone, 0)?;
     done.sequence_number = 1;
     done.item_id = None;
     done.item = Some(EventItem::Call {
         id: item_id.to_owned(),
-        approval_request_id: format!("mcpr_{}", next_id()),
+        approval_request_id,
         arguments: request.arguments.clone(),
         error: None,
         name: request.tool_name.clone(),
-        output: output.clone(),
+        output: output.to_owned(),
         server_label: "litellm".to_owned(),
     });
-    Ok(vec![
-        call_event(request, item_id, McpEventKind::CallCompleted, 3)?,
-        done,
-    ])
+    Ok(done)
 }
 
 pub fn create_mcp_call_events<Id>(
@@ -110,6 +97,23 @@ where
         _ => format!("mcp_{}", next_id()),
     };
     let mut events = argument_events(request, &item_id)?;
-    events.extend(outcome_events(request, &item_id, next_id)?);
+    match &request.result {
+        None => events.push(call_event(request, &item_id, McpEventKind::CallFailed, 3)?),
+        Some(output) => {
+            events.push(call_event(
+                request,
+                &item_id,
+                McpEventKind::CallCompleted,
+                3,
+            )?);
+            let approval_request_id = format!("mcpr_{}", next_id());
+            events.push(output_item_done(
+                request,
+                &item_id,
+                output,
+                approval_request_id,
+            )?);
+        }
+    }
     Ok(events)
 }
