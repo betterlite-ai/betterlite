@@ -43,49 +43,48 @@ fn an_unset_url_fails_with_the_litellm_message() {
     );
 }
 
-fn environment(pairs: &[(&str, &str)]) -> BTreeMap<String, String> {
+fn environment(pairs: &[(&str, Option<&str>)]) -> BTreeMap<String, String> {
     pairs
         .iter()
-        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .filter_map(|(name, value)| value.map(|text| ((*name).to_owned(), text.to_owned())))
         .collect()
 }
 
 #[rstest]
-#[case::set(Some("http://prometheus:9090"), Some("http://prometheus:9090"))]
-#[case::unset(None, None)]
-#[case::empty(Some(""), None)]
-fn from_lookup_reads_prometheus_url(#[case] value: Option<&str>, #[case] expected: Option<&str>) {
-    let pairs: Vec<(&str, &str)> = value
-        .map(|url| ("PROMETHEUS_URL", url))
-        .into_iter()
-        .collect();
-    let settings = PrometheusSettings::from_lookup(&environment(&pairs));
-    assert_eq!(settings.url.as_deref(), expected);
-    assert_eq!(settings.selected_instance, None);
-}
-
-#[rstest]
-#[case::set(Some("web-1:8000"), Some("web-1:8000"))]
-#[case::unset(None, None)]
-#[case::empty(Some(""), None)]
-fn from_lookup_reads_prometheus_selected_instance(
-    #[case] value: Option<&str>,
-    #[case] expected: Option<&str>,
+#[case::both_set(
+    Some("http://prometheus:9090"),
+    Some("web-1:8000"),
+    Some("http://prometheus:9090"),
+    Some("web-1:8000")
+)]
+#[case::both_unset(None, None, None, None)]
+#[case::both_empty(Some(""), Some(""), None, None)]
+#[case::only_url(
+    Some("http://prometheus:9090"),
+    None,
+    Some("http://prometheus:9090"),
+    None
+)]
+#[case::only_instance(None, Some("web-1:8000"), None, Some("web-1:8000"))]
+fn from_lookup_reads_both_variables(
+    #[case] url: Option<&str>,
+    #[case] instance: Option<&str>,
+    #[case] expected_url: Option<&str>,
+    #[case] expected_instance: Option<&str>,
 ) {
-    let pairs: Vec<(&str, &str)> = value
-        .map(|instance| ("PROMETHEUS_SELECTED_INSTANCE", instance))
-        .into_iter()
-        .collect();
-    let settings = PrometheusSettings::from_lookup(&environment(&pairs));
-    assert_eq!(settings.selected_instance.as_deref(), expected);
-    assert_eq!(settings.url, None);
+    let settings = PrometheusSettings::from_lookup(&environment(&[
+        ("PROMETHEUS_URL", url),
+        ("PROMETHEUS_SELECTED_INSTANCE", instance),
+    ]));
+    assert_eq!(settings.url.as_deref(), expected_url);
+    assert_eq!(settings.selected_instance.as_deref(), expected_instance);
 }
 
 #[test]
 fn from_lookup_feeds_the_endpoint_a_litellm_style_environment() {
     let settings = PrometheusSettings::from_lookup(&environment(&[
-        ("PROMETHEUS_URL", "http://prometheus:9090"),
-        ("PROMETHEUS_SELECTED_INSTANCE", "web-1:8000"),
+        ("PROMETHEUS_URL", Some("http://prometheus:9090")),
+        ("PROMETHEUS_SELECTED_INSTANCE", Some("web-1:8000")),
     ]));
     assert_eq!(
         settings.endpoint::<FakeFailure>().unwrap(),
