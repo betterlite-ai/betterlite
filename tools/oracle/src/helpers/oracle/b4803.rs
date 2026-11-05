@@ -93,14 +93,31 @@ impl Helper for Op {
                 input.request_id.as_deref(),
                 &mut source,
             )),
-            Operation::Task | Operation::Working | Operation::Completed | Operation::Artifact => {
-                run_event(input, &mut source)
-            }
+            Operation::Task => run_event(input, EventContent::Task, &mut source),
+            Operation::Working => run_event(
+                input,
+                EventContent::Status {
+                    state: "working",
+                    final_event: false,
+                    message: Some("thinking"),
+                },
+                &mut source,
+            ),
+            Operation::Completed => run_event(
+                input,
+                EventContent::Status {
+                    state: "completed",
+                    final_event: true,
+                    message: None,
+                },
+                &mut source,
+            ),
+            Operation::Artifact => run_event(input, EventContent::Artifact("answer"), &mut source),
         }
     }
 }
 
-fn run_event(input: &Input, source: &mut Source) -> HelperResult {
+fn run_event(input: &Input, event: EventContent<'_>, source: &mut Source) -> HelperResult {
     let context = A2AStreamingContext::new(
         input
             .request_id
@@ -109,22 +126,5 @@ fn run_event(input: &Input, source: &mut Source) -> HelperResult {
         input.message.clone(),
         source,
     );
-    let event = match input.operation {
-        Operation::Task => EventContent::Task,
-        Operation::Working => EventContent::Status {
-            state: "working",
-            final_event: false,
-            message: Some("thinking"),
-        },
-        Operation::Completed => EventContent::Status {
-            state: "completed",
-            final_event: true,
-            message: None,
-        },
-        Operation::Artifact => EventContent::Artifact("answer"),
-        Operation::Extract | Operation::Metadata | Operation::Roles | Operation::Response => {
-            return Op::not_built("b4803");
-        }
-    };
     output(&stream_event(&context, event, source))
 }
