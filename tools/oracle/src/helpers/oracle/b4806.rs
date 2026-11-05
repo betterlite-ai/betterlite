@@ -8,7 +8,9 @@ use betterlite_a2a::pydantic_ai_provider::{ProviderCall, ProviderError, Pydantic
 use betterlite_a2a::pydantic_ai_submit::error::SubmitError;
 use betterlite_a2a::pydantic_ai_submit::{AgentRequest, AgentResponse, AgentTransport};
 use betterlite_a2a::pydantic_ai_transformation::fake_streaming::events::StreamEvent;
-use betterlite_a2a::pydantic_ai_transformation::send::PydanticAITransformation;
+use betterlite_a2a::pydantic_ai_transformation::send::{
+    ProjectedMessage, PydanticAITransformation, ReplayedStream,
+};
 use betterlite_core::agents::json::AgentJson;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -212,7 +214,7 @@ fn normalize(value: &mut AgentJson, seen: &mut HashMap<String, String>) {
 }
 
 async fn call(
-    provider: &PydanticAIProviderConfig<Script>,
+    provider: &mut PydanticAIProviderConfig<Script, Source>,
     input: &Input,
 ) -> Result<AgentJson, CallError> {
     let request = ProviderCall {
@@ -221,12 +223,11 @@ async fn call(
         api_base: input.api_base.as_deref(),
         kwargs: &input.kwargs,
     };
-    let mut source = Source { ids: 1..=99 };
     if input.mode == Mode::NonStreaming {
-        let event = provider.handle_non_streaming(&request, &mut source).await?;
+        let event = provider.handle::<ProjectedMessage>(&request).await?;
         return Ok(serde_json::to_value(event)?);
     }
-    let simulated = provider.handle_streaming(&request, &mut source).await?;
+    let simulated = provider.handle::<ReplayedStream>(&request).await?;
     let steps: Vec<_> = simulated
         .iter()
         .map(|step| Step {
@@ -249,12 +250,15 @@ impl Helper for Op {
             requests: Mutex::new(Vec::new()),
             pauses: Mutex::new(Vec::new()),
         };
-        let provider = PydanticAIProviderConfig {
+        let mut provider = PydanticAIProviderConfig {
             handler: PydanticAIHandler {
-                transformation: PydanticAITransformation { transport: script },
+                transformation: PydanticAITransformation {
+                    transport: script,
+                    source: Source { ids: 1..=99 },
+                },
             },
         };
-        let outcome = match runtime.block_on(call(&provider, input)) {
+        let outcome = match runtime.block_on(call(&mut provider, input)) {
             Ok(value) => Outcome::Ok(value),
             Err(CallError::Provider(error)) => Outcome::Error(classify(&error)),
             Err(error @ CallError::Serialize(_)) => {

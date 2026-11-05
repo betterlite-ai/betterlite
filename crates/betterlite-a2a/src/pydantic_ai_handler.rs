@@ -2,16 +2,13 @@ use std::collections::BTreeMap;
 use std::error::Error as StdError;
 use std::time::Duration;
 
-use serde::Serialize;
+use betterlite_core::agents::json::AgentJson;
 use thiserror::Error;
 
 use crate::completion_bridge::EventSource;
-use crate::completion_bridge::events::Event;
 use crate::pydantic_ai_submit::error::SubmitError;
 use crate::pydantic_ai_submit::{AgentCall, AgentTransport};
-use crate::pydantic_ai_transformation::fake_streaming::{SimulatedEvent, StreamPacing};
-use crate::pydantic_ai_transformation::send::PydanticAITransformation;
-use crate::pydantic_ai_transformation::transform::ResponseMessage;
+use crate::pydantic_ai_transformation::send::{Delivery, PydanticAITransformation};
 
 mod tests;
 
@@ -26,60 +23,42 @@ where
     Submit(#[from] SubmitError<E>),
 }
 
-pub struct HandlerRequest<'request, P> {
+pub struct HandlerRequest<'request> {
     pub request_id: &'request str,
-    pub params: &'request P,
+    pub params: &'request AgentJson,
     pub api_base: Option<&'request str>,
     pub timeout: Duration,
     pub headers: &'request BTreeMap<String, String>,
 }
 
-pub struct PydanticAIHandler<T> {
-    pub transformation: PydanticAITransformation<T>,
+pub struct PydanticAIHandler<T, S> {
+    pub transformation: PydanticAITransformation<T, S>,
 }
 
-impl<T> PydanticAIHandler<T>
+impl<T, S> PydanticAIHandler<T, S>
 where
     T: AgentTransport,
+    S: EventSource,
 {
-    pub async fn handle_non_streaming<P, S>(
-        &self,
-        request: &HandlerRequest<'_, P>,
-        source: &mut S,
-    ) -> Result<Event<ResponseMessage>, HandlerError<T::Error>>
+    // The delivery picks the entry point: ProjectedMessage answers once, ReplayedStream paces events
+    pub async fn handle<D>(
+        &mut self,
+        request: &HandlerRequest<'_>,
+        delivery: D,
+    ) -> Result<D::Output, HandlerError<T::Error>>
     where
-        P: Serialize + Sync,
-        S: EventSource,
+        D: Delivery,
     {
-        let call = agent_call(request)?;
         Ok(self
             .transformation
-            .send_non_streaming_request(&call, source)
-            .await?)
-    }
-
-    // The simulated events carry their own delays, so the caller paces the replay
-    pub async fn handle_streaming<P, S>(
-        &self,
-        request: &HandlerRequest<'_, P>,
-        pacing: StreamPacing,
-        source: &mut S,
-    ) -> Result<Vec<SimulatedEvent>, HandlerError<T::Error>>
-    where
-        P: Serialize + Sync,
-        S: EventSource,
-    {
-        let call = agent_call(request)?;
-        Ok(self
-            .transformation
-            .send_streaming_request(&call, pacing, source)
+            .send(&agent_call(request)?, delivery)
             .await?)
     }
 }
 
-fn agent_call<'request, P, E>(
-    request: &HandlerRequest<'request, P>,
-) -> Result<AgentCall<'request, P>, HandlerError<E>>
+fn agent_call<'request, E>(
+    request: &HandlerRequest<'request>,
+) -> Result<AgentCall<'request, AgentJson>, HandlerError<E>>
 where
     E: StdError + 'static,
 {

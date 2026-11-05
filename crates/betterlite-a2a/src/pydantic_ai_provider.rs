@@ -4,16 +4,15 @@ use std::num::NonZeroUsize;
 use std::time::Duration;
 
 use betterlite_core::agents::json::AgentJson;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_with::{DurationSecondsWithFrac, serde_as};
 use thiserror::Error;
 
 use crate::completion_bridge::EventSource;
-use crate::completion_bridge::events::Event;
 use crate::pydantic_ai_handler::{HandlerError, HandlerRequest, PydanticAIHandler};
 use crate::pydantic_ai_submit::{AgentTransport, DEFAULT_TIMEOUT};
-use crate::pydantic_ai_transformation::fake_streaming::{SimulatedEvent, StreamPacing};
-use crate::pydantic_ai_transformation::transform::ResponseMessage;
+use crate::pydantic_ai_transformation::fake_streaming::StreamPacing;
+use crate::pydantic_ai_transformation::send::Delivery;
 
 mod tests;
 
@@ -28,9 +27,9 @@ where
     Handler(#[from] HandlerError<E>),
 }
 
-pub struct ProviderCall<'call, P> {
+pub struct ProviderCall<'call> {
     pub request_id: &'call str,
-    pub params: &'call P,
+    pub params: &'call AgentJson,
     pub api_base: Option<&'call str>,
     pub kwargs: &'call BTreeMap<String, AgentJson>,
 }
@@ -49,8 +48,8 @@ struct ProviderKwargs {
     delay_ms: Option<u64>,
 }
 
-pub struct PydanticAIProviderConfig<T> {
-    pub handler: PydanticAIHandler<T>,
+pub struct PydanticAIProviderConfig<T, S> {
+    pub handler: PydanticAIHandler<T, S>,
 }
 
 struct ResolvedKwargs {
@@ -59,55 +58,37 @@ struct ResolvedKwargs {
     pacing: StreamPacing,
 }
 
-impl<T> PydanticAIProviderConfig<T>
-where
-    T: AgentTransport,
-{
-    pub async fn handle_non_streaming<P, S>(
-        &self,
-        call: &ProviderCall<'_, P>,
-        source: &mut S,
-    ) -> Result<Event<ResponseMessage>, ProviderError<T::Error>>
-    where
-        P: Serialize + Sync,
-        S: EventSource,
-    {
-        let kwargs = read_kwargs(call.kwargs)?;
-        let request = HandlerRequest {
+impl ResolvedKwargs {
+    const fn request<'call>(&'call self, call: &ProviderCall<'call>) -> HandlerRequest<'call> {
+        HandlerRequest {
             request_id: call.request_id,
             params: call.params,
             api_base: call.api_base,
-            timeout: kwargs.timeout,
-            headers: &kwargs.headers,
-        };
-        Ok(self.handler.handle_non_streaming(&request, source).await?)
+            timeout: self.timeout,
+            headers: &self.headers,
+        }
     }
+}
 
-    // An empty api_base is refused here and not in the non-streaming path, as LiteLLM does
-    pub async fn handle_streaming<P, S>(
-        &self,
-        call: &ProviderCall<'_, P>,
-        source: &mut S,
-    ) -> Result<Vec<SimulatedEvent>, ProviderError<T::Error>>
+impl<T, S> PydanticAIProviderConfig<T, S>
+where
+    T: AgentTransport,
+    S: EventSource,
+{
+    pub async fn handle<D>(
+        &mut self,
+        call: &ProviderCall<'_>,
+    ) -> Result<D::Output, ProviderError<T::Error>>
     where
-        P: Serialize + Sync,
-        S: EventSource,
+        D: Delivery,
     {
-        if call.api_base.is_none_or(str::is_empty) {
+        if D::REFUSES_EMPTY_API_BASE && call.api_base.is_none_or(str::is_empty) {
             return Err(ProviderError::Handler(HandlerError::ApiBaseRequired));
         }
         let kwargs = read_kwargs(call.kwargs)?;
-        let request = HandlerRequest {
-            request_id: call.request_id,
-            params: call.params,
-            api_base: call.api_base,
-            timeout: kwargs.timeout,
-            headers: &kwargs.headers,
-        };
-        Ok(self
-            .handler
-            .handle_streaming(&request, kwargs.pacing, source)
-            .await?)
+        let request = kwargs.request(call);
+        let delivery = D::from(kwargs.pacing);
+        Ok(self.handler.handle(&request, delivery).await?)
     }
 }
 

@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use betterlite_core::agents::json::AgentJson;
 
-use super::PydanticAITransformation;
+use super::{ProjectedMessage, PydanticAITransformation, ReplayedStream};
 use crate::pydantic_ai_submit::error::SubmitError;
 use crate::pydantic_ai_submit::tests::{Counter, ScriptedTransport, json};
 use crate::pydantic_ai_submit::{AgentCall, DEFAULT_TIMEOUT};
@@ -36,12 +36,13 @@ fn params() -> AgentJson {
 
 #[tokio::test]
 async fn pydantic_ai_submit_non_streaming_transforms_the_polled_task() {
-    let transformation = PydanticAITransformation {
+    let mut transformation = PydanticAITransformation {
         transport: ScriptedTransport::answering(&[SUBMITTED, WORKING, COMPLETED]),
+        source: Counter(0),
     };
     let (params, headers) = (params(), BTreeMap::new());
     let event = transformation
-        .send_non_streaming_request(&call(&params, &headers), &mut Counter(0))
+        .send(&call(&params, &headers), ProjectedMessage)
         .await
         .unwrap();
     assert_eq!(
@@ -53,15 +54,15 @@ async fn pydantic_ai_submit_non_streaming_transforms_the_polled_task() {
 
 #[tokio::test]
 async fn pydantic_ai_submit_streaming_replays_the_raw_task() {
-    let transformation = PydanticAITransformation {
+    let mut transformation = PydanticAITransformation {
         transport: ScriptedTransport::answering(&[SUBMITTED, COMPLETED]),
+        source: Counter(0),
     };
     let (params, headers) = (params(), BTreeMap::new());
     let steps = transformation
-        .send_streaming_request(
+        .send(
             &call(&params, &headers),
-            StreamPacing::default(),
-            &mut Counter(0),
+            ReplayedStream(StreamPacing::default()),
         )
         .await
         .unwrap();
@@ -73,14 +74,15 @@ async fn pydantic_ai_submit_streaming_replays_the_raw_task() {
 
 #[tokio::test]
 async fn pydantic_ai_submit_send_reports_a_task_that_cannot_be_read() {
-    let transformation = PydanticAITransformation {
+    let mut transformation = PydanticAITransformation {
         transport: ScriptedTransport::answering(&[
             r#"{"result": {"id": "", "history": "not a list"}}"#,
         ]),
+        source: Counter(0),
     };
     let (params, headers) = (params(), BTreeMap::new());
     let error = transformation
-        .send_non_streaming_request(&call(&params, &headers), &mut Counter(0))
+        .send(&call(&params, &headers), ProjectedMessage)
         .await
         .unwrap_err();
     assert!(matches!(error, SubmitError::Response(_)));
