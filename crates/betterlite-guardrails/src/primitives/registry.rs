@@ -3,6 +3,20 @@ use indexmap::IndexMap;
 // name and parameter names in positional order
 pub type Signature = (&'static str, &'static [&'static str]);
 
+const TEXT: &[&str] = &["text"];
+const PATTERN: &[&str] = &["text", "pattern", "flags"];
+const URL: &[&str] = &["url"];
+const SUBSTRINGS: &[&str] = &["text", "substrings"];
+const REPLACE: &[&str] = &["text", "pattern", "replacement", "flags"];
+const REQUEST: &[&str] = &["url", "method", "headers", "body", "timeout"];
+const POST: &[&str] = &["url", "body", "headers", "timeout"];
+const LANGUAGES: &[&str] = &["text", "languages"];
+
+// The safe builtins custom code may call; the Starlark runtime provides them.
+const BUILTINS: [&str; 10] = [
+    "len", "str", "int", "float", "bool", "list", "dict", "True", "False", "None",
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Primitive {
     Action(ActionPrimitive),
@@ -77,23 +91,9 @@ pub enum TextPrimitive {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Builtin {
-    Len,
-    Str,
-    Int,
-    Float,
-    Bool,
-    List,
-    Dict,
-    True,
-    False,
-    None,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RegistryEntry {
     Function(Primitive),
-    Builtin(Builtin),
+    Builtin(&'static str),
 }
 
 impl Primitive {
@@ -132,136 +132,35 @@ impl Primitive {
     #[must_use]
     pub const fn signature(self) -> Signature {
         match self {
-            Self::Action(kind) => kind.signature(),
-            Self::Regex(kind) => kind.signature(),
-            Self::Json(kind) => kind.signature(),
-            Self::Url(kind) => kind.signature(),
-            Self::Http(kind) => kind.signature(),
-            Self::Code(kind) => kind.signature(),
-            Self::Substring(kind) => kind.signature(),
-            Self::Text(kind) => kind.signature(),
-        }
-    }
-}
-
-impl ActionPrimitive {
-    const fn signature(self) -> Signature {
-        match self {
-            Self::Allow => ("allow", &[]),
-            Self::Block => ("block", &["reason", "detection_info"]),
-            Self::Flag => ("flag", &["reason", "metadata"]),
-            Self::Modify => ("modify", &["texts", "images", "tool_calls"]),
-        }
-    }
-}
-
-impl RegexPrimitive {
-    const fn signature(self) -> Signature {
-        match self {
-            Self::Match => ("regex_match", &["text", "pattern", "flags"]),
-            Self::MatchAll => ("regex_match_all", &["text", "pattern", "flags"]),
-            Self::Replace => (
-                "regex_replace",
-                &["text", "pattern", "replacement", "flags"],
-            ),
-            Self::FindAll => ("regex_find_all", &["text", "pattern", "flags"]),
-        }
-    }
-}
-
-impl JsonPrimitive {
-    const fn signature(self) -> Signature {
-        match self {
-            Self::Parse => ("json_parse", &["text"]),
-            Self::Stringify => ("json_stringify", &["obj"]),
-            Self::SchemaValid => ("json_schema_valid", &["obj", "schema"]),
-        }
-    }
-}
-
-impl UrlPrimitive {
-    const fn signature(self) -> Signature {
-        match self {
-            Self::Extract => ("extract_urls", &["text"]),
-            Self::IsValid => ("is_valid_url", &["url"]),
-            Self::AllValid => ("all_urls_valid", &["text"]),
-            Self::GetDomain => ("get_url_domain", &["url"]),
-        }
-    }
-}
-
-impl HttpPrimitive {
-    const fn signature(self) -> Signature {
-        match self {
-            Self::Request => (
-                "http_request",
-                &["url", "method", "headers", "body", "timeout"],
-            ),
-            Self::Get => ("http_get", &["url", "headers", "timeout"]),
-            Self::Post => ("http_post", &["url", "body", "headers", "timeout"]),
-        }
-    }
-}
-
-impl CodePrimitive {
-    const fn signature(self) -> Signature {
-        match self {
-            Self::Detect => ("detect_code", &["text"]),
-            Self::DetectLanguages => ("detect_code_languages", &["text"]),
-            Self::ContainsLanguage => ("contains_code_language", &["text", "languages"]),
-        }
-    }
-}
-
-impl SubstringPrimitive {
-    const fn signature(self) -> Signature {
-        match self {
-            Self::Contains => ("contains", &["text", "substring"]),
-            Self::ContainsAny => ("contains_any", &["text", "substrings"]),
-            Self::ContainsAll => ("contains_all", &["text", "substrings"]),
-        }
-    }
-}
-
-impl TextPrimitive {
-    const fn signature(self) -> Signature {
-        match self {
-            Self::WordCount => ("word_count", &["text"]),
-            Self::CharCount => ("char_count", &["text"]),
-            Self::Lower => ("lower", &["text"]),
-            Self::Upper => ("upper", &["text"]),
-            Self::Trim => ("trim", &["text"]),
-        }
-    }
-}
-
-impl Builtin {
-    pub const ALL: [Self; 10] = [
-        Self::Len,
-        Self::Str,
-        Self::Int,
-        Self::Float,
-        Self::Bool,
-        Self::List,
-        Self::Dict,
-        Self::True,
-        Self::False,
-        Self::None,
-    ];
-
-    #[must_use]
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Len => "len",
-            Self::Str => "str",
-            Self::Int => "int",
-            Self::Float => "float",
-            Self::Bool => "bool",
-            Self::List => "list",
-            Self::Dict => "dict",
-            Self::True => "True",
-            Self::False => "False",
-            Self::None => "None",
+            Self::Action(ActionPrimitive::Allow) => ("allow", &[]),
+            Self::Action(ActionPrimitive::Block) => ("block", &["reason", "detection_info"]),
+            Self::Action(ActionPrimitive::Flag) => ("flag", &["reason", "metadata"]),
+            Self::Action(ActionPrimitive::Modify) => ("modify", &["texts", "images", "tool_calls"]),
+            Self::Regex(RegexPrimitive::Match) => ("regex_match", PATTERN),
+            Self::Regex(RegexPrimitive::MatchAll) => ("regex_match_all", PATTERN),
+            Self::Regex(RegexPrimitive::Replace) => ("regex_replace", REPLACE),
+            Self::Regex(RegexPrimitive::FindAll) => ("regex_find_all", PATTERN),
+            Self::Json(JsonPrimitive::Parse) => ("json_parse", TEXT),
+            Self::Json(JsonPrimitive::Stringify) => ("json_stringify", &["obj"]),
+            Self::Json(JsonPrimitive::SchemaValid) => ("json_schema_valid", &["obj", "schema"]),
+            Self::Url(UrlPrimitive::Extract) => ("extract_urls", TEXT),
+            Self::Url(UrlPrimitive::IsValid) => ("is_valid_url", URL),
+            Self::Url(UrlPrimitive::AllValid) => ("all_urls_valid", TEXT),
+            Self::Url(UrlPrimitive::GetDomain) => ("get_url_domain", URL),
+            Self::Http(HttpPrimitive::Request) => ("http_request", REQUEST),
+            Self::Http(HttpPrimitive::Get) => ("http_get", &["url", "headers", "timeout"]),
+            Self::Http(HttpPrimitive::Post) => ("http_post", POST),
+            Self::Code(CodePrimitive::Detect) => ("detect_code", TEXT),
+            Self::Code(CodePrimitive::DetectLanguages) => ("detect_code_languages", TEXT),
+            Self::Code(CodePrimitive::ContainsLanguage) => ("contains_code_language", LANGUAGES),
+            Self::Substring(SubstringPrimitive::Contains) => ("contains", &["text", "substring"]),
+            Self::Substring(SubstringPrimitive::ContainsAny) => ("contains_any", SUBSTRINGS),
+            Self::Substring(SubstringPrimitive::ContainsAll) => ("contains_all", SUBSTRINGS),
+            Self::Text(TextPrimitive::WordCount) => ("word_count", TEXT),
+            Self::Text(TextPrimitive::CharCount) => ("char_count", TEXT),
+            Self::Text(TextPrimitive::Lower) => ("lower", TEXT),
+            Self::Text(TextPrimitive::Upper) => ("upper", TEXT),
+            Self::Text(TextPrimitive::Trim) => ("trim", TEXT),
         }
     }
 }
@@ -271,8 +170,8 @@ pub fn get_custom_code_primitives() -> IndexMap<&'static str, RegistryEntry> {
     let functions = Primitive::ALL
         .into_iter()
         .map(|primitive| (primitive.signature().0, RegistryEntry::Function(primitive)));
-    let builtins = Builtin::ALL
+    let builtins = BUILTINS
         .into_iter()
-        .map(|builtin| (builtin.name(), RegistryEntry::Builtin(builtin)));
+        .map(|name| (name, RegistryEntry::Builtin(name)));
     functions.chain(builtins).collect()
 }

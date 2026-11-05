@@ -57,7 +57,7 @@ fn primitives_registry(#[case] names: &[&str], #[case] expected: Kind) {
                 Kind::Function
             }
             Some(RegistryEntry::Builtin(builtin)) => {
-                assert_eq!(builtin.name(), *name);
+                assert_eq!(builtin, name);
                 Kind::Builtin
             }
             None => Kind::Absent,

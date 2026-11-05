@@ -2,11 +2,10 @@ use indexmap::IndexMap;
 use serde::Serialize;
 
 pub mod arguments;
+mod stateless;
 
 use arguments::{
-    BlockArguments, FlagArguments, HttpGetArguments, HttpPostArguments, HttpRequestArguments,
-    LanguagesArguments, ModifyArguments, NoArguments, PatternArguments, ReplaceArguments,
-    SchemaArguments, StringifyArguments, SubstringArguments, SubstringsArguments, TextArguments,
+    HttpGetArguments, HttpPostArguments, HttpRequestArguments, LanguagesArguments, TextArguments,
     UrlArguments, bind,
 };
 
@@ -14,13 +13,8 @@ use super::code_detection::CodeDetector;
 use super::error::PrimitiveError;
 use super::http::transport::OutboundHttp;
 use super::http::{HttpRequest, HttpResponseResult, http_request};
-use super::json_tools::{json_parse, json_schema_valid, json_stringify};
 use super::json_value::JsonValue;
-use super::pattern_matching::{regex_find_all, regex_match, regex_match_all, regex_replace};
-use super::registry::{
-    ActionPrimitive, CodePrimitive, HttpPrimitive, JsonPrimitive, Primitive, RegexPrimitive,
-    SubstringPrimitive, TextPrimitive, UrlPrimitive,
-};
+use super::registry::{CodePrimitive, HttpPrimitive, Primitive, UrlPrimitive};
 use super::results::ActionResult;
 use super::urls::{UrlExtractor, get_url_domain, is_valid_url};
 
@@ -62,14 +56,14 @@ impl<Transport: OutboundHttp> Primitives<Transport> {
         named: Named,
     ) -> Result<PrimitiveOutput, PrimitiveError> {
         match primitive {
-            Primitive::Action(kind) => action(primitive, kind, positional, named),
-            Primitive::Regex(kind) => regex(primitive, kind, positional, named),
-            Primitive::Json(kind) => json(primitive, kind, positional, named),
+            Primitive::Action(kind) => stateless::action(primitive, kind, positional, named),
+            Primitive::Regex(kind) => stateless::regex(primitive, kind, positional, named),
+            Primitive::Json(kind) => stateless::json(primitive, kind, positional, named),
             Primitive::Url(kind) => self.url(primitive, kind, positional, named),
             Primitive::Http(kind) => self.http(primitive, kind, positional, named).await,
             Primitive::Code(kind) => self.code(primitive, kind, positional, named),
-            Primitive::Substring(kind) => substring(primitive, kind, positional, named),
-            Primitive::Text(kind) => text(primitive, kind, positional, named),
+            Primitive::Substring(kind) => stateless::substring(primitive, kind, positional, named),
+            Primitive::Text(kind) => stateless::text(primitive, kind, positional, named),
         }
     }
 
@@ -170,158 +164,4 @@ impl<Transport: OutboundHttp> Primitives<Transport> {
             }
         })
     }
-}
-
-fn action(
-    primitive: Primitive,
-    kind: ActionPrimitive,
-    positional: Positional,
-    named: Named,
-) -> Result<PrimitiveOutput, PrimitiveError> {
-    let result = match kind {
-        ActionPrimitive::Allow => {
-            let _none: NoArguments = bind(primitive, positional, named)?;
-            ActionResult::Allow
-        }
-        ActionPrimitive::Block => {
-            let arguments: BlockArguments = bind(primitive, positional, named)?;
-            ActionResult::Block {
-                reason: arguments.reason,
-                detection_info: arguments.detection_info.filter(|info| !info.is_empty()),
-            }
-        }
-        ActionPrimitive::Flag => {
-            let arguments: FlagArguments = bind(primitive, positional, named)?;
-            ActionResult::Flag {
-                reason: arguments.reason,
-                metadata: arguments.metadata.unwrap_or_default(),
-            }
-        }
-        ActionPrimitive::Modify => {
-            let arguments: ModifyArguments = bind(primitive, positional, named)?;
-            ActionResult::Modify {
-                texts: arguments.texts,
-                images: arguments.images,
-                tool_calls: arguments.tool_calls,
-            }
-        }
-    };
-    Ok(PrimitiveOutput::Action(result))
-}
-
-fn regex(
-    primitive: Primitive,
-    kind: RegexPrimitive,
-    positional: Positional,
-    named: Named,
-) -> Result<PrimitiveOutput, PrimitiveError> {
-    Ok(match kind {
-        RegexPrimitive::Match => {
-            let arguments: PatternArguments = bind(primitive, positional, named)?;
-            PrimitiveOutput::Truth(regex_match(
-                &arguments.text,
-                &arguments.pattern,
-                arguments.flags.unwrap_or_default(),
-            ))
-        }
-        RegexPrimitive::MatchAll => {
-            let arguments: PatternArguments = bind(primitive, positional, named)?;
-            PrimitiveOutput::Truth(regex_match_all(
-                &arguments.text,
-                &arguments.pattern,
-                arguments.flags.unwrap_or_default(),
-            ))
-        }
-        RegexPrimitive::Replace => {
-            let arguments: ReplaceArguments = bind(primitive, positional, named)?;
-            let flags = arguments.flags.unwrap_or_default();
-            PrimitiveOutput::Text(regex_replace(
-                &arguments.text,
-                &arguments.pattern,
-                &arguments.replacement,
-                flags,
-            ))
-        }
-        RegexPrimitive::FindAll => {
-            let arguments: PatternArguments = bind(primitive, positional, named)?;
-            let found = regex_find_all(
-                &arguments.text,
-                &arguments.pattern,
-                arguments.flags.unwrap_or_default(),
-            );
-            PrimitiveOutput::Value(JsonValue::Array(found))
-        }
-    })
-}
-
-fn json(
-    primitive: Primitive,
-    kind: JsonPrimitive,
-    positional: Positional,
-    named: Named,
-) -> Result<PrimitiveOutput, PrimitiveError> {
-    Ok(match kind {
-        JsonPrimitive::Parse => {
-            let arguments: TextArguments = bind(primitive, positional, named)?;
-            PrimitiveOutput::Value(json_parse(&arguments.text))
-        }
-        JsonPrimitive::Stringify => {
-            let arguments: StringifyArguments = bind(primitive, positional, named)?;
-            PrimitiveOutput::Text(json_stringify(&arguments.obj))
-        }
-        JsonPrimitive::SchemaValid => {
-            let arguments: SchemaArguments = bind(primitive, positional, named)?;
-            PrimitiveOutput::Truth(json_schema_valid(&arguments.obj, &arguments.schema))
-        }
-    })
-}
-
-fn substring(
-    primitive: Primitive,
-    kind: SubstringPrimitive,
-    positional: Positional,
-    named: Named,
-) -> Result<PrimitiveOutput, PrimitiveError> {
-    Ok(match kind {
-        SubstringPrimitive::Contains => {
-            let arguments: SubstringArguments = bind(primitive, positional, named)?;
-            PrimitiveOutput::Truth(arguments.text.contains(&arguments.substring))
-        }
-        SubstringPrimitive::ContainsAny => {
-            let arguments: SubstringsArguments = bind(primitive, positional, named)?;
-            PrimitiveOutput::Truth(
-                arguments
-                    .substrings
-                    .iter()
-                    .any(|part| arguments.text.contains(part.as_str())),
-            )
-        }
-        SubstringPrimitive::ContainsAll => {
-            let arguments: SubstringsArguments = bind(primitive, positional, named)?;
-            PrimitiveOutput::Truth(
-                arguments
-                    .substrings
-                    .iter()
-                    .all(|part| arguments.text.contains(part.as_str())),
-            )
-        }
-    })
-}
-
-fn text(
-    primitive: Primitive,
-    kind: TextPrimitive,
-    positional: Positional,
-    named: Named,
-) -> Result<PrimitiveOutput, PrimitiveError> {
-    let arguments: TextArguments = bind(primitive, positional, named)?;
-    Ok(match kind {
-        TextPrimitive::WordCount => {
-            PrimitiveOutput::Count(arguments.text.split_whitespace().count())
-        }
-        TextPrimitive::CharCount => PrimitiveOutput::Count(arguments.text.chars().count()),
-        TextPrimitive::Lower => PrimitiveOutput::Text(arguments.text.to_lowercase()),
-        TextPrimitive::Upper => PrimitiveOutput::Text(arguments.text.to_uppercase()),
-        TextPrimitive::Trim => PrimitiveOutput::Text(arguments.text.trim().to_owned()),
-    })
 }
