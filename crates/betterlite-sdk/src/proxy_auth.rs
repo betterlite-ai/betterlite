@@ -44,12 +44,26 @@ pub trait TokenCredential: Send + Sync {
     ) -> impl Future<Output = Result<AccessToken, Self::Error>> + Send;
 }
 
-fn fresh_token(cache: &Mutex<Option<AccessToken>>, now: i64) -> Option<AccessToken> {
-    cache
+async fn cached_or_fetched<E, F, Fut>(
+    cache: &Mutex<Option<AccessToken>>,
+    now: i64,
+    fetch: F,
+) -> Result<AccessToken, E>
+where
+    F: FnOnce() -> Fut,
+    Fut: Future<Output = Result<AccessToken, E>>,
+{
+    let fresh = cache
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
         .clone()
-        .filter(|cached| cached.expires_on > now.saturating_add(REFRESH_BUFFER_SECONDS))
+        .filter(|cached| cached.expires_on > now.saturating_add(REFRESH_BUFFER_SECONDS));
+    if let Some(cached) = fresh {
+        return Ok(cached);
+    }
+    let token = fetch().await?;
+    *cache.lock().unwrap_or_else(PoisonError::into_inner) = Some(token.clone());
+    Ok(token)
 }
 
 // default_chain is DefaultAzureCredential, built on the first get_token call; None stands for a missing azure-identity package
@@ -104,14 +118,14 @@ impl<K: Clock> fmt::Debug for GenericOAuth2Credential<K> {
 }
 
 impl<K: Clock> GenericOAuth2Credential<K> {
-    async fn exchange(&self, scope: &str) -> Result<TokenResponse, OAuth2Error> {
+    fn token_request(&self, scope: &str) -> OutboundRequest {
         let form = form_urlencoded::Serializer::new(String::new())
             .append_pair("grant_type", "client_credentials")
             .append_pair("client_id", &self.client_id)
             .append_pair("client_secret", self.client_secret.expose_secret())
             .append_pair("scope", scope)
             .finish();
-        let request = OutboundRequest {
+        OutboundRequest {
             method: Method::POST,
             url: self.token_url.clone(),
             query: Vec::new(),
@@ -121,10 +135,13 @@ impl<K: Clock> GenericOAuth2Credential<K> {
                 data: form.into_bytes(),
             },
             deadline: self.client.limits.read_timeout,
-        };
+        }
+    }
+
+    async fn exchange(&self, scope: &str) -> Result<AccessToken, OAuth2Error> {
         let response = self
             .client
-            .send_buffered(request)
+            .send_buffered(self.token_request(scope))
             .await
             .map_err(OAuth2Error::Transport)?;
         if !(200..300).contains(&response.status) {
@@ -132,7 +149,19 @@ impl<K: Clock> GenericOAuth2Credential<K> {
                 status: response.status,
             });
         }
-        serde_json::from_slice(&response.body).map_err(OAuth2Error::Body)
+        let parsed: TokenResponse =
+            serde_json::from_slice(&response.body).map_err(OAuth2Error::Body)?;
+        // a token response without expires_in lasts an hour
+        let lifetime = parsed.expires_in.unwrap_or(3600);
+        let expires_on = self
+            .clock
+            .unix_seconds()
+            .checked_add(lifetime)
+            .ok_or(OAuth2Error::ExpiryOverflow)?;
+        Ok(AccessToken {
+            token: parsed.access_token,
+            expires_on,
+        })
     }
 }
 
@@ -140,25 +169,8 @@ impl<K: Clock> TokenCredential for GenericOAuth2Credential<K> {
     type Error = OAuth2Error;
 
     async fn get_token(&self, scope: &str) -> Result<AccessToken, OAuth2Error> {
-        if let Some(cached) = fresh_token(&self.cached_token, self.clock.unix_seconds()) {
-            return Ok(cached);
-        }
-        let parsed = self.exchange(scope).await?;
-        // a token response without expires_in lasts an hour
-        let lifetime = parsed.expires_in.unwrap_or(3600);
-        let token = AccessToken {
-            token: parsed.access_token,
-            expires_on: self
-                .clock
-                .unix_seconds()
-                .checked_add(lifetime)
-                .ok_or(OAuth2Error::ExpiryOverflow)?,
-        };
-        *self
-            .cached_token
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(token.clone());
-        Ok(token)
+        let now = self.clock.unix_seconds();
+        cached_or_fetched(&self.cached_token, now, || self.exchange(scope)).await
     }
 }
 
@@ -179,15 +191,11 @@ impl<C: TokenCredential, K: Clock> fmt::Debug for ProxyAuthHandler<C, K> {
 
 impl<C: TokenCredential, K: Clock> ProxyAuthHandler<C, K> {
     pub async fn get_token(&self) -> Result<AccessToken, C::Error> {
-        if let Some(cached) = fresh_token(&self.cached_token, self.clock.unix_seconds()) {
-            return Ok(cached);
-        }
-        let token = self.credential.get_token(&self.scope).await?;
-        *self
-            .cached_token
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(token.clone());
-        Ok(token)
+        let now = self.clock.unix_seconds();
+        cached_or_fetched(&self.cached_token, now, || {
+            self.credential.get_token(&self.scope)
+        })
+        .await
     }
 
     pub async fn get_auth_headers(&self) -> Result<HeaderMap, ProxyAuthError<C::Error>> {
