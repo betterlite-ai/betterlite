@@ -15,6 +15,11 @@ use crate::routes::{CallType, RouteMetadataError, get_routes_for_call_type};
     Some("empty")
 )]
 #[case::undeclared_call_type(br#"{"source":"test","call_types":[],"routes":[{"route":"/test","call_types":["completion"]}]}"#, Some("undeclared"))]
+#[case::undeclared_among_other_declared(
+    br#"{"source":"test","call_types":["embedding","moderation"],"routes":[{"route":"/test","call_types":["completion"]}]}"#,
+    Some("undeclared")
+)]
+#[case::at_limit(&vec![b' '; 0x0002_0000], Some("fixture"))]
 #[case::oversized(&vec![b' '; 0x0002_0001], Some("large"))]
 fn call_route_metadata_route_metadata_tests_behavior(
     #[case] bytes: &[u8],
