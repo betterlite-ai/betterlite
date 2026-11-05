@@ -70,29 +70,35 @@ impl crate::helpers::Helper for Op {
                 servers,
                 base_item_id,
                 tools,
-            } => {
-                let discovered: Vec<DiscoveredTool> = tools.iter().map(discovered_tool).collect();
-                let outcome = create_mcp_list_tools_events(servers, base_item_id, &discovered);
-                let diagnostics: Vec<Value> = outcome
-                    .diagnostics
-                    .iter()
-                    .map(|diagnostic| {
-                        let level = match diagnostic.level {
-                            DiagnosticLevel::Debug => "debug",
-                            DiagnosticLevel::Error => "error",
-                            DiagnosticLevel::Traceback => "traceback",
-                        };
-                        json!({"level": level, "message": diagnostic.message})
-                    })
-                    .collect();
-                Ok(json!({"events": outcome.events, "diagnostics": diagnostics}))
-            }
+            } => Ok(list_tools_projection(servers, base_item_id, tools)),
             Input::McpCall { request, ids } => {
                 let events = call_events(request, ids.clone())?;
                 Ok(json!({"events": events, "diagnostics": []}))
             }
         }
     }
+}
+
+fn list_tools_projection(
+    servers: &[ServerEntry],
+    base_item_id: &str,
+    tools: &[ToolInput],
+) -> Value {
+    let discovered: Vec<DiscoveredTool> = tools.iter().map(discovered_tool).collect();
+    let outcome = create_mcp_list_tools_events(servers, base_item_id, &discovered);
+    let diagnostics: Vec<Value> = outcome
+        .diagnostics
+        .iter()
+        .map(|diagnostic| {
+            let level = match diagnostic.level {
+                DiagnosticLevel::Debug => "debug",
+                DiagnosticLevel::Error => "error",
+                DiagnosticLevel::Traceback => "traceback",
+            };
+            json!({"level": level, "message": diagnostic.message})
+        })
+        .collect();
+    json!({"events": outcome.events, "diagnostics": diagnostics})
 }
 
 fn sample_call() -> McpCallRequest {

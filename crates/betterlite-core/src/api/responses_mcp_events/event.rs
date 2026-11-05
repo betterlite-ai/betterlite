@@ -83,35 +83,35 @@ pub struct McpEvent {
 pub fn set_event_field(
     event: &mut McpEvent,
     name: &str,
-    value: Value,
+    input: Value,
 ) -> Result<(), McpEventError> {
     let wrong_type = |expected| McpEventError::FieldType {
         field: name.to_owned(),
         expected,
     };
-    match (name, value) {
-        ("type", value) => {
+    match (name, input) {
+        ("type", kind) => {
             event.kind =
-                serde_json::from_value(value).map_err(|_| wrong_type("an MCP event type"))?;
+                serde_json::from_value(kind).map_err(|_unused| wrong_type("an MCP event type"))?;
         }
-        ("sequence_number", value) => {
-            event.sequence_number = value.as_i64().ok_or_else(|| wrong_type("an integer"))?;
+        ("sequence_number", number) => {
+            event.sequence_number = number.as_i64().ok_or_else(|| wrong_type("an integer"))?;
         }
-        ("output_index", value) => {
-            event.output_index = value.as_i64().ok_or_else(|| wrong_type("an integer"))?;
+        ("output_index", number) => {
+            event.output_index = number.as_i64().ok_or_else(|| wrong_type("an integer"))?;
         }
         ("item_id", Value::String(text)) => event.item_id = Some(text),
         ("delta", Value::String(text)) => event.delta = Some(text),
         ("arguments", Value::String(text)) => event.arguments = Some(text),
         ("item_id" | "delta" | "arguments", _) => return Err(wrong_type("a string")),
-        ("item", value) => {
+        ("item", item) => {
             event.item = Some(
-                serde_json::from_value(value)
+                serde_json::from_value(item)
                     .map_err(|source| McpEventError::ItemShape { source })?,
             );
         }
-        (_, value) => {
-            event.extra.insert(name.to_owned(), value);
+        (_, other) => {
+            event.extra.insert(name.to_owned(), other);
         }
     }
     Ok(())

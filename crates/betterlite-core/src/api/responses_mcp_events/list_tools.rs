@@ -45,9 +45,12 @@ pub struct ListToolsOutcome {
     pub diagnostics: Vec<Diagnostic>,
 }
 
-fn read_attribute<Content: Clone>(
+fn read_attribute<Content>(
     attribute: &ToolAttribute<Content>,
-) -> Result<Option<Content>, McpEventError> {
+) -> Result<Option<Content>, McpEventError>
+where
+    Content: Clone,
+{
     match attribute {
         ToolAttribute::Absent => Ok(None),
         ToolAttribute::Value(content) => Ok(Some(content.clone())),
@@ -133,6 +136,7 @@ fn failure_outcome(
     }
 }
 
+#[must_use]
 pub fn create_mcp_list_tools_events(
     servers: &[ServerEntry],
     base_item_id: &str,
