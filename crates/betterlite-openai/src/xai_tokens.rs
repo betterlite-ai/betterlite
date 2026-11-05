@@ -88,10 +88,10 @@ impl<F: FileAccess, C: Clock, T: Transport> XaiOauth<F, C, T> {
     }
 
     pub fn read_auth_file(&self) -> Option<AuthFile> {
-        self.files
-            .read(&self.auth_file)
+        let bytes = self.files.read(&self.auth_file).ok()?;
+        decode_xai_oauth(&bytes)
+            .map_err(|error| tracing::debug!(%error, "Ignoring an unreadable xAI OAuth auth file"))
             .ok()
-            .and_then(|bytes| decode_xai_oauth(&bytes).ok())
     }
 
     pub fn write_auth_file(&self, record: &OauthRecord) -> Result<(), XaiOauthError> {
