@@ -21,7 +21,7 @@ pub(super) fn disallowed(kind: DisallowedKind) -> RejectedUpload {
     }
 }
 
-pub(super) fn scan(result: ScanResult) -> Option<RejectedUpload> {
+pub(super) fn scan(result: &ScanResult) -> Option<RejectedUpload> {
     match result.verdict {
         ScanVerdict::Clean => None,
         ScanVerdict::Infected => Some(RejectedUpload {

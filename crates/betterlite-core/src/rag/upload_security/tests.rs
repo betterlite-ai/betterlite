@@ -1,5 +1,9 @@
 #![cfg(test)]
 
+use std::fs;
+use std::path::PathBuf;
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use super::{
     AllowedContent, ContentInspection, DetectedFormat, DisallowedContent, DisallowedKind,
     EICAR_TEST_SIGNATURE, EicarTestMalwareScanner, MAX_UPLOAD_SIZE_BYTES, MalwareScanner,
@@ -63,7 +67,7 @@ fn gzip_archive() {
 }
 #[test]
 fn tar_archive() {
-    let mut content = vec![0; 262];
+    let mut content = [0; 262];
     content[257..262].copy_from_slice(b"ustar");
     assert!(matches!(
         inspect_content(&content),
@@ -120,7 +124,7 @@ fn pdf_allowed() {
 #[test]
 fn utf8_text_allowed() {
     assert_eq!(
-        inspect_content("hello λ".as_bytes()),
+        inspect_content("hello \u{3bb}".as_bytes()),
         ContentInspection::Allowed(AllowedContent {
             format: DetectedFormat::Text
         })
@@ -241,10 +245,21 @@ fn eicar_format_passes_then_scanner_blocks() {
 
 #[rstest::rstest]
 fn replays_the_upload_security_content_corpus(
-    #[files("fuzz/corpus/upload_security_content/*")] path: std::path::PathBuf,
+    #[files("fuzz/corpus/upload_security_content/*")] path: PathBuf,
 ) {
-    let content = std::fs::read(path).unwrap();
-    let _ = inspect_content(&content);
+    let content = fs::read(path).unwrap();
+    if let ContentInspection::Allowed(allowed) = inspect_content(&content) {
+        match allowed.format {
+            DetectedFormat::Pdf => assert!(content.starts_with(b"%PDF-")),
+            DetectedFormat::Text => {
+                assert!(!content.contains(&0));
+                assert_eq!(
+                    str::from_utf8(&content).map(str::as_bytes),
+                    Ok(content.as_slice())
+                );
+            }
+        }
+    }
 }
 
 #[rstest::rstest]
@@ -291,7 +306,7 @@ fn ambiguous_text_allowed(#[case] content: &[u8]) {
 
 #[test]
 fn pdf_precedes_binary_magic() {
-    let mut content = vec![0; 262];
+    let mut content = [0; 262];
     content[..5].copy_from_slice(b"%PDF-");
     content[257..262].copy_from_slice(b"ustar");
     assert_eq!(
@@ -308,11 +323,11 @@ fn pdf_precedes_binary_magic() {
     );
 }
 
-struct CountingScanner(std::sync::atomic::AtomicUsize);
+struct CountingScanner(AtomicUsize);
 impl MalwareScanner for CountingScanner {
     fn scan(&self, content: &[u8]) -> ScanResult {
         assert_eq!(content, b"hello");
-        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        self.0.fetch_add(1, Ordering::SeqCst);
         ScanResult {
             verdict: ScanVerdict::Clean,
             signature: None,
@@ -327,32 +342,32 @@ impl MalwareScanner for CountingScanner {
 #[case::executable(b"#!/bin/sh", MAX_UPLOAD_SIZE_BYTES)]
 #[case::binary(b"\0", MAX_UPLOAD_SIZE_BYTES)]
 fn rejection_skips_dependencies(#[case] content: &[u8], #[case] max: usize) {
-    let scanner = CountingScanner(std::sync::atomic::AtomicUsize::new(0));
-    let mut uuid_calls = 0;
+    let scanner = CountingScanner(AtomicUsize::new(0));
+    let mut uuid_calls = 0_usize;
     let result = validate_upload(
         content,
         &scanner,
         || {
-            uuid_calls += 1;
+            uuid_calls = uuid_calls.checked_add(1).unwrap();
             ID
         },
         max,
     );
     assert!(matches!(result, UploadValidation::Rejected(_)));
     assert_eq!(uuid_calls, 0);
-    assert_eq!(scanner.0.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert_eq!(scanner.0.load(Ordering::SeqCst), 0);
 }
 
 #[test]
 fn size_boundary_calls_dependencies_once() {
-    assert_eq!(MAX_UPLOAD_SIZE_BYTES, 536_870_912);
-    let scanner = CountingScanner(std::sync::atomic::AtomicUsize::new(0));
-    let mut uuid_calls = 0;
+    assert_eq!(MAX_UPLOAD_SIZE_BYTES, 0x2000_0000);
+    let scanner = CountingScanner(AtomicUsize::new(0));
+    let mut uuid_calls = 0_usize;
     let result = validate_upload(
         b"hello",
         &scanner,
         || {
-            uuid_calls += 1;
+            uuid_calls = uuid_calls.checked_add(1).unwrap();
             ID
         },
         5,
@@ -367,7 +382,7 @@ fn size_boundary_calls_dependencies_once() {
         })
     );
     assert_eq!(uuid_calls, 1);
-    assert_eq!(scanner.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+    assert_eq!(scanner.0.load(Ordering::SeqCst), 1);
 }
 
 #[test]
@@ -389,4 +404,39 @@ fn eicar_substring_and_partial() {
             signature: None
         }
     );
+}
+
+#[rstest::rstest]
+#[case::unknown(None, "unknown signature")]
+#[case::named(Some("Test.Sig"), "Test.Sig")]
+#[case::explicit_empty(Some(""), "")]
+fn infected_signature_message(#[case] signature: Option<&str>, #[case] expected: &str) {
+    assert_eq!(
+        super::rejection::scan(&ScanResult {
+            verdict: ScanVerdict::Infected,
+            signature: signature.map(str::to_owned),
+        }),
+        Some(RejectedUpload {
+            reason: RejectionReason::MalwareDetected,
+            message: format!("Uploaded file was flagged by malware scanning ({expected})."),
+        })
+    );
+}
+
+#[rstest::rstest]
+#[case::infected(ScanVerdict::Infected)]
+#[case::error(ScanVerdict::Error)]
+fn failed_scan_skips_uuid(#[case] verdict: ScanVerdict) {
+    let mut calls = 0_usize;
+    let result = validate_upload(
+        b"hello",
+        &Scanner(verdict),
+        || {
+            calls = calls.checked_add(1).unwrap();
+            ID
+        },
+        MAX_UPLOAD_SIZE_BYTES,
+    );
+    assert!(matches!(result, UploadValidation::Rejected(_)));
+    assert_eq!(calls, 0);
 }

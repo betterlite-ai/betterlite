@@ -1,3 +1,5 @@
+use std::str;
+
 pub const MAX_UPLOAD_SIZE_BYTES: usize = 512 * 1024 * 1024;
 pub const EICAR_TEST_SIGNATURE: &[u8] =
     b"X5O!P%@AP[4\\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*";
@@ -85,6 +87,7 @@ pub enum UploadValidation {
     Rejected(RejectedUpload),
 }
 
+#[must_use]
 pub fn inspect_content(content: &[u8]) -> ContentInspection {
     if signatures::shebang(content) {
         return ContentInspection::Disallowed(DisallowedContent {
@@ -96,7 +99,7 @@ pub fn inspect_content(content: &[u8]) -> ContentInspection {
             format: DetectedFormat::Pdf,
         });
     }
-    let is_text = !content.contains(&0) && std::str::from_utf8(content).is_ok();
+    let is_text = !content.contains(&0) && str::from_utf8(content).is_ok();
     if let Some(kind) = signatures::binary_kind(content, is_text) {
         return ContentInspection::Disallowed(DisallowedContent { kind });
     }
@@ -110,10 +113,10 @@ pub fn inspect_content(content: &[u8]) -> ContentInspection {
         })
     }
 }
-pub fn generate_safe_filename<Id: FnOnce() -> uuid::Uuid>(
-    format: DetectedFormat,
-    uuid: Id,
-) -> String {
+pub fn generate_safe_filename<Id>(format: DetectedFormat, uuid: Id) -> String
+where
+    Id: FnOnce() -> uuid::Uuid,
+{
     let extension = match format {
         DetectedFormat::Pdf => "pdf",
         DetectedFormat::Text => "txt",
@@ -121,12 +124,15 @@ pub fn generate_safe_filename<Id: FnOnce() -> uuid::Uuid>(
     format!("{}.{}", uuid().simple(), extension)
 }
 
-pub fn validate_upload<Id: FnOnce() -> uuid::Uuid>(
+pub fn validate_upload<Id>(
     content: &[u8],
     scanner: &dyn MalwareScanner,
     uuid: Id,
     max_size_bytes: usize,
-) -> UploadValidation {
+) -> UploadValidation
+where
+    Id: FnOnce() -> uuid::Uuid,
+{
     let size = content.len();
     if size == 0 {
         return UploadValidation::Rejected(RejectedUpload {
@@ -148,7 +154,7 @@ pub fn validate_upload<Id: FnOnce() -> uuid::Uuid>(
         }
         ContentInspection::Allowed(value) => value.format,
     };
-    if let Some(rejection) = rejection::scan(scanner.scan(content)) {
+    if let Some(rejection) = rejection::scan(&scanner.scan(content)) {
         return UploadValidation::Rejected(rejection);
     }
     let content_type = match format {

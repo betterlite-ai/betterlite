@@ -16,10 +16,10 @@ pub(crate) struct Input {
     #[serde(default = "default_uuid")]
     pub(crate) uuid: String,
 }
-fn default_verdict() -> ScannerKind {
+const fn default_verdict() -> ScannerKind {
     ScannerKind::Clean
 }
-fn default_size() -> usize {
+const fn default_size() -> usize {
     upload_security::MAX_UPLOAD_SIZE_BYTES
 }
 fn default_uuid() -> String {
@@ -129,7 +129,7 @@ impl MalwareScanner for MatchScanner {
         }
     }
 }
-fn reason_name(reason: upload_security::RejectionReason) -> &'static str {
+const fn reason_name(reason: upload_security::RejectionReason) -> &'static str {
     match reason {
         upload_security::RejectionReason::EmptyFile => "empty_file",
         upload_security::RejectionReason::FileTooLarge => "file_too_large",

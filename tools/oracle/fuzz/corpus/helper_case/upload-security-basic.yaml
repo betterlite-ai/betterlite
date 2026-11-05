@@ -1,5 +1,5 @@
 kind: helper
-name: upload-security-seed
+name: upload_security-scanner-seed
 call:
   b3452:
     content_hex: '255044462d31'
