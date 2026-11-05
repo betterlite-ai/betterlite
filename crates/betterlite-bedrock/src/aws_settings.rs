@@ -60,8 +60,7 @@ pub struct AuthParams {
     pub aws_web_identity_token: Option<SecretString>,
     pub aws_sts_endpoint: Option<String>,
     pub aws_external_id: Option<String>,
-    #[serde(skip)]
-    pub aws_session_tags: Option<Vec<AwsSessionTag>>,
+    pub aws_session_tags: Option<SessionTagValue>,
 }
 
 pub fn canonicalize_tags(
@@ -89,13 +88,6 @@ pub fn canonicalize_tags(
     Ok(Some(tags))
 }
 
-#[derive(Deserialize)]
-struct RawAuth {
-    #[serde(flatten)]
-    fields: AuthParams,
-    aws_session_tags: Option<SessionTagValue>,
-}
-
 pub fn pop_aws_auth_params(
     parameters: &mut BTreeMap<String, Box<RawValue>>,
 ) -> Result<AuthParams, AuthError> {
@@ -117,10 +109,7 @@ pub fn pop_aws_auth_params(
         }
     }
     let bytes = serde_json::to_vec(&popped)?;
-    let raw: RawAuth = serde_json::from_slice(&bytes)?;
-    let mut fields = raw.fields;
-    fields.aws_session_tags = canonicalize_tags(raw.aws_session_tags)?;
-    Ok(fields)
+    Ok(serde_json::from_slice(&bytes)?)
 }
 
 #[must_use]
