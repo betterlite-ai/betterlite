@@ -200,61 +200,43 @@ impl ExporterFactories {
     }
 }
 
+// Metrics and logs build their OTLP exporters the same way and only differ in the types and the fallback arms.
+macro_rules! signal_sink {
+    ($exporter:ident => $sink:ident, $config:expr, $client:expr, $signal:expr, { $($fallback:tt)* }) => {{
+        let headers = $config.headers.as_deref();
+        match classify(&$config.exporter) {
+            Kind::HttpJson | Kind::HttpProto => {
+                let endpoint = signal_endpoint($config.endpoint.as_deref(), $signal);
+                let builder = opentelemetry_otlp::$exporter::builder().with_http();
+                let configured =
+                    http_exporter(builder, Protocol::HttpBinary, endpoint, headers, $client);
+                Ok($sink::Otlp(Box::new(configured.build()?)))
+            }
+            Kind::Grpc => {
+                let builder = opentelemetry_otlp::$exporter::builder().with_tonic();
+                let configured = grpc_exporter(builder, $config.endpoint.as_deref(), headers)?;
+                Ok($sink::Otlp(Box::new(configured.build()?)))
+            }
+            $($fallback)*
+        }
+    }};
+}
+
 // Metrics ignore traces_endpoint and always speak protobuf; an unrecognized kind prints to the console.
 pub fn metric_sink(
     config: &OtelConfig,
     clients: &HttpClients,
 ) -> Result<MetricSink, ExporterError> {
-    let headers = config.headers.as_deref();
-    match classify(&config.exporter) {
-        Kind::HttpJson | Kind::HttpProto => {
-            let endpoint = signal_endpoint(config.endpoint.as_deref(), Signal::Metrics);
-            let builder = opentelemetry_otlp::MetricExporter::builder().with_http();
-            let configured = http_exporter(
-                builder,
-                Protocol::HttpBinary,
-                endpoint,
-                headers,
-                &clients.metrics,
-            );
-            Ok(MetricSink::Otlp(Box::new(configured.build()?)))
-        }
-        Kind::Grpc => {
-            let builder = opentelemetry_otlp::MetricExporter::builder().with_tonic();
-            let configured = grpc_exporter(builder, config.endpoint.as_deref(), headers)?;
-            Ok(MetricSink::Otlp(Box::new(configured.build()?)))
-        }
-        Kind::Console | Kind::InMemory | Kind::Unrecognized => {
-            Ok(MetricSink::Console(Box::default()))
-        }
-    }
+    signal_sink!(MetricExporter => MetricSink, config, &clients.metrics, Signal::Metrics, {
+        Kind::Console | Kind::InMemory | Kind::Unrecognized => Ok(MetricSink::Console(Box::default())),
+    })
 }
 
 pub fn log_sink(config: &OtelConfig, clients: &HttpClients) -> Result<LogSink, ExporterError> {
-    let headers = config.headers.as_deref();
-    match classify(&config.exporter) {
+    signal_sink!(LogExporter => LogSink, config, &clients.logs, Signal::Logs, {
         Kind::InMemory => Ok(LogSink::InMemory(InMemoryLogExporter::default())),
-        Kind::HttpJson | Kind::HttpProto => {
-            let endpoint = signal_endpoint(config.endpoint.as_deref(), Signal::Logs);
-            let builder = opentelemetry_otlp::LogExporter::builder().with_http();
-            let configured = http_exporter(
-                builder,
-                Protocol::HttpBinary,
-                endpoint,
-                headers,
-                &clients.logs,
-            );
-            Ok(LogSink::Otlp(Box::new(configured.build()?)))
-        }
-        Kind::Grpc => {
-            let builder = opentelemetry_otlp::LogExporter::builder().with_tonic();
-            let configured = grpc_exporter(builder, config.endpoint.as_deref(), headers)?;
-            Ok(LogSink::Otlp(Box::new(configured.build()?)))
-        }
-        Kind::Console | Kind::Unrecognized => Ok(LogSink::Console(
-            opentelemetry_stdout::LogExporter::default(),
-        )),
-    }
+        Kind::Console | Kind::Unrecognized => Ok(LogSink::Console(opentelemetry_stdout::LogExporter::default())),
+    })
 }
 
 #[path = "exporters/tests.rs"]

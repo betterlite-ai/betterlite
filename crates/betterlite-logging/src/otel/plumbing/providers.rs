@@ -110,30 +110,36 @@ where
     }
 }
 
-pub fn resolve_meter_provider(
-    config: &OtelConfig,
-    clients: &HttpClients,
-    injected: Option<SdkMeterProvider>,
-    existing: ProviderState<SdkMeterProvider>,
-) -> Result<Resolved<SdkMeterProvider>, ExporterError> {
-    resolve_provider(injected, existing, || {
+// Both resolvers share one signature and differ only in how the provider is built from config.
+macro_rules! provider_resolver {
+    ($name:ident, $provider:ty, $build:expr) => {
+        pub fn $name(
+            config: &OtelConfig,
+            clients: &HttpClients,
+            injected: Option<$provider>,
+            existing: ProviderState<$provider>,
+        ) -> Result<Resolved<$provider>, ExporterError> {
+            resolve_provider(injected, existing, || $build(config, clients))
+        }
+    };
+}
+
+provider_resolver!(
+    resolve_meter_provider,
+    SdkMeterProvider,
+    |config, clients| {
         Ok(build_meter_provider(
             config,
             build_metric_reader(config, clients)?,
         ))
-    })
-}
+    }
+);
 
-pub fn resolve_logger_provider(
-    config: &OtelConfig,
-    clients: &HttpClients,
-    injected: Option<SdkLoggerProvider>,
-    existing: ProviderState<SdkLoggerProvider>,
-) -> Result<Resolved<SdkLoggerProvider>, ExporterError> {
-    resolve_provider(injected, existing, || {
-        Ok(build_logger_provider(config, log_sink(config, clients)?))
-    })
-}
+provider_resolver!(
+    resolve_logger_provider,
+    SdkLoggerProvider,
+    |config, clients| { Ok(build_logger_provider(config, log_sink(config, clients)?)) }
+);
 
 #[must_use]
 pub fn get_meter(provider: &SdkMeterProvider, name: &'static str) -> Meter {
