@@ -1234,8 +1234,10 @@ name = "betterlite-context"
 version = "0.1.0"
 dependencies = [
  "betterlite-config",
+ "betterlite-models",
  "betterlite-redact",
  "percent-encoding",
+ "regex",
  "rstest",
  "rust_decimal",
  "secrecy",
