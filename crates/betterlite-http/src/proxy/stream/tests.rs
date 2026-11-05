@@ -50,6 +50,12 @@ fn get(url: &Url) -> OutboundRequest {
     }
 }
 
+async fn listen() -> (TcpListener, Url) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let url = Url::parse(&format!("http://{}/", listener.local_addr().unwrap())).unwrap();
+    (listener, url)
+}
+
 const TRICKLE_DEADLINE: Duration = Duration::from_millis(300);
 
 // Headers arrive at once, then one body byte every 100 ms: only a deadline that outlives the headers can stop it.
@@ -78,8 +84,7 @@ async fn trickle(listener: TcpListener) {
 }
 
 async fn trickled(client: &ProxiedClient) -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let url = Url::parse(&format!("http://{}/", listener.local_addr().unwrap())).unwrap();
+    let (listener, url) = listen().await;
     let mut server = JoinSet::new();
     server.spawn(trickle(listener));
     let request = || OutboundRequest {
@@ -117,8 +122,7 @@ async fn refuse(listener: TcpListener, streams: Arc<AtomicUsize>) {
 }
 
 async fn refused() -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let url = Url::parse(&format!("http://{}/", listener.local_addr().unwrap())).unwrap();
+    let (listener, url) = listen().await;
     let streams = Arc::new(AtomicUsize::new(0));
     let mut server = JoinSet::new();
     server.spawn(refuse(listener, Arc::clone(&streams)));
@@ -150,8 +154,7 @@ async fn burst(client: &ProxiedClient, url: &Url) {
 
 // The second chunk is only written after the client has read the first, so a client that buffers the body hangs here.
 async fn incremental(client: &ProxiedClient) -> String {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let url = Url::parse(&format!("http://{}/", listener.local_addr().unwrap())).unwrap();
+    let (listener, url) = listen().await;
     let go = Arc::new(Notify::new());
     let signal = Arc::clone(&go);
     let mut server = JoinSet::new();
