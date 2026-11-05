@@ -1,0 +1,250 @@
+use std::time::Duration;
+
+use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
+use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
+use betterlite_http::url_path::encode_segment;
+use http::header::{ACCEPT, AUTHORIZATION};
+use http::{HeaderMap, HeaderName, HeaderValue, Method};
+use indexmap::IndexMap;
+use secrecy::{ExposeSecret as _, SecretString};
+use serde::Deserialize;
+use serde_json::Value;
+use url::Url;
+
+use crate::batches::error::SdkError;
+use crate::batches::records::{BatchCreate, BatchPage, BatchQuery};
+use crate::batches::sdk::{BatchesSdk, ClientConstructor, ClientKind, SdkArguments, Timeout};
+
+const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
+const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
+
+// The OpenAI SDK over betterlite's pooled outbound client; max_retries is not applied because the pool never retries
+#[derive(Debug, Clone)]
+pub struct HttpBatchesClient {
+    pub transport: ProxiedClient,
+    pub kind: ClientKind,
+    pub base_url: String,
+    pub api_key: SecretString,
+    pub organization: Option<String>,
+    pub timeout: Duration,
+}
+
+// Builds a fresh client per call from the call's own settings, so no credential outlives or crosses a call
+#[derive(Debug, Clone)]
+pub struct HttpConstructor {
+    pub transport: ProxiedClient,
+    pub environment_key: Option<SecretString>,
+}
+
+impl ClientConstructor for HttpConstructor {
+    type Client = HttpBatchesClient;
+
+    fn construct(&self, arguments: &SdkArguments, kind: ClientKind) -> Option<HttpBatchesClient> {
+        let api_key = arguments
+            .api_key
+            .clone()
+            .or_else(|| self.environment_key.clone())?;
+        let timeout = match &arguments.timeout {
+            Some(Timeout::Seconds(seconds)) => Duration::try_from_secs_f64(*seconds).ok(),
+            Some(Timeout::Phases(phases)) => phases
+                .read
+                .and_then(|seconds| Duration::try_from_secs_f64(seconds).ok()),
+            None => None,
+        };
+        Some(HttpBatchesClient {
+            transport: self.transport.clone(),
+            kind,
+            base_url: arguments
+                .base_url
+                .clone()
+                .unwrap_or_else(|| DEFAULT_BASE_URL.to_owned()),
+            api_key,
+            organization: arguments.organization.clone(),
+            timeout: timeout.unwrap_or(DEFAULT_TIMEOUT),
+        })
+    }
+}
+
+struct Call<'call> {
+    method: Method,
+    path: String,
+    query: Vec<(String, String)>,
+    body: RequestBody,
+    extra_headers: Option<&'call IndexMap<String, String>>,
+    timeout: Option<f64>,
+}
+
+#[derive(Deserialize)]
+struct ErrorEnvelope {
+    error: Option<ErrorFields>,
+}
+
+#[derive(Default, Deserialize)]
+struct ErrorFields {
+    #[serde(rename = "type")]
+    error_type: Option<String>,
+    param: Option<String>,
+    code: Option<String>,
+}
+
+fn header_value(name: &str, value: &str) -> Result<HeaderValue, SdkError> {
+    HeaderValue::try_from(value).map_err(|source| SdkError::Transport {
+        source: TransportError::InvalidHeader {
+            name: name.to_owned(),
+            source,
+        },
+    })
+}
+
+fn status_error(response: &UpstreamResponse) -> SdkError {
+    let fields = serde_json::from_slice::<ErrorEnvelope>(&response.body)
+        .ok()
+        .and_then(|envelope| envelope.error)
+        .unwrap_or_default();
+    let body = str::from_utf8(&response.body).unwrap_or("<body is not UTF-8>");
+    SdkError::Status {
+        status: response.status,
+        error_type: fields.error_type,
+        param: fields.param,
+        code: fields.code,
+        message: format!("Error code: {} - {body}", response.status),
+    }
+}
+
+impl HttpBatchesClient {
+    fn headers(&self, extra: Option<&IndexMap<String, String>>) -> Result<HeaderMap, SdkError> {
+        let mut headers = HeaderMap::new();
+        let bearer = format!("Bearer {}", self.api_key.expose_secret());
+        headers.insert(AUTHORIZATION, header_value("authorization", &bearer)?);
+        headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
+        if let Some(organization) = &self.organization {
+            headers.insert(
+                HeaderName::from_static("openai-organization"),
+                header_value("openai-organization", organization)?,
+            );
+        }
+        for (name, value) in extra.into_iter().flatten() {
+            let header_name =
+                HeaderName::try_from(name.as_str()).map_err(|source| SdkError::HeaderName {
+                    name: name.clone(),
+                    source,
+                })?;
+            headers.insert(header_name, header_value(name, value)?);
+        }
+        Ok(headers)
+    }
+
+    async fn send(&self, call: Call<'_>) -> Result<Vec<u8>, SdkError> {
+        let url = Url::parse(&format!(
+            "{}{}",
+            self.base_url.trim_end_matches('/'),
+            call.path
+        ))
+        .map_err(|source| SdkError::BaseUrl { source })?;
+        let deadline = call
+            .timeout
+            .and_then(|seconds| Duration::try_from_secs_f64(seconds).ok())
+            .unwrap_or(self.timeout);
+        let response = self
+            .transport
+            .send_buffered(OutboundRequest {
+                method: call.method,
+                url,
+                query: call.query,
+                headers: self.headers(call.extra_headers)?,
+                body: call.body,
+                deadline,
+            })
+            .await
+            .map_err(|source| SdkError::Transport { source })?;
+        if (200..300).contains(&response.status) {
+            return Ok(response.body);
+        }
+        Err(status_error(&response))
+    }
+}
+
+impl BatchesSdk for HttpBatchesClient {
+    type Page = BatchPage;
+
+    fn kind(&self) -> ClientKind {
+        self.kind
+    }
+
+    async fn create(&self, request: &BatchCreate) -> Result<Vec<u8>, SdkError> {
+        let mut body =
+            serde_json::to_value(request).map_err(|source| SdkError::Encode { source })?;
+        if let Value::Object(fields) = &mut body {
+            fields.remove("extra_headers");
+            fields.remove("timeout");
+            fields.remove("extra_body");
+            for (name, value) in request.extra_body.iter().flatten() {
+                fields.insert(name.clone(), Value::String(value.clone()));
+            }
+        }
+        self.send(Call {
+            method: Method::POST,
+            path: String::from("/batches"),
+            query: Vec::new(),
+            body: RequestBody::Json(
+                serde_json::to_vec(&body).map_err(|source| SdkError::Encode { source })?,
+            ),
+            extra_headers: request.extra_headers.as_ref(),
+            timeout: request.timeout,
+        })
+        .await
+    }
+
+    async fn retrieve(&self, request: &BatchQuery) -> Result<Vec<u8>, SdkError> {
+        let id = encode_segment(&request.batch_id, "batch_id")
+            .map_err(|source| SdkError::Path { source })?;
+        self.send(Call {
+            method: Method::GET,
+            path: format!("/batches/{id}"),
+            query: Vec::new(),
+            body: RequestBody::Empty,
+            extra_headers: request.extra_headers.as_ref(),
+            timeout: request.timeout,
+        })
+        .await
+    }
+
+    async fn cancel(&self, request: &BatchQuery) -> Result<Vec<u8>, SdkError> {
+        let id = encode_segment(&request.batch_id, "batch_id")
+            .map_err(|source| SdkError::Path { source })?;
+        let extra = request.extra_body.clone().unwrap_or_default();
+        self.send(Call {
+            method: Method::POST,
+            path: format!("/batches/{id}/cancel"),
+            query: Vec::new(),
+            body: RequestBody::Json(
+                serde_json::to_vec(&extra).map_err(|source| SdkError::Encode { source })?,
+            ),
+            extra_headers: request.extra_headers.as_ref(),
+            timeout: request.timeout,
+        })
+        .await
+    }
+
+    async fn list(&self, after: Option<&str>, limit: Option<u32>) -> Result<BatchPage, SdkError> {
+        let mut query = Vec::new();
+        if let Some(value) = after {
+            query.push((String::from("after"), value.to_owned()));
+        }
+        if let Some(count) = limit {
+            query.push((String::from("limit"), count.to_string()));
+        }
+        let body = self
+            .send(Call {
+                method: Method::GET,
+                path: String::from("/batches"),
+                query,
+                body: RequestBody::Empty,
+                extra_headers: None,
+                timeout: None,
+            })
+            .await?;
+        serde_json::from_slice(&body).map_err(|source| SdkError::Body { source })
+    }
+}

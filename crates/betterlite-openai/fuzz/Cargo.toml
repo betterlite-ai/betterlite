@@ -99,3 +99,10 @@ path = "fuzz_targets/responses_event_records.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "openai_batches"
+path = "fuzz_targets/openai_batches.rs"
+test = false
+doc = false
+bench = false
