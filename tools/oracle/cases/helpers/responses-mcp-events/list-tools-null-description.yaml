@@ -1,0 +1,14 @@
+kind: helper
+name: list-tools-null-description
+call:
+  responses_mcp_events:
+    operation: list_tools
+    base_item_id: mcp_list_3
+    servers:
+      - {server_label: zapier}
+    tools:
+      - {name: nullish, description: null}
+      - {name: null, description: kept}
+      - {name: schema, input_schema: null}
+env: {}
+compare: {ignore: []}
