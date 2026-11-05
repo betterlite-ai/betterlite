@@ -1,4 +1,5 @@
 use std::fmt::Display;
+use std::slice;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::password_policy::Settings;
@@ -125,27 +126,9 @@ fn observed(fixture: &Fixture, logs: &Logs, extra: Value) -> Value {
     value
 }
 
-async fn breach(
-    password: &str,
-    general: &Map<String, Value>,
-    hibp: &Hibp,
-    logs: &Logs,
-) -> HelperResult {
-    let resolved = settings(general)?;
-    let fixture = hibp::start(hibp, resolved.check_breached_passwords).await?;
-    let outcome = fixture
-        .checker
-        .validate_not_breached(&SecretString::from(password.to_owned()))
-        .await;
-    let extra = json!({
-        "breached": outcome.is_err(),
-        "error": verdict(outcome.err().as_ref()),
-    });
-    Ok(observed(&fixture, logs, extra))
-}
-
-async fn bulk(
+async fn screened(
     passwords: &[String],
+    single: bool,
     general: &Map<String, Value>,
     hibp: &Hibp,
     logs: &Logs,
@@ -153,17 +136,26 @@ async fn bulk(
     let resolved = settings(general)?;
     let fixture = hibp::start(hibp, resolved.check_breached_passwords).await?;
     let secrets: Vec<SecretString> = passwords.iter().cloned().map(SecretString::from).collect();
-    let judged = validate_passwords_bulk(&secrets, &resolved, &fixture.checker).await;
-    let verdicts: Vec<Value> = judged
-        .iter()
-        .map(|entry| {
-            json!({
-                "password": entry.password.expose_secret(),
-                "error": verdict(entry.error.as_ref()),
-            })
+    let extra = if let (true, Some(only)) = (single, secrets.first()) {
+        let outcome = fixture.checker.validate_not_breached(only).await;
+        json!({
+            "breached": outcome.is_err(),
+            "error": verdict(outcome.err().as_ref()),
         })
-        .collect();
-    Ok(observed(&fixture, logs, json!({ "verdicts": verdicts })))
+    } else {
+        let judged = validate_passwords_bulk(&secrets, &resolved, &fixture.checker).await;
+        let verdicts: Vec<Value> = judged
+            .iter()
+            .map(|entry| {
+                json!({
+                    "password": entry.password.expose_secret(),
+                    "error": verdict(entry.error.as_ref()),
+                })
+            })
+            .collect();
+        json!({ "verdicts": verdicts })
+    };
+    Ok(observed(&fixture, logs, extra))
 }
 
 async fn run_function(input: &Input, logs: &Logs) -> HelperResult {
@@ -196,12 +188,21 @@ async fn run_function(input: &Input, logs: &Logs) -> HelperResult {
             password,
             general_settings,
             hibp,
-        } => breach(password, general_settings, hibp, logs).await,
+        } => {
+            screened(
+                slice::from_ref(password),
+                true,
+                general_settings,
+                hibp,
+                logs,
+            )
+            .await
+        }
         Input::Bulk {
             passwords,
             general_settings,
             hibp,
-        } => bulk(passwords, general_settings, hibp, logs).await,
+        } => screened(passwords, false, general_settings, hibp, logs).await,
         Input::Migrate { users } => store::migrate(users, &hasher).await,
     }
 }
