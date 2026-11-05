@@ -1,0 +1,5 @@
+kind: helper
+name: error-call-id-empty
+call: {error_call_id: {enabled: true, call_id: ""}}
+env: {}
+compare: {ignore: []}

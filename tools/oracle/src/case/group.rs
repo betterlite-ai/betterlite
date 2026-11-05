@@ -1,3 +1,4 @@
+use crate::websocket_oracle::WebSocketCase;
 use std::collections::BTreeMap;
 use std::path::Path;
 
@@ -58,6 +59,7 @@ pub(crate) enum LoadedCase {
     Http(Case),
     Scenario(ScenarioCase),
     Helper(HelperCase),
+    WebSocket(Box<WebSocketCase>),
 }
 
 pub(super) fn validate_scenario_case(path: &Path, case: &ScenarioCase) -> Result<(), OracleError> {

@@ -3,9 +3,8 @@ title: Affinity identity and atomic pin claims
 description: 'Implement AffinityKey and AffinityPin, caller-key hashing, model-map identity and local/shared
   first-writer claims. Preserve legacy string pins, TTL refresh and local fallback on Redis outage. Use
   B360 atomic operations and B052 identity; fuzz persisted pin bytes before typed decoding and never expose
-  keys. Implement the owned native service in crates/betterlite-router/src/affinity_claims.rs. Add ProbeOperation::AffinityClaims
-  in tools/oracle/src/router_probes/mod.rs and the corresponding B372 entry in tools/oracle/litellm/probes/registry.py;
-  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  keys. Implement the owned native service in crates/betterlite-router/src/affinity_claims.rs. B301 registers ProbeOperation::AffinityClaims and its Python entry as stubs, so fill only tools/oracle/src/router_probes/affinity_claims.rs and tools/oracle/litellm/probes/affinity_claims.py and leave mod.rs and registry.py as they are;
+  the adapters only call production services.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
   lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
   exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/caching/affinity_cache.py:
@@ -43,9 +42,6 @@ scope:
   - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/affinity_claims.rs
   - tools/oracle/src/router_probes/affinity_claims/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/affinity_claims.py
   - tools/oracle/cases/routing/affinity-claims/**
   - crates/betterlite-router/fuzz/Cargo.toml

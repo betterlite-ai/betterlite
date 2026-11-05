@@ -1,0 +1,14 @@
+kind: helper
+name: anthropic-history-declared-tool-call-ids
+call:
+  anthropic_history:
+    function: declared_tool_call_ids
+    message:
+      tool_calls:
+        - {id: call-a}
+        - {id: call-b}
+        - {id: call-a}
+        - {id: ""}
+env: {}
+compare:
+  ignore: []

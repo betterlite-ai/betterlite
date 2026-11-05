@@ -86,3 +86,10 @@ path = "fuzz_targets/scenario.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "websocket_oracle"
+path = "fuzz_targets/websocket_oracle.rs"
+test = false
+doc = false
+bench = false

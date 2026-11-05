@@ -38,6 +38,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "compatible_line"
+path = "fuzz_targets/compatible_line.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "embedding"
 path = "fuzz_targets/embedding.rs"
 test = false
@@ -59,6 +66,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "voyage_embedding_reply"
+path = "fuzz_targets/voyage_embedding_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "vector_store_records"
 path = "fuzz_targets/vector_store_records.rs"
 test = false
@@ -75,6 +89,13 @@ bench = false
 [[bin]]
 name = "cohere_line"
 path = "fuzz_targets/cohere_line.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "responses_event_records"
+path = "fuzz_targets/responses_event_records.rs"
 test = false
 doc = false
 bench = false

@@ -1,0 +1,6 @@
+kind: helper
+name: logging-privacy-key-info
+call:
+  logging_privacy: {"global": true, "payload": {"messages": [{"role": "user", "content": "hidden"}], "prompt": "hidden", "input": "hidden", "response": {"choices": [{"message": {"content": "hidden"}}]}}, "key_info": {"user_api_key_hash": "hash", "team": "a"}, "redact_key_info": true}
+env: {}
+compare: {ignore: []}

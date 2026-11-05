@@ -71,18 +71,14 @@ description: >-
   Rust/Python adapter lines, 0 parser target/replay lines, 0 config/loader lines and 40 module/dispatch/shared-seed
   wiring lines; 535 planned, 550 maximum changed lines. Composition has no new Python algorithm; its allowance is
   native operation wiring plus fixture calls.
+
+  B010 registers the BedrockImage variants of OperationRequest, OperationResult and PreparedRequest as stubs in
+  crates/betterlite-provider/src/bedrock_image_dispatch.rs. Fill them there and leave provider.rs, operation.rs
+  and prepared.rs as they are.
 scope:
   paths:
   - crates/betterlite-provider/Cargo.toml
   - crates/betterlite-bedrock/Cargo.toml
-  - crates/betterlite-provider/src/provider.rs
-  - crates/betterlite-provider/src/provider/**
-  - crates/betterlite-provider/src/operation.rs
-  - crates/betterlite-provider/src/operation/**
-  - crates/betterlite-core/src/dispatch.rs
-  - crates/betterlite-core/src/dispatch/**
-  - crates/betterlite-core/src/operation.rs
-  - crates/betterlite-core/src/operation/**
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-provider/src/bedrock_image_dispatch.rs
   - crates/betterlite-provider/src/bedrock_image_dispatch/**

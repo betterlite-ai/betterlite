@@ -5,9 +5,8 @@ description: 'Serve GET /router/settings and GET /router/fields using typed resp
   priority-group support from the implemented router. Keep field definitions in a reviewed static catalog
   and reproduce source metadata through snapshots/oracle cases. Reuse B052 authentication. This source
   file defines read endpoints only; settings mutations remain B066''s configuration API. Implement the
-  owned native service in crates/betterlite-server/src/router_settings.rs. Add ProbeOperation::RouterSettings in
-  tools/oracle/src/router_probes/mod.rs and the corresponding B348 entry in tools/oracle/litellm/probes/registry.py;
-  the adapters only call production services. Shared exports and dispatch files are explicitly in scope.
+  owned native service in crates/betterlite-server/src/router_settings.rs. B301 registers ProbeOperation::RouterSettings and its Python entry as stubs, so fill only tools/oracle/src/router_probes/router_settings.rs and tools/oracle/litellm/probes/router_settings.py and leave mod.rs and registry.py as they are;
+  the adapters only call production services.
   Budget allocation: at most 360 implementation lines, 220 behavior-test lines, 140 Rust/Python adapter
   lines and 80 parser/fuzz/integration lines (800 total); fixture/corpus files use only the existing checks.yaml
   exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/proxy/management_endpoints/router_settings_endpoints.py:
@@ -26,9 +25,6 @@ scope:
   - crates/betterlite-server/src/routing/router_settings/**
   - tools/oracle/src/router_probes/router_settings.rs
   - tools/oracle/src/router_probes/router_settings/**
-  - tools/oracle/src/router_probes/mod.rs
-  - tools/oracle/litellm/probes/registry.py
-  - tools/oracle/litellm/probes/protocol.py
   - tools/oracle/litellm/probes/router_settings.py
   - tools/oracle/cases/routing/router-settings/**
   - tools/oracle/helpers/b348.py

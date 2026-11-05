@@ -1,0 +1,5 @@
+kind: helper
+name: a2a-role-agent
+call: {"b4803": {"operation": "roles", "message": {"role": "agent", "metadata": {"ignored": 1}}}}
+env: {}
+compare: {ignore: []}
