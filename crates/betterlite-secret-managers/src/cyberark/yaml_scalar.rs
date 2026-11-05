@@ -60,9 +60,8 @@ pub(super) fn double_quoted(text: &str) -> String {
                 start = end.saturating_add(1);
             }
         }
-        let foldable = end > 0
-            && end.saturating_add(1) < chars.len()
-            && (character == Some(' ') || start >= end);
+        let foldable =
+            end.saturating_add(1) < chars.len() && (character == Some(' ') || start >= end);
         if foldable && column.saturating_add(end) > BEST_WIDTH.saturating_add(start) {
             output.extend(chars.get(start..end).unwrap_or_default());
             output.push_str(FOLD_BREAK);

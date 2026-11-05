@@ -163,6 +163,16 @@ async fn overwriting_a_live_entry_keeps_its_first_expiry() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_set_drops_the_entries_that_expire_at_that_instant() {
+    let cache = TtlCache::new(Duration::from_secs(10));
+    cache.set("old", SecretString::from("v"));
+    advance(Duration::from_secs(10)).await;
+    assert!(cache.get("old").is_some());
+    cache.set("new", SecretString::from("v"));
+    assert!(cache.get("old").is_none());
+}
+
+#[tokio::test(start_paused = true)]
 async fn deleting_removes_the_entry() {
     let cache = TtlCache::new(Duration::from_secs(10));
     cache.set("key", SecretString::from("v"));

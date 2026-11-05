@@ -31,6 +31,7 @@ const SECRET_ROUTE: &str = "POST http://127.0.0.1:8080/secrets/default/variable/
 #[case::fold_after_quotes(&format!("{}{}", "a".repeat(70), "\"".repeat(20)), &format!("\"{}{}\\\n  {}\"", "a".repeat(70), "\\\"".repeat(6), "\\\"".repeat(14)))]
 #[case::fold_after_astral(&format!("{}\u{1f600}b", "a".repeat(76)), &format!("\"{}\\U0001F600\\\n  b\"", "a".repeat(76)))]
 #[case::fold_after_backslash(&format!("{}\\{}", "ab".repeat(40), "c".repeat(10)), &format!("\"{}\\\\\\\n  {}\"", "ab".repeat(40), "c".repeat(10)))]
+#[case::trailing_space_never_folds(&format!("{} ", "a".repeat(80)), &format!("\"{} \"", "a".repeat(80)))]
 #[case::fold_at_space(&["word"; 30].join(" "), &format!("\"{}\\\n  \\ {}\"", ["word"; 17].join(" "), ["word"; 13].join(" ")))]
 fn the_policy_scalar_matches_pyyaml(#[case] name: &str, #[case] expected: &str) {
     assert_eq!(double_quoted(name), expected);
