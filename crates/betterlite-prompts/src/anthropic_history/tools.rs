@@ -72,7 +72,7 @@ pub fn sanitize_messages(
         }
         let normalized = sanitize_empty_text_content(message);
         if message_field_text(message, "role") == Some("assistant")
-            && let Some(repair) = missing_repair(message, messages, index)
+            && let Some(repair) = missing_repair(&normalized, messages, index)
         {
             consumed.extend(repair.consumed_indices);
             sanitized.extend(repair.messages);

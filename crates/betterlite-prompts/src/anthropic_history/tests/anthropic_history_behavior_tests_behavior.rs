@@ -134,6 +134,22 @@ fn anthropic_history_behavior_tests_behavior_single_matching_result_is_not_dupli
 }
 
 #[test]
+fn anthropic_history_behavior_tests_behavior_missing_result_keeps_sanitized_empty_text() {
+    let messages = vec![
+        json!({"role":"assistant","content":" ","tool_calls":[{"id":"x","function":{"name":"read"}}]}),
+    ];
+    let output = tools::sanitize_messages(&messages, true).unwrap();
+    assert_eq!(output.len(), 2);
+    let [repaired_assistant, _missing] = output.as_slice() else {
+        panic!()
+    };
+    assert_eq!(
+        field(repaired_assistant, "content"),
+        &Json::Text("[System: Empty message content sanitised to satisfy protocol]".to_owned())
+    );
+}
+
+#[test]
 fn anthropic_history_behavior_tests_behavior_orphan_tool_result_is_dropped() {
     let messages = vec![json!({"role":"tool","tool_call_id":"missing","content":"secret"})];
     assert!(
