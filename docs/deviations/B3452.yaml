@@ -1,0 +1,12 @@
+task: B3452
+deviations:
+  - what: >-
+      Byte classification is pure Rust matching the pinned Python byte inspection
+      without a live antivirus engine. The EICAR test signature verification is
+      compiled into the default scanner, and custom MalwareScanner implementations
+      are injected at call sites, never loaded from config or environment.
+    why: >-
+      This task builds byte inspection and scanner injection, not antivirus
+      integration. Production deployment pairs this with a real scanning service
+      provided at initialization time.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/rag_endpoints/upload_security.py#L97-L110

@@ -1,0 +1,10 @@
+kind: helper
+name: batch-calls-models-input-order
+call:
+  batch_calls:
+    mode: models
+    completion_order: [1, 0]
+    models: [m0, m1]
+    results: [{value: first}, {value: second}]
+env: {}
+compare: {ignore: []}

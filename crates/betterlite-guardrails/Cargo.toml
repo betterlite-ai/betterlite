@@ -19,6 +19,7 @@ rust_decimal.workspace = true
 secrecy.workspace = true
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["raw_value"] }
+serde_with = { version = "3.24.0", default-features = false }
 thiserror.workspace = true
 tracing.workspace = true
 ulid = "3.0.0"

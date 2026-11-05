@@ -1,0 +1,6 @@
+kind: helper
+name: logging-privacy-blocked-dd-site
+call:
+  logging_privacy: {"action": "metadata", "request": {"dd_site": "os.environ/PRIVATE", "langsmith_project": "project"}}
+env: {}
+compare: {ignore: []}
