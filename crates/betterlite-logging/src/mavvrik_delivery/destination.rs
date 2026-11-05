@@ -93,12 +93,11 @@ impl<Http: Transport> FocusMavvrikDestination<Http> {
         self.registered.store(true, Ordering::SeqCst);
         let parsed: RegisterResponse =
             serde_json::from_slice(&response.body).map_err(MavvrikDeliveryError::Json)?;
-        let metrics_marker = parsed.metrics_marker.unwrap_or_default();
         tracing::debug!(
-            ?metrics_marker,
+            metrics_marker = ?parsed.metrics_marker,
             "Mavvrik FOCUS destination: got metricsMarker"
         );
-        Ok(metrics_marker)
+        Ok(parsed.metrics_marker)
     }
 }
 

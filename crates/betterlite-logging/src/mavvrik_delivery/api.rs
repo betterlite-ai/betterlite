@@ -2,6 +2,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+use serde_with::{DefaultOnNull, serde_as};
 use url::Url;
 
 use super::destination::FocusMavvrikDestination;
@@ -30,10 +31,12 @@ pub(super) struct RegisterRequest<'name> {
     pub(super) name: &'name str,
 }
 
+#[serde_as]
 #[derive(Deserialize)]
 pub(super) struct RegisterResponse {
-    #[serde(rename = "metricsMarker")]
-    pub(super) metrics_marker: Option<MetricsMarker>,
+    #[serde(default, rename = "metricsMarker")]
+    #[serde_as(deserialize_as = "DefaultOnNull")]
+    pub(super) metrics_marker: MetricsMarker,
 }
 
 #[derive(Serialize)]
