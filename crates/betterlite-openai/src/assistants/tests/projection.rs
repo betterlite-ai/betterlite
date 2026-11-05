@@ -24,6 +24,7 @@ pub(super) fn client_argument_projection() {
     supplied_client_wins(&api);
 }
 
+// Given values pass through untouched, and empty or zero values are kept rather than dropped.
 fn forwarded_options(api: &AssistantsApi<Recorder>) {
     let full = ClientOptions {
         api_key: Some(SecretString::from("k")),
@@ -34,14 +35,24 @@ fn forwarded_options(api: &AssistantsApi<Recorder>) {
     };
     let client = api.get_openai_client(ClientKind::Async, full, None);
     assert_eq!(client.kind, ClientKind::Async);
-    assert_eq!(
+    let seen = (
         client.api_key.as_ref().map(ExposeSecret::expose_secret),
-        Some("k")
+        client.base_url.as_deref(),
+        client.timeout,
+        client.max_retries,
+        client.organization.as_deref(),
     );
-    assert_eq!(client.base_url.as_deref(), Some("https://h/v1"));
-    assert_eq!(client.timeout, Some(Duration::from_millis(2500)));
-    assert_eq!(client.max_retries, Some(3));
-    assert_eq!(client.organization.as_deref(), Some("o"));
+    let timeout = Duration::from_millis(2500);
+    assert_eq!(
+        seen,
+        (
+            Some("k"),
+            Some("https://h/v1"),
+            Some(timeout),
+            Some(3),
+            Some("o")
+        )
+    );
 }
 
 fn empty_options_are_kept(api: &AssistantsApi<Recorder>) {
@@ -53,14 +64,11 @@ fn empty_options_are_kept(api: &AssistantsApi<Recorder>) {
         organization: Some(String::new()),
     };
     let kept = api.get_openai_client(ClientKind::Sync, empty, None);
-    assert_eq!(
-        kept.api_key.as_ref().map(ExposeSecret::expose_secret),
-        Some("")
-    );
-    assert_eq!(kept.base_url.as_deref(), Some(""));
+    assert_eq!(kept.api_key.map(|key| key.expose_secret().len()), Some(0));
+    assert_eq!(kept.base_url, Some(String::new()));
     assert_eq!(kept.timeout, Some(Duration::ZERO));
     assert_eq!(kept.max_retries, Some(0));
-    assert_eq!(kept.organization.as_deref(), Some(""));
+    assert_eq!(kept.organization, Some(String::new()));
 }
 
 fn supplied_client_wins(api: &AssistantsApi<Recorder>) {

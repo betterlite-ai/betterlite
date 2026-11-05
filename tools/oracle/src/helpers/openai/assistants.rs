@@ -5,11 +5,11 @@ use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::assistants::client::{ClientKind, ClientOptions, SdkClient};
 use betterlite_openai::assistants::error::AssistantsError;
 use betterlite_openai::assistants::operations::AssistantsApi;
-use betterlite_openai::assistants::records::{AssistantCreate, ListParams};
 use betterlite_openai::assistants::transport::AssistantsTransport;
+use input::{AssistantsCall, ClientFields, KindName, OptionFields, Reply};
 use reqwest::header::HeaderMap;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde::Deserialize;
+use serde::Serialize;
 use serde_json::{Value, json};
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -18,88 +18,6 @@ use std::time::Duration;
 const PAGE: &str = r#"{"object":"list","data":[],"first_id":null,"last_id":null,"has_more":false}"#;
 const ASSISTANT: &str = r#"{"id":"asst_1","object":"assistant","created_at":1,"model":"gpt-4o","tools":[],"tool_resources":null}"#;
 const DELETED: &str = r#"{"id":"asst_1","deleted":true,"object":"assistant.deleted"}"#;
-
-#[derive(Debug, Clone, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct OptionFields {
-    api_key: Option<String>,
-    api_base: Option<String>,
-    timeout: Option<f64>,
-    max_retries: Option<u32>,
-    organization: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Reply {
-    status: u16,
-    body: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ListFields {
-    #[serde(default)]
-    options: OptionFields,
-    #[serde(default)]
-    params: ListParams,
-    flag: Option<bool>,
-    #[serde(default)]
-    direct: bool,
-    reply: Option<Reply>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct CreateFields {
-    #[serde(default)]
-    options: OptionFields,
-    data: AssistantCreate,
-    flag: Option<bool>,
-    reply: Option<Reply>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct DeleteFields {
-    #[serde(default)]
-    options: OptionFields,
-    assistant_id: String,
-    flag: Option<bool>,
-    reply: Option<Reply>,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum KindName {
-    Sync,
-    Async,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Supplied {
-    kind: KindName,
-    organization: Option<String>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ClientFields {
-    kind: KindName,
-    options: OptionFields,
-    supplied: Option<Supplied>,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum AssistantsCall {
-    ListAssistants(ListFields),
-    CreateAssistant(Box<CreateFields>),
-    DeleteAssistant(DeleteFields),
-    ClientArguments(ClientFields),
-}
 
 struct Wire {
     seen: Mutex<Vec<Value>>,
@@ -222,52 +140,25 @@ fn outcome(wire: &Wire, result: Result<Value, AssistantsError>) -> HelperResult 
     }
 }
 
-fn api_over(wire: &Arc<Wire>) -> AssistantsApi<Wire> {
-    AssistantsApi {
-        transport: Arc::clone(wire),
-    }
-}
-
-async fn list(fields: &ListFields) -> HelperResult {
-    let wire = Wire::replying(fields.reply.as_ref(), PAGE);
-    let api = api_over(&wire);
-    let options = client_options(&fields.options)?;
-    let page = if fields.direct {
-        api.async_get_assistants(options, None, &fields.params)
-            .await
-    } else {
-        api.get_assistants(options, None, fields.flag, &fields.params)
-            .await
+async fn exchange<T, F, C>(
+    given: Option<&Reply>,
+    canned: &str,
+    options: &OptionFields,
+    call: C,
+) -> HelperResult
+where
+    T: Serialize,
+    F: Future<Output = Result<T, AssistantsError>>,
+    C: FnOnce(AssistantsApi<Wire>, ClientOptions) -> F,
+{
+    let wire = Wire::replying(given, canned);
+    let api = AssistantsApi {
+        transport: Arc::clone(&wire),
     };
+    let result = call(api, client_options(options)?).await;
     outcome(
         &wire,
-        page.map(|listed| serde_json::to_value(listed).unwrap_or(Value::Null)),
-    )
-}
-
-async fn create(fields: &CreateFields) -> HelperResult {
-    let wire = Wire::replying(fields.reply.as_ref(), ASSISTANT);
-    let api = api_over(&wire);
-    let options = client_options(&fields.options)?;
-    let created = api
-        .create_assistants(options, &fields.data, None, fields.flag)
-        .await;
-    outcome(
-        &wire,
-        created.map(|assistant| serde_json::to_value(assistant).unwrap_or(Value::Null)),
-    )
-}
-
-async fn delete(fields: &DeleteFields) -> HelperResult {
-    let wire = Wire::replying(fields.reply.as_ref(), DELETED);
-    let api = api_over(&wire);
-    let options = client_options(&fields.options)?;
-    let deleted = api
-        .delete_assistant(options, &fields.assistant_id, None, fields.flag)
-        .await;
-    outcome(
-        &wire,
-        deleted.map(|gone| serde_json::to_value(gone).unwrap_or(Value::Null)),
+        result.map(|value| serde_json::to_value(value).unwrap_or(Value::Null)),
     )
 }
 
@@ -310,7 +201,9 @@ fn shown(client: &SdkClient<Wire>) -> Value {
 
 fn client_arguments(fields: &ClientFields) -> HelperResult {
     let wire = Wire::replying(None, PAGE);
-    let api = api_over(&wire);
+    let api = AssistantsApi {
+        transport: Arc::clone(&wire),
+    };
     let supplied = fields.supplied.as_ref().map(|supplied| SdkClient {
         kind: kind_of(supplied.kind),
         api_key: None,
@@ -333,9 +226,38 @@ fn invoke(input: &AssistantsCall) -> HelperResult {
         .build()
         .map_err(|error| invalid_input(error.to_string()))?;
     match input {
-        AssistantsCall::ListAssistants(fields) => runtime.block_on(list(fields)),
-        AssistantsCall::CreateAssistant(fields) => runtime.block_on(create(fields)),
-        AssistantsCall::DeleteAssistant(fields) => runtime.block_on(delete(fields)),
+        AssistantsCall::ListAssistants(fields) => runtime.block_on(exchange(
+            fields.reply.as_ref(),
+            PAGE,
+            &fields.options,
+            |api, options| async move {
+                if fields.direct {
+                    api.async_get_assistants(options, None, &fields.params)
+                        .await
+                } else {
+                    api.get_assistants(options, None, fields.flag, &fields.params)
+                        .await
+                }
+            },
+        )),
+        AssistantsCall::CreateAssistant(fields) => runtime.block_on(exchange(
+            fields.reply.as_ref(),
+            ASSISTANT,
+            &fields.options,
+            |api, options| async move {
+                api.create_assistants(options, &fields.data, None, fields.flag)
+                    .await
+            },
+        )),
+        AssistantsCall::DeleteAssistant(fields) => runtime.block_on(exchange(
+            fields.reply.as_ref(),
+            DELETED,
+            &fields.options,
+            |api, options| async move {
+                api.delete_assistant(options, &fields.assistant_id, None, fields.flag)
+                    .await
+            },
+        )),
         AssistantsCall::ClientArguments(fields) => client_arguments(fields),
     }
 }
@@ -350,4 +272,5 @@ impl crate::helpers::Helper for Op {
     }
 }
 
+mod input;
 mod tests;

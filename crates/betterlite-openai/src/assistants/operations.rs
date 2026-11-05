@@ -40,9 +40,9 @@ impl<T: AssistantsTransport> AssistantsApi<T> {
         client: Option<SdkClient<T>>,
         params: &ListParams,
     ) -> Result<AssistantPage, AssistantsError> {
-        let openai_client = self.get_openai_client(ClientKind::Async, options, client);
-        let request_params = params.request_params();
-        openai_client.list(request_params).await
+        self.get_openai_client(ClientKind::Async, options, client)
+            .list(params.request_params())
+            .await
     }
 
     // Only the literal true selects the async helper, and that helper gets its own defaults rather than the caller's pagination.
@@ -53,14 +53,13 @@ impl<T: AssistantsTransport> AssistantsApi<T> {
         aget_assistants: Option<bool>,
         params: &ListParams,
     ) -> Result<AssistantPage, AssistantsError> {
-        if aget_assistants == Some(true) {
-            return self
-                .async_get_assistants(options, client, &ListParams::default())
-                .await;
-        }
-        let openai_client = self.get_openai_client(ClientKind::Sync, options, client);
-        let request_params = params.request_params();
-        openai_client.list(request_params).await
+        let kind = client_kind(aget_assistants);
+        let request_params = match kind {
+            ClientKind::Async => ListParams::default().request_params(),
+            ClientKind::Sync => params.request_params(),
+        };
+        let listing = self.get_openai_client(kind, options, client);
+        listing.list(request_params).await
     }
 
     // Serves create_assistants and async_create_assistants: the flag only changes the client type.
@@ -71,14 +70,9 @@ impl<T: AssistantsTransport> AssistantsApi<T> {
         client: Option<SdkClient<T>>,
         async_create_assistants: Option<bool>,
     ) -> Result<AssistantObject, AssistantsError> {
-        let kind = if async_create_assistants == Some(true) {
-            ClientKind::Async
-        } else {
-            ClientKind::Sync
-        };
-        self.get_openai_client(kind, options, client)
-            .create(create_assistant_data)
-            .await
+        let kind = client_kind(async_create_assistants);
+        let creator = self.get_openai_client(kind, options, client);
+        creator.create(create_assistant_data).await
     }
 
     // Serves delete_assistant and async_delete_assistant: the flag only changes the client type.
@@ -89,13 +83,17 @@ impl<T: AssistantsTransport> AssistantsApi<T> {
         client: Option<SdkClient<T>>,
         async_delete_assistants: Option<bool>,
     ) -> Result<AssistantDeleted, AssistantsError> {
-        let kind = if async_delete_assistants == Some(true) {
-            ClientKind::Async
-        } else {
-            ClientKind::Sync
-        };
+        let kind = client_kind(async_delete_assistants);
         self.get_openai_client(kind, options, client)
             .delete(assistant_id)
             .await
+    }
+}
+
+const fn client_kind(flag: Option<bool>) -> ClientKind {
+    if matches!(flag, Some(true)) {
+        ClientKind::Async
+    } else {
+        ClientKind::Sync
     }
 }
