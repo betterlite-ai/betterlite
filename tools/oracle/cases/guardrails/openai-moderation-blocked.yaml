@@ -1,0 +1,21 @@
+kind: helper
+name: openai-moderation-blocked
+call:
+  b3731:
+    apply:
+      settings: {api_key: test-key}
+      inputs: {texts: [something violent]}
+      request_data: {model: gpt-4o}
+      answer:
+        status: 200
+        headers: {}
+        body:
+          id: modr-2
+          model: omni-moderation-latest
+          results:
+            - flagged: true
+              categories: {violence: true, hate: false, harassment: true}
+              category_scores: {violence: 0.97, hate: 0.01, harassment: 0.6}
+              category_applied_input_types: {violence: [text], hate: [text], harassment: [text]}
+env: {}
+compare: {ignore: []}
