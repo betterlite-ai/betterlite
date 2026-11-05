@@ -1,0 +1,11 @@
+task: B4806
+deviations:
+  - what: Pydantic model detection uses Rust trait bounds (Serialize) instead of isinstance checks for model_dump and dict protocols, so any serializable params type is accepted.
+    why: Rust requires explicit trait bounds at compile time rather than runtime duck typing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/pydantic_ai_agents/transformation.py#L83-L93
+  - what: The agent transport is a trait the caller supplies, and the poll pause goes through it. betterlite-a2a ships no HTTP client for this provider.
+    why: The gateway wiring that owns the HTTP client and the per-request timeout belongs to B4809, and an injected transport keeps the 0.5 second pauses testable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/pydantic_ai_agents/transformation.py#L200-L215
+  - what: PydanticAIProviderConfig exposes inherent handle_non_streaming and handle_streaming methods with typed arguments and does not implement BaseA2AProviderConfig, and streaming returns the simulated events with their delays instead of an async iterator.
+    why: BaseA2AProviderConfig returns the completion bridge's SendMessageResponse and StreamEvent types, which cannot carry the Pydantic AI task messages, and the caller paces the replay by sleeping for each event's delay.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/pydantic_ai_agents/config.py#L20-L57
