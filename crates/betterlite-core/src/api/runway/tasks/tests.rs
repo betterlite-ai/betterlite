@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, VecDeque};
 use std::fs;
+use std::future::{Future, ready};
 use std::path::PathBuf;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -36,14 +37,18 @@ impl Script {
 }
 
 impl TaskTransport for Script {
-    async fn get(&self, url: Url, _headers: HeaderMap) -> Result<UpstreamResponse, TransportError> {
+    fn get(
+        &self,
+        url: Url,
+        _headers: HeaderMap,
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
         self.urls.lock().unwrap().push(url.to_string());
         let (status, body) = self.answers.lock().unwrap().pop_front().unwrap();
-        Ok(UpstreamResponse {
+        ready(Ok(UpstreamResponse {
             status,
             headers: HeaderMap::new(),
             body: body.as_bytes().to_vec(),
-        })
+        }))
     }
 }
 
@@ -68,8 +73,9 @@ impl PollClock for Clock {
         Duration::from_millis(self.millis.fetch_add(self.step, Ordering::SeqCst))
     }
 
-    async fn pause(&self, duration: Duration) {
+    fn pause(&self, duration: Duration) -> impl Future<Output = ()> + Send {
         self.pauses.lock().unwrap().push(duration);
+        ready(())
     }
 }
 
@@ -144,16 +150,16 @@ fn header_fallback(
     let mut caller = HeaderMap::new();
     caller.insert("x-trace", HeaderValue::from_static("t-1"));
     caller.insert(AUTHORIZATION, HeaderValue::from_static("Bearer old"));
-    let explicit = explicit.map(SecretString::from);
+    let credential = explicit.map(SecretString::from);
     let headers = loaded
-        .authenticate(TaskKind::Speech, &caller, explicit.as_ref())
+        .authenticate(TaskKind::Speech, &caller, credential.as_ref())
         .unwrap();
     assert_eq!(headers[AUTHORIZATION], expected);
     assert_eq!(headers["x-runway-version"], "2024-11-06");
     assert_eq!(headers["x-trace"], "t-1");
     assert_eq!(headers[CONTENT_TYPE], "application/json");
     let image = loaded
-        .authenticate(TaskKind::Image, &caller, explicit.as_ref())
+        .authenticate(TaskKind::Image, &caller, credential.as_ref())
         .unwrap();
     assert!(!image.contains_key(CONTENT_TYPE));
 }
@@ -268,7 +274,7 @@ async fn deadline_equality(#[case] step_millis: u64, #[case] gets: usize) {
     r#"{"status":"weird"}"#,
     "Unknown RunwayML task status: WEIRD"
 )]
-#[case::missing_status(TaskKind::Image, r"{}", "Unknown RunwayML task status: ")]
+#[case::missing_status(TaskKind::Image, "{}", "Unknown RunwayML task status: ")]
 #[tokio::test]
 async fn failed_messages(
     #[case] kind: TaskKind,
@@ -351,7 +357,7 @@ fn mixed_outputs_keep_every_member() {
 fn replays_the_runway_task_corpus(#[files("fuzz/corpus/runway_task/*")] path: PathBuf) {
     let bytes = fs::read(path).unwrap();
     if let Ok(task) = decode_runway_task(&bytes) {
-        assert!(std::str::from_utf8(&bytes).is_ok());
+        assert_eq!(str::from_utf8(&bytes).map(str::len), Ok(bytes.len()));
         drop(task.state());
     }
 }

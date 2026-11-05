@@ -18,13 +18,11 @@ pub enum TaskOutput {
 
 impl From<Box<RawValue>> for TaskOutput {
     fn from(raw: Box<RawValue>) -> Self {
-        if let Ok(url) = serde_json::from_str(raw.get()) {
-            Self::Url(url)
-        } else if let Ok(fields) = serde_json::from_str(raw.get()) {
-            Self::Fields(fields)
-        } else {
-            Self::Unsupported(raw.get().to_owned())
-        }
+        let text = raw.get();
+        serde_json::from_str(text)
+            .map(Self::Url)
+            .or_else(|_| serde_json::from_str(text).map(Self::Fields))
+            .unwrap_or_else(|_| Self::Unsupported(text.to_owned()))
     }
 }
 
@@ -37,10 +35,10 @@ pub enum TaskOutputs {
 
 impl From<Box<RawValue>> for TaskOutputs {
     fn from(raw: Box<RawValue>) -> Self {
-        match serde_json::from_str::<Vec<Box<RawValue>>>(raw.get()) {
-            Ok(members) => Self::Members(members.into_iter().map(TaskOutput::from).collect()),
-            Err(_) => Self::NotAList(raw.get().to_owned()),
-        }
+        serde_json::from_str::<Vec<Box<RawValue>>>(raw.get()).map_or_else(
+            |_| Self::NotAList(raw.get().to_owned()),
+            |members| Self::Members(members.into_iter().map(TaskOutput::from).collect()),
+        )
     }
 }
 
@@ -64,6 +62,7 @@ pub enum TaskState {
 }
 
 impl RunwayTask {
+    #[must_use]
     pub fn state(&self) -> TaskState {
         let status = self.status.as_deref().unwrap_or_default().to_uppercase();
         match status.as_str() {
@@ -75,6 +74,7 @@ impl RunwayTask {
         }
     }
 
+    #[must_use]
     pub fn failure_error(&self, kind: TaskKind) -> RunwayTaskError {
         RunwayTaskError::Failed {
             kind,

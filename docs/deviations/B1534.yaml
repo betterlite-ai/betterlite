@@ -1,0 +1,8 @@
+task: B1534
+deviations:
+  - what: The task id is percent-encoded as a single path segment before it is placed in the poll URL, so an id holding "/", "?" or "#" stays inside /v1/tasks/{id}.
+    why: LiteLLM interpolates the id raw, so an id with a slash or a query mark reaches another path on the Runway host. Runway ids are UUIDs, so no working setup relies on the raw form.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/image_generation/transformation.py#L230
+  - what: A task answer larger than 16 MiB is refused with a size error instead of being decoded.
+    why: LiteLLM reads the whole body into memory with no cap. Task records are a few hundred bytes, so no working setup sends one near the limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/image_generation/transformation.py#L241

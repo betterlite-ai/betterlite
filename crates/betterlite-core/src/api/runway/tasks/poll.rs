@@ -57,14 +57,14 @@ impl PollClock for MonotonicClock {
     }
 }
 
-pub struct TaskPoller<'a, T, C> {
-    pub transport: &'a T,
-    pub clock: &'a C,
+pub struct TaskPoller<'client, T, C> {
+    pub transport: &'client T,
+    pub clock: &'client C,
     pub kind: TaskKind,
     pub timeout_seconds: u64,
 }
 
-impl<T: TaskTransport, C: PollClock> TaskPoller<'_, T, C> {
+impl<T: TaskTransport + Sync, C: PollClock + Sync> TaskPoller<'_, T, C> {
     pub async fn poll(
         &self,
         api_base: &str,
