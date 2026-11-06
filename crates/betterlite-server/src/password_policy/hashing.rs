@@ -106,6 +106,8 @@ impl<S: SaltSource> PasswordHasher<S> {
         let owned = password.clone();
         let mut tasks = JoinSet::new();
         tasks.spawn_blocking(move || {
+            // The permit must outlive a cancelled future, since tokio cannot abort a started blocking task.
+            let _held = permit;
             let params = Params::new(LOG_N, BLOCK_SIZE, PARALLELISM, KEY_LENGTH)
                 .map_err(|_invalid| HashError::Params)?;
             let mut key = [0_u8; KEY_LENGTH];
@@ -114,7 +116,6 @@ impl<S: SaltSource> PasswordHasher<S> {
             Ok(key)
         });
         let joined = tasks.join_next().await;
-        drop(permit);
         match joined {
             Some(Ok(derived)) => derived,
             Some(Err(error)) => Err(HashError::Task(Box::new(error))),

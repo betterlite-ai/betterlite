@@ -51,7 +51,6 @@ where
         .iter()
         .filter(|user| {
             let stored = user.password.expose_secret();
-            // Neither scrypt nor legacy sha256 hex.
             !stored.is_empty() && !stored.starts_with(SCRYPT_PREFIX) && !is_sha256_hex(stored)
         })
         .collect();
