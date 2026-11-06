@@ -6,7 +6,6 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::value::RawValue;
 
-use super::super::constants::{API_BASE_VARIABLE, API_KEY_VARIABLE};
 use super::super::request::{SandboxRef, as_str_dict, endpoint_base_url, lifecycle_headers};
 use super::{FakeHttp, environment, handle, sandbox};
 
@@ -14,7 +13,7 @@ use super::{FakeHttp, environment, handle, sandbox};
 fn validate_environment_prefers_the_supplied_key() {
     let sandbox = sandbox(
         FakeHttp::new(&[]),
-        environment(&[(API_KEY_VARIABLE, "env-key")]),
+        environment(&[("OPEN_SANDBOX_API_KEY", "env-key")]),
     );
     let supplied = SecretString::from("supplied-key");
     assert_eq!(
@@ -29,7 +28,7 @@ fn validate_environment_prefers_the_supplied_key() {
 fn validate_environment_reads_the_open_sandbox_api_key() {
     let sandbox = sandbox(
         FakeHttp::new(&[]),
-        environment(&[(API_KEY_VARIABLE, "env-key")]),
+        environment(&[("OPEN_SANDBOX_API_KEY", "env-key")]),
     );
     assert_eq!(
         sandbox.validate_environment(None).expose_secret(),
@@ -45,7 +44,10 @@ fn validate_environment_is_empty_without_the_variable() {
 
 #[test]
 fn validate_environment_treats_an_empty_variable_as_unset() {
-    let sandbox = sandbox(FakeHttp::new(&[]), environment(&[(API_KEY_VARIABLE, "")]));
+    let sandbox = sandbox(
+        FakeHttp::new(&[]),
+        environment(&[("OPEN_SANDBOX_API_KEY", "")]),
+    );
     assert_eq!(sandbox.validate_environment(None).expose_secret(), "");
 }
 
@@ -53,14 +55,14 @@ fn validate_environment_treats_an_empty_variable_as_unset() {
 fn api_base_requires_a_base_and_names_the_variable() {
     let sandbox = sandbox(FakeHttp::new(&[]), environment(&[]));
     let error = sandbox.api_base(None).unwrap_err();
-    assert!(error.to_string().contains(API_BASE_VARIABLE));
+    assert!(error.to_string().contains("OPEN_SANDBOX_API_BASE"));
 }
 
 #[test]
 fn api_base_reads_the_environment_and_trims_trailing_slashes() {
     let sandbox = sandbox(
         FakeHttp::new(&[]),
-        environment(&[(API_BASE_VARIABLE, "http://sandbox.example///")]),
+        environment(&[("OPEN_SANDBOX_API_BASE", "http://sandbox.example///")]),
     );
     assert_eq!(sandbox.api_base(None).unwrap(), "http://sandbox.example");
 }
@@ -69,7 +71,7 @@ fn api_base_reads_the_environment_and_trims_trailing_slashes() {
 fn api_base_prefers_the_parameter_over_the_environment() {
     let sandbox = sandbox(
         FakeHttp::new(&[]),
-        environment(&[(API_BASE_VARIABLE, "http://env.example")]),
+        environment(&[("OPEN_SANDBOX_API_BASE", "http://env.example")]),
     );
     assert_eq!(
         sandbox.api_base(Some("https://explicit.example/")).unwrap(),
@@ -81,7 +83,7 @@ fn api_base_prefers_the_parameter_over_the_environment() {
 fn api_base_rejects_an_explicit_empty_value_even_with_the_environment_set() {
     let sandbox = sandbox(
         FakeHttp::new(&[]),
-        environment(&[(API_BASE_VARIABLE, "http://env.example")]),
+        environment(&[("OPEN_SANDBOX_API_BASE", "http://env.example")]),
     );
     assert!(matches!(
         sandbox.api_base(Some("")).unwrap_err(),
@@ -173,7 +175,7 @@ fn api_key_resolves_the_documented_precedence(
 ) {
     let sandbox = sandbox(
         FakeHttp::new(&[]),
-        environment(&[(API_KEY_VARIABLE, "env-key")]),
+        environment(&[("OPEN_SANDBOX_API_KEY", "env-key")]),
     );
     let container = handle(stored);
     let supplied = parameter.map(SecretString::from);
