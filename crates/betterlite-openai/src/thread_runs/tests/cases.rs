@@ -209,38 +209,22 @@ async fn dot_segments_are_refused() {
         );
         assert!(transport.requests().is_empty());
     }
-    let encoded = RunRequest {
-        thread_id: String::from("%2e"),
-        ..request()
-    };
-    let (api, transport) = harness();
-    transport.queue(200, &[], QUEUED);
-    transport.queue(200, &[("openai-poll-after-ms", "0")], COMPLETED);
-    api.run_thread(call(Facade::SyncRun), &encoded)
-        .await
-        .unwrap();
-    assert_eq!(
-        transport.requests()[0].url,
-        "https://example.test/v1/threads/%252e/runs"
-    );
-}
-
-// The SDK's quote set leaves the unreserved and sub-delim marks alone and escapes the rest, brackets included.
-async fn path_segments_are_quoted() {
-    let bracketed = RunRequest {
-        thread_id: String::from("a[b]"),
-        ..request()
-    };
-    let (api, transport) = harness();
-    transport.queue(200, &[], QUEUED);
-    transport.queue(200, &[("openai-poll-after-ms", "0")], COMPLETED);
-    api.run_thread(call(Facade::SyncRun), &bracketed)
-        .await
-        .unwrap();
-    assert_eq!(
-        transport.requests()[0].url,
-        "https://example.test/v1/threads/a%5Bb%5D/runs"
-    );
+    for (thread_id, url) in [
+        ("%2e", "https://example.test/v1/threads/%252e/runs"),
+        ("a[b]", "https://example.test/v1/threads/a%5Bb%5D/runs"),
+    ] {
+        let quoted = RunRequest {
+            thread_id: String::from(thread_id),
+            ..request()
+        };
+        let (api, transport) = harness();
+        transport.queue(200, &[], QUEUED);
+        transport.queue(200, &[("openai-poll-after-ms", "0")], COMPLETED);
+        api.run_thread(call(Facade::SyncRun), &quoted)
+            .await
+            .unwrap();
+        assert_eq!(transport.requests()[0].url, url);
+    }
 }
 
 async fn empty_run_id_is_refused() {
@@ -637,7 +621,6 @@ async fn instructions_tools_overrides() {
         streamed[0].body.as_ref().unwrap().get("model"),
         Some(&Value::Null)
     );
-    path_segments_are_quoted().await;
 }
 
 async fn dispatch_selections() {
