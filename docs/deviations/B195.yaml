@@ -1,7 +1,7 @@
 task: B195
 deviations:
-  - what: Without CUSTOM_TIKTOKEN_CACHE_DIR a fetched r50k_base or gpt2 vocabulary is fetched again on the next engine build, where tiktoken writes it into its packaged tokenizers folder.
-    why: betterlite's bundled assets are compiled into the binary, so there is no package folder to write into; with the variable set the URL, sha1 key, sha256 check and file are the same.
+  - what: When CUSTOM_TIKTOKEN_CACHE_DIR is unset, a fetched r50k_base or gpt2 file stays in memory for the life of the process, where tiktoken writes it into the tokenizers folder inside LiteLLM's installed package.
+    why: betterlite's bundled assets are compiled into the binary, so there is no package folder to write into. The fetch, the URL and the hash check are the same; only the copy on disk is missing.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/default_encoding.py#L20-L30
   - what: Hub requests send hf-hub's user agent, "hf-hub/1.0.0" with HF_HUB_USER_AGENT_ORIGIN appended when set, where huggingface_hub sends its own name, version and Python details.
     why: Sending another library's name and Python version from a Rust binary would misreport the client to the Hub; the URLs, headers that carry meaning and the token are the same.
@@ -27,8 +27,8 @@ deviations:
   - what: A custom tokenizer's failed download reaches the caller with hf-hub's error text, where huggingface_hub raises its own exception message.
     why: The text comes from a different library; the failure and when it happens are the same.
     link: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/file_download.py#L1925-L1960
-  - what: A 404 for a missing repository or a missing revision surfaces as the typed entry-not-found error, where huggingface_hub keeps RepositoryNotFound and RevisionNotFound apart.
-    why: hf-hub maps every model 404 to entry-not-found and drops the X-Error-Code header that names the class; the fallback, retry and terminal behavior is the same.
+  - what: When a 404 answer carries no X-Error-Code header, the repository is probed with one extra exists request to tell a missing repository from a missing file, where huggingface_hub reads the code from the response it already has.
+    why: hf-hub maps every model 404 to entry-not-found; its error keeps X-Error-Code, so the probe only runs when the header is absent. The fallback, the retry and the typed error classes then match huggingface_hub.
     link: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/file_download.py#L1925-L1960
   - what: The gpt2 encoder map is parsed but not compared against the merge file, where tiktoken asserts the two agree before building the ranks.
     why: Both files are pinned by sha256, so a corrupted pair cannot pass the fetch and a working setup cannot reach the assertion.

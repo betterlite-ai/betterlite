@@ -1,28 +1,61 @@
 use super::HubError;
-use hf_hub::HFError;
+use hf_hub::{HFClient, HFError, split_id};
 use std::path::Path;
 use tokio::fs;
-pub(super) fn classify(error: HFError, repository: &str, revision: &str) -> HubError {
+pub(super) async fn classify(
+    client: &HFClient,
+    error: HFError,
+    repository: &str,
+    revision: &str,
+) -> HubError {
     if matches!(&error, HFError::RevisionNotFound { .. }) {
         return HubError::RevisionNotFound(repository.to_owned(), revision.to_owned(), error);
     }
-    if matches!(&error, HFError::EntryNotFound { .. }) {
-        return HubError::EntryNotFound(repository.to_owned(), error);
+    if let HFError::EntryNotFound { context, .. } = &error {
+        let code = context
+            .as_ref()
+            .and_then(|found| found.error_code.as_deref());
+        if code == Some("RepoNotFound") {
+            return HubError::RepoNotFound(repository.to_owned(), error);
+        }
+        if code == Some("RevisionNotFound") {
+            return HubError::RevisionNotFound(repository.to_owned(), revision.to_owned(), error);
+        }
+        if code == Some("EntryNotFound") {
+            return HubError::EntryNotFound(repository.to_owned(), error);
+        }
+        return missing_entry(client, error, repository).await;
     }
     if matches!(&error, HFError::RepoNotFound { .. }) {
         return HubError::RepoNotFound(repository.to_owned(), error);
     }
-    if matches!(&error, HFError::AuthRequired { .. }) {
-        return HubError::Unauthorized(error);
-    }
-    let gated = matches!(&error, HFError::Forbidden { context } if context.body.to_ascii_lowercase().contains("gated"));
+    let gated = matches!(
+        &error,
+        HFError::AuthRequired { context } | HFError::Forbidden { context }
+            if context.error_code.as_deref() == Some("GatedRepo")
+    );
     if gated {
         return HubError::Gated(repository.to_owned(), error);
+    }
+    if matches!(&error, HFError::AuthRequired { .. }) {
+        return HubError::Unauthorized(error);
     }
     if let HFError::LocalEntryNotFound { path } = error {
         return HubError::CacheMiss(repository.to_owned(), path);
     }
     HubError::Download(repository.to_owned(), error)
+}
+async fn missing_entry(client: &HFClient, error: HFError, repository: &str) -> HubError {
+    let (owner, name) = split_id(repository);
+    let exists = client
+        .model(owner.to_owned(), name.to_owned())
+        .exists()
+        .send()
+        .await;
+    match exists {
+        Ok(false) => HubError::RepoNotFound(repository.to_owned(), error),
+        _ => HubError::EntryNotFound(repository.to_owned(), error),
+    }
 }
 pub(super) fn retryable(error: &HubError) -> bool {
     let HubError::Download(_, source) = error else {
@@ -40,7 +73,10 @@ pub(super) fn retryable(error: &HubError) -> bool {
     matches!(source, HFError::RateLimited { .. })
 }
 pub(super) fn not_available(error: HubError, repository: &str) -> HubError {
-    if error.identity() {
+    if matches!(
+        &error,
+        HubError::RepoNotFound(..) | HubError::Gated(..) | HubError::Unauthorized(..)
+    ) {
         return error;
     }
     HubError::NotAvailable(repository.to_owned(), Box::new(error))

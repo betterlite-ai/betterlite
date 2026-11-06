@@ -68,12 +68,6 @@ impl HubError {
             Self::RevisionNotFound(..) | Self::EntryNotFound(..) | Self::Stalled(..)
         )
     }
-    pub(super) const fn identity(&self) -> bool {
-        matches!(
-            self,
-            Self::RepoNotFound(..) | Self::Gated(..) | Self::Unauthorized(..)
-        )
-    }
 }
 pub struct HubDownloader {
     pub(crate) settings: Arc<HubSettings>,

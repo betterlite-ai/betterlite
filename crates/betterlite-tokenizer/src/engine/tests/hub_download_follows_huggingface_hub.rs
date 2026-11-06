@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
 use betterlite_config::sections::huggingface_hub::{
     OfflineSetting, Settings as HubSettings, TransferSetting,
@@ -8,6 +9,7 @@ use betterlite_config::sections::huggingface_hub::{
 use secrecy::SecretString;
 use temp_env::async_with_vars;
 use tokio::fs;
+use tokio::time::Instant;
 use tracing::span::{Attributes, Id, Record};
 use tracing::subscriber::with_default;
 use tracing::{Event, Level, Metadata};
@@ -149,10 +151,17 @@ async fn unauthorized_is_reported() {
 
 #[tokio::test]
 async fn missing_revision_and_file_do_not_fall_back() {
-    let server = Server::start(|_request| Reply::Response {
-        status: 404,
-        headers: vec![("X-Error-Code", "RevisionNotFound".to_owned())],
-        body: Vec::new(),
+    let server = Server::start(|request| {
+        let code = if request.path.contains("missing-revision") {
+            "RevisionNotFound"
+        } else {
+            "EntryNotFound"
+        };
+        Reply::Response {
+            status: 404,
+            headers: vec![("X-Error-Code", code.to_owned())],
+            body: Vec::new(),
+        }
     })
     .await;
     let directory = tempfile::tempdir().unwrap();
@@ -160,7 +169,7 @@ async fn missing_revision_and_file_do_not_fall_back() {
     let hub = downloader(&settings);
     assert!(matches!(
         hub.download(REPO, "missing-revision", None).await,
-        Err(HubError::EntryNotFound(..))
+        Err(HubError::RevisionNotFound(..))
     ));
     assert_eq!(server.request_count(), 1);
     assert!(matches!(
@@ -168,6 +177,106 @@ async fn missing_revision_and_file_do_not_fall_back() {
         Err(HubError::EntryNotFound(..))
     ));
     assert_eq!(server.request_count(), 2);
+}
+
+#[tokio::test]
+async fn missing_repository_falls_back_to_the_cache() {
+    let server = Server::start(|request| standard_reply(request, BODY)).await;
+    let directory = tempfile::tempdir().unwrap();
+    let settings = hub_settings(&server.endpoint, directory.path());
+    assert_eq!(
+        downloader(&settings)
+            .download(REPO, "main", None)
+            .await
+            .unwrap(),
+        BODY
+    );
+    let missing = Server::start(|_request| Reply::Response {
+        status: 404,
+        headers: vec![("X-Error-Code", "RepoNotFound".to_owned())],
+        body: Vec::new(),
+    })
+    .await;
+    let missing_settings = hub_settings(&missing.endpoint, directory.path());
+    assert_eq!(
+        downloader(&missing_settings)
+            .download(REPO, "main", None)
+            .await
+            .unwrap(),
+        BODY
+    );
+}
+
+#[tokio::test]
+async fn missing_repository_without_a_cached_file_is_reported() {
+    let server = Server::start(|_request| Reply::Response {
+        status: 404,
+        headers: vec![("X-Error-Code", "RepoNotFound".to_owned())],
+        body: Vec::new(),
+    })
+    .await;
+    let directory = tempfile::tempdir().unwrap();
+    let settings = hub_settings(&server.endpoint, directory.path());
+    assert!(matches!(
+        downloader(&settings).download(REPO, "main", None).await,
+        Err(HubError::RepoNotFound(..))
+    ));
+    assert_eq!(server.request_count(), 1);
+}
+
+#[tokio::test]
+async fn entry_not_found_without_the_header_checks_the_repository() {
+    let repo_exists = Server::start(|request| {
+        if request.path.starts_with("/api/models/") {
+            return Reply::Response {
+                status: 200,
+                headers: Vec::new(),
+                body: b"{}".to_vec(),
+            };
+        }
+        Reply::Response {
+            status: 404,
+            headers: Vec::new(),
+            body: Vec::new(),
+        }
+    })
+    .await;
+    let directory = tempfile::tempdir().unwrap();
+    let settings = hub_settings(&repo_exists.endpoint, directory.path());
+    assert!(matches!(
+        downloader(&settings).download(REPO, "main", None).await,
+        Err(HubError::EntryNotFound(..))
+    ));
+    let repo_missing = Server::start(|_request| Reply::Response {
+        status: 404,
+        headers: Vec::new(),
+        body: Vec::new(),
+    })
+    .await;
+    let missing_settings = hub_settings(&repo_missing.endpoint, directory.path());
+    assert!(matches!(
+        downloader(&missing_settings)
+            .download(REPO, "main", None)
+            .await,
+        Err(HubError::RepoNotFound(..))
+    ));
+}
+
+#[tokio::test]
+async fn gated_repository_is_reported() {
+    let server = Server::start(|_request| Reply::Response {
+        status: 403,
+        headers: vec![("X-Error-Code", "GatedRepo".to_owned())],
+        body: Vec::new(),
+    })
+    .await;
+    let directory = tempfile::tempdir().unwrap();
+    let settings = hub_settings(&server.endpoint, directory.path());
+    assert!(matches!(
+        downloader(&settings).download(REPO, "main", None).await,
+        Err(HubError::Gated(..))
+    ));
+    assert_eq!(server.request_count(), 1);
 }
 
 #[tokio::test]
@@ -199,15 +308,42 @@ async fn service_unavailable_answers_from_the_cache() {
 }
 
 #[tokio::test(start_paused = true)]
-async fn head_past_etag_timeout_falls_back_and_retries() {
+async fn head_past_etag_timeout_falls_back_to_the_cache() {
+    let server = Server::start(|request| standard_reply(request, BODY)).await;
+    let directory = tempfile::tempdir().unwrap();
+    let settings = hub_settings(&server.endpoint, directory.path());
+    assert_eq!(
+        downloader(&settings)
+            .download(REPO, "main", None)
+            .await
+            .unwrap(),
+        BODY
+    );
+    let stalling = Server::start(|_request| Reply::Stall).await;
+    let mut stalled_settings = hub_settings(&stalling.endpoint, directory.path());
+    stalled_settings.etag_timeout = 0;
+    assert_eq!(
+        downloader(&stalled_settings)
+            .download(REPO, "main", None)
+            .await
+            .unwrap(),
+        BODY
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn head_past_etag_timeout_retries_for_sixty_seconds() {
     let server = Server::start(|_request| Reply::Stall).await;
     let directory = tempfile::tempdir().unwrap();
     let mut settings = hub_settings(&server.endpoint, directory.path());
-    settings.etag_timeout = 0;
+    settings.etag_timeout = 30;
+    let started = Instant::now();
     assert!(matches!(
         downloader(&settings).download(REPO, "main", None).await,
         Err(HubError::NotAvailable(..))
     ));
+    assert_eq!(server.request_count(), 2);
+    assert!(started.elapsed() >= Duration::from_secs(90));
 }
 
 #[tokio::test]
