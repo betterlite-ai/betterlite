@@ -1,0 +1,1 @@
+{"id":"msg_1","object":"thread.message","created_at":7,"thread_id":"thread_1","role":"user","content":[{"type":"text","text":{"value":"hi","annotations":[]}}],"status":"completed","assistant_id":"asst_1","run_id":"run_1","metadata":{"team":"core"},"attachments":[{"file_id":"file-1","tools":[{"type":"code_interpreter"}]}],"extension_field":{"nested":[1,2]}}

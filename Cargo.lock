@@ -1032,6 +1032,7 @@ dependencies = [
 name = "betterlite-auth"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "betterlite-db",
  "chrono",
  "hex",
@@ -1050,8 +1051,17 @@ dependencies = [
  "strum",
  "thiserror",
  "tracing",
+ "tracing-subscriber",
  "unicode-normalization",
  "uuid",
+]
+
+[[package]]
+name = "betterlite-auth-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-auth",
+ "libfuzzer-sys",
 ]
 
 [[package]]
@@ -1225,11 +1235,13 @@ dependencies = [
  "aws-sigv4",
  "aws-smithy-runtime-api",
  "betterlite-auth",
+ "betterlite-db",
  "betterlite-env",
  "betterlite-models",
  "betterlite-rate-limit",
  "betterlite-secret-managers",
  "betterlite-secrets",
+ "chrono",
  "fancy-regex",
  "indexmap 2.14.2",
  "insta",
@@ -1328,6 +1340,7 @@ dependencies = [
 name = "betterlite-core-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-config",
  "betterlite-core",
  "chrono",
  "jiff",
