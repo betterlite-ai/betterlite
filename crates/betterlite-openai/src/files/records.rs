@@ -4,6 +4,7 @@ use betterlite_http::proxy::UpstreamResponse;
 use indexmap::IndexMap;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use serde_with::skip_serializing_none;
 
 use crate::files::error::{FilesError, StatusError};
 use crate::files::stream::flatten_headers;
@@ -41,6 +42,7 @@ pub enum FileKind {
 }
 
 // LiteLLM's OpenAIFileObject: the create path revalidates the SDK object into this record
+#[skip_serializing_none]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileObject {
     pub id: String,
@@ -49,11 +51,8 @@ pub struct FileObject {
     pub filename: String,
     pub object: FileKind,
     pub purpose: FilesPurpose,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<FileStatus>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status_details: Option<String>,
 }
 
@@ -72,16 +71,13 @@ pub enum ListKind {
 }
 
 // The SDK's cursor page of file objects, with the list fields the files API reference declares
+#[skip_serializing_none]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FilePage {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub object: Option<ListKind>,
     pub data: Vec<FileObject>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub has_more: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub first_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_id: Option<String>,
 }
 
@@ -90,10 +86,7 @@ pub fn decode_file_object<R>(status: u16, body: &[u8]) -> Result<R, FilesError>
 where
     R: DeserializeOwned,
 {
-    if !(200..300).contains(&status) {
-        let failure = StatusError::from_response(status, body);
-        return Err(FilesError::Status(Box::new(failure)));
-    }
+    StatusError::check(status, body)?;
     serde_json::from_slice(body).map_err(|source| FilesError::Decode { source })
 }
 

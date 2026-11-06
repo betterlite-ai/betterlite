@@ -16,6 +16,17 @@ pub struct StatusError {
 }
 
 impl StatusError {
+    // A 2xx reply passes; any other status is the SDK's status error
+    pub fn check(status: u16, body: &[u8]) -> Result<(), FilesError> {
+        if (200..300).contains(&status) {
+            Ok(())
+        } else {
+            Err(FilesError::Status(Box::new(Self::from_response(
+                status, body,
+            ))))
+        }
+    }
+
     // the SDK's status-error mapping: a JSON body keeps its "error" object, any other body is the message
     #[must_use]
     pub fn from_response(status: u16, body: &[u8]) -> Self {

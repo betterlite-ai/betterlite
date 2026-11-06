@@ -23,6 +23,8 @@ pub mod request;
 pub mod stream;
 pub mod transport;
 
+type Reply<R> = Result<R, FilesError>;
+
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1/";
 
 // the OpenAI SDK's default request timeout
@@ -107,7 +109,7 @@ pub struct FilesApi<T> {
 }
 
 impl<T: FileTransport> FilesApi<T> {
-    async fn json_call<R>(&self, request: OutboundRequest) -> Result<R, FilesError>
+    async fn json_call<R>(&self, request: OutboundRequest) -> Reply<R>
     where
         R: DeserializeOwned,
     {
@@ -119,11 +121,7 @@ impl<T: FileTransport> FilesApi<T> {
         decode_file_object(reply.status, &reply.body)
     }
 
-    pub async fn create_file(
-        &self,
-        client: &FilesClient,
-        data: &FileCreate,
-    ) -> Result<FileObject, FilesError> {
+    pub async fn create_file(&self, client: &FilesClient, data: &FileCreate) -> Reply<FileObject> {
         self.json_call(client.create_request(data, (self.boundaries)().simple().to_string())?)
             .await
     }
@@ -132,16 +130,13 @@ impl<T: FileTransport> FilesApi<T> {
         &self,
         client: &FilesClient,
         request: &FileContentRequest,
-    ) -> Result<BinaryContent, FilesError> {
+    ) -> Reply<BinaryContent> {
         let reply = self
             .transport
             .send_buffered(client.content_request(request)?)
             .await
             .map_err(|source| FilesError::Transport { source })?;
-        if !(200..300).contains(&reply.status) {
-            let failure = StatusError::from_response(reply.status, &reply.body);
-            return Err(FilesError::Status(Box::new(failure)));
-        }
+        StatusError::check(reply.status, &reply.body)?;
         Ok(BinaryContent::from_response(reply))
     }
 
@@ -151,7 +146,7 @@ impl<T: FileTransport> FilesApi<T> {
         client: &FilesClient,
         request: &FileContentRequest,
         chunk_size: Option<NonZeroUsize>,
-    ) -> Result<FileContentStreamingResult, FilesError> {
+    ) -> Reply<FileContentStreamingResult> {
         let reply = self
             .transport
             .send_stream(client.content_request(request)?)
@@ -169,30 +164,18 @@ impl<T: FileTransport> FilesApi<T> {
         ))
     }
 
-    pub async fn retrieve_file(
-        &self,
-        client: &FilesClient,
-        file_id: &str,
-    ) -> Result<FileObject, FilesError> {
+    pub async fn retrieve_file(&self, client: &FilesClient, file_id: &str) -> Reply<FileObject> {
         self.json_call(client.bare_request(Method::GET, file_path(file_id, "")?, Vec::new())?)
             .await
     }
 
-    pub async fn delete_file(
-        &self,
-        client: &FilesClient,
-        file_id: &str,
-    ) -> Result<FileDeleted, FilesError> {
+    pub async fn delete_file(&self, client: &FilesClient, file_id: &str) -> Reply<FileDeleted> {
         self.json_call(client.bare_request(Method::DELETE, file_path(file_id, "")?, Vec::new())?)
             .await
     }
 
     // Only purpose is forwarded; after, limit and order are not arguments of this wrapper
-    pub async fn list_files(
-        &self,
-        client: &FilesClient,
-        query: &FileQuery,
-    ) -> Result<FilePage, FilesError> {
+    pub async fn list_files(&self, client: &FilesClient, query: &FileQuery) -> Reply<FilePage> {
         self.json_call(client.bare_request(Method::GET, "/files".to_owned(), query.pairs())?)
             .await
     }
