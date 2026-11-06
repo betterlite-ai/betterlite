@@ -1,0 +1,1 @@
+{"texts":["system prompt","user prompt","assistant answer"],"structured_messages":[{"role":"system","content":"system prompt"},{"role":"user","content":[{"type":"text","text":"user prompt"}]},{"role":"assistant","content":"assistant answer"}],"model":"gpt-4o"}
