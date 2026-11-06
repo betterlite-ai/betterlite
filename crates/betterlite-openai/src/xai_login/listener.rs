@@ -15,7 +15,7 @@ use crate::xai_tokens::Clock;
 pub const PREFERRED_PORT: u16 = 56_121;
 pub const CALLBACK_TIMEOUT: Duration = Duration::from_secs(180);
 pub const POLL_INTERVAL: Duration = Duration::from_secs(1);
-pub const MAX_REQUEST_BYTES: usize = 0x0001_0001;
+pub const MAX_HEAD_BYTES: u64 = 0x0001_0001;
 const MISMATCH_BODY: &str = "<html><body><h1>xAI authorization state mismatch.</h1></body></html>";
 const FAILED_BODY: &str =
     "<html><body><h1>xAI authorization failed.</h1>You can close this tab.</body></html>";
@@ -38,6 +38,11 @@ impl Default for CallbackSettings {
     }
 }
 
+enum Head {
+    Partial,
+    Ready(Result<CallbackRequest, (u16, &'static str)>),
+}
+
 pub struct CallbackServer {
     pub(crate) listener: TcpListener,
     pub(crate) redirect_uri: String,
@@ -51,26 +56,25 @@ impl CallbackServer {
         settings: &CallbackSettings,
         expected_state: &str,
     ) -> Result<Self, XaiLoginError> {
-        let mut failure = None;
-        for candidate in [settings.preferred_port, 0] {
-            match TcpListener::bind(SocketAddr::from((Ipv4Addr::LOCALHOST, candidate))).await {
-                Ok(listener) => {
-                    let address = listener
-                        .local_addr()
-                        .map_err(|source| XaiLoginError::Bind { source })?;
-                    return Ok(Self {
-                        listener,
-                        redirect_uri: format!("http://127.0.0.1:{}{CALLBACK_PATH}", address.port()),
-                        expected_state: expected_state.to_owned(),
-                        poll: settings.poll,
-                        timeout: settings.timeout,
-                    });
-                }
-                Err(source) => failure = Some(source),
+        let preferred = SocketAddr::from((Ipv4Addr::LOCALHOST, settings.preferred_port));
+        let listener = match TcpListener::bind(preferred).await {
+            Ok(listener) => listener,
+            Err(_preferred_taken) => {
+                let ephemeral = SocketAddr::from((Ipv4Addr::LOCALHOST, 0));
+                TcpListener::bind(ephemeral)
+                    .await
+                    .map_err(|source| XaiLoginError::Listener { source })?
             }
-        }
-        Err(XaiLoginError::Bind {
-            source: failure.unwrap_or_else(|| io::Error::other("no callback port could be bound")),
+        };
+        let address = listener
+            .local_addr()
+            .map_err(|source| XaiLoginError::Listener { source })?;
+        Ok(Self {
+            listener,
+            redirect_uri: format!("http://127.0.0.1:{}{CALLBACK_PATH}", address.port()),
+            expected_state: expected_state.to_owned(),
+            poll: settings.poll,
+            timeout: settings.timeout,
         })
     }
 
@@ -89,32 +93,37 @@ impl CallbackServer {
             let Some(slot) = wait_slot(clock.now(), deadline, self.poll) else {
                 return Err(XaiLoginError::Timeout);
             };
-            match timeout(slot, self.accept()).await {
-                Ok(Ok(Some(request))) => return Ok(request),
-                Ok(Ok(None)) => {}
-                Ok(Err(source)) => return Err(XaiLoginError::Accept { source }),
-                Err(_elapsed) => {}
+            let mut stream = match timeout(slot, self.listener.accept()).await {
+                Ok(Ok((stream, _peer))) => stream,
+                Ok(Err(source)) => return Err(XaiLoginError::Listener { source }),
+                Err(_elapsed) => continue,
+            };
+            if let Some(request) = self.serve(&mut stream).await {
+                return Ok(request);
             }
         }
     }
 
-    async fn accept(&self) -> io::Result<Option<CallbackRequest>> {
-        let (mut stream, _peer) = self.listener.accept().await?;
-        Ok(self.serve(&mut stream).await)
-    }
-
     async fn serve(&self, stream: &mut TcpStream) -> Option<CallbackRequest> {
-        let head = match read_head(stream).await {
-            Ok(head) => head,
-            Err(error) => {
+        let head = match timeout(self.poll, read_head(stream)).await {
+            Ok(Ok(head)) => head,
+            Ok(Err(error)) => {
                 tracing::debug!(%error, "Could not read the xAI OAuth callback request");
                 return None;
             }
+            Err(_elapsed) => {
+                tracing::debug!("The xAI OAuth callback connection sent no request in time");
+                return None;
+            }
         };
-        let request = match parse_request(&head) {
-            Ok(request) => request,
-            Err((status, reason)) => {
+        let request = match decode_head(&head) {
+            Head::Ready(Ok(request)) => request,
+            Head::Ready(Err((status, reason))) => {
                 reply(stream, status, reason, "").await;
+                return None;
+            }
+            Head::Partial => {
+                reply(stream, 400, "Bad Request", "").await;
                 return None;
             }
         };
@@ -138,14 +147,27 @@ impl CallbackServer {
     }
 }
 
-fn parse_request(head: &[u8]) -> Result<CallbackRequest, (u16, &'static str)> {
-    let Some((method, target)) = request_line(head) else {
+fn decode_head(head: &[u8]) -> Head {
+    let mut headers = [httparse::EMPTY_HEADER; 99];
+    let mut request = httparse::Request::new(&mut headers);
+    match request.parse(head) {
+        Ok(httparse::Status::Partial) => Head::Partial,
+        Ok(httparse::Status::Complete(_consumed)) => Head::Ready(parse_target(&request)),
+        Err(httparse::Error::TooManyHeaders) => {
+            Head::Ready(Err((431, "Request Header Fields Too Large")))
+        }
+        Err(_malformed) => Head::Ready(Err((400, "Bad Request"))),
+    }
+}
+
+fn parse_target(head: &httparse::Request<'_, '_>) -> Result<CallbackRequest, (u16, &'static str)> {
+    let (Some(method), Some(target)) = (head.method, head.path) else {
         return Err((400, "Bad Request"));
     };
-    if method != b"GET" {
+    if method != "GET" {
         return Err((501, "Not Implemented"));
     }
-    match decode_xai_callback(target) {
+    match decode_xai_callback(target.as_bytes()) {
         Ok(request) => Ok(request),
         Err(CallbackError::TooLong) => Err((414, "URI Too Long")),
         Err(CallbackError::Malformed) => Err((400, "Bad Request")),
@@ -158,43 +180,30 @@ pub(crate) fn wait_slot(now: Decimal, deadline: Decimal, poll: Duration) -> Opti
     if left <= Decimal::ZERO {
         return None;
     }
-    let nanos = left
+    let slot = left
         .checked_mul(Decimal::from(1_000_000_000_u64))
         .and_then(|value| value.to_u64())
-        .unwrap_or(u64::MAX);
-    Some(Duration::from_nanos(nanos).min(poll))
+        .map_or(poll, Duration::from_nanos);
+    Some(slot.min(poll))
 }
 
 async fn read_head(stream: &mut TcpStream) -> io::Result<Vec<u8>> {
     let mut buffer = Vec::new();
     let mut chunk = [0_u8; 1024];
-    let limit = u64::try_from(MAX_REQUEST_BYTES).unwrap_or(u64::MAX);
-    let mut limited = stream.take(limit);
+    let mut limited = stream.take(MAX_HEAD_BYTES);
     loop {
-        if buffer.windows(4).any(|window| window == b"\r\n\r\n") {
-            return Ok(buffer);
-        }
         let read = limited.read(&mut chunk).await?;
         if read == 0 {
             return Ok(buffer);
         }
         let bytes = chunk
             .get(..read)
-            .ok_or_else(|| io::Error::other("the callback read exceeded its buffer"))?;
+            .ok_or_else(|| io::Error::other("callback read overran"))?;
         buffer.extend_from_slice(bytes);
+        if !matches!(decode_head(&buffer), Head::Partial) {
+            return Ok(buffer);
+        }
     }
-}
-
-fn request_line(head: &[u8]) -> Option<(&[u8], &[u8])> {
-    let line = head.split(|byte| *byte == b'\n').next()?;
-    let stripped = line.strip_suffix(b"\r").unwrap_or(line);
-    let mut parts = stripped.split(|byte| *byte == b' ');
-    let (Some(method), Some(target), Some(_version), None) =
-        (parts.next(), parts.next(), parts.next(), parts.next())
-    else {
-        return None;
-    };
-    Some((method, target))
 }
 
 async fn reply(stream: &mut TcpStream, status: u16, reason: &'static str, body: &'static str) {

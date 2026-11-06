@@ -9,6 +9,7 @@ use crate::xai_login::service::{
     Existing, LoginOptions, StoredRecord, TerminalOutput, UserOutput as _, classify,
 };
 use crate::xai_tokens::codec::decode_xai_oauth;
+use crate::xai_tokens::error::XaiOauthError;
 use crate::xai_tokens::rules::CLIENT_ID;
 
 use super::support::{
@@ -19,8 +20,9 @@ use super::support::{
 const VERIFIER: &str = "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc";
 const ONLY_REFRESH: &str = r#"{"refresh_token":"only","token_type":"Bearer","token_endpoint":"https://auth.x.ai/oauth2/token","expires_at":5000}"#;
 const BLANK_ACCESS: &str = r#"{"access_token":"","refresh_token":"r","token_type":"Bearer","token_endpoint":"https://auth.x.ai/oauth2/token","expires_at":5000}"#;
-const BLANK_REFRESH: &str = r#"{"access_token":"a","refresh_token":"","token_type":"Bearer","token_endpoint":"https://auth.x.ai/oauth2/token","expires_at":5000}"#;
 const UNREADABLE_EXPIRY: &str = r#"{"access_token":"a","refresh_token":"r","token_type":"Bearer","token_endpoint":"https://auth.x.ai/oauth2/token","expires_at":"later"}"#;
+const FRESH_BLANK_REFRESH: &str = r#"{"access_token":"live-access","refresh_token":"","id_token":"live-id","token_type":"Bearer","token_endpoint":"https://auth.x.ai/oauth2/token","expires_at":5000}"#;
+const EXPIRED_BLANK_REFRESH: &str = r#"{"access_token":"a","refresh_token":"","token_type":"Bearer","token_endpoint":"https://auth.x.ai/oauth2/token","expires_at":1000}"#;
 
 fn options() -> LoginOptions {
     LoginOptions {
@@ -99,6 +101,30 @@ async fn a_failed_refresh_falls_through_to_authorization() {
         seen[1].url,
         "https://auth.x.ai/.well-known/openid-configuration"
     );
+}
+
+#[tokio::test]
+async fn a_fresh_record_with_a_blank_refresh_token_is_returned() {
+    let fixture = Fixture::new(Some(FRESH_BLANK_REFRESH), Vec::new());
+    let record = fixture.service.login(options()).await.unwrap();
+    assert_eq!(record.access_token.expose_secret(), "live-access");
+    assert_eq!(record.refresh_token.expose_secret(), "");
+    assert!(fixture.seen().is_empty());
+    assert_eq!(fixture.service.browser.opens(), 0);
+}
+
+#[tokio::test]
+async fn a_transport_failure_on_refresh_ends_the_login() {
+    let fixture = Fixture::new(Some(STALE), vec![Reply::Fail]);
+    let error = fixture.service.login(options()).await.unwrap_err();
+    assert!(matches!(
+        error,
+        XaiLoginError::Oauth(XaiOauthError::Transport { stage: "token", .. })
+    ));
+    let seen = fixture.seen();
+    assert_eq!(seen.len(), 1);
+    assert_eq!(seen[0].method, "POST");
+    assert_eq!(fixture.service.browser.opens(), 0);
 }
 
 #[tokio::test]
@@ -352,12 +378,20 @@ fn classifies_an_existing_record(#[case] json: &str, #[case] fresh: bool) {
 #[rstest]
 #[case::only_a_refresh_token(ONLY_REFRESH)]
 #[case::blank_access_token(BLANK_ACCESS)]
-#[case::blank_refresh_token(BLANK_REFRESH)]
+#[case::expired_blank_refresh_token(EXPIRED_BLANK_REFRESH)]
 fn a_record_the_declared_type_cannot_hold_is_unusable(#[case] json: &str) {
     assert!(matches!(
         classify(stored(json), Decimal::from(NOW)),
         Existing::Unusable
     ));
+}
+
+#[test]
+fn a_fresh_record_with_a_blank_refresh_token_is_fresh() {
+    let Existing::Fresh(record) = classify(stored(FRESH_BLANK_REFRESH), Decimal::from(NOW)) else {
+        panic!("a fresh record was not returned");
+    };
+    assert_eq!(record.refresh_token.expose_secret(), "");
 }
 
 #[test]

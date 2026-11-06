@@ -287,7 +287,7 @@ fn login_service(settings: Settings, replies: Vec<Reply>) -> TestLogin {
         },
         callbacks: CallbackSettings {
             preferred_port: 0,
-            poll: Duration::from_millis(5),
+            poll: Duration::from_millis(50),
             timeout: Duration::from_secs(30),
         },
     }

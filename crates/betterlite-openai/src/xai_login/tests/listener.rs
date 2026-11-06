@@ -10,7 +10,7 @@ use tokio::time::timeout;
 
 use crate::xai_login::error::XaiLoginError;
 use crate::xai_login::listener::{
-    CALLBACK_TIMEOUT, CallbackServer, CallbackSettings, MAX_REQUEST_BYTES, POLL_INTERVAL,
+    CALLBACK_TIMEOUT, CallbackServer, CallbackSettings, MAX_HEAD_BYTES, POLL_INTERVAL,
     PREFERRED_PORT, wait_slot,
 };
 
@@ -21,9 +21,18 @@ use super::support::{
 fn settings() -> CallbackSettings {
     CallbackSettings {
         preferred_port: 0,
-        poll: Duration::from_millis(5),
+        poll: Duration::from_millis(50),
         timeout: Duration::from_secs(30),
     }
+}
+
+#[test]
+fn a_slot_beyond_nanoseconds_is_the_whole_poll() {
+    let deadline = "1000000000000000000000000000".parse().unwrap();
+    assert_eq!(
+        wait_slot(Decimal::ZERO, deadline, POLL_INTERVAL),
+        Some(POLL_INTERVAL)
+    );
 }
 
 #[test]
@@ -167,14 +176,32 @@ async fn an_oversized_request_head_is_refused_and_keeps_waiting() {
     let port = server_port(&server);
     let wait = server.wait(&clock);
     tokio::pin!(wait);
+    let bound = usize::try_from(MAX_HEAD_BYTES).unwrap();
     let prefix = "GET /";
-    let request = format!("{prefix}{}", "a".repeat(MAX_REQUEST_BYTES - prefix.len()));
-    assert_eq!(request.len(), MAX_REQUEST_BYTES);
+    let request = format!("{prefix}{}", "a".repeat(bound - prefix.len()));
+    assert_eq!(request.len(), bound);
     let (response, outcome) = tokio::join!(
         send(port, &request),
         timeout(Duration::from_millis(300), &mut wait),
     );
     assert_eq!(response.status, 400);
+    outcome.unwrap_err();
+}
+
+#[tokio::test]
+async fn too_many_headers_are_refused_and_keep_waiting() {
+    let clock = FixedClock(Decimal::from(NOW));
+    let server = CallbackServer::bind(&settings(), STATE).await.unwrap();
+    let port = server_port(&server);
+    let wait = server.wait(&clock);
+    tokio::pin!(wait);
+    let headers = "X-Probe: a\r\n".repeat(100);
+    let request = format!("GET /callback?code=c&state=state-test HTTP/1.1\r\n{headers}\r\n");
+    let (response, outcome) = tokio::join!(
+        send(port, &request),
+        timeout(Duration::from_millis(300), &mut wait),
+    );
+    assert_eq!(response.status, 431);
     outcome.unwrap_err();
 }
 
@@ -209,7 +236,7 @@ async fn a_taken_preferred_port_falls_back_to_an_ephemeral_port() {
     let taken = occupied.local_addr().unwrap().port();
     let settings = CallbackSettings {
         preferred_port: taken,
-        poll: Duration::from_millis(5),
+        poll: Duration::from_millis(50),
         timeout: Duration::from_secs(30),
     };
     let clock = FixedClock(Decimal::from(NOW));
@@ -243,7 +270,7 @@ async fn the_wait_times_out_at_the_deadline() {
     };
     let settings = CallbackSettings {
         preferred_port: 0,
-        poll: Duration::from_millis(5),
+        poll: Duration::from_millis(50),
         timeout: Duration::from_secs(3),
     };
     let server = CallbackServer::bind(&settings, STATE).await.unwrap();

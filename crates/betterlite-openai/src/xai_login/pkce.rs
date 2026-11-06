@@ -8,8 +8,6 @@ use url::form_urlencoded;
 use super::error::XaiLoginError;
 use crate::xai_tokens::rules::CLIENT_ID;
 
-const ENTROPY_BYTES: usize = 32;
-
 pub trait Entropy: Send + Sync {
     fn fill(&self, bytes: &mut [u8]) -> Result<(), XaiLoginError>;
 }
@@ -28,7 +26,7 @@ pub fn pkce_pair<E>(entropy: &E) -> Result<(SecretString, String), XaiLoginError
 where
     E: Entropy,
 {
-    let mut random = [0_u8; ENTROPY_BYTES];
+    let mut random = [0_u8; 32];
     entropy.fill(&mut random)?;
     Ok(pkce_pair_from(&random))
 }

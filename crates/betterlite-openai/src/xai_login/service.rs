@@ -13,6 +13,7 @@ use super::pkce::{Entropy, build_authorize_url, pkce_pair};
 use crate::xai_tokens::Clock;
 use crate::xai_tokens::XaiOauth;
 use crate::xai_tokens::codec::{AuthFile, Numeric, decode_xai_oauth};
+use crate::xai_tokens::error::XaiOauthError;
 use crate::xai_tokens::files::FileAccess;
 use crate::xai_tokens::rules::{
     CLIENT_ID, OauthRecord, build_auth_record, is_expired, validate_xai_endpoint,
@@ -81,12 +82,11 @@ impl<F: FileAccess, C: Clock, T: Transport, E: Entropy, U: Uuids, B: Browser, O:
             .map(|stored| classify(stored, now));
         match existing {
             Some(Existing::Fresh(record)) => Ok(record),
-            Some(Existing::Refreshable(auth)) => {
-                if let Ok(record) = self.oauth.refresh_tokens(&auth).await {
-                    return Ok(record);
-                }
-                self.interactive(options).await
-            }
+            Some(Existing::Refreshable(auth)) => match self.oauth.refresh_tokens(&auth).await {
+                Ok(record) => Ok(record),
+                Err(error) if falls_through(&error) => self.interactive(options).await,
+                Err(error) => Err(XaiLoginError::Oauth(error)),
+            },
             Some(Existing::Unusable) | None => self.interactive(options).await,
         }
     }
@@ -105,8 +105,13 @@ impl<F: FileAccess, C: Clock, T: Transport, E: Entropy, U: Uuids, B: Browser, O:
             &state,
             &nonce,
         );
-
-        self.announce(options, &authorize_url)?;
+        if options.no_browser || !self.browser.open(&authorize_url) {
+            self.output
+                .write(&format!(
+                    "Open this URL to authenticate with xAI:\n{authorize_url}\n"
+                ))
+                .map_err(|source| XaiLoginError::Output { source })?;
+        }
 
         let request = server.wait(&self.oauth.clock).await?;
         if request.state.as_deref() != Some(state.as_str()) {
@@ -149,17 +154,6 @@ impl<F: FileAccess, C: Clock, T: Transport, E: Entropy, U: Uuids, B: Browser, O:
         Ok(record)
     }
 
-    fn announce(&self, options: LoginOptions, authorize_url: &str) -> Result<(), XaiLoginError> {
-        if !options.no_browser && self.browser.open(authorize_url) {
-            return Ok(());
-        }
-        self.output
-            .write(&format!(
-                "Open this URL to authenticate with xAI:\n{authorize_url}\n"
-            ))
-            .map_err(|source| XaiLoginError::Output { source })
-    }
-
     async fn read_stored(&self) -> Option<StoredRecord> {
         let bytes = self.oauth.files.read(&self.oauth.auth_file).await.ok()?;
         decode_xai_oauth(&bytes)
@@ -191,18 +185,10 @@ pub(super) fn classify(stored: StoredRecord, now: Decimal) -> Existing {
     else {
         return Existing::Unusable;
     };
-    let Some(refresh_token) = stored
+    let refresh_token = stored
         .refresh_token
-        .filter(|token| !token.expose_secret().is_empty())
-    else {
-        return Existing::Unusable;
-    };
-    let auth_file = AuthFile {
-        access_token: Some(access_token.clone()),
-        refresh_token: Some(refresh_token.clone()),
-        token_endpoint: Some(stored.token_endpoint.clone()),
-        expires_at: stored.expires_at.clone(),
-    };
+        .unwrap_or_else(|| SecretString::from(String::new()));
+    let refreshable = !refresh_token.expose_secret().is_empty();
     let expires_at = stored
         .expires_at
         .as_ref()
@@ -219,6 +205,26 @@ pub(super) fn classify(stored: StoredRecord, now: Decimal) -> Existing {
                 expires_at: seconds,
             })
         }
-        _ => Existing::Refreshable(auth_file),
+        _ if refreshable => Existing::Refreshable(AuthFile {
+            access_token: Some(access_token),
+            refresh_token: Some(refresh_token),
+            token_endpoint: Some(stored.token_endpoint),
+            expires_at: stored.expires_at,
+        }),
+        _ => Existing::Unusable,
     }
+}
+
+const fn falls_through(error: &XaiOauthError) -> bool {
+    matches!(
+        error,
+        XaiOauthError::LoginRequired
+            | XaiOauthError::RefreshTokenMissing
+            | XaiOauthError::Status { .. }
+            | XaiOauthError::Response { .. }
+            | XaiOauthError::MissingEndpoints
+            | XaiOauthError::UnexpectedEndpoint
+            | XaiOauthError::MissingAccessToken
+            | XaiOauthError::MissingRefreshToken
+    )
 }
