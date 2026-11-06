@@ -12,6 +12,7 @@ workspace = true
 base64 = "0.23.1"
 betterlite-compression = { path = "../betterlite-compression" }
 betterlite-config = { path = "../betterlite-config" }
+betterlite-env = { path = "../betterlite-env" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-redact = { path = "../betterlite-redact" }
@@ -46,6 +47,10 @@ temp-env = "0.3.6"
 tokio = { workspace = true, features = ["rt", "macros"] }
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "tls12"] }
 tracing-subscriber.workspace = true
+
+[[test]]
+name = "onyx"
+path = "src/onyx/tests.rs"
 
 [[test]]
 name = "vigil_guard"
