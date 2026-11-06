@@ -11,21 +11,14 @@ description: 'Compose the implemented complexity classifier outcomes, tier place
   of copying their algorithms. Function coverage in litellm/router_strategy/complexity_router/complexity_router.py:
   _with_signal (L1088-L1089), ComplexityRouter.aclassify (L1892-L1929), ComplexityRouter._classify_and_route
   (L4474-L4811). Implement these behaviors through the typed Rust services above; synchronous facades
-  and structural accessors reuse the same primitive instead of separate ports.'
+  and structural accessors reuse the same primitive instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B021 wires this service in.'
 scope:
   paths:
   - crates/betterlite-router/src/complexity_pipeline.rs
   - crates/betterlite-router/src/complexity_pipeline/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/complexity_pipeline.rs
   - crates/betterlite-server/src/routing/complexity_pipeline/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/complexity_pipeline.rs
   - tools/oracle/src/router_probes/complexity_pipeline/**
   - tools/oracle/litellm/probes/complexity_pipeline.py

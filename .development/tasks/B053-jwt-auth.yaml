@@ -73,6 +73,7 @@ description: >-
   Native-only deviation tests in this production module: native_license_checks_and_paid_tier_quotas_are_absent_the_mit_behavior_is_ava.
   Exercise the precise changed setting/output branch and assert its configured status/error/side effects;
   do not add these differing results to oracle equality cases.
+  B1100 registers state/jwt_auth.rs as a stub slot, so fill only crates/betterlite-server/src/state/jwt_auth.rs and leave state.rs as it is.
 scope:
   paths:
     - crates/betterlite-server/src/jwt_auth.rs
@@ -87,8 +88,8 @@ scope:
     - tools/oracle/fuzz/corpus/helper_case/jwt-auth-*
     - crates/betterlite-server/src/auth.rs
     - crates/betterlite-server/src/auth/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/state/jwt_auth.rs
+    - crates/betterlite-server/src/state/jwt_auth/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/jwt-auth/**

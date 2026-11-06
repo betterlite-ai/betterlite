@@ -20,21 +20,14 @@ description: 'Add the quality_router marker with its typed config and per-deploy
   (L226-L229), QualityRouter._keyword_override (L231-L269), QualityRouter._keyword_override.sort_key (L259-L266),
   QualityRouter._resolve_model_for_quality_tier (L271-L304), QualityRouter._stash_decision (L306-L320),
   QualityRouter.async_pre_routing_hook (L322-L452). Implement these behaviors through the typed Rust services
-  above; synchronous facades and structural accessors reuse the same primitive instead of separate ports.'
+  above; synchronous facades and structural accessors reuse the same primitive instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B021 wires this service in.'
 scope:
   paths:
   - crates/betterlite-router/src/quality_router.rs
   - crates/betterlite-router/src/quality_router/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/quality_router.rs
   - crates/betterlite-server/src/routing/quality_router/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/quality_router.rs
   - tools/oracle/src/router_probes/quality_router/**
   - tools/oracle/litellm/probes/quality_router.py

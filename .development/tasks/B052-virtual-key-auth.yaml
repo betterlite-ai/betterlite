@@ -74,6 +74,7 @@ description: >-
   allow_user_auth_default_false_exact_true, post_checks_default_false and uninstalled_backend_rejected
   call its loader and replay new config_yaml seeds. No parser is added. Budget 300 production, 300
   table-driven tests, 100 wiring and 70 config lines, 770 within 800.
+  B1100 registers state/virtual_key_auth.rs as a stub slot, so fill only crates/betterlite-server/src/state/virtual_key_auth.rs and leave state.rs as it is.
 scope:
   paths:
     - crates/betterlite-server/src/virtual_key_auth.rs
@@ -81,8 +82,8 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/auth.rs
     - crates/betterlite-server/src/auth/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/state/virtual_key_auth.rs
+    - crates/betterlite-server/src/state/virtual_key_auth/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - crates/betterlite-config/Cargo.toml

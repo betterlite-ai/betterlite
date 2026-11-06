@@ -23,21 +23,14 @@ description: 'Finish complexity cross-field validation over B374 tier definition
   (L2065-L2072), ComplexityRouterConfig._validate_plugins_adaptive_combo (L2107-L2113), ComplexityRouterConfig._validate_stall_escalation
   (L2116-L2132), ComplexityRouterConfig._validate_tier_param_placement (L2135-L2154). Implement these
   behaviors through the typed Rust services above; synchronous facades and structural accessors reuse
-  the same primitive instead of separate ports.'
+  the same primitive instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B332, B351, B353, B377 and B379 call this service.'
 scope:
   paths:
   - crates/betterlite-router/src/complexity_config.rs
   - crates/betterlite-router/src/complexity_config/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/complexity_config.rs
   - crates/betterlite-server/src/routing/complexity_config/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/complexity_config.rs
   - tools/oracle/src/router_probes/complexity_config/**
   - tools/oracle/litellm/probes/complexity_config.py
