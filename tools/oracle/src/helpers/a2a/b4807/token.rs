@@ -7,8 +7,8 @@ use betterlite_a2a::watsonx_credentials::bearer::{
     BearerTokens, CredentialsError, TokenClock, TokenHttpResponse, TokenRequest, TokenTransport,
 };
 use betterlite_a2a::watsonx_credentials::params::WxoRequestParams;
-use betterlite_a2a::watsonx_credentials::token_cache::{BoundedTokenCache, TokenStore};
-use secrecy::{ExposeSecret as _, SecretString};
+use betterlite_a2a::watsonx_credentials::token_cache::BoundedTokenCache;
+use secrecy::{ExposeSecret as _, SecretSlice, SecretString};
 use serde::Deserialize;
 use serde_json::{Map, Value, json};
 use url::form_urlencoded;
@@ -44,20 +44,6 @@ impl TokenClock for StepClock {
     }
     fn unix_seconds(&self) -> i64 {
         self.wall
-    }
-}
-
-struct SharedStore(Arc<BoundedTokenCache>);
-
-impl TokenStore for SharedStore {
-    fn lookup(&self, key: &str, now: Duration) -> Option<SecretString> {
-        self.0.lookup(key, now)
-    }
-    fn insert(&self, key: String, token: SecretString, expires_at: Duration) {
-        self.0.insert(key, token, expires_at);
-    }
-    fn evict_expired(&self, now: Duration) {
-        self.0.evict_expired(now);
     }
 }
 
@@ -100,7 +86,7 @@ impl TokenTransport for Recorder<'_> {
             .push(record(request));
         let response = TokenHttpResponse {
             status: 200,
-            body: self.answer.clone(),
+            body: SecretSlice::from(self.answer.clone()),
         };
         async move { Ok(response) }
     }
@@ -121,7 +107,7 @@ fn run_step(
             at: Duration::from_secs(step.at),
             wall: step.wall,
         },
-        store: SharedStore(Arc::clone(store)),
+        store: Arc::clone(store),
     };
     let params = WxoRequestParams {
         cp4d_host: step.params.cp4d_host.clone(),
@@ -137,10 +123,14 @@ fn run_step(
             "token": token.expose_secret(),
             "requests": seen.into_inner().unwrap_or_else(PoisonError::into_inner),
         }),
-        Err(error @ CredentialsError::MissingUsername) => {
-            json!({"error": {"class": "ValueError", "message": error.to_string()}})
-        }
-        Err(error) => json!({"error": {"class": "TokenError", "message": error.to_string()}}),
+        // a step marker names the failure, so LiteLLM's class and wording stay out of the comparison
+        Err(CredentialsError::MissingUsername) => json!({"error": "missing_username"}),
+        Err(
+            CredentialsError::Encode(_)
+            | CredentialsError::Transport(_)
+            | CredentialsError::Status { .. }
+            | CredentialsError::Decode(_),
+        ) => json!({"error": "token_request_failed"}),
     }
 }
 

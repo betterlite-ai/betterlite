@@ -45,10 +45,25 @@ pub(crate) enum Input {
     },
     Stream {
         text: String,
-        request_id: Option<String>,
-        chunk_size: Option<NonZeroUsize>,
-        delay_ms: Option<u64>,
+        #[serde(default = "default_request_id")]
+        request_id: String,
+        #[serde(default = "default_chunk_size")]
+        chunk_size: NonZeroUsize,
+        #[serde(default = "default_delay_ms")]
+        delay_ms: u64,
     },
+}
+
+fn default_request_id() -> String {
+    "request".to_owned()
+}
+
+fn default_chunk_size() -> NonZeroUsize {
+    StreamPacing::default().chunk_size
+}
+
+fn default_delay_ms() -> u64 {
+    u64::try_from(StreamPacing::default().delay.as_millis()).unwrap_or(u64::MAX)
 }
 
 #[derive(Serialize)]
@@ -129,13 +144,11 @@ impl Helper for Op {
                 chunk_size,
                 delay_ms,
             } => {
-                let defaults = StreamPacing::default();
                 let pacing = StreamPacing {
-                    chunk_size: chunk_size.unwrap_or(defaults.chunk_size),
-                    delay: delay_ms.map_or(defaults.delay, Duration::from_millis),
+                    chunk_size: *chunk_size,
+                    delay: Duration::from_millis(*delay_ms),
                 };
-                let id = request_id.as_deref().unwrap_or("request");
-                let steps = fake_streaming_from_text(text, id, pacing, &mut source);
+                let steps = fake_streaming_from_text(text, request_id, pacing, &mut source);
                 serde_json::to_value(pace(&steps))
             }
         };

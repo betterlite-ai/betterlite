@@ -118,8 +118,8 @@ async def token_step(step: Mapping[str, Json]) -> Json:
                 username=cast("str | None", params.get("username")),
                 client=client,
             )
-        except ValueError as error:
-            return {"error": {"class": type(error).__name__, "message": str(error)}}
+        except ValueError:
+            return {"error": "missing_username"}
     return {"token": token, "requests": client.requests}
 
 
