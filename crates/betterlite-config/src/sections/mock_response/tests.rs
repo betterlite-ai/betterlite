@@ -163,6 +163,10 @@ fn resolves_an_environment_reference() {
     "model_list:\n  - model_name: mock\n    litellm_params:\n      mock_response: {unexpected: field}\n",
     "yaml"
 )]
+#[case::mapping_arguments(
+    "model_list:\n  - model_name: mock\n    litellm_params:\n      mock_response:\n        choices:\n          - message:\n              tool_calls:\n                - function:\n                    name: f\n                    arguments: {a: 1}\n",
+    "yaml"
+)]
 fn rejects_invalid_mock_values(#[case] source: &str, #[case] category: &str) {
     let error = load(source, &BTreeMap::new()).expect_err("invalid mock value");
     assert_eq!(error.category(), category);

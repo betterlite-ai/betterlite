@@ -102,6 +102,14 @@ fn encodes_object_arguments_as_json_text() {
     assert_eq!(call.function.arguments.as_deref(), Some(r#"{"a":1}"#));
 }
 #[test]
+fn a_client_tool_call_without_a_name_is_a_body_error() {
+    let body =
+        br#"{"model":"m","messages":[],"mock_tool_calls":[{"function":{"arguments":"{}"}}]}"#;
+    let request = ChatRequest::parse(body).unwrap();
+    client_mock(&request.passthrough, allowed()).expect_err("a nameless tool call");
+}
+
+#[test]
 fn a_denied_client_mock_field_is_stripped_with_a_warning() {
     let choices: Value = serde_json::from_str(r#"{"choices": [{"logprobs": null}]}"#).unwrap();
     let calls: Value = serde_json::from_str(r#"[{"function": {"arguments": "{}"}}]"#).unwrap();

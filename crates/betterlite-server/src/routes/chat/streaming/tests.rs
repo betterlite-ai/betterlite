@@ -209,6 +209,16 @@ async fn mock_stream_frames_follow_the_litellm_client_shape() {
     assert_eq!(frames[4], "data: [DONE]");
 }
 
+#[tokio::test]
+async fn an_object_mock_cannot_be_streamed() {
+    let source = "model_list:\n  - model_name: g\n    litellm_params:\n      model: openai/up\n      api_base: 'http://127.0.0.1:1'\n      api_key: k\n      mock_response:\n        choices:\n          - message: {content: hi}\n";
+    let (status, body) = mock_call(source, r#"{"model":"g","messages":[],"stream":true}"#).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let reply: ErrorReply = serde_json::from_slice(&body).expect("error body");
+    assert_eq!(reply.error.error_type, "invalid_request_error");
+    assert_eq!(reply.error.code, "400");
+}
+
 #[derive(serde::Deserialize)]
 struct ErrorReply {
     error: ErrorFields,
