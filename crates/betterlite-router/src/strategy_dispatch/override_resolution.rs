@@ -23,7 +23,9 @@ pub fn request_override(raw: StrategyOverride<'_>) -> OverrideDecision {
         }
     };
     match RoutingStrategy::parse(text) {
-        Ok(strategy) if strategy.is_overridable() => OverrideDecision::Honored(strategy),
+        Ok(strategy) if strategy.has_selector() || strategy == RoutingStrategy::SimpleShuffle => {
+            OverrideDecision::Honored(strategy)
+        }
         Ok(_) | Err(_) => OverrideDecision::Ignored {
             raw: Some(text.to_owned()),
             supported: supported_overrides(),
@@ -144,7 +146,7 @@ fn supported_overrides() -> Vec<RoutingStrategy> {
     let mut supported: Vec<RoutingStrategy> = VALID_ROUTING_STRATEGIES
         .iter()
         .copied()
-        .filter(|strategy| strategy.is_overridable())
+        .filter(|strategy| strategy.has_selector() || *strategy == RoutingStrategy::SimpleShuffle)
         .collect();
     supported.sort_by_key(|strategy| strategy.wire_name());
     supported

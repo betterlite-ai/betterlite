@@ -398,221 +398,196 @@ fn strategy_dispatch_behaviors(#[case] behavior: Behavior) {
     }
 }
 
-enum Boundary {
-    InvalidStrategy,
-    ArgsMismatch,
-    UnknownSelector,
-    Retirement,
-    SingleCandidate,
-    EmptyCandidates,
-    SelectorCalls,
-    OverrideWithoutSelector,
-    DuplicateGroups,
-    InitClearsOverrideCache,
+fn error_fields_are_typed() {
+    let error = RoutingStrategy::parse("priority").unwrap_err();
+    let StrategyDispatchError::InvalidRoutingStrategy { value, valid } = error else {
+        panic!("an unknown strategy is an invalid routing strategy");
+    };
+    assert_eq!(value, "priority");
+    assert!(valid.contains("'provider-budget-routing'"));
+    let message = StrategyDispatchError::InvalidRoutingStrategy { value, valid }.to_string();
+    assert!(message.contains("Invalid routing_strategy: 'priority'"));
+    assert!(message.contains("Valid options:"));
+    let mismatch = StrategyDispatch::new(
+        RoutingStrategy::UsageBasedRoutingV2,
+        Some(SelectorArgs::Fixed),
+    )
+    .unwrap_err();
+    let StrategyDispatchError::ArgsMismatch {
+        strategy,
+        expected,
+        supplied,
+    } = mismatch
+    else {
+        panic!("fixed arguments do not fit usage-based routing");
+    };
+    assert_eq!(strategy, RoutingStrategy::UsageBasedRoutingV2);
+    assert_eq!(expected, "usage-based arguments");
+    assert_eq!(supplied, "no routing arguments");
 }
 
-#[rstest]
-#[case::invalid_strategy_error_fields(Boundary::InvalidStrategy)]
-#[case::args_mismatch_error_fields(Boundary::ArgsMismatch)]
-#[case::unknown_selector_is_an_error(Boundary::UnknownSelector)]
-#[case::unregister_retires_by_identity(Boundary::Retirement)]
-#[case::one_candidate_is_selected(Boundary::SingleCandidate)]
-#[case::no_candidates_is_an_error(Boundary::EmptyCandidates)]
-#[case::selector_call_table(Boundary::SelectorCalls)]
-#[case::override_simple_shuffle_caches_none(Boundary::OverrideWithoutSelector)]
-#[case::duplicate_group_is_an_error(Boundary::DuplicateGroups)]
-#[case::init_clears_override_cache(Boundary::InitClearsOverrideCache)]
-fn strategy_dispatch_boundaries(#[case] boundary: Boundary) {
-    match boundary {
-        Boundary::InvalidStrategy => {
-            let error = RoutingStrategy::parse("priority").unwrap_err();
-            let StrategyDispatchError::InvalidRoutingStrategy { value, valid } = error else {
-                panic!("an unknown strategy is an invalid routing strategy");
-            };
-            assert_eq!(value, "priority");
-            assert!(valid.contains("'provider-budget-routing'"));
-            let message =
-                StrategyDispatchError::InvalidRoutingStrategy { value, valid }.to_string();
-            assert!(message.contains("Invalid routing_strategy: 'priority'"));
-            assert!(message.contains("Valid options:"));
-        }
-        Boundary::ArgsMismatch => {
-            let error = StrategyDispatch::new(
-                RoutingStrategy::UsageBasedRoutingV2,
-                Some(SelectorArgs::Fixed),
-            )
-            .unwrap_err();
-            let StrategyDispatchError::ArgsMismatch {
-                strategy,
-                expected,
-                supplied,
-            } = error
-            else {
-                panic!("fixed arguments do not fit usage-based routing");
-            };
-            assert_eq!(strategy, RoutingStrategy::UsageBasedRoutingV2);
-            assert_eq!(expected, "usage-based arguments");
-            assert_eq!(supplied, "no routing arguments");
-        }
-        Boundary::UnknownSelector => {
-            let mut dispatch = new_dispatch(RoutingStrategy::LeastBusy);
-            let unknown = SelectorId(99);
-            let error = dispatch.unregister(&[unknown]).unwrap_err();
-            let StrategyDispatchError::UnknownSelector { id } = error else {
-                panic!("an unknown id must be refused");
-            };
-            assert_eq!(id, unknown);
-            assert!(
-                StrategyDispatchError::UnknownSelector { id }
-                    .to_string()
-                    .contains("99")
-            );
-        }
-        Boundary::Retirement => {
-            let mut dispatch = new_dispatch(RoutingStrategy::LeastBusy);
-            let selector = dispatch.state().selector.unwrap();
-            let state = dispatch.unregister(&[selector.id]).unwrap();
-            assert!(state.callbacks.is_empty());
-            assert!(state.input_callbacks.is_empty());
-            assert!(state.selector.unwrap().retired);
-            let again = dispatch.unregister(&[selector.id]).unwrap();
-            assert!(again.callbacks.is_empty());
-        }
-        Boundary::SingleCandidate => {
-            let mut dispatch = new_dispatch(RoutingStrategy::SimpleShuffle);
-            let candidates = [Candidate {
-                weight: 0,
-                rpm: 0,
-                tpm: 0,
-            }];
-            let mut random = StdRng::seed_from_u64(SEED);
-            let outcome = select(
-                &mut dispatch,
-                &mut request_for("gpt"),
-                &RoutingGroups::default(),
-                &candidates,
-                &mut random,
-            )
-            .unwrap();
-            assert_eq!(outcome.selection, Selection::SimpleShuffle { index: 0 });
-        }
-        Boundary::EmptyCandidates => {
-            let mut dispatch = new_dispatch(RoutingStrategy::SimpleShuffle);
-            let mut random = StdRng::seed_from_u64(SEED);
-            let error = select(
-                &mut dispatch,
-                &mut request_for("gpt"),
-                &RoutingGroups::default(),
-                &[],
-                &mut random,
-            )
-            .unwrap_err();
-            assert!(matches!(error, StrategyDispatchError::Shuffle { .. }));
-        }
-        Boundary::SelectorCalls => {
-            let selector = Some(SelectorId(0));
-            assert_eq!(
-                selector_call(RoutingStrategy::LeastBusy, selector),
-                Some(SelectorCall::LeastBusy)
-            );
-            assert_eq!(
-                selector_call(RoutingStrategy::UsageBasedRouting, selector),
-                Some(SelectorCall::UsageBasedV1)
-            );
-            assert_eq!(
-                selector_call(RoutingStrategy::UsageBasedRoutingV2, selector),
-                Some(SelectorCall::UsageBasedV2)
-            );
-            assert_eq!(
-                selector_call(RoutingStrategy::CostBasedRouting, selector),
-                Some(SelectorCall::CostBased)
-            );
-            assert_eq!(
-                selector_call(RoutingStrategy::LatencyBasedRouting, selector),
-                Some(SelectorCall::LatencyBased)
-            );
-            assert_eq!(
-                selector_call(RoutingStrategy::SimpleShuffle, selector),
-                None
-            );
-            assert_eq!(selector_call(RoutingStrategy::Lar1, selector), None);
-            assert_eq!(
-                selector_call(RoutingStrategy::ProviderBudgetRouting, selector),
-                None
-            );
-            assert_eq!(selector_call(RoutingStrategy::LeastBusy, None), None);
-            assert_eq!(
-                selector_call(RoutingStrategy::UsageBasedRoutingV2, None),
-                None
-            );
-        }
-        Boundary::OverrideWithoutSelector => {
-            let mut dispatch = new_dispatch(RoutingStrategy::UsageBasedRoutingV2);
-            let overridden = override_selector(&mut dispatch, RoutingStrategy::SimpleShuffle);
-            assert_eq!(overridden.selector, None);
-            assert!(!overridden.is_default);
-            assert_eq!(
-                dispatch
-                    .override_selectors
-                    .get(&RoutingStrategy::SimpleShuffle),
-                Some(&None)
-            );
-            assert_eq!(
-                override_pre_call_target(&dispatch, RoutingStrategy::SimpleShuffle, None),
-                None
-            );
-        }
-        Boundary::DuplicateGroups => {
-            let duplicate = RoutingGroups::new(vec![
-                RoutingGroupRoute {
-                    name: "a".to_owned(),
-                    models: vec!["m".to_owned()],
-                    strategy: GroupStrategy::Routing(RoutingStrategy::LeastBusy),
-                    selector: None,
-                },
-                RoutingGroupRoute {
-                    name: "a".to_owned(),
-                    models: vec!["n".to_owned()],
-                    strategy: GroupStrategy::Routing(RoutingStrategy::LeastBusy),
-                    selector: None,
-                },
-            ]);
-            assert!(matches!(
-                duplicate,
-                Err(StrategyDispatchError::DuplicateGroup { .. })
-            ));
-            let shared = RoutingGroups::new(vec![
-                RoutingGroupRoute {
-                    name: "a".to_owned(),
-                    models: vec!["m".to_owned()],
-                    strategy: GroupStrategy::Routing(RoutingStrategy::LeastBusy),
-                    selector: None,
-                },
-                RoutingGroupRoute {
-                    name: "b".to_owned(),
-                    models: vec!["m".to_owned()],
-                    strategy: GroupStrategy::Routing(RoutingStrategy::CostBasedRouting),
-                    selector: None,
-                },
-            ]);
-            assert!(matches!(
-                shared,
-                Err(StrategyDispatchError::DuplicateGroupModel { .. })
-            ));
-        }
-        Boundary::InitClearsOverrideCache => {
-            let mut dispatch = new_dispatch(RoutingStrategy::UsageBasedRoutingV2);
-            let cached = override_selector(&mut dispatch, RoutingStrategy::CostBasedRouting);
-            let again = override_selector(&mut dispatch, RoutingStrategy::CostBasedRouting);
-            assert_eq!(cached.selector, again.selector);
-            let state = dispatch.init(RoutingStrategy::LeastBusy, None).unwrap();
-            assert_eq!(
-                state.selector.map(|selector| selector.strategy),
-                Some(RoutingStrategy::LeastBusy)
-            );
-            let rebuilt = override_selector(&mut dispatch, RoutingStrategy::CostBasedRouting);
-            assert_ne!(rebuilt.selector, cached.selector);
-            assert!(dispatch.selectors[cached.selector.unwrap().0].retired);
-        }
-    }
+fn unregister_retires_by_identity() {
+    let mut dispatch = new_dispatch(RoutingStrategy::LeastBusy);
+    let selector = dispatch.state().selector.unwrap();
+    let unknown = SelectorId(99);
+    let error = dispatch.unregister(&[unknown]).unwrap_err();
+    let StrategyDispatchError::UnknownSelector { id } = error else {
+        panic!("an unknown id must be refused");
+    };
+    assert_eq!(id, unknown);
+    assert!(
+        StrategyDispatchError::UnknownSelector { id }
+            .to_string()
+            .contains("99")
+    );
+    let state = dispatch.unregister(&[selector.id]).unwrap();
+    assert!(state.callbacks.is_empty());
+    assert!(state.input_callbacks.is_empty());
+    assert!(state.selector.unwrap().retired);
+    let again = dispatch.unregister(&[selector.id]).unwrap();
+    assert!(again.callbacks.is_empty());
+}
+
+fn selector_call_table() {
+    let selector = Some(SelectorId(0));
+    assert_eq!(
+        selector_call(RoutingStrategy::LeastBusy, selector),
+        Some(SelectorCall::LeastBusy)
+    );
+    assert_eq!(
+        selector_call(RoutingStrategy::UsageBasedRouting, selector),
+        Some(SelectorCall::UsageBasedV1)
+    );
+    assert_eq!(
+        selector_call(RoutingStrategy::UsageBasedRoutingV2, selector),
+        Some(SelectorCall::UsageBasedV2)
+    );
+    assert_eq!(
+        selector_call(RoutingStrategy::CostBasedRouting, selector),
+        Some(SelectorCall::CostBased)
+    );
+    assert_eq!(
+        selector_call(RoutingStrategy::LatencyBasedRouting, selector),
+        Some(SelectorCall::LatencyBased)
+    );
+    assert_eq!(
+        selector_call(RoutingStrategy::SimpleShuffle, selector),
+        None
+    );
+    assert_eq!(selector_call(RoutingStrategy::Lar1, selector), None);
+    assert_eq!(
+        selector_call(RoutingStrategy::ProviderBudgetRouting, selector),
+        None
+    );
+    assert_eq!(selector_call(RoutingStrategy::LeastBusy, None), None);
+}
+
+fn single_candidate_selection() {
+    let mut dispatch = new_dispatch(RoutingStrategy::SimpleShuffle);
+    let mut random = StdRng::seed_from_u64(SEED);
+    let candidates = [Candidate {
+        weight: 0,
+        rpm: 0,
+        tpm: 0,
+    }];
+    let outcome = select(
+        &mut dispatch,
+        &mut request_for("gpt"),
+        &RoutingGroups::default(),
+        &candidates,
+        &mut random,
+    )
+    .unwrap();
+    assert_eq!(outcome.selection, Selection::SimpleShuffle { index: 0 });
+    let error = select(
+        &mut dispatch,
+        &mut request_for("gpt"),
+        &RoutingGroups::default(),
+        &[],
+        &mut random,
+    )
+    .unwrap_err();
+    assert!(matches!(error, StrategyDispatchError::Shuffle { .. }));
+}
+
+fn override_selector_boundaries() {
+    let mut dispatch = new_dispatch(RoutingStrategy::UsageBasedRoutingV2);
+    let overridden = override_selector(&mut dispatch, RoutingStrategy::SimpleShuffle);
+    assert_eq!(overridden.selector, None);
+    assert!(!overridden.is_default);
+    assert_eq!(
+        dispatch
+            .override_selectors
+            .get(&RoutingStrategy::SimpleShuffle),
+        Some(&None)
+    );
+    assert_eq!(
+        override_pre_call_target(&dispatch, RoutingStrategy::SimpleShuffle, None),
+        None
+    );
+}
+
+fn duplicate_groups_are_refused() {
+    let duplicate = RoutingGroups::new(vec![
+        RoutingGroupRoute {
+            name: "a".to_owned(),
+            models: vec!["m".to_owned()],
+            strategy: GroupStrategy::Routing(RoutingStrategy::LeastBusy),
+            selector: None,
+        },
+        RoutingGroupRoute {
+            name: "a".to_owned(),
+            models: vec!["n".to_owned()],
+            strategy: GroupStrategy::Routing(RoutingStrategy::LeastBusy),
+            selector: None,
+        },
+    ]);
+    assert!(matches!(
+        duplicate,
+        Err(StrategyDispatchError::DuplicateGroup { .. })
+    ));
+    let shared = RoutingGroups::new(vec![
+        RoutingGroupRoute {
+            name: "a".to_owned(),
+            models: vec!["m".to_owned()],
+            strategy: GroupStrategy::Routing(RoutingStrategy::LeastBusy),
+            selector: None,
+        },
+        RoutingGroupRoute {
+            name: "b".to_owned(),
+            models: vec!["m".to_owned()],
+            strategy: GroupStrategy::Routing(RoutingStrategy::CostBasedRouting),
+            selector: None,
+        },
+    ]);
+    assert!(matches!(
+        shared,
+        Err(StrategyDispatchError::DuplicateGroupModel { .. })
+    ));
+}
+
+fn init_clears_override_cache() {
+    let mut dispatch = new_dispatch(RoutingStrategy::UsageBasedRoutingV2);
+    let cached = override_selector(&mut dispatch, RoutingStrategy::CostBasedRouting);
+    let again = override_selector(&mut dispatch, RoutingStrategy::CostBasedRouting);
+    assert_eq!(cached.selector, again.selector);
+    let state = dispatch.init(RoutingStrategy::LeastBusy, None).unwrap();
+    assert_eq!(
+        state.selector.map(|selector| selector.strategy),
+        Some(RoutingStrategy::LeastBusy)
+    );
+    let rebuilt = override_selector(&mut dispatch, RoutingStrategy::CostBasedRouting);
+    assert_ne!(rebuilt.selector, cached.selector);
+    assert!(dispatch.selectors[cached.selector.unwrap().0].retired);
+}
+
+#[test]
+fn strategy_dispatch_boundaries() {
+    error_fields_are_typed();
+    unregister_retires_by_identity();
+    selector_call_table();
+    single_candidate_selection();
+    override_selector_boundaries();
+    duplicate_groups_are_refused();
+    init_clears_override_cache();
 }

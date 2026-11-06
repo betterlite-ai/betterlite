@@ -63,17 +63,4 @@ impl RoutingStrategy {
             Self::SimpleShuffle | Self::Lar1 | Self::ProviderBudgetRouting => false,
         }
     }
-
-    #[must_use]
-    pub const fn is_overridable(self) -> bool {
-        match self {
-            Self::SimpleShuffle
-            | Self::LeastBusy
-            | Self::LatencyBasedRouting
-            | Self::CostBasedRouting
-            | Self::UsageBasedRoutingV2
-            | Self::UsageBasedRouting => true,
-            Self::Lar1 | Self::ProviderBudgetRouting => false,
-        }
-    }
 }

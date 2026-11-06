@@ -103,6 +103,13 @@ fn strategy_field(field: Option<&str>) -> Result<RoutingStrategy, OperationError
     })
 }
 
+fn start(input: &Input) -> Result<StrategyDispatch, OperationError> {
+    let strategy = strategy_field(input.strategy.as_deref())?;
+    StrategyDispatch::new(strategy, None).map_err(|error| OperationError::InvalidRequest {
+        message: error.to_string(),
+    })
+}
+
 fn names(selectors: &[Selector]) -> Vec<String> {
     let mut names = Vec::with_capacity(selectors.len());
     for selector in selectors {
@@ -182,12 +189,8 @@ fn validate(input: &Input) -> Result<Output, OperationError> {
 }
 
 fn reinit(input: &Input) -> Result<Output, OperationError> {
-    let strategy = strategy_field(input.strategy.as_deref())?;
+    let mut dispatch = start(input)?;
     let next = strategy_field(input.next_strategy.as_deref())?;
-    let mut dispatch =
-        StrategyDispatch::new(strategy, None).map_err(|error| OperationError::InvalidRequest {
-            message: error.to_string(),
-        })?;
     let before = dispatch.state();
     let cached = override_selector(&mut dispatch, RoutingStrategy::CostBasedRouting);
     let again = override_selector(&mut dispatch, RoutingStrategy::CostBasedRouting);
@@ -217,11 +220,7 @@ fn reinit(input: &Input) -> Result<Output, OperationError> {
 }
 
 fn override_scenario(input: &Input) -> Result<Output, OperationError> {
-    let strategy = strategy_field(input.strategy.as_deref())?;
-    let mut dispatch =
-        StrategyDispatch::new(strategy, None).map_err(|error| OperationError::InvalidRequest {
-            message: error.to_string(),
-        })?;
+    let mut dispatch = start(input)?;
     let raw = input
         .routing_strategy
         .as_deref()
@@ -259,16 +258,12 @@ fn dispatch_scenario(
     input: &Input,
     random: &mut InjectedRandom<'_>,
 ) -> Result<Output, OperationError> {
-    let strategy = strategy_field(input.strategy.as_deref())?;
+    let mut dispatch = start(input)?;
     let model = input
         .model
         .as_deref()
         .ok_or_else(|| OperationError::InvalidRequest {
             message: "dispatch needs the model group to route".to_owned(),
-        })?;
-    let mut dispatch =
-        StrategyDispatch::new(strategy, None).map_err(|error| OperationError::InvalidRequest {
-            message: error.to_string(),
         })?;
     let mut request = RoutingRequest {
         resolved_model: model,
