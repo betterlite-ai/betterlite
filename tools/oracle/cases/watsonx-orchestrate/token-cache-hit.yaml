@@ -1,0 +1,20 @@
+kind: helper
+name: watsonx-token-cache-hit
+call:
+  b4807:
+    operation: token
+    steps:
+      - params: {cp4d_host: "https://cp4d.example.com", auth_mode: cp4d, api_key: key-1, username: alice}
+        at: 100
+        wall: 1000
+        answer: {token: tok-1, expiration: 5000}
+      - params: {cp4d_host: "https://cp4d.example.com", auth_mode: cp4d, api_key: key-1, username: alice}
+        at: 200
+        wall: 1100
+        answer: {token: tok-2, expiration: 5000}
+      - params: {cp4d_host: "https://cp4d.example.com", auth_mode: cp4d, api_key: key-1, username: bob}
+        at: 201
+        wall: 1100
+        answer: {token: tok-3, expiration: 5000}
+env: {}
+compare: {ignore: []}

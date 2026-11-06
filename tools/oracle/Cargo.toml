@@ -44,6 +44,7 @@ betterlite-redact = { path = "../../crates/betterlite-redact" }
 betterlite-redis = { path = "../../crates/betterlite-redis" }
 betterlite-router = { path = "../../crates/betterlite-router" }
 betterlite-sdk = { path = "../../crates/betterlite-sdk" }
+betterlite-secret-managers = { path = "../../crates/betterlite-secret-managers" }
 betterlite-secrets = { path = "../../crates/betterlite-secrets" }
 betterlite-server = { path = "../../crates/betterlite-server" }
 betterlite-streaming = { path = "../../crates/betterlite-streaming" }
@@ -63,7 +64,7 @@ secrecy = { version = "0.10.3", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde-saphyr = "2.0.0"
 serde_json = { version = "1.0.145", features = ["arbitrary_precision", "raw_value"] }
-serde_with = { version = "3.24.0", default-features = false, features = ["alloc", "indexmap_2"] }
+serde_with = { version = "3.24.0", default-features = false, features = ["alloc", "indexmap_2", "macros"] }
 sha2.workspace = true
 soft-canonicalize = "0.5.6"
 tempfile = "3.27.0"
@@ -71,6 +72,7 @@ thiserror = "2.0.17"
 tl = "0.7.8"
 tokio = { version = "=1.53.3", features = ["rt", "net", "sync", "test-util", "time", "io-util", "macros", "process", "fs"] }
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "handshake"] }
+tower = { workspace = true, features = ["util"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["registry"] }
 ulid = "3.0.0"

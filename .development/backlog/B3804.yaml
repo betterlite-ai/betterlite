@@ -1,7 +1,7 @@
 id: B3804
 milestone: M6 guardrails
 title: Presidio analysis chunking and entity filtering
-status: todo
+status: done
 depends_on: [B173, B184]
 file: tasks/B3804-presidio-analysis.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/proxy/guardrails/guardrail_hooks/presidio.py"
 parent: B108
 split_from: B108
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 759

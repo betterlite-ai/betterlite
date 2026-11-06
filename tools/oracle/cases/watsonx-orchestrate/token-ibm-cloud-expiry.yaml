@@ -1,0 +1,36 @@
+kind: helper
+name: watsonx-token-ibm-cloud-expiry
+call:
+  b4807:
+    operation: token
+    steps:
+      - params: {cp4d_host: "https://orchestrate.example.com", auth_mode: ibm_cloud, api_key: key-1}
+        at: 100
+        wall: 1000
+        answer: {access_token: iam-1, expires_in: 3600}
+      - params: {cp4d_host: "https://orchestrate.example.com", auth_mode: ibm_cloud, api_key: key-1}
+        at: 3639
+        wall: 1000
+        answer: {access_token: iam-2, expires_in: 3600}
+      - params: {cp4d_host: "https://orchestrate.example.com", auth_mode: ibm_cloud, api_key: key-1}
+        at: 3640
+        wall: 1000
+        answer: {access_token: iam-3, expires_in: 3600}
+      - params: {cp4d_host: "https://orchestrate.example.com", auth_mode: ibm_cloud, api_key: key-2}
+        at: 5000
+        wall: 1000
+        answer: {access_token: iam-4, expires_in: 60}
+      - params: {cp4d_host: "https://orchestrate.example.com", auth_mode: ibm_cloud, api_key: key-2}
+        at: 5001
+        wall: 1000
+        answer: {access_token: iam-5, expires_in: 60}
+      - params: {cp4d_host: "https://orchestrate.example.com", auth_mode: ibm_cloud, api_key: key-3}
+        at: 6000
+        wall: 1000
+        answer: {access_token: iam-6}
+      - params: {cp4d_host: "https://orchestrate.example.com", auth_mode: ibm_cloud, api_key: key-3}
+        at: 7000
+        wall: 1000
+        answer: {access_token: iam-7}
+env: {}
+compare: {ignore: []}
