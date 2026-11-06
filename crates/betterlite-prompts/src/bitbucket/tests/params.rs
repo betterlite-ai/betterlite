@@ -37,7 +37,7 @@ async fn compiled_params(template: &str) -> PromptParams {
 async fn compile_projects_the_five_optional_params_and_keeps_null_values() {
     let params = compiled_params(
         "---\nmodel: gpt-4\ntemperature: 0.5\nmax_tokens: 100\ntop_p: 0.9\n\
-         frequency_penalty: 0.1\npresence_penalty:\n---\nUser: hi",
+         frequency_penalty: 0.1\npresence_penalty:\nseed: 7\n---\nUser: hi",
     )
     .await;
 
@@ -53,6 +53,10 @@ async fn compile_projects_the_five_optional_params_and_keeps_null_values() {
         params.get("presence_penalty"),
         Some(ContractJson::Null)
     ));
+    assert!(
+        params.get("seed").is_none(),
+        "LiteLLM projects only the five named parameters, not every metadata key"
+    );
 }
 
 #[tokio::test]

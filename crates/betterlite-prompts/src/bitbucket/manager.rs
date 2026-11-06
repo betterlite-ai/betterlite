@@ -53,6 +53,15 @@ impl BitBucketPromptManager {
         render_template(&manager, prompt_id, prompt_variables)
     }
 
+    #[must_use]
+    pub const fn should_run_prompt_management(prompt_id: Option<&str>) -> bool {
+        // LiteLLM compares the id against None, so an empty id still runs the manager.
+        if prompt_id.is_none() {
+            return false;
+        }
+        true
+    }
+
     pub async fn compile_prompt_helper(
         &self,
         prompt_id: Option<&str>,
