@@ -9,6 +9,7 @@ use crate::sdk_http::{OracleLimits as SdkHttpLimits, SdkHttpCase, decode_sdk_htt
 
 use super::{CaseKind, LoadedCase, parse_case};
 
+// sdk_http and probe cases run through their own drivers, so this list leaves them out
 pub(crate) fn load_cases(paths: &[PathBuf]) -> Result<Vec<LoadedCase>, OracleError> {
     let texts = cases_matching(paths, |kind| !matches!(kind, Some("sdk_http" | "probe")))?;
     texts
