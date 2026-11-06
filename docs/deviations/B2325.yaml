@@ -1,0 +1,17 @@
+task: B2325
+deviations:
+  - what: A window JSON text longer than 1048576 bytes or nested past depth 64 takes the same empty-window fallback as malformed JSON instead of being decoded.
+    why: Bounds a formerly unbounded decoder so a stored hostile window cannot exhaust the task; native_window_limits_return_empty_mapping proves both limits and the fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L894-L907
+  - what: Window JSON that repeats a key at any nesting level takes the empty-window fallback, where Python's json.loads keeps the last value for that key.
+    why: The shared JsonData decoder rejects duplicate object keys instead of silently overwriting an earlier entry, the same choice B859 and B4652 record; native_window_limits_return_empty_mapping proves the fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L894-L907
+  - what: A reset_at string is parsed with speedate's ISO 8601 grammar, which rejects basic-format dates and week dates and bare-hour or seconds-wide offsets that Python's fromisoformat accepts, and accepts a lowercase z or an underscore separator that fromisoformat rejects.
+    why: speedate is the date parser betterlite-auth already uses and it keeps the stored offset; the accepted forms are a strict subset for real stored timestamps, and every rejected form falls back to the injected now the source uses on a malformed reset_at.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1286-L1296
+  - what: A YAML non-finite float spelling (.nan, .inf or -.inf) for litellm_settings.budget_exceeded_throttle_percentage fails config startup instead of disabling throttling.
+    why: The shared config parser rejects typeless non-finite floats before a section sees the value; the throttle primitive still returns None for a NaN or infinite fraction, and an overflowing os.environ reference reaches it and disables throttling.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/budget_throttle.py#L19-L30
+  - what: A duration longer than Python's timedelta range yields a start instant or None instead of raising OverflowError.
+    why: A multi-million-year budget_duration is no setup anyone can rely on, and betterlite's primitives never panic or raise on it; the window start either computes in chrono's wider range or stays None.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/budget_reservation.py#L1268-L1283

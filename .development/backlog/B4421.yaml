@@ -2,7 +2,7 @@ id: B4421
 milestone: M8 platform
 title: Dispatch hosted secret reads and KMS decryption
 status: todo
-depends_on: [B002, B4410, B4414, B4417, B4418, B4419, B4420]
+depends_on: [B002, B4410, B4414, B4418, B4419, B4420]
 file: tasks/B4421-secret-read-dispatch.yaml
 covers:
   - "litellm/secret_managers/secret_manager_handler.py"

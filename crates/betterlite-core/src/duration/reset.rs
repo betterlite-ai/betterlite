@@ -121,8 +121,11 @@ fn apply_time_of_day(
 }
 
 fn add_days(moment: civil::DateTime, days: i64) -> Result<civil::DateTime, DurationError> {
+    let span = jiff::Span::new()
+        .try_days(days)
+        .map_err(|error| DurationError::Calendar { source: error })?;
     moment
-        .checked_add(jiff::Span::new().days(days))
+        .checked_add(span)
         .map_err(|error| DurationError::Calendar { source: error })
 }
 

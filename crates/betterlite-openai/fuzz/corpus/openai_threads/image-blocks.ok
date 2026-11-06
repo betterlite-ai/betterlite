@@ -1,0 +1,1 @@
+{"id":"msg_4","object":"thread.message","created_at":7,"thread_id":"thread_1","role":"user","content":[{"type":"image_file","image_file":{"file_id":"file-1","detail":"high"}},{"type":"image_url","image_url":{"url":"https://example.test/a.png","detail":"low"}},{"type":"image_url","image_url":{"url":"https://example.test/b.png"}}],"status":"completed"}
