@@ -93,7 +93,12 @@ async fn a_compiled_prompt_carries_messages_model_and_optional_params() {
 
 #[tokio::test]
 async fn a_compile_failure_names_the_requested_prompt() {
-    let (manager, _transport) = manager(vec![answer!(404, ""), answer!(404, "")]);
+    let (manager, _transport) = manager(vec![
+        answer!(404, ""),
+        answer!(404, ""),
+        answer!(404, ""),
+        answer!(404, ""),
+    ]);
     let dynamic = ContractJson::Null;
 
     let error = manager
