@@ -292,10 +292,12 @@ async fn cached_failure_case(
 #[tokio::test]
 async fn template_cache_caps_fetched_entries() {
     let mut entries = builtin_entries();
+    assert_eq!(entries.len(), BUILTIN_ENTRIES);
     entries.extend(
         (0..MAX_FETCHED_ENTRIES).map(|index| (format!("filler{index}"), TokenizerConfig::Failure)),
     );
-    assert_eq!(entries.len(), BUILTIN_ENTRIES + MAX_FETCHED_ENTRIES);
+    // the deviation keeps 1024 fetched entries beside the three built-ins
+    assert_eq!(entries.len(), 1027);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base_url = format!("http://{}", listener.local_addr().unwrap());
     let factory = PromptFactory {
