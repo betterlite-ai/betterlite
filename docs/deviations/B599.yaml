@@ -1,0 +1,20 @@
+task: B599
+deviations:
+  - what: A frame larger than 16 MiB, or with more than 64 KiB of headers, is rejected with a 502 error as soon as the prelude is read, before any buffer grows.
+    why: botocore only stops at its own 24 MiB payload and 128 KiB header caps after it has buffered the frame, and the 502 error keeps a hostile upstream from forcing large allocations in the gateway.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L374-L403
+  - what: The 502 message for a stream that decoded to no events or ended with undecoded bytes goes through the secret redactor, so first bytes and header values cannot leak a credential.
+    why: The text comes from an unknown upstream and may echo credentials, and LiteLLM prints it as received.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L374-L403
+  - what: A frame that repeats a header name fails the stream with betterlite's typed event-frame error instead of botocore's DuplicateHeader exception, and the later value never replaces the first.
+    why: The pinned botocore rejects the same frame (EventStreamHeaderParser._parse_headers raises DuplicateHeader), so the stream stops in both; betterlite keeps the rejection in its own typed error rather than surfacing a botocore exception.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L745-L765
+  - what: An ":exception-type" header that is not a string counts as absent.
+    why: LiteLLM would put the non-string value into the error text, and betterlite keeps the error text to strings.
+    link: ""
+  - what: The base64 inside a chunk payload is decoded strictly, and padding errors fail the frame.
+    why: Python's lenient decoder drops stray characters and would pass a corrupted chunk to the JSON parser.
+    link: ""
+  - what: ServerSentEvent.json and its repr text are typed methods on the record instead of a Display or FromStr implementation.
+    why: The workspace bans handwritten Display and FromStr, so the repr text is a plain method.
+    link: ""
