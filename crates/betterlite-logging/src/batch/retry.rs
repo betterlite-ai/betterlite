@@ -29,13 +29,10 @@ pub enum RequeuePolicy {
 
 impl RequeuePolicy {
     #[must_use]
-    pub fn retained<E>(self, batch: &[E], status: u16) -> Vec<E>
-    where
-        E: Clone,
-    {
+    pub fn retains(self, status: u16) -> bool {
         match self {
-            Self::RequeueAll => batch.to_vec(),
-            Self::Undelivered => undelivered_after_http_error(batch, status),
+            Self::RequeueAll => true,
+            Self::Undelivered => is_retryable_status(status),
         }
     }
 }

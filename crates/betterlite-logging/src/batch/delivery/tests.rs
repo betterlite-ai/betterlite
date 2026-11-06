@@ -305,6 +305,23 @@ fn owned(events: &[&str]) -> Vec<String> {
         cancelled: false,
     }
 )]
+#[case::requeue_policy_keeps_a_non_retryable_batch(
+    SendCase {
+        events: &["e0", "e1"],
+        success_status_codes: &[200],
+        policy: Policy::Requeue,
+        max_events_per_request: None,
+        oversized: &[],
+        unserializable: &[],
+        script: &[Step::Response(400)],
+    },
+    Expectation {
+        attempts: &[&["e0", "e1"]],
+        delivered: &[],
+        undelivered: &["e0", "e1"],
+        cancelled: false,
+    }
+)]
 #[case::retryable_status_requeues_the_batch(
     SendCase {
         events: &["e0", "e1"],

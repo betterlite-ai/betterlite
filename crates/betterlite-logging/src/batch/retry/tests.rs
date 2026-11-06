@@ -19,7 +19,8 @@ const EVENTS: [&str; 3] = ["e0", "e1", "e2"];
 #[case::server_error_tail(599, true)]
 fn batch_delivery_behavior_tests_behavior(#[case] status: u16, #[case] retryable: bool) {
     assert_eq!(is_retryable_status(status), retryable);
-    assert_eq!(RequeuePolicy::RequeueAll.retained(&EVENTS, status), EVENTS);
+    assert!(RequeuePolicy::RequeueAll.retains(status));
+    assert_eq!(RequeuePolicy::Undelivered.retains(status), retryable);
     let undelivered = undelivered_after_http_error(&EVENTS, status);
     if retryable {
         assert_eq!(undelivered, EVENTS);
