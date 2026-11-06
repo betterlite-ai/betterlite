@@ -1,0 +1,19 @@
+kind: helper
+name: has-tool
+call:
+  response_tool_calls:
+    function: has_tool
+    tools:
+      - type: function
+        function:
+          name: alpha
+      - name: beta
+        input_schema:
+          type: object
+      - type: function
+        function: alpha
+        name: gamma
+    tool_name: gamma
+env: {}
+compare:
+  ignore: []
