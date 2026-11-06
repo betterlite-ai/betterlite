@@ -23,12 +23,14 @@ const CONFIG_WITHOUT_TEMPLATE: &[u8] = br#"{"add_bos_token":true}"#;
 
 enum Answer {
     Status(u16, &'static [u8]),
+    Redirect(&'static str),
     Broken,
 }
 
 #[derive(Clone, Copy)]
 enum Expect {
     Rendered(&'static str),
+    Redirect(&'static str),
     NoTemplate,
     NotText,
     Json,
@@ -69,13 +71,22 @@ async fn read_request(stream: &mut TcpStream) -> String {
 async fn respond(listener: &TcpListener, answer: &Answer) -> String {
     let (mut stream, _) = listener.accept().await.unwrap();
     let request = read_request(&mut stream).await;
-    if let Answer::Status(status, body) = answer {
-        let head = format!(
-            "HTTP/1.1 {status} X\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
-            body.len()
-        );
-        stream.write_all(head.as_bytes()).await.unwrap();
-        stream.write_all(body).await.unwrap();
+    match answer {
+        Answer::Status(status, body) => {
+            let head = format!(
+                "HTTP/1.1 {status} X\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+                body.len()
+            );
+            stream.write_all(head.as_bytes()).await.unwrap();
+            stream.write_all(body).await.unwrap();
+        }
+        Answer::Redirect(location) => {
+            let head = format!(
+                "HTTP/1.1 307 Temporary Redirect\r\nlocation: {location}\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+            );
+            stream.write_all(head.as_bytes()).await.unwrap();
+        }
+        Answer::Broken => {}
     }
     request
 }
@@ -185,6 +196,14 @@ fn expected_paths(model: &str, count: usize) -> Vec<String> {
     ],
     Expect::CacheRecovery
 )]
+#[case::config_redirect(
+    "org/model",
+    vec![
+        Answer::Redirect("/moved/tokenizer_config.json"),
+        Answer::Status(200, br#"{"chat_template":"moved","bos_token":"<s>"}"#)
+    ],
+    Expect::Redirect("moved")
+)]
 #[tokio::test]
 async fn fetch_follows_litellm(
     #[case] model: &'static str,
@@ -199,6 +218,10 @@ async fn fetch_follows_litellm(
     };
     if matches!(expected, Expect::CacheRecovery) {
         cached_failure_case(&factory, &listener, model, &answers).await;
+        return;
+    }
+    if let Expect::Redirect(text) = expected {
+        redirect_case(&factory, &listener, model, &answers, text).await;
         return;
     }
     let (rendered, requests) = fetch_case(&factory, &listener, model, &answers).await;
@@ -221,7 +244,33 @@ async fn fetch_follows_litellm(
             Err(FactoryError::Hub(HubError::Transport { .. }))
         )),
         Expect::CacheRecovery => panic!("the cached case has its own driver"),
+        Expect::Redirect(_) => panic!("the redirect case has its own driver"),
     }
+}
+
+async fn redirect_case(
+    factory: &PromptFactory,
+    listener: &TcpListener,
+    model: &str,
+    answers: &[Answer],
+    expected: &str,
+) {
+    let [redirected, destination] = answers else {
+        panic!("the redirect case needs two answers");
+    };
+    let messages = bare_messages();
+    let now = clock();
+    let (rendered, config, moved) = tokio::join!(
+        factory.hf_chat_template(model, &messages, now),
+        respond(listener, redirected),
+        respond(listener, destination),
+    );
+    assert_eq!(
+        request_path(&config),
+        format!("/{model}/raw/main/tokenizer_config.json")
+    );
+    assert_eq!(request_path(&moved), "/moved/tokenizer_config.json");
+    assert_eq!(rendered.unwrap(), expected);
 }
 
 async fn fetch_case(

@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::sync::{Arc, Mutex};
 
 use betterlite_config::proxy::ProxyPolicy;
@@ -17,6 +18,8 @@ use crate::builtin::Message;
 use crate::error::FactoryError;
 
 const LLAMA3_RENDERED: &str = "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\ns<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nu<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n";
+const MISTRAL_RENDERED: &str = "<s>Error message - Conversation roles must alternate user/assistant/user/assistant/...Error message - Only user and assistant roles are supported!Error message - Conversation roles must alternate user/assistant/user/assistant/...[INST] u [/INST]";
+const DEEPSEEK_RENDERED: &str = "<\u{ff5c}begin\u{2581}of\u{2581}sentence\u{ff5c}>s<\u{ff5c}User\u{ff5c}>u<\u{ff5c}Assistant\u{ff5c}><think>\n";
 
 #[derive(Clone, Copy)]
 enum Answer {
@@ -26,12 +29,13 @@ enum Answer {
 #[derive(Clone, Copy)]
 enum Call {
     Selector,
+    // a selector run against a factory whose cache has no built-in entry for the model
+    Uncached,
     Template,
 }
 
 #[derive(Clone, Copy)]
 enum Expect {
-    Contains(&'static str),
     Exact(&'static str),
     NoTemplate,
 }
@@ -74,6 +78,10 @@ async fn read_request(stream: &mut TcpStream) -> String {
             return String::from_utf8(request).unwrap();
         }
     }
+}
+
+fn request_path(request: &str) -> &str {
+    request.split_whitespace().nth(1).unwrap()
 }
 
 async fn respond(listener: &TcpListener, answer: &Answer) -> String {
@@ -207,9 +215,9 @@ async fn prompt_factory_cases(#[case] model: &str, #[case] custom_llm_provider: 
 }
 
 #[rstest]
-#[case::builtin_mistral(Call::Template, "mistralai/Mistral-7B-Instruct-v0.1", None, vec![], Expect::Contains("[INST] u [/INST]"))]
+#[case::builtin_mistral(Call::Template, "mistralai/Mistral-7B-Instruct-v0.1", None, vec![], Expect::Exact(MISTRAL_RENDERED))]
 #[case::builtin_llama3(Call::Template, "meta-llama/Meta-Llama-3-8B-Instruct", None, vec![], Expect::Exact(LLAMA3_RENDERED))]
-#[case::builtin_deepseek(Call::Template, "deepseek-r1/deepseek-r1-7b-instruct", None, vec![], Expect::Contains("\u{ff5c}User\u{ff5c}u"))]
+#[case::builtin_deepseek(Call::Template, "deepseek-r1/deepseek-r1-7b-instruct", None, vec![], Expect::Exact(DEEPSEEK_RENDERED))]
 #[case::config_with_template(
     Call::Template,
     "unlisted/config-template",
@@ -238,6 +246,15 @@ async fn prompt_factory_cases(#[case] model: &str, #[case] custom_llm_provider: 
 #[case::generic_llama3_caller_renders_builtin(Call::Selector, "meta-llama/llama-3-8b-instruct", None, vec![], Expect::Exact(LLAMA3_RENDERED))]
 #[case::generic_dashed_llama3_caller_renders_builtin(Call::Selector, "meta-llama-3-8b-instruct", None, vec![], Expect::Exact(LLAMA3_RENDERED))]
 #[case::final_caller_falls_back_to_default_pt(Call::Selector, "gpt2", None, vec![], Expect::Exact("s u"))]
+#[case::final_caller_renders_the_original_model(
+    Call::Selector,
+    "Org/Model-X",
+    None,
+    vec![Answer::Status(200, br#"{"chat_template":"{{ messages[1]['content'] }}-ok"}"#)],
+    Expect::Exact("u-ok")
+)]
+#[case::bedrock_caller_lets_the_error_through(Call::Uncached, "meta.llama3-70b-instruct-v1:0", Some("bedrock"), vec![], Expect::NoTemplate)]
+#[case::generic_llama3_caller_falls_back(Call::Uncached, "meta-llama/llama-3-8b-instruct", None, vec![], Expect::Exact("s u"))]
 #[tokio::test]
 async fn hub_templates_follow_litellm(
     #[case] call: Call,
@@ -253,66 +270,66 @@ async fn hub_templates_follow_litellm(
         let base_url = format!("http://{}", listener.local_addr().unwrap());
         Hub::Http(hub_client(&base_url))
     };
+    let cache = match call {
+        Call::Uncached => BTreeMap::new(),
+        Call::Selector | Call::Template => builtin_entries(),
+    };
     let factory = PromptFactory {
-        cache: Mutex::new(builtin_entries()),
+        cache: Mutex::new(cache),
         hub,
     };
-    let output = match call {
-        Call::Template => template_case(&factory, &listener, &answers, model).await,
-        Call::Selector => {
-            prompt_factory(&factory, model, &bare_messages(), provider, clock()).await
+    let messages = bare_messages();
+    let now = clock();
+    let (output, requests) = match call {
+        Call::Template => {
+            let (rendered, requests) = Box::pin(fetch_case(
+                &listener,
+                &answers,
+                factory.hf_chat_template(model, &messages, now),
+            ))
+            .await;
+            (rendered.map(Output::Text), requests)
+        }
+        Call::Selector | Call::Uncached => {
+            let selection = prompt_factory(&factory, model, &messages, provider, now);
+            Box::pin(fetch_case(&listener, &answers, selection)).await
         }
     };
+    assert_eq!(requests.len(), answers.len());
+    if let Some(first) = requests.first() {
+        let config_path = format!("/{model}/raw/main/tokenizer_config.json");
+        assert_eq!(request_path(first), config_path);
+    }
     match expected {
-        Expect::Contains(needle) => {
-            let text = match output.unwrap() {
-                Output::Text(text) => text,
-                other @ (Output::Ollama(_) | Output::None) => {
-                    panic!("expected text, got {other:?}");
-                }
-            };
-            assert!(text.contains(needle), "{needle:?} is missing from {text:?}");
-        }
         Expect::Exact(text) => assert_eq!(output.unwrap(), Output::Text(text.to_owned())),
         Expect::NoTemplate => assert!(matches!(output, Err(FactoryError::NoChatTemplate))),
     }
 }
 
-async fn template_case(
-    factory: &PromptFactory,
-    listener: &TcpListener,
-    answers: &[Answer],
-    model: &str,
-) -> Result<Output, FactoryError> {
-    let messages = bare_messages();
-    let now = clock();
-    let rendered = match answers {
-        [] => factory.hf_chat_template(model, &messages, now).await,
+async fn fetch_case<T, F>(listener: &TcpListener, answers: &[Answer], call: F) -> (T, Vec<String>)
+where
+    F: Future<Output = T>,
+{
+    match answers {
+        [] => (call.await, Vec::new()),
         [one] => {
-            let (rendered, _) = tokio::join!(
-                factory.hf_chat_template(model, &messages, now),
-                respond(listener, one)
-            );
-            rendered
+            let (result, first) = tokio::join!(call, respond(listener, one));
+            (result, vec![first])
         }
         [one, two] => {
-            let (rendered, _, _) = tokio::join!(
-                factory.hf_chat_template(model, &messages, now),
-                respond(listener, one),
-                respond(listener, two)
-            );
-            rendered
+            let (result, first, second) =
+                tokio::join!(call, respond(listener, one), respond(listener, two));
+            (result, vec![first, second])
         }
         [one, two, three] => {
-            let (rendered, _, _, _) = tokio::join!(
-                factory.hf_chat_template(model, &messages, now),
+            let (result, first, second, third) = tokio::join!(
+                call,
                 respond(listener, one),
                 respond(listener, two),
                 respond(listener, three)
             );
-            rendered
+            (result, vec![first, second, third])
         }
         _ => panic!("the case carries more answers than the fetch can use"),
-    };
-    rendered.map(Output::Text)
+    }
 }

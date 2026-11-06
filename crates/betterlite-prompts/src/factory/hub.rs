@@ -4,6 +4,7 @@ use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
+use http::header::LOCATION;
 use http::{HeaderMap, Method};
 use serde::Deserialize;
 use serde::de::IgnoredAny;
@@ -18,6 +19,9 @@ pub(super) const LLAMA3_INSTRUCT_MODEL: &str = "meta-llama/Meta-Llama-3-8B-Instr
 const DEEPSEEK_MODEL: &str = "deepseek-r1/deepseek-r1-7b-instruct";
 const TOKENIZER_CONFIG_FILE: &str = "tokenizer_config.json";
 const TEMPLATE_FILES: [&str; 2] = ["chat_template.jinja", "chat_template.jinja2"];
+const REDIRECT_STATUSES: [u16; 5] = [301, 302, 303, 307, 308];
+// httpx, which LiteLLM's client uses, follows at most 20 redirects
+const MAX_REDIRECTS: usize = 20;
 pub(super) const BUILTIN_ENTRIES: usize = 3;
 pub(super) const MAX_FETCHED_ENTRIES: usize = 1024;
 
@@ -54,6 +58,8 @@ pub enum HubError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("too many redirects fetching {url}")]
+    Redirect { url: String },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -96,10 +102,7 @@ pub enum ChatTemplateFile {
 impl HubClient {
     pub(super) async fn tokenizer_config(&self, model: &str) -> Result<TokenizerConfig, HubError> {
         let (url, text) = self.target(model, TOKENIZER_CONFIG_FILE)?;
-        let response = self.get(url).await.map_err(|source| HubError::Transport {
-            url: text.clone(),
-            source,
-        })?;
+        let response = self.follow(url).await?;
         if response.status != 200 {
             return Ok(TokenizerConfig::Failure);
         }
@@ -126,7 +129,7 @@ impl HubClient {
             let Ok((url, _)) = self.target(model, filename) else {
                 continue;
             };
-            let Ok(response) = self.get(url).await else {
+            let Ok(response) = self.follow(url).await else {
                 continue;
             };
             if response.status != 200 {
@@ -152,18 +155,42 @@ impl HubClient {
         Ok((url, text))
     }
 
-    async fn get(&self, url: Url) -> Result<UpstreamResponse, TransportError> {
-        self.client
-            .send_buffered(OutboundRequest {
-                method: Method::GET,
-                url,
-                query: Vec::new(),
-                headers: HeaderMap::new(),
-                body: RequestBody::Empty,
-                deadline: self.client.limits.read_timeout,
-            })
-            .await
+    // LiteLLM's httpx client follows redirects, which Hugging Face answers for a renamed repo; no credential rides along
+    async fn follow(&self, url: Url) -> Result<UpstreamResponse, HubError> {
+        let mut target = url;
+        for _ in 0..MAX_REDIRECTS {
+            let response = self
+                .client
+                .send_buffered(OutboundRequest {
+                    method: Method::GET,
+                    url: target.clone(),
+                    query: Vec::new(),
+                    headers: HeaderMap::new(),
+                    body: RequestBody::Empty,
+                    deadline: self.client.limits.read_timeout,
+                })
+                .await
+                .map_err(|source| HubError::Transport {
+                    url: target.to_string(),
+                    source,
+                })?;
+            let Some(next) = redirect_target(&target, &response) else {
+                return Ok(response);
+            };
+            target = next;
+        }
+        Err(HubError::Redirect {
+            url: target.to_string(),
+        })
     }
+}
+
+fn redirect_target(url: &Url, response: &UpstreamResponse) -> Option<Url> {
+    if !REDIRECT_STATUSES.contains(&response.status) {
+        return None;
+    }
+    let location = response.headers.get(LOCATION)?.to_str().ok()?;
+    url.join(location).ok()
 }
 
 impl Hub {
@@ -201,10 +228,10 @@ pub fn builtin_entries() -> BTreeMap<String, TokenizerConfig> {
             DEEPSEEK_MODEL,
             include_str!("fixtures/deepseek_r1_7b_instruct.jinja"),
             TokenValue::Object(TokenObject {
-                content: Some("\u{ff5c}begin\u{2581}of\u{2581}sentence\u{ff5c}".to_owned()),
+                content: Some("<\u{ff5c}begin\u{2581}of\u{2581}sentence\u{ff5c}>".to_owned()),
             }),
             TokenValue::Object(TokenObject {
-                content: Some("\u{ff5c}end\u{2581}of\u{2581}sentence\u{ff5c}".to_owned()),
+                content: Some("<\u{ff5c}end\u{2581}of\u{2581}sentence\u{ff5c}>".to_owned()),
             }),
         ),
     ];
