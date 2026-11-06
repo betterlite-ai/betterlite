@@ -1,0 +1,14 @@
+kind: helper
+name: cyberark-mtls-certificate-authentication
+env: {}
+compare: {ignore: []}
+call:
+  b4418:
+    env: {CYBERARK_CLIENT_CERT: /certs/client.pem, CYBERARK_CLIENT_KEY: /certs/client.key}
+    routes:
+      - route: "POST http://127.0.0.1:8080/authn/default/admin/authenticate"
+        replies: [{status: 200, body: '{"protected":"abc"}'}]
+      - route: "GET http://127.0.0.1:8080/secrets/default/variable/db"
+        replies: [{status: 200, body: s3cret}]
+    steps:
+      - {op: read, name: db}

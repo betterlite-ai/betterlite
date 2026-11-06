@@ -1,0 +1,12 @@
+kind: helper
+name: password-policy-migration-plaintext-rows
+call:
+  password_policy:
+    function: migrate
+    users:
+      - {user_id: plain, password: Tr0ub4dor&3-horse}
+      - {user_id: legacy, password: ed959ca4a127cf7607afafe90c900b004d51ae2e40be4d1419114915a1f3db01}
+      - {user_id: modern, password: "scrypt:AAECAwQFBgcICQoLDA0ODx1Hv3tNBnic5gedoiP9VrMdNNYQltZrnQ2BXv57yZCs"}
+env: {}
+compare:
+  ignore: []

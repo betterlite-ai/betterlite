@@ -13,11 +13,19 @@ cargo-fuzz = true
 
 [dependencies]
 betterlite-bedrock = { path = ".." }
+bytes = "1.12.1"
 libfuzzer-sys = "0.4.9"
 
 [[bin]]
 name = "nova_data_url"
 path = "fuzz_targets/nova_data_url.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bedrock_event_frames"
+path = "fuzz_targets/bedrock_event_frames.rs"
 test = false
 doc = false
 bench = false
