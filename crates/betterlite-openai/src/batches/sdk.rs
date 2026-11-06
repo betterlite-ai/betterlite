@@ -59,8 +59,12 @@ pub struct Connection<Client> {
 pub trait ClientConstructor: Sync {
     type Client: BatchesSdk;
 
-    // None is an SDK that could not be built, for example without any API key
-    fn construct(&self, arguments: &SdkArguments, kind: ClientKind) -> Option<Self::Client>;
+    // Ok(None) is an SDK that could not be built, for example without any API key
+    fn construct(
+        &self,
+        arguments: &SdkArguments,
+        kind: ClientKind,
+    ) -> Result<Option<Self::Client>, SdkError>;
 }
 
 pub trait BatchesSdk: Send + Sync {

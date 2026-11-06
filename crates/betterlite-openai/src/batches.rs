@@ -1,5 +1,5 @@
 use crate::batches::decode::decode_batch_object;
-use crate::batches::error::BatchesError;
+use crate::batches::error::{BatchesError, SdkError};
 use crate::batches::records::{BatchCreate, BatchObject, BatchQuery};
 use crate::batches::sdk::{BatchesSdk, ClientConstructor, ClientKind, Connection, SdkArguments};
 
@@ -28,14 +28,14 @@ impl<Constructor: ClientConstructor> BatchesApi<Constructor> {
     pub fn get_openai_client(
         &self,
         connection: Connection<Constructor::Client>,
-    ) -> Option<Constructor::Client> {
+    ) -> Result<Option<Constructor::Client>, SdkError> {
         let Connection {
             is_async,
             settings,
             client,
         } = connection;
         if client.is_some() {
-            return client;
+            return Ok(client);
         }
         let arguments = SdkArguments {
             api_key: settings.api_key,
@@ -60,7 +60,7 @@ impl<Constructor: ClientConstructor> BatchesApi<Constructor> {
     ) -> Result<Constructor::Client, BatchesError> {
         let is_async = connection.is_async;
         let client = self
-            .get_openai_client(connection)
+            .get_openai_client(connection)?
             .ok_or(BatchesError::NotInitialized)?;
         if is_async && client.kind() != ClientKind::Async {
             return Err(BatchesError::NotAsync);

@@ -42,6 +42,12 @@ pub enum SdkError {
         code: Option<String>,
         message: String,
     },
+    #[error("the timeout must be a finite, non-negative number of seconds, not {seconds}")]
+    InvalidTimeout { seconds: f64 },
+    #[error(
+        "the shared transport cannot apply a per-phase httpx.Timeout (set phases: {phases}); it enforces one total deadline"
+    )]
+    UnsupportedTimeoutPhase { phases: String },
     #[error("the request could not be sent: {source}")]
     Transport {
         #[source]

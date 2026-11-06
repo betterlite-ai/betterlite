@@ -132,9 +132,13 @@ pub(super) struct Constructor {
 impl ClientConstructor for Constructor {
     type Client = Sdk;
 
-    fn construct(&self, arguments: &SdkArguments, kind: ClientKind) -> Option<Sdk> {
+    fn construct(
+        &self,
+        arguments: &SdkArguments,
+        kind: ClientKind,
+    ) -> Result<Option<Sdk>, SdkError> {
         if self.unbuildable {
-            return None;
+            return Ok(None);
         }
         let built = Built {
             kind,
@@ -147,10 +151,10 @@ impl ClientConstructor for Constructor {
             },
         };
         record(&self.built, serde_json::to_value(built).unwrap_or_default());
-        Some(Sdk {
+        Ok(Some(Sdk {
             kind,
             calls: Arc::clone(&self.calls),
             answer: self.answer.clone(),
-        })
+        }))
     }
 }

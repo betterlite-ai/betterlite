@@ -2,6 +2,7 @@
 
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::time::Duration;
 
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
@@ -14,9 +15,11 @@ use tokio::net::{TcpListener, TcpStream};
 
 use super::fake::{batch, create_request, query};
 use crate::batches::error::SdkError;
-use crate::batches::http::HttpConstructor;
+use crate::batches::http::{HttpBatchesClient, HttpConstructor};
 use crate::batches::records::BatchObject;
-use crate::batches::sdk::{BatchesSdk as _, ClientConstructor as _, ClientKind, SdkArguments};
+use crate::batches::sdk::{
+    BatchesSdk as _, ClientConstructor as _, ClientKind, SdkArguments, Timeout, TimeoutPhases,
+};
 
 const SECRET: &str = "sk-fixture-secret-7731";
 
@@ -36,6 +39,25 @@ fn arguments(api_key: Option<&str>, base_url: &str, organization: Option<&str>) 
         max_retries: None,
         organization: organization.map(str::to_owned),
     }
+}
+
+fn arguments_with_timeout(timeout: Option<Timeout>) -> SdkArguments {
+    SdkArguments {
+        api_key: Some(SecretString::from("k")),
+        base_url: Some(String::from("https://example.test/v1")),
+        timeout,
+        max_retries: None,
+        organization: None,
+    }
+}
+
+fn build(
+    builder: &HttpConstructor,
+    arguments: &SdkArguments,
+    kind: ClientKind,
+) -> HttpBatchesClient {
+    let client = builder.construct(arguments, kind).unwrap();
+    client.unwrap()
 }
 
 async fn bind() -> (TcpListener, String) {
@@ -81,6 +103,21 @@ fn pair(name: &str, value: &str) -> IndexMap<String, String> {
     IndexMap::from([(String::from(name), String::from(value))])
 }
 
+fn assert_batch_requests(requests: &[String]) {
+    assert_eq!(requests.len(), 5);
+    assert!(requests[0].starts_with("POST /v1/batches HTTP/1.1"));
+    assert!(requests[0].contains("x-trace: t1"));
+    let expected = r#"{"completion_window":"24h","endpoint":"/v1/embeddings","input_file_id":"file-1","vendor":"x"}"#;
+    assert_eq!(
+        body_of(&requests[0]),
+        serde_json::from_str::<Value>(expected).unwrap()
+    );
+    assert!(requests[1].starts_with("GET /v1/batches/batch_1 HTTP/1.1"));
+    assert!(requests[2].starts_with("POST /v1/batches/batch_1/cancel HTTP/1.1"));
+    assert!(requests[3].starts_with("GET /v1/batches HTTP/1.1"));
+    assert!(requests[4].starts_with("GET /v1/batches?after=batch_0&limit=2 HTTP/1.1"));
+}
+
 #[tokio::test]
 async fn http_client_speaks_the_batch_endpoints() {
     let ok = batch("batch_1", "validating");
@@ -96,9 +133,11 @@ async fn http_client_speaks_the_batch_endpoints() {
         (200, page),
     ];
     let (listener, base) = bind().await;
-    let client = constructor(None)
-        .construct(&arguments(Some("k"), &base, None), ClientKind::Async)
-        .unwrap();
+    let client = build(
+        &constructor(None),
+        &arguments(Some("k"), &base, None),
+        ClientKind::Async,
+    );
     let mut request = create_request();
     request.extra_body = Some(pair("vendor", "x"));
     request.extra_headers = Some(pair("x-trace", "t1"));
@@ -112,17 +151,7 @@ async fn http_client_speaks_the_batch_endpoints() {
         client.list(Some("batch_0"), Some(2)).await.unwrap();
     };
     let (requests, ()) = tokio::join!(serve(listener, replies), calls);
-    assert!(requests[0].starts_with("POST /v1/batches HTTP/1.1"));
-    assert!(requests[0].contains("x-trace: t1"));
-    let expected = r#"{"completion_window":"24h","endpoint":"/v1/embeddings","input_file_id":"file-1","vendor":"x"}"#;
-    assert_eq!(
-        body_of(&requests[0]),
-        serde_json::from_str::<Value>(expected).unwrap()
-    );
-    assert!(requests[1].starts_with("GET /v1/batches/batch_1 HTTP/1.1"));
-    assert!(requests[2].starts_with("POST /v1/batches/batch_1/cancel HTTP/1.1"));
-    assert!(requests[3].starts_with("GET /v1/batches HTTP/1.1"));
-    assert!(requests[4].starts_with("GET /v1/batches?after=batch_0&limit=2 HTTP/1.1"));
+    assert_batch_requests(&requests);
 }
 
 #[tokio::test]
@@ -131,9 +160,11 @@ async fn http_client_reports_status_errors_with_their_fields() {
         r#"{"error":{"message":"no","type":"invalid_request_error","param":"limit","code":"bad"}}"#,
     );
     let (listener, base) = bind().await;
-    let client = constructor(None)
-        .construct(&arguments(Some("k"), &base, None), ClientKind::Async)
-        .unwrap();
+    let client = build(
+        &constructor(None),
+        &arguments(Some("k"), &base, None),
+        ClientKind::Async,
+    );
     let (_requests, failure) = tokio::join!(
         serve(listener, vec![(400, error)]),
         client.list(None, Some(0))
@@ -160,18 +191,21 @@ async fn openai_batches_credential_identity_isolation() {
     let replies = vec![(200, batch("b", "validating")); 3];
     let (listener, base) = bind().await;
     let environment = constructor(Some("sk-from-environment"));
-    let explicit = environment
-        .construct(
-            &arguments(Some("sk-explicit"), &base, Some("org-a")),
-            ClientKind::Sync,
-        )
-        .unwrap();
-    let inherited = environment
-        .construct(&arguments(None, &base, None), ClientKind::Sync)
-        .unwrap();
-    let empty_key = environment
-        .construct(&arguments(Some(""), &base, None), ClientKind::Sync)
-        .unwrap();
+    let explicit = build(
+        &environment,
+        &arguments(Some("sk-explicit"), &base, Some("org-a")),
+        ClientKind::Sync,
+    );
+    let inherited = build(
+        &environment,
+        &arguments(None, &base, None),
+        ClientKind::Sync,
+    );
+    let empty_key = build(
+        &environment,
+        &arguments(Some(""), &base, None),
+        ClientKind::Sync,
+    );
     let calls = async {
         explicit.retrieve(&query()).await.unwrap();
         inherited.retrieve(&query()).await.unwrap();
@@ -186,7 +220,7 @@ async fn openai_batches_credential_identity_isolation() {
     assert!(!requests[2].contains("authorization"));
     assert!(!requests[2].contains("sk-from-environment"));
     let without_key = constructor(None).construct(&arguments(None, &base, None), ClientKind::Sync);
-    assert!(without_key.is_none());
+    assert!(matches!(without_key, Ok(None)));
 }
 
 #[tokio::test]
@@ -194,18 +228,16 @@ async fn openai_batches_secret_safe_failure() {
     let (unreachable, dead) = bind().await;
     drop(unreachable);
     let builder = constructor(None);
-    let client = builder
-        .construct(
-            &arguments(Some(SECRET), &dead, Some("org-x")),
-            ClientKind::Sync,
-        )
-        .unwrap();
-    let broken = builder
-        .construct(
-            &arguments(Some("sk-bad\nkey"), &dead, None),
-            ClientKind::Sync,
-        )
-        .unwrap();
+    let client = build(
+        &builder,
+        &arguments(Some(SECRET), &dead, Some("org-x")),
+        ClientKind::Sync,
+    );
+    let broken = build(
+        &builder,
+        &arguments(Some("sk-bad\nkey"), &dead, None),
+        ClientKind::Sync,
+    );
     let failures = [
         client.retrieve(&query()).await.unwrap_err(),
         broken.retrieve(&query()).await.unwrap_err(),
@@ -219,4 +251,71 @@ async fn openai_batches_secret_safe_failure() {
     assert!(!shown.contains(SECRET), "{shown}");
     assert!(!shown.contains("sk-bad"), "{shown}");
     assert!(matches!(failures[1], SdkError::Transport { .. }));
+}
+
+#[test]
+fn batch_client_timeouts_reject_unusable_numbers() {
+    let builder = constructor(None);
+    let errors = [-1.0_f64, f64::NAN, f64::INFINITY, f64::MAX].map(|seconds| {
+        builder
+            .construct(
+                &arguments_with_timeout(Some(Timeout::Seconds(seconds))),
+                ClientKind::Sync,
+            )
+            .unwrap_err()
+    });
+    assert!(
+        errors
+            .iter()
+            .all(|error| matches!(error, SdkError::InvalidTimeout { .. }))
+    );
+    let zero = build(
+        &builder,
+        &arguments_with_timeout(Some(Timeout::Seconds(0.0_f64))),
+        ClientKind::Sync,
+    );
+    assert_eq!(zero.timeout, Duration::ZERO);
+}
+
+#[test]
+fn batch_client_timeouts_name_unsupported_phases() {
+    let timeout = Timeout::Phases(TimeoutPhases {
+        connect: Some(1.0_f64),
+        read: None,
+        write: None,
+        pool: Some(2.0_f64),
+    });
+    let error = constructor(None)
+        .construct(&arguments_with_timeout(Some(timeout)), ClientKind::Sync)
+        .unwrap_err();
+    let SdkError::UnsupportedTimeoutPhase { phases } = error else {
+        panic!("expected the phases to be refused");
+    };
+    assert!(phases.contains("connect"), "{phases}");
+    assert!(phases.contains("pool"), "{phases}");
+    assert!(!phases.contains("read"), "{phases}");
+}
+
+#[tokio::test]
+async fn batch_calls_reject_an_unusable_timeout() {
+    let (listener, base) = bind().await;
+    drop(listener);
+    let client = build(
+        &constructor(None),
+        &arguments(Some("k"), &base, None),
+        ClientKind::Sync,
+    );
+    let mut not_a_number = query();
+    not_a_number.timeout = Some(f64::NAN);
+    let mut negative = query();
+    negative.timeout = Some(-1.0_f64);
+    let failures = [
+        client.retrieve(&not_a_number).await.unwrap_err(),
+        client.retrieve(&negative).await.unwrap_err(),
+    ];
+    assert!(
+        failures
+            .iter()
+            .all(|error| matches!(error, SdkError::InvalidTimeout { .. }))
+    );
 }

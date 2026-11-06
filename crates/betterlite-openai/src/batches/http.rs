@@ -14,7 +14,9 @@ use url::Url;
 
 use crate::batches::error::SdkError;
 use crate::batches::records::{BatchCreate, BatchPage, BatchQuery};
-use crate::batches::sdk::{BatchesSdk, ClientConstructor, ClientKind, SdkArguments, Timeout};
+use crate::batches::sdk::{
+    BatchesSdk, ClientConstructor, ClientKind, SdkArguments, Timeout, TimeoutPhases,
+};
 
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
@@ -40,19 +42,28 @@ pub struct HttpConstructor {
 impl ClientConstructor for HttpConstructor {
     type Client = HttpBatchesClient;
 
-    fn construct(&self, arguments: &SdkArguments, kind: ClientKind) -> Option<HttpBatchesClient> {
-        let api_key = arguments
+    fn construct(
+        &self,
+        arguments: &SdkArguments,
+        kind: ClientKind,
+    ) -> Result<Option<HttpBatchesClient>, SdkError> {
+        let Some(api_key) = arguments
             .api_key
             .clone()
-            .or_else(|| self.environment_key.clone())?;
-        let timeout = match &arguments.timeout {
-            Some(Timeout::Seconds(seconds)) => Duration::try_from_secs_f64(*seconds).ok(),
-            Some(Timeout::Phases(phases)) => phases
-                .read
-                .and_then(|seconds| Duration::try_from_secs_f64(seconds).ok()),
-            None => None,
+            .or_else(|| self.environment_key.clone())
+        else {
+            return Ok(None);
         };
-        Some(HttpBatchesClient {
+        let timeout = match &arguments.timeout {
+            Some(Timeout::Seconds(seconds)) => duration_seconds(*seconds)?,
+            Some(Timeout::Phases(phases)) => {
+                return Err(SdkError::UnsupportedTimeoutPhase {
+                    phases: phase_names(phases),
+                });
+            }
+            None => DEFAULT_TIMEOUT,
+        };
+        Ok(Some(HttpBatchesClient {
             transport: self.transport.clone(),
             kind,
             base_url: arguments
@@ -61,8 +72,37 @@ impl ClientConstructor for HttpConstructor {
                 .unwrap_or_else(|| DEFAULT_BASE_URL.to_owned()),
             api_key,
             organization: arguments.organization.clone(),
-            timeout: timeout.unwrap_or(DEFAULT_TIMEOUT),
-        })
+            timeout,
+        }))
+    }
+}
+
+fn duration_seconds(seconds: f64) -> Result<Duration, SdkError> {
+    if !seconds.is_finite() || seconds < 0.0_f64 {
+        return Err(SdkError::InvalidTimeout { seconds });
+    }
+    Duration::try_from_secs_f64(seconds).map_err(|_source| SdkError::InvalidTimeout { seconds })
+}
+
+// The shared transport applies one total deadline, so every phase is refused by name
+fn phase_names(phases: &TimeoutPhases) -> String {
+    let mut names = Vec::new();
+    if phases.connect.is_some() {
+        names.push("connect");
+    }
+    if phases.read.is_some() {
+        names.push("read");
+    }
+    if phases.write.is_some() {
+        names.push("write");
+    }
+    if phases.pool.is_some() {
+        names.push("pool");
+    }
+    if names.is_empty() {
+        String::from("none")
+    } else {
+        names.join(", ")
     }
 }
 
@@ -165,10 +205,10 @@ impl HttpBatchesClient {
             call.path
         ))
         .map_err(|source| SdkError::BaseUrl { source })?;
-        let deadline = call
-            .timeout
-            .and_then(|seconds| Duration::try_from_secs_f64(seconds).ok())
-            .unwrap_or(self.timeout);
+        let deadline = match call.timeout {
+            Some(seconds) => duration_seconds(seconds)?,
+            None => self.timeout,
+        };
         let response = self
             .transport
             .send_buffered(OutboundRequest {

@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use std::future::{Future, ready};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use crate::batches::BatchesApi;
 use crate::batches::error::SdkError;
@@ -138,13 +138,20 @@ impl BatchesSdk for FakeSdk {
 impl ClientConstructor for FakeConstructor {
     type Client = FakeSdk;
 
-    fn construct(&self, arguments: &SdkArguments, kind: ClientKind) -> Option<FakeSdk> {
-        self.built.lock().unwrap().push((arguments.clone(), kind));
-        self.produce.then(|| FakeSdk {
+    fn construct(
+        &self,
+        arguments: &SdkArguments,
+        kind: ClientKind,
+    ) -> Result<Option<FakeSdk>, SdkError> {
+        self.built
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((arguments.clone(), kind));
+        Ok(self.produce.then(|| FakeSdk {
             kind,
             calls: Arc::clone(&self.calls),
             answer: self.answer.clone(),
-        })
+        }))
     }
 }
 
