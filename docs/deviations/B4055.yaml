@@ -1,0 +1,13 @@
+task: B4055
+deviations:
+  - what: >-
+      Frontmatter scalars follow serde-saphyr, not PyYAML: a leading-zero integer such as 012 is the number 12 here and octal 10 in PyYAML (08 is 8 here and text there), a sexagesimal such as 1:30 is text here and 90 there, 0o17 is 15 here and text there, and a bare y or n is a boolean here and text there. yes/no/on/off and true/false are booleans in both.
+    why: >-
+      serde-saphyr is the YAML parser the workspace uses. It reads YAML 1.1 booleans and YAML 1.2 numbers, while PyYAML reads YAML 1.1 for both.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_prompt_manager.py#L132
+  - what: A file body that is not valid UTF-8 (a text/ response, or a response that is not base64 of UTF-8) fails with an error naming the file, where httpx decodes a text/ body with the charset its content type declares, or with replacement characters when the body does not fit.
+    why: Decoding with a guessed charset or replacement characters would silently corrupt a prompt, and the workspace lints forbid lossy decoding.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_client.py#L123-L129
+  - what: Rendering stops at a fuel limit, a 64 KiB template cap and a 1 MiB output cap.
+    why: A template taken from a repository can loop or grow without bound, and the shared dotprompt environment this manager renders through already enforces those limits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_prompt_manager.py#L172-L174
