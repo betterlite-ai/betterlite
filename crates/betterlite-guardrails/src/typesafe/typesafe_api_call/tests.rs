@@ -14,7 +14,7 @@ use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
-use super::{JevAnswer, JevSystemOneResponse, MAX_RESPONSE_BYTES, call_systemone};
+use super::{JevAnswer, JevSystemOneResponse, MAX_RESPONSE_BYTES, NoulType, call_systemone};
 use crate::generic_guardrail_contracts::UnreachableFallback;
 use crate::typesafe::fixtures::{guardrail, json, settings};
 use crate::typesafe::typesafe_failure_handling::TypeSafeError;
@@ -186,7 +186,10 @@ async fn call_systemone_posts_state_and_questions_to_the_systemone_path() {
         .expect("a parsed response");
     assert_eq!(
         response.answers.get("e0"),
-        Some(&JevAnswer::Noul { noul: 0.1_f64 })
+        Some(&JevAnswer {
+            kind: NoulType::Noul,
+            noul: 0.1_f64
+        })
     );
     let captured = receiver.recv().await.expect("the Jev API was called");
     assert_request(&captured);
@@ -208,8 +211,9 @@ async fn call_systemone_parses_the_jev_response_shape(#[case] body: &str) {
     .await
     .expect("fail open")
     .expect("a parsed response");
-    let JevAnswer::Noul { noul } = result.answers.get("e0").expect("e0 answer");
-    assert!((0.0_f64..=1.0_f64).contains(noul));
+    let answer = result.answers.get("e0").expect("e0 answer");
+    assert_eq!(answer.kind, NoulType::Noul);
+    assert!((0.0_f64..=1.0_f64).contains(&answer.noul));
 }
 
 #[tokio::test]

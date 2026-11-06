@@ -15,8 +15,8 @@ use crate::typesafe::{DEFAULT_RESPONSE_TEXT_LIMIT, TypeSafeGuardrail};
 
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-enum NoulQuestionType {
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum NoulType {
     #[serde(rename = "noul")]
     Noul,
 }
@@ -24,7 +24,7 @@ enum NoulQuestionType {
 #[derive(Debug, Serialize)]
 struct JevQuestion {
     #[serde(rename = "type")]
-    kind: NoulQuestionType,
+    kind: NoulType,
     instructions: String,
 }
 
@@ -35,11 +35,12 @@ struct JevSystemOneRequest<'source> {
     questions: IndexMap<String, JevQuestion>,
 }
 
+// A serde tag buffers the answer object, and a buffered number cannot become f64 under serde_json's arbitrary_precision.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
-#[serde(tag = "type")]
-pub enum JevAnswer {
-    #[serde(rename = "noul")]
-    Noul { noul: f64 },
+pub struct JevAnswer {
+    #[serde(rename = "type")]
+    pub kind: NoulType,
+    pub noul: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize)]
@@ -53,7 +54,7 @@ fn build_questions(question_ids: &[String]) -> IndexMap<String, JevQuestion> {
         questions.insert(
             question_id.clone(),
             JevQuestion {
-                kind: NoulQuestionType::Noul,
+                kind: NoulType::Noul,
                 instructions: question_instructions(question_id),
             },
         );
@@ -106,10 +107,10 @@ async fn read_limited_body(mut response: reqwest::Response) -> Result<LimitedBod
 }
 
 fn answers_are_valid(response: &JevSystemOneResponse) -> bool {
-    response.answers.values().all(|answer| {
-        let JevAnswer::Noul { noul } = answer;
-        (0.0_f64..=1.0_f64).contains(noul)
-    })
+    response
+        .answers
+        .values()
+        .all(|answer| (0.0_f64..=1.0_f64).contains(&answer.noul))
 }
 
 async fn send_request(
