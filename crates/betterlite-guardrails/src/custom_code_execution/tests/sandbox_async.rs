@@ -1,6 +1,6 @@
 use super::super::sandbox::DEFAULT_FILENAME;
 use super::super::sandbox::compile_sandboxed;
-use super::compiled;
+use super::{compiled, failure};
 
 #[test]
 fn allows_async_definitions_and_awaits() {
@@ -46,11 +46,19 @@ fn records_sync_functions_as_sync() {
 fn imports_and_classes_stay_forbidden_inside_async_code() {
     let import =
         compile_sandboxed("async def f():\n    import os\n", DEFAULT_FILENAME).unwrap_err();
-    assert!(import.message.contains("import statements are not allowed"));
+    assert!(
+        failure(&import)
+            .2
+            .contains("import statements are not allowed")
+    );
     let class = compile_sandboxed(
         "async def f():\n    class Inner:\n        pass\n",
         DEFAULT_FILENAME,
     )
     .unwrap_err();
-    assert!(class.message.contains("class definitions are not allowed"));
+    assert!(
+        failure(&class)
+            .2
+            .contains("class definitions are not allowed")
+    );
 }

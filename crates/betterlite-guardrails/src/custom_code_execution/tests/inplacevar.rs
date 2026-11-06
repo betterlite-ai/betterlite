@@ -149,3 +149,63 @@ fn an_unsupported_operand_names_both_types() {
         "unsupported operand types for -=: str and int"
     );
 }
+
+#[test]
+fn repeats_bytes_and_tuples_like_the_operator_module() {
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Multiply,
+            &Value::Bytes(b"ab".to_vec()),
+            &Value::Int(2)
+        ),
+        Ok(Value::Bytes(b"abab".to_vec()))
+    );
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Multiply,
+            &Value::Int(2),
+            &Value::Bytes(b"ab".to_vec())
+        ),
+        Ok(Value::Bytes(b"abab".to_vec()))
+    );
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Multiply,
+            &Value::Tuple(vec![Value::Int(1)]),
+            &Value::Int(3)
+        ),
+        Ok(Value::Tuple(vec![
+            Value::Int(1),
+            Value::Int(1),
+            Value::Int(1)
+        ]))
+    );
+}
+
+#[test]
+fn a_zero_or_negative_count_gives_an_empty_value() {
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Multiply,
+            &Value::Str("x".to_owned()),
+            &Value::Int(-1)
+        ),
+        Ok(Value::Str(String::new()))
+    );
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Multiply,
+            &Value::List(vec![Value::Int(1)]),
+            &Value::Int(0)
+        ),
+        Ok(Value::List(Vec::new()))
+    );
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Multiply,
+            &Value::Str("x".to_owned()),
+            &Value::Int(0x0010_0001)
+        ),
+        Err(InplaceError::RepetitionTooLong)
+    );
+}

@@ -9,7 +9,7 @@ mod checks;
 use checks::{NameKind, check_call, check_name};
 
 const MAX_DEPTH: usize = 200;
-const BUDGET_GUARD: &str = "_budget_ok_() and ";
+const BUDGET_GUARD: &str = "_budget_ok_() and (";
 const ITER_GUARD: &str = "_getiter_";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -34,16 +34,12 @@ pub struct Analysis {
 pub fn parse(source: &str, filename: &str) -> Result<Tree, CompileError> {
     let mut parser = Parser::new();
     let language = Language::from(tree_sitter_python::LANGUAGE);
-    parser.set_language(&language).map_err(|_error| {
-        CompileError::new(filename, 1, "could not load the Python grammar".to_owned())
-    })?;
-    parser.parse(source, None).ok_or_else(|| {
-        CompileError::new(
-            filename,
-            1,
-            "the Python parser did not produce a tree".to_owned(),
-        )
-    })
+    parser
+        .set_language(&language)
+        .map_err(|error| CompileError::Grammar { source: error })?;
+    parser
+        .parse(source, None)
+        .ok_or_else(|| CompileError::syntax(filename, 1, "the Python parser produced no tree"))
 }
 
 pub fn analyze(tree: &Tree, source: &str, filename: &str) -> Result<Analysis, CompileError> {
@@ -51,11 +47,7 @@ pub fn analyze(tree: &Tree, source: &str, filename: &str) -> Result<Analysis, Co
     if root.has_error() {
         let broken = first_error(root).unwrap_or(root);
         let line = u32::try_from(broken.start_position().row.saturating_add(1)).unwrap_or(u32::MAX);
-        return Err(CompileError::new(
-            filename,
-            line,
-            "invalid syntax".to_owned(),
-        ));
+        return Err(CompileError::syntax(filename, line, "invalid syntax"));
     }
     let mut analysis = Analysis::default();
     walk(root, source, filename, 0, &mut analysis)?;
@@ -80,7 +72,7 @@ fn check_node(
     analysis: &mut Analysis,
 ) -> Result<(), CompileError> {
     if let Some(reason) = forbidden(node.kind()) {
-        return Err(CompileError::new(filename, line, reason.to_owned()));
+        return Err(CompileError::forbidden(filename, line, reason.to_owned()));
     }
     if node.kind() == "function_definition" {
         record_function(node, source, filename, line, analysis)?;
@@ -160,15 +152,19 @@ fn loop_guard(node: Node<'_>, analysis: &mut Analysis) {
             position: condition.start_byte(),
             text: BUDGET_GUARD.to_owned(),
         });
+        analysis.edits.push(Edit {
+            position: condition.end_byte(),
+            text: ")".to_owned(),
+        });
     }
     if let Some(iterable) = node.child_by_field_name("right") {
         analysis.edits.push(Edit {
             position: iterable.start_byte(),
-            text: format!("{ITER_GUARD}("),
+            text: format!("{ITER_GUARD}(("),
         });
         analysis.edits.push(Edit {
             position: iterable.end_byte(),
-            text: ")".to_owned(),
+            text: "))".to_owned(),
         });
     }
 }
@@ -182,10 +178,10 @@ fn walk(
 ) -> Result<(), CompileError> {
     let line = u32::try_from(node.start_position().row.saturating_add(1)).unwrap_or(u32::MAX);
     if depth > MAX_DEPTH {
-        return Err(CompileError::new(
+        return Err(CompileError::syntax(
             filename,
             line,
-            "the guardrail program nests too deeply".to_owned(),
+            "the guardrail program nests too deeply",
         ));
     }
     check_node(node, source, filename, line, analysis)?;
@@ -238,10 +234,10 @@ pub fn apply(source: &str, edits: &[Edit], filename: &str) -> Result<String, Com
     let mut rendered = source.to_owned();
     for edit in ordered {
         if edit.position > rendered.len() || !rendered.is_char_boundary(edit.position) {
-            return Err(CompileError::new(
+            return Err(CompileError::syntax(
                 filename,
                 1,
-                "the rewrite position is not a character boundary".to_owned(),
+                "the rewrite position is not a character boundary",
             ));
         }
         rendered.insert_str(edit.position, &edit.text);

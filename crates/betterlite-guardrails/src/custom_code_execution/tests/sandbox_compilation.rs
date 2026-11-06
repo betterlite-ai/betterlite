@@ -2,7 +2,7 @@ use rstest::rstest;
 
 use super::super::sandbox::DEFAULT_FILENAME;
 use super::super::sandbox::compile_sandboxed;
-use super::compiled;
+use super::{compiled, failure};
 
 #[test]
 fn compiles_a_guardrail_program_and_returns_the_source() {
@@ -35,12 +35,12 @@ fn compiles_a_guardrail_program_and_returns_the_source() {
     "def f():\n    def g():\n        nonlocal total\n",
     "nonlocal statements are not allowed"
 )]
-fn rejects_forbidden_constructs(#[case] source: &str, #[case] message: &str) {
+fn rejects_forbidden_constructs(#[case] source: &str, #[case] requirement: &str) {
     let error = compile_sandboxed(source, DEFAULT_FILENAME).unwrap_err();
+    let (_, _, message) = failure(&error);
     assert!(
-        error.message.contains(message),
-        "expected {message:?} in {:?}",
-        error.message
+        message.contains(requirement),
+        "expected {requirement:?} in {message:?}"
     );
 }
 
@@ -49,14 +49,13 @@ fn rejects_forbidden_constructs(#[case] source: &str, #[case] message: &str) {
 #[case::inspect_code("def f(x):\n    return x.co_code\n")]
 fn rejects_inspect_attributes(#[case] source: &str) {
     let error = compile_sandboxed(source, DEFAULT_FILENAME).unwrap_err();
-    assert!(error.message.contains("restricted name"));
+    assert!(failure(&error).2.contains("restricted name"));
 }
 
 #[test]
 fn reports_the_file_and_line_of_the_failure() {
     let error = compile_sandboxed("\n\nimport os\n", "guard.py").unwrap_err();
-    assert_eq!(error.filename, "guard.py");
-    assert_eq!(error.line, 3);
+    assert_eq!(failure(&error), ("guard.py", 3, "invalid syntax"));
 }
 
 const RESPONSE_REJECTION_CODE: &str = r#"

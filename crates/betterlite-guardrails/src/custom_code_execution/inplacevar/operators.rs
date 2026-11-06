@@ -132,77 +132,76 @@ fn shifted_value(
     Ok(Value::Int(value))
 }
 
-fn repeated_items(items: &[Value], count: i64) -> Result<Vec<Value>, InplaceError> {
-    let times = usize::try_from(count).map_err(|_error| InplaceError::RepetitionTooLong)?;
-    let total = items
-        .len()
+fn repeated_length(length: usize, count: i64) -> Result<usize, InplaceError> {
+    let times = usize::try_from(count).unwrap_or(0);
+    let total = length
         .checked_mul(times)
         .ok_or(InplaceError::RepetitionTooLong)?;
     if total > MAX_REPEATED_ITEMS {
         return Err(InplaceError::RepetitionTooLong);
     }
-    let mut repeated = Vec::with_capacity(total);
+    Ok(times)
+}
+
+fn repeated_items(items: &[Value], count: i64) -> Result<Vec<Value>, InplaceError> {
+    let times = repeated_length(items.len(), count)?;
+    let mut repeated = Vec::new();
     for _ in 0..times {
         repeated.extend(items.iter().cloned());
     }
     Ok(repeated)
 }
 
-fn repeated_text(text: &str, count: i64) -> Result<Value, InplaceError> {
-    let times = usize::try_from(count).map_err(|_error| InplaceError::RepetitionTooLong)?;
-    let total = text
-        .len()
-        .checked_mul(times)
-        .ok_or(InplaceError::RepetitionTooLong)?;
-    if total > MAX_REPEATED_ITEMS {
-        return Err(InplaceError::RepetitionTooLong);
-    }
-    Ok(Value::Str(text.repeat(times)))
-}
-
-fn sequence(op: InplaceOp, left: &Value, right: &Value) -> Option<Result<Value, InplaceError>> {
+pub(super) fn sequence(
+    op: InplaceOp,
+    left: &Value,
+    right: &Value,
+) -> Option<Result<Value, InplaceError>> {
     if op == InplaceOp::Add {
-        if let (Value::Str(first), Value::Str(second)) = (left, right) {
-            return Some(Ok(Value::Str(format!("{first}{second}"))));
-        }
-        if let (Value::Bytes(first), Value::Bytes(second)) = (left, right) {
-            let mut joined = first.clone();
-            joined.extend_from_slice(second);
-            return Some(Ok(Value::Bytes(joined)));
-        }
-        if let (Value::List(first), Value::List(second)) = (left, right) {
-            let mut joined = first.clone();
-            joined.extend(second.iter().cloned());
-            return Some(Ok(Value::List(joined)));
-        }
-        if let (Value::Tuple(first), Value::Tuple(second)) = (left, right) {
-            let mut joined = first.clone();
-            joined.extend(second.iter().cloned());
-            return Some(Ok(Value::Tuple(joined)));
-        }
+        return concatenate(left, right);
     }
     if op == InplaceOp::Multiply {
-        if let (Value::Str(text), Value::Int(count)) | (Value::Int(count), Value::Str(text)) =
-            (left, right)
-        {
-            return Some(repeated_text(text, *count));
-        }
-        if let (Value::List(items), Value::Int(count)) | (Value::Int(count), Value::List(items)) =
-            (left, right)
-        {
-            return Some(repeated_items(items, *count).map(Value::List));
-        }
+        return repetition(left, right);
     }
     None
 }
 
-pub(super) fn sequence_or_numeric(
-    op: InplaceOp,
-    left: &Value,
-    right: &Value,
-) -> Result<Value, InplaceError> {
-    if let Some(outcome) = sequence(op, left, right) {
-        return outcome;
+fn concatenate(left: &Value, right: &Value) -> Option<Result<Value, InplaceError>> {
+    if let (Value::Str(first), Value::Str(second)) = (left, right) {
+        return Some(Ok(Value::Str(format!("{first}{second}"))));
     }
-    numeric(op, left, right)
+    if let (Value::Bytes(first), Value::Bytes(second)) = (left, right) {
+        let mut joined = first.clone();
+        joined.extend_from_slice(second);
+        return Some(Ok(Value::Bytes(joined)));
+    }
+    if let (Value::List(first), Value::List(second)) = (left, right) {
+        let mut joined = first.clone();
+        joined.extend(second.iter().cloned());
+        return Some(Ok(Value::List(joined)));
+    }
+    if let (Value::Tuple(first), Value::Tuple(second)) = (left, right) {
+        let mut joined = first.clone();
+        joined.extend(second.iter().cloned());
+        return Some(Ok(Value::Tuple(joined)));
+    }
+    None
+}
+
+fn repetition(left: &Value, right: &Value) -> Option<Result<Value, InplaceError>> {
+    match (left, right) {
+        (Value::Str(text), Value::Int(count)) | (Value::Int(count), Value::Str(text)) => {
+            Some(repeated_length(text.len(), *count).map(|times| Value::Str(text.repeat(times))))
+        }
+        (Value::Bytes(text), Value::Int(count)) | (Value::Int(count), Value::Bytes(text)) => {
+            Some(repeated_length(text.len(), *count).map(|times| Value::Bytes(text.repeat(times))))
+        }
+        (Value::List(items), Value::Int(count)) | (Value::Int(count), Value::List(items)) => {
+            Some(repeated_items(items, *count).map(Value::List))
+        }
+        (Value::Tuple(items), Value::Int(count)) | (Value::Int(count), Value::Tuple(items)) => {
+            Some(repeated_items(items, *count).map(Value::Tuple))
+        }
+        _ => None,
+    }
 }

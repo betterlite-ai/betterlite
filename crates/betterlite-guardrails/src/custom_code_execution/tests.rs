@@ -23,6 +23,25 @@ mod sandbox_while_loop;
 const SHORT: Duration = Duration::from_millis(30);
 const LONG: Duration = Duration::from_secs(10);
 
+// Every source error names the file, the line and the reason; a grammar failure has neither.
+pub(crate) fn failure(error: &super::sandbox::error::CompileError) -> (&str, u32, &str) {
+    match error {
+        super::sandbox::error::CompileError::Syntax {
+            filename,
+            line,
+            message,
+        }
+        | super::sandbox::error::CompileError::Forbidden {
+            filename,
+            line,
+            message,
+        } => (filename, *line, message),
+        super::sandbox::error::CompileError::Grammar { .. } => {
+            panic!("expected a source error, got a grammar failure")
+        }
+    }
+}
+
 fn compiled(source: &str) -> super::sandbox::CompiledProgram {
     match compile_sandboxed(source, DEFAULT_FILENAME) {
         Ok(program) => program,

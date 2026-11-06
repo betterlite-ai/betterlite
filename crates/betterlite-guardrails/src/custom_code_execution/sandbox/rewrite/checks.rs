@@ -42,26 +42,26 @@ pub(super) fn check_name(
         NameKind::Attribute => "attribute",
     };
     if name.starts_with('_') && name != "_" {
-        return Err(CompileError::new(
+        return Err(CompileError::forbidden(
             filename,
             line,
             format!("\"{name}\" is an invalid {subject} name because it starts with \"_\""),
         ));
     }
     if name.ends_with("__roles__") {
-        return Err(CompileError::new(
+        return Err(CompileError::forbidden(
             filename,
             line,
             format!("\"{name}\" is an invalid {subject} name because it ends with \"__roles__\""),
         ));
     }
     match kind {
-        NameKind::Variable if FORBIDDEN_NAMES.contains(&name) => Err(CompileError::new(
+        NameKind::Variable if FORBIDDEN_NAMES.contains(&name) => Err(CompileError::forbidden(
             filename,
             line,
             format!("\"{name}\" is a reserved name."),
         )),
-        NameKind::Attribute if INSPECT_ATTRIBUTES.contains(&name) => Err(CompileError::new(
+        NameKind::Attribute if INSPECT_ATTRIBUTES.contains(&name) => Err(CompileError::forbidden(
             filename,
             line,
             format!(
@@ -74,12 +74,12 @@ pub(super) fn check_name(
 
 pub(super) fn check_call(name: &str, filename: &str, line: u32) -> Result<(), CompileError> {
     match name {
-        "exec" => Err(CompileError::new(
+        "exec" => Err(CompileError::forbidden(
             filename,
             line,
             "Exec calls are not allowed.".to_owned(),
         )),
-        "eval" => Err(CompileError::new(
+        "eval" => Err(CompileError::forbidden(
             filename,
             line,
             "Eval calls are not allowed.".to_owned(),
