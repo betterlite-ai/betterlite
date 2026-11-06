@@ -5,7 +5,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use betterlite_prometheus::collector_factory::collector::{
-    Collector as _, MetricLike, MetricValue,
+    Collector as _, MetricLike, MetricUpdate, MetricValue,
 };
 use betterlite_prometheus::collector_factory::config::{MetricSet, PrometheusMetricsConfig};
 use betterlite_prometheus::collector_factory::error::CollectorFactoryError;
@@ -36,6 +36,7 @@ fn set(names: &[&str]) -> MetricSet {
 
 #[rstest]
 #[case::excluded(MetricSet::new(), set(&["litellm_spend_metric"]), false)]
+#[case::excluded_even_when_enabled(set(&["litellm_spend_metric"]), set(&["litellm_spend_metric"]), false)]
 #[case::empty_enable_list(MetricSet::new(), MetricSet::new(), true)]
 #[case::listed(set(&["litellm_spend_metric"]), MetricSet::new(), true)]
 #[case::unlisted(set(&["litellm_requests_metric"]), MetricSet::new(), false)]
@@ -63,6 +64,23 @@ fn prometheus_factory_disabled_metric_returns_no_op() {
     metric.observe(MetricValue::PositiveInfinity);
     metric.set(MetricValue::NegativeInfinity);
     metric.remove();
+}
+
+#[test]
+fn prometheus_factory_disables_metrics_outside_the_enable_list() {
+    let mut factory = CollectorFactory::new(schema());
+    factory
+        .parse_prometheus_config(&[config("litellm_requests_metric", &[])])
+        .unwrap();
+    let build = factory.create_metric_factory(FakeMetric::registered);
+    assert!(matches!(
+        build("litellm_spend_metric", &["model"]),
+        MetricLike::NoOp(_)
+    ));
+    assert!(matches!(
+        build("litellm_requests_metric", &["model"]),
+        MetricLike::Real(_)
+    ));
 }
 
 #[test]
@@ -174,4 +192,69 @@ fn prometheus_factory_metric_values_keep_decimal_precision() {
     assert_ne!(MetricValue::PositiveInfinity, MetricValue::NotANumber);
     assert_ne!(MetricValue::NegativeInfinity, MetricValue::NotANumber);
     assert_ne!(MetricValue::NotANumber, exact);
+}
+
+#[test]
+fn prometheus_factory_forwards_operations_on_the_real_metric() {
+    let factory = CollectorFactory::new(schema());
+    let build = factory.create_metric_factory(FakeMetric::registered);
+    let metric = build("litellm_spend_metric", &["model", "team"]);
+    let labeled = metric.labels(&[("model", "gpt-4")]);
+    labeled.inc(MetricValue::Finite(Decimal::new(150, 2)));
+    labeled.set(MetricValue::PositiveInfinity);
+    labeled.observe(MetricValue::NegativeInfinity);
+    labeled.observe(MetricValue::NotANumber);
+    labeled.remove();
+    let expected = [
+        MetricUpdate::Inc(MetricValue::Finite(Decimal::new(150, 2))),
+        MetricUpdate::Set(MetricValue::PositiveInfinity),
+        MetricUpdate::Observe(MetricValue::NegativeInfinity),
+        MetricUpdate::Observe(MetricValue::NotANumber),
+        MetricUpdate::Remove,
+    ]
+    .iter()
+    .map(|update| format!("litellm_spend_metric:{update:?}"))
+    .collect::<Vec<_>>();
+    let MetricLike::Real(real) = &labeled else {
+        panic!("expected the real metric");
+    };
+    assert_eq!(
+        real.labels,
+        Vec::from([(String::from("model"), String::from("gpt-4"))])
+    );
+    assert_eq!(real.entries(), expected);
+}
+
+#[test]
+fn prometheus_factory_forwards_operations_on_the_excluded_metric() {
+    let mut factory = CollectorFactory::new(schema());
+    factory
+        .parse_exclude_config(&[], &[String::from("team")], &[], &[])
+        .unwrap();
+    let build = factory.create_metric_factory(FakeMetric::registered);
+    let metric = build("litellm_spend_metric", &["model", "team"]);
+    let labeled = metric.labels(&[("model", "gpt-4"), ("team", "alpha")]);
+    labeled.inc(MetricValue::Finite(Decimal::new(150, 2)));
+    labeled.set(MetricValue::PositiveInfinity);
+    labeled.observe(MetricValue::NegativeInfinity);
+    labeled.observe(MetricValue::NotANumber);
+    labeled.remove();
+    let expected = [
+        MetricUpdate::Inc(MetricValue::Finite(Decimal::new(150, 2))),
+        MetricUpdate::Set(MetricValue::PositiveInfinity),
+        MetricUpdate::Observe(MetricValue::NegativeInfinity),
+        MetricUpdate::Observe(MetricValue::NotANumber),
+        MetricUpdate::Remove,
+    ]
+    .iter()
+    .map(|update| format!("litellm_spend_metric:{update:?}"))
+    .collect::<Vec<_>>();
+    let MetricLike::Excluded(wrapper) = &labeled else {
+        panic!("expected the excluded-label wrapper");
+    };
+    assert_eq!(
+        wrapper.metric.labels,
+        Vec::from([(String::from("model"), String::from("gpt-4"))])
+    );
+    assert_eq!(wrapper.metric.entries(), expected);
 }

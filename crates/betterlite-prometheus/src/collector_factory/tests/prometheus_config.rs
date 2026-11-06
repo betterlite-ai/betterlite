@@ -117,6 +117,31 @@ fn prometheus_config_skips_label_validation_for_an_invalid_metric() {
 }
 
 #[test]
+fn prometheus_config_collects_errors_across_groups() {
+    let mut factory = CollectorFactory::new(schema());
+    let configs = [
+        config(&["not_a_metric"], &[]),
+        config(&["litellm_spend_metric"], &["bogus"]),
+        config(&["another_bad_metric"], &[]),
+    ];
+    let error = factory.parse_prometheus_config(&configs).unwrap_err();
+    let CollectorFactoryError::Configuration { results } = &error else {
+        panic!("expected a typed configuration error");
+    };
+    assert_eq!(results.metric_errors.len(), 2);
+    assert_eq!(results.label_errors.len(), 1);
+    let messages = results.all_error_messages();
+    assert_eq!(messages.len(), 3);
+    assert!(messages[0].contains("not_a_metric"));
+    assert!(messages[1].contains("another_bad_metric"));
+    assert!(messages[2].contains("bogus"));
+    let text = error.to_string();
+    let label_position = text.find("bogus").unwrap();
+    assert!(text.find("not_a_metric").unwrap() < label_position);
+    assert!(text.find("another_bad_metric").unwrap() < label_position);
+}
+
+#[test]
 fn prometheus_config_keeps_the_last_group_for_a_metric() {
     let mut factory = CollectorFactory::new(schema());
     let configs = [

@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use betterlite_prometheus::collector_factory::registry::{
-    CallbackEntry, CallbackRegistry, PROMETHEUS_LOGGER_CLASS,
+    CallbackEntry, CallbackRegistry, PROMETHEUS_CALLBACK_NAME, PROMETHEUS_LOGGER_CLASS,
 };
 
 #[derive(Debug, Eq, PartialEq)]
@@ -11,7 +11,7 @@ struct FakeLogger {
 
 static LOGGER: FakeLogger = FakeLogger { name: "logger" };
 static OTHER_LOGGER: FakeLogger = FakeLogger {
-    name: "other-prometheus-logger",
+    name: "other-logger",
 };
 
 fn entry(
@@ -36,10 +36,18 @@ fn prometheus_registry_returns_the_first_logger() {
 }
 
 #[test]
-fn prometheus_registry_skips_other_callbacks() {
+fn prometheus_registry_matches_the_configured_callback_name() {
+    let registry = CallbackRegistry {
+        entries: vec![entry(PROMETHEUS_CALLBACK_NAME, Some(&LOGGER))],
+    };
+    assert_eq!(registry.get_instance(), Some(&LOGGER));
+}
+
+#[test]
+fn prometheus_registry_skips_loggers_of_other_classes() {
     let registry = CallbackRegistry {
         entries: vec![
-            entry("CustomLogger", None),
+            entry("CustomLogger", Some(&OTHER_LOGGER)),
             entry(PROMETHEUS_LOGGER_CLASS, Some(&LOGGER)),
         ],
     };
@@ -49,7 +57,10 @@ fn prometheus_registry_skips_other_callbacks() {
 #[test]
 fn prometheus_registry_returns_none_when_not_registered() {
     let registry = CallbackRegistry {
-        entries: vec![entry("CustomLogger", None)],
+        entries: vec![
+            entry("CustomLogger", Some(&OTHER_LOGGER)),
+            entry(PROMETHEUS_CALLBACK_NAME, None),
+        ],
     };
     assert_eq!(registry.get_instance(), None);
     let empty: CallbackRegistry<'static, FakeLogger> = CallbackRegistry { entries: vec![] };

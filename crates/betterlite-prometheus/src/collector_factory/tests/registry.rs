@@ -1,4 +1,5 @@
 pub const PROMETHEUS_LOGGER_CLASS: &str = "PrometheusLogger";
+pub const PROMETHEUS_CALLBACK_NAME: &str = "prometheus";
 
 // one callback as the exporter's registry adapter sees it: B189's class name plus the logger it holds
 #[derive(Clone, Debug)]
@@ -17,7 +18,9 @@ impl<'callbacks, L> CallbackRegistry<'callbacks, L> {
     #[must_use]
     pub fn get_instance(&self) -> Option<&'callbacks L> {
         for entry in &self.entries {
-            if entry.class_name == PROMETHEUS_LOGGER_CLASS {
+            let configured = entry.class_name == PROMETHEUS_CALLBACK_NAME
+                || entry.class_name == PROMETHEUS_LOGGER_CLASS;
+            if configured {
                 return entry.logger;
             }
         }
