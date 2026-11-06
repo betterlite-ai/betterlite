@@ -1,0 +1,11 @@
+kind: helper
+name: user-url-no-hostname
+call:
+  b5082:
+    call: validate_url
+    url: "http:///path"
+    user_url_allowed_hosts: []
+    ssl_verify: true
+env: {}
+compare:
+  ignore: []

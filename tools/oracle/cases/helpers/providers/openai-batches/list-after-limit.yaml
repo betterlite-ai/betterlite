@@ -1,0 +1,10 @@
+kind: helper
+name: list-after-limit
+call:
+  openai_batches:
+    is_async: true
+    settings: {api_key: sk-fixture, api_base: null, timeout: null, max_retries: null, organization: null}
+    request: {list: {after: batch_0, limit: 20}}
+    answer: {value: {object: list, data: [], has_more: false}}
+env: {}
+compare: {ignore: []}

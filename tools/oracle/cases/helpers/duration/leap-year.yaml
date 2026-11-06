@@ -1,0 +1,14 @@
+kind: helper
+name: leap_year
+call:
+  duration:
+    calls:
+      - {function: duration_in_seconds, duration: "1mo", now: "2024-02-29T00:00:00Z"}
+      - {function: duration_in_seconds, duration: "12mo", now: "2024-02-29T00:00:00Z"}
+      - {function: duration_in_seconds, duration: "48mo", now: "2020-02-29T00:00:00Z"}
+      - {function: duration_in_seconds, duration: "12mo", now: "2023-02-28T00:00:00Z"}
+      - {function: reset, duration: "1mo", now: "2024-02-29T00:00:00Z"}
+      - {function: reset, duration: "1d", now: "2024-02-28T12:00:00Z"}
+      - {function: reset, duration: "1d", now: "2024-02-29T12:00:00Z"}
+env: {}
+compare: {ignore: []}
