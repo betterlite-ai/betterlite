@@ -1,0 +1,5 @@
+kind: helper
+name: openai-threads-empty-thread-id
+call: {openai_threads: {get_thread: {options: {api_key: sk-test, api_base: 'https://example.test/v1'}, thread_id: '', aget_thread: false}}}
+env: {}
+compare: {ignore: []}
