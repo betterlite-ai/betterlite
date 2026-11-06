@@ -12,7 +12,7 @@ use crate::http_analytics_loggers::delivery::{DELIVERY_DEADLINE, Delivery, PostR
 use super::error::BraintrustError;
 use super::event::{CallbackPath, SuccessEvent};
 use super::payload;
-use super::payload::fields::{metadata_text, optional_object};
+use super::payload::{metadata_text, optional_object};
 use super::settings::Settings;
 
 const DEFAULT_PROJECT_NAME: &str = "litellm";

@@ -2,8 +2,10 @@ kind: helper
 name: braintrust api key validation rejects a missing BRAINTRUST_API_KEY
 call:
   b3962:
-    function: init
+    function: resolve_project
     scenarios:
-      - environment: {}
+      - path: sync
+        project_name: analytics
+        environment: {}
 env: {}
 compare: {ignore: []}

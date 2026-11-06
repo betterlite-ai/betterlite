@@ -1,11 +1,14 @@
 kind: helper
-name: "braintrust_logging: init seed"
+name: "braintrust_logging: project resolution seed"
 call:
   b3962:
-    function: init
+    function: resolve_project
     scenarios:
-      - environment: {BRAINTRUST_API_KEY: seed-key}
-      - environment: {BRAINTRUST_API_BASE: "http://seed.test/v1"}
-        api_key: seed-key
+      - path: async
+        project_name: seed-project
+        environment: {BRAINTRUST_API_KEY: seed-key}
+        api_base: "http://seed.test/v1"
+        answers:
+          - {status: 200, body: {id: seed-id}}
 env: {}
 compare: {ignore: []}

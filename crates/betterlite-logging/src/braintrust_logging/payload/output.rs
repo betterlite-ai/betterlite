@@ -4,24 +4,17 @@ use serde_json::Number;
 
 use super::super::event::{ResponseObject, SuccessEvent};
 use super::PayloadError;
-use super::fields::object;
 use super::finish_reason::map_finish_reason;
+use super::object;
 
-const MODEL_CHOICE_FIELDS: [&str; 5] = [
+const MODEL_FIELDS: [&str; 5] = [
     "finish_reason",
     "index",
     "message",
     "logprobs",
     "provider_specific_fields",
 ];
-const TEXT_CHOICE_FIELDS: [&str; 4] = ["finish_reason", "index", "text", "logprobs"];
-const MESSAGE_FIELDS: [&str; 5] = [
-    "content",
-    "role",
-    "tool_calls",
-    "function_call",
-    "provider_specific_fields",
-];
+const TEXT_FIELDS: [&str; 4] = ["finish_reason", "index", "text", "logprobs"];
 const DROPPED_WHEN_NULL: [&str; 6] = [
     "annotations",
     "audio",
@@ -35,35 +28,6 @@ const DROPPED_WHEN_NULL: [&str; 6] = [
 enum ChoiceKind {
     Model,
     Text,
-}
-
-#[derive(Clone, Copy)]
-enum Expected {
-    Object,
-    Array,
-    Text,
-    Integer,
-}
-
-impl Expected {
-    fn matches(self, value: &Json) -> bool {
-        match (self, value) {
-            (Self::Object, Json::Object(_))
-            | (Self::Array, Json::List(_))
-            | (Self::Text, Json::Text(_)) => true,
-            (Self::Integer, Json::Number(number)) => number.is_i64() || number.is_u64(),
-            (Self::Object | Self::Array | Self::Text | Self::Integer, _) => false,
-        }
-    }
-
-    const fn describe(self) -> &'static str {
-        match self {
-            Self::Object => "a JSON object",
-            Self::Array => "a JSON array",
-            Self::Text => "a string",
-            Self::Integer => "an integer",
-        }
-    }
 }
 
 pub(super) fn output(event: &SuccessEvent<'_>) -> Result<Json, PayloadError> {
@@ -103,39 +67,30 @@ fn choice(item: &Json, kind: ChoiceKind) -> Result<Json, PayloadError> {
     choice.insert("finish_reason".to_owned(), finish);
     choice.insert("index".to_owned(), index(fields.get("index"), kind)?);
     match kind {
-        ChoiceKind::Model => model_fields(fields, native, &mut choice)?,
+        ChoiceKind::Model => {
+            choice.insert("message".to_owned(), message(fields.get("message"))?);
+            if let Some(logprobs) = fields
+                .get("logprobs")
+                .filter(|value| !matches!(value, Json::Null))
+            {
+                choice.insert("logprobs".to_owned(), logprobs.clone());
+            }
+            if let Some(provider) = provider_fields(fields, native)? {
+                choice.insert("provider_specific_fields".to_owned(), provider);
+            }
+            copy_extra(fields, &MODEL_FIELDS, &mut choice);
+        }
         ChoiceKind::Text => {
-            choice.insert(
-                "text".to_owned(),
-                fields.get("text").cloned().unwrap_or(Json::Null),
-            );
-            choice.insert(
-                "logprobs".to_owned(),
-                fields.get("logprobs").cloned().unwrap_or(Json::Null),
-            );
-            extras(fields, &TEXT_CHOICE_FIELDS, &mut choice);
+            for key in ["text", "logprobs"] {
+                choice.insert(
+                    key.to_owned(),
+                    fields.get(key).cloned().unwrap_or(Json::Null),
+                );
+            }
+            copy_extra(fields, &TEXT_FIELDS, &mut choice);
         }
     }
     Ok(Json::Object(choice))
-}
-
-fn model_fields(
-    fields: &IndexMap<String, Json>,
-    native: Option<String>,
-    choice: &mut IndexMap<String, Json>,
-) -> Result<(), PayloadError> {
-    choice.insert("message".to_owned(), message(fields.get("message"))?);
-    if let Some(logprobs) = fields
-        .get("logprobs")
-        .filter(|value| !matches!(value, Json::Null))
-    {
-        choice.insert("logprobs".to_owned(), logprobs.clone());
-    }
-    if let Some(provider) = provider_fields(fields, native)? {
-        choice.insert("provider_specific_fields".to_owned(), provider);
-    }
-    extras(fields, &MODEL_CHOICE_FIELDS, choice);
-    Ok(())
 }
 
 fn finish_reason(
@@ -163,24 +118,15 @@ fn finish_reason(
 
 fn index(value: Option<&Json>, kind: ChoiceKind) -> Result<Json, PayloadError> {
     let zero = Json::Number(Number::from(0_u8));
-    match kind {
-        ChoiceKind::Model => checked(value, "choices[].index", Expected::Integer, zero),
-        ChoiceKind::Text => Ok(value.cloned().unwrap_or(zero)),
-    }
-}
-
-fn checked(
-    value: Option<&Json>,
-    field: &'static str,
-    expected: Expected,
-    fallback: Json,
-) -> Result<Json, PayloadError> {
     match value {
-        None | Some(Json::Null) => Ok(fallback),
-        Some(present) if expected.matches(present) => Ok(present.clone()),
+        Some(present) if kind == ChoiceKind::Text => Ok(present.clone()),
+        Some(Json::Number(number)) if number.is_i64() || number.is_u64() => {
+            Ok(Json::Number(number.clone()))
+        }
+        None | Some(Json::Null) => Ok(zero),
         Some(_) => Err(PayloadError::Field {
-            field,
-            expected: expected.describe(),
+            field: "choices[].index",
+            expected: "an integer",
         }),
     }
 }
@@ -220,65 +166,72 @@ fn message(value: Option<&Json>) -> Result<Json, PayloadError> {
             });
         }
     };
-    message_body(fields)
-}
-
-fn message_body(fields: &IndexMap<String, Json>) -> Result<Json, PayloadError> {
-    let mut message = IndexMap::new();
-    message.insert(
-        "content".to_owned(),
-        fields.get("content").cloned().unwrap_or(Json::Null),
-    );
-    message_defaults(fields, &mut message)?;
-    extras(fields, &MESSAGE_FIELDS, &mut message);
-    message.retain(|key, item| {
-        !(matches!(item, Json::Null) && DROPPED_WHEN_NULL.contains(&key.as_str()))
-    });
+    let mut message = IndexMap::from([
+        ("content".to_owned(), Json::Null),
+        ("role".to_owned(), Json::Text("assistant".to_owned())),
+        ("tool_calls".to_owned(), Json::Null),
+        ("function_call".to_owned(), Json::Null),
+        ("provider_specific_fields".to_owned(), Json::Null),
+    ]);
+    for (key, item) in fields {
+        let dropped = matches!(item, Json::Null)
+            && (key == "role" || DROPPED_WHEN_NULL.contains(&key.as_str()));
+        if !dropped {
+            message.insert(key.clone(), item.clone());
+        }
+    }
+    normalize_message(&mut message)?;
     Ok(Json::Object(message))
 }
 
-fn message_defaults(
-    fields: &IndexMap<String, Json>,
-    message: &mut IndexMap<String, Json>,
-) -> Result<(), PayloadError> {
-    message.insert(
-        "role".to_owned(),
-        checked(
-            fields.get("role"),
-            "choices[].message.role",
-            Expected::Text,
-            Json::Text("assistant".to_owned()),
-        )?,
-    );
-    let calls = match fields.get("tool_calls") {
-        Some(Json::List(calls)) if calls.is_empty() => None,
-        other => other,
+fn normalize_message(message: &mut IndexMap<String, Json>) -> Result<(), PayloadError> {
+    if let Some(role) = message.get("role")
+        && !matches!(role, Json::Text(_))
+    {
+        return Err(PayloadError::Field {
+            field: "choices[].message.role",
+            expected: "a string or null",
+        });
+    }
+    let calls = match message.get("tool_calls") {
+        Some(Json::List(calls)) if calls.is_empty() => Json::Null,
+        Some(calls @ Json::List(_)) => calls.clone(),
+        None | Some(Json::Null) => Json::Null,
+        Some(_) => {
+            return Err(PayloadError::Field {
+                field: "choices[].message.tool_calls",
+                expected: "a JSON array or null",
+            });
+        }
     };
-    message.insert(
-        "tool_calls".to_owned(),
-        checked(
-            calls,
-            "choices[].message.tool_calls",
-            Expected::Array,
-            Json::Null,
-        )?,
-    );
-    for (key, name) in [
+    message.insert("tool_calls".to_owned(), calls);
+    for (key, field) in [
         ("function_call", "choices[].message.function_call"),
         (
             "provider_specific_fields",
             "choices[].message.provider_specific_fields",
         ),
     ] {
-        message.insert(
-            key.to_owned(),
-            checked(fields.get(key), name, Expected::Object, Json::Null)?,
-        );
+        let value = match message.get(key) {
+            Some(object @ Json::Object(_)) => object.clone(),
+            None | Some(Json::Null) => Json::Null,
+            Some(_) => {
+                return Err(PayloadError::Field {
+                    field,
+                    expected: "a JSON object or null",
+                });
+            }
+        };
+        message.insert(key.to_owned(), value);
     }
     Ok(())
 }
 
-fn extras(fields: &IndexMap<String, Json>, declared: &[&str], out: &mut IndexMap<String, Json>) {
+fn copy_extra(
+    fields: &IndexMap<String, Json>,
+    declared: &[&str],
+    out: &mut IndexMap<String, Json>,
+) {
     for (key, value) in fields {
         if !declared.contains(&key.as_str()) {
             out.insert(key.clone(), value.clone());

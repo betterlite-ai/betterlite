@@ -5,7 +5,7 @@ use betterlite_logging::braintrust_logging::logger::BraintrustLogger;
 use betterlite_logging::braintrust_logging::settings::Settings;
 use betterlite_models::decisions::Json;
 use chrono::{DateTime, Utc};
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::runtime::Runtime;
@@ -21,7 +21,6 @@ pub(crate) struct Op;
 #[derive(Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
 pub(crate) enum Input {
-    Init { scenarios: Vec<Scenario> },
     ResolveProject { scenarios: Vec<Scenario> },
     Log { scenarios: Vec<Scenario> },
 }
@@ -101,23 +100,10 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::Init { scenarios } => init(scenarios),
             Input::ResolveProject { scenarios } => projects(scenarios),
             Input::Log { scenarios } => logs(scenarios),
         }
     }
-}
-
-fn init(scenarios: &[Scenario]) -> HelperResult {
-    let mut results = Vec::with_capacity(scenarios.len());
-    for scenario in scenarios {
-        let settings = settings(scenario)?;
-        results.push(json!({
-            "api_base": settings.api_base,
-            "api_key": settings.api_key.expose_secret(),
-        }));
-    }
-    Ok(json!({"results": results}))
 }
 
 fn projects(scenarios: &[Scenario]) -> HelperResult {

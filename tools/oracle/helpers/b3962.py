@@ -114,14 +114,6 @@ def build_logger(scenario: dict[str, Json]) -> BraintrustLogger:
     )
 
 
-def init_result(scenario: dict[str, Json]) -> Json:
-    logger = build_logger(scenario)
-    return cast(Json, {
-        "api_base": logger.api_base,
-        "api_key": logger.api_key,
-    })
-
-
 def resolve_sync(logger: BraintrustLogger, name: str) -> str:
     return logger.get_project_id_sync(name)
 
@@ -254,7 +246,6 @@ def log_result(scenario: dict[str, Json]) -> Json:
 
 
 HANDLERS = {
-    "init": init_result,
     "resolve_project": project_result,
     "log": log_result,
 }

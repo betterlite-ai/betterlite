@@ -1,12 +1,12 @@
 use betterlite_models::decisions::Json;
+use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde_json::Number;
 
 use super::super::event::{CallbackPath, ResponseObject, SuccessEvent};
 use super::PayloadError;
-use super::fields::{object, optional_object};
-use super::seconds;
+use super::{object, optional_object};
 
 pub(super) fn metrics(
     event: &SuccessEvent<'_>,
@@ -27,10 +27,10 @@ pub(super) fn metrics(
         event.response_cost.cloned().unwrap_or(Json::Null),
     );
     insert_first_token(&mut metrics, event, path)?;
-    let start = Decimal::new(seconds::micros(event.start_time)?, 6);
-    let end = Decimal::new(seconds::micros(event.end_time)?, 6);
-    metrics.insert("start".to_owned(), seconds::text(start, "start")?);
-    metrics.insert("end".to_owned(), seconds::text(end, "end")?);
+    let start = Decimal::new(micros(event.start_time)?, 6);
+    let end = Decimal::new(micros(event.end_time)?, 6);
+    metrics.insert("start".to_owned(), text(start, "start")?);
+    metrics.insert("end".to_owned(), text(end, "end")?);
     Ok(Some(Json::Object(metrics)))
 }
 
@@ -41,17 +41,15 @@ fn insert_first_token(
     path: CallbackPath,
 ) -> Result<(), PayloadError> {
     let first_token = match path {
-        CallbackPath::Sync => Some(seconds::difference(
+        CallbackPath::Sync => Some(difference(
             event.end_time,
             event.start_time,
             "time_to_first_token",
         )?),
         CallbackPath::Async => match (event.completion_start_time, event.api_call_start_time) {
-            (Some(completion), Some(call)) => Some(seconds::difference(
-                completion,
-                call,
-                "time_to_first_token",
-            )?),
+            (Some(completion), Some(call)) => {
+                Some(difference(completion, call, "time_to_first_token")?)
+            }
             _ => None,
         },
     };
@@ -84,4 +82,45 @@ fn token(usage: &IndexMap<String, Json>, name: &'static str) -> Result<Json, Pay
         }
         Some(_) => Err(PayloadError::UsageToken { name }),
     }
+}
+
+pub(super) fn micros(moment: DateTime<Utc>) -> Result<i64, PayloadError> {
+    moment
+        .timestamp()
+        .checked_mul(1_000_000)
+        .and_then(|seconds| seconds.checked_add(i64::from(moment.timestamp_subsec_micros())))
+        .ok_or(PayloadError::Field {
+            field: "timestamp",
+            expected: "a representable instant",
+        })
+}
+
+pub(super) fn difference(
+    later: DateTime<Utc>,
+    earlier: DateTime<Utc>,
+    field: &'static str,
+) -> Result<Json, PayloadError> {
+    let elapsed = Decimal::new(micros(later)?, 6)
+        .checked_sub(Decimal::new(micros(earlier)?, 6))
+        .ok_or(PayloadError::Field {
+            field,
+            expected: "a representable duration",
+        })?;
+    text(elapsed, field)
+}
+
+// Python writes a timestamp or duration as the shortest decimal that round-trips, with a fraction digit.
+pub(super) fn text(seconds: Decimal, field: &'static str) -> Result<Json, PayloadError> {
+    let normalized = seconds.normalize().to_string();
+    let value = if normalized.contains('.') {
+        normalized
+    } else {
+        format!("{normalized}.0")
+    };
+    serde_json::from_str::<Number>(&value)
+        .map(Json::Number)
+        .map_err(|_source| PayloadError::Field {
+            field,
+            expected: "a JSON number",
+        })
 }
