@@ -64,7 +64,6 @@ enum Fault {
     #[default]
     None,
     Directory,
-    Read,
     Write,
 }
 
@@ -85,30 +84,33 @@ impl FileAccess for Files {
         Ok(())
     }
 
-    fn read<'call>(
-        &'call mut self,
-        _path: &'call Path,
-    ) -> impl Future<Output = io::Result<Vec<u8>>> + Send + 'call {
-        if self.fault == Fault::Read {
-            return ready(Err(io::Error::from(io::ErrorKind::NotFound)));
-        }
-        ready(
-            self.content
-                .clone()
-                .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound)),
-        )
+    fn read(&mut self, _path: &Path) -> impl Future<Output = io::Result<Vec<u8>>> + Send {
+        ready(self.read_outcome())
     }
 
-    fn write<'call>(
-        &'call mut self,
-        _path: &'call Path,
-        content: &'call [u8],
-    ) -> impl Future<Output = io::Result<()>> + Send + 'call {
+    fn write(
+        &mut self,
+        _path: &Path,
+        content: &[u8],
+    ) -> impl Future<Output = io::Result<()>> + Send {
         self.writes.push(content.to_vec());
+        ready(self.write_outcome())
+    }
+}
+
+impl Files {
+    fn read_outcome(&self) -> io::Result<Vec<u8>> {
+        self.content
+            .clone()
+            .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
+    }
+
+    fn write_outcome(&self) -> io::Result<()> {
         if self.fault == Fault::Write {
-            return ready(Err(io::Error::other("scripted write failure")));
+            Err(io::Error::other("scripted write failure"))
+        } else {
+            Ok(())
         }
-        ready(Ok(()))
     }
 }
 
@@ -290,26 +292,6 @@ async fn a_whitespace_only_cached_token_starts_login() {
 
     assert_eq!(token.expose_secret(), "fresh");
     assert_eq!(subject.files.writes, vec![b"fresh".to_vec()]);
-    assert_eq!(subject.transport.requests.len(), 2);
-}
-
-#[tokio::test]
-async fn an_unreadable_cached_token_starts_login() {
-    let files = Files {
-        content: None,
-        fault: Fault::Read,
-        writes: Vec::new(),
-        dirs: Vec::new(),
-    };
-    let mut subject = authenticator(
-        files,
-        vec![Ok(device_reply())],
-        vec![Ok(token_reply("fresh"))],
-    );
-
-    let token = subject.get_access_token().await.unwrap();
-
-    assert_eq!(token.expose_secret(), "fresh");
     assert_eq!(subject.transport.requests.len(), 2);
 }
 

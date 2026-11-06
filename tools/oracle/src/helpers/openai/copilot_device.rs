@@ -78,19 +78,16 @@ impl FileAccess for Files {
         LocalFiles.ensure_dir(path)
     }
 
-    fn read<'call>(
-        &'call mut self,
-        path: &'call Path,
-    ) -> impl Future<Output = io::Result<Vec<u8>>> + Send + 'call {
+    fn read(&mut self, path: &Path) -> impl Future<Output = io::Result<Vec<u8>>> + Send {
         let mut files = LocalFiles;
         async move { files.read(path).await }
     }
 
-    fn write<'call>(
-        &'call mut self,
-        path: &'call Path,
-        content: &'call [u8],
-    ) -> impl Future<Output = io::Result<()>> + Send + 'call {
+    fn write(
+        &mut self,
+        path: &Path,
+        content: &[u8],
+    ) -> impl Future<Output = io::Result<()>> + Send {
         let destination = if self.fail_write {
             path.join("missing")
         } else {

@@ -11,15 +11,9 @@ pub const FILE_LIMIT: usize = 0x0010_0000;
 
 pub trait FileAccess {
     fn ensure_dir(&mut self, path: &Path) -> io::Result<()>;
-    fn read<'call>(
-        &'call mut self,
-        path: &'call Path,
-    ) -> impl Future<Output = io::Result<Vec<u8>>> + Send + 'call;
-    fn write<'call>(
-        &'call mut self,
-        path: &'call Path,
-        content: &'call [u8],
-    ) -> impl Future<Output = io::Result<()>> + Send + 'call;
+    fn read(&mut self, path: &Path) -> impl Future<Output = io::Result<Vec<u8>>> + Send;
+    fn write(&mut self, path: &Path, content: &[u8])
+    -> impl Future<Output = io::Result<()>> + Send;
 }
 
 #[derive(Debug, Default)]
