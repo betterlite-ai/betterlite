@@ -11,8 +11,9 @@ use opentelemetry_sdk::metrics::{InMemoryMetricExporter, SdkMeterProvider};
 use rstest::rstest;
 
 use super::{
-    METRIC_EXPORT_INTERVAL, ProviderState, Resolved, build_logger_provider, build_resource,
-    get_meter, resolve_logger_provider, resolve_meter_provider, resolve_provider,
+    METRIC_EXPORT_INTERVAL, ProviderState, Resolved, build_logger_provider, build_meter_provider,
+    build_metric_reader, build_resource, get_meter, resolve_logger_provider,
+    resolve_meter_provider, resolve_provider,
 };
 use crate::otel::plumbing::exporters::tests::{RecordingClient, clients, config};
 use crate::otel::plumbing::exporters::{ExporterError, build_log_exporter};
@@ -199,6 +200,30 @@ fn exporter_logger_provider_batches_network_sinks() {
         posted.first().map(|request| request.uri.as_str()),
         Some("http://collector:4318/v1/logs")
     );
+}
+
+#[tokio::test]
+async fn exporter_metric_reader_posts_protobuf_to_the_metrics_path() {
+    let recorder = Arc::new(RecordingClient::default());
+    let wired = clients(&recorder);
+    let mut settings = config("otlp_http");
+    settings.endpoint = Some("http://collector:4318".to_owned());
+    let reader = build_metric_reader(&settings, &wired).expect("reader");
+    let provider = build_meter_provider(&settings, reader);
+    get_meter(&provider, "litellm.metrics")
+        .u64_counter("probe")
+        .build()
+        .add(1, &[]);
+    let posted = recorder
+        .wait_for_request(Duration::from_secs(8))
+        .await
+        .expect("periodic export within the interval");
+    assert_eq!(posted.uri, "http://collector:4318/v1/metrics");
+    let content_type = posted
+        .headers
+        .get("content-type")
+        .and_then(|value| value.to_str().ok());
+    assert_eq!(content_type, Some("application/x-protobuf"));
 }
 
 #[test]

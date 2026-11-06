@@ -2,6 +2,7 @@
 use std::collections::BTreeMap;
 use std::mem;
 use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
 
 use betterlite_config::sections::otel_settings::Settings as OtelConfig;
 use http::HeaderMap;
@@ -14,10 +15,14 @@ use opentelemetry_http::{Bytes, HttpClient, HttpError, Request, Response};
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
 use rstest::rstest;
 use serde::Deserialize;
+use tokio::time::sleep;
+use tonic::Request as GrpcRequest;
+use tonic::service::Interceptor as _;
 
+use super::header_rewrite::{MetadataInterceptor, configured_headers};
 use super::{
     ExporterError, ExporterFactories, ExporterFactory, HttpClients, Transport, build_log_exporter,
-    configured_endpoint, metadata_from_headers, metric_sink,
+    configured_endpoint, metric_sink,
 };
 use crate::otel::config::ExporterSpec;
 use crate::otel::plumbing::processors::processor_for;
@@ -38,6 +43,20 @@ pub(crate) struct RecordingClient {
 impl RecordingClient {
     pub(crate) fn recorded(&self) -> Vec<Recorded> {
         mem::take(&mut *self.requests.lock().expect("recording lock"))
+    }
+
+    pub(crate) async fn wait_for_request(&self, timeout: Duration) -> Option<Recorded> {
+        let deadline = Instant::now().checked_add(timeout)?;
+        loop {
+            let recorded = self.recorded();
+            if !recorded.is_empty() {
+                return recorded.into_iter().next();
+            }
+            if Instant::now() >= deadline {
+                return None;
+            }
+            sleep(Duration::from_millis(25)).await;
+        }
     }
 }
 
@@ -199,14 +218,79 @@ fn exporter_endpoint_treats_a_blank_as_unset(
 
 #[test]
 fn otlp_grpc_headers_are_decoded_into_metadata() {
-    let metadata =
-        metadata_from_headers(Some("authorization=Basic%20dG9rZW4%3D")).expect("metadata");
-    let value = metadata
+    let headers = configured_headers(Some("authorization=Basic%20dG9rZW4%3D")).expect("headers");
+    let mut interceptor = MetadataInterceptor { headers };
+    let request = interceptor.call(GrpcRequest::new(())).expect("intercepted");
+    let value = request
+        .metadata()
         .get("authorization")
-        .expect("authorization header")
-        .to_str()
-        .expect("header text");
-    assert_eq!(value, "Basic dG9rZW4=");
+        .and_then(|value| value.to_str().ok());
+    assert_eq!(value, Some("Basic dG9rZW4="));
+}
+
+#[test]
+fn otlp_grpc_metadata_interceptor_drops_the_environment_headers() {
+    let headers = configured_headers(Some("authorization=Bearer tenant")).expect("headers");
+    let mut interceptor = MetadataInterceptor { headers };
+    let mut request = GrpcRequest::new(());
+    request.metadata_mut().insert(
+        "authorization",
+        "Bearer operator".parse().expect("metadata"),
+    );
+    request
+        .metadata_mut()
+        .insert("x-env", "1".parse().expect("metadata"));
+    let intercepted = interceptor.call(request).expect("intercepted");
+    let authorization = intercepted
+        .metadata()
+        .get("authorization")
+        .and_then(|value| value.to_str().ok());
+    assert_eq!(authorization, Some("Bearer tenant"));
+    assert!(intercepted.metadata().get("x-env").is_none());
+}
+
+#[test]
+fn otlp_http_environment_headers_apply_when_the_spec_sets_none() {
+    let mut http = spec("otlp_http");
+    http.endpoint = Some("http://collector:4318".to_owned());
+    let posted = temp_env::with_vars(
+        [
+            (
+                "OTEL_EXPORTER_OTLP_HEADERS",
+                Some("authorization=Bearer operator"),
+            ),
+            ("OTEL_EXPORTER_OTLP_TRACES_HEADERS", None),
+        ],
+        || post_one_span(&http),
+    );
+    let authorization = posted
+        .headers
+        .get("authorization")
+        .and_then(|value| value.to_str().ok());
+    assert_eq!(authorization, Some("Bearer operator"));
+}
+
+#[test]
+fn otlp_http_configured_headers_replace_the_environment_headers() {
+    let mut http = spec("otlp_http");
+    http.endpoint = Some("http://collector:4318".to_owned());
+    http.headers = Some("authorization=Bearer tenant".to_owned());
+    let posted = temp_env::with_vars(
+        [
+            (
+                "OTEL_EXPORTER_OTLP_HEADERS",
+                Some("authorization=Bearer operator,x-env=1"),
+            ),
+            ("OTEL_EXPORTER_OTLP_TRACES_HEADERS", None),
+        ],
+        || post_one_span(&http),
+    );
+    let authorization = posted
+        .headers
+        .get("authorization")
+        .and_then(|value| value.to_str().ok());
+    assert_eq!(authorization, Some("Bearer tenant"));
+    assert!(posted.headers.get("x-env").is_none());
 }
 
 #[test]

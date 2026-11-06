@@ -6,6 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+async-trait = "0.1.92"
 betterlite-config = { path = "../betterlite-config" }
 betterlite-env = { path = "../betterlite-env" }
 betterlite-http = { path = "../betterlite-http" }
@@ -39,19 +40,20 @@ serde_with = { version = "3.24.0", default-features = false, features = ["alloc"
 sha2.workspace = true
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true
+tonic = { version = "0.14.9", default-features = false }
 tracing.workspace = true
 unicode-properties = { version = "0.1.4", default-features = false, features = ["general-category"] }
 url = "2.5.8"
 uuid.workspace = true
 
 [dev-dependencies]
-async-trait = "0.1.92"
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-privacy-openai = { path = "src/logging_privacy/openai" }
 insta = { version = "1.49.0", default-features = false, features = ["yaml"] }
 rstest = "=0.27.0"
 serde-saphyr.workspace = true
 serde_json = { version = "1.0.154", features = ["arbitrary_precision", "raw_value"] }
+temp-env = "0.3.6"
 tokio.workspace = true
 tracing-subscriber.workspace = true
 

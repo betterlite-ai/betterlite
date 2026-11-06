@@ -1,11 +1,10 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use betterlite_config::sections::otel_settings::Settings as OtelConfig;
 use http::HeaderMap;
-use http::header::{HeaderName, HeaderValue, InvalidHeaderName, InvalidHeaderValue};
+use http::header::{InvalidHeaderName, InvalidHeaderValue};
 use opentelemetry_http::HttpClient;
-use opentelemetry_otlp::tonic_types::metadata::MetadataMap;
 use opentelemetry_otlp::{
     ExporterBuildError, Protocol, WithExportConfig, WithHttpConfig, WithTonicConfig,
 };
@@ -14,8 +13,10 @@ use opentelemetry_sdk::trace::InMemorySpanExporter;
 
 use crate::otel::config::{ExporterSpec, Signal};
 use crate::otel::plumbing::endpoints::signal_endpoint;
-use crate::otel::plumbing::headers::parse_headers;
 use crate::otel::plumbing::sinks::{LogSink, MetricSink, SpanSink};
+
+mod header_rewrite;
+use header_rewrite::{ConfiguredHeadersClient, MetadataInterceptor, configured_headers};
 
 pub type ExporterFactory = Arc<dyn Fn(&ExporterSpec) -> ExportResult<SpanSink> + Send + Sync>;
 
@@ -85,7 +86,38 @@ fn configured_endpoint(endpoint: Option<&str>) -> Option<&str> {
     }
 }
 
-// The SDK percent-decodes header values it is given, and parse_headers already did.
+fn with_endpoint<B>(builder: B, endpoint: Option<&str>) -> B
+where
+    B: WithExportConfig,
+{
+    match configured_endpoint(endpoint) {
+        Some(url) => builder.with_endpoint(url),
+        None => builder,
+    }
+}
+
+fn shared_client(client: &Arc<dyn HttpClient>, headers: HeaderMap) -> Arc<dyn HttpClient> {
+    if headers.is_empty() {
+        Arc::clone(client)
+    } else {
+        Arc::new(ConfiguredHeadersClient {
+            inner: Arc::clone(client),
+            headers,
+        })
+    }
+}
+
+fn tonic_builder<B>(builder: B, headers: HeaderMap) -> B
+where
+    B: WithTonicConfig,
+{
+    if headers.is_empty() {
+        builder
+    } else {
+        builder.with_interceptor(MetadataInterceptor { headers })
+    }
+}
+
 fn http_exporter<B>(
     builder: B,
     protocol: Protocol,
@@ -96,31 +128,11 @@ fn http_exporter<B>(
 where
     B: WithExportConfig + WithHttpConfig,
 {
-    let mut headers: HashMap<String, String> = HashMap::new();
-    for (name, value) in parse_headers(raw_headers) {
-        HeaderName::from_bytes(name.as_bytes())?;
-        HeaderValue::from_str(&value)?;
-        headers.insert(name, value.replace('%', "%25"));
-    }
+    let headers = configured_headers(raw_headers)?;
     let configured = builder
         .with_protocol(protocol)
-        .with_shared_http_client(Arc::clone(client))
-        .with_headers(headers);
-    Ok(match configured_endpoint(endpoint) {
-        Some(url) => configured.with_endpoint(url),
-        None => configured,
-    })
-}
-
-fn metadata_from_headers(raw_headers: Option<&str>) -> ExportResult<MetadataMap> {
-    let mut headers = HeaderMap::new();
-    for (name, value) in parse_headers(raw_headers) {
-        headers.insert(
-            HeaderName::from_bytes(name.as_bytes())?,
-            HeaderValue::from_str(&value)?,
-        );
-    }
-    Ok(MetadataMap::from_headers(headers))
+        .with_shared_http_client(shared_client(client, headers));
+    Ok(with_endpoint(configured, endpoint))
 }
 
 fn grpc_exporter<B>(
@@ -131,7 +143,8 @@ fn grpc_exporter<B>(
 where
     B: WithExportConfig + WithTonicConfig,
 {
-    let configured = builder.with_metadata(metadata_from_headers(raw_headers)?);
+    let headers = configured_headers(raw_headers)?;
+    let configured = tonic_builder(builder, headers);
     Ok(match configured_endpoint(endpoint) {
         Some(url) => configured.with_endpoint(url),
         None => configured,

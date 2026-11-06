@@ -1,6 +1,7 @@
 #![cfg(test)]
 use super::{DatabaseEndpoint, db_span_attributes, parse_database_endpoint, postgres_endpoint};
 use betterlite_config::loader::EnvironmentLookup;
+use opentelemetry::Value;
 use rstest::rstest;
 use std::collections::BTreeMap;
 use std::fs;
@@ -165,4 +166,19 @@ fn database_span_attributes_name_the_datastore(
     #[case] expected: &[(&str, &str)],
 ) {
     assert_eq!(attributes(service, call_type, environment), pairs(expected));
+}
+
+#[rstest]
+#[case::postgres("postgres", "postgresql://u:p@db:5433/app", 5433)]
+#[case::batch_write("batch_write_to_db", "postgresql://db/app", 5432)]
+fn database_span_attributes_serve_the_port_as_an_integer(
+    #[case] service: &str,
+    #[case] url: &str,
+    #[case] port: i64,
+) {
+    let attributes = db_span_attributes(service, None, &environment(&[("DATABASE_URL", url)]));
+    let found = attributes
+        .iter()
+        .find(|attribute| attribute.key.as_str() == "server.port");
+    assert_eq!(found.expect("server.port").value, Value::I64(port));
 }
