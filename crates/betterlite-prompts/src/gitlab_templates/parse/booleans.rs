@@ -3,8 +3,8 @@ use std::borrow::Cow;
 use serde_saphyr::granit_parser::{Event, Parser, ScalarStyle};
 
 // PyYAML's implicit resolver: exactly these spellings are booleans, and any other casing of the words is text.
-fn is_pyyaml_true(text: &str) -> bool {
-    text == "true"
+fn pyyaml_value(text: &str) -> Option<bool> {
+    if text == "true"
         || text == "True"
         || text == "TRUE"
         || text == "yes"
@@ -13,10 +13,10 @@ fn is_pyyaml_true(text: &str) -> bool {
         || text == "on"
         || text == "On"
         || text == "ON"
-}
-
-fn is_pyyaml_false(text: &str) -> bool {
-    text == "false"
+    {
+        return Some(true);
+    }
+    if text == "false"
         || text == "False"
         || text == "FALSE"
         || text == "no"
@@ -25,14 +25,16 @@ fn is_pyyaml_false(text: &str) -> bool {
         || text == "off"
         || text == "Off"
         || text == "OFF"
+    {
+        return Some(false);
+    }
+    None
 }
 
 fn replacement(text: &str) -> Option<String> {
-    if is_pyyaml_true(text) {
-        return Some("true".to_owned());
-    }
-    if is_pyyaml_false(text) {
-        return Some("false".to_owned());
+    if let Some(flag) = pyyaml_value(text) {
+        let word = if flag { "true" } else { "false" };
+        return Some(word.to_owned());
     }
     let lowered = text.to_ascii_lowercase();
     if lowered == "true" || lowered == "false" {
