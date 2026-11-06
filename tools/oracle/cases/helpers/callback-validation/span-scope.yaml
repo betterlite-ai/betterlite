@@ -193,6 +193,29 @@
         },
         {
           "function": "logging_metadata_config_error"
+        },
+        {
+          "function": "logging_metadata_config_error",
+          "metadata": {
+            "logging": [
+              {
+                "callback_name": "langfuse_otel",
+                "callback_vars": {
+                  "langfuse_host": "h"
+                }
+              },
+              {
+                "callback_vars": {
+                  "langfuse_span_scope": "full"
+                }
+              },
+              {
+                "callback_vars": {
+                  "langfuse_span_scope": "llm_only"
+                }
+              }
+            ]
+          }
         }
       ]
     }
@@ -226,6 +249,10 @@
       },
       {
         "pointer": "/value/13/error/message",
+        "why": "betterlite writes its own message"
+      },
+      {
+        "pointer": "/value/18/error/message",
         "why": "betterlite writes its own message"
       }
     ]

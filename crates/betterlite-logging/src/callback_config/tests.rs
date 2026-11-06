@@ -2,6 +2,7 @@
 
 use std::fs;
 use std::path::PathBuf;
+use std::time::{Duration, Instant};
 
 use rstest::rstest;
 
@@ -45,6 +46,20 @@ fn flags(v2: bool) -> FeatureFlags {
     }
 }
 
+fn many_scoped_metadata_outcome(count: usize) -> String {
+    let entry = r#"{"callback_vars": {"langfuse_span_scope": "full"}}"#;
+    let json = format!(r#"{{"logging": [{}]}}"#, vec![entry; count].join(","));
+    let started = Instant::now();
+    let result = outcome(validate_logging_metadata(json.as_bytes(), flags(false)));
+    // the quadratic scan takes minutes here, so a regression trips this bound
+    assert!(
+        started.elapsed() < Duration::from_secs(15),
+        "the span-scope check took {:?} for {count} entries",
+        started.elapsed()
+    );
+    result
+}
+
 fn run(scenario: &Scenario) -> String {
     match scenario {
         Scenario::Config(name, pairs, v2) => {
@@ -73,11 +88,7 @@ fn run(scenario: &Scenario) -> String {
                 other => format!("unexpected {other:?}"),
             }
         }
-        Scenario::ManyScoped(count) => {
-            let entry = r#"{"callback_vars": {"langfuse_span_scope": "full"}}"#;
-            let json = format!(r#"{{"logging": [{}]}}"#, vec![entry; *count].join(","));
-            outcome(validate_logging_metadata(json.as_bytes(), flags(false)))
-        }
+        Scenario::ManyScoped(count) => many_scoped_metadata_outcome(*count),
         Scenario::Team(json, v2) => outcome(validate_team_callback(json.as_bytes(), flags(*v2))),
     }
 }
@@ -172,6 +183,7 @@ fn held(family: &str, var: &str) -> String {
 #[case::metadata_scope_conflict_across_entries(Scenario::Metadata(r#"{"logging": [{"callback_name": "langfuse_otel", "callback_vars": {"langfuse_span_scope": "full"}}, {"callback_name": "langfuse_otel", "callback_vars": {"langfuse_span_scope": "llm_only"}}]}"#, false), SCOPE_CONFLICT)]
 #[case::metadata_entry_errors_come_before_conflicts(Scenario::Metadata(r#"{"logging": [{"callback_name": "langfuse_otel", "callback_vars": {"langfuse_span_scope": "full"}}, {"callback_name": "langfuse_otel", "callback_vars": {"langfuse_span_scope": "bad"}}]}"#, false), "Invalid langfuse_span_scope 'bad': must be one of ['full', 'llm_only']")]
 #[case::metadata_conflict_needs_no_callback_name(Scenario::Metadata(r#"{"logging": [{"callback_vars": {"langfuse_span_scope": "full"}}, {"callback_vars": {"langfuse_span_scope": "x"}}]}"#, false), SCOPE_CONFLICT)]
+#[case::metadata_first_scoped_entry_is_the_reference(Scenario::Metadata(r#"{"logging": [{"callback_name": "langfuse_otel", "callback_vars": {"langfuse_host": "h"}}, {"callback_vars": {"langfuse_span_scope": "full"}}, {"callback_vars": {"langfuse_span_scope": "llm_only"}}]}"#, false), SCOPE_CONFLICT)]
 #[case::metadata_boolean_variable_becomes_text(Scenario::Metadata(r#"{"logging": [{"callback_name": "langfuse", "callback_vars": {"turn_off_message_logging": true}}]}"#, false), "ok")]
 #[case::metadata_boolean_rate_is_text(Scenario::Metadata(r#"{"logging": [{"callback_name": "arize", "callback_vars": {"arize_error_sampling_rate": false}}]}"#, false), &rate("arize_error_sampling_rate", "False"))]
 #[case::metadata_many_entries_share_one_scope(Scenario::ManyScoped(100_000), "ok")]
