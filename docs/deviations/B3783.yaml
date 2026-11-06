@@ -8,7 +8,7 @@ deviations:
       betterlite's timeout is a std Duration, which cannot hold a negative or non-finite
       duration; the invalid configuration is reported where it enters instead of turning
       every evaluation into a silent fail-open.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L43-L48
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L44-L48
   - what: >-
       A guardrail built without a timeout reads ONYX_TIMEOUT. LiteLLM's Python constructor
       defaults the argument to 10.0, so it only reads the variable when the caller passes
@@ -18,21 +18,21 @@ deviations:
       betterlite's constructor takes the configured timeout as an Option and has no
       separate omitted-argument state; the config model's default of None matches the
       initialize_guardrail call LiteLLM makes.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L37-L44
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L40-L48
   - what: >-
       The Onyx Guard response body is read up to 1 MiB; a larger reply is treated as a
       backend error and fails open. LiteLLM parses a reply of any size.
     why: >-
       Every outbound call in betterlite has a bounded read, so a misbehaving guard server
       cannot make the gateway allocate without limit.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L66-L68
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L85
   - what: >-
       A transport error is stripped of its URL before it is logged. LiteLLM logs the httpx
       error, whose message contains the full request URL.
     why: >-
       The Onyx endpoint carries the API key in its path, so keeping the URL would write the
       key into the error log that the fail-open path emits.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L57-L64
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L130-L141
   - what: >-
       A denial whose violated_rules is null blocks with the "Unknown violation" message and
       status 400. LiteLLM's ", ".join(result["violated_rules"]) raises TypeError and the
@@ -41,4 +41,4 @@ deviations:
       A null list is outside the response type LiteLLM declares, and a fail-open on a
       server that denied the request is a bug no working setup relies on. Rules that are
       absent still use the same "Unknown violation" text LiteLLM uses.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L83-L92
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L86-L94
