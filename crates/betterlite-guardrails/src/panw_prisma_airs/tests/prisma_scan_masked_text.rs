@@ -1,5 +1,6 @@
 use rstest::rstest;
 
+use crate::panw_prisma_airs::verdict::{Action, ScanVerdict};
 use crate::prisma_airs_masking::{MaskedData, ScanResult, get_masked_text};
 
 fn masked(data: Option<&str>) -> MaskedData {
@@ -36,6 +37,25 @@ fn a_missing_or_empty_masked_text_is_reported_as_it_is(
     };
     assert_eq!(get_masked_text(&result, false), expected);
     assert_eq!(get_masked_text(&result, true), None);
+}
+
+#[rstest]
+#[case::prompt_string(
+    r#"{"action":"allow","category":"benign","prompt_masked_data":"redacted"}"#,
+    false
+)]
+#[case::response_list(
+    r#"{"action":"allow","category":"benign","response_masked_data":["redacted"]}"#,
+    true
+)]
+fn a_masked_field_that_is_not_an_object_keeps_the_verdict(
+    #[case] body: &str,
+    #[case] is_response: bool,
+) {
+    let verdict = ScanVerdict::from_body(body.as_bytes()).expect("the verdict survives");
+    assert_eq!(verdict.action, Action::Allow);
+    assert_eq!(verdict.category.as_deref(), Some("benign"));
+    assert_eq!(get_masked_text(&verdict.masks, is_response), None);
 }
 
 #[test]

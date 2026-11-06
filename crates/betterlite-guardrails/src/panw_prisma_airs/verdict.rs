@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::value::RawValue;
 use thiserror::Error;
 
-use crate::prisma_airs_masking::ScanResult;
+use crate::prisma_airs_masking::{MaskedData, ScanResult};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -33,6 +33,8 @@ struct VerdictWire {
     category: Option<String>,
     scan_id: Option<String>,
     error: Option<String>,
+    prompt_masked_data: Option<Box<RawValue>>,
+    response_masked_data: Option<Box<RawValue>>,
 }
 
 #[derive(Debug)]
@@ -87,11 +89,19 @@ impl ScanVerdict {
     pub fn from_body(body: &[u8]) -> Result<Self, VerdictError> {
         serde_json::from_slice::<Box<RawValue>>(body).map_err(VerdictError::NotJson)?;
         let wire: VerdictWire = serde_json::from_slice(body).map_err(VerdictError::Shape)?;
-        let masks: ScanResult = serde_json::from_slice(body).map_err(VerdictError::Shape)?;
         let mut extra: IndexMap<String, Box<RawValue>> =
             serde_json::from_slice(body).map_err(VerdictError::Shape)?;
         extra.shift_remove("action");
         extra.shift_remove("category");
+        // AIRS may put anything there; LiteLLM reads a value that is not a dict as no masked text instead of failing the verdict.
+        let masked = |value: Option<Box<RawValue>>| -> Option<MaskedData> {
+            let raw = value?;
+            serde_json::from_str::<MaskedData>(raw.get()).ok()
+        };
+        let masks = ScanResult {
+            prompt_masked_data: masked(wire.prompt_masked_data),
+            response_masked_data: masked(wire.response_masked_data),
+        };
         Ok(Self {
             action: wire.action,
             category: wire.category,
