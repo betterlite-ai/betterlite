@@ -12,3 +12,6 @@ deviations:
   - what: A timeout that is not a positive finite number of seconds falls back to the 10 second default.
     why: Duration cannot hold a negative or non-finite value, and LiteLLM would hand such a value to httpx and fail on the first scan.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L163-L252
+  - what: An api_key that cannot be sent as an HTTP header value fails construction with a named error, where LiteLLM accepts it and fails every scan request instead.
+    why: A key with a control character can never become a valid x-pan-token, so failing once at construction surfaces the misconfiguration instead of turning every scan into an error (and, with fallback_on_error='allow', into an unscanned request).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L431-L436
