@@ -5,10 +5,11 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use reqwest::StatusCode;
 
+use crate::pangea::error::PangeaGuardrailError;
+use crate::pangea::hooks::{GuardrailResponse, RequestData};
 use crate::pangea::tests::support::{
     GUARDRAIL_NAME, Recorder, data_with_messages, guardrail, payload, serve, user,
 };
-use crate::pangea::{GuardrailResponse, PangeaGuardrailError, RequestData};
 
 const ALLOWED: &str = r#"{"result":{"blocked":false,"transformed":false}}"#;
 const TRANSFORMED: &str = r#"{"result":{"blocked":false,"transformed":true,"output":{"messages":[{"role":"user","content":"<US_SSN>"}]}}}"#;

@@ -2,12 +2,12 @@
 
 use std::collections::BTreeMap;
 
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 
+use crate::pangea::config::{DEFAULT_API_BASE, PangeaGuardrailConfigModel};
+use crate::pangea::error::PangeaGuardrailError;
+use crate::pangea::hooks::PangeaGuardrail;
 use crate::pangea::tests::support::GUARDRAIL_NAME;
-use crate::pangea::{
-    DEFAULT_API_BASE, PangeaGuardrail, PangeaGuardrailConfigModel, PangeaGuardrailError,
-};
 
 fn resolve(
     lookup: &BTreeMap<String, String>,
@@ -15,7 +15,7 @@ fn resolve(
     api_base: Option<&str>,
 ) -> Result<PangeaGuardrail, PangeaGuardrailError> {
     let config = PangeaGuardrailConfigModel {
-        api_key: api_key.map(str::to_owned),
+        api_key: api_key.map(|key| SecretString::from(key.to_owned())),
         api_base: api_base.map(str::to_owned),
         optional_params: None,
     };
