@@ -16,6 +16,7 @@ use crate::engine::tests::support::{
 const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
 const CATALOG: &str = r#"{
   "command-r": {"litellm_provider": "cohere"},
+  "command-r-plus-other": {"litellm_provider": "mistral"},
   "claude-2.1": {"litellm_provider": "anthropic"},
   "claude-3-opus-20240229": {"litellm_provider": "anthropic"},
   "meta-llama/llama-2-70b-chat": {"litellm_provider": "replicate"},
@@ -55,6 +56,7 @@ fn selector(settings: &HubSettings, disable: bool) -> Selector {
 
 #[rstest]
 #[case::cohere("command-r", TokenizerType::HuggingFace, "Xenova/c4ai-command-r-v01-tokenizer", &[1, 2])]
+#[case::command_r_other_provider_is_cl100k("command-r-plus-other", TokenizerType::OpenAi, "", &[15339, 1917])]
 #[case::anthropic("claude-2.1", TokenizerType::HuggingFace, "", &[9381, 2253])]
 #[case::llama2("meta-llama/llama-2-70b-chat", TokenizerType::HuggingFace, "hf-internal-testing/llama-tokenizer", &[1, 2])]
 #[case::llama3("meta-llama/Meta-Llama-3-70B", TokenizerType::HuggingFace, "Xenova/llama-3-tokenizer", &[1, 2])]

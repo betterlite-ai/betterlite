@@ -1,4 +1,5 @@
 use std::fs;
+use std::sync::Arc;
 
 use base64::Engine as _;
 use base64::engine::general_purpose::STANDARD;
@@ -7,9 +8,10 @@ use sha1::{Digest as _, Sha1};
 use sha2::Sha256;
 use std::fmt::Write as _;
 
+use crate::engine::Engine;
 use crate::engine::assets;
-use crate::engine::fetch::TiktokenFetcher;
 use crate::engine::fetch::gpt2::bpe_file;
+use crate::engine::fetch::{FetchError, TiktokenFetcher};
 use crate::engine::huggingface::HuggingFaceEngine;
 use crate::engine::tests::support::{Reply, Server, client, counter};
 use crate::engine::tiktoken::{Encoding, TiktokenEngine};
@@ -64,6 +66,30 @@ fn decode_matches_python() {
     let _failure = engine.decode(&[999_999_999]).unwrap_err();
     assert_eq!(anthropic().decode(&[9381, 2253]).unwrap(), "hello world");
     assert_eq!(anthropic().decode(&[0, 9381, 2253]).unwrap(), "hello world");
+    let harmony = tiktoken(Encoding::O200kHarmony);
+    assert_eq!(harmony.decode(&[200_005]).unwrap(), "<|channel|>");
+    assert_eq!(harmony.decode(&[200_000]).unwrap(), "<|reserved_200000|>");
+    let tiktoken_engine = Engine::Tiktoken(Arc::new(tiktoken(Encoding::Cl100kBase)));
+    assert_eq!(
+        tiktoken_engine.decode(&[15339, 1917]).unwrap(),
+        "hello world"
+    );
+    let huggingface_engine = Engine::HuggingFace(Arc::new(anthropic()));
+    assert_eq!(
+        huggingface_engine.decode(&[9381, 2253]).unwrap(),
+        "hello world"
+    );
+}
+
+#[test]
+fn every_encoding_keeps_its_tiktoken_name() {
+    assert_eq!(Encoding::Cl100kBase.name(), "cl100k_base");
+    assert_eq!(Encoding::O200kBase.name(), "o200k_base");
+    assert_eq!(Encoding::P50kBase.name(), "p50k_base");
+    assert_eq!(Encoding::P50kEdit.name(), "p50k_edit");
+    assert_eq!(Encoding::O200kHarmony.name(), "o200k_harmony");
+    assert_eq!(Encoding::R50kBase.name(), "r50k_base");
+    assert_eq!(Encoding::Gpt2.name(), "gpt2");
 }
 
 fn synthetic_bpe_file() -> Vec<u8> {
@@ -122,6 +148,31 @@ async fn r50k_fetch_follows_read_file_cached() {
     assert_eq!(server.request_count(), requests);
 }
 
+#[tokio::test]
+async fn a_corrupted_cache_file_is_fetched_again() {
+    let (server, cache, fetcher, _sha256) = r50k_fixture().await;
+    let url = format!("{}/encodings/r50k_base.tiktoken", server.endpoint);
+    let key = hex::encode(Sha1::digest(url.as_bytes()));
+    fs::write(cache.path().join(&key), b"corrupted").unwrap();
+    let expected = synthetic_bpe_file();
+    assert_eq!(fetcher.data(Encoding::R50kBase).await.unwrap(), expected);
+    assert_eq!(server.request_count(), 1);
+    assert_eq!(fs::read(cache.path().join(&key)).unwrap(), expected);
+}
+
+#[tokio::test]
+async fn an_unreadable_cache_entry_is_reported_without_a_request() {
+    let (server, cache, fetcher, _sha256) = r50k_fixture().await;
+    let url = format!("{}/encodings/r50k_base.tiktoken", server.endpoint);
+    let key = hex::encode(Sha1::digest(url.as_bytes()));
+    fs::create_dir_all(cache.path().join(&key)).unwrap();
+    assert!(matches!(
+        fetcher.data(Encoding::R50kBase).await,
+        Err(FetchError::Cache(..))
+    ));
+    assert_eq!(server.request_count(), 0);
+}
+
 #[test]
 fn gpt2_vocabulary_follows_data_gym() {
     let vocab = include_bytes!("../../../fixtures/gpt2-test-vocab.bpe");
@@ -132,6 +183,8 @@ fn gpt2_vocabulary_follows_data_gym() {
     assert_eq!(engine.decode(&[256, 257, 78]).unwrap(), "hello".to_owned());
     assert_eq!(engine.encode(" t").unwrap(), [258]);
     assert_eq!(engine.decode(&[258]).unwrap(), " t".to_owned());
+    assert_eq!(engine.encode("\u{e9}").unwrap(), [259]);
+    assert_eq!(engine.decode(&[259]).unwrap(), "\u{e9}".to_owned());
 }
 
 #[tokio::test]

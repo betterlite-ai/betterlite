@@ -1,6 +1,7 @@
+use std::net::TcpListener;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use betterlite_config::sections::huggingface_hub::{
@@ -432,6 +433,33 @@ async fn retry_after_cache_miss_succeeds() {
 }
 
 #[tokio::test]
+async fn a_connection_error_retries_once_the_hub_answers() {
+    let probe = TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = probe.local_addr().unwrap();
+    drop(probe);
+    let directory = tempfile::tempdir().unwrap();
+    let settings = hub_settings(&format!("http://{address}"), directory.path());
+    let calls = Arc::new(AtomicUsize::new(0));
+    let holder: Arc<Mutex<Option<Server>>> = Arc::new(Mutex::new(None));
+    let counted = Arc::clone(&calls);
+    let kept = Arc::clone(&holder);
+    let clock: Arc<Clock> = Arc::new(move || {
+        let call = counted.fetch_add(1, Ordering::SeqCst).saturating_add(1);
+        if call != 3 {
+            return Instant::now();
+        }
+        let listener = TcpListener::bind(address).unwrap();
+        let server = Server::on_listener(listener, |request| standard_reply(request, BODY));
+        kept.lock().unwrap().replace(server);
+        Instant::now()
+    });
+    let hub = HubDownloader::new(Arc::new(settings.clone()), resolver(&settings), clock);
+    assert_eq!(hub.download(REPO, "main", None).await.unwrap(), BODY);
+    let served = holder.lock().unwrap().take().unwrap();
+    assert_eq!(served.request_count(), 2);
+}
+
+#[tokio::test]
 async fn stalled_body_fails_with_the_download_timeout() {
     let server = Server::start(|request| {
         if request.method == "HEAD" {
@@ -575,7 +603,8 @@ fn the_deprecated_transfer_warning_fires_once() {
     let warnings = Arc::new(AtomicUsize::new(0));
     with_default(CountingSubscriber(Arc::clone(&warnings)), || {
         let _first = hub.client(None).unwrap();
+        assert_eq!(warnings.load(Ordering::SeqCst), 1);
         let _second = hub.client(None).unwrap();
+        assert_eq!(warnings.load(Ordering::SeqCst), 1);
     });
-    assert_eq!(warnings.load(Ordering::SeqCst), 1);
 }

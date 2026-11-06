@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::future::pending;
+use std::net::TcpListener as StdTcpListener;
 use std::path::Path;
 use std::str::from_utf8;
 use std::sync::{Arc, Mutex};
@@ -70,6 +71,29 @@ impl Server {
         let shared_handler = Arc::new(handler);
         tasks.lock().unwrap().spawn(accept_loop(
             listener,
+            shared_handler,
+            Arc::clone(&requests),
+            Arc::clone(&tasks),
+        ));
+        Self {
+            endpoint,
+            requests,
+            tasks,
+        }
+    }
+
+    pub(crate) fn on_listener<H>(listener: StdTcpListener, handler: H) -> Self
+    where
+        H: Fn(&Request) -> Reply + Send + Sync + 'static,
+    {
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
+        listener.set_nonblocking(true).unwrap();
+        let bound = TcpListener::from_std(listener).unwrap();
+        let requests: Arc<Mutex<Vec<Request>>> = Arc::default();
+        let tasks: Arc<Mutex<JoinSet<()>>> = Arc::default();
+        let shared_handler = Arc::new(handler);
+        tasks.lock().unwrap().spawn(accept_loop(
+            bound,
             shared_handler,
             Arc::clone(&requests),
             Arc::clone(&tasks),

@@ -165,7 +165,8 @@ async fn a_cancelled_count_releases_its_permit() {
     let first = Arc::clone(&service);
     let first_engine = engine.clone();
     tasks.spawn(async move { first.count(&first_engine, "hello").await });
-    entered.recv().await.unwrap();
+    let admitted = timeout(Duration::from_secs(5), entered.recv()).await;
+    assert!(admitted.unwrap().is_some());
     tasks.abort_all();
     while tasks.join_next().await.is_some() {}
     counter.open.store(true, Ordering::SeqCst);
@@ -210,4 +211,30 @@ async fn the_output_cap_rejects_long_id_lists() {
         service.count(&engine, "hello world").await,
         Err(EngineError::OutputTooLarge { ids: 2, limit: 1 })
     ));
+}
+
+#[tokio::test]
+async fn the_input_cap_admits_text_at_the_limit() {
+    let recorder = Recorder::new();
+    let facility: Arc<dyn BlockingCounter> = Arc::<Recorder>::clone(&recorder);
+    let limits = EncodeLimits {
+        input_bytes: 11,
+        output_ids: 100,
+    };
+    let service = Arc::new(CountingService::new(1, facility, limits));
+    let engine = cl100k();
+    assert_eq!(service.count(&engine, "hello world").await.unwrap(), 2);
+}
+
+#[tokio::test]
+async fn the_output_cap_admits_ids_at_the_limit() {
+    let recorder = Recorder::new();
+    let facility: Arc<dyn BlockingCounter> = Arc::<Recorder>::clone(&recorder);
+    let limits = EncodeLimits {
+        input_bytes: 100,
+        output_ids: 2,
+    };
+    let service = Arc::new(CountingService::new(1, facility, limits));
+    let engine = cl100k();
+    assert_eq!(service.count(&engine, "hello world").await.unwrap(), 2);
 }
