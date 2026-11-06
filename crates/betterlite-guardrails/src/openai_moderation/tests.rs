@@ -92,11 +92,7 @@ fn build(
     global_keys: GlobalApiKeys,
     lookup: &BTreeMap<String, String>,
 ) -> Result<OpenAiModerationGuardrail, ModerationError> {
-    let client = base_builder()
-        .connect_timeout(params.timeout.unwrap_or(CONNECT_TIMEOUT))
-        .build()
-        .map_err(|source| ModerationError::Request { source })?;
-    OpenAiModerationGuardrail::new(params, global_keys, lookup, client, CLOCK)
+    OpenAiModerationGuardrail::new(params, global_keys, lookup, base_builder(), CLOCK)
 }
 
 fn params(api_key: Option<SecretString>, api_base: Option<String>) -> ModerationParams {
@@ -283,8 +279,14 @@ async fn make_request_times_out_when_the_server_never_answers() {
     assert!(error.detail().is_none());
 }
 
+#[rstest]
+#[case::default_connect_limit(None, CONNECT_TIMEOUT)]
+#[case::configured_timeout_caps_connecting(Some(Duration::from_secs(6)), Duration::from_secs(6))]
 #[tokio::test]
-async fn make_request_stops_connecting_after_five_seconds_when_no_timeout_is_set() {
+async fn make_request_stops_connecting_at_the_connect_limit(
+    #[case] configured: Option<Duration>,
+    #[case] shortest_wait: Duration,
+) {
     let socket = TcpSocket::new_v4().unwrap();
     socket.bind("127.0.0.1:0".parse().unwrap()).unwrap();
     let full = socket.listen(1).unwrap();
@@ -292,13 +294,16 @@ async fn make_request_stops_connecting_after_five_seconds_when_no_timeout_is_set
     // The listener never accepts, so once its backlog holds these connections further SYNs are dropped.
     let attempt = || timeout(Duration::from_millis(200), TcpStream::connect(address));
     let _queued = tokio::join!(attempt(), attempt(), attempt(), attempt());
-    let instance = guardrail(&format!("http://{address}/v1"));
-    assert_eq!(instance.timeout, DEFAULT_TIMEOUT);
+    let key = SecretString::from("sk-test".to_owned());
+    let mut given = params(Some(key), Some(format!("http://{address}/v1")));
+    given.timeout = configured;
+    let instance = build(given, GlobalApiKeys::default(), &BTreeMap::new()).unwrap();
+    assert_eq!(instance.timeout, configured.unwrap_or(DEFAULT_TIMEOUT));
     let started = Instant::now();
     let error = async_make_request(&instance, "x").await.unwrap_err();
     assert!(matches!(error, ModerationError::Timeout { .. }));
     assert_eq!(error.status_code(), StatusCode::REQUEST_TIMEOUT);
-    assert!(started.elapsed() >= CONNECT_TIMEOUT);
+    assert!(started.elapsed() >= shortest_wait);
     assert!(started.elapsed() < Duration::from_secs(10));
     drop(full);
 }

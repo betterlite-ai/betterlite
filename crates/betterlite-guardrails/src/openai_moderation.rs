@@ -20,7 +20,7 @@ pub mod wire;
 
 pub const DEFAULT_API_BASE: &str = "https://api.openai.com/v1";
 pub const DEFAULT_SAMPLING_RATE: u32 = 5;
-// LiteLLM's guardrail client defaults to httpx.Timeout(timeout=600, connect=5); the injected client sets connect_timeout from CONNECT_TIMEOUT.
+// LiteLLM's guardrail client is httpx.Timeout(timeout=600, connect=5); a configured timeout replaces both limits.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 pub const OPENAI_API_KEY_VARIABLE: &str = "OPENAI_API_KEY";
@@ -106,7 +106,7 @@ impl OpenAiModerationGuardrail {
         params: ModerationParams,
         global_keys: GlobalApiKeys,
         lookup: &L,
-        client: reqwest::Client,
+        client_builder: reqwest::ClientBuilder,
         clock: fn() -> Duration,
     ) -> Result<Self, ModerationError>
     where
@@ -129,6 +129,10 @@ impl OpenAiModerationGuardrail {
             .api_base
             .filter(|base| !base.is_empty())
             .unwrap_or_else(|| DEFAULT_API_BASE.to_owned());
+        let client = client_builder
+            .connect_timeout(params.timeout.unwrap_or(CONNECT_TIMEOUT))
+            .build()
+            .map_err(|source| ModerationError::Request { source })?;
         tracing::debug!(
             guardrail_name = params.guardrail_name,
             "Initialized OpenAI Moderation Guardrail"
