@@ -59,6 +59,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "openai_files"
+path = "fuzz_targets/openai_files.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "responses_shapes"
 path = "fuzz_targets/responses_shapes.rs"
 test = false
