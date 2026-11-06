@@ -9,6 +9,7 @@ use super::wire::GroundingDocument;
 pub fn extract_grounding_documents(
     request_data: &BTreeMap<String, GuardrailValue>,
 ) -> Vec<GroundingDocument> {
+    // LiteLLM selects between the two sources with `or`, so an empty metadata object falls through
     let metadata = request_data
         .get("metadata")
         .and_then(as_object)
