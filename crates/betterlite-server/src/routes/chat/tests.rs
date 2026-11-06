@@ -363,6 +363,38 @@ async fn a_generated_model_id_hashes_the_mock_response() {
     );
 }
 
+#[tokio::test]
+async fn a_reordered_mock_response_key_still_hashes_last() {
+    let source = "model_list:\n  - {model_name: text, litellm_params: {model: openai/gpt-4o, mock_response: 'hello world', api_base: 'http://127.0.0.1:1', api_key: k}}\n";
+    let (status, _bytes, headers) = mock_reply(
+        source,
+        "/v1/chat/completions",
+        r#"{"model":"text","messages":[]}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        header(&headers, "x-litellm-model-id"),
+        Some("51b4bb57c0b10832fe43c4dcfb0e49425af84e287cde4b72b07164cfd11a705a")
+    );
+}
+
+#[tokio::test]
+async fn an_object_mock_response_is_hashed_from_the_typed_record() {
+    let source = "model_list:\n  - model_name: text\n    litellm_params:\n      model: openai/gpt-4o\n      api_base: 'http://127.0.0.1:1'\n      api_key: k\n      mock_response:\n        choices:\n          - message: {content: hi}\n";
+    let (status, _bytes, headers) = mock_reply(
+        source,
+        "/v1/chat/completions",
+        r#"{"model":"text","messages":[]}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        header(&headers, "x-litellm-model-id"),
+        Some("e00cf7425cc254d0a79e69daae7d10ceebb80b9991130b45021bb2453dd4d273")
+    );
+}
+
 #[rstest]
 #[case::shorthand(
     r#"{"model":"g","messages":[],"mock_tool_calls":[{"function":{"arguments":"{}"}}]}"#
