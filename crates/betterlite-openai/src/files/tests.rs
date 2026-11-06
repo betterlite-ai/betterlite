@@ -374,7 +374,10 @@ async fn chunk_lengths(
         .await
         .expect("streaming");
     let mut collected = Vec::new();
-    while let Some(chunk) = opened.stream.next().await {
+    // Bounded, so a stream that never ends fails the length checks instead of hanging the test
+    while collected.len() < 16
+        && let Some(chunk) = opened.stream.next().await
+    {
         collected.push(chunk.expect("chunk"));
     }
     (collected, opened.exit)
