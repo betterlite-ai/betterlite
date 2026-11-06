@@ -2,6 +2,7 @@
 
 use std::time::Duration;
 
+use axum::http::StatusCode;
 use rstest::rstest;
 
 use super::shared::{
@@ -31,12 +32,22 @@ async fn analyzer_unparsable_is_an_internal_error_in_both_modes(#[case] mode: Op
     );
 }
 
+#[rstest]
+#[case::empty("")]
+#[case::whitespace_only(" \n\t ")]
 #[tokio::test]
-async fn analyzer_unparsable_treats_an_empty_json_body_as_unparsable() {
-    let mock = spawn_mock(|_| json_reply(""), Duration::ZERO).await;
-    let error = analyzer(settings(&mock.base))
+async fn analyzer_unparsable_treats_a_blank_body_as_an_unexpected_type(#[case] body: &'static str) {
+    let mock = spawn_mock(
+        move |_| (StatusCode::OK, "application/json", body.to_owned()),
+        Duration::ZERO,
+    )
+    .await;
+    let error = analyzer(closed_settings(&mock.base, Trigger::PiiEntities))
         .analyze_text("john", &NO_OVERRIDES)
         .await
         .unwrap_err();
-    assert!(matches!(error, PresidioAnalysisError::ResponseJson { .. }));
+    let PresidioAnalysisError::GuardrailRaised { message, .. } = error else {
+        panic!("expected a guardrail error");
+    };
+    assert!(message.contains("unexpected type null"), "{message}");
 }

@@ -16,7 +16,7 @@ where
         .map(|character| match character {
             '"' | '\\' | '\n' | '\r' | '\t' | '\u{8}' | '\u{c}' => 2,
             '\u{0}'..='\u{1f}' => 6,
-            '\u{20}'..='\u{7f}' => 1,
+            '\u{20}'..='\u{7e}' => 1,
             _ if character.len_utf16() == 1 => 6,
             _ => 12,
         })

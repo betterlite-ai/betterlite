@@ -3,6 +3,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use serde_json::value::RawValue;
 use tokio::runtime::{Handle, Id};
 use tokio::sync::Semaphore;
 
@@ -111,6 +112,15 @@ pub struct PresidioAnalyzer {
 
 pub async fn json_body(response: reqwest::Response) -> Result<AnalyzeBody, PresidioAnalysisError> {
     let bytes = read_capped_body(response, MAX_RESPONSE_BYTES).await?;
+    // aiohttp's json() returns None for a blank body, which LiteLLM then treats as an unexpected type
+    if bytes
+        .iter()
+        .all(|byte| matches!(byte, b' ' | b'\t' | b'\n' | b'\x0b' | b'\x0c' | b'\r'))
+    {
+        let null = RawValue::from_string("null".to_owned())
+            .map_err(|source| PresidioAnalysisError::ResponseJson { source })?;
+        return Ok(AnalyzeBody::Unexpected(null));
+    }
     let raw = serde_json::from_slice(&bytes)
         .map_err(|source| PresidioAnalysisError::ResponseJson { source })?;
     AnalyzeBody::from_raw(raw).map_err(|source| PresidioAnalysisError::ResponseJson { source })

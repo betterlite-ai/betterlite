@@ -23,6 +23,7 @@ use crate::presidio_analysis::wire::AnalyzeOutcome;
     r#"{"entity_type":5}"#,
     "failed to parse dict response"
 )]
+#[case::blank_body(StatusCode::OK, "application/json", "", "unexpected type null")]
 #[case::http_error(
     StatusCode::INTERNAL_SERVER_ERROR,
     "text/plain",

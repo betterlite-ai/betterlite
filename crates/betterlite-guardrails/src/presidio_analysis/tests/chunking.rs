@@ -70,6 +70,18 @@ async fn chunking_budgets_the_escaped_width_of_non_ascii_text() {
 }
 
 #[tokio::test]
+async fn chunking_counts_delete_characters_as_six_escaped_bytes() {
+    let mock = spawn_mock(find_secret, Duration::ZERO).await;
+    let mut configured = settings(&mock.base);
+    configured.chunk_size_bytes = 100;
+    analyzer(configured)
+        .analyze_text(&"\u{7f}".repeat(20), &NO_OVERRIDES)
+        .await
+        .unwrap();
+    assert!(mock.seen.lock().unwrap().len() > 1);
+}
+
+#[tokio::test]
 async fn chunking_sends_a_single_character_in_one_request_even_over_the_budget() {
     let mock = spawn_mock(find_secret, Duration::ZERO).await;
     let mut configured = settings(&mock.base);
