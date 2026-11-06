@@ -20,7 +20,7 @@ serde.workspace = true
 serde_json = "1.0.154"
 soft-canonicalize = "0.5.6"
 thiserror.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true
 
 [dev-dependencies]
@@ -28,7 +28,7 @@ aws-smithy-http-client = { version = "1.5.1", default-features = false, features
 axum.workspace = true
 rstest = "=0.27.0"
 tempfile = "3.27.0"
-tokio.workspace = true
+tokio = { workspace = true, features = ["test-util"] }
 tracing-subscriber.workspace = true
 
 [lints]
