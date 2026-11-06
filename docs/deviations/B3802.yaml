@@ -1,53 +1,37 @@
 task: B3802
 deviations:
   - what: >-
-      compile_sandboxed returns the guarded guardrail source (a CompiledProgram with the loop rewrites applied
-      and the module-level functions it defines) instead of a CPython code object. The runtime that executes
-      guardrail code compiles that source; this module never holds CPython bytecode.
-    why: betterlite is a Rust gateway with no CPython inprocess, so the compilation boundary keeps the
-      RestrictedPython transform result as source. The transform work itself happens once per guardrail.
+      compile_sandboxed returns the guarded guardrail source instead of a CPython code object; the runtime
+      that executes guardrail code compiles that source, and this module never holds CPython bytecode.
+    why: betterlite is a Rust gateway with no CPython in process, so the transform result stays source.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/sandbox.py#L146-L157
   - what: >-
       import statements and class definitions are rejected at compile time. LiteLLM's RestrictedPython
-      transformer accepts both: an import loads a real Python module, and a class definition is rewritten to
-      use a metaclass the sandbox globals do not provide, so it compiles and then fails at execution.
-    why: betterlite has no Python module system, so an import cannot resolve, and a class definition cannot run
-      at all. A working guardrail could not rely on either, and rejecting them at compile time reports the
-      problem where it is written instead of at the first call.
+      accepts both, and a class it compiles then fails at execution because __metaclass__ is not in the globals.
+    why: betterlite has no Python module system and no class model, so neither can run here.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/sandbox.py#L126-L143
   - what: >-
-      Attribute reads, subscript reads and writes are not rewritten to _getattr_, _getitem_ and _write_. Those
-      guards are bound in build_sandbox_globals so the executing runtime can route its own access through them,
-      but the compiled source keeps the original attribute and subscript expressions.
-    why: RestrictedPython's AST rewriting is a library call and the task puts it out of scope; betterlite's
-      access rules live in the runtime that executes the compiled source, which owns the value model.
+      Attribute and subscript reads and writes are not rewritten to _getattr_, _getitem_ and _write_; those
+      guards are bound in build_sandbox_globals for the runtime that executes the compiled source.
+    why: RestrictedPython's AST rewriting is a library call and out of this task's scope; the runtime owns it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/sandbox.py#L126-L143
   - what: >-
-      CPython thread interruption through ctypes.pythonapi.PyThreadState_SetAsyncExc is replaced by a
-      cooperative interrupt flag that _budget_ok_ and _getiter_ check. A worker stuck in a native call keeps
-      running past the deadline, as in LiteLLM, but no mechanism can stop it; the caller still gets its
-      timeout after the one-second interrupt grace period.
-    why: Rust has no way to raise an exception inside a running thread, and the source's runtime mechanism is
-      deferred as U7 in the task. The flag reaches every budget check the sandboxed code makes.
+      ctypes.pythonapi.PyThreadState_SetAsyncExc is replaced by a cooperative interrupt flag that _budget_ok_
+      and _getiter_ check; a worker stuck in a native call keeps running past its deadline.
+    why: Rust cannot raise inside a running thread, and the source's runtime mechanism is deferred as U7.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/bounded_execution.py#L91-L98
   - what: >-
       await_with_timeout aborts its task at the deadline, but a Rust future cannot swallow abort the way a
-      Python coroutine swallows CancelledError, so the repeated cancel loop stops at the first poll boundary
-      instead of running the full grace period. The grace period and poll interval are unchanged for workers
-      that do not observe their budget.
-    why: Aborting a Tokio task takes effect at the next await point, and the runtime offers no hook to keep
-      cancelling a task that ignores it.
+      coroutine swallows CancelledError, so the repeated cancel loop stops at the first poll boundary.
+    why: Aborting a Tokio task takes effect at its next await point and has no hook for ignoring cancellation.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/bounded_execution.py#L192-L200
   - what: >-
-      _inplacevar_ implements integer arithmetic, string, bytes, list and tuple concatenation, text and list
-      repetition, and /= on two integers returning a float. Float operands, matrix multiplication and /= on
-      non-integers return an unsupported-operand error instead of computing.
-    why: The sandbox value model has no host numeric types, and the gateway lint table forbids float
-      arithmetic in Rust; integer results stay exact and an unsupported operand names both types.
+      _inplacevar_ implements integer arithmetic, string, bytes, list and tuple concatenation, repetition, and
+      /= on two integers; float operands and matrix multiplication report an unsupported operand.
+    why: The sandbox value model has no host numeric types, and the lint table forbids float arithmetic in Rust.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/sandbox.py#L103-L111
   - what: >-
-      A guardrail program that nests syntax nodes deeper than 200 levels is rejected at compile time, and a
-      repeated text or list value larger than one million elements is refused by _inplacevar_.
-    why: tree-sitter recursion and an unbounded repetition are both ways for untrusted source to exhaust the
-      gateway's stack or memory before any deadline applies.
+      Source nesting deeper than 200 levels is rejected at compile time, and a repeated text or list larger
+      than one million items is refused by _inplacevar_.
+    why: Both are ways for untrusted source to exhaust the gateway's stack or memory before a deadline applies.
     link: ""
