@@ -1,0 +1,5 @@
+kind: helper
+name: arc-second-request
+call: {azure_arc_identity: {action: token, platform: linux, environment: {IDENTITY_ENDPOINT: "http://arc.test/token", IMDS_ENDPOINT: "http://arc.test/imds"}, files: {"/var/opt/azcmagent/tokens/abc.key": "line-one\r\nline-two\n"}, now: 1700000000, resource: "https://cognitiveservices.azure.com", identity: system, responses: [{status: 401, headers: {WWW-Authenticate: "Basic realm=abc"}, body: ""}, {status: 200, headers: {}, body: '{"access_token":"tok-value","expires_in":3600}'}]}}
+env: {}
+compare: {ignore: []}

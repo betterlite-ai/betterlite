@@ -19,6 +19,7 @@ betterlite-ocr = { path = "../betterlite-ocr" }
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-redact = { path = "../betterlite-redact" }
 betterlite-roi = { path = "../betterlite-roi" }
+betterlite-router = { path = "../betterlite-router" }
 betterlite-semantic = { path = "../betterlite-semantic" }
 caseless = "0.2.2"
 chrono = { workspace = true }

@@ -23,6 +23,8 @@ scope:
     - crates/betterlite-openai/src/chat/execution/**
     - crates/betterlite-openai/src/chat/deployment.rs
     - crates/betterlite-openai/src/chat/deployment/**
+    - crates/betterlite-openai/src/embedding/tests.rs
+    - crates/betterlite-server/src/server/chat_setup/tests.rs
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_strategy/simple_shuffle.py#L17-L67
@@ -38,7 +40,7 @@ dod:
     proof: [router-tests]
   - text: A deployment with weight 0 is never picked while another deployment has a positive weight.
     proof: [router-tests]
-  - text: Routing lives in its own crate, and only the server depends on it.
+  - text: Routing lives in its own crate. Only the server depends on it, besides the oracle and the router fuzz crate, the same as for betterlite-server.
     proof: [deny, layering]
   - text: Every mutant in the routing code is caught by a test.
     proof: [mutants]
@@ -50,13 +52,14 @@ checks:
       run: cargo nextest run --locked -p betterlite-router --no-tests=fail
     - id: layering
       why: deny.toml does not keep betterlite-router behind betterlite-server
-      run: grep -qE 'crate = "betterlite-router", wrappers = \["betterlite-server"\]' deny.toml
+      run: grep -qE 'crate = "betterlite-router", wrappers = \["betterlite-oracle", "betterlite-router-fuzz", "betterlite-server"\]' deny.toml
 oracle_cases: []
 deviations: []
 out_of_scope:
   - Per-request weights (LiteLLM's _router_weights request argument).
   - Other routing strategies such as least-busy, usage-based-routing, latency-based-routing and cost-based-routing.
   - Health-based filtering, retries, cooldowns and fallbacks (B017, B018).
+  - Fractional weight, rpm and tpm values. LiteLLM reads them as numbers, the config here reads whole numbers (B002).
 pitfalls:
   - The oracle cannot compare random picks across Python and Rust random generators, so this task proves behavior with seeded tests instead of oracle cases.
   - A statistical test with a fixed seed is deterministic. Pick the seed once and keep it; never retry with a new seed until it passes.

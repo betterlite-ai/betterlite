@@ -1,0 +1,7 @@
+kind: helper
+name: literal_form_exchange
+call:
+  chatgpt_login: {"record": null, "replacement": null, "now": 1000, "replies": [{"status": 200, "body": "{\"device_auth_id\": \"dev-id\", \"user_code\": \"ABCD-1234\"}"}, {"status": 200, "body": "{\"authorization_code\": \"a b&c=d\", \"code_challenge\": \"challenge\", \"code_verifier\": \"v+/=\"}"}, {"status": 200, "body": "{\"access_token\": \"h.eyJleHAiOiA0MDAwMDAwMDAwLCAiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjogeyJjaGF0Z3B0X2FjY291bnRfaWQiOiAiYWNjdCJ9fQ.s\", \"refresh_token\": \"new\", \"id_token\": \"h.eyJleHAiOiA0MDAwMDAwMDAwLCAiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjogeyJjaGF0Z3B0X2FjY291bnRfaWQiOiAiYWNjdCJ9fQ.s\"}"}], "repeat": null}
+env: {}
+compare:
+  ignore: []
