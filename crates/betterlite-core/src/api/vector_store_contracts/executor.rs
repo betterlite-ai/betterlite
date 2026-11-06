@@ -50,7 +50,8 @@ impl VectorStoreEmbeddingExecutor for DirectEmbeddingExecutor {
         query: &str,
         configuration: &Params,
     ) -> Result<EmbeddingResponse, VectorStoreEmbeddingError> {
-        let deployment = self.deployment(model, configuration)?;
+        let mut deployment = self.deployment(model)?;
+        apply_call_options(&mut deployment, configuration)?;
         let request = embedding_request(query, configuration)?;
         send_embedding(&self.executor, &deployment, &request)
             .await
@@ -61,40 +62,34 @@ impl VectorStoreEmbeddingExecutor for DirectEmbeddingExecutor {
 
 impl DirectEmbeddingExecutor {
     // a model no deployment serves is still called, from the configuration and the environment defaults
-    fn deployment(
-        &self,
-        model: &str,
-        configuration: &Params,
-    ) -> Result<ChatDeployment, VectorStoreEmbeddingError> {
-        let mut deployment =
-            match self.deployments.iter().find(|deployment| {
-                deployment.litellm_model == model || deployment.model_group == model
-            }) {
-                Some(found) => found.clone(),
-                None => ChatDeployment::resolve(
-                    &ModelDeployment {
-                        model_name: model.to_owned(),
-                        litellm_params: LiteLlmParams {
-                            ssl_verify: None,
-                            model: Some(model.to_owned()),
-                            api_base: None,
-                            api_key: None,
-                            api_version: None,
-                            timeout: None,
-                            stream_timeout: None,
-                            max_retries: None,
-                            rpm: None,
-                            tpm: None,
-                            weight: None,
-                        },
-                        model_info: ModelInfo::default(),
-                    },
-                    &self.defaults,
-                )
-                .map_err(|source| VectorStoreEmbeddingError::Deployment { source })?,
-            };
-        apply_call_options(&mut deployment, configuration)?;
-        Ok(deployment)
+    fn deployment(&self, model: &str) -> Result<ChatDeployment, VectorStoreEmbeddingError> {
+        let matched = self.deployments.iter().find(|deployment| {
+            deployment.litellm_model == model || deployment.model_group == model
+        });
+        if let Some(found) = matched {
+            return Ok(found.clone());
+        }
+        ChatDeployment::resolve(
+            &ModelDeployment {
+                model_name: model.to_owned(),
+                litellm_params: LiteLlmParams {
+                    ssl_verify: None,
+                    model: Some(model.to_owned()),
+                    api_base: None,
+                    api_key: None,
+                    api_version: None,
+                    timeout: None,
+                    stream_timeout: None,
+                    max_retries: None,
+                    rpm: None,
+                    tpm: None,
+                    weight: None,
+                },
+                model_info: ModelInfo::default(),
+            },
+            &self.defaults,
+        )
+        .map_err(|source| VectorStoreEmbeddingError::Deployment { source })
     }
 }
 
