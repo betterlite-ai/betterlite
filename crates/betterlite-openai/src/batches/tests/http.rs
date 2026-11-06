@@ -157,7 +157,7 @@ async fn http_client_reports_status_errors_with_their_fields() {
 
 #[tokio::test]
 async fn openai_batches_credential_identity_isolation() {
-    let replies = vec![(200, batch("b", "validating")); 2];
+    let replies = vec![(200, batch("b", "validating")); 3];
     let (listener, base) = bind().await;
     let environment = constructor(Some("sk-from-environment"));
     let explicit = environment
@@ -169,9 +169,13 @@ async fn openai_batches_credential_identity_isolation() {
     let inherited = environment
         .construct(&arguments(None, &base, None), ClientKind::Sync)
         .unwrap();
+    let empty_key = environment
+        .construct(&arguments(Some(""), &base, None), ClientKind::Sync)
+        .unwrap();
     let calls = async {
         explicit.retrieve(&query()).await.unwrap();
         inherited.retrieve(&query()).await.unwrap();
+        empty_key.retrieve(&query()).await.unwrap();
     };
     let (requests, ()) = tokio::join!(serve(listener, replies), calls);
     assert!(requests[0].contains("authorization: Bearer sk-explicit\r\n"));
@@ -179,6 +183,8 @@ async fn openai_batches_credential_identity_isolation() {
     assert!(requests[1].contains("authorization: Bearer sk-from-environment\r\n"));
     assert!(!requests[1].contains("openai-organization"));
     assert!(!requests[1].contains("sk-explicit"));
+    assert!(!requests[2].contains("authorization"));
+    assert!(!requests[2].contains("sk-from-environment"));
     let without_key = constructor(None).construct(&arguments(None, &base, None), ClientKind::Sync);
     assert!(without_key.is_none());
 }

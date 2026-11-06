@@ -135,8 +135,11 @@ impl HttpBatchesClient {
 
     fn headers(&self, extra: Option<&IndexMap<String, String>>) -> Result<HeaderMap, SdkError> {
         let mut headers = HeaderMap::new();
-        let bearer = format!("Bearer {}", self.api_key.expose_secret());
-        headers.insert(AUTHORIZATION, header_value("authorization", &bearer)?);
+        // the SDK treats an empty key as no key and sends no Authorization header
+        if !self.api_key.expose_secret().is_empty() {
+            let bearer = format!("Bearer {}", self.api_key.expose_secret());
+            headers.insert(AUTHORIZATION, header_value("authorization", &bearer)?);
+        }
         headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
         if let Some(organization) = &self.organization {
             headers.insert(
