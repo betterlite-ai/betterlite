@@ -14,21 +14,16 @@ description: 'Apply B369 CooldownDecision using B307 cooldown records and B304 d
   _set_cooldown_deployments (L427-L489), _async_get_cooldown_deployments (L492-L515), _async_get_cooldown_deployments_with_debug_info
   (L518-L531), _get_cooldown_deployments (L534-L558). Implement these behaviors through the typed Rust
   services above; synchronous facades and structural accessors reuse the same primitive instead of separate
-  ports.'
+  ports.
+  B016 registers RouteStage::CooldownPolicy as a stub, so replace only that stub and its not-built test in crates/betterlite-router/src/context/cooldown_policy.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.'
 scope:
   paths:
   - crates/betterlite-router/src/cooldown_policy.rs
   - crates/betterlite-router/src/cooldown_policy/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-router/src/context/cooldown_policy.rs
+  - crates/betterlite-router/src/context/cooldown_policy/**
   - crates/betterlite-server/src/routing/cooldown_policy.rs
   - crates/betterlite-server/src/routing/cooldown_policy/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/cooldown_policy.rs
   - tools/oracle/src/router_probes/cooldown_policy/**
   - tools/oracle/litellm/probes/cooldown_policy.py

@@ -14,21 +14,16 @@ description: 'Implement usage-based-routing with B304''s per-group minute maps a
   LowestTPMLoggingHandler.__init__ (L26-L28), LowestTPMLoggingHandler.log_success_event (L30-L82), LowestTPMLoggingHandler.async_log_success_event
   (L84-L146), LowestTPMLoggingHandler.get_available_deployments (L148-L236). Implement these behaviors
   through the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
-  instead of separate ports.'
+  instead of separate ports.
+  B016 registers Strategy::UsageBasedRouting as a stub, so replace only that stub and its not-built test in crates/betterlite-router/src/strategy/usage_routing.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.'
 scope:
   paths:
   - crates/betterlite-router/src/usage_routing.rs
   - crates/betterlite-router/src/usage_routing/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-router/src/strategy/usage_routing.rs
+  - crates/betterlite-router/src/strategy/usage_routing/**
   - crates/betterlite-server/src/routing/usage_routing.rs
   - crates/betterlite-server/src/routing/usage_routing/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/usage_routing.rs
   - tools/oracle/src/router_probes/usage_routing/**
   - tools/oracle/litellm/probes/usage_routing.py
