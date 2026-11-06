@@ -5,6 +5,7 @@ call:
     operation: run
     container:
       id: sbx_456
+      domain: e2b.app
       envd_access_token: envd-secret
     code: "echo $FOO"
     env_vars:

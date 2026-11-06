@@ -53,6 +53,8 @@ pub enum E2bError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("the sandbox response body is larger than {limit} bytes")]
+    ResponseTooLarge { limit: usize },
     #[error("the sandbox output exceeded {limit} bytes; aborting to avoid unbounded memory use")]
     OutputTooLarge { limit: usize },
     #[error("the sandbox output is not valid UTF-8")]
@@ -80,12 +82,6 @@ pub struct SandboxRequest {
     pub body: Vec<u8>,
 }
 
-#[derive(Debug)]
-pub struct SandboxResponse {
-    pub status: u16,
-    pub body: Vec<u8>,
-}
-
 pub struct SandboxStream {
     pub status: u16,
     pub body: BoxStream<'static, Result<Vec<u8>, E2bError>>,
@@ -93,8 +89,7 @@ pub struct SandboxStream {
 
 #[async_trait]
 pub trait SandboxHttp: Send + Sync {
-    async fn send_buffered(&self, request: SandboxRequest) -> Result<SandboxResponse, E2bError>;
-    async fn send_streaming(&self, request: SandboxRequest) -> Result<SandboxStream, E2bError>;
+    async fn send(&self, request: SandboxRequest) -> Result<SandboxStream, E2bError>;
 }
 
 pub struct E2bSandbox<Http, Environment> {

@@ -4,6 +4,8 @@ use betterlite_config::loader::EnvironmentLookup;
 use betterlite_models::sandbox::{
     CodeExecutionResult, ContainerHandle, HiddenParams, SandboxOutputError, read_capped_lines,
 };
+use futures_util::StreamExt as _;
+use futures_util::stream::BoxStream;
 use http::header::{CONTENT_TYPE, HeaderName};
 use http::{HeaderMap, HeaderValue, Method};
 use secrecy::SecretString;
@@ -18,6 +20,8 @@ use super::{
 };
 
 const E2B_API_KEY_VARIABLE: &str = "E2B_API_KEY";
+// the same buffered body limit betterlite-http applies to a non-streamed response
+const MAX_RESPONSE_BYTES: usize = 0x0100_0000;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) struct CreateBody {
@@ -72,18 +76,21 @@ where
         let api_key = self.validate_environment(request.api_key)?;
         let api_base = request.api_base.unwrap_or(E2B_API_BASE);
         let body = create_body(&request);
-        let sent = self
+        let response = self
             .http
-            .send_buffered(create_request(api_base, &api_key, &body)?)
+            .send(create_request(api_base, &api_key, &body)?)
             .await?;
-        check_status(sent.status)?;
-        created_handle(&sent.body, api_key, api_base)
+        check_status(response.status)?;
+        let received = collect_body(response.body).await?;
+        created_handle(&received, api_key, api_base)
     }
 
     pub async fn arun_code(&self, request: RunCode<'_>) -> Result<CodeExecutionResult, E2bError> {
-        let sent = self.http.send_streaming(run_request(&request)?).await?;
-        check_status(sent.status)?;
-        let lines = read_capped_lines(sent.body).await.map_err(output_error)?;
+        let response = self.http.send(run_request(&request)?).await?;
+        check_status(response.status)?;
+        let lines = read_capped_lines(response.body)
+            .await
+            .map_err(output_error)?;
         Ok(parse_ndjson(&lines))
     }
 
@@ -99,15 +106,15 @@ where
             .map(str::to_owned)
             .or_else(|| handle.hidden_params.api_base.clone())
             .unwrap_or_else(|| E2B_API_BASE.to_owned());
-        let sent = self
-            .http
-            .send_streaming(delete_request(&handle, &api_key, &api_base)?)
-            .await?;
-        if sent.status == 404 {
+        let url = Url::parse(&format!("{api_base}/sandboxes/{}", handle.id))
+            .map_err(|source| E2bError::Url { source })?;
+        let deletion = api_key_request(Method::DELETE, url, &api_key, Vec::new())?;
+        let response = self.http.send(deletion).await?;
+        if response.status == 404 {
             return Ok(false);
         }
-        check_status(sent.status)?;
-        Ok((200..300).contains(&sent.status))
+        check_status(response.status)?;
+        Ok((200..300).contains(&response.status))
     }
 }
 
@@ -120,6 +127,25 @@ fn create_body(request: &CreateSandbox<'_>) -> CreateBody {
     }
 }
 
+fn api_key_request(
+    method: Method,
+    url: Url,
+    api_key: &SecretString,
+    body: Vec<u8>,
+) -> Result<SandboxRequest, E2bError> {
+    let mut headers = HeaderMap::new();
+    headers.insert(
+        HeaderName::from_static("x-api-key"),
+        secret_header_value(api_key)?,
+    );
+    Ok(SandboxRequest {
+        method,
+        url,
+        headers,
+        body,
+    })
+}
+
 fn create_request(
     api_base: &str,
     api_key: &SecretString,
@@ -127,19 +153,12 @@ fn create_request(
 ) -> Result<SandboxRequest, E2bError> {
     let url =
         Url::parse(&format!("{api_base}/sandboxes")).map_err(|source| E2bError::Url { source })?;
-    let mut headers = HeaderMap::new();
-    headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-    headers.insert(
-        HeaderName::from_static("x-api-key"),
-        secret_header_value(api_key)?,
-    );
     let encoded = serde_json::to_vec(body).map_err(|source| E2bError::Encode { source })?;
-    Ok(SandboxRequest {
-        method: Method::POST,
-        url,
-        headers,
-        body: encoded,
-    })
+    let mut request = api_key_request(Method::POST, url, api_key, encoded)?;
+    request
+        .headers
+        .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
+    Ok(request)
 }
 
 fn created_handle(
@@ -201,24 +220,20 @@ fn run_request(request: &RunCode<'_>) -> Result<SandboxRequest, E2bError> {
     })
 }
 
-fn delete_request(
-    handle: &ContainerHandle,
-    api_key: &SecretString,
-    api_base: &str,
-) -> Result<SandboxRequest, E2bError> {
-    let url = Url::parse(&format!("{api_base}/sandboxes/{}", handle.id))
-        .map_err(|source| E2bError::Url { source })?;
-    let mut headers = HeaderMap::new();
-    headers.insert(
-        HeaderName::from_static("x-api-key"),
-        secret_header_value(api_key)?,
-    );
-    Ok(SandboxRequest {
-        method: Method::DELETE,
-        url,
-        headers,
-        body: Vec::new(),
-    })
+async fn collect_body(
+    mut body: BoxStream<'static, Result<Vec<u8>, E2bError>>,
+) -> Result<Vec<u8>, E2bError> {
+    let mut collected = Vec::new();
+    while let Some(chunk) = body.next().await {
+        let data = chunk?;
+        if collected.len().saturating_add(data.len()) > MAX_RESPONSE_BYTES {
+            return Err(E2bError::ResponseTooLarge {
+                limit: MAX_RESPONSE_BYTES,
+            });
+        }
+        collected.extend_from_slice(&data);
+    }
+    Ok(collected)
 }
 
 fn as_handle(container: SandboxRef<'_>) -> ContainerHandle {

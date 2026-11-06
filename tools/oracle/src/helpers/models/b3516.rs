@@ -5,76 +5,20 @@ use async_trait::async_trait;
 use betterlite_models::sandbox::{CodeExecutionResult, ContainerHandle, HiddenParams};
 use betterlite_provider::e2b::{
     CreateSandbox, DeleteSandbox, E2B_DEFAULT_DOMAIN, E2bError, E2bSandbox, RunCode, SandboxHttp,
-    SandboxRef, SandboxRequest, SandboxResponse, SandboxStream,
+    SandboxRef, SandboxRequest, SandboxStream,
 };
 use futures_util::{StreamExt as _, stream};
 use secrecy::SecretString;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use crate::helpers::HelperError;
 
+use input::{ContainerFields, ContainerInput, Input, Operation};
+
+mod input;
+
 type Environment = BTreeMap<String, String>;
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct Input {
-    operation: Operation,
-    #[serde(default)]
-    api_key: Option<String>,
-    #[serde(default)]
-    api_base: Option<String>,
-    #[serde(default)]
-    template: Option<String>,
-    #[serde(default)]
-    timeout: Option<i64>,
-    #[serde(default)]
-    allow_internet_access: Option<bool>,
-    #[serde(default)]
-    container: Option<ContainerInput>,
-    #[serde(default)]
-    code: Option<String>,
-    #[serde(default)]
-    env_vars: Option<BTreeMap<String, String>>,
-    #[serde(default = "default_response_status")]
-    response_status: u16,
-    #[serde(default)]
-    response_body: String,
-}
-
-#[derive(Debug, Clone, Copy, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum Operation {
-    Create,
-    Run,
-    Delete,
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum ContainerInput {
-    Id(String),
-    Handle(ContainerFields),
-}
-
-#[derive(Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ContainerFields {
-    id: String,
-    #[serde(default)]
-    domain: Option<String>,
-    #[serde(default)]
-    envd_access_token: Option<String>,
-    #[serde(default)]
-    traffic_access_token: Option<String>,
-    #[serde(default)]
-    api_key: Option<String>,
-    #[serde(default)]
-    api_base: Option<String>,
-}
-
-const fn default_response_status() -> u16 {
-    200
-}
+type Sandbox = E2bSandbox<RecordingHttp, Environment>;
 
 #[derive(Serialize)]
 struct RequestOutput {
@@ -91,22 +35,10 @@ struct HandleOutput {
     domain: Option<String>,
 }
 
-#[derive(Serialize)]
-struct CreateOutput {
-    request: RequestOutput,
-    handle: HandleOutput,
-}
-
-#[derive(Serialize)]
-struct RunOutput {
-    request: RequestOutput,
-    result: CodeExecutionResult,
-}
-
-#[derive(Serialize)]
-struct DeleteOutput {
-    request: RequestOutput,
-    deleted: bool,
+enum Payload {
+    Create(HandleOutput),
+    Run(CodeExecutionResult),
+    Delete(bool),
 }
 
 struct RecordingHttp {
@@ -117,18 +49,7 @@ struct RecordingHttp {
 
 #[async_trait]
 impl SandboxHttp for RecordingHttp {
-    async fn send_buffered(&self, request: SandboxRequest) -> Result<SandboxResponse, E2bError> {
-        self.requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(request);
-        Ok(SandboxResponse {
-            status: self.status,
-            body: self.body.clone(),
-        })
-    }
-
-    async fn send_streaming(&self, request: SandboxRequest) -> Result<SandboxStream, E2bError> {
+    async fn send(&self, request: SandboxRequest) -> Result<SandboxStream, E2bError> {
         self.requests
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -154,78 +75,81 @@ impl crate::helpers::Helper for Op {
             },
             environment: Environment::new(),
         };
-        match input.operation {
-            Operation::Create => create_output(&sandbox, input),
-            Operation::Run => run_output(&sandbox, input),
-            Operation::Delete => delete_output(&sandbox, input),
-        }
+        let payload = match input.operation {
+            Operation::Create => Payload::Create(create_output(&sandbox, input)?),
+            Operation::Run => Payload::Run(run_output(&sandbox, input)?),
+            Operation::Delete => Payload::Delete(delete_output(&sandbox, input)?),
+        };
+        let request = request_output(&only_request(&sandbox)?)?;
+        Ok(match payload {
+            Payload::Create(handle) => serde_json::json!({"request": request, "handle": handle}),
+            Payload::Run(result) => serde_json::json!({"request": request, "result": result}),
+            Payload::Delete(deleted) => serde_json::json!({"request": request, "deleted": deleted}),
+        })
     }
 }
 
-type Sandbox = E2bSandbox<RecordingHttp, Environment>;
+fn create_output(sandbox: &Sandbox, input: &Input) -> Result<HandleOutput, Box<HelperError>> {
+    let request = create_request(input);
+    let created = block_on(sandbox.acreate_sandbox(request))?;
+    Ok(HandleOutput {
+        id: created.id,
+        provider: created.provider,
+        domain: created.domain,
+    })
+}
 
-fn create_output(sandbox: &Sandbox, input: &Input) -> crate::helpers::HelperResult {
-    let created = block_on(sandbox.acreate_sandbox(CreateSandbox {
+fn create_request(input: &Input) -> CreateSandbox<'_> {
+    CreateSandbox {
         template: input.template.as_deref(),
         timeout: input.timeout,
         allow_internet_access: input.allow_internet_access,
         api_key: input.api_key.as_deref(),
         api_base: input.api_base.as_deref(),
-    }))?;
-    let output = CreateOutput {
-        request: request_output(&only_request(sandbox)?)?,
-        handle: HandleOutput {
-            id: created.id,
-            provider: created.provider,
-            domain: created.domain,
-        },
-    };
-    serde_json::to_value(output).map_err(|error| helper_error("SerializationError", error))
+    }
 }
 
-fn run_output(sandbox: &Sandbox, input: &Input) -> crate::helpers::HelperResult {
+fn run_output(sandbox: &Sandbox, input: &Input) -> Result<CodeExecutionResult, Box<HelperError>> {
+    let container = container_handle(input)?;
+    let request = run_request(input, &container)?;
+    block_on(sandbox.arun_code(request))
+}
+
+fn run_request<'request>(
+    input: &'request Input,
+    container: &'request ContainerHandle,
+) -> Result<RunCode<'request>, Box<HelperError>> {
     let code = input
         .code
         .as_deref()
-        .ok_or_else(|| helper_error("InvalidInput", "run takes a code string"))?;
-    let container = container_handle(input)?;
-    let result = block_on(sandbox.arun_code(RunCode {
-        container: &container,
+        .ok_or_else(|| helper_error("InvalidInput", "run needs a code string"))?;
+    Ok(RunCode {
+        container,
         code,
         env_vars: input.env_vars.as_ref(),
-    }))?;
-    let output = RunOutput {
-        request: request_output(&only_request(sandbox)?)?,
-        result,
-    };
-    serde_json::to_value(output).map_err(|error| helper_error("SerializationError", error))
+    })
 }
 
-fn delete_output(sandbox: &Sandbox, input: &Input) -> crate::helpers::HelperResult {
+fn delete_output(sandbox: &Sandbox, input: &Input) -> Result<bool, Box<HelperError>> {
     let spec = input
         .container
         .as_ref()
         .ok_or_else(|| helper_error("InvalidInput", "delete takes a container"))?;
-    let deleted = match spec {
+    match spec {
         ContainerInput::Id(id) => block_on(sandbox.adelete_sandbox(DeleteSandbox {
             container: SandboxRef::Id(id.as_str()),
             api_key: input.api_key.as_deref(),
             api_base: input.api_base.as_deref(),
-        }))?,
+        })),
         ContainerInput::Handle(fields) => {
             let container = handle_from_fields(fields);
             block_on(sandbox.adelete_sandbox(DeleteSandbox {
                 container: SandboxRef::Handle(&container),
                 api_key: input.api_key.as_deref(),
                 api_base: input.api_base.as_deref(),
-            }))?
+            }))
         }
-    };
-    let output = DeleteOutput {
-        request: request_output(&only_request(sandbox)?)?,
-        deleted,
-    };
-    serde_json::to_value(output).map_err(|error| helper_error("SerializationError", error))
+    }
 }
 
 fn container_handle(input: &Input) -> Result<ContainerHandle, Box<HelperError>> {

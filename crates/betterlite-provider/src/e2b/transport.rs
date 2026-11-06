@@ -3,7 +3,7 @@ use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use futures_util::StreamExt as _;
 
-use super::{E2bError, SandboxHttp, SandboxRequest, SandboxResponse, SandboxStream};
+use super::{E2bError, SandboxHttp, SandboxRequest, SandboxStream};
 
 pub struct ProxiedSandboxHttp {
     pub client: ProxiedClient,
@@ -24,19 +24,7 @@ impl ProxiedSandboxHttp {
 
 #[async_trait]
 impl SandboxHttp for ProxiedSandboxHttp {
-    async fn send_buffered(&self, request: SandboxRequest) -> Result<SandboxResponse, E2bError> {
-        let upstream = self
-            .client
-            .send_buffered(self.outbound(request))
-            .await
-            .map_err(|source| E2bError::Transport { source })?;
-        Ok(SandboxResponse {
-            status: upstream.status,
-            body: upstream.body,
-        })
-    }
-
-    async fn send_streaming(&self, request: SandboxRequest) -> Result<SandboxStream, E2bError> {
+    async fn send(&self, request: SandboxRequest) -> Result<SandboxStream, E2bError> {
         let response = self
             .client
             .send(self.outbound(request))
