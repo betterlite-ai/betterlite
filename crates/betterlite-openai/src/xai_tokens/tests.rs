@@ -298,6 +298,7 @@ async fn stored_endpoint_off_x_ai_stops_before_any_request() {
     let fixture = Fixture::new(Some(&evil), vec![]);
     let error = fixture.oauth.get_access_token().await.unwrap_err();
     assert!(matches!(error, XaiOauthError::UnexpectedEndpoint));
+    assert!(!error.to_string().contains("evil.example"));
     assert_eq!(fixture.calls(), 0);
     assert_eq!(fixture.file(), evil);
 }
@@ -431,7 +432,8 @@ async fn failed_exchange_leaves_the_file_alone(#[case] reply: Reply) {
         1
     );
     assert!(!format!("{error} {error:?}").contains("new-access"));
-    assert!(!format!("{error:?}").contains("old-refresh"));
+    assert!(!format!("{error} {error:?}").contains("old-refresh"));
+    assert!(!error.to_string().contains(TOKEN_URL));
 }
 
 #[test]
