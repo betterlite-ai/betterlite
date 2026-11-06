@@ -26,7 +26,7 @@ use tracing::subscriber::{DefaultGuard, set_default};
 use super::breach::{BreachChecker, HIBP_RANGE_API_BASE, HIBP_TIMEOUT, LookupError};
 use super::bulk::validate_passwords_bulk;
 use super::error::{ERROR_TYPE, PARAM, PasswordError, STATUS};
-use super::hashing::{HashError, OsSalts, PasswordHasher, SaltSource};
+use super::hashing::{HashError, OsSalts, PasswordHasher, SaltSource, is_sha256_hex};
 use super::migration::{PasswordStore, StoredPassword, migrate_passwords_to_scrypt};
 use super::strength::{validate, violations};
 
@@ -127,6 +127,17 @@ async fn legacy_sha256() {
     assert!(!hasher.verify(&secret(PASSWORD), "").await);
     let not_hex = format!("g{rest}");
     assert!(!hasher.verify(&secret(PASSWORD), &not_hex).await);
+}
+
+#[test]
+fn sha256_hex_shape() {
+    assert!(is_sha256_hex(PYTHON_SHA256));
+    assert!(!is_sha256_hex("abcdef"));
+    assert!(!is_sha256_hex(&PYTHON_SHA256.to_uppercase()));
+    let (_first, rest) = PYTHON_SHA256.split_at(1);
+    let not_hex = format!("g{rest}");
+    assert!(!is_sha256_hex(&not_hex));
+    assert!(!is_sha256_hex(""));
 }
 
 #[rstest]

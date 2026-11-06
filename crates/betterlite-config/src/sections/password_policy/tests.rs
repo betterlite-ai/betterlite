@@ -88,19 +88,23 @@ fn environment_length_is_floored_and_empty_is_unset() {
 }
 
 #[rstest]
-#[case::text_length("password_policy_min_length: twelve", &[], "password_policy_min_length")]
-#[case::fractional_length("password_policy_min_length: 12.5", &[], "password_policy_min_length")]
-#[case::bool_length("password_policy_min_length: true", &[], "password_policy_min_length")]
-#[case::env_text_length("password_policy_min_length: os.environ/BAD", &[("BAD", "many")], "BAD")]
-#[case::missing_env_length("password_policy_min_length: os.environ/GONE", &[], "GONE")]
-#[case::text_flag("password_policy_require_numbers: nope", &[], "password_policy_require_numbers")]
-#[case::number_flag("password_policy_require_uppercase: 0", &[], "password_policy_require_uppercase")]
-#[case::env_text_flag("password_policy_check_breached_passwords: os.environ/BAD", &[("BAD", "perhaps")], "BAD")]
-#[case::missing_env_flag("password_policy_require_lowercase: os.environ/GONE", &[], "GONE")]
+#[case::text_length("password_policy_min_length: twelve", &[], "password_policy_min_length", None)]
+#[case::fractional_length("password_policy_min_length: 12.5", &[], "password_policy_min_length", None)]
+#[case::bool_length("password_policy_min_length: true", &[], "password_policy_min_length", Some(true))]
+#[case::env_text_length("password_policy_min_length: os.environ/BAD", &[("BAD", "many")], "BAD", None)]
+#[case::missing_env_length("password_policy_min_length: os.environ/GONE", &[], "GONE", None)]
+#[case::text_flag("password_policy_require_numbers: nope", &[], "password_policy_require_numbers", Some(false))]
+#[case::number_flag("password_policy_require_uppercase: 0", &[], "password_policy_require_uppercase", Some(false))]
+#[case::number_flag_nonzero("password_policy_require_numbers: 7", &[], "password_policy_require_numbers", Some(true))]
+#[case::float_flag("password_policy_require_lowercase: 2.5", &[], "password_policy_require_lowercase", Some(true))]
+#[case::float_zero_flag("password_policy_require_special_characters: 0.0", &[], "password_policy_require_special_characters", Some(false))]
+#[case::env_text_flag("password_policy_check_breached_passwords: os.environ/BAD", &[("BAD", "perhaps")], "BAD", None)]
+#[case::missing_env_flag("password_policy_require_lowercase: os.environ/GONE", &[], "GONE", None)]
 fn invalid_value_fallback(
     #[case] line: &str,
     #[case] environment: &[(&str, &str)],
     #[case] named: &str,
+    #[case] expected_scalar: Option<bool>,
 ) {
     let yaml = format!("general_settings:\n  {line}\n");
     let error = load(&yaml, environment).unwrap_err();
@@ -108,4 +112,14 @@ fn invalid_value_fallback(
         error.to_string().contains(named),
         "{error} should name {named}"
     );
+    let actual_scalar = match &error {
+        ConfigError::InvalidScalar { value, .. } => Some(*value),
+        ConfigError::Environment { .. }
+        | ConfigError::Yaml { .. }
+        | ConfigError::Unsupported { .. }
+        | ConfigError::MissingEnvironment { .. }
+        | ConfigError::InvalidFloat { .. }
+        | ConfigError::InvalidInteger { .. } => None,
+    };
+    assert_eq!(actual_scalar, expected_scalar, "{error}");
 }
