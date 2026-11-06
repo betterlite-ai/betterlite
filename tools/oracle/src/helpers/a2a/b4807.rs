@@ -15,6 +15,7 @@ use betterlite_a2a::watsonx_transform::response::build_a2a_message_response;
 use chrono::{DateTime, Utc};
 use secrecy::ExposeSecret as _;
 use serde::{Deserialize, Serialize};
+use serde_with::{DurationMilliSeconds, serde_as};
 use uuid::Uuid;
 
 use crate::helpers::{Helper, HelperError, HelperResult};
@@ -24,6 +25,7 @@ mod token;
 
 pub(crate) struct Op;
 
+#[serde_as]
 #[derive(Deserialize)]
 #[serde(tag = "operation", rename_all = "snake_case")]
 pub(crate) enum Input {
@@ -49,8 +51,9 @@ pub(crate) enum Input {
         request_id: String,
         #[serde(default = "default_chunk_size")]
         chunk_size: NonZeroUsize,
-        #[serde(default = "default_delay_ms")]
-        delay_ms: u64,
+        #[serde(default = "default_delay", rename = "delay_ms")]
+        #[serde_as(as = "DurationMilliSeconds<u64>")]
+        delay: Duration,
     },
 }
 
@@ -62,14 +65,17 @@ fn default_chunk_size() -> NonZeroUsize {
     StreamPacing::default().chunk_size
 }
 
-fn default_delay_ms() -> u64 {
-    u64::try_from(StreamPacing::default().delay.as_millis()).unwrap_or(u64::MAX)
+fn default_delay() -> Duration {
+    StreamPacing::default().delay
 }
 
+#[serde_as]
 #[derive(Serialize)]
 struct Step<'event, E> {
     event: &'event E,
-    delay_ms: u64,
+    #[serde(rename = "delay_ms")]
+    #[serde_as(as = "DurationMilliSeconds<u64>")]
+    delay: Duration,
 }
 
 struct Source {
@@ -116,7 +122,7 @@ fn pace(steps: &[WxoStreamStep]) -> Vec<Step<'_, Event<WxoStreamResult>>> {
         .iter()
         .map(|step| Step {
             event: &step.event,
-            delay_ms: u64::try_from(step.delay_after.as_millis()).unwrap_or(u64::MAX),
+            delay: step.delay_after,
         })
         .collect()
 }
@@ -142,11 +148,11 @@ impl Helper for Op {
                 text,
                 request_id,
                 chunk_size,
-                delay_ms,
+                delay,
             } => {
                 let pacing = StreamPacing {
                     chunk_size: *chunk_size,
-                    delay: Duration::from_millis(*delay_ms),
+                    delay: *delay,
                 };
                 let steps = fake_streaming_from_text(text, request_id, pacing, &mut source);
                 serde_json::to_value(pace(&steps))
