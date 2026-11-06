@@ -16,7 +16,7 @@ use serde::Deserialize;
 use tokio::task::yield_now;
 
 use crate::roi_github::client::GitHub;
-use crate::roi_github::models::GitHubPullListItem;
+use crate::roi_github::models::{GitHubPullListItem, PullDetail};
 use crate::roi_github::transport::Transport;
 
 pub(crate) const NEXT_LINK: &str = "<https://api.github.com/user/repos?page=2>; rel=\"next\"";
@@ -209,6 +209,11 @@ pub(crate) fn pull_detail_json(
     format!(
         r#"{{"number":{number},"title":"Pull {number}","body":null,"html_url":"https://github.com/o/r/pull/{number}","user":{user},"merged_at":"2026-01-02T00:00:00Z","head":{{"sha":"sha-{number}"}},"additions":10,"deletions":4,"changed_files":{changed},"commits":{total}}}"#
     )
+}
+
+#[must_use]
+pub(crate) fn pull_detail(commits: Option<i64>) -> PullDetail {
+    serde_json::from_str(&pull_detail_json(7, Some("octo"), Some(0), commits)).unwrap()
 }
 
 #[must_use]

@@ -8,9 +8,8 @@ use chrono::NaiveDate;
 use futures_util::TryStreamExt as _;
 use serde::de::Error as _;
 
-use crate::roi_github::adapters::{
-    graphql_commit_evidence, pull_file_evidence, rest_commit_evidence,
-};
+use crate::roi_github::adapters::rest_commit_evidence;
+use crate::roi_github::adapters::{graphql_commit_evidence, pull_file_evidence};
 use crate::roi_github::client::GitHub;
 use crate::roi_github::error::SourceError;
 use crate::roi_github::models::{
@@ -59,10 +58,9 @@ where
     ));
     let mut merged = Vec::new();
     while let Some(page) = stream.try_next().await? {
-        let last = page
-            .last()
-            .map(|pull| pull.updated_at.get(..10).unwrap_or(&pull.updated_at));
-        let stop = last.is_some_and(|updated| updated < start_day.as_str());
+        let stop = page.last().is_some_and(|pull| {
+            pull.updated_at.get(..10).unwrap_or(&pull.updated_at) < start_day.as_str()
+        });
         for pull in page {
             let within = pull.merged_at.as_deref().is_some_and(|merged_at| {
                 let day = merged_at.get(..10).unwrap_or(merged_at);
@@ -87,13 +85,14 @@ pub async fn evidence<T>(
 where
     T: Transport,
 {
-    let (detail, files) = pull_snapshot(github, repo, pull.number).await?;
+    let base = format!("repos/{repo}/pulls/{}", pull.number);
+    let (detail, files) = pull_snapshot(github, &base).await?;
     let user = detail.user.as_ref().and_then(|user| user.login.as_deref());
     let login = user
         .filter(|login| !login.is_empty())
         .unwrap_or("deleted-user");
     let profile = profile_email(github, login, "").await;
-    let metadata = commit_metadata(github, repo, pull.number, detail.commits).await?;
+    let metadata = commit_metadata(github, repo, pull.number, &detail).await?;
     let (commit_emails, emails) = identity_emails(&profile, &metadata.authors, login);
     let changed_files = detail
         .changed_files
@@ -124,17 +123,15 @@ where
 
 async fn pull_snapshot<T>(
     github: &GitHub<T>,
-    repo: &str,
-    number: i64,
+    base: &str,
 ) -> Result<(PullDetail, Vec<ROIPullFile>), SourceError>
 where
     T: Transport,
 {
-    let path = format!("repos/{repo}/pulls/{number}");
-    let response = github.request(Method::GET, &path, &[], None).await?;
+    let response = github.request(Method::GET, base, &[], None).await?;
     let detail = serde_json::from_slice(&response.body)
         .map_err(|source| parse_error(PULL_DETAIL_ERROR, source))?;
-    let files_path = format!("repos/{repo}/pulls/{number}/files");
+    let files_path = format!("{base}/files");
     let collected: Vec<Vec<PullFile>> = pages::<PullFile, T>(github, &files_path, &[], FILE_PAGES)
         .try_collect()
         .await?;
@@ -168,7 +165,7 @@ async fn commit_metadata<T>(
     github: &GitHub<T>,
     repo: &str,
     number: i64,
-    total: Option<i64>,
+    detail: &PullDetail,
 ) -> Result<CommitMetadata, SourceError>
 where
     T: Transport,
@@ -177,18 +174,32 @@ where
         return graphql_commits(github, repo, number, None, GRAPHQL_COMMIT_PAGES).await;
     }
     let path = format!("repos/{repo}/pulls/{number}/commits");
+    rest_metadata(github, &path, detail).await
+}
+
+async fn rest_metadata<T>(
+    github: &GitHub<T>,
+    path: &str,
+    detail: &PullDetail,
+) -> Result<CommitMetadata, SourceError>
+where
+    T: Transport,
+{
     let collected: Vec<Vec<RestCommit>> =
-        pages::<RestCommit, T>(github, &path, &[], REST_COMMIT_PAGES)
+        pages::<RestCommit, T>(github, path, &[], REST_COMMIT_PAGES)
             .try_collect()
             .await?;
     let rest: Vec<&RestCommit> = collected.iter().flatten().collect();
-    let count = total.unwrap_or_else(|| i64::try_from(rest.len()).unwrap_or(i64::MAX));
+    let count = detail
+        .commits
+        .unwrap_or_else(|| i64::try_from(rest.len()).unwrap_or(i64::MAX));
+    let (commits, authors) = rest
+        .iter()
+        .map(|commit| (rest_commit_evidence(commit), rest_author(commit)))
+        .unzip();
     Ok(CommitMetadata {
-        commits: rest
-            .iter()
-            .map(|commit| rest_commit_evidence(commit))
-            .collect(),
-        authors: rest.iter().map(|commit| rest_author(commit)).collect(),
+        commits,
+        authors,
         count,
     })
 }
@@ -213,14 +224,16 @@ where
     T: Transport,
 {
     let (owner, name) = repo.split_once('/').unwrap_or((repo, ""));
+    // GitHub Enterprise serves GraphQL beside its /api/v3 REST root, so the path steps out of it
+    let path = if github.api_url.ends_with("/api/v3") {
+        "../graphql"
+    } else {
+        "graphql"
+    };
     let mut commits = Vec::new();
     let mut authors = Vec::new();
     let mut next = cursor;
-    let mut pages_left = remaining_pages;
-    loop {
-        if pages_left == 0 {
-            return Err(SourceError::PaginationLimit);
-        }
+    for _ in 0..remaining_pages {
         let payload = GraphQlPayload {
             query: GRAPHQL_QUERY.to_owned(),
             variables: GraphQlVariables {
@@ -232,9 +245,7 @@ where
         };
         let body = serde_json::to_vec(&payload)
             .map_err(|source| parse_error(COMMIT_PARSE_ERROR, source))?;
-        let response = github
-            .request(Method::POST, graphql_path(&github.api_url), &[], Some(body))
-            .await?;
+        let response = github.request(Method::POST, path, &[], Some(body)).await?;
         let parsed: GraphQlResponse = serde_json::from_slice(&response.body)
             .map_err(|source| parse_error(COMMIT_PARSE_ERROR, source))?;
         let connection = graphql_connection(&parsed)?;
@@ -248,17 +259,8 @@ where
             });
         }
         next.clone_from(&connection.page_info.end_cursor);
-        pages_left = pages_left.saturating_sub(1);
     }
-}
-
-fn graphql_path(api_url: &str) -> &'static str {
-    // GitHub Enterprise serves GraphQL beside its /api/v3 REST root, so the path steps out of it
-    if api_url.ends_with("/api/v3") {
-        "../graphql"
-    } else {
-        "graphql"
-    }
+    Err(SourceError::PaginationLimit)
 }
 
 fn graphql_connection(response: &GraphQlResponse) -> Result<&GraphQlConnection, SourceError> {
@@ -292,7 +294,6 @@ fn parse_error(message: &str, source: serde_json::Error) -> SourceError {
         source,
     }
 }
-
 mod tests;
 
 include!("roi_evidence/tests/declarations.rs");

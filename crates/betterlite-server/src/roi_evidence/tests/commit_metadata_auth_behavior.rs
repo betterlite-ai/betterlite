@@ -5,7 +5,7 @@ use std::iter::repeat_with;
 use super::commit_metadata;
 use super::tests::{
     GraphQlRequestBody, NEXT_LINK, Script, Seen, github, github_with_token, graphql_page,
-    json_reply, with_link,
+    json_reply, pull_detail, with_link,
 };
 use crate::roi_github::models::GRAPHQL_QUERY;
 
@@ -22,7 +22,9 @@ fn request_body(seen: &Seen) -> GraphQlRequestBody {
 async fn commit_metadata_without_a_token_reads_rest_commits() {
     let script = Script::new(vec![json_reply(200, REST_COMMITS)]);
     let github = github(script.clone());
-    let metadata = commit_metadata(&github, "o/r", 7, Some(4)).await.unwrap();
+    let metadata = commit_metadata(&github, "o/r", 7, &pull_detail(Some(4)))
+        .await
+        .unwrap();
     assert_eq!(metadata.count, 4);
     assert_eq!(metadata.commits.len(), 1);
     assert_eq!(metadata.commits[0].sha, "c1");
@@ -54,7 +56,9 @@ async fn commit_metadata_rest_count_falls_back_to_the_collected_commits() {
     ]"#;
     let script = Script::new(vec![json_reply(200, commits)]);
     let github = github(script);
-    let metadata = commit_metadata(&github, "o/r", 7, None).await.unwrap();
+    let metadata = commit_metadata(&github, "o/r", 7, &pull_detail(None))
+        .await
+        .unwrap();
     assert_eq!(metadata.count, 2);
     assert_eq!(metadata.commits.len(), 2);
 }
@@ -67,7 +71,9 @@ async fn commit_metadata_rest_authors_default_missing_parts_to_empty_strings() {
     ]"#;
     let script = Script::new(vec![json_reply(200, commits)]);
     let github = github(script);
-    let metadata = commit_metadata(&github, "o/r", 7, None).await.unwrap();
+    let metadata = commit_metadata(&github, "o/r", 7, &pull_detail(None))
+        .await
+        .unwrap();
     assert_eq!(metadata.authors[0], (String::new(), String::new()));
     assert_eq!(metadata.authors[1], (String::new(), String::new()));
 }
@@ -80,7 +86,9 @@ async fn commit_metadata_rest_stops_at_three_pages() {
             .collect(),
     );
     let github = github(script.clone());
-    let error = commit_metadata(&github, "o/r", 7, None).await.unwrap_err();
+    let error = commit_metadata(&github, "o/r", 7, &pull_detail(None))
+        .await
+        .unwrap_err();
     assert_eq!(
         error.to_string(),
         "GitHub's pagination limit was reached. Narrow the date range."
@@ -93,7 +101,9 @@ async fn commit_metadata_with_a_token_posts_the_graphql_query() {
     let page = graphql_page("", false, 4, None);
     let script = Script::new(vec![json_reply(200, &page)]);
     let github = github_with_token(script.clone(), "secret", "https://api.github.com");
-    let metadata = commit_metadata(&github, "o/r", 7, Some(4)).await.unwrap();
+    let metadata = commit_metadata(&github, "o/r", 7, &pull_detail(Some(4)))
+        .await
+        .unwrap();
     assert_eq!(metadata.count, 4);
     assert!(metadata.commits.is_empty());
     let seen = script.seen();
@@ -115,7 +125,9 @@ async fn commit_metadata_graphql_uses_the_enterprise_api_path() {
     let page = graphql_page("", false, 0, None);
     let script = Script::new(vec![json_reply(200, &page)]);
     let github = github_with_token(script.clone(), "secret", "https://ghe.example.com/api/v3");
-    commit_metadata(&github, "o/r", 7, Some(0)).await.unwrap();
+    commit_metadata(&github, "o/r", 7, &pull_detail(Some(0)))
+        .await
+        .unwrap();
     assert_eq!(script.seen()[0].url, "https://ghe.example.com/api/graphql");
 }
 
@@ -124,7 +136,9 @@ async fn commit_metadata_splits_the_repository_into_owner_and_name() {
     let page = graphql_page("", false, 0, None);
     let script = Script::new(vec![json_reply(200, &page)]);
     let github = github_with_token(script.clone(), "secret", "https://api.github.com");
-    commit_metadata(&github, "solo", 7, Some(0)).await.unwrap();
+    commit_metadata(&github, "solo", 7, &pull_detail(Some(0)))
+        .await
+        .unwrap();
     let payload = request_body(&script.seen()[0]);
     assert_eq!(payload.variables.owner, "solo");
     assert_eq!(payload.variables.name, "");
