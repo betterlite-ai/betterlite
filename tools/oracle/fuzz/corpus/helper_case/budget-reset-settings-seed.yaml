@@ -1,0 +1,13 @@
+kind: helper
+name: budget_reset_settings_seed
+call:
+  budget_reset:
+    reset_now: "2024-01-01T10:00:00Z"
+    calendar_now: "2024-06-15T12:00:00Z"
+    calendar_timezone: null
+    calls:
+      - {function: get_budget_reset_settings, settings: {timezone: Asia/Kolkata, budget_reset_time: "6:5"}}
+      - {function: parse_budget_reset_time, value: "24:00"}
+      - {function: compute_budget_reset_at, settings: {timezone: UTC, budget_reset_time: "06:00"}, duration: "1d"}
+env: {}
+compare: {ignore: []}

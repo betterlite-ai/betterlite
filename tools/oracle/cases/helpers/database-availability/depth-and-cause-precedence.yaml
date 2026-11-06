@@ -1,0 +1,62 @@
+kind: helper
+name: database-availability-depth-and-cause-precedence
+call:
+  database_availability:
+    scenarios:
+      - chain:
+          - {kind: database, error_type: data, message: not an outage, cause: 1}
+          - {kind: database, error_type: data, message: not an outage, cause: 2}
+          - {kind: database, error_type: data, message: not an outage, cause: 3}
+          - {kind: database, error_type: data, message: not an outage, cause: 4}
+          - {kind: database, error_type: data, message: not an outage, cause: 5}
+          - {kind: database, error_type: data, message: not an outage, cause: 6}
+          - {kind: database, error_type: data, message: not an outage, cause: 7}
+          - {kind: database, error_type: data, message: not an outage, cause: 8}
+          - {kind: database, error_type: data, message: not an outage, cause: 9}
+          - {kind: database, error_type: data, message: not an outage, cause: 10}
+          - {kind: database, error_type: data, message: not an outage, cause: 11}
+          - {kind: database, error_type: data, message: not an outage, cause: 12}
+          - {kind: database, error_type: data, message: not an outage, cause: 13}
+          - {kind: database, error_type: data, message: not an outage, cause: 14}
+          - {kind: database, error_type: data, message: not an outage, cause: 15}
+          - {kind: database, error_type: data, message: not an outage, cause: 16}
+          - {kind: database, error_type: data, message: not an outage, cause: 17}
+          - {kind: database, error_type: data, message: not an outage, cause: 18}
+          - {kind: database, error_type: data, message: not an outage, cause: 19}
+          - {kind: database, error_type: connect, message: connection refused}
+      - chain:
+          - {kind: database, error_type: data, message: not an outage, cause: 1}
+          - {kind: database, error_type: data, message: not an outage, cause: 2}
+          - {kind: database, error_type: data, message: not an outage, cause: 3}
+          - {kind: database, error_type: data, message: not an outage, cause: 4}
+          - {kind: database, error_type: data, message: not an outage, cause: 5}
+          - {kind: database, error_type: data, message: not an outage, cause: 6}
+          - {kind: database, error_type: data, message: not an outage, cause: 7}
+          - {kind: database, error_type: data, message: not an outage, cause: 8}
+          - {kind: database, error_type: data, message: not an outage, cause: 9}
+          - {kind: database, error_type: data, message: not an outage, cause: 10}
+          - {kind: database, error_type: data, message: not an outage, cause: 11}
+          - {kind: database, error_type: data, message: not an outage, cause: 12}
+          - {kind: database, error_type: data, message: not an outage, cause: 13}
+          - {kind: database, error_type: data, message: not an outage, cause: 14}
+          - {kind: database, error_type: data, message: not an outage, cause: 15}
+          - {kind: database, error_type: data, message: not an outage, cause: 16}
+          - {kind: database, error_type: data, message: not an outage, cause: 17}
+          - {kind: database, error_type: data, message: not an outage, cause: 18}
+          - {kind: database, error_type: data, message: not an outage, cause: 19}
+          - {kind: database, error_type: data, message: not an outage, cause: 20}
+          - {kind: database, error_type: connect, message: connection refused}
+      - chain:
+          - {kind: database, error_type: data, message: root, cause: 1, context: 2}
+          - {kind: database, error_type: data, message: cause}
+          - {kind: database, error_type: connect, message: connection refused}
+      - chain:
+          - {kind: database, error_type: data, message: first, cause: 1}
+          - {kind: database, error_type: data, message: second, cause: 0}
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/0/error/message, why: betterlite writes its own message}
+    - {pointer: /value/1/error/message, why: betterlite writes its own message}
+    - {pointer: /value/2/error/message, why: betterlite writes its own message}
+    - {pointer: /value/3/error/message, why: betterlite writes its own message}
