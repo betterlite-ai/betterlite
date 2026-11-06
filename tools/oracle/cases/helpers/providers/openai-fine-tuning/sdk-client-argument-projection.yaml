@@ -1,0 +1,5 @@
+kind: helper
+name: openai-fine-tuning-sdk-client-argument-projection
+call: {"openai_fine_tuning": {"steps": [{"action": "project", "is_async": true, "args": {"api_key": "k", "api_base": "https://x.test", "timeout": 0.0, "max_retries": 0, "organization": ""}}, {"action": "project", "args": {"api_key": "k"}}, {"action": "project", "client": "sync", "args": {"api_key": "ignored", "api_base": "https://other.test"}}, {"action": "project", "is_async": false, "args": {"api_base": ""}}]}}
+env: {}
+compare: {ignore: []}

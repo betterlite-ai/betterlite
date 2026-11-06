@@ -1,0 +1,5 @@
+kind: helper
+name: openai-fine-tuning-seed-azure-status
+call: {openai_fine_tuning: {steps: [{action: normalize, is_azure: true, record: {organization_id: null, result_files: null, status: notRunning}}]}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,24 @@
+kind: helper
+name: mcp_sigv4_default_chain_mocked
+call:
+  b4742:
+    settings:
+      aws_access_key_id: AKIDONLYHALF
+    environment:
+      AWS_ACCESS_KEY_ID: AKIDFROMENVIRONMENT
+      AWS_SECRET_ACCESS_KEY: environmentsecret
+      AWS_SESSION_TOKEN: environmenttoken
+      AWS_EC2_METADATA_DISABLED: 'true'
+      AWS_SHARED_CREDENTIALS_FILE: /nonexistent/credentials
+      AWS_CONFIG_FILE: /nonexistent/config
+      HOME: /nonexistent
+    now: 1440938160
+    requests:
+      - method: POST
+        url: https://bedrock-agentcore.us-east-1.amazonaws.com/runtimes/abc/invocations
+        headers:
+          - [content-type, application/json]
+          - [content-length, '2']
+        body: '{}'
+env: {}
+compare: {ignore: []}
