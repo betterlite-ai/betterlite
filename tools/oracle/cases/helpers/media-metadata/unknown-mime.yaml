@@ -1,0 +1,11 @@
+kind: helper
+name: media-metadata-unknown-mime
+call:
+  media_metadata:
+    operation: infer_content_type_from_url_and_content
+    url: https://example.com/file
+    content_base64: bm90LWFuLWltYWdl
+    current_content_type: null
+env: {}
+compare:
+  ignore: []
