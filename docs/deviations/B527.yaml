@@ -1,0 +1,4 @@
+task: B527
+deviations:
+  - {what: "Vector store search and create options reject unknown keys instead of silently ignoring them", why: "LiteLLM reads only the keys it knows from the optional-params dict, so a misspelled or unmodeled option disappears from the provider request; the no-silent-drops rule requires an error that names the field", link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/vector_stores/transformation.py#L106-L112"}
+  - {what: "Attached-file create, list and update params reject unknown keys instead of forwarding them", why: "LiteLLM copies the caller's dict, so an unmodeled field reaches the provider request unchanged; the no-silent-drops rule requires an error that names the field", link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/vector_store_files/transformation.py#L106-L115"}
