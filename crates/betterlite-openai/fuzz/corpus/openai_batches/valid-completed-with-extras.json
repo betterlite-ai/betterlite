@@ -1,0 +1,1 @@
+{"id":"batch_2","object":"batch","endpoint":"/v1/embeddings","input_file_id":"file-2","completion_window":"24h","status":"completed","created_at":1,"completed_at":9,"output_file_id":"file-3","metadata":{"team":"ml"},"request_counts":{"completed":3,"failed":1,"total":4},"usage":{"input_tokens":3,"output_tokens":4,"total_tokens":7},"vendor_flag":true}

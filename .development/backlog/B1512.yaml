@@ -1,7 +1,7 @@
 id: B1512
 milestone: M3 providers
 title: Obtain GitHub access tokens with the Copilot device flow
-status: todo
+status: done
 depends_on: [B002, B173, B184, B187, B171]
 file: tasks/B1512-copilot-device-auth.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/llms/github_copilot/common_utils.py"
 parent: B045
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 773

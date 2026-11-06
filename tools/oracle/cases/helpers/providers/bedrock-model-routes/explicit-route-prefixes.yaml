@@ -1,0 +1,47 @@
+kind: helper
+name: bedrock-explicit-route-prefixes
+call:
+  bedrock_model_routes:
+    price_map: {}
+    converse_models: []
+    request_metadata_fields: []
+    tool_names: {}
+    step:
+      routes:
+        models:
+          - nova-2/custom
+          - nova/custom
+          - bedrock/nova/custom
+          - xconverse/y
+          - openai/gpt-5.6
+          - claude_platform/openai.gpt-5.6
+          - converse_like/x
+          - converse/x
+          - agent/x
+          - agentcore/x
+          - async_invoke/x
+          - mantle/openai.gpt-5.5
+          - bedrock/mantle/x
+          - bedrock_mantle/openai.gpt-5.5
+          - converse/invoke/x
+          - agent/mantle/x
+        requests:
+          - model: invoke/anthropic.claude-3
+            request_params: {serviceTier: default, stop: []}
+          - model: converse/invoke/x
+            request_params: {serviceTier: default}
+          - model: chat_completions/openai.gpt-4o
+            request_params: {}
+          - model: chat_completions/openai.gpt-4o
+            request_params: {serviceTier: default}
+          - model: chat_completions/openai.gpt-4o
+            request_params: {serviceTier: default}
+            additional_drop_params: [serviceTier]
+          - model: chat_completions/openai.gpt-4o
+            request_params: {stop: []}
+            additional_drop_params: [stop]
+          - model: chat_completions/openai.gpt-4o
+            request_params: {stop: null}
+env: {}
+compare:
+  ignore: []
