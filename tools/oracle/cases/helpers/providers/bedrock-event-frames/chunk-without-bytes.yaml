@@ -1,0 +1,5 @@
+kind: helper
+name: chunk-without-bytes
+call: {"bedrock_event_frames": {"operation": "stream", "params": {"chunks": ["0000005d0000004b44af4c0b0b3a6576656e742d747970650700056368756e6b0d3a636f6e74656e742d747970650700106170706c69636174696f6e2f6a736f6e0d3a6d6573736167652d747970650700056576656e747b7dff8b8869"], "response_headers": {"content-type": "application/vnd.amazon.eventstream", "x-amzn-requestid": "req-1"}, "shape_loaded": true}}}
+env: {}
+compare: {ignore: []}

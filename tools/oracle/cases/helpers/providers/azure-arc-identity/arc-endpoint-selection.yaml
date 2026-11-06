@@ -1,0 +1,5 @@
+kind: helper
+name: arc-endpoint-selection
+call: {azure_arc_identity: {action: endpoint, platform: win32, environment: {ProgramFiles: "C:\\Program Files"}, files: {"C:\\Program Files\\AzureConnectedMachineAgent\\himds.exe": ""}, now: 1700000000}}
+env: {}
+compare: {ignore: []}

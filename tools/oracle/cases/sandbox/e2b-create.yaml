@@ -1,0 +1,10 @@
+kind: helper
+name: e2b-create-defaults
+call:
+  b3516:
+    operation: create
+    api_key: e2b-test-key
+    response_body: '{"sandboxID":"sbx_123","domain":"custom.e2b.app","envdAccessToken":"envd-secret","trafficAccessToken":"traffic-secret"}'
+env: {}
+compare:
+  ignore: []
