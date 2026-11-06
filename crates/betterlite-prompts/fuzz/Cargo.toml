@@ -66,3 +66,10 @@ path = "fuzz_targets/tool_schema.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "media_metadata"
+path = "fuzz_targets/media_metadata.rs"
+test = false
+doc = false
+bench = false
