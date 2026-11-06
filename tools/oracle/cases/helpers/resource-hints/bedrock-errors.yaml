@@ -1,0 +1,25 @@
+kind: helper
+name: resource-hints-bedrock-errors
+call:
+  auth_resource_hints:
+    steps:
+      - kind: bedrock_count
+        endpoint: "/model/x/count_tokens"
+      - kind: bedrock_count
+        endpoint: "/model/x/count-tokens"
+      - kind: bedrock_count
+        endpoint: "/COUNT_TOKENS"
+      - kind: bedrock_model
+        endpoint: "v2/model/aws/anthropic/m/invoke"
+      - kind: bedrock_model
+        endpoint: "/model/m/x/invoke"
+      - kind: bedrock_model
+        endpoint: "/x/y/converse"
+      - kind: bedrock_model
+        endpoint: "/model/application-inference-profile/p1/invoke"
+      - kind: bedrock_model
+        endpoint: "/model/"
+      - kind: bedrock_model
+        endpoint: ""
+env: {}
+compare: {ignore: []}

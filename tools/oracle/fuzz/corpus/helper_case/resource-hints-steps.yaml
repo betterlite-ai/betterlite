@@ -1,0 +1,17 @@
+kind: helper
+name: resource-hints-steps
+call:
+  auth_resource_hints:
+    steps:
+      - kind: azure
+        endpoint: "/chat/gpt-4"
+        router_models: ["chat", "gpt-4"]
+      - kind: video_id
+        encoded: "video_YTtiO2M7ZDtl"
+      - kind: bedrock_model
+        endpoint: "/model/m/invoke"
+      - kind: nim_endpoint
+        endpoint: "/a/b"
+        router_models: ["a"]
+env: {}
+compare: {ignore: []}
