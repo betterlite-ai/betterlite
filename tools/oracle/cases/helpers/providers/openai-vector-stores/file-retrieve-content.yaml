@@ -1,0 +1,5 @@
+kind: helper
+name: file-retrieve-content
+call: {"openai_vector_stores": {"file_item_request": {"operation": "content", "file_id": "file 1/a", "api_base": "https://api.example.test/v1/vector_stores/vs_abc/files"}}}
+env: {}
+compare: {ignore: []}
