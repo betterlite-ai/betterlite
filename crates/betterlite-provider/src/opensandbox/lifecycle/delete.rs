@@ -25,13 +25,13 @@ where
         let container: Cow<'_, ContainerHandle> = match request.container {
             ContainerRef::Cached(handle) => Cow::Borrowed(&handle.container),
             ContainerRef::Handle(handle) => Cow::Borrowed(handle),
-            ContainerRef::Id(id) => self.as_handle(SandboxRef::Id(id), request.api_base)?,
+            ContainerRef::Id(id) => self.as_handle(SandboxRef::Id(id), request.options.api_base)?,
         };
         let api_base = match container.hidden_params.api_base.as_deref() {
             Some(base) => base.to_owned(),
-            None => self.api_base(request.api_base)?,
+            None => self.api_base(request.options.api_base)?,
         };
-        let api_key = self.api_key(request.api_key, &container);
+        let api_key = self.api_key(request.options.api_key, &container);
         let url = Url::parse(&format!("{api_base}/sandboxes/{}", container.id))
             .map_err(|source| OpenSandboxError::Url { source })?;
         let response = client

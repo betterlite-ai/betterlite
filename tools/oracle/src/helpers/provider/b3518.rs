@@ -4,7 +4,7 @@ use std::time::Duration;
 use betterlite_models::sandbox::{ContainerHandle, HiddenParams};
 use betterlite_provider::opensandbox::helpers::poll::Endpoint;
 use betterlite_provider::opensandbox::lifecycle::{
-    ContainerRef, CreateSandboxRequest, DeleteSandbox, RunCode, SandboxHandle,
+    ContainerRef, CreateSandboxRequest, DeleteSandbox, RunCode, SandboxHandle, SandboxOptions,
 };
 use secrecy::SecretString;
 use serde::Deserialize;
@@ -22,23 +22,67 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
+        let sandbox = recording_sandbox(input);
+        let api_key = input.api_key.as_deref().map(SecretString::from);
+        let options = sandbox_options(input, api_key.as_ref())?;
         match input.operation {
-            Operation::Create => create_output(input),
-            Operation::Run => run_output(input),
-            Operation::Delete => delete_output(input),
+            Operation::Create => {
+                let handle =
+                    block_on(sandbox.acreate_sandbox(prepared_create(input, options), None))?;
+                Ok(serde_json::json!({
+                    "handle": handle_output(&handle),
+                    "requests": requests_output(&sandbox.http)?,
+                }))
+            }
+            Operation::Run => {
+                let container = container_input(input)?;
+                let result = block_on(
+                    sandbox.arun_code(prepared_run(input, container.reference(), options)?, None),
+                )?;
+                Ok(serde_json::json!({
+                    "requests": requests_output(&sandbox.http)?,
+                    "result": result,
+                }))
+            }
+            Operation::Delete => {
+                let container = container_input(input)?;
+                let deleted = block_on(sandbox.adelete_sandbox(
+                    DeleteSandbox {
+                        container: container.reference(),
+                        options,
+                    },
+                    None,
+                ))?;
+                Ok(serde_json::json!({
+                    "deleted": deleted,
+                    "requests": requests_output(&sandbox.http)?,
+                }))
+            }
         }
     }
 }
 
-fn create_output(input: &Input) -> crate::helpers::HelperResult {
-    let sandbox = recording_sandbox(input);
-    let api_key = input.api_key.as_deref().map(SecretString::from);
-    let prepared = CreateSandboxRequest {
+fn sandbox_options<'request>(
+    input: &'request Input,
+    api_key: Option<&'request SecretString>,
+) -> Result<SandboxOptions<'request>, Box<HelperError>> {
+    Ok(SandboxOptions {
+        api_key,
+        api_base: input.api_base.as_deref(),
+        use_server_proxy: input.use_server_proxy.unwrap_or(false),
+        ready_timeout: seconds(input.ready_timeout)?,
+        poll_interval: seconds(input.poll_interval)?,
+    })
+}
+
+fn prepared_create<'request>(
+    input: &'request Input,
+    options: SandboxOptions<'request>,
+) -> CreateSandboxRequest<'request> {
+    CreateSandboxRequest {
         template: input.template.as_deref(),
         timeout: input.timeout,
         allow_internet_access: input.allow_internet_access,
-        api_key: api_key.as_ref(),
-        api_base: input.api_base.as_deref(),
         metadata: input.metadata.as_ref(),
         env_vars: input.env_vars.as_ref(),
         resource_limits: input.resource_limits.as_ref(),
@@ -46,52 +90,21 @@ fn create_output(input: &Input) -> crate::helpers::HelperResult {
         entrypoint: input.entrypoint.as_deref(),
         network_policy: input.network_policy.as_deref(),
         secure_access: input.secure_access.unwrap_or(false),
-        use_server_proxy: input.use_server_proxy.unwrap_or(false),
-        ready_timeout: seconds(input.ready_timeout)?,
-        poll_interval: seconds(input.poll_interval)?,
-    };
-    let handle = block_on(sandbox.acreate_sandbox(prepared, None))?;
-    Ok(serde_json::json!({
-        "handle": handle_output(&handle),
-        "requests": requests_output(&sandbox.http)?,
-    }))
+        options,
+    }
 }
 
-fn run_output(input: &Input) -> crate::helpers::HelperResult {
-    let sandbox = recording_sandbox(input);
-    let container = container_input(input)?;
-    let api_key = input.api_key.as_deref().map(SecretString::from);
-    let prepared = RunCode {
-        container: container.reference(),
+fn prepared_run<'request>(
+    input: &'request Input,
+    container: ContainerRef<'request>,
+    options: SandboxOptions<'request>,
+) -> Result<RunCode<'request>, Box<HelperError>> {
+    Ok(RunCode {
+        container,
         code: required(input.code.as_deref(), "code")?,
-        api_key: api_key.as_ref(),
-        api_base: input.api_base.as_deref(),
         language: input.language.as_deref(),
-        use_server_proxy: input.use_server_proxy.unwrap_or(false),
-        ready_timeout: seconds(input.ready_timeout)?,
-        poll_interval: seconds(input.poll_interval)?,
-    };
-    let result = block_on(sandbox.arun_code(prepared, None))?;
-    Ok(serde_json::json!({
-        "requests": requests_output(&sandbox.http)?,
-        "result": result,
-    }))
-}
-
-fn delete_output(input: &Input) -> crate::helpers::HelperResult {
-    let sandbox = recording_sandbox(input);
-    let container = container_input(input)?;
-    let api_key = input.api_key.as_deref().map(SecretString::from);
-    let prepared = DeleteSandbox {
-        container: container.reference(),
-        api_key: api_key.as_ref(),
-        api_base: input.api_base.as_deref(),
-    };
-    let deleted = block_on(sandbox.adelete_sandbox(prepared, None))?;
-    Ok(serde_json::json!({
-        "deleted": deleted,
-        "requests": requests_output(&sandbox.http)?,
-    }))
+        options,
+    })
 }
 
 enum Container {

@@ -128,7 +128,7 @@ fn create_polls_the_endpoint_until_it_answers() {
     );
     let api_key = SecretString::from("key-1");
     let mut request = create_request("http://sandbox.example", &api_key);
-    request.poll_interval = Some(Duration::from_millis(10));
+    request.options.poll_interval = Some(Duration::from_millis(10));
     let handle = block_on(sandbox.acreate_sandbox(request, None)).unwrap();
 
     assert_eq!(handle.execd_endpoint.url, "http://execd.local/");
@@ -172,8 +172,8 @@ fn create_uses_the_given_ready_timeout_and_poll_interval() {
     let sandbox = sandbox(&[(200, RUNNING), (404, NOT_FOUND)], environment(&[]));
     let api_key = SecretString::from("key-1");
     let mut request = create_request("http://sandbox.example", &api_key);
-    request.ready_timeout = Some(Duration::from_secs(1));
-    request.poll_interval = Some(Duration::from_millis(500));
+    request.options.ready_timeout = Some(Duration::from_secs(1));
+    request.options.poll_interval = Some(Duration::from_millis(500));
     let error = block_on(sandbox.acreate_sandbox(request, None)).unwrap_err();
 
     assert!(matches!(
@@ -212,8 +212,8 @@ fn create_reports_a_sandbox_that_never_runs() {
     let sandbox = sandbox(&[(200, PENDING)], environment(&[]));
     let api_key = SecretString::from("key-1");
     let mut request = create_request("http://sandbox.example", &api_key);
-    request.ready_timeout = Some(Duration::from_secs(1));
-    request.poll_interval = Some(Duration::from_millis(500));
+    request.options.ready_timeout = Some(Duration::from_secs(1));
+    request.options.poll_interval = Some(Duration::from_millis(500));
     let error = block_on(sandbox.acreate_sandbox(request, None)).unwrap_err();
 
     assert!(matches!(
@@ -229,7 +229,7 @@ fn create_requires_an_api_base() {
     let sandbox = sandbox(&[], environment(&[]));
     let api_key = SecretString::from("key-1");
     let mut request = create_request("http://sandbox.example", &api_key);
-    request.api_base = None;
+    request.options.api_base = None;
     let error = block_on(sandbox.acreate_sandbox(request, None)).unwrap_err();
 
     assert!(matches!(
@@ -251,8 +251,8 @@ fn create_reads_the_api_base_and_key_from_the_environment() {
     );
     let unused = SecretString::from("unused");
     let mut request = create_request("http://sandbox.example", &unused);
-    request.api_base = None;
-    request.api_key = None;
+    request.options.api_base = None;
+    request.options.api_key = None;
     let handle = block_on(sandbox.acreate_sandbox(request, None)).unwrap();
 
     assert_eq!(
@@ -279,7 +279,7 @@ fn create_omits_the_api_key_header_when_no_key_is_set() {
     let sandbox = sandbox(&[(200, RUNNING), (200, ENDPOINT)], environment(&[]));
     let unused = SecretString::from("unused");
     let mut request = create_request("http://sandbox.example", &unused);
-    request.api_key = None;
+    request.options.api_key = None;
     let handle = block_on(sandbox.acreate_sandbox(request, None)).unwrap();
 
     assert_eq!(
@@ -392,7 +392,7 @@ fn create_forwards_the_server_proxy_flag_to_the_endpoint_lookup() {
     let sandbox = sandbox(&[(200, RUNNING), (200, ENDPOINT)], environment(&[]));
     let api_key = SecretString::from("key-1");
     let mut request = create_request("http://sandbox.example", &api_key);
-    request.use_server_proxy = true;
+    request.options.use_server_proxy = true;
     let handle = block_on(sandbox.acreate_sandbox(request, None)).unwrap();
 
     assert!(handle.use_server_proxy);

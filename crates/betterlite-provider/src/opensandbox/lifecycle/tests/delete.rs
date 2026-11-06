@@ -65,7 +65,7 @@ fn delete_reports_another_error_status() {
 fn delete_builds_a_handle_for_a_bare_id() {
     let sandbox = sandbox(&[(204, "")], environment(&[]));
     let mut request = delete_request(ContainerRef::Id("sbx_7"));
-    request.api_base = Some("http://sandbox.example");
+    request.options.api_base = Some("http://sandbox.example");
     let deleted = block_on(sandbox.adelete_sandbox(request, None)).unwrap();
 
     assert!(deleted);
@@ -80,7 +80,7 @@ fn delete_prefers_the_stored_base_over_the_parameter() {
     let sandbox = sandbox(&[(200, "")], environment(&[]));
     let handle = plain_handle(Some("http://stored.example"), Some("stored-key"));
     let mut request = delete_request(ContainerRef::Handle(&handle));
-    request.api_base = Some("http://override.example");
+    request.options.api_base = Some("http://override.example");
     block_on(sandbox.adelete_sandbox(request, None)).unwrap();
 
     assert_eq!(
@@ -95,7 +95,7 @@ fn delete_prefers_the_key_parameter_over_the_stored_key() {
     let handle = plain_handle(Some("http://stored.example"), Some("stored-key"));
     let api_key = SecretString::from("override-key");
     let mut request = delete_request(ContainerRef::Handle(&handle));
-    request.api_key = Some(&api_key);
+    request.options.api_key = Some(&api_key);
     block_on(sandbox.adelete_sandbox(request, None)).unwrap();
 
     assert_eq!(
@@ -142,7 +142,7 @@ fn delete_uses_the_supplied_client_instead_of_the_pool() {
         clock: StepClock::new(),
     };
     let mut request = delete_request(ContainerRef::Id("sbx_7"));
-    request.api_base = Some("http://sandbox.example");
+    request.options.api_base = Some("http://sandbox.example");
     block_on(sandbox.adelete_sandbox(request, Some(&caller))).unwrap();
 
     assert!(sandbox.http.requests().is_empty());

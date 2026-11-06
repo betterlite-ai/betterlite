@@ -35,9 +35,9 @@ fn ensure_reacquires_the_endpoint_and_records_the_resolved_base() {
     let handle = plain_handle(None, None);
     let api_key = SecretString::from("explicit-key");
     let mut request = run_request(ContainerRef::Handle(&handle), "1");
-    request.api_base = Some("http://sandbox.example");
-    request.api_key = Some(&api_key);
-    request.use_server_proxy = true;
+    request.options.api_base = Some("http://sandbox.example");
+    request.options.api_key = Some(&api_key);
+    request.options.use_server_proxy = true;
     let resolved = block_on(sandbox.ensure_handle(&request, None)).unwrap();
 
     assert_eq!(
@@ -99,7 +99,7 @@ fn ensure_prefers_the_stored_base_and_the_stored_key() {
     let sandbox = sandbox(&[(200, ENDPOINT)], environment(&[]));
     let handle = plain_handle(Some("http://stored.example"), Some("stored-key"));
     let mut request = run_request(ContainerRef::Handle(&handle), "1");
-    request.api_base = Some("http://override.example");
+    request.options.api_base = Some("http://override.example");
     let resolved = block_on(sandbox.ensure_handle(&request, None)).unwrap();
 
     assert_eq!(
@@ -122,7 +122,7 @@ fn ensure_replaces_a_stale_domain_with_the_resolved_api_base() {
     let mut handle = plain_handle(None, None);
     handle.domain = Some("http://stale.example".to_owned());
     let mut request = run_request(ContainerRef::Handle(&handle), "1");
-    request.api_base = Some("http://fresh.example");
+    request.options.api_base = Some("http://fresh.example");
     let resolved = block_on(sandbox.ensure_handle(&request, None)).unwrap();
 
     assert_eq!(
@@ -171,8 +171,8 @@ fn ensure_reports_an_endpoint_that_never_arrives() {
     let sandbox = sandbox(&[(404, NOT_FOUND)], environment(&[]));
     let handle = plain_handle(Some("http://stored.example"), Some("stored-key"));
     let mut request = run_request(ContainerRef::Handle(&handle), "1");
-    request.ready_timeout = Some(Duration::from_secs(1));
-    request.poll_interval = Some(Duration::from_millis(500));
+    request.options.ready_timeout = Some(Duration::from_secs(1));
+    request.options.poll_interval = Some(Duration::from_millis(500));
     let error = block_on(sandbox.ensure_handle(&request, None)).unwrap_err();
 
     assert!(matches!(

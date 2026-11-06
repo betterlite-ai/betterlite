@@ -64,8 +64,8 @@ fn run_reacquires_the_endpoint_for_a_bare_id() {
     let sandbox = sandbox(&[(200, ENDPOINT), (200, OUTPUT)], environment(&[]));
     let api_key = SecretString::from("key-1");
     let mut request = run_request(ContainerRef::Id("sbx_1"), "1 + 1");
-    request.api_base = Some("http://sandbox.example");
-    request.api_key = Some(&api_key);
+    request.options.api_base = Some("http://sandbox.example");
+    request.options.api_key = Some(&api_key);
     let result = block_on(sandbox.arun_code(request, None)).unwrap();
 
     assert_eq!(result.stdout, "hello\n");
@@ -106,8 +106,8 @@ fn run_prefers_the_stored_base_and_the_explicit_key() {
     let handle = plain_handle(Some("http://stored.example"), Some("stored-key"));
     let api_key = SecretString::from("override-key");
     let mut request = run_request(ContainerRef::Handle(&handle), "1");
-    request.api_base = Some("http://override.example");
-    request.api_key = Some(&api_key);
+    request.options.api_base = Some("http://override.example");
+    request.options.api_key = Some(&api_key);
     block_on(sandbox.arun_code(request, None)).unwrap();
 
     let requests = sandbox.http.requests();
@@ -203,10 +203,10 @@ fn run_reports_an_endpoint_that_never_arrives() {
     let sandbox = sandbox(&[(404, NOT_FOUND)], environment(&[]));
     let api_key = SecretString::from("key-1");
     let mut request = run_request(ContainerRef::Id("sbx_1"), "1");
-    request.api_base = Some("http://sandbox.example");
-    request.api_key = Some(&api_key);
-    request.ready_timeout = Some(Duration::from_secs(1));
-    request.poll_interval = Some(Duration::from_millis(500));
+    request.options.api_base = Some("http://sandbox.example");
+    request.options.api_key = Some(&api_key);
+    request.options.ready_timeout = Some(Duration::from_secs(1));
+    request.options.poll_interval = Some(Duration::from_millis(500));
     let error = block_on(sandbox.arun_code(request, None)).unwrap_err();
 
     assert!(matches!(
@@ -222,7 +222,7 @@ fn run_forwards_the_server_proxy_flag_when_it_reacquires_the_endpoint() {
     let sandbox = sandbox(&[(200, ENDPOINT), (200, OUTPUT)], environment(&[]));
     let handle = plain_handle(Some("http://stored.example"), Some("stored-key"));
     let mut request = run_request(ContainerRef::Handle(&handle), "1");
-    request.use_server_proxy = true;
+    request.options.use_server_proxy = true;
     block_on(sandbox.arun_code(request, None)).unwrap();
 
     assert_eq!(

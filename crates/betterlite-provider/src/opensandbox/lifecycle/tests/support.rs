@@ -14,7 +14,9 @@ use super::super::super::helpers::poll::Endpoint;
 use super::super::super::helpers::{
     OpenSandbox, OpenSandboxError, PollClock, SandboxHttp, SandboxRequest, SandboxStream,
 };
-use super::super::{ContainerRef, CreateSandboxRequest, DeleteSandbox, RunCode, SandboxHandle};
+use super::super::{
+    ContainerRef, CreateSandboxRequest, DeleteSandbox, RunCode, SandboxHandle, SandboxOptions,
+};
 
 pub(super) type Environment = BTreeMap<String, String>;
 pub(super) type Sandbox = OpenSandbox<ScriptedHttp, Environment, StepClock>;
@@ -145,6 +147,16 @@ where
         .block_on(work)
 }
 
+pub(super) fn options<'request>() -> SandboxOptions<'request> {
+    SandboxOptions {
+        api_key: None,
+        api_base: None,
+        use_server_proxy: false,
+        ready_timeout: None,
+        poll_interval: None,
+    }
+}
+
 pub(super) fn create_request<'request>(
     api_base: &'request str,
     api_key: &'request SecretString,
@@ -153,8 +165,6 @@ pub(super) fn create_request<'request>(
         template: None,
         timeout: None,
         allow_internet_access: None,
-        api_key: Some(api_key),
-        api_base: Some(api_base),
         metadata: None,
         env_vars: None,
         resource_limits: None,
@@ -162,9 +172,13 @@ pub(super) fn create_request<'request>(
         entrypoint: None,
         network_policy: None,
         secure_access: false,
-        use_server_proxy: false,
-        ready_timeout: None,
-        poll_interval: None,
+        options: SandboxOptions {
+            api_key: Some(api_key),
+            api_base: Some(api_base),
+            use_server_proxy: false,
+            ready_timeout: None,
+            poll_interval: None,
+        },
     }
 }
 
@@ -182,13 +196,17 @@ pub(super) fn plain_handle(api_base: Option<&str>, api_key: Option<&str>) -> Con
     }
 }
 
-pub(super) fn cached_handle(api_base: &str, api_key: &str, endpoint: &str) -> SandboxHandle {
+pub(super) fn endpoint(url: &str) -> Endpoint {
+    Endpoint {
+        url: url.to_owned(),
+        headers: BTreeMap::from([("X-Execd-Token".to_owned(), "execd-token".to_owned())]),
+    }
+}
+
+pub(super) fn cached_handle(api_base: &str, api_key: &str, endpoint_url: &str) -> SandboxHandle {
     SandboxHandle {
         container: plain_handle(Some(api_base), Some(api_key)),
-        execd_endpoint: Endpoint {
-            url: endpoint.to_owned(),
-            headers: BTreeMap::from([("X-Execd-Token".to_owned(), "execd-token".to_owned())]),
-        },
+        execd_endpoint: endpoint(endpoint_url),
         use_server_proxy: true,
     }
 }
@@ -200,20 +218,15 @@ pub(super) fn run_request<'request>(
     RunCode {
         container,
         code,
-        api_key: None,
-        api_base: None,
         language: None,
-        use_server_proxy: false,
-        ready_timeout: None,
-        poll_interval: None,
+        options: options(),
     }
 }
 
 pub(super) fn delete_request(container: ContainerRef<'_>) -> DeleteSandbox<'_> {
     DeleteSandbox {
         container,
-        api_key: None,
-        api_base: None,
+        options: options(),
     }
 }
 

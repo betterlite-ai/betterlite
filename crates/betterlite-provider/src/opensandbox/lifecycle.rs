@@ -45,12 +45,19 @@ pub enum ContainerRef<'request> {
 }
 
 #[derive(Debug, Clone, Copy, Default)]
+pub struct SandboxOptions<'request> {
+    pub api_key: Option<&'request SecretString>,
+    pub api_base: Option<&'request str>,
+    pub use_server_proxy: bool,
+    pub ready_timeout: Option<Duration>,
+    pub poll_interval: Option<Duration>,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
 pub struct CreateSandboxRequest<'request> {
     pub template: Option<&'request str>,
     pub timeout: Option<i64>,
     pub allow_internet_access: Option<bool>,
-    pub api_key: Option<&'request SecretString>,
-    pub api_base: Option<&'request str>,
     pub metadata: Option<&'request BTreeMap<String, String>>,
     pub env_vars: Option<&'request BTreeMap<String, String>>,
     pub resource_limits: Option<&'request BTreeMap<String, String>>,
@@ -58,26 +65,19 @@ pub struct CreateSandboxRequest<'request> {
     pub entrypoint: Option<&'request [String]>,
     pub network_policy: Option<&'request RawValue>,
     pub secure_access: bool,
-    pub use_server_proxy: bool,
-    pub ready_timeout: Option<Duration>,
-    pub poll_interval: Option<Duration>,
+    pub options: SandboxOptions<'request>,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct RunCode<'request> {
     pub container: ContainerRef<'request>,
     pub code: &'request str,
-    pub api_key: Option<&'request SecretString>,
-    pub api_base: Option<&'request str>,
     pub language: Option<&'request str>,
-    pub use_server_proxy: bool,
-    pub ready_timeout: Option<Duration>,
-    pub poll_interval: Option<Duration>,
+    pub options: SandboxOptions<'request>,
 }
 
 #[derive(Debug, Clone, Copy)]
 pub struct DeleteSandbox<'request> {
     pub container: ContainerRef<'request>,
-    pub api_key: Option<&'request SecretString>,
-    pub api_base: Option<&'request str>,
+    pub options: SandboxOptions<'request>,
 }
