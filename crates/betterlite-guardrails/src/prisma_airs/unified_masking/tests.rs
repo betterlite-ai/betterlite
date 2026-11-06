@@ -54,7 +54,7 @@ async fn a_blocked_request_with_masking_on_takes_the_masked_text() {
 #[tokio::test]
 async fn a_blocked_request_without_masking_is_a_400() {
     let outcome = execute(
-        Run::new(BLOCK_MASKED),
+        Run::new(BLOCK_PLAIN),
         inputs(&["secret"]),
         request_data(),
         None,

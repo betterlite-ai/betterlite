@@ -104,15 +104,12 @@ async fn a_synthesized_call_id_is_the_scan_tr_id() {
 
 #[tokio::test]
 async fn a_stored_call_id_is_reused_by_the_next_scan() {
-    let first = execute(Run::new(ALLOW), inputs(&["one"]), request_data(), None).await;
-    let stored = first
-        .request_data
-        .litellm_call_id
-        .clone()
-        .expect("synthesized id");
+    let mut first = execute(Run::new(ALLOW), inputs(&["one"]), request_data(), None).await;
+    first.result.as_ref().expect("allowed");
+    first.request_data.litellm_call_id = Some("stored-call-id".to_owned());
     let second = execute(Run::new(ALLOW), inputs(&["two"]), first.request_data, None).await;
     second.result.as_ref().expect("allowed");
-    assert!(second.bodies[0].contains(&format!(r#""tr_id":"{stored}""#)));
+    assert!(second.bodies[0].contains(r#""tr_id":"stored-call-id""#));
 }
 
 #[tokio::test]

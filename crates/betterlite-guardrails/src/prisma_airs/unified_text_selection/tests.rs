@@ -243,15 +243,49 @@ async fn a_responses_reasoning_item_is_never_the_latest_turn() {
 }
 
 #[tokio::test]
-async fn a_response_scan_ignores_the_text_selection() {
-    let mut given = inputs(&["sys", "user"]);
+async fn a_latest_turn_without_text_leaves_nothing_to_scan() {
+    let mut given = inputs(&["old"]);
     given.structured_messages =
-        messages(r#"[{"role":"system","content":"sys"},{"role":"user","content":"user"}]"#);
+        messages(r#"[{"role":"user","content":"old"},{"role":"user","content":[]}]"#);
+    let run = Run {
+        latest_only: Some(true),
+        ..Run::new(ALLOW)
+    };
+    let outcome = execute(run, given, request_data(), None).await;
+    outcome.result.as_ref().expect("allowed");
+    assert!(outcome.bodies.is_empty());
+    assert_eq!(outcome.inputs.texts, ["old"]);
+}
+
+#[tokio::test]
+async fn a_misaligned_latest_turn_falls_back_to_the_scannable_roles() {
+    let mut given = inputs(&["sys", "old", "answer"]);
+    given.structured_messages = messages(
+        r#"[{"role":"system","content":"sys"},{"role":"user","content":"old"},{"role":"assistant","content":"answer"},{"role":"user","content":"new"}]"#,
+    );
+    let run = Run {
+        latest_only: Some(true),
+        ..Run::new(ALLOW)
+    };
+    let outcome = execute(run, given, request_data(), None).await;
+    outcome.result.as_ref().expect("allowed");
+    assert_eq!(outcome.bodies.len(), 2);
+    assert!(outcome.bodies[0].contains(&prompt_json("sys")));
+    assert!(outcome.bodies[1].contains(&prompt_json("old")));
+}
+
+#[tokio::test]
+async fn a_response_scan_ignores_the_text_selection() {
+    let mut given = inputs(&["sys", "user", "assistant"]);
+    given.structured_messages = messages(
+        r#"[{"role":"system","content":"sys"},{"role":"user","content":"user"},{"role":"assistant","content":"assistant"}]"#,
+    );
     let run = Run {
         direction: Direction::Response,
         ..Run::new(ALLOW)
     };
     let outcome = execute(run, given, request_data(), None).await;
     outcome.result.as_ref().expect("allowed");
-    assert_eq!(outcome.bodies.len(), 2);
+    assert_eq!(outcome.bodies.len(), 3);
+    assert!(outcome.bodies[2].contains(&prompt_json("assistant")));
 }

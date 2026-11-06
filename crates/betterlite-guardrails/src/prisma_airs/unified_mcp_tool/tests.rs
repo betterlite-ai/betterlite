@@ -2,7 +2,10 @@
 
 use std::collections::BTreeMap;
 
+use axum::http::StatusCode;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_config::sections::panw_prisma_airs::FallbackAction;
+use rstest::rstest;
 
 use crate::panw_prisma_airs::audit::Direction;
 use crate::prisma_airs::request_data::RequestData;
@@ -97,6 +100,18 @@ async fn the_registry_resolves_a_server_by_tool_name() {
 }
 
 #[tokio::test]
+async fn the_legacy_server_name_wins_over_the_registry() {
+    let mut run = Run::new(ALLOW);
+    run.tool_names = BTreeMap::from([("search".to_owned(), "registry-server".to_owned())]);
+    let mut data = with_search();
+    data.server_name = Some("legacy-server".to_owned());
+    data.mcp_arguments = Some(object(&[("q", text("x"))]));
+    let outcome = execute(run, inputs(&[]), data, None).await;
+    outcome.result.as_ref().expect("allowed");
+    assert!(outcome.bodies[0].contains(r#""server_name":"legacy-server""#));
+}
+
+#[tokio::test]
 async fn a_name_without_arguments_is_not_an_mcp_request() {
     let mut data = request_data();
     data.name = Some("search".to_owned());
@@ -124,6 +139,32 @@ async fn a_null_mcp_argument_falls_back_to_the_arguments_field() {
     let outcome = execute(Run::new(ALLOW), inputs(&[]), data, None).await;
     outcome.result.as_ref().expect("allowed");
     assert!(outcome.bodies[0].contains(r#""input":"{\"q\":\"x\"}""#));
+}
+
+#[tokio::test]
+async fn a_null_arguments_field_sends_no_input() {
+    let mut data = with_search();
+    data.arguments = Some(GuardrailValue::Null);
+    let outcome = execute(Run::new(ALLOW), inputs(&[]), data, None).await;
+    outcome.result.as_ref().expect("allowed");
+    assert!(outcome.bodies[0].contains(r#""tool_invoked":"search""#));
+    assert!(!outcome.bodies[0].contains(r#""input":"#));
+}
+
+#[rstest]
+#[case::empty_string(Some(text("")))]
+#[case::whitespace(Some(text("   ")))]
+#[case::no_argument_field(None)]
+#[tokio::test]
+async fn a_tool_event_without_usable_arguments_has_no_input(
+    #[case] arguments: Option<GuardrailValue>,
+) {
+    let mut data = with_search();
+    data.mcp_arguments = arguments;
+    let outcome = execute(Run::new(ALLOW), inputs(&[]), data, None).await;
+    outcome.result.as_ref().expect("allowed");
+    assert!(outcome.bodies[0].contains(r#""tool_invoked":"search""#));
+    assert!(!outcome.bodies[0].contains(r#""input":"#));
 }
 
 #[tokio::test]
@@ -165,6 +206,8 @@ async fn invalid_masked_json_blocks_structured_arguments() {
     assert_eq!(outcome.result.as_ref().expect_err("blocked").status(), 400);
     let detail = detail_json(&outcome);
     assert!(detail.contains("masked data is not valid JSON"));
+    assert!(detail.contains(r#""type":"guardrail_violation""#));
+    assert!(detail.contains(r#""code":"panw_prisma_airs_blocked""#));
     assert_eq!(
         outcome.request_data.mcp_arguments,
         Some(object(&[("q", text("secret"))]))
@@ -175,7 +218,10 @@ async fn invalid_masked_json_blocks_structured_arguments() {
 async fn a_masked_allow_without_an_argument_field_is_a_400() {
     let outcome = execute(Run::new(ALLOW_MASKED), inputs(&[]), with_search(), None).await;
     assert_eq!(outcome.result.as_ref().expect_err("blocked").status(), 400);
-    assert!(detail_json(&outcome).contains("no rewritable argument field present"));
+    let detail = detail_json(&outcome);
+    assert!(detail.contains("no rewritable argument field present"));
+    assert!(detail.contains(r#""type":"guardrail_violation""#));
+    assert!(detail.contains(r#""code":"panw_prisma_airs_blocked""#));
 }
 
 #[tokio::test]
@@ -201,6 +247,37 @@ async fn a_blocked_mcp_request_without_masking_is_a_400() {
     let outcome = execute(Run::new(BLOCK_PLAIN), inputs(&[]), data, None).await;
     assert_eq!(outcome.result.as_ref().expect_err("blocked").status(), 400);
     assert!(detail_json(&outcome).contains(r#""code":"panw_prisma_airs_blocked""#));
+}
+
+#[tokio::test]
+async fn a_transient_mcp_failure_with_fallback_allow_leaves_the_arguments_alone() {
+    let run = Run {
+        status: StatusCode::SERVICE_UNAVAILABLE,
+        fallback: FallbackAction::Allow,
+        ..Run::new("{}")
+    };
+    let mut data = with_search();
+    data.mcp_arguments = Some(object(&[("q", text("secret"))]));
+    let outcome = execute(run, inputs(&[]), data, None).await;
+    outcome.result.as_ref().expect("fallback allows");
+    assert_eq!(
+        outcome.request_data.mcp_arguments,
+        Some(object(&[("q", text("secret"))]))
+    );
+    assert_eq!(outcome.audit.applied_guardrails, ["panw:unscanned", "panw"]);
+    assert_eq!(outcome.audit.information.len(), 1);
+}
+
+#[tokio::test]
+async fn a_transient_mcp_failure_without_fallback_is_a_500() {
+    let run = Run {
+        status: StatusCode::SERVICE_UNAVAILABLE,
+        ..Run::new("{}")
+    };
+    let mut data = with_search();
+    data.mcp_arguments = Some(object(&[("q", text("secret"))]));
+    let outcome = execute(run, inputs(&[]), data, None).await;
+    assert_eq!(outcome.result.as_ref().expect_err("blocks").status(), 500);
 }
 
 #[tokio::test]

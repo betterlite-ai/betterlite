@@ -129,13 +129,18 @@ fn mcp_input(request_data: &RequestData) -> Result<Option<String>, serde_json::E
     Ok((!serialized.trim().is_empty()).then_some(serialized))
 }
 
-// mcp_arguments wins over arguments; a present null falls through like Python's None.
+// mcp_arguments wins over arguments; a present null in either falls through like Python's None.
 fn selected_arguments(request_data: &RequestData) -> Option<&GuardrailValue> {
     request_data
         .mcp_arguments
         .as_ref()
         .filter(|value| !matches!(value, GuardrailValue::Null))
-        .or(request_data.arguments.as_ref())
+        .or_else(|| {
+            request_data
+                .arguments
+                .as_ref()
+                .filter(|value| !matches!(value, GuardrailValue::Null))
+        })
 }
 
 fn apply_verdict(
