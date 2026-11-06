@@ -1,0 +1,1 @@
+{"id":"ft_6","created_at":6,"error":{"code":null,"message":"boom","param":null},"fine_tuned_model":null,"finished_at":null,"hyperparameters":{},"model":"m","object":"fine_tuning.job","organization_id":"org","result_files":[],"status":"failed","trained_tokens":null,"training_file":"f","validation_file":null}

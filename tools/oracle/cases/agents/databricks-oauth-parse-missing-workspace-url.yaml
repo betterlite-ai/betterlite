@@ -1,0 +1,5 @@
+kind: helper
+name: databricks-oauth-parse-missing-workspace-url
+call: {"b4782": {"operation": "parse", "params": {"databricks_oauth": {"client_id": "id", "client_secret": "s3cret"}}}}
+env: {}
+compare: {ignore: []}

@@ -975,11 +975,17 @@ dependencies = [
  "betterlite-http",
  "chrono",
  "futures-core",
+ "hex",
  "http 1.5.0",
+ "lru",
+ "num-traits",
  "rstest",
+ "secrecy",
  "serde",
  "serde_json",
  "serde_with",
+ "sha2 0.11.1",
+ "strum",
  "thiserror",
  "tokio",
  "url",
@@ -1055,8 +1061,19 @@ dependencies = [
  "betterlite-error",
  "indexmap 2.14.2",
  "rstest",
+ "secrecy",
  "serde",
  "serde_json",
+ "serde_path_to_error",
+ "thiserror",
+]
+
+[[package]]
+name = "betterlite-azure-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-azure",
+ "libfuzzer-sys",
 ]
 
 [[package]]
@@ -1067,16 +1084,21 @@ dependencies = [
  "aws-credential-types",
  "aws-sdk-sts",
  "aws-smithy-async",
+ "aws-smithy-eventstream",
  "aws-smithy-runtime-api",
  "aws-smithy-types",
  "aws-types",
+ "base64 0.23.1",
  "betterlite-config",
  "betterlite-context",
  "betterlite-env",
  "betterlite-openai",
  "betterlite-redact",
+ "bytes",
  "chrono",
+ "crc32fast",
  "encoding_rs",
+ "fancy-regex",
  "futures-util",
  "hex",
  "indexmap 2.14.2",
@@ -1098,6 +1120,7 @@ name = "betterlite-bedrock-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-bedrock",
+ "bytes",
  "libfuzzer-sys",
 ]
 
@@ -1271,11 +1294,14 @@ dependencies = [
  "betterlite-auth",
  "betterlite-config",
  "betterlite-context",
+ "betterlite-env",
+ "betterlite-http",
  "betterlite-logging",
  "betterlite-models",
  "betterlite-openai",
  "chrono",
  "futures-util",
+ "http 1.5.0",
  "indexmap 2.14.2",
  "lopdf",
  "rstest",
@@ -1283,9 +1309,12 @@ dependencies = [
  "secrecy",
  "serde",
  "serde_json",
+ "serde_path_to_error",
  "serde_with",
  "thiserror",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
  "url",
  "uuid",
 ]
@@ -1422,14 +1451,22 @@ name = "betterlite-guardrails"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "base64 0.23.1",
+ "betterlite-compression",
  "betterlite-config",
+ "betterlite-http",
  "betterlite-prompts",
+ "betterlite-redact",
  "fancy-regex",
+ "futures-util",
  "indexmap 2.14.2",
+ "lru",
+ "mime_guess",
  "regex",
  "reqwest",
  "rstest",
  "rust_decimal",
+ "rustls",
  "secrecy",
  "serde",
  "serde_json",
@@ -1442,6 +1479,7 @@ dependencies = [
  "ulid",
  "unicode-normalization",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -1495,6 +1533,14 @@ name = "betterlite-http"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "aws-config",
+ "aws-credential-types",
+ "aws-sdk-sts",
+ "aws-sigv4",
+ "aws-smithy-async",
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
+ "aws-types",
  "base64 0.23.1",
  "betterlite-config",
  "bytes",
@@ -1503,6 +1549,7 @@ dependencies = [
  "h2",
  "hex",
  "http 1.5.0",
+ "libc",
  "opentelemetry-http",
  "percent-encoding",
  "rcgen",
@@ -1523,6 +1570,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "url",
  "uuid",
  "webpki-roots",
  "zip",
@@ -1589,9 +1637,13 @@ dependencies = [
  "http 1.5.0",
  "indexmap 2.14.2",
  "insta",
+ "jiff",
+ "minijinja",
+ "minijinja-contrib",
  "parquet-format-safe",
  "parquet2",
  "pep440_rs",
+ "percent-encoding",
  "prost",
  "regex",
  "rstest",
@@ -1607,6 +1659,7 @@ dependencies = [
  "strum",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "unicode-properties",
@@ -1646,6 +1699,7 @@ dependencies = [
  "strum",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "url",
@@ -1667,6 +1721,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "fancy-regex",
+ "futures-util",
  "indexmap 2.14.2",
  "jiff",
  "rstest",
@@ -1680,6 +1735,7 @@ dependencies = [
  "speedate",
  "strum",
  "thiserror",
+ "tokio",
  "tracing",
  "tracing-subscriber",
  "unicode-general-category",
@@ -1762,6 +1818,7 @@ dependencies = [
 name = "betterlite-oracle"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "aws-credential-types",
  "aws-smithy-async",
  "aws-smithy-runtime-api",
@@ -1795,19 +1852,25 @@ dependencies = [
  "betterlite-paths",
  "betterlite-postgres-fixture",
  "betterlite-prompts",
+ "betterlite-provider",
+ "betterlite-proxy",
  "betterlite-rate-limit",
  "betterlite-redact",
  "betterlite-redis",
  "betterlite-router",
+ "betterlite-sdk",
+ "betterlite-secret-managers",
  "betterlite-secrets",
  "betterlite-server",
  "betterlite-streaming",
  "betterlite-websearch",
+ "bytes",
  "chrono",
  "clap",
  "cookie_store",
  "futures-util",
  "hex",
+ "http 1.5.0",
  "indexmap 2.14.2",
  "jiff",
  "percent-encoding",
@@ -1828,6 +1891,7 @@ dependencies = [
  "tokio",
  "tokio-postgres",
  "tokio-tungstenite",
+ "tower",
  "tracing",
  "tracing-subscriber",
  "ulid",
@@ -1960,10 +2024,51 @@ dependencies = [
 [[package]]
 name = "betterlite-provider"
 version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "betterlite-config",
+ "betterlite-http",
+ "betterlite-models",
+ "futures-util",
+ "http 1.5.0",
+ "rstest",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "betterlite-provider-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-provider",
+ "libfuzzer-sys",
+]
 
 [[package]]
 name = "betterlite-proxy"
 version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "betterlite-config",
+ "betterlite-context",
+ "betterlite-http",
+ "hex",
+ "http 1.5.0",
+ "rstest",
+ "rust_decimal",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "url",
+]
 
 [[package]]
 name = "betterlite-rag"
@@ -2064,9 +2169,11 @@ name = "betterlite-router"
 version = "0.1.0"
 dependencies = [
  "indexmap 2.14.2",
+ "rand 0.10.3",
  "rstest",
  "serde",
  "serde_json",
+ "thiserror",
  "unicode-general-category",
 ]
 
@@ -2088,17 +2195,35 @@ dependencies = [
 [[package]]
 name = "betterlite-sdk"
 version = "0.1.0"
+dependencies = [
+ "betterlite-config",
+ "betterlite-http",
+ "chrono",
+ "http 1.5.0",
+ "rstest",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "url",
+]
 
 [[package]]
 name = "betterlite-secret-managers"
 version = "0.1.0"
 dependencies = [
+ "aws-credential-types",
  "aws-sdk-kms",
+ "aws-sigv4",
  "aws-smithy-http-client",
+ "aws-smithy-runtime-api",
  "axum",
  "base64 0.23.1",
  "betterlite-env",
+ "http 1.5.0",
  "num-traits",
+ "percent-encoding",
  "regex",
  "rstest",
  "secrecy",
@@ -2108,6 +2233,8 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -2165,6 +2292,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "axum",
+ "base64 0.23.1",
  "betterlite-auth",
  "betterlite-billing",
  "betterlite-config",
@@ -2178,6 +2306,7 @@ dependencies = [
  "betterlite-postgres-fixture",
  "betterlite-redact",
  "betterlite-roi",
+ "betterlite-router",
  "betterlite-semantic",
  "caseless",
  "chrono",
@@ -2187,8 +2316,10 @@ dependencies = [
  "encoding_rs",
  "form_urlencoded",
  "futures-util",
+ "getrandom 0.4.3",
  "hex",
  "hyper-util",
+ "icu_properties",
  "indexmap 2.14.2",
  "multipart-rs",
  "percent-encoding",
@@ -2198,10 +2329,12 @@ dependencies = [
  "rstest",
  "rust_decimal",
  "rustls",
+ "scrypt",
  "secrecy",
  "serde",
  "serde_json",
  "serde_with",
+ "sha1",
  "sha2 0.11.1",
  "signal-hook",
  "soft-canonicalize",
@@ -4474,6 +4607,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
 
 [[package]]
+name = "mime_guess"
+version = "2.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f7c44f8e672c00fe5308fa235f821cb4198414e1c77935c1ab6948d3fd78550e"
+dependencies = [
+ "mime",
+ "unicase",
+]
+
+[[package]]
 name = "minijinja"
 version = "3.0.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5629,6 +5772,7 @@ dependencies = [
  "hyper-util",
  "js-sys",
  "log",
+ "mime_guess",
  "percent-encoding",
  "pin-project-lite",
  "quinn",
@@ -5637,6 +5781,7 @@ dependencies = [
  "rustls-platform-verifier",
  "serde",
  "serde_json",
+ "serde_urlencoded",
  "sync_wrapper",
  "tokio",
  "tokio-rustls",
@@ -7073,6 +7218,12 @@ dependencies = [
  "rand 0.10.3",
  "web-time",
 ]
+
+[[package]]
+name = "unicase"
+version = "2.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "357cc3acc6a036009fd6c973ed009037c732d60d0b4f6c673e9041497482a28f"
 
 [[package]]
 name = "unicode-bidi"
