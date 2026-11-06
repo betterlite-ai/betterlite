@@ -1,0 +1,24 @@
+task: B3517
+deviations:
+  - what: >-
+      When OPEN_SANDBOX_API_KEY_ENV_VAR is missing and not available from os.environ, betterlite returns empty string,
+      whereas LiteLLM attempts get_secret_str to consult its configured secret manager.
+    why: Full secret-manager dispatch is unresolved; betterlite uses only the env var lookup supplied by B002.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opensandbox/sandbox/transformation.py#L46-L49
+  - what: >-
+      When metadata is supplied to acreate_sandbox, betterlite forwards it in the creation body, whereas some deployments
+      may not support or return this field.
+    why: The metadata field is conditionally passed through to match the underlying API; it does not affect sandbox execution.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opensandbox/sandbox/transformation.py#L356-L357
+  - what: >-
+      A sandbox status or endpoint answer larger than 16 MiB fails with ResponseTooLarge, whereas LiteLLM reads the
+      whole JSON answer through httpx without a limit.
+    why: An answer that size is not a working OpenSandbox deployment, and an unbounded read from a provider is a free denial of service.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opensandbox/sandbox/transformation.py#L242-L247
+  - what: >-
+      betterlite builds the creation request body from a typed record, so an explicit empty metadata, env or resource
+      map is sent as given, whereas LiteLLM's truthiness drops an empty mapping from the body.
+    why: >-
+      docs/compatibility.md makes an explicit empty value the caller's value rather than the default; no working setup
+      that omits a field reaches this difference.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/opensandbox/sandbox/transformation.py#L356-L362
