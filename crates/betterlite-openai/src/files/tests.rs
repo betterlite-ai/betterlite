@@ -27,7 +27,9 @@ use super::records::{
     CreatePurpose, ExpiresAfter, FileContentRequest, FileCreate, FileObject, FileQuery, FileUpload,
     ListKind, decode_file_object,
 };
-use super::stream::{DEFAULT_CHUNK_SIZE, FileContentStreamingResult, StreamExit, flatten_headers};
+use super::stream::{
+    DEFAULT_CHUNK_SIZE, FileContentStreamingResult, StreamExit, flatten_headers, read_error_body,
+};
 use super::transport::{FileTransport, StreamReply};
 use super::{
     ClientArgs, ClientKind, DEFAULT_MAX_RETRIES, DEFAULT_TIMEOUT, FilesApi, FilesClient,
@@ -580,6 +582,14 @@ async fn error_passthrough() {
         assert!(status.message.contains("No such File object: file-x"));
     }
     status_error_parsing();
+    error_body_limit().await;
+}
+
+// Reading stops once 64 KiB are collected, so 65 chunks of 1 KiB keep 64 of them
+async fn error_body_limit() {
+    let chunks: Vec<Result<Vec<u8>, HttpError>> = (0..65).map(|_| Ok(vec![b'x'; 1024])).collect();
+    let collected = read_error_body(stream::iter(chunks).boxed()).await;
+    assert_eq!(collected.len(), 64 * 1024);
 }
 
 fn status_error_parsing() {
