@@ -10,6 +10,7 @@ use betterlite_guardrails::ibm_detector_client::message::{
 use betterlite_guardrails::ibm_detector_client::threshold::is_violation;
 use betterlite_guardrails::ibm_detector_client::wire::Detection;
 use secrecy::ExposeSecret as _;
+use serde::Deserialize as _;
 use serde_json::{Value, json};
 
 use crate::case::UpstreamAnswer;
@@ -107,7 +108,7 @@ fn filter(settings: &Settings, environment: &Environment, detections: &[Value]) 
     let config = configure(settings, environment)?;
     let mut kept = Vec::new();
     for detection in detections {
-        let parsed: Detection = serde_json::from_value(detection.clone())
+        let parsed = Detection::deserialize(detection)
             .map_err(|error| failure("SerializationError", error.to_string()))?;
         if is_violation(&config, &parsed) {
             kept.push(detection);
