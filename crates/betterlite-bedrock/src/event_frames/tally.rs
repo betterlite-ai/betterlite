@@ -78,15 +78,15 @@ fn repr_text(value: Option<&String>) -> String {
         '\''
     };
     let mut out = String::from(quote);
-    for ch in text.chars() {
-        let piece = match ch {
+    for character in text.chars() {
+        let piece = match character {
             '\\' => "\\\\".to_owned(),
             '\n' => "\\n".to_owned(),
             '\r' => "\\r".to_owned(),
             '\t' => "\\t".to_owned(),
-            _ if ch == quote => format!("\\{ch}"),
-            _ if ch.is_control() => format!("\\x{:02x}", u32::from(ch)),
-            _ => ch.to_string(),
+            _ if character == quote => format!("\\{character}"),
+            _ if character.is_control() => format!("\\x{:02x}", u32::from(character)),
+            _ => character.to_string(),
         };
         out.push_str(&piece);
     }

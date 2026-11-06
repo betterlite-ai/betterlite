@@ -6,6 +6,9 @@ deviations:
   - what: The 502 message for a stream that decoded to no events or ended with undecoded bytes goes through the secret redactor, so first bytes and header values cannot leak a credential.
     why: The text comes from an unknown upstream and may echo credentials, and LiteLLM prints it as received.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L374-L403
+  - what: A frame that repeats a header name fails the stream with betterlite's typed event-frame error instead of botocore's DuplicateHeader exception, and the later value never replaces the first.
+    why: The pinned botocore rejects the same frame (EventStreamHeaderParser._parse_headers raises DuplicateHeader), so the stream stops in both; betterlite keeps the rejection in its own typed error rather than surfacing a botocore exception.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L745-L765
   - what: An ":exception-type" header that is not a string counts as absent.
     why: LiteLLM would put the non-string value into the error text, and betterlite keeps the error text to strings.
     link: ""

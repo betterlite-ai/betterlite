@@ -29,10 +29,10 @@ pub enum BetaHeader {
 }
 
 // str.strip() also drops the four ASCII separator controls, which char::is_whitespace does not.
-const fn is_space(ch: char) -> bool {
-    match ch {
+const fn is_space(character: char) -> bool {
+    match character {
         '\u{1c}'..='\u{1f}' => true,
-        _ => ch.is_whitespace(),
+        _ => character.is_whitespace(),
     }
 }
 
