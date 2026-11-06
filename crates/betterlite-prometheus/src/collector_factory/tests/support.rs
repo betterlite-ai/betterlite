@@ -13,18 +13,10 @@ pub(crate) struct FakeSchema {
 }
 
 impl FakeSchema {
+    #[rustfmt::skip]
     pub(crate) fn new(entries: &[(&str, &[&str])]) -> Self {
-        let labels = entries
-            .iter()
-            .map(|(metric, names)| {
-                let values = names.iter().map(|name| (*name).to_owned()).collect();
-                ((*metric).to_owned(), values)
-            })
-            .collect();
-        Self {
-            labels,
-            mode: String::from("api_key_alias"),
-        }
+        let labels = entries.iter().map(|(metric, names)| ((*metric).to_owned(), names.iter().map(|name| (*name).to_owned()).collect())).collect();
+        Self { labels, mode: String::from("api_key_alias") }
     }
 }
 
@@ -56,15 +48,10 @@ pub(crate) struct ChangingSchema {
 }
 
 impl ChangingSchema {
+    #[rustfmt::skip]
     pub(crate) fn new(entries: &[&[&str]]) -> Self {
-        let responses = entries
-            .iter()
-            .map(|names| names.iter().map(|name| (*name).to_owned()).collect())
-            .collect();
-        Self {
-            responses: Arc::new(Mutex::new(responses)),
-            calls: Arc::new(AtomicUsize::new(0)),
-        }
+        let queued: VecDeque<Vec<String>> = entries.iter().map(|names| names.iter().map(|name| (*name).to_owned()).collect()).collect();
+        Self { responses: Arc::new(Mutex::new(queued)), calls: Arc::new(AtomicUsize::new(0)) }
     }
 }
 
@@ -98,20 +85,10 @@ pub(crate) struct FakeMetric {
 }
 
 impl FakeMetric {
-    pub(crate) fn new(name: &str) -> Self {
-        Self {
-            name: name.to_owned(),
-            labelnames: Vec::new(),
-            labels: Vec::new(),
-            log: Arc::new(Mutex::new(Vec::new())),
-            label_calls: Arc::new(AtomicUsize::new(0)),
-        }
-    }
-
+    #[rustfmt::skip]
     pub(crate) fn registered(name: &str, labelnames: &[&str]) -> Self {
-        let mut metric = Self::new(name);
-        metric.labelnames = labelnames.iter().map(|label| (*label).to_owned()).collect();
-        metric
+        let recorded = labelnames.iter().map(|label| (*label).to_owned()).collect();
+        Self { name: name.to_owned(), labelnames: recorded, labels: Vec::new(), log: Arc::new(Mutex::new(Vec::new())), label_calls: Arc::new(AtomicUsize::new(0)) }
     }
 
     pub(crate) fn entries(&self) -> Vec<String> {

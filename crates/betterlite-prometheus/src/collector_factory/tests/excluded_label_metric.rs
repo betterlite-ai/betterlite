@@ -13,7 +13,7 @@ fn set(names: &[&str]) -> MetricSet {
 
 fn wrapper(excluded: &[&str]) -> ExcludedLabelMetric<FakeMetric> {
     ExcludedLabelMetric {
-        metric: FakeMetric::new("fake"),
+        metric: FakeMetric::registered("fake", &[]),
         excluded_labels: set(excluded),
     }
 }
