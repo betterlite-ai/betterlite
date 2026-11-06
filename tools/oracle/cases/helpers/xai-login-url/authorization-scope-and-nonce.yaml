@@ -1,0 +1,12 @@
+kind: helper
+name: authorization_scope_and_nonce
+call:
+  xai_login_url:
+    entropy: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    authorization_endpoint: "https://auth.x.ai/oauth2/authorize"
+    redirect_uri: "http://127.0.0.1:56121/callback"
+    state: "deadbeefdeadbeefdeadbeefdeadbeef"
+    nonce: "00112233445566778899aabbccddeeff"
+env: {}
+compare:
+  ignore: []

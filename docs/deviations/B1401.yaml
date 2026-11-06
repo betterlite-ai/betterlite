@@ -1,0 +1,21 @@
+task: B1401
+deviations:
+  - what: >-
+      The callback listener is closed on every path after it binds. LiteLLM closes it only in
+      _wait_for_callback's finally, so a failure in _build_authorize_url, webbrowser.open or the
+      stdout write leaves port 56121 bound until the process exits.
+    why: A leaked listener keeps the fixed port and makes the next login fall back to an ephemeral one.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/oauth.py#L332-L340
+  - what: >-
+      A failure to write the callback page is logged and the wait continues. LiteLLM's do_GET
+      writes without catching, so a client that disconnects first raises BrokenPipeError out of
+      the wait and fails the whole login.
+    why: A browser tab closed at the wrong moment must not cancel an authorization that already arrived.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/oauth.py#L94-L108
+  - what: >-
+      The receiver bounds each request: a request head above 64 KiB answers 431, a request target
+      above 64 KiB answers 414, an unparsable target answers 400, and a connection that sends
+      nothing within one poll slot is dropped. LiteLLM reads headers without a bound, lets
+      urlparse errors escape do_GET, and blocks on a silent connection past its 180-second deadline.
+    why: A loopback receiver is still an untrusted socket, and a stall must not outlive the login deadline.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/oauth.py#L78-L111

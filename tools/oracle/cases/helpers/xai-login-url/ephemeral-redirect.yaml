@@ -1,0 +1,12 @@
+kind: helper
+name: ephemeral_redirect
+call:
+  xai_login_url:
+    entropy: "0000000000000000000000000000000000000000000000000000000000000000"
+    authorization_endpoint: "https://auth.x.ai/oauth2/authorize"
+    redirect_uri: "http://127.0.0.1:49213/callback"
+    state: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    nonce: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+env: {}
+compare:
+  ignore: []

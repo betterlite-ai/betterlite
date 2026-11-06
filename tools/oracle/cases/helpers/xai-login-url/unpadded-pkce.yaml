@@ -1,0 +1,12 @@
+kind: helper
+name: unpadded_pkce
+call:
+  xai_login_url:
+    entropy: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+    authorization_endpoint: "https://auth.x.ai/oauth2/authorize"
+    redirect_uri: "http://127.0.0.1:56121/callback"
+    state: "0123456789abcdef0123456789abcdef"
+    nonce: "fedcba9876543210fedcba9876543210"
+env: {}
+compare:
+  ignore: []
