@@ -169,16 +169,6 @@ where
     Ok(json!({ "hash": derived }))
 }
 
-async fn verify<S>(hasher: &PasswordHasher<S>, password: &str, stored: &str) -> HelperResult
-where
-    S: SaltSource,
-{
-    let verified = hasher
-        .verify(&SecretString::from(password.to_owned()), stored)
-        .await;
-    Ok(json!({ "verified": verified }))
-}
-
 fn strength_verdict(password: &str, general: &Map<String, Value>) -> HelperResult {
     let outcome = strength::validate(
         &SecretString::from(password.to_owned()),
@@ -191,7 +181,12 @@ async fn run_function(input: &Input, logs: &Logs) -> HelperResult {
     let hasher = PasswordHasher::new(FixedSalts, WORKERS);
     match input {
         Input::Hash { password } => hash(&hasher, password).await,
-        Input::Verify { password, stored } => verify(&hasher, password, stored).await,
+        Input::Verify { password, stored } => {
+            let verified = hasher
+                .verify(&SecretString::from(password.to_owned()), stored)
+                .await;
+            Ok(json!({ "verified": verified }))
+        }
         Input::Strength {
             password,
             general_settings,
