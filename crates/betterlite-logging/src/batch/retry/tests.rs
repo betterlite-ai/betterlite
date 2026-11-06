@@ -89,7 +89,7 @@ fn batch_delivery_behavior_tests_behavior(#[case] status: u16, #[case] retryable
     );
     assert!(logs.contains("records=3"), "missing the count in {logs}");
     assert!(
-        logs.contains("detail=classification"),
+        logs.contains("detail=\"classification\""),
         "missing the detail in {logs}"
     );
     assert!(

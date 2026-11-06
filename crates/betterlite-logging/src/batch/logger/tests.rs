@@ -16,7 +16,11 @@ use tracing::subscriber::set_default;
 use tracing_subscriber::fmt::MakeWriter;
 
 use super::{BatchQueue, BatchSettings, Enqueued, FlushReport};
-use crate::batch::delivery::{BatchCancelled, BatchDelivery};
+use crate::batch::delivery::{
+    BatchCancelled, BatchDelivery, BatchResponse, BatchTransport, DeliverySettings, SendFailure,
+    send_batch_with_413_split,
+};
+use crate::batch::retry::RequeuePolicy;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Reply {
@@ -40,6 +44,7 @@ enum FlushStep {
     Overlap {
         second_events: &'static [&'static str],
     },
+    SplitTimeout,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -125,6 +130,63 @@ impl BatchDelivery<String> for TestDelivery {
                 Gate::Pending => pending().await,
             }
         }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+#[error("the split transport failed")]
+struct SplitFailure;
+
+struct SplitTransport {
+    calls: AtomicUsize,
+    attempts: Mutex<Vec<Vec<String>>>,
+}
+
+impl BatchTransport<String> for SplitTransport {
+    type SendError = SplitFailure;
+    type LimitError = SplitFailure;
+
+    fn send(
+        &self,
+        batch: &[String],
+    ) -> impl Future<Output = Result<BatchResponse, SendFailure<Self::SendError>>> + Send {
+        self.attempts.lock().unwrap().push(batch.to_vec());
+        let first = self.calls.fetch_add(1, Ordering::SeqCst) == 0;
+        async move {
+            if first {
+                Ok(BatchResponse {
+                    status: 200,
+                    detail: "the scripted provider accepted the left half".to_owned(),
+                })
+            } else {
+                pending().await
+            }
+        }
+    }
+
+    fn exceeds_limits(&self, batch: &[String]) -> Result<bool, Self::LimitError> {
+        Ok(batch.len() > 2)
+    }
+}
+
+const SPLIT_SETTINGS: DeliverySettings<'static> = DeliverySettings {
+    success_status_codes: &[200],
+    policy: RequeuePolicy::Undelivered,
+    integration_name: "BatchDelivery",
+    drop_error_message: "batch delivery dropped a single event the destination rejected as too large",
+};
+
+struct SplitterDelivery {
+    transport: SplitTransport,
+}
+
+impl BatchDelivery<String> for SplitterDelivery {
+    async fn deliver(
+        &self,
+        batch: &[String],
+        settled: &AtomicUsize,
+    ) -> Result<Vec<String>, BatchCancelled<String>> {
+        send_batch_with_413_split(&self.transport, batch, SPLIT_SETTINGS, settled).await
     }
 }
 
@@ -230,10 +292,26 @@ async fn drive(case: &FlushCase) -> Outcome {
                 outcome.attempts.push(finished.second);
                 outcome.reports.extend(finished.reports);
             }
+            FlushStep::SplitTimeout => outcome.attempts.extend(split_timeout(&queue).await),
         }
     }
     outcome.queue = queue.pending();
     outcome
+}
+
+async fn split_timeout(queue: &BatchQueue<String>) -> Vec<Vec<String>> {
+    let delivery = SplitterDelivery {
+        transport: SplitTransport {
+            calls: AtomicUsize::new(0),
+            attempts: Mutex::new(Vec::new()),
+        },
+    };
+    let waiting = timeout(Duration::from_millis(20), queue.flush(&delivery)).await;
+    assert!(
+        waiting.is_err(),
+        "the pending right half should keep the flush waiting"
+    );
+    delivery.transport.attempts.lock().unwrap().clone()
 }
 
 async fn abort_flush(queue: &BatchQueue<String>, arrivals: &[&str], settled: usize) -> Vec<String> {
@@ -474,6 +552,24 @@ const SMALL: BatchSettings = BatchSettings {
     },
     Expectation {
         sent: &[&["a", "b", "c", "d"]],
+        delivered: &[],
+        queue: &["c", "d"],
+        enqueued: ENQUEUED_FOUR,
+        reports: &[],
+        warns: false,
+    }
+)]
+#[case::split_flush_keeps_the_unaccepted_half(
+    FlushCase {
+        settings: DEFAULT,
+        preserve: false,
+        steps: &[
+            FlushStep::Enqueue(&["a", "b", "c", "d"]),
+            FlushStep::SplitTimeout,
+        ],
+    },
+    Expectation {
+        sent: &[&["a", "b"], &["c", "d"]],
         delivered: &[],
         queue: &["c", "d"],
         enqueued: ENQUEUED_FOUR,

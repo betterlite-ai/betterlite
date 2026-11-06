@@ -3,7 +3,7 @@
 use std::collections::VecDeque;
 use std::future::Future;
 use std::io::{Result as IoResult, Write};
-use std::sync::atomic::AtomicUsize;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
 use rstest::rstest;
@@ -83,6 +83,7 @@ struct Expectation {
     delivered: &'static [&'static str],
     undelivered: &'static [&'static str],
     cancelled: bool,
+    settled: usize,
     logs: &'static [&'static str],
 }
 
@@ -193,6 +194,7 @@ async fn drive(
 ) -> (
     Result<Vec<String>, BatchCancelled<String>>,
     ScriptedTransport,
+    usize,
 ) {
     let transport = ScriptedTransport {
         script: Mutex::new(case.script.iter().copied().collect()),
@@ -216,7 +218,7 @@ async fn drive(
     };
     let settled = AtomicUsize::new(0);
     let result = send_batch_with_413_split(&transport, &events, settings, &settled).await;
-    (result, transport)
+    (result, transport, settled.load(Ordering::SeqCst))
 }
 
 fn owned(events: &[&str]) -> Vec<String> {
@@ -239,6 +241,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &["e0", "e1"],
         undelivered: &["e2", "e3"],
         cancelled: false,
+        settled: 2,
         logs: &["a retry can clear"],
     }
 )]
@@ -257,6 +260,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &["e0", "e1"],
         undelivered: &[],
         cancelled: false,
+        settled: 2,
         logs: &[],
     }
 )]
@@ -275,6 +279,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &[],
         undelivered: &[],
         cancelled: false,
+        settled: 1,
         logs: &["rejected as too large"],
     }
 )]
@@ -293,6 +298,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &[],
         undelivered: &[],
         cancelled: false,
+        settled: 1,
         logs: &["rejected as too large"],
     }
 )]
@@ -311,6 +317,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &["e0", "e1", "e2", "e3"],
         undelivered: &[],
         cancelled: false,
+        settled: 4,
         logs: &[],
     }
 )]
@@ -329,6 +336,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &["e0", "e1", "e2"],
         undelivered: &[],
         cancelled: false,
+        settled: 3,
         logs: &[],
     }
 )]
@@ -347,6 +355,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &["e0", "e1", "e3"],
         undelivered: &[],
         cancelled: false,
+        settled: 4,
         logs: &["cannot be serialized"],
     }
 )]
@@ -365,6 +374,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &[],
         undelivered: &[],
         cancelled: false,
+        settled: 1,
         logs: &["cannot be serialized"],
     }
 )]
@@ -383,6 +393,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &[],
         undelivered: &["e0", "e1", "e2", "e3"],
         cancelled: false,
+        settled: 0,
         logs: &["a retry can clear"],
     }
 )]
@@ -401,6 +412,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &[],
         undelivered: &[],
         cancelled: false,
+        settled: 2,
         logs: &["a retry cannot clear"],
     }
 )]
@@ -419,6 +431,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &[],
         undelivered: &[],
         cancelled: false,
+        settled: 1,
         logs: &["a retry cannot clear", "quota exhausted for this key"],
     }
 )]
@@ -437,6 +450,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &[],
         undelivered: &["e0", "e1"],
         cancelled: false,
+        settled: 0,
         logs: &["a retry can clear"],
     }
 )]
@@ -455,7 +469,11 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &[],
         undelivered: &["e0", "e1"],
         cancelled: false,
-        logs: &["a retry can clear"],
+        settled: 0,
+        logs: &[
+            "a retry can clear",
+            "the scripted provider asked for a slower retry",
+        ],
     }
 )]
 #[case::generic_failure_requeues_the_batch(
@@ -473,6 +491,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &[],
         undelivered: &["e0", "e1"],
         cancelled: false,
+        settled: 0,
         logs: &["whole batch is requeued", "scripted transport failure"],
     }
 )]
@@ -496,6 +515,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &["e0"],
         undelivered: &["e1", "e2", "e3"],
         cancelled: true,
+        settled: 1,
         logs: &[],
     }
 )]
@@ -514,6 +534,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &[],
         undelivered: &[],
         cancelled: false,
+        settled: 0,
         logs: &[],
     }
 )]
@@ -532,6 +553,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &["e0", "e1"],
         undelivered: &[],
         cancelled: false,
+        settled: 2,
         logs: &[],
     }
 )]
@@ -550,6 +572,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &["e0", "e1", "e2", "e3", "e4"],
         undelivered: &[],
         cancelled: false,
+        settled: 5,
         logs: &[],
     }
 )]
@@ -566,7 +589,8 @@ async fn batch_delivery_behavior_tests_behavior(
         .with_writer(buffer.clone())
         .finish();
     let _guard = set_default(subscriber);
-    let (result, transport) = drive(&case).await;
+    let (result, transport, settled) = drive(&case).await;
+    assert_eq!(settled, expected.settled);
     let attempted: Vec<Vec<String>> = transport
         .attempts
         .lock()
