@@ -24,14 +24,19 @@ fn failure(origin: Origin) -> Failure {
 }
 
 fn database(error_type: ErrorType, message: &str) -> Failure {
-    failure(Origin::Database(DbError {
-        error_type,
+    Failure {
+        origin: Origin::Database(DbError {
+            error_type,
+            message: message.to_owned(),
+            code: None,
+            meta_code: None,
+            traceback_modules: Vec::new(),
+            cause: None,
+        }),
         message: message.to_owned(),
-        code: None,
-        meta_code: None,
-        traceback_modules: Vec::new(),
         cause: None,
-    }))
+        context: None,
+    }
 }
 
 fn engine_internal() -> Failure {
@@ -105,7 +110,7 @@ fn with_context(mut value: Failure, context: usize) -> Failure {
 fn chain_stops_at_twenty() {
     let reachable = linear(
         iter::repeat_with(|| database(ErrorType::Data, "not an outage"))
-            .take(20)
+            .take(19)
             .chain([database(ErrorType::Connect, "connection refused")])
             .collect(),
     );
@@ -114,7 +119,7 @@ fn chain_stops_at_twenty() {
 
     let beyond = linear(
         iter::repeat_with(|| database(ErrorType::Data, "not an outage"))
-            .take(21)
+            .take(20)
             .chain([database(ErrorType::Connect, "connection refused")])
             .collect(),
     );
