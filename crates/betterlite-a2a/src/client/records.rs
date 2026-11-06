@@ -7,8 +7,6 @@ use serde::{Deserialize, Serialize};
 
 pub const AGENT_CARD_PATH_PARAM: &str = "agent_card_path";
 pub const JSONRPC_VERSION: &str = "2.0";
-pub const A2A_VERSION_HEADER: &str = "a2a-version";
-pub const A2A_VERSION_1_0: &str = "1.0";
 pub const SEND_MESSAGE_METHOD: &str = "SendMessage";
 pub const SEND_STREAMING_MESSAGE_METHOD: &str = "SendStreamingMessage";
 

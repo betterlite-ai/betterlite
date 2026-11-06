@@ -11,10 +11,7 @@ use crate::agent_card::{AgentCard, WireValue};
 use crate::client::A2AClient;
 use crate::client::error::ClientError;
 use crate::client::records::core::{CoreSendMessageRequest, CoreStreamEvent};
-use crate::client::records::{
-    A2A_VERSION_1_0, A2A_VERSION_HEADER, JSONRPC_VERSION, SEND_MESSAGE_METHOD,
-    SEND_STREAMING_MESSAGE_METHOD,
-};
+use crate::client::records::{JSONRPC_VERSION, SEND_MESSAGE_METHOD, SEND_STREAMING_MESSAGE_METHOD};
 
 mod exchange;
 
@@ -94,9 +91,6 @@ pub(crate) fn headers(
         })?;
         headers.append(header_name, header_value);
     }
-    headers
-        .entry(HeaderName::from_static(A2A_VERSION_HEADER))
-        .or_insert(HeaderValue::from_static(A2A_VERSION_1_0));
     if streaming {
         headers
             .entry(ACCEPT)
