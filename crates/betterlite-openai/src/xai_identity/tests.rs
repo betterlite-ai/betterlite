@@ -226,6 +226,13 @@ fn xai_identity_decode_models_rejects_every_non_success_status(#[case] status: u
 }
 
 #[test]
+fn xai_identity_decode_models_accepts_a_body_of_exactly_the_limit() {
+    let mut body = br#"{"data":[]}"#.to_vec();
+    body.resize(4 * 1024 * 1024, b' ');
+    assert!(decode_xai_models(200, &body).unwrap().is_empty());
+}
+
+#[test]
 fn xai_identity_decode_models_rejects_an_oversized_body() {
     let body = vec![b' '; 4 * 1024 * 1024 + 1];
     let error = decode_xai_models(200, &body).unwrap_err();

@@ -3,6 +3,7 @@ pub mod reconcile;
 mod tests;
 
 use std::collections::BTreeMap;
+use std::num::NonZeroU64;
 
 use betterlite_models::cost_usage::CostUsage;
 use betterlite_models::price_fields::decimal_lexeme::parse_decimal_lexeme;
@@ -125,7 +126,10 @@ pub fn cost_per_web_search_request(
     if usage.cost.is_some_and(|cost| cost >= Decimal::ZERO) {
         return Ok(Decimal::ZERO);
     }
-    let Some(calls) = web_search_calls(details).filter(|calls| *calls > 0) else {
+    let Some(calls) = web_search_calls(details)
+        .and_then(|calls| u64::try_from(calls).ok())
+        .and_then(NonZeroU64::new)
+    else {
         return Ok(Decimal::ZERO);
     };
     // xAI lists web search at five dollars per thousand calls; medium, low, high is LiteLLM's order
@@ -141,6 +145,6 @@ pub fn cost_per_web_search_request(
         .flatten()
         .find(|rate| *rate > Decimal::ZERO)
         .unwrap_or_else(|| Decimal::new(5, 3));
-    rate.checked_mul(Decimal::from(calls))
+    rate.checked_mul(Decimal::from(calls.get()))
         .ok_or(XaiUsageError::Overflow)
 }
