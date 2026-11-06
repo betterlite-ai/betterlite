@@ -1,0 +1,32 @@
+task: B1513
+deviations:
+  - what: >-
+      A cached API-key record whose token is not a string, whose expires_at is not an integer, whose endpoints is not
+      an object of string members, or whose bytes exceed the 64 KiB reply bound is unreadable: get_api_key warns and
+      refreshes, and get_api_base returns None. A refresh reply of the same shape consumes an attempt instead of
+      producing a key. LiteLLM returns whatever value the token key holds, passes a malformed endpoint through, and
+      raises TypeError out of get_api_key for a non-numeric expiry.
+    why: >-
+      get_api_key is declared to return a string, so handing a caller an integer token is a value no working setup can
+      use, and a corrupt local record is repaired by the refresh that follows. The same reply through LiteLLM's
+      json.load has no size bound at all.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/github_copilot/authenticator.py#L90-L93
+  - what: >-
+      Modeled fields that the refresh reply sends as null are written back absent, while every unknown member and its
+      value is preserved; LiteLLM dumps the reply mapping exactly as it arrived.
+    why: >-
+      A null token or expiry is not a value the next read can use (LiteLLM raises TypeError comparing a null expiry
+      with the current time), and the write-back exists to keep the record readable, not to copy a shape the caller
+      can no longer use.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/github_copilot/authenticator.py#L107-L110
+  - what: >-
+      Diagnostics name the failed step without logging the provider reply body or the caught exception text; LiteLLM
+      logs the whole reply mapping when it carries no token and prints the HTTP exception on a failed attempt.
+    why: >-
+      A reply body can echo the token being refreshed, and an exception string can carry provider-side material; fixed
+      messages keep the attempt count and the distinct warning paths visible without putting a credential through
+      B187's log path.
+    link: >-
+      https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/github_copilot/authenticator.py#L173-L178
