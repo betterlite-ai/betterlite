@@ -20,21 +20,14 @@ description: 'Implement IoLimits, IoReservation and UsageTokens with minute-key 
   _reservation_value (L312-L322), _rate_limit_error (L325-L343), _sync_increment_with_rollback (L346-L367),
   _increment_with_rollback (L370-L394), io_token_pre_call_check (L397-L456), async_io_token_pre_call_check
   (L459-L525). Implement these behaviors through the typed Rust services above; synchronous facades and
-  structural accessors reuse the same primitive instead of separate ports.'
+  structural accessors reuse the same primitive instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B019 wires this service in.'
 scope:
   paths:
   - crates/betterlite-router/src/io_token_reservations.rs
   - crates/betterlite-router/src/io_token_reservations/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/io_token_reservations.rs
   - crates/betterlite-server/src/routing/io_token_reservations/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/io_token_reservations.rs
   - tools/oracle/src/router_probes/io_token_reservations/**
   - tools/oracle/litellm/probes/io_token_reservations.py

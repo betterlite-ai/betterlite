@@ -14,15 +14,11 @@ description: 'Implement BenchmarkWindow, BenchmarkTotals and grouped rollup calc
   through the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
   instead of separate ports. Bound the router_read outside-byte parser to 1048576 bytes before decoding;
   on excess use its typed invalid-input outcome (classifier/observation consumers keep their pinned warning/fallback
-  path).'
+  path). This task adds no route or server state, so leave routes.rs and state.rs to B1100.'
 scope:
   paths:
   - crates/betterlite-server/src/benchmark_aggregates.rs
   - crates/betterlite-server/src/benchmark_aggregates/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/benchmark_aggregates.rs
   - crates/betterlite-server/src/routing/benchmark_aggregates/**
   - tools/oracle/src/router_probes/benchmark_aggregates.rs

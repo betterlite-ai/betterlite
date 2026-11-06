@@ -17,15 +17,13 @@ description: 'Implement POST /auto_router/validate_complexity_router_config and 
   through the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
   instead of separate ports. Bound the preview_config outside-byte parser to 1048576 bytes before decoding;
   on excess use its typed invalid-input outcome (classifier/observation consumers keep their pinned warning/fallback
-  path).'
+  path). B1100 registers routes/router_preview_validation.rs as a stub, so fill only crates/betterlite-server/src/routes/router_preview_validation.rs and leave routes.rs and state.rs as they are.'
 scope:
   paths:
   - crates/betterlite-server/src/router_preview_validation.rs
   - crates/betterlite-server/src/router_preview_validation/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/routes/router_preview_validation.rs
+  - crates/betterlite-server/src/routes/router_preview_validation/**
   - crates/betterlite-server/src/routing/router_preview_validation.rs
   - crates/betterlite-server/src/routing/router_preview_validation/**
   - tools/oracle/src/router_probes/router_preview_validation.rs

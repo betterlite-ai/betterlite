@@ -92,15 +92,14 @@ description: >-
   settings come from their existing owners. There is no new byte parser. Count 366 nonblank/noncomment
   lines including complete declarations, decorators and docstrings; allow 330 implementation, 390 native
   tests and 65 registration lines, 785 within 800, splitting Rust implementation files below 300 lines.
+  B1100 registers routes/organization_create.rs as a stub, so fill only crates/betterlite-server/src/routes/organization_create.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/organization_create.rs
     - crates/betterlite-server/src/organization_create/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/organization_create.rs
+    - crates/betterlite-server/src/routes/organization_create/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/organization-create/**
