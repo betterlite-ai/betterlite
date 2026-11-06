@@ -1055,6 +1055,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-auth-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-auth",
+ "libfuzzer-sys",
+]
+
+[[package]]
 name = "betterlite-azure"
 version = "0.1.0"
 dependencies = [
@@ -1225,6 +1233,7 @@ dependencies = [
  "aws-sigv4",
  "aws-smithy-runtime-api",
  "betterlite-auth",
+ "betterlite-db",
  "betterlite-env",
  "betterlite-models",
  "betterlite-rate-limit",
