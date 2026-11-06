@@ -120,7 +120,6 @@ async def request(client: gh.GitHub, input_value: dict[str, Json]) -> dict[str, 
         method,
         client._url(path),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
         params=params_of(input_value),
-        json_body=input_value.get("json_body"),
         headers=client._headers,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
     )
     return {"status": response.status_code}
