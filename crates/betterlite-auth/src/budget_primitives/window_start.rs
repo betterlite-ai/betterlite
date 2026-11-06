@@ -57,10 +57,11 @@ fn parse_datetime(text: &str) -> Option<DateTime<FixedOffset>> {
 }
 
 fn truncating_config() -> DateTimeConfig {
-    // "truncate" is one of the two literals speedate's overflow policy parser accepts
-    let overflow = "truncate".parse().unwrap_or_default();
     let time_config = TimeConfig::builder()
-        .microseconds_precision_overflow_behavior(overflow)
+        .microseconds_precision_overflow_behavior(
+            // ast-grep-ignore: no-long-names
+            speedate::MicrosecondsPrecisionOverflowBehavior::Truncate,
+        )
         .build();
     DateTimeConfig::builder().time_config(time_config).build()
 }
