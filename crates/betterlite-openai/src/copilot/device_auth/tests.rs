@@ -592,6 +592,9 @@ fn the_constructor_creates_the_directory_and_derives_paths() {
         PathBuf::from("/tokens/access-token")
     );
     assert_eq!(subject.api_key_path, PathBuf::from("/tokens/api-key.json"));
+    let debug = format!("{subject:?}");
+    assert!(debug.contains("Authenticator"));
+    assert!(debug.contains("/tokens"));
 }
 
 #[test]
