@@ -124,7 +124,7 @@ fn copilot_device_home_sources(
 
 #[cfg(unix)]
 #[test]
-fn copilot_device_rejects_a_non_utf8_system_home() {
+fn copilot_device_keeps_the_default_for_a_non_utf8_system_home() {
     use std::ffi::OsString;
     use std::fs;
     use std::os::unix::ffi::OsStringExt as _;
@@ -134,6 +134,7 @@ fn copilot_device_rejects_a_non_utf8_system_home() {
     let log = tempfile::NamedTempFile::new().unwrap();
     let subscriber = tracing_subscriber::fmt()
         .with_ansi(false)
+        .with_max_level(tracing::Level::DEBUG)
         .without_time()
         .with_target(false)
         .with_writer(log.reopen().unwrap())
@@ -152,6 +153,6 @@ fn copilot_device_rejects_a_non_utf8_system_home() {
     );
     assert_eq!(
         fs::read_to_string(log.path()).unwrap(),
-        " WARN the system home is not UTF-8; the Copilot token path keeps its literal default\n"
+        "DEBUG the system home is not UTF-8; the Copilot token path keeps its literal default\n"
     );
 }

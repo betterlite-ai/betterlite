@@ -43,7 +43,8 @@ fn default_token_dir(lookup: &dyn EnvironmentLookup) -> String {
             return DEFAULT_TOKEN_DIR.to_owned();
         };
         let Some(home) = path.to_str() else {
-            tracing::warn!(
+            // the shared loader runs every section, so a warning level would land in the sibling token-store test's log
+            tracing::debug!(
                 "the system home is not UTF-8; the Copilot token path keeps its literal default"
             );
             return DEFAULT_TOKEN_DIR.to_owned();
