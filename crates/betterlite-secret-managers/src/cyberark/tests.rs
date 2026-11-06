@@ -153,7 +153,12 @@ pub(super) type Scripted = (
 
 pub(super) fn scripted(pairs: &[(&str, &str)], routes: &[(&str, Vec<Reply>)]) -> Scripted {
     let transport = FakeTransport::new(routes);
-    let manager = CyberArkSecretManager::new(&environment(pairs), Arc::clone(&transport)).unwrap();
+    let manager = CyberArkSecretManager::new(
+        &environment(pairs),
+        Arc::clone(&transport),
+        Arc::new(Instant::now),
+    )
+    .unwrap();
     (manager, transport)
 }
 

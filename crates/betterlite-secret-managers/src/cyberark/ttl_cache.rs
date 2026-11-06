@@ -5,28 +5,24 @@ use std::time::Duration;
 use secrecy::SecretString;
 use tokio::time::Instant;
 
+use super::Clock;
+
 const CAPACITY: usize = 200;
 
-struct Entry {
+pub(super) struct Entry {
     value: SecretString,
     expiry: Instant,
 }
 
 pub(super) struct TtlCache {
-    entries: Mutex<BTreeMap<String, Entry>>,
-    ttl: Duration,
+    pub(super) entries: Mutex<BTreeMap<String, Entry>>,
+    pub(super) ttl: Duration,
+    pub(super) clock: Clock,
 }
 
 impl TtlCache {
-    pub(super) const fn new(ttl: Duration) -> Self {
-        Self {
-            entries: Mutex::new(BTreeMap::new()),
-            ttl,
-        }
-    }
-
     pub(super) fn get(&self, key: &str) -> Option<SecretString> {
-        let now = Instant::now();
+        let now = (self.clock)();
         let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
         if entries.get(key).is_some_and(|entry| now > entry.expiry) {
             entries.remove(key);
@@ -36,7 +32,7 @@ impl TtlCache {
 
     // An unexpired entry keeps its first expiry when overwritten, as LiteLLM's InMemoryCache does.
     pub(super) fn set(&self, key: &str, value: SecretString) {
-        let now = Instant::now();
+        let now = (self.clock)();
         let mut entries = self.entries.lock().unwrap_or_else(PoisonError::into_inner);
         entries.retain(|_, entry| now < entry.expiry);
         while entries.len() >= CAPACITY {

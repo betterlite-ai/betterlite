@@ -4,7 +4,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use super::CyberArkSecretManager;
 use super::error::CyberArkError;
-use super::transport::{ConjurRequest, ConjurResponse, ConjurTransport, HttpMethod};
+use super::transport::{ConjurResponse, ConjurTransport};
 
 mod tests;
 
@@ -17,21 +17,6 @@ pub(super) fn begin_login<T>(manager: &CyberArkSecretManager<T>) -> String {
         "{}/authn/{}/{}/authenticate",
         settings.api_base, settings.account, settings.username
     )
-}
-
-pub(super) const fn login_request<'borrowed, T>(
-    manager: &'borrowed CyberArkSecretManager<T>,
-    url: &'borrowed str,
-) -> ConjurRequest<'borrowed> {
-    ConjurRequest {
-        method: HttpMethod::Post,
-        url,
-        authorization: None,
-        content_type: None,
-        body: Some(&manager.settings.api_key),
-        verify_tls: manager.settings.verify_tls,
-        client_certificate: manager.settings.client_certificate.as_ref(),
-    }
 }
 
 pub(super) fn finish_login<T>(

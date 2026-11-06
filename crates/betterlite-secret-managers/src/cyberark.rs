@@ -1,23 +1,26 @@
 use std::collections::BTreeMap;
 use std::convert::Infallible;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use secrecy::SecretString;
-use tokio::sync::Mutex;
+use tokio::sync::Mutex as AsyncMutex;
+use tokio::time::Instant;
 
 use crate::secret_contracts::options::{DeleteOptions, SecretOptions, SecretRotation, SecretWrite};
 use crate::secret_contracts::{BaseSecretManager, RotationError, SecretFuture};
 use crate::secret_helpers::read_boolean_text;
-use cyberark_auth::{TOKEN_KEY, begin_login, finish_login, login_request};
-use cyberark_read::{finish_read, read_request, secret_url};
+use cyberark_auth::{TOKEN_KEY, begin_login, finish_login};
+use cyberark_read::{finish_read, secret_url};
 use error::{CyberArkError, CyberArkInitError};
 use operation::SecretOperation;
-use transport::{ClientCertificate, ConjurResponse, ConjurTransport};
+use transport::{ClientCertificate, ConjurRequest, ConjurResponse, ConjurTransport, HttpMethod};
 use ttl_cache::TtlCache;
 
 mod cyberark_auth;
 mod cyberark_delete;
 mod cyberark_read;
+mod cyberark_rotate;
 mod cyberark_write;
 pub mod error;
 pub mod operation;
@@ -27,6 +30,8 @@ mod ttl_cache;
 mod yaml_scalar;
 
 const DEFAULT_REFRESH_SECONDS: u64 = 300;
+
+pub type Clock = Arc<dyn Fn() -> Instant + Send + Sync>;
 
 #[derive(Debug)]
 pub struct CyberArkSettings {
@@ -83,13 +88,14 @@ pub struct CyberArkSecretManager<T> {
     transport: T,
     values: TtlCache,
     tokens: TtlCache,
-    policy_load_lock: Mutex<()>,
+    policy_load_lock: AsyncMutex<()>,
 }
 
 impl<T: ConjurTransport> CyberArkSecretManager<T> {
     pub fn new(
         environment: &BTreeMap<String, String>,
         transport: T,
+        clock: Clock,
     ) -> Result<Self, CyberArkInitError> {
         let settings = CyberArkSettings::from_environment(environment)?;
         if !settings.verify_tls {
@@ -98,9 +104,17 @@ impl<T: ConjurTransport> CyberArkSecretManager<T> {
             );
         }
         Ok(Self {
-            values: TtlCache::new(settings.refresh_interval),
-            tokens: TtlCache::new(settings.refresh_interval),
-            policy_load_lock: Mutex::new(()),
+            values: TtlCache {
+                entries: Mutex::new(BTreeMap::new()),
+                ttl: settings.refresh_interval,
+                clock: Arc::clone(&clock),
+            },
+            tokens: TtlCache {
+                entries: Mutex::new(BTreeMap::new()),
+                ttl: settings.refresh_interval,
+                clock,
+            },
+            policy_load_lock: AsyncMutex::new(()),
             settings,
             transport,
         })
@@ -111,7 +125,16 @@ impl<T: ConjurTransport> CyberArkSecretManager<T> {
             return Ok(header);
         }
         let url = begin_login(self);
-        finish_login(self, self.transport.send(login_request(self, &url)).await)
+        let request = ConjurRequest {
+            method: HttpMethod::Post,
+            url: &url,
+            authorization: None,
+            content_type: None,
+            body: Some(&self.settings.api_key),
+            verify_tls: self.settings.verify_tls,
+            client_certificate: self.settings.client_certificate.as_ref(),
+        };
+        finish_login(self, self.transport.send(request).await)
     }
 
     fn authorization_blocking(&self) -> Result<SecretString, CyberArkError<T::Error>> {
@@ -119,10 +142,16 @@ impl<T: ConjurTransport> CyberArkSecretManager<T> {
             return Ok(header);
         }
         let url = begin_login(self);
-        finish_login(
-            self,
-            self.transport.send_blocking(login_request(self, &url)),
-        )
+        let request = ConjurRequest {
+            method: HttpMethod::Post,
+            url: &url,
+            authorization: None,
+            content_type: None,
+            body: Some(&self.settings.api_key),
+            verify_tls: self.settings.verify_tls,
+            client_certificate: self.settings.client_certificate.as_ref(),
+        };
+        finish_login(self, self.transport.send_blocking(request))
     }
 
     async fn read(&self, secret_name: &str) -> Option<SecretString> {
@@ -144,16 +173,32 @@ impl<T: ConjurTransport> CyberArkSecretManager<T> {
     async fn fetch(&self, secret_name: &str) -> Result<ConjurResponse, CyberArkError<T::Error>> {
         let header = self.authorization().await?;
         let url = secret_url(self, secret_name);
-        let reply = self.transport.send(read_request(self, &url, &header)).await;
+        let request = ConjurRequest {
+            method: HttpMethod::Get,
+            url: &url,
+            authorization: Some(&header),
+            content_type: None,
+            body: None,
+            verify_tls: self.settings.verify_tls,
+            client_certificate: None,
+        };
+        let reply = self.transport.send(request).await;
         reply.map_err(CyberArkError::Transport)?.require_success()
     }
 
     fn fetch_blocking(&self, secret_name: &str) -> Result<ConjurResponse, CyberArkError<T::Error>> {
         let header = self.authorization_blocking()?;
         let url = secret_url(self, secret_name);
-        let reply = self
-            .transport
-            .send_blocking(read_request(self, &url, &header));
+        let request = ConjurRequest {
+            method: HttpMethod::Get,
+            url: &url,
+            authorization: Some(&header),
+            content_type: None,
+            body: None,
+            verify_tls: self.settings.verify_tls,
+            client_certificate: None,
+        };
+        let reply = self.transport.send_blocking(request);
         reply.map_err(CyberArkError::Transport)?.require_success()
     }
 }
@@ -200,6 +245,6 @@ impl<T: ConjurTransport> BaseSecretManager for CyberArkSecretManager<T> {
         &'borrowed self,
         rotation: SecretRotation<'borrowed, Self::Params>,
     ) -> SecretFuture<'borrowed, Self::Response, RotationError<Self::Error>> {
-        Box::pin(cyberark_delete::rotate(self, rotation))
+        Box::pin(cyberark_rotate::rotate(self, rotation))
     }
 }

@@ -1,10 +1,13 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
-use tokio::time::advance;
+use tokio::time::{Instant, advance};
 
 use super::secret_url;
 use crate::cyberark::tests::{AUTH_ROUTE, Reply, capture_logs, keyed};
@@ -133,48 +136,81 @@ async fn a_secret_named_like_the_token_key_never_returns_the_token() {
     );
 }
 
-async fn filled_cache(entries: u32) -> TtlCache {
-    let cache = TtlCache::new(Duration::from_secs(60));
+struct ManualClock {
+    start: Instant,
+    elapsed_ms: AtomicU64,
+}
+
+impl ManualClock {
+    fn advance(&self, by: Duration) {
+        let millis = u64::try_from(by.as_millis()).unwrap();
+        self.elapsed_ms.fetch_add(millis, Ordering::SeqCst);
+    }
+}
+
+fn manual_cache(ttl: Duration) -> (TtlCache, Arc<ManualClock>) {
+    let clock = Arc::new(ManualClock {
+        start: Instant::now(),
+        elapsed_ms: AtomicU64::new(0),
+    });
+    let reader = Arc::clone(&clock);
+    let cache = TtlCache {
+        entries: Mutex::new(BTreeMap::new()),
+        ttl,
+        clock: Arc::new(move || {
+            reader
+                .start
+                .checked_add(Duration::from_millis(
+                    reader.elapsed_ms.load(Ordering::SeqCst),
+                ))
+                .unwrap()
+        }),
+    };
+    (cache, clock)
+}
+
+fn filled_cache(entries: u32) -> TtlCache {
+    let (cache, clock) = manual_cache(Duration::from_secs(60));
     for index in 0..entries {
         cache.set(&format!("key{index:03}"), SecretString::from("v"));
-        advance(Duration::from_millis(1)).await;
+        clock.advance(Duration::from_millis(1));
     }
     cache
 }
 
-#[tokio::test(start_paused = true)]
-async fn the_cache_evicts_the_earliest_expiry_at_capacity() {
-    let cache = filled_cache(200).await;
+#[test]
+fn the_cache_evicts_the_earliest_expiry_at_capacity() {
+    let cache = filled_cache(200);
     cache.set("newest", SecretString::from("v"));
     assert!(cache.get("key000").is_none());
     assert!(cache.get("key001").is_some());
     assert!(cache.get("newest").is_some());
 }
 
-#[tokio::test(start_paused = true)]
-async fn overwriting_a_live_entry_keeps_its_first_expiry() {
-    let cache = TtlCache::new(Duration::from_secs(10));
+#[test]
+fn overwriting_a_live_entry_keeps_its_first_expiry() {
+    let (cache, clock) = manual_cache(Duration::from_secs(10));
     cache.set("key", SecretString::from("old"));
-    advance(Duration::from_secs(6)).await;
+    clock.advance(Duration::from_secs(6));
     cache.set("key", SecretString::from("new"));
     assert_eq!(cache.get("key").unwrap().expose_secret(), "new");
-    advance(Duration::from_secs(5)).await;
+    clock.advance(Duration::from_secs(5));
     assert!(cache.get("key").is_none());
 }
 
-#[tokio::test(start_paused = true)]
-async fn a_set_drops_the_entries_that_expire_at_that_instant() {
-    let cache = TtlCache::new(Duration::from_secs(10));
+#[test]
+fn a_set_drops_the_entries_that_expire_at_that_instant() {
+    let (cache, clock) = manual_cache(Duration::from_secs(10));
     cache.set("old", SecretString::from("v"));
-    advance(Duration::from_secs(10)).await;
+    clock.advance(Duration::from_secs(10));
     assert!(cache.get("old").is_some());
     cache.set("new", SecretString::from("v"));
     assert!(cache.get("old").is_none());
 }
 
-#[tokio::test(start_paused = true)]
-async fn deleting_removes_the_entry() {
-    let cache = TtlCache::new(Duration::from_secs(10));
+#[test]
+fn deleting_removes_the_entry() {
+    let (cache, _clock) = manual_cache(Duration::from_secs(10));
     cache.set("key", SecretString::from("v"));
     cache.delete("key");
     assert!(cache.get("key").is_none());

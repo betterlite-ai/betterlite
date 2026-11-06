@@ -2,7 +2,8 @@
 
 use secrecy::{ExposeSecret as _, SecretString};
 
-use super::{delete, rotate};
+use super::delete;
+use crate::cyberark::cyberark_rotate::rotate;
 use crate::cyberark::operation::OperationStatus;
 use crate::cyberark::tests::{POLICY_ROUTE, Reply, capture_logs, keyed};
 use crate::secret_contracts::options::{DeleteOptions, SecretOptions, SecretRotation, SecretWrite};

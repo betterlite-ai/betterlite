@@ -84,7 +84,9 @@ async fn execute(input: &Input) -> Value {
     let subscriber = tracing_subscriber::registry().with(logs.clone());
     let _guard = tracing::subscriber::set_default(subscriber);
     let script = Script::new(&input.routes, Arc::clone(&requests));
-    let Ok(manager) = CyberArkSecretManager::new(&input.env, script) else {
+    let Ok(manager) =
+        CyberArkSecretManager::new(&input.env, script, Arc::new(tokio::time::Instant::now))
+    else {
         return json!({"init": {"ok": false, "logs": logs.take()}, "steps": []});
     };
     let init = json!({"ok": true, "logs": logs.take()});
