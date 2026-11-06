@@ -43,7 +43,7 @@ call:
           mcp_servers: 1
           modalities: 1
           model: 1
-          moderation: 1
+          moderation: null
           n: 1
           output_config: 1
           output_format: 1

@@ -59,6 +59,12 @@ fn unknown_parameters_are_dropped() {
     assert_eq!(parameters["tools"].get(), "[]");
 }
 
+fn null_values_are_copied() {
+    let parameters = projected(r#"{"moderation":null,"metadata":null}"#);
+    assert_eq!(keys(&parameters), ["moderation"]);
+    assert_eq!(parameters["moderation"].get(), "null");
+}
+
 fn each_request_type_keeps_its_discriminating_parameter() {
     let parameters = projected(
         r#"{"thinking":{"type":"enabled"},"best_of":2,"dimensions":3,"chunking_strategy":"auto","documents":["a"],"background":true,"stop_sequences":["end"]}"#,
@@ -129,6 +135,7 @@ fn logging_names_drop_the_content_names() {
 #[case::content_parameters_are_dropped(content_parameters_are_dropped)]
 #[case::metadata_parameters_are_dropped(metadata_parameters_are_dropped)]
 #[case::unknown_parameters_are_dropped(unknown_parameters_are_dropped)]
+#[case::null_values_are_copied(null_values_are_copied)]
 #[case::each_request_type_keeps_its_discriminating_parameter(
     each_request_type_keeps_its_discriminating_parameter
 )]
