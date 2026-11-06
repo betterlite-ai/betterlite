@@ -1,8 +1,12 @@
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use betterlite_config::types::{LiteLlmParams, ModelDeployment, ModelInfo};
+use betterlite_context::owned_parameter_names::is_litellm_owned_kwarg;
+use betterlite_models::catalog::ModelCatalog;
 use betterlite_models::decisions::Json;
+use betterlite_models::metadata::identity::Mode;
 use betterlite_openai::chat::deployment::{ChatDeployment, OpenAiDefaults};
 use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::embedding::{
@@ -14,30 +18,33 @@ use betterlite_provider::api::vector_store_contracts::config::{
 use betterlite_provider::api::vector_store_contracts::error::VectorStoreEmbeddingError;
 use secrecy::SecretString;
 
-// litellm.embedding reads these itself, so none of them reaches the provider body
-const CALL_OPTIONS: [&str; 15] = [
+// default_params of litellm.embedding and its named arguments, minus user, dimensions and encoding_format, which are sent
+const CALL_ARGUMENTS: [&str; 15] = [
+    "additional_drop_params",
+    "aembedding",
     "api_base",
     "api_key",
     "api_type",
     "api_version",
-    "caching",
-    "custom_llm_provider",
+    "base_url",
+    "default_headers",
+    "deployment_id",
     "drop_params",
     "extra_headers",
-    "headers",
-    "litellm_call_id",
-    "logger_fn",
     "max_retries",
-    "metadata",
-    "num_retries",
+    "organization",
+    "request_timeout",
     "timeout",
 ];
+// litellm.embedding's own timeout argument, which a model no deployment serves waits on
+const EMBEDDING_TIMEOUT_SECONDS: f64 = 600.0;
 
 // LiteLLM's direct executor splats the configuration into the embedding call after model and input
 pub struct DirectEmbeddingExecutor {
     pub executor: ChatExecutor,
     pub deployments: Vec<ChatDeployment>,
     pub defaults: OpenAiDefaults,
+    pub catalog: Arc<ModelCatalog>,
 }
 
 #[async_trait]
@@ -50,7 +57,7 @@ impl VectorStoreEmbeddingExecutor for DirectEmbeddingExecutor {
         query: &str,
         configuration: &Params,
     ) -> Result<EmbeddingResponse, VectorStoreEmbeddingError> {
-        let mut deployment = self.deployment(model)?;
+        let mut deployment = self.deployment(model, configuration)?;
         apply_call_options(&mut deployment, configuration)?;
         let request = embedding_request(query, configuration)?;
         send_embedding(&self.executor, &deployment, &request)
@@ -62,7 +69,11 @@ impl VectorStoreEmbeddingExecutor for DirectEmbeddingExecutor {
 
 impl DirectEmbeddingExecutor {
     // a model no deployment serves is still called, from the configuration and the environment defaults
-    fn deployment(&self, model: &str) -> Result<ChatDeployment, VectorStoreEmbeddingError> {
+    pub(super) fn deployment(
+        &self,
+        model: &str,
+        configuration: &Params,
+    ) -> Result<ChatDeployment, VectorStoreEmbeddingError> {
         let matched = self.deployments.iter().find(|deployment| {
             deployment.litellm_model == model || deployment.model_group == model
         });
@@ -74,11 +85,11 @@ impl DirectEmbeddingExecutor {
                 model_name: model.to_owned(),
                 litellm_params: LiteLlmParams {
                     ssl_verify: None,
-                    model: Some(model.to_owned()),
+                    model: Some(self.served_model(model, configuration)?),
                     api_base: None,
                     api_key: None,
                     api_version: None,
-                    timeout: None,
+                    timeout: Some(EMBEDDING_TIMEOUT_SECONDS),
                     stream_timeout: None,
                     max_retries: None,
                     rpm: None,
@@ -90,6 +101,26 @@ impl DirectEmbeddingExecutor {
             &self.defaults,
         )
         .map_err(|source| VectorStoreEmbeddingError::Deployment { source })
+    }
+
+    // get_llm_provider: a named provider prefixes the model, and a known OpenAI embedding model is openai's
+    fn served_model(
+        &self,
+        model: &str,
+        configuration: &Params,
+    ) -> Result<String, VectorStoreEmbeddingError> {
+        Ok(match text_option(configuration, "custom_llm_provider")? {
+            Some(provider) if model.split('/').next() != Some(provider) => {
+                format!("{provider}/{model}")
+            }
+            None if self.catalog.metadata(model).is_some_and(|known| {
+                known.provider == "openai" && known.mode == Some(Mode::Embedding)
+            }) =>
+            {
+                format!("openai/{model}")
+            }
+            Some(_) | None => model.to_owned(),
+        })
     }
 }
 
@@ -152,7 +183,8 @@ fn embedding_request(
                 return Err(VectorStoreEmbeddingError::DuplicateArgument { name: name.clone() });
             }
             "extra_body" => {}
-            option if CALL_OPTIONS.contains(&option) => {}
+            option if CALL_ARGUMENTS.contains(&option) || is_litellm_owned_kwarg(option) => {}
+            _ if matches!(value, Json::Null) => {}
             _ => {
                 body.insert(name.clone(), value.clone());
             }

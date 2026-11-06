@@ -9,6 +9,7 @@ publish.workspace = true
 async-trait = "0.1.92"
 betterlite-auth = { path = "../betterlite-auth" }
 betterlite-config = { path = "../betterlite-config" }
+betterlite-context = { path = "../betterlite-context" }
 betterlite-env = { path = "../betterlite-env" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-logging = { path = "../betterlite-logging" }
@@ -36,7 +37,6 @@ uuid.workspace = true
 [lints]
 workspace = true
 [dev-dependencies]
-betterlite-context = { path = "../betterlite-context" }
 rand = { version = "0.10.3", default-features = false, features = ["std", "std_rng"] }
 rstest = "=0.27.0"
 tokio = { workspace = true, features = ["test-util"] }

@@ -11,6 +11,7 @@ use betterlite_core::api::vector_store_contracts::router::{
     RouterEmbeddingExecutor, VectorStoreRouter,
 };
 use betterlite_http::proxy::ProxiedClient;
+use betterlite_models::catalog::BundledCatalog;
 use betterlite_models::decisions::Json;
 use betterlite_openai::chat::deployment::{ChatDeployment, OpenAiDefaults};
 use betterlite_openai::chat::execution::ChatExecutor;
@@ -101,11 +102,13 @@ async fn send(
         ProxiedClient::outbound(&policy).map_err(|error| SdkHttpError::Client(Box::new(error)))?;
     let (router_config, router_deployments, defaults) =
         deployments(router_entries(call, api_base), env)?;
+    let catalog = BundledCatalog::default().get();
     // the direct side serves no deployment: its key and base come from the configuration and the env
     let direct = DirectEmbeddingExecutor {
         executor: chat_executor(&client, Vec::new()),
         deployments: Vec::new(),
         defaults: defaults.clone(),
+        catalog: Arc::clone(&catalog),
     };
     let outcomes = if call.router.is_some() {
         let handle = FakeRouter {
@@ -113,6 +116,7 @@ async fn send(
                 executor: chat_executor(&client, router_deployments.clone()),
                 deployments: router_deployments,
                 defaults,
+                catalog,
             },
             deployments: router_config,
         };
@@ -239,7 +243,7 @@ impl VectorStoreRouter for FakeRouter {
         self.deployments.clone()
     }
 
-    // the deployment the router picked is the one in its model list, with its own key and base
+    // a router with no deployment for the model has nothing to call, so a wrong selection fails the case
     async fn embedding(
         &self,
         entry: EmbeddingEntry,
@@ -247,6 +251,17 @@ impl VectorStoreRouter for FakeRouter {
         input: &[String],
         configuration: Params,
     ) -> Result<EmbeddingResponse, BaseLlmException> {
+        let listed = self.deployments.iter().any(|deployment| {
+            deployment.model_name == model
+                || deployment.litellm_params.model.as_deref() == Some(model)
+        });
+        if !listed {
+            return Err(BaseLlmException {
+                status_code: 404,
+                message: format!("no deployment in the router's model list serves {model}"),
+                headers: Params::new(),
+            });
+        }
         let query = input.first().map_or("", String::as_str);
         self.direct
             .embed(entry, model, query, &configuration)

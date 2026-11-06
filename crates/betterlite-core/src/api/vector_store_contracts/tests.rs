@@ -2,18 +2,21 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::{ModelDeployment, ProxyTrust};
+use betterlite_http::error::HttpError;
 use betterlite_http::proxy::ProxiedClient;
+use betterlite_models::catalog::BundledCatalog;
 use betterlite_models::decisions::Json;
 use betterlite_openai::api::vector_store_records::records::vector::{
     VectorStoreCreateResponse, VectorStoreSearchResponse,
 };
 use betterlite_openai::chat::deployment::{ChatDeployment, OpenAiDefaults};
 use betterlite_openai::chat::execution::ChatExecutor;
-use betterlite_openai::embedding::EmbeddingResponse;
+use betterlite_openai::embedding::{EmbeddingError, EmbeddingResponse};
 use betterlite_openai::openai_base_config::CatalogCapabilities;
 use betterlite_provider::api::vector_store_contracts::config::{
     AuthCredentials, EmbeddingEntry, EndpointsByType, Params, PreparedRequest, SearchRequest,
@@ -30,6 +33,7 @@ use serde_json::Number;
 use thiserror::Error;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
+use tokio::time::timeout;
 
 use super::executor::DirectEmbeddingExecutor;
 use super::filters::{requested_create_params, requested_search_params};
@@ -329,6 +333,7 @@ fn executor_over(
         },
         deployments,
         defaults,
+        catalog: BundledCatalog::default().get(),
     }
 }
 
@@ -499,6 +504,96 @@ async fn direct_executor_accepts_litellm_call_parameters_without_sending_them() 
 }
 
 #[tokio::test]
+async fn direct_executor_keeps_litellm_owned_parameters_out_of_the_provider_body() {
+    let executor = direct_executor("http://127.0.0.1:9/v1");
+    let configuration = r#"{"organization": "org", "base_url": "http://other", "deployment_id": "d", "default_headers": {"x": "1"}, "request_timeout": 5, "litellm_metadata": {"team": "a"}, "tags": ["t"], "model_info": {"id": "m"}, "ssl_verify": false, "input_cost_per_token": 0.1, "allowed_openai_params": ["dimensions"], "client_secret": "s", "azure_password": "p", "mock_response": [0.5], "_litellm_internal": 1}"#;
+    let (_sent, body) = embed_through(&executor, configuration).await;
+    assert_eq!(
+        body,
+        params(r#"{"model": "text-embedding-3-small", "input": ["hello"]}"#)
+    );
+}
+
+#[tokio::test]
+async fn direct_executor_leaves_a_null_provider_parameter_out_of_the_body() {
+    let executor = direct_executor("http://127.0.0.1:9/v1");
+    let (_sent, body) = embed_through(&executor, r#"{"input_type": null}"#).await;
+    assert_eq!(
+        body,
+        params(r#"{"model": "text-embedding-3-small", "input": ["hello"]}"#)
+    );
+}
+
+#[rstest]
+#[case::known_openai_embedding_model("text-embedding-3-small", "{}", "text-embedding-3-small")]
+#[case::named_provider("some-model", r#"{"custom_llm_provider": "openai"}"#, "some-model")]
+#[case::provider_already_in_the_model(
+    "openai/some-model",
+    r#"{"custom_llm_provider": "openai"}"#,
+    "some-model"
+)]
+#[tokio::test]
+async fn direct_executor_resolves_the_openai_provider_like_get_llm_provider(
+    #[case] model: &str,
+    #[case] given: &str,
+    #[case] sent_model: &str,
+) {
+    let (listener, base) = listen().await;
+    let executor = executor_over(Vec::new(), OpenAiDefaults::default());
+    let mut configuration = params(given);
+    configuration.insert("api_base".to_owned(), text(&base));
+    let (sent, answered) = tokio::join!(
+        provider(listener),
+        executor.embed(EmbeddingEntry::Embedding, model, "hello", &configuration)
+    );
+    let _answered = answered.expect("embedding");
+    assert_eq!(
+        request_body(&sent),
+        params(&format!(
+            r#"{{"model": "{sent_model}", "input": ["hello"]}}"#
+        ))
+    );
+}
+
+#[tokio::test]
+async fn direct_executor_refuses_a_model_no_provider_serves_before_any_request() {
+    let executor = executor_over(Vec::new(), OpenAiDefaults::default());
+    let error = executor
+        .embed(
+            EmbeddingEntry::Embedding,
+            "some-model",
+            "hello",
+            &Params::new(),
+        )
+        .await
+        .expect_err("provider");
+    assert!(matches!(
+        error,
+        VectorStoreEmbeddingError::Embedding {
+            source: EmbeddingError::UnsupportedProvider { .. }
+        }
+    ));
+}
+
+#[tokio::test]
+async fn direct_executor_waits_600_seconds_for_a_model_no_deployment_serves() {
+    let executor = executor_over(
+        Vec::new(),
+        OpenAiDefaults {
+            api_bases: Vec::new(),
+            api_keys: Vec::new(),
+            request_timeout: Some(7.0_f64),
+            organization: None,
+        },
+    );
+    let unmatched = executor
+        .deployment("openai/some-new-model", &Params::new())
+        .expect("deployment");
+    assert_eq!(unmatched.timeout, Duration::from_secs(600));
+    assert!((unmatched.timeout_seconds - 600.0).abs() < f64::EPSILON);
+}
+
+#[tokio::test]
 async fn direct_executor_forwards_encoding_format_and_user() {
     let executor = direct_executor("http://127.0.0.1:9/v1");
     let (_sent, body) =
@@ -612,18 +707,21 @@ async fn direct_executor_gives_up_after_the_configured_timeout() {
     };
     let executor = direct_executor(&base);
     let configuration = params(r#"{"timeout": 0.2}"#);
-    let ((), outcome) = tokio::join!(
-        silent,
-        executor.embed(
-            EmbeddingEntry::Embedding,
-            "openai/text-embedding-3-small",
-            "hello",
-            &configuration
-        )
+    let waiting = executor.embed(
+        EmbeddingEntry::Embedding,
+        "openai/text-embedding-3-small",
+        "hello",
+        &configuration,
     );
+    // a lost override falls back to the deployment's 6000 second wait, so the bound fails the test instead
+    let ((), outcome) = tokio::join!(silent, timeout(Duration::from_secs(5), waiting));
     assert!(matches!(
-        outcome,
-        Err(VectorStoreEmbeddingError::Embedding { .. })
+        outcome.expect("the configured timeout ends the call within 5 seconds"),
+        Err(VectorStoreEmbeddingError::Embedding {
+            source: EmbeddingError::Http {
+                source: HttpError::Timeout
+            }
+        })
     ));
 }
 
