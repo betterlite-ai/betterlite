@@ -197,6 +197,12 @@ fn parse_splits_frontmatter_and_keeps_bad_yaml_from_failing_the_load(
     assert_eq!(template.content, body);
 }
 
+#[test]
+fn parse_keeps_the_last_value_of_a_repeated_key() {
+    let template = parse_prompt_file("---\na: 1\na: 2\n---\nbody", "p", YamlParser::Full).unwrap();
+    assert_eq!(template.metadata, object(r#"{"a": 2}"#));
+}
+
 #[rstest]
 #[case::text("---\njust words\n---\nbody")]
 #[case::list("---\n- a\n- b\n---\nbody")]

@@ -25,8 +25,11 @@ pub enum ParseError {
 }
 
 fn parse_full_yaml(frontmatter: &str) -> Result<Object, ParseError> {
-    // invalid YAML erases the metadata instead of failing the load
-    let Ok(value) = serde_saphyr::from_str::<Json>(frontmatter) else {
+    // PyYAML keeps the last value of a repeated key, and invalid YAML erases the metadata instead of failing the load
+    let options = serde_saphyr::options! {
+        duplicate_keys: serde_saphyr::DuplicateKeyPolicy::LastWins,
+    };
+    let Ok(value) = serde_saphyr::from_str_with_options::<Json>(frontmatter, options) else {
         return Ok(Object::new());
     };
     if !value.is_truthy() {
