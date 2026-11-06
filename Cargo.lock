@@ -1576,6 +1576,7 @@ version = "0.1.0"
 dependencies = [
  "betterlite-config",
  "betterlite-env",
+ "betterlite-http",
  "betterlite-models",
  "betterlite-openai",
  "betterlite-privacy-openai",
@@ -1584,6 +1585,7 @@ dependencies = [
  "chrono",
  "flate2",
  "hex",
+ "http 1.5.0",
  "indexmap 2.14.2",
  "insta",
  "parquet-format-safe",
@@ -1603,6 +1605,7 @@ dependencies = [
  "sha2 0.11.1",
  "strum",
  "thiserror",
+ "tokio",
  "tracing",
  "tracing-subscriber",
  "unicode-properties",
