@@ -122,9 +122,13 @@ impl Section for Raw {
             RESET_TIME_PATH,
             lookup,
         )?;
+        let invalid = |path: &str, raw: &JsonValue| ConfigError::InvalidScalar {
+            path: path.to_owned(),
+            value: matches!(raw, JsonValue::Bool(true)),
+        };
         get_budget_reset_settings(&timezone, &reset_time).map_err(|error| match error {
-            BudgetResetSettingsError::TimezoneNotText => invalid_scalar(TIMEZONE_PATH, &timezone),
-            BudgetResetSettingsError::ResetTime(_) => invalid_scalar(RESET_TIME_PATH, &reset_time),
+            BudgetResetSettingsError::TimezoneNotText => invalid(TIMEZONE_PATH, &timezone),
+            BudgetResetSettingsError::ResetTime(_) => invalid(RESET_TIME_PATH, &reset_time),
         })
     }
 }
@@ -140,12 +144,5 @@ where
         | JsonValue::Number(_)
         | JsonValue::Array(_)
         | JsonValue::Object(_)) => Ok(other),
-    }
-}
-
-fn invalid_scalar(path: &str, raw: &JsonValue) -> ConfigError {
-    ConfigError::InvalidScalar {
-        path: path.to_owned(),
-        value: matches!(raw, JsonValue::Bool(true)),
     }
 }

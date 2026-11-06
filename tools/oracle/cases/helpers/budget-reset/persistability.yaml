@@ -33,9 +33,14 @@ call:
       - {function: is_persistable, duration: "99999999999999999999d"}
       - {function: is_persistable, settings: {timezone: 1}, duration: "0h"}
       - {function: is_persistable, settings: {budget_reset_time: 0}, duration: "0mo"}
+      - {function: is_persistable, settings: {timezone: 1}, duration: "1h"}
+      - {function: is_persistable, settings: {budget_reset_time: 0}, duration: "24h"}
+      - {function: is_persistable, settings: {timezone: ["UTC"]}, duration: "7d"}
       - {function: budget_duration_error, duration: "1h"}
       - {function: budget_duration_error, duration: "2mo"}
       - {function: budget_duration_error, duration: "0h"}
       - {function: budget_duration_error, settings: {timezone: 1, budget_reset_time: false}, duration: "0h"}
+      - {function: budget_duration_error, settings: {timezone: 1}, duration: "1h"}
+      - {function: budget_duration_error, settings: {budget_reset_time: 0}, duration: "24h"}
 env: {}
 compare: {ignore: []}

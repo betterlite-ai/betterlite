@@ -5,18 +5,14 @@ use std::path::PathBuf;
 use std::str;
 
 use betterlite_config::sections::budget_reset::clock::decode_reset_clock;
-use betterlite_config::sections::budget_reset::{
-    BudgetResetSettings, BudgetResetSettingsError, get_budget_reset_settings,
-};
-use betterlite_config::sections::settings::JsonValue;
+use betterlite_config::sections::budget_reset::{BudgetResetSettings, get_budget_reset_settings};
 use chrono::{DateTime, Utc};
 use jiff::tz::TimeZoneDatabase;
 use rstest::rstest;
 use serde_json::json;
 
 use super::{
-    BudgetResetError, RawBudgetResetSettings, ResetClocks, budget_duration_error,
-    compute_budget_reset_at, get_budget_reset_time, is_persistable_budget_duration,
+    ResetClocks, budget_duration_error, compute_budget_reset_at, is_persistable_budget_duration,
 };
 use crate::duration::error::{DurationError, DurationWarning};
 use crate::duration::seconds::duration_in_seconds;
@@ -34,16 +30,6 @@ fn settings(timezone: &str, reset_time: &str) -> BudgetResetSettings {
     get_budget_reset_settings(&json!(timezone), &json!(reset_time)).unwrap()
 }
 
-fn raw<'values>(
-    timezone: &'values JsonValue,
-    reset_time: &'values JsonValue,
-) -> RawBudgetResetSettings<'values> {
-    RawBudgetResetSettings {
-        timezone,
-        reset_time_of_day: reset_time,
-    }
-}
-
 fn clocks<'zone>(reset: &str, calendar: &str, zone: Option<&'zone str>) -> ResetClocks<'zone> {
     ResetClocks {
         reset_now: moment(reset),
@@ -59,11 +45,8 @@ fn current_settings_snapshot_used() {
     let evening = compute_budget_reset_at("1d", &settings("UTC", "18:00"), now, &DATABASE());
     assert_eq!(morning.unwrap().instant, moment("2024-01-02T06:00:00Z"));
     assert_eq!(evening.unwrap().instant, moment("2024-01-01T18:00:00Z"));
-    let timezone = json!("UTC");
-    let early_time = json!("06:00");
-    let late_time = json!("18:00");
-    let early = get_budget_reset_time("1d", raw(&timezone, &early_time), now, &DATABASE());
-    let late = get_budget_reset_time("1d", raw(&timezone, &late_time), now, &DATABASE());
+    let early = compute_budget_reset_at("1d", &settings("UTC", "06:00"), now, &DATABASE());
+    let late = compute_budget_reset_at("1d", &settings("UTC", "18:00"), now, &DATABASE());
     assert_ne!(early.unwrap().instant, late.unwrap().instant);
 }
 
@@ -93,15 +76,6 @@ fn invalid_zone_silent_utc() {
     .unwrap();
     assert_eq!(reset.instant, moment("2024-01-02T00:00:00Z"));
     assert_eq!(reset.civil.to_string(), "2024-01-02T00:00:00");
-    let timezone = json!("Not/AZone");
-    let via_settings = get_budget_reset_time(
-        "1d",
-        raw(&timezone, &json!(null)),
-        moment("2024-01-01T10:00:00Z"),
-        &DATABASE(),
-    )
-    .unwrap();
-    assert_eq!(via_settings.instant, reset.instant);
 }
 
 #[test]
@@ -211,45 +185,27 @@ fn offset_preserved() {
 
 #[test]
 fn separate_local_and_utc_clock_samples() {
-    let timezone = json!(null);
-    let reset_time = json!(null);
-    let database = DATABASE();
+    let configured = settings("UTC", "00:00");
     let calendar_overflow = clocks("2024-06-15T12:00:00Z", "9999-12-15T00:00:00Z", None);
     assert!(
-        !is_persistable_budget_duration(
-            "1mo",
-            raw(&timezone, &reset_time),
-            calendar_overflow,
-            &database
-        )
-        .unwrap()
+        !is_persistable_budget_duration("1mo", &configured, calendar_overflow, &DATABASE())
+            .unwrap()
     );
     let reset_overflow = clocks("9999-12-15T00:00:00Z", "2024-06-15T12:00:00Z", None);
     assert!(
-        !is_persistable_budget_duration(
-            "1mo",
-            raw(&timezone, &reset_time),
-            reset_overflow,
-            &database
-        )
-        .unwrap()
+        !is_persistable_budget_duration("1mo", &configured, reset_overflow, &DATABASE()).unwrap()
     );
     let both_valid = clocks("2024-06-15T12:00:00Z", "2024-06-15T12:00:00Z", None);
-    assert!(
-        is_persistable_budget_duration("1mo", raw(&timezone, &reset_time), both_valid, &database)
-            .unwrap()
-    );
-    let month = duration_in_seconds("1mo", both_valid.calendar_now, None, &database).unwrap();
+    assert!(is_persistable_budget_duration("1mo", &configured, both_valid, &DATABASE()).unwrap());
+    let month = duration_in_seconds("1mo", both_valid.calendar_now, None, &DATABASE()).unwrap();
     assert!(month.seconds > 0);
 }
 
 #[test]
 fn absent_duration_skips_everything() {
-    let timezone = json!(1_i32);
-    let reset_time = json!(0_i32);
     let result = budget_duration_error(
         None,
-        raw(&timezone, &reset_time),
+        &settings("UTC", "06:00"),
         clocks("2024-06-15T12:00:00Z", "2024-06-15T12:00:00Z", None),
         &DATABASE(),
     );
@@ -264,21 +220,11 @@ fn absent_duration_skips_everything() {
 #[case::monthly_alias("monthly")]
 #[case::calendar_month("1mo")]
 fn positive_duration_accepted(#[case] duration: &str) {
-    let timezone = json!(null);
-    let reset_time = json!(null);
+    let configured = settings("UTC", "00:00");
     let clock = clocks("2024-06-15T12:00:00Z", "2024-06-15T12:00:00Z", None);
-    assert!(
-        is_persistable_budget_duration(duration, raw(&timezone, &reset_time), clock, &DATABASE())
-            .unwrap()
-    );
+    assert!(is_persistable_budget_duration(duration, &configured, clock, &DATABASE()).unwrap());
     assert_eq!(
-        budget_duration_error(
-            Some(duration),
-            raw(&timezone, &reset_time),
-            clock,
-            &DATABASE()
-        )
-        .unwrap(),
+        budget_duration_error(Some(duration), &configured, clock, &DATABASE()).unwrap(),
         None
     );
 }
@@ -291,38 +237,27 @@ fn positive_duration_accepted(#[case] duration: &str) {
 #[case::weeks("0w")]
 #[case::months("0mo")]
 fn nonpositive_short_circuits_settings(#[case] duration: &str) {
-    let timezone = json!(1_i32);
-    let reset_time = json!(false);
+    let configured = settings("UTC", "06:00");
     let clock = clocks("2024-06-15T12:00:00Z", "2024-06-15T12:00:00Z", None);
-    let persistable =
-        is_persistable_budget_duration(duration, raw(&timezone, &reset_time), clock, &DATABASE());
+    let persistable = is_persistable_budget_duration(duration, &configured, clock, &DATABASE());
     assert!(!persistable.unwrap());
 }
 
 #[test]
 fn two_month_duration_rejected() {
-    let timezone = json!(null);
-    let reset_time = json!(null);
+    let configured = settings("UTC", "00:00");
     let clock = clocks("2024-06-15T12:00:00Z", "2024-06-15T12:00:00Z", None);
+    assert!(!is_persistable_budget_duration("2mo", &configured, clock, &DATABASE()).unwrap());
     assert!(
-        !is_persistable_budget_duration("2mo", raw(&timezone, &reset_time), clock, &DATABASE())
-            .unwrap()
-    );
-    assert!(
-        budget_duration_error(Some("2mo"), raw(&timezone, &reset_time), clock, &DATABASE())
+        budget_duration_error(Some("2mo"), &configured, clock, &DATABASE())
             .unwrap()
             .is_some()
     );
-    let error = get_budget_reset_time(
-        "2mo",
-        raw(&timezone, &reset_time),
-        clock.reset_now,
-        &DATABASE(),
-    )
-    .unwrap_err();
+    let error =
+        compute_budget_reset_at("2mo", &configured, clock.reset_now, &DATABASE()).unwrap_err();
     assert!(matches!(
         error,
-        BudgetResetError::Duration(DurationError::UnsupportedMonthInterval { .. })
+        DurationError::UnsupportedMonthInterval { .. }
     ));
 }
 
@@ -332,8 +267,7 @@ fn two_month_duration_rejected() {
 #[case::two_month("2mo", false)]
 #[case::twelve_month("12mo", false)]
 fn seconds_or_reset_value_error_rejected(#[case] duration: &str, #[case] seconds_step: bool) {
-    let timezone = json!(null);
-    let reset_time = json!(null);
+    let configured = settings("UTC", "00:00");
     let clock = clocks("2024-06-15T12:00:00Z", "2024-06-15T12:00:00Z", None);
     let seconds = duration_in_seconds(
         duration,
@@ -342,84 +276,54 @@ fn seconds_or_reset_value_error_rejected(#[case] duration: &str, #[case] seconds
         &DATABASE(),
     );
     assert_eq!(seconds.is_err(), seconds_step, "{duration}");
-    assert!(
-        !is_persistable_budget_duration(duration, raw(&timezone, &reset_time), clock, &DATABASE())
-            .unwrap()
-    );
+    assert!(!is_persistable_budget_duration(duration, &configured, clock, &DATABASE()).unwrap());
 }
 
 #[rstest]
 #[case::quantity("99999999999999999999d")]
 #[case::reset_range("100000000d")]
 fn overflow_rejected(#[case] duration: &str) {
-    let timezone = json!(null);
-    let reset_time = json!(null);
+    let configured = settings("UTC", "00:00");
     let clock = clocks("2024-06-15T12:00:00Z", "2024-06-15T12:00:00Z", None);
-    let failure = get_budget_reset_time(
-        duration,
-        raw(&timezone, &reset_time),
-        clock.reset_now,
-        &DATABASE(),
-    )
-    .unwrap_err();
+    let failure =
+        compute_budget_reset_at(duration, &configured, clock.reset_now, &DATABASE()).unwrap_err();
     assert!(matches!(
         failure,
-        BudgetResetError::Duration(
-            DurationError::QuantityOverflow { .. } | DurationError::Calendar { .. }
-        )
+        DurationError::QuantityOverflow { .. } | DurationError::Calendar { .. }
     ));
-    assert!(
-        !is_persistable_budget_duration(duration, raw(&timezone, &reset_time), clock, &DATABASE())
-            .unwrap()
-    );
+    assert!(!is_persistable_budget_duration(duration, &configured, clock, &DATABASE()).unwrap());
 }
 
 #[rstest]
-#[case::timezone(json!(1_i32), json!(null))]
-#[case::reset_time(json!(null), json!(0_i32))]
-fn unrelated_error_propagates(#[case] timezone: JsonValue, #[case] reset_time: JsonValue) {
+#[case::zero("0h")]
+#[case::unparsable("abc")]
+#[case::unsupported_unit("5x")]
+#[case::two_month("2mo")]
+#[case::twelve_month("12mo")]
+#[case::overflow("99999999999999999999d")]
+#[case::negative("-5m")]
+fn rejection_never_returns_an_error(#[case] duration: &str) {
+    let configured = settings("UTC", "06:00");
     let clock = clocks("2024-06-15T12:00:00Z", "2024-06-15T12:00:00Z", None);
-    let persist_error =
-        is_persistable_budget_duration("1h", raw(&timezone, &reset_time), clock, &DATABASE())
-            .unwrap_err();
-    assert!(matches!(
-        persist_error,
-        BudgetResetError::Settings(
-            BudgetResetSettingsError::TimezoneNotText | BudgetResetSettingsError::ResetTime(_)
-        )
-    ));
-    let duration_failure =
-        budget_duration_error(Some("1h"), raw(&timezone, &reset_time), clock, &DATABASE())
-            .unwrap_err();
-    assert!(matches!(duration_failure, BudgetResetError::Settings(_)));
+    assert!(!is_persistable_budget_duration(duration, &configured, clock, &DATABASE()).unwrap());
+    assert!(
+        budget_duration_error(Some(duration), &configured, clock, &DATABASE())
+            .unwrap()
+            .is_some()
+    );
 }
 
 #[test]
 fn positive_prefix_unknown_reset_unit_accepted() {
-    let timezone = json!(null);
-    let reset_time = json!(null);
+    let configured = settings("UTC", "00:00");
     let clock = clocks("2024-06-15T12:00:00Z", "2024-06-15T12:00:00Z", None);
-    assert!(
-        is_persistable_budget_duration("1hour", raw(&timezone, &reset_time), clock, &DATABASE())
-            .unwrap()
-    );
+    assert!(is_persistable_budget_duration("1hour", &configured, clock, &DATABASE()).unwrap());
     assert_eq!(
-        budget_duration_error(
-            Some("1hour"),
-            raw(&timezone, &reset_time),
-            clock,
-            &DATABASE()
-        )
-        .unwrap(),
+        budget_duration_error(Some("1hour"), &configured, clock, &DATABASE()).unwrap(),
         None
     );
-    let reset = get_budget_reset_time(
-        "1hour",
-        raw(&timezone, &reset_time),
-        clock.reset_now,
-        &DATABASE(),
-    )
-    .unwrap();
+    let reset =
+        compute_budget_reset_at("1hour", &configured, clock.reset_now, &DATABASE()).unwrap();
     assert_eq!(reset.instant, moment("2024-06-16T00:00:00Z"));
 }
 
@@ -440,13 +344,14 @@ fn monthly_alias_differs_from_calendar_month() {
 #[case::week("7d")]
 #[case::days("30d")]
 fn invalid_duration_names_field_and_examples(#[case] example: &str) {
-    let timezone = json!(null);
-    let reset_time = json!(null);
-    let clock = clocks("2024-06-15T12:00:00Z", "2024-06-15T12:00:00Z", None);
-    let message =
-        budget_duration_error(Some("abc"), raw(&timezone, &reset_time), clock, &DATABASE())
-            .unwrap()
-            .unwrap();
+    let message = budget_duration_error(
+        Some("abc"),
+        &settings("UTC", "00:00"),
+        clocks("2024-06-15T12:00:00Z", "2024-06-15T12:00:00Z", None),
+        &DATABASE(),
+    )
+    .unwrap()
+    .unwrap();
     assert!(message.contains("budget_duration"));
     assert!(message.contains(example));
 }

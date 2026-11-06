@@ -4,11 +4,10 @@ use betterlite_config::sections::budget_reset::{
 };
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_core::budget_reset::{
-    BudgetResetError, RawBudgetResetSettings, ResetClocks, budget_duration_error,
-    compute_budget_reset_at, get_budget_reset_time, is_persistable_budget_duration,
+    ResetClocks, compute_budget_reset_at, is_persistable_budget_duration,
 };
 use betterlite_core::duration::error::{DurationError, DurationWarning};
-use betterlite_core::duration::reset::Reset;
+use betterlite_core::duration::seconds::duration_in_seconds;
 use chrono::{DateTime, Utc};
 use jiff::tz::TimeZoneDatabase;
 use serde::{Deserialize, Serialize};
@@ -21,15 +20,6 @@ struct RawSettings {
     timezone: JsonValue,
     #[serde(rename = "budget_reset_time", default)]
     reset_time_of_day: JsonValue,
-}
-
-impl RawSettings {
-    const fn borrowed(&self) -> RawBudgetResetSettings<'_> {
-        RawBudgetResetSettings {
-            timezone: &self.timezone,
-            reset_time_of_day: &self.reset_time_of_day,
-        }
-    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -85,7 +75,10 @@ struct Outcome {
     warned: bool,
 }
 
-type Answer = Result<(JsonValue, bool), &'static str>;
+enum Answer {
+    Value(JsonValue, bool),
+    Failed(&'static str),
+}
 
 struct RunContext<'run> {
     clocks: ResetClocks<'run>,
@@ -120,86 +113,103 @@ fn run_call(call: &Call, context: &RunContext<'_>) -> Outcome {
     let answer = match call {
         Call::ParseBudgetResetTime { value } => parse_time(value),
         Call::GetBudgetResetSettings { settings } => current_settings(settings),
-        Call::ComputeBudgetResetAt { settings, duration } => {
+        Call::ComputeBudgetResetAt { settings, duration }
+        | Call::GetBudgetResetTime { settings, duration } => {
             computed_at(settings, duration, context)
         }
-        Call::GetBudgetResetTime { settings, duration } => reset_time(settings, duration, context),
-        Call::IsPersistable { settings, duration } => persistable(settings, duration, context),
-        Call::BudgetDurationError { settings, duration } => {
-            duration_error(settings, duration.as_deref(), context)
-        }
+        Call::IsPersistable { settings, duration } => Answer::Value(
+            JsonValue::Bool(persists(settings, duration, context)),
+            false,
+        ),
+        Call::BudgetDurationError { settings, duration } => Answer::Value(
+            persistent_diagnostic(settings, duration.as_deref(), context),
+            false,
+        ),
     };
     match answer {
-        Ok((value, warned)) => accepted(value, warned),
-        Err(category) => rejected(category),
+        Answer::Value(value, warned) => Outcome {
+            ok: true,
+            value: Some(value),
+            error: None,
+            warned,
+        },
+        Answer::Failed(category) => Outcome {
+            ok: false,
+            value: None,
+            error: Some(category),
+            warned: false,
+        },
     }
 }
 
 fn parse_time(value: &JsonValue) -> Answer {
-    parse_budget_reset_time(value)
-        .map(|time| {
-            (
-                JsonValue::String(time.format("%H:%M:%S").to_string()),
-                false,
-            )
-        })
-        .map_err(|error| time_error_category(&error))
+    match parse_budget_reset_time(value) {
+        Ok(time) => Answer::Value(
+            JsonValue::String(time.format("%H:%M:%S").to_string()),
+            false,
+        ),
+        Err(error) => Answer::Failed(time_error_category(&error)),
+    }
 }
 
 fn current_settings(settings: &RawSettings) -> Answer {
-    get_budget_reset_settings(&settings.timezone, &settings.reset_time_of_day)
-        .map(|resolved| (settings_json(&resolved), false))
-        .map_err(|error| settings_error_category(&error))
+    match get_budget_reset_settings(&settings.timezone, &settings.reset_time_of_day) {
+        Ok(resolved) => Answer::Value(settings_json(&resolved), false),
+        Err(error) => Answer::Failed(settings_error_category(&error)),
+    }
 }
 
 fn computed_at(settings: &RawSettings, duration: &str, context: &RunContext<'_>) -> Answer {
-    let current = get_budget_reset_settings(&settings.timezone, &settings.reset_time_of_day)
-        .map_err(|error| settings_error_category(&error))?;
-    compute_budget_reset_at(
+    let current = match get_budget_reset_settings(&settings.timezone, &settings.reset_time_of_day) {
+        Ok(resolved) => resolved,
+        Err(error) => return Answer::Failed(settings_error_category(&error)),
+    };
+    match compute_budget_reset_at(
         duration,
         &current,
         context.clocks.reset_now,
         context.database,
-    )
-    .map(|reset| reset_answer(&reset))
-    .map_err(|error| duration_category(&error))
-}
-
-fn reset_time(settings: &RawSettings, duration: &str, context: &RunContext<'_>) -> Answer {
-    let raw = settings.borrowed();
-    get_budget_reset_time(duration, raw, context.clocks.reset_now, context.database)
-        .map(|reset| reset_answer(&reset))
-        .map_err(|error| reset_error_category(&error))
-}
-
-fn persistable(settings: &RawSettings, duration: &str, context: &RunContext<'_>) -> Answer {
-    let raw = settings.borrowed();
-    is_persistable_budget_duration(duration, raw, context.clocks, context.database)
-        .map(|persistable| (JsonValue::Bool(persistable), false))
-        .map_err(|error| reset_error_category(&error))
-}
-
-fn duration_error(
-    settings: &RawSettings,
-    duration: Option<&str>,
-    context: &RunContext<'_>,
-) -> Answer {
-    match budget_duration_error(
-        duration,
-        settings.borrowed(),
-        context.clocks,
-        context.database,
     ) {
-        Ok(None) => Ok((JsonValue::Null, false)),
-        Ok(Some(_diagnostic)) => Ok((JsonValue::String("invalid".to_owned()), false)),
-        Err(error) => Err(reset_error_category(&error)),
+        Ok(reset) => Answer::Value(
+            JsonValue::from(reset.instant.timestamp_micros()),
+            warned(&reset.warnings),
+        ),
+        Err(error) => Answer::Failed(duration_category(&error)),
     }
 }
 
-fn reset_answer(reset: &Reset) -> (JsonValue, bool) {
-    let micros = reset.instant.timestamp_micros();
-    let warning_present = warned(&reset.warnings);
-    (JsonValue::from(micros), warning_present)
+fn persists(settings: &RawSettings, duration: &str, context: &RunContext<'_>) -> bool {
+    let Ok(budget) = duration_in_seconds(
+        duration,
+        context.clocks.calendar_now,
+        context.clocks.calendar_timezone,
+        context.database,
+    ) else {
+        return false;
+    };
+    if budget.seconds <= 0 {
+        return false;
+    }
+    let Ok(current) = get_budget_reset_settings(&settings.timezone, &settings.reset_time_of_day)
+    else {
+        return false;
+    };
+    is_persistable_budget_duration(duration, &current, context.clocks, context.database)
+        .unwrap_or(false)
+}
+
+fn persistent_diagnostic(
+    settings: &RawSettings,
+    duration: Option<&str>,
+    context: &RunContext<'_>,
+) -> JsonValue {
+    let Some(budget_duration) = duration else {
+        return JsonValue::Null;
+    };
+    if persists(settings, budget_duration, context) {
+        return JsonValue::Null;
+    }
+    JsonValue::String("invalid".to_owned())
 }
 
 fn moment(text: &str) -> Result<DateTime<Utc>, Box<crate::helpers::HelperError>> {
@@ -219,24 +229,6 @@ fn warned(warnings: &[DurationWarning]) -> bool {
     warnings
         .iter()
         .any(|warning| matches!(warning, DurationWarning::UnrecognizedResetDuration { .. }))
-}
-
-const fn accepted(value: JsonValue, warned: bool) -> Outcome {
-    Outcome {
-        ok: true,
-        value: Some(value),
-        error: None,
-        warned,
-    }
-}
-
-const fn rejected(error: &'static str) -> Outcome {
-    Outcome {
-        ok: false,
-        value: None,
-        error: Some(error),
-        warned: false,
-    }
 }
 
 const fn duration_category(error: &DurationError) -> &'static str {
@@ -265,13 +257,6 @@ const fn settings_error_category(error: &BudgetResetSettingsError) -> &'static s
         BudgetResetSettingsError::TimezoneNotText | BudgetResetSettingsError::ResetTime(_) => {
             "value_error"
         }
-    }
-}
-
-const fn reset_error_category(error: &BudgetResetError) -> &'static str {
-    match error {
-        BudgetResetError::Duration(duration) => duration_category(duration),
-        BudgetResetError::Settings(settings) => settings_error_category(settings),
     }
 }
 
