@@ -10,7 +10,7 @@ use betterlite_mcp::client::sessions::runtime::HttpClientHandle;
 use betterlite_mcp::client::sessions::transport::StdioServerParameters;
 use serde::Deserialize;
 use thiserror::Error;
-use tokio::time::sleep;
+use tokio::time::{Instant, sleep};
 
 #[derive(Debug, Error, PartialEq, Eq)]
 pub(crate) enum TestError {
@@ -110,6 +110,7 @@ impl Script {
 #[derive(Clone, Default)]
 pub(crate) struct FakeHttp {
     pub(crate) errors: Arc<Mutex<Vec<Arc<TestError>>>>,
+    pub(crate) bounds: Arc<Mutex<Vec<u64>>>,
 }
 
 impl FakeHttp {
@@ -119,12 +120,30 @@ impl FakeHttp {
             .unwrap_or_else(PoisonError::into_inner)
             .push(error);
     }
+
+    pub(crate) fn bounds(&self) -> Vec<u64> {
+        self.bounds
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
 }
 
 impl HttpClientHandle for FakeHttp {
     type Error = TestError;
 
-    fn begin_cleanup(&self, _scope: CleanupScope) {}
+    fn begin_cleanup(&self, scope: CleanupScope) {
+        let remaining = scope.deadline.saturating_duration_since(Instant::now());
+        let millis = u64::try_from(remaining.as_millis()).unwrap_or(u64::MAX);
+        let rounded = millis
+            .saturating_add(50)
+            .div_euclid(100)
+            .saturating_mul(100);
+        self.bounds
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(rounded);
+    }
 
     fn finish_cleanup(&self) -> Vec<Arc<TestError>> {
         std::mem::take(&mut *self.errors.lock().unwrap_or_else(PoisonError::into_inner))

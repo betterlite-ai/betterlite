@@ -789,13 +789,10 @@ async def run_scenario(  # noqa: C901, PLR0915 - the plan drives every lifecycle
                 def fake_transport_context(
                     *_args: object, **_kwargs: object
                 ) -> tuple[Transport, FakeHttpClient | None]:
-                    if scenario.http:
-                        calls.append("http_client")
-                        calls.append("streamable_http_client")
-                        verbose_logger.debug("MCP client using the streamable HTTP transport")
-                        return (transport, fake_http)
-                    calls.append("sse_client")
-                    return (transport, None)
+                    calls.append("http_client")
+                    calls.append("streamable_http_client")
+                    verbose_logger.debug("MCP client using the streamable HTTP transport")
+                    return (transport, fake_http)
 
                 with patch.object(
                     mcp_client.MCPClient,

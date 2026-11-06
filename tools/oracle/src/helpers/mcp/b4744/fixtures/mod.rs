@@ -46,16 +46,16 @@ impl Fixture {
 
     pub(crate) fn contexts(
         &self,
-        with_http: bool,
+        record_cleanup: bool,
     ) -> betterlite_mcp::client::sessions::transport::TransportContexts<Self> {
-        let http = with_http.then(|| self.http.clone());
+        let http = record_cleanup.then(|| self.http.clone());
         betterlite_mcp::client::sessions::transport::TransportContexts {
             transport: FakeTransport {
                 script: Arc::clone(&self.script),
                 plan: Arc::clone(&self.plan),
-                http: http.clone(),
+                http,
             },
-            http_client: http.map(Arc::new),
+            http_client: Some(Arc::new(self.http.clone())),
         }
     }
 }

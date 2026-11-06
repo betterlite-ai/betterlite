@@ -4,9 +4,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use betterlite_mcp::client::cleanup::failure::ErrorContext;
 use betterlite_mcp::client::sessions::client::SessionClient;
 use betterlite_mcp::client::sessions::error::{McpFailure, SessionError};
-use betterlite_mcp::client::sessions::execute::{
-    SESSION_CLEANUP_TIMEOUT, execute_session_operation,
-};
+use betterlite_mcp::client::sessions::execute::execute_session_operation;
 use betterlite_mcp::client::sessions::run::{HTTP_CLOSE_TIMEOUT, run_with_session};
 use betterlite_mcp::client::sessions::stream::{StreamFailure, StreamFailureKind, StreamMessage};
 use betterlite_mcp::client::sessions::transport::{TransportContexts, TransportType};
@@ -21,7 +19,7 @@ use tracing_subscriber::layer::{Context, SubscriberExt as _};
 
 use crate::helpers::{HelperError, HelperResult};
 
-use super::super::fixtures::{FakeSession, Fixture, Script, Step, TestError};
+use super::super::fixtures::{FakeSession, Fixture, Script, TestError};
 use super::super::input::{ExecuteInput, Mode, Operation, Scenario, SettingsInput, StreamKind};
 use super::{invalid, make_client};
 
@@ -123,24 +121,23 @@ async fn lifecycle(
 struct Run {
     outcome: Result<&'static str, SessionError<TestError>>,
     calls: Vec<String>,
+    bounds: Vec<u64>,
     warnings: usize,
     debugs: usize,
     instructions: Option<String>,
 }
 
 fn scenario_run(settings: &SettingsInput, scenario: &Scenario) -> Result<Run, Box<HelperError>> {
-    let mut relaxed = settings.clone();
-    let active = if scenario.mode == Mode::Run && !scenario.http {
-        relaxed.transport_type = TransportType::Sse;
-        &relaxed
-    } else {
-        settings
-    };
+    let mut active = settings.clone();
+    if scenario.mode == Mode::Run {
+        active.transport_type = TransportType::Http;
+    }
     let fixture = Fixture::new(scenario.plan.clone());
+    let http = fixture.http.clone();
     let contexts = fixture.contexts(scenario.http);
     let script = Arc::clone(&fixture.script);
     let mut client = make_client(
-        active,
+        &active,
         fixture,
         TaskTracker::new(),
         CancellationToken::new(),
@@ -164,6 +161,7 @@ fn scenario_run(settings: &SettingsInput, scenario: &Scenario) -> Result<Run, Bo
     Ok(Run {
         outcome,
         calls: script.calls(),
+        bounds: http.bounds(),
         warnings: counts.warn.load(Ordering::Relaxed),
         debugs: counts.debug.load(Ordering::Relaxed),
         instructions: client.last_initialize_instructions,
@@ -175,19 +173,19 @@ fn scenario_json(scenario: &Scenario, run: &Run) -> Value {
         Ok(value) => ("ok".to_owned(), Some(*value)),
         Err(error) => (outcome_kind(error), None),
     };
-    let bound = u64::try_from(SESSION_CLEANUP_TIMEOUT.as_millis()).unwrap_or(u64::MAX);
-    let session_bound = run
-        .calls
-        .iter()
-        .any(|call| call == "session.exit")
-        .then_some(bound);
-    let expired = scenario.plan.session_exit == Step::Timeout;
-    let transport_bound = run
-        .calls
-        .iter()
-        .any(|call| call == "transport.exit")
-        .then_some(if expired { 0_u64 } else { bound });
-    let http_bound = (scenario.mode == Mode::Run && scenario.http)
+    let session_ran = run.calls.iter().any(|call| call == "session.exit");
+    let session_bound = if session_ran {
+        run.bounds.first().copied()
+    } else {
+        None
+    };
+    let transport_ran = run.calls.iter().any(|call| call == "transport.exit");
+    let transport_bound = if transport_ran {
+        run.bounds.get(usize::from(session_ran)).copied()
+    } else {
+        None
+    };
+    let http_bound = (scenario.mode == Mode::Run)
         .then_some(u64::try_from(HTTP_CLOSE_TIMEOUT.as_millis()).unwrap_or(u64::MAX));
     json!({
         "calls": run.calls,
