@@ -5,16 +5,13 @@ use super::vigil_guard_error::VigilGuardError;
 use super::vigil_guard_handler_protocol::{AsyncPostHandler, HttpResponse, RequestTimeout};
 use super::vigil_guard_transient::TransportError;
 
-pub async fn post_with_retry<H>(
-    handler: &H,
+pub async fn post_with_retry(
+    handler: &dyn AsyncPostHandler,
     endpoint: &str,
     headers: &HeaderMap,
     payload: &AnalyzePayload,
     timeout: RequestTimeout,
-) -> Result<HttpResponse, VigilGuardError>
-where
-    H: AsyncPostHandler,
-{
+) -> Result<HttpResponse, VigilGuardError> {
     let mut retry_allowed = true;
     loop {
         let failure = match handler.post(endpoint, headers, payload, timeout).await {

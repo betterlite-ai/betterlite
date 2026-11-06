@@ -1,5 +1,6 @@
 use std::collections::{BTreeMap, VecDeque};
 use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
@@ -48,13 +49,13 @@ impl FakeHandler {
 }
 
 impl AsyncPostHandler for FakeHandler {
-    fn post(
-        &self,
+    fn post<'request>(
+        &'request self,
         url: &str,
         headers: &HeaderMap,
         json: &AnalyzePayload,
         timeout: RequestTimeout,
-    ) -> impl Future<Output = Result<HttpResponse, TransportError>> + Send {
+    ) -> Pin<Box<dyn Future<Output = Result<HttpResponse, TransportError>> + Send + 'request>> {
         lock(&self.calls).push(Call {
             url: url.to_owned(),
             headers: headers.clone(),
@@ -64,7 +65,7 @@ impl AsyncPostHandler for FakeHandler {
         let response = lock(&self.responses)
             .pop_front()
             .unwrap_or_else(|| Ok(json_body("{}")));
-        async move { response }
+        Box::pin(async move { response })
     }
 }
 

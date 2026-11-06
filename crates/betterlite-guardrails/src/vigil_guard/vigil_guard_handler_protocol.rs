@@ -1,4 +1,5 @@
 use std::future::Future;
+use std::pin::Pin;
 use std::time::Duration;
 
 use reqwest::StatusCode;
@@ -20,11 +21,11 @@ pub struct HttpResponse {
 }
 
 pub trait AsyncPostHandler: Sync {
-    fn post(
-        &self,
+    fn post<'request>(
+        &'request self,
         url: &str,
         headers: &HeaderMap,
         json: &AnalyzePayload,
         timeout: RequestTimeout,
-    ) -> impl Future<Output = Result<HttpResponse, TransportError>> + Send;
+    ) -> Pin<Box<dyn Future<Output = Result<HttpResponse, TransportError>> + Send + 'request>>;
 }

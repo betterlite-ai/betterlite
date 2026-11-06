@@ -74,16 +74,13 @@ pub struct Analysis {
     pub output_text: Option<GuardrailValue>,
 }
 
-pub async fn analyze<H>(
-    handler: &H,
+pub async fn analyze(
+    handler: &dyn AsyncPostHandler,
     settings: &VigilGuardSettings,
     text: &str,
     source: Source,
     metadata: &IndexMap<String, MetadataValue>,
-) -> Result<Analysis, VigilGuardError>
-where
-    H: AsyncPostHandler,
-{
+) -> Result<Analysis, VigilGuardError> {
     let payload = AnalyzePayload {
         text: text.to_owned(),
         source,
