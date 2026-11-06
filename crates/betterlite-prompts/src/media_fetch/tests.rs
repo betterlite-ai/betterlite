@@ -562,6 +562,7 @@ async fn closed_port() -> u16 {
 #[case::connection_refused_three_tries("connection_refused")]
 #[case::status_error_not_retried("status_not_retried")]
 #[case::ssrf_rejected_before_a_request("ssrf_rejected")]
+#[case::infinite_limit_retried("infinite_limit")]
 #[case::total_deadline("total_deadline")]
 #[tokio::test]
 async fn url_conversion_matches_litellm(#[case] scenario: &str) {
@@ -641,6 +642,17 @@ async fn url_conversion_matches_litellm(#[case] scenario: &str) {
                 )
             );
             assert_eq!(server.request_count(), 0);
+        }
+        "infinite_limit" => {
+            let server = Server::start(vec![("/image.png".to_owned(), Reply::ok(b"body"))]).await;
+            let fetcher = new_fetcher(&["127.0.0.1"], f64::INFINITY, TEN_MINUTES);
+            let url = server.url("/image.png");
+            let error = fetcher.convert(&url).await.unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                format!("Error: Unable to fetch image from URL after 3 attempts. url={url}")
+            );
+            assert_eq!(server.request_count(), 3);
         }
         "total_deadline" => {
             let routes = vec![(
