@@ -41,15 +41,23 @@ pub(crate) fn execute(
     env: &BTreeMap<String, String>,
     stop: &Stop<'_>,
 ) -> Execution {
-    let SdkHttpCall::OpenaiChat(chat) = call;
-    let result = Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(SdkHttpError::Io)
-        .and_then(|runtime| runtime.block_on(send_until_stopped(chat, api_base, env, stop)));
-    Execution {
-        result,
-        log: Vec::new(),
+    match call {
+        SdkHttpCall::OpenaiChat(chat) => {
+            let result = Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(SdkHttpError::Io)
+                .and_then(|runtime| {
+                    runtime.block_on(send_until_stopped(chat, api_base, env, stop))
+                });
+            Execution {
+                result,
+                log: Vec::new(),
+            }
+        }
+        SdkHttpCall::VectorStoreEmbeddingExecutor(embedding) => {
+            super::embedding_executor::execute(embedding, api_base, env, stop)
+        }
     }
 }
 
@@ -130,7 +138,7 @@ fn deployments(
 }
 
 // the same defaults the server builds, so proxy-wide base URLs, keys and the organization resolve from the case env
-fn openai_defaults(config: &LoadedConfig) -> OpenAiDefaults {
+pub(crate) fn openai_defaults(config: &LoadedConfig) -> OpenAiDefaults {
     let settings = &config.sections.resource_sdk_settings;
     let bases = [
         &settings.api_base,

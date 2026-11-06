@@ -4,12 +4,15 @@ use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
 
+use betterlite_provider::api::vector_store_contracts::config::Params;
+
 use crate::case::{Compare, UpstreamAnswer};
 use error::SdkHttpError;
 use result::SdkResult;
 
 pub(crate) mod capture;
 mod child;
+pub(crate) mod embedding_executor;
 pub mod error;
 pub(crate) mod native;
 pub(crate) mod python;
@@ -54,6 +57,7 @@ pub struct SdkHttpCase {
 #[serde(rename_all = "snake_case")]
 pub enum SdkHttpCall {
     OpenaiChat(OpenaiChat),
+    VectorStoreEmbeddingExecutor(VectorStoreEmbeddingCall),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -63,6 +67,33 @@ pub struct OpenaiChat {
     pub(crate) messages: Vec<ChatMessage>,
     pub(crate) api_key: String,
     pub(crate) timeout_seconds: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VectorStoreEmbeddingCall {
+    pub(crate) model: String,
+    pub(crate) query: String,
+    pub(crate) api_key: String,
+    #[serde(default)]
+    pub(crate) configuration: Params,
+    #[serde(default)]
+    pub(crate) metadata: Params,
+    #[serde(default)]
+    pub(crate) router: Option<Vec<RouterDeploymentSpec>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RouterDeploymentSpec {
+    pub(crate) model_name: String,
+    pub(crate) litellm_params: RouterDeploymentParams,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RouterDeploymentParams {
+    pub(crate) model: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -133,6 +164,33 @@ fn reserved_environment(name: &str) -> bool {
         || upper.starts_with("UV_")
 }
 
+fn validate_call(call: &SdkHttpCall, limits: &OracleLimits) -> Result<(), SdkHttpError> {
+    match call {
+        SdkHttpCall::OpenaiChat(chat) => {
+            if chat.timeout_seconds == 0 || chat.timeout_seconds > limits.max_execution.as_secs() {
+                return Err(SdkHttpError::Invalid(
+                    "timeout_seconds must be between 1 and the execution limit".to_owned(),
+                ));
+            }
+        }
+        SdkHttpCall::VectorStoreEmbeddingExecutor(embedding) => {
+            if !embedding.model.starts_with("openai/") {
+                return Err(SdkHttpError::Invalid(
+                    "the embedding model must be an openai/ model".to_owned(),
+                ));
+            }
+            for deployment in embedding.router.iter().flatten() {
+                if !deployment.litellm_params.model.starts_with("openai/") {
+                    return Err(SdkHttpError::Invalid(
+                        "every router deployment must serve an openai/ model".to_owned(),
+                    ));
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 fn validate(case: &SdkHttpCase, limits: &OracleLimits) -> Result<(), SdkHttpError> {
     let invalid = |message: &str| Err(SdkHttpError::Invalid(message.to_owned()));
     if case.kind != "sdk_http" || case.name.is_empty() {
@@ -141,10 +199,7 @@ fn validate(case: &SdkHttpCase, limits: &OracleLimits) -> Result<(), SdkHttpErro
     if let Some(name) = case.env.keys().find(|name| reserved_environment(name)) {
         return invalid(&format!("the case env may not set {name}"));
     }
-    let SdkHttpCall::OpenaiChat(chat) = &case.call;
-    if chat.timeout_seconds == 0 || chat.timeout_seconds > limits.max_execution.as_secs() {
-        return invalid("timeout_seconds must be between 1 and the execution limit");
-    }
+    validate_call(&case.call, limits)?;
     if case.upstream.len() > limits.max_requests {
         return invalid("the case scripts more provider answers than the request limit");
     }
