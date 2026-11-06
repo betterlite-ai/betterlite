@@ -15,7 +15,7 @@ use indexmap::IndexMap;
 
 use crate::orchestration::prompt_orchestration::PromptManagementBackend as _;
 
-use super::support::{json, message, request};
+use super::support::{json, message, params, request};
 
 const BODY: &str = r#"{"prompt_template":[{"role":"system","content":"Be brief"}],"prompt_template_model":"gpt-4o","prompt_template_optional_params":{"temperature":0.5}}"#;
 const BODY_WITHOUT_MODEL: &str = r#"{"prompt_template":[{"role":"user","content":"Say hello"}]}"#;
@@ -28,12 +28,21 @@ struct FakePromptApi {
 
 impl FakePromptApi {
     fn replying(body: &str) -> Self {
-        let reply = PromptApiResponse {
-            status: 200,
-            body: body.as_bytes().to_vec(),
-        };
+        Self::replying_many(vec![body])
+    }
+
+    fn replying_many(bodies: Vec<&str>) -> Self {
+        let replies = bodies
+            .into_iter()
+            .map(|body| {
+                Ok(PromptApiResponse {
+                    status: 200,
+                    body: body.as_bytes().to_vec(),
+                })
+            })
+            .collect();
         Self {
-            replies: Arc::new(Mutex::new(VecDeque::from(vec![Ok(reply)]))),
+            replies: Arc::new(Mutex::new(replies)),
             calls: Arc::new(Mutex::new(Vec::new())),
         }
     }
@@ -300,4 +309,86 @@ async fn generic_async_hook_fetches_without_a_prompt_id_when_the_spec_has_query_
             .iter()
             .any(|(key, value)| key == "prompt_id" && value.is_empty())
     );
+}
+
+#[tokio::test]
+async fn generic_sync_hook_applies_the_prompt_variables() {
+    let body = r#"{"prompt_template":[{"role":"user","content":"Hello {name}"}]}"#;
+    let transport = FakePromptApi::replying(body);
+    let manager = generic_manager(transport);
+    let dynamic = json("{}");
+    let variables = params(r#"{"name":"Ann"}"#);
+    let mut completion = request(Some("greeting"), "generic_prompt/gpt-4", &dynamic);
+    completion.prompt_variables = Some(&variables);
+
+    let outcome = manager
+        .get_chat_completion_prompt(completion)
+        .await
+        .expect("completion prompt");
+
+    assert_eq!(
+        outcome.messages,
+        vec![
+            message("user", "Hello Ann"),
+            message("user", "client question"),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn generic_sync_hook_keeps_versions_in_separate_cache_entries() {
+    let first = r#"{"prompt_template":[{"role":"user","content":"first version"}]}"#;
+    let second = r#"{"prompt_template":[{"role":"user","content":"second version"}]}"#;
+    let transport = FakePromptApi::replying_many(vec![first, second]);
+    let manager = generic_manager(transport.clone());
+    let dynamic = json("{}");
+
+    let mut first_completion = request(Some("greeting"), "generic_prompt/gpt-4", &dynamic);
+    first_completion.prompt_version = Some(1);
+    let outcome = manager
+        .get_chat_completion_prompt(first_completion)
+        .await
+        .expect("first completion prompt");
+    assert_eq!(outcome.messages[0], message("user", "first version"));
+
+    let mut second_completion = request(Some("greeting"), "generic_prompt/gpt-4", &dynamic);
+    second_completion.prompt_version = Some(2);
+    let second_outcome = manager
+        .get_chat_completion_prompt(second_completion)
+        .await
+        .expect("second completion prompt");
+    assert_eq!(
+        second_outcome.messages[0],
+        message("user", "second version")
+    );
+    assert_eq!(transport.calls().len(), 2);
+}
+
+#[tokio::test]
+async fn generic_sync_hook_keeps_labels_in_separate_cache_entries() {
+    let first = r#"{"prompt_template":[{"role":"user","content":"production prompt"}]}"#;
+    let second = r#"{"prompt_template":[{"role":"user","content":"staging prompt"}]}"#;
+    let transport = FakePromptApi::replying_many(vec![first, second]);
+    let manager = generic_manager(transport.clone());
+    let dynamic = json("{}");
+
+    let mut first_completion = request(Some("greeting"), "generic_prompt/gpt-4", &dynamic);
+    first_completion.prompt_label = Some("production");
+    let outcome = manager
+        .get_chat_completion_prompt(first_completion)
+        .await
+        .expect("first completion prompt");
+    assert_eq!(outcome.messages[0], message("user", "production prompt"));
+
+    let mut second_completion = request(Some("greeting"), "generic_prompt/gpt-4", &dynamic);
+    second_completion.prompt_label = Some("staging");
+    let second_outcome = manager
+        .get_chat_completion_prompt(second_completion)
+        .await
+        .expect("second completion prompt");
+    assert_eq!(
+        second_outcome.messages[0],
+        message("user", "staging prompt")
+    );
+    assert_eq!(transport.calls().len(), 2);
 }
