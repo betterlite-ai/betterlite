@@ -56,33 +56,6 @@ pub struct ChatCompletionPrompt {
     pub non_default_params: PromptParams,
 }
 
-impl<'request> ChatCompletionPromptRequest<'request> {
-    fn async_compile_call(&self) -> AsyncCompilePromptCall<'request> {
-        AsyncCompilePromptCall {
-            prompt_id: self.prompt_id,
-            client_messages: self.messages.clone(),
-            prompt_variables: self.prompt_variables,
-            dynamic_callback_params: self.dynamic_callback_params,
-            prompt_spec: self.prompt_spec,
-            prompt_label: self.prompt_label,
-            prompt_version: self.prompt_version,
-        }
-    }
-
-    // LiteLLM's sync hook compiles without the prompt spec and only then reads it for the ignore flags.
-    fn sync_compile_call(&self, prompt_id: &'request str) -> CompilePromptCall<'request> {
-        CompilePromptCall {
-            prompt_id,
-            client_messages: self.messages.clone(),
-            prompt_variables: self.prompt_variables,
-            dynamic_callback_params: self.dynamic_callback_params,
-            prompt_spec: None,
-            prompt_label: self.prompt_label,
-            prompt_version: self.prompt_version,
-        }
-    }
-}
-
 impl<'request> From<CompilePromptCall<'request>> for AsyncCompilePromptCall<'request> {
     fn from(call: CompilePromptCall<'request>) -> Self {
         Self {
@@ -165,7 +138,15 @@ pub trait PromptManagementBackend: Sync {
             ) {
                 return Ok(unchanged_prompt(request));
             }
-            let call = request.async_compile_call();
+            let call = AsyncCompilePromptCall {
+                prompt_id: request.prompt_id,
+                client_messages: request.messages.clone(),
+                prompt_variables: request.prompt_variables,
+                dynamic_callback_params: request.dynamic_callback_params,
+                prompt_spec: request.prompt_spec,
+                prompt_label: request.prompt_label,
+                prompt_version: request.prompt_version,
+            };
             let compiled = self.async_compile_prompt(call).await?;
             Ok(finish_chat_completion_prompt(
                 self.integration_name(),
@@ -195,7 +176,16 @@ where
         ) {
             return Ok(unchanged_prompt(request));
         }
-        let call = request.sync_compile_call(resolved_id);
+        // LiteLLM's sync hook compiles without the prompt spec and reads it only for the ignore flags.
+        let call = CompilePromptCall {
+            prompt_id: resolved_id,
+            client_messages: request.messages.clone(),
+            prompt_variables: request.prompt_variables,
+            dynamic_callback_params: request.dynamic_callback_params,
+            prompt_spec: None,
+            prompt_label: request.prompt_label,
+            prompt_version: request.prompt_version,
+        };
         let compiled = backend.compile_prompt(call).await?;
         Ok(finish_chat_completion_prompt(
             backend.integration_name(),

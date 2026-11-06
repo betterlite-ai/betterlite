@@ -15,9 +15,9 @@ use super::prompt_orchestration::{
     PromptOrchestrationError, sync_completion_prompt,
 };
 
-impl<T> PromptManagementBackend for GitLabPromptManager<T>
+impl<Transport> PromptManagementBackend for GitLabPromptManager<Transport>
 where
-    T: GitLabTransport,
+    Transport: GitLabTransport,
 {
     type CompileError = Box<CompileError>;
 
