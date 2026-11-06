@@ -11,13 +11,13 @@ use crate::presidio_actions::request_data::{
 };
 use crate::presidio_response::anthropic::process_anthropic_response;
 use crate::presidio_response::error::PresidioResponseError;
-use crate::presidio_response::log_merge::{append_log_entries, log_bucket_clone, log_entries};
+use crate::presidio_response::log_merge::{append_log_entries, log_bucket_name, log_entries};
 use crate::presidio_response::messages::{
     TextTask, apply_masked_texts, collect_text_tasks, request_messages, store_messages,
 };
 use crate::presidio_response::model::process_response_for_pii;
-use crate::presidio_response::runtime::run_on_new_runtime;
-use crate::presidio_response::wire::{ChatMessage, ResponseBody};
+use crate::presidio_response::runtime::run_with_owned_client;
+use crate::presidio_response::wire::{ChatMessage, ResponseBody, to_raw};
 use crate::presidio_response::{HookContext, Mode};
 
 const COMPLETION_CALL_TYPES: [&str; 2] = ["completion", "acompletion"];
@@ -30,15 +30,16 @@ pub fn logging_hook(
     response: &mut ResponseBody,
     call_type: &str,
 ) -> Result<(), PresidioResponseError> {
-    if Handle::try_current().is_ok() {
+    if let Ok(handle) = Handle::try_current() {
         return thread::scope(|scope| {
-            let handle = scope.spawn(|| run_on_new_runtime(context, request, response, call_type));
-            handle
-                .join()
+            let join = scope.spawn(|| {
+                handle.block_on(async_logging_hook(context, request, response, call_type))
+            });
+            join.join()
                 .map_err(|_panic| PresidioResponseError::HookThreadPanicked)?
         });
     }
-    run_on_new_runtime(context, request, response, call_type)
+    run_with_owned_client(context, request, response, call_type)
 }
 
 pub async fn async_logging_hook(
@@ -83,9 +84,9 @@ async fn mask_request_messages(
     if tasks.is_empty() {
         return Ok(0);
     }
-    let existing = log_entries(request).len();
-    let gathered = run_checks(context, &tasks, request, presidio_config.as_ref()).await;
-    let (masked, failure, added) = collect_outputs(gathered, existing);
+    let bucket = log_bucket_name(request);
+    let gathered = run_checks(context, &tasks, bucket, presidio_config.as_ref()).await?;
+    let (masked, failure, added) = collect_outputs(gathered);
     append_log_entries(request, added)?;
     if let Some(error) = failure {
         return Err(PresidioResponseError::from(error));
@@ -97,10 +98,11 @@ async fn mask_request_messages(
 async fn run_checks(
     context: HookContext<'_>,
     tasks: &[TextTask],
-    request: &RequestData,
+    bucket: &'static str,
     config: Option<&PresidioPerRequestConfig>,
-) -> Vec<CheckOutcome> {
-    let base = log_bucket_clone(request);
+) -> Result<Vec<CheckOutcome>, PresidioResponseError> {
+    // Each check owns an empty bucket of a few bytes, so the checks never copy request metadata between them.
+    let base = empty_bucket(bucket)?;
     let mut checks = Vec::with_capacity(tasks.len());
     for task in tasks {
         let mut data = base.clone();
@@ -123,12 +125,17 @@ async fn run_checks(
             (outcome, data)
         });
     }
-    join_all(checks).await
+    Ok(join_all(checks).await)
+}
+
+fn empty_bucket(bucket: &'static str) -> Result<RequestData, PresidioResponseError> {
+    let mut data = RequestData::new();
+    data.insert(bucket.to_owned(), to_raw(&RequestData::new())?);
+    Ok(data)
 }
 
 fn collect_outputs(
     gathered: Vec<CheckOutcome>,
-    existing: usize,
 ) -> (
     Vec<Option<String>>,
     Option<PresidioActionsError>,
@@ -138,7 +145,7 @@ fn collect_outputs(
     let mut failure = None;
     let mut added = Vec::new();
     for (outcome, data) in gathered {
-        added.extend(log_entries(&data).into_iter().skip(existing));
+        added.extend(log_entries(&data));
         match outcome {
             Ok(text) => masked.push(Some(text)),
             Err(error) => {

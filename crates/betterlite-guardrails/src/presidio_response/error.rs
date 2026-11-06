@@ -23,6 +23,11 @@ pub enum PresidioResponseError {
         #[source]
         source: Error,
     },
+    #[error("the Presidio logging hook could not build its own HTTP client")]
+    Client {
+        #[source]
+        source: reqwest::Error,
+    },
     #[error("the Presidio logging hook thread panicked")]
     HookThreadPanicked,
     #[error(transparent)]
@@ -38,6 +43,7 @@ impl PresidioResponseError {
             | Self::MessagesJson { .. }
             | Self::BodyJson { .. }
             | Self::Runtime { .. }
+            | Self::Client { .. }
             | Self::HookThreadPanicked => 500,
         }
     }

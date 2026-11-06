@@ -1,106 +1,28 @@
 #![cfg(test)]
 
 use std::io;
-use std::sync::{Arc, Mutex};
-use std::time::Duration;
 
 use axum::Router;
-use axum::body::Bytes;
-use axum::extract::State;
-use axum::http::{StatusCode, header};
+use axum::http::StatusCode;
 use axum::response::{IntoResponse as _, Response};
 use axum::routing::post;
-use serde::Deserialize;
 use tokio::net::TcpListener;
-use tokio::sync::Barrier;
 use tokio::task::JoinSet;
-use tokio::time::timeout;
 
 use super::shared::{
     analyzer, anonymizer, anthropic_texts, chat_content, content_text, context, logged_count,
-    messages, request_data, response_body,
+    logged_entity_types, logged_names, messages, request_data, response_body, spawn_mock,
 };
 use crate::presidio_response::error::PresidioResponseError;
 use crate::presidio_response::logging::async_logging_hook;
 use crate::presidio_response::wire::{ChatMessage, Content, ContentItem};
 
-const DETECTIONS: &str = r#"[{"entity_type":"PERSON","start":0,"end":5,"score":0.9}]"#;
-const MASKED_REPLY: &str = r#"{"text":"MASKED","items":[{"entity_type":"PERSON"}]}"#;
-
-#[derive(Clone)]
-struct MockState {
-    barrier: Arc<Barrier>,
-    seen: Arc<Mutex<Vec<SeenAnalyze>>>,
-}
-
-#[derive(Clone, Deserialize)]
-struct SeenAnalyze {
-    text: String,
-    language: Option<String>,
-}
-
-async fn analyze(State(state): State<MockState>, body: Bytes) -> Response {
-    if let Ok(seen) = serde_json::from_slice::<SeenAnalyze>(&body) {
-        state.seen.lock().expect("seen requests").push(seen);
-    }
-    if timeout(Duration::from_secs(2), state.barrier.wait())
-        .await
-        .is_err()
-    {
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "the checks ran one at a time",
-        )
-            .into_response();
-    }
-    (
-        StatusCode::OK,
-        [(header::CONTENT_TYPE, "application/json")],
-        DETECTIONS,
-    )
-        .into_response()
-}
-
-async fn anonymize() -> Response {
-    (
-        StatusCode::OK,
-        [(header::CONTENT_TYPE, "application/json")],
-        MASKED_REPLY,
-    )
-        .into_response()
-}
-
 async fn failing_analyze() -> Response {
     (StatusCode::INTERNAL_SERVER_ERROR, "boom").into_response()
 }
 
-async fn spawn_mock(
-    concurrent: usize,
-) -> (
-    String,
-    Arc<Mutex<Vec<SeenAnalyze>>>,
-    JoinSet<io::Result<()>>,
-) {
-    let state = MockState {
-        barrier: Arc::new(Barrier::new(concurrent)),
-        seen: Arc::new(Mutex::new(Vec::new())),
-    };
-    let seen = Arc::clone(&state.seen);
-    let router = Router::new()
-        .route("/analyze", post(analyze))
-        .route("/anonymize", post(anonymize))
-        .with_state(state);
-    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
-    let base = format!("http://{}", listener.local_addr().expect("address"));
-    let mut server = JoinSet::new();
-    server.spawn(axum::serve(listener, router).into_future());
-    (base, seen, server)
-}
-
 async fn spawn_failing_mock() -> (String, JoinSet<io::Result<()>>) {
-    let router = Router::new()
-        .route("/analyze", post(failing_analyze))
-        .route("/anonymize", post(anonymize));
+    let router = Router::new().route("/analyze", post(failing_analyze));
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let base = format!("http://{}", listener.local_addr().expect("address"));
     let mut server = JoinSet::new();
@@ -176,6 +98,22 @@ async fn a_missing_messages_field_leaves_the_response_untouched() {
 }
 
 #[tokio::test]
+async fn a_null_messages_field_leaves_the_response_untouched() {
+    let analyzer = analyzer("http://presidio.invalid", Some("MASKED"));
+    let anonymizer = anonymizer("http://presidio.invalid");
+    let context = context(&analyzer, &anonymizer);
+    let mut request = request_data(r#"{"messages":null}"#);
+    let mut response =
+        response_body(r#"{"choices":[{"message":{"role":"assistant","content":"Bob"}}]}"#);
+
+    async_logging_hook(context, &mut request, &mut response, "acompletion")
+        .await
+        .expect("a null messages field is not an error");
+
+    assert_eq!(chat_content(&response).as_deref(), Some("Bob"));
+}
+
+#[tokio::test]
 async fn masks_the_model_response_after_the_messages() {
     let analyzer = analyzer("http://presidio.invalid", Some("MASKED"));
     let anonymizer = anonymizer("http://presidio.invalid");
@@ -211,9 +149,9 @@ async fn masks_an_anthropic_message_response() {
 
 #[tokio::test]
 async fn gathers_the_message_checks_concurrently() {
-    let (base, seen, _server) = spawn_mock(2).await;
-    let analyzer = analyzer(&base, None);
-    let anonymizer = anonymizer(&base);
+    let mock = spawn_mock(2).await;
+    let analyzer = analyzer(&mock.base, None);
+    let anonymizer = anonymizer(&mock.base);
     let context = context(&analyzer, &anonymizer);
     let mut request = request_data(
         r#"{"messages":[{"role":"user","content":"Alice"},{"role":"user","content":"Bobby"}],"metadata":{"guardrail_config":{"language":"de"}}}"#,
@@ -227,13 +165,13 @@ async fn gathers_the_message_checks_concurrently() {
     let parsed = messages(&request);
     assert_eq!(
         content_text(parsed[0].content.as_ref()).as_deref(),
-        Some("MASKED")
+        Some("MASKED-Alice")
     );
     assert_eq!(
         content_text(parsed[1].content.as_ref()).as_deref(),
-        Some("MASKED")
+        Some("MASKED-Bobby")
     );
-    let seen_requests = seen.lock().expect("seen requests").clone();
+    let seen_requests = mock.seen.lock().expect("seen requests").clone();
     assert_eq!(seen_requests.len(), 2);
     assert!(
         seen_requests
@@ -247,6 +185,95 @@ async fn gathers_the_message_checks_concurrently() {
     texts.sort_unstable();
     assert_eq!(texts, vec!["Alice", "Bobby"]);
     assert_eq!(logged_count(&request), 2);
+}
+
+#[tokio::test]
+async fn maps_each_masked_text_back_to_its_message_and_part() {
+    let mock = spawn_mock(3).await;
+    let analyzer = analyzer(&mock.base, None);
+    let anonymizer = anonymizer(&mock.base);
+    let context = context(&analyzer, &anonymizer);
+    let mut request = request_data(
+        r#"{"messages":[{"role":"user","content":"Alice"},{"role":"user","content":[{"type":"text","text":"Bobby"},{"type":"text","text":"Carla"}]}],"metadata":{}}"#,
+    );
+    let mut response = response_body(r#"{"choices":[]}"#);
+
+    async_logging_hook(context, &mut request, &mut response, "acompletion")
+        .await
+        .expect("logging hook");
+
+    let parsed = messages(&request);
+    assert_eq!(parsed.len(), 2);
+    assert_eq!(
+        content_text(parsed[0].content.as_ref()).as_deref(),
+        Some("MASKED-Alice")
+    );
+    let Some(Content::Blocks(items)) = parsed[1].content.as_ref() else {
+        panic!("the second message keeps a content list");
+    };
+    assert_eq!(items.len(), 2);
+    let ContentItem::Object(bobby) = &items[0] else {
+        panic!("the first part is an object");
+    };
+    assert_eq!(bobby.text.as_deref(), Some("MASKED-Bobby"));
+    let ContentItem::Object(carla) = &items[1] else {
+        panic!("the second part is an object");
+    };
+    assert_eq!(carla.text.as_deref(), Some("MASKED-Carla"));
+    assert_eq!(
+        logged_entity_types(&request),
+        vec![
+            "PERSON".to_owned(),
+            "EMAIL_ADDRESS".to_owned(),
+            "PHONE_NUMBER".to_owned()
+        ]
+    );
+}
+
+#[tokio::test]
+async fn keeps_existing_guardrail_records_and_appends_the_new_ones() {
+    let analyzer = analyzer("http://presidio.invalid", Some("MASKED"));
+    let anonymizer = anonymizer("http://presidio.invalid");
+    let context = context(&analyzer, &anonymizer);
+    let mut request = request_data(
+        r#"{"messages":[{"role":"user","content":"Alice"},{"role":"user","content":"Bobby"}],"metadata":{"standard_logging_guardrail_information":[{"guardrail_name":"earlier"}]}}"#,
+    );
+    let mut response = response_body(r#"{"choices":[]}"#);
+
+    async_logging_hook(context, &mut request, &mut response, "acompletion")
+        .await
+        .expect("logging hook");
+
+    assert_eq!(logged_count(&request), 3);
+    assert_eq!(
+        logged_names(&request),
+        vec![
+            "earlier".to_owned(),
+            "presidio-global".to_owned(),
+            "presidio-global".to_owned()
+        ]
+    );
+}
+
+#[tokio::test]
+async fn records_go_to_the_litellm_metadata_bucket() {
+    let analyzer = analyzer("http://presidio.invalid", Some("MASKED"));
+    let anonymizer = anonymizer("http://presidio.invalid");
+    let context = context(&analyzer, &anonymizer);
+    let mut request = request_data(
+        r#"{"messages":[{"role":"user","content":"Alice"}],"metadata":{"keep":true},"litellm_metadata":{}}"#,
+    );
+    let mut response = response_body(r#"{"choices":[]}"#);
+
+    async_logging_hook(context, &mut request, &mut response, "acompletion")
+        .await
+        .expect("logging hook");
+
+    assert_eq!(logged_count(&request), 1);
+    assert_eq!(
+        request.get("metadata").expect("metadata").get(),
+        r#"{"keep":true}"#
+    );
 }
 
 #[tokio::test]

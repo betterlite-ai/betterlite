@@ -6,15 +6,6 @@ use crate::presidio_response::wire::to_raw;
 
 const LOGGING_KEY: &str = "standard_logging_guardrail_information";
 
-pub(super) fn log_bucket_clone(request: &RequestData) -> RequestData {
-    let bucket = log_bucket_name(request);
-    let mut clone = RequestData::new();
-    if let Some(raw) = request.get(bucket) {
-        clone.insert(bucket.to_owned(), raw.clone());
-    }
-    clone
-}
-
 pub(super) fn log_entries(request: &RequestData) -> Vec<Box<RawValue>> {
     let bucket = log_bucket_name(request);
     let Some(bucket_raw) = request.get(bucket) else {
@@ -51,7 +42,7 @@ pub(super) fn append_log_entries(
     Ok(())
 }
 
-fn log_bucket_name(request: &RequestData) -> &'static str {
+pub(super) fn log_bucket_name(request: &RequestData) -> &'static str {
     if request.contains_key("litellm_metadata") {
         "litellm_metadata"
     } else {

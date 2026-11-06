@@ -97,6 +97,8 @@ async fn masks_tool_calls_and_legacy_function_calls() {
     assert_eq!(function.arguments.as_deref(), Some("MASKED"));
     let function_call = message.function_call.as_ref().expect("function call");
     assert_eq!(function_call.arguments.as_deref(), Some("MASKED"));
+    let raw = serde_json::to_string(&response).expect("response JSON");
+    assert!(raw.contains(r#""content":null"#));
     assert_eq!(logged_count(&data), 2);
 }
 

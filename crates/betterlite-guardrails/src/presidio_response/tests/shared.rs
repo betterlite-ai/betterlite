@@ -5,9 +5,20 @@ use std::io::{self, Write};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use axum::Router;
+use axum::body::Bytes;
+use axum::extract::State;
+use axum::http::{StatusCode, header};
+use axum::response::{IntoResponse as _, Response};
+use axum::routing::post;
 use betterlite_config::sections::guardrail_identity::enums::PiiAction;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use serde::Deserialize;
 use serde_json::value::RawValue;
+use tokio::net::TcpListener;
+use tokio::sync::{Barrier, Semaphore};
+use tokio::task::JoinSet;
+use tokio::time::{sleep, timeout};
 use tracing::Level;
 use tracing::subscriber::{DefaultGuard, set_default};
 
@@ -20,6 +31,12 @@ use crate::presidio_response::wire::{ChatMessage, Content, ContentItem, Response
 
 pub(super) static NO_ENTITIES: BTreeMap<String, PiiAction> = BTreeMap::new();
 pub(super) static NO_PARAMS: BTreeMap<String, GuardrailValue> = BTreeMap::new();
+
+const SLOW_TEXT: &str = "Slow";
+const DELAYED_TEXT: &str = "Alice";
+const DELAYED_REPLY: Duration = Duration::from_millis(100);
+const BARRIER_TIMEOUT: Duration = Duration::from_secs(2);
+const LOGGING_KEY: &str = "standard_logging_guardrail_information";
 
 pub(super) fn request_data(json: &str) -> RequestData {
     serde_json::from_str(json).expect("request data")
@@ -160,18 +177,174 @@ pub(super) fn logged_text(captured: &Mutex<Vec<u8>>) -> String {
     String::from_utf8(bytes).expect("captured log is UTF-8")
 }
 
-pub(super) fn logged_count(request: &RequestData) -> usize {
-    let Some(bucket) = request
+#[derive(Clone, Deserialize)]
+pub(super) struct SeenAnalyze {
+    pub(super) text: String,
+    pub(super) language: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct SeenAnonymize {
+    text: String,
+}
+
+#[derive(Clone)]
+struct MockState {
+    barrier: Arc<Barrier>,
+    seen: Arc<Mutex<Vec<SeenAnalyze>>>,
+    started: Arc<Semaphore>,
+    release: Arc<Semaphore>,
+}
+
+pub(super) struct MockServer {
+    pub(super) base: String,
+    pub(super) seen: Arc<Mutex<Vec<SeenAnalyze>>>,
+    pub(super) started: Arc<Semaphore>,
+    pub(super) release: Arc<Semaphore>,
+    _server: JoinSet<io::Result<()>>,
+}
+
+fn entity_for(text: &str) -> &'static str {
+    match text {
+        "Bobby" => "EMAIL_ADDRESS",
+        "Carla" => "PHONE_NUMBER",
+        _ => "PERSON",
+    }
+}
+
+async fn analyze(State(state): State<MockState>, body: Bytes) -> Response {
+    let Ok(seen) = serde_json::from_slice::<SeenAnalyze>(&body) else {
+        return (StatusCode::BAD_REQUEST, "missing text").into_response();
+    };
+    let text = seen.text.clone();
+    state.seen.lock().expect("seen requests").push(seen);
+    if timeout(BARRIER_TIMEOUT, state.barrier.wait())
+        .await
+        .is_err()
+    {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "the checks ran one at a time",
+        )
+            .into_response();
+    }
+    if text == SLOW_TEXT {
+        state.started.add_permits(1);
+        if state.release.acquire().await.is_err() {
+            return (StatusCode::INTERNAL_SERVER_ERROR, "released").into_response();
+        }
+    }
+    let detection = format!(
+        r#"[{{"entity_type":"{}","start":0,"end":5,"score":0.9}}]"#,
+        entity_for(&text)
+    );
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "application/json")],
+        detection,
+    )
+        .into_response()
+}
+
+async fn anonymize(body: Bytes) -> Response {
+    let Ok(seen) = serde_json::from_slice::<SeenAnonymize>(&body) else {
+        return (StatusCode::BAD_REQUEST, "missing text").into_response();
+    };
+    if seen.text == DELAYED_TEXT {
+        sleep(DELAYED_REPLY).await;
+    }
+    let reply = format!(
+        r#"{{"text":"MASKED-{}","items":[{{"entity_type":"{}"}}]}}"#,
+        seen.text,
+        entity_for(&seen.text)
+    );
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "application/json")],
+        reply,
+    )
+        .into_response()
+}
+
+pub(super) async fn spawn_mock(concurrent: usize) -> MockServer {
+    let state = MockState {
+        barrier: Arc::new(Barrier::new(concurrent)),
+        seen: Arc::new(Mutex::new(Vec::new())),
+        started: Arc::new(Semaphore::new(0)),
+        release: Arc::new(Semaphore::new(0)),
+    };
+    let seen = Arc::clone(&state.seen);
+    let started = Arc::clone(&state.started);
+    let release = Arc::clone(&state.release);
+    let router = Router::new()
+        .route("/analyze", post(analyze))
+        .route("/anonymize", post(anonymize))
+        .with_state(state);
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let base = format!("http://{}", listener.local_addr().expect("address"));
+    let mut server = JoinSet::new();
+    server.spawn(axum::serve(listener, router).into_future());
+    MockServer {
+        base,
+        seen,
+        started,
+        release,
+        _server: server,
+    }
+}
+
+fn log_entries_json(request: &RequestData) -> Option<String> {
+    let bucket = request
         .get("litellm_metadata")
-        .or_else(|| request.get("metadata"))
-    else {
-        return 0;
+        .or_else(|| request.get("metadata"))?;
+    let metadata: BTreeMap<String, Box<RawValue>> = serde_json::from_str(bucket.get()).ok()?;
+    let entries = metadata.get(LOGGING_KEY)?;
+    Some(entries.get().to_owned())
+}
+
+pub(super) fn logged_count(request: &RequestData) -> usize {
+    log_entries_json(request).map_or(0, |json| {
+        serde_json::from_str::<Vec<Box<RawValue>>>(&json).map_or(0, |entries| entries.len())
+    })
+}
+
+#[derive(Deserialize)]
+struct LoggedRecord {
+    #[serde(default)]
+    guardrail_name: Option<String>,
+    #[serde(default)]
+    guardrail_response: Vec<LoggedItem>,
+}
+
+#[derive(Deserialize)]
+struct LoggedItem {
+    #[serde(default)]
+    entity_type: Option<String>,
+}
+
+fn logged_records(request: &RequestData) -> Vec<LoggedRecord> {
+    let Some(json) = log_entries_json(request) else {
+        return Vec::new();
     };
-    let Ok(metadata) = serde_json::from_str::<BTreeMap<String, Box<RawValue>>>(bucket.get()) else {
-        return 0;
-    };
-    let Some(entries) = metadata.get("standard_logging_guardrail_information") else {
-        return 0;
-    };
-    serde_json::from_str::<Vec<Box<RawValue>>>(entries.get()).map_or(0, |logged| logged.len())
+    serde_json::from_str(&json).expect("logged records")
+}
+
+pub(super) fn logged_names(request: &RequestData) -> Vec<String> {
+    logged_records(request)
+        .into_iter()
+        .map(|record| record.guardrail_name.unwrap_or_default())
+        .collect()
+}
+
+pub(super) fn logged_entity_types(request: &RequestData) -> Vec<String> {
+    logged_records(request)
+        .into_iter()
+        .map(|record| {
+            record
+                .guardrail_response
+                .first()
+                .and_then(|item| item.entity_type.clone())
+                .unwrap_or_default()
+        })
+        .collect()
 }
