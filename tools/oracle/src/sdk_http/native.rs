@@ -178,11 +178,10 @@ async fn send(
     let body = serde_json::to_vec(&wire).map_err(SdkHttpError::Serialize)?;
     let request =
         ChatRequest::parse(&body).map_err(|source| SdkHttpError::ChatParse(Box::new(source)))?;
-    let deployment = executor.deployments.first().ok_or_else(|| {
-        SdkHttpError::Chat(Box::new(ChatError::UnknownModel {
-            model: chat.model.clone(),
-        }))
-    })?;
+    let deployment = executor
+        .deployments
+        .first()
+        .ok_or_else(|| SdkHttpError::Invalid(format!("no deployment serves {}", chat.model)))?;
     match executor.send(deployment, &request).await {
         Ok(outcome) => Ok(SdkResult::Success {
             value: completion(outcome.response),
@@ -212,8 +211,7 @@ fn completion(response: ChatResponse) -> ChatCompletion {
 // the OpenAI SDK reads type/param/code from `body["error"]` when it is a mapping, else from the body itself
 fn project_failure(model: &str, response: &UpstreamResponse) -> Result<SdkResult, SdkHttpError> {
     let text = String::from_utf8(response.body.clone()).map_err(SdkHttpError::ErrorBodyUtf8)?;
-    let parsed = serde_json::from_str::<Value>(&text).ok();
-    let flat = match parsed {
+    let flat = match serde_json::from_str::<Value>(&text).ok() {
         Some(Value::Object(mut object)) => match object.remove("error") {
             Some(inner @ Value::Object(_)) => Some(inner),
             Some(_) | None => Some(Value::Object(object)),
