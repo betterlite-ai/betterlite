@@ -14,7 +14,6 @@ base64 = "0.22.1"
 betterlite-config = { path = "../betterlite-config" }
 betterlite-core = { path = "../betterlite-core" }
 betterlite-http = { path = "../betterlite-http" }
-betterlite-openai = { path = "../betterlite-openai" }
 chrono = { workspace = true }
 futures-core = "0.3.34"
 futures-util = { version = "0.3.34", default-features = false, features = ["async-await"] }

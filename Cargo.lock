@@ -975,7 +975,6 @@ dependencies = [
  "betterlite-config",
  "betterlite-core",
  "betterlite-http",
- "betterlite-openai",
  "chrono",
  "futures-core",
  "futures-util",
