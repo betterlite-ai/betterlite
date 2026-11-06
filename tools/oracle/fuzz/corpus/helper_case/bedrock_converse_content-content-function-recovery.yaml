@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-converse-content-content-function-recovery-seed
+call:
+  bedrock_converse_content:
+    content_function_recovery:
+      tools:
+        - toolSpec: {name: alpha}
+      initial_finish_reason: stop
+      message:
+        content: '{"type": "function", "name": "alpha", "arguments": {"b": 2}}'
+env: {}
+compare: {ignore: []}

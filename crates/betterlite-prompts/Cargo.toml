@@ -7,11 +7,13 @@ publish.workspace = true
 
 [dependencies]
 base64 = "0.23.1"
+betterlite-context = { path = "../betterlite-context" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-logging = { path = "../betterlite-logging" }
 betterlite-models = { path = "../betterlite-models" }
 chrono.workspace = true
 fancy-regex = "0.19.2"
+futures-util = { version = "0.3.34", default-features = false, features = ["alloc"] }
 http = "1.5.0"
 indexmap = { version = "2.14.2", features = ["serde"] }
 minijinja = { version = "3.0.4", features = ["builtins", "fuel", "preserve_order", "serde"] }
@@ -23,7 +25,7 @@ serde-saphyr.workspace = true
 serde_json = { version = "1.0.145", features = ["arbitrary_precision"] }
 serde_with = { version = "3.24.0", default-features = false, features = ["macros"] }
 thiserror.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true
 url = "2.5.8"
 
@@ -35,3 +37,7 @@ tokio = { workspace = true, features = ["rt", "macros", "time"] }
 
 [lints]
 workspace = true
+
+[[test]]
+name = "bitbucket_prompt_manager"
+path = "src/bitbucket/tests.rs"
