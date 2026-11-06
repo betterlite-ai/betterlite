@@ -2,7 +2,7 @@
 
 use super::error::VectorStoreError;
 use super::files::{self, Attributes, FileCreateParams, FileListParams, FileOperation};
-use super::reply::{ReplyKind, decode_vector_reply, transform_response};
+use super::reply::{ReplyError, ReplyKind, decode_vector_reply, transform_response};
 use super::store::{self, CreateParams, Query, SearchParams};
 use super::{
     Headers, complete_url, file_endpoints, get_auth_credentials, store_endpoints,
@@ -340,6 +340,17 @@ fn invalid_reply_status_headers() {
     transform_response(ReplyKind::File, &response(200, b"")).expect_err("empty");
 }
 
+fn reply_byte_limit() {
+    let limit = 0x0100_0000;
+    let mut body = vec![b'a'; limit];
+    body[0] = b'"';
+    body[limit - 1] = b'"';
+    decode_vector_reply(ReplyKind::File, &body).expect("body at the limit");
+    body.insert(1, b'a');
+    let error = decode_vector_reply(ReplyKind::File, &body).expect_err("one byte over");
+    assert!(matches!(error, ReplyError::TooLarge), "{error:?}");
+}
+
 #[rstest]
 #[case::store_create(store_create)]
 #[case::search_ranking_filter(search_ranking_filter)]
@@ -355,6 +366,7 @@ fn invalid_reply_status_headers() {
 #[case::encoded_ids_query(encoded_ids_query)]
 #[case::endpoint_permissions(endpoint_permissions)]
 #[case::invalid_reply_status_headers(invalid_reply_status_headers)]
+#[case::reply_byte_limit(reply_byte_limit)]
 fn vector_stores_cases(#[case] scenario: fn()) {
     scenario();
 }
