@@ -237,6 +237,14 @@ fn wildcard_catalog_behaviors(
     lookups: vec![Lookup::Route("a\u{e9}")],
     expectations: vec![Some(vec![("ascii", "ascii/\u{e9}")])],
 })]
+#[case::the_fallback_returns_the_whole_request_of_a_prefix_match(Boundary::Routes {
+    deployments: vec![("llmengine/fo::*::static::*", "fallback", "openai/one*")],
+    removed: vec![],
+    lookups: vec![Lookup::Route("llmengine/fo::hi::static::bye::tail")],
+    expectations: vec![Some(vec![
+        ("fallback", "llmengine/fo::hi::static::bye::tail"),
+    ])],
+})]
 #[case::removing_an_unknown_model_id_changes_nothing(Boundary::Routes {
     deployments: vec![("openai/*", "a", "azure/*")],
     removed: vec!["unknown"],
