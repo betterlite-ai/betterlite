@@ -9,6 +9,3 @@ deviations:
   - what: The redirect guard and the error-response capture hook are recorded on the HTTP client configuration (redirect_guard, capture_error_responses) instead of being attached as httpx event hooks. The guard's origin rule and the credential drop are implemented here; the error-response capture itself waits for its owner.
     why: credential_redirect_hook and capture_upstream_error_response are unresolved callees with no owning task (their owner is pending B136), and Rust has no httpx event-hook layer to attach them to.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L802-L811
-  - what: Transport and session creation come from an injected McpRuntime instead of a process-spawning MCP SDK. The runtime receives the same selected transport, stdio parameters, auth headers and HTTP client configuration LiteLLM builds, and the session receives the same read timeout, callbacks and message handler.
-    why: Rust gateway code never starts processes, and the pinned Python MCP SDK has no Rust equivalent with the same legacy negotiation and callback behavior; the transport engine belongs to the manager that constructs this client.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L452-L541
