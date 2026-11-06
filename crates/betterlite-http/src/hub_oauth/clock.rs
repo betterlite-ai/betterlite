@@ -10,18 +10,11 @@ pub struct SystemHubClock {
     started: Instant,
 }
 
-impl SystemHubClock {
-    #[must_use]
-    pub fn new() -> Self {
+impl Default for SystemHubClock {
+    fn default() -> Self {
         Self {
             started: Instant::now(),
         }
-    }
-}
-
-impl Default for SystemHubClock {
-    fn default() -> Self {
-        Self::new()
     }
 }
 
@@ -31,9 +24,11 @@ impl HubClock for SystemHubClock {
     }
 
     fn unix_seconds(&self) -> i64 {
-        let elapsed = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |since| since.as_secs());
-        i64::try_from(elapsed).unwrap_or(i64::MAX)
+        match SystemTime::now().duration_since(UNIX_EPOCH) {
+            Ok(since) => i64::try_from(since.as_secs()).unwrap_or(i64::MAX),
+            Err(error) => i64::try_from(error.duration().as_secs())
+                .unwrap_or(i64::MAX)
+                .saturating_neg(),
+        }
     }
 }

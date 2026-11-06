@@ -8,6 +8,8 @@ use std::time::Duration;
 
 use tokio::time::sleep;
 
+use betterlite_config::sections::huggingface_hub::{OfflineSetting, Settings};
+
 use super::support::{Env, Logs, body_of, header, implicit, oidc_settings};
 use crate::hub_oauth::error::StoredTokensError;
 use crate::hub_token::{HubTokenError, HubTokenFileReader, HubTokenResolver};
@@ -33,6 +35,17 @@ impl Fixture {
     async fn new(stored_tokens: &str) -> Self {
         let env = Env::new().await;
         let hub = env.hub();
+        Self::with_hub(env, hub, stored_tokens)
+    }
+
+    async fn offline(stored_tokens: &str) -> Self {
+        let env = Env::new().await;
+        let mut hub = env.hub();
+        hub.offline = OfflineSetting::Offline;
+        Self::with_hub(env, hub, stored_tokens)
+    }
+
+    fn with_hub(env: Env, hub: Settings, stored_tokens: &str) -> Self {
         fs::create_dir_all(hub.token_path.parent().unwrap()).unwrap();
         fs::write(&hub.token_path, "old\n").unwrap();
         fs::write(&hub.stored_tokens_path, stored_tokens).unwrap();
@@ -262,34 +275,69 @@ pub(super) async fn unparsable_stored_tokens_count_as_empty() {
     assert!(logs.text().contains("Error parsing stored tokens file"));
 }
 
-// serves a different token file on each read, so a login that rewrites it between the two reads is visible
+// serves the listed token file contents in order, repeating the last one
 struct RewrittenTokenFile {
     reads: AtomicUsize,
-    first: Vec<u8>,
-    second: Vec<u8>,
+    contents: Vec<Vec<u8>>,
+}
+
+impl RewrittenTokenFile {
+    fn new(contents: &[&str]) -> Self {
+        Self {
+            reads: AtomicUsize::new(0),
+            contents: contents
+                .iter()
+                .map(|content| content.as_bytes().to_vec())
+                .collect(),
+        }
+    }
 }
 
 #[async_trait::async_trait]
 impl HubTokenFileReader for RewrittenTokenFile {
     async fn read(&self, _path: &Path) -> io::Result<Vec<u8>> {
         let read = self.reads.fetch_add(1, Ordering::SeqCst);
-        Ok(if read == 0 {
-            self.first.clone()
-        } else {
-            self.second.clone()
-        })
+        let index = read.min(self.contents.len().saturating_sub(1));
+        Ok(self.contents.get(index).cloned().unwrap_or_default())
     }
 }
 
 // a login rewrote the token file before the refresh re-read it, so the new token is served instead of the stale one
 pub(super) async fn token_file_rewritten_during_the_lookup_is_served() {
     let env = Env::new().await;
-    let reader = Arc::new(RewrittenTokenFile {
-        reads: AtomicUsize::new(0),
-        first: b"old\n".to_vec(),
-        second: b"switched\n".to_vec(),
-    });
+    let reader = Arc::new(RewrittenTokenFile::new(&["old\n", "switched\n"]));
     let lookup = env.lookup_with_reader(env.hub(), oidc_settings(None), reader);
     assert_eq!(implicit(&lookup).await.unwrap().unwrap(), "switched");
     assert!(env.server.requests().is_empty());
+}
+
+// the file was switched back before the next lookup, which must not reuse the decision of the replaced one
+pub(super) async fn token_file_switched_back_is_served_again() {
+    let env = Env::new().await;
+    let reader = Arc::new(RewrittenTokenFile::new(&[
+        "old\n",
+        "switched\n",
+        "old\n",
+        "old\n",
+    ]));
+    let lookup = env.lookup_with_reader(env.hub(), oidc_settings(None), reader);
+    assert_eq!(implicit(&lookup).await.unwrap().unwrap(), "switched");
+    assert_eq!(implicit(&lookup).await.unwrap().unwrap(), "old");
+    assert!(env.server.requests().is_empty());
+}
+
+// huggingface_hub's request hook refuses the refresh in offline mode, so the lookup warns once and keeps the stored token
+pub(super) async fn offline_refresh_warns_once_and_keeps_the_token() {
+    let (logs, _guard) = Logs::capture();
+    let fixture = Fixture::offline(&stored("old", "rt", NOW)).await;
+    assert_eq!(implicit(&fixture.lookup).await.unwrap().unwrap(), "old");
+    assert!(fixture.env.server.requests().is_empty());
+    let text = logs.text();
+    assert_eq!(text.matches("Could not refresh").count(), 1);
+    assert!(text.contains("offline mode is enabled"), "{text}");
+
+    fixture.env.clock.advance(300);
+    assert_eq!(implicit(&fixture.lookup).await.unwrap().unwrap(), "old");
+    assert!(fixture.env.server.requests().is_empty());
+    assert_eq!(logs.text().matches("Could not refresh").count(), 1);
 }

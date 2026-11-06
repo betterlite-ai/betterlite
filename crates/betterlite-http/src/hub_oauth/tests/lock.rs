@@ -1,5 +1,5 @@
 use std::fs;
-use std::os::unix::fs::PermissionsExt as _;
+use std::os::unix::fs::{PermissionsExt as _, symlink};
 use std::time::Duration;
 
 use tokio::time::timeout;
@@ -14,6 +14,22 @@ async fn lock_file_directory_is_created_and_group_writable() {
     let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
     assert_eq!(mode, 0o664);
     drop(lock);
+}
+
+// filelock opens the lock with O_NOFOLLOW: a symlink is refused before its target can be truncated or rechmodded
+#[tokio::test]
+async fn symlinked_lock_file_is_refused_and_leaves_its_target_alone() {
+    let directory = tempfile::tempdir().unwrap();
+    let target = directory.path().join("target");
+    fs::write(&target, "keep me").unwrap();
+    let mode = fs::metadata(&target).unwrap().permissions().mode();
+    let path = directory.path().join("stored_tokens.lock");
+    symlink(&target, &path).unwrap();
+
+    let error = acquire(&path, Duration::from_secs(1)).await.unwrap_err();
+    assert!(matches!(error, LockError::Open { .. }), "{error:?}");
+    assert_eq!(fs::read_to_string(&target).unwrap(), "keep me");
+    assert_eq!(fs::metadata(&target).unwrap().permissions().mode(), mode);
 }
 
 #[tokio::test]

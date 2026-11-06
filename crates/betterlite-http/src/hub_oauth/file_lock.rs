@@ -40,8 +40,9 @@ async fn open_lock_file(path: &Path) -> Result<File, io::Error> {
         .read(true)
         .write(true)
         .create(true)
-        .truncate(true)
+        .truncate(false)
         .mode(LOCK_FILE_MODE)
+        .custom_flags(libc::O_NOFOLLOW)
         .open(path)
         .await?;
     Ok(file.into_std().await)
@@ -74,7 +75,20 @@ pub async fn acquire(path: &Path, timeout: Duration) -> Result<File, LockError> 
         .map_err(|_elapsed| LockError::Timeout {
             path: path.to_path_buf(),
         })??;
-    file.set_permissions(Permissions::from_mode(LOCK_FILE_MODE))
-        .map_err(open)?;
+    // filelock truncates and normalizes the mode only once it owns the lock, so a losing contender leaves the holder's file alone
+    file.set_len(0).map_err(open)?;
+    match file.set_permissions(Permissions::from_mode(LOCK_FILE_MODE)) {
+        Ok(()) => {}
+        Err(error) => {
+            if matches!(error.kind(), io::ErrorKind::PermissionDenied) {
+                tracing::debug!(%error, "the lock file keeps the mode its owner set");
+            } else {
+                return Err(LockError::Open {
+                    path: path.to_path_buf(),
+                    source: error,
+                });
+            }
+        }
+    }
     Ok(file)
 }

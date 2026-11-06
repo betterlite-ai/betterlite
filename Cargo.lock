@@ -1503,6 +1503,7 @@ dependencies = [
  "h2",
  "hex",
  "http 1.5.0",
+ "libc",
  "opentelemetry-http",
  "percent-encoding",
  "rcgen",

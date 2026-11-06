@@ -45,7 +45,7 @@ fn resolver_with(settings: Settings, reader: Arc<dyn HubTokenFileReader>) -> Hub
         OidcSettings::default(),
         Arc::new(ProxiedClient::outbound(&policy).unwrap()),
         reader,
-        Arc::new(SystemHubClock::new()),
+        Arc::new(SystemHubClock::default()),
     )
 }
 

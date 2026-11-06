@@ -1,7 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use betterlite_config::sections::huggingface_hub::Settings as HubSettings;
+use betterlite_config::sections::huggingface_hub::{OfflineSetting, Settings as HubSettings};
 use betterlite_config::sections::huggingface_oidc::Settings as OidcSettings;
 use reqwest::header::{AUTHORIZATION, HeaderMap, HeaderValue};
 use reqwest::{Method, Url};
@@ -39,36 +39,20 @@ struct Exchanged {
     expires_in: Option<i64>,
 }
 
-struct CachedToken {
+pub(crate) struct CachedToken {
     token: SecretString,
     expires_at: u64,
 }
 
 pub struct OidcExchange {
-    hub: Arc<HubSettings>,
-    settings: OidcSettings,
-    client: Arc<ProxiedClient>,
-    clock: Arc<dyn HubClock>,
-    cache: Mutex<Option<CachedToken>>,
+    pub(crate) hub: Arc<HubSettings>,
+    pub(crate) settings: OidcSettings,
+    pub(crate) client: Arc<ProxiedClient>,
+    pub(crate) clock: Arc<dyn HubClock>,
+    pub(crate) cache: Mutex<Option<CachedToken>>,
 }
 
 impl OidcExchange {
-    #[must_use]
-    pub fn new(
-        hub: Arc<HubSettings>,
-        settings: OidcSettings,
-        client: Arc<ProxiedClient>,
-        clock: Arc<dyn HubClock>,
-    ) -> Self {
-        Self {
-            hub,
-            settings,
-            client,
-            clock,
-            cache: Mutex::new(None),
-        }
-    }
-
     // huggingface_hub's _get_token_from_oidc: None when HF_OIDC_RESOURCE is unset, every failure otherwise is an error
     pub async fn token(&self) -> Result<Option<SecretString>, OidcError> {
         let Some(resource) = &self.settings.resource else {
@@ -163,6 +147,10 @@ impl OidcExchange {
         T: DeserializeOwned,
     {
         let url = request.url.to_string();
+        // huggingface_hub's request hook refuses every Hub call in offline mode, so nothing is sent
+        if matches!(self.hub.offline, OfflineSetting::Offline) {
+            return Err(OidcError::Offline { url });
+        }
         let response =
             self.client
                 .send_buffered(request)

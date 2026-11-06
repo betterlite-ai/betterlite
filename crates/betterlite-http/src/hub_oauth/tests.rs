@@ -24,6 +24,7 @@ async fn oidc_follows_huggingface_hub() {
     oidc::unset_resource_falls_through_to_the_env_token().await;
     oidc::missing_inputs_are_errors_even_with_an_env_token().await;
     oidc::rejected_exchanges_are_errors_and_not_cached().await;
+    oidc::offline_mode_fails_before_any_request().await;
     oidc::exchange_uses_the_download_timeout().await;
 }
 
@@ -42,6 +43,8 @@ async fn oauth_refresh_follows_huggingface_hub() {
     oauth::stored_tokens_that_are_not_utf8_are_an_error().await;
     oauth::unparsable_stored_tokens_count_as_empty().await;
     oauth::token_file_rewritten_during_the_lookup_is_served().await;
+    oauth::token_file_switched_back_is_served_again().await;
+    oauth::offline_refresh_warns_once_and_keeps_the_token().await;
 }
 
 #[rstest]

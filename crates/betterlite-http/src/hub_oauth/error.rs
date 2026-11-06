@@ -20,6 +20,10 @@ pub enum OidcError {
         "Cannot request an OIDC id token from GitHub Actions. Make sure the workflow job sets `permissions: id-token: write`."
     )]
     GithubRequest,
+    #[error(
+        "Cannot reach {url}: offline mode is enabled. To disable it, please unset the `HF_HUB_OFFLINE` environment variable."
+    )]
+    Offline { url: String },
     #[error("the GitHub Actions request token holds a character a header cannot carry")]
     Header(#[source] InvalidHeaderValue),
     #[error("{url} is not a valid URL")]
@@ -68,6 +72,10 @@ pub enum RefreshError {
         #[source]
         source: ParseError,
     },
+    #[error(
+        "Cannot reach {url}: offline mode is enabled. To disable it, please unset the `HF_HUB_OFFLINE` environment variable."
+    )]
+    Offline { url: String },
     #[error("Failed to refresh access token: {0}")]
     Request(#[source] TransportError),
     #[error("Failed to parse response from {url} (status {status})")]

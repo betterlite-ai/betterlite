@@ -2,7 +2,7 @@ use std::ffi::OsString;
 use std::sync::Arc;
 use std::time::Duration;
 
-use betterlite_config::sections::huggingface_hub::Settings as HubSettings;
+use betterlite_config::sections::huggingface_hub::{OfflineSetting, Settings as HubSettings};
 use reqwest::header::{HeaderMap, HeaderValue};
 use reqwest::{Method, Url};
 use secrecy::{ExposeSecret as _, SecretString};
@@ -37,42 +37,29 @@ struct Cached {
     recheck_at: i64,
 }
 
+// a lookup either caches its decision or serves a token that must not replace the cache
+enum Decision {
+    Cache(Cached),
+    Serve(SecretString),
+}
+
 #[derive(Default)]
-struct State {
+pub(crate) struct State {
     cache: Option<Cached>,
     warned: bool,
 }
 
 pub struct OauthRefresh {
     pub(crate) lock_timeout: Duration,
-    hub: Arc<HubSettings>,
-    client_id: String,
-    client: Arc<ProxiedClient>,
-    clock: Arc<dyn HubClock>,
-    file_reader: Arc<dyn HubTokenFileReader>,
-    state: Mutex<State>,
+    pub(crate) hub: Arc<HubSettings>,
+    pub(crate) client_id: String,
+    pub(crate) client: Arc<ProxiedClient>,
+    pub(crate) clock: Arc<dyn HubClock>,
+    pub(crate) file_reader: Arc<dyn HubTokenFileReader>,
+    pub(crate) state: Mutex<State>,
 }
 
 impl OauthRefresh {
-    #[must_use]
-    pub fn new(
-        hub: Arc<HubSettings>,
-        client_id: String,
-        client: Arc<ProxiedClient>,
-        clock: Arc<dyn HubClock>,
-        file_reader: Arc<dyn HubTokenFileReader>,
-    ) -> Self {
-        Self {
-            lock_timeout: LOCK_TIMEOUT,
-            hub,
-            client_id,
-            client,
-            clock,
-            file_reader,
-            state: Mutex::new(State::default()),
-        }
-    }
-
     // huggingface_hub's _refresh_oauth_token_if_needed: a failed refresh is warned about and keeps the file token
     pub async fn refresh_if_needed(
         &self,
@@ -86,11 +73,19 @@ impl OauthRefresh {
         {
             return Ok(cached.resolved_token.clone());
         }
-        let checked = self.check(&mut state.warned, token, now).await?;
-        let resolved = checked.resolved_token.clone();
-        state.cache = Some(checked);
-        drop(state);
-        Ok(resolved)
+        match self.check(&mut state.warned, token, now).await? {
+            Decision::Cache(checked) => {
+                let resolved = checked.resolved_token.clone();
+                state.cache = Some(checked);
+                drop(state);
+                Ok(resolved)
+            }
+            Decision::Serve(replaced) => {
+                // huggingface_hub returns this token without touching its cache
+                drop(state);
+                Ok(replaced)
+            }
+        }
     }
 
     async fn check(
@@ -98,47 +93,51 @@ impl OauthRefresh {
         warned: &mut bool,
         token: SecretString,
         now: i64,
-    ) -> Result<Cached, HubTokenError> {
+    ) -> Result<Decision, HubTokenError> {
         let sections = read_full(&self.hub.stored_tokens_path).await?;
         let Some((name, refresh_token, stored_expiry)) = refreshable(&sections, &token) else {
             return self.replaced_or(token, now).await;
         };
         if stored_expiry.saturating_sub(REFRESH_MARGIN) > now {
-            return Ok(Cached {
+            return Ok(Decision::Cache(Cached {
                 file_token: token.clone(),
                 resolved_token: token,
                 recheck_at: stored_expiry.saturating_sub(REFRESH_MARGIN),
-            });
+            }));
         }
         match self
             .refresh_locked(&name, &token, &refresh_token, now)
             .await
         {
-            Ok((new_token, new_expires_at)) => Ok(Cached {
+            Ok((new_token, new_expires_at)) => Ok(Decision::Cache(Cached {
                 file_token: new_token.clone(),
                 resolved_token: new_token,
                 // the floor keeps a token that lives less than the margin from being refreshed on every call
                 recheck_at: now.saturating_add(RECHECK_INTERVAL).max(
                     new_expires_at.map_or(0, |expires| expires.saturating_sub(REFRESH_MARGIN)),
                 ),
-            }),
-            Err(error) => Ok(Cached {
+            })),
+            Err(error) => Ok(Decision::Cache(Cached {
                 file_token: token.clone(),
                 resolved_token: token,
                 recheck_at: warn_about(&error, warned, now),
-            }),
+            })),
         }
     }
 
     // a concurrent refresh may have replaced the token, in which case the new one is served and not kept
-    async fn replaced_or(&self, token: SecretString, now: i64) -> Result<Cached, HubTokenError> {
+    async fn replaced_or(&self, token: SecretString, now: i64) -> Result<Decision, HubTokenError> {
         let on_disk = read_token_file(&*self.file_reader, &self.hub.token_path).await?;
-        let replaced = on_disk.filter(|current| current.expose_secret() != token.expose_secret());
-        Ok(Cached {
+        if let Some(current) =
+            on_disk.filter(|current| current.expose_secret() != token.expose_secret())
+        {
+            return Ok(Decision::Serve(current));
+        }
+        Ok(Decision::Cache(Cached {
             file_token: token.clone(),
-            resolved_token: replaced.unwrap_or(token),
+            resolved_token: token,
             recheck_at: now.saturating_add(RECHECK_INTERVAL),
-        })
+        }))
     }
 
     async fn refresh_locked(
@@ -205,6 +204,10 @@ impl OauthRefresh {
         refresh_token: &SecretString,
     ) -> Result<TokenAnswer, RefreshError> {
         let url = format!("{}/oauth/token", self.hub.endpoint);
+        // huggingface_hub's request hook refuses every Hub call in offline mode, so nothing is sent
+        if matches!(self.hub.offline, OfflineSetting::Offline) {
+            return Err(RefreshError::Offline { url });
+        }
         let form = url::form_urlencoded::Serializer::new(String::new())
             .append_pair("grant_type", "refresh_token")
             .append_pair("refresh_token", refresh_token.expose_secret())

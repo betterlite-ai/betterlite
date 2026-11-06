@@ -1,3 +1,4 @@
+use betterlite_config::sections::huggingface_hub::OfflineSetting;
 use betterlite_config::sections::huggingface_oidc::Settings as OidcSettings;
 use secrecy::SecretString;
 use serde::Deserialize;
@@ -188,6 +189,41 @@ pub(super) async fn rejected_exchanges_are_errors_and_not_cached() {
     ));
     env.server.answer(200, r#"{"access_token":"hf_ok"}"#);
     assert_eq!(implicit(&lookup).await.unwrap().unwrap(), "hf_ok");
+}
+
+// huggingface_hub's request hook refuses every Hub call in offline mode, so the lookup fails before any request
+pub(super) async fn offline_mode_fails_before_any_request() {
+    let env = Env::new().await;
+    let mut hub = env.hub();
+    hub.offline = OfflineSetting::Offline;
+
+    let supplied = env.lookup(hub.clone(), supplied_token_settings());
+    let error = implicit(&supplied).await.unwrap_err();
+    assert!(
+        matches!(&error, HubTokenError::Oidc(OidcError::Offline { .. })),
+        "{error}"
+    );
+    assert!(error.to_string().contains(&env.server.endpoint), "{error}");
+
+    let mut github = oidc_settings(Some("user"));
+    github.github_actions = true;
+    github.request_url = Some(format!("{}/github?api=1", env.server.endpoint));
+    github.request_token = Some(SecretString::from("request-token"));
+    let minted = env.lookup(hub.clone(), github);
+    assert!(matches!(
+        implicit(&minted).await,
+        Err(HubTokenError::Oidc(OidcError::Offline { .. }))
+    ));
+
+    // the missing GitHub request variables are named before offline mode is looked at
+    let mut missing = oidc_settings(Some("user"));
+    missing.github_actions = true;
+    let misconfigured = env.lookup(hub, missing);
+    assert!(matches!(
+        implicit(&misconfigured).await,
+        Err(HubTokenError::Oidc(OidcError::GithubRequest))
+    ));
+    assert!(env.server.requests().is_empty());
 }
 
 pub(super) async fn exchange_uses_the_download_timeout() {

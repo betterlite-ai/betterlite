@@ -6,6 +6,7 @@ use std::{io, sync::Arc};
 use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 use tokio::fs;
+use tokio::sync::Mutex;
 
 use betterlite_config::sections::huggingface_hub::Settings;
 use betterlite_config::sections::huggingface_oidc::Settings as OidcSettings;
@@ -13,7 +14,7 @@ use betterlite_config::sections::huggingface_oidc::Settings as OidcSettings;
 use crate::hub_oauth::clock::HubClock;
 use crate::hub_oauth::error::{OidcError, StoredTokensError};
 use crate::hub_oauth::oidc::OidcExchange;
-use crate::hub_oauth::refresh::OauthRefresh;
+use crate::hub_oauth::refresh::{LOCK_TIMEOUT, OauthRefresh, State};
 use crate::proxy::ProxiedClient;
 
 #[derive(Debug)]
@@ -97,16 +98,25 @@ impl HubTokenResolver {
         file_reader: Arc<dyn HubTokenFileReader>,
         clock: Arc<dyn HubClock>,
     ) -> Self {
+        let client_id = oidc.device_code_client_id.clone();
         let shared = Arc::new(settings);
         Self {
-            oauth: OauthRefresh::new(
-                Arc::clone(&shared),
-                oidc.device_code_client_id.clone(),
-                Arc::clone(&client),
-                Arc::clone(&clock),
-                Arc::clone(&file_reader),
-            ),
-            oidc: OidcExchange::new(Arc::clone(&shared), oidc, client, clock),
+            oauth: OauthRefresh {
+                lock_timeout: LOCK_TIMEOUT,
+                hub: Arc::clone(&shared),
+                client_id,
+                client: Arc::clone(&client),
+                clock: Arc::clone(&clock),
+                file_reader: Arc::clone(&file_reader),
+                state: Mutex::new(State::default()),
+            },
+            oidc: OidcExchange {
+                hub: Arc::clone(&shared),
+                settings: oidc,
+                client,
+                clock,
+                cache: Mutex::new(None),
+            },
             settings: shared,
             file_reader,
         }
