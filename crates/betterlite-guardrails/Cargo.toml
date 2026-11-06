@@ -30,6 +30,8 @@ serde_with = { version = "3.24.0", default-features = false, features = ["macros
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true
+tree-sitter = "0.25.10"
+tree-sitter-python = "0.25.0"
 ulid = "3.0.0"
 unicode-normalization = "0.1.26"
 url = "2.5.8"
