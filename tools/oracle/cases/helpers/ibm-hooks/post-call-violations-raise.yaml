@@ -1,0 +1,22 @@
+kind: helper
+name: post-call-violations-raise
+call:
+  b3737:
+    post_call:
+      settings:
+        auth_token: test-token
+        detector_id: jailbreak-detector
+        mode: post_call
+      data:
+        messages:
+          - {role: user, content: hello}
+      response:
+        choices:
+          - {message: {role: assistant, content: do anything now}}
+      answer:
+        status: 200
+        headers: {}
+        body:
+          - [{detection_type: jailbreak, score: 0.9, text: do anything now}]
+env: {}
+compare: {ignore: []}

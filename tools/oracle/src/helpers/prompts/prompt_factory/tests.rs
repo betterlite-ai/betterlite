@@ -4,6 +4,9 @@ use super::{Input, Op};
 use crate::helpers::Helper as _;
 use rstest::rstest;
 
+const BEDROCK_LLAMA3_RENDERED: &str = "<|begin_of_text|><|start_header_id|>user<|end_header_id|>\n\nhi<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n";
+const GENERIC_LLAMA3_RENDERED: &str = "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\ns<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nu<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n";
+
 #[rstest]
 #[case::custom_prompt(
     r#"{"mode":"custom_prompt","template":{"roles":{"user":{"pre_message":"[INST] ","post_message":" [/INST]"}},"initial_prompt_value":"<s>","final_prompt_value":"</s>","bos_token":"","eos_token":""},"messages":[{"role":"user","content":"hi"}]}"#,
@@ -41,13 +44,39 @@ fn function_call_prompt_adds_a_system_message() {
 }
 
 #[test]
-fn bedrock_missing_local_template_raises_an_exception() {
+fn bedrock_llama3_renders_litellms_builtin_template() {
     let input: Input = serde_json::from_str(
         r#"{"mode":"factory","model":"meta.llama3-70b-instruct-v1:0","custom_llm_provider":"bedrock","messages":[{"role":"user","content":"hi"}]}"#,
     )
     .unwrap();
-    let error = Op::run(&input).unwrap_err();
-    assert_eq!(error.class, "Exception");
+    assert_eq!(
+        Op::run(&input).unwrap(),
+        serde_json::to_value(BEDROCK_LLAMA3_RENDERED).unwrap()
+    );
+}
+
+#[test]
+fn generic_llama3_renders_litellms_builtin_template() {
+    let input: Input = serde_json::from_str(
+        r#"{"mode":"factory","model":"meta-llama/llama-3-8b-instruct","messages":[{"role":"system","content":"s"},{"role":"user","content":"u"}]}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        Op::run(&input).unwrap(),
+        serde_json::to_value(GENERIC_LLAMA3_RENDERED).unwrap()
+    );
+}
+
+#[test]
+fn generic_unknown_model_falls_back_to_default_pt() {
+    let input: Input = serde_json::from_str(
+        r#"{"mode":"factory","model":"some/unlisted-model","messages":[{"role":"system","content":"s"},{"role":"user","content":"u"}]}"#,
+    )
+    .unwrap();
+    assert_eq!(
+        Op::run(&input).unwrap(),
+        serde_json::to_value("s u").unwrap()
+    );
 }
 
 #[test]
@@ -58,16 +87,4 @@ fn factory_role_error_carries_status_400() {
     .unwrap();
     let error = Op::run(&input).unwrap_err();
     assert_eq!(error.status, Some(400));
-}
-
-#[test]
-fn generic_missing_local_template_falls_back_to_default_pt() {
-    let input: Input = serde_json::from_str(
-        r#"{"mode":"factory","model":"meta-llama/llama-3-8b-instruct","messages":[{"role":"system","content":"s"},{"role":"user","content":"u"}]}"#,
-    )
-    .unwrap();
-    assert_eq!(
-        Op::run(&input).unwrap(),
-        serde_json::to_value("s u").unwrap()
-    );
 }

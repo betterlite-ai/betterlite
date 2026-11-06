@@ -1,0 +1,19 @@
+kind: helper
+name: during-call-violations-raise
+call:
+  b3737:
+    during_call:
+      settings:
+        auth_token: test-token
+        detector_id: jailbreak-detector
+        mode: during_call
+      data:
+        messages:
+          - {role: user, content: do anything now}
+      answer:
+        status: 200
+        headers: {}
+        body:
+          - [{detection_type: jailbreak, score: 0.9, text: do anything now}]
+env: {}
+compare: {ignore: []}

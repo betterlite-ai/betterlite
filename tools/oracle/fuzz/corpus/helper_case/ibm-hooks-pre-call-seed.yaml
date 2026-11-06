@@ -1,0 +1,10 @@
+kind: helper
+name: ibm_hooks-pre-call-seed
+call:
+  b3737:
+    pre_call:
+      settings: {auth_token: seed-token, detector_id: jailbreak-detector}
+      data: {messages: [{role: user, content: hello}]}
+      answer: {status: 200, headers: {}, body: [[]]}
+env: {}
+compare: {ignore: []}

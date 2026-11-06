@@ -1,0 +1,13 @@
+kind: helper
+name: prefix_suffix
+call:
+  duration:
+    calls:
+      - {function: duration_in_seconds, duration: "5m trailing", now: "2024-01-01T00:00:00Z"}
+      - {function: duration_in_seconds, duration: "10dabc", now: "2024-01-01T00:00:00Z"}
+      - {function: duration_in_seconds, duration: "2hours", now: "2024-01-01T00:00:00Z"}
+      - {function: duration_in_seconds, duration: "3mo extra", now: "2024-01-31T00:00:00Z"}
+      - {function: reset, duration: "5m!", now: "2024-01-01T10:00:00Z"}
+      - {function: reset, duration: "7dxyz", now: "2024-01-03T10:00:00Z"}
+env: {}
+compare: {ignore: []}

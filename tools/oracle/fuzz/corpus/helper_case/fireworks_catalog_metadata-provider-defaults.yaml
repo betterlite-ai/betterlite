@@ -1,0 +1,15 @@
+kind: helper
+name: fireworks-catalog-metadata-seed-provider-defaults
+call:
+  fireworks_catalog_metadata:
+    catalog:
+      - {key: "fireworks_ai/accounts/fireworks/models/vision-off", model_info: {supports_vision: false}}
+      - {key: "fireworks_ai/accounts/fireworks/models/reasoning-on", model_info: {supports_reasoning: true}}
+      - {key: "fireworks_ai/accounts/fireworks/models/no-tools", model_info: {supports_function_calling: false}}
+    steps:
+      - {op: provider_info, model: "unknown-model"}
+      - {op: provider_info, model: "vision-off"}
+      - {op: provider_info, model: "custom-reasoning-on"}
+      - {op: provider_info, model: "no-tools"}
+env: {}
+compare: {ignore: []}

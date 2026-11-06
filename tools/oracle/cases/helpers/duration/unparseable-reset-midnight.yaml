@@ -1,0 +1,13 @@
+kind: helper
+name: unparseable_reset_midnight
+call:
+  duration:
+    calls:
+      - {function: reset, duration: "abc", now: "2024-01-01T10:00:00Z", timezone: "America/New_York"}
+      - {function: reset, duration: "5", now: "2024-01-01T10:00:00Z", timezone: "America/New_York"}
+      - {function: reset, duration: "5M", now: "2024-01-01T10:00:00Z", timezone: "America/New_York"}
+      - {function: reset, duration: "", now: "2024-01-01T10:00:00Z", timezone: "America/New_York"}
+      - {function: reset, duration: " 5m", now: "2024-01-01T10:00:00Z", timezone: "America/New_York"}
+      - {function: reset, duration: "dailyx", now: "2024-01-01T10:00:00Z", timezone: "America/New_York"}
+env: {}
+compare: {ignore: []}

@@ -4,6 +4,7 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
+default-run = "betterlite-oracle"
 
 [dependencies]
 async-trait = "0.1.92"
@@ -45,12 +46,14 @@ betterlite-proxy = { path = "../../crates/betterlite-proxy" }
 betterlite-rate-limit = { path = "../../crates/betterlite-rate-limit" }
 betterlite-redact = { path = "../../crates/betterlite-redact" }
 betterlite-redis = { path = "../../crates/betterlite-redis" }
+betterlite-roi = { path = "../../crates/betterlite-roi" }
 betterlite-router = { path = "../../crates/betterlite-router" }
 betterlite-sdk = { path = "../../crates/betterlite-sdk" }
 betterlite-secret-managers = { path = "../../crates/betterlite-secret-managers" }
 betterlite-secrets = { path = "../../crates/betterlite-secrets" }
 betterlite-server = { path = "../../crates/betterlite-server" }
 betterlite-streaming = { path = "../../crates/betterlite-streaming" }
+betterlite-tokenizer = { path = "../../crates/betterlite-tokenizer" }
 betterlite-websearch = { path = "../../crates/betterlite-websearch" }
 bytes = "1.12.1"
 chrono.workspace = true
@@ -63,6 +66,7 @@ indexmap = { version = "2.14.2", features = ["serde"] }
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 percent-encoding.workspace = true
 quick-xml.workspace = true
+rand = { version = "0.10.3", default-features = false, features = ["std", "std_rng", "sys_rng"] }
 reqwest = { version = "0.13.5", default-features = false, features = ["blocking"] }
 rust_decimal.workspace = true
 secrecy = { version = "0.10.3", features = ["serde"] }
@@ -77,23 +81,20 @@ thiserror = "2.0.17"
 tl = "0.7.8"
 tokio = { version = "=1.53.3", features = ["rt", "net", "sync", "test-util", "time", "io-util", "macros", "process", "fs"] }
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "handshake"] }
+tokio-util = { version = "0.7.20", default-features = false, features = ["rt"] }
 tower = { workspace = true, features = ["util"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["registry"] }
 ulid = "3.0.0"
 url = "2.5.8"
 uuid = { version = "1.28.0", default-features = false }
-
 [dev-dependencies]
 rstest = "=0.27.0"
 tokio-postgres.workspace = true
-
 [[test]]
 name = "otlp_normalization"
 path = "src/helpers/logging/otlp_normalization/tests.rs"
-
 [lints]
 workspace = true
-
 [package.metadata.cargo-shear]
 ignored-paths = ["src/helpers/*/*.rs"]

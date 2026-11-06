@@ -24,6 +24,7 @@ mod config;
 mod fixtures;
 pub(crate) mod native_feature_eligibility;
 mod scenario;
+pub(crate) mod sdk_http;
 mod websocket;
 
 #[derive(Debug, clap::Parser)]

@@ -1,0 +1,5 @@
+kind: helper
+name: fetch-page-parse-error
+call: {"b3152": {"operation": "fetch_page", "path": "user/repos", "page": 1, "replies": [{"status": 200, "body": {"not": "a list"}}]}}
+env: {}
+compare: {ignore: []}
