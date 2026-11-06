@@ -52,3 +52,13 @@ probes:
         deployments:
           - id: weighted
             weight: 3
+  - clock:
+      unix_millis: 1700000000123
+      monotonic_millis: 42000
+    samples:
+      - 8989598474565630
+    operation:
+      single_candidate:
+        deployments:
+          - id: rejected-draw
+            weight: 2047

@@ -96,6 +96,15 @@ fn a_heavy_weight_candidate_answers_with_the_deployment_for_a_large_sample() {
 }
 
 #[test]
+fn a_rejected_weight_draw_is_not_a_missing_sample() {
+    let request = request(
+        vec![deployment("only", 2047, 0, 0)],
+        vec![8_989_598_474_565_630],
+    );
+    assert_eq!(execute(&request), selected("only"));
+}
+
+#[test]
 fn a_weighted_candidate_without_samples_answers_samples_exhausted() {
     let request = request(vec![deployment("only", 3, 0, 0)], Vec::new());
     assert_eq!(

@@ -9,6 +9,7 @@ use rstest::rstest;
 
 use crate::OracleError;
 use crate::case::Ignore;
+use crate::cli::Options;
 use crate::process::sync_litellm;
 use crate::router_probes::random::InjectedRandom;
 use crate::router_probes::single_candidate::{Deployment, Input, Output};
@@ -16,7 +17,8 @@ use crate::router_probes::{
     ProbeOperation, ProbeOutput, Reply, Request, Sample, UnbuiltInput, execute,
 };
 use crate::routing_component_oracle::{
-    ProbeCase, ProbeCompare, ProbeStep, compare_replies, python_command, validate_probe_case,
+    Commands, ProbeCase, ProbeCompare, ProbeStep, compare_replies, python_command, run_case,
+    validate_probe_case,
 };
 use crate::routing_probe_ipc::child::{ProbeCommand, run_bounded};
 use crate::routing_probe_ipc::{
@@ -75,26 +77,44 @@ fn a_reply_with_an_undeclared_failure_kind_is_malformed() {
     ));
 }
 
+fn step() -> ProbeStep {
+    ProbeStep {
+        clock: ProbeClock {
+            unix_millis: 1,
+            monotonic_millis: 2,
+        },
+        samples: vec![Sample::try_from(0).unwrap()],
+        operation: ProbeOperation::SingleCandidate(Input {
+            deployments: vec![Deployment {
+                id: "only".to_owned(),
+                weight: 3,
+                rpm: 0,
+                tpm: 0,
+            }],
+        }),
+    }
+}
+
 fn probe_case(kind: &str, name: &str) -> ProbeCase {
     ProbeCase {
         kind: kind.to_owned(),
         name: name.to_owned(),
-        probes: vec![ProbeStep {
-            clock: ProbeClock {
-                unix_millis: 1,
-                monotonic_millis: 2,
-            },
-            samples: vec![Sample::try_from(0).unwrap()],
-            operation: ProbeOperation::SingleCandidate(Input {
-                deployments: vec![Deployment {
-                    id: "only".to_owned(),
-                    weight: 3,
-                    rpm: 0,
-                    tpm: 0,
-                }],
-            }),
-        }],
+        probes: vec![step()],
         compare: ProbeCompare::default(),
+    }
+}
+
+fn shell(script: &str, arguments: &[&str]) -> ProbeCommand {
+    let mut complete = vec![
+        OsString::from("-c"),
+        OsString::from(script),
+        OsString::from("probe"),
+    ];
+    complete.extend(arguments.iter().map(OsString::from));
+    ProbeCommand {
+        program: PathBuf::from("sh"),
+        args: complete,
+        cwd: env::temp_dir(),
     }
 }
 
@@ -151,6 +171,52 @@ fn a_probe_case_needs_the_probe_kind_and_a_name() {
         Err(OracleError::CaseInvalid { .. })
     ));
     validate_probe_case(path, &probe_case("probe", "case")).unwrap();
+}
+
+#[test]
+fn a_probe_case_needs_at_least_one_probe() {
+    let mut case = probe_case("probe", "case");
+    case.probes.clear();
+    assert!(matches!(
+        validate_probe_case(Path::new("probe.yaml"), &case),
+        Err(OracleError::CaseInvalid { .. })
+    ));
+}
+
+const MATCHING_REPLY: &str =
+    r#"{"outcome":"ok","output":{"single_candidate":{"selected":"probe"}},"warnings":[]}"#;
+const DIFFERENT_REPLY: &str =
+    r#"{"outcome":"ok","output":{"single_candidate":{"selected":"native"}},"warnings":[]}"#;
+
+#[tokio::test]
+async fn a_difference_in_one_step_fails_the_whole_case() {
+    let directory = tempfile::tempdir().unwrap();
+    let counter = directory.path().join("draws");
+    let counter_path = counter.to_str().unwrap();
+    let native_script = r#"cat > /dev/null
+count=$(cat "$1" 2>/dev/null || echo 0)
+echo $((count + 1)) > "$1"
+if [ "$count" = "0" ]; then printf '%s' "$2"; else printf '%s' "$3"; fi"#;
+    let python_script = r#"cat > /dev/null
+printf '%s' "$2""#;
+    let commands = Commands {
+        native: shell(
+            native_script,
+            &[counter_path, DIFFERENT_REPLY, MATCHING_REPLY],
+        ),
+        python: shell(python_script, &[counter_path, MATCHING_REPLY]),
+    };
+    let case = ProbeCase {
+        kind: "probe".to_owned(),
+        name: "two-steps".to_owned(),
+        probes: vec![step(), step()],
+        compare: ProbeCompare::default(),
+    };
+    let options = Options {
+        self_check: false,
+        paths: Vec::new(),
+    };
+    assert!(run_case(&options, &commands, &case).await.unwrap());
 }
 
 #[rstest]

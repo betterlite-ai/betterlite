@@ -45,7 +45,8 @@ pub(crate) fn run(
     let index = pick(&candidates, random).map_err(|error| OperationError::InvalidRequest {
         message: error.to_string(),
     })?;
-    if random.exhausted {
+    // LiteLLM makes one draw for this selection, so a rejected sample was still a draw
+    if random.next == 0 {
         return Err(OperationError::SamplesExhausted {
             message: "the request has no sample left for this draw".to_owned(),
         });
