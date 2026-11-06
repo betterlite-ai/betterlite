@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::iter::repeat_n;
 use std::sync::{Arc, Mutex};
 
 use betterlite_config::proxy::ProxyPolicy;
@@ -21,6 +22,7 @@ use crate::factory::PromptFactory;
 
 const CONFIG_WITHOUT_TEMPLATE: &[u8] = br#"{"add_bos_token":true}"#;
 
+#[derive(Clone, Copy)]
 enum Answer {
     Status(u16, &'static [u8]),
     Redirect(&'static str),
@@ -31,11 +33,23 @@ enum Answer {
 enum Expect {
     Rendered(&'static str),
     Redirect(&'static str),
+    // Some renders the text, None means the redirect cap was hit
+    Chain(Option<&'static str>),
     NoTemplate,
     NotText,
     Json,
     Transport,
     CacheRecovery,
+}
+
+fn redirect_chain(redirects: usize) -> Vec<Answer> {
+    repeat_n(Answer::Redirect("/hop"), redirects).collect()
+}
+
+fn redirects_then_config(redirects: usize) -> Vec<Answer> {
+    let mut answers = redirect_chain(redirects);
+    answers.push(Answer::Status(200, br#"{"chat_template":"hop"}"#));
+    answers
 }
 
 fn clock() -> chrono::DateTime<Utc> {
@@ -204,6 +218,8 @@ fn expected_paths(model: &str, count: usize) -> Vec<String> {
     ],
     Expect::Redirect("moved")
 )]
+#[case::config_twenty_redirects("org/model", redirects_then_config(20), Expect::Chain(Some("hop")))]
+#[case::config_too_many_redirects("org/model", redirect_chain(21), Expect::Chain(None))]
 #[tokio::test]
 async fn fetch_follows_litellm(
     #[case] model: &'static str,
@@ -222,6 +238,10 @@ async fn fetch_follows_litellm(
     }
     if let Expect::Redirect(text) = expected {
         redirect_case(&factory, &listener, model, &answers, text).await;
+        return;
+    }
+    if let Expect::Chain(rendered) = expected {
+        chain_case(&factory, &listener, model, &answers, rendered).await;
         return;
     }
     let (rendered, requests) = fetch_case(&factory, &listener, model, &answers).await;
@@ -245,7 +265,47 @@ async fn fetch_follows_litellm(
         )),
         Expect::CacheRecovery => panic!("the cached case has its own driver"),
         Expect::Redirect(_) => panic!("the redirect case has its own driver"),
+        Expect::Chain(_) => panic!("the redirect chain has its own driver"),
     }
+}
+
+async fn chain_case(
+    factory: &PromptFactory,
+    listener: &TcpListener,
+    model: &str,
+    answers: &[Answer],
+    expected: Option<&str>,
+) {
+    let messages = bare_messages();
+    let now = clock();
+    let (rendered, requests) = tokio::join!(
+        factory.hf_chat_template(model, &messages, now),
+        serve(listener, answers),
+    );
+    assert_eq!(requests.len(), answers.len());
+    let config_path = format!("/{model}/raw/main/tokenizer_config.json");
+    assert_eq!(
+        requests.first().map(|request| request_path(request)),
+        Some(config_path.as_str())
+    );
+    for request in requests.iter().skip(1) {
+        assert_eq!(request_path(request), "/hop");
+    }
+    match expected {
+        Some(text) => assert_eq!(rendered.unwrap(), text),
+        None => assert!(matches!(
+            rendered,
+            Err(FactoryError::Hub(HubError::Redirect { .. }))
+        )),
+    }
+}
+
+async fn serve(listener: &TcpListener, answers: &[Answer]) -> Vec<String> {
+    let mut requests = Vec::new();
+    for answer in answers {
+        requests.push(respond(listener, answer).await);
+    }
+    requests
 }
 
 async fn redirect_case(
@@ -281,33 +341,10 @@ async fn fetch_case(
 ) -> (Result<String, FactoryError>, Vec<String>) {
     let messages = bare_messages();
     let now = clock();
-    match answers {
-        [one] => {
-            let (rendered, first) = tokio::join!(
-                factory.hf_chat_template(model, &messages, now),
-                respond(listener, one)
-            );
-            (rendered, vec![first])
-        }
-        [one, two] => {
-            let (rendered, first, second) = tokio::join!(
-                factory.hf_chat_template(model, &messages, now),
-                respond(listener, one),
-                respond(listener, two)
-            );
-            (rendered, vec![first, second])
-        }
-        [one, two, three] => {
-            let (rendered, first, second, third) = tokio::join!(
-                factory.hf_chat_template(model, &messages, now),
-                respond(listener, one),
-                respond(listener, two),
-                respond(listener, three)
-            );
-            (rendered, vec![first, second, third])
-        }
-        _ => panic!("the case carries more answers than the fetch can use"),
-    }
+    tokio::join!(
+        factory.hf_chat_template(model, &messages, now),
+        serve(listener, answers),
+    )
 }
 
 async fn cached_failure_case(

@@ -20,7 +20,7 @@ const DEEPSEEK_MODEL: &str = "deepseek-r1/deepseek-r1-7b-instruct";
 const TOKENIZER_CONFIG_FILE: &str = "tokenizer_config.json";
 const TEMPLATE_FILES: [&str; 2] = ["chat_template.jinja", "chat_template.jinja2"];
 const REDIRECT_STATUSES: [u16; 5] = [301, 302, 303, 307, 308];
-// httpx, which LiteLLM's client uses, follows at most 20 redirects
+// httpx raises TooManyRedirects only once more than 20 redirects were followed, so 20 redirects plus the answer fit
 const MAX_REDIRECTS: usize = 20;
 pub(super) const BUILTIN_ENTRIES: usize = 3;
 pub(super) const MAX_FETCHED_ENTRIES: usize = 1024;
@@ -158,7 +158,7 @@ impl HubClient {
     // LiteLLM's httpx client follows redirects, which Hugging Face answers for a renamed repo; no credential rides along
     async fn follow(&self, url: Url) -> Result<UpstreamResponse, HubError> {
         let mut target = url;
-        for _ in 0..MAX_REDIRECTS {
+        for _ in 0..=MAX_REDIRECTS {
             let response = self
                 .client
                 .send_buffered(OutboundRequest {
