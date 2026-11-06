@@ -26,7 +26,7 @@ pub(super) fn detect(
     contents: &[String],
     answer: Option<&UpstreamAnswer>,
 ) -> HelperResult {
-    let (mock, silent, base) = mock_for(answer)?;
+    let (mock, silent, base) = mock_for(answer, contents.len())?;
     let mut parameters = settings.clone();
     parameters.insert("base_url".to_owned(), GuardrailValue::Text(base));
     let config = configure(&parameters, environment)?;
@@ -50,13 +50,16 @@ pub(super) fn detect(
 
 fn mock_for(
     answer: Option<&UpstreamAnswer>,
+    calls: usize,
 ) -> Result<(Option<MockProvider>, TcpListener, String), Box<HelperError>> {
     let io = |error: std::io::Error| failure("OSError", error.to_string());
     // with no answer this listener stays bound and silent while the caller holds it, so the call times out
     let silent = TcpListener::bind(("127.0.0.1", 0)).map_err(io)?;
+    // the orchestrator makes one call per text, and MockProvider serves one scripted reply per call
     let mock = answer
         .map(|reply| {
-            MockScript::try_from(std::slice::from_ref(reply)).and_then(MockProvider::start)
+            let answers = vec![reply.clone(); calls.max(1)];
+            MockScript::try_from(answers.as_slice()).and_then(MockProvider::start)
         })
         .transpose()
         .map_err(|error| failure("MockError", error.to_string()))?;
