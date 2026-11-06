@@ -68,6 +68,9 @@ fn provider_match(litellm_provider: Option<&Value>, custom_llm_provider: Option<
 
 impl Session {
     fn invalidate(&mut self) -> Value {
+        // the Python driver refills both caches before every invalidate, so the two sides measure the same state
+        self.full_cache = HashMap::from([("full", 1)]);
+        self.helper_cache = HashMap::from([("helper", 1)]);
         let before = [self.full_cache.len(), self.helper_cache.len()];
         self.keys
             .invalidate(&mut self.full_cache, &mut self.helper_cache);
@@ -122,8 +125,8 @@ impl crate::helpers::Helper for Op {
         let mut session = Session {
             model_cost: input.model_cost.iter().cloned().zip(0..).collect(),
             keys: ModelCostKeys::default(),
-            full_cache: HashMap::from([("full", 1)]),
-            helper_cache: HashMap::from([("helper", 1)]),
+            full_cache: HashMap::new(),
+            helper_cache: HashMap::new(),
         };
         Ok(json!(
             input
