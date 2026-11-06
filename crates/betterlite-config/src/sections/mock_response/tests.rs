@@ -71,7 +71,7 @@ fn reads_a_response_object_with_litellm_defaults() {
                 content: Some(String::from("hello")),
                 tool_calls: None,
             },
-            finish_reason: Some(String::from("stop")),
+            finish_reason: None,
         }])
     );
 }

@@ -9,6 +9,10 @@ use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::net::TcpListener;
+use tokio::time::timeout;
 use tower::ServiceExt as _;
 
 use super::{EmbeddingError, embedding_routes, failure};
@@ -260,7 +264,7 @@ async fn a_mock_embedding_answers_with_the_body_model() {
     .expect("config");
     let executor =
         chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).expect("executor");
-    let request = Request::post("/v1/embeddings")
+    let request = Request::post("/openai/deployments/emb/embeddings")
         .header("content-type", "application/json")
         .body(Body::from(r#"{"model":"alias","input":"hello"}"#))
         .expect("request");
@@ -272,4 +276,56 @@ async fn a_mock_embedding_answers_with_the_body_model() {
     let body = to_bytes(response.into_body(), 8192).await.expect("body");
     let reply: MockEmbeddingReply = serde_json::from_slice(&body).expect("reply");
     assert_eq!(reply.model, "alias");
+}
+
+const EMBEDDING_ANSWER: &str = r#"{"object":"list","data":[{"object":"embedding","embedding":[0.1],"index":0}],"model":"embed","usage":{"prompt_tokens":1,"total_tokens":1}}"#;
+
+async fn provider(listener: TcpListener) -> String {
+    let Ok(Ok((mut stream, _))) = timeout(Duration::from_secs(1), listener.accept()).await else {
+        return String::new();
+    };
+    let mut received = Vec::new();
+    while !received.ends_with(b"\r\n\r\n") {
+        received.push(stream.read_u8().await.unwrap());
+    }
+    let mut body = vec![0_u8; 4096];
+    let read = stream.read(&mut body).await.unwrap();
+    body.truncate(read);
+    received.extend(body);
+    let head = format!(
+        "HTTP/1.1 200 X\r\ncontent-length: {}\r\n\r\n",
+        EMBEDDING_ANSWER.len()
+    );
+    let _written = stream
+        .write_all(format!("{head}{EMBEDDING_ANSWER}").as_bytes())
+        .await;
+    String::from_utf8(received).unwrap()
+}
+
+#[tokio::test]
+async fn a_stripped_client_mock_field_never_reaches_the_embedding_provider() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}/v1", listener.local_addr().unwrap());
+    let source = format!(
+        "model_list:\n  - {{model_name: embed, litellm_params: {{model: openai/embed, api_base: '{base}', api_key: k}}}}\n"
+    );
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(&source)
+    .expect("config");
+    let executor =
+        chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).expect("executor");
+    let request = Request::post("/v1/embeddings")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"model":"embed","input":"hello","mock_response":{"choices":[{"logprobs":null}]},"mock_tool_calls":[{"function":{"arguments":"{}"}}]}"#,
+        ))
+        .expect("request");
+    let call = embedding_routes(Arc::new(executor)).oneshot(request);
+    let (sent, answered) = tokio::join!(provider(listener), call);
+    let response = answered.expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(!sent.contains("mock_response"), "{sent}");
+    assert!(!sent.contains("mock_tool_calls"), "{sent}");
 }
