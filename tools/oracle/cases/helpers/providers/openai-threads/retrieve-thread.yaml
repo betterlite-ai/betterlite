@@ -1,5 +1,5 @@
 kind: helper
 name: openai-threads-retrieve-thread
-call: {openai_threads: {get_thread: {options: {api_key: sk-test, api_base: 'https://example.test/v1', organization: org-1}, thread_id: thread_1, aget_thread: false, reply: {status: 200, body: '{"id":"thread_1","object":"thread","created_at":7,"metadata":{"team":"core"},"tool_resources":{"file_search":{"vector_store_ids":["vs_1"]}}}'}}}}
+call: {openai_threads: {get_thread: {options: {api_key: sk-test, api_base: 'https://example.test/v1', organization: org-1}, thread_id: thread_1, aget_thread: false, reply: {status: 200, body: '{"id":"thread_1","object":"thread","created_at":7,"metadata":{"n":1},"tool_resources":{"file_search":{"vector_store_ids":["vs_1"]}}}'}}}}
 env: {}
 compare: {ignore: []}

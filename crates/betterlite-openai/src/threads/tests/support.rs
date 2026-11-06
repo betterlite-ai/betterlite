@@ -14,16 +14,29 @@ use serde_json::{Value, json};
 use crate::assistants::client::ClientOptions;
 use crate::assistants::operations::AssistantsApi;
 use crate::assistants::transport::AssistantsTransport;
-use crate::threads::operations::ThreadsApi;
+use crate::threads::operations::{ClientSetup, ThreadsApi};
 
 pub(super) const KEY: &str = "sk-fixture";
 pub(super) const BASE: &str = "https://example.test/v1";
 pub(super) const THREAD: &str = r#"{"id":"thread_1","object":"thread","created_at":7,"metadata":{"team":"core"},"tool_resources":{"code_interpreter":{"file_ids":["file-1"]}}}"#;
 pub(super) const THREAD_PROJECTION: &str =
     r#"{"id":"thread_1","created_at":7,"metadata":{"team":"core"},"object":"thread"}"#;
-pub(super) const MESSAGE: &str = r#"{"id":"msg_1","object":"thread.message","created_at":7,"thread_id":"thread_1","role":"assistant","content":[{"type":"text","text":{"value":"hi","annotations":[]}}],"status":"completed","unknown_field":{"nested":[1,2]}}"#;
-pub(super) const MESSAGE_NO_STATUS: &str = r#"{"id":"msg_1","object":"thread.message","created_at":7,"thread_id":"thread_1","role":"assistant","content":[{"type":"text","text":{"value":"hi","annotations":[]}}]}"#;
-pub(super) const PAGE: &str = r#"{"object":"list","data":[{"id":"msg_1","object":"thread.message","created_at":7,"thread_id":"thread_1","role":"assistant","content":[{"type":"text","text":{"value":"hi","annotations":[]}}],"status":"completed","unknown_field":{"nested":[1,2]}}],"first_id":"msg_1","last_id":"msg_1","has_more":false}"#;
+pub(super) const THREAD_NULL: &str =
+    r#"{"id":"thread_1","object":"thread","created_at":7,"metadata":null}"#;
+pub(super) const THREAD_NULL_PROJECTION: &str =
+    r#"{"id":"thread_1","created_at":7,"metadata":null,"object":"thread"}"#;
+pub(super) const THREAD_NUMERIC: &str =
+    r#"{"id":"thread_1","object":"thread","created_at":7,"metadata":{"n":1}}"#;
+pub(super) const THREAD_NUMERIC_PROJECTION: &str =
+    r#"{"id":"thread_1","created_at":7,"metadata":{"n":1},"object":"thread"}"#;
+pub(super) const MESSAGE: &str = r#"{"id":"msg_1","object":"thread.message","created_at":7,"assistant_id":null,"attachments":null,"completed_at":null,"incomplete_at":null,"incomplete_details":null,"metadata":null,"run_id":null,"thread_id":"thread_1","role":"assistant","status":"completed","content":[{"type":"text","text":{"value":"hi","annotations":[]}}],"unknown_field":{"nested":[1,2]}}"#;
+pub(super) const MESSAGE_NO_STATUS: &str = r#"{"id":"msg_1","object":"thread.message","created_at":7,"assistant_id":null,"attachments":null,"completed_at":null,"incomplete_at":null,"incomplete_details":null,"metadata":null,"run_id":null,"thread_id":"thread_1","role":"assistant","content":[{"type":"text","text":{"value":"hi","annotations":[]}}]}"#;
+pub(super) const MESSAGE_COMPLETED: &str = r#"{"id":"msg_1","object":"thread.message","created_at":7,"assistant_id":null,"attachments":null,"completed_at":null,"incomplete_at":null,"incomplete_details":null,"metadata":null,"run_id":null,"thread_id":"thread_1","role":"assistant","status":"completed","content":[{"type":"text","text":{"value":"hi","annotations":[]}}]}"#;
+pub(super) const MESSAGE_IN_PROGRESS: &str = r#"{"id":"msg_1","object":"thread.message","created_at":7,"assistant_id":null,"attachments":null,"completed_at":null,"incomplete_at":null,"incomplete_details":null,"metadata":null,"run_id":null,"thread_id":"thread_1","role":"assistant","status":"in_progress","content":[{"type":"text","text":{"value":"hi","annotations":[]}}]}"#;
+pub(super) const MESSAGE_NULL_STATUS: &str = r#"{"id":"msg_1","object":"thread.message","created_at":7,"assistant_id":null,"attachments":null,"completed_at":null,"incomplete_at":null,"incomplete_details":null,"metadata":null,"run_id":null,"thread_id":"thread_1","role":"assistant","status":null,"content":[{"type":"text","text":{"value":"hi","annotations":[]}}]}"#;
+pub(super) const MESSAGE_EMPTY_STATUS: &str = r#"{"id":"msg_1","object":"thread.message","created_at":7,"assistant_id":null,"attachments":null,"completed_at":null,"incomplete_at":null,"incomplete_details":null,"metadata":null,"run_id":null,"thread_id":"thread_1","role":"assistant","status":"","content":[{"type":"text","text":{"value":"hi","annotations":[]}}]}"#;
+pub(super) const MESSAGE_EXTRAS: &str = r#"{"id":"msg_9","object":"thread.message","created_at":9,"assistant_id":null,"attachments":[{"file_id":"file-1","tools":[{"type":"code_interpreter","extra_tool_key":7}]}],"completed_at":null,"incomplete_at":null,"incomplete_details":null,"metadata":null,"run_id":null,"thread_id":"thread_1","role":"assistant","status":"completed","content":[{"type":"text","text":{"value":"cited","annotations":[{"type":"file_citation","text":"s","start_index":0,"end_index":1,"file_citation":{"file_id":"file-1","quote":"q"},"extra_annotation":true}],"extra_text":1},"extra_block":"x"}]}"#;
+pub(super) const PAGE: &str = r#"{"object":"list","data":[{"id":"msg_1","object":"thread.message","created_at":7,"assistant_id":null,"attachments":null,"completed_at":null,"incomplete_at":null,"incomplete_details":null,"metadata":null,"run_id":null,"thread_id":"thread_1","role":"assistant","status":"completed","content":[{"type":"text","text":{"value":"hi","annotations":[]}}],"unknown_field":{"nested":[1,2]}}],"first_id":"msg_1","last_id":"msg_1","has_more":false}"#;
 
 #[derive(Default)]
 pub(super) struct Recorder {
@@ -100,6 +113,20 @@ pub(super) fn options(key: &str) -> ClientOptions {
         timeout: None,
         max_retries: None,
     }
+}
+
+pub(super) fn setup(key: &str) -> ClientSetup<Recorder> {
+    ClientSetup {
+        options: options(key),
+        supplied: None,
+        async_requested: false,
+    }
+}
+
+pub(super) fn async_setup(key: &str) -> ClientSetup<Recorder> {
+    let mut setup = setup(key);
+    setup.async_requested = true;
+    setup
 }
 
 pub(super) fn api_with(status: u16, body: &str) -> (ThreadsApi<Recorder>, Arc<Recorder>) {

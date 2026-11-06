@@ -1,5 +1,5 @@
 kind: helper
 name: openai-threads-create-thread-initial-messages
-call: {openai_threads: {create_thread: {options: {api_key: sk-test, api_base: 'https://example.test/v1'}, messages: [{role: user, content: "Hey, how's it going?"}, {role: assistant, content: [{type: text, text: Fine.}]}], acreate_thread: false, reply: {status: 200, body: '{"id":"thread_1","object":"thread","created_at":7,"metadata":null,"tool_resources":{"code_interpreter":{"file_ids":["file-1"]}}}'}}}}
+call: {openai_threads: {create_thread: {options: {api_key: sk-test, api_base: 'https://example.test/v1'}, messages: [{role: user, content: "Hey, how's it going?"}, {role: assistant, content: [{type: text, text: Fine.}]}], metadata: {team: core, n: 1}, acreate_thread: false, reply: {status: 200, body: '{"id":"thread_1","object":"thread","created_at":7,"metadata":null,"tool_resources":{"code_interpreter":{"file_ids":["file-1"]}}}'}}}}
 env: {}
 compare: {ignore: []}

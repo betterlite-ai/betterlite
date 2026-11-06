@@ -93,7 +93,9 @@ where
                 json_body(data)?,
             )
             .await?;
-            Ok(ThreadReply::Message(with_completed_status(message)))
+            Ok(ThreadReply::Message(Box::new(with_completed_status(
+                message,
+            ))))
         }
         ThreadCall::ListMessages(thread_id) => {
             let page = call(

@@ -39,8 +39,7 @@ def client_class() -> str:
 
 @dataclass
 class Wire:
-    bodies: list[str]
-    status: int = 200
+    replies: list[tuple[int, str]]
     seen: list[Json] = field(default_factory=lambda: cast(list[Json], []))
     kinds: list[Json] = field(default_factory=lambda: cast(list[Json], []))
     position: int = 0
@@ -59,11 +58,9 @@ class Wire:
             }
         )
         self.kinds.append(client_class())
-        body = self.bodies[min(self.position, len(self.bodies) - 1)]
+        status, body = self.replies[min(self.position, len(self.replies) - 1)]
         self.position += 1
-        return httpx.Response(
-            self.status, content=body, headers={"content-type": "application/json"}
-        )
+        return httpx.Response(status, content=body, headers={"content-type": "application/json"})
 
 
 @dataclass
@@ -90,8 +87,8 @@ def options_of(raw: Json) -> Options:
 def wire_for(fields: dict[str, Json], canned: str) -> Wire:
     reply = cast("dict[str, Json] | None", fields.get("reply"))
     if reply is None:
-        return Wire([canned])
-    return Wire([cast(str, reply["body"])], cast(int, reply["status"]))
+        return Wire([(200, canned)])
+    return Wire([(cast(int, reply["status"]), cast(str, reply["body"]))])
 
 
 def sdk_clients(wire: Wire) -> tuple[object, object]:
@@ -117,7 +114,7 @@ def failure(error: Exception) -> Json:
 
 def settle(call: object) -> Json:
     settled = asyncio.run(call) if inspect.iscoroutine(call) else call  # pyright: ignore[reportUnknownArgumentType]
-    return cast(Json, cast("openai.BaseModel", settled).model_dump(exclude_none=True))
+    return cast(Json, cast("openai.BaseModel", settled).model_dump())
 
 
 def create_thread(fields: dict[str, Json]) -> Json:
@@ -228,7 +225,11 @@ def get_messages(fields: dict[str, Json]) -> Json:
 
 def dispatch(fields: dict[str, Json]) -> Json:
     options = options_of(fields.get("options"))
-    wire = Wire([THREAD, THREAD, MESSAGE, PAGE])
+    reply = cast("dict[str, Json] | None", fields.get("reply"))
+    last: tuple[int, str] = (200, PAGE)
+    if reply is not None:
+        last = (cast(int, reply["status"]), cast(str, reply["body"]))
+    wire = Wire([(200, THREAD), (200, THREAD), (200, MESSAGE), last])
     sync, asynchronous = sdk_clients(wire)
     api = OpenAIAssistantsAPI()
     with (

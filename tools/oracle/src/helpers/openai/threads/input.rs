@@ -1,5 +1,6 @@
 use betterlite_openai::threads::records::ThreadMessageData;
 use serde::Deserialize;
+use serde_json::Value;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -25,7 +26,7 @@ pub(crate) struct CreateThreadFields {
     #[serde(default)]
     pub(super) options: OptionFields,
     pub(super) messages: Option<Vec<ThreadMessageData>>,
-    pub(super) metadata: Option<BTreeMap<String, String>>,
+    pub(super) metadata: Option<BTreeMap<String, Value>>,
     #[serde(default)]
     pub(super) acreate_thread: Option<bool>,
     pub(super) reply: Option<Reply>,
@@ -78,6 +79,7 @@ pub(crate) struct DispatchFields {
     pub(super) a_add_message: Option<bool>,
     #[serde(default)]
     pub(super) aget_messages: Option<bool>,
+    pub(super) reply: Option<Reply>,
 }
 
 #[derive(Debug, Clone, Deserialize)]

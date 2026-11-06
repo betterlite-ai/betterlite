@@ -2,7 +2,7 @@ use crate::helpers::{HelperError, HelperResult};
 use betterlite_openai::assistants::client::{ClientKind, ClientOptions};
 use betterlite_openai::assistants::operations::AssistantsApi;
 use betterlite_openai::threads::error::ThreadsError;
-use betterlite_openai::threads::operations::{ThreadCall, ThreadReply, ThreadsApi, dispatch_kind};
+use betterlite_openai::threads::operations::{ClientSetup, ThreadCall, ThreadReply, ThreadsApi};
 use betterlite_openai::threads::records::{
     MessageContent, MessageRole, ThreadCreate, ThreadMessageData,
 };
@@ -109,7 +109,12 @@ fn exchange(
         },
     };
     let options = client_options(fields)?;
-    block_on(api.call(options, None, flag, request)).map(|reply| reply.map(reply_value))
+    let setup = ClientSetup {
+        options,
+        supplied: None,
+        async_requested: flag,
+    };
+    block_on(api.call(setup, request)).map(|reply| reply.map(reply_value))
 }
 
 fn run_one(
@@ -124,13 +129,28 @@ fn run_one(
     answer(&wire, outcome)
 }
 
-fn dispatch_kinds(fields: &DispatchFields) -> Vec<&'static str> {
-    vec![
-        client_class(dispatch_kind(fields.acreate_thread.unwrap_or(false))),
-        client_class(dispatch_kind(fields.aget_thread.unwrap_or(false))),
-        client_class(dispatch_kind(fields.a_add_message.unwrap_or(false))),
-        client_class(dispatch_kind(fields.aget_messages.unwrap_or(false))),
-    ]
+fn dispatch_kinds(
+    api: &ThreadsApi<Wire>,
+    options: &ClientOptions,
+    fields: &DispatchFields,
+) -> Vec<&'static str> {
+    let flags = [
+        fields.acreate_thread.unwrap_or(false),
+        fields.aget_thread.unwrap_or(false),
+        fields.a_add_message.unwrap_or(false),
+        fields.aget_messages.unwrap_or(false),
+    ];
+    flags
+        .into_iter()
+        .map(|flag| {
+            let setup = ClientSetup {
+                options: options.clone(),
+                supplied: None,
+                async_requested: flag,
+            };
+            client_class(api.client(setup).kind)
+        })
+        .collect()
 }
 
 // The four operations run in LiteLLM's order, each carrying the flag its dispatch function reads.
@@ -163,7 +183,12 @@ fn dispatch_calls<'request>(
 }
 
 fn dispatch(fields: &DispatchFields) -> HelperResult {
-    let wire = dispatch_wire();
+    let wire = dispatch_wire(fields.reply.as_ref());
+    let api = ThreadsApi {
+        assistants: AssistantsApi {
+            transport: Arc::clone(&wire),
+        },
+    };
     let create = ThreadCreate {
         messages: None,
         metadata: None,
@@ -185,7 +210,8 @@ fn dispatch(fields: &DispatchFields) -> HelperResult {
         Ok(collected) => Value::from(collected),
         Err(error) => return answer(&wire, Err(error)),
     };
-    let kinds = dispatch_kinds(fields);
+    let options = client_options(&fields.options)?;
+    let kinds = dispatch_kinds(&api, &options, fields);
     let requests = wire
         .seen
         .lock()

@@ -7,6 +7,12 @@ use crate::threads::records::{
     ThreadCreate, ThreadMessage, ThreadMessageData, ThreadMessagePage, ThreadRecord,
 };
 
+pub struct ClientSetup<T> {
+    pub options: ClientOptions,
+    pub supplied: Option<SdkClient<T>>,
+    pub async_requested: bool,
+}
+
 #[derive(Debug)]
 pub enum ThreadCall<'request> {
     Create(&'request ThreadCreate),
@@ -21,7 +27,7 @@ pub enum ThreadCall<'request> {
 #[derive(Debug)]
 pub enum ThreadReply {
     Thread(ThreadRecord),
-    Message(ThreadMessage),
+    Message(Box<ThreadMessage>),
     Page(ThreadMessagePage),
 }
 
@@ -30,8 +36,7 @@ pub struct ThreadsApi<T> {
 }
 
 // LiteLLM selects the async branch only for the literal True flag, and every other value stays on the sync path.
-#[must_use]
-pub const fn dispatch_kind(async_requested: bool) -> ClientKind {
+const fn dispatch_kind(async_requested: bool) -> ClientKind {
     if async_requested {
         ClientKind::Async
     } else {
@@ -40,15 +45,22 @@ pub const fn dispatch_kind(async_requested: bool) -> ClientKind {
 }
 
 impl<T: AssistantsTransport> ThreadsApi<T> {
+    #[must_use]
+    pub fn client(&self, setup: ClientSetup<T>) -> SdkClient<T> {
+        self.assistants.get_openai_client(
+            dispatch_kind(setup.async_requested),
+            setup.options,
+            setup.supplied,
+        )
+    }
+
     pub async fn call(
         &self,
-        options: ClientOptions,
-        client: Option<SdkClient<T>>,
-        async_requested: bool,
+        setup: ClientSetup<T>,
         request: ThreadCall<'_>,
     ) -> Result<ThreadReply, ThreadsError> {
-        let kind = dispatch_kind(async_requested);
-        let openai = self.assistants.get_openai_client(kind, options, client);
-        client::send(&openai, request).await
+        let openai = self.client(setup);
+        let reply = client::send(&openai, request);
+        reply.await
     }
 }

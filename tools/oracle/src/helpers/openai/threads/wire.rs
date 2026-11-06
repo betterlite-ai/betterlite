@@ -1,6 +1,6 @@
 use super::input::Reply;
 use betterlite_http::proxy::UpstreamResponse;
-use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
+use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody, merge_query};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::assistants::transport::AssistantsTransport;
 use reqwest::header::HeaderMap;
@@ -37,12 +37,14 @@ impl AssistantsTransport for Wire {
         };
         let content_type = header(&request.headers, "content-type")
             .or_else(|| body.is_some().then(|| String::from("application/json")));
+        let mut url = request.url.clone();
+        merge_query(&mut url, &request.query);
         self.seen
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(json!({
                 "method": request.method.as_str(),
-                "url": request.url.as_str(),
+                "url": url.as_str(),
                 "authorization": header(&request.headers, "authorization"),
                 "openai-organization": header(&request.headers, "openai-organization"),
                 "openai-beta": header(&request.headers, "openai-beta"),
@@ -74,15 +76,17 @@ pub(super) fn replying(given: Option<&Reply>, canned: &str) -> Arc<Wire> {
     })
 }
 
-pub(super) fn dispatch_wire() -> Arc<Wire> {
-    let replies = vec![
-        (200, String::from(THREAD)),
-        (200, String::from(THREAD)),
-        (200, String::from(MESSAGE)),
-        (200, String::from(PAGE)),
-    ];
+pub(super) fn dispatch_wire(given: Option<&Reply>) -> Arc<Wire> {
+    let mut replies = VecDeque::new();
+    replies.push_back((200, String::from(THREAD)));
+    replies.push_back((200, String::from(THREAD)));
+    replies.push_back((200, String::from(MESSAGE)));
+    replies.push_back(given.map_or_else(
+        || (200, String::from(PAGE)),
+        |reply| (reply.status, reply.body.clone()),
+    ));
     Arc::new(Wire {
         seen: Mutex::new(Vec::new()),
-        replies: Mutex::new(VecDeque::from(replies)),
+        replies: Mutex::new(replies),
     })
 }
