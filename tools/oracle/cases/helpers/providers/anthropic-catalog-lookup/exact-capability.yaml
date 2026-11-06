@@ -1,0 +1,5 @@
+kind: helper
+name: exact-capability
+call: {anthropic_catalog_lookup: {function: exact, model: claude-sonnet-4-6, key: supports_flag, runtime: {claude-sonnet-4-6: null}}}
+env: {}
+compare: {ignore: []}
