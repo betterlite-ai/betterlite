@@ -1,0 +1,26 @@
+task: B3570
+deviations:
+  - what: >-
+      betterlite limits the raw-bytes-to-lines decoder to 16 MiB of accumulated chunks,
+      disabling collection and skipping spend flush while continuing to relay bytes unchanged.
+    why: >-
+      LiteLLM keeps every raw chunk for the whole stream, and betterlite logging must be
+      bounded per the B3570 architect decision, so a stream past the cap relays unchanged
+      and logs no spend.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/passthrough/transformation.py#L243-L259
+  - what: >-
+      relayed_body returns a typed PassthroughError.InvalidUtf8 for a body that is not valid
+      UTF-8, where LiteLLM returns the body text decoded with replacement characters.
+    why: >-
+      The workspace refuses to mangle bytes that are not UTF-8 (clippy.toml forbids
+      from_utf8_lossy), and the relayed bytes still reach the caller unchanged; only the
+      logged projection is skipped.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/passthrough/transformation.py#L71-L77
+  - what: >-
+      format_url writes query parameters with the standard Rust form encoder, so the raw
+      query string lists parameters in sorted key order and percent-encodes '*' and '~'
+      where Python's urlencode leaves '~' and encodes '*'.
+    why: >-
+      Both spellings decode to the same parameter names and values, so a provider sees
+      the same query; only the raw text differs, and the workspace keeps one encoder.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/passthrough/transformation.py#L166-L167
