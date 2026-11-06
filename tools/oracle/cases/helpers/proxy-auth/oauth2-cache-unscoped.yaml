@@ -1,0 +1,16 @@
+kind: helper
+name: proxy-auth-oauth2-cache-unscoped
+call:
+  proxy_auth:
+    operation: oauth2
+    params:
+      client_id: my-client
+      client_secret: s3cr3t value
+      responses:
+        - {status: 200, body: {access_token: jwt-one, expires_in: 3600}}
+        - {status: 200, body: {access_token: jwt-two, expires_in: 3600}}
+      calls:
+        - {at: 1000, scope: 'api://one/.default'}
+        - {at: 1010, scope: 'api://two/.default'}
+env: {}
+compare: {ignore: []}
