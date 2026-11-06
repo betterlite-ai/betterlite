@@ -15,3 +15,6 @@ deviations:
   - what: a success response whose JSON does not have the declared detector shape is a typed client error in betterlite, so the guardrail status is failed to respond; LiteLLM returns the parsed value and the hook loop fails later with an unhandled AttributeError or TypeError.
     why: a malformed answer is a detector failure, and betterlite reports guardrail_failed_to_respond instead of a 500 raised by an unhandled Python exception (rule owned-behavior-is-built).
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/ibm_detector.py#L146-L169
+  - what: the detector client applies verify_ssl but does not read SSL_CERT_FILE, SSL_CERTIFICATE or SSL_VERIFY, which LiteLLM's httpx client resolves through get_ssl_configuration.
+    why: those variables resolve into a shared TLS policy (B173) from the loaded config and environment, and the guardrail client is built before that policy reaches it; passing a resolved policy into guardrail construction belongs to the framework registration path (U1).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L370-L430
