@@ -1,0 +1,31 @@
+task: B3806
+deviations:
+  - what: >-
+      A text value that is present but not a string (a response content part, an Anthropic text
+      block, a tool-call or legacy function-call argument) is left untouched, and a content list
+      item that is not an object is skipped. LiteLLM calls _unmask_pii_text or check_pii on those
+      values and raises, and async_logging_hook calls .get on a non-object item and raises.
+    why: >-
+      Those values break the response types LiteLLM declares, and LiteLLM's failure is a 500 from
+      an isinstance/getattr accident on input no working provider produces. The task's pitfalls
+      also require non-object list items and missing text fields to be skipped without error.
+      Declared-type input is masked and unmasked exactly as LiteLLM does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1350-L1375
+  - what: >-
+      async_post_call_success_hook unmask mode treats a ModelResponse with no choices as a no-op.
+      LiteLLM reads response.choices[0] to check for StreamingChoices and raises IndexError when
+      the list is empty.
+    why: >-
+      A chat completion response with no choices is not a response a working setup serves, and the
+      index error fails the post-call hook. betterlite iterates zero choices and returns the
+      response unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1228-L1230
+  - what: >-
+      When several message texts are masked at once, their standard_logging_guardrail_information
+      records are appended in message order after every check returns. LiteLLM appends each record
+      inside its own check, so the list follows completion order.
+    why: >-
+      Completion order is a scheduling artifact of asyncio.gather that changes between runs with
+      the same input, so no setup can rely on it. betterlite's order is deterministic and holds
+      one record per check, which is what the list means.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L1172
