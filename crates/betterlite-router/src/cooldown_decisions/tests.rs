@@ -354,13 +354,6 @@ fn case_unknown_deployment() -> CooldownDecision {
     run(&router, None, &failure, minute(0, 0), 0)
 }
 
-fn case_high_traffic_with_successes_stays_up() -> CooldownDecision {
-    let router = policy();
-    let deployment = deployment();
-    let failure = failure(FailureClass::InternalServer, ErrorStatus::Code(500));
-    run(&router, Some(&deployment), &failure, minute(600, 400), 0)
-}
-
 fn case_bad_request_policy() -> CooldownDecision {
     let router = policy();
     let mut deployment = deployment();
@@ -471,7 +464,6 @@ fn case_policy_beats_generic_on_single_group() -> CooldownDecision {
     Some(1)
 )]
 #[case::unknown_deployment(case_unknown_deployment(), false, None, None)]
-#[case::high_traffic_with_successes(case_high_traffic_with_successes_stays_up(), false, None, None)]
 #[case::bad_request_policy(
     case_bad_request_policy(),
     true,
@@ -511,6 +503,19 @@ fn status_decision(status: ErrorStatus) -> CooldownDecision {
     run(&router, Some(&deployment), &failure, minute(0, 0), 0)
 }
 
+fn traffic_status_decision(status: ErrorStatus, successes: u64, failures: u64) -> CooldownDecision {
+    let router = policy();
+    let deployment = deployment();
+    let failure = failure(FailureClass::BadRequest, status);
+    run(
+        &router,
+        Some(&deployment),
+        &failure,
+        minute(successes, failures),
+        0,
+    )
+}
+
 fn counter_decision(before: u64) -> CooldownDecision {
     let mut router = policy();
     router.allowed_fails = 3;
@@ -520,96 +525,101 @@ fn counter_decision(before: u64) -> CooldownDecision {
     run(&router, Some(&deployment), &failure, minute(0, 0), before)
 }
 
-#[rstest]
-#[case::below_400_cooldowns(399, true)]
-#[case::bad_request_stays_up(400, false)]
-#[case::unauthorized_cooldowns(401, true)]
-#[case::forbidden_stays_up(403, false)]
-#[case::not_found_cooldowns(404, true)]
-#[case::request_timeout_stays_up(408, false)]
-#[case::conflict_stays_up(409, false)]
-#[case::unprocessable_stays_up(422, false)]
-#[case::rate_limit_cooldowns(429, true)]
-#[case::last_client_error_stays_up(499, false)]
-#[case::server_error_stays_up(500, false)]
-#[case::top_server_error_stays_up(599, false)]
-fn cooldown_decisions_status_boundaries(#[case] code: i64, #[case] cooldown: bool) {
-    let decision = status_decision(ErrorStatus::Code(code));
-    assert_eq!(decision.cooldown, cooldown);
-    assert_eq!(decision.counter, None);
-}
-
-#[rstest]
-#[case::empty_text_is_not_required(ErrorStatus::Text(String::new()), false)]
-#[case::unparsable_text_is_required_then_not_retried(
-    ErrorStatus::Text("abc".to_owned()),
-    false
-)]
-#[case::text_unauthorized(ErrorStatus::Text("401".to_owned()), true)]
-#[case::text_rate_limit(ErrorStatus::Text("429".to_owned()), true)]
-#[case::text_server_error(ErrorStatus::Text(" 500 ".to_owned()), false)]
-fn cooldown_decisions_text_status_boundaries(#[case] status: ErrorStatus, #[case] cooldown: bool) {
-    let decision = status_decision(status);
-    assert_eq!(decision.cooldown, cooldown);
-}
-
-#[rstest]
-#[case::below_threshold(2, false, 3)]
-#[case::at_threshold(3, true, 4)]
-#[case::saturated_counter(u64::MAX, true, u64::MAX)]
-fn cooldown_decisions_strict_counter_boundaries(
-    #[case] before: u64,
-    #[case] cooldown: bool,
-    #[case] fails: u64,
-) {
-    let decision = counter_decision(before);
-    assert_eq!(decision.cooldown, cooldown);
-    assert_eq!(counter_fails(&decision), Some(fails));
-}
-
-#[rstest]
-#[case::below_minimum_requests(0, 4, 2, false)]
-#[case::at_minimum_requests(0, 5, 2, true)]
-#[case::ratio_just_above_threshold(2, 3, 2, true)]
-#[case::ratio_exactly_half(3, 3, 2, false)]
-#[case::single_group_traffic_below(0, 999, 1, false)]
-#[case::single_group_traffic_at_boundary(0, 1000, 1, true)]
-#[case::saturated_total(u64::MAX, u64::MAX, 2, true)]
-fn cooldown_decisions_ratio_boundaries(
-    #[case] successes: u64,
-    #[case] failures: u64,
-    #[case] model_group_size: u32,
-    #[case] cooldown: bool,
-) {
+fn ratio_decision(successes: u64, failures: u64, model_group_size: u32) -> CooldownDecision {
     let router = policy();
     let mut deployment = deployment();
     deployment.model_group_size = model_group_size;
     let failure = failure(FailureClass::InternalServer, ErrorStatus::Code(500));
-    let decision = run(
+    run(
         &router,
         Some(&deployment),
         &failure,
         minute(successes, failures),
         0,
-    );
-    assert_eq!(decision.cooldown, cooldown);
+    )
 }
 
-#[rstest]
-#[case::exactly_zero(Seconds(0.0), false)]
-#[case::negative_zero(Seconds(-0.0), false)]
-#[case::positive_tolerance_edge(Seconds(1e-9), false)]
-#[case::negative_tolerance_edge(Seconds(-1e-9), false)]
-#[case::just_past_tolerance(Seconds(2e-9), true)]
-fn cooldown_decisions_time_to_cooldown_boundaries(
-    #[case] time_to_cooldown: Seconds,
-    #[case] cooldown: bool,
-) {
+fn time_decision(time_to_cooldown: Seconds) -> CooldownDecision {
     let router = policy();
     let deployment = deployment();
     let failure = failure(FailureClass::RateLimit, ErrorStatus::Code(429));
-    let decision = decide_with_time(&router, &deployment, &failure, Some(time_to_cooldown));
+    decide_with_time(&router, &deployment, &failure, Some(time_to_cooldown))
+}
+
+#[rstest]
+#[case::status_below_400(status_decision(ErrorStatus::Code(399)), true, None)]
+#[case::status_bad_request(status_decision(ErrorStatus::Code(400)), false, None)]
+#[case::status_unauthorized(status_decision(ErrorStatus::Code(401)), true, None)]
+#[case::status_forbidden(status_decision(ErrorStatus::Code(403)), false, None)]
+#[case::status_not_found(status_decision(ErrorStatus::Code(404)), true, None)]
+#[case::status_request_timeout(status_decision(ErrorStatus::Code(408)), false, None)]
+#[case::status_conflict(status_decision(ErrorStatus::Code(409)), false, None)]
+#[case::status_unprocessable(status_decision(ErrorStatus::Code(422)), false, None)]
+#[case::status_rate_limit(status_decision(ErrorStatus::Code(429)), true, None)]
+#[case::status_last_client_error(status_decision(ErrorStatus::Code(499)), false, None)]
+#[case::status_server_error(status_decision(ErrorStatus::Code(500)), false, None)]
+#[case::status_top_server_error(status_decision(ErrorStatus::Code(599)), false, None)]
+#[case::text_empty_status(
+    traffic_status_decision(ErrorStatus::Text(String::new()), 0, 0),
+    false,
+    None
+)]
+#[case::text_empty_status_with_traffic(
+    traffic_status_decision(ErrorStatus::Text(String::new()), 0, 5),
+    false,
+    None
+)]
+#[case::text_unparsable_status(
+    traffic_status_decision(ErrorStatus::Text("abc".to_owned()), 0, 0),
+    false,
+    None
+)]
+#[case::text_unparsable_status_with_traffic(
+    traffic_status_decision(ErrorStatus::Text("abc".to_owned()), 0, 5),
+    true,
+    None
+)]
+#[case::text_unauthorized(
+    traffic_status_decision(ErrorStatus::Text("401".to_owned()), 0, 0),
+    true,
+    None
+)]
+#[case::text_rate_limit(
+    traffic_status_decision(ErrorStatus::Text("429".to_owned()), 0, 0),
+    true,
+    None
+)]
+#[case::text_padded_server_error(
+    traffic_status_decision(ErrorStatus::Text(" 500 ".to_owned()), 0, 0),
+    false,
+    None
+)]
+#[case::counter_below_threshold(counter_decision(2), false, Some(3))]
+#[case::counter_at_threshold(counter_decision(3), true, Some(4))]
+#[case::counter_saturated(counter_decision(u64::MAX), true, Some(u64::MAX))]
+#[case::ratio_below_minimum(ratio_decision(0, 4, 2), false, None)]
+#[case::ratio_at_minimum(ratio_decision(0, 5, 2), true, None)]
+#[case::ratio_just_above_half(ratio_decision(2, 3, 2), true, None)]
+#[case::ratio_exactly_half(ratio_decision(3, 3, 2), false, None)]
+#[case::single_group_traffic_below(ratio_decision(0, 999, 1), false, None)]
+#[case::single_group_traffic_at_boundary(ratio_decision(0, 1000, 1), true, None)]
+#[case::high_traffic_with_successes(ratio_decision(600, 400, 2), false, None)]
+#[case::saturated_total(ratio_decision(u64::MAX, u64::MAX, 2), true, None)]
+#[case::time_zero(time_decision(Seconds(0.0)), false, None)]
+#[case::time_negative_zero(time_decision(Seconds(-0.0)), false, None)]
+#[case::time_positive_edge(time_decision(Seconds(1e-9)), false, None)]
+#[case::time_negative_edge(time_decision(Seconds(-1e-9)), false, None)]
+#[case::time_past_edge(time_decision(Seconds(2e-9)), true, None)]
+fn cooldown_decisions_boundaries(
+    #[case] decision: CooldownDecision,
+    #[case] cooldown: bool,
+    #[case] fails: Option<u64>,
+) {
     assert_eq!(decision.cooldown, cooldown);
+    assert_eq!(counter_fails(&decision), fails);
+    if fails.is_none() {
+        assert_eq!(decision.counter, None);
+    }
 }
 
 #[test]
