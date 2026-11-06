@@ -7,6 +7,8 @@ use betterlite_azure::azure_arc_identity::{
     ArcHost, ArcIdentity, ArcPlatform, ArcRequest, ArcResponse, ArcTransport, acquire_arc_token,
     select_arc_endpoint,
 };
+use betterlite_config::loader::ConfigLoader;
+use betterlite_config::sections::azure_arc_identity::Settings;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::json;
@@ -46,9 +48,27 @@ pub(crate) enum Input {
     },
 }
 
-impl ArcHost for Fixture {
+struct Host<'fixture> {
+    fixture: &'fixture Fixture,
+    settings: Settings,
+}
+
+impl<'fixture> Host<'fixture> {
+    fn load(fixture: &'fixture Fixture) -> Result<Self, Box<crate::helpers::HelperError>> {
+        let config = ConfigLoader {
+            lookup: fixture.environment.clone(),
+        }
+        .load("")?;
+        Ok(Self {
+            fixture,
+            settings: config.sections.azure_arc_identity,
+        })
+    }
+}
+
+impl ArcHost for Host<'_> {
     fn platform(&self) -> ArcPlatform {
-        match self.platform.as_str() {
+        match self.fixture.platform.as_str() {
             "linux" => ArcPlatform::Linux,
             "win32" => ArcPlatform::Windows,
             other => ArcPlatform::Other(other.to_owned()),
@@ -56,7 +76,15 @@ impl ArcHost for Fixture {
     }
 
     fn environment(&self, name: &str) -> Option<String> {
-        self.environment.get(name).cloned()
+        self.fixture.environment.get(name).cloned()
+    }
+
+    fn program_data(&self) -> String {
+        self.settings.program_data.clone()
+    }
+
+    fn program_files(&self) -> String {
+        self.settings.program_files.clone()
     }
 
     fn file_size(&self, path: &str) -> io::Result<u64> {
@@ -65,14 +93,15 @@ impl ArcHost for Fixture {
     }
 
     fn read_text(&self, path: &str) -> io::Result<String> {
-        self.files
+        self.fixture
+            .files
             .get(path)
             .cloned()
             .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, path.to_owned()))
     }
 
     fn now_unix_seconds(&self) -> i64 {
-        self.now
+        self.fixture.now
     }
 }
 
@@ -82,19 +111,17 @@ struct Recording {
 }
 
 impl ArcTransport for Recording {
-    fn get(&self, request: &ArcRequest<'_>) -> io::Result<ArcResponse> {
-        let mut headers = BTreeMap::from([("Metadata", "true".to_owned())]);
-        if let Some(secret) = request.key_secret {
-            headers.insert("Authorization", format!("Basic {}", secret.expose_secret()));
-        }
+    fn get(&self, request: &ArcRequest) -> io::Result<ArcResponse> {
+        let params: BTreeMap<_, _> = request.query.iter().cloned().collect();
+        let headers: BTreeMap<_, _> = request
+            .headers
+            .iter()
+            .map(|(name, value)| (*name, value.expose_secret()))
+            .collect();
         self.requests
             .lock()
             .map_err(|error| io::Error::other(error.to_string()))?
-            .push(json!({
-                "url": request.endpoint,
-                "params": {"api-version": "2020-06-01", "resource": request.resource},
-                "headers": headers,
-            }));
+            .push(json!({"url": request.url, "params": params, "headers": headers}));
         let reply = self
             .replies
             .lock()
@@ -125,12 +152,12 @@ fn error_class(error: &ArcIdentityError) -> &'static str {
 }
 
 fn acquire(
-    fixture: &Fixture,
+    host: &Host<'_>,
     resource: &str,
     identity: &Identity,
     responses: &[Reply],
 ) -> serde_json::Value {
-    let Some(endpoint) = select_arc_endpoint(fixture) else {
+    let Some(endpoint) = select_arc_endpoint(host) else {
         return json!({"requests": [], "result": {"kind": "no_endpoint"}, "bearer": null});
     };
     let transport = Recording {
@@ -141,7 +168,7 @@ fn acquire(
         Identity::System => ArcIdentity::SystemAssigned,
         Identity::User => ArcIdentity::UserAssigned,
     };
-    let outcome = acquire_arc_token(fixture, &transport, &endpoint, resource, requested);
+    let outcome = acquire_arc_token(host, &transport, &endpoint, resource, requested);
     let requests = transport
         .requests
         .into_inner()
@@ -172,13 +199,15 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         Ok(match input {
-            Input::Endpoint(fixture) => json!({"endpoint": select_arc_endpoint(fixture)}),
+            Input::Endpoint(fixture) => {
+                json!({"endpoint": select_arc_endpoint(&Host::load(fixture)?)})
+            }
             Input::Token {
                 fixture,
                 resource,
                 identity,
                 responses,
-            } => acquire(fixture, resource, identity, responses),
+            } => acquire(&Host::load(fixture)?, resource, identity, responses),
         })
     }
 }

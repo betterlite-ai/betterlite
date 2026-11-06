@@ -36,9 +36,7 @@ pub(super) fn endpoint_selection() {
     let mut windows = FixtureHost::linux(&[(himds, "")]);
     windows.platform = ArcPlatform::Windows;
     assert_eq!(select_arc_endpoint(&windows), None);
-    windows
-        .environment
-        .insert("ProgramFiles".to_owned(), "C:\\Program Files".to_owned());
+    windows.program_files = "C:\\Program Files".to_owned();
     assert_eq!(select_arc_endpoint(&windows), Some(ENDPOINT.to_owned()));
     windows.platform = ArcPlatform::Other("darwin".to_owned());
     assert_eq!(select_arc_endpoint(&windows), None);
@@ -60,9 +58,7 @@ pub(super) fn challenge_request() {
     .unwrap();
     assert_eq!(token.token.expose_secret(), "tok");
     let first = transport.recorded().remove(0);
-    assert_eq!(first.endpoint, ENDPOINT);
-    assert_eq!(first.resource, RESOURCE);
-    assert_eq!(first.key_secret, None);
+    assert_eq!(first, Recorded::challenge());
 
     for header in [
         "Basic realm=a=b",
@@ -108,25 +104,29 @@ pub(super) fn restricted_key() {
     ] {
         let (outcome, sent) = run(&linux, &format!("Basic realm={challenge}"), TOKEN_BODY);
         outcome.unwrap();
-        assert_eq!(sent.recorded()[1].key_secret.as_deref(), Some(secret));
+        assert_eq!(
+            sent.recorded()[1].authorization(),
+            Some(format!("Basic {secret}"))
+        );
     }
     let mut windows =
         FixtureHost::linux(&[("D:\\PD\\AzureConnectedMachineAgent\\Tokens\\b.key", "win")]);
     windows.platform = ArcPlatform::Windows;
-    windows
-        .environment
-        .insert("ProgramData".to_owned(), "D:\\PD".to_owned());
+    windows.program_data = "D:\\PD".to_owned();
     for challenge in ["C:\\other\\dir\\b.txt", "C:b.txt", "b.txt"] {
         let (outcome, sent) = run(&windows, &format!("Basic realm={challenge}"), TOKEN_BODY);
         outcome.unwrap();
-        assert_eq!(sent.recorded()[1].key_secret.as_deref(), Some("win"));
+        assert_eq!(
+            sent.recorded()[1].authorization(),
+            Some("Basic win".to_owned())
+        );
     }
     let drive_like = FixtureHost::linux(&[("/var/opt/azcmagent/tokens/C:b.key", "drive")]);
     let (drive_outcome, drive_sent) = run(&drive_like, "Basic realm=C:b.txt", TOKEN_BODY);
     drive_outcome.unwrap();
     assert_eq!(
-        drive_sent.recorded()[1].key_secret.as_deref(),
-        Some("drive")
+        drive_sent.recorded()[1].authorization(),
+        Some("Basic drive".to_owned())
     );
     key_file_limits();
 }
@@ -165,16 +165,8 @@ pub(super) fn second_request() {
     assert_eq!(
         sent.recorded(),
         vec![
-            Recorded {
-                endpoint: ENDPOINT.to_owned(),
-                resource: RESOURCE.to_owned(),
-                key_secret: None,
-            },
-            Recorded {
-                endpoint: ENDPOINT.to_owned(),
-                resource: RESOURCE.to_owned(),
-                key_secret: Some("s3cret\nline\n".to_owned()),
-            },
+            Recorded::challenge(),
+            Recorded::authenticated("s3cret\nline\n"),
         ]
     );
 }

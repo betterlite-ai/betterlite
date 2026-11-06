@@ -18,6 +18,8 @@ pub(super) const RESOURCE: &str = "https://cognitiveservices.azure.com";
 pub(super) struct FixtureHost {
     pub(super) platform: ArcPlatform,
     pub(super) environment: BTreeMap<String, String>,
+    pub(super) program_data: String,
+    pub(super) program_files: String,
     pub(super) files: BTreeMap<String, String>,
     pub(super) now: i64,
 }
@@ -27,6 +29,8 @@ impl FixtureHost {
         Self {
             platform: ArcPlatform::Linux,
             environment: BTreeMap::new(),
+            program_data: "%ProgramData%".to_owned(),
+            program_files: "%ProgramFiles%".to_owned(),
             files: files
                 .iter()
                 .map(|(path, text)| ((*path).to_owned(), (*text).to_owned()))
@@ -43,6 +47,14 @@ impl ArcHost for FixtureHost {
 
     fn environment(&self, name: &str) -> Option<String> {
         self.environment.get(name).cloned()
+    }
+
+    fn program_data(&self) -> String {
+        self.program_data.clone()
+    }
+
+    fn program_files(&self) -> String {
+        self.program_files.clone()
     }
 
     fn file_size(&self, path: &str) -> io::Result<u64> {
@@ -67,9 +79,37 @@ impl ArcHost for FixtureHost {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct Recorded {
-    pub(super) endpoint: String,
-    pub(super) resource: String,
-    pub(super) key_secret: Option<String>,
+    pub(super) url: String,
+    pub(super) query: Vec<(String, String)>,
+    pub(super) headers: Vec<(String, String)>,
+}
+
+impl Recorded {
+    pub(super) fn challenge() -> Self {
+        Self {
+            url: ENDPOINT.to_owned(),
+            query: vec![
+                ("api-version".to_owned(), "2020-06-01".to_owned()),
+                ("resource".to_owned(), RESOURCE.to_owned()),
+            ],
+            headers: vec![("Metadata".to_owned(), "true".to_owned())],
+        }
+    }
+
+    pub(super) fn authenticated(key_text: &str) -> Self {
+        let mut request = Self::challenge();
+        request
+            .headers
+            .push(("Authorization".to_owned(), format!("Basic {key_text}")));
+        request
+    }
+
+    pub(super) fn authorization(&self) -> Option<String> {
+        self.headers
+            .iter()
+            .find(|(name, _)| name == "Authorization")
+            .map(|(_, value)| value.clone())
+    }
 }
 
 pub(super) struct FixtureTransport {
@@ -98,16 +138,22 @@ impl FixtureTransport {
 }
 
 impl ArcTransport for FixtureTransport {
-    fn get(&self, request: &ArcRequest<'_>) -> io::Result<ArcResponse> {
+    fn get(&self, request: &ArcRequest) -> io::Result<ArcResponse> {
         self.requests
             .lock()
             .map_err(|error| io::Error::other(error.to_string()))?
             .push(Recorded {
-                endpoint: request.endpoint.to_owned(),
-                resource: request.resource.to_owned(),
-                key_secret: request
-                    .key_secret
-                    .map(|secret| secret.expose_secret().to_owned()),
+                url: request.url.clone(),
+                query: request
+                    .query
+                    .iter()
+                    .map(|(name, value)| ((*name).to_owned(), value.clone()))
+                    .collect(),
+                headers: request
+                    .headers
+                    .iter()
+                    .map(|(name, value)| ((*name).to_owned(), value.expose_secret().to_owned()))
+                    .collect(),
             });
         self.replies
             .lock()

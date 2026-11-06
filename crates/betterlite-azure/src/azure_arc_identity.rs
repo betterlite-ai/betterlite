@@ -14,6 +14,7 @@ const WINDOWS_HIMDS_SUFFIX: &str = "\\AzureConnectedMachineAgent\\himds.exe";
 const ARC_DEFAULT_ENDPOINT: &str = "http://localhost:40342/metadata/identity/oauth2/token";
 const REFRESH_THRESHOLD_SECONDS: i64 = 7200;
 const REDACTED: &str = "[redacted]";
+const API_VERSION: &str = "2020-06-01";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ArcPlatform {
@@ -31,17 +32,18 @@ pub enum ArcIdentity {
 pub trait ArcHost {
     fn platform(&self) -> ArcPlatform;
     fn environment(&self, name: &str) -> Option<String>;
+    fn program_data(&self) -> String;
+    fn program_files(&self) -> String;
     fn file_size(&self, path: &str) -> io::Result<u64>;
     fn read_text(&self, path: &str) -> io::Result<String>;
     fn now_unix_seconds(&self) -> i64;
 }
 
-// The transport adds api-version=2020-06-01, resource and `Metadata: true`, and `Authorization: Basic <secret>` when a key is set.
 #[derive(Debug)]
-pub struct ArcRequest<'request> {
-    pub endpoint: &'request str,
-    pub resource: &'request str,
-    pub key_secret: Option<&'request SecretString>,
+pub struct ArcRequest {
+    pub url: String,
+    pub query: [(&'static str, String); 2],
+    pub headers: Vec<(&'static str, SecretString)>,
 }
 
 #[derive(Debug)]
@@ -52,7 +54,7 @@ pub struct ArcResponse {
 }
 
 pub trait ArcTransport {
-    fn get(&self, request: &ArcRequest<'_>) -> io::Result<ArcResponse>;
+    fn get(&self, request: &ArcRequest) -> io::Result<ArcResponse>;
 }
 
 #[derive(Debug)]
@@ -74,15 +76,31 @@ where
         return Some(identity_endpoint).filter(|endpoint| !endpoint.is_empty());
     }
     let himds_path = match host.platform() {
-        ArcPlatform::Linux => Some(LINUX_HIMDS_PATH.to_owned()),
-        ArcPlatform::Windows => host
-            .environment("ProgramFiles")
-            .map(|directory| format!("{directory}{WINDOWS_HIMDS_SUFFIX}")),
-        ArcPlatform::Other(_) => None,
-    }?;
+        ArcPlatform::Linux => LINUX_HIMDS_PATH.to_owned(),
+        ArcPlatform::Windows => format!("{}{WINDOWS_HIMDS_SUFFIX}", host.program_files()),
+        ArcPlatform::Other(_) => return None,
+    };
     host.file_size(&himds_path)
         .is_ok()
         .then(|| ARC_DEFAULT_ENDPOINT.to_owned())
+}
+
+fn arc_request(endpoint: &str, resource: &str, key_secret: Option<&SecretString>) -> ArcRequest {
+    let mut headers = vec![("Metadata", SecretString::from("true"))];
+    if let Some(secret) = key_secret {
+        headers.push((
+            "Authorization",
+            SecretString::from(format!("Basic {}", secret.expose_secret())),
+        ));
+    }
+    ArcRequest {
+        url: endpoint.to_owned(),
+        query: [
+            ("api-version", API_VERSION.to_owned()),
+            ("resource", resource.to_owned()),
+        ],
+        headers,
+    }
 }
 
 fn challenge_value(headers: &[(String, String)]) -> Result<String, ArcIdentityError> {
@@ -135,20 +153,12 @@ where
         return Err(ArcIdentityError::UserAssignedIdentity);
     }
     let challenge = transport
-        .get(&ArcRequest {
-            endpoint,
-            resource,
-            key_secret: None,
-        })
+        .get(&arc_request(endpoint, resource, None))
         .map_err(ArcIdentityError::Transport)?;
     let key_name = challenge_value(&challenge.headers)?;
     let key_secret = key_file::read_key_file(host, &key_name)?;
     let reply = transport
-        .get(&ArcRequest {
-            endpoint,
-            resource,
-            key_secret: Some(&key_secret),
-        })
+        .get(&arc_request(endpoint, resource, Some(&key_secret)))
         .map_err(ArcIdentityError::Transport)?;
     match decode_arc_identity_reply(reply.body.expose_secret().as_bytes())? {
         ArcReply::Token(token) => {

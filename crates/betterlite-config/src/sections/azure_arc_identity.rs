@@ -3,17 +3,29 @@ use crate::sections::Section;
 
 mod tests;
 
+const UNEXPANDED_PROGRAM_DATA: &str = "%ProgramData%";
+const UNEXPANDED_PROGRAM_FILES: &str = "%ProgramFiles%";
+
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct Raw {
     #[serde(skip)]
     _unused: (),
 }
 
-// Both values only expand Windows paths for the Azure Arc agent; an empty value counts as unset.
-#[derive(Debug, Clone, Default)]
+// Windows path expansion for the Azure Arc agent, as ntpath.expandvars does it: an unset variable stays as its literal %name% and an empty one expands to nothing.
+#[derive(Debug, Clone)]
 pub struct Settings {
-    pub program_data: Option<String>,
-    pub program_files: Option<String>,
+    pub program_data: String,
+    pub program_files: String,
+}
+
+impl Default for Settings {
+    fn default() -> Self {
+        Self {
+            program_data: UNEXPANDED_PROGRAM_DATA.to_owned(),
+            program_files: UNEXPANDED_PROGRAM_FILES.to_owned(),
+        }
+    }
 }
 
 impl Section for Raw {
@@ -23,13 +35,14 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
+        let defaults = Settings::default();
         Ok(Settings {
             program_data: lookup
                 .lookup("PROGRAMDATA")
-                .filter(|value| !value.is_empty()),
+                .unwrap_or(defaults.program_data),
             program_files: lookup
                 .lookup("ProgramFiles")
-                .filter(|value| !value.is_empty()),
+                .unwrap_or(defaults.program_files),
         })
     }
 }

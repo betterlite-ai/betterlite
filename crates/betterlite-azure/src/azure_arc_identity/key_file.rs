@@ -5,7 +5,6 @@ use super::{ArcHost, ArcPlatform};
 
 const LINUX_TOKEN_DIRECTORY: &str = "/var/opt/azcmagent/tokens";
 const WINDOWS_TOKEN_SUFFIX: &str = "\\AzureConnectedMachineAgent\\Tokens";
-const UNEXPANDED_PROGRAM_DATA: &str = "%ProgramData%";
 const MAX_KEY_FILE_BYTES: u64 = 4096;
 
 // Only the last path component of the challenge value is used, so the challenge cannot leave the token directory.
@@ -34,12 +33,10 @@ where
 {
     let (directory, separator) = match host.platform() {
         ArcPlatform::Linux => (LINUX_TOKEN_DIRECTORY.to_owned(), '/'),
-        ArcPlatform::Windows => {
-            let program_data = host
-                .environment("ProgramData")
-                .unwrap_or_else(|| UNEXPANDED_PROGRAM_DATA.to_owned());
-            (format!("{program_data}{WINDOWS_TOKEN_SUFFIX}"), '\\')
-        }
+        ArcPlatform::Windows => (
+            format!("{}{WINDOWS_TOKEN_SUFFIX}", host.program_data()),
+            '\\',
+        ),
         ArcPlatform::Other(platform) => {
             return Err(ArcIdentityError::UnsupportedPlatform { platform });
         }

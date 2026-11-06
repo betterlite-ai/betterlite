@@ -39,8 +39,8 @@ fn azure_arc_identity_credential_identity_isolation() {
     let (second_outcome, second) = run(&host, "Basic realm=second", body);
     second_outcome.unwrap();
     assert_eq!(
-        second.recorded()[1].key_secret.as_deref(),
-        Some("second-key")
+        second.recorded()[1].authorization(),
+        Some("Basic second-key".to_owned())
     );
 
     let transport = FixtureTransport::challenge_then("Basic realm=first", body);
@@ -72,13 +72,8 @@ fn azure_arc_identity_secret_safe_failure() {
     let token = accepted.unwrap();
     assert_eq!(token.token.expose_secret(), "fixture-token");
     assert!(!format!("{token:?}").contains("fixture-token"));
-    let recorded = Recorded {
-        endpoint: ENDPOINT.to_owned(),
-        resource: RESOURCE.to_owned(),
-        key_secret: Some("fixture-key\n".to_owned()),
-    };
-    assert_eq!(sent.recorded()[1], recorded);
-    assert!(!sent.recorded()[1].endpoint.contains("fixture-key"));
+    assert_eq!(sent.recorded()[1], Recorded::authenticated("fixture-key\n"));
+    assert!(!sent.recorded()[1].url.contains("fixture-key"));
 }
 
 #[test]
