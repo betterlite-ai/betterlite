@@ -174,11 +174,6 @@ fn validate_call(call: &SdkHttpCall, limits: &OracleLimits) -> Result<(), SdkHtt
             }
         }
         SdkHttpCall::VectorStoreEmbeddingExecutor(embedding) => {
-            if !embedding.model.starts_with("openai/") {
-                return Err(SdkHttpError::Invalid(
-                    "the embedding model must be an openai/ model".to_owned(),
-                ));
-            }
             for deployment in embedding.router.iter().flatten() {
                 if !deployment.litellm_params.model.starts_with("openai/") {
                     return Err(SdkHttpError::Invalid(

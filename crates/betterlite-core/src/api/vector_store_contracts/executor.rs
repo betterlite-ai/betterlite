@@ -231,7 +231,9 @@ fn embedding_request(
                 return Err(VectorStoreEmbeddingError::DuplicateArgument { name: name.clone() });
             }
             "extra_body" => {}
-            // main.py writes the named encoding_format back after the drop, so it is always sent
+            // main.py writes encoding_format back after the drop, except the text none
+            "encoding_format" if matches!(value, Json::Text(format) if format.trim().eq_ignore_ascii_case("none")) =>
+                {}
             "dimensions" | "user" if dropped.contains(&name.as_str()) => {}
             // only openai is served, and LiteLLM keeps aws_*, vertex_* and hf_model_name for other providers
             option

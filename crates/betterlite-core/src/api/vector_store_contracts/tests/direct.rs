@@ -207,6 +207,11 @@ async fn direct_executor_keeps_other_providers_credentials_out_of_the_body() {
     r#"{"additional_drop_params": ["encoding_format"], "encoding_format": "float"}"#,
     r#"{"encoding_format": "float"}"#
 )]
+#[case::encoding_format_none_is_no_format(
+    r#"{"additional_drop_params": ["encoding_format"], "encoding_format": "none"}"#,
+    "{}"
+)]
+#[case::encoding_format_none_unlisted(r#"{"encoding_format": " None "}"#, "{}")]
 #[case::unknown_parameter_stays(
     r#"{"additional_drop_params": ["input_type"], "input_type": "x"}"#,
     r#"{"input_type": "x"}"#
