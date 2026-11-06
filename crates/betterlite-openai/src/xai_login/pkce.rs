@@ -8,7 +8,6 @@ use url::form_urlencoded;
 use super::error::XaiLoginError;
 use crate::xai_tokens::rules::CLIENT_ID;
 
-pub const SCOPE: &str = "openid profile email offline_access grok-cli:access api:access";
 const ENTROPY_BYTES: usize = 32;
 
 pub trait Entropy: Send + Sync {
@@ -53,7 +52,10 @@ pub fn build_authorize_url(
     query.append_pair("response_type", "code");
     query.append_pair("client_id", CLIENT_ID);
     query.append_pair("redirect_uri", redirect_uri);
-    query.append_pair("scope", SCOPE);
+    query.append_pair(
+        "scope",
+        "openid profile email offline_access grok-cli:access api:access",
+    );
     query.append_pair("code_challenge", challenge);
     query.append_pair("code_challenge_method", "S256");
     query.append_pair("state", state);

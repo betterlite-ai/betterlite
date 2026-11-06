@@ -2,7 +2,7 @@ kind: helper
 name: default_authorize_url
 call:
   xai_login_url:
-    entropy: "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+    entropy: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31]
     authorization_endpoint: "https://auth.x.ai/oauth2/authorize"
     redirect_uri: "http://127.0.0.1:56121/callback"
     state: "0123456789abcdef0123456789abcdef"

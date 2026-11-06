@@ -3,13 +3,13 @@ use secrecy::ExposeSecret as _;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use crate::helpers::{Helper, HelperResult};
 
 mod tests;
 
 #[derive(Debug, Deserialize)]
 pub(crate) struct Input {
-    entropy: String,
+    entropy: Vec<u8>,
     authorization_endpoint: String,
     redirect_uri: String,
     state: String,
@@ -22,17 +22,7 @@ impl Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> HelperResult {
-        let random = hex::decode(&input.entropy).map_err(|error| {
-            Box::new(HelperError {
-                class: "ValueError".to_owned(),
-                status: None,
-                error_type: None,
-                param: None,
-                code: None,
-                message: error.to_string(),
-            })
-        })?;
-        let (verifier, challenge) = pkce_pair_from(&random);
+        let (verifier, challenge) = pkce_pair_from(&input.entropy);
         Ok(json!({
             "verifier": verifier.expose_secret(),
             "challenge": challenge,

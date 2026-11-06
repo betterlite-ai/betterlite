@@ -349,25 +349,17 @@ pub(crate) fn port_of(authorize_url: &str) -> u16 {
     Url::parse(&redirect).unwrap().port().unwrap()
 }
 
-pub(crate) async fn callback_when_opened(browser: &RecordingBrowser, target: &str) -> Response {
+pub(crate) async fn callback_when<F>(announced: F, target: &str) -> Response
+where
+    F: Fn() -> Option<String>,
+{
     for _attempt in 0_u16..600_u16 {
-        if let Some(url) = browser.url() {
+        if let Some(url) = announced() {
             return get(port_of(&url), target).await;
         }
         sleep(Duration::from_millis(5)).await;
     }
-    panic!("the login never opened the browser");
-}
-
-pub(crate) async fn callback_when_printed(output: &RecordingOutput, target: &str) -> Response {
-    for _attempt in 0_u16..600_u16 {
-        let text = output.text();
-        if let Some(url) = text.lines().nth(1) {
-            return get(port_of(url), target).await;
-        }
-        sleep(Duration::from_millis(5)).await;
-    }
-    panic!("the login never printed the authorization URL");
+    panic!("the login never announced the authorization URL");
 }
 
 #[derive(Deserialize)]

@@ -6,7 +6,7 @@ from pydantic import JsonValue
 
 
 class Input(TypedDict):
-    entropy: str
+    entropy: list[int]
     authorization_endpoint: str
     redirect_uri: str
     state: str
@@ -15,10 +15,8 @@ class Input(TypedDict):
 
 class Fixture(XAIOAuthAuthenticator):
     def evaluate(self, case: Input) -> JsonValue:
-        random_bytes = bytes.fromhex(case["entropy"])
-
         def token_bytes(_count: int) -> bytes:
-            return random_bytes
+            return bytes(case["entropy"])
 
         with patch("litellm.llms.xai.oauth.secrets.token_bytes", token_bytes):
             verifier, challenge = self._pkce_pair()

@@ -2,7 +2,7 @@ kind: helper
 name: authorization_scope_and_nonce
 call:
   xai_login_url:
-    entropy: "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+    entropy: [255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255]
     authorization_endpoint: "https://auth.x.ai/oauth2/authorize"
     redirect_uri: "http://127.0.0.1:56121/callback"
     state: "deadbeefdeadbeefdeadbeefdeadbeef"

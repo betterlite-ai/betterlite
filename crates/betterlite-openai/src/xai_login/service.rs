@@ -108,15 +108,15 @@ impl<F: FileAccess, C: Clock, T: Transport, E: Entropy, U: Uuids, B: Browser, O:
 
         self.announce(options, &authorize_url)?;
 
-        let fields = server.wait(&self.oauth.clock).await?;
-        if fields.state.as_deref() != Some(state.as_str()) {
+        let request = server.wait(&self.oauth.clock).await?;
+        if request.state.as_deref() != Some(state.as_str()) {
             return Err(XaiLoginError::StateMismatch);
         }
-        if let Some(error) = fields.error {
-            let description = fields.error_description.unwrap_or(error);
+        if let Some(error) = request.error {
+            let description = request.error_description.unwrap_or(error);
             return Err(XaiLoginError::Provider { description });
         }
-        let Some(code) = fields.code else {
+        let Some(code) = request.code else {
             return Err(XaiLoginError::MissingCode);
         };
         self.redeem(&code, &verifier, &token_endpoint, &redirect_uri)
@@ -162,13 +162,9 @@ impl<F: FileAccess, C: Clock, T: Transport, E: Entropy, U: Uuids, B: Browser, O:
 
     async fn read_stored(&self) -> Option<StoredRecord> {
         let bytes = self.oauth.files.read(&self.oauth.auth_file).await.ok()?;
-        match decode_xai_oauth(&bytes) {
-            Ok(record) => Some(record),
-            Err(error) => {
-                tracing::debug!(%error, "Ignoring an unreadable xAI OAuth auth file");
-                None
-            }
-        }
+        decode_xai_oauth(&bytes)
+            .map_err(|error| tracing::debug!(%error, "Ignoring an unreadable xAI OAuth auth file"))
+            .ok()
     }
 }
 

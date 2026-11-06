@@ -13,7 +13,7 @@ use crate::xai_tokens::rules::CLIENT_ID;
 
 use super::support::{
     BrokenWriter, DISCOVERY_REPLY, FRESH, Fixture, NOW, Reply, STALE, STALE_WITHOUT_REFRESH,
-    TOKEN_REPLY, callback_when_opened, callback_when_printed, port_of,
+    TOKEN_REPLY, callback_when, port_of,
 };
 
 const VERIFIER: &str = "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc";
@@ -133,7 +133,10 @@ async fn a_matching_callback_exchanges_the_code_and_stores_the_record() {
     let service = &fixture.service;
     let (login, response) = tokio::join!(
         service.login(options()),
-        callback_when_opened(&service.browser, "/callback?code=code-1&state=state-test"),
+        callback_when(
+            || service.browser.url(),
+            "/callback?code=code-1&state=state-test"
+        ),
     );
     let record = login.unwrap();
     assert_eq!(response.status, 200);
@@ -173,7 +176,10 @@ async fn the_authorization_url_reaches_the_browser() {
     let service = &fixture.service;
     let (_record, _response) = tokio::join!(
         service.login(options()),
-        callback_when_opened(&service.browser, "/callback?code=code-1&state=state-test"),
+        callback_when(
+            || service.browser.url(),
+            "/callback?code=code-1&state=state-test"
+        ),
     );
     let url = service.browser.url().unwrap();
     let port = port_of(&url);
@@ -202,7 +208,10 @@ async fn no_browser_prints_the_url_without_opening_it() {
             force: false,
             no_browser: true,
         }),
-        callback_when_printed(&service.output, "/callback?code=code-1&state=state-test"),
+        callback_when(
+            || service.output.text().lines().nth(1).map(str::to_owned),
+            "/callback?code=code-1&state=state-test",
+        ),
     );
     record.unwrap();
     assert_eq!(response.status, 200);
@@ -226,7 +235,10 @@ async fn a_refused_browser_prints_the_url() {
     let service = &fixture.service;
     let (record, _response) = tokio::join!(
         service.login(options()),
-        callback_when_printed(&service.output, "/callback?code=code-1&state=state-test"),
+        callback_when(
+            || service.output.text().lines().nth(1).map(str::to_owned),
+            "/callback?code=code-1&state=state-test",
+        ),
     );
     record.unwrap();
     assert_eq!(service.browser.opens(), 1);
@@ -239,7 +251,10 @@ async fn a_state_mismatch_ends_the_login() {
     let service = &fixture.service;
     let (result, response) = tokio::join!(
         service.login(options()),
-        callback_when_opened(&service.browser, "/callback?code=code-1&state=state-other"),
+        callback_when(
+            || service.browser.url(),
+            "/callback?code=code-1&state=state-other"
+        ),
     );
     assert!(matches!(result, Err(XaiLoginError::StateMismatch)));
     assert_eq!(response.status, 400);
@@ -256,8 +271,8 @@ async fn a_provider_error_ends_the_login_with_its_description() {
     let service = &fixture.service;
     let (result, response) = tokio::join!(
         service.login(options()),
-        callback_when_opened(
-            &service.browser,
+        callback_when(
+            || service.browser.url(),
             "/callback?error=access_denied&error_description=user+denied&state=state-test",
         ),
     );
@@ -275,7 +290,7 @@ async fn a_missing_code_ends_the_login() {
     let service = &fixture.service;
     let (result, response) = tokio::join!(
         service.login(options()),
-        callback_when_opened(&service.browser, "/callback?state=state-test"),
+        callback_when(|| service.browser.url(), "/callback?state=state-test"),
     );
     assert_eq!(response.status, 200);
     assert!(matches!(result, Err(XaiLoginError::MissingCode)));

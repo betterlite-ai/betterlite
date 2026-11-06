@@ -85,14 +85,14 @@ async fn reproduces_the_pinned_python_callback_transcript(#[case] name: &str) {
         outcome.unwrap_err();
         return;
     };
-    let fields = outcome.unwrap().unwrap();
+    let request = outcome.unwrap().unwrap();
     assert_eq!(
         expected.code.as_deref(),
-        fields.code.as_ref().map(ExposeSecret::expose_secret),
+        request.code.as_ref().map(ExposeSecret::expose_secret),
     );
-    assert_eq!(expected.state, fields.state);
-    assert_eq!(expected.error, fields.error);
-    assert_eq!(expected.error_description, fields.error_description);
+    assert_eq!(expected.state, request.state);
+    assert_eq!(expected.error, request.error);
+    assert_eq!(expected.error_description, request.error_description);
 }
 
 #[test]
@@ -137,12 +137,12 @@ async fn an_unrelated_path_keeps_the_wait_running() {
         &mut wait,
     );
     assert_eq!(received.status, 200);
-    let fields = waiting.unwrap();
+    let request = waiting.unwrap();
     assert_eq!(
-        fields.code.as_ref().map(ExposeSecret::expose_secret),
+        request.code.as_ref().map(ExposeSecret::expose_secret),
         Some("code-1")
     );
-    assert_eq!(fields.state.as_deref(), Some(STATE));
+    assert_eq!(request.state.as_deref(), Some(STATE));
 }
 
 #[tokio::test]
@@ -193,12 +193,12 @@ async fn the_receiver_writes_no_access_log() {
     );
     assert_eq!(missing.status, 404);
     outcome.unwrap_err();
-    let (received, fields) = tokio::join!(
+    let (received, request) = tokio::join!(
         get(port, "/callback?code=code-1&state=state-test"),
         &mut wait,
     );
     assert_eq!(received.status, 200);
-    fields.unwrap();
+    request.unwrap();
     assert!(captured.0.lock().unwrap().is_empty());
 }
 
@@ -221,13 +221,13 @@ async fn a_taken_preferred_port_falls_back_to_an_ephemeral_port() {
         format!("http://127.0.0.1:{}/callback", server_port(&server))
     );
     let port = server_port(&server);
-    let (response, fields) = tokio::join!(
+    let (response, request) = tokio::join!(
         get(port, "/callback?code=code-1&state=state-test"),
         server.wait(&clock),
     );
     assert_eq!(response.status, 200);
     assert_eq!(
-        fields
+        request
             .unwrap()
             .code
             .as_ref()

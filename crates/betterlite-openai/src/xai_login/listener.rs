@@ -8,9 +8,7 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::timeout;
 
-use super::callback::{
-    CALLBACK_PATH, CallbackError, CallbackFields, CallbackRequest, decode_xai_callback,
-};
+use super::callback::{CALLBACK_PATH, CallbackError, CallbackRequest, decode_xai_callback};
 use super::error::XaiLoginError;
 use crate::xai_tokens::Clock;
 
@@ -18,7 +16,11 @@ pub const PREFERRED_PORT: u16 = 56_121;
 pub const CALLBACK_TIMEOUT: Duration = Duration::from_secs(180);
 pub const POLL_INTERVAL: Duration = Duration::from_secs(1);
 pub const MAX_REQUEST_BYTES: usize = 0x0001_0001;
-const HTML: Option<&str> = Some("text/html; charset=utf-8");
+const MISMATCH_BODY: &str = "<html><body><h1>xAI authorization state mismatch.</h1></body></html>";
+const FAILED_BODY: &str =
+    "<html><body><h1>xAI authorization failed.</h1>You can close this tab.</body></html>";
+const RECEIVED_BODY: &str =
+    "<html><body><h1>xAI authorization received.</h1>You can close this tab.</body></html>";
 
 pub struct CallbackSettings {
     pub preferred_port: u16,
@@ -35,62 +37,6 @@ impl Default for CallbackSettings {
         }
     }
 }
-
-struct Page {
-    status: u16,
-    reason: &'static str,
-    content_type: Option<&'static str>,
-    body: &'static str,
-}
-
-const NOT_FOUND: Page = Page {
-    status: 404,
-    reason: "Not Found",
-    content_type: None,
-    body: "",
-};
-const BAD_REQUEST: Page = Page {
-    status: 400,
-    reason: "Bad Request",
-    content_type: None,
-    body: "",
-};
-const TOO_LONG: Page = Page {
-    status: 414,
-    reason: "URI Too Long",
-    content_type: None,
-    body: "",
-};
-const TOO_LARGE: Page = Page {
-    status: 431,
-    reason: "Request Header Fields Too Large",
-    content_type: None,
-    body: "",
-};
-const NOT_IMPLEMENTED: Page = Page {
-    status: 501,
-    reason: "Not Implemented",
-    content_type: None,
-    body: "",
-};
-const STATE_MISMATCH: Page = Page {
-    status: 400,
-    reason: "Bad Request",
-    content_type: HTML,
-    body: "<html><body><h1>xAI authorization state mismatch.</h1></body></html>",
-};
-const FAILED: Page = Page {
-    status: 200,
-    reason: "OK",
-    content_type: HTML,
-    body: "<html><body><h1>xAI authorization failed.</h1>You can close this tab.</body></html>",
-};
-const RECEIVED: Page = Page {
-    status: 200,
-    reason: "OK",
-    content_type: HTML,
-    body: "<html><body><h1>xAI authorization received.</h1>You can close this tab.</body></html>",
-};
 
 pub struct CallbackServer {
     pub(crate) listener: TcpListener,
@@ -111,11 +57,10 @@ impl CallbackServer {
                 Ok(listener) => {
                     let address = listener
                         .local_addr()
-                        .map_err(|source| XaiLoginError::Bind { source })?;
-                    let port = address.port();
+                        .map_err(|source| XaiLoginError::Listener { source })?;
                     return Ok(Self {
                         listener,
-                        redirect_uri: format!("http://127.0.0.1:{port}{CALLBACK_PATH}"),
+                        redirect_uri: format!("http://127.0.0.1:{}{CALLBACK_PATH}", address.port()),
                         expected_state: expected_state.to_owned(),
                         poll: settings.poll,
                         timeout: settings.timeout,
@@ -124,12 +69,12 @@ impl CallbackServer {
                 Err(source) => failure = Some(source),
             }
         }
-        Err(XaiLoginError::Bind {
+        Err(XaiLoginError::Listener {
             source: failure.unwrap_or_else(|| io::Error::other("no callback port could be bound")),
         })
     }
 
-    pub async fn wait<C>(self, clock: &C) -> Result<CallbackFields, XaiLoginError>
+    pub async fn wait<C>(self, clock: &C) -> Result<CallbackRequest, XaiLoginError>
     where
         C: Clock,
     {
@@ -145,24 +90,24 @@ impl CallbackServer {
                 return Err(XaiLoginError::Timeout);
             };
             match timeout(slot, self.accept()).await {
-                Ok(Ok(Some(fields))) => return Ok(fields),
+                Ok(Ok(Some(request))) => return Ok(request),
                 Ok(Ok(None)) => {}
-                Ok(Err(source)) => return Err(XaiLoginError::Accept { source }),
+                Ok(Err(source)) => return Err(XaiLoginError::Listener { source }),
                 Err(_elapsed) => {}
             }
         }
     }
 
-    async fn accept(&self) -> io::Result<Option<CallbackFields>> {
+    async fn accept(&self) -> io::Result<Option<CallbackRequest>> {
         let (mut stream, _peer) = self.listener.accept().await?;
         Ok(self.serve(&mut stream).await)
     }
 
-    async fn serve(&self, stream: &mut TcpStream) -> Option<CallbackFields> {
+    async fn serve(&self, stream: &mut TcpStream) -> Option<CallbackRequest> {
         let head = match read_head(stream).await {
             Ok(Some(head)) => head,
             Ok(None) => {
-                reply(stream, &TOO_LARGE).await;
+                reply(stream, 431, "Request Header Fields Too Large", "").await;
                 return None;
             }
             Err(error) => {
@@ -172,41 +117,42 @@ impl CallbackServer {
         };
         let request = match parse_request(&head) {
             Ok(request) => request,
-            Err(page) => {
-                reply(stream, page).await;
+            Err((status, reason)) => {
+                reply(stream, status, reason, "").await;
                 return None;
             }
         };
         if request.path != CALLBACK_PATH {
-            reply(stream, &NOT_FOUND).await;
+            reply(stream, 404, "Not Found", "").await;
             return None;
         }
-        reply(stream, self.page_for(&request)).await;
-        Some(request.fields)
+        let (status, reason, body) = self.page(&request);
+        reply(stream, status, reason, body).await;
+        Some(request)
     }
 
-    fn page_for(&self, request: &CallbackRequest) -> &'static Page {
-        if request.fields.state.as_deref() != Some(self.expected_state.as_str()) {
-            return &STATE_MISMATCH;
+    fn page(&self, request: &CallbackRequest) -> (u16, &'static str, &'static str) {
+        if request.state.as_deref() != Some(self.expected_state.as_str()) {
+            return (400, "Bad Request", MISMATCH_BODY);
         }
-        if request.fields.error.is_some() {
-            return &FAILED;
+        if request.error.is_some() {
+            return (200, "OK", FAILED_BODY);
         }
-        &RECEIVED
+        (200, "OK", RECEIVED_BODY)
     }
 }
 
-fn parse_request(head: &[u8]) -> Result<CallbackRequest, &'static Page> {
+fn parse_request(head: &[u8]) -> Result<CallbackRequest, (u16, &'static str)> {
     let Some((method, target)) = request_line(head) else {
-        return Err(&BAD_REQUEST);
+        return Err((400, "Bad Request"));
     };
     if method != b"GET" {
-        return Err(&NOT_IMPLEMENTED);
+        return Err((501, "Not Implemented"));
     }
     match decode_xai_callback(target) {
         Ok(request) => Ok(request),
-        Err(CallbackError::TooLong) => Err(&TOO_LONG),
-        Err(CallbackError::Malformed) => Err(&BAD_REQUEST),
+        Err(CallbackError::TooLong) => Err((414, "URI Too Long")),
+        Err(CallbackError::Malformed) => Err((400, "Bad Request")),
     }
 }
 
@@ -256,24 +202,23 @@ fn request_line(head: &[u8]) -> Option<(&[u8], &[u8])> {
     Some((method, target))
 }
 
-async fn reply(stream: &mut TcpStream, page: &Page) {
-    if let Err(error) = write_page(stream, page).await {
+async fn reply(stream: &mut TcpStream, status: u16, reason: &'static str, body: &'static str) {
+    let content_type = if body.is_empty() {
+        ""
+    } else {
+        "Content-Type: text/html; charset=utf-8\r\n"
+    };
+    let head = format!(
+        "HTTP/1.1 {status} {reason}\r\n{content_type}Content-Length: {}\r\nConnection: close\r\n\r\n",
+        body.len()
+    );
+    let written = async {
+        stream.write_all(head.as_bytes()).await?;
+        stream.write_all(body.as_bytes()).await?;
+        stream.flush().await?;
+        stream.shutdown().await
+    };
+    if let Err(error) = written.await {
         tracing::debug!(%error, "Could not write the xAI OAuth callback response");
     }
-}
-
-async fn write_page(stream: &mut TcpStream, page: &Page) -> io::Result<()> {
-    let content_type = page
-        .content_type
-        .map_or_else(String::new, |value| format!("Content-Type: {value}\r\n"));
-    let head = format!(
-        "HTTP/1.1 {} {}\r\n{content_type}Content-Length: {}\r\nConnection: close\r\n\r\n",
-        page.status,
-        page.reason,
-        page.body.len()
-    );
-    stream.write_all(head.as_bytes()).await?;
-    stream.write_all(page.body.as_bytes()).await?;
-    stream.flush().await?;
-    stream.shutdown().await
 }

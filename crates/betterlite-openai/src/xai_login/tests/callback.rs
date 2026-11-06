@@ -14,11 +14,7 @@ use crate::xai_login::callback::{CallbackError, MAX_TARGET_BYTES, decode_xai_cal
 fn decodes_the_first_nonblank_code(#[case] target: &str, #[case] expected: Option<&str>) {
     let request = decode_xai_callback(target.as_bytes()).unwrap();
     assert_eq!(request.path, "/callback");
-    let code = request
-        .fields
-        .code
-        .as_ref()
-        .map(ExposeSecret::expose_secret);
+    let code = request.code.as_ref().map(ExposeSecret::expose_secret);
     assert_eq!(code, expected);
 }
 
@@ -27,16 +23,12 @@ fn decodes_every_callback_field() {
     let request =
         decode_xai_callback(b"/callback?code=c&state=s&error=e&error_description=d").unwrap();
     assert_eq!(
-        request
-            .fields
-            .code
-            .as_ref()
-            .map(ExposeSecret::expose_secret),
+        request.code.as_ref().map(ExposeSecret::expose_secret),
         Some("c")
     );
-    assert_eq!(request.fields.state.as_deref(), Some("s"));
-    assert_eq!(request.fields.error.as_deref(), Some("e"));
-    assert_eq!(request.fields.error_description.as_deref(), Some("d"));
+    assert_eq!(request.state.as_deref(), Some("s"));
+    assert_eq!(request.error.as_deref(), Some("e"));
+    assert_eq!(request.error_description.as_deref(), Some("d"));
 }
 
 #[rstest]
@@ -68,7 +60,7 @@ fn accepts_a_target_at_the_bound() {
     let mut target = String::from(prefix);
     target.push_str(&"a".repeat(MAX_TARGET_BYTES - prefix.len()));
     let request = decode_xai_callback(target.as_bytes()).unwrap();
-    let code = request.fields.code.unwrap();
+    let code = request.code.unwrap();
     assert_eq!(code.expose_secret().len(), MAX_TARGET_BYTES - prefix.len());
 }
 
