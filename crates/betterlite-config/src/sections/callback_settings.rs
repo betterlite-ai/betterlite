@@ -7,6 +7,7 @@ use serde::de::IgnoredAny;
 
 use crate::env_integer::get_env_int;
 use crate::loader::{ConfigError, EnvironmentLookup};
+use crate::resolve::resolve_string;
 use crate::sections::Section;
 
 mod tests;
@@ -42,11 +43,34 @@ pub struct Raw {
 #[derive(Debug, Default, Deserialize)]
 struct RawLiteLlm {
     #[serde(default)]
-    callbacks: Vec<String>,
+    callbacks: Option<RawCallbackList>,
     #[serde(default)]
     success_callback: Vec<String>,
     #[serde(default)]
     failure_callback: Vec<String>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum RawCallbackList {
+    One(String),
+    Many(Vec<String>),
+}
+
+impl RawCallbackList {
+    fn names(&self) -> Vec<&str> {
+        match self {
+            Self::One(name) => vec![name.as_str()],
+            Self::Many(names) => names.iter().map(String::as_str).collect(),
+        }
+    }
+
+    fn into_names(self) -> Vec<String> {
+        match self {
+            Self::One(name) => vec![name],
+            Self::Many(names) => names,
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -60,14 +84,23 @@ enum RawValue {
 }
 
 impl RawValue {
-    fn into_callback_value(self) -> Option<CallbackValue> {
-        match self {
-            Self::Text(text) => Some(CallbackValue::Text(SecretString::from(text))),
+    fn into_callback_value<L>(
+        self,
+        path: &str,
+        lookup: &L,
+    ) -> Result<Option<CallbackValue>, ConfigError>
+    where
+        L: EnvironmentLookup,
+    {
+        Ok(match self {
+            Self::Text(text) => Some(CallbackValue::Text(SecretString::from(resolve_string(
+                text, path, lookup,
+            )?))),
             Self::Number(number) => Some(CallbackValue::Number(number.to_string())),
             Self::Flag(set) => Some(CallbackValue::Flag(set)),
             Self::Null => Some(CallbackValue::Null),
             Self::Other(_) => None,
-        }
+        })
     }
 }
 
@@ -116,41 +149,57 @@ pub struct Settings {
 }
 
 fn unavailable_paths(lists: &RawLiteLlm) -> Vec<String> {
-    [
-        ("litellm_settings.callbacks", &lists.callbacks),
+    let mut paths = Vec::new();
+    let callbacks = lists
+        .callbacks
+        .as_ref()
+        .map(RawCallbackList::names)
+        .unwrap_or_default();
+    if callbacks
+        .iter()
+        .any(|name| !INSTALLED_CALLBACKS.contains(name))
+    {
+        paths.push("litellm_settings.callbacks".to_owned());
+    }
+    for (path, names) in [
         ("litellm_settings.success_callback", &lists.success_callback),
         ("litellm_settings.failure_callback", &lists.failure_callback),
-    ]
-    .into_iter()
-    .filter(|(_, names)| {
-        names
+    ] {
+        if names
             .iter()
             .any(|name| !INSTALLED_CALLBACKS.contains(&name.as_str()))
-    })
-    .map(|(path, _)| path.to_owned())
-    .collect()
+        {
+            paths.push(path.to_owned());
+        }
+    }
+    paths
 }
 
-fn callback_entries(
+fn callback_entries<L>(
     raw: BTreeMap<String, IndexMap<String, RawValue>>,
     paths: &mut Vec<String>,
-) -> BTreeMap<String, CallbackEntry> {
+    lookup: &L,
+) -> Result<BTreeMap<String, CallbackEntry>, ConfigError>
+where
+    L: EnvironmentLookup,
+{
     let mut entries = BTreeMap::new();
     for (name, values) in raw {
         let mut converted = IndexMap::new();
         for (key, value) in values {
-            if let Some(setting) = value.into_callback_value() {
+            let path = format!("callback_settings.{name}.{key}");
+            if let Some(setting) = value.into_callback_value(&path, lookup)? {
                 converted.insert(key, setting);
                 continue;
             }
             let owned = name == OTEL_ENTRY && OTEL_NESTED_KEYS.contains(&key.as_str());
             if !owned {
-                paths.push(format!("callback_settings.{name}.{key}"));
+                paths.push(path);
             }
         }
         entries.insert(name, CallbackEntry { values: converted });
     }
-    entries
+    Ok(entries)
 }
 
 impl Section for Raw {
@@ -167,12 +216,16 @@ impl Section for Raw {
         // a negative or oversized limit admits nothing, exactly as LiteLLM's negative limit skips every add
         let max_callbacks = usize::try_from(raw_capacity).unwrap_or_default();
         let mut paths = unavailable_paths(&self.litellm_settings);
-        let callback_settings = callback_entries(self.callback_settings, &mut paths);
+        let callback_settings = callback_entries(self.callback_settings, &mut paths, lookup)?;
         if !paths.is_empty() {
             return Err(ConfigError::Unsupported { paths });
         }
         Ok(Settings {
-            callbacks: self.litellm_settings.callbacks,
+            callbacks: self
+                .litellm_settings
+                .callbacks
+                .map(RawCallbackList::into_names)
+                .unwrap_or_default(),
             success_callback: self.litellm_settings.success_callback,
             failure_callback: self.litellm_settings.failure_callback,
             callback_settings,

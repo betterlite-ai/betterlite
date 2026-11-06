@@ -6,6 +6,7 @@ call:
     steps:
       - {op: register, list: success_callback, callback: {class_name: Logger, attributes: {api_key: sk-1}}}
       - {op: register, list: success_callback, callback: {class_name: Logger, attributes: {api_key: sk-1}}}
+      - {op: register, list: success_callback, callback: {class_name: Logger, attributes: {api_key: sk-1, _cache_id: 9}}}
       - {op: register, list: callbacks, callback: {class_name: Logger, attributes: {api_key: sk-1}}}
       - {op: register, list: success_callback, callback: {class_name: Logger, attributes: {api_key: sk-2}}}
       - {op: register, list: success_callback, callback: {class_name: Logger, attributes: {api_key: sk-1, retries: 3}}}

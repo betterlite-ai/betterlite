@@ -36,6 +36,9 @@ impl CallbackIdentity {
     pub fn key(&self) -> String {
         let mut key = self.class_name.clone();
         for (name, attribute) in &self.attributes {
+            if name.starts_with('_') {
+                continue;
+            }
             key.push('-');
             key.push_str(name);
             key.push('=');

@@ -249,7 +249,7 @@ class Session:
         success = set(self.keys("success_callback"))
         general = set(self.keys("callbacks"))
         return {
-            "input": as_json(sorted(self.keys("input_callback"))),
+            "input": as_json(sorted(set(self.keys("input_callback")) | general)),
             "success": as_json(sorted(success | general)),
             "failure": as_json(sorted(set(self.keys("failure_callback")) | general)),
             "stream": as_json(sorted(success | general)),

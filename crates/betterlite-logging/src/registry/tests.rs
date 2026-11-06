@@ -200,7 +200,10 @@ fn callback_registry_tests_behavior(#[case] scenario: Scenario) {
             assert_eq!(keys(&registry, CallbackList::Failure), ["fail"]);
             assert_eq!(keys(&registry, CallbackList::Input), ["input"]);
             assert_eq!(keys(&registry, CallbackList::Service), ["service"]);
-            assert_eq!(phase_keys(&registry, CallbackPhase::Input), ["input"]);
+            assert_eq!(
+                phase_keys(&registry, CallbackPhase::Input),
+                ["general", "input"]
+            );
             assert_eq!(
                 phase_keys(&registry, CallbackPhase::Success),
                 ["general", "succ"]
@@ -233,6 +236,17 @@ fn callback_registry_tests_behavior(#[case] scenario: Scenario) {
             });
             assert_eq!(outcome, Registration::AlreadyRegistered);
             assert!(log.contains("callback already registered in this list"));
+            let private = attributed(
+                "Logger",
+                &[
+                    ("api_key", Attribute::Text("k".to_owned())),
+                    ("_cache_id", Attribute::Integer(7)),
+                ],
+            );
+            assert_eq!(
+                registry.register(private, channel_sink(4).0, CallbackList::Success),
+                Registration::AlreadyRegistered
+            );
             assert_eq!(
                 registry.register(identity, second, CallbackList::Callbacks),
                 Registration::Registered
@@ -313,6 +327,7 @@ fn callback_registry_tests_behavior(#[case] scenario: Scenario) {
                 "MyLogger",
                 &[
                     ("api_key", Attribute::Text("sk-1".to_owned())),
+                    ("_cache_id", Attribute::Integer(7)),
                     ("verbose", Attribute::Flag(true)),
                     ("retries", Attribute::Integer(3)),
                 ],

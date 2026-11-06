@@ -28,11 +28,12 @@ pub enum CallbackList {
 }
 
 impl CallbackList {
-    // LiteLLM dispatches a streaming response's events through log_stream_event instead of log_success_event
+    // function_setup copies callbacks entries into input_callback, and streams reach success callbacks
     #[must_use]
     pub const fn phases(self) -> &'static [CallbackPhase] {
         match self {
             Self::Callbacks => &[
+                CallbackPhase::Input,
                 CallbackPhase::Success,
                 CallbackPhase::Failure,
                 CallbackPhase::Stream,
