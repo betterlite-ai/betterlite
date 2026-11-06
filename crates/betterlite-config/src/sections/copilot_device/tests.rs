@@ -151,8 +151,16 @@ fn copilot_device_keeps_the_default_for_a_non_utf8_system_home() {
         config.sections.copilot_device.token_dir,
         "~/.config/litellm/github_copilot"
     );
+    // every section shares the loader, so only the lines naming the Copilot token path belong to this section
+    let log_text = fs::read_to_string(log.path()).unwrap();
+    let copilot: Vec<&str> = log_text
+        .lines()
+        .filter(|line| line.contains("Copilot token path"))
+        .collect();
     assert_eq!(
-        fs::read_to_string(log.path()).unwrap(),
-        "DEBUG the system home is not UTF-8; the Copilot token path keeps its literal default\n"
+        copilot,
+        vec![
+            "DEBUG the system home is not UTF-8; the Copilot token path keeps its literal default"
+        ]
     );
 }
