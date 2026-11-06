@@ -1,0 +1,5 @@
+kind: helper
+name: routing-prefix-order
+call: {bedrock_model: {model: 'nova/bedrock/model'}}
+env: {}
+compare: {ignore: []}
