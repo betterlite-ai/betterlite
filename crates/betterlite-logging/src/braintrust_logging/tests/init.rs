@@ -19,7 +19,7 @@ fn environment(variables: &[(&str, &str)]) -> BTreeMap<String, String> {
 }
 
 #[test]
-fn init_builds_the_bearer_headers_from_the_key() {
+fn init_exposes_the_key_and_the_default_base() {
     let settings = settings(&[]);
     assert_eq!(settings.api_key.expose_secret(), KEY);
     assert_eq!(settings.api_base, BASE);
