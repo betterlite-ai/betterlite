@@ -1,0 +1,5 @@
+task: B235
+deviations:
+  - what: "The filename MIME guess uses Python 3.13's built-in mimetypes table only. Extensions that the host's /etc/mime.types adds or overrides get a different answer: report.docx, song.ogg and voice.m4a return application/octet-stream here, while LiteLLM on a host with that file returns their real types, and notes.rtf returns text/rtf here, while a host that maps .rtf to application/rtf makes LiteLLM return application/rtf."
+    why: "LiteLLM calls mimetypes.guess_type, whose first call runs mimetypes.init() and merges the machine's mime.types files, so its answer depends on the host the SDK or proxy runs on. betterlite pins Python 3.13's _types_map_default so the same filename gives the same answer everywhere. Pinned by media_metadata_behavior_tests_behavior::rtf_uses_the_pure_python_mimetypes_value and ::docx_has_no_pure_python_mapping_so_it_stays_octet_stream."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L823"
