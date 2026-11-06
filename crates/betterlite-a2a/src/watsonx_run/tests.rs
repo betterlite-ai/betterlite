@@ -36,7 +36,7 @@ pub(crate) enum Fail {
 #[derive(Clone, Debug)]
 pub(crate) struct Reply {
     pub(crate) status: u16,
-    pub(crate) body: AgentJson,
+    pub(crate) body: String,
     pub(crate) content_type: Option<String>,
     pub(crate) lines: Vec<String>,
     pub(crate) fail: Option<Fail>,
@@ -47,7 +47,7 @@ impl Reply {
     pub(crate) fn json(body: &str) -> Self {
         Self {
             status: 200,
-            body: serde_json::from_str(body).unwrap(),
+            body: body.to_owned(),
             content_type: None,
             lines: Vec::new(),
             fail: None,
@@ -73,7 +73,7 @@ impl Reply {
     pub(crate) fn failing(fail: Fail) -> Self {
         Self {
             status: 200,
-            body: AgentJson::Null,
+            body: String::new(),
             content_type: None,
             lines: Vec::new(),
             fail: Some(fail),
@@ -185,11 +185,9 @@ impl Script {
         request: &RunRequest<'_>,
     ) -> Result<RunResponse, RunFailure<ScriptError>> {
         let reply = self.reply(method, request)?;
-        let body = serde_json::to_vec(&reply.body)
-            .map_err(|source| RunFailure::Transport(ScriptError::Record(source)))?;
         Ok(RunResponse {
             status: reply.status,
-            body,
+            body: reply.body.into_bytes(),
         })
     }
 
@@ -205,11 +203,7 @@ impl Script {
             Some(Fail::TooLarge) => StreamBody::TooLarge {
                 max: request.limits.max_response_bytes,
             },
-            _ => {
-                let chunks = chunks_of(&reply)
-                    .map_err(|source| RunFailure::Transport(ScriptError::Record(source)))?;
-                StreamBody::Chunks(chunks)
-            }
+            _ => StreamBody::Chunks(chunks_of(&reply)),
         };
         Ok(StreamResponse {
             status,
@@ -219,19 +213,19 @@ impl Script {
     }
 }
 
-fn chunks_of(reply: &Reply) -> Result<Vec<Vec<u8>>, serde_json::Error> {
+fn chunks_of(reply: &Reply) -> Vec<Vec<u8>> {
     let sse = reply
         .content_type
         .as_deref()
         .is_some_and(|value| value.to_lowercase().contains("text/event-stream"));
     if sse {
-        return Ok(reply
+        return reply
             .lines
             .iter()
             .map(|line| format!("{line}\n").into_bytes())
-            .collect());
+            .collect();
     }
-    Ok(vec![serde_json::to_vec(&reply.body)?])
+    vec![reply.body.clone().into_bytes()]
 }
 
 impl TokenTransport for &Script {
@@ -247,12 +241,12 @@ impl TokenTransport for &Script {
             .unwrap_or_else(PoisonError::into_inner);
         *calls = calls.saturating_add(1);
         drop(calls);
-        let answer = self.next().and_then(|reply| {
-            let body = serde_json::to_vec(&reply.body).map_err(ScriptError::Record)?;
-            Ok(TokenHttpResponse {
+        let answer = self.next().and_then(|reply| match reply.fail {
+            Some(Fail::Transport) => Err(ScriptError::Transport),
+            _ => Ok(TokenHttpResponse {
                 status: reply.status,
-                body: SecretSlice::from(body),
-            })
+                body: SecretSlice::from(reply.body.into_bytes()),
+            }),
         });
         ready(answer)
     }
