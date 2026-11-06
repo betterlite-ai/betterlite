@@ -2,12 +2,12 @@ task: B3802
 deviations:
   - what: >-
       compile_sandboxed returns the guarded guardrail source instead of a CPython code object; the runtime
-      that executes guardrail code compiles that source, and this module never holds CPython bytecode.
+      that executes guardrail code compiles that source.
     why: betterlite is a Rust gateway with no CPython in process, so the transform result stays source.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/sandbox.py#L146-L157
   - what: >-
-      import statements and class definitions are rejected at compile time. LiteLLM's RestrictedPython
-      accepts both, and a class it compiles then fails at execution because __metaclass__ is not in the globals.
+      import statements and class definitions are rejected at compile time; LiteLLM's RestrictedPython
+      accepts both, and a class it compiles then fails at execution without __metaclass__ in the globals.
     why: betterlite has no Python module system and no class model, so neither can run here.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/sandbox.py#L126-L143
   - what: >-
@@ -26,12 +26,12 @@ deviations:
     why: Aborting a Tokio task takes effect at its next await point and has no hook for ignoring cancellation.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/bounded_execution.py#L192-L200
   - what: >-
-      _inplacevar_ implements integer arithmetic, string, bytes, list and tuple concatenation, repetition, and
-      /= on two integers; float operands and matrix multiplication report an unsupported operand.
-    why: The sandbox value model has no host numeric types, and the lint table forbids float arithmetic in Rust.
+      _inplacevar_ covers integer arithmetic, sequence concatenation, repetition and /= on two integers;
+      float operands and matrix multiplication report an unsupported operand.
+    why: The value model has no host numeric types, and the lint table forbids float arithmetic in Rust.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/sandbox.py#L103-L111
   - what: >-
       Source nesting deeper than 200 levels is rejected at compile time, and a repeated text or list larger
       than one million items is refused by _inplacevar_.
-    why: Both are ways for untrusted source to exhaust the gateway's stack or memory before a deadline applies.
+    why: Both are ways for untrusted source to exhaust the stack or memory before a deadline applies.
     link: ""
