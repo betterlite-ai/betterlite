@@ -12,15 +12,13 @@ description: 'Implement benchmark and per-key session read endpoints over B387 a
   services instead of copying their algorithms. Function coverage in litellm/proxy/management_endpoints/auto_router_endpoints.py:
   get_auto_router_benchmarks (L846-L907), get_auto_router_session (L916-L959). Implement these behaviors
   through the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
-  instead of separate ports.'
+  instead of separate ports. B1100 registers routes/auto_router_read_api.rs as a stub, so fill only crates/betterlite-server/src/routes/auto_router_read_api.rs and leave routes.rs and state.rs as they are.'
 scope:
   paths:
   - crates/betterlite-server/src/auto_router_read_api.rs
   - crates/betterlite-server/src/auto_router_read_api/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/routes/auto_router_read_api.rs
+  - crates/betterlite-server/src/routes/auto_router_read_api/**
   - crates/betterlite-server/src/routing/auto_router_read_api.rs
   - crates/betterlite-server/src/routing/auto_router_read_api/**
   - tools/oracle/src/router_probes/auto_router_read_api.rs

@@ -8,7 +8,7 @@ description: >-
   in betterlite-server::savings using B174 and B845 get_deployment_model_info; outside a
   proxy the context has no deployment resolver and uses public prices. This replaces only
   _proxy_llm_router's global access, not its public-price fallback. This task attaches the
-  adapter to B068's server cost-service resource in state.rs, reusing that resource's bound
+  adapter to B068's server cost-service resource in state/cost_service.rs, reusing that resource's bound
   B1678 effective lookup instead of building a second one; logging and later spend writers
   read the savings context from there. B068 itself never names a savings type. Resolve or lookup failures emit debug and become
   unavailable estimates; no dashboard metric failure may abort a spend write.
@@ -51,6 +51,7 @@ description: >-
   tests verify B845 deployment lookup, absent-proxy fallback and that the assembled cost
   service carries the attached savings context. The 375 nonblank source
   lines budget 320 pricing/context, 260 tests and 220 adapters within 800.
+  B1100 registers state/cost_service.rs as a stub slot and B068 fills it first, so add the savings context to crates/betterlite-server/src/state/cost_service.rs and leave state.rs as it is.
 scope:
   paths:
     - crates/betterlite-models/Cargo.toml
@@ -59,8 +60,8 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/savings.rs
     - crates/betterlite-server/src/savings/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/state/cost_service.rs
+    - crates/betterlite-server/src/state/cost_service/**
     - tools/oracle/src/helpers/server/savings_pricing.rs
     - tools/oracle/src/helpers/server/savings_pricing/**
     - tools/oracle/helpers/savings_pricing.py

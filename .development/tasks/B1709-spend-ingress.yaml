@@ -38,6 +38,7 @@ description: >-
   realtime replay. Fuzz decode_callback_logs in server using its production body decoder.
   Consumer source is 186 lines, replay 171 and records 32; cap implementation at 390 and
   tests/fuzz/CLI/HTTP fixtures at 410, within 800 total.
+  B1100 registers routes/callback_replay.rs as a stub, so fill only crates/betterlite-server/src/routes/callback_replay.rs and leave routes.rs as it is.
 scope:
   paths:
     - crates/betterlite/src/main.rs
@@ -45,7 +46,8 @@ scope:
     - crates/betterlite/src/collector/**
     - crates/betterlite-server/src/{collector,callback_replay}.rs
     - crates/betterlite-server/src/{collector,callback_replay}/**
-    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/routes/callback_replay.rs
+    - crates/betterlite-server/src/routes/callback_replay/**
     - crates/betterlite-server/fuzz/{Cargo.toml,fuzz_targets/spend_ingress.rs,corpus/spend_ingress/**}
     - tools/oracle/cases/http/callback-replay/**
     - tools/oracle/helpers/b1709.py

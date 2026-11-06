@@ -21,15 +21,11 @@ description: 'Use B051/B070 repository and write-queue infrastructure to persist
   separate ports. Function coverage in litellm/repositories/autorouter_session_repository.py: AutoRouterSessionRepository.table
   (L17-L18), AutoRouterSessionRepository.model_class (L21-L22), AutoRouterSessionRepository.find_latest_for_key
   (L24-L34). Implement these behaviors through the typed Rust services above; synchronous facades and
-  structural accessors reuse the same primitive instead of separate ports.'
+  structural accessors reuse the same primitive instead of separate ports. This task adds no route or server state, so leave routes.rs and state.rs to B1100.'
 scope:
   paths:
   - crates/betterlite-server/src/auto_router_rollups.rs
   - crates/betterlite-server/src/auto_router_rollups/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/auto_router_rollups.rs
   - crates/betterlite-server/src/routing/auto_router_rollups/**
   - tools/oracle/src/router_probes/auto_router_rollups.rs
