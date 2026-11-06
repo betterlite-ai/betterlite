@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 
 use crate::answer::parse_answer;
 use crate::checks;
-use crate::checks::Selection;
 use crate::checks::history;
 use crate::dependencies::added_dependencies;
 use crate::development::Development;
@@ -53,7 +52,6 @@ fn failures(
     worktree: &Development,
     task_id: &str,
     report: &Report,
-    in_pull_request: &[String],
 ) -> Result<Option<Failure>, GateError> {
     let task = worktree.task(task_id)?;
     let added = added_dependencies(&worktree.root, &resolve_base(&worktree.root)?)?;
@@ -70,10 +68,7 @@ fn failures(
             red: vec![Red::Report],
         }));
     }
-    let selection = Selection {
-        only: Vec::new(),
-        skip: in_pull_request.to_vec(),
-    };
+    let selection = checks::selection::builtins_and(worktree, &task, checks::selection::lint)?;
     let verdict = checks::run(worktree, &task, &selection)?;
     if verdict.passed {
         return Ok(None);
@@ -189,12 +184,7 @@ fn answered(
         })));
     }
     let worktree = Development::open(attempt.places.worktree)?;
-    if let Some(failure) = failures(
-        &worktree,
-        &attempt.brief.task.id,
-        &report,
-        &attempt.agents.policy.checks_in_pull_request,
-    )? {
+    if let Some(failure) = failures(&worktree, &attempt.brief.task.id, &report)? {
         return Ok(Some(Step::Fix(failure)));
     }
     review::review(attempt, runner, &worktree.root).map(Some)
