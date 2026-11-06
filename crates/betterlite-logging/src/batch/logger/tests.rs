@@ -365,15 +365,18 @@ const SMALL: BatchSettings = BatchSettings {
         preserve: false,
         steps: &[
             FlushStep::Enqueue(&["a", "b", "c"]),
-            FlushStep::Flush { reply: Reply::Partial { kept: 0 }, arrivals: &[] },
+            FlushStep::Flush {
+                reply: Reply::Partial { kept: 1 },
+                arrivals: &["d", "e"],
+            },
         ],
     },
     Expectation {
         sent: &[&["a", "b", "c"]],
-        delivered: &[],
-        queue: &["b", "c"],
+        delivered: &["a"],
+        queue: &["c", "d", "e"],
         depths: &[1, 2, 3],
-        reports: &[ReportExpectation { batch: 3, delivered: 0, requeued: 3, dropped_oldest: 1, cancelled: false }],
+        reports: &[ReportExpectation { batch: 3, delivered: 1, requeued: 2, dropped_oldest: 1, cancelled: false }],
         warns: true,
     }
 )]
