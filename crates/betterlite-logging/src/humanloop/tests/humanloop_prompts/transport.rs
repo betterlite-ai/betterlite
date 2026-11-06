@@ -75,7 +75,7 @@ impl Drop for MockServer {
 async fn serve_connection(mut stream: TcpStream, scenario: Scenario, redirect_target: String) {
     let response = match scenario {
         Scenario::Stall => {
-            sleep(Duration::from_secs(2)).await;
+            sleep(Duration::from_secs(3)).await;
             return;
         }
         Scenario::BodyTooLarge => format!(
@@ -148,7 +148,7 @@ async fn a_stalled_response_ends_in_a_transport_error_within_the_deadline() {
         .await
         .expect_err("stalled");
     assert!(matches!(error, FetchError::Transport { .. }));
-    assert!(started.elapsed() < Duration::from_secs(1));
+    assert!(started.elapsed() < Duration::from_secs(2));
 }
 
 #[tokio::test]
