@@ -15,18 +15,13 @@ description: >-
   lines and 40 module/seed wiring lines; 400 planned and maximum changed lines. Integration cases exercise exact_entry_before_rule,
   first_routing_match, reload_replaces_rules and explicit_null_not_filled through the production engine and router
   boundary.
+  B016 registers RouteStage::GeneralizationIntegration as a stub, so replace only that stub and its not-built test in crates/betterlite-router/src/context/generalization_integration.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.
 scope:
   paths:
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-router/src/context/generalization_integration.rs
+  - crates/betterlite-router/src/context/generalization_integration/**
   - crates/betterlite-server/src/routing/model_generalizations.rs
   - crates/betterlite-server/src/routing/model_generalizations/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/model_generalizations.rs
   - tools/oracle/src/router_probes/model_generalizations/**
   - tools/oracle/litellm/probes/model_generalizations.py

@@ -38,16 +38,15 @@ description: >-
   registration adds 7. Allow 205 implementation, 165 tests, 235 HTTP fixtures, 55 fixture callbacks,
   45 config tests/seeds and 45 wiring lines, 750 total. The package exports and architecture documents
   describe wiring only and add no separate implementation of their referenced functions.
+  B1100 registers routes/anthropic_messages.rs as a stub, so fill only crates/betterlite-server/src/routes/anthropic_messages.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
   - crates/betterlite-server/src/api/anthropic_messages_routes.rs
   - crates/betterlite-server/src/api/anthropic_messages_routes/**
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/routes/anthropic_messages.rs
+  - crates/betterlite-server/src/routes/anthropic_messages/**
   - crates/betterlite-server/Cargo.toml
   - crates/betterlite-config/fuzz/corpus/config_yaml/anthropic-messages-routes-*
   - tools/oracle/cases/api/anthropic-messages-routes/**

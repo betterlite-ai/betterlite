@@ -31,14 +31,13 @@ description: >-
   are no owned config reads, license checks, credentials or byte parsers. Build model_group_read with
   files below 300 lines. The owned functions have 78 nonblank, noncomment lines including docstrings;
   budget 100 implementation, 230 tests and 60 route wiring lines, 390 within a 400-line gate.
+  B1100 registers routes/model_group_read.rs as a stub, so fill only crates/betterlite-server/src/routes/model_group_read.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/model_group_read.rs
     - crates/betterlite-server/src/model_group_read/**
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/model_group_read.rs
+    - crates/betterlite-server/src/routes/model_group_read/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - crates/betterlite-server/Cargo.toml

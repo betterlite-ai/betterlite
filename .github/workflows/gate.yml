@@ -3,6 +3,7 @@ name: gate
 on:
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened]
   merge_group:
     types: [checks_requested]
   push:
@@ -66,6 +67,9 @@ jobs:
           parts=$(jq -cn --argjson shards "$TEST_SHARDS" '["lint"] + [range(1; $shards + 1) | "tests-\(.)"]')
           if [[ $EVENT == pull_request ]]; then
             parts='["lint"]'
+            if [[ -n $task ]]; then
+              parts='["lint","task","mutants"]'
+            fi
           elif [[ $EVENT == merge_group && -n $task ]]; then
             parts='["lint","task"]'
           fi
@@ -78,7 +82,8 @@ jobs:
     name: ${{ matrix.part }}
     needs: find
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    # the longest local mutants run took 130 minutes
+    timeout-minutes: ${{ matrix.part == 'mutants' && 300 || 120 }}
     permissions:
       contents: read
     strategy:
@@ -174,13 +179,13 @@ jobs:
           cargo test --locked --manifest-path .development/gate/Cargo.toml -- --test-threads=1
 
       - name: Install the pinned tools
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' || needs.find.outputs.task != ''
         uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
         with:
           tool: cargo-nextest@0.9.140,cargo-deny@0.20.2,cargo-llvm-cov@0.8.7,cargo-mutants@27.1.0,typos@1.48.0,prek@0.4.9,zizmor@1.26.1,uv@0.11.14
 
       - name: Restore the tools built from source
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' || needs.find.outputs.task != ''
         id: tools
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -188,7 +193,7 @@ jobs:
           key: source-tools-cargo-shear-1.13.1-ast-grep-0.45.3-similarity-rs-0.5.0
 
       - name: Install the tools without prebuilt binaries
-        if: github.event_name != 'pull_request' && steps.tools.outputs.cache-hit != 'true'
+        if: (github.event_name != 'pull_request' || needs.find.outputs.task != '') && steps.tools.outputs.cache-hit != 'true'
         run: cargo install --locked --force cargo-shear@1.13.1 ast-grep@0.45.3 similarity-rs@0.5.0
 
       - name: Save the tools built from source
@@ -200,11 +205,11 @@ jobs:
 
       # cargo gate affected reads the package graph offline, and a cold cache lacks the crates no Linux build downloads.
       - name: Download every crate the lockfile names
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' || needs.find.outputs.task != ''
         run: cargo fetch --locked
 
       - name: Restore LiteLLM's helper answers
-        if: matrix.part != 'lint' && github.event_name != 'pull_request'
+        if: matrix.part != 'lint' && (github.event_name != 'pull_request' || needs.find.outputs.task != '')
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ~/.cache/betterlite-oracle
@@ -213,8 +218,9 @@ jobs:
 
       # lint and task split every check between them, so a check added to checks.yaml runs in task
       - name: Run the gate's ${{ matrix.part }} checks on the merged result
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' || needs.find.outputs.task != ''
         env:
+          EVENT: ${{ github.event_name }}
           GATE_BASE: ${{ needs.find.outputs.base }}
           GATE_ALL_TESTS: ${{ github.event_name == 'push' && 'true' || '' }}
           PART: ${{ matrix.part }}
@@ -222,8 +228,12 @@ jobs:
         run: |
           lint=(fmt clippy deny shear hooks similarity file-size workflows)
           if [[ -n $TASK ]]; then
-            lint+=(task-file tools scope lint-table diff-budget expect-budget crates committed whitespace specs-untouched notice no-enterprise no-attribution)
+            local_checks=$(cargo gate list "$TASK" --local) || exit 1
+            mapfile -t lint < <(awk '/^[^ ]/ {print $1}' <<<"$local_checks")
           fi
+          # coverage runs with the task's tests on the pull request, so the queue leaves it out
+          later=(mutants)
+          if [[ $EVENT != pull_request ]]; then later+=(coverage); fi
           selection=()
           case $PART in
             lint) for id in "${lint[@]}"; do selection+=(--only "$id"); done ;;
@@ -232,11 +242,15 @@ jobs:
               if [[ -z $packages ]]; then echo "the change affects no package"; exit 0; fi
               # the tests use LiteLLM but not its dev tools, about 330 MB
               UV_NO_DEV=1 exec cargo nextest run --locked --no-tests=warn --partition "hash:${PART#tests-}/$TEST_SHARDS" $packages ;;
-            task) for id in "${lint[@]}" mutants coverage; do selection+=(--skip "$id"); done ;;
+            task) for id in "${lint[@]}" "${later[@]}"; do selection+=(--skip "$id"); done ;;
+            mutants)
+              if ! cargo gate list "$TASK" | awk '$1 == "mutants" {found = 1} END {exit !found}'; then echo "the task has no mutants check"; exit 0; fi
+              export UV_NO_DEV=1
+              selection=(--only mutants) ;;
           esac
           if [[ $PART == task ]]; then
             checks=$(cargo gate list "$TASK")
-            if ! awk -v skipped=" ${lint[*]} mutants coverage " 'NF && !index(skipped, " "$1" "){remaining=1} END{exit !remaining}' <<<"$checks"; then
+            if ! awk -v skipped=" ${lint[*]} ${later[*]} " '/^[^ ]/ && !index(skipped, " "$1" "){remaining=1} END{exit !remaining}' <<<"$checks"; then
               echo "every task check belongs to another gate part"
               exit 0
             fi

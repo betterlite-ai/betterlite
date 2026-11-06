@@ -35,21 +35,14 @@ description: 'Introduce the default complexity_router marker and typed baseline 
   facades and structural accessors reuse the same primitive instead of separate ports. If floating diagnostics
   differ, a case may use absolute_tolerance=0.000000000001 only on its explicitly named score/probability
   pointer. Selection, tie order, counts, statuses, money and provider requests remain exact. Six-decimal
-  wire signals are compared after the source rounding, without widening tolerance.'
+  wire signals are compared after the source rounding, without widening tolerance.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B331, B338, B351, B358, B373, B374, B375 and B400 call this service.'
 scope:
   paths:
   - crates/betterlite-router/src/complexity_scoring.rs
   - crates/betterlite-router/src/complexity_scoring/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/complexity_scoring.rs
   - crates/betterlite-server/src/routing/complexity_scoring/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/complexity_scoring.rs
   - tools/oracle/src/router_probes/complexity_scoring/**
   - tools/oracle/litellm/probes/complexity_scoring.py
