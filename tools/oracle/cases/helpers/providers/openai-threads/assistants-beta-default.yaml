@@ -1,0 +1,5 @@
+kind: helper
+name: openai-threads-assistants-beta-default
+call: {openai_threads: {dispatch: {options: {api_key: sk-test, api_base: 'https://example.test/v1'}}}}
+env: {}
+compare: {ignore: []}

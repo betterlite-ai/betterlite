@@ -1,0 +1,5 @@
+kind: helper
+name: openai-threads-append-multimodal-message
+call: {openai_threads: {add_message: {options: {api_key: sk-test, api_base: 'https://example.test/v1'}, thread_id: thread_1, data: {role: user, content: [{type: text, text: 'what is this?'}, {type: image_url, image_url: {url: 'https://example.test/a.png', detail: high}}, {type: image_file, image_file: {file_id: file-1, detail: null}}], attachments: [{file_id: file-1, tools: [{type: code_interpreter}, {type: file_search}]}, {}], metadata: {n: 1}}, a_add_message: false, reply: {status: 200, body: '{"id":"msg_1","object":"thread.message","created_at":7,"thread_id":"thread_1","role":"assistant","content":[{"type":"text","text":{"value":"cited","annotations":[{"type":"file_citation","text":"s","start_index":0,"end_index":1,"file_citation":{"file_id":"file-1","quote":"q"},"extra_annotation":true}],"extra_text":1},"extra_block":"x"}],"attachments":[{"file_id":"file-1","tools":[{"type":"code_interpreter","extra_tool_key":7}]}]}'}}}}
+env: {}
+compare: {ignore: []}

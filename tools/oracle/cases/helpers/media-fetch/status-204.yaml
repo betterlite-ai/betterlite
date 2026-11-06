@@ -1,0 +1,12 @@
+kind: helper
+name: media-fetch-status-204
+call:
+  b5083:
+    call: read_response
+    status: 204
+    headers: {}
+    body_base64: ""
+    url: "https://example.com/image.png"
+env: {}
+compare:
+  ignore: []

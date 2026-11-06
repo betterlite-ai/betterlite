@@ -78,3 +78,10 @@ path = "fuzz_targets/prisma_scan.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "prisma_unified"
+path = "fuzz_targets/prisma_unified.rs"
+test = false
+doc = false
+bench = false
