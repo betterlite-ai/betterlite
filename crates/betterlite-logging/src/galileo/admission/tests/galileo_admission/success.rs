@@ -392,5 +392,6 @@ fn runtime_errors_are_logged_and_swallowed() {
 
     assert!(records(&delivery).is_empty());
     assert!(transport.calls().is_empty());
+    assert_eq!(logs.matching(Level::DEBUG, "On Async Success").len(), 1);
     assert_eq!(logs.matching(Level::ERROR, "unexpected error").len(), 1);
 }
