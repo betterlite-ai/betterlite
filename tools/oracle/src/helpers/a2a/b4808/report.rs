@@ -62,6 +62,8 @@ const fn run_kind(error: &RunError<ScriptError, ScriptError>) -> &'static str {
         RunError::Credentials(CredentialsError::Decode(_))
         | RunError::Api(ApiError::Decode(_))
         | RunError::Poll(PollError::Api(ApiError::Decode(_))) => "decode",
+        RunError::Api(ApiError::TooLarge { .. })
+        | RunError::Poll(PollError::Api(ApiError::TooLarge { .. })) => "too_large",
         RunError::Poll(PollError::NoRunId) => "no_run_id",
         RunError::Poll(PollError::PollTimeout { .. }) => "timeout",
         RunError::Poll(PollError::NonSuccess { .. }) => "non_success",

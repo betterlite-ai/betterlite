@@ -12,6 +12,7 @@ use crate::watsonx_run::run_api::ApiError;
 use crate::watsonx_run::tests::{
     Fail, Reply, Script, ScriptError, litellm_params, run_handler, send_params, token_reply,
 };
+use crate::watsonx_run::transport::MAX_RESPONSE_BYTES;
 use crate::watsonx_transform::extract::WxoSendParams;
 use crate::watsonx_transform::fake_streaming::{WxoStreamResult, WxoStreamStep};
 
@@ -370,6 +371,87 @@ async fn fallback_does_not_submit_when_the_stream_answer_is_malformed() {
     let recorded = script.recorded();
     assert_eq!(recorded.len(), 1);
     assert_eq!(recorded[0].url, STREAM);
+}
+
+#[tokio::test]
+async fn handler_rejects_an_sse_body_past_the_response_limit() {
+    let script = Script::new(vec![token_reply(), Reply::sse(&[&sse_text_step("hello")])]);
+    let mut handler = run_handler(&script);
+    handler.max_response_bytes = 8;
+    let error: RunError<ScriptError, ScriptError> = handler
+        .handle_streaming(
+            "req-1",
+            &send_params(),
+            &litellm_params(),
+            StreamPacing::default(),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        RunError::Api(ApiError::TooLarge { max: 8 })
+    ));
+    assert_eq!(script.recorded().len(), 1);
+}
+
+#[tokio::test]
+async fn handler_rejects_a_json_body_past_the_response_limit() {
+    let script = Script::new(vec![
+        token_reply(),
+        Reply::json(r#"{"run_id": "run-1", "status": "running"}"#)
+            .with_content_type("application/json"),
+    ]);
+    let mut handler = run_handler(&script);
+    handler.max_response_bytes = 8;
+    let error: RunError<ScriptError, ScriptError> = handler
+        .handle_streaming(
+            "req-1",
+            &send_params(),
+            &litellm_params(),
+            StreamPacing::default(),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        RunError::Api(ApiError::TooLarge { max: 8 })
+    ));
+}
+
+#[tokio::test]
+async fn handler_accepts_a_stream_at_the_response_limit() {
+    let script = Script::new(vec![token_reply(), Reply::sse(&["data: {}"])]);
+    let mut handler = run_handler(&script);
+    handler.max_response_bytes = 9;
+    handler
+        .handle_streaming(
+            "req-1",
+            &send_params(),
+            &litellm_params(),
+            StreamPacing::default(),
+        )
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn handler_reports_a_stream_the_transport_could_not_carry() {
+    let script = Script::new(vec![token_reply(), Reply::failing(Fail::TooLarge)]);
+    let error: RunError<ScriptError, ScriptError> = run_handler(&script)
+        .handle_streaming(
+            "req-1",
+            &send_params(),
+            &litellm_params(),
+            StreamPacing::default(),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        RunError::Api(ApiError::TooLarge {
+            max: MAX_RESPONSE_BYTES
+        })
+    ));
 }
 
 #[tokio::test]

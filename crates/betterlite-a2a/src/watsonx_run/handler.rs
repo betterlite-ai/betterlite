@@ -26,7 +26,7 @@ use super::accumulator::{LineAccumulator, SseError, accumulate_text};
 use super::event::RunEvent;
 use super::poll::{PollError, poll_run};
 use super::run_api::{ApiError, Method, RunBody, RunContent, RunMessage, call_run};
-use super::transport::{RunRequest, RunTransport, StreamBody};
+use super::transport::{RunLimits, RunRequest, RunTransport, StreamBody};
 
 mod tests;
 
@@ -68,6 +68,7 @@ pub struct RunHandler<T, K, C, S, U> {
     pub transport: T,
     pub credentials: BearerTokens<K, C, S>,
     pub source: U,
+    pub max_response_bytes: usize,
 }
 
 impl<T, K, C, S, U> RunHandler<T, K, C, S, U>
@@ -85,11 +86,15 @@ where
         raw: &WxoLitellmParams,
     ) -> Result<Event<ResponseMessage>, RunError<T::Error, K::Error>> {
         let prepared = self.prepare(params, raw, JSON_ACCEPT).await?;
+        let limits = RunLimits {
+            timeout: NON_STREAMING_TIMEOUT,
+            max_response_bytes: self.max_response_bytes,
+        };
         let request = RunRequest {
             url: &prepared.runs_url,
             headers: &prepared.headers,
             body: Some(&prepared.body),
-            timeout: NON_STREAMING_TIMEOUT,
+            limits,
         };
         let started = call_run(&self.transport, &request, Method::Post).await?;
         let run = poll_run(
@@ -97,7 +102,7 @@ where
             &prepared.base_url,
             started,
             &prepared.headers,
-            NON_STREAMING_TIMEOUT,
+            limits,
         )
         .await?;
         let text = extract_text_from_wxo_result(&run.run);
@@ -151,11 +156,37 @@ where
         &self,
         prepared: &Prepared,
     ) -> Result<String, RunError<T::Error, K::Error>> {
+        let limits = RunLimits {
+            timeout: STREAMING_TIMEOUT,
+            max_response_bytes: self.max_response_bytes,
+        };
+        let (content_type, chunks) = self.read_stream(prepared, limits).await?;
+        if content_type.to_lowercase().contains("text/event-stream") {
+            return Ok(sse_text(&chunks)?);
+        }
+        let event =
+            serde_json::from_slice::<RunEvent>(&chunks.concat()).map_err(ApiError::Decode)?;
+        let run = poll_run(
+            &self.transport,
+            &prepared.base_url,
+            event,
+            &prepared.headers,
+            limits,
+        )
+        .await?;
+        Ok(extract_text_from_wxo_result(&run.run))
+    }
+
+    async fn read_stream(
+        &self,
+        prepared: &Prepared,
+        limits: RunLimits,
+    ) -> Result<(String, Vec<Vec<u8>>), RunError<T::Error, K::Error>> {
         let request = RunRequest {
             url: &prepared.stream_url,
             headers: &prepared.headers,
             body: Some(&prepared.body),
-            timeout: STREAMING_TIMEOUT,
+            limits,
         };
         let response = self
             .transport
@@ -167,28 +198,22 @@ where
                 status: response.status,
             }));
         }
+        let content_type = response.content_type;
         let chunks = match response.body {
             StreamBody::Chunks(chunks) => chunks,
             StreamBody::ReadFailed(error) => return Err(RunError::Body(error)),
+            StreamBody::TooLarge { max } => return Err(RunError::Api(ApiError::TooLarge { max })),
         };
-        if response
-            .content_type
-            .to_lowercase()
-            .contains("text/event-stream")
-        {
-            return Ok(sse_text(&chunks)?);
+        let mut total = 0_usize;
+        for chunk in &chunks {
+            total = total.saturating_add(chunk.len());
         }
-        let event =
-            serde_json::from_slice::<RunEvent>(&chunks.concat()).map_err(ApiError::Decode)?;
-        let run = poll_run(
-            &self.transport,
-            &prepared.base_url,
-            event,
-            &prepared.headers,
-            STREAMING_TIMEOUT,
-        )
-        .await?;
-        Ok(extract_text_from_wxo_result(&run.run))
+        if total > limits.max_response_bytes {
+            return Err(RunError::Api(ApiError::TooLarge {
+                max: limits.max_response_bytes,
+            }));
+        }
+        Ok((content_type, chunks))
     }
 }
 

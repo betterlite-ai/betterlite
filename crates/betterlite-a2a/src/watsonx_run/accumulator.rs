@@ -8,7 +8,7 @@ use crate::watsonx_transform::extract::extract_text_from_wxo_result;
 mod tests;
 
 pub const MAX_LINE_BYTES: usize = 0x10_0000;
-pub const MAX_TEXT_BYTES: usize = 0x80_0000;
+pub const MAX_TEXT_BYTES: usize = 0x40_0000;
 
 #[derive(Debug, Error)]
 pub enum SseError {

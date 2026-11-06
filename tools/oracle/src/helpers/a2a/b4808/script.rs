@@ -79,7 +79,7 @@ impl Script {
                 url: request.url.to_owned(),
                 headers: request.headers.clone(),
                 body,
-                timeout: request.timeout.as_secs_f64(),
+                timeout: request.limits.timeout.as_secs_f64(),
             });
         Ok(())
     }
@@ -112,6 +112,9 @@ impl Script {
         }
         let body = match step.fail {
             Some(Fail::Read) => StreamBody::ReadFailed(ScriptError::Read),
+            Some(Fail::TooLarge) => StreamBody::TooLarge {
+                max: request.limits.max_response_bytes,
+            },
             _ => StreamBody::Chunks(chunks_of(&step).map_err(ScriptError::Record)?),
         };
         Ok(StreamResponse {

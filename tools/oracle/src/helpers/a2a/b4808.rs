@@ -6,6 +6,7 @@ use betterlite_a2a::watsonx_credentials::bearer::BearerTokens;
 use betterlite_a2a::watsonx_credentials::token_cache::BoundedTokenCache;
 use betterlite_a2a::watsonx_run::config::{Answer, ConfigCall, Reply, WatsonxRunConfig};
 use betterlite_a2a::watsonx_run::handler::RunHandler;
+use betterlite_a2a::watsonx_run::transport::MAX_RESPONSE_BYTES;
 use betterlite_a2a::watsonx_transform::extract::WxoSendParams;
 use betterlite_core::agents::json::AgentJson;
 use serde::Deserialize;
@@ -32,6 +33,7 @@ enum Mode {
 enum Fail {
     Transport,
     Read,
+    TooLarge,
 }
 
 #[derive(Clone, Deserialize)]
@@ -115,6 +117,7 @@ impl Helper for Op {
                     store: BoundedTokenCache::new(NonZeroUsize::MIN),
                 },
                 source: Source::default(),
+                max_response_bytes: MAX_RESPONSE_BYTES,
             },
         };
         let outcome = match runtime.block_on(call(&mut config, input)) {

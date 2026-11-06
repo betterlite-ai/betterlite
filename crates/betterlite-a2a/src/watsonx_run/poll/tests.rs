@@ -9,7 +9,7 @@ use rstest::rstest;
 use super::{MAX_POLL_ATTEMPTS, PollError, poll_run, run_id};
 use crate::watsonx_run::event::RunEvent;
 use crate::watsonx_run::run_api::ApiError;
-use crate::watsonx_run::tests::{Fail, Reply, Script};
+use crate::watsonx_run::tests::{Fail, Reply, Script, limits};
 
 const BASE: &str = "https://cp4d.example.com/orchestrate/cpd/instances/inst-1";
 const RUN: &str =
@@ -35,7 +35,7 @@ async fn polling_waits_two_seconds_before_every_get_on_the_run_id_endpoint() {
         Reply::json(r#"{"status": "completed"}"#),
     ]);
     let headers = headers();
-    let polled = poll_run(&&script, BASE, started(), &headers, TIMEOUT)
+    let polled = poll_run(&&script, BASE, started(), &headers, limits(TIMEOUT))
         .await
         .unwrap();
     assert_eq!(polled.status.as_deref(), Some("completed"));
@@ -56,7 +56,7 @@ async fn polling_waits_two_seconds_before_every_get_on_the_run_id_endpoint() {
 async fn polling_returns_at_the_first_successful_terminal_state(#[case] status: &str) {
     let answer = format!(r#"{{"run_id": "run-1", "status": "{status}"}}"#);
     let script = Script::new(vec![Reply::json(&answer)]);
-    let polled = poll_run(&&script, BASE, started(), &headers(), TIMEOUT)
+    let polled = poll_run(&&script, BASE, started(), &headers(), limits(TIMEOUT))
         .await
         .unwrap();
     assert_eq!(polled.status.as_deref(), Some(status));
@@ -66,7 +66,7 @@ async fn polling_returns_at_the_first_successful_terminal_state(#[case] status: 
 #[tokio::test]
 async fn polling_times_out_after_ninety_attempts() {
     let script = Script::new(vec![Reply::json(r#"{"status": "running"}"#).repeating()]);
-    let error = poll_run(&&script, BASE, started(), &headers(), TIMEOUT)
+    let error = poll_run(&&script, BASE, started(), &headers(), limits(TIMEOUT))
         .await
         .unwrap_err();
     assert_eq!(
@@ -86,7 +86,7 @@ async fn polling_times_out_after_ninety_attempts() {
 #[tokio::test]
 async fn polling_fails_on_a_status_that_is_not_a_success(#[case] status: u16) {
     let script = Script::new(vec![Reply::json("{}").with_status(status)]);
-    let error = poll_run(&&script, BASE, started(), &headers(), TIMEOUT)
+    let error = poll_run(&&script, BASE, started(), &headers(), limits(TIMEOUT))
         .await
         .unwrap_err();
     assert!(matches!(
@@ -98,7 +98,7 @@ async fn polling_fails_on_a_status_that_is_not_a_success(#[case] status: u16) {
 #[tokio::test]
 async fn polling_surfaces_a_transport_failure() {
     let script = Script::new(vec![Reply::failing(Fail::Transport)]);
-    let error = poll_run(&&script, BASE, started(), &headers(), TIMEOUT)
+    let error = poll_run(&&script, BASE, started(), &headers(), limits(TIMEOUT))
         .await
         .unwrap_err();
     assert!(matches!(error, PollError::Api(ApiError::Transport(_))));
@@ -112,7 +112,7 @@ async fn polling_does_not_poll_a_run_that_is_already_terminal() {
         BASE,
         event(r#"{"run_id": "run-1", "status": "completed"}"#),
         &headers(),
-        TIMEOUT,
+        limits(TIMEOUT),
     )
     .await
     .unwrap();
@@ -125,7 +125,7 @@ async fn polling_polls_a_run_that_is_not_terminal_and_returns_the_terminal_one()
     let script = Script::new(vec![Reply::json(
         r#"{"run_id": "run-1", "status": "succeeded"}"#,
     )]);
-    let run = poll_run(&&script, BASE, started(), &headers(), TIMEOUT)
+    let run = poll_run(&&script, BASE, started(), &headers(), limits(TIMEOUT))
         .await
         .unwrap();
     assert_eq!(run.status.as_deref(), Some("succeeded"));
@@ -140,7 +140,7 @@ async fn polling_falls_back_to_the_id_when_the_run_id_is_empty() {
         BASE,
         event(r#"{"run_id": "", "id": "run-1", "status": "running"}"#),
         &headers(),
-        TIMEOUT,
+        limits(TIMEOUT),
     )
     .await
     .unwrap();
@@ -156,7 +156,7 @@ async fn polling_falls_back_to_the_id_when_the_run_id_is_absent() {
         BASE,
         event(r#"{"id": "run-1", "status": "running"}"#),
         &headers(),
-        TIMEOUT,
+        limits(TIMEOUT),
     )
     .await
     .unwrap();
@@ -185,7 +185,7 @@ async fn polling_requires_a_run_id_for_a_run_that_is_not_terminal() {
         BASE,
         event(r#"{"status": "running"}"#),
         &headers(),
-        TIMEOUT,
+        limits(TIMEOUT),
     )
     .await
     .unwrap_err();
@@ -201,7 +201,7 @@ async fn polling_requires_a_run_id_for_a_run_that_is_not_terminal() {
 async fn polling_fails_a_terminal_run_that_is_not_a_success(#[case] status: &str) {
     let script = Script::new(Vec::new());
     let answer = format!(r#"{{"run_id": "run-1", "status": "{status}"}}"#);
-    let error = poll_run(&&script, BASE, event(&answer), &headers(), TIMEOUT)
+    let error = poll_run(&&script, BASE, event(&answer), &headers(), limits(TIMEOUT))
         .await
         .unwrap_err();
     assert_eq!(
@@ -219,7 +219,7 @@ async fn polling_fails_a_terminal_run_that_is_not_a_success(#[case] status: &str
 async fn polling_stops_at_a_polled_run_that_ended_without_success(#[case] status: &str) {
     let answer = format!(r#"{{"status": "{status}"}}"#);
     let script = Script::new(vec![Reply::json(&answer)]);
-    let error = poll_run(&&script, BASE, started(), &headers(), TIMEOUT)
+    let error = poll_run(&&script, BASE, started(), &headers(), limits(TIMEOUT))
         .await
         .unwrap_err();
     assert!(matches!(error, PollError::NonSuccess { .. }));
@@ -233,7 +233,7 @@ async fn polling_keeps_the_timeout_it_was_given_for_every_get() {
         Reply::json(r#"{"status": "completed"}"#),
     ]);
     let timeout = Duration::from_secs(120);
-    poll_run(&&script, BASE, started(), &headers(), timeout)
+    poll_run(&&script, BASE, started(), &headers(), limits(timeout))
         .await
         .unwrap();
     let timeouts: Vec<_> = script

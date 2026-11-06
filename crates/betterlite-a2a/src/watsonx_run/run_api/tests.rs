@@ -6,8 +6,8 @@ use std::time::Duration;
 use rstest::rstest;
 
 use super::{ApiError, Method, RunBody, RunContent, RunMessage, call_run};
-use crate::watsonx_run::tests::{Fail, Reply, Script};
-use crate::watsonx_run::transport::RunRequest;
+use crate::watsonx_run::tests::{Fail, Reply, Script, limits};
+use crate::watsonx_run::transport::{RunLimits, RunRequest};
 
 const URL: &str = "https://cp4d.example.com/orchestrate/cpd/instances/inst-1/v1/orchestrate/runs";
 
@@ -43,7 +43,7 @@ async fn submission_posts_the_run_body_to_the_runs_endpoint() {
         url: URL,
         headers: &headers,
         body: Some(&body),
-        timeout: Duration::from_secs(90),
+        limits: limits(Duration::from_secs(90)),
     };
     let event = call_run(&&script, &request, Method::Post).await.unwrap();
     assert_eq!(event.run_id.as_deref(), Some("run-1"));
@@ -78,7 +78,7 @@ async fn submission_accepts_a_success_status(#[case] status: u16) {
         url: URL,
         headers: &headers,
         body: None,
-        timeout: Duration::from_secs(90),
+        limits: limits(Duration::from_secs(90)),
     };
     call_run(&&script, &request, Method::Post).await.unwrap();
 }
@@ -95,7 +95,7 @@ async fn submission_fails_on_a_status_that_is_not_a_success(#[case] status: u16)
         url: URL,
         headers: &headers,
         body: None,
-        timeout: Duration::from_secs(90),
+        limits: limits(Duration::from_secs(90)),
     };
     let error = call_run(&&script, &request, Method::Post)
         .await
@@ -114,7 +114,7 @@ async fn submission_fails_on_a_malformed_answer(#[case] answer: &str) {
         url: URL,
         headers: &headers,
         body: None,
-        timeout: Duration::from_secs(90),
+        limits: limits(Duration::from_secs(90)),
     };
     let error = call_run(&&script, &request, Method::Post)
         .await
@@ -130,7 +130,7 @@ async fn submission_surfaces_a_transport_failure() {
         url: URL,
         headers: &headers,
         body: None,
-        timeout: Duration::from_secs(90),
+        limits: limits(Duration::from_secs(90)),
     };
     let error = call_run(&&script, &request, Method::Post)
         .await
@@ -144,4 +144,39 @@ fn submission_serializes_the_content_as_a_response_type_and_a_text() {
         serde_json::to_string(&body(None).message.content).unwrap(),
         r#"[{"response_type":"text","text":"hello"}]"#
     );
+}
+
+#[tokio::test]
+async fn submission_accepts_a_body_at_the_response_limit() {
+    let script = Script::new(vec![Reply::json("{}")]);
+    let headers = headers();
+    let request = RunRequest {
+        url: URL,
+        headers: &headers,
+        body: None,
+        limits: RunLimits {
+            timeout: Duration::from_secs(90),
+            max_response_bytes: 2,
+        },
+    };
+    call_run(&&script, &request, Method::Post).await.unwrap();
+}
+
+#[tokio::test]
+async fn submission_rejects_a_body_past_the_response_limit() {
+    let script = Script::new(vec![Reply::json("{}")]);
+    let headers = headers();
+    let request = RunRequest {
+        url: URL,
+        headers: &headers,
+        body: None,
+        limits: RunLimits {
+            timeout: Duration::from_secs(90),
+            max_response_bytes: 1,
+        },
+    };
+    let error = call_run(&&script, &request, Method::Post)
+        .await
+        .unwrap_err();
+    assert!(matches!(error, ApiError::TooLarge { max: 1 }));
 }

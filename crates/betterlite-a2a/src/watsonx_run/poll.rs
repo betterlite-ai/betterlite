@@ -6,7 +6,7 @@ use thiserror::Error;
 
 use super::event::{RunEvent, RunState};
 use super::run_api::{ApiError, Method, call_run};
-use super::transport::{RunRequest, RunTransport};
+use super::transport::{RunLimits, RunRequest, RunTransport};
 
 mod tests;
 
@@ -43,7 +43,7 @@ pub async fn poll_run<T>(
     base_url: &str,
     started: RunEvent,
     headers: &BTreeMap<String, String>,
-    timeout: Duration,
+    limits: RunLimits,
 ) -> Result<RunEvent, PollError<T::Error>>
 where
     T: RunTransport,
@@ -59,7 +59,7 @@ where
                 url: &url,
                 headers,
                 body: None,
-                timeout,
+                limits,
             };
             let event = call_run(transport, &request, Method::Get).await?;
             if RunState::parse(event.status.as_deref().unwrap_or_default()).is_some() {

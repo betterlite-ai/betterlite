@@ -20,7 +20,8 @@ use crate::watsonx_credentials::params::WxoLitellmParams;
 use crate::watsonx_credentials::token_cache::BoundedTokenCache;
 use crate::watsonx_run::handler::RunHandler;
 use crate::watsonx_run::transport::{
-    RunRequest, RunResponse, RunTransport, StreamBody, StreamResponse,
+    MAX_RESPONSE_BYTES, RunLimits, RunRequest, RunResponse, RunTransport, StreamBody,
+    StreamResponse,
 };
 use crate::watsonx_transform::extract::WxoSendParams;
 
@@ -28,6 +29,7 @@ use crate::watsonx_transform::extract::WxoSendParams;
 pub(crate) enum Fail {
     Transport,
     Read,
+    TooLarge,
 }
 
 #[derive(Clone, Debug)]
@@ -162,7 +164,7 @@ impl Script {
                 url: request.url.to_owned(),
                 headers: request.headers.clone(),
                 body,
-                timeout: request.timeout,
+                timeout: request.limits.timeout,
             });
         Ok(())
     }
@@ -195,6 +197,9 @@ impl Script {
         }
         let body = match reply.fail {
             Some(Fail::Read) => StreamBody::ReadFailed(ScriptError::Read),
+            Some(Fail::TooLarge) => StreamBody::TooLarge {
+                max: request.limits.max_response_bytes,
+            },
             _ => StreamBody::Chunks(chunks_of(&reply).map_err(ScriptError::Record)?),
         };
         Ok(StreamResponse {
@@ -328,6 +333,14 @@ pub(crate) fn run_handler(
             store: BoundedTokenCache::new(NonZeroUsize::new(8).unwrap()),
         },
         source: Source::default(),
+        max_response_bytes: MAX_RESPONSE_BYTES,
+    }
+}
+
+pub(crate) fn limits(timeout: Duration) -> RunLimits {
+    RunLimits {
+        timeout,
+        max_response_bytes: MAX_RESPONSE_BYTES,
     }
 }
 

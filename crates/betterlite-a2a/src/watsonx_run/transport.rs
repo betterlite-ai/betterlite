@@ -5,11 +5,20 @@ use std::time::Duration;
 
 use super::run_api::RunBody;
 
+pub const MAX_RESPONSE_BYTES: usize = 0x80_0000;
+
+#[derive(Clone, Copy, Debug)]
+pub struct RunLimits {
+    pub timeout: Duration,
+    pub max_response_bytes: usize,
+}
+
 pub struct RunRequest<'request> {
     pub url: &'request str,
     pub headers: &'request BTreeMap<String, String>,
     pub body: Option<&'request RunBody>,
-    pub timeout: Duration,
+    // a transport stops reading a body past limits.max_response_bytes and reports it as too large
+    pub limits: RunLimits,
 }
 
 #[derive(Debug)]
@@ -29,6 +38,7 @@ pub struct StreamResponse<E> {
 pub enum StreamBody<E> {
     Chunks(Vec<Vec<u8>>),
     ReadFailed(E),
+    TooLarge { max: usize },
 }
 
 pub trait RunTransport: Send + Sync {

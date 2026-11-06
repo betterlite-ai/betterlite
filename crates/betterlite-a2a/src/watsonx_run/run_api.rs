@@ -45,6 +45,8 @@ where
     Status { status: u16 },
     #[error("the watsonx Orchestrate run answer is not the expected JSON")]
     Decode(#[source] serde_json::Error),
+    #[error("the watsonx Orchestrate run answer passed {max} bytes")]
+    TooLarge { max: usize },
 }
 
 pub async fn call_run<T>(
@@ -63,6 +65,11 @@ where
     if !(200..300).contains(&response.status) {
         return Err(ApiError::Status {
             status: response.status,
+        });
+    }
+    if response.body.len() > request.limits.max_response_bytes {
+        return Err(ApiError::TooLarge {
+            max: request.limits.max_response_bytes,
         });
     }
     serde_json::from_slice(&response.body).map_err(ApiError::Decode)

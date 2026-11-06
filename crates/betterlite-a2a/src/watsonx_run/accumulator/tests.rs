@@ -67,9 +67,9 @@ fn drops_a_line_that_is_not_text() {
 }
 
 #[test]
-fn accumulator_bounds_are_one_mebibyte_and_eight_mebibytes() {
+fn accumulator_bounds_are_one_mebibyte_per_line_and_four_for_the_text() {
     assert_eq!(MAX_LINE_BYTES, 0x10_0000);
-    assert_eq!(MAX_TEXT_BYTES, 0x80_0000);
+    assert_eq!(MAX_TEXT_BYTES, 0x40_0000);
 }
 
 #[test]
