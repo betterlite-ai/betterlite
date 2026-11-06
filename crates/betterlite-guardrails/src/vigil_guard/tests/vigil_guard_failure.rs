@@ -75,7 +75,7 @@ fn a_missing_config_error_names_the_field() {
 }
 
 #[test]
-fn fail_closed_blocks_the_request() {
+fn fail_closed_raises_a_backend_failure_that_is_not_a_content_block() {
     let inputs = inputs(Some(vec!["a".to_owned()]), None);
     let final_texts = vec!["a".to_owned()];
     let error = handle_backend_failure(
@@ -87,8 +87,9 @@ fn fail_closed_blocks_the_request() {
     )
     .unwrap_err();
     assert_eq!(error.status_code(), StatusCode::BAD_REQUEST);
-    assert!(matches!(
-        error,
-        VigilGuardError::Blocked { reason } if reason.contains("fail_closed")
-    ));
+    assert!(matches!(error, VigilGuardError::BackendUnavailable));
+    assert_eq!(
+        error.to_string(),
+        "Vigil Guard backend unreachable; request blocked by fail_closed policy."
+    );
 }

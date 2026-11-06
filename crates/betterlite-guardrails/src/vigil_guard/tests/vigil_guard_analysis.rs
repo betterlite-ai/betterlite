@@ -1,9 +1,12 @@
 use std::fs;
 use std::path::Path;
+use std::time::Duration;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::vigil_guard::analysis::{Analysis, Decision, Source, analyze};
+use betterlite_guardrails::vigil_guard::config::VigilGuardSettings;
 use betterlite_guardrails::vigil_guard::error::VigilGuardError;
+use betterlite_guardrails::vigil_guard::handler_protocol::RequestTimeout;
 use betterlite_guardrails::vigil_guard::metadata::MetadataValue;
 use indexmap::IndexMap;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
@@ -26,11 +29,20 @@ async fn sends_full_mode_payload_to_guard_analyze() {
         r#"{"decision":"BLOCKED","blockMessage":"banned content","sanitizedText":"clean"}"#,
     ))]);
     let metadata = model_metadata();
-    let result = analyze(&handler, &settings(), "hello", Source::UserInput, &metadata)
+    let timeout = RequestTimeout {
+        total: Duration::from_secs(3),
+        connect: Duration::from_secs(1),
+    };
+    let configured = VigilGuardSettings {
+        timeout,
+        ..settings()
+    };
+    let result = analyze(&handler, &configured, "hello", Source::UserInput, &metadata)
         .await
         .expect("analysis succeeds");
     let calls = handler.calls();
     let call = &calls[0];
+    assert_eq!(call.timeout, timeout);
     assert_eq!(call.url, "https://vigil.example/v1/guard/analyze");
     assert_eq!(
         call.headers.get(AUTHORIZATION).unwrap().to_str().unwrap(),

@@ -29,13 +29,15 @@ pub enum VigilGuardError {
     InvalidToolFunction { index: usize },
     #[error("Vigil Guard blocked the request: {reason}")]
     Blocked { reason: String },
+    #[error("Vigil Guard backend unreachable; request blocked by fail_closed policy.")]
+    BackendUnavailable,
 }
 
 impl VigilGuardError {
     #[must_use]
     pub const fn status_code(&self) -> StatusCode {
         match self {
-            Self::Blocked { .. } => StatusCode::BAD_REQUEST,
+            Self::Blocked { .. } | Self::BackendUnavailable => StatusCode::BAD_REQUEST,
             Self::MissingConfig { .. }
             | Self::InvalidHeader { .. }
             | Self::Transport { .. }

@@ -1,6 +1,8 @@
+use std::time::Duration;
+
 use betterlite_guardrails::vigil_guard::DEFAULT_TIMEOUT;
 use betterlite_guardrails::vigil_guard::error::VigilGuardError;
-use betterlite_guardrails::vigil_guard::handler_protocol::HttpResponse;
+use betterlite_guardrails::vigil_guard::handler_protocol::{HttpResponse, RequestTimeout};
 use betterlite_guardrails::vigil_guard::retry::post_with_retry;
 use betterlite_guardrails::vigil_guard::transient::TransportError;
 use reqwest::StatusCode;
@@ -20,11 +22,17 @@ const ENDPOINT: &str = "https://vigil.example/v1/guard/analyze";
 async fn retries_once_on_transient_status(#[case] status: StatusCode) {
     let handler = FakeHandler::new(vec![Ok(status_only(status)), Ok(json_body("{}"))]);
     let headers = HeaderMap::new();
-    let response = post_with_retry(&handler, ENDPOINT, &headers, &payload(), DEFAULT_TIMEOUT)
+    let timeout = RequestTimeout {
+        total: Duration::from_secs(3),
+        connect: Duration::from_secs(1),
+    };
+    let response = post_with_retry(&handler, ENDPOINT, &headers, &payload(), timeout)
         .await
         .expect("the second attempt succeeds");
     assert_eq!(response.status, StatusCode::OK);
-    assert_eq!(handler.calls().len(), 2);
+    let calls = handler.calls();
+    assert_eq!(calls.len(), 2);
+    assert!(calls.iter().all(|call| call.timeout == timeout));
 }
 
 #[rstest]

@@ -34,9 +34,7 @@ pub fn handle_backend_failure(
                 error = %error,
                 "Vigil Guard backend failure with fail_closed; blocking request"
             );
-            Err(VigilGuardError::Blocked {
-                reason: "the backend is unreachable; the fail_closed policy blocked it".to_owned(),
-            })
+            Err(VigilGuardError::BackendUnavailable)
         }
     }
 }
