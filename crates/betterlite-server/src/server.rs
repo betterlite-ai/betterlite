@@ -54,14 +54,14 @@ pub async fn run(
     port: u16,
 ) -> Result<(), ServerError> {
     let shutdown_signal = build_shutdown_signal()?;
+    let shutting_down = Arc::new(AtomicBool::new(false));
+    let outbound = chat.client.clone();
+    let application = application(&config, chat, Arc::clone(&shutting_down))?;
     let address = format!("{host}:{port}");
     let listener = TcpListener::bind((host, port))
         .await
         .map_err(|source| ServerError::Bind { address, source })?;
     tracing::info!(host, port, "betterlite server listening");
-    let shutting_down = Arc::new(AtomicBool::new(false));
-    let outbound = chat.client.clone();
-    let application = application(&config, chat, Arc::clone(&shutting_down))?;
     let mut connections = JoinSet::new();
     let connection_builder = configure_connection_builder();
     connections.spawn(shutdown_signal.wait(Arc::clone(&shutting_down)));

@@ -5,9 +5,9 @@ use std::fs;
 use super::execute;
 use crate::checks::Outcome;
 use crate::git::git;
-use crate::spec::command::Command;
+use crate::spec::command::{Command, Turn};
 
-fn run_lock_probe(one_at_a_time: bool) -> Outcome {
+fn run_lock_probe(turn: Turn) -> Outcome {
     let root = tempfile::tempdir().unwrap();
     git(root.path(), &["init", "--quiet"]).unwrap();
     let log_dir = root.path().join(".git/betterlite/B000/gate");
@@ -18,17 +18,17 @@ fn run_lock_probe(one_at_a_time: bool) -> Outcome {
         run: "! flock --nonblock .git/betterlite/deny.lock true".to_owned(),
         when_exists: None,
         after_green: false,
-        one_at_a_time,
+        turn,
     };
     execute(root.path(), &log_dir, &probe, &[]).unwrap()
 }
 
 #[test]
 fn a_one_at_a_time_check_runs_while_the_gate_holds_its_lock() {
-    assert!(matches!(run_lock_probe(true), Outcome::Pass));
+    assert!(matches!(run_lock_probe(Turn::Alone), Outcome::Pass));
 }
 
 #[test]
 fn other_checks_run_without_the_lock() {
-    assert!(matches!(run_lock_probe(false), Outcome::Fail { .. }));
+    assert!(matches!(run_lock_probe(Turn::Build), Outcome::Fail { .. }));
 }

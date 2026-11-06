@@ -3,12 +3,12 @@
 use std::fs;
 use std::path::Path;
 
-use crate::checks::{Outcome, Selection, history, render, run};
+use crate::checks::{Outcome, Selection, history, render, run, selection};
 use crate::development::Development;
 use crate::git::git;
 use crate::spec::backlog::Backlog;
 use crate::spec::catalog::Catalog;
-use crate::spec::command::Command;
+use crate::spec::command::{Command, Turn};
 use crate::spec::task::Task;
 use crate::yaml::read_yaml;
 
@@ -51,7 +51,7 @@ fn command(id: &str, script: &str) -> Command {
         run: script.to_owned(),
         when_exists: None,
         after_green: false,
-        one_at_a_time: false,
+        turn: Turn::Build,
     }
 }
 
@@ -140,4 +140,18 @@ fn a_new_run_without_a_result_or_an_error_is_unfinished() {
     assert!(!history::unfinished(folder.path(), &earlier).unwrap());
     fs::create_dir_all(runs.join("run-cut")).unwrap();
     assert!(history::unfinished(folder.path(), &earlier).unwrap());
+}
+
+#[test]
+fn the_local_gate_keeps_lint_checks_and_leaves_tests_to_ci() {
+    let (_folder, mut development, mut task) = fixture();
+    development.catalog.base.commands.extend([
+        command("fmt", "true"),
+        command("clippy", "true"),
+        command("deny", "true"),
+        command("mutants", "true"),
+    ]);
+    task.checks.commands.push(command("route-tests", "true"));
+    let selection = selection::builtins_and(&development, &task, selection::lint).unwrap();
+    assert_eq!(selection.only, ["fmt", "clippy", "deny"]);
 }

@@ -38,15 +38,14 @@ description: >-
   compares complete bodies/error fields on real routes, including all aliases. Reuse B003 decoding
   and B830 response contracts, with no new parser/fuzz target. Allow 145 production, 270 table-driven
   tests and 80 wiring lines, 495 within a 550-line gate.
+  B1100 registers routes/customer_read.rs as a stub, so fill only crates/betterlite-server/src/routes/customer_read.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/customer_read.rs
     - crates/betterlite-server/src/customer_read/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/customer_read.rs
+    - crates/betterlite-server/src/routes/customer_read/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/customer-read/**

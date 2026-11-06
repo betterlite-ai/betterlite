@@ -43,13 +43,14 @@ description: >-
   This is a background job with no new HTTP route or pure-function adapter: native fixture
   tests execute production orchestration. The seven functions contain 241 nonblank lines;
   cron registration adds 34, allowing 250 implementation and 450 tests/startup wiring in 750.
+  B1100 registers state/ptu_rollup.rs as a stub slot, so fill only crates/betterlite-server/src/state/ptu_rollup.rs and leave state.rs as it is.
 scope:
   paths:
     - crates/betterlite-db/src/ptu/rollup.rs
     - crates/betterlite-db/src/ptu/rollup/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/state/ptu_rollup.rs
+    - crates/betterlite-server/src/state/ptu_rollup/**
     - crates/betterlite-server/src/jobs.rs
     - crates/betterlite-server/src/jobs/**
     - crates/betterlite-server/src/jobs/ptu.rs

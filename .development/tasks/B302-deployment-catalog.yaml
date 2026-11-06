@@ -17,21 +17,14 @@ description: 'Resolve aliases, literal deployment IDs, team-visible names and wi
   (L12690-L12713), Router.deployments_for_request (L12715-L12727), Router._is_strategy_marker_deployment
   (L12730-L12735), Router._common_checks_available_deployment (L12737-L12908), Router._drop_strategy_markers
   (L12910-L12921). Implement these behaviors through the typed Rust services above; synchronous facades
-  and structural accessors reuse the same primitive instead of separate ports.'
+  and structural accessors reuse the same primitive instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B016 wires this service into RouteContext.'
 scope:
   paths:
   - crates/betterlite-router/src/deployment_catalog.rs
   - crates/betterlite-router/src/deployment_catalog/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/deployment_catalog.rs
   - crates/betterlite-server/src/routing/deployment_catalog/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/deployment_catalog.rs
   - tools/oracle/src/router_probes/deployment_catalog/**
   - tools/oracle/litellm/probes/deployment_catalog.py

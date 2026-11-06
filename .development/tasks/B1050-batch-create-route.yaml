@@ -26,8 +26,7 @@ description: >-
 
 
   Register exactly these routes in this task: POST /{provider}/v1/batches; POST /v1/batches; POST /batches. Each
-  alias is exercised through the booted proxy. Every route factory is mounted once; a family composer mounts its
-  child factories without re-registering their methods/paths.
+  alias is exercised through the booted proxy. Every route factory is mounted once, from its own route stub; no family composer mounts it again.
 
 
   Route input projections: _create_batch_data.input_file_id (absent None); data.metadata (absent None); data.model
@@ -104,6 +103,7 @@ description: >-
   still uses FastAPI detail, while explicit JSONResponse helpers keep their own code/null fields; do not coerce
   those into ProxyException semantics. The constructor inventory above is not a claim that the raw HTTPException
   reaches the client unchanged.
+  B1100 registers routes/batch_create.rs as a stub, so fill only crates/betterlite-server/src/routes/batch_create.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
   - crates/betterlite-server/Cargo.toml
@@ -111,10 +111,8 @@ scope:
   - crates/betterlite-server/src/api/batch_create_route/**
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/routes/batch_create.rs
+  - crates/betterlite-server/src/routes/batch_create/**
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/batch_create_route.rs
   - crates/betterlite-core/src/api/batch_create_route/**

@@ -6,11 +6,13 @@ description: >-
   Session identity comes from the UI token cookie with claims: exp (required), login_method ("sso" or "username_password"), and type (rejected if "byok_session"). Session keys starting with sk- are re-resolved against the database to catch revoked sessions from logout or password change, using the session-key DB liveness lookup (get_key_object, hash_token).
 
   The authorization code store is in-memory with a 300-second TTL per code and a 1000-entry capacity limit; lazy cleanup runs on each request to prevent memory exhaustion. RFC 6749 requirements enforced: response_type must be "code", code_challenge is required, redirect_uri must be a loopback address (127.0.0.1, ::1, localhost over http/https), and client_id is recorded for later verification by B4678. The POST response is a 302 redirect to redirect_uri?code=...&state=... (with & if redirect_uri has existing query string).
+  B1100 registers routes/mcp_byok_consent.rs as a stub, so fill only crates/betterlite-server/src/routes/mcp_byok_consent.rs and leave routes.rs as it is.
 
 scope:
   paths:
     - Cargo.toml
-    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/routes/mcp_byok_consent.rs
+    - crates/betterlite-server/src/routes/mcp_byok_consent/**
     - crates/betterlite-mcp/src/byok_consent.rs
     - crates/betterlite-mcp/src/byok_consent/**
     - crates/betterlite-mcp/src/mcp_registry_resolve.rs

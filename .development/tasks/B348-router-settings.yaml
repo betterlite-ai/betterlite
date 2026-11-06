@@ -12,15 +12,13 @@ description: 'Serve GET /router/settings and GET /router/fields using typed resp
   exclusions. Reuse predecessor services instead of copying their algorithms. Function coverage in litellm/proxy/management_endpoints/router_settings_endpoints.py:
   _router_setting_source (L52-L61), _get_routing_strategies_from_router_class (L64-L80), get_router_settings
   (L89-L164), get_router_fields (L173-L213). Implement these behaviors through the typed Rust services
-  above; synchronous facades and structural accessors reuse the same primitive instead of separate ports.'
+  above; synchronous facades and structural accessors reuse the same primitive instead of separate ports. B1100 registers routes/router_settings.rs as a stub, so fill only crates/betterlite-server/src/routes/router_settings.rs and leave routes.rs and state.rs as they are.'
 scope:
   paths:
   - crates/betterlite-server/src/router_settings.rs
   - crates/betterlite-server/src/router_settings/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/routes/router_settings.rs
+  - crates/betterlite-server/src/routes/router_settings/**
   - crates/betterlite-server/src/routing/router_settings.rs
   - crates/betterlite-server/src/routing/router_settings/**
   - tools/oracle/src/router_probes/router_settings.rs
