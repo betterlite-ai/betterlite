@@ -1,0 +1,5 @@
+kind: helper
+name: ensure-private-dir
+call: {private_json: {function: ensure_private_dir, name: created}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+kind: helper
+name: stage-commit
+call: {private_json: {function: stage_commit, name: cache.json, data: {"secret": "sk-123", "n": 1}}}
+env: {}
+compare: {ignore: []}
