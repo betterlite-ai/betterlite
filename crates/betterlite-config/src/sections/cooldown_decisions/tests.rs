@@ -307,3 +307,59 @@ fn names_the_router_setting_path(#[case] source: &str, #[case] path: &str) {
     let error = settings(source, &[]).unwrap_err();
     assert!(error.contains(path), "{error}");
 }
+
+#[rstest]
+#[case::content_policy_violation("ContentPolicyViolationErrorAllowedFails")]
+#[case::bad_request("BadRequestErrorAllowedFails")]
+#[case::authentication("AuthenticationErrorAllowedFails")]
+#[case::timeout("TimeoutErrorAllowedFails")]
+#[case::rate_limit("RateLimitErrorAllowedFails")]
+#[case::internal_server("InternalServerErrorAllowedFails")]
+#[case::service_unavailable("ServiceUnavailableErrorAllowedFails")]
+#[case::bad_gateway("BadGatewayErrorAllowedFails")]
+#[case::not_found("NotFoundErrorAllowedFails")]
+fn names_every_router_policy_field(#[case] field: &str) {
+    let source = format!("router_settings:\n  allowed_fails_policy:\n    {field}: true");
+    let error = settings(&source, &[]).unwrap_err();
+    assert!(
+        error.contains(&format!("router_settings.allowed_fails_policy.{field}")),
+        "{error}"
+    );
+}
+
+#[rstest]
+#[case::model_info_policy(
+    "model_list:\n  - model_name: g\n    litellm_params:\n      model: openai/gpt-4o\n    model_info:\n      allowed_fails_policy:\n        BadRequestErrorAllowedFails: true",
+    "model_list.0.model_info.allowed_fails_policy.BadRequestErrorAllowedFails"
+)]
+#[case::model_info_count(
+    "model_list:\n  - model_name: g\n    litellm_params:\n      model: openai/gpt-4o\n    model_info:\n      allowed_fails: true",
+    "model_list.0.model_info.allowed_fails"
+)]
+#[case::model_info_time(
+    "model_list:\n  - model_name: g\n    litellm_params:\n      model: openai/gpt-4o\n    model_info:\n      cooldown_time: true",
+    "model_list.0.model_info.cooldown_time"
+)]
+#[case::params_time(
+    "model_list:\n  - model_name: g\n    litellm_params:\n      model: openai/gpt-4o\n      cooldown_time: true",
+    "model_list.0.litellm_params.cooldown_time"
+)]
+fn names_every_deployment_setting_path(#[case] source: &str, #[case] path: &str) {
+    let error = settings(source, &[]).unwrap_err();
+    assert!(error.contains(path), "{error}");
+}
+
+#[test]
+fn names_the_proxy_global_path() {
+    let error = settings("litellm_settings:\n  allowed_fails: true", &[]).unwrap_err();
+    assert!(error.contains("litellm_settings.allowed_fails"), "{error}");
+}
+
+#[test]
+fn names_the_disable_cooldowns_path() {
+    let error = settings("router_settings:\n  disable_cooldowns: maybe", &[]).unwrap_err();
+    assert!(
+        error.contains("router_settings.disable_cooldowns"),
+        "{error}"
+    );
+}
