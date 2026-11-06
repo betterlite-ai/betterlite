@@ -75,7 +75,6 @@ fn refresh_interval_resolution(
 #[rstest]
 #[case::word("GOOGLE_SECRET_MANAGER_REFRESH_INTERVAL", "soon")]
 #[case::negative("GOOGLE_SECRET_MANAGER_REFRESH_INTERVAL", "-5")]
-#[case::not_a_flag("GOOGLE_SECRET_MANAGER_ALWAYS_READ_SECRET_MANAGER", "maybe")]
 fn invalid_text_names_the_variable(#[case] name: &str, #[case] text: &str) {
     let variables = environment(&[
         ("GOOGLE_SECRET_MANAGER_PROJECT_ID", "project-one"),
@@ -98,8 +97,11 @@ fn invalid_text_names_the_variable(#[case] name: &str, #[case] text: &str) {
 #[case::uppercase(Some("TRUE"), None, true)]
 #[case::mixed_case(Some("True"), Some(false), true)]
 #[case::false_text_keeps_parameter(Some("false"), Some(true), true)]
-#[case::numeric_text_is_true(Some("1"), None, true)]
-#[case::padded_text_is_true(Some(" true"), None, true)]
+#[case::numeric_text_is_not_true(Some("1"), None, false)]
+#[case::yes_text_is_not_true(Some("yes"), None, false)]
+#[case::padded_text_is_not_true(Some(" true "), None, false)]
+#[case::unknown_text_is_not_true(Some("maybe"), None, false)]
+#[case::unknown_text_keeps_parameter(Some("maybe"), Some(true), true)]
 #[case::empty_text_is_unset(Some(""), Some(true), true)]
 #[case::false_text_without_parameter(Some("no"), None, false)]
 #[case::unset_uses_parameter(None, Some(true), true)]

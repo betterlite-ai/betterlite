@@ -41,11 +41,7 @@ impl Settings {
         };
         let always_read_from_environment = environment
             .get(ALWAYS_READ_VARIABLE)
-            .map(|text| betterlite_env::flag(ALWAYS_READ_VARIABLE, text))
-            .transpose()
-            .map_err(GoogleSecretManagerError::Environment)?
-            .flatten()
-            .unwrap_or(false);
+            .is_some_and(|text| text.to_lowercase() == "true");
         Ok(Self {
             project_id,
             refresh_interval: Duration::from_secs(refresh_seconds),
