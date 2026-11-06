@@ -4,6 +4,9 @@ use std::path::{Path, PathBuf};
 
 use betterlite_logging::private_json::error::PrivateJsonError;
 use betterlite_logging::private_json::files::PrivateFiles;
+use betterlite_logging::private_json::files::overwrite_json::overwrite_private_json;
+use betterlite_logging::private_json::files::stage_json::stage_private_json;
+use betterlite_logging::private_json::files::write_json::write_private_json;
 use betterlite_logging::private_json::safe_json::{
     DEFAULT_MAX_RECURSE_DEPTH, safe_dumps, safe_json_loads,
 };
@@ -17,36 +20,14 @@ pub(crate) struct Op;
 #[derive(serde::Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
 pub(crate) enum Input {
-    Structure {
-        data: Value,
-        max_depth: Option<usize>,
-    },
-    Load {
-        text: String,
-    },
-    StageCommit {
-        name: String,
-        data: Value,
-    },
-    StageDiscard {
-        name: String,
-        data: Value,
-    },
-    Overwrite {
-        name: String,
-        data: Value,
-    },
-    OwnerPermissions {
-        name: String,
-        data: Value,
-    },
-    SymlinkedParent {
-        name: String,
-        data: Value,
-    },
-    EnsurePrivateDir {
-        name: String,
-    },
+    Structure { data: Value },
+    Load { text: String },
+    StageCommit { name: String, data: Value },
+    StageDiscard { name: String, data: Value },
+    Overwrite { name: String, data: Value },
+    OwnerPermissions { name: String, data: Value },
+    SymlinkedParent { name: String, data: Value },
+    EnsurePrivateDir { name: String },
 }
 
 impl crate::helpers::Helper for Op {
@@ -54,44 +35,49 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::Structure { data, max_depth } => structure(data, *max_depth),
+            Input::Structure { data } => structure(data),
             Input::Load { text } => safe_json_loads(text.as_bytes()).map_err(failure),
             Input::StageCommit { .. }
             | Input::StageDiscard { .. }
             | Input::Overwrite { .. }
             | Input::OwnerPermissions { .. }
             | Input::SymlinkedParent { .. }
-            | Input::EnsurePrivateDir { .. } => file_operation(input),
+            | Input::EnsurePrivateDir { .. } => {
+                let root = tempfile::tempdir().map_err(failure)?;
+                let runtime = tokio::runtime::Builder::new_current_thread()
+                    .build()
+                    .map_err(failure)?;
+                let fixture = Fixture {
+                    root,
+                    files: PrivateFiles::default(),
+                };
+                runtime.block_on(async {
+                    match input {
+                        Input::StageCommit { name, data } => fixture.stage(name, data, true).await,
+                        Input::StageDiscard { name, data } => {
+                            fixture.stage(name, data, false).await
+                        }
+                        Input::Overwrite { name, data } => fixture.overwrite(name, data).await,
+                        Input::OwnerPermissions { name, data } => {
+                            fixture.owner_permissions(name, data).await
+                        }
+                        Input::SymlinkedParent { name, data } => {
+                            fixture.symlinked_parent(name, data).await
+                        }
+                        Input::EnsurePrivateDir { name } => fixture.ensure_private_dir(name).await,
+                        Input::Structure { .. } | Input::Load { .. } => {
+                            Err(failure("not a file operation"))
+                        }
+                    }
+                })
+            }
         }
     }
 }
 
-fn structure(data: &Value, max_depth: Option<usize>) -> HelperResult {
-    let dumped =
-        safe_dumps(data, max_depth.unwrap_or(DEFAULT_MAX_RECURSE_DEPTH), None).map_err(failure)?;
-    serde_json::from_str(&dumped).map_err(failure)
-}
-
-fn file_operation(input: &Input) -> HelperResult {
-    let root = tempfile::tempdir().map_err(failure)?;
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .map_err(failure)?;
-    let fixture = Fixture {
-        root,
-        files: PrivateFiles::default(),
-    };
-    runtime.block_on(async {
-        match input {
-            Input::StageCommit { name, data } => fixture.stage(name, data, true).await,
-            Input::StageDiscard { name, data } => fixture.stage(name, data, false).await,
-            Input::Overwrite { name, data } => fixture.overwrite(name, data).await,
-            Input::OwnerPermissions { name, data } => fixture.owner_permissions(name, data).await,
-            Input::SymlinkedParent { name, data } => fixture.symlinked_parent(name, data).await,
-            Input::EnsurePrivateDir { name } => fixture.ensure_private_dir(name).await,
-            Input::Structure { .. } | Input::Load { .. } => Err(failure("not a file operation")),
-        }
-    })
+fn structure(data: &Value) -> HelperResult {
+    serde_json::from_str(&safe_dumps(data, DEFAULT_MAX_RECURSE_DEPTH, None).map_err(failure)?)
+        .map_err(failure)
 }
 
 struct Fixture {
@@ -102,7 +88,7 @@ struct Fixture {
 impl Fixture {
     async fn stage(&self, name: &str, data: &Value, commit: bool) -> HelperResult {
         let target = self.root.path().join(name);
-        let staged = self.files.stage_private_json(&target, data).await?;
+        let staged = stage_private_json(&self.files, &target, data).await?;
         if commit {
             self.files.commit_staged_json(&staged, &target).await?;
         } else {
@@ -113,7 +99,7 @@ impl Fixture {
 
     async fn overwrite(&self, name: &str, data: &Value) -> HelperResult {
         let target = self.seed_readable(name)?;
-        self.files.overwrite_private_json(&target, data).await?;
+        overwrite_private_json(&self.files, &target, data).await?;
         Ok(file_view(&target))
     }
 
@@ -129,7 +115,7 @@ impl Fixture {
         let directory = self.root.path().join("conf");
         self.files.ensure_private_dir(&directory).await?;
         let target = directory.join(name);
-        self.files.write_private_json(&target, data).await?;
+        write_private_json(&self.files, &target, data).await?;
         let directory_mode = fs::metadata(&directory)
             .map_err(failure)?
             .permissions()
@@ -143,9 +129,7 @@ impl Fixture {
         fs::create_dir_all(&real).map_err(failure)?;
         let link = self.root.path().join("link");
         std::os::unix::fs::symlink(&real, &link).map_err(failure)?;
-        self.files
-            .write_private_json(&link.join(name), data)
-            .await?;
+        write_private_json(&self.files, &link.join(name), data).await?;
         let parent_is_symlink = fs::symlink_metadata(&link)
             .map_err(failure)?
             .file_type()

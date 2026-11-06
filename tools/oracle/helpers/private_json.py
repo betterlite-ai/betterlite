@@ -33,9 +33,7 @@ def run(input_value: dict[str, Json]) -> Json:
 
 def _structure(input_value: Fields) -> Json:
     data = cast(object, input_value.get("data"))
-    max_depth = input_value.get("max_depth")
-    depth = DEFAULT_MAX_RECURSE_DEPTH if max_depth is None else _integer(max_depth, "max_depth")
-    return cast(Json, safe_json_structure(data, depth))
+    return cast(Json, safe_json_structure(data, DEFAULT_MAX_RECURSE_DEPTH))
 
 
 def _load(input_value: Fields) -> Json:
@@ -146,10 +144,4 @@ def _text(value: Json, name: str) -> str:
 def _object(value: Json, name: str) -> Fields:
     if not isinstance(value, dict):
         raise TypeError(f"{name} must be an object")
-    return value
-
-
-def _integer(value: Json, name: str) -> int:
-    if not isinstance(value, int) or isinstance(value, bool):
-        raise TypeError(f"{name} must be an integer")
     return value
