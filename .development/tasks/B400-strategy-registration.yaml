@@ -17,21 +17,14 @@ description: 'Implement StrategyRegistration over B327 semantic, B334 complexity
   (L9465-L9502). Implement these behaviors through the typed Rust services above; synchronous facades
   and structural accessors reuse the same primitive instead of separate ports. Function coverage in litellm/router_strategy/complexity_router/complexity_router.py:
   ComplexityRouter.__init__ (L1324-L1479). Implement these behaviors through the typed Rust services above;
-  synchronous facades and structural accessors reuse the same primitive instead of separate ports.'
+  synchronous facades and structural accessors reuse the same primitive instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B362 calls this service.'
 scope:
   paths:
   - crates/betterlite-router/src/strategy_registration.rs
   - crates/betterlite-router/src/strategy_registration/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/strategy_registration.rs
   - crates/betterlite-server/src/routing/strategy_registration/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/strategy_registration.rs
   - tools/oracle/src/router_probes/strategy_registration/**
   - tools/oracle/litellm/probes/strategy_registration.py

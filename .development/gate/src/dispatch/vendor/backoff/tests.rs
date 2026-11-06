@@ -16,6 +16,12 @@ fn authentication_and_transient_network_errors_have_different_recovery() {
         0
     ));
     assert!(waiting("You've hit your usage limit", age, fallback, 0));
+    assert!(waiting(
+        "API Error: 401 Authentication Fails",
+        Duration::from_hours(2),
+        fallback,
+        0
+    ));
 }
 
 #[test]

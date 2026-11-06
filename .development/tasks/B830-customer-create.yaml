@@ -71,15 +71,14 @@ description: >-
   The owned customer ranges contain 228 nonblank noncomment lines excluding docstrings, including
   route decorators and post-import unblock code; response classes add nine declarations. Allow 250
   production, 325 tests and 75 wiring lines, 650 within 650. Request decoding remains with B124.
+  B1100 registers routes/customer_create.rs as a stub, so fill only crates/betterlite-server/src/routes/customer_create.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/customer_create.rs
     - crates/betterlite-server/src/customer_create/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/customer_create.rs
+    - crates/betterlite-server/src/routes/customer_create/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/customer-create/**
