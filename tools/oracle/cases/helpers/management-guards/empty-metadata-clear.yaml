@@ -1,0 +1,9 @@
+kind: helper
+name: empty-metadata-clear
+call:
+  management_guards:
+    calls:
+      - {function: update_metadata_field, updated_kv: {tags: [], metadata: {tags: [old]}}, field_name: tags}
+      - {function: update_metadata_field, updated_kv: {guardrails: [], metadata: {guardrails: [old]}}, field_name: guardrails}
+env: {}
+compare: {ignore: []}

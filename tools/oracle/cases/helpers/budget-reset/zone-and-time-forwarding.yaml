@@ -1,0 +1,28 @@
+kind: helper
+name: budget_reset_zone_and_time_forwarding
+call:
+  budget_reset:
+    reset_now: "2024-01-01T10:00:00Z"
+    calendar_now: "2024-06-15T12:00:00Z"
+    calendar_timezone: null
+    calls:
+      - {function: compute_budget_reset_at, settings: {timezone: "UTC", budget_reset_time: "00:00"}, duration: "1d"}
+      - {function: compute_budget_reset_at, settings: {timezone: "UTC", budget_reset_time: "06:00"}, duration: "1d"}
+      - {function: compute_budget_reset_at, settings: {timezone: "America/New_York", budget_reset_time: "02:30"}, duration: "1d"}
+      - {function: compute_budget_reset_at, settings: {timezone: "America/New_York", budget_reset_time: "00:00"}, duration: "0s"}
+      - {function: compute_budget_reset_at, settings: {timezone: "Asia/Kolkata", budget_reset_time: "06:00"}, duration: "1d"}
+      - {function: compute_budget_reset_at, settings: {timezone: "Not/AZone", budget_reset_time: "00:00"}, duration: "1d"}
+      - {function: compute_budget_reset_at, settings: {timezone: "america/new_york", budget_reset_time: "00:00"}, duration: "1d"}
+      - {function: compute_budget_reset_at, settings: {timezone: "UTC", budget_reset_time: "06:00"}, duration: "7d"}
+      - {function: compute_budget_reset_at, settings: {timezone: "UTC", budget_reset_time: "06:00"}, duration: "30d"}
+      - {function: compute_budget_reset_at, settings: {timezone: "UTC", budget_reset_time: "06:00"}, duration: "1mo"}
+      - {function: compute_budget_reset_at, settings: {timezone: "UTC", budget_reset_time: "06:00"}, duration: "2h"}
+      - {function: compute_budget_reset_at, settings: {timezone: "UTC", budget_reset_time: "06:00"}, duration: "30m"}
+      - {function: compute_budget_reset_at, settings: {timezone: "UTC", budget_reset_time: "06:00"}, duration: "30s"}
+      - {function: get_budget_reset_time, settings: {timezone: "UTC", budget_reset_time: "00:00"}, duration: "1d"}
+      - {function: get_budget_reset_time, settings: {timezone: "America/New_York", budget_reset_time: "02:30"}, duration: "1d"}
+      - {function: get_budget_reset_time, settings: {timezone: "Asia/Kolkata", budget_reset_time: "06:00"}, duration: "1d"}
+      - {function: get_budget_reset_time, settings: {timezone: "Not/AZone", budget_reset_time: "00:00"}, duration: "1d"}
+      - {function: get_budget_reset_time, settings: {timezone: "UTC", budget_reset_time: "06:00"}, duration: "1mo"}
+env: {}
+compare: {ignore: []}
