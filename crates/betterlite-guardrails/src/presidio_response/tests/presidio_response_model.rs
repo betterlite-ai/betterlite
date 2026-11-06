@@ -1,6 +1,9 @@
 #![cfg(test)]
 
-use super::shared::{analyzer, anonymizer, content_text, context, logged_count, request_data};
+use super::shared::{
+    analyzer, anonymizer, capture_logs, content_text, context, logged_count, logged_text,
+    request_data,
+};
 use crate::presidio_response::Mode;
 use crate::presidio_response::model::process_response_for_pii;
 use crate::presidio_response::wire::{
@@ -195,6 +198,23 @@ async fn keeps_unknown_fields() {
         raw,
         r#"{"choices":[{"index":0,"message":{"content":"MASKED","name":"helper","role":"assistant"}}],"id":"chat-1","object":"chat.completion"}"#
     );
+}
+
+#[tokio::test]
+async fn unmasking_without_tokens_logs_a_debug_line() {
+    let (captured, _guard) = capture_logs();
+    let analyzer = analyzer("http://presidio.invalid", Some("MASKED"));
+    let anonymizer = anonymizer("http://presidio.invalid");
+    let context = context(&analyzer, &anonymizer);
+    let mut data = request_data("{}");
+    let mut response =
+        response(r#"{"choices":[{"message":{"role":"assistant","content":"Hi <PERSON_1>"}}]}"#);
+
+    process_response_for_pii(context, &mut response, &mut data, Mode::Unmask)
+        .await
+        .expect("response processing");
+
+    assert!(logged_text(&captured).contains("pii_tokens"));
 }
 
 #[tokio::test]

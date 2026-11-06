@@ -1,12 +1,6 @@
 #![cfg(test)]
 
-use std::io::{self, Write};
-use std::sync::{Arc, Mutex};
-
-use tracing::Level;
-use tracing::subscriber::set_default;
-
-use super::shared::{analyzer, anonymizer, context, request_data};
+use super::shared::{analyzer, anonymizer, capture_logs, context, logged_text, request_data};
 use crate::presidio_response::Mode;
 use crate::presidio_response::anthropic::process_anthropic_response;
 use crate::presidio_response::wire::{AnthropicMessage, ContentItem};
@@ -110,32 +104,9 @@ async fn a_non_list_content_is_left_untouched() {
     assert_eq!(raw, r#"{"content":"Alice","type":"message"}"#);
 }
 
-#[derive(Clone, Default)]
-struct Sink(Arc<Mutex<Vec<u8>>>);
-
-impl Write for Sink {
-    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0
-            .lock()
-            .map_err(|_poisoned| io::Error::other("poisoned"))?
-            .extend_from_slice(buf);
-        Ok(buf.len())
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Ok(())
-    }
-}
-
 #[tokio::test]
 async fn unmasking_without_tokens_logs_a_debug_line() {
-    let captured = Arc::new(Mutex::new(Vec::new()));
-    let sink = Sink(Arc::clone(&captured));
-    let subscriber = tracing_subscriber::fmt()
-        .with_max_level(Level::DEBUG)
-        .with_writer(move || sink.clone())
-        .finish();
-    let _guard = set_default(subscriber);
+    let (captured, _guard) = capture_logs();
     let analyzer = analyzer("http://presidio.invalid", Some("MASKED"));
     let anonymizer = anonymizer("http://presidio.invalid");
     let context = context(&analyzer, &anonymizer);
@@ -147,7 +118,5 @@ async fn unmasking_without_tokens_logs_a_debug_line() {
         .await
         .expect("anthropic processing");
 
-    let text = String::from_utf8(captured.lock().expect("captured log").clone())
-        .expect("captured log is UTF-8");
-    assert!(text.contains("pii_tokens"));
+    assert!(logged_text(&captured).contains("pii_tokens"));
 }

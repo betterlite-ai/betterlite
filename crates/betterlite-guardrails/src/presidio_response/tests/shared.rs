@@ -1,12 +1,15 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
-use std::sync::Mutex;
+use std::io::{self, Write};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use betterlite_config::sections::guardrail_identity::enums::PiiAction;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use serde_json::value::RawValue;
+use tracing::Level;
+use tracing::subscriber::{DefaultGuard, set_default};
 
 use crate::presidio_actions::request_data::RequestData;
 use crate::presidio_actions::{AnonymizerSettings, PresidioAnonymizer};
@@ -121,6 +124,40 @@ pub(super) fn anthropic_texts(response: &ResponseBody) -> Vec<String> {
             ContentItem::Object(_) | ContentItem::Other(_) => None,
         })
         .collect()
+}
+
+#[derive(Clone, Default)]
+struct Sink(Arc<Mutex<Vec<u8>>>);
+
+impl Write for Sink {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .map_err(|_poisoned| io::Error::other("poisoned"))?
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+pub(super) fn capture_logs() -> (Arc<Mutex<Vec<u8>>>, DefaultGuard) {
+    let captured = Arc::new(Mutex::new(Vec::new()));
+    let sink = Sink(Arc::clone(&captured));
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(Level::DEBUG)
+        .with_writer(move || sink.clone())
+        .finish();
+    (captured, set_default(subscriber))
+}
+
+pub(super) fn logged_text(captured: &Mutex<Vec<u8>>) -> String {
+    let bytes = captured
+        .lock()
+        .map_or_else(|_poisoned| Vec::new(), |log| log.clone());
+    String::from_utf8(bytes).expect("captured log is UTF-8")
 }
 
 pub(super) fn logged_count(request: &RequestData) -> usize {

@@ -30,17 +30,18 @@ const MASKED_REPLY: &str = r#"{"text":"MASKED","items":[{"entity_type":"PERSON"}
 #[derive(Clone)]
 struct MockState {
     barrier: Arc<Barrier>,
-    seen: Arc<Mutex<Vec<String>>>,
+    seen: Arc<Mutex<Vec<SeenAnalyze>>>,
 }
 
-#[derive(Deserialize)]
+#[derive(Clone, Deserialize)]
 struct SeenAnalyze {
     text: String,
+    language: Option<String>,
 }
 
 async fn analyze(State(state): State<MockState>, body: Bytes) -> Response {
     if let Ok(seen) = serde_json::from_slice::<SeenAnalyze>(&body) {
-        state.seen.lock().expect("seen requests").push(seen.text);
+        state.seen.lock().expect("seen requests").push(seen);
     }
     if timeout(Duration::from_secs(2), state.barrier.wait())
         .await
@@ -75,7 +76,11 @@ async fn failing_analyze() -> Response {
 
 async fn spawn_mock(
     concurrent: usize,
-) -> (String, Arc<Mutex<Vec<String>>>, JoinSet<io::Result<()>>) {
+) -> (
+    String,
+    Arc<Mutex<Vec<SeenAnalyze>>>,
+    JoinSet<io::Result<()>>,
+) {
     let state = MockState {
         barrier: Arc::new(Barrier::new(concurrent)),
         seen: Arc::new(Mutex::new(Vec::new())),
@@ -211,7 +216,7 @@ async fn gathers_the_message_checks_concurrently() {
     let anonymizer = anonymizer(&base);
     let context = context(&analyzer, &anonymizer);
     let mut request = request_data(
-        r#"{"messages":[{"role":"user","content":"Alice"},{"role":"user","content":"Bobby"}],"metadata":{}}"#,
+        r#"{"messages":[{"role":"user","content":"Alice"},{"role":"user","content":"Bobby"}],"metadata":{"guardrail_config":{"language":"de"}}}"#,
     );
     let mut response = response_body(r#"{"choices":[]}"#);
 
@@ -228,8 +233,40 @@ async fn gathers_the_message_checks_concurrently() {
         content_text(parsed[1].content.as_ref()).as_deref(),
         Some("MASKED")
     );
-    assert_eq!(seen.lock().expect("seen requests").len(), 2);
+    let seen_requests = seen.lock().expect("seen requests").clone();
+    assert_eq!(seen_requests.len(), 2);
+    assert!(
+        seen_requests
+            .iter()
+            .all(|analyze| analyze.language.as_deref() == Some("de"))
+    );
+    let mut texts: Vec<&str> = seen_requests
+        .iter()
+        .map(|analyze| analyze.text.as_str())
+        .collect();
+    texts.sort_unstable();
+    assert_eq!(texts, vec!["Alice", "Bobby"]);
     assert_eq!(logged_count(&request), 2);
+}
+
+#[tokio::test]
+async fn a_stream_chunk_response_stays_untouched() {
+    let analyzer = analyzer("http://presidio.invalid", Some("MASKED"));
+    let anonymizer = anonymizer("http://presidio.invalid");
+    let context = context(&analyzer, &anonymizer);
+    let mut request = request_data(r#"{"messages":[{"role":"user","content":"Alice"}]}"#);
+    let body = r#"{"object":"chat.completion.chunk","choices":[{"delta":{"content":"Bob"}}]}"#;
+    let mut response = response_body(body);
+
+    async_logging_hook(context, &mut request, &mut response, "acompletion")
+        .await
+        .expect("logging hook");
+
+    assert_eq!(
+        content_text(messages(&request)[0].content.as_ref()).as_deref(),
+        Some("MASKED")
+    );
+    assert_eq!(response.into_raw().expect("response JSON").get(), body);
 }
 
 #[tokio::test]
