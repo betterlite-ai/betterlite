@@ -6,3 +6,6 @@ deviations:
   - what: A task answer larger than 16 MiB is refused with a size error instead of being decoded.
     why: LiteLLM reads the whole body into memory with no cap. Task records are a few hundred bytes, so no working setup sends one near the limit.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/image_generation/transformation.py#L241
+  - what: Elapsed polling time is measured on a monotonic clock rather than by subtracting two time.time() readings.
+    why: A backward wall-clock step would keep a poll alive past its deadline and a forward step would end it early. The deadline still means the same duration for every working setup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/runwayml/image_generation/transformation.py#L165
