@@ -1,0 +1,14 @@
+kind: helper
+name: media-fetch-body-one-byte-over-limit
+call:
+  b5083:
+    call: read_response
+    status: 200
+    headers: {}
+    body_repeat:
+      byte: 1
+      count: 52428801
+    url: "https://example.com/image.png"
+env: {}
+compare:
+  ignore: []

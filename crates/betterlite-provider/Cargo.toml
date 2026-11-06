@@ -11,12 +11,13 @@ betterlite-config = { path = "../betterlite-config" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
-futures-util = { version = "0.3.34", default-features = false, features = ["async-await"] }
+futures-util = { version = "0.3.34", default-features = false, features = ["async-await", "std"] }
 http = "1.5.0"
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["raw_value"] }
 thiserror.workspace = true
+tokio = { workspace = true, features = ["time"] }
 url = "2.5.8"
 
 [dev-dependencies]
