@@ -1,4 +1,5 @@
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, strum::Display)]
+#[strum(serialize_all = "snake_case")]
 pub enum CallbackPhase {
     Input,
     Success,
@@ -15,17 +16,6 @@ impl CallbackPhase {
         Self::Stream,
         Self::Service,
     ];
-
-    #[must_use]
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Input => "input",
-            Self::Success => "success",
-            Self::Failure => "failure",
-            Self::Stream => "stream",
-            Self::Service => "service",
-        }
-    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -45,17 +35,6 @@ impl CallbackList {
         Self::Input,
         Self::Service,
     ];
-
-    #[must_use]
-    pub const fn name(self) -> &'static str {
-        match self {
-            Self::Callbacks => "callbacks",
-            Self::Success => "success_callback",
-            Self::Failure => "failure_callback",
-            Self::Input => "input_callback",
-            Self::Service => "service_callback",
-        }
-    }
 
     // LiteLLM dispatches a streaming response's events through log_stream_event instead of log_success_event
     #[must_use]

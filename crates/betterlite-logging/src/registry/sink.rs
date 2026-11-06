@@ -28,7 +28,7 @@ impl CallbackSink {
     pub fn deliver(&self, event: &CallbackEvent) -> Result<(), SinkError> {
         match self {
             Self::Tracing => {
-                tracing::info!(phase = event.phase.name(), "callback event");
+                tracing::info!(phase = %event.phase, "callback event");
                 Ok(())
             }
             Self::Channel(sender) => sender

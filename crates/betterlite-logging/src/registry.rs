@@ -71,7 +71,7 @@ impl CallbackRegistry {
         if count >= self.capacity {
             tracing::warn!(
                 callback = %identity.class_name,
-                list = list.name(),
+                list = ?list,
                 capacity = self.capacity,
                 "callback skipped: the list is at capacity"
             );
@@ -86,7 +86,7 @@ impl CallbackRegistry {
             if !entry.lists.insert(list) {
                 tracing::debug!(
                     callback = %entry.identity.class_name,
-                    list = list.name(),
+                    list = ?list,
                     "callback already registered in this list; keeping the first"
                 );
                 return Registration::AlreadyRegistered;

@@ -123,11 +123,28 @@ impl Helper for Op {
             .iter()
             .map(|step| run_step(&mut registry, step))
             .collect();
+        let selection = registry.select();
         Ok(json!({
             "steps": steps,
-            "lists": lists(&registry),
-            "phases": phases(&registry),
-            "selection": selection(&registry),
+            "lists": {
+                "callbacks": keys_for_list(&registry, CallbackList::Callbacks),
+                "success_callback": keys_for_list(&registry, CallbackList::Success),
+                "failure_callback": keys_for_list(&registry, CallbackList::Failure),
+                "input_callback": keys_for_list(&registry, CallbackList::Input),
+                "service_callback": keys_for_list(&registry, CallbackList::Service),
+            },
+            "phases": {
+                "input": keys_for_phase(&registry, CallbackPhase::Input),
+                "success": keys_for_phase(&registry, CallbackPhase::Success),
+                "failure": keys_for_phase(&registry, CallbackPhase::Failure),
+                "stream": keys_for_phase(&registry, CallbackPhase::Stream),
+                "service": keys_for_phase(&registry, CallbackPhase::Service),
+            },
+            "selection": {
+                "success": selection.success,
+                "failure": selection.failure,
+                "success_and_failure": selection.success_and_failure,
+            },
         }))
     }
 }
@@ -214,33 +231,4 @@ fn keys_for_phase(registry: &CallbackRegistry, phase: CallbackPhase) -> Vec<Stri
         .collect();
     keys.sort();
     keys
-}
-
-fn lists(registry: &CallbackRegistry) -> Value {
-    json!({
-        "callbacks": keys_for_list(registry, CallbackList::Callbacks),
-        "success_callback": keys_for_list(registry, CallbackList::Success),
-        "failure_callback": keys_for_list(registry, CallbackList::Failure),
-        "input_callback": keys_for_list(registry, CallbackList::Input),
-        "service_callback": keys_for_list(registry, CallbackList::Service),
-    })
-}
-
-fn phases(registry: &CallbackRegistry) -> Value {
-    json!({
-        "input": keys_for_phase(registry, CallbackPhase::Input),
-        "success": keys_for_phase(registry, CallbackPhase::Success),
-        "failure": keys_for_phase(registry, CallbackPhase::Failure),
-        "stream": keys_for_phase(registry, CallbackPhase::Stream),
-        "service": keys_for_phase(registry, CallbackPhase::Service),
-    })
-}
-
-fn selection(registry: &CallbackRegistry) -> Value {
-    let selection = registry.select();
-    json!({
-        "success": selection.success,
-        "failure": selection.failure,
-        "success_and_failure": selection.success_and_failure,
-    })
 }
