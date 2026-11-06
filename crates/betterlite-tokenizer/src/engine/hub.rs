@@ -14,6 +14,7 @@ use tokio::fs;
 use tokio::time::Instant;
 mod download;
 use download::{Bounds, RETRY_START_TIMEOUT, download_bounded};
+const HF_TRANSFER_WARNING: &str = "The `HF_HUB_ENABLE_HF_TRANSFER` environment variable is deprecated as 'hf_transfer' is not used anymore. Please use `HF_XET_HIGH_PERFORMANCE` instead to enable high performance transfer with Xet. Visit https://huggingface.co/docs/huggingface_hub/package_reference/environment_variables#hfxethighperformance for more details.";
 pub(crate) struct Request<'request> {
     pub(crate) repository: &'request str,
     pub(crate) revision: &'request str,
@@ -146,9 +147,7 @@ impl HubDownloader {
         if self.settings.transfer == TransferSetting::DeprecatedTransfer
             && !self.warned.swap(true, Ordering::SeqCst)
         {
-            tracing::warn!(
-                "The `HF_HUB_ENABLE_HF_TRANSFER` environment variable is deprecated as 'hf_transfer' is not used anymore. Please use `HF_XET_HIGH_PERFORMANCE` instead to enable high performance transfer with Xet. Visit https://huggingface.co/docs/huggingface_hub/package_reference/environment_variables#hfxethighperformance for more details."
-            );
+            tracing::warn!("{}", HF_TRANSFER_WARNING);
         }
         Ok(client)
     }

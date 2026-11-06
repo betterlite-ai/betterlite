@@ -20,7 +20,6 @@ use thiserror::Error;
 use tokio::fs;
 use url::Url;
 use uuid::Uuid;
-const DEFAULT_BASE: &str = "https://openaipublic.blob.core.windows.net";
 const R50K_SHA256: &str = "306cd27f03c1a714eca7108e03d66b7dc042abe8c258b44c199a7ed9838dd930";
 const GPT2_VOCAB_SHA256: &str = "1ce1664773c50f3e0cc8842619a93edc4624525b728b188a9e0be33b7726adc5";
 const GPT2_ENCODER_SHA256: &str =
@@ -58,7 +57,7 @@ impl TiktokenFetcher {
         Self {
             client,
             cache_dir,
-            base: DEFAULT_BASE.to_owned(),
+            base: "https://openaipublic.blob.core.windows.net".to_owned(),
             r50k_sha256: R50K_SHA256.to_owned(),
             gpt2_vocab_sha256: GPT2_VOCAB_SHA256.to_owned(),
             gpt2_encoder_sha256: GPT2_ENCODER_SHA256.to_owned(),
