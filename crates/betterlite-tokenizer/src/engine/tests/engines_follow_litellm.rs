@@ -63,6 +63,7 @@ fn decode_matches_python() {
     assert_eq!(engine.decode(&[128]).unwrap(), "\u{fffd}");
     let _failure = engine.decode(&[999_999_999]).unwrap_err();
     assert_eq!(anthropic().decode(&[9381, 2253]).unwrap(), "hello world");
+    assert_eq!(anthropic().decode(&[0, 9381, 2253]).unwrap(), "hello world");
 }
 
 fn synthetic_bpe_file() -> Vec<u8> {
