@@ -147,6 +147,38 @@ async fn a_stdio_server_child_that_ignores_term_is_killed_after_the_leader_exits
 }
 
 #[tokio::test]
+async fn a_leader_that_exits_first_still_sweeps_its_surviving_child() {
+    let owner = process::id();
+    let pid_file = env::temp_dir().join(format!("betterlite-b4744-survivor-{owner}.pid"));
+    drop(fs::remove_file(&pid_file));
+    let pid_path = pid_file.display().to_string();
+    let script = format!("/bin/sleep 60 & echo $! > {pid_path}; exit 0");
+    let runtime = StdioRuntime {
+        factory: Arc::new(TestFactory::default()),
+    };
+    let mut transport = runtime.stdio_client(parameters(
+        "/bin/sh",
+        vec!["-c".to_owned(), script],
+        BTreeMap::new(),
+    ));
+    let streams = transport.enter().await.unwrap();
+    let leader = streams.pid;
+    drop(streams);
+    sleep(Duration::from_millis(300)).await;
+    let child = fs::read_to_string(&pid_file).expect("the child wrote its pid");
+    let child_pid = child.trim().parse::<u32>().expect("the pid is a number");
+    assert!(process_running(child_pid));
+    transport.exit().await.unwrap();
+    sleep(Duration::from_millis(300)).await;
+    assert!(!process_exists(leader));
+    assert!(
+        !process_running(child_pid),
+        "the descendant outlived the leader"
+    );
+    drop(fs::remove_file(&pid_file));
+}
+
+#[tokio::test]
 async fn a_stdio_server_that_ignores_term_is_killed_after_the_force_window() {
     let runtime = StdioRuntime {
         factory: Arc::new(TestFactory::default()),
