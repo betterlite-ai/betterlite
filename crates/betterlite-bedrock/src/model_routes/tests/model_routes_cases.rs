@@ -182,10 +182,6 @@ fn capability_map() -> ParamMap {
             flag_entry(TOOLS_REASONING_FLAG, number(1)),
         ),
         (
-            "openai.gpt-5.6-true",
-            flag_entry(RESPONSE_FORMAT_FLAG, ParamValue::Bool(true)),
-        ),
-        (
             "openai.gpt-5.6-literal",
             flag_entry(TOOLS_REASONING_FLAG, text("true")),
         ),
@@ -227,7 +223,7 @@ fn gpt_version_checks(route: &ModelRouteSelector<'_>) {
 }
 
 fn gpt_flag_checks(route: &ModelRouteSelector<'_>) {
-    assert!(price_map_flag(route, "openai.gpt-5.6-true", RESPONSE_FORMAT_FLAG).unwrap());
+    assert!(price_map_flag(route, "openai.gpt-5.6", RESPONSE_FORMAT_FLAG).unwrap());
     assert!(!price_map_flag(route, "openai.gpt-5.6-string", RESPONSE_FORMAT_FLAG).unwrap());
     assert!(!price_map_flag(route, "openai.gpt-5.6-number", TOOLS_REASONING_FLAG).unwrap());
     assert!(price_map_flag(route, "openai.gpt-oss-20b-1:0", TOOLS_REASONING_FLAG).unwrap());

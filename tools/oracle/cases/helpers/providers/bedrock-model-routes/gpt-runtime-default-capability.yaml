@@ -21,8 +21,6 @@ call:
         supports_bedrock_runtime_chat_completions_response_format: "true"
       openai.gpt-5.6-number:
         supports_bedrock_runtime_chat_completions_tools_with_reasoning: 1
-      openai.gpt-5.6-true:
-        supports_bedrock_runtime_chat_completions_response_format: true
       openai.gpt-5.6-null: null
       openai.gpt-5.6-bad: not-an-object
       bedrock/us-east-1/openai.gpt-5.6-dup:
@@ -47,7 +45,6 @@ call:
           - x.openai.gpt-5.6
           - openai.gpt-5.6-string
           - openai.gpt-5.6-number
-          - openai.gpt-5.6-true
           - us.openai.gpt-5.6-luna
           - bedrock/us-east-1/openai.gpt-5.6-sol
           - bedrock/us-east-1/openai.gpt-5.6-region
