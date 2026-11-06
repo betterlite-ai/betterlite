@@ -1,0 +1,17 @@
+kind: helper
+name: opensandbox-create-running
+call:
+  b3517:
+    operation: wait_until_running
+    sandbox_id: sbx_1
+    api_base: http://sandbox.example
+    headers:
+      Content-Type: application/json
+    ready_timeout: 30.0
+    poll_interval: 0.1
+    responses:
+      - status: 200
+        body: '{"id":"sbx_1","status":{"state":"Running"}}'
+env: {}
+compare:
+  ignore: []
