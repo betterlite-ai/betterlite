@@ -51,6 +51,7 @@ enum Reply {
 struct Seen {
     path: String,
     team: Option<String>,
+    body: String,
 }
 
 #[derive(Clone)]
@@ -67,7 +68,7 @@ fn router(state: AgentState) -> Router {
         .with_state(state)
 }
 
-fn record(state: &AgentState, path: &str, headers: &HttpHeaders) {
+fn record(state: &AgentState, path: &str, headers: &HttpHeaders, body: String) {
     let team = headers
         .get(TEAM_HEADER)
         .and_then(|value| value.to_str().ok())
@@ -75,20 +76,26 @@ fn record(state: &AgentState, path: &str, headers: &HttpHeaders) {
     state.seen.lock().unwrap().push(Seen {
         path: path.to_owned(),
         team,
+        body,
     });
 }
 
 async fn card(State(state): State<AgentState>, headers: HttpHeaders) -> Response {
-    record(&state, CARD_PATH, &headers);
+    record(&state, CARD_PATH, &headers, String::new());
     ([(CONTENT_TYPE, "application/json")], state.card).into_response()
 }
 
 async fn message(
     State(state): State<AgentState>,
     headers: HttpHeaders,
-    _request: Bytes,
+    request: Bytes,
 ) -> Response {
-    record(&state, "/", &headers);
+    record(
+        &state,
+        "/",
+        &headers,
+        String::from_utf8(request.to_vec()).unwrap(),
+    );
     match state.reply {
         Reply::Json(reply) => ([(CONTENT_TYPE, "application/json")], reply).into_response(),
         Reply::Sse(frames) => {
@@ -166,6 +173,13 @@ fn send_request(text: &str) -> SendMessageRequest {
     serde_json::from_str(&body).unwrap()
 }
 
+fn configured_request(text: &str) -> SendMessageRequest {
+    let body = format!(
+        r#"{{"id":"request-1","params":{{"message":{{"kind":"message","messageId":"m-1","role":"user","parts":[{{"kind":"text","text":"{text}"}}]}},"configuration":{{"acceptedOutputModes":["text/plain"],"blocking":false,"historyLength":3,"pushNotificationConfig":{{"url":"https://hooks.example/"}}}}}}}}"#
+    );
+    serde_json::from_str(&body).unwrap()
+}
+
 fn buffered_message(text: &str) -> String {
     format!(
         r#"{{"jsonrpc":"2.0","id":"rpc-1","result":{{"message":{{"messageId":"m-1","role":"ROLE_AGENT","parts":[{{"text":"{text}"}}]}}}}}}"#
@@ -190,6 +204,21 @@ fn status_frame() -> String {
     sse_frame(
         r#"{"jsonrpc":"2.0","id":"rpc-1","result":{"statusUpdate":{"taskId":"t-1","contextId":"c-1","status":{"state":"TASK_STATE_WORKING"}}}}"#,
     )
+}
+
+fn kind_of(response: &SendMessageResponse) -> Option<&'static str> {
+    match response.result.get("kind").and_then(AgentJson::as_str) {
+        Some("message") => Some("message"),
+        Some("task") => Some("task"),
+        Some(_) | None => None,
+    }
+}
+
+fn body_of(seen: &[Seen]) -> String {
+    seen.iter()
+        .find(|entry| entry.path == "/")
+        .map(|entry| entry.body.clone())
+        .unwrap_or_default()
 }
 
 fn team_of(seen: &[Seen], path: &str) -> Option<String> {
@@ -278,6 +307,7 @@ async fn a2a_client_creation(#[case] with_headers: bool) {
 #[rstest]
 #[case::buffered_message(false, "message")]
 #[case::buffered_task(false, "task")]
+#[case::buffered_configuration(false, "configured")]
 #[case::buffered_without_result(false, "empty")]
 #[case::streaming_empty_events(true, "empty-stream")]
 #[case::streaming_status_last(true, "status")]
@@ -299,7 +329,11 @@ async fn native_send_behavior(#[case] streaming: bool, #[case] scenario: &str) {
         seen: Arc::default(),
     };
     let pool = pooled_client();
-    let request = send_request("hello");
+    let request = if scenario == "configured" {
+        configured_request("hello")
+    } else {
+        send_request("hello")
+    };
     let (outcome, seen) = run_agent(listener, state, async move {
         let client = create_a2a_client(&pool, settings(&base, streaming, Duration::from_secs(5)))
             .await
@@ -308,14 +342,8 @@ async fn native_send_behavior(#[case] streaming: bool, #[case] scenario: &str) {
     })
     .await;
     match scenario {
-        "message" | "task" => assert_eq!(
-            outcome
-                .unwrap()
-                .result
-                .get("kind")
-                .and_then(AgentJson::as_str),
-            Some("message")
-        ),
+        "task" => assert_eq!(kind_of(&outcome.unwrap()), Some("task")),
+        "message" | "configured" => assert_eq!(kind_of(&outcome.unwrap()), Some("message")),
         "empty" | "empty-stream" => assert!(matches!(
             outcome,
             Err(ClientError::Final { message }) if message.contains("no response")
@@ -327,6 +355,26 @@ async fn native_send_behavior(#[case] streaming: bool, #[case] scenario: &str) {
         other => panic!("unknown scenario {other}"),
     }
     assert_eq!(team_of(&seen, "/").as_deref(), Some("blue"));
+    let body = body_of(&seen);
+    let method = if streaming {
+        "SendStreamingMessage"
+    } else {
+        "SendMessage"
+    };
+    assert!(body.contains(&format!("\"method\":\"{method}\"")));
+    if matches!(scenario, "message" | "configured") {
+        assert!(body.contains("\"messageId\":\"m-1\""));
+        assert!(body.contains("\"role\":\"ROLE_USER\""));
+        assert!(body.contains("\"text\":\"hello\""));
+    }
+    if scenario == "configured" {
+        assert!(body.contains("\"acceptedOutputModes\":[\"text/plain\"]"));
+        assert!(body.contains("\"historyLength\":3"));
+        assert!(body.contains("\"returnImmediately\":true"));
+        assert!(
+            body.contains("\"taskPushNotificationConfig\":{\"url\":\"https://hooks.example/\"")
+        );
+    }
 
     let (empty_listener, empty_base) = start_agent().await;
     let empty_state = AgentState {
