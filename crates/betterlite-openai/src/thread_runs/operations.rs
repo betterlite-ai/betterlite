@@ -48,17 +48,7 @@ impl<T: AssistantsTransport> RunsApi<T> {
         request: &RunRequest,
     ) -> Result<RunReply, ThreadRunsError> {
         let segments = thread_segments(&request.thread_id)?;
-        let body = RunCreate {
-            assistant_id: &request.assistant_id,
-            additional_instructions: request.additional_instructions.as_deref(),
-            instructions: request.instructions.as_deref(),
-            metadata: request.metadata.as_ref(),
-            model: request.model.as_deref(),
-            stream: false,
-            tools: request.tools.as_deref(),
-        };
-        let bytes =
-            serde_json::to_vec(&body).map_err(|source| ThreadRunsError::Encode { source })?;
+        let bytes = create_body(request, false)?;
         let create = outbound(
             client,
             CallKind::Create,
@@ -94,17 +84,7 @@ impl<T: AssistantsTransport> RunsApi<T> {
         handler: Option<Arc<dyn RunEventHandler>>,
     ) -> Result<RunStream<T>, ThreadRunsError> {
         let segments = thread_segments(&request.thread_id)?;
-        let body = RunCreate {
-            assistant_id: &request.assistant_id,
-            additional_instructions: request.additional_instructions.as_deref(),
-            instructions: request.instructions.as_deref(),
-            metadata: request.metadata.as_ref(),
-            model: request.model.as_deref(),
-            stream: true,
-            tools: request.tools.as_deref(),
-        };
-        let bytes =
-            serde_json::to_vec(&body).map_err(|source| ThreadRunsError::Encode { source })?;
+        let bytes = create_body(request, true)?;
         let kind = CallKind::Stream {
             custom_handler: handler.is_some(),
         };
@@ -141,6 +121,20 @@ impl<T: AssistantsTransport> RunsApi<T> {
             run: Box::new(run),
         })
     }
+}
+
+// The SDK always sends every keyword LiteLLM's wrapper received, so a None argument stays null on the wire.
+fn create_body(request: &RunRequest, stream: bool) -> Result<Vec<u8>, ThreadRunsError> {
+    let body = RunCreate {
+        assistant_id: &request.assistant_id,
+        additional_instructions: request.additional_instructions.as_deref(),
+        instructions: request.instructions.as_deref(),
+        metadata: request.metadata.as_ref(),
+        model: request.model.as_deref(),
+        stream,
+        tools: request.tools.as_deref(),
+    };
+    serde_json::to_vec(&body).map_err(|source| ThreadRunsError::Encode { source })
 }
 
 fn thread_segments(thread_id: &str) -> Result<[&str; 3], ThreadRunsError> {
