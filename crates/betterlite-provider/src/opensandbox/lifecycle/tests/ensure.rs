@@ -25,7 +25,7 @@ fn ensure_returns_a_cached_handle_without_asking_the_api() {
         resolved.container.hidden_params.api_base.as_deref(),
         Some("http://stored.example")
     );
-    assert_eq!(resolved.execd_endpoint.url, "http://execd.local");
+    assert_eq!(resolved.execd_endpoint, "http://execd.local");
     assert!(resolved.use_server_proxy);
 }
 

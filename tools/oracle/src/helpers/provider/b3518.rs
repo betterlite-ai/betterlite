@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_models::sandbox::{ContainerHandle, HiddenParams};
-use betterlite_provider::opensandbox::helpers::poll::Endpoint;
 use betterlite_provider::opensandbox::lifecycle::{
     ContainerRef, CreateSandboxRequest, DeleteSandbox, RunCode, SandboxHandle, SandboxOptions,
 };
@@ -153,12 +152,13 @@ fn container_input(input: &Input) -> Result<Container, Box<HelperError>> {
     };
     Ok(Container::Cached(SandboxHandle {
         container,
-        execd_endpoint: Endpoint {
-            url,
-            headers: hidden
-                .and_then(|fields| fields.execd_headers.clone())
-                .unwrap_or_default(),
-        },
+        execd_endpoint: url,
+        execd_headers: hidden
+            .and_then(|fields| fields.execd_headers.clone())
+            .unwrap_or_default()
+            .into_iter()
+            .map(|(name, value)| (name, SecretString::from(value)))
+            .collect(),
         use_server_proxy: hidden
             .and_then(|fields| fields.use_server_proxy)
             .unwrap_or(false),

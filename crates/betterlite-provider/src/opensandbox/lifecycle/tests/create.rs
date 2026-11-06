@@ -77,14 +77,13 @@ fn create_caches_the_endpoint_and_the_credentials_in_the_handle() {
             .map(|key| key.expose_secret().to_owned()),
         Some("key-1".to_owned())
     );
-    assert_eq!(handle.execd_endpoint.url, "http://execd.local/");
+    assert_eq!(handle.execd_endpoint, "http://execd.local/");
     assert_eq!(
         handle
-            .execd_endpoint
-            .headers
+            .execd_headers
             .get("X-Execd-Token")
-            .map(String::as_str),
-        Some("token-1")
+            .map(|token| token.expose_secret().to_owned()),
+        Some("token-1".to_owned())
     );
     assert!(!handle.use_server_proxy);
 }
@@ -131,7 +130,7 @@ fn create_polls_the_endpoint_until_it_answers() {
     request.options.poll_interval = Some(Duration::from_millis(10));
     let handle = block_on(sandbox.acreate_sandbox(request, None)).unwrap();
 
-    assert_eq!(handle.execd_endpoint.url, "http://execd.local/");
+    assert_eq!(handle.execd_endpoint, "http://execd.local/");
     let requests = sandbox.http.requests();
     assert_eq!(requests.len(), 3);
     assert_eq!(

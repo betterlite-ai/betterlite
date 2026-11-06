@@ -170,9 +170,8 @@ fn run_rejects_an_endpoint_header_name_a_request_cannot_carry() {
     let sandbox = sandbox(&[], environment(&[]));
     let mut handle = cached_handle("http://stored.example", "stored-key", "http://execd.local");
     handle
-        .execd_endpoint
-        .headers
-        .insert("bad header".to_owned(), "value".to_owned());
+        .execd_headers
+        .insert("bad header".to_owned(), SecretString::from("value"));
     let error = block_on(sandbox.arun_code(run_request(ContainerRef::Cached(&handle), "1"), None))
         .unwrap_err();
 
@@ -185,9 +184,8 @@ fn run_rejects_an_endpoint_header_value_a_request_cannot_carry() {
     let sandbox = sandbox(&[], environment(&[]));
     let mut handle = cached_handle("http://stored.example", "stored-key", "http://execd.local");
     handle
-        .execd_endpoint
-        .headers
-        .insert("X-Bad".to_owned(), "bad\nvalue".to_owned());
+        .execd_headers
+        .insert("X-Bad".to_owned(), SecretString::from("bad\nvalue"));
     let error = block_on(sandbox.arun_code(run_request(ContainerRef::Cached(&handle), "1"), None))
         .unwrap_err();
 

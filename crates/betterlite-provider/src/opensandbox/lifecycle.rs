@@ -8,7 +8,6 @@ use serde_json::value::RawValue;
 use thiserror::Error;
 
 use super::helpers::OpenSandboxError;
-use super::helpers::poll::Endpoint;
 
 mod delete;
 mod operations;
@@ -33,7 +32,8 @@ pub enum LifecycleError {
 #[derive(Debug, Clone)]
 pub struct SandboxHandle {
     pub container: ContainerHandle,
-    pub execd_endpoint: Endpoint,
+    pub execd_endpoint: String,
+    pub execd_headers: BTreeMap<String, SecretString>,
     pub use_server_proxy: bool,
 }
 

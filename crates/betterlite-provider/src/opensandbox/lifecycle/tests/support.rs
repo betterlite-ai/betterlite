@@ -10,7 +10,6 @@ use futures_util::stream;
 use secrecy::SecretString;
 use tokio::runtime::Builder;
 
-use super::super::super::helpers::poll::Endpoint;
 use super::super::super::helpers::{
     OpenSandbox, OpenSandboxError, PollClock, SandboxHttp, SandboxRequest, SandboxStream,
 };
@@ -196,17 +195,19 @@ pub(super) fn plain_handle(api_base: Option<&str>, api_key: Option<&str>) -> Con
     }
 }
 
-pub(super) fn endpoint(url: &str) -> Endpoint {
-    Endpoint {
-        url: url.to_owned(),
-        headers: BTreeMap::from([("X-Execd-Token".to_owned(), "execd-token".to_owned())]),
-    }
+pub(super) fn endpoint_headers() -> BTreeMap<String, SecretString> {
+    BTreeMap::from([(
+        "X-Execd-Token".to_owned(),
+        SecretString::from("execd-token"),
+    )])
 }
 
 pub(super) fn cached_handle(api_base: &str, api_key: &str, endpoint_url: &str) -> SandboxHandle {
+    let container = plain_handle(Some(api_base), Some(api_key));
     SandboxHandle {
-        container: plain_handle(Some(api_base), Some(api_key)),
-        execd_endpoint: endpoint(endpoint_url),
+        container,
+        execd_endpoint: endpoint_url.to_owned(),
+        execd_headers: endpoint_headers(),
         use_server_proxy: true,
     }
 }

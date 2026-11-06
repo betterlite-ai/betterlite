@@ -112,8 +112,12 @@ pub(super) fn handle_output(handle: &SandboxHandle) -> Value {
         "hidden_params": {
             "api_base": &handle.container.hidden_params.api_base,
             "api_key": handle.container.hidden_params.api_key.as_ref().map(|key| key.expose_secret().to_owned()),
-            "execd_endpoint": &handle.execd_endpoint.url,
-            "execd_headers": &handle.execd_endpoint.headers,
+            "execd_endpoint": &handle.execd_endpoint,
+            "execd_headers": handle
+                .execd_headers
+                .iter()
+                .map(|(name, value)| (name.clone(), value.expose_secret().to_owned()))
+                .collect::<BTreeMap<String, String>>(),
             "use_server_proxy": handle.use_server_proxy,
         },
     })

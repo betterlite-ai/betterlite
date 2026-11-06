@@ -7,7 +7,7 @@ use betterlite_models::sandbox::{
 };
 use http::header::{ACCEPT, CACHE_CONTROL, CONTENT_TYPE, HeaderName, HeaderValue};
 use http::{HeaderMap, Method};
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::value::RawValue;
 use url::Url;
@@ -80,9 +80,9 @@ where
         };
         let url = format!(
             "{}/code",
-            endpoint_base_url(&handle.execd_endpoint.url, &api_base)
+            endpoint_base_url(&handle.execd_endpoint, &api_base)
         );
-        let headers = execution_headers(&handle.execd_endpoint.headers)?;
+        let headers = execution_headers(&handle.execd_headers)?;
         let language = request.language.unwrap_or(DEFAULT_LANGUAGE);
         let lines = self
             .post_code(
@@ -142,7 +142,8 @@ where
         container.hidden_params.api_key = Some(waiting.api_key.clone());
         Ok(SandboxHandle {
             container,
-            execd_endpoint: endpoint,
+            execd_endpoint: endpoint.url,
+            execd_headers: secret_headers(&endpoint.headers),
             use_server_proxy: waiting.use_server_proxy,
         })
     }
@@ -252,8 +253,15 @@ fn create_request(
     })
 }
 
+fn secret_headers(headers: &BTreeMap<String, String>) -> BTreeMap<String, SecretString> {
+    headers
+        .iter()
+        .map(|(name, value)| (name.clone(), SecretString::from(value.as_str())))
+        .collect()
+}
+
 fn execution_headers(
-    endpoint_headers: &BTreeMap<String, String>,
+    endpoint_headers: &BTreeMap<String, SecretString>,
 ) -> Result<HeaderMap, LifecycleError> {
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
@@ -262,8 +270,9 @@ fn execution_headers(
     for (name, value) in endpoint_headers {
         let header_name = HeaderName::try_from(name.as_str())
             .map_err(|source| LifecycleError::InvalidHeaderName { source })?;
-        let header_value = HeaderValue::try_from(value.as_str())
+        let mut header_value = HeaderValue::try_from(value.expose_secret())
             .map_err(|source| OpenSandboxError::InvalidHeader { source })?;
+        header_value.set_sensitive(true);
         headers.insert(header_name, header_value);
     }
     Ok(headers)
