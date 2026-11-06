@@ -29,11 +29,19 @@ deviations:
       booleans and null are rendered as JSON text.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/humanloop.py#L57
   - what: >-
-      A response without a template or model field, or with a non-string model, is a typed error that
-      names the field instead of an unhandled KeyError.
+      A template message that is not a JSON object is a typed error that names its index instead of an
+      AttributeError from dict.get.
     why: >-
-      A KeyError surfaces as a 500 on a response the integration cannot use; the typed error keeps the
-      failure a client can act on and changes nothing for a well-formed response.
+      The AttributeError is an unhandled failure on a response the integration cannot use; a
+      well-formed response has object messages and is unaffected.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/humanloop.py#L53-L55
+  - what: >-
+      A response that is not a JSON object, has no template or model field, or has a non-string model,
+      is a typed error that names the problem instead of an unhandled JSONDecodeError, KeyError or
+      later type failure.
+    why: >-
+      Those unhandled failures surface as a 500 on a response the integration cannot use; the typed
+      error keeps the failure a client can act on and changes nothing for a well-formed response.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/humanloop.py#L81-L89
   - what: >-
       A negative HUMANLOOP_PROMPT_CACHE_TTL_SECONDS is a settings error instead of a cache entry that
