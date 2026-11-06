@@ -3,6 +3,8 @@ use std::path::Path;
 use super::{FileAccess, GROUP_WORLD_BITS, PRIVATE_DIR_MODE, StagedFile};
 use crate::private_json::error::PrivateJsonError;
 
+pub(crate) const CLEANUP_FAILED: &str = "could not remove a private staging file";
+
 pub(super) fn ensure_private_dir_blocking(
     files: &dyn FileAccess,
     directory: &Path,
@@ -38,7 +40,9 @@ pub(super) fn stage_blocking(
         .create_staged(directory, suffix)
         .map_err(|source| PrivateJsonError::Stage(target.to_owned(), source))?;
     if let Err(source) = files.write_staged(&mut staged, bytes) {
-        remove_quietly(files, &staged.path);
+        if let Err(cleanup) = files.remove(&staged.path) {
+            tracing::debug!(%cleanup, CLEANUP_FAILED);
+        }
         return Err(PrivateJsonError::Stage(target.to_owned(), source));
     }
     Ok(StagedFile { path: staged.path })
@@ -50,17 +54,12 @@ pub(super) fn commit_blocking(
     target: &Path,
 ) -> Result<(), PrivateJsonError> {
     if let Err(source) = files.replace(&staged.path, target) {
-        remove_quietly(files, &staged.path);
+        if let Err(cleanup) = files.remove(&staged.path) {
+            tracing::debug!(%cleanup, CLEANUP_FAILED);
+        }
         return Err(PrivateJsonError::Commit(target.to_owned(), source));
     }
     Ok(())
-}
-
-// A failed stage or commit still owes the caller a removed temporary, and a removal failure must not hide the first error
-fn remove_quietly(files: &dyn FileAccess, path: &Path) {
-    if let Err(error) = files.remove(path) {
-        tracing::debug!(%error, "could not remove a private staging file");
-    }
 }
 
 // Path("file.json").parent is "" while Path("/").parent is "/", and only a path naming no file has nowhere to stage

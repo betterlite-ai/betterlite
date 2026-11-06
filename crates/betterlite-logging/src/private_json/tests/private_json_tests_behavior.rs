@@ -140,6 +140,23 @@ fn safe_json_loads_bounds_the_nesting_depth(#[case] depth: usize, #[case] reject
     if rejected {
         assert!(matches!(error, Some(PrivateJsonError::TooDeep(limit)) if limit == MAX_JSON_DEPTH));
     }
+    let empty_tail = format!(
+        "{}[]{}",
+        "[".repeat(MAX_JSON_DEPTH),
+        "]".repeat(MAX_JSON_DEPTH)
+    );
+    assert!(matches!(
+        safe_json_loads(empty_tail.as_bytes()),
+        Err(PrivateJsonError::TooDeep(_))
+    ));
+}
+
+#[test]
+fn safe_json_loads_accepts_a_payload_at_the_byte_limit() {
+    let text = format!("[{}]", " ".repeat(MAX_JSON_BYTES - 2));
+    assert_eq!(text.len(), MAX_JSON_BYTES);
+    let parsed = safe_json_loads(text.as_bytes()).expect("accepts a payload at the byte limit");
+    assert_eq!(parsed, value("[]"));
 }
 
 #[test]
