@@ -1,5 +1,4 @@
 pub mod catalog;
-pub mod model_info;
 pub mod request;
 mod tests;
 
@@ -114,7 +113,9 @@ impl<'catalog> ModelRouteSelector<'catalog> {
         if let Some(route) = named_route(model) {
             return Ok(route);
         }
-        if has_route_prefix(model, CHAT_COMPLETIONS_PREFIX) {
+        if model.starts_with(CHAT_COMPLETIONS_PREFIX)
+            || model.contains(&format!("/{CHAT_COMPLETIONS_PREFIX}"))
+        {
             return self.chat_or_converse(model, request_params);
         }
         let after_bedrock = model.replacen(BEDROCK_PREFIX, "", 1);
@@ -177,16 +178,9 @@ impl<'catalog> ModelRouteSelector<'catalog> {
 }
 
 fn named_route(model: &str) -> Option<BedrockRoute> {
-    ROUTE_TABLE
-        .iter()
-        .find_map(|(prefix, route)| has_route_prefix(model, prefix).then_some(*route))
-}
-
-#[must_use]
-pub fn has_route_prefix(model: &str, prefix: &str) -> bool {
-    let at_start = model.starts_with(prefix);
-    let after_slash = format!("/{prefix}");
-    model.contains(&after_slash) || at_start
+    ROUTE_TABLE.iter().find_map(|(prefix, route)| {
+        (model.starts_with(prefix) || model.contains(&format!("/{prefix}"))).then_some(*route)
+    })
 }
 
 #[must_use]
@@ -204,17 +198,6 @@ pub fn get_claude_platform_model(model: &str) -> String {
         Some((before, after)) => format!("{before}{after}"),
         None => model.to_owned(),
     }
-}
-
-#[must_use]
-pub fn get_bedrock_tool_name<'names>(
-    mappings: &'names IndexMap<String, String>,
-    response_tool_name: &'names str,
-) -> &'names str {
-    if let Some(original) = mappings.get(response_tool_name) {
-        return original;
-    }
-    response_tool_name
 }
 
 pub fn map_claude_platform_auth(passed_params: &ParamMap, optional_params: &mut ParamMap) {

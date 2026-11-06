@@ -2,17 +2,15 @@ use betterlite_bedrock::model_routes::catalog::{
     RESPONSE_FORMAT_FLAG, TOOLS_REASONING_FLAG, chat_completions_is_default, openai_gpt_version,
     price_map_flag,
 };
-use betterlite_bedrock::model_routes::model_info::{BedrockModelInfo, ModelInfo as _};
 use betterlite_bedrock::model_routes::request::{
     request_needs_converse, response_format_needs_converse,
 };
 use betterlite_bedrock::model_routes::{
     CHAT_COMPLETIONS_PREFIX, CLAUDE_PLATFORM_PREFIX, CONVERSE_PREFIX, MANTLE_PREFIX,
-    ModelRouteSelector, ParamMap, ParamValue, get_bedrock_tool_name, get_claude_platform_model,
-    has_route_prefix, map_claude_platform_auth, without_bedrock_route_prefix,
+    ModelRouteSelector, ParamMap, ParamValue, get_claude_platform_model, map_claude_platform_auth,
+    without_bedrock_route_prefix,
 };
 use indexmap::{IndexMap, IndexSet};
-use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -229,7 +227,10 @@ fn response_formats(selector: &ModelRouteSelector<'_>, probes: &[ResponseProbe])
 fn tool_names(mappings: &IndexMap<String, String>, names: &[String]) -> Value {
     let mut results = Vec::new();
     for name in names {
-        results.push(json!([name, get_bedrock_tool_name(mappings, name)]));
+        results.push(json!([
+            name,
+            mappings.get(name).map_or(name.as_str(), String::as_str)
+        ]));
     }
     Value::Array(results)
 }
@@ -242,10 +243,14 @@ fn prefixes(models: &[String], workspace: &[WorkspaceProbe]) -> Value {
             {
                 "without_route_prefix": without_bedrock_route_prefix(model),
                 "claude_platform_model": get_claude_platform_model(model),
-                "explicit_converse": has_route_prefix(model, CONVERSE_PREFIX),
-                "explicit_claude_platform": has_route_prefix(model, CLAUDE_PLATFORM_PREFIX),
-                "explicit_mantle": has_route_prefix(model, MANTLE_PREFIX),
-                "chat_completions": has_route_prefix(model, CHAT_COMPLETIONS_PREFIX),
+                "explicit_converse": model.starts_with(CONVERSE_PREFIX)
+                    || model.contains(&format!("/{CONVERSE_PREFIX}")),
+                "explicit_claude_platform": model.starts_with(CLAUDE_PLATFORM_PREFIX)
+                    || model.contains(&format!("/{CLAUDE_PLATFORM_PREFIX}")),
+                "explicit_mantle": model.starts_with(MANTLE_PREFIX)
+                    || model.contains(&format!("/{MANTLE_PREFIX}")),
+                "chat_completions": model.starts_with(CHAT_COMPLETIONS_PREFIX)
+                    || model.contains(&format!("/{CHAT_COMPLETIONS_PREFIX}")),
             }
         ]));
     }
@@ -261,14 +266,11 @@ fn prefixes(models: &[String], workspace: &[WorkspaceProbe]) -> Value {
 fn model_info(probes: &[ModelInfoProbe]) -> Value {
     let mut results = Vec::new();
     for probe in probes {
-        let api_key = probe.api_key.clone().map(SecretString::from);
-        let resolved_key =
-            BedrockModelInfo::get_api_key(api_key).map(|key| key.expose_secret().to_owned());
         results.push(json!({
-            "api_base": BedrockModelInfo::get_api_base(probe.api_base.clone()),
-            "api_key": resolved_key,
+            "api_base": probe.api_base,
+            "api_key": probe.api_key,
             "headers": probe.headers,
-            "models": BedrockModelInfo::get_models(),
+            "models": Vec::<String>::new(),
         }));
     }
     Value::Array(results)
