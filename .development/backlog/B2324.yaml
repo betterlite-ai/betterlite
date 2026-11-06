@@ -2,7 +2,7 @@ id: B2324
 milestone: M4 keys, spend and management
 title: Resource and provider path hints below authentication
 status: todo
-depends_on: [B171, B302, B856]
+depends_on: [B171, B856]
 file: tasks/B2324-auth-resource-hints.yaml
 covers:
   - "litellm/types/videos/utils.py"

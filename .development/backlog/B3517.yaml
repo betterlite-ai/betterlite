@@ -1,7 +1,7 @@
 id: B3517
 milestone: M5 api families
 title: OpenSandbox request helpers readiness and execution output
-status: todo
+status: done
 depends_on: [B3516, B002, B173]
 file: tasks/B3517-opensandbox-helpers.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/constants.py"
 parent: B099
 split_from: B099
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 807

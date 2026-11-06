@@ -1,0 +1,85 @@
+kind: helper
+name: throttle-type-and-boundaries
+call:
+  budget_primitives:
+    calls:
+      - function: throttle_percentage
+        value: {percentage: 0.5}
+      - function: throttle_percentage
+        value: {percentage: 1}
+      - function: throttle_percentage
+        value: {percentage: 1.0}
+      - function: throttle_percentage
+        value: {percentage: 0}
+      - function: throttle_percentage
+        value: {percentage: -0.5}
+      - function: throttle_percentage
+        value: {percentage: 1.5}
+      - function: throttle_percentage
+        value: {percentage: true}
+      - function: throttle_percentage
+        value: {percentage: false}
+      - function: throttle_percentage
+        value: {percentage: null}
+      - function: throttle_percentage
+        value: {percentage: "0.5"}
+      - function: should_throttle
+        value:
+          token: {metadata: {throttle_on_budget_exceeded: true}, tpm_limit: 10}
+          percentage: 0.5
+      - function: should_throttle
+        value:
+          token: {metadata: {throttle_on_budget_exceeded: true}, rpm_limit: 10}
+          percentage: 1.0
+      - function: should_throttle
+        value:
+          token: {metadata: {throttle_on_budget_exceeded: true}, tpm_limit: 0}
+          percentage: 0.5
+      - function: should_throttle
+        value:
+          token: {metadata: {throttle_on_budget_exceeded: true}, rpm_limit: -5}
+          percentage: 0.5
+      - function: should_throttle
+        value:
+          token: {metadata: {throttle_on_budget_exceeded: "true"}, tpm_limit: 10}
+          percentage: 0.5
+      - function: should_throttle
+        value:
+          token: {metadata: {throttle_on_budget_exceeded: 1}, tpm_limit: 10}
+          percentage: 0.5
+      - function: should_throttle
+        value:
+          token: {metadata: {}}
+          percentage: 0.5
+      - function: should_throttle
+        value:
+          token: {metadata: {throttle_on_budget_exceeded: true}}
+          percentage: 0.5
+      - function: should_throttle
+        value:
+          token: {metadata: {throttle_on_budget_exceeded: true}, tpm_limit: 10}
+          percentage: 2.0
+      - function: should_throttle
+        value:
+          token: {metadata: {throttle_on_budget_exceeded: true}, tpm_limit: 10}
+          percentage: null
+      - function: throttled_limit
+        value: {limit: 100, percentage: 0.5}
+      - function: throttled_limit
+        value: {limit: 3, percentage: 1.0}
+      - function: throttled_limit
+        value: {limit: 0, percentage: 0.5}
+      - function: throttled_limit
+        value: {limit: -5, percentage: 0.5}
+      - function: throttled_limit
+        value: {limit: 1, percentage: 0.1}
+      - function: throttled_limit
+        value: {limit: 100, percentage: 0.29}
+      - function: throttled_limit
+        value: {limit: null, percentage: 0.5}
+      - function: throttled_limit
+        value: {percentage: 0.5}
+      - function: throttled_limit
+        value: {limit: 100}
+env: {}
+compare: {ignore: []}
