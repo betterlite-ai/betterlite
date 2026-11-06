@@ -108,11 +108,23 @@ fn refresh_interval_must_be_a_number() {
     assert!(matches!(error, CyberArkInitError::RefreshInterval(_)));
 }
 
+#[test]
+fn a_negative_refresh_interval_is_rejected() {
+    let error = CyberArkSettings::from_environment(&environment(&[
+        ("CYBERARK_API_KEY", "key"),
+        ("CYBERARK_REFRESH_INTERVAL", "-1"),
+    ]))
+    .unwrap_err();
+    assert!(matches!(error, CyberArkInitError::RefreshInterval(_)));
+}
+
 #[rstest]
 #[case::unset(None, true)]
 #[case::true_text(Some("true"), true)]
 #[case::false_text(Some("false"), false)]
 #[case::padded_mixed_case(Some(" False "), false)]
+#[case::one_text(Some("1"), true)]
+#[case::off_text(Some("off"), false)]
 #[case::unrecognized(Some("maybe"), true)]
 #[case::empty(Some(""), true)]
 fn ssl_verification_defaults_to_true(#[case] text: Option<&str>, #[case] verify: bool) {
@@ -153,6 +165,7 @@ async fn api_key_login_posts_the_key_and_base64_encodes_the_token() {
     assert_eq!(login.body.as_deref(), Some("key"));
     assert_eq!(login.client_certificate, None);
     assert_eq!(login.authorization, None);
+    assert!(!login.blocking);
     assert!(login.verify_tls);
     assert_eq!(seen[1].authorization.as_deref(), Some(TOKEN_HEADER));
 }
@@ -168,7 +181,8 @@ async fn certificate_login_sends_the_pair_and_an_empty_body() {
         &[(AUTH_ROUTE, vec![Reply::Status(200, TOKEN_JSON)])],
     );
     manager.read("db").await;
-    let login = transport.recorded().into_iter().next().unwrap();
+    let seen = transport.recorded();
+    let login = seen.first().unwrap();
     assert_eq!(login.body.as_deref(), Some(""));
     assert!(!login.verify_tls);
     assert_eq!(
@@ -178,6 +192,7 @@ async fn certificate_login_sends_the_pair_and_an_empty_body() {
             key_path: "/k.pem".to_owned(),
         })
     );
+    assert_eq!(seen[1].client_certificate, None);
 }
 
 #[tokio::test(start_paused = true)]
