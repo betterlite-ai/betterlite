@@ -32,7 +32,7 @@ fn arguments_are_normalized_with_scheme_and_trailing_slash() {
     let endpoints = validate_environment(
         Some("localhost:5001"),
         Some("https://anonymizer.local/"),
-        missing,
+        from_environment,
     )
     .unwrap();
     assert_eq!(
