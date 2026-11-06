@@ -1241,6 +1241,7 @@ dependencies = [
  "betterlite-rate-limit",
  "betterlite-secret-managers",
  "betterlite-secrets",
+ "chrono",
  "fancy-regex",
  "indexmap 2.14.2",
  "insta",
@@ -1339,6 +1340,7 @@ dependencies = [
 name = "betterlite-core-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-config",
  "betterlite-core",
  "chrono",
  "jiff",
