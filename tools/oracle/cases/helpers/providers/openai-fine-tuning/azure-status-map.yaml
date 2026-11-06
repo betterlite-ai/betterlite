@@ -1,0 +1,5 @@
+kind: helper
+name: openai-fine-tuning-azure-status-map
+call: {"openai_fine_tuning": {"steps": [{"action": "normalize", "is_azure": true, "record": {"organization_id": "o", "result_files": [], "status": "pending"}}, {"action": "normalize", "is_azure": true, "record": {"organization_id": "o", "result_files": [], "status": "notRunning"}}, {"action": "normalize", "is_azure": true, "record": {"organization_id": "o", "result_files": [], "status": "running"}}, {"action": "normalize", "is_azure": true, "record": {"organization_id": "o", "result_files": [], "status": "succeeded"}}, {"action": "normalize", "is_azure": true, "record": {"organization_id": "o", "result_files": [], "status": "failed"}}, {"action": "normalize", "is_azure": true, "record": {"organization_id": "o", "result_files": [], "status": "canceled"}}, {"action": "normalize", "is_azure": true, "record": {"organization_id": "o", "result_files": [], "status": "canceling"}}, {"action": "normalize", "is_azure": true, "record": {"organization_id": "o", "result_files": [], "status": "paused"}}]}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,18 @@
+kind: helper
+name: orchestrator-calls-once-per-text
+call:
+  b3736:
+    detect:
+      settings:
+        auth_token: test-token
+        detector_id: jailbreak-detector
+        is_detector_server: false
+        optional_params: {detector_params: {threshold: 3}}
+      environment: {}
+      contents: ["first message", "second message"]
+      answer:
+        status: 200
+        headers: {}
+        body: {detections: [{detection_type: pii, score: 0.7, text: secret, detector_id: email-detector}]}
+env: {}
+compare: {ignore: []}
