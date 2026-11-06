@@ -1,3 +1,4 @@
+use std::mem;
 use std::str;
 
 use serde::de::DeserializeOwned;
@@ -54,27 +55,24 @@ fn event_and_data(frame: &[u8]) -> (Option<String>, Vec<u8>) {
     (event, data)
 }
 
-// One frame ends at a blank line; the trailing remainder is still a frame when the body ends without one.
-pub(crate) fn run_event_frames(body: &[u8]) -> Vec<&[u8]> {
+// One frame ends at a blank line whatever line terminator wrote it; a body without a final blank line keeps its tail.
+pub(crate) fn run_event_frames(body: &[u8]) -> Vec<Vec<u8>> {
     let mut frames = Vec::new();
-    let (mut start, mut cursor) = (0_usize, 0_usize);
-    while let Some(rest) = body.get(cursor..) {
-        let boundary = if rest.starts_with(b"\r\n\r\n") {
-            4
-        } else if rest.starts_with(b"\n\n") || rest.starts_with(b"\r\r") {
-            2
-        } else {
-            cursor = cursor.saturating_add(1);
+    let mut frame: Vec<u8> = Vec::new();
+    for line in body.split(|byte| matches!(*byte, b'\n' | b'\r')) {
+        if line.is_empty() {
+            if !frame.is_empty() {
+                frames.push(mem::take(&mut frame));
+            }
             continue;
-        };
-        if let Some(frame) = body.get(start..cursor).filter(|frame| !frame.is_empty()) {
-            frames.push(frame);
         }
-        cursor = cursor.saturating_add(boundary);
-        start = cursor;
+        if !frame.is_empty() {
+            frame.push(b'\n');
+        }
+        frame.extend_from_slice(line);
     }
-    if let Some(tail) = body.get(start..).filter(|tail| !tail.is_empty()) {
-        frames.push(tail);
+    if !frame.is_empty() {
+        frames.push(frame);
     }
     frames
 }

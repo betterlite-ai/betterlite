@@ -57,8 +57,9 @@ impl<T: AssistantsTransport> RunsApi<T> {
         )?;
         let created = send(self.transport.as_ref(), create).await?;
         let mut run = decode_json::<RunReply>(&created.body)?;
+        let run_id = run.id.clone();
         loop {
-            let poll_segments = run_segments(&request.thread_id, &run.id)?;
+            let poll_segments = run_segments(&request.thread_id, &run_id)?;
             let poll = outbound(client, CallKind::Poll, &poll_segments, RequestBody::Empty)?;
             let response = send(self.transport.as_ref(), poll).await?;
             run = decode_json::<RunReply>(&response.body)?;

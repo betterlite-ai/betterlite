@@ -47,7 +47,7 @@ fn events_from(
 ) -> Result<Vec<RunEvent>, ThreadRunsError> {
     let mut events = Vec::new();
     for frame in run_event_frames(body) {
-        let Some(event) = decode_run_event(frame)? else {
+        let Some(event) = decode_run_event(&frame)? else {
             break;
         };
         if let Some(sink) = handler {
