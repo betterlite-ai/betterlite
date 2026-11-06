@@ -19,6 +19,8 @@ enum Scenario {
     NonList(&'static str),
     ScalarEntry(&'static str),
     NestedOwner,
+    OtelUnknownScalar,
+    OtelUnknownNested,
     NestedOwnerless,
 }
 
@@ -61,6 +63,8 @@ fn variables(pairs: &[(&str, &str)]) -> IndexMap<String, String> {
     "litellm_settings:\n  callbacks: [1]\n"
 ))]
 #[case::nested_settings_value_owned_by_another_section(Scenario::NestedOwner)]
+#[case::unknown_otel_scalar_is_kept(Scenario::OtelUnknownScalar)]
+#[case::unknown_otel_nested_value_is_unsupported(Scenario::OtelUnknownNested)]
 #[case::nested_settings_value_without_an_owner_is_unsupported(Scenario::NestedOwnerless)]
 fn callback_registry_tests_behavior(#[case] scenario: Scenario) {
     match scenario {
@@ -162,7 +166,38 @@ fn callback_registry_tests_behavior(#[case] scenario: Scenario) {
                 &[],
             )
             .unwrap();
-            assert!(!settings.callback_settings.contains_key("otel"));
+            let otel = settings
+                .callback_settings
+                .get("otel")
+                .expect("otel scalars are kept");
+            assert_eq!(
+                otel.exposed_variables(),
+                variables(&[("endpoint", "https://collector")])
+            );
+        }
+        Scenario::OtelUnknownScalar => {
+            let settings = load(
+                "callback_settings:\n  otel:\n    unknown_scalar: keep-me\n",
+                &[],
+            )
+            .unwrap();
+            let otel = settings
+                .callback_settings
+                .get("otel")
+                .expect("otel scalars are kept");
+            assert_eq!(
+                otel.exposed_variables(),
+                variables(&[("unknown_scalar", "keep-me")])
+            );
+        }
+        Scenario::OtelUnknownNested => {
+            let error = load(
+                "callback_settings:\n  otel:\n    mystery:\n      depth: 1\n",
+                &[],
+            )
+            .unwrap_err();
+            assert!(matches!(error, ConfigError::Unsupported { paths }
+                if paths == ["callback_settings.otel.mystery"]));
         }
         Scenario::NestedOwnerless => {
             let error = load(

@@ -15,8 +15,21 @@ const CAPACITY_VARIABLE: &str = "LITELLM_MAX_CALLBACKS";
 const DEFAULT_CAPACITY: i64 = 100;
 // no exporter is compiled into betterlite yet, so every LiteLLM callback name is unavailable
 const INSTALLED_CALLBACKS: [&str; 0] = [];
-// these callback_settings entries belong to the section that parses their adapter options
-const OWNED_ENTRIES: [&str; 1] = ["otel"];
+const OTEL_ENTRY: &str = "otel";
+// the nested callback_settings.otel keys RawOtel declares, including its aliases; otel_settings parses them
+const OTEL_NESTED_KEYS: [&str; 11] = [
+    "LITELLM_OTEL_BAGGAGE_METADATA_KEYS",
+    "LITELLM_OTEL_BAGGAGE_PROMOTED_KEYS",
+    "LITELLM_OTEL_BAGGAGE_TEAM_METADATA_KEYS",
+    "LITELLM_OTEL_EXCLUDED_SERVICES",
+    "baggage_metadata_keys",
+    "baggage_promoted_keys",
+    "baggage_team_metadata_keys",
+    "excluded_services",
+    "exporters",
+    "mapper_names",
+    "resource_attributes",
+];
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
@@ -124,16 +137,15 @@ fn callback_entries(
 ) -> BTreeMap<String, CallbackEntry> {
     let mut entries = BTreeMap::new();
     for (name, values) in raw {
-        if OWNED_ENTRIES.contains(&name.as_str()) {
-            continue;
-        }
         let mut converted = IndexMap::new();
         for (key, value) in values {
-            match value.into_callback_value() {
-                Some(setting) => {
-                    converted.insert(key, setting);
-                }
-                None => paths.push(format!("callback_settings.{name}.{key}")),
+            if let Some(setting) = value.into_callback_value() {
+                converted.insert(key, setting);
+                continue;
+            }
+            let owned = name == OTEL_ENTRY && OTEL_NESTED_KEYS.contains(&key.as_str());
+            if !owned {
+                paths.push(format!("callback_settings.{name}.{key}"));
             }
         }
         entries.insert(name, CallbackEntry { values: converted });
