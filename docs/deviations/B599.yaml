@@ -6,17 +6,11 @@ deviations:
   - what: The 502 message for a stream that decoded to no events or ended with undecoded bytes goes through the secret redactor, so first bytes and header values cannot leak a credential.
     why: The text comes from an unknown upstream and may echo credentials, and LiteLLM prints it as received.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/chat/invoke_handler.py#L374-L403
-  - what: A frame that repeats a header name is rejected as invalid.
-    why: botocore keeps the last value silently, so two values for ":message-type" or ":exception-type" would let a frame pick which one wins.
-    link: ""
   - what: An ":exception-type" header that is not a string counts as absent.
     why: LiteLLM would put the non-string value into the error text, and betterlite keeps the error text to strings.
     link: ""
   - what: The base64 inside a chunk payload is decoded strictly, and padding errors fail the frame.
     why: Python's lenient decoder drops stray characters and would pass a corrupted chunk to the JSON parser.
-    link: ""
-  - what: An anthropic-beta list header keeps only string elements, and a JSON array parsed from a string header turns its numbers and containers into their JSON text.
-    why: The declared header type is a list of strings, and Python's str() of a float or dict is not stable text to copy.
     link: ""
   - what: ServerSentEvent.json and its repr text are typed methods on the record instead of a Display or FromStr implementation.
     why: The workspace bans handwritten Display and FromStr, so the repr text is a plain method.

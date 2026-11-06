@@ -1,6 +1,7 @@
 #![no_main]
 
 use std::collections::BTreeMap;
+use std::str::from_utf8;
 
 use betterlite_bedrock::event_frames::beta::{BetaHeader, anthropic_beta_from_headers};
 use betterlite_bedrock::event_frames::decode_aws_event_frame;
@@ -16,7 +17,7 @@ fuzz_target!(|bytes: &[u8]| {
     while let Ok(Some(event)) = decode_aws_event_frame(&mut buffer) {
         let _text = parse_message_from_event(Some(&shape), &event);
     }
-    if let Ok(text) = std::str::from_utf8(bytes) {
+    if let Ok(text) = from_utf8(bytes) {
         let headers = BTreeMap::from([(
             "anthropic-beta".to_owned(),
             BetaHeader::Text(text.to_owned()),

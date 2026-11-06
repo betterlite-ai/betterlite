@@ -5,15 +5,25 @@ use std::collections::BTreeMap;
 use serde::Deserialize;
 
 use super::frames::kind;
-use crate::event_frames::beta::{BetaHeader, anthropic_beta_from_headers};
+use crate::event_frames::beta::{BetaHeader, BetaValue, anthropic_beta_from_headers};
 use crate::event_frames::sse::ServerSentEvent;
 
-fn beta(headers: &str) -> Vec<String> {
+fn beta(headers: &str) -> Vec<BetaValue> {
     let map: BTreeMap<String, BetaHeader> = serde_json::from_str(headers).unwrap();
     anthropic_beta_from_headers(&map)
 }
 
+fn beta_json(headers: &str) -> String {
+    serde_json::to_string(&beta(headers)).unwrap()
+}
+
 pub(super) fn anthropic_beta_header_forms() {
+    assert_falsey_forms();
+    assert_list_forms();
+    assert_text_forms();
+}
+
+fn assert_falsey_forms() {
     for headers in [
         "{}",
         r#"{"Anthropic-Beta": "a"}"#,
@@ -28,28 +38,38 @@ pub(super) fn anthropic_beta_header_forms() {
         r#"{"anthropic-beta": {"a": 1}}"#,
         r#"{"anthropic-beta": "[]"}"#,
     ] {
-        assert_eq!(beta(headers), Vec::<String>::new(), "{headers}");
+        assert_eq!(beta(headers), Vec::<BetaValue>::new(), "{headers}");
     }
+}
+
+fn assert_list_forms() {
     assert_eq!(
-        beta(r#"{"anthropic-beta": ["a", " a ", "", "a"]}"#),
-        ["a", " a ", "", "a"]
+        beta_json(r#"{"anthropic-beta": ["a", " a ", "", "a"]}"#),
+        r#"["a"," a ","","a"]"#
     );
+    assert_eq!(
+        beta_json(r#"{"anthropic-beta": ["a", 1, null, true, ["x"], {"k": 1}]}"#),
+        r#"["a",1,null,true,["x"],{"k":1}]"#
+    );
+}
+
+fn assert_text_forms() {
     let strings = [
-        ("a, b ,c", vec!["a", "b", "c"]),
-        (" ", vec![""]),
-        ("a,,a", vec!["a", "", "a"]),
+        ("a, b ,c", r#"["a","b","c"]"#),
+        (" ", r#"[""]"#),
+        ("a,,a", r#"["a","","a"]"#),
         (
-            r#"[\"x\", \" y \", 5, null, true, [1], 1.5]"#,
-            vec!["x", "y", "5", "None", "True", "[1]", "1.5"],
+            r#"[\"x\", \" y \", 5, null, true, false, [1], 1.5]"#,
+            r#"["x","y","5","None","True","False","[1]","1.5"]"#,
         ),
-        ("[not json]", vec!["[not json]"]),
-        ("[a, b]", vec!["[a", "b]"]),
-        (r#" [\"a\"] "#, vec!["a"]),
-        (r"\u001ca\u001c", vec!["a"]),
+        ("[not json]", r#"["[not json]"]"#),
+        ("[a, b]", r#"["[a","b]"]"#),
+        (r#" [\"a\"] "#, r#"["a"]"#),
+        (r"\u001ca\u001c", r#"["a"]"#),
     ];
     for (raw, expected) in strings {
         let headers = format!(r#"{{"anthropic-beta": "{raw}"}}"#);
-        assert_eq!(beta(&headers), expected, "{raw:?}");
+        assert_eq!(beta_json(&headers), expected, "{raw:?}");
     }
 }
 
@@ -62,7 +82,11 @@ pub(super) fn sse_record_and_json() {
     let blank = ServerSentEvent::new(None, None, None, None);
     assert_eq!(blank.event, None);
     assert_eq!(blank.data, "");
-    assert_eq!((blank.id, blank.retry), (None, None));
+    assert_eq!((blank.id.as_deref(), blank.retry), (None, None));
+    assert_eq!(
+        blank.repr(),
+        "ServerSentEvent(event=None, data=, id=None, retry=None)"
+    );
     let kept = ServerSentEvent::new(Some(String::new()), None, Some(String::new()), Some(0));
     assert_eq!(kept.event, None);
     assert_eq!(kept.id.as_deref(), Some(""));

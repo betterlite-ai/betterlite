@@ -115,31 +115,80 @@ pub(super) fn truncated_frame() {
 pub(super) fn error_before_first_event() {
     let redactor = redactor();
     let empty = EventStreamTally::default();
-    let (status, first) = bedrock_parts(empty.undecoded_stream_error(None, &redactor).unwrap());
+    no_events_message(&empty, &redactor);
+    first_bytes_message(&redactor);
+    textual_diagnostics(&empty, &redactor);
+}
+
+fn no_events_message(empty: &EventStreamTally, redactor: &Redactor) {
+    let (status, first) = bedrock_parts(empty.undecoded_stream_error(None, redactor).unwrap());
     assert_eq!(status, 502);
     assert_eq!(
         first,
         "Bedrock answered the stream with HTTP 200 but its body decoded to no events (content-type=None, x-amzn-requestid=None, 0 bytes received, first bytes=b'')"
     );
+}
+
+fn first_bytes_message(redactor: &Redactor) {
     let mut tally = EventStreamTally::default();
     tally.add_chunk(&[b'x'; 150]);
-    tally.add_chunk(b"y\n\xff'");
-    tally.add_chunk(&[b'z'; 100]);
+    tally.add_chunk(b"y\n\r\t\\'\"\x01\xff");
+    tally.add_chunk(&[b'z'; 40]);
     let headers = request_headers();
     let error = tally
-        .undecoded_stream_error(Some(&headers), &redactor)
+        .undecoded_stream_error(Some(&headers), redactor)
         .unwrap();
     let (_, second) = bedrock_parts(error);
-    let head = format!("b\"{}y\\n\\xff'{}\"", "x".repeat(150), "z".repeat(46));
+    let mut head = String::from("b'");
+    head.push_str(&"x".repeat(150));
+    head.push('y');
+    head.push_str(r"\n");
+    head.push_str(r"\r");
+    head.push_str(r"\t");
+    head.push_str(r"\\");
+    head.push_str(r"\'");
+    head.push('"');
+    head.push_str(r"\x01");
+    head.push_str(r"\xff");
+    head.push_str(&"z".repeat(40));
+    head.push('\'');
     assert!(
         second.ends_with(&format!("first bytes={head})")),
         "{second}"
     );
-    assert!(second.contains("content-type='application/vnd.amazon.eventstream', x-amzn-requestid='req-1', 254 bytes received"));
+    assert!(second.contains("content-type='application/vnd.amazon.eventstream', x-amzn-requestid='req-1', 200 bytes received"));
+}
+
+fn textual_diagnostics(empty: &EventStreamTally, redactor: &Redactor) {
+    let escaped_headers = BTreeMap::from([
+        (
+            "content-type".to_owned(),
+            "a\\b'c\"d\ne\rf\tg\u{1}h".to_owned(),
+        ),
+        ("x-amzn-requestid".to_owned(), "it's".to_owned()),
+    ]);
+    let (_, escaped) = bedrock_parts(
+        empty
+            .undecoded_stream_error(Some(&escaped_headers), redactor)
+            .unwrap(),
+    );
+    let mut expected = String::from("content-type='a");
+    expected.push_str(r"\\");
+    expected.push_str(r"\'");
+    expected.push_str("c\"d");
+    expected.push_str(r"\n");
+    expected.push('e');
+    expected.push_str(r"\r");
+    expected.push('f');
+    expected.push_str(r"\t");
+    expected.push('g');
+    expected.push_str(r"\x01");
+    expected.push_str("h', x-amzn-requestid=\"it's\", 0 bytes received");
+    assert!(escaped.contains(&expected), "{escaped}");
     let upper = BTreeMap::from([("Content-Type".to_owned(), "x".to_owned())]);
     let (_, third) = bedrock_parts(
         empty
-            .undecoded_stream_error(Some(&upper), &redactor)
+            .undecoded_stream_error(Some(&upper), redactor)
             .unwrap(),
     );
     assert!(third.contains("content-type=None"), "{third}");
