@@ -74,6 +74,18 @@ fn serializing_a_record_omits_absent_fields() {
     assert_eq!(written, value(r#"{"expires_at":17}"#));
 }
 
+#[test]
+fn a_null_modelled_field_is_written_back_absent() {
+    let record =
+        decode_copilot_key_record(br#"{"token":null,"expires_at":17,"endpoints":null}"#).unwrap();
+
+    let written: Value = serde_json::from_slice(&serde_json::to_vec(&record).unwrap()).unwrap();
+
+    assert!(record.token.is_none());
+    assert!(record.endpoints.is_none());
+    assert_eq!(written, value(r#"{"expires_at":17}"#));
+}
+
 #[rstest]
 #[case::array(b"[]".as_slice())]
 #[case::string(br#""token""#.as_slice())]

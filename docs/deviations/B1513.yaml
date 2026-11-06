@@ -4,8 +4,8 @@ deviations:
       A cached API-key record whose token is not a string, whose expires_at is not an integer, whose endpoints is not
       an object of string members, or whose bytes exceed the 64 KiB reply bound is unreadable: get_api_key warns and
       refreshes, and get_api_base returns None. A refresh reply of the same shape consumes an attempt instead of
-      producing a key. LiteLLM returns whatever value the token key holds, passes a malformed endpoint through, and
-      raises TypeError out of get_api_key for a non-numeric expiry.
+      producing a key. LiteLLM returns whatever value the token key holds, hands a non-string endpoint member back to
+      get_api_base's caller, and raises TypeError out of get_api_key for a non-numeric expiry.
     why: >-
       get_api_key is declared to return a string, so handing a caller an integer token is a value no working setup can
       use, and a corrupt local record is repaired by the refresh that follows. The same reply through LiteLLM's

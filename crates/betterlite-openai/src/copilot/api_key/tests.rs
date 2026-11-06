@@ -381,6 +381,25 @@ async fn three_tokenless_replies_are_a_401() {
 }
 
 #[tokio::test]
+async fn a_malformed_key_reply_consumes_an_attempt() {
+    let mut subject = authenticator(
+        Files::given(None, Some("access-token"), false),
+        vec![
+            Ok(reply(
+                200,
+                r#"{"token":"first","expires_at":1800000000,"endpoints":[]}"#,
+            )),
+            Ok(key_reply("second", 1_800_000_000)),
+        ],
+    );
+
+    let token = subject.get_api_key().await.unwrap();
+
+    assert_eq!(token.unwrap().expose_secret(), "second");
+    assert_eq!(subject.transport.gets.len(), 2);
+}
+
+#[tokio::test]
 async fn a_transport_failure_consumes_an_attempt() {
     let mut subject = authenticator(
         Files::given(None, Some("access-token"), false),
