@@ -26,7 +26,9 @@ pub struct DeploymentFacts {
     #[serde(default)]
     pub allowed_fails: Option<u32>,
     #[serde(default)]
-    pub cooldown_time: Option<Seconds>,
+    pub model_info_cooldown_time: Option<Seconds>,
+    #[serde(default)]
+    pub litellm_params_cooldown_time: Option<Seconds>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -209,7 +211,11 @@ fn deployment_decision(
     } else {
         None
     };
-    let ttl = deployment.cooldown_time.unwrap_or(policy.cooldown_time);
+    // LiteLLM reads cooldown_time from model_info first and falls back to litellm_params
+    let deployment_ttl = deployment
+        .model_info_cooldown_time
+        .or(deployment.litellm_params_cooldown_time);
+    let ttl = deployment_ttl.unwrap_or(policy.cooldown_time);
     count_fails(deployment, allowed, ttl, suffix, allowed_fails_before)
 }
 

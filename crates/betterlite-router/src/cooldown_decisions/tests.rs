@@ -84,7 +84,8 @@ fn deployment() -> DeploymentFacts {
         provider_default: false,
         allowed_fails_policy: None,
         allowed_fails: None,
-        cooldown_time: None,
+        model_info_cooldown_time: None,
+        litellm_params_cooldown_time: None,
     }
 }
 
@@ -300,7 +301,26 @@ fn case_deployment_cooldown_time() -> CooldownDecision {
     let router = policy();
     let mut deployment = deployment();
     deployment.allowed_fails_policy = Some(policy_with(PolicyEntry::ContentPolicyViolation, 1));
-    deployment.cooldown_time = Some(Seconds(2.5));
+    deployment.model_info_cooldown_time = Some(Seconds(2.5));
+    let failure = failure(FailureClass::ContentPolicyViolation, ErrorStatus::Code(400));
+    run(&router, Some(&deployment), &failure, minute(0, 0), 1)
+}
+
+fn case_litellm_params_cooldown_time() -> CooldownDecision {
+    let router = policy();
+    let mut deployment = deployment();
+    deployment.allowed_fails_policy = Some(policy_with(PolicyEntry::ContentPolicyViolation, 1));
+    deployment.litellm_params_cooldown_time = Some(Seconds(1.25));
+    let failure = failure(FailureClass::ContentPolicyViolation, ErrorStatus::Code(400));
+    run(&router, Some(&deployment), &failure, minute(0, 0), 1)
+}
+
+fn case_model_info_cooldown_time_wins() -> CooldownDecision {
+    let router = policy();
+    let mut deployment = deployment();
+    deployment.allowed_fails_policy = Some(policy_with(PolicyEntry::ContentPolicyViolation, 1));
+    deployment.model_info_cooldown_time = Some(Seconds(2.5));
+    deployment.litellm_params_cooldown_time = Some(Seconds(1.25));
     let failure = failure(FailureClass::ContentPolicyViolation, ErrorStatus::Code(400));
     run(&router, Some(&deployment), &failure, minute(0, 0), 1)
 }
@@ -490,6 +510,8 @@ fn cooldown_decisions_behaviors(
 
 #[rstest]
 #[case::deployment_cooldown_time_overrides_router(case_deployment_cooldown_time(), Seconds(2.5))]
+#[case::litellm_params_cooldown_time(case_litellm_params_cooldown_time(), Seconds(1.25))]
+#[case::model_info_cooldown_time_wins(case_model_info_cooldown_time_wins(), Seconds(2.5))]
 #[case::default_router_cooldown_time(case_router_policy_applies(), Seconds(5.0))]
 #[case::zero_cooldown_time_kept(case_zero_cooldown_time(), Seconds(0.0))]
 fn cooldown_decisions_counter_ttl(#[case] decision: CooldownDecision, #[case] expected: Seconds) {

@@ -43,7 +43,7 @@ from litellm.router_utils.router_callbacks.track_deployment_metrics import (
     increment_deployment_failures_for_current_minute,
     increment_deployment_successes_for_current_minute,
 )
-from litellm.types.router import AllowedFailsPolicy, DeploymentTypedDict
+from litellm.types.router import AllowedFailsPolicy
 from litellm.types.utils import BACKGROUND_RESPONSE_COST_POLL_CALL_ORIGIN
 from pydantic import ConfigDict, Field
 from typing_extensions import override
@@ -155,7 +155,8 @@ class DeploymentInput(Strict):
     provider_default: bool
     allowed_fails_policy: Policy | None = None
     allowed_fails: int | None = None
-    cooldown_time: float | None = None
+    model_info_cooldown_time: float | None = None
+    litellm_params_cooldown_time: float | None = None
 
 
 class CallerTimeout(Strict):
@@ -250,8 +251,8 @@ def model_info(deployment: DeploymentInput) -> dict[str, object]:
         info["allowed_fails_policy"] = policy_values(deployment.allowed_fails_policy)
     if deployment.allowed_fails is not None:
         info["allowed_fails"] = deployment.allowed_fails
-    if deployment.cooldown_time is not None:
-        info["cooldown_time"] = deployment.cooldown_time
+    if deployment.model_info_cooldown_time is not None:
+        info["cooldown_time"] = deployment.model_info_cooldown_time
     return info
 
 
@@ -309,28 +310,31 @@ class CooldownDecisions(Operation):
         return Output(cooldown=cooldown, counter=cache.recorded())
 
     def build_router(self, deployment: DeploymentInput | None) -> Router:
-        entries: list[DeploymentTypedDict] = []
+        entries: list[dict[str, object]] = []
         if deployment is not None:
+            target_params: dict[str, object] = {"model": _MODEL, "api_key": "sk-probe"}
+            if deployment.litellm_params_cooldown_time is not None:
+                target_params["cooldown_time"] = deployment.litellm_params_cooldown_time
             info = model_info(deployment)
             entries.extend(
-                DeploymentTypedDict(
-                    model_name=_MODEL_GROUP,
-                    litellm_params={"model": _MODEL, "api_key": "sk-probe"},
-                    model_info=info if index == 0 else {"id": f"{deployment.id}-{index}"},
-                )
+                {
+                    "model_name": _MODEL_GROUP,
+                    "litellm_params": target_params if index == 0 else {"model": _MODEL, "api_key": "sk-probe"},
+                    "model_info": info if index == 0 else {"id": f"{deployment.id}-{index}"},
+                }
                 for index in range(deployment.model_group_size)
             )
             if deployment.has_alternatives:
                 entries.append(
-                    DeploymentTypedDict(
-                        model_name=f"{_MODEL_GROUP}-alternative",
-                        litellm_params={"model": _MODEL, "api_key": "sk-probe"},
-                        model_info={
+                    {
+                        "model_name": f"{_MODEL_GROUP}-alternative",
+                        "litellm_params": {"model": _MODEL, "api_key": "sk-probe"},
+                        "model_info": {
                             "id": f"{deployment.id}-alternative",
                             "team_id": _TEAM,
                             "team_public_model_name": _PUBLIC_MODEL,
                         },
-                    )
+                    }
                 )
         router = Router(
             model_list=entries,
