@@ -72,16 +72,17 @@ pub fn get_budget_reset_settings(
 }
 
 pub fn parse_budget_reset_time(value: &JsonValue) -> Result<NaiveTime, BudgetResetTimeError> {
-    match value {
-        JsonValue::Null => Ok(NaiveTime::MIN),
-        JsonValue::String(text) if text.is_empty() => Ok(NaiveTime::MIN),
-        JsonValue::String(text) => {
+    if let JsonValue::String(text) = value {
+        return if text.is_empty() {
+            Ok(NaiveTime::MIN)
+        } else {
             clock::decode_reset_clock(text).map_err(BudgetResetTimeError::from)
-        }
-        JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::Array(_) | JsonValue::Object(_) => {
-            Err(BudgetResetTimeError::NotText)
-        }
+        };
     }
+    if value.is_null() {
+        return Ok(NaiveTime::MIN);
+    }
+    Err(BudgetResetTimeError::NotText)
 }
 
 fn reset_timezone(value: &JsonValue) -> Result<String, BudgetResetSettingsError> {
