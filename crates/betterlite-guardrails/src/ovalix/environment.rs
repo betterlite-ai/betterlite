@@ -84,27 +84,8 @@ impl Candidates {
         }
     }
 
-    fn into_settings(self) -> Option<Settings> {
-        Some(Settings {
-            tracker_api_base: self.tracker_api_base?,
-            tracker_api_key: self.tracker_api_key?,
-            application_id: self.application_id?,
-            pre_checkpoint_id: self.pre_checkpoint_id,
-            post_checkpoint_id: self.post_checkpoint_id,
-        })
-    }
-
-    fn missing(&self, requested: &[CallHook]) -> Vec<&'static str> {
+    fn into_settings(self, requested: &[CallHook]) -> Result<Settings, OvalixConfigError> {
         let mut missing = Vec::new();
-        if self.tracker_api_base.is_none() {
-            missing.push(TRACKER_API_BASE_SETTING);
-        }
-        if self.tracker_api_key.is_none() {
-            missing.push(TRACKER_API_KEY_SETTING);
-        }
-        if self.application_id.is_none() {
-            missing.push(APPLICATION_ID_SETTING);
-        }
         if requested.contains(&CallHook::PreCall) && self.pre_checkpoint_id.is_none() {
             missing.push(PRE_CHECKPOINT_SETTING);
         }
@@ -114,7 +95,25 @@ impl Candidates {
         if self.pre_checkpoint_id.is_none() && self.post_checkpoint_id.is_none() {
             missing.push(ANY_CHECKPOINT_SETTING);
         }
-        missing
+        let required_values = (
+            required(
+                self.tracker_api_base,
+                TRACKER_API_BASE_SETTING,
+                &mut missing,
+            ),
+            required(self.tracker_api_key, TRACKER_API_KEY_SETTING, &mut missing),
+            required(self.application_id, APPLICATION_ID_SETTING, &mut missing),
+        );
+        match required_values {
+            (Some(tracker_api_base), Some(tracker_api_key), Some(application_id)) => Ok(Settings {
+                tracker_api_base,
+                tracker_api_key,
+                application_id,
+                pre_checkpoint_id: self.pre_checkpoint_id,
+                post_checkpoint_id: self.post_checkpoint_id,
+            }),
+            _ => Err(OvalixConfigError { missing }),
+        }
     }
 }
 
@@ -127,18 +126,19 @@ where
     E: EnvironmentLookup,
 {
     let candidates = Candidates::from_params(params, env);
-    let missing = candidates.missing(requested);
-    if !missing.is_empty() {
-        return Err(OvalixConfigError { missing });
-    }
     let event_hooks = resolve_event_hooks(&candidates, requested);
-    let Some(settings) = candidates.into_settings() else {
-        return Err(OvalixConfigError { missing });
-    };
+    let settings = candidates.into_settings(requested)?;
     Ok(Resolved {
         settings,
         event_hooks,
     })
+}
+
+fn required<T>(value: Option<T>, name: &'static str, missing: &mut Vec<&'static str>) -> Option<T> {
+    if value.is_none() {
+        missing.push(name);
+    }
+    value
 }
 
 // LiteLLM's `or` chain treats a blank config value as unset, so the environment variable is read next.

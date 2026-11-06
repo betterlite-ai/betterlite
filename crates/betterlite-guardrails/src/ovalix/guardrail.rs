@@ -1,3 +1,4 @@
+use betterlite_http::proxy::limits::{ReadError, read_bounded};
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 use secrecy::ExposeSecret as _;
 
@@ -42,7 +43,7 @@ impl<C: Clock> OvalixGuardrail<C> {
             },
         };
         let url = format!("{}{CHECKPOINT_PATH}", self.settings.tracker_api_base);
-        let response = self
+        let mut response = self
             .client
             .post(&url)
             .headers(self.prepare_headers()?)
@@ -55,7 +56,9 @@ impl<C: Clock> OvalixGuardrail<C> {
         if !status.is_success() {
             return Err(CheckpointError::Status { status });
         }
-        let body = read_capped_body(response).await?;
+        let body = read_bounded(&mut response, MAX_RESPONSE_BYTES)
+            .await
+            .map_err(read_body_error)?;
         serde_json::from_slice(&body).map_err(|source| CheckpointError::ResponseJson { source })
     }
 
@@ -164,20 +167,9 @@ fn request_error(source: reqwest::Error) -> CheckpointError {
     }
 }
 
-async fn read_capped_body(mut response: reqwest::Response) -> Result<Vec<u8>, CheckpointError> {
-    let limit = MAX_RESPONSE_BYTES;
-    if response
-        .content_length()
-        .is_some_and(|length| length > u64::try_from(limit).unwrap_or(u64::MAX))
-    {
-        return Err(CheckpointError::ResponseTooLarge { limit });
+fn read_body_error(error: ReadError) -> CheckpointError {
+    match error {
+        ReadError::TooLarge { limit } => CheckpointError::ResponseTooLarge { limit },
+        ReadError::Failed(source) => request_error(source),
     }
-    let mut body = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(request_error)? {
-        body.extend_from_slice(&chunk);
-        if body.len() > limit {
-            return Err(CheckpointError::ResponseTooLarge { limit });
-        }
-    }
-    Ok(body)
 }

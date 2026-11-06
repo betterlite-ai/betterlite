@@ -94,7 +94,15 @@ impl crate::helpers::Helper for Op {
 fn run_call(call: &Call) -> HelperResult {
     let prepared = prepare(call)?;
     let result = build_runtime()?.block_on(prepared.guardrail.apply_guardrail(
-        inputs(call),
+        Inputs {
+            texts: call.texts.clone(),
+            images: None,
+            tools: None,
+            tool_calls: None,
+            structured_messages: None,
+            model: None,
+            stream_holdback_chars: None,
+        },
         &call.request_data,
         call.input_type,
     ));
@@ -119,7 +127,21 @@ fn run_call(call: &Call) -> HelperResult {
 fn prepare(call: &Call) -> Result<Prepared, Box<HelperError>> {
     let today = NaiveDate::parse_from_str(&call.today, "%Y-%m-%d")
         .map_err(|error| failure("ValueError", None, error.to_string()))?;
-    let params = params(&call.settings);
+    let params = Params {
+        guardrail_name: Some("ovalix".to_owned()),
+        tracker_api_base: call.settings.tracker_api_base.clone(),
+        tracker_api_key: call
+            .settings
+            .tracker_api_key
+            .clone()
+            .map(SecretString::from),
+        application_id: call.settings.application_id.clone(),
+        pre_checkpoint_id: call.settings.pre_checkpoint_id.clone(),
+        post_checkpoint_id: call.settings.post_checkpoint_id.clone(),
+        event_hooks: Vec::new(),
+        default_on: false,
+        timeout: None,
+    };
     let resolved = environment::resolve(&params, &call.env, &params.event_hooks)
         .map_err(|error| failure("OvalixGuardrailMissingSecrets", None, error.to_string()))?;
     let tracker_api_base = resolved.settings.tracker_api_base.clone();
@@ -150,47 +172,17 @@ fn prepare(call: &Call) -> Result<Prepared, Box<HelperError>> {
 
 fn script(call: &Call) -> Result<MockScript, Box<HelperError>> {
     if call.answers.is_empty() {
-        return Ok(disconnection_script());
+        return Ok(MockScript {
+            deadline: Duration::from_secs(5),
+            replies: vec![ScriptedReply {
+                wait: Wait::Delay { millis: 500 },
+                then: Outcome::Close,
+            }],
+            barriers: BTreeMap::new(),
+        });
     }
     MockScript::try_from(call.answers.as_slice())
         .map_err(|error| failure("ValueError", None, error.to_string()))
-}
-
-fn disconnection_script() -> MockScript {
-    MockScript {
-        deadline: Duration::from_secs(5),
-        replies: vec![ScriptedReply {
-            wait: Wait::Delay { millis: 500 },
-            then: Outcome::Close,
-        }],
-        barriers: BTreeMap::new(),
-    }
-}
-
-fn params(settings: &Settings) -> Params {
-    Params {
-        guardrail_name: Some("ovalix".to_owned()),
-        tracker_api_base: settings.tracker_api_base.clone(),
-        tracker_api_key: settings.tracker_api_key.clone().map(SecretString::from),
-        application_id: settings.application_id.clone(),
-        pre_checkpoint_id: settings.pre_checkpoint_id.clone(),
-        post_checkpoint_id: settings.post_checkpoint_id.clone(),
-        event_hooks: Vec::new(),
-        default_on: false,
-        timeout: None,
-    }
-}
-
-fn inputs(call: &Call) -> Inputs {
-    Inputs {
-        texts: call.texts.clone(),
-        images: None,
-        tools: None,
-        tool_calls: None,
-        structured_messages: None,
-        model: None,
-        stream_holdback_chars: None,
-    }
 }
 
 fn build_runtime() -> Result<tokio::runtime::Runtime, Box<HelperError>> {
