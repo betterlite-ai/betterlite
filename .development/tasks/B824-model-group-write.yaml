@@ -61,15 +61,14 @@ description: >-
   own 314 nonblank/noncomment source lines including examples; allow 300 implementation, 350 tests and
   75 registration lines, 725 within the 750-line gate. Typed request parsing stays with B003/B832;
   this orchestration introduces neither credentials nor a new byte decoder.
+  B1100 registers routes/model_group_write.rs as a stub, so fill only crates/betterlite-server/src/routes/model_group_write.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/model_group_write.rs
     - crates/betterlite-server/src/model_group_write/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/model_group_write.rs
+    - crates/betterlite-server/src/routes/model_group_write/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/model-group-write/**

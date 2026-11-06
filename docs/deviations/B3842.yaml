@@ -1,0 +1,11 @@
+task: B3842
+deviations:
+  - what: >-
+      When OTEL_EXPORTER_OTLP_CERTIFICATE or OTEL_EXPORTER_OTLP_{SIGNAL}_CERTIFICATE is set,
+      resolve_otlp_http_tls returns DefaultVerified (a null session that verifies against the
+      default trusted CAs) instead of handing the certificate path to the exporter.
+    why: >-
+      Betterlite does not yet expose a certificate path to the OTLP exporter factory; that wiring
+      belongs to the exporter-transport layer B3848 owns. This task only decides that the
+      certificate env var takes precedence over SSL_VERIFY, proven by exporter_certificate_precedence.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/otlp_tls.py#L28-L30

@@ -25,21 +25,16 @@ description: 'Implement typed routing-context input/output and wire the ordered 
   through the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
   instead of separate ports. Bound the plugin_json outside-byte parser to 1048576 bytes before decoding;
   on excess use its typed invalid-input outcome (classifier/observation consumers keep their pinned warning/fallback
-  path).'
+  path).
+  B016 registers RouteStage::RoutingPlugins as a stub, so replace only that stub and its not-built test in crates/betterlite-router/src/context/routing_plugins.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.'
 scope:
   paths:
   - crates/betterlite-router/src/routing_plugins.rs
   - crates/betterlite-router/src/routing_plugins/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-router/src/context/routing_plugins.rs
+  - crates/betterlite-router/src/context/routing_plugins/**
   - crates/betterlite-server/src/routing/routing_plugins.rs
   - crates/betterlite-server/src/routing/routing_plugins/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/routing_plugins.rs
   - tools/oracle/src/router_probes/routing_plugins/**
   - tools/oracle/litellm/probes/routing_plugins.py

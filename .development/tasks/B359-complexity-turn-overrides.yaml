@@ -26,21 +26,14 @@ description: 'Build a typed per-turn override result for B335''s session lifecyc
   _json_arguments (L32-L36), _tool_call_signature (L39-L47), _iter_tool_result_error_pairs (L50-L59),
   _iter_tool_call_events_newest_first (L62-L89), detect_stalled_task (L92-L118). Implement these behaviors
   through the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
-  instead of separate ports.'
+  instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B335 calls this service.'
 scope:
   paths:
   - crates/betterlite-router/src/complexity_turn_overrides.rs
   - crates/betterlite-router/src/complexity_turn_overrides/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/complexity_turn_overrides.rs
   - crates/betterlite-server/src/routing/complexity_turn_overrides/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/complexity_turn_overrides.rs
   - tools/oracle/src/router_probes/complexity_turn_overrides/**
   - tools/oracle/litellm/probes/complexity_turn_overrides.py

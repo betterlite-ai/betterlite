@@ -123,7 +123,7 @@ fn check_report(
         return block_counted(development, task_id, &problems);
     }
     let selection = if env::var("GATE_DISPATCHED").as_deref() == Ok("1") {
-        checks::selection::preflight(development, &task)?
+        checks::selection::builtins_and(development, &task, checks::selection::prerequisite)?
     } else {
         Selection::default()
     };

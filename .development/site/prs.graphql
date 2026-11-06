@@ -1,6 +1,6 @@
 query($owner: String!, $name: String!, $endCursor: String) {
   repository(owner: $owner, name: $name) {
-    pullRequests(states: MERGED, first: 100, after: $endCursor) {
+    pullRequests(states: MERGED, first: 50, after: $endCursor) {
       pageInfo {
         hasNextPage
         endCursor
@@ -8,9 +8,14 @@ query($owner: String!, $name: String!, $endCursor: String) {
       nodes {
         number
         baseRefName
+        headRefName
         createdAt
         mergedAt
+        additions
+        deletions
+        changedFiles
         commits(first: 1) {
+          totalCount
           nodes {
             commit {
               authoredDate
@@ -18,6 +23,7 @@ query($owner: String!, $name: String!, $endCursor: String) {
           }
         }
         timelineItems(itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT], first: 1) {
+          filteredCount
           nodes {
             ... on AddedToMergeQueueEvent {
               createdAt

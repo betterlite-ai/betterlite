@@ -22,20 +22,13 @@ description: >-
 
   Call B2226 for local TTL semantics instead of copying its maps/heap. The shared native size deviation is owned
   there; keep the routing-specific byte parser here.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B360 calls this service.
 scope:
   paths:
   - crates/betterlite-router/src/routing_value_store.rs
   - crates/betterlite-router/src/routing_value_store/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/routing_value_store.rs
   - crates/betterlite-server/src/routing/routing_value_store/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/routing_value_store.rs
   - tools/oracle/src/router_probes/routing_value_store/**
   - tools/oracle/litellm/probes/routing_value_store.py
