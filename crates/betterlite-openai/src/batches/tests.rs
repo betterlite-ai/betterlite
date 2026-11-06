@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::fs;
+use std::io::Error;
 use std::path::PathBuf;
 
 use indexmap::IndexMap;
@@ -341,17 +342,21 @@ fn replays_the_openai_batches_corpus() {
         .collect::<Vec<_>>();
     paths.sort();
     assert!(!paths.is_empty(), "no batch corpus seeds");
-    paths.into_iter().for_each(|path| {
-        let bytes = fs::read(&path).unwrap();
-        let name = path.file_name().unwrap().to_str().unwrap();
-        let decoded = decode_batch_object(&bytes);
-        if name.starts_with("valid-") {
-            assert!(decoded.is_ok(), "{name}: {decoded:?}");
-        } else {
-            assert!(
-                matches!(decoded, Err(BatchDecodeError::Json { .. })),
-                "{name}: {decoded:?}"
-            );
-        }
-    });
+    paths
+        .into_iter()
+        .try_for_each(|path| {
+            let bytes = fs::read(&path)?;
+            let name = path.file_name().unwrap().to_str().unwrap();
+            let decoded = decode_batch_object(&bytes);
+            if name.starts_with("valid-") {
+                assert!(decoded.is_ok(), "{name}: {decoded:?}");
+            } else {
+                assert!(
+                    matches!(decoded, Err(BatchDecodeError::Json { .. })),
+                    "{name}: {decoded:?}"
+                );
+            }
+            Ok::<(), Error>(())
+        })
+        .unwrap();
 }
