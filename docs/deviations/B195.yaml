@@ -3,36 +3,15 @@ deviations:
   - what: When CUSTOM_TIKTOKEN_CACHE_DIR is unset, a fetched r50k_base or gpt2 file stays in memory for the life of the process, where tiktoken writes it into the tokenizers folder inside LiteLLM's installed package.
     why: betterlite's bundled assets are compiled into the binary, so there is no package folder to write into. The fetch, the URL and the hash check are the same; only the copy on disk is missing.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/default_encoding.py#L20-L30
-  - what: Hub requests send hf-hub's user agent, "hf-hub/1.0.0" with HF_HUB_USER_AGENT_ORIGIN appended when set, where huggingface_hub sends its own name, version and Python details.
-    why: Sending another library's name and Python version from a Rust binary would misreport the client to the Hub; the URLs, headers that carry meaning and the token are the same.
-    link: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_headers.py#L157-L203
-  - what: When the token lookup finds no token, hf-hub runs its own lookup, so an HF_TOKEN made only of whitespace is sent as written and a missing HF_TOKEN_PATH file falls through to {HF_HOME}/token, where huggingface_hub sends no token.
-    why: HFClientBuilder has no way to say "no token"; Max decided on 2026-10-31 not to ask hf-hub upstream for such an option for now.
-    link: https://docs.rs/hf-hub/1.0.0/hf_hub/struct.HFClientBuilder.html
-  - what: HF_HUB_DISABLE_XET is not read. A file the Hub serves through Xet downloads through hf-xet even when the variable is set.
-    why: hf-hub always uses hf-xet when the HEAD answer carries X-Xet-Hash and has no switch to turn it off; the bytes and the cache path are the same.
-    link: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/constants.py#L343
-  - what: HF_HUB_DISABLE_SYMLINKS and HF_HUB_DISABLE_SYMLINKS_WARNING are not read. The cache always links snapshot files to blobs.
-    why: hf-hub has no switch for copies; betterlite ships for Linux and macOS, where symlinks work and huggingface_hub links too unless told otherwise.
-    link: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/constants.py#L277-L281
-  - what: An HF_ENDPOINT mirror that answers the metadata request with an absolute redirect fails the metadata step and falls back to the cache, where huggingface_hub follows a redirect to the same host or a Hub host.
-    why: hf-hub's metadata request follows only relative redirects; the Hub itself redirects relatively, so only such a mirror sees it.
-    link: https://github.com/huggingface/hf-hub/issues/163
-  - what: A proxy failure falls back to the cache, where huggingface_hub raises ProxyError.
-    why: hf-hub reports a proxy failure as a connection error and the two cannot be told apart.
-    link: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/file_download.py#L1818-L1820
-  - what: hf-hub retries a request up to 5 times with backoff on 408, 429, 500, 502, 503, 504 and connection errors before the cache fallback, where huggingface_hub's first metadata request tries once.
-    why: hf-hub's retry is the same list huggingface_hub uses on its second try, and the etag_timeout bound still holds.
+  - what: HF_HUB_DISABLE_XET, HF_HUB_DISABLE_SYMLINKS and HF_HUB_DISABLE_SYMLINKS_WARNING are not read. Files the Hub serves through Xet download through hf-xet even when the first is set, and the cache always links snapshot files to blobs.
+    why: hf-hub always uses hf-xet when the HEAD answer carries X-Xet-Hash and has no switch for either; the bytes and the cache path are the same, and betterlite ships for Linux and macOS where symlinks work.
+    link: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/constants.py#L277-L343
+  - what: hf-hub's client and transport differ from huggingface_hub, which sends its own user agent, follows redirects to a Hub host, raises ProxyError and tries a metadata request once; hf-hub sends its own user agent, runs its own token lookup when none is given, follows only relative redirects, reports a proxy failure as a connection error, and retries 408, 429, 500, 502, 503, 504 and connection errors up to 5 times.
+    why: The user agent must not claim to be Python, the lookup has no off switch in HFClientBuilder, and the retry list is the one huggingface_hub uses on its second try; the URLs, the headers that carry meaning, the etag_timeout bound and the token are the same.
     link: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/utils/_http.py#L451-L456
-  - what: A custom tokenizer's failed download reaches the caller with hf-hub's error text, where huggingface_hub raises its own exception message.
-    why: The text comes from a different library; the failure and when it happens are the same.
+  - what: A failed custom tokenizer download reaches the caller with hf-hub's error text, and a 404 without X-Error-Code is resolved with one extra exists request to tell a missing repository from a missing file.
+    why: The text comes from a different library, and hf-hub maps every model 404 to entry-not-found while its error keeps X-Error-Code; the probe only runs when the header is absent, and the fallback, the retry and the typed error classes then match huggingface_hub.
     link: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/file_download.py#L1925-L1960
-  - what: When a 404 answer carries no X-Error-Code header, the repository is probed with one extra exists request to tell a missing repository from a missing file, where huggingface_hub reads the code from the response it already has.
-    why: hf-hub maps every model 404 to entry-not-found; its error keeps X-Error-Code, so the probe only runs when the header is absent. The fallback, the retry and the typed error classes then match huggingface_hub.
-    link: https://github.com/huggingface/huggingface_hub/blob/v1.32.0/src/huggingface_hub/file_download.py#L1925-L1960
-  - what: The gpt2 encoder map is parsed but not compared against the merge file, where tiktoken asserts the two agree before building the ranks.
-    why: Both files are pinned by sha256, so a corrupted pair cannot pass the fetch and a working setup cannot reach the assertion.
+  - what: The gpt2 encoder map is parsed but not compared against the merge file, where tiktoken asserts the two agree before building the ranks, and the custom tokenizer cache holds 64 entries where LiteLLM sizes it from DEFAULT_MAX_LRU_CACHE_SIZE.
+    why: Both gpt2 files are pinned by sha256, so a corrupted pair cannot pass the fetch and a working setup cannot reach the assertion; the cache variable is read in LiteLLM's constants at import and the default matches.
     link: https://github.com/openai/tiktoken/blob/0.12.0/tiktoken/load.py#L137-L144
-  - what: The custom tokenizer cache holds 64 entries, where LiteLLM sizes _select_custom_tokenizer_helper's cache from DEFAULT_MAX_LRU_CACHE_SIZE, 64 unless the variable is set.
-    why: The variable is read in LiteLLM's constants at import time; this task's settings section reads the three variables its text names, and the default matches.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L493

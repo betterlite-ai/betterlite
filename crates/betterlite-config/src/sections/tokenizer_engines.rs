@@ -9,7 +9,6 @@ pub struct Raw {
 }
 #[derive(Debug, Default, serde::Deserialize)]
 struct RawSettings {
-    #[serde(default)]
     disable_hf_tokenizer_download: Option<bool>,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]

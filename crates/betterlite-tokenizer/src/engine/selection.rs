@@ -30,11 +30,6 @@ pub enum TokenizerType {
     OpenAi,
     HuggingFace,
 }
-#[derive(Debug, Clone)]
-pub struct SelectTokenizerResponse {
-    pub tokenizer_type: TokenizerType,
-    pub engine: Engine,
-}
 #[derive(Debug, Error)]
 pub enum SelectionError {
     #[error("the custom tokenizer could not be downloaded")]
@@ -86,7 +81,7 @@ impl Selector {
         &self,
         model: &str,
         custom: Option<&CustomTokenizer>,
-    ) -> Result<SelectTokenizerResponse, SelectionError> {
+    ) -> Result<(Engine, TokenizerType), SelectionError> {
         if let Some(tokenizer) = custom {
             return self.select_custom(tokenizer).await;
         }
@@ -94,21 +89,17 @@ impl Selector {
             && let Some(kind) = self.kind(model)
         {
             match self.load_kind(kind).await {
-                Ok(engine) => {
-                    return Ok(SelectTokenizerResponse {
-                        tokenizer_type: TokenizerType::HuggingFace,
-                        engine,
-                    });
-                }
+                Ok(engine) => return Ok((engine, TokenizerType::HuggingFace)),
                 Err(error) => tracing::debug!("Error selecting tokenizer: {error}"),
             }
         }
-        self.default_encoding().await
+        let engine = self.default_encoding().await?;
+        Ok((engine, TokenizerType::OpenAi))
     }
     async fn select_custom(
         &self,
         custom: &CustomTokenizer,
-    ) -> Result<SelectTokenizerResponse, SelectionError> {
+    ) -> Result<(Engine, TokenizerType), SelectionError> {
         let key: CustomKey = (
             custom.identifier.clone(),
             custom.revision.clone(),
@@ -123,21 +114,8 @@ impl Selector {
             .ok()
             .and_then(|mut cache| cache.get(&key).cloned());
         if let Some(found) = cached {
-            return Ok(SelectTokenizerResponse {
-                tokenizer_type: TokenizerType::HuggingFace,
-                engine: found,
-            });
+            return Ok((found, TokenizerType::HuggingFace));
         }
-        let engine = self.download_custom(custom).await?;
-        if let Ok(mut cache) = self.custom.lock() {
-            cache.put(key, engine.clone());
-        }
-        Ok(SelectTokenizerResponse {
-            tokenizer_type: TokenizerType::HuggingFace,
-            engine,
-        })
-    }
-    async fn download_custom(&self, custom: &CustomTokenizer) -> Result<Engine, SelectionError> {
         tracing::debug!(
             "Loading custom HuggingFace tokenizer {} (revision {})",
             custom.identifier,
@@ -151,13 +129,22 @@ impl Selector {
                 custom.auth_token.as_ref(),
             )
             .await?;
-        self.build_huggingface(bytes).await
+        let engine = self.build_huggingface(bytes).await?;
+        if let Ok(mut cache) = self.custom.lock() {
+            cache.put(key, engine.clone());
+        }
+        Ok((engine, TokenizerType::HuggingFace))
     }
-    pub async fn default_encoding(&self) -> Result<SelectTokenizerResponse, SelectionError> {
-        Ok(SelectTokenizerResponse {
-            tokenizer_type: TokenizerType::OpenAi,
-            engine: self.load_kind(Kind::OpenAi).await?,
-        })
+    pub async fn default_encoding(&self) -> Result<Engine, SelectionError> {
+        if let Some(found) = self
+            .kinds
+            .lock()
+            .ok()
+            .and_then(|cache| cache.get(&Kind::OpenAi).cloned())
+        {
+            return Ok(found);
+        }
+        self.load_kind(Kind::OpenAi).await
     }
     async fn load_kind(&self, kind: Kind) -> Result<Engine, SelectionError> {
         if let Some(found) = self

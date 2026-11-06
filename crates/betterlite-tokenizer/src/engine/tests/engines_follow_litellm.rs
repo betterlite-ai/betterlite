@@ -9,7 +9,7 @@ use std::fmt::Write as _;
 
 use crate::engine::assets;
 use crate::engine::fetch::TiktokenFetcher;
-use crate::engine::fetch::gpt2::bpe_file;
+use crate::engine::fetch::bpe_file;
 use crate::engine::huggingface::HuggingFaceEngine;
 use crate::engine::tests::support::{Reply, Server, client};
 use crate::engine::tiktoken::{Encoding, TiktokenEngine};
@@ -88,9 +88,7 @@ async fn r50k_fixture() -> (Server, tempfile::TempDir, TiktokenFetcher, String) 
     let cache = tempfile::tempdir().unwrap();
     let fetcher = TiktokenFetcher::new(client(), Some(cache.path().to_path_buf())).with_base(
         server.endpoint.clone(),
-        sha256.clone(),
-        sha256.clone(),
-        sha256.clone(),
+        [sha256.clone(), sha256.clone(), sha256.clone()],
     );
     (server, cache, fetcher, sha256)
 }
@@ -111,9 +109,7 @@ async fn r50k_fetch_follows_read_file_cached() {
     let requests = server.request_count();
     let second = TiktokenFetcher::new(client(), Some(cache.path().to_path_buf())).with_base(
         server.endpoint.clone(),
-        sha256.clone(),
-        sha256.clone(),
-        sha256,
+        [sha256.clone(), sha256.clone(), sha256],
     );
     let cached = second.data(Encoding::R50kBase).await.unwrap();
     let rebuilt = TiktokenEngine::from_bpe_file(Encoding::R50kBase, &cached).unwrap();
@@ -159,9 +155,7 @@ async fn gpt2_fetch_converts_both_files() {
     .await;
     let fetcher = TiktokenFetcher::new(client(), None).with_base(
         server.endpoint.clone(),
-        String::new(),
-        vocabulary_hash,
-        encoder_hash,
+        [String::new(), vocabulary_hash, encoder_hash],
     );
     let data = fetcher.data(Encoding::Gpt2).await.unwrap();
     let engine = TiktokenEngine::from_bpe_file(Encoding::Gpt2, &data).unwrap();

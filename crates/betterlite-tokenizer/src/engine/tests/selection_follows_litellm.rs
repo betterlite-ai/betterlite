@@ -5,12 +5,13 @@ use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use rstest::rstest;
 use secrecy::SecretString;
 
+use crate::engine::Engine;
 use crate::engine::fetch::TiktokenFetcher;
-use crate::engine::hub::{HubDownloader, HubError, SystemClock};
+use crate::engine::hub::{HubDownloader, HubError};
 use crate::engine::limits::CountingService;
 use crate::engine::selection::{CustomTokenizer, SelectionError, Selector, TokenizerType};
 use crate::engine::tests::support::{
-    InlineCounter, Reply, Request, Server, client, hub_settings, resolver,
+    InlineCounter, Reply, Request, Server, client, hub_settings, resolver, system_clock,
 };
 
 const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -46,7 +47,7 @@ fn selector(settings: &HubSettings, disable: bool) -> Selector {
     let hub = Arc::new(HubDownloader::new(
         Arc::new(settings.clone()),
         resolver(settings),
-        Arc::new(SystemClock),
+        system_clock(),
     ));
     let fetcher = Arc::new(TiktokenFetcher::new(client(), None));
     let catalog = Arc::new(ModelCatalog::parse(CATALOG.as_bytes(), UnknownFields::Reject).unwrap());
@@ -76,8 +77,8 @@ async fn every_kind_matches_litellm(
         .select(model, None)
         .await
         .unwrap();
-    assert_eq!(selected.tokenizer_type, expected_type);
-    assert_eq!(selected.engine.encode("hello world").unwrap(), expected_ids);
+    assert_eq!(selected.1, expected_type);
+    assert_eq!(selected.0.encode("hello world").unwrap(), expected_ids);
     match expected_repo {
         "" => assert_eq!(server.request_count(), 0),
         repo => assert!(
@@ -97,7 +98,7 @@ async fn the_disable_switch_returns_cl100k() {
         .select("command-r", None)
         .await
         .unwrap();
-    assert_eq!(selected.tokenizer_type, TokenizerType::OpenAi);
+    assert_eq!(selected.1, TokenizerType::OpenAi);
     assert_eq!(server.request_count(), 0);
 }
 
@@ -111,12 +112,12 @@ async fn each_kind_is_downloaded_once() {
         .select("meta-llama/Meta-Llama-3-70B", None)
         .await
         .unwrap();
-    assert_eq!(first.tokenizer_type, TokenizerType::HuggingFace);
+    assert_eq!(first.1, TokenizerType::HuggingFace);
     let second = selector
         .select("meta-llama/Meta-Llama-3-70B", None)
         .await
         .unwrap();
-    assert_eq!(second.tokenizer_type, TokenizerType::HuggingFace);
+    assert_eq!(second.1, TokenizerType::HuggingFace);
     assert_eq!(server.request_count(), 2);
 }
 
@@ -134,11 +135,8 @@ async fn a_failed_download_falls_back_to_cl100k() {
         .select("meta-llama/Meta-Llama-3-70B", None)
         .await
         .unwrap();
-    assert_eq!(selected.tokenizer_type, TokenizerType::OpenAi);
-    assert_eq!(
-        selected.engine.encode("hello world").unwrap(),
-        [15339, 1917]
-    );
+    assert_eq!(selected.1, TokenizerType::OpenAi);
+    assert_eq!(selected.0.encode("hello world").unwrap(), [15339, 1917]);
 }
 
 #[tokio::test]
@@ -176,9 +174,9 @@ async fn a_custom_tokenizer_is_downloaded_once_with_its_token() {
     };
     let selector = selector(&settings, false);
     let first = selector.select("command-r", Some(&custom)).await.unwrap();
-    assert_eq!(first.engine.encode("hello world").unwrap(), [1, 2]);
+    assert_eq!(first.0.encode("hello world").unwrap(), [1, 2]);
     let second = selector.select("command-r", Some(&custom)).await.unwrap();
-    assert_eq!(second.engine.encode("hello world").unwrap(), [1, 2]);
+    assert_eq!(second.0.encode("hello world").unwrap(), [1, 2]);
     assert_eq!(server.request_count(), 2);
     let requests = server.requests.lock().unwrap();
     let request = requests.first().unwrap();
@@ -194,9 +192,6 @@ async fn default_encoding_is_the_bundled_cl100k() {
     let directory = tempfile::tempdir().unwrap();
     let settings = hub_settings("http://127.0.0.1:1", directory.path());
     let selected = selector(&settings, false).default_encoding().await.unwrap();
-    assert_eq!(selected.tokenizer_type, TokenizerType::OpenAi);
-    assert_eq!(
-        selected.engine.encode("hello world").unwrap(),
-        [15339, 1917]
-    );
+    assert!(matches!(selected, Engine::Tiktoken(_)));
+    assert_eq!(selected.encode("hello world").unwrap(), [15339, 1917]);
 }

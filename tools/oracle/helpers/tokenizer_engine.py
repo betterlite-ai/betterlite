@@ -10,9 +10,7 @@ from litellm.rust_bridge import tokenizer as tokenizer_module
 from tokenizers import Tokenizer
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
-_TIKTOKEN_NAMES = frozenset(
-    {"cl100k_base", "o200k_base", "p50k_base", "p50k_edit", "o200k_harmony"}
-)
+_NAMES = frozenset({"cl100k_base", "o200k_base", "p50k_base", "p50k_edit", "o200k_harmony"})
 class _Lookup(Protocol):
     def __call__(self, name: str) -> tiktoken.Encoding: ...
 _python_encoding = cast(_Lookup, tokenizer_module.__dict__["_python_encoding"])
@@ -30,7 +28,7 @@ def _tokens(fields: dict[str, Json]) -> list[int]:
     return [cast(int, item) for item in value]
 def run(input_value: dict[str, Json]) -> Json:
     name = input_value.get("engine")
-    if isinstance(name, str) and name in _TIKTOKEN_NAMES:
+    if isinstance(name, str) and name in _NAMES:
         engine: tiktoken.Encoding | Tokenizer = _python_encoding(name)
     elif name == "anthropic":
         engine = Tokenizer.from_str(litellm.utils.claude_json_str)
@@ -39,13 +37,11 @@ def run(input_value: dict[str, Json]) -> Json:
     else:
         raise ValueError(f"unknown engine: {name!r}")
     operation = input_value.get("operation")
-    if operation in {"encode", "count"}:
+    if operation == "encode":
         source = _text(input_value)
         if isinstance(engine, tiktoken.Encoding):
-            ids = engine.encode(source, disallowed_special=())
-        else:
-            ids = engine.encode(source).ids
-        return len(ids) if operation == "count" else cast(Json, ids)
+            return cast(Json, engine.encode(source, disallowed_special=()))
+        return cast(Json, engine.encode(source).ids)
     if operation == "decode":
         ids = _tokens(input_value)
         if isinstance(engine, tiktoken.Encoding):

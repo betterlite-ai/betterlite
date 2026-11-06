@@ -19,8 +19,6 @@ pub enum EngineError {
     HuggingFaceEncode(#[source] tokenizers::Error),
     #[error("the token ids could not be decoded")]
     HuggingFaceDecode(#[source] tokenizers::Error),
-    #[error("the {encoding} encoding is not bundled and has to be fetched")]
-    NotBundled { encoding: &'static str },
     #[error("the token counting pool is closed")]
     PoolClosed,
 }

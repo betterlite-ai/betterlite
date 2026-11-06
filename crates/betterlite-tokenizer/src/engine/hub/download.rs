@@ -1,5 +1,4 @@
-use super::classify::classify;
-use super::{Clock, HubDownloader, HubError, Request};
+use super::{Clock, HubDownloader, HubError, Request, classify};
 use futures_util::future::{Either, select};
 use hf_hub::progress::{DownloadEvent, Progress, ProgressEvent, ProgressHandler};
 use hf_hub::{HFClient, split_id};
@@ -9,7 +8,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use tokio::sync::Notify;
-use tokio::time::{Instant, timeout_at};
+use tokio::time::timeout_at;
 pub(super) const RETRY_START_TIMEOUT: Duration = Duration::from_secs(60);
 const TOKENIZER_FILE: &str = "tokenizer.json";
 #[derive(Debug, Clone, Copy)]
@@ -46,7 +45,7 @@ pub(super) async fn download_bounded(
 }
 struct Watch<'watch> {
     events: &'watch DownloadEvents,
-    clock: &'watch dyn Clock,
+    clock: &'watch Clock,
     client: &'watch HFClient,
 }
 struct DownloadEvents {
@@ -80,23 +79,17 @@ where
     C: Future<Output = hf_hub::HFResult<PathBuf>>,
 {
     let mut pinned = std::pin::pin!(call);
-    let mut started = false;
-    let mut deadline = watch
-        .clock
-        .now()
+    let mut deadline = (watch.clock)()
         .checked_add(bounds.start)
         .ok_or(HubError::TimeoutRange)?;
     loop {
         let signal = watch.events.notify.notified();
         tokio::pin!(signal);
         match timeout_at(deadline, select(pinned.as_mut(), signal.as_mut())).await {
-            Err(_elapsed) if started => {
-                return Err(HubError::Stalled(
-                    request.repository.to_owned(),
-                    bounds.idle.as_secs(),
-                ));
+            Err(_elapsed) => {
+                let stalled = watch.events.started.load(Ordering::SeqCst);
+                return Err(stalled_error(request, stalled, bounds.idle));
             }
-            Err(_elapsed) => return Err(HubError::StartTimeout(request.repository.to_owned())),
             Ok(Either::Left((result, _))) => {
                 let failure = match result {
                     Ok(path) => return Ok(path),
@@ -106,25 +99,21 @@ where
                 return Err(failed.await);
             }
             Ok(Either::Right((_permit, _))) => {
-                deadline = next_deadline(watch, &mut started, bounds)?;
+                let window = if watch.events.started.load(Ordering::SeqCst) {
+                    bounds.idle
+                } else {
+                    bounds.start
+                };
+                deadline = (watch.clock)()
+                    .checked_add(window)
+                    .ok_or(HubError::TimeoutRange)?;
             }
         }
     }
 }
-fn next_deadline(
-    watch: &Watch<'_>,
-    started: &mut bool,
-    bounds: Bounds,
-) -> Result<Instant, HubError> {
-    let window = if watch.events.started.load(Ordering::SeqCst) {
-        *started = true;
-        bounds.idle
-    } else {
-        bounds.start
-    };
-    watch
-        .clock
-        .now()
-        .checked_add(window)
-        .ok_or(HubError::TimeoutRange)
+fn stalled_error(request: &Request<'_>, stalled: bool, idle: Duration) -> HubError {
+    if stalled {
+        return HubError::Stalled(request.repository.to_owned(), idle.as_secs());
+    }
+    HubError::StartTimeout(request.repository.to_owned())
 }

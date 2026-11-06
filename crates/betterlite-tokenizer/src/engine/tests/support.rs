@@ -22,6 +22,9 @@ use crate::engine::error::EngineError;
 use crate::engine::limits::{BlockingCounter, BuildJob, CountJob};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
+use tokio::time::Instant;
+
+use crate::engine::hub::Clock;
 
 pub(crate) struct Request {
     pub(crate) method: String,
@@ -264,4 +267,8 @@ impl BlockingCounter for InlineCounter {
     async fn build(&self, job: BuildJob) -> Result<Engine, EngineError> {
         job()
     }
+}
+
+pub(crate) fn system_clock() -> Arc<Clock> {
+    Arc::new(Instant::now)
 }

@@ -14,23 +14,23 @@ use tracing::span::{Attributes, Id, Record};
 use tracing::subscriber::with_default;
 use tracing::{Event, Level, Metadata};
 
-use crate::engine::hub::{Clock, HubDownloader, HubError, SystemClock};
-use crate::engine::tests::support::{Reply, Request, Server, hub_settings, resolver};
+use crate::engine::hub::{Clock, HubDownloader, HubError};
+use crate::engine::tests::support::{Reply, Request, Server, hub_settings, resolver, system_clock};
 
 const BODY: &[u8] = b"{\"tokenizer\":\"json\"}";
 const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
 const ETAG: &str = "etag-value";
 const REPO: &str = "owner/name";
 
-fn clock() -> Arc<dyn Clock> {
-    Arc::new(SystemClock)
+fn clock() -> Arc<Clock> {
+    system_clock()
 }
 
 fn downloader(settings: &HubSettings) -> HubDownloader {
     HubDownloader::new(
         Arc::new(settings.clone()),
         resolver(settings),
-        Arc::new(SystemClock),
+        system_clock(),
     )
 }
 
@@ -470,8 +470,8 @@ async fn custom_tokenizer_uses_its_explicit_token() {
 #[test]
 fn system_clock_runs() {
     let clock = clock();
-    let first = clock.now();
-    assert!(clock.now() >= first);
+    let first = clock();
+    assert!(clock() >= first);
 }
 
 struct CountingSubscriber(Arc<AtomicUsize>);
