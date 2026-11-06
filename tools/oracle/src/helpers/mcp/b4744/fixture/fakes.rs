@@ -1,12 +1,13 @@
 use std::future::Future;
 use std::sync::{Arc, PoisonError};
 
-use betterlite_mcp::client::sessions::error::ExitFailure;
+use betterlite_mcp::client::cleanup::failure::ErrorContext;
+use betterlite_mcp::client::sessions::error::{ExitFailure, McpFailure};
 use betterlite_mcp::client::sessions::negotiate::{
     ClientSession, InitializeOutcome, InitializeRequest,
 };
 use betterlite_mcp::client::sessions::runtime::SessionContext;
-use betterlite_mcp::client::sessions::stream::MessageHandler;
+use betterlite_mcp::client::sessions::stream::{MessageHandler, StreamFailure, StreamMessage};
 use betterlite_mcp::client::sessions::transport::TransportContext;
 
 use super::state::{FakeHttp, InitStep, Plan, Script, Step, TestError, enter_result, exit_result};
@@ -58,7 +59,7 @@ impl InitializeOutcome for FakeInit {
 pub(crate) struct FakeSession {
     pub(crate) script: Arc<Script>,
     pub(crate) plan: Arc<Plan>,
-    pub(crate) handler: MessageHandler,
+    pub(crate) handler: MessageHandler<TestError>,
 }
 
 impl FakeSession {
@@ -76,7 +77,13 @@ impl ClientSession for FakeSession {
     type InitializeResult = FakeInit;
 
     fn initialize(&mut self) -> impl Future<Output = Result<FakeInit, TestError>> + Send {
-        init_future(&self.script, &self.plan, "initialize", self.plan.initialize)
+        init_future(
+            &self.script,
+            &self.plan,
+            &self.handler,
+            "initialize",
+            self.plan.initialize,
+        )
     }
 
     fn send_initialize(
@@ -84,7 +91,13 @@ impl ClientSession for FakeSession {
         request: InitializeRequest,
     ) -> impl Future<Output = Result<FakeInit, TestError>> + Send {
         self.push_request(request);
-        init_future(&self.script, &self.plan, "send_initialize", InitStep::Ok)
+        init_future(
+            &self.script,
+            &self.plan,
+            &self.handler,
+            "send_request",
+            InitStep::Ok,
+        )
     }
 
     fn adopt(&mut self, _result: &FakeInit) {
@@ -98,18 +111,41 @@ impl ClientSession for FakeSession {
             Ok(())
         }
     }
+
+    fn protocol_failure(error: &TestError) -> Option<McpFailure> {
+        match error {
+            TestError::Protocol(failure) => Some(failure.clone()),
+            TestError::Boom(_) => None,
+        }
+    }
 }
 
 fn init_future(
     script: &Script,
     plan: &Plan,
+    handler: &MessageHandler<TestError>,
     name: &'static str,
-    fail: InitStep,
+    step: InitStep,
 ) -> impl Future<Output = Result<FakeInit, TestError>> + Send + 'static {
     script.record(name);
-    let result = match fail {
-        InitStep::Fail => Err(TestError::Boom("initialize")),
+    let protocol = |code: i32, context: Option<ErrorContext>| {
+        TestError::Protocol(McpFailure {
+            code,
+            message: "upstream error".to_owned(),
+            context,
+        })
+    };
+    let result = match step {
         InitStep::Ok => Ok(fake_init(plan)),
+        InitStep::Fail => Err(TestError::Boom("initialize")),
+        InitStep::Protocol => Err(protocol(-32_000_i32, None)),
+        InitStep::Timeout => Err(protocol(-32_001_i32, Some(ErrorContext::Timeout))),
+        InitStep::StreamFailure => {
+            let _failed = handler.handle(StreamMessage::Failure(StreamFailure::Http(Arc::new(
+                TestError::Boom("stream"),
+            ))));
+            Err(protocol(-32_000_i32, None))
+        }
     };
     std::future::ready(result)
 }
@@ -148,7 +184,7 @@ fn fake_init(plan: &Plan) -> FakeInit {
 pub(crate) struct FakeSessionContext {
     pub(crate) script: Arc<Script>,
     pub(crate) plan: Arc<Plan>,
-    pub(crate) handler: MessageHandler,
+    pub(crate) handler: MessageHandler<TestError>,
 }
 
 impl SessionContext for FakeSessionContext {

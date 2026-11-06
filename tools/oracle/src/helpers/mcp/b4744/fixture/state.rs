@@ -3,7 +3,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use betterlite_mcp::client::cleanup::http_client::CleanupScope;
-use betterlite_mcp::client::sessions::error::ExitFailure;
+use betterlite_mcp::client::sessions::error::{ExitFailure, McpFailure};
 use betterlite_mcp::client::sessions::factory::{HttpClientConfig, SseRequest};
 use betterlite_mcp::client::sessions::negotiate::InitializeRequest;
 use betterlite_mcp::client::sessions::runtime::HttpClientHandle;
@@ -16,6 +16,8 @@ use tokio::time::sleep;
 pub(crate) enum TestError {
     #[error("boom: {0}")]
     Boom(&'static str),
+    #[error("mcp error {0}")]
+    Protocol(McpFailure),
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
@@ -35,6 +37,9 @@ pub(crate) enum InitStep {
     #[default]
     Ok,
     Fail,
+    Protocol,
+    Timeout,
+    StreamFailure,
 }
 
 #[derive(Clone, Debug, Deserialize)]

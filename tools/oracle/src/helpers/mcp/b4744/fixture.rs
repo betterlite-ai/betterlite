@@ -111,7 +111,11 @@ impl McpRuntime for Fixture {
         Ok(FakeHttp::clone(&self.http))
     }
 
-    fn session_context(&self, _streams: (), options: SessionOptions) -> FakeSessionContext {
+    fn session_context(
+        &self,
+        _streams: (),
+        options: SessionOptions<TestError>,
+    ) -> FakeSessionContext {
         FakeSessionContext {
             script: Arc::clone(&self.script),
             plan: Arc::clone(&self.plan),

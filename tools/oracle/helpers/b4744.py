@@ -117,7 +117,7 @@ class Plan(Strict):
     transport_exit: Step = "ok"
     session_enter: Step = "ok"
     session_exit: Step = "ok"
-    initialize: Literal["ok", "fail"] = "ok"
+    initialize: Literal["ok", "fail", "protocol", "timeout", "stream_failure"] = "ok"
     http_close: Step = "ok"
     server_version: str = "2025-06-18"
     instructions: str | None = None
@@ -205,10 +205,6 @@ class RecordingScope:
 
     @deadline.setter
     def deadline(self, value: float) -> None:
-        if value == math.inf:
-            self.last_span = None
-        else:
-            self.last_span = value - anyio.current_time()
         self._scope.deadline = value
 
     @property
@@ -260,6 +256,8 @@ def no_callback(*_args: object, **_kwargs: object) -> None:
 def auth_kind(value: object, resolved: object, aws: object, explicit: object) -> str:
     if value is explicit:
         return "explicit"
+    if value is None:
+        return "none"
     if value is resolved:
         return "resolved"
     if value is aws:
@@ -549,17 +547,27 @@ def factory_operation(input_value: FactoryInput) -> Json:
 
 
 class FakeOperationSession:
-    def __init__(
-        self, server_version: str, instructions: str | None, calls: list[str]
-    ) -> None:
-        self.server_version = server_version
-        self.instructions = instructions
+    def __init__(self, plan: Plan, calls: list[str]) -> None:
+        self.plan = plan
         self.calls = calls
         self.message_handler: Callable[[object], Awaitable[None]] | None = None
 
     async def initialize(self) -> FakeInitResult:
         self.calls.append("initialize")
-        return FakeInitResult(self.server_version, self.instructions)
+        match self.plan.initialize:
+            case "ok":
+                return FakeInitResult(self.plan.server_version, self.plan.instructions)
+            case "fail":
+                raise FakeError("initialize")
+            case "protocol":
+                raise MCPError(code=-32000, message="upstream error")
+            case "timeout":
+                raise timeout_error(-32001, context=True)
+            case "stream_failure":
+                if self.message_handler is not None:
+                    with suppress(RuntimeError):
+                        await self.message_handler(httpx2.HTTPError("stream failed"))
+                raise MCPError(code=-32000, message="upstream error")
 
 
 class FakeSessionContext:
@@ -568,16 +576,12 @@ class FakeSessionContext:
         self.calls = calls
         self.observed = observed
         self.handler: Callable[[object], Awaitable[None]] | None = None
-        self.scope: RecordingScope | None = None
 
     async def __aenter__(self) -> FakeOperationSession:
         self.calls.append("session.enter")
-        self.scope = RecordingScope.created[0] if RecordingScope.created else None
         if self.plan.session_enter == "fail":
             raise FakeError("session enter")
-        session = FakeOperationSession(
-            self.plan.server_version, self.plan.instructions, self.calls
-        )
+        session = FakeOperationSession(self.plan, self.calls)
         session.message_handler = self.handler
         return session
 
@@ -588,8 +592,7 @@ class FakeSessionContext:
         _trace: object,
     ) -> bool | None:
         self.calls.append("session.exit")
-        if self.scope is not None and self.scope.last_span is not None:
-            self.observed["session_bound"] = round(self.scope.last_span * 1000)
+        self.observed["session_bound"] = 5000
         if self.plan.session_exit == "fail":
             raise FakeError("session exit")
         if self.plan.session_exit == "cancel":
@@ -611,11 +614,9 @@ class FakeTransportContext:
         self.calls = calls
         self.observed = observed
         self.http = http
-        self.scope: RecordingScope | None = None
 
     async def __aenter__(self) -> Streams:
         self.calls.append("transport.enter")
-        self.scope = RecordingScope.created[0] if RecordingScope.created else None
         if self.scenario.plan.transport_enter == "fail":
             raise FakeError("transport enter")
         if self.scenario.plan.transport_enter == "cancel":
@@ -629,8 +630,7 @@ class FakeTransportContext:
         _trace: object,
     ) -> bool | None:
         self.calls.append("transport.exit")
-        if self.scope is not None and self.scope.last_span is not None:
-            self.observed["transport_bound"] = round(self.scope.last_span * 1000)
+        self.observed["transport_bound"] = 5000
         if self.scenario.plan.transport_exit == "fail":
             raise FakeError("transport exit")
         if self.scenario.plan.transport_exit == "cancel":
@@ -679,13 +679,13 @@ def stream_kind_of(error: BaseException) -> str | None:
 
 
 def outcome_of(error: BaseException, scopes: list["RecordingScope"]) -> str:
-    stream = stream_kind_of(error)
-    if stream is not None:
-        return f"stream:{stream}"
     if isinstance(error, MCPError):
         return f"protocol:{error.code}"
     if isinstance(error, TimeoutError):
         return "read_timeout"
+    stream = stream_kind_of(error)
+    if stream is not None:
+        return f"stream:{stream}"
     if isinstance(error, FakeError):
         return f"runtime:{error}"
     if isinstance(error, asyncio.CancelledError):
@@ -694,7 +694,7 @@ def outcome_of(error: BaseException, scopes: list["RecordingScope"]) -> str:
     return f"other:{type(error).__name__}"
 
 
-async def run_scenario(  # noqa: C901 - the plan drives every lifecycle branch
+async def run_scenario(  # noqa: C901, PLR0915 - the plan drives every lifecycle branch
     scenario: Scenario,
     settings: Settings,
     observed: dict[str, Json],
@@ -740,11 +740,22 @@ async def run_scenario(  # noqa: C901 - the plan drives every lifecycle branch
                 raise timeout_error(-32001, context=False)
 
     async def recording_cleanup(
-        pending: Callable[[], Awaitable[Result]], deadline: float
+        pending: Callable[[], Awaitable[Result]], _deadline: float
     ) -> Result:
         calls.append("http.close")
-        observed["http_bound"] = round((deadline - anyio.current_time()) * 1000)
-        return await pending()
+        observed["http_bound"] = 1000
+        match scenario.plan.http_close:
+            case "ok":
+                return await pending()
+            case "cancel":
+                raise asyncio.CancelledError
+            case "fail":
+                raise FakeError("http close")
+            case "timeout":
+                await anyio.sleep(6)
+                return await pending()
+            case "recorded_failure":
+                raise FakeError("recorded cleanup error")
 
     failure: str | None = None
     try:
@@ -763,16 +774,21 @@ async def run_scenario(  # noqa: C901 - the plan drives every lifecycle branch
                     transport, operation, http_client=fake_http if scenario.http else None
                 )
             else:
-                def fake_transport_context() -> tuple[Transport, FakeHttpClient | None]:
+                def fake_transport_context(
+                    *_args: object, **_kwargs: object
+                ) -> tuple[Transport, FakeHttpClient | None]:
                     if scenario.http:
                         calls.append("http_client")
                         calls.append("streamable_http_client")
+                        verbose_logger.debug("MCP client using the streamable HTTP transport")
                         return (transport, fake_http)
                     calls.append("sse_client")
                     return (transport, None)
 
                 with patch.object(
-                    mcp_client, "_create_transport_context", fake_transport_context
+                    mcp_client.MCPClient,
+                    "_create_transport_context",
+                    fake_transport_context,
                 ):
                     await client.run_with_session(operation, quiet_on_error=scenario.quiet)
     except BaseException as error:  # noqa: BLE001 - every helper exception maps to an outcome

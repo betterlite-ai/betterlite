@@ -8,7 +8,7 @@ use betterlite_mcp::client::sessions::execute::{
     SESSION_CLEANUP_TIMEOUT, execute_session_operation,
 };
 use betterlite_mcp::client::sessions::run::{HTTP_CLOSE_TIMEOUT, run_with_session};
-use betterlite_mcp::client::sessions::stream::{StreamFailure, StreamMessage};
+use betterlite_mcp::client::sessions::stream::{StreamFailure, StreamFailureKind, StreamMessage};
 use betterlite_mcp::client::sessions::transport::{TransportContexts, TransportType};
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
@@ -21,7 +21,7 @@ use tracing_subscriber::layer::{Context, SubscriberExt as _};
 
 use crate::helpers::{HelperError, HelperResult};
 
-use super::super::fixture::{FakeSession, Fixture, Script, Step, TestError};
+use super::super::fixture::{FakeSession, Fixture, Script, TestError};
 use super::super::input::{ExecuteInput, Mode, Operation, Scenario, SettingsInput, StreamKind};
 use super::{invalid, make_client};
 
@@ -48,19 +48,20 @@ where
     }
 }
 
-const fn stream_failure(kind: StreamKind) -> StreamFailure {
+fn stream_failure(kind: StreamKind) -> StreamFailure<TestError> {
+    let source = Arc::new(TestError::Boom("stream"));
     match kind {
-        StreamKind::Value => StreamFailure::ValueError,
-        StreamKind::Http => StreamFailure::Http,
-        StreamKind::Io => StreamFailure::Io,
+        StreamKind::Value => StreamFailure::ValueError(source),
+        StreamKind::Http => StreamFailure::Http(source),
+        StreamKind::Io => StreamFailure::Io(source),
     }
 }
 
-const fn stream_name(failure: StreamFailure) -> &'static str {
-    match failure {
-        StreamFailure::ValueError => "value",
-        StreamFailure::Http => "http",
-        StreamFailure::Io => "io",
+const fn stream_name(failure: &StreamFailure<TestError>) -> &'static str {
+    match failure.kind() {
+        StreamFailureKind::ValueError => "value",
+        StreamFailureKind::Http => "http",
+        StreamFailureKind::Io => "io",
     }
 }
 
@@ -69,8 +70,9 @@ fn outcome_kind(error: &SessionError<TestError>) -> String {
         SessionError::Protocol(failure) => format!("protocol:{}", failure.code),
         SessionError::Runtime(source) => match source.as_ref() {
             TestError::Boom(label) => format!("runtime:{label}"),
+            TestError::Protocol(_) => "runtime:mcp_error".to_owned(),
         },
-        SessionError::Stream(failure) => format!("stream:{}", stream_name(*failure.as_ref())),
+        SessionError::Stream(failure) => format!("stream:{}", stream_name(failure.as_ref())),
         SessionError::Cancelled => "cancelled".to_owned(),
         SessionError::CleanupTimedOut => "timeout".to_owned(),
         SessionError::ReadTimeout(_) => "read_timeout".to_owned(),
@@ -173,10 +175,17 @@ fn scenario_json(scenario: &Scenario, run: &Run) -> Value {
         Ok(value) => ("ok".to_owned(), Some(*value)),
         Err(error) => (outcome_kind(error), None),
     };
-    let session_bound = (scenario.plan.session_enter == Step::Ok)
-        .then_some(u64::try_from(SESSION_CLEANUP_TIMEOUT.as_millis()).unwrap_or(u64::MAX));
-    let transport_bound =
-        Some(u64::try_from(SESSION_CLEANUP_TIMEOUT.as_millis()).unwrap_or(u64::MAX));
+    let bound = u64::try_from(SESSION_CLEANUP_TIMEOUT.as_millis()).unwrap_or(u64::MAX);
+    let session_bound = run
+        .calls
+        .iter()
+        .any(|call| call == "session.exit")
+        .then_some(bound);
+    let transport_bound = run
+        .calls
+        .iter()
+        .any(|call| call == "transport.exit")
+        .then_some(bound);
     let http_bound = (scenario.mode == Mode::Run && scenario.http)
         .then_some(u64::try_from(HTTP_CLOSE_TIMEOUT.as_millis()).unwrap_or(u64::MAX));
     json!({
