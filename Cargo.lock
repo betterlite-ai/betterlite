@@ -2123,9 +2123,11 @@ name = "betterlite-router"
 version = "0.1.0"
 dependencies = [
  "indexmap 2.14.2",
+ "rand 0.10.3",
  "rstest",
  "serde",
  "serde_json",
+ "thiserror",
  "unicode-general-category",
 ]
 
@@ -2257,6 +2259,7 @@ dependencies = [
  "betterlite-postgres-fixture",
  "betterlite-redact",
  "betterlite-roi",
+ "betterlite-router",
  "betterlite-semantic",
  "caseless",
  "chrono",

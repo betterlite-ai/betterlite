@@ -1,7 +1,7 @@
 id: B008
 milestone: M2 routing
 title: Load balancing across deployments of one model
-status: todo
+status: done
 depends_on: [B004]
 file: tasks/B008-load-balancing.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/router_weights.py"
 parent: null
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 774
