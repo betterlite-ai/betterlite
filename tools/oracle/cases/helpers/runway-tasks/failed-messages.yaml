@@ -1,0 +1,15 @@
+kind: helper
+name: runway-tasks-failed-messages
+call:
+  runway_tasks:
+    operation: poll
+    params:
+      kind: speech
+      task_id: task-1
+      api_base: 'https://runway.test'
+      timeout_seconds: 600
+      step_millis: 0
+      replies:
+        - {status: 200, body: '{"status": "failed"}'}
+env: {}
+compare: {ignore: []}

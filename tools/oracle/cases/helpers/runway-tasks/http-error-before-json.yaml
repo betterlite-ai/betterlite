@@ -1,0 +1,15 @@
+kind: helper
+name: runway-tasks-http-error-before-json
+call:
+  runway_tasks:
+    operation: poll
+    params:
+      kind: image
+      task_id: task-1
+      api_base: 'https://runway.test'
+      timeout_seconds: 600
+      step_millis: 0
+      replies:
+        - {status: 502, body: 'not json'}
+env: {}
+compare: {ignore: []}

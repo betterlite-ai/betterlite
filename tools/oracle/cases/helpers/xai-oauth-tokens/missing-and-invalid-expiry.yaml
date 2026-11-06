@@ -1,0 +1,7 @@
+kind: helper
+name: missing_and_invalid_expiry
+call:
+  xai_oauth_tokens: {"expired": {"now": 1000, "expires_at": "soon"}}
+env: {}
+compare:
+  ignore: []

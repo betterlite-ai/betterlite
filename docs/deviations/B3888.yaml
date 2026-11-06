@@ -1,0 +1,20 @@
+task: B3888
+deviations:
+  - what: Series labels are read as strings and a series with no samples is skipped by the fallback summary instead of raising an error.
+    why: LiteLLM types labels as dict[str, object] and indexes values[0] without a guard, so an empty series raises IndexError and fails the whole summary. No working setup relies on that.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_helpers/prometheus_api.py#L65-L97
+  - what: A sample value that is NaN, an infinity or not a number at all is rejected with an error that names the value.
+    why: LiteLLM converts it with float() and int(), which raises OverflowError or ValueError with no context. betterlite has no floats and reports the bad value.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_helpers/prometheus_api.py#L65-L97
+  - what: Each daily spend date is built from the sample timestamp in UTC.
+    why: LiteLLM calls datetime.fromtimestamp on the timestamp, which uses the host's local zone, and then appends +00:00, so the label is wrong on any host not running in UTC.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_helpers/prometheus_api.py#L165-L169
+  - what: An empty PROMETHEUS_URL or an empty selected instance counts as unset.
+    why: LiteLLM only checks for None, so an empty string is used as a base URL or never matches an instance. docs/compatibility.md reads an empty env string as unset.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_helpers/prometheus_api.py#L43-L62
+  - what: Daily spend is a decimal that serializes as a JSON number, read from the sample string without rounding through a float.
+    why: LiteLLM returns a Python float, which can lose digits that Prometheus reported.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_helpers/prometheus_api.py#L124-L173
+  - what: Every query has a 30 second timeout and a response body over 8 MiB is refused.
+    why: LiteLLM's HTTP client sets no cap on response size, so a hostile or broken Prometheus endpoint can exhaust memory.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_helpers/prometheus_api.py#L47-L62
