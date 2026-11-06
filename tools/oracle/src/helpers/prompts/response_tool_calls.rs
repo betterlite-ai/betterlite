@@ -77,17 +77,6 @@ impl RouteCallTypes<String> for ScriptedRoutes {
     }
 }
 
-fn serialization_failure(message: &str) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: "SerializationError".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: message.to_owned(),
-    })
-}
-
 fn resolve_call(call: &StructuredCall) -> Option<Vec<Message>> {
     let handlers: Vec<ScriptedHandler> = call
         .handlers
@@ -141,11 +130,28 @@ impl crate::helpers::Helper for Op {
                 response,
                 include_all_choices,
             } => serde_json::to_value(get_tool_calls_from_response(response, *include_all_choices))
-                .map_err(|error| serialization_failure(&error.to_string())),
+                .map_err(|error| {
+                    Box::new(HelperError {
+                        class: "SerializationError".to_owned(),
+                        status: None,
+                        error_type: None,
+                        param: None,
+                        code: None,
+                        message: error.to_string(),
+                    })
+                }),
             Input::HasTool { tools, tool_name } => Ok(json!(has_tool_with_name(tools, tool_name))),
             Input::ResolveStructuredMessages { calls } => {
-                serde_json::to_value(resolve_calls(calls))
-                    .map_err(|error| serialization_failure(&error.to_string()))
+                serde_json::to_value(resolve_calls(calls)).map_err(|error| {
+                    Box::new(HelperError {
+                        class: "SerializationError".to_owned(),
+                        status: None,
+                        error_type: None,
+                        param: None,
+                        code: None,
+                        message: error.to_string(),
+                    })
+                })
             }
         }
     }
