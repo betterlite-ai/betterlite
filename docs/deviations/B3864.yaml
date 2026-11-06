@@ -6,6 +6,9 @@ deviations:
   - what: An empty api_key, api_base or prompt_id counts as missing, and an empty explicit api_key falls back to PHOENIX_API_KEY.
     why: docs/compatibility.md reads an empty env string as unset; Python gets the same result through truthiness.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/__init__.py#L20
+  - what: Templates render on minijinja instead of CPython's Jinja2, so a filter or Python string method that only Jinja2 provides is undefined; the delimiters, the autoescaped entities and the sandboxed attribute access match.
+    why: betterlite's other prompt integrations render with minijinja, whose value model never exposes host objects to a template, so the sandbox holds without CPython.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix_prompt_manager.py#L104-L117
   - what: Templates render with minijinja under a fuel limit of 1,000,000 steps, and a template that runs past it fails the compilation.
     why: LiteLLM's sandbox has no step cap, so a template with an endless loop hangs the request; the cap keeps a workspace-authored prompt from stalling the gateway.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix_prompt_manager.py#L107
