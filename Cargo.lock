@@ -1838,6 +1838,7 @@ dependencies = [
  "betterlite-postgres-fixture",
  "betterlite-prompts",
  "betterlite-provider",
+ "betterlite-proxy",
  "betterlite-rate-limit",
  "betterlite-redact",
  "betterlite-redis",
@@ -1853,6 +1854,7 @@ dependencies = [
  "cookie_store",
  "futures-util",
  "hex",
+ "http 1.5.0",
  "indexmap 2.14.2",
  "jiff",
  "percent-encoding",
@@ -1967,6 +1969,7 @@ dependencies = [
 name = "betterlite-prompts"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "betterlite-logging",
  "betterlite-models",
  "chrono",
@@ -1974,7 +1977,9 @@ dependencies = [
  "indexmap 2.14.2",
  "minijinja",
  "minijinja-contrib",
+ "percent-encoding",
  "rstest",
+ "secrecy",
  "serde",
  "serde-saphyr",
  "serde_json",
@@ -2026,6 +2031,24 @@ dependencies = [
 [[package]]
 name = "betterlite-proxy"
 version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "betterlite-config",
+ "betterlite-context",
+ "betterlite-http",
+ "hex",
+ "http 1.5.0",
+ "rstest",
+ "rust_decimal",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "url",
+]
 
 [[package]]
 name = "betterlite-rag"
