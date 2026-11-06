@@ -1,0 +1,14 @@
+task: B4058
+deviations:
+  - what: GitLab and BitBucket sync completion hooks forward prompt_spec unchanged but omit the ignore_prompt_manager_model and ignore_prompt_manager_optional_params parameters when calling PromptManagementBase.get_chat_completion_prompt. These parameters default to False in the base method, while resolve_prompt_manager_ignore_flags still runs unconditionally with the real prompt_spec.
+    why: LiteLLM's GitLabPromptManager and BitBucketPromptManager sync methods omit the ignore-flag parameters while forwarding the real prompt_spec; the base method still calls resolve_prompt_manager_ignore_flags with the real spec and False defaults.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_prompt_manager.py#L576-L587
+  - what: Async get_chat_completion_prompt does not short-circuit on None prompt_id; it checks should_run_prompt_management before any compilation.
+    why: LiteLLM's async method always gates on should_run_prompt_management; only the sync path short-circuits None.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prompt_management_base.py#L228-L233
+  - what: The sync completion flow and compile_prompt are async Rust functions that await the backend's async compile helper. LiteLLM's sync hook calls a blocking _compile_prompt_helper.
+    why: Every betterlite prompt transport (GitLab, BitBucket, generic prompt API) fetches over async HTTP, so there is no blocking helper to call. The sync flow keeps LiteLLM's distinguishing behavior, the None short-circuit and the False ignore-flag defaults, and returns the same values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_prompt_manager.py#L548-L560
+  - what: compile_prompt and async_compile_prompt wrap a backend helper failure in PromptOrchestrationError with a message naming the prompt id. LiteLLM's base only wraps the message concatenation and lets a helper exception propagate unchanged.
+    why: In Rust the compiled result is the fallible value at the join point, so a helper failure is what the orchestration catches there; the error text is betterlite's own and keeps the backend error as its source.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prompt_management_base.py#L95-L104
