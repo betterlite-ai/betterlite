@@ -2,8 +2,10 @@
 
 use std::fmt::Debug;
 
+use betterlite_config::types::LiteLlmParams;
 use indexmap::{IndexMap, IndexSet};
 use rstest::rstest;
+use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::model_routes::catalog::{
     RESPONSE_FORMAT_FLAG, TOOLS_REASONING_FLAG, chat_completions_is_default, openai_gpt_version,
@@ -13,8 +15,9 @@ use crate::model_routes::request::{
     request_needs_converse, response_format_needs_converse as format_needs_converse,
 };
 use crate::model_routes::{
-    BedrockRoute, CONVERSE_ONLY_REQUEST_KEYS, ModelRouteSelector, ParamMap, ParamValue, RouteError,
-    get_claude_platform_model, map_claude_platform_auth, without_bedrock_route_prefix,
+    BedrockModelInfo, BedrockRoute, CONVERSE_ONLY_REQUEST_KEYS, ModelRouteSelector, ParamMap,
+    ParamValue, RouteError, bedrock_model_info, get_bedrock_tool_name, get_claude_platform_model,
+    map_claude_platform_auth, without_bedrock_route_prefix,
 };
 
 #[rstest]
@@ -649,34 +652,53 @@ fn route_helpers_and_workspace_keys() {
     workspace_keys();
 }
 
-fn model_info_passthrough() {
-    let price_map = ParamMap::new();
-    let converse = IndexSet::new();
-    let route = selector(&price_map, &converse, false);
-    let bare = ParamMap::new();
-    let supplied = params(&[
-        ("api_base", text("https://base.example")),
-        ("api_key", text("sk-fixture")),
-        ("api_base_empty", text("")),
-        (
-            "extra_headers",
-            mapping(&[("X-Amz-Target", text("BedrockRuntime.Converse"))]),
-        ),
-    ]);
-    let original = supplied.clone();
-    for model in [
-        "converse/x",
-        "invoke/x",
-        "anthropic.claude-3",
-        "unknown-model",
-    ] {
-        assert_eq!(
-            route.route_for_request(model, &supplied, None).unwrap(),
-            route.route_for_request(model, &bare, None).unwrap(),
-            "{model}"
-        );
+fn deployment(api_base: Option<&str>, api_key: Option<&str>) -> LiteLlmParams {
+    LiteLlmParams {
+        ssl_verify: None,
+        model: None,
+        api_base: api_base.map(str::to_owned),
+        api_key: api_key.map(SecretString::from),
+        api_version: None,
+        timeout: None,
+        stream_timeout: None,
+        max_retries: None,
+        rpm: None,
+        tpm: None,
+        weight: None,
     }
-    assert_eq!(supplied, original);
+}
+
+fn model_info_passthrough() {
+    let headers = IndexMap::from([(
+        "X-Amz-Target".to_owned(),
+        "BedrockRuntime.Converse".to_owned(),
+    )]);
+    let absent = bedrock_model_info(&deployment(None, None), headers.clone());
+    assert!(absent.api_base.is_none());
+    assert!(absent.api_key.is_none());
+    assert_eq!(absent.headers, headers);
+    assert!(BedrockModelInfo::MODELS.is_empty());
+
+    let empty = bedrock_model_info(&deployment(Some(""), Some("")), IndexMap::new());
+    assert_eq!(empty.api_base.as_deref(), Some(""));
+    assert_eq!(
+        empty.api_key.map(|key| key.expose_secret().to_owned()),
+        Some(String::new())
+    );
+    assert!(empty.headers.is_empty());
+    assert!(BedrockModelInfo::MODELS.is_empty());
+
+    let supplied = bedrock_model_info(
+        &deployment(Some("https://base.example"), Some("sk-fixture")),
+        headers.clone(),
+    );
+    assert_eq!(supplied.api_base.as_deref(), Some("https://base.example"));
+    assert_eq!(
+        supplied.api_key.map(|key| key.expose_secret().to_owned()),
+        Some("sk-fixture".to_owned())
+    );
+    assert_eq!(supplied.headers, headers);
+    assert!(BedrockModelInfo::MODELS.is_empty());
 }
 
 fn reverse_tool_name_lookup() {
@@ -684,6 +706,7 @@ fn reverse_tool_name_lookup() {
         ("converted".to_owned(), "Original Name".to_owned()),
         ("x".to_owned(), "y".to_owned()),
         ("same".to_owned(), "same".to_owned()),
+        ("empty_original".to_owned(), String::new()),
     ]);
     check_cases(
         &[
@@ -692,7 +715,8 @@ fn reverse_tool_name_lookup() {
             ("", String::new()),
             ("same", "same".to_owned()),
             ("Original Name", "Original Name".to_owned()),
+            ("empty_original", String::new()),
         ],
-        |name| mappings.get(name).map_or(name, String::as_str).to_owned(),
+        |name| get_bedrock_tool_name(&mappings, name).to_owned(),
     );
 }

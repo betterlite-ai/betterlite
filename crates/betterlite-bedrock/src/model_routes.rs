@@ -2,9 +2,11 @@ pub mod catalog;
 pub mod request;
 mod tests;
 
+use betterlite_config::types::LiteLlmParams;
 use betterlite_context::bedrock_model::{get_bedrock_base_model, strip_bedrock_routing_prefix};
 use fancy_regex::Regex;
 use indexmap::{IndexMap, IndexSet};
+use secrecy::SecretString;
 
 pub const CHAT_COMPLETIONS_PREFIX: &str = "chat_completions/";
 pub const CLAUDE_PLATFORM_PREFIX: &str = "claude_platform/";
@@ -82,6 +84,30 @@ pub enum RouteError {
     WrongType { field: &'static str },
 }
 
+#[derive(Clone, Debug)]
+pub struct BedrockModelInfo {
+    pub api_base: Option<String>,
+    pub api_key: Option<SecretString>,
+    pub headers: IndexMap<String, String>,
+}
+
+impl BedrockModelInfo {
+    pub const MODELS: &[String] = &[];
+}
+
+// Bedrock adds no base, key, header or model list of its own, so the deployment's values are the effective ones
+#[must_use]
+pub fn bedrock_model_info(
+    deployment: &LiteLlmParams,
+    headers: IndexMap<String, String>,
+) -> BedrockModelInfo {
+    BedrockModelInfo {
+        api_base: deployment.api_base.clone(),
+        api_key: deployment.api_key.clone(),
+        headers,
+    }
+}
+
 pub struct ModelRouteSelector<'catalog> {
     price_map: &'catalog ParamMap,
     converse_models: &'catalog IndexSet<String>,
@@ -113,9 +139,7 @@ impl<'catalog> ModelRouteSelector<'catalog> {
         if let Some(route) = named_route(model) {
             return Ok(route);
         }
-        if model.starts_with(CHAT_COMPLETIONS_PREFIX)
-            || model.contains(&format!("/{CHAT_COMPLETIONS_PREFIX}"))
-        {
+        if has_route_prefix(model, CHAT_COMPLETIONS_PREFIX) {
             return self.chat_or_converse(model, request_params);
         }
         let after_bedrock = model.replacen(BEDROCK_PREFIX, "", 1);
@@ -177,10 +201,29 @@ impl<'catalog> ModelRouteSelector<'catalog> {
     }
 }
 
+#[must_use]
+pub fn has_route_prefix(model: &str, prefix: &str) -> bool {
+    if model.starts_with(prefix) {
+        true
+    } else {
+        model.contains(&format!("/{prefix}"))
+    }
+}
+
 fn named_route(model: &str) -> Option<BedrockRoute> {
-    ROUTE_TABLE.iter().find_map(|(prefix, route)| {
-        (model.starts_with(prefix) || model.contains(&format!("/{prefix}"))).then_some(*route)
-    })
+    ROUTE_TABLE
+        .iter()
+        .find_map(|(prefix, route)| has_route_prefix(model, prefix).then_some(*route))
+}
+
+#[must_use]
+pub fn get_bedrock_tool_name<'name>(
+    mappings: &'name IndexMap<String, String>,
+    response_tool_name: &'name str,
+) -> &'name str {
+    mappings
+        .get(response_tool_name)
+        .map_or(response_tool_name, String::as_str)
 }
 
 #[must_use]
