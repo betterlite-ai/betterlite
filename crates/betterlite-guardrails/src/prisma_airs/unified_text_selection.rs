@@ -16,13 +16,10 @@ pub fn scannable_text_indices(
     logging_obj: Option<&LoggingObject>,
     direction: Direction,
 ) -> Option<BTreeSet<usize>> {
-    if direction == Direction::Response {
+    if direction == Direction::Response || inputs.structured_messages.is_empty() {
         return None;
     }
-    let messages = inputs
-        .structured_messages
-        .as_deref()
-        .filter(|messages| !messages.is_empty())?;
+    let messages = inputs.structured_messages.as_slice();
     if use_latest_user_only(guardrail, request_data, logging_obj)
         && let Some(latest) = latest_user_text_indices(&inputs.texts, messages, request_data)
     {

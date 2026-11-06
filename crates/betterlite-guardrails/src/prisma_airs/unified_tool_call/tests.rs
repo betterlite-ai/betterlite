@@ -14,7 +14,7 @@ const BLOCK_PLAIN: &str = r#"{"action":"block","category":"injection","scan_id":
 
 fn with_tool_calls(json: &str) -> Inputs {
     let mut given = inputs(&[]);
-    given.tool_calls = Some(tool_calls(json));
+    given.tool_calls = tool_calls(json);
     given
 }
 
@@ -22,7 +22,6 @@ fn arguments(outcome: &Outcome, index: usize) -> Option<&str> {
     outcome
         .inputs
         .tool_calls
-        .as_ref()?
         .get(index)?
         .function
         .as_ref()?

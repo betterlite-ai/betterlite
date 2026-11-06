@@ -22,20 +22,16 @@ pub async fn scan_tool_calls(
     scan: &ToolCallScan<'_>,
     audit: &mut GuardrailAudit,
 ) -> Result<(), GuardrailHttpError> {
-    let Some(tool_calls) = inputs
-        .tool_calls
-        .as_mut()
-        .filter(|tool_calls| !tool_calls.is_empty())
-    else {
+    if inputs.tool_calls.is_empty() {
         return Ok(());
-    };
+    }
     let tool_scan = ToolScan {
         direction: scan.direction,
         metadata: scan.metadata,
         call_id: Some(scan.call_id),
         start_time: scan.start_time,
     };
-    scan_tool_calls_for_guardrail(guardrail, tool_calls, &tool_scan, audit).await
+    scan_tool_calls_for_guardrail(guardrail, &mut inputs.tool_calls, &tool_scan, audit).await
 }
 
 mod tests;

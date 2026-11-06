@@ -7,8 +7,10 @@ use crate::panw_prisma_airs::tool_scan::ToolCall;
 pub struct Inputs {
     #[serde(default)]
     pub texts: Vec<String>,
-    pub structured_messages: Option<Vec<StructuredMessage>>,
-    pub tool_calls: Option<Vec<ToolCall>>,
+    #[serde(default)]
+    pub structured_messages: Vec<StructuredMessage>,
+    #[serde(default)]
+    pub tool_calls: Vec<ToolCall>,
     pub model: Option<String>,
 }
 

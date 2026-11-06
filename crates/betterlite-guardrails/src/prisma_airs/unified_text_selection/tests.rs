@@ -198,9 +198,9 @@ fn an_anthropic_url_selects_latest_only_by_default() {
 #[tokio::test]
 async fn a_request_scan_skips_assistant_and_tool_history() {
     let mut given = inputs(&["sys", "user", "assistant", "tool"]);
-    given.structured_messages = Some(messages(
+    given.structured_messages = messages(
         r#"[{"role":"system","content":"sys"},{"role":"user","content":"user"},{"role":"assistant","content":"assistant"},{"role":"tool","content":"tool"}]"#,
-    ));
+    );
     let outcome = execute(Run::new(ALLOW), given, request_data(), None).await;
     outcome.result.as_ref().expect("allowed");
     assert_eq!(outcome.bodies.len(), 2);
@@ -211,9 +211,8 @@ async fn a_request_scan_skips_assistant_and_tool_history() {
 #[tokio::test]
 async fn an_anthropic_request_scans_only_the_latest_user_message() {
     let mut given = inputs(&["old", "new"]);
-    given.structured_messages = Some(messages(
-        r#"[{"role":"user","content":"old"},{"role":"user","content":"new"}]"#,
-    ));
+    given.structured_messages =
+        messages(r#"[{"role":"user","content":"old"},{"role":"user","content":"new"}]"#);
     let mut data = request_data();
     data.proxy_server_request = Some(ProxyServerRequest {
         url: Some("https://proxy.example/v1/messages".to_owned()),
@@ -227,9 +226,8 @@ async fn an_anthropic_request_scans_only_the_latest_user_message() {
 #[tokio::test]
 async fn a_responses_reasoning_item_is_never_the_latest_turn() {
     let mut given = inputs(&["old", "think"]);
-    given.structured_messages = Some(messages(
-        r#"[{"role":"user","content":"old"},{"role":"user","content":"think"}]"#,
-    ));
+    given.structured_messages =
+        messages(r#"[{"role":"user","content":"old"},{"role":"user","content":"think"}]"#);
     let mut data = request_data();
     data.input = Some(responses_input(
         r#"[{"type":"message","role":"user","content":"old"},{"type":"reasoning","content":[{"type":"text","text":"think"}]}]"#,
@@ -247,9 +245,8 @@ async fn a_responses_reasoning_item_is_never_the_latest_turn() {
 #[tokio::test]
 async fn a_response_scan_ignores_the_text_selection() {
     let mut given = inputs(&["sys", "user"]);
-    given.structured_messages = Some(messages(
-        r#"[{"role":"system","content":"sys"},{"role":"user","content":"user"}]"#,
-    ));
+    given.structured_messages =
+        messages(r#"[{"role":"system","content":"sys"},{"role":"user","content":"user"}]"#);
     let run = Run {
         direction: Direction::Response,
         ..Run::new(ALLOW)

@@ -103,8 +103,8 @@ pub(super) fn request_data() -> RequestData {
 pub(super) fn inputs(texts: &[&str]) -> Inputs {
     Inputs {
         texts: texts.iter().map(|text| (*text).to_owned()).collect(),
-        structured_messages: None,
-        tool_calls: None,
+        structured_messages: Vec::new(),
+        tool_calls: Vec::new(),
         model: None,
     }
 }
