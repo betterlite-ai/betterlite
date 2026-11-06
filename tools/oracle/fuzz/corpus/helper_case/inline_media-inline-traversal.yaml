@@ -25,6 +25,14 @@ call:
             source:
               type: url
               url: "https://a.example/1.png"
+          - type: file
+            file:
+              file_id: "https://a.example/unselected-file.txt"
+              filename: unselected-file.txt
+          - type: image
+            source:
+              type: url
+              url: "https://a.example/unselected-image-source.png"
       - role: user
         content:
           - type: image_url

@@ -515,6 +515,11 @@ fn run_decode_ok(url: &str, limit: usize, expected: &[u8]) {
     expected: r#"[{"role":"system","content":"plain text"},{"role":"user","content":[{"type":"image_url","image_url":{"url":"/etc/passwd"}},{"type":"image_url","image_url":"file:///etc/passwd"},{"type":"image_url","image_url":"data:image/png;base64,AAAA"},{"type":"file","file":{"file_id":"/tmp/secret","filename":"secret"}},{"type":"document","source":{"type":"base64","media_type":"application/pdf","data":"cGRm"}},{"type":"text","text":"keep"}]},{"role":"assistant","content":[]}]"#,
     urls: &[],
 }))]
+#[case::image_filter_selects_only_image_url_parts(Scenario::Urls {
+    filter: INLINE_REMOTE_IMAGE_URLS,
+    messages: r#"[{"role":"user","content":[{"type":"image_url","image_url":{"url":"https://a.example/one.png"}},{"type":"document","source":{"type":"url","url":"https://a.example/doc.pdf"}},{"type":"file","file":{"file_id":"https://a.example/f.txt"}},{"type":"image","source":{"type":"url","url":"https://a.example/two.png"}}]}]"#,
+    expected: &["https://a.example/one.png"],
+})]
 #[case::deduplicates_urls_in_first_seen_order(Scenario::Urls {
     filter: INLINE_EVERY_REMOTE_URL,
     messages: r#"[{"role":"user","content":[{"type":"image_url","image_url":{"url":"https://a.example/b.png"}},{"type":"image_url","image_url":{"url":"https://a.example/a.png"}}]},{"role":"user","content":[{"type":"image_url","image_url":{"url":"https://a.example/b.png"}},{"type":"document","source":{"type":"url","url":"https://a.example/c.pdf"}}]},{"role":"user","content":[{"type":"image_url","image_url":{"url":"https://a.example/a.png"}}]}]"#,
