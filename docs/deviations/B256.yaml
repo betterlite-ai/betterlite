@@ -1,0 +1,5 @@
+task: B256
+deviations:
+  - what: A flush that returns undelivered events requeues them before the events that arrived during the flush and keeps the queue capped, where CustomBatchLogger.flush_queue clears the whole queue after async_send_batch returns normally.
+    why: Datadog and Azure Sentinel override flush_queue and requeue the events their 413 splitter reports undelivered, so a working setup relies on retention rather than the base class clear. Betterlite exposes the undelivered set from the injected transport and keeps it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L84-L89
