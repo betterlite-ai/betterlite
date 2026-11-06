@@ -86,6 +86,6 @@ pub trait BatchesSdk: Send + Sync {
     fn list(
         &self,
         after: Option<&str>,
-        limit: Option<u32>,
+        limit: Option<i64>,
     ) -> impl Future<Output = Result<Self::Page, SdkError>> + Send;
 }

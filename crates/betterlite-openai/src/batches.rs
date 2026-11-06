@@ -92,7 +92,7 @@ impl<Constructor: ClientConstructor> BatchesApi<Constructor> {
         &self,
         connection: Connection<Constructor::Client>,
         after: Option<&str>,
-        limit: Option<u32>,
+        limit: Option<i64>,
     ) -> Result<<Constructor::Client as BatchesSdk>::Page, BatchesError> {
         Ok(self
             .checked_client(connection, false)?

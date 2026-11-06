@@ -233,7 +233,7 @@ impl BatchesSdk for HttpBatchesClient {
         self.on_batch(request, Method::POST, "/cancel", body).await
     }
 
-    async fn list(&self, after: Option<&str>, limit: Option<u32>) -> Result<BatchPage, SdkError> {
+    async fn list(&self, after: Option<&str>, limit: Option<i64>) -> Result<BatchPage, SdkError> {
         let mut query = Vec::new();
         if let Some(value) = after {
             query.push((String::from("after"), value.to_owned()));

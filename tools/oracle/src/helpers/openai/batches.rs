@@ -44,7 +44,7 @@ enum Answer {
 #[serde(deny_unknown_fields)]
 struct Listing {
     after: Option<String>,
-    limit: Option<u32>,
+    limit: Option<i64>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -19,7 +19,7 @@ pub(super) enum Recorded {
     Cancel(BatchQuery),
     List {
         after: Option<String>,
-        limit: Option<u32>,
+        limit: Option<i64>,
     },
 }
 
@@ -122,7 +122,7 @@ impl BatchesSdk for FakeSdk {
     fn list(
         &self,
         after: Option<&str>,
-        limit: Option<u32>,
+        limit: Option<i64>,
     ) -> impl Future<Output = Result<BatchPage, SdkError>> + Send {
         self.record(Recorded::List {
             after: after.map(str::to_owned),

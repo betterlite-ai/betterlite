@@ -43,7 +43,7 @@ pub enum ExpiryAnchor {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 pub struct OutputExpiry {
     pub anchor: ExpiryAnchor,
-    pub seconds: u32,
+    pub seconds: i64,
 }
 
 #[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
