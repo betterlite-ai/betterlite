@@ -16,11 +16,11 @@ pub(super) fn number_spans(
     analyze_results: &[AnalyzeResponseItem],
     masked_entity_count: &mut IndexMap<String, usize>,
 ) -> Result<NumberedText, PresidioActionsError> {
-    let chars: Vec<char> = text.chars().collect();
-    let spans = collect_spans(analyze_results, chars.len())?;
+    let original_chars: Vec<char> = text.chars().collect();
+    let spans = collect_spans(analyze_results, original_chars.len())?;
     let sequence = sequence_numbers(&spans);
     let mut tokens = IndexMap::new();
-    let mut replaced_text = chars;
+    let mut replaced_text = original_chars.clone();
     for (start, end, entity_type) in spans.iter().rev() {
         let Some(sequence_number) = sequence.get(&(*start, *end)) else {
             return Err(PresidioActionsError::SpanOutOfBounds {
@@ -29,7 +29,15 @@ pub(super) fn number_spans(
             });
         };
         let token = format!("<{entity_type}_{sequence_number}>");
-        let Some((replaced, original)) = replace_span(&replaced_text, *start, *end, &token) else {
+        let Some(original_slice) = original_chars.get(*start..*end) else {
+            return Err(PresidioActionsError::SpanOutOfBounds {
+                start: *start,
+                end: *end,
+            });
+        };
+        // LiteLLM stores text[start:end] from the input, while replacements land on the mutated copy.
+        let original: String = original_slice.iter().collect();
+        let Some(replaced) = replace_span(&replaced_text, *start, *end, &token) else {
             return Err(PresidioActionsError::SpanOutOfBounds {
                 start: *start,
                 end: *end,
@@ -82,17 +90,11 @@ fn sequence_numbers(spans: &[(usize, usize, &str)]) -> BTreeMap<(usize, usize), 
     sequence
 }
 
-fn replace_span(
-    chars: &[char],
-    start: usize,
-    end: usize,
-    token: &str,
-) -> Option<(Vec<char>, String)> {
-    let original: String = chars.get(start..end)?.iter().collect();
+fn replace_span(chars: &[char], start: usize, end: usize, token: &str) -> Option<Vec<char>> {
     let mut replaced = chars.get(..start)?.to_vec();
     replaced.extend(token.chars());
     replaced.extend_from_slice(chars.get(end..)?);
-    Some((replaced, original))
+    Some(replaced)
 }
 
 #[must_use]

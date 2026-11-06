@@ -87,6 +87,22 @@ fn a_repeated_span_takes_the_last_sequence_number() {
 }
 
 #[test]
+fn overlapping_spans_store_the_unmodified_input_slices() {
+    let detections = [item("PERSON", 0, 6), item("LOCATION", 3, 9)];
+    let mut data = request_data("{}");
+    let mut counts = IndexMap::new();
+    let text =
+        finalize_numbered_tokens("abcdefghij", &detections, Some(&mut data), &mut counts).unwrap();
+    assert_eq!(text, "<PERSON_1>CATION_2>j");
+    let stored = tokens(&data);
+    assert_eq!(stored.get("<PERSON_1>").map(String::as_str), Some("abcdef"));
+    assert_eq!(
+        stored.get("<LOCATION_2>").map(String::as_str),
+        Some("defghi")
+    );
+}
+
+#[test]
 fn a_detection_without_a_start_is_an_error() {
     let mut detection = item("PERSON", 0, 5);
     detection.start = None;
