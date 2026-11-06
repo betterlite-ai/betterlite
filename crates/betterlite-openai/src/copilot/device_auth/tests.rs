@@ -631,6 +631,26 @@ fn the_constructor_reports_a_directory_failure() {
 }
 
 #[test]
+fn copilot_error_statuses_match_the_source_family() {
+    assert_eq!(DeviceAuthError::Exhausted.status(), Some(401));
+    assert_eq!(DeviceAuthError::ApiKeyExpired.status(), Some(401));
+    assert_eq!(DeviceAuthError::RefreshApiKey.status(), Some(401));
+    assert_eq!(DeviceAuthError::ApiKey { status: 500 }.status(), Some(500));
+    assert_eq!(
+        DeviceAuthError::DeviceCode(DeviceCodeFailure::Status { status: 404 }).status(),
+        Some(400)
+    );
+    assert_eq!(
+        DeviceAuthError::AccessToken(AccessTokenFailure::Status { status: 500 }).status(),
+        Some(400)
+    );
+    assert_eq!(
+        DeviceAuthError::TokenDirectory(io::Error::other("denied")).status(),
+        None
+    );
+}
+
+#[test]
 fn github_headers_carry_the_oauth_identity() {
     let headers = github_headers(None);
 

@@ -15,6 +15,12 @@ pub enum DeviceAuthError {
     AccessToken(#[source] AccessTokenFailure),
     #[error("no Copilot access token after three login attempts")]
     Exhausted,
+    #[error("the Copilot API key expired")]
+    ApiKeyExpired,
+    #[error("the Copilot API key refresh failed")]
+    RefreshApiKey,
+    #[error("the Copilot API key request failed with status {status}")]
+    ApiKey { status: u16 },
 }
 
 impl DeviceAuthError {
@@ -23,7 +29,8 @@ impl DeviceAuthError {
         match self {
             Self::TokenDirectory(_) => None,
             Self::DeviceCode(_) | Self::AccessToken(_) => Some(400),
-            Self::Exhausted => Some(401),
+            Self::Exhausted | Self::ApiKeyExpired | Self::RefreshApiKey => Some(401),
+            Self::ApiKey { status } => Some(*status),
         }
     }
 }
