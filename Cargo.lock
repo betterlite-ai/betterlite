@@ -1098,6 +1098,7 @@ dependencies = [
  "chrono",
  "crc32fast",
  "encoding_rs",
+ "fancy-regex",
  "futures-util",
  "hex",
  "indexmap 2.14.2",
@@ -1774,6 +1775,7 @@ dependencies = [
  "http 1.5.0",
  "indexmap 2.14.2",
  "nix",
+ "percent-encoding",
  "rand 0.10.3",
  "rstest",
  "rust_decimal",
@@ -1874,6 +1876,7 @@ dependencies = [
  "jiff",
  "percent-encoding",
  "quick-xml",
+ "rand 0.10.3",
  "reqwest",
  "rstest",
  "rust_decimal",
@@ -1985,10 +1988,13 @@ name = "betterlite-prompts"
 version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
+ "betterlite-config",
+ "betterlite-http",
  "betterlite-logging",
  "betterlite-models",
  "chrono",
  "fancy-regex",
+ "http 1.5.0",
  "indexmap 2.14.2",
  "minijinja",
  "minijinja-contrib",
@@ -2003,6 +2009,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "url",
 ]
 
 [[package]]
