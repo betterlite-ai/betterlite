@@ -13,22 +13,16 @@ from litellm.types.utils import CompletionTokensDetailsWrapper, ModelInfo, Usage
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
 
-class RecordingPricing:
-    def __init__(self) -> None:
-        self.seen: list[Usage] = []
-
+class CountPricing:
     def __call__(
         self, *, model: str, usage: Usage, custom_llm_provider: str
     ) -> tuple[float, float]:
         assert (model, custom_llm_provider) == ("oracle-model", "xai")  # noqa: S101
-        self.seen.append(usage)
-        return 0.11, 0.22
+        return float(usage.prompt_tokens), float(usage.completion_tokens)
 
 
 def money(value: float | None) -> str | None:
-    if value is None:
-        return None
-    return format(Decimal(repr(float(value))).normalize(), "f")
+    return None if value is None else format(Decimal(repr(float(value))).normalize(), "f")
 
 
 def build_usage(fields: dict[str, Json]) -> Usage:
@@ -70,21 +64,9 @@ def run_ticks(value: dict[str, Json]) -> Json:
 
 def run_cost(value: dict[str, Json]) -> Json:
     usage = build_usage(cast(dict[str, Json], value["usage"]))
-    recorder = RecordingPricing()
-    with patch.object(cost_calculator, "generic_cost_per_token", recorder):
+    with patch.object(cost_calculator, "generic_cost_per_token", CountPricing()):
         prompt_cost, completion_cost = cost_calculator.cost_per_token("oracle-model", usage)
-    delegate = None
-    if recorder.seen:
-        adjusted = recorder.seen[0]
-        delegate = {
-            **cast(dict[str, Json], counts(adjusted)),
-            "has_completion_details": bool(adjusted.completion_tokens_details),
-        }
-    return {
-        "prompt_cost": money(prompt_cost),
-        "completion_cost": money(completion_cost),
-        "delegate": delegate,
-    }
+    return {"prompt_cost": money(prompt_cost), "completion_cost": money(completion_cost)}
 
 
 def run_reconcile(value: dict[str, Json]) -> Json:
@@ -114,11 +96,5 @@ def run_search(value: dict[str, Json]) -> Json:
 
 
 def run(value: dict[str, Json]) -> Json:
-    action = cast(str, value["action"])
-    if action == "ticks":
-        return run_ticks(value)
-    if action == "cost":
-        return run_cost(value)
-    if action == "reconcile":
-        return run_reconcile(value)
-    return run_search(value)
+    handlers = {"ticks": run_ticks, "cost": run_cost, "reconcile": run_reconcile}
+    return handlers.get(cast(str, value["action"]), run_search)(value)

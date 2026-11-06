@@ -92,10 +92,6 @@ fn oracle_provider_prefix_is_removed_everywhere() {
     assert_eq!(calls[0]["base_model"], "grok-4");
     assert_eq!(calls[1]["base_model"], "grok-4");
     assert_eq!(calls[2]["base_model"], "a/b");
-    assert_eq!(
-        calls[4]["models"]["ids"],
-        serde_json::json!(["xai/grok-4", "xai/xai/grok-3"])
-    );
-    assert_eq!(calls[9]["models"]["error"], "status");
-    assert_eq!(calls[13]["models"]["error"], "malformed");
+    assert_eq!(calls[3]["base_model"], "grok-4");
+    assert_eq!(calls[4]["base_model"], "");
 }

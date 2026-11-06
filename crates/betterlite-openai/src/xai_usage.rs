@@ -129,7 +129,6 @@ pub fn cost_per_web_search_request(
         return Ok(Decimal::ZERO);
     };
     // xAI lists web search at five dollars per thousand calls; medium, low, high is LiteLLM's order
-    let fallback = Decimal::new(5, 3);
     let configured = search_context.map_or([None; 3], |pricing| {
         [
             pricing.search_context_size_medium,
@@ -141,7 +140,7 @@ pub fn cost_per_web_search_request(
         .into_iter()
         .flatten()
         .find(|rate| *rate > Decimal::ZERO)
-        .unwrap_or(fallback);
+        .unwrap_or(Decimal::new(5, 3));
     rate.checked_mul(Decimal::from(calls))
         .ok_or(XaiUsageError::Overflow)
 }
