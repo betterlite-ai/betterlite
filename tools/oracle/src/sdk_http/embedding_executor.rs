@@ -27,11 +27,11 @@ use serde::Serialize;
 use tokio::runtime::Builder;
 use tokio::time::timeout;
 
+use super::VectorStoreEmbeddingCall;
 use super::capture::{Execution, Stop};
 use super::error::SdkHttpError;
 use super::native::openai_defaults;
 use super::result::{EmbeddingOutcomes, SdkResult};
-use super::{RouterDeploymentSpec, VectorStoreEmbeddingCall};
 
 const POLL: Duration = Duration::from_millis(10);
 const TIMEOUT_SECONDS: u64 = 30;
