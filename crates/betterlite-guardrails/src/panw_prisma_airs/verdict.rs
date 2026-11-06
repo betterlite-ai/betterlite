@@ -93,9 +93,10 @@ impl ScanVerdict {
             serde_json::from_slice(body).map_err(VerdictError::Shape)?;
         extra.shift_remove("action");
         extra.shift_remove("category");
-        // AIRS may put anything there; LiteLLM reads a value that is not a dict as no masked text instead of failing the verdict.
+        // AIRS may put anything there; LiteLLM reads a value that is not a dict as no masked text instead of failing the verdict. The map gate also rejects a JSON array, which serde would otherwise read as a positional struct.
         let masked = |value: Option<Box<RawValue>>| -> Option<MaskedData> {
             let raw = value?;
+            serde_json::from_str::<IndexMap<String, Box<RawValue>>>(raw.get()).ok()?;
             serde_json::from_str::<MaskedData>(raw.get()).ok()
         };
         let masks = ScanResult {
