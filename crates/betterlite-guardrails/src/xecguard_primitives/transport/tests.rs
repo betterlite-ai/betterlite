@@ -20,7 +20,7 @@ use tracing::subscriber::set_default;
 
 use super::{call_grounding, call_scan};
 use crate::xecguard_primitives::error::XecGuardError;
-use crate::xecguard_primitives::settings::XecGuardSettings;
+use crate::xecguard_primitives::settings::{RawXecGuardSettings, XecGuardSettings};
 use crate::xecguard_primitives::wire::{GroundingDocument, ScanType, XecGuardMessage};
 
 type Server = JoinSet<Result<(), io::Error>>;
@@ -89,8 +89,8 @@ async fn serve(
     (base, captured, server)
 }
 
-fn settings(api_base: &str) -> XecGuardSettings {
-    XecGuardSettings {
+fn raw_settings(api_base: &str) -> RawXecGuardSettings {
+    RawXecGuardSettings {
         api_key: SecretString::from("secret-key"),
         api_base: api_base.to_owned(),
         model: "xecguard_v2".to_owned(),
@@ -99,6 +99,10 @@ fn settings(api_base: &str) -> XecGuardSettings {
         grounding_strictness: "BALANCED".to_owned(),
         timeout: None,
     }
+}
+
+fn settings(api_base: &str) -> XecGuardSettings {
+    XecGuardSettings::from(raw_settings(api_base))
 }
 
 fn message(role: &str, content: &str) -> XecGuardMessage {
@@ -173,11 +177,11 @@ async fn transport_scan_uses_the_configured_policy_names(
     #[case] expected: Vec<String>,
 ) {
     let (base, captured, _server) = serve(StatusCode::OK, "{}".to_owned()).await;
-    let mut settings = settings(&base);
-    settings.policy_names = Some(configured);
+    let mut input = raw_settings(&base);
+    input.policy_names = Some(configured);
     call_scan(
         &reqwest::Client::default(),
-        &settings,
+        &XecGuardSettings::from(input),
         &[message("user", "hi")],
         ScanType::Response,
         false,
@@ -210,11 +214,11 @@ async fn transport_scan_returns_none_when_errors_are_suppressed() {
 async fn transport_scan_returns_none_when_block_on_error_is_off() {
     let (base, _captured, _server) =
         serve(StatusCode::INTERNAL_SERVER_ERROR, "oops".to_owned()).await;
-    let mut settings = settings(&base);
-    settings.block_on_error = false;
+    let mut input = raw_settings(&base);
+    input.block_on_error = false;
     let result = call_scan(
         &reqwest::Client::default(),
-        &settings,
+        &XecGuardSettings::from(input),
         &[message("user", "hi")],
         ScanType::Input,
         false,
@@ -302,11 +306,11 @@ async fn transport_scan_rejects_a_response_over_one_mebibyte() {
 
 #[tokio::test]
 async fn transport_reports_an_api_key_that_cannot_be_a_header() {
-    let mut settings = settings("http://127.0.0.1:1");
-    settings.api_key = SecretString::from("\u{0}");
+    let mut input = raw_settings("http://127.0.0.1:1");
+    input.api_key = SecretString::from("\u{0}");
     let error = call_scan(
         &reqwest::Client::default(),
-        &settings,
+        &XecGuardSettings::from(input),
         &[message("user", "hi")],
         ScanType::Input,
         false,
@@ -327,11 +331,11 @@ async fn transport_reports_a_timeout() {
     let router = Router::new().route("/xecguard/v1/scan", post(answer));
     let mut server = JoinSet::new();
     server.spawn(axum::serve(listener, router).into_future());
-    let mut settings = settings(&base);
-    settings.timeout = Some(Duration::from_millis(1));
+    let mut input = raw_settings(&base);
+    input.timeout = Some(Duration::from_millis(1));
     let error = call_scan(
         &reqwest::Client::default(),
-        &settings,
+        &XecGuardSettings::from(input),
         &[message("user", "hi")],
         ScanType::Input,
         false,
@@ -355,11 +359,11 @@ async fn transport_grounding_posts_the_last_user_and_assistant_texts() {
         document_id: "d1".to_owned(),
         context: "ctx".to_owned(),
     }];
-    let mut settings = settings(&base);
-    settings.api_base = format!("{base}/");
+    let mut input = raw_settings(&base);
+    input.api_base = format!("{base}/");
     let result = call_grounding(
         &reqwest::Client::default(),
-        &settings,
+        &XecGuardSettings::from(input),
         &messages,
         &documents,
     )

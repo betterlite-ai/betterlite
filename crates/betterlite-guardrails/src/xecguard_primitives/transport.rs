@@ -1,10 +1,7 @@
-use std::time::Duration;
-
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 use secrecy::ExposeSecret as _;
 use serde::Serialize;
 
-use super::DEFAULT_POLICIES;
 use super::error::XecGuardError;
 use super::message::last_text_by_role;
 use super::settings::XecGuardSettings;
@@ -13,7 +10,6 @@ use super::wire::{
     ScanResult, ScanType, XecGuardMessage,
 };
 
-pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(10);
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, Serialize)]
@@ -64,12 +60,7 @@ fn scan_payload(
         model: settings.model.clone(),
         scan_type,
         messages: messages.to_vec(),
-        policy_names: settings.policy_names.clone().unwrap_or_else(|| {
-            DEFAULT_POLICIES
-                .iter()
-                .map(|policy| (*policy).to_owned())
-                .collect()
-        }),
+        policy_names: settings.policy_names.clone(),
     }
 }
 
@@ -151,7 +142,7 @@ async fn send(
         .post(endpoint)
         .headers(headers)
         .json(body)
-        .timeout(settings.timeout.unwrap_or(DEFAULT_REQUEST_TIMEOUT))
+        .timeout(settings.timeout)
         .send()
         .await
         .map_err(request_error)?;
