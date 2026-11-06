@@ -44,7 +44,6 @@ async fn posts_the_client_credentials_grant_as_a_form() {
 
 #[rstest]
 #[case::missing_expires_in(r#"{"access_token":"jwt"}"#, NOW + 3_600)]
-#[case::null_expires_in(r#"{"access_token":"jwt","expires_in":null}"#, NOW + 3_600)]
 #[case::given_expires_in(r#"{"access_token":"jwt","expires_in":120}"#, NOW + 120)]
 #[case::explicit_zero_is_used(r#"{"access_token":"jwt","expires_in":0}"#, NOW)]
 #[case::extra_fields_are_ignored(r#"{"access_token":"jwt","token_type":"Bearer","expires_in":5}"#, NOW + 5)]
@@ -104,6 +103,7 @@ async fn a_status_outside_2xx_is_an_error_and_caches_nothing(#[case] status: u16
 #[case::not_json("<html>")]
 #[case::access_token_not_text(r#"{"access_token":5}"#)]
 #[case::expires_in_not_a_number(r#"{"access_token":"jwt","expires_in":"soon"}"#)]
+#[case::null_expires_in(r#"{"access_token":"jwt","expires_in":null}"#)]
 #[tokio::test]
 async fn a_body_that_is_not_a_token_response_is_an_error(#[case] body: &str) {
     let server = serve(200, body).await;

@@ -94,7 +94,13 @@ impl<C: TokenCredential> TokenCredential for AzureADCredential<C> {
 #[derive(Deserialize)]
 struct TokenResponse {
     access_token: secrecy::SecretString,
-    expires_in: Option<i64>,
+    #[serde(default = "default_expires_in")]
+    expires_in: i64,
+}
+
+// LiteLLM's data.get("expires_in", 3600): absent lasts an hour, an explicit null fails like its TypeError
+const fn default_expires_in() -> i64 {
+    3600
 }
 
 // The cache is not keyed by scope: a token fetched for one scope answers every later scope, as in LiteLLM
@@ -151,12 +157,10 @@ impl<K: Clock> GenericOAuth2Credential<K> {
         }
         let parsed: TokenResponse =
             serde_json::from_slice(&response.body).map_err(OAuth2Error::Body)?;
-        // a token response without expires_in lasts an hour
-        let lifetime = parsed.expires_in.unwrap_or(3600);
         let expires_on = self
             .clock
             .unix_seconds()
-            .checked_add(lifetime)
+            .checked_add(parsed.expires_in)
             .ok_or(OAuth2Error::ExpiryOverflow)?;
         Ok(AccessToken {
             token: parsed.access_token,

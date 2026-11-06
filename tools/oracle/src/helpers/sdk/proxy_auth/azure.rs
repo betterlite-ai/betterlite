@@ -34,12 +34,8 @@ impl TokenCredential for Named {
     }
 }
 
-const fn default_chain() -> Named {
-    Named("chain")
-}
-
 pub(super) fn run(input: &Azure) -> HelperResult {
-    let build: fn() -> Named = default_chain;
+    let build: fn() -> Named = || Named("chain");
     let credential = AzureADCredential {
         credential: if input.injected {
             OnceCell::new_with(Some(Named("injected")))
