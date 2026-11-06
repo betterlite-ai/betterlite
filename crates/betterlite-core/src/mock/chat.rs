@@ -49,33 +49,17 @@ pub fn response(
     created: u64,
 ) -> Result<ChatResponse, MockError> {
     match answer(plan.response)? {
-        ChatAnswer::Content(content) => Ok(completion(
-            id.to_owned(),
+        ChatAnswer::Content(content) => Ok(ChatResponse {
+            id: id.to_owned(),
+            object: String::from("chat.completion"),
             created,
-            model.to_owned(),
-            content_choices(content, plan)?,
-            usage_from(plan, usage),
-        )),
+            model: model.to_owned(),
+            choices: content_choices(content, plan)?,
+            usage: usage_from(plan, usage),
+            system_fingerprint: None,
+            service_tier: None,
+        }),
         ChatAnswer::Object(object) => Ok(object_response(object, model, id, created)),
-    }
-}
-
-fn completion(
-    id: String,
-    created: u64,
-    model: String,
-    choices: Vec<ChatChoice>,
-    usage: ChatUsage,
-) -> ChatResponse {
-    ChatResponse {
-        id,
-        object: String::from("chat.completion"),
-        created,
-        model,
-        choices,
-        usage,
-        system_fingerprint: None,
-        service_tier: None,
     }
 }
 
@@ -132,18 +116,20 @@ fn usage_from(plan: &MockPlan<'_>, defaults: UsageDefaults) -> ChatUsage {
 }
 
 fn object_response(object: &MockChatObject, model: &str, id: &str, created: u64) -> ChatResponse {
-    let mut response = completion(
-        object.id.clone().unwrap_or_else(|| id.to_owned()),
-        object.created.unwrap_or(created),
-        object.model.clone().unwrap_or_else(|| model.to_owned()),
-        object_choices(object),
-        object_usage(object),
-    );
-    response
-        .system_fingerprint
-        .clone_from(&object.system_fingerprint);
-    response.service_tier.clone_from(&object.service_tier);
-    response
+    // an object field wins over the id, timestamp and model LiteLLM generates for a mock
+    let identifier = object.id.clone().unwrap_or_else(|| id.to_owned());
+    let timestamp = object.created.unwrap_or(created);
+    let name = object.model.clone().unwrap_or_else(|| model.to_owned());
+    ChatResponse {
+        id: identifier,
+        object: String::from("chat.completion"),
+        created: timestamp,
+        model: name,
+        choices: object_choices(object),
+        usage: object_usage(object),
+        system_fingerprint: object.system_fingerprint.clone(),
+        service_tier: object.service_tier.clone(),
+    }
 }
 
 fn object_usage(object: &MockChatObject) -> ChatUsage {

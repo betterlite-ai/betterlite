@@ -145,6 +145,22 @@ fn rejects_invalid_mock_values(#[case] source: &str, #[case] category: &str) {
     assert_eq!(error.category(), category);
 }
 
+// LiteLLM's router would merge these deployment parameters into the call; this section loads only mock_response
+#[rstest]
+#[case::mock_timeout("mock_timeout: true")]
+#[case::mock_delay("mock_delay: 0.5")]
+fn an_operator_mock_wait_parameter_is_not_loaded(#[case] parameter: &str) {
+    let source = format!(
+        "model_list:\n  - model_name: mock\n    litellm_params:\n      mock_response: hi\n      {parameter}\n"
+    );
+    let error = load(&source, &BTreeMap::new()).expect_err("unsupported parameter");
+    let ConfigError::Unsupported { paths } = error else {
+        panic!("expected an unsupported key");
+    };
+    let name = parameter.split(':').next().expect("parameter name");
+    assert!(paths.iter().any(|path| path.ends_with(name)), "{paths:?}");
+}
+
 #[test]
 fn keeps_the_position_of_each_deployment() {
     let settings = load(

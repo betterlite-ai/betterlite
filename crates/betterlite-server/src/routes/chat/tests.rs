@@ -553,7 +553,7 @@ async fn normalization_gateway(enabled: bool) -> (ProxiedClient, String, JoinSet
 #[case::syntax_error(true, "syntax-id", "!", (400, false))]
 #[case::empty_body(true, "empty-id", "", (400, true))]
 #[case::schema_error(true, "schema-id", r#"{"model":"g"}"#, (400, true))]
-#[case::unsupported_parameter(true, "unsupported-id", r#"{"model":"g","messages":[],"mock_response":"blocked"}"#, (400, true))]
+#[case::unsupported_parameter(true, "unsupported-id", r#"{"model":"g","messages":[],"mock_timeout":true}"#, (400, true))]
 #[case::unknown_model(
     true,
     "router-id",

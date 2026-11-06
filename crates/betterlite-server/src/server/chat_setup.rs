@@ -14,7 +14,9 @@ use betterlite_openai::openai_base_config::CatalogCapabilities;
 use rand::rngs::StdRng;
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
+use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
+use uuid::Uuid;
 
 #[derive(Debug, Error)]
 pub enum ChatSetupError {
@@ -72,10 +74,18 @@ pub fn chat_executor(
             text_models: BTreeSet::new(),
         },
         random: Mutex::new(random),
+        clock: unix_seconds,
+        next_id: Uuid::new_v4,
         mock,
         mock_chat,
         mock_embedding,
     })
+}
+
+fn unix_seconds() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_secs())
 }
 
 fn openai_defaults(config: &Config) -> OpenAiDefaults {

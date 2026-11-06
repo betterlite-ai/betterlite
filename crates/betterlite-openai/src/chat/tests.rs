@@ -3,6 +3,7 @@
 use std::fs;
 use std::path::PathBuf;
 
+use betterlite_config::sections::mock_response::MockResponse;
 use rstest::rstest;
 
 use super::{ChatRequest, MessageContent, RequestError, Role, Stop, ToolChoice};
@@ -37,12 +38,24 @@ fn parses_typed_fields_and_keeps_unknown_parameters_for_forwarding() {
 #[rstest]
 #[case::api_base("api_base")]
 #[case::fallbacks("fallbacks")]
-#[case::mock_response("mock_response")]
+#[case::mock_delay("mock_delay")]
+#[case::mock_timeout("mock_timeout")]
 #[case::extra_headers("extra_headers")]
 fn refuses_litellm_request_keys_it_does_not_act_on(#[case] name: &str) {
     let body = format!(r#"{{"model":"m","messages":[],"{name}":"x"}}"#);
     let error = ChatRequest::parse(body.as_bytes()).unwrap_err();
     assert!(matches!(error, RequestError::Unsupported { name: refused } if refused == name));
+}
+
+#[test]
+fn parses_the_mock_fields_it_acts_on() {
+    let body = br#"{"model":"m","messages":[],"mock_response":"client","mock_tool_calls":[]}"#;
+    let request = ChatRequest::parse(body).unwrap();
+    assert_eq!(
+        request.mock_response,
+        Some(MockResponse::Text(String::from("client")))
+    );
+    assert_eq!(request.mock_tool_calls, Some(Vec::new()));
 }
 
 #[rstest]

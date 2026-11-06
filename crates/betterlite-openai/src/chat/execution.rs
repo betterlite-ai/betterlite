@@ -1,5 +1,5 @@
 use std::sync::Mutex;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use betterlite_config::sections::mock_response::selection::{MockPlan, resolve_mock};
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
@@ -74,6 +74,8 @@ pub struct ChatExecutor {
     pub deployments: Vec<ChatDeployment>,
     pub catalog: CatalogCapabilities,
     pub random: Mutex<StdRng>,
+    pub clock: fn() -> u64,
+    pub next_id: fn() -> Uuid,
     pub mock: MockSettings,
     pub mock_chat: MockChatBuilder,
     pub mock_embedding: MockEmbeddingBuilder,
@@ -127,14 +129,13 @@ impl ChatExecutor {
         deployment: &ChatDeployment,
         request: &ChatRequest,
     ) -> Result<ChatOutcome, ChatError> {
+        let id = format!("chatcmpl-{}", (self.next_id)());
         let response = (self.mock_chat)(
             plan,
             self.mock.usage,
             &deployment.litellm_model,
-            &format!("chatcmpl-{}", Uuid::new_v4()),
-            SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .map_or(0, |elapsed| elapsed.as_secs()),
+            &id,
+            (self.clock)(),
         )
         .map_err(mock_failure)?;
         Ok(ChatOutcome {

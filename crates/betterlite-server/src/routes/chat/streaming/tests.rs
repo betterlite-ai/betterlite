@@ -7,25 +7,33 @@ use axum::body::{Body, to_bytes};
 use axum::http::{Request, StatusCode};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_http::error::HttpError;
+use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::stream::SseParser;
 use futures_util::{StreamExt as _, stream};
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rstest::rstest;
 use tower::ServiceExt as _;
+use uuid::Uuid;
 
 use super::{RelayState, next_sse};
 use crate::routes::chat::chat_routes_with_call_id;
 use crate::server::chat_setup::chat_executor;
 
-async fn mock_call(source: &str, body: &str) -> (StatusCode, Vec<u8>) {
+fn executor_for(source: &str) -> ChatExecutor {
     let config = ConfigLoader {
         lookup: BTreeMap::new(),
     }
     .load(source)
     .expect("config");
-    let executor =
-        chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(3)).expect("executor");
+    chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(3)).expect("executor")
+}
+
+async fn mock_call(source: &str, body: &str) -> (StatusCode, Vec<u8>) {
+    routed(executor_for(source), body).await
+}
+
+async fn routed(executor: ChatExecutor, body: &str) -> (StatusCode, Vec<u8>) {
     let request = Request::post("/v1/chat/completions")
         .header("content-type", "application/json")
         .body(Body::from(body.to_owned()))
@@ -40,6 +48,14 @@ async fn mock_call(source: &str, body: &str) -> (StatusCode, Vec<u8>) {
         .await
         .expect("body");
     (status, collected.to_vec())
+}
+
+fn fixed_clock() -> u64 {
+    1_700_000_000
+}
+
+fn fixed_id() -> Uuid {
+    Uuid::from_u128(7)
 }
 
 #[derive(serde::Deserialize)]
@@ -61,6 +77,31 @@ struct FrameDelta {
     role: Option<String>,
     #[serde(default)]
     content: Option<String>,
+}
+
+#[tokio::test]
+async fn mock_stream_frames_use_the_injected_id_and_clock() {
+    let source = "model_list:\n  - {model_name: g, litellm_params: {model: openai/up, api_base: 'http://127.0.0.1:1', api_key: k, mock_response: abcdefg, timeout: 0.1}}\n";
+    let mut executor = executor_for(source);
+    executor.clock = fixed_clock;
+    executor.next_id = fixed_id;
+    let (status, body) = routed(executor, r#"{"model":"g","messages":[],"stream":true}"#).await;
+    assert_eq!(status, StatusCode::OK);
+    let text = String::from_utf8(body).expect("utf-8 SSE");
+    let first = text
+        .split("\n\n")
+        .next()
+        .expect("first frame")
+        .trim_start_matches("data: ");
+    let frame: FrameHeader = serde_json::from_str(first).expect("frame");
+    assert_eq!(frame.id, format!("chatcmpl-{}", fixed_id()));
+    assert_eq!(frame.created, fixed_clock());
+}
+
+#[derive(serde::Deserialize)]
+struct FrameHeader {
+    id: String,
+    created: u64,
 }
 
 #[tokio::test]

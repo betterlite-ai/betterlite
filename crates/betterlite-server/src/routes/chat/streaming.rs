@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 use std::io;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 use axum::body::{Body, Bytes};
 use axum::http::HeaderMap;
@@ -19,7 +19,6 @@ use betterlite_openai::stream::SseParser;
 use betterlite_openai::stream::chunk::{Choice, Chunk, Delta};
 use futures_util::StreamExt as _;
 use futures_util::stream::{self, BoxStream};
-use uuid::Uuid;
 
 use super::headers::stream_headers;
 use super::{CallContext, failure};
@@ -87,15 +86,13 @@ fn mock_stream(
         );
     };
     let model = request.model.clone().unwrap_or_default();
-    let id = format!("chatcmpl-{}", Uuid::new_v4());
+    let id = format!("chatcmpl-{}", (executor.next_id)());
     let spec = StreamSpec {
         content,
         choice_count: plan.choice_count,
         model: &model,
         id: &id,
-        created: SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |elapsed| elapsed.as_secs()),
+        created: (executor.clock)(),
     };
     let frames = match mock_frames(&spec, plan.prompt_tokens, executor.mock.usage) {
         Ok(frames) => frames,

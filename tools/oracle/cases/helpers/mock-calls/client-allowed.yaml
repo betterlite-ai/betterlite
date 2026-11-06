@@ -7,6 +7,7 @@ call:
     clock: 1700000000
     uuid: "12345678-1234-4234-8234-123456789012"
     allow_client_mock_response: true
+    operator_mock_response: operator value
     client_mock_response: client value
 env: {}
 compare:

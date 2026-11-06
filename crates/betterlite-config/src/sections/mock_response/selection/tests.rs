@@ -78,11 +78,11 @@ fn an_allowed_client_response_is_used() {
 }
 
 #[test]
-fn the_operator_response_wins_over_an_allowed_client_response() {
+fn an_allowed_client_response_wins_over_the_operator_one() {
     let operator = text("operator");
     let client = text("client");
     let plan = resolve_mock(Some(&operator), allowed(), Some(&client), None, None).expect("mock");
-    assert_eq!(plan.response, Some(&operator));
+    assert_eq!(plan.response, Some(&client));
 }
 
 #[test]

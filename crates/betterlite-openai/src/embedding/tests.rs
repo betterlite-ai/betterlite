@@ -22,6 +22,7 @@ use std::sync::{Arc, Mutex};
 use tokio::io::AsyncWriteExt as _;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
+use uuid::Uuid;
 
 use super::{
     EmbeddingError, EmbeddingInput, EmbeddingRequest, EmbeddingVector, EncodingFormat, servable,
@@ -147,6 +148,14 @@ fn unused_embedding(
     Err(MockError::EmbeddingFailure)
 }
 
+fn fixed_clock() -> u64 {
+    1_700_000_000
+}
+
+fn fixed_id() -> Uuid {
+    Uuid::from_u128(7)
+}
+
 fn embedding_executor(base: &str) -> (ChatExecutor, ChatDeployment) {
     let config = ConfigLoader {
         lookup: BTreeMap::new(),
@@ -169,6 +178,8 @@ fn embedding_executor(base: &str) -> (ChatExecutor, ChatDeployment) {
             text_models: BTreeSet::new(),
         },
         random: Mutex::new(StdRng::seed_from_u64(1)),
+        clock: fixed_clock,
+        next_id: fixed_id,
         mock: MockSettings::default(),
         mock_chat: unused_chat,
         mock_embedding: unused_embedding,

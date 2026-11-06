@@ -142,7 +142,10 @@ def _chat_outcome(input_value: dict[str, Json], *, stream: bool) -> Json:
 
 
 def _effective_mock(input_value: dict[str, Json]) -> tuple[Json, Json]:
+    deployment: dict[str, Json] = {}
     operator = input_value.get("operator_mock_response")
+    if operator is not None:
+        deployment["mock_response"] = operator
     data: dict[str, Json] = {"model": _string(input_value, "model"), "messages": _messages()}
     client_response = input_value.get("client_mock_response")
     client_tool_calls = input_value.get("client_mock_tool_calls")
@@ -153,8 +156,9 @@ def _effective_mock(input_value: dict[str, Json]) -> tuple[Json, Json]:
     if "mock_response" in data or "mock_tool_calls" in data:
         allowed = input_value.get("allow_client_mock_response") is True
         data = asyncio.run(_strip_client_fields(data, allowed=allowed))
-    response = operator if operator is not None else data.get("mock_response")
-    return response, data.get("mock_tool_calls")
+    # the router builds {**litellm_params, ..., **kwargs}, so a surviving client field wins
+    merged = {**deployment, **data}
+    return merged.get("mock_response"), merged.get("mock_tool_calls")
 
 
 async def _strip_client_fields(data: dict[str, Json], *, allowed: bool) -> dict[str, Json]:

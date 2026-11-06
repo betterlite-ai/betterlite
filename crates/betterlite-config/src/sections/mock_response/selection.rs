@@ -13,7 +13,7 @@ pub struct MockPlan<'request> {
     pub prompt_tokens: Option<u64>,
 }
 
-// LiteLLM strips both fields from every request body before routing unless the key or team allows them
+// an allowed client field survives stripping, and the router merges it after litellm_params, so it wins
 #[must_use]
 pub fn resolve_mock<'request>(
     operator: Option<&'request MockResponse>,
@@ -23,7 +23,7 @@ pub fn resolve_mock<'request>(
     choice_count: Option<u32>,
 ) -> Option<MockPlan<'request>> {
     let (response, tool_calls) = if permission.allow_client_mock_response {
-        (operator.or(client_response), client_tool_calls)
+        (client_response.or(operator), client_tool_calls)
     } else {
         if client_response.is_some() {
             tracing::warn!(

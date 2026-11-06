@@ -23,6 +23,7 @@ use tokio::sync::Notify;
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 use tracing::subscriber::set_default;
+use uuid::Uuid;
 
 use super::ChatExecutor;
 use crate::chat::deployment::{ChatDeployment, OpenAiDefaults};
@@ -33,12 +34,12 @@ use crate::openai_base_config::CatalogCapabilities;
 
 const ANSWER: &str = r#"{"id":"c1","object":"chat.completion","created":7,"model":"upstream","choices":[{"index":0,"message":{"role":"assistant","content":null,"refusal":"no"},"finish_reason":"stop"}]}"#;
 
-// the stub reports the effective mock content through the response id so a test can read it back
+// the stub reports the injected id and the effective mock content through the response id
 fn echo_mock(
     plan: &MockPlan<'_>,
     _usage: UsageDefaults,
     model: &str,
-    _id: &str,
+    id: &str,
     created: u64,
 ) -> Result<ChatResponse, MockError> {
     let Some(MockResponse::Text(content)) = plan.response else {
@@ -55,7 +56,7 @@ fn echo_mock(
         return Err(error);
     }
     Ok(ChatResponse {
-        id: content.clone(),
+        id: format!("{id}={content}"),
         object: String::from("chat.completion"),
         created,
         model: model.to_owned(),
@@ -71,6 +72,14 @@ fn unused_embedding(
     _model: &str,
 ) -> Result<EmbeddingResponse, MockError> {
     Err(MockError::EmbeddingFailure)
+}
+
+fn fixed_clock() -> u64 {
+    1_700_000_000
+}
+
+fn fixed_id() -> Uuid {
+    Uuid::from_u128(7)
 }
 
 fn executor(
@@ -109,6 +118,8 @@ fn executor(
             text_models: BTreeSet::new(),
         },
         random: Mutex::new(StdRng::seed_from_u64(seed)),
+        clock: fixed_clock,
+        next_id: fixed_id,
         mock: MockSettings {
             responses,
             usage: UsageDefaults::default(),
@@ -433,11 +444,11 @@ fn allowed() -> MockPermission {
     allowed(),
     Expected::Content("client")
 )]
-#[case::the_operator_mock_beats_an_allowed_client_one(
+#[case::an_allowed_client_mock_beats_the_operator_one(
     Some("operator"),
     Some("client"),
     allowed(),
-    Expected::Content("operator")
+    Expected::Content("client")
 )]
 #[case::a_denied_client_mock_is_stripped(
     None,
@@ -479,7 +490,9 @@ async fn mock_calls_behavior_tests_behavior(
     match expected {
         Expected::Content(text) => {
             let outcome = chat.send(deployment, &request).await.unwrap();
-            assert_eq!(outcome.response.id, text);
+            let expected_id = format!("chatcmpl-{}={text}", fixed_id());
+            assert_eq!(outcome.response.id, expected_id);
+            assert_eq!(outcome.response.created, fixed_clock());
             assert_eq!(outcome.upstream.status, 200);
         }
         Expected::Failure(status, error_type) => {
