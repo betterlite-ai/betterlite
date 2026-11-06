@@ -2,9 +2,14 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use betterlite_config::sections::huggingface_hub::{OfflineSetting, Settings as HubSettings};
+use betterlite_config::sections::huggingface_hub::{
+    OfflineSetting, Settings as HubSettings, TransferSetting,
+};
 use secrecy::SecretString;
 use tokio::fs;
+use tracing::span::{Attributes, Id, Record};
+use tracing::subscriber::with_default;
+use tracing::{Event, Level, Metadata};
 
 use crate::engine::hub::{Clock, HubDownloader, HubError, SystemClock};
 use crate::engine::tests::support::{Reply, Request, Server, hub_settings, resolver};
@@ -316,4 +321,49 @@ fn system_clock_runs() {
     let clock = clock();
     let first = clock.now();
     assert!(clock.now() >= first);
+}
+
+struct CountingSubscriber(Arc<AtomicUsize>);
+
+impl tracing::Subscriber for CountingSubscriber {
+    fn enabled(&self, _metadata: &Metadata<'_>) -> bool {
+        true
+    }
+
+    fn new_span(&self, _span: &Attributes<'_>) -> Id {
+        Id::from_u64(1)
+    }
+
+    fn record(&self, _span: &Id, _values: &Record<'_>) {}
+
+    fn record_follows_from(&self, _span: &Id, _follows: &Id) {}
+
+    fn event(&self, event: &Event<'_>) {
+        if *event.metadata().level() == Level::WARN
+            && event
+                .metadata()
+                .target()
+                .starts_with("betterlite_tokenizer")
+        {
+            self.0.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+
+    fn enter(&self, _span: &Id) {}
+
+    fn exit(&self, _span: &Id) {}
+}
+
+#[test]
+fn the_deprecated_transfer_warning_fires_once() {
+    let directory = tempfile::tempdir().unwrap();
+    let mut settings = hub_settings("http://127.0.0.1:1", directory.path());
+    settings.transfer = TransferSetting::DeprecatedTransfer;
+    let hub = downloader(&settings);
+    let warnings = Arc::new(AtomicUsize::new(0));
+    with_default(CountingSubscriber(Arc::clone(&warnings)), || {
+        let _first = hub.client(None).unwrap();
+        let _second = hub.client(None).unwrap();
+    });
+    assert_eq!(warnings.load(Ordering::SeqCst), 1);
 }
