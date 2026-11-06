@@ -1,0 +1,56 @@
+kind: probe
+name: wildcard-multiple-captures
+probes:
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      wildcard_catalog:
+        steps:
+          - {action: add, pattern: "llmengine/fo::*::static::*", model: "openai/fo::*::static::*", model_id: "multi"}
+          - {action: route, request: "llmengine/fo::hi::static::bye"}
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      wildcard_catalog:
+        steps:
+          - {action: add, pattern: "llmengine/fo::*::static::*", model: "openai/one*", model_id: "fallback"}
+          - {action: route, request: "llmengine/fo::hi::static::bye"}
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      wildcard_catalog:
+        steps:
+          - {action: add, pattern: "openai/*", model: "azure/*/*", model_id: "partial"}
+          - {action: route, request: "openai/gpt-4"}
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      wildcard_catalog:
+        steps:
+          - {action: add, pattern: "openai/*", model: "bedrock/fixed", model_id: "fixed"}
+          - {action: route, request: "openai/gpt-4"}
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      wildcard_catalog:
+        steps:
+          - {action: add, pattern: "openai/gpt-4", model: "azure/*", model_id: "literal"}
+          - {action: route, request: "openai/gpt-4-turbo"}
+          - {action: route, request: "openai/gpt"}
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      wildcard_catalog:
+        steps:
+          - {action: add, pattern: "openai/*", model: "azure/*", model_id: "provider"}
+          - {action: get_pattern, model: "gpt-4", provider: "openai"}
+          - {action: get_pattern, model: "openai/gpt-4", provider: "azure"}
+          - {action: get_pattern, model: "claude", provider: "anthropic"}
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      wildcard_catalog:
+        steps:
+          - {action: add, pattern: "openai/*", model: "azure/*", model_id: "provider"}
+          - {action: get_deployments, model: "gpt-4", provider: "openai"}
+          - {action: get_deployments, model: "claude", provider: "anthropic"}
