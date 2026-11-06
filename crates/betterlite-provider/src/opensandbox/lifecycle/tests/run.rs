@@ -246,6 +246,19 @@ fn run_borrows_the_https_scheme_from_the_stored_base() {
 }
 
 #[test]
+fn run_prefers_the_stored_base_over_the_domain_for_the_scheme() {
+    let sandbox = sandbox(&[(200, OUTPUT)], environment(&[]));
+    let mut handle = cached_handle("https://stored.example", "stored-key", "10.0.0.5:44772");
+    handle.container.domain = Some("http://domain.example".to_owned());
+    block_on(sandbox.arun_code(run_request(ContainerRef::Cached(&handle), "1"), None)).unwrap();
+
+    assert_eq!(
+        sandbox.http.request(0).url.as_str(),
+        "https://10.0.0.5:44772/code"
+    );
+}
+
+#[test]
 fn run_borrows_the_scheme_from_the_handle_domain() {
     let sandbox = sandbox(&[(200, OUTPUT)], environment(&[]));
     let mut handle = cached_handle("http://stored.example", "stored-key", "10.0.0.5:44772");
