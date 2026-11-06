@@ -1,0 +1,13 @@
+kind: helper
+name: metadata-null-versus-falsy
+call:
+  management_guards:
+    calls:
+      - {function: update_metadata_field, updated_kv: {tags: null, metadata: {tags: [old]}}, field_name: tags}
+      - {function: update_metadata_field, updated_kv: {tags: false}, field_name: tags}
+      - {function: update_metadata_field, updated_kv: {tags: []}, field_name: tags}
+      - {function: update_metadata_field, updated_kv: {tags: {}}, field_name: tags}
+      - {function: update_metadata_field, updated_kv: {tags: 0}, field_name: tags}
+      - {function: update_metadata_field, updated_kv: {tags: ""}, field_name: tags}
+env: {}
+compare: {ignore: []}
