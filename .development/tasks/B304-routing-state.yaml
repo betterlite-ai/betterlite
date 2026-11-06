@@ -25,21 +25,14 @@ description: 'Implement RouterCounters and batched delta synchronization over B3
   (L45-L59), increment_deployment_failures_for_current_minute (L62-L75), get_deployment_successes_for_current_minute
   (L78-L94), get_deployment_failures_for_current_minute (L97-L113). Implement these behaviors through
   the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
-  instead of separate ports.'
+  instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B308, B314, B316, B317, B319, B326, B371 and B389 use its counters through their own modules, and B019 installs the shared counters and their shutdown in the server.'
 scope:
   paths:
   - crates/betterlite-router/src/routing_state.rs
   - crates/betterlite-router/src/routing_state/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/routing_state.rs
   - crates/betterlite-server/src/routing/routing_state/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/routing_state.rs
   - tools/oracle/src/router_probes/routing_state/**
   - tools/oracle/litellm/probes/routing_state.py

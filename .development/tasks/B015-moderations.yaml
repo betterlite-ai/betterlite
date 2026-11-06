@@ -21,6 +21,7 @@ description: >-
   and leave dispatch.rs and operation.rs as they are. Write the behavior rstest functions moderations_moderation_tests_behavior
   in adjacent tests.rs files, with a named case for each behavior and failure in the DoD; corpus replay tests have
   separate names. Budget 270 endpoint/types, 270 tests, 90 fuzz/replay and 100 dispatch/config wiring (730 total).
+  B1100 registers routes/moderations.rs as a stub, so fill crates/betterlite-server/src/routes/moderations.rs and leave routes.rs as it is.
 scope:
   paths:
   - Cargo.toml
@@ -36,7 +37,6 @@ scope:
   - crates/betterlite-openai/fuzz/corpus/moderation_request/**
   - crates/betterlite-openai/fuzz/corpus/moderation_response/**
   - crates/betterlite-server/src/server.rs
-  - crates/betterlite-server/src/routes.rs
   - crates/betterlite-server/src/routes/moderations.rs
   - crates/betterlite-server/src/routes/moderations/**
   - crates/betterlite-config/src/sections/moderation_model.rs

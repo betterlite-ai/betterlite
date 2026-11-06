@@ -35,13 +35,15 @@ description: >-
   with a snapshot of the proxy's running configuration and general_settings.
 
   Review as security-sensitive and test the route through the booted server.
+  B1100 registers routes/debug_report.rs as a stub, so fill only crates/betterlite-server/src/routes/debug_report.rs and leave routes.rs as it is.
 scope:
   paths:
     - crates/betterlite-reporting/src/safe_proxy_config.rs
     - crates/betterlite-reporting/src/safe_proxy_config/**
     - crates/betterlite-server/src/debug_routes.rs
     - crates/betterlite-server/src/debug_routes/**
-    - crates/betterlite-server/src/routes.rs
+    - crates/betterlite-server/src/routes/debug_report.rs
+    - crates/betterlite-server/src/routes/debug_report/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/debug/report/**

@@ -37,15 +37,14 @@ description: >-
   full bodies/errors for the real MIT server and betterlite. Shared query/config parsers remain with
   B003/B002. Allow 150 production, 270 table-driven tests, 90 wiring and 60 config lines, 570 within
   a 625-line gate; source docstring examples are not production implementation lines.
+  B1100 registers routes/model_management.rs as a stub, so fill only crates/betterlite-server/src/routes/model_management.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/model_management.rs
     - crates/betterlite-server/src/model_management/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/model_management.rs
+    - crates/betterlite-server/src/routes/model_management/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - crates/betterlite-config/Cargo.toml

@@ -7,8 +7,7 @@ description: >-
   /v1/responses/{response_id} and /openai/v1/responses/{response_id}; DELETE at those same three paths; GET
   /responses/{response_id}/input_items, /v1/responses/{response_id}/input_items and
   /openai/v1/responses/{response_id}/input_items; and POST /responses/{response_id}/cancel,
-  /v1/responses/{response_id}/cancel and /openai/v1/responses/{response_id}/cancel. B080 mounts this route factory
-  once, so this task must not register any of those paths a second time.
+  /v1/responses/{response_id}/cancel and /openai/v1/responses/{response_id}/cancel. Mount this route factory once, from its own route stub; B080 does not mount it again.
 
   A path response_id beginning with the literal "litellm_poll_" selects polling for get_response, delete_response or
   cancel_response; get_response_input_items never selects polling, even when its path id begins with that prefix. A
@@ -46,6 +45,7 @@ description: >-
   master key, B856 ordinary-key rows and B1139's isolated Redis/Postgres setup. Do not add a helper adapter for these
   FastAPI handlers. The owned source slice is 348 nonblank, non-comment physical Python lines; budget 330
   implementation, 190 native tests, 210 scenario fixtures and 40 wiring lines, 770 total.
+  B1100 registers routes/responses_read.rs as a stub, so fill only crates/betterlite-server/src/routes/responses_read.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
   - crates/betterlite-server/Cargo.toml
@@ -53,10 +53,8 @@ scope:
   - crates/betterlite-server/src/api/responses_read_routes/**
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/routes/responses_read.rs
+  - crates/betterlite-server/src/routes/responses_read/**
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/responses_read_routes.rs
   - crates/betterlite-core/src/api/responses_read_routes/**
@@ -230,7 +228,7 @@ deviations:
     to permission_error, so betterlite gives both addressed-id classes the same client-visible denial type.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/openai_error_payload.py#L16-L22
 out_of_scope:
-- 'B080 owns responses_api and its POST aliases in endpoints.py L194-L458; this task composes B080''s route factory without registering POST /responses again.'
+- 'B080 owns responses_api and its POST aliases in endpoints.py L194-L458; this task does not register POST /responses again.'
 - 'B940 owns _convert_tool_payload_value L77-L86, _convert_tool_envelope L89-L105, _normalize_tool_dialect L108-L120, _is_chat_completions_body L123-L127, _parse_cursor_model_variant L140-L145, _router_can_serve L148-L155, _resolve_cursor_model_variant L158-L179, _resolve_cursor_model_variant_before_auth L182-L191, cursor_model_list L471-L485 and cursor_chat_completions L496-L674.'
 - 'B939 owns compact_response L988-L1052, _proxy_token_counter L1081-L1084, _responses_invalid_request_response L1090-L1099, _missing_responses_param_response L1102-L1107, _responses_input_as_token_count_messages L1110-L1125 and responses_input_tokens L1143-L1198.'
 - 'B941 owns _read_ws_model_from_first_frame L1316-L1384, _extract_model_from_first_ws_event L1387-L1396, _routing_hints_from_first_ws_frame L1407-L1419, _responses_ws_failure_frame L1422-L1428, _enforce_responses_ws_first_frame_model_auth L1431-L1471 and responses_websocket_endpoint L1476-L1620.'
