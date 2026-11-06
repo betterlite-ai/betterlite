@@ -12,7 +12,7 @@ use crate::panw_prisma_airs::audit::Direction;
 use crate::prisma_airs::request_data::{ProxyServerRequest, ResponsesInput};
 use crate::prisma_airs::support::{
     Run, build_guardrail, execute, inputs, logging, messages, prompt_json, request_data,
-    responses_input, settings, texts,
+    response_json, responses_input, settings, texts,
 };
 
 const ALLOW: &str = r#"{"action":"allow","category":"benign","scan_id":"scan-1"}"#;
@@ -287,5 +287,5 @@ async fn a_response_scan_ignores_the_text_selection() {
     let outcome = execute(run, given, request_data(), None).await;
     outcome.result.as_ref().expect("allowed");
     assert_eq!(outcome.bodies.len(), 3);
-    assert!(outcome.bodies[2].contains(&prompt_json("assistant")));
+    assert!(outcome.bodies[2].contains(&response_json("assistant")));
 }
