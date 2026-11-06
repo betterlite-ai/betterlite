@@ -3,7 +3,7 @@ title: Refresh Copilot API keys and discover the authenticated endpoint
 description: >-
   Implement copilot::api_key in betterlite-openai for get_api_key, get_api_base and _refresh_api_key
   in the shared Authenticator. Consume B1512's paths, access-token service, GitHub headers and endpoint
-  setting. A cached expires_at strictly greater than now returns its token field without checking
+  setting; the paths and endpoints arrive as config.sections.copilot_device. A cached expires_at strictly greater than now returns its token field without checking
   truthiness; equality expires. Missing files, malformed JSON and expired records warn and refresh.
   Endpoint discovery independently reads endpoints.api and returns None with a warning on the caught
   file/JSON/key errors; it must never start login or refresh.
