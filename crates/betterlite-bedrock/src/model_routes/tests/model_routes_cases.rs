@@ -4,7 +4,6 @@ use std::fmt::Debug;
 
 use indexmap::{IndexMap, IndexSet};
 use rstest::rstest;
-use secrecy::ExposeSecret as _;
 
 use crate::model_routes::catalog::{
     RESPONSE_FORMAT_FLAG, TOOLS_REASONING_FLAG, chat_completions_is_default, openai_gpt_version,
@@ -15,8 +14,7 @@ use crate::model_routes::request::{
 };
 use crate::model_routes::{
     BedrockRoute, CONVERSE_ONLY_REQUEST_KEYS, ModelRouteSelector, ParamMap, ParamValue, RouteError,
-    get_claude_platform_model, map_claude_platform_auth, model_environment,
-    without_bedrock_route_prefix,
+    get_claude_platform_model, map_claude_platform_auth, without_bedrock_route_prefix,
 };
 
 #[rstest]
@@ -652,40 +650,33 @@ fn route_helpers_and_workspace_keys() {
 }
 
 fn model_info_passthrough() {
-    let environment = model_environment(
-        Some("https://base.example".to_owned()),
-        Some("sk-fixture".to_owned()),
-        IndexMap::from([(
-            "X-Amz-Target".to_owned(),
-            "BedrockRuntime.Converse".to_owned(),
-        )]),
-    );
-    assert_eq!(
-        environment.api_base.as_deref(),
-        Some("https://base.example")
-    );
-    assert_eq!(
-        environment
-            .api_key
-            .as_ref()
-            .map(|key| key.expose_secret().to_owned()),
-        Some("sk-fixture".to_owned())
-    );
-    assert_eq!(
-        environment.headers.get("X-Amz-Target").map(String::as_str),
-        Some("BedrockRuntime.Converse")
-    );
-    assert!(environment.models.is_empty());
-
-    let empty = model_environment(Some(String::new()), Some(String::new()), IndexMap::new());
-    assert_eq!(empty.api_base.as_deref(), Some(""));
-    assert_eq!(
-        empty.api_key.map(|key| key.expose_secret().to_owned()),
-        Some(String::new())
-    );
-    let absent = model_environment(None, None, IndexMap::new());
-    assert!(absent.api_base.is_none());
-    assert!(absent.api_key.is_none());
+    let price_map = ParamMap::new();
+    let converse = IndexSet::new();
+    let route = selector(&price_map, &converse, false);
+    let bare = ParamMap::new();
+    let supplied = params(&[
+        ("api_base", text("https://base.example")),
+        ("api_key", text("sk-fixture")),
+        ("api_base_empty", text("")),
+        (
+            "extra_headers",
+            mapping(&[("X-Amz-Target", text("BedrockRuntime.Converse"))]),
+        ),
+    ]);
+    let original = supplied.clone();
+    for model in [
+        "converse/x",
+        "invoke/x",
+        "anthropic.claude-3",
+        "unknown-model",
+    ] {
+        assert_eq!(
+            route.route_for_request(model, &supplied, None).unwrap(),
+            route.route_for_request(model, &bare, None).unwrap(),
+            "{model}"
+        );
+    }
+    assert_eq!(supplied, original);
 }
 
 fn reverse_tool_name_lookup() {
