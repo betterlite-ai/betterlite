@@ -106,15 +106,14 @@ description: >-
   HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
   exercise real virtual-key lookup and permission policy. This route is not assigned a management effects
   decorator unless its owned source function has one.
+  B1100 registers routes/model_patch.rs as a stub, so fill only crates/betterlite-server/src/routes/model_patch.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/model_patch.rs
     - crates/betterlite-server/src/model_patch/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/model_patch.rs
+    - crates/betterlite-server/src/routes/model_patch/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/model-patch/**

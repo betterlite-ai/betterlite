@@ -19,9 +19,10 @@ description: >-
   Add `_coerce_message(detail: &dyn Any) -> String` that stringifies error objects by attempting JSON serialization,
   extracting "error" or "message" keys from mappings, and falling back to Display when JSON fails.
 
-  Use betterlite-server state to access the optional router for alias resolution. Never depend on agent feature assembly or
+  Take the optional router for alias resolution as an injected dependency. Never depend on agent feature assembly or
   the v3 rate limiter policy; inject the agent registry and router as dependencies. The ProxyRateLimitError Prometheus
   exception_class_name stays "HTTPException" to preserve existing dashboard labels.
+  This task adds no server state, so leave state.rs to B1100.
 
 scope:
   paths:
@@ -31,7 +32,6 @@ scope:
     - crates/betterlite-auth/src/provider_resolution/**
     - crates/betterlite-error/src/rate_limit.rs
     - crates/betterlite-error/src/rate_limit/**
-    - crates/betterlite-server/src/state.rs
     - tools/oracle/cases/rate-limit/**
     - tools/oracle/helpers/b3017.py
     - tools/oracle/helpers/b3017/**

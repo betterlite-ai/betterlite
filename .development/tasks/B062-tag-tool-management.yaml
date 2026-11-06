@@ -16,18 +16,17 @@ description: >-
   committed policy write remains HTTP 500. Reuse B722/B724/B725 and B732 auth records, and
   the raw-token hashing primitive already owned by key authentication. Decode bounded policy
   bodies and override queries with decode_tool_policy(&[u8]) and fuzz tool_policy_request.
-  Compose the B1603/B1604 tag routers and B1607 tool reports once; extend its suffix dispatcher
+  The B1603/B1604 tag routers and B1607 tool reports mount from their own route stubs, so do not mount them here; extend the B1607 suffix dispatcher in tool_reports.rs
   for /overrides rather than mounting a second catch-all. B860 HTTP cases compare success and
   error status/type/param/code, content-type, and slash decoding. Named Rust tests
   attach_race_cleans_orphan, delete_allocates_permission, refresh_failure_keeps_write and
   composed_paths_are_unique inspect real rows and router construction. Ownership is 222 source
   lines; budget 260 handlers, 220 tests, 100 parser/fuzz and 70 composition, within 675 lines.
+  B1100 registers routes/tool_policy.rs as a stub, so fill only crates/betterlite-server/src/routes/tool_policy.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/tool_policy.rs
+    - crates/betterlite-server/src/routes/tool_policy/**
     - crates/betterlite-server/src/tool_reports.rs
     - crates/betterlite-server/src/tool_policy_routes.rs
     - crates/betterlite-server/src/tool_policy_routes/**

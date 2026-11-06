@@ -111,6 +111,7 @@ description: >-
   and failure_stops_downstream. The registration test invokes the actual B732 constructor with this production
   stage; the failure test asserts its public error translation and that the downstream handler was not
   called. These tests are part of the behavior-test allowance already budgeted above.
+  B1100 registers state/request_body_safety.rs as a stub slot, so fill only crates/betterlite-server/src/state/request_body_safety.rs and leave state.rs as it is.
 scope:
   paths:
     - crates/betterlite-auth/src/request_body_safety.rs
@@ -125,8 +126,8 @@ scope:
     - tools/oracle/fuzz/corpus/helper_case/request-body-safety-*
     - crates/betterlite-server/src/auth.rs
     - crates/betterlite-server/src/auth/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/state/request_body_safety.rs
+    - crates/betterlite-server/src/state/request_body_safety/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/request-body-safety/**

@@ -20,21 +20,14 @@ description: 'Implement a pure typed retry decision module over B011 errors, mod
   (L69-L70). Implement these behaviors through the typed Rust services above; synchronous facades and
   structural accessors reuse the same primitive instead of separate ports. Bound the retry_after outside-byte
   parser to 8192 bytes before decoding; on excess use its typed invalid-input outcome (classifier/observation
-  consumers keep their pinned warning/fallback path).'
+  consumers keep their pinned warning/fallback path).
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B017 wires this service in.'
 scope:
   paths:
   - crates/betterlite-router/src/retry_policy.rs
   - crates/betterlite-router/src/retry_policy/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/retry_policy.rs
   - crates/betterlite-server/src/routing/retry_policy/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/retry_policy.rs
   - tools/oracle/src/router_probes/retry_policy/**
   - tools/oracle/litellm/probes/retry_policy.py

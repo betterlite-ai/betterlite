@@ -23,8 +23,7 @@ description: >-
 
 
   Register exactly these routes in this task: GET /{provider}/v1/batches/{batch_id:path}; GET /v1/batches/{batch_id:path};
-  GET /batches/{batch_id:path}. batch_id is a trailing path capture, so it may contain slashes. B086 mounts this
-  retrieval factory; it must not register these GET handlers again when composing cancellation and listing.
+  GET /batches/{batch_id:path}. batch_id is a trailing path capture, so it may contain slashes. Mount this retrieval factory once, from its own route stub; B086 does not mount it, and no other batch task registers these GET handlers again.
 
 
   Start data with batch_id from the path; never initialize a file_id from an unrelated body projection.
@@ -86,6 +85,7 @@ description: >-
 
   Errors before common_processing_pre_call_logic may have no call id; request_litellm_call_id returns None in that
   case and B2400 adds no x-litellm-call-id header. Later failures retain the id established by common processing.
+  B1100 registers routes/batch_read.rs as a stub, so fill only crates/betterlite-server/src/routes/batch_read.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
   - crates/betterlite-server/Cargo.toml
@@ -93,10 +93,8 @@ scope:
   - crates/betterlite-server/src/api/batch_read_routes/**
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/routes/batch_read.rs
+  - crates/betterlite-server/src/routes/batch_read/**
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/batch_read_routes.rs
   - crates/betterlite-core/src/api/batch_read_routes/**
