@@ -10,7 +10,13 @@ const IGNORED_PREFIXES: [&str; 4] = [":", "event:", "id:", "retry:"];
 #[must_use]
 pub fn parse_sse_line(line: &str) -> Option<Message> {
     let stripped = line.trim();
-    if ignored_sse_line(stripped) {
+    if stripped.is_empty() {
+        return None;
+    }
+    let ignored = IGNORED_PREFIXES
+        .iter()
+        .any(|prefix| stripped.starts_with(prefix));
+    if ignored {
         return None;
     }
     let data = stripped.strip_prefix("data:").map_or(stripped, str::trim);
@@ -23,15 +29,6 @@ pub fn parse_sse_line(line: &str) -> Option<Message> {
         return code_and_message_error(&parsed);
     }
     Some(parsed)
-}
-
-fn ignored_sse_line(stripped: &str) -> bool {
-    if stripped.is_empty() {
-        return true;
-    }
-    IGNORED_PREFIXES
-        .iter()
-        .any(|prefix| stripped.starts_with(prefix))
 }
 
 #[must_use]
