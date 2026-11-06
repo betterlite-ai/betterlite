@@ -3,9 +3,10 @@ use std::time::Duration;
 
 use betterlite_config::tls::TlsPolicy;
 use betterlite_http::proxy::base_builder;
+use betterlite_http::proxy::limits::read_bounded;
 use betterlite_http::tls::apply_policy;
+use reqwest::Client;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
-use reqwest::{Client, Response};
 use secrecy::ExposeSecret as _;
 use serde::Serialize;
 
@@ -134,7 +135,7 @@ impl IbmDetectorClient {
         P: Serialize + Sync,
     {
         let encoded = serde_json::to_vec(payload).map_err(IbmClientError::Encode)?;
-        let response = self
+        let mut response = self
             .http
             .post(url)
             .headers(self.request_headers(detector_id)?)
@@ -144,23 +145,12 @@ impl IbmDetectorClient {
             .await
             .map_err(IbmClientError::Request)?;
         let status = response.status();
-        let body = read_bounded(response).await?;
+        let body = read_bounded(&mut response, MAX_RESPONSE_BYTES)
+            .await
+            .map_err(IbmClientError::Read)?;
         if !status.is_success() {
             return Err(IbmClientError::Status { status });
         }
         Ok(body)
     }
-}
-
-async fn read_bounded(mut response: Response) -> Result<Vec<u8>, IbmClientError> {
-    let mut body = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(IbmClientError::Read)? {
-        if body.len().saturating_add(chunk.len()) > MAX_RESPONSE_BYTES {
-            return Err(IbmClientError::TooLarge {
-                limit: MAX_RESPONSE_BYTES,
-            });
-        }
-        body.extend_from_slice(&chunk);
-    }
-    Ok(body)
 }

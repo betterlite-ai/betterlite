@@ -1,3 +1,4 @@
+use betterlite_http::proxy::limits::ReadError;
 use betterlite_http::tls::TlsError;
 use reqwest::StatusCode;
 use reqwest::header::{InvalidHeaderName, InvalidHeaderValue};
@@ -28,9 +29,7 @@ pub enum IbmClientError {
     #[error("the IBM detector answered with HTTP status {status}")]
     Status { status: StatusCode },
     #[error("the IBM detector response could not be read")]
-    Read(#[source] reqwest::Error),
-    #[error("the IBM detector response is larger than {limit} bytes")]
-    TooLarge { limit: usize },
+    Read(#[source] ReadError),
     #[error("the IBM detector response was not the expected shape")]
     ResponseJson(#[source] serde_json::Error),
 }
