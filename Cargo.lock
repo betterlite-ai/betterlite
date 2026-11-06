@@ -1061,8 +1061,19 @@ dependencies = [
  "betterlite-error",
  "indexmap 2.14.2",
  "rstest",
+ "secrecy",
  "serde",
  "serde_json",
+ "serde_path_to_error",
+ "thiserror",
+]
+
+[[package]]
+name = "betterlite-azure-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-azure",
+ "libfuzzer-sys",
 ]
 
 [[package]]
@@ -1523,6 +1534,7 @@ dependencies = [
  "h2",
  "hex",
  "http 1.5.0",
+ "libc",
  "opentelemetry-http",
  "percent-encoding",
  "rcgen",
@@ -1543,6 +1555,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "url",
  "uuid",
  "webpki-roots",
  "zip",
@@ -2165,6 +2178,7 @@ dependencies = [
  "betterlite-env",
  "http 1.5.0",
  "num-traits",
+ "percent-encoding",
  "regex",
  "rstest",
  "secrecy",

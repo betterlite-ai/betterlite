@@ -1,0 +1,30 @@
+kind: helper
+name: cyberark-policy-failure-write-proceeds
+env: {}
+compare: {ignore: []}
+call:
+  b4418:
+    env: {CYBERARK_API_KEY: key-1}
+    routes:
+      - route: "POST http://127.0.0.1:8080/authn/default/admin/authenticate"
+        replies: [{status: 200, body: '{"protected":"abc"}'}]
+      - route: "POST http://127.0.0.1:8080/policies/default/policy/root"
+        replies: [{status: 404, body: ""}, {status: 422, body: ""}, {failure: true}, {status: 500, body: ""}, {status: 201, body: ""}]
+      - route: "POST http://127.0.0.1:8080/secrets/default/variable/a"
+        replies: [{status: 201, body: ""}]
+      - route: "POST http://127.0.0.1:8080/secrets/default/variable/b"
+        replies: [{status: 201, body: ""}]
+      - route: "POST http://127.0.0.1:8080/secrets/default/variable/c"
+        replies: [{status: 201, body: ""}]
+      - route: "POST http://127.0.0.1:8080/secrets/default/variable/d"
+        replies: [{status: 400, body: ""}]
+      - route: "POST http://127.0.0.1:8080/secrets/default/variable/e"
+        replies: [{status: 201, body: ""}]
+    steps:
+      - {op: write, name: a, value: one}
+      - {op: write, name: b, value: two}
+      - {op: write, name: c, value: three}
+      - {op: write, name: d, value: four}
+      - {op: write, name: e, value: five}
+      - {op: read, name: a}
+      - {op: read, name: d}

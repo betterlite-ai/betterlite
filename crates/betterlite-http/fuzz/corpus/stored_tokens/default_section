@@ -1,0 +1,6 @@
+[DEFAULT]
+d = 1
+[a]
+k = v
+d = 2
+[b]
