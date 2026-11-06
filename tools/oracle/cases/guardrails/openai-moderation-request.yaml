@@ -1,0 +1,27 @@
+kind: helper
+name: openai-moderation-request
+call:
+  b3731:
+    apply:
+      settings: {api_key: test-key, api_base: "https://moderation.test/v1"}
+      inputs:
+        texts: [ignored when messages exist]
+        structured_messages:
+          - {role: user, content: first question}
+          - {role: assistant, content: an answer}
+          - {role: user, content: "What is the weather in Tokyo?"}
+          - {role: user, content: "And in Osaka?"}
+      request_data: {metadata: {user_api_key_alias: alias}}
+      answer:
+        status: 200
+        headers: {}
+        body:
+          id: modr-1
+          model: omni-moderation-latest
+          results:
+            - flagged: false
+              categories: {violence: false, hate: false}
+              category_scores: {violence: 0.01, hate: 0.002}
+              category_applied_input_types: {violence: [text], hate: [text]}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,12 @@
+kind: helper
+name: multiple_month_reset_error
+call:
+  duration:
+    calls:
+      - {function: reset, duration: "2mo", now: "2024-01-15T00:00:00Z"}
+      - {function: reset, duration: "12mo", now: "2024-01-15T00:00:00Z"}
+      - {function: reset, duration: "0mo", now: "2024-01-15T00:00:00Z"}
+      - {function: reset, duration: "2mo", now: "2024-01-15T00:00:00Z", timezone: "America/New_York", reset_time_of_day: "06:00:00"}
+      - {function: reset, duration: "10000mo", now: "2024-01-15T00:00:00Z"}
+env: {}
+compare: {ignore: []}

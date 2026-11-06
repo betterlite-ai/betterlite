@@ -1,0 +1,8 @@
+kind: helper
+name: openai-moderation-init-missing-key
+call:
+  b3731:
+    construct:
+      settings: {api_base: "https://moderation.test/v1"}
+env: {}
+compare: {ignore: []}

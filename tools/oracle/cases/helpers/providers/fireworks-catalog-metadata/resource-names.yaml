@@ -1,0 +1,45 @@
+kind: helper
+name: fireworks-catalog-metadata-resource-names
+call:
+  fireworks_catalog_metadata:
+    steps:
+      - {op: resolve_resource, model: "routers/glm-latest"}
+      - {op: resolve_resource, model: "routers/firerouter"}
+      - {op: resolve_resource, model: "fireworks_ai/routers/glm-latest"}
+      - {op: resolve_resource, model: "models/glm-4p6"}
+      - {op: resolve_resource, model: "fireworks_ai/models/glm-4p6"}
+      - {op: resolve_resource, model: "glm-4p6"}
+      - {op: resolve_resource, model: "fireworks_ai/glm-4p6"}
+      - {op: resolve_resource, model: "fireworks_ai/fireworks_ai/glm-4p6"}
+      - {op: resolve_resource, model: "kimi-k2p6-fast"}
+      - {op: resolve_resource, model: "firerouter"}
+      - {op: resolve_resource, model: "fireworks_ai/firerouter"}
+      - {op: resolve_resource, model: "firerouter/kimi-k3/deepseek-v4"}
+      - {op: resolve_resource, model: "firerouter-v2"}
+      - {op: resolve_resource, model: "auto"}
+      - {op: resolve_resource, model: "fireworks_ai/auto"}
+      - {op: resolve_resource, model: "auto-instant"}
+      - {op: resolve_resource, model: "fireworks_ai/auto-instant"}
+      - {op: resolve_resource, model: "firerouter/auto"}
+      - {op: resolve_resource, model: "autoglm-9b"}
+      - {op: resolve_resource, model: "auto-v2"}
+      - {op: resolve_resource, model: "accounts/fireworks/routers/glm-latest"}
+      - {op: resolve_resource, model: "accounts/fireworks/models/glm-4p6"}
+      - {op: resolve_resource, model: "fireworks_ai/accounts/fireworks/routers/glm-latest"}
+      - {op: resolve_resource, model: "accounts/fireworks/models/qwen2p5-coder-7b#accounts/gitlab/deployments/2fb7764c"}
+      - {op: resolve_resource, model: "glm-4p6#accounts/gitlab/deployments/2fb7764c"}
+      - {op: resolve_resource, model: "FW-Kimi-K3"}
+      - {op: resolve_resource, model: "fireworks_ai/FW-Kimi-K3"}
+      - {op: resolve_resource, model: "FW-GLM-5.2-Fast"}
+      - {op: resolve_resource, model: ""}
+      - {op: resolve_resource, model: "fireworks_ai/"}
+      - {op: resolve_resource, model: "routers/"}
+      - {op: cost_key, model: "deepseek-r1"}
+      - {op: cost_key, model: "glm-5p3-fast"}
+      - {op: cost_key, model: "auto"}
+      - {op: cost_key, model: "accounts/fireworks/models/deepseek-r1"}
+      - {op: cost_key, model: "fireworks_ai/kimi-k2p6-fast"}
+      - {op: cost_key, model: "FW-Kimi-K3"}
+      - {op: cost_key, model: "glm-4p6#accounts/gitlab/deployments/2fb7764c"}
+env: {}
+compare: {ignore: []}
