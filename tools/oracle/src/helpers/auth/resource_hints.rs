@@ -70,8 +70,10 @@ struct DeploymentInput {
 struct DebugCounter(Arc<AtomicUsize>);
 
 impl<S: Subscriber> Layer<S> for DebugCounter {
-    fn on_event(&self, _event: &tracing::Event<'_>, _: Context<'_, S>) {
-        self.0.fetch_add(1, Ordering::Relaxed);
+    fn on_event(&self, event: &tracing::Event<'_>, _: Context<'_, S>) {
+        if event.metadata().level() == &tracing::Level::DEBUG {
+            self.0.fetch_add(1, Ordering::Relaxed);
+        }
     }
 }
 
