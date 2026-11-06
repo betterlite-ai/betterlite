@@ -143,6 +143,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "vector_file_contracts"
+path = "fuzz_targets/vector_file_contracts.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "xai_models"
 path = "fuzz_targets/xai_models.rs"
 test = false
