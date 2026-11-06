@@ -8,7 +8,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prompt_management_base.py#L228-L233
   - what: The sync completion flow and compile_prompt are async Rust functions that await the backend's async compile helper. LiteLLM's sync hook calls a blocking _compile_prompt_helper.
     why: Every betterlite prompt transport (GitLab, BitBucket, generic prompt API) fetches over async HTTP, so there is no blocking helper to call. The sync flow keeps LiteLLM's distinguishing behavior, the None short-circuit and the False ignore-flag defaults, and returns the same values.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_prompt_manager.py#L548-L560
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prompt_management_base.py#L91-L98
   - what: compile_prompt and async_compile_prompt wrap a backend helper failure in PromptOrchestrationError with a message naming the prompt id. LiteLLM's base only wraps the message concatenation and lets a helper exception propagate unchanged.
     why: In Rust the compiled result is the fallible value at the join point, so a helper failure is what the orchestration catches there; the error text is betterlite's own and keeps the backend error as its source.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prompt_management_base.py#L95-L104
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prompt_management_base.py#L100-L105
