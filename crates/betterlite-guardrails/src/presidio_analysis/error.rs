@@ -1,3 +1,5 @@
+use std::string::FromUtf8Error;
+
 use thiserror::Error;
 use tokio::runtime::TryCurrentError;
 use tokio::sync::AcquireError;
@@ -21,6 +23,11 @@ pub enum PresidioAnalysisError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("Presidio PII analysis failed: analyzer response text is not UTF-8")]
+    ResponseEncoding {
+        #[source]
+        source: FromUtf8Error,
+    },
     #[error("Presidio PII analysis failed: no async runtime")]
     NoRuntime {
         #[source]
@@ -41,6 +48,7 @@ impl PresidioAnalysisError {
             Self::Request { .. }
             | Self::ResponseTooLarge { .. }
             | Self::ResponseJson { .. }
+            | Self::ResponseEncoding { .. }
             | Self::NoRuntime { .. }
             | Self::SemaphoreClosed { .. } => 500,
         }

@@ -55,6 +55,8 @@ mod merge_chunks;
 mod merge_sort;
 #[path = "presidio_analysis/tests/response_cap.rs"]
 mod response_cap;
+#[path = "presidio_analysis/tests/response_text.rs"]
+mod response_text;
 #[path = "presidio_analysis/tests/shared.rs"]
 mod shared;
 #[path = "presidio_analysis/tests/text_split.rs"]

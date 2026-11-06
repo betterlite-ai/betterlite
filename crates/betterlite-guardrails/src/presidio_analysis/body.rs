@@ -1,3 +1,5 @@
+use std::str;
+
 use super::error::PresidioAnalysisError;
 
 pub(super) async fn read_capped_body(
@@ -42,12 +44,14 @@ pub(super) async fn read_text_prefix(
         };
         body.extend_from_slice(&chunk);
     }
-    let mut text = String::new();
-    for part in body.utf8_chunks() {
-        text.push_str(part.valid());
-        if !part.invalid().is_empty() {
-            text.push(char::REPLACEMENT_CHARACTER);
-        }
+    // A capped prefix can end inside a character; drop that incomplete tail instead of refusing the sample.
+    let incomplete_tail = str::from_utf8(&body)
+        .err()
+        .filter(|error| error.error_len().is_none());
+    if let Some(error) = incomplete_tail {
+        body.truncate(error.valid_up_to());
     }
+    let text = String::from_utf8(body)
+        .map_err(|source| PresidioAnalysisError::ResponseEncoding { source })?;
     Ok(text.chars().take(max_chars).collect())
 }
