@@ -1,0 +1,5 @@
+kind: helper
+name: openai-threads-list-messages-no-query
+call: {openai_threads: {get_messages: {options: {api_key: sk-test, api_base: 'https://example.test/v1'}, thread_id: thread_1, aget_messages: true, reply: {status: 200, body: '{"object":"list","data":[{"id":"msg_1","object":"thread.message","created_at":7,"thread_id":"thread_1","role":"assistant","content":[{"type":"text","text":{"value":"hi","annotations":[]}}],"status":"completed"},{"id":"msg_2","object":"thread.message","created_at":8,"thread_id":"thread_1","role":"user","content":[{"type":"text","text":{"value":"bye","annotations":[]}}],"status":"in_progress"}],"first_id":"msg_1","last_id":"msg_2","has_more":false}'}}}}
+env: {}
+compare: {ignore: []}
