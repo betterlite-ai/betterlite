@@ -1,0 +1,23 @@
+task: B3864
+deviations:
+  - what: The initializer raises one combined message, "api_key and api_base are required for Arize Phoenix prompt integration", for a missing key or base.
+    why: The task text fixes this message; the client constructor in LiteLLM raises separate "api_key is required" and "api_base is required" messages that the initializer never reaches.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/__init__.py#L20-L25
+  - what: An empty api_key, api_base or prompt_id counts as missing, and an empty explicit api_key falls back to PHOENIX_API_KEY.
+    why: docs/compatibility.md reads an empty env string as unset; Python gets the same result through truthiness.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/__init__.py#L20
+  - what: Templates render on minijinja instead of CPython's Jinja2, so a filter or Python string method that only Jinja2 provides is undefined; the delimiters, the autoescaped entities and the sandboxed attribute access match.
+    why: betterlite's other prompt integrations render with minijinja, whose value model never exposes host objects to a template, so the sandbox holds without CPython.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix_prompt_manager.py#L104-L117
+  - what: Templates render with minijinja under a fuel limit of 1,000,000 steps, and a template that runs past it fails the compilation.
+    why: LiteLLM's sandbox has no step cap, so a template with an endless loop hangs the request; the cap keeps a workspace-authored prompt from stalling the gateway.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix_prompt_manager.py#L107
+  - what: The Phoenix request waits up to 600 seconds, but the connect timeout is the pooled client's own limit (10 seconds by default) instead of LiteLLM's 5 seconds.
+    why: OutboundRequest carries one deadline per request and the connect timeout is set once when the shared ProxiedClient is built, so this client cannot set a connect timeout per request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L164-L167
+  - what: Redirect responses from Phoenix are not followed and fail with the "Redirect response" status text.
+    why: The pooled outbound client never follows redirects, so a bearer token cannot be replayed to another host.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix_client.py#L56-L72
+  - what: A response whose fields have the wrong type (parameters that are not an object, temperature that is not a number, max_tokens that is not an integer, content that is not a list of parts) fails with a typed error that names the field.
+    why: docs/compatibility.md makes a wrong-typed value an error that names the field instead of Python's duck-typed behavior.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/arize/arize_phoenix_prompt_manager.py#L137-L174

@@ -1,0 +1,16 @@
+kind: helper
+name: runway-tasks-deadline-equality
+call:
+  runway_tasks:
+    operation: poll
+    params:
+      kind: image
+      task_id: task-1
+      api_base: 'https://runway.test'
+      timeout_seconds: 1
+      step_millis: 1000
+      replies:
+        - {status: 200, body: '{"status": "RUNNING"}'}
+        - {status: 200, body: '{"status": "RUNNING"}'}
+env: {}
+compare: {ignore: []}

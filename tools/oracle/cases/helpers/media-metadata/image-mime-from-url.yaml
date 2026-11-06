@@ -1,0 +1,9 @@
+kind: helper
+name: media-metadata-image-mime-from-url
+call:
+  media_metadata:
+    operation: image_mime_type_from_url
+    url: https://x.com/a.png;v=1
+env: {}
+compare:
+  ignore: []
