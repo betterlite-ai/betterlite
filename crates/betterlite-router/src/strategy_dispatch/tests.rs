@@ -591,3 +591,241 @@ fn strategy_dispatch_boundaries() {
     duplicate_groups_are_refused();
     init_clears_override_cache();
 }
+
+#[rstest]
+#[case::simple_shuffle(RoutingStrategy::SimpleShuffle, "simple-shuffle")]
+#[case::lar1(RoutingStrategy::Lar1, "lar1")]
+#[case::least_busy(RoutingStrategy::LeastBusy, "least-busy")]
+#[case::latency(RoutingStrategy::LatencyBasedRouting, "latency-based-routing")]
+#[case::cost(RoutingStrategy::CostBasedRouting, "cost-based-routing")]
+#[case::usage_v2(RoutingStrategy::UsageBasedRoutingV2, "usage-based-routing-v2")]
+#[case::usage(RoutingStrategy::UsageBasedRouting, "usage-based-routing")]
+#[case::provider_budget(RoutingStrategy::ProviderBudgetRouting, "provider-budget-routing")]
+fn wire_names_round_trip(#[case] strategy: RoutingStrategy, #[case] name: &str) {
+    assert_eq!(strategy.wire_name(), name);
+    assert_eq!(RoutingStrategy::parse(name).unwrap(), strategy);
+}
+
+#[test]
+fn fixed_strategies_ignore_arguments() {
+    let usage = Some(SelectorArgs::Usage(UsageArgs { ttl_seconds: 5 }));
+    assert_eq!(
+        SelectorArgs::for_strategy(RoutingStrategy::SimpleShuffle, usage).unwrap(),
+        SelectorArgs::Fixed
+    );
+    assert_eq!(
+        SelectorArgs::for_strategy(RoutingStrategy::Lar1, usage).unwrap(),
+        SelectorArgs::Fixed
+    );
+    assert_eq!(
+        SelectorArgs::for_strategy(RoutingStrategy::LeastBusy, usage).unwrap(),
+        SelectorArgs::Fixed
+    );
+    assert_eq!(
+        SelectorArgs::for_strategy(RoutingStrategy::CostBasedRouting, usage).unwrap(),
+        SelectorArgs::Fixed
+    );
+    assert_eq!(
+        SelectorArgs::for_strategy(RoutingStrategy::ProviderBudgetRouting, usage).unwrap(),
+        SelectorArgs::Fixed
+    );
+    assert_eq!(
+        SelectorArgs::defaults_for(RoutingStrategy::SimpleShuffle),
+        SelectorArgs::Fixed
+    );
+    assert_eq!(
+        SelectorArgs::defaults_for(RoutingStrategy::LeastBusy),
+        SelectorArgs::Fixed
+    );
+    assert_eq!(
+        SelectorArgs::defaults_for(RoutingStrategy::CostBasedRouting),
+        SelectorArgs::Fixed
+    );
+    assert_eq!(SelectorArgs::Fixed.kind_name(), "no routing arguments");
+}
+
+#[test]
+fn usage_arguments_default_and_validate() {
+    assert_eq!(
+        SelectorArgs::for_strategy(RoutingStrategy::UsageBasedRouting, None).unwrap(),
+        SelectorArgs::Usage(UsageArgs { ttl_seconds: 60 })
+    );
+    assert_eq!(
+        SelectorArgs::for_strategy(
+            RoutingStrategy::UsageBasedRoutingV2,
+            Some(SelectorArgs::Usage(UsageArgs { ttl_seconds: 5 }))
+        )
+        .unwrap(),
+        SelectorArgs::Usage(UsageArgs { ttl_seconds: 5 })
+    );
+    assert!(matches!(
+        SelectorArgs::for_strategy(
+            RoutingStrategy::UsageBasedRoutingV2,
+            Some(SelectorArgs::Latency(LatencyArgs::default()))
+        ),
+        Err(StrategyDispatchError::ArgsMismatch { .. })
+    ));
+    assert_eq!(
+        SelectorArgs::defaults_for(RoutingStrategy::UsageBasedRoutingV2),
+        SelectorArgs::Usage(UsageArgs { ttl_seconds: 60 })
+    );
+    assert_eq!(
+        SelectorArgs::Usage(UsageArgs { ttl_seconds: 5 }).kind_name(),
+        "usage-based arguments"
+    );
+}
+
+#[test]
+fn latency_arguments_default_and_validate() {
+    let defaults = SelectorArgs::Latency(LatencyArgs {
+        ttl_seconds: 3600.0,
+        lowest_latency_buffer: 0.0,
+        max_latency_list_size: 10,
+        ttft_percentile: None,
+    });
+    assert_eq!(
+        SelectorArgs::for_strategy(RoutingStrategy::LatencyBasedRouting, None).unwrap(),
+        defaults
+    );
+    let custom = SelectorArgs::Latency(LatencyArgs {
+        ttl_seconds: 12.5,
+        lowest_latency_buffer: 0.25,
+        max_latency_list_size: 4,
+        ttft_percentile: Some(0.5_f64),
+    });
+    assert_eq!(
+        SelectorArgs::for_strategy(RoutingStrategy::LatencyBasedRouting, Some(custom)).unwrap(),
+        custom
+    );
+    assert_eq!(
+        SelectorArgs::defaults_for(RoutingStrategy::LatencyBasedRouting),
+        defaults
+    );
+    assert_eq!(defaults.kind_name(), "latency-based arguments");
+    assert!(matches!(
+        SelectorArgs::for_strategy(
+            RoutingStrategy::LatencyBasedRouting,
+            Some(SelectorArgs::Usage(UsageArgs { ttl_seconds: 5 }))
+        ),
+        Err(StrategyDispatchError::ArgsMismatch { .. })
+    ));
+}
+
+#[test]
+fn argument_mismatches_name_the_fields() {
+    let custom = SelectorArgs::Latency(LatencyArgs {
+        ttl_seconds: 12.5,
+        lowest_latency_buffer: 0.25,
+        max_latency_list_size: 4,
+        ttft_percentile: Some(0.5_f64),
+    });
+    let mismatch =
+        SelectorArgs::for_strategy(RoutingStrategy::UsageBasedRoutingV2, Some(custom)).unwrap_err();
+    let StrategyDispatchError::ArgsMismatch {
+        expected, supplied, ..
+    } = mismatch
+    else {
+        panic!("latency arguments do not fit usage-based routing");
+    };
+    assert_eq!(expected, "usage-based arguments");
+    assert_eq!(supplied, "latency-based arguments");
+}
+
+#[test]
+fn least_busy_delegates_its_selector() {
+    let candidates = [Candidate {
+        weight: 0,
+        rpm: 0,
+        tpm: 0,
+    }];
+    let mut random = StdRng::seed_from_u64(SEED);
+    let mut dispatch = new_dispatch(RoutingStrategy::LeastBusy);
+    let default_selector = dispatch.state().selector.unwrap().id;
+    let outcome = select(
+        &mut dispatch,
+        &mut request_for("gpt"),
+        &RoutingGroups::default(),
+        &candidates,
+        &mut random,
+    )
+    .unwrap();
+    assert_eq!(
+        outcome.selection,
+        Selection::Selector {
+            selector: default_selector,
+            call: SelectorCall::LeastBusy,
+        }
+    );
+}
+
+#[test]
+fn usage_v2_delegates_and_lar1_has_no_selector() {
+    let candidates = [Candidate {
+        weight: 0,
+        rpm: 0,
+        tpm: 0,
+    }];
+    let mut random = StdRng::seed_from_u64(SEED);
+    let mut usage = new_dispatch(RoutingStrategy::UsageBasedRoutingV2);
+    let usage_selector = usage.state().selector.unwrap().id;
+    let usage_outcome = select(
+        &mut usage,
+        &mut request_for("gpt"),
+        &RoutingGroups::default(),
+        &candidates,
+        &mut random,
+    )
+    .unwrap();
+    assert_eq!(
+        usage_outcome.selection,
+        Selection::Selector {
+            selector: usage_selector,
+            call: SelectorCall::UsageBasedV2,
+        }
+    );
+    let mut lar1 = new_dispatch(RoutingStrategy::Lar1);
+    let lar1_outcome = select(
+        &mut lar1,
+        &mut request_for("gpt"),
+        &RoutingGroups::default(),
+        &candidates,
+        &mut random,
+    )
+    .unwrap();
+    assert_eq!(lar1_outcome.selection, Selection::NoSelector);
+}
+
+#[test]
+fn binding_edges_refuse_missing_inputs() {
+    let dispatch = new_dispatch(RoutingStrategy::UsageBasedRoutingV2);
+    assert!(!bind_override_selector(
+        &dispatch,
+        RoutingStrategy::LeastBusy,
+        None,
+        &RoutingGroups::default(),
+        None
+    ));
+    assert!(!bind_override_selector(
+        &dispatch,
+        RoutingStrategy::LeastBusy,
+        Some(SelectorId(0)),
+        &RoutingGroups::default(),
+        None
+    ));
+}
+
+#[test]
+fn registry_edges_refuse_unknown_ids() {
+    let mut dispatch = new_dispatch(RoutingStrategy::LeastBusy);
+    assert!(matches!(
+        dispatch.register_selector(SelectorId(7)),
+        Err(StrategyDispatchError::UnknownSelector { .. })
+    ));
+    assert!(matches!(
+        dispatch.unregister(&[SelectorId(1)]),
+        Err(StrategyDispatchError::UnknownSelector { .. })
+    ));
+    let id = dispatch.state().selector.unwrap().id;
+    let state = dispatch.unregister(&[id]).unwrap();
+    assert!(state.callbacks.is_empty());
+}
