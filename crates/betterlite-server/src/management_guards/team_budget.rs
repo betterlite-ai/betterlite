@@ -9,6 +9,14 @@ use crate::management_guards::amounts::{Amount, describe_amount};
 use crate::management_guards::duration::validate_budget_duration;
 use crate::management_guards::error::ManagementGuardError;
 
+// str.strip()'s whitespace set also covers U+001C-U+001F; Rust's is_whitespace() does not
+const fn is_strip_whitespace(character: char) -> bool {
+    match character {
+        '\u{1c}'..='\u{1f}' => true,
+        _ => character.is_whitespace(),
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ModelBudgetConfig<'duration> {
     pub max_budget: Option<Amount>,
@@ -27,7 +35,7 @@ pub fn validate_team_model_max_budget(
         return Ok(());
     };
     for (model, config) in configs {
-        if model.trim().is_empty() {
+        if model.trim_matches(is_strip_whitespace).is_empty() {
             return Err(ManagementGuardError::EmptyModelName);
         }
         let accepted =

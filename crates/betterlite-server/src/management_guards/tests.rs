@@ -527,6 +527,14 @@ fn native_no_license_metadata() {
     vec![(" gpt-4 ", config(None, None))],
     "model_max_budget[' gpt-4 '].max_budget must be a non-negative finite number. Received: null"
 )]
+#[case::separator_only_name(
+    vec![("\u{1c}", config(Some(Amount::Finite(Decimal::ONE)), Some("1d")))],
+    "model_max_budget keys must be non-empty model names"
+)]
+#[case::separator_prefixed_name(
+    vec![("\u{1c}gpt-4", config(None, Some("1d")))],
+    "model_max_budget['\u{1c}gpt-4'].max_budget must be a non-negative finite number. Received: null"
+)]
 fn team_model_max_budget_order(#[case] entries: Vec<NamedConfig>, #[case] message: &str) {
     let map = budget_map(&entries);
     let error =
