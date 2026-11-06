@@ -13,24 +13,25 @@ use super::{
 use crate::galileo::admission::{CallbackKwargs, async_log_success_event};
 use crate::galileo_payloads::content::ResponseObj;
 
+const WIRE_KWARGS: &str = r#"{
+    "standard_logging_object": {
+        "call_type": "acompletion",
+        "model": "gpt-5.2",
+        "prompt_tokens": 3,
+        "completion_tokens": 4,
+        "total_tokens": 7,
+        "response_cost": 0.001,
+        "startTime": 1779710400.0,
+        "endTime": 1779710401.5
+    },
+    "call_type": "acompletion",
+    "model": "gpt-4o",
+    "messages": [{"role": "user", "content": "hi"}]
+}"#;
+
 #[test]
 fn callback_kwargs_decode_from_the_wire_shape() {
-    let wire = serde_json::json!({
-        "standard_logging_object": {
-            "call_type": "acompletion",
-            "model": "gpt-5.2",
-            "prompt_tokens": 3,
-            "completion_tokens": 4,
-            "total_tokens": 7,
-            "response_cost": 0.001,
-            "startTime": 1779710400.0,
-            "endTime": 1779710401.5
-        },
-        "call_type": "acompletion",
-        "model": "gpt-4o",
-        "messages": [{"role": "user", "content": "hi"}]
-    });
-
+    let wire = serde_json::from_str(WIRE_KWARGS).expect("the callback wire shape is JSON");
     let kwargs: CallbackKwargs = serde_json::from_value(wire).expect("the callback kwargs decode");
     let slo = kwargs
         .standard_logging_object
