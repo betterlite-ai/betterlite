@@ -1,0 +1,14 @@
+task: B3805
+deviations:
+  - what: validate_environment raises a load error naming the missing variable when PRESIDIO_ANALYZER_API_BASE or PRESIDIO_ANONYMIZER_API_BASE is unset; it never falls back to a default Presidio host.
+    why: LiteLLM also raises for both missing values, so a setup that leaves either unset fails at startup here too, before any request is masked.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L282-L302
+  - what: The anonymizer response body is read with a 64 MiB cap and fails with ResponseTooLarge above it.
+    why: aiohttp reads the whole body into memory with no limit, so a misbehaving anonymizer can exhaust the gateway. No working setup gets an anonymized response that large.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L768-L772
+  - what: A detection without an entity_type in numbered-token mode fails the request with MissingEntityType instead of building a token from Python's None text.
+    why: LiteLLM formats None into "<None_1>" and counts it under a None dict key, which is Python str text rather than a declared entity type; docs/compatibility.md keeps repr text out of betterlite. Configured PII protection still fails closed, so no PII reaches the provider.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/presidio.py#L800-L837
+  - what: The presidio record appended to metadata.standard_logging_guardrail_information carries the provider, response, status, timings and masked_entity_count. It does not carry guardrail_mode, and it does not run the logging-object sync and otel span that CustomGuardrail.add_standard_logging_guardrail_information_to_request_data performs.
+    why: guardrail_mode and that bookkeeping live on the CustomGuardrail base class, which belongs to B104; the presidio hook records what it knows into the same metadata list so the later base-class task can extend it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1272-L1308

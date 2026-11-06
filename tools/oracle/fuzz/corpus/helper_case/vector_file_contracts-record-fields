@@ -1,0 +1,6 @@
+kind: helper
+name: vector-file-record-fields
+call:
+  vector_file_contracts: {operation: attachment_record_fields, records: [{kind: file_object, value: {usage_bytes: null, status: failed}}, {kind: chunking_strategy, value: {type: static, static: null}}]}
+env: {}
+compare: {ignore: []}
