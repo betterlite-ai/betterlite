@@ -23,7 +23,7 @@ struct Capped {
 
 type Joined<'scope, T> = ScopedJoinHandle<'scope, io::Result<T>>;
 
-// the child is always killed and waited before this returns, whether it finished, hit the stop or failed
+// helpers/python.rs run_bounded cannot cancel its child, drops stderr and caps stdout at 1 MiB; this task keeps the helper drivers unchanged, so run kills and waits on every path
 pub(crate) fn run(
     command: &mut Command,
     input: &[u8],
