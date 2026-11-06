@@ -488,6 +488,14 @@ fn native_no_license_metadata() {
     let mut updated_kv =
         BTreeMap::from([("guardrails".to_owned(), JsonData::Array(vec![value("g")]))]);
     assert_eq!(update_metadata_field(&mut updated_kv, "guardrails"), Ok(()));
+    let denial =
+        check_guardrail_opt_out(&principal(Some("u1"), &[]), Some(true), None, None, "team");
+    assert_eq!(
+        denial,
+        Err(ManagementGuardError::GuardrailsDisabled {
+            entity: "team".to_owned()
+        })
+    );
 }
 
 #[rstest]
