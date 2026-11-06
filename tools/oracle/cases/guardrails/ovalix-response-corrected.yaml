@@ -14,10 +14,12 @@ call:
       request_data:
         metadata:
           user_api_key_user_email: user@example.com
-      texts: ["the model answer"]
+      texts: ["first", "second", "current"]
       today: "2026-03-04"
       timeout_ms: 500
       answers:
         - {status: 200, headers: {}, body: {action_type: "none", modified_data: {content: "the corrected answer"}}}
+        - {status: 200, headers: {}, body: {action_type: "none", modified_data: "not a dict"}}
+        - {status: 200, headers: {}, body: {action_type: "none", modified_data: ["injected"]}}
 env: {}
 compare: {ignore: []}

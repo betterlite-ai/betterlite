@@ -61,7 +61,10 @@ pub struct Params {
     pub application_id: Option<String>,
     pub pre_checkpoint_id: Option<String>,
     pub post_checkpoint_id: Option<String>,
+    // LiteLLM's supported_event_hooks constructor kwarg, which only the explicit constructor caller sets
     pub event_hooks: Vec<CallHook>,
+    // litellm_params.mode, stored beside the supported hooks the way CustomGuardrail keeps event_hook
+    pub mode: Vec<CallHook>,
     pub default_on: bool,
     pub timeout: Option<Duration>,
 }
@@ -72,6 +75,7 @@ pub struct OvalixGuardrail<C> {
     pub guardrail_name: String,
     pub default_on: bool,
     pub event_hooks: Vec<CallHook>,
+    pub mode: Vec<CallHook>,
     pub timeout: Duration,
     pub client: reqwest::Client,
     pub clock: C,
@@ -99,6 +103,7 @@ where
         guardrail_name: params.guardrail_name.unwrap_or_default(),
         default_on: params.default_on,
         event_hooks: resolved.event_hooks,
+        mode: params.mode,
         timeout: params.timeout.unwrap_or(DEFAULT_TIMEOUT),
         client,
         clock,

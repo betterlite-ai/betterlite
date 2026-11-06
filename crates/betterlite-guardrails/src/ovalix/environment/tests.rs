@@ -19,6 +19,7 @@ fn params() -> Params {
         pre_checkpoint_id: None,
         post_checkpoint_id: None,
         event_hooks: Vec::new(),
+        mode: Vec::new(),
         default_on: false,
         timeout: None,
     }
@@ -123,6 +124,20 @@ fn every_missing_setting_is_named() {
             "application_id (OVALIX_APPLICATION_ID)",
             "pre_checkpoint_id or post_checkpoint_id",
         ]
+    );
+}
+
+#[test]
+fn base_key_and_application_id_without_a_checkpoint_id_are_missing() {
+    let env = environment(&[
+        (TRACKER_API_BASE_ENV, "http://tracker.test"),
+        (TRACKER_API_KEY_ENV, "oracle-key"),
+        (APPLICATION_ID_ENV, "app-1"),
+    ]);
+    let error = resolve(&params(), &env, &[]).expect_err("missing");
+    assert_eq!(
+        error.missing,
+        vec!["pre_checkpoint_id or post_checkpoint_id"]
     );
 }
 

@@ -137,10 +137,7 @@ impl<C: Clock> OvalixGuardrail<C> {
         text: &str,
         is_first_response: bool,
     ) -> Result<String, OvalixError> {
-        let corrected_content = response
-            .modified_data
-            .as_ref()
-            .and_then(|data| data.content.as_deref());
+        let corrected_content = response.corrected_content();
         let blocked = response
             .action_type
             .as_deref()

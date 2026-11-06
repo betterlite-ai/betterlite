@@ -3,6 +3,8 @@ use reqwest::header::InvalidHeaderValue;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::primitives::json_value::JsonValue;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum DataType {
     #[serde(rename = "TEXT")]
@@ -24,17 +26,25 @@ pub struct CheckpointRequest {
     pub data: CheckpointData,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
-#[serde(default)]
-pub struct ModifiedData {
-    pub content: Option<String>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Deserialize)]
 #[serde(default)]
 pub struct CheckpointResponse {
     pub action_type: Option<String>,
-    pub modified_data: Option<ModifiedData>,
+    pub modified_data: Option<JsonValue>,
+}
+
+impl CheckpointResponse {
+    // LiteLLM reads modified_data only when it is a dict, and only a string content is a correction
+    #[must_use]
+    pub fn corrected_content(&self) -> Option<&str> {
+        let JsonValue::Object(fields) = self.modified_data.as_ref()? else {
+            return None;
+        };
+        match fields.get("content") {
+            Some(JsonValue::String(text)) => Some(text),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Error)]

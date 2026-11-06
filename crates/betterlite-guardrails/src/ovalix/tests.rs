@@ -8,16 +8,18 @@ use std::time::Duration;
 
 use axum::Router;
 use axum::body::Bytes;
-use axum::http::StatusCode;
+use axum::http::{HeaderMap, StatusCode};
 use axum::routing::post;
 use chrono::NaiveDate;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
+use tokio::time::sleep;
 
-use super::checkpoint::{CheckpointRequest, DataType};
+use super::checkpoint::{CheckpointError, CheckpointRequest, DataType};
 use super::environment::Settings;
 use super::error::OvalixError;
+use super::exception_status::GuardrailRaisedException;
 use super::session_identity::{Clock, RequestData};
 use super::{
     CHECKPOINT_PATH, CallHook, CallbackRegistry, InputType, Inputs, OvalixGuardrail, Params,
@@ -41,11 +43,51 @@ fn today() -> NaiveDate {
     NaiveDate::parse_from_str(TODAY, "%Y-%m-%d").expect("date")
 }
 
-type Captured = Arc<Mutex<Vec<CheckpointRequest>>>;
-type Reply = (StatusCode, String);
+#[derive(Clone)]
+struct Received {
+    request: CheckpointRequest,
+    authorization: String,
+    content_type: String,
+}
+
+type Captured = Arc<Mutex<Vec<Received>>>;
+
+struct Reply {
+    status: StatusCode,
+    body: String,
+    delay: Duration,
+}
 
 fn ok(body: String) -> Reply {
-    (StatusCode::OK, body)
+    Reply {
+        status: StatusCode::OK,
+        body,
+        delay: Duration::ZERO,
+    }
+}
+
+fn delayed(body: String, delay: Duration) -> Reply {
+    Reply {
+        status: StatusCode::OK,
+        body,
+        delay,
+    }
+}
+
+fn failed(status: StatusCode) -> Reply {
+    Reply {
+        status,
+        body: String::new(),
+        delay: Duration::ZERO,
+    }
+}
+
+fn header(headers: &HeaderMap, name: &str) -> String {
+    headers
+        .get(name)
+        .and_then(|value| value.to_str().ok())
+        .unwrap_or_default()
+        .to_owned()
 }
 
 async fn serve(replies: Vec<Reply>) -> (String, Captured, JoinSet<io::Result<()>>) {
@@ -56,14 +98,24 @@ async fn serve(replies: Vec<Reply>) -> (String, Captured, JoinSet<io::Result<()>
     let state = (Arc::clone(&requests), queue);
     let router = Router::new().route(
         CHECKPOINT_PATH,
-        post(move |body: Bytes| {
+        post(move |headers: HeaderMap, body: Bytes| {
             let (captured, pending) = state.clone();
             async move {
                 let request: CheckpointRequest =
                     serde_json::from_slice(&body).expect("checkpoint request");
-                captured.lock().expect("lock").push(request);
+                captured.lock().expect("lock").push(Received {
+                    request,
+                    authorization: header(&headers, "authorization"),
+                    content_type: header(&headers, "content-type"),
+                });
                 let next = pending.lock().expect("lock").pop_front();
-                next.unwrap_or((StatusCode::INTERNAL_SERVER_ERROR, String::new()))
+                let reply = next.unwrap_or(Reply {
+                    status: StatusCode::INTERNAL_SERVER_ERROR,
+                    body: String::new(),
+                    delay: Duration::ZERO,
+                });
+                sleep(reply.delay).await;
+                (reply.status, reply.body)
             }
         }),
     );
@@ -84,6 +136,7 @@ fn guardrail(base: &str) -> OvalixGuardrail<FixedClock> {
         guardrail_name: "ovalix-test".to_owned(),
         default_on: false,
         event_hooks: vec![CallHook::PreCall, CallHook::PostCall],
+        mode: vec![CallHook::PreCall],
         timeout: Duration::from_secs(5),
         client: reqwest::Client::default(),
         clock: FixedClock(today()),
@@ -140,9 +193,12 @@ async fn checkpoint_payload_matches_the_tracker_contract() {
         .await
         .expect("allowed");
     let captured = requests.lock().expect("lock").clone();
+    let [received] = captured.as_slice() else {
+        panic!("one checkpoint request");
+    };
     assert_eq!(
-        captured,
-        vec![CheckpointRequest {
+        received.request,
+        CheckpointRequest {
             application_id: "app-1".to_owned(),
             checkpoint_id: "pre-1".to_owned(),
             actor: EMAIL_ACTOR_HASH.to_owned(),
@@ -151,8 +207,10 @@ async fn checkpoint_payload_matches_the_tracker_contract() {
             data: super::checkpoint::CheckpointData {
                 content: "hello there".to_owned(),
             },
-        }]
+        }
     );
+    assert_eq!(received.authorization, "Bearer oracle-key");
+    assert_eq!(received.content_type, "application/json");
 }
 
 #[tokio::test]
@@ -177,7 +235,7 @@ async fn texts_are_sent_to_the_tracker_in_reverse_order() {
         .lock()
         .expect("lock")
         .iter()
-        .map(|request| request.data.content.clone())
+        .map(|received| received.request.data.content.clone())
         .collect();
     assert_eq!(contents, vec!["gamma", "beta", "alpha"]);
 }
@@ -274,6 +332,74 @@ async fn a_blocked_current_text_without_modified_data_uses_the_fallback_message(
 }
 
 #[tokio::test]
+async fn a_non_object_modified_data_counts_as_absent() {
+    let (base, _requests, _server) = serve(vec![
+        ok(ALLOWED.to_owned()),
+        ok(r#"{"action_type":"none","modified_data":"not a dict"}"#.to_owned()),
+        ok(r#"{"action_type":"none","modified_data":["injected"]}"#.to_owned()),
+    ])
+    .await;
+    let guardrail = guardrail(&base);
+    let output = guardrail
+        .apply_guardrail(
+            inputs(&["oldest", "middle", "current"]),
+            &email_request_data(),
+            InputType::Response,
+        )
+        .await
+        .expect("allowed");
+    assert_eq!(output.texts, vec!["oldest", "middle", "current"]);
+}
+
+#[tokio::test]
+async fn a_slow_tracker_becomes_a_timeout_error() {
+    let (base, _requests, _server) = serve(vec![delayed(
+        ALLOWED.to_owned(),
+        Duration::from_millis(300),
+    )])
+    .await;
+    let mut guardrail = guardrail(&base);
+    guardrail.timeout = Duration::from_millis(50);
+    let error = guardrail
+        .apply_guardrail(
+            inputs(&["prompt"]),
+            &email_request_data(),
+            InputType::Request,
+        )
+        .await
+        .expect_err("timeout");
+    assert!(matches!(
+        error,
+        OvalixError::Raised(GuardrailRaisedException {
+            source: CheckpointError::Timeout { .. },
+            ..
+        })
+    ));
+}
+
+#[tokio::test]
+async fn a_tracker_response_over_the_size_cap_is_rejected() {
+    let oversized = "x".repeat(super::MAX_RESPONSE_BYTES + 1);
+    let (base, _requests, _server) = serve(vec![ok(oversized)]).await;
+    let guardrail = guardrail(&base);
+    let error = guardrail
+        .apply_guardrail(
+            inputs(&["prompt"]),
+            &email_request_data(),
+            InputType::Request,
+        )
+        .await
+        .expect_err("oversized");
+    assert!(matches!(
+        error,
+        OvalixError::Raised(GuardrailRaisedException {
+            source: CheckpointError::ResponseTooLarge { limit },
+            ..
+        }) if limit == super::MAX_RESPONSE_BYTES
+    ));
+}
+
+#[tokio::test]
 async fn a_response_is_left_alone_without_a_post_checkpoint_id() {
     let mut guardrail = guardrail("http://127.0.0.1:9");
     guardrail.settings.post_checkpoint_id = None;
@@ -335,8 +461,7 @@ async fn other_input_fields_survive_a_checkpoint_round_trip() {
 
 #[tokio::test]
 async fn a_tracker_error_status_becomes_a_guardrail_raised_error() {
-    let (base, _requests, _server) =
-        serve(vec![(StatusCode::INTERNAL_SERVER_ERROR, String::new())]).await;
+    let (base, _requests, _server) = serve(vec![failed(StatusCode::INTERNAL_SERVER_ERROR)]).await;
     let guardrail = guardrail(&base);
     let error = guardrail
         .apply_guardrail(
@@ -421,9 +546,30 @@ fn params() -> Params {
         pre_checkpoint_id: None,
         post_checkpoint_id: None,
         event_hooks: Vec::new(),
+        mode: Vec::new(),
         default_on: true,
         timeout: None,
     }
+}
+
+#[test]
+fn the_configured_mode_stays_beside_the_supported_hooks() {
+    let mut configured = params();
+    configured.mode = vec![CallHook::PreCall];
+    let mut registry = Registry::default();
+    let guardrail = initialize_guardrail(
+        configured,
+        &environment(),
+        FixedClock(today()),
+        reqwest::Client::default(),
+        &mut registry,
+    )
+    .expect("initialized");
+    assert_eq!(guardrail.mode, vec![CallHook::PreCall]);
+    assert_eq!(
+        guardrail.event_hooks,
+        vec![CallHook::PreCall, CallHook::PostCall]
+    );
 }
 
 #[test]

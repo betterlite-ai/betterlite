@@ -86,15 +86,6 @@ impl Candidates {
 
     fn into_settings(self, requested: &[CallHook]) -> Result<Settings, OvalixConfigError> {
         let mut missing = Vec::new();
-        if requested.contains(&CallHook::PreCall) && self.pre_checkpoint_id.is_none() {
-            missing.push(PRE_CHECKPOINT_SETTING);
-        }
-        if requested.contains(&CallHook::PostCall) && self.post_checkpoint_id.is_none() {
-            missing.push(POST_CHECKPOINT_SETTING);
-        }
-        if self.pre_checkpoint_id.is_none() && self.post_checkpoint_id.is_none() {
-            missing.push(ANY_CHECKPOINT_SETTING);
-        }
         let required_values = (
             required(
                 self.tracker_api_base,
@@ -104,14 +95,27 @@ impl Candidates {
             required(self.tracker_api_key, TRACKER_API_KEY_SETTING, &mut missing),
             required(self.application_id, APPLICATION_ID_SETTING, &mut missing),
         );
+        if requested.contains(&CallHook::PreCall) && self.pre_checkpoint_id.is_none() {
+            missing.push(PRE_CHECKPOINT_SETTING);
+        }
+        if requested.contains(&CallHook::PostCall) && self.post_checkpoint_id.is_none() {
+            missing.push(POST_CHECKPOINT_SETTING);
+        }
+        if self.pre_checkpoint_id.is_none() && self.post_checkpoint_id.is_none() {
+            missing.push(ANY_CHECKPOINT_SETTING);
+        }
         match required_values {
-            (Some(tracker_api_base), Some(tracker_api_key), Some(application_id)) => Ok(Settings {
-                tracker_api_base,
-                tracker_api_key,
-                application_id,
-                pre_checkpoint_id: self.pre_checkpoint_id,
-                post_checkpoint_id: self.post_checkpoint_id,
-            }),
+            (Some(tracker_api_base), Some(tracker_api_key), Some(application_id))
+                if missing.is_empty() =>
+            {
+                Ok(Settings {
+                    tracker_api_base,
+                    tracker_api_key,
+                    application_id,
+                    pre_checkpoint_id: self.pre_checkpoint_id,
+                    post_checkpoint_id: self.post_checkpoint_id,
+                })
+            }
             _ => Err(OvalixConfigError { missing }),
         }
     }

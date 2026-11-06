@@ -7,6 +7,7 @@ from typing import Literal, TypeAlias, cast
 from unittest import mock
 
 import httpx
+from litellm.exceptions import GuardrailRaisedException
 from litellm.proxy.guardrails.guardrail_hooks.ovalix import initialize_guardrail
 from litellm.proxy.guardrails.guardrail_hooks.ovalix import ovalix as ovalix_module
 from litellm.proxy.guardrails.guardrail_hooks.ovalix.ovalix import OvalixGuardrail
@@ -50,9 +51,18 @@ def guardrail(fields: dict[str, Json]) -> OvalixGuardrail:
     )
 
 
-def response_payload(instance: OvalixGuardrail, calls: list[tuple[str, Json]], texts: Json) -> Json:
+def response_payload(
+    instance: OvalixGuardrail,
+    calls: list[tuple[str, Json]],
+    *,
+    blocked: bool,
+    status: int | None,
+    texts: Json,
+) -> Json:
     hooks = cast(list[GuardrailEventHooks], instance.supported_event_hooks)
     return {
+        "blocked": blocked,
+        "status": status,
         "tracker_api_base": cast(Json, instance._tracker_api_base),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
         "event_hooks": [hook.value for hook in hooks],
         "requests": [{"path": path, "body": body} for path, body in calls],
@@ -90,8 +100,19 @@ def ovalix_call(fields: dict[str, Json]) -> Json:
         )
 
     with mock.patch.object(ovalix_module, "datetime", frozen_clock(cast(str, fields["today"]))):
-        result = asyncio.run(call())
-    return response_payload(instance, calls, cast(Json, result.get("texts")))
+        try:
+            result = asyncio.run(call())
+        except GuardrailRaisedException as error:
+            return response_payload(
+                instance,
+                calls,
+                blocked=bool(error.blocked_content),
+                status=error.status_code,
+                texts=None,
+            )
+    return response_payload(
+        instance, calls, blocked=False, status=None, texts=cast(Json, result.get("texts"))
+    )
 
 
 def run(input_value: dict[str, Json]) -> Json:

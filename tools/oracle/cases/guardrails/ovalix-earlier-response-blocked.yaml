@@ -14,12 +14,13 @@ call:
       request_data:
         litellm_metadata:
           user_api_key_user_id: user-123
-      texts: ["oldest", "middle", "current"]
+      texts: ["oldest", "older", "middle", "current"]
       today: "2026-03-04"
       timeout_ms: 500
       answers:
-        - {status: 200, headers: {}, body: {action_type: "none", modified_data: {content: "corrected current"}}}
-        - {status: 200, headers: {}, body: {action_type: "block"}}
+        - {status: 200, headers: {}, body: {action_type: "none"}}
+        - {status: 200, headers: {}, body: {action_type: "block", modified_data: "not a dict"}}
+        - {status: 200, headers: {}, body: {action_type: "block", modified_data: ["injected"]}}
         - {status: 200, headers: {}, body: {action_type: "block", modified_data: {content: "blocked oldest"}}}
 env: {}
 compare: {ignore: []}

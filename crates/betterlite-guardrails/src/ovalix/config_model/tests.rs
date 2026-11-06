@@ -37,6 +37,43 @@ fn the_config_model_defaults_every_field_to_none() {
 }
 
 #[test]
+fn the_config_model_accepts_optional_params_as_null_or_an_object() {
+    let absent: OvalixGuardrailConfigModel = serde_json::from_str("{}").expect("model");
+    assert!(absent.optional_params.is_none());
+    let null: OvalixGuardrailConfigModel =
+        serde_json::from_str(r#"{"optional_params": null}"#).expect("model");
+    assert!(null.optional_params.is_none());
+    let provided: OvalixGuardrailConfigModel =
+        serde_json::from_str(r#"{"optional_params": {"on_flagged_action": "block"}}"#)
+            .expect("model");
+    assert!(provided.optional_params.is_some());
+}
+
+#[test]
+fn the_config_model_describes_every_field_the_way_litellm_does() {
+    assert_eq!(
+        OvalixGuardrailConfigModel::TRACKER_API_BASE_DESCRIPTION,
+        "Base URL for the Ovalix Tracker service."
+    );
+    assert_eq!(
+        OvalixGuardrailConfigModel::TRACKER_API_KEY_DESCRIPTION,
+        "API key for the Ovalix Tracker service."
+    );
+    assert_eq!(
+        OvalixGuardrailConfigModel::APPLICATION_ID_DESCRIPTION,
+        "Application ID for the Ovalix Tracker service."
+    );
+    assert_eq!(
+        OvalixGuardrailConfigModel::PRE_CHECKPOINT_ID_DESCRIPTION,
+        "Pre-checkpoint ID for the Ovalix Tracker service."
+    );
+    assert_eq!(
+        OvalixGuardrailConfigModel::POST_CHECKPOINT_ID_DESCRIPTION,
+        "Post-checkpoint ID for the Ovalix Tracker service."
+    );
+}
+
+#[test]
 fn the_config_model_rejects_an_unknown_field() {
     let result: Result<OvalixGuardrailConfigModel, _> =
         serde_json::from_str(r#"{"tracker_url": "http://tracker.test"}"#);

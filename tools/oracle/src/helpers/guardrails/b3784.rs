@@ -3,6 +3,9 @@ use std::time::Duration;
 
 use betterlite_guardrails::ovalix::environment;
 use betterlite_guardrails::ovalix::error::OvalixError;
+use betterlite_guardrails::ovalix::exception_status::{
+    GuardrailRaisedException, OvalixBlockedException,
+};
 use betterlite_guardrails::ovalix::session_identity::{Clock, RequestData};
 use betterlite_guardrails::ovalix::{CallHook, InputType, Inputs, OvalixGuardrail, Params};
 use chrono::NaiveDate;
@@ -40,7 +43,31 @@ pub(crate) struct Call {
     #[serde(default)]
     timeout_ms: Option<u64>,
     #[serde(default)]
+    mode: Mode,
+    #[serde(default)]
     answers: Vec<UpstreamAnswer>,
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(untagged)]
+enum Mode {
+    One(CallHook),
+    Many(Vec<CallHook>),
+}
+
+impl Default for Mode {
+    fn default() -> Self {
+        Self::Many(Vec::new())
+    }
+}
+
+impl Mode {
+    fn hooks(&self) -> Vec<CallHook> {
+        match self {
+            Self::One(hook) => vec![*hook],
+            Self::Many(hooks) => hooks.clone(),
+        }
+    }
 }
 
 #[derive(Default, Deserialize)]
@@ -76,10 +103,12 @@ struct RequestRecord {
 
 #[derive(Serialize)]
 struct Output {
+    blocked: bool,
+    status: Option<u16>,
     tracker_api_base: String,
     event_hooks: Vec<CallHook>,
     requests: Vec<RequestRecord>,
-    texts: Vec<String>,
+    texts: Option<Vec<String>>,
 }
 
 impl crate::helpers::Helper for Op {
@@ -112,16 +141,22 @@ fn run_call(call: &Call) -> HelperResult {
             .finish()
             .map_err(|error| failure("ValueError", None, error.to_string()))?,
     );
-    match result {
-        Ok(output) => serde_json::to_value(Output {
-            tracker_api_base: prepared.tracker_api_base,
-            event_hooks: prepared.event_hooks,
-            requests,
-            texts: output.texts,
-        })
-        .map_err(|error| failure("ValueError", None, error.to_string())),
-        Err(error) => Err(ovalix_failure(&error)),
-    }
+    let (blocked, status, texts) = match &result {
+        Ok(output) => (false, None, Some(output.texts.clone())),
+        Err(error) => {
+            let (blocked, status) = ovalix_failure(error);
+            (blocked, Some(status), None)
+        }
+    };
+    serde_json::to_value(Output {
+        blocked,
+        status,
+        tracker_api_base: prepared.tracker_api_base,
+        event_hooks: prepared.event_hooks,
+        requests,
+        texts,
+    })
+    .map_err(|error| failure("ValueError", None, error.to_string()))
 }
 
 fn prepare(call: &Call) -> Result<Prepared, Box<HelperError>> {
@@ -139,6 +174,7 @@ fn prepare(call: &Call) -> Result<Prepared, Box<HelperError>> {
         pre_checkpoint_id: call.settings.pre_checkpoint_id.clone(),
         post_checkpoint_id: call.settings.post_checkpoint_id.clone(),
         event_hooks: Vec::new(),
+        mode: call.mode.hooks(),
         default_on: false,
         timeout: None,
     };
@@ -154,6 +190,7 @@ fn prepare(call: &Call) -> Result<Prepared, Box<HelperError>> {
         guardrail_name: "ovalix".to_owned(),
         default_on: false,
         event_hooks: resolved.event_hooks.clone(),
+        mode: params.mode,
         timeout: Duration::from_millis(call.timeout_ms.unwrap_or(1000)),
         client: reqwest::Client::default(),
         clock: FixedClock(today),
@@ -172,7 +209,12 @@ fn script(call: &Call) -> Result<MockScript, Box<HelperError>> {
             deadline: Duration::from_secs(5),
             replies: vec![ScriptedReply {
                 wait: Wait::Delay { millis: 500 },
-                then: Outcome::Close,
+                then: Outcome::Answer(UpstreamAnswer {
+                    status: 200,
+                    headers: BTreeMap::new(),
+                    body: Some(serde_json::json!({"action_type": "none"})),
+                    events: None,
+                }),
             }],
             barriers: BTreeMap::new(),
         });
@@ -198,12 +240,17 @@ fn record_requests(calls: Vec<ProviderCall>) -> Vec<RequestRecord> {
         .collect()
 }
 
-fn ovalix_failure(error: &OvalixError) -> Box<HelperError> {
-    let class = match error {
-        OvalixError::Blocked(_) => "OvalixBlockedException",
-        OvalixError::Raised(_) => "GuardrailRaisedException",
-    };
-    failure(class, Some(400), error.to_string())
+const fn ovalix_failure(error: &OvalixError) -> (bool, u16) {
+    match error {
+        OvalixError::Blocked(_) => (
+            OvalixBlockedException::BLOCKED_CONTENT,
+            OvalixBlockedException::STATUS_CODE,
+        ),
+        OvalixError::Raised(_) => (
+            GuardrailRaisedException::BLOCKED_CONTENT,
+            GuardrailRaisedException::STATUS_CODE,
+        ),
+    }
 }
 
 fn failure(class: &str, status: Option<u16>, message: String) -> Box<HelperError> {
