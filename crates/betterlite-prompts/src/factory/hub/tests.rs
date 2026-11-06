@@ -116,10 +116,10 @@ fn expected_paths(model: &str, count: usize) -> Vec<String> {
     vec![Answer::Status(200, br#"{"chat_template":["first","second"]}"#)],
     Expect::NotText
 )]
-#[case::config_non_object_body(
+#[case::config_array_body(
     "org/model",
     vec![
-        Answer::Status(200, b"[]"),
+        Answer::Status(200, br#"["abc","<s>"]"#),
         Answer::Status(200, b"[{{ bos_token }}]")
     ],
     Expect::Rendered("[]")

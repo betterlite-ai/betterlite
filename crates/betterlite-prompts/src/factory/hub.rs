@@ -77,14 +77,6 @@ pub struct TokenizerDocument {
     pub eos_token: Option<TokenValue>,
 }
 
-#[derive(Deserialize)]
-#[serde(untagged)]
-enum ConfigBody {
-    Document(TokenizerDocument),
-    // LiteLLM only reads the parsed body when it is a dict, so any other JSON is a config without a template
-    Other(IgnoredAny),
-}
-
 // LiteLLM keeps whatever the config holds at chat_template and hands it to the renderer, which fails on anything but text
 #[derive(Clone, Debug, Default, Deserialize, PartialEq)]
 #[serde(untagged)]
@@ -111,11 +103,20 @@ impl HubClient {
         if response.status != 200 {
             return Ok(TokenizerConfig::Failure);
         }
-        let body: ConfigBody = serde_json::from_slice(&response.body)
-            .map_err(|source| HubError::Json { url: text, source })?;
-        let document = match body {
-            ConfigBody::Document(document) => Some(document),
-            ConfigBody::Other(_) => None,
+        // a derived struct also deserializes from a JSON array by position, but LiteLLM only reads an object body
+        let object = response
+            .body
+            .iter()
+            .find(|byte| !byte.is_ascii_whitespace())
+            .is_some_and(|byte| *byte == b'{');
+        let document = if object {
+            let document = serde_json::from_slice(&response.body)
+                .map_err(|source| HubError::Json { url: text, source })?;
+            Some(document)
+        } else {
+            serde_json::from_slice::<IgnoredAny>(&response.body)
+                .map_err(|source| HubError::Json { url: text, source })?;
+            None
         };
         Ok(TokenizerConfig::Success(document))
     }
