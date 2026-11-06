@@ -7,10 +7,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use rstest::rstest;
-use serde_json::value::RawValue;
+use serde::{Deserialize, Serialize};
 
 use super::support::{
-    FakeResolver, FakeTransport, ResolverFailure, answer, manager, resolver, transport,
+    FakeResolver, FakeTransport, ResolverFailure, answer, get_secret_request, manager, resolver,
+    transport,
 };
 use crate::aws::AwsSecretsManager;
 use crate::aws::request_signing::{
@@ -20,7 +21,25 @@ use crate::secret_contracts::options::SecretTimeout;
 
 const ENDPOINT: &str = "http://127.0.0.1:9/bedrock-runtime";
 
-fn client_for(transport: &Arc<FakeTransport>) -> AwsSecretsManager<FakeResolver> {
+#[derive(Debug, Deserialize, PartialEq, Eq)]
+struct Reply {
+    #[serde(rename = "Name")]
+    name: Option<String>,
+    #[serde(rename = "SecretString")]
+    secret_string: Option<String>,
+}
+
+#[derive(Serialize)]
+struct VersionBody {
+    #[serde(rename = "SecretId")]
+    secret_id: &'static str,
+    #[serde(rename = "VersionStage")]
+    version_stage: &'static str,
+    #[serde(rename = "SecretString")]
+    secret_string: &'static str,
+}
+
+fn client_for(transport: &Arc<FakeTransport>) -> AwsSecretsManager<FakeResolver, FakeTransport> {
     let mut client = manager(
         FakeResolver {
             endpoint: Some(ENDPOINT.to_owned()),
@@ -32,23 +51,15 @@ fn client_for(transport: &Arc<FakeTransport>) -> AwsSecretsManager<FakeResolver>
     client
 }
 
-fn get_request(data: Option<&BTreeMap<String, Box<RawValue>>>) -> ActionRequest<'_> {
-    ActionRequest {
-        action: "GetSecretValue",
-        secret_name: "my/secret",
-        request_data: data,
-    }
-}
-
 #[tokio::test]
 async fn posts_the_signed_request_and_returns_the_json_object() {
     let sending = answer(200, br#"{"Name":"my/secret","SecretString":"hunter2"}"#);
-    let response = client_for(&sending)
-        .async_post_action(&get_request(None), None, None)
+    let response: Reply = client_for(&sending)
+        .async_post_action(&get_secret_request("my/secret"), None, None)
         .await
         .unwrap();
-    assert_eq!(response.fields["SecretString"].get(), r#""hunter2""#);
-    assert_eq!(response.fields["Name"].get(), r#""my/secret""#);
+    assert_eq!(response.secret_string.as_deref(), Some("hunter2"));
+    assert_eq!(response.name.as_deref(), Some("my/secret"));
     let sent = take(&mut *sending.sent.lock().unwrap());
     let [request] = sent.as_slice() else {
         panic!("expected exactly one request, got {}", sent.len());
@@ -70,23 +81,64 @@ async fn posts_the_signed_request_and_returns_the_json_object() {
 
 #[tokio::test]
 async fn posts_request_data_as_the_body() {
-    let mut data = BTreeMap::new();
-    data.insert(
-        "SecretId".to_owned(),
-        RawValue::from_string(r#""my/secret""#.to_owned()).unwrap(),
-    );
-    data.insert(
-        "VersionStage".to_owned(),
-        RawValue::from_string(r#""AWSPREVIOUS""#.to_owned()).unwrap(),
-    );
+    let data = VersionBody {
+        secret_id: "my/secret",
+        version_stage: "AWSPREVIOUS",
+        secret_string: "hunter2",
+    };
+    let request = ActionRequest {
+        action: "GetSecretValue",
+        secret_name: "my/secret",
+        request_data: Some(&data),
+    };
     let sending = answer(200, b"{}");
-    client_for(&sending)
-        .async_post_action(&get_request(Some(&data)), None, None)
+    let _reply: Reply = client_for(&sending)
+        .async_post_action(&request, None, None)
         .await
         .unwrap();
     assert_eq!(
         sending.sent.lock().unwrap()[0].body,
-        br#"{"SecretId":"my/secret","VersionStage":"AWSPREVIOUS"}"#
+        br#"{"SecretId":"my/secret","VersionStage":"AWSPREVIOUS","SecretString":"hunter2"}"#
+    );
+}
+
+#[tokio::test]
+async fn the_debug_text_of_a_sent_request_hides_the_body() {
+    let data = VersionBody {
+        secret_id: "my/secret",
+        version_stage: "AWSPREVIOUS",
+        secret_string: "hunter2",
+    };
+    let request = ActionRequest {
+        action: "GetSecretValue",
+        secret_name: "my/secret",
+        request_data: Some(&data),
+    };
+    let sending = answer(200, b"{}");
+    let _reply: Reply = client_for(&sending)
+        .async_post_action(&request, None, None)
+        .await
+        .unwrap();
+    let transport_text = take(&mut sending.sent.lock().unwrap()[0].debug_text);
+    let request_text = format!("{request:?}");
+    assert!(!transport_text.contains("hunter2"));
+    assert!(transport_text.contains("body_bytes: 78"));
+    assert_eq!(
+        request_text,
+        r#"ActionRequest { action: "GetSecretValue", secret_name: "my/secret", has_request_data: true }"#
+    );
+}
+
+#[tokio::test]
+async fn the_signature_is_dated_by_the_injected_clock() {
+    let sending = answer(200, b"{}");
+    let _reply: Reply = client_for(&sending)
+        .async_post_action(&get_secret_request("my/secret"), None, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        sending.sent.lock().unwrap()[0].headers["x-amz-date"],
+        "20240305T123045Z"
     );
 }
 
@@ -107,7 +159,7 @@ async fn optional_params_reach_the_credential_resolver() {
     };
     let client = client_for(&answer(200, b"{}"));
     client
-        .async_post_action(&get_request(None), Some(&mut params), None)
+        .async_post_action::<_, Reply>(&get_secret_request("my/secret"), Some(&mut params), None)
         .await
         .unwrap();
     let seen = client.dependencies.resolver.seen.lock().unwrap().clone();
@@ -130,7 +182,7 @@ async fn an_error_status_becomes_a_message_with_the_response_text(
     #[case] text: &str,
 ) {
     let error = client_for(&answer(status, text.as_bytes()))
-        .async_post_action(&get_request(None), None, None)
+        .async_post_action::<_, Reply>(&get_secret_request("my/secret"), None, None)
         .await
         .unwrap_err();
     assert!(matches!(error, AwsRequestError::Http { .. }));
@@ -168,7 +220,7 @@ async fn the_timeout_option_reaches_the_transport(
 ) {
     let sending = answer(200, b"{}");
     client_for(&sending)
-        .async_post_action(&get_request(None), None, timeout)
+        .async_post_action::<_, Reply>(&get_secret_request("my/secret"), None, timeout)
         .await
         .unwrap();
     assert_eq!(sending.sent.lock().unwrap()[0].timeout, expected);
@@ -177,7 +229,7 @@ async fn the_timeout_option_reaches_the_transport(
 #[tokio::test]
 async fn a_slow_server_becomes_a_timeout_message() {
     let error = client_for(&transport(Err(TransportError::Timeout)))
-        .async_post_action(&get_request(None), None, None)
+        .async_post_action::<_, Reply>(&get_secret_request("my/secret"), None, None)
         .await
         .unwrap_err();
     assert!(matches!(error, AwsRequestError::Timeout));
@@ -191,7 +243,7 @@ async fn a_slow_server_becomes_a_timeout_message() {
 #[tokio::test]
 async fn a_success_body_that_is_not_a_json_object_is_a_response_error(#[case] body: Vec<u8>) {
     let error = client_for(&answer(200, &body))
-        .async_post_action(&get_request(None), None, None)
+        .async_post_action::<_, Reply>(&get_secret_request("my/secret"), None, None)
         .await
         .unwrap_err();
     assert!(matches!(error, AwsRequestError::Response(_)));
@@ -204,7 +256,7 @@ async fn a_response_past_the_size_limit_is_refused() {
     oversized.extend_from_slice(br#""}"#);
     let sending = answer(200, &oversized);
     let error = client_for(&sending)
-        .async_post_action(&get_request(None), None, None)
+        .async_post_action::<_, Reply>(&get_secret_request("my/secret"), None, None)
         .await
         .unwrap_err();
     assert!(matches!(
@@ -220,7 +272,7 @@ async fn a_response_past_the_size_limit_is_refused() {
 #[tokio::test]
 async fn a_transport_that_stops_reading_at_the_limit_is_a_size_error() {
     let error = client_for(&transport(Err(TransportError::ResponseTooLarge)))
-        .async_post_action(&get_request(None), None, None)
+        .async_post_action::<_, Reply>(&get_secret_request("my/secret"), None, None)
         .await
         .unwrap_err();
     assert!(matches!(
@@ -231,13 +283,15 @@ async fn a_transport_that_stops_reading_at_the_limit_is_a_size_error() {
 
 #[tokio::test]
 async fn an_unreachable_server_is_a_transport_error() {
-    let refused =
-        TransportError::Failed(Box::new(io::Error::from(io::ErrorKind::ConnectionRefused)));
+    let refused = TransportError::Failed(io::Error::from(io::ErrorKind::ConnectionRefused));
     let error = client_for(&transport(Err(refused)))
-        .async_post_action(&get_request(None), None, None)
+        .async_post_action::<_, Reply>(&get_secret_request("my/secret"), None, None)
         .await
         .unwrap_err();
-    assert!(matches!(error, AwsRequestError::Transport(_)));
+    let AwsRequestError::Transport(source) = error else {
+        panic!("expected a transport error, got {error}");
+    };
+    assert_eq!(source.kind(), io::ErrorKind::ConnectionRefused);
 }
 
 #[tokio::test]
@@ -251,7 +305,7 @@ async fn a_credential_failure_stops_before_any_request_is_sent() {
     let mut client = manager(failing, BTreeMap::new());
     client.dependencies.transport = Arc::<FakeTransport>::clone(&sending);
     let error = client
-        .async_post_action(&get_request(None), None, None)
+        .async_post_action::<_, Reply>(&get_secret_request("my/secret"), None, None)
         .await
         .unwrap_err();
     assert!(matches!(
@@ -268,19 +322,11 @@ async fn a_response_of_exactly_the_size_limit_is_accepted() {
     body.extend_from_slice(br#""}"#);
     assert_eq!(body.len(), 0x0010_0000);
     let response = client_for(&answer(200, &body))
-        .async_post_action(&get_request(None), None, None)
+        .async_post_action::<_, Reply>(&get_secret_request("my/secret"), None, None)
         .await
         .unwrap();
-    assert!(response.fields.contains_key("SecretString"));
-}
-
-#[tokio::test]
-async fn the_debug_text_of_a_response_lists_field_names_without_values() {
-    let response = client_for(&answer(200, br#"{"SecretString":"hunter2"}"#))
-        .async_post_action(&get_request(None), None, None)
-        .await
-        .unwrap();
-    let text = format!("{response:?}");
-    assert!(text.contains("SecretString"));
-    assert!(!text.contains("hunter2"));
+    assert_eq!(
+        response.secret_string.map(|value| value.len()),
+        Some(0x0010_0000 - 19)
+    );
 }

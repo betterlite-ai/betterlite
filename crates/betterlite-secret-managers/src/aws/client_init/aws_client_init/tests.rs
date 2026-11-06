@@ -3,7 +3,9 @@
 use std::collections::BTreeMap;
 use std::fmt::Debug;
 use std::future::ready;
+use std::io;
 use std::sync::{Arc, Mutex};
+use std::time::SystemTime;
 
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -47,18 +49,18 @@ enum RuntimeFailure {
 
 #[derive(Default)]
 struct Runtime {
-    client: Option<AwsSecretsManager<NoResolver>>,
+    client: Option<AwsSecretsManager<NoResolver, NoTransport>>,
     system: Option<KeyManagementSystem>,
     fail_client: bool,
     fail_system: bool,
 }
 
-impl AwsSecretManagerRuntime<NoResolver> for Runtime {
+impl AwsSecretManagerRuntime<NoResolver, NoTransport> for Runtime {
     type Error = RuntimeFailure;
 
     fn set_secret_manager_client(
         &mut self,
-        client: AwsSecretsManager<NoResolver>,
+        client: AwsSecretsManager<NoResolver, NoTransport>,
     ) -> Result<(), RuntimeFailure> {
         if self.fail_client {
             return Err(RuntimeFailure::Client);
@@ -109,10 +111,12 @@ where
 struct NoTransport;
 
 impl AwsTransport for NoTransport {
+    type Error = io::Error;
+
     fn post<'request>(
         &'request self,
         _request: TransportRequest<'request>,
-    ) -> TransportFuture<'request> {
+    ) -> TransportFuture<'request, io::Error> {
         Box::pin(ready(Err(TransportError::Timeout)))
     }
 }
@@ -124,12 +128,13 @@ fn environment(names: &[&str]) -> BTreeMap<String, String> {
         .collect()
 }
 
-fn dependencies(names: &[&str]) -> AwsDependencies<NoResolver> {
+fn dependencies(names: &[&str]) -> AwsDependencies<NoResolver, NoTransport> {
     AwsDependencies {
         environment: environment(names),
         transport: Arc::new(NoTransport),
         resolver: NoResolver,
         dns_suffix: |_region| "amazonaws.com",
+        clock: SystemTime::now,
     }
 }
 
@@ -148,8 +153,8 @@ fn full_settings() -> AwsKeyManagementSettings {
 }
 
 fn load_and_collect_warnings(
-    flag: Option<bool>,
-    settings: Option<&AwsKeyManagementSettings>,
+    flag: bool,
+    settings: &AwsKeyManagementSettings,
     environment_names: &[&str],
     runtime: &mut Runtime,
 ) -> (Result<(), RuntimeFailure>, Vec<String>) {
@@ -165,13 +170,11 @@ fn load_and_collect_warnings(
 mod aws_secrets_manager_tests_behavior {
     use super::*;
 
-    #[rstest]
-    #[case::flag_absent(None)]
-    #[case::flag_false(Some(false))]
-    fn load_registers_nothing_unless_the_flag_is_true(#[case] flag: Option<bool>) {
+    #[test]
+    fn load_registers_nothing_unless_the_flag_is_true() {
         let mut runtime = Runtime::default();
         let (outcome, warnings) =
-            load_and_collect_warnings(flag, Some(&full_settings()), &[], &mut runtime);
+            load_and_collect_warnings(false, &full_settings(), &[], &mut runtime);
         outcome.unwrap();
         assert!(runtime.client.is_none());
         assert!(runtime.system.is_none());
@@ -181,12 +184,8 @@ mod aws_secrets_manager_tests_behavior {
     #[test]
     fn load_stores_every_key_management_setting_on_the_client() {
         let mut runtime = Runtime::default();
-        let (outcome, _warnings) = load_and_collect_warnings(
-            Some(true),
-            Some(&full_settings()),
-            &["AWS_REGION_NAME"],
-            &mut runtime,
-        );
+        let (outcome, _warnings) =
+            load_and_collect_warnings(true, &full_settings(), &["AWS_REGION_NAME"], &mut runtime);
         outcome.unwrap();
         let client = runtime.client.unwrap();
         assert_eq!(client.aws_region_name.as_deref(), Some("eu-west-1"));
@@ -213,8 +212,12 @@ mod aws_secrets_manager_tests_behavior {
     #[test]
     fn load_without_settings_builds_a_client_with_empty_settings() {
         let mut runtime = Runtime::default();
-        let (outcome, _warnings) =
-            load_and_collect_warnings(Some(true), None, &["AWS_REGION"], &mut runtime);
+        let (outcome, _warnings) = load_and_collect_warnings(
+            true,
+            &AwsKeyManagementSettings::default(),
+            &["AWS_REGION"],
+            &mut runtime,
+        );
         outcome.unwrap();
         let client = runtime.client.unwrap();
         assert!(client.aws_region_name.is_none());
@@ -243,12 +246,8 @@ mod aws_secrets_manager_tests_behavior {
             kms_key_id: None,
         };
         let mut runtime = Runtime::default();
-        let (outcome, _warnings) = load_and_collect_warnings(
-            Some(true),
-            Some(&settings),
-            &["AWS_DEFAULT_REGION"],
-            &mut runtime,
-        );
+        let (outcome, _warnings) =
+            load_and_collect_warnings(true, &settings, &["AWS_DEFAULT_REGION"], &mut runtime);
         outcome.unwrap();
         let client = runtime.client.unwrap();
         assert_eq!(client.aws_region_name.as_deref(), Some(""));
@@ -259,8 +258,8 @@ mod aws_secrets_manager_tests_behavior {
     fn load_hands_the_injected_environment_to_the_client() {
         let mut runtime = Runtime::default();
         let (outcome, _warnings) = load_and_collect_warnings(
-            Some(true),
-            None,
+            true,
+            &AwsKeyManagementSettings::default(),
             &["AWS_REGION_NAME", "AWS_BEDROCK_RUNTIME_ENDPOINT"],
             &mut runtime,
         );
@@ -286,8 +285,12 @@ mod aws_secrets_manager_tests_behavior {
             fail_client,
             fail_system,
         };
-        let (outcome, _warnings) =
-            load_and_collect_warnings(Some(true), None, &["AWS_REGION"], &mut runtime);
+        let (outcome, _warnings) = load_and_collect_warnings(
+            true,
+            &AwsKeyManagementSettings::default(),
+            &["AWS_REGION"],
+            &mut runtime,
+        );
         assert_eq!(outcome.unwrap_err().to_string(), message);
     }
 
@@ -299,8 +302,12 @@ mod aws_secrets_manager_tests_behavior {
             fail_client: true,
             fail_system: false,
         };
-        let (_outcome, _warnings) =
-            load_and_collect_warnings(Some(true), None, &["AWS_REGION"], &mut runtime);
+        let (_outcome, _warnings) = load_and_collect_warnings(
+            true,
+            &AwsKeyManagementSettings::default(),
+            &["AWS_REGION"],
+            &mut runtime,
+        );
         assert!(runtime.system.is_none());
     }
 
@@ -342,8 +349,12 @@ mod aws_secrets_manager_tests_behavior {
     #[test]
     fn load_warns_about_a_missing_region_and_still_registers_the_client() {
         let mut runtime = Runtime::default();
-        let (outcome, warnings) =
-            load_and_collect_warnings(Some(true), None, &["AWS_ACCESS_KEY_ID"], &mut runtime);
+        let (outcome, warnings) = load_and_collect_warnings(
+            true,
+            &AwsKeyManagementSettings::default(),
+            &["AWS_ACCESS_KEY_ID"],
+            &mut runtime,
+        );
         outcome.unwrap();
         assert_eq!(warnings.len(), 1);
         assert!(runtime.client.is_some());
@@ -353,7 +364,12 @@ mod aws_secrets_manager_tests_behavior {
     #[test]
     fn a_disabled_loader_does_not_check_the_environment() {
         let mut runtime = Runtime::default();
-        let (outcome, warnings) = load_and_collect_warnings(Some(false), None, &[], &mut runtime);
+        let (outcome, warnings) = load_and_collect_warnings(
+            false,
+            &AwsKeyManagementSettings::default(),
+            &[],
+            &mut runtime,
+        );
         outcome.unwrap();
         assert!(warnings.is_empty());
     }

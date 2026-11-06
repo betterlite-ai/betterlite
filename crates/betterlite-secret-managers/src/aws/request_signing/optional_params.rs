@@ -19,7 +19,7 @@ fn fill_secret(slot: &mut Option<SecretString>, instance: Option<&SecretString>)
     }
 }
 
-impl<Resolver> AwsSecretsManager<Resolver> {
+impl<Resolver, Transport> AwsSecretsManager<Resolver, Transport> {
     pub(super) fn fill_missing_optional_params(&self, optional_params: &mut AwsOptionalParams) {
         fill_text(
             &mut optional_params.aws_role_name,

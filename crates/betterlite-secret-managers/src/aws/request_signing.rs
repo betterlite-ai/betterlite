@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::error::Error;
 use std::fmt;
 use std::future::Future;
@@ -12,7 +11,7 @@ use aws_sigv4::sign::v4::signing_params::BuildError;
 use http::header::{InvalidHeaderName, InvalidHeaderValue};
 use http::{HeaderMap, StatusCode};
 use secrecy::{SecretSlice, SecretString};
-use serde_json::value::RawValue;
+use serde::Serialize;
 use thiserror::Error;
 
 mod optional_params;
@@ -51,11 +50,25 @@ pub trait CredentialResolver {
     ) -> Result<AwsCredentialsInfo, Self::Error>;
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct ActionRequest<'borrowed> {
+// The type of a request that sends only the default body, so it can never be built
+#[derive(Debug, Serialize)]
+pub enum NoBody {}
+
+pub struct ActionRequest<'borrowed, Body> {
     pub action: &'borrowed str,
     pub secret_name: &'borrowed str,
-    pub request_data: Option<&'borrowed BTreeMap<String, Box<RawValue>>>,
+    pub request_data: Option<&'borrowed Body>,
+}
+
+// CreateSecret and UpdateSecret carry SecretString in request_data, so the body is never printed
+impl<Body> fmt::Debug for ActionRequest<'_, Body> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ActionRequest")
+            .field("action", &self.action)
+            .field("secret_name", &self.secret_name)
+            .field("has_request_data", &self.request_data.is_some())
+            .finish()
+    }
 }
 
 #[derive(Debug)]
@@ -65,13 +78,25 @@ pub struct PreparedRequest {
     pub body: SecretSlice<u8>,
 }
 
-#[derive(Debug)]
 pub struct TransportRequest<'borrowed> {
     pub url: &'borrowed str,
     pub headers: HeaderMap,
     pub body: &'borrowed [u8],
     pub timeout: Duration,
     pub max_response_bytes: usize,
+}
+
+// PutSecretValue carries SecretString in the body, so only its length is printed
+impl fmt::Debug for TransportRequest<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("TransportRequest")
+            .field("url", &self.url)
+            .field("header_names", &self.headers.keys().collect::<Vec<_>>())
+            .field("body_bytes", &self.body.len())
+            .field("timeout", &self.timeout)
+            .field("max_response_bytes", &self.max_response_bytes)
+            .finish()
+    }
 }
 
 #[derive(Debug)]
@@ -81,41 +106,36 @@ pub struct TransportResponse {
 }
 
 #[derive(Debug, Error)]
-pub enum TransportError {
+pub enum TransportError<Failure>
+where
+    Failure: Error + 'static,
+{
     #[error("the request timed out")]
     Timeout,
     #[error("the response is larger than the allowed size")]
     ResponseTooLarge,
     #[error("the request failed: {0}")]
-    Failed(#[source] Box<dyn Error + Send + Sync>),
+    Failed(#[source] Failure),
 }
 
-pub type TransportFuture<'request> =
-    Pin<Box<dyn Future<Output = Result<TransportResponse, TransportError>> + Send + 'request>>;
+pub type TransportFuture<'request, Failure> = Pin<
+    Box<dyn Future<Output = Result<TransportResponse, TransportError<Failure>>> + Send + 'request>,
+>;
 
-pub trait AwsTransport: fmt::Debug + Send + Sync {
+pub trait AwsTransport: Send + Sync {
+    type Error: Error + Send + Sync + 'static;
+
     fn post<'request>(
         &'request self,
         request: TransportRequest<'request>,
-    ) -> TransportFuture<'request>;
-}
-
-pub struct AwsActionResponse {
-    pub fields: BTreeMap<String, Box<RawValue>>,
-}
-
-impl fmt::Debug for AwsActionResponse {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("AwsActionResponse")
-            .field("fields", &self.fields.keys().collect::<Vec<_>>())
-            .finish()
-    }
+    ) -> TransportFuture<'request, Self::Error>;
 }
 
 #[derive(Debug, Error)]
-pub enum AwsRequestError<ResolverError>
+pub enum AwsRequestError<ResolverError, TransportFailure>
 where
     ResolverError: Error + 'static,
+    TransportFailure: Error + 'static,
 {
     #[error(transparent)]
     Credentials(ResolverError),
@@ -134,12 +154,12 @@ where
     #[error("Timeout error occurred")]
     Timeout,
     #[error("Secrets Manager request failed: {0}")]
-    Transport(#[source] Box<dyn Error + Send + Sync>),
+    Transport(#[source] TransportFailure),
     #[error("Secrets Manager response exceeds {limit} bytes")]
     ResponseTooLarge { limit: usize },
     #[error("Secrets Manager error text is not UTF-8: {0}")]
     ErrorText(#[source] FromUtf8Error),
-    #[error("Secrets Manager response is not a JSON object: {0}")]
+    #[error("Secrets Manager response does not match the expected shape: {0}")]
     Response(#[source] serde_json::Error),
 }
 

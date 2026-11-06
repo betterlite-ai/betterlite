@@ -5,12 +5,32 @@ use std::str::from_utf8;
 
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::value::RawValue;
+use serde::Serialize;
 
 use super::super::support::{
     FakeResolver, ResolverFailure, get_secret_request, manager, resolver, signing_time,
 };
 use crate::aws::request_signing::{ActionRequest, AwsRequestError, PreparedRequest};
+
+#[derive(Serialize)]
+struct Region {
+    #[serde(rename = "Region")]
+    region: &'static str,
+}
+
+#[derive(Serialize)]
+struct ReplicaBody {
+    #[serde(rename = "ReplicaRegions")]
+    replica_regions: Vec<Region>,
+    #[serde(rename = "SecretId")]
+    secret_id: &'static str,
+}
+
+#[derive(Serialize)]
+struct SkippedBody {
+    #[serde(rename = "VersionId", skip_serializing_if = "Option::is_none")]
+    version_id: Option<&'static str>,
+}
 
 const GET_SESSION_SIGNATURE: &str = "AWS4-HMAC-SHA256 Credential=AKIDEXAMPLE/20240305/us-east-1/secretsmanager/aws4_request, SignedHeaders=content-type;host;x-amz-date;x-amz-security-token;x-amz-target, Signature=886aa1516978326d78f46360655b9c89a78fd93a4a9b1911b41bd09c3df1155d";
 
@@ -142,18 +162,16 @@ fn put_secret_value_without_a_value_sends_only_the_secret_id() {
 
 #[test]
 fn non_empty_request_data_replaces_the_default_body() {
-    let mut data = BTreeMap::new();
-    data.insert(
-        "SecretId".to_owned(),
-        RawValue::from_string(r#""other""#.to_owned()).unwrap(),
-    );
-    data.insert(
-        "ReplicaRegions".to_owned(),
-        RawValue::from_string(r#"[{"Region":"us-west-2"}]"#.to_owned()).unwrap(),
-    );
+    let data = ReplicaBody {
+        replica_regions: vec![Region {
+            region: "us-west-2",
+        }],
+        secret_id: "other",
+    };
     let request = ActionRequest {
+        action: "GetSecretValue",
+        secret_name: "my/secret",
         request_data: Some(&data),
-        ..get_secret_request("my/secret")
     };
     let secret_value = SecretString::from("ignored");
     let prepared = manager(resolver("us-east-1"), BTreeMap::new())
@@ -167,10 +185,11 @@ fn non_empty_request_data_replaces_the_default_body() {
 
 #[test]
 fn empty_request_data_falls_back_to_the_default_body() {
-    let data = BTreeMap::new();
+    let data = SkippedBody { version_id: None };
     let request = ActionRequest {
+        action: "GetSecretValue",
+        secret_name: "my/secret",
         request_data: Some(&data),
-        ..get_secret_request("my/secret")
     };
     let prepared = manager(resolver("us-east-1"), BTreeMap::new())
         .prepare_request(&request, None, None, signing_time())

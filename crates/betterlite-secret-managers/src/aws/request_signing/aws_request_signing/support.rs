@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::future::ready;
+use std::io;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
@@ -9,7 +10,7 @@ use secrecy::{ExposeSecret, SecretString};
 use thiserror::Error;
 
 use crate::aws::request_signing::{
-    ActionRequest, AwsCredentialsInfo, AwsOptionalParams, AwsTransport, CredentialResolver,
+    ActionRequest, AwsCredentialsInfo, AwsOptionalParams, AwsTransport, CredentialResolver, NoBody,
     TransportError, TransportFuture, TransportRequest, TransportResponse,
 };
 use crate::aws::{AwsDependencies, AwsSecretsManager};
@@ -167,20 +168,24 @@ pub(super) struct Sent {
     pub(super) body: Vec<u8>,
     pub(super) timeout: Duration,
     pub(super) max_response_bytes: usize,
+    pub(super) debug_text: String,
 }
 
 #[derive(Debug)]
 pub(super) struct FakeTransport {
-    reply: Mutex<Option<Result<TransportResponse, TransportError>>>,
+    reply: Mutex<Option<Result<TransportResponse, TransportError<io::Error>>>>,
     pub(super) sent: Mutex<Vec<Sent>>,
 }
 
 impl AwsTransport for FakeTransport {
+    type Error = io::Error;
+
     fn post<'request>(
         &'request self,
         request: TransportRequest<'request>,
-    ) -> TransportFuture<'request> {
+    ) -> TransportFuture<'request, io::Error> {
         self.sent.lock().unwrap().push(Sent {
+            debug_text: format!("{request:?}"),
             url: request.url.to_owned(),
             headers: request.headers,
             body: request.body.to_vec(),
@@ -192,7 +197,9 @@ impl AwsTransport for FakeTransport {
     }
 }
 
-pub(super) fn transport(reply: Result<TransportResponse, TransportError>) -> Arc<FakeTransport> {
+pub(super) fn transport(
+    reply: Result<TransportResponse, TransportError<io::Error>>,
+) -> Arc<FakeTransport> {
     Arc::new(FakeTransport {
         reply: Mutex::new(Some(reply)),
         sent: Mutex::new(Vec::new()),
@@ -219,7 +226,7 @@ pub(super) fn resolver(region: &str) -> FakeResolver {
 pub(super) fn manager(
     resolver: FakeResolver,
     environment: BTreeMap<String, String>,
-) -> AwsSecretsManager<FakeResolver> {
+) -> AwsSecretsManager<FakeResolver, FakeTransport> {
     AwsSecretsManager {
         aws_region_name: None,
         aws_role_name: None,
@@ -235,6 +242,7 @@ pub(super) fn manager(
             transport: answer(200, b"{}"),
             resolver,
             dns_suffix,
+            clock: signing_time,
         },
     }
 }
@@ -242,7 +250,7 @@ pub(super) fn manager(
 pub(super) fn manager_with_instance_settings(
     resolver: FakeResolver,
     settings: &Snapshot,
-) -> AwsSecretsManager<FakeResolver> {
+) -> AwsSecretsManager<FakeResolver, FakeTransport> {
     let mut client = manager(resolver, BTreeMap::new());
     client.aws_role_name = settings.0.get("role").cloned();
     client.aws_session_name = settings.0.get("session_name").cloned();
@@ -258,7 +266,7 @@ pub(super) fn manager_with_instance_settings(
     client
 }
 
-pub(super) fn get_secret_request(name: &str) -> ActionRequest<'_> {
+pub(super) fn get_secret_request(name: &str) -> ActionRequest<'_, NoBody> {
     ActionRequest {
         action: "GetSecretValue",
         secret_name: name,

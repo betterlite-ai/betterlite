@@ -7,11 +7,12 @@ use serde::Serialize;
 use crate::aws::AwsSecretsManager;
 use crate::aws::request_signing::sigv4::signed_headers;
 use crate::aws::request_signing::{
-    ActionRequest, AwsCredentialsInfo, AwsOptionalParams, AwsRequestError, CredentialResolver,
-    PreparedRequest,
+    ActionRequest, AwsCredentialsInfo, AwsOptionalParams, AwsRequestError, AwsTransport,
+    CredentialResolver, PreparedRequest,
 };
 
 const RUNTIME_ENDPOINT_VARIABLE: &str = "AWS_BEDROCK_RUNTIME_ENDPOINT";
+const EMPTY_OBJECT: &[u8] = b"{}";
 
 #[derive(Serialize)]
 #[serde(rename_all = "PascalCase")]
@@ -21,17 +22,21 @@ struct DefaultBody<'borrowed> {
     secret_string: Option<&'borrowed str>,
 }
 
-impl<Resolver> AwsSecretsManager<Resolver>
+impl<Resolver, Transport> AwsSecretsManager<Resolver, Transport>
 where
     Resolver: CredentialResolver,
+    Transport: AwsTransport,
 {
-    pub fn prepare_request(
+    pub fn prepare_request<Body>(
         &self,
-        request: &ActionRequest<'_>,
+        request: &ActionRequest<'_, Body>,
         secret_value: Option<&SecretString>,
         optional_params: Option<&mut AwsOptionalParams>,
         now: SystemTime,
-    ) -> Result<PreparedRequest, AwsRequestError<Resolver::Error>> {
+    ) -> Result<PreparedRequest, AwsRequestError<Resolver::Error, Transport::Error>>
+    where
+        Body: Serialize,
+    {
         let mut fresh_params = AwsOptionalParams::default();
         let params = optional_params.unwrap_or(&mut fresh_params);
         self.fill_missing_optional_params(params);
@@ -72,15 +77,21 @@ where
     }
 }
 
-fn request_body<ResolverError>(
-    request: &ActionRequest<'_>,
+fn request_body<Body, ResolverError, TransportFailure>(
+    request: &ActionRequest<'_, Body>,
     secret_value: Option<&SecretString>,
-) -> Result<Vec<u8>, AwsRequestError<ResolverError>>
+) -> Result<Vec<u8>, AwsRequestError<ResolverError, TransportFailure>>
 where
+    Body: Serialize,
     ResolverError: Error + 'static,
+    TransportFailure: Error + 'static,
 {
-    if let Some(data) = request.request_data.filter(|data| !data.is_empty()) {
-        return serde_json::to_vec(data).map_err(AwsRequestError::Body);
+    if let Some(data) = request.request_data {
+        let body = serde_json::to_vec(data).map_err(AwsRequestError::Body)?;
+        // LiteLLM treats an empty request_data dict as absent
+        if body != EMPTY_OBJECT {
+            return Ok(body);
+        }
     }
     let secret_string = secret_value
         .map(ExposeSecret::expose_secret)

@@ -14,15 +14,16 @@ use crate::aws::request_signing::{AwsCredentialsInfo, AwsRequestError};
 const SERVICE_NAME: &str = "secretsmanager";
 const JSON_CONTENT_TYPE: &str = "application/x-amz-json-1.1";
 
-pub(super) fn signed_headers<ResolverError>(
+pub(super) fn signed_headers<ResolverError, TransportFailure>(
     credentials_info: &AwsCredentialsInfo,
     endpoint_url: &str,
     action: &str,
     body: &[u8],
     now: SystemTime,
-) -> Result<HeaderMap, AwsRequestError<ResolverError>>
+) -> Result<HeaderMap, AwsRequestError<ResolverError, TransportFailure>>
 where
     ResolverError: Error + 'static,
+    TransportFailure: Error + 'static,
 {
     let target = format!("{SERVICE_NAME}.{action}");
     let identity = Identity::from(credentials_info.credentials.clone());
@@ -54,12 +55,13 @@ where
     response_headers(&target, &instructions)
 }
 
-fn response_headers<ResolverError>(
+fn response_headers<ResolverError, TransportFailure>(
     target: &str,
     instructions: &SigningInstructions,
-) -> Result<HeaderMap, AwsRequestError<ResolverError>>
+) -> Result<HeaderMap, AwsRequestError<ResolverError, TransportFailure>>
 where
     ResolverError: Error + 'static,
+    TransportFailure: Error + 'static,
 {
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static(JSON_CONTENT_TYPE));

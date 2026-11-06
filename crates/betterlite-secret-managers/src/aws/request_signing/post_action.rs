@@ -1,12 +1,12 @@
-use std::collections::BTreeMap;
-use std::time::{Duration, SystemTime};
+use std::time::Duration;
 
 use secrecy::ExposeSecret as _;
-use serde_json::value::RawValue;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 
 use crate::aws::AwsSecretsManager;
 use crate::aws::request_signing::{
-    ActionRequest, AwsActionResponse, AwsOptionalParams, AwsRequestError, CredentialResolver,
+    ActionRequest, AwsOptionalParams, AwsRequestError, AwsTransport, CredentialResolver,
     TransportError, TransportRequest,
 };
 use crate::secret_contracts::options::SecretTimeout;
@@ -32,17 +32,23 @@ fn request_timeout(timeout: Option<SecretTimeout>) -> Duration {
     }
 }
 
-impl<Resolver> AwsSecretsManager<Resolver>
+impl<Resolver, Transport> AwsSecretsManager<Resolver, Transport>
 where
     Resolver: CredentialResolver + Sync,
+    Transport: AwsTransport,
 {
-    pub async fn async_post_action(
+    pub async fn async_post_action<Body, Reply>(
         &self,
-        request: &ActionRequest<'_>,
+        request: &ActionRequest<'_, Body>,
         optional_params: Option<&mut AwsOptionalParams>,
         timeout: Option<SecretTimeout>,
-    ) -> Result<AwsActionResponse, AwsRequestError<Resolver::Error>> {
-        let prepared = self.prepare_request(request, None, optional_params, SystemTime::now())?;
+    ) -> Result<Reply, AwsRequestError<Resolver::Error, Transport::Error>>
+    where
+        Body: Serialize + Sync,
+        Reply: DeserializeOwned,
+    {
+        let now = (self.dependencies.clock)();
+        let prepared = self.prepare_request(request, None, optional_params, now)?;
         let response = self
             .dependencies
             .transport
@@ -70,8 +76,6 @@ where
             let text = String::from_utf8(response.body).map_err(AwsRequestError::ErrorText)?;
             return Err(AwsRequestError::Http { text });
         }
-        let fields = serde_json::from_slice::<BTreeMap<String, Box<RawValue>>>(&response.body)
-            .map_err(AwsRequestError::Response)?;
-        Ok(AwsActionResponse { fields })
+        serde_json::from_slice(&response.body).map_err(AwsRequestError::Response)
     }
 }
