@@ -22,15 +22,11 @@ description: 'Add the typed shadow-evaluation request model and pure validation 
   (L499-L513). Implement these behaviors through the typed Rust services above; synchronous facades and
   structural accessors reuse the same primitive instead of separate ports. Bound the shadow_req outside-byte
   parser to 1048576 bytes before decoding; on excess use its typed invalid-input outcome (classifier/observation
-  consumers keep their pinned warning/fallback path).'
+  consumers keep their pinned warning/fallback path). This task adds no route or server state, so leave routes.rs and state.rs to B1100.'
 scope:
   paths:
   - crates/betterlite-server/src/shadow_eval_validation.rs
   - crates/betterlite-server/src/shadow_eval_validation/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/shadow_eval_validation.rs
   - crates/betterlite-server/src/routing/shadow_eval_validation/**
   - tools/oracle/src/router_probes/shadow_eval_validation.rs

@@ -71,15 +71,14 @@ description: >-
 
   No environment variable or config key is read in these owned ranges. Native tests exercise matching,
   pagination, exception timing and Postgres effects without a helper adapter that invokes handlers.
+  B1100 registers routes/team_member_bulk.rs as a stub, so fill only crates/betterlite-server/src/routes/team_member_bulk.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/team_member_bulk.rs
     - crates/betterlite-server/src/team_member_bulk/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/team_member_bulk.rs
+    - crates/betterlite-server/src/routes/team_member_bulk/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/team-member-bulk/**

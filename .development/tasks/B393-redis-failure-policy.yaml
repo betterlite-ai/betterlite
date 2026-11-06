@@ -22,21 +22,14 @@ description: 'Implement RedisFailurePolicy with closed/open/half-open generation
   (L513-L517), _exit_circuit_breaker (L520-L533), _run_under_circuit_breaker (L536-L554), _run_under_circuit_breaker_sync
   (L557-L571), _redis_circuit_breaker_guard (L574-L593), _redis_circuit_breaker_guard.wrapper (L588-L591),
   _redis_circuit_breaker_guard_sync (L596-L601). Implement these behaviors through the typed Rust services
-  above; synchronous facades and structural accessors reuse the same primitive instead of separate ports.'
+  above; synchronous facades and structural accessors reuse the same primitive instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B360 calls this service.'
 scope:
   paths:
   - crates/betterlite-router/src/redis_failure_policy.rs
   - crates/betterlite-router/src/redis_failure_policy/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/redis_failure_policy.rs
   - crates/betterlite-server/src/routing/redis_failure_policy/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/redis_failure_policy.rs
   - tools/oracle/src/router_probes/redis_failure_policy/**
   - tools/oracle/litellm/probes/redis_failure_policy.py

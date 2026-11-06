@@ -103,6 +103,7 @@ description: >-
   General pass_through_endpoints configuration stays rejected until B102 installs its handlers;
   B102 owns those enabled-route HTTP cases. This task pins its static virtual-route denial
   through real HTTP before downstream dispatch.
+  B1100 registers state/virtual_key_routes.rs as a stub slot, so fill only crates/betterlite-server/src/state/virtual_key_routes.rs and leave state.rs as it is.
 scope:
   paths:
     - crates/betterlite-auth/src/virtual_key_routes.rs
@@ -117,8 +118,8 @@ scope:
     - tools/oracle/fuzz/corpus/helper_case/virtual-key-routes-*
     - crates/betterlite-server/src/auth.rs
     - crates/betterlite-server/src/auth/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/state/virtual_key_routes.rs
+    - crates/betterlite-server/src/state/virtual_key_routes/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/virtual-key-routes/**

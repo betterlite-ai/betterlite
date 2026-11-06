@@ -19,21 +19,16 @@ description: 'Add typed routing_groups that materialize B302 candidates without 
   ports. Function coverage in litellm/router_utils/routing_groups.py: apply_routing_group_priority (L8-L17),
   validate_routing_strategy (L23-L35), parse_routing_groups (L38-L100). Implement these behaviors through
   the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
-  instead of separate ports.'
+  instead of separate ports.
+  B016 registers RouteStage::RoutingGroups as a stub, so replace only that stub and its not-built test in crates/betterlite-router/src/context/routing_groups.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.'
 scope:
   paths:
   - crates/betterlite-router/src/routing_groups.rs
   - crates/betterlite-router/src/routing_groups/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-router/src/context/routing_groups.rs
+  - crates/betterlite-router/src/context/routing_groups/**
   - crates/betterlite-server/src/routing/routing_groups.rs
   - crates/betterlite-server/src/routing/routing_groups/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/routing_groups.rs
   - tools/oracle/src/router_probes/routing_groups/**
   - tools/oracle/litellm/probes/routing_groups.py
