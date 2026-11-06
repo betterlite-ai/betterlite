@@ -7,7 +7,7 @@ use rstest::rstest;
 use crate::duration::error::{DurationError, DurationWarning};
 use crate::duration::reset::{Reset, next_standardized_reset_time};
 use crate::duration::seconds::{BudgetDuration, duration_in_seconds};
-use crate::duration::spec::{ResetDurationSpec, parse_reset_duration};
+use crate::duration::spec::{ResetDurationSpec, ResetUnit, parse_reset_duration};
 
 const DATABASE: fn() -> TimeZoneDatabase = TimeZoneDatabase::from_env;
 
@@ -155,21 +155,16 @@ fn duration_parser_duration_tests_behavior_trailing_input_is_reported(
     );
 }
 
-#[test]
-fn duration_parser_duration_tests_behavior_invalid_timezone_falls_back_to_utc() {
-    let result = budget("1mo", "2024-01-31T00:00:00Z", Some("Not/AZone"));
+#[rstest]
+#[case::not_a_zone("Not/AZone")]
+#[case::wrong_case("america/new_york")]
+fn duration_parser_duration_tests_behavior_invalid_timezone_falls_back_to_utc(#[case] name: &str) {
+    let result = budget("1mo", "2024-01-31T00:00:00Z", Some(name));
     assert_eq!(result.seconds, 2_505_600);
-    assert_eq!(
-        result.warnings,
-        vec![DurationWarning::InvalidTimezone {
-            name: "Not/AZone".to_owned()
-        }]
-    );
-    assert!(
-        budget("1mo", "2024-01-31T00:00:00Z", None)
-            .warnings
-            .is_empty()
-    );
+    assert!(matches!(
+        result.warnings.as_slice(),
+        [DurationWarning::InvalidTimezone { name: rejected }] if rejected == name
+    ));
 }
 
 #[rstest]
@@ -366,6 +361,20 @@ fn duration_parser_duration_tests_behavior_rejects_month_intervals_but_one(
     "01:30:00",
     "2024-11-04T06:30:00Z"
 )]
+#[case::fold_minute_handler(
+    "30m",
+    "2024-11-03T06:10:00Z",
+    Some("America/New_York"),
+    "00:00:00",
+    "2024-11-03T06:30:00Z"
+)]
+#[case::fold_second_handler(
+    "15s",
+    "2024-11-03T06:10:00Z",
+    Some("America/New_York"),
+    "00:00:00",
+    "2024-11-03T06:10:15Z"
+)]
 fn duration_parser_duration_tests_behavior_reset_instants(
     #[case] spec: &str,
     #[case] now: &str,
@@ -395,16 +404,21 @@ fn duration_parser_duration_tests_behavior_reset_fallbacks(
     assert_eq!(result.warnings, vec![warning]);
 }
 
-#[test]
-fn duration_parser_duration_tests_behavior_invalid_reset_timezone_falls_back_to_utc() {
-    let result = reset_at("1d", "2024-01-01T10:00:00Z", Some("Not/AZone"), "00:00:00");
-    assert_eq!(result.instant, moment("2024-01-02T00:00:00Z"));
+#[rstest]
+#[case::not_a_zone("Not/AZone")]
+#[case::wrong_case("america/new_york")]
+fn duration_parser_duration_tests_behavior_reset_timezone_rejected_uses_utc(#[case] name: &str) {
+    let reset = reset_at("1d", "2024-01-01T10:00:00Z", Some(name), "00:00:00");
+    let warning = reset.warnings.first().cloned();
+    assert_eq!(reset.instant, moment("2024-01-02T00:00:00Z"));
+    assert_eq!(reset.civil.to_string(), "2024-01-02T00:00:00");
     assert_eq!(
-        result.warnings,
-        vec![DurationWarning::InvalidTimezone {
-            name: "Not/AZone".to_owned()
-        }]
+        warning,
+        Some(DurationWarning::InvalidTimezone {
+            name: name.to_owned()
+        })
     );
+    assert_eq!(reset.warnings.len(), 1);
     assert!(
         reset_at("1d", "2024-01-01T10:00:00Z", None, "00:00:00")
             .warnings
@@ -426,8 +440,16 @@ fn duration_parser_duration_tests_behavior_reset_trailing_input_is_reported() {
 
 #[test]
 fn duration_parser_duration_tests_behavior_reset_parser_keeps_the_prefix() {
-    let parsed = parse_reset_duration("5m!").unwrap();
-    assert!(matches!(parsed, ResetDurationSpec::Known { .. }));
+    assert_eq!(
+        parse_reset_duration("5m!").unwrap(),
+        ResetDurationSpec::Known {
+            amount: 5,
+            unit: ResetUnit::Minute,
+            warnings: vec![DurationWarning::TrailingInput {
+                rest: "!".to_owned()
+            }],
+        }
+    );
 }
 
 #[test]

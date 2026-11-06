@@ -17,8 +17,13 @@ pub(crate) fn resolve_zone(name: Option<&str>, database: &TimeZoneDatabase) -> R
             warnings: Vec::new(),
         };
     };
-    database.get(requested).map_or_else(
-        |_| ResolvedZone {
+    // Python's ZoneInfo matches the on-disk name case-sensitively, while jiff's lookup ignores ASCII case
+    let resolved = database
+        .get(requested)
+        .ok()
+        .filter(|zone| zone.iana_name() == Some(requested));
+    resolved.map_or_else(
+        || ResolvedZone {
             zone: TimeZone::UTC,
             warnings: vec![DurationWarning::InvalidTimezone {
                 name: requested.to_owned(),
