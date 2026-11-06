@@ -1,0 +1,80 @@
+# exception swallow with print_verbose error logging and no re-raise from any analytics logger
+kind: helper
+name: http-analytics-exception-handling
+call:
+  b3961:
+    function: log
+    scenarios:
+      - logger: athina
+        environment: {ATHINA_API_KEY: athina-key-1}
+        kwargs: {model: gpt-4o, messages: [{role: user, content: Hello}], litellm_params: {metadata: {}}}
+        response:
+          id: chatcmpl-1
+          created: 1700000000
+          model: gpt-4o
+          object: chat.completion
+          system_fingerprint: null
+          choices:
+            - finish_reason: stop
+              index: 0
+              message: {content: hi, role: assistant, tool_calls: null, function_call: null}
+          usage:
+            completion_tokens: 2
+            prompt_tokens: 3
+            total_tokens: 5
+            completion_tokens_details: null
+            prompt_tokens_details: null
+        start_time: "2026-01-02T03:00:00Z"
+        end_time: "2026-01-02T03:00:01Z"
+        answers: [{raise: connection reset}]
+      - logger: greenscale
+        environment: {GREENSCALE_API_KEY: green-key}
+        kwargs: {model: gpt-4o, litellm_params: {metadata: {}}}
+        response:
+          id: chatcmpl-1
+          created: 1700000000
+          model: gpt-4o
+          object: chat.completion
+          system_fingerprint: null
+          choices:
+            - finish_reason: stop
+              index: 0
+              message: {content: hi, role: assistant, tool_calls: null, function_call: null}
+          usage:
+            completion_tokens: 2
+            prompt_tokens: 3
+            total_tokens: 5
+            completion_tokens_details: null
+            prompt_tokens_details: null
+        now: "2026-01-02T03:04:05Z"
+        start_time: "2026-01-02T03:00:00Z"
+        end_time: "2026-01-02T03:00:01Z"
+        answers: []
+      - logger: promptlayer
+        environment: {PROMPTLAYER_API_KEY: pl-key}
+        kwargs:
+          model: gpt-4o
+          messages: [{role: user, content: Hello}]
+          optional_params: {temperature: 0.2}
+          litellm_params: {metadata: {user: u1}}
+        response:
+          id: chatcmpl-1
+          created: 1700000000
+          model: gpt-4o
+          object: chat.completion
+          system_fingerprint: null
+          choices:
+            - finish_reason: stop
+              index: 0
+              message: {content: hi, role: assistant, tool_calls: null, function_call: null}
+          usage:
+            completion_tokens: 2
+            prompt_tokens: 3
+            total_tokens: 5
+            completion_tokens_details: null
+            prompt_tokens_details: null
+        start_time: "2026-01-02T03:00:00Z"
+        end_time: "2026-01-02T03:00:01Z"
+        answers: [{raise: connection reset}]
+env: {}
+compare: {ignore: []}

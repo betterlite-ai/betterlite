@@ -1,0 +1,17 @@
+kind: helper
+name: threshold-zero-violation
+call:
+  b3736:
+    filter:
+      settings:
+        auth_token: test-token
+        base_url: "https://ibm.test"
+        detector_id: jailbreak-detector
+        optional_params: {score_threshold: 0.0}
+      environment: {}
+      detections:
+        - {score: -0.5}
+        - {score: 0.0}
+        - {detection_type: toxic, score: 0.2, text: bad}
+env: {}
+compare: {ignore: []}

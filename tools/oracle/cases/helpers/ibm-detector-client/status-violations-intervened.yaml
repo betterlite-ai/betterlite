@@ -1,0 +1,15 @@
+kind: helper
+name: status-violations-intervened
+call:
+  b3736:
+    detect:
+      settings: {auth_token: test-token, detector_id: jailbreak-detector}
+      environment: {}
+      contents: [hello]
+      answer:
+        status: 200
+        headers: {}
+        body:
+          - [{detection_type: toxic, score: 0.9, text: bad}]
+env: {}
+compare: {ignore: []}

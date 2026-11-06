@@ -1,0 +1,5 @@
+kind: helper
+name: tool-definitions-and-results
+call: {openai_count_tokens: {"count": {"model": "gpt-5", "messages": [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "calling", "tool_calls": [{"id": "c1", "function": {"name": "f", "arguments": "{}"}}, {}]}, {"role": "tool", "tool_call_id": "c1", "content": "done"}], "tools": [{"type": "function", "function": {"name": "f", "strict": true}}, {"type": "function", "function": {"name": "g", "description": "d", "parameters": {"type": "object"}}}, {"type": "web_search"}], "api_key": "sk-deployment"}}}
+env: {}
+compare: {ignore: []}
