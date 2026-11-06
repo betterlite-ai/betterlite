@@ -1,0 +1,12 @@
+kind: helper
+name: runway-tasks-header-fallback
+call:
+  runway_tasks:
+    operation: headers
+    params:
+      kind: speech
+      environment: {RUNWAYML_API_SECRET: '', RUNWAYML_API_KEY: key-from-env}
+      headers: {x-trace: t-1, Authorization: Bearer old, X-Runway-Version: '1999-01-01'}
+      api_key: null
+env: {}
+compare: {ignore: []}
