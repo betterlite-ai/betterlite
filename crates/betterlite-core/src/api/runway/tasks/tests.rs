@@ -13,12 +13,13 @@ use betterlite_http::proxy::transport_error::TransportError;
 use http::header::{AUTHORIZATION, CONTENT_TYPE};
 use http::{HeaderMap, HeaderValue};
 use rstest::rstest;
-use secrecy::SecretString;
+use secrecy::{ExposeSecret as _, SecretString};
+use tokio::time::Instant;
 use url::Url;
 
 use super::TaskKind;
 use super::error::RunwayTaskError;
-use super::poll::{PollClock, TaskPoller, TaskTransport};
+use super::poll::{MonotonicClock, PollClock, TaskPoller, TaskTransport};
 use super::record::{RunwayTask, TaskOutput, TaskOutputs, decode_runway_task};
 use super::settings::RunwaySettings;
 
@@ -126,6 +127,15 @@ fn runway_task_settings() {
     assert_eq!(set.api_base, "https://other.test");
     assert_eq!(set.api_version, "2025-01-01");
     assert_eq!(set.polling_timeout_seconds, 30);
+    let secrets = settings(&[
+        ("RUNWAYML_API_SECRET", "secret-1"),
+        ("RUNWAYML_API_KEY", "key-1"),
+    ])
+    .unwrap();
+    assert_eq!(secrets.api_secret.unwrap().expose_secret(), "secret-1");
+    assert_eq!(secrets.api_key.unwrap().expose_secret(), "key-1");
+    let empty_secrets = settings(&[("RUNWAYML_API_SECRET", ""), ("RUNWAYML_API_KEY", "")]).unwrap();
+    assert!(empty_secrets.api_secret.is_none() && empty_secrets.api_key.is_none());
     let bad = settings(&[("RUNWAYML_POLLING_TIMEOUT", "soon")]).unwrap_err();
     assert!(bad.to_string().contains("RUNWAYML_POLLING_TIMEOUT"));
 }
@@ -155,6 +165,7 @@ fn header_fallback(
         .authenticate(TaskKind::Speech, &caller, credential.as_ref())
         .unwrap();
     assert_eq!(headers[AUTHORIZATION], expected);
+    assert!(headers[AUTHORIZATION].is_sensitive());
     assert_eq!(headers["x-runway-version"], "2024-11-06");
     assert_eq!(headers["x-trace"], "t-1");
     assert_eq!(headers[CONTENT_TYPE], "application/json");
@@ -324,6 +335,49 @@ async fn task_id_is_one_path_segment() {
         .unwrap();
     let urls = transport.urls.lock().unwrap();
     assert_eq!(urls[0], "https://runway.test/v1/tasks/a%2Fb%20c%3Fd");
+}
+
+#[rstest]
+#[case::empty("", "task_id is required")]
+#[case::dot(".", "task_id cannot be a dot path segment")]
+#[case::dot_dot("..", "task_id cannot be a dot path segment")]
+#[tokio::test]
+async fn rejects_an_unusable_task_id(#[case] task_id: &str, #[case] message: &str) {
+    let transport = Script::new(&[]);
+    let clock = Clock::new(0);
+    let poller = TaskPoller {
+        transport: &transport,
+        clock: &clock,
+        kind: TaskKind::Image,
+        timeout_seconds: 600,
+    };
+    let error = poller
+        .poll("https://runway.test", task_id, &HeaderMap::new())
+        .await
+        .unwrap_err();
+    assert_eq!(error.to_string(), message);
+    assert!(matches!(error, RunwayTaskError::TaskId(_)));
+    assert!(transport.urls.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn monotonic_clock_passes_real_time() {
+    let clock = MonotonicClock {
+        origin: Instant::now(),
+    };
+    let started = clock.now();
+    clock.pause(Duration::from_millis(100)).await;
+    assert!(clock.now() >= started + Duration::from_millis(20));
+}
+
+#[test]
+fn task_bytes_at_the_limit_decode() {
+    let mut body = br#"{"status":"SUCCEEDED","pad":""#.to_vec();
+    body.resize(0x0100_0000 - 2, b'x');
+    body.extend_from_slice(b"\"}");
+    assert_eq!(body.len(), 0x0100_0000);
+    let task = decode_runway_task(&body).unwrap();
+    assert_eq!(task.state(), super::record::TaskState::Succeeded);
 }
 
 #[test]
