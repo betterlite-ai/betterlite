@@ -9,7 +9,7 @@ use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::batches::BatchOperation;
-use crate::batches::decode::{BatchDecodeError, decode_batch_object};
+use crate::batches::decode::{BatchDecodeError, MAX_BATCH_BYTES, decode_batch_object};
 use crate::batches::error::BatchesError;
 use crate::batches::records::{BatchStatus, ExpiryAnchor, OutputExpiry};
 use crate::batches::sdk::{ClientKind, Timeout};
@@ -331,6 +331,20 @@ async fn batches_cases(#[case] scenario: Scenario) {
         Scenario::SdkErrorPassthrough => sdk_error_passthrough().await,
         Scenario::CancelSyncClientType => cancel_sync_client_type().await,
     }
+}
+
+#[test]
+fn batch_answers_over_the_byte_limit_are_refused() {
+    let at_limit = vec![b' '; MAX_BATCH_BYTES];
+    assert!(matches!(
+        decode_batch_object(&at_limit),
+        Err(BatchDecodeError::Json { .. })
+    ));
+    let over_limit = vec![b' '; MAX_BATCH_BYTES + 1];
+    assert!(matches!(
+        decode_batch_object(&over_limit),
+        Err(BatchDecodeError::TooLarge { size }) if size == MAX_BATCH_BYTES + 1
+    ));
 }
 
 #[test]
