@@ -91,10 +91,12 @@ fn conforms(object: &JsonValue, root: &SchemaNode) -> bool {
 }
 
 fn has_type(kind: Option<&TypeSpec>, value: &JsonValue) -> bool {
-    match kind {
-        None => true,
-        Some(TypeSpec::One(name)) => type_matches(name, value),
-        Some(TypeSpec::Many(names)) => {
+    let Some(spec) = kind else {
+        return true;
+    };
+    match spec {
+        TypeSpec::One(name) => type_matches(name, value),
+        TypeSpec::Many(names) => {
             let unique = names
                 .iter()
                 .enumerate()
@@ -105,22 +107,16 @@ fn has_type(kind: Option<&TypeSpec>, value: &JsonValue) -> bool {
 }
 
 fn type_matches(kind: &SchemaType, value: &JsonValue) -> bool {
-    match value {
-        JsonValue::Object(_) => matches!(kind, SchemaType::Object),
-        JsonValue::Array(_) => matches!(kind, SchemaType::Array),
-        JsonValue::String(_) => matches!(kind, SchemaType::String),
-        JsonValue::Bool(_) => matches!(kind, SchemaType::Boolean),
-        JsonValue::Null => matches!(kind, SchemaType::Null),
-        JsonValue::Number(number) => match kind {
-            SchemaType::Number => true,
-            SchemaType::Integer => number
-                .as_f64()
-                .is_some_and(|float| float.fract() == 0.0_f64),
-            SchemaType::Array
-            | SchemaType::Boolean
-            | SchemaType::Null
-            | SchemaType::Object
-            | SchemaType::String => false,
-        },
+    match (kind, value) {
+        (SchemaType::Object, JsonValue::Object(_))
+        | (SchemaType::Array, JsonValue::Array(_))
+        | (SchemaType::String, JsonValue::String(_))
+        | (SchemaType::Boolean, JsonValue::Bool(_))
+        | (SchemaType::Null, JsonValue::Null)
+        | (SchemaType::Number, JsonValue::Number(_)) => true,
+        (SchemaType::Integer, JsonValue::Number(number)) => number
+            .as_f64()
+            .is_some_and(|float| float.fract() == 0.0_f64),
+        _ => false,
     }
 }
