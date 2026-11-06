@@ -6,7 +6,7 @@ use aws_credential_types::{
     provider::{ProvideCredentials as _, SharedCredentialsProvider, error::CredentialsError},
 };
 use aws_sdk_sts::Client;
-use aws_types::{SdkConfig, os_shim_internal::Env, region::Region};
+use aws_types::{os_shim_internal::Env, region::Region};
 
 use super::error::McpSigV4Error;
 use super::{AwsSources, McpSigV4Settings};
@@ -38,14 +38,14 @@ pub(super) async fn assume_role(
         .clock
         .now()
         .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
+        .map_err(|source| McpSigV4Error::ClockBeforeEpoch { source })?
         .as_secs();
     let session_name = settings
         .aws_session_name
         .clone()
         .unwrap_or_else(|| format!("litellm-mcp-{seconds}"));
     let loader = loader(sources).region(Region::new(region_name.to_owned()));
-    let config: SdkConfig = match explicit {
+    let config = match explicit {
         Some(credentials) => loader.credentials_provider(credentials).load().await,
         None => loader.load().await,
     };

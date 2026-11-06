@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::sync::Arc;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::{Duration, UNIX_EPOCH};
 
@@ -194,10 +195,11 @@ async fn sign_refreshes_credentials_close_to_their_expiry() {
     let rotating = Rotating {
         calls: Arc::clone(&calls),
     };
-    auth.cache = CredentialCache::new(
-        SharedCredentialsProvider::new(rotating),
-        SharedTimeSource::new(clock.clone()),
-    );
+    auth.cache = CredentialCache {
+        clock: SharedTimeSource::new(clock.clone()),
+        provider: SharedCredentialsProvider::new(rotating),
+        current: Mutex::new(None),
+    };
     let first = auth.auth_flow(mcp_request("{}")).await.unwrap();
     let again = auth.auth_flow(mcp_request("{}")).await.unwrap();
     assert!(authorization(&first).contains("Credential=AKIDROTATE0/"));

@@ -1,3 +1,5 @@
+use std::time::SystemTimeError;
+
 use aws_credential_types::provider::error::CredentialsError;
 use aws_sdk_sts::{error::SdkError, operation::assume_role::AssumeRoleError};
 use aws_sigv4::{http_request::SigningError, sign::v4::signing_params::BuildError};
@@ -20,6 +22,11 @@ pub enum McpSigV4Error {
     Provider {
         #[source]
         source: CredentialsError,
+    },
+    #[error("the clock reads before the Unix epoch, so the role session name has no epoch seconds")]
+    ClockBeforeEpoch {
+        #[source]
+        source: SystemTimeError,
     },
     #[error("header {name} cannot be signed because its value is not visible ASCII")]
     HeaderValue {

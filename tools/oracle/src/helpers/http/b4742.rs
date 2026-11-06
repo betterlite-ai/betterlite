@@ -1,6 +1,6 @@
 mod connector;
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::time::{Duration, UNIX_EPOCH};
 
 use aws_smithy_async::rt::sleep::{SharedAsyncSleep, TokioSleep};
@@ -66,6 +66,8 @@ enum Failure {
     Request(#[from] http::Error),
     #[error("the helper runtime failed: {0}")]
     Runtime(#[from] std::io::Error),
+    #[error("the case time {0} is past the clock's range")]
+    Clock(u64),
 }
 
 fn mcp_settings(settings: &Settings) -> McpSigV4Settings {
@@ -81,28 +83,28 @@ fn mcp_settings(settings: &Settings) -> McpSigV4Settings {
     }
 }
 
-fn sources(input: &Input, recorder: &Recorder) -> AwsSources {
+fn sources(input: &Input, recorder: &Recorder) -> Result<AwsSources, Failure> {
     let sts = recorder.clone();
-    AwsSources {
+    Ok(AwsSources {
         environment: input
             .environment
             .iter()
             .map(|(name, value)| (name.clone(), value.clone()))
-            .collect::<HashMap<_, _>>(),
+            .collect(),
         filesystem: Fs::from_slice(&[]),
         client: http_client_fn(move |_, _| SharedHttpConnector::new(Sts(sts.clone()))),
         clock: SharedTimeSource::new(StaticTimeSource::new(
             UNIX_EPOCH
                 .checked_add(Duration::from_secs(input.now))
-                .unwrap_or(UNIX_EPOCH),
+                .ok_or(Failure::Clock(input.now))?,
         )),
         sleep: SharedAsyncSleep::new(TokioSleep::new()),
         timeout: Duration::from_secs(5),
-    }
+    })
 }
 
 async fn sign_requests(input: &Input, recorder: &Recorder) -> Result<Vec<Value>, Failure> {
-    let auth = McpSigV4Auth::new(mcp_settings(&input.settings), sources(input, recorder)).await?;
+    let auth = McpSigV4Auth::new(mcp_settings(&input.settings), sources(input, recorder)?).await?;
     let mut signed = Vec::new();
     for call in &input.requests {
         let mut builder = Request::builder()
@@ -112,9 +114,9 @@ async fn sign_requests(input: &Input, recorder: &Recorder) -> Result<Vec<Value>,
             builder = builder.header(name, value);
         }
         let request = builder.body(Bytes::from(call.body.clone()))?;
-        let response = auth.auth_flow(request).await?;
+        let signed_request = auth.auth_flow(request).await?;
         let header = |name: &str| {
-            response
+            signed_request
                 .headers()
                 .get(name)
                 .and_then(|value| value.to_str().ok())

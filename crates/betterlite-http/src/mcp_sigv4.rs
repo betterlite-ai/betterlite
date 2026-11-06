@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::Mutex;
 use std::time::Duration;
 
 use aws_credential_types::{Credentials, provider::SharedCredentialsProvider};
@@ -100,7 +101,11 @@ impl McpSigV4Auth {
             requires_request_body: true,
             service_name,
             region_name,
-            cache: CredentialCache::new(provider, sources.clock.clone()),
+            cache: CredentialCache {
+                clock: sources.clock.clone(),
+                provider,
+                current: Mutex::new(None),
+            },
             clock: sources.clock,
         })
     }

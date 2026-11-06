@@ -11,21 +11,12 @@ use super::error::McpSigV4Error;
 const REFRESH_BEFORE_EXPIRY: Duration = Duration::from_mins(10);
 
 pub struct CredentialCache {
-    clock: SharedTimeSource,
-    provider: SharedCredentialsProvider,
-    current: Mutex<Option<Credentials>>,
+    pub clock: SharedTimeSource,
+    pub provider: SharedCredentialsProvider,
+    pub current: Mutex<Option<Credentials>>,
 }
 
 impl CredentialCache {
-    #[must_use]
-    pub const fn new(provider: SharedCredentialsProvider, clock: SharedTimeSource) -> Self {
-        Self {
-            clock,
-            provider,
-            current: Mutex::new(None),
-        }
-    }
-
     pub async fn get(&self) -> Result<Credentials, McpSigV4Error> {
         let now = self.clock.now();
         let cached = self
