@@ -4,6 +4,7 @@ use std::fs;
 use std::io::Error;
 use std::path::PathBuf;
 
+use betterlite_http::proxy::limits::TransportLimits;
 use indexmap::IndexMap;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -335,6 +336,8 @@ async fn batches_cases(#[case] scenario: Scenario) {
 
 #[test]
 fn batch_answers_over_the_byte_limit_are_refused() {
+    // the decoder cap matches the transport's, since no larger body ever reaches it
+    assert_eq!(MAX_BATCH_BYTES, TransportLimits::DEFAULT.body_bytes);
     let at_limit = vec![b' '; MAX_BATCH_BYTES];
     assert!(matches!(
         decode_batch_object(&at_limit),

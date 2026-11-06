@@ -15,7 +15,7 @@ use crate::batches::error::SdkError;
 use crate::batches::records::{BatchCreate, BatchPage, BatchQuery};
 use crate::batches::sdk::{BatchesSdk, ClientConstructor, ClientKind, SdkArguments, Timeout};
 
-use self::timeouts::{duration_seconds, phase_names};
+use self::timeouts::phase_names;
 
 mod timeouts;
 
@@ -61,7 +61,8 @@ impl ClientConstructor for HttpConstructor {
             return Ok(None);
         };
         let timeout = match &arguments.timeout {
-            Some(Timeout::Seconds(seconds)) => duration_seconds(*seconds)?,
+            Some(Timeout::Seconds(seconds)) => Duration::try_from_secs_f64(*seconds)
+                .map_err(|_source| SdkError::InvalidTimeout { seconds: *seconds })?,
             Some(Timeout::Phases(phases)) => {
                 return Err(SdkError::UnsupportedTimeoutPhase {
                     phases: phase_names(phases),
@@ -200,7 +201,8 @@ impl HttpBatchesClient {
         ))
         .map_err(|source| SdkError::BaseUrl { source })?;
         let deadline = match call.timeout {
-            Some(seconds) => duration_seconds(seconds)?,
+            Some(seconds) => Duration::try_from_secs_f64(seconds)
+                .map_err(|_source| SdkError::InvalidTimeout { seconds })?,
             None => self.timeout,
         };
         let response = self
