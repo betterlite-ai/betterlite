@@ -1,0 +1,2 @@
+general_settings:
+  allow_requests_on_db_unavailable: os.environ/ALLOW_REQUESTS_ON_DB_UNAVAILABLE

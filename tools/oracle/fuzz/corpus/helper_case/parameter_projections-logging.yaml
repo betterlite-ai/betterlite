@@ -1,0 +1,11 @@
+kind: helper
+name: parameter-projections-logging-seed
+call:
+  parameter_projections:
+    steps:
+      - function: logging_projection
+        model_parameters: {messages: [{role: user, content: hi}], thinking: {type: enabled, budget_tokens: 2048}, best_of: 2, dimensions: 3, chunking_strategy: auto, documents: [a], background: true, stop_sequences: [end], metadata: {trace: x}, unknown_parameter: 1}
+      - function: excluded_content_names
+      - function: provider_chat_names
+env: {}
+compare: {ignore: []}
