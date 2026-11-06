@@ -70,15 +70,15 @@ pub fn anthropic_messages_tool_calls(response: &ToolCallResponse) -> Vec<Normali
         if block.kind.as_deref() != Some("tool_use") {
             continue;
         }
+        let arguments = match block.input.as_ref() {
+            Some(Json::Object(object)) => object.clone(),
+            Some(Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_))
+            | None => Object::new(),
+        };
         calls.push(NormalizedToolCall {
             id: block.id.clone(),
             name: block.name.clone(),
-            arguments: block
-                .input
-                .as_ref()
-                .and_then(Json::as_object)
-                .cloned()
-                .unwrap_or_default(),
+            arguments,
         });
     }
     calls
