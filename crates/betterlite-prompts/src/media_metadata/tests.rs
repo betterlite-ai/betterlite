@@ -229,6 +229,10 @@ fn run(scenario: Scenario) {
     url: "https://api.example.com?file=/img.png",
     expected: None,
 })]
+#[case::image_mime_type_from_url_netloc_only_has_no_path(Scenario::ImageMimeFromUrl {
+    url: "https://cdn.example.jpg",
+    expected: None,
+})]
 #[case::image_mime_type_from_url_strips_params_from_the_last_segment(Scenario::ImageMimeFromUrl {
     url: "https://x.com/a.png;v=1",
     expected: Some("image/png"),

@@ -68,12 +68,10 @@ fn url_path(url: &str) -> &str {
         url.get(end.saturating_add(3)..).unwrap_or_default()
     });
     let path = if scheme_end.is_some() {
-        match after_scheme.find(['/', '?', '#']) {
-            Some(boundary) if after_scheme.as_bytes().get(boundary) == Some(&b'/') => {
-                after_scheme.get(boundary..).unwrap_or_default()
-            }
-            _ => "",
-        }
+        after_scheme
+            .find(['/', '?', '#'])
+            .and_then(|boundary| after_scheme.get(boundary..))
+            .unwrap_or_default()
     } else {
         after_scheme
     };
