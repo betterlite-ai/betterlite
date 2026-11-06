@@ -4,6 +4,7 @@ use std::fmt::Debug;
 
 use indexmap::{IndexMap, IndexSet};
 use rstest::rstest;
+use secrecy::ExposeSecret as _;
 
 use crate::model_routes::catalog::{
     RESPONSE_FORMAT_FLAG, TOOLS_REASONING_FLAG, chat_completions_is_default, openai_gpt_version,
@@ -13,9 +14,9 @@ use crate::model_routes::request::{
     request_needs_converse, response_format_needs_converse as format_needs_converse,
 };
 use crate::model_routes::{
-    BedrockRoute, CHAT_COMPLETIONS_PREFIX, CLAUDE_PLATFORM_PREFIX, CONVERSE_ONLY_REQUEST_KEYS,
-    CONVERSE_PREFIX, MANTLE_PREFIX, ModelRouteSelector, ParamMap, ParamValue, RouteError,
-    get_claude_platform_model, map_claude_platform_auth, without_bedrock_route_prefix,
+    BedrockRoute, CONVERSE_ONLY_REQUEST_KEYS, ModelRouteSelector, ParamMap, ParamValue, RouteError,
+    get_claude_platform_model, map_claude_platform_auth, model_environment,
+    without_bedrock_route_prefix,
 };
 
 #[rstest]
@@ -599,45 +600,26 @@ fn model_rewrite_cases() {
 }
 
 fn prefix_predicate_cases() {
+    let price_map = ParamMap::new();
+    let converse = IndexSet::new();
+    let route = selector(&price_map, &converse, false);
     check_cases(
         &[
-            ("converse/x", true),
-            ("bedrock/converse/x", true),
-            ("a/b/converse/x", true),
-            ("xconverse/x", false),
-            ("converse_like/x", false),
+            ("converse/x", BedrockRoute::Converse),
+            ("bedrock/converse/x", BedrockRoute::Converse),
+            ("a/b/converse/x", BedrockRoute::Converse),
+            ("xconverse/x", BedrockRoute::Invoke),
+            ("converse_like/x", BedrockRoute::ConverseLike),
+            ("claude_platform/x", BedrockRoute::ClaudePlatform),
+            ("converse/claude_platform/x", BedrockRoute::ClaudePlatform),
+            ("xclaude_platform/x", BedrockRoute::Invoke),
+            ("mantle/x", BedrockRoute::Mantle),
+            ("x/mantle/y", BedrockRoute::Mantle),
+            ("bedrock_mantle/x", BedrockRoute::Invoke),
+            ("bedrock/chat_completions/x", BedrockRoute::ChatCompletions),
+            ("xchat_completions/x", BedrockRoute::Invoke),
         ],
-        |model| {
-            model.starts_with(CONVERSE_PREFIX) || model.contains(&format!("/{CONVERSE_PREFIX}"))
-        },
-    );
-    check_cases(
-        &[
-            ("converse/claude_platform/x", true),
-            ("xclaude_platform/x", false),
-        ],
-        |model| {
-            model.starts_with(CLAUDE_PLATFORM_PREFIX)
-                || model.contains(&format!("/{CLAUDE_PLATFORM_PREFIX}"))
-        },
-    );
-    check_cases(
-        &[
-            ("mantle/x", true),
-            ("x/mantle/y", true),
-            ("bedrock_mantle/x", false),
-        ],
-        |model| model.starts_with(MANTLE_PREFIX) || model.contains(&format!("/{MANTLE_PREFIX}")),
-    );
-    check_cases(
-        &[
-            ("bedrock/chat_completions/x", true),
-            ("xchat_completions/x", false),
-        ],
-        |model| {
-            model.starts_with(CHAT_COMPLETIONS_PREFIX)
-                || model.contains(&format!("/{CHAT_COMPLETIONS_PREFIX}"))
-        },
+        |model| route.route(model, None).unwrap(),
     );
 }
 
@@ -670,27 +652,40 @@ fn route_helpers_and_workspace_keys() {
 }
 
 fn model_info_passthrough() {
-    let supplied_base = Some("https://base.example".to_owned());
-    let supplied_key = Some("sk-fixture".to_owned());
-    let supplied_headers = IndexMap::from([(
-        "X-Amz-Target".to_owned(),
-        "BedrockRuntime.Converse".to_owned(),
-    )]);
-    let used_base = supplied_base.clone();
-    let used_key = supplied_key.clone();
-    let used_headers = supplied_headers.clone();
-    let used_models: Vec<String> = Vec::new();
-    assert_eq!(used_base, supplied_base);
-    assert_eq!(used_key, supplied_key);
-    assert_eq!(used_headers, supplied_headers);
-    assert!(used_models.is_empty());
+    let environment = model_environment(
+        Some("https://base.example".to_owned()),
+        Some("sk-fixture".to_owned()),
+        IndexMap::from([(
+            "X-Amz-Target".to_owned(),
+            "BedrockRuntime.Converse".to_owned(),
+        )]),
+    );
+    assert_eq!(
+        environment.api_base.as_deref(),
+        Some("https://base.example")
+    );
+    assert_eq!(
+        environment
+            .api_key
+            .as_ref()
+            .map(|key| key.expose_secret().to_owned()),
+        Some("sk-fixture".to_owned())
+    );
+    assert_eq!(
+        environment.headers.get("X-Amz-Target").map(String::as_str),
+        Some("BedrockRuntime.Converse")
+    );
+    assert!(environment.models.is_empty());
 
-    let empty_base: Option<String> = Some(String::new());
-    let empty_key: Option<String> = Some(String::new());
-    assert_eq!(empty_base.as_deref(), Some(""));
-    assert_eq!(empty_key.as_deref(), Some(""));
-    let absent: Option<String> = None;
-    assert!(absent.is_none());
+    let empty = model_environment(Some(String::new()), Some(String::new()), IndexMap::new());
+    assert_eq!(empty.api_base.as_deref(), Some(""));
+    assert_eq!(
+        empty.api_key.map(|key| key.expose_secret().to_owned()),
+        Some(String::new())
+    );
+    let absent = model_environment(None, None, IndexMap::new());
+    assert!(absent.api_base.is_none());
+    assert!(absent.api_key.is_none());
 }
 
 fn reverse_tool_name_lookup() {

@@ -5,6 +5,7 @@ mod tests;
 use betterlite_context::bedrock_model::{get_bedrock_base_model, strip_bedrock_routing_prefix};
 use fancy_regex::Regex;
 use indexmap::{IndexMap, IndexSet};
+use secrecy::SecretString;
 
 pub const CHAT_COMPLETIONS_PREFIX: &str = "chat_completions/";
 pub const CLAUDE_PLATFORM_PREFIX: &str = "claude_platform/";
@@ -80,6 +81,29 @@ pub enum RouteError {
     Pattern(#[from] fancy_regex::Error),
     #[error("request field {field} has a type the route cannot read")]
     WrongType { field: &'static str },
+}
+
+#[derive(Clone, Debug)]
+pub struct ModelEnvironment {
+    pub api_base: Option<String>,
+    pub api_key: Option<SecretString>,
+    pub headers: IndexMap<String, String>,
+    pub models: Vec<String>,
+}
+
+// Bedrock's model info adds no api base, key or header of its own and claims no model list
+#[must_use]
+pub fn model_environment(
+    api_base: Option<String>,
+    api_key: Option<String>,
+    headers: IndexMap<String, String>,
+) -> ModelEnvironment {
+    ModelEnvironment {
+        api_base,
+        api_key: api_key.map(SecretString::from),
+        headers,
+        models: Vec::new(),
+    }
 }
 
 pub struct ModelRouteSelector<'catalog> {

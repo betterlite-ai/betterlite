@@ -8,9 +8,10 @@ use betterlite_bedrock::model_routes::request::{
 use betterlite_bedrock::model_routes::{
     CHAT_COMPLETIONS_PREFIX, CLAUDE_PLATFORM_PREFIX, CONVERSE_PREFIX, MANTLE_PREFIX,
     ModelRouteSelector, ParamMap, ParamValue, get_claude_platform_model, map_claude_platform_auth,
-    without_bedrock_route_prefix,
+    model_environment, without_bedrock_route_prefix,
 };
 use indexmap::{IndexMap, IndexSet};
+use secrecy::ExposeSecret as _;
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -266,11 +267,16 @@ fn prefixes(models: &[String], workspace: &[WorkspaceProbe]) -> Value {
 fn model_info(probes: &[ModelInfoProbe]) -> Value {
     let mut results = Vec::new();
     for probe in probes {
+        let environment = model_environment(
+            probe.api_base.clone(),
+            probe.api_key.clone(),
+            probe.headers.clone(),
+        );
         results.push(json!({
-            "api_base": probe.api_base,
-            "api_key": probe.api_key,
-            "headers": probe.headers,
-            "models": Vec::<String>::new(),
+            "api_base": environment.api_base,
+            "api_key": environment.api_key.map(|key| key.expose_secret().to_owned()),
+            "headers": environment.headers,
+            "models": environment.models,
         }));
     }
     Value::Array(results)
