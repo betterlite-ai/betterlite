@@ -209,22 +209,17 @@ pub trait BasePassthroughConfig {
         Ok((headers, None))
     }
 
-    fn get_error_class(
-        &self,
-        message: &str,
-        status_code: u16,
-        headers: Option<&Headers>,
-    ) -> ProviderError {
+    fn get_error_class(&self, message: &str, status_code: u16, headers: &Headers) -> ProviderError {
         ProviderError::from(ProviderErrorParts {
             status_code,
             status_code_is_synthesized: false,
             message: message.to_owned(),
-            headers: headers.map(|provided| {
-                provided
+            headers: Some(
+                headers
                     .iter()
                     .map(|(name, value)| (name.clone(), value.clone()))
-                    .collect()
-            }),
+                    .collect(),
+            ),
             request: None,
             response: None,
             body: None,

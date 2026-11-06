@@ -505,18 +505,19 @@ fn format_url_reports_a_url_that_does_not_parse() {
 }
 
 #[rstest]
-#[case::with_headers(true)]
-#[case::without_headers(false)]
-fn default_error_class_carries_the_status_message_and_headers(#[case] with_headers: bool) {
-    let headers = Headers::from([("x-request-id".to_owned(), "r1".to_owned())]);
-    let error =
-        DefaultConfig.get_error_class("upstream failed", 503, with_headers.then_some(&headers));
+#[case::headers(
+    Headers::from([("x-request-id".to_owned(), "r1".to_owned())]),
+    Some(vec![("x-request-id".to_owned(), "r1".to_owned())])
+)]
+#[case::empty(Headers::new(), Some(Vec::new()))]
+fn default_error_class_carries_the_status_message_and_headers(
+    #[case] headers: Headers,
+    #[case] expected: Option<Vec<(String, String)>>,
+) {
+    let error = DefaultConfig.get_error_class("upstream failed", 503, &headers);
     assert_eq!(error.status_code, 503);
     assert_eq!(error.message, "upstream failed");
-    assert_eq!(
-        error.headers,
-        with_headers.then(|| vec![("x-request-id".to_owned(), "r1".to_owned())])
-    );
+    assert_eq!(error.headers, expected);
     assert!(!error.status_code_is_synthesized);
 }
 
