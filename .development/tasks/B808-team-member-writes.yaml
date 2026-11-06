@@ -69,15 +69,14 @@ description: >-
 
 
   Both member-write routes use B052 key authentication followed by their B865 decorators.
+  B1100 registers routes/team_member_writes.rs as a stub, so fill only crates/betterlite-server/src/routes/team_member_writes.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/team_member_writes.rs
     - crates/betterlite-server/src/team_member_writes/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/team_member_writes.rs
+    - crates/betterlite-server/src/routes/team_member_writes/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/team-member-writes/**

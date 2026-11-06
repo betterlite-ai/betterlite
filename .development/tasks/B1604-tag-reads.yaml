@@ -20,10 +20,11 @@ description: >-
   error type/param/code and content-type; ignore message wording only on error responses.
   The owned functions occupy 257 nonblank, noncomment lines. Allow 280 product, 190 tests,
   100 decoder/fuzz and 50 composition lines, within 650 changed lines.
+  B1100 registers routes/tag_reads.rs as a stub, so fill only crates/betterlite-server/src/routes/tag_reads.rs and leave routes.rs as it is.
 scope:
   paths:
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
+    - crates/betterlite-server/src/routes/tag_reads.rs
+    - crates/betterlite-server/src/routes/tag_reads/**
     - crates/betterlite-server/src/tag_reads.rs
     - crates/betterlite-server/src/tag_reads/**
     - crates/betterlite-server/fuzz/Cargo.toml

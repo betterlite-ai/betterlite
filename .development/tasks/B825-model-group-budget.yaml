@@ -60,15 +60,14 @@ description: >-
   No setting is newly read here: the actor fallback is injected from the proxy. The 120 owned nonblank,
   noncomment lines include API examples; estimate 130 production, 270 behavior tests and 65 route lines,
   465 within 500, with each Rust implementation file below 300 lines.
+  B1100 registers routes/model_group_budget.rs as a stub, so fill only crates/betterlite-server/src/routes/model_group_budget.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/model_group_budget.rs
     - crates/betterlite-server/src/model_group_budget/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/model_group_budget.rs
+    - crates/betterlite-server/src/routes/model_group_budget/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/model-group-budget/**

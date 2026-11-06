@@ -24,16 +24,15 @@ description: >-
   with a configured master key and B1139/B856 virtual-key fixtures where required. No helper adapter.
   Own 98 nonblank/non-comment lines including decorators, excluding imports. Budget 125 handler,
   130 tests,125 HTTP fixtures,60 fuzz/replay and 30 wiring =470 lines.
+  B1100 registers routes/rerank.rs as a stub, so fill only crates/betterlite-server/src/routes/rerank.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/api/rerank_routes.rs
   - crates/betterlite-server/src/api/rerank_routes/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/routes/rerank.rs
+  - crates/betterlite-server/src/routes/rerank/**
   - crates/betterlite-server/fuzz/Cargo.toml
   - crates/betterlite-server/fuzz/fuzz_targets/rerank_route.rs
   - crates/betterlite-server/fuzz/corpus/rerank_route/**
