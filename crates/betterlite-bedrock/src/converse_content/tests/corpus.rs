@@ -21,7 +21,7 @@ fn replays_the_bedrock_converse_content_corpus() {
             let name = path.file_name().unwrap().to_str().unwrap();
             assert_eq!(
                 decode_converse_json_tool(&bytes).is_ok(),
-                name.ends_with("-valid.json"),
+                name.starts_with("valid-"),
                 "{name}"
             );
             Ok::<(), io::Error>(())

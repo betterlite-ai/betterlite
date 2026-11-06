@@ -24,13 +24,13 @@ use crate::converse_content::{
 };
 
 #[rstest]
-#[case::case_1_reverse_tool_names(case_1_reverse_tool_names)]
-#[case::case_2_json_mode_filter(case_2_json_mode_filter)]
-#[case::case_3_wrapped_properties(case_3_wrapped_properties)]
-#[case::case_4_text_with_tool_use(case_4_text_with_tool_use)]
-#[case::case_5_empty_tool_input(case_5_empty_tool_input)]
-#[case::case_6_content_function_recovery(case_6_content_function_recovery)]
-#[case::case_7_citation_search_locations(case_7_citation_search_locations)]
+#[case::reverse_tool_names(reverse_tool_names)]
+#[case::json_mode_filter(json_mode_filter)]
+#[case::wrapped_properties(wrapped_properties)]
+#[case::text_with_tool_use(text_with_tool_use)]
+#[case::empty_tool_input(empty_tool_input)]
+#[case::content_function_recovery(content_function_recovery)]
+#[case::citation_search_locations(citation_search_locations)]
 fn converse_content_cases(#[case] check: fn()) {
     check();
 }
@@ -65,7 +65,7 @@ fn function_tools() -> Vec<ToolBlock> {
     ]
 }
 
-fn case_1_reverse_tool_names() {
+fn reverse_tool_names() {
     assert!(get_tool_call_names(None).is_empty());
     assert!(get_tool_call_names(Some(&[])).is_empty());
     let tools = vec![
@@ -96,7 +96,7 @@ fn case_1_reverse_tool_names() {
     );
 }
 
-fn case_2_json_mode_filter() {
+fn json_mode_filter() {
     json_mode_filter_unchanged();
     json_mode_filter_synthetic_only();
     json_mode_filter_mixed();
@@ -171,7 +171,7 @@ fn json_mode_filter_mixed() {
     assert_eq!(mixed_missing.tools, Some(vec![real]));
 }
 
-fn case_3_wrapped_properties() {
+fn wrapped_properties() {
     assert_eq!(
         unwrap_bedrock_properties(r#"{"properties": {"b": 1, "a": 2}}"#),
         r#"{"b": 1, "a": 2}"#
@@ -214,7 +214,7 @@ const TRANSLATION_BLOCKS: &str = r#"[
     {}
 ]"#;
 
-fn case_4_text_with_tool_use() {
+fn text_with_tool_use() {
     text_with_tool_use_projection();
     text_with_tool_use_without_blocks();
 }
@@ -269,7 +269,7 @@ const EMPTY_INPUT_BLOCKS: &str = r#"[
     {"toolUse": {"toolUseId": "tu-nested", "name": "plain", "input": {"b": [1, {"d": 4}], "a": null}}}
 ]"#;
 
-fn case_5_empty_tool_input() {
+fn empty_tool_input() {
     empty_tool_input_arguments();
     empty_tool_input_errors();
 }
@@ -352,7 +352,7 @@ fn recovered_call(arguments: &str) -> MessageToolCall {
     }
 }
 
-fn case_6_content_function_recovery() {
+fn content_function_recovery() {
     recovery_with_arguments();
     recovery_failures();
     recovery_without_match();
@@ -477,7 +477,7 @@ const CITATION_BLOCKS: &str = r#"[
     }
 ]"#;
 
-fn case_7_citation_search_locations() {
+fn citation_search_locations() {
     citation_offsets_and_kinds();
     citation_character_offsets();
 }
