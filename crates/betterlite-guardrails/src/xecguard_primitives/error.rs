@@ -21,3 +21,20 @@ pub enum XecGuardError {
     #[error("XecGuard API unreachable (block_on_error=True): {source}")]
     Unreachable { source: Box<Self> },
 }
+
+impl XecGuardError {
+    #[must_use]
+    pub const fn status(&self) -> StatusCode {
+        match self {
+            // every _post failure reaches the client as LiteLLM's 400 HTTPException
+            Self::Timeout { .. }
+            | Self::Request { .. }
+            | Self::InvalidHeader { .. }
+            | Self::HttpStatus { .. }
+            | Self::ResponseTooLarge { .. }
+            | Self::ResponseJson { .. }
+            | Self::Unreachable { .. } => StatusCode::BAD_REQUEST,
+            Self::PayloadEncoding { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+        }
+    }
+}

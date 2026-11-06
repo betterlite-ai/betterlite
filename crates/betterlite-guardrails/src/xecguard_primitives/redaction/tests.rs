@@ -73,6 +73,32 @@ fn redaction_masks_credentials_inside_arrays() {
 }
 
 #[test]
+fn redaction_sanitizes_match_and_regex_keys_before_masking() {
+    let sanitized = sanitize_scan_result(&scan_result(
+        r#"{"decision":"UNSAFE","xecguard_result":[{"match":"raw span","regex":"p","violated_policy_name":"P"}]}"#,
+    ))
+    .expect("sanitized");
+    let Some(GuardrailValue::Array(violations)) = sanitized.get("xecguard_result") else {
+        panic!("expected a violation list");
+    };
+    let Some(GuardrailValue::Object(violation)) = violations.first() else {
+        panic!("expected a violation object");
+    };
+    assert_eq!(
+        violation.get("match"),
+        Some(&GuardrailValue::Text("[REDACTED]".to_owned()))
+    );
+    assert_eq!(
+        violation.get("regex"),
+        Some(&GuardrailValue::Text("[REDACTED]".to_owned()))
+    );
+    assert_eq!(
+        violation.get("violated_policy_name"),
+        Some(&GuardrailValue::Text("P".to_owned()))
+    );
+}
+
+#[test]
 fn redaction_keeps_other_fields_untouched() {
     let sanitized = sanitize_scan_result(&scan_result(
         r#"{"decision":"SAFE","trace_id":"t-1","xecguard_result":[{"violated_policy_name":"P"}],"other":{"a":1}}"#,

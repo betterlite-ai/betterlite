@@ -241,9 +241,45 @@ async fn transport_scan_reports_an_unreachable_api_when_block_on_error() {
     .await
     .expect_err("blocked on error");
     assert!(matches!(error, XecGuardError::Unreachable { .. }));
+    assert_eq!(error.status(), StatusCode::BAD_REQUEST);
     let rendered = error.to_string();
     assert!(rendered.starts_with("XecGuard API unreachable (block_on_error=True): "));
     assert!(rendered.contains("500"));
+}
+
+#[rstest]
+#[case::blocking(true, true)]
+#[case::non_blocking(false, false)]
+#[tokio::test]
+async fn transport_grounding_handles_api_failures(
+    #[case] block_on_error: bool,
+    #[case] expect_unreachable: bool,
+) {
+    let (base, captured, _server) =
+        serve(StatusCode::INTERNAL_SERVER_ERROR, "oops".to_owned()).await;
+    let mut input = raw_settings(&base);
+    input.block_on_error = block_on_error;
+    let messages = [message("user", "question"), message("assistant", "answer")];
+    let documents = [GroundingDocument {
+        document_id: "d1".to_owned(),
+        context: "ctx".to_owned(),
+    }];
+    let result = call_grounding(
+        &reqwest::Client::default(),
+        &XecGuardSettings::from(input),
+        &messages,
+        &documents,
+    )
+    .await;
+    assert_eq!(captured.lock().expect("captured request").requests, 1);
+    if expect_unreachable {
+        assert!(matches!(
+            result.expect_err("blocked grounding"),
+            XecGuardError::Unreachable { .. }
+        ));
+    } else {
+        assert!(result.expect("unblocked grounding").is_none());
+    }
 }
 
 #[tokio::test]
