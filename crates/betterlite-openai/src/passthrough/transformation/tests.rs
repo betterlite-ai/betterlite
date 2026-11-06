@@ -221,6 +221,11 @@ fn replace_path_segment_matches_whole_segments(
 #[case::object(200, br#"{"id":"r"}"#.to_vec(), Some(test_object([("id", json!("r"))])))]
 #[case::utf8_bom(200, b"\xef\xbb\xbf{\"id\":\"r\"}".to_vec(), Some(test_object([("id", json!("r"))])))]
 #[case::utf16_bom_is_not_json(200, b"\xff\xfe{\x00}\x00".to_vec(), None)]
+#[case::utf16_le_without_bom_is_not_json(
+    200,
+    b"{\x00\"\x00a\x00\"\x00:\x001\x00}\x00".to_vec(),
+    None
+)]
 #[case::other_status(201, br#"{"id":"r"}"#.to_vec(), None)]
 #[case::array(200, b"[1]".to_vec(), None)]
 #[case::text(200, b"\"value\"".to_vec(), None)]
@@ -242,6 +247,10 @@ fn relayed_json_object_projects_only_a_200_object(
 #[case::array(b"[1]".to_vec(), json!("[1]"))]
 #[case::json_text(b"\"value\"".to_vec(), json!("\"value\""))]
 #[case::invalid_json(b"not json".to_vec(), json!("not json"))]
+#[case::utf16_le_without_bom(
+    b"{\x00\"\x00a\x00\"\x00:\x001\x00}\x00".to_vec(),
+    json!("{\u{0}\"\u{0}a\u{0}\"\u{0}:\u{0}1\u{0}}\u{0}")
+)]
 fn relayed_body_falls_back_to_the_response_text(#[case] body: Vec<u8>, #[case] expected: Value) {
     let relayed = relayed_body(&body).unwrap();
     assert_eq!(serde_json::to_value(relayed).unwrap(), expected);
