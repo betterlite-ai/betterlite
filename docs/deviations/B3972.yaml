@@ -1,0 +1,27 @@
+task: B3972
+deviations:
+  - what: >-
+      A successful sync POST reaches send_request as a response with its status, so the 200 check runs and a
+      non-200 answer raises a typed status error carrying the response text. LiteLLM's _http_request returns
+      None, and send_request reads res.status_code off that None, so every successful sync delivery raises
+      AttributeError before the check.
+    why: >-
+      The AttributeError is a latent bug that no working setup can rely on, since it fires on every success.
+      Copying it would drop every sync trace.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/api.py#L66-L98
+  - what: >-
+      A response whose choices list is empty produces a success span with output "NO_OUTPUT". LiteLLM indexes
+      choices[0] after defaulting a missing choices key to [{}], so an explicit empty list raises IndexError
+      and no trace is sent.
+    why: >-
+      The declared type of choices is a list, which allows an empty one, and the IndexError is a Python
+      runtime accident rather than behavior a working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/deepeval.py#L104-L109
+  - what: >-
+      When standard_logging_object carries no trace_id, the span's traceUuid and the trace's uuid are the same
+      generated uuid. LiteLLM calls uuid.uuid4() once for the span and again for the trace, so the span points
+      at a trace id the payload does not carry.
+    why: >-
+      LiteLLM's own two ids cannot both be honored, and the span is orphaned from its trace, so no working
+      setup can rely on the second value; one id keeps the span inside the trace it is sent with.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/deepeval.py#L113-L117
