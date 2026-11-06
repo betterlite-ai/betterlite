@@ -2,7 +2,7 @@ id: B3017
 milestone: M4 keys, spend and management
 title: Resolve session budget agents and proxy limit errors
 status: todo
-depends_on: [B174, B184, B302]
+depends_on: [B174, B184]
 file: tasks/B3017-session-budget-context.yaml
 covers:
   - "litellm/proxy/agent_endpoints/agent_registry.py"

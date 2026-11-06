@@ -1,0 +1,12 @@
+kind: helper
+name: message-detector-server-format
+call:
+  b3736:
+    message_detector_server:
+      settings: {auth_token: test-token, base_url: "https://ibm.test", detector_id: jailbreak-detector}
+      environment: {}
+      detections:
+        - [{detection_type: toxic, score: 0.912, text: bad}]
+        - []
+env: {}
+compare: {ignore: []}

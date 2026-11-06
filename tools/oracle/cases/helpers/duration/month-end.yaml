@@ -1,0 +1,14 @@
+kind: helper
+name: month_end
+call:
+  duration:
+    calls:
+      - {function: duration_in_seconds, duration: "1mo", now: "2024-01-31T12:30:45.123456Z"}
+      - {function: duration_in_seconds, duration: "2mo", now: "2024-01-31T00:00:00Z"}
+      - {function: duration_in_seconds, duration: "1mo", now: "2024-03-31T00:00:00Z"}
+      - {function: duration_in_seconds, duration: "1mo", now: "2024-05-31T00:00:00Z"}
+      - {function: duration_in_seconds, duration: "3mo", now: "2024-11-30T00:00:00Z"}
+      - {function: duration_in_seconds, duration: "1mo", now: "2024-02-01T03:00:00Z", timezone: "America/New_York"}
+      - {function: duration_in_seconds, duration: "0mo", now: "2024-01-31T00:00:00Z"}
+env: {}
+compare: {ignore: []}

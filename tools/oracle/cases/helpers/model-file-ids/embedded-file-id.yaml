@@ -1,0 +1,9 @@
+kind: helper
+name: model-file-ids-embedded-file-id
+call:
+  model_file_ids:
+    function: get_format_from_file_id
+    file_id: bGl0ZWxsbV9wcm94eTpmaWxlLmFiYzEyMzt1bmlmaWVkX2lkLGFiYy0xMjM7dGFyZ2V0X21vZGVsX25hbWVzLGdwdC00O2xsbV9vdXRwdXRfZmlsZV9pZCxmaWxlLXh5ejtsbG1fb3V0cHV0X2ZpbGVfbW9kZWxfaWQsZGVwbG95bWVudC0x
+env: {}
+compare:
+  ignore: []

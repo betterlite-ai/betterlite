@@ -1,0 +1,8 @@
+: keep-alive
+event: message
+id: 7
+retry: 1000
+data: {"type":"stdout","text":"before"}
+data: {"type":"error","name":"RuntimeError","text":"boom","traceback":["a","b"]}
+data: {"type":"error","error":{"ename":"Second","evalue":"ignored"}}
+data: {"type":"execution_count","execution_count":"2"}

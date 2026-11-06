@@ -2,7 +2,7 @@ id: B2316
 milestone: M4 keys, spend and management
 title: Request-local spend-counter reads and shared batch scopes
 status: todo
-depends_on: [B126, B171, B733, B856, B2314]
+depends_on: [B4330, B4331, B171, B733, B856, B2314]
 file: tasks/B2316-spend-counter-batches.yaml
 covers:
   - "litellm/proxy/spend_tracking/spend_counter_batch.py"
