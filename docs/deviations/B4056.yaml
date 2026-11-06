@@ -1,0 +1,35 @@
+task: B4056
+deviations:
+  - what: >-
+      BitBucketPromptManager keeps its config, prompt id and ProxiedClient transport as fields, and
+      the built template manager is returned through an async OnceCell and mutex, so prompt_manager
+      is an async method that yields a guard instead of a synchronous property.
+    why: The BitBucket client is async and dependencies enter through constructors, so the transport is injected and the lazy build is awaited.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_prompt_manager.py#L225-L233
+  - what: >-
+      Compilation failures are typed thiserror variants instead of ValueError. The messages
+      "prompt_id is required for BitBucket prompt manager", "Prompt template '{prompt_id}' not
+      found" and "Error compiling prompt '{prompt_id}': {cause}" are kept verbatim.
+    why: The workspace rule is typed errors that keep their cause, and callers branch on the variant rather than on string parsing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_prompt_manager.py#L443-L481
+  - what: >-
+      integration_name is the INTEGRATION_NAME constant rather than a property, following the
+      DotpromptManager, GenericPromptManager and PhoenixPromptManager convention.
+    why: The crate exposes integration names as constants, and a one-line getter for a constant is banned by the no-one-line-functions rule.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_prompt_manager.py#L220-L223
+  - what: >-
+      set_global_bitbucket_config takes a GlobalBitBucketConfig cell and stores the typed config
+      in it, where LiteLLM writes a module-level global onto the litellm object.
+    why: betterlite has no process globals; the runtime config is passed in and shared through the cell.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/__init__.py#L17-L30
+  - what: >-
+      prompt_initializer takes the ProxiedClient transport as a third argument and returns a
+      BitBucketPromptManager, where LiteLLM's initializer builds the manager from the config alone
+      and returns CustomPromptManagement.
+    why: The transport is an injected dependency, and the concrete manager type is known at compile time.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/__init__.py#L33-L51
+  - what: >-
+      Both compile_prompt_helper and async_compile_prompt_helper are async, where LiteLLM's
+      _compile_prompt_helper is synchronous over a synchronous HTTP client.
+    why: The BitBucket client is async, so loading a missing prompt cannot complete without awaiting it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_prompt_manager.py#L425-L506

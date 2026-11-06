@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "missing-template", "call": {"b4056": {"mode": "get_template", "prompt_id": "absent", "files": {"greeting": "User: hi"}}}, "env": {}, "compare": {"ignore": []}}
