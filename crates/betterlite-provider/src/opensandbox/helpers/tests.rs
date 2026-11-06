@@ -18,6 +18,7 @@ mod corpus;
 mod create;
 mod defaults;
 mod poll;
+mod reply;
 mod request;
 mod sse;
 

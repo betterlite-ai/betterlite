@@ -1,3 +1,4 @@
+use std::str::from_utf8;
 use std::time::Duration;
 
 use betterlite_models::sandbox::SANDBOX_MAX_OUTPUT_BYTES;
@@ -36,7 +37,7 @@ fn post_code_sends_the_execution_request_and_returns_every_line() {
         PostCode {
             url: "http://sandbox.example/code",
             headers: headers(),
-            body: body,
+            body,
         },
         None,
     ))
@@ -52,7 +53,7 @@ fn post_code_sends_the_execution_request_and_returns_every_line() {
         "application/json"
     );
     assert_eq!(
-        std::str::from_utf8(&request.body).unwrap(),
+        from_utf8(&request.body).unwrap(),
         r#"{"code":"print(1)","context":{"language":"python"}}"#
     );
     let timeout = request.timeout.unwrap();
@@ -73,7 +74,7 @@ fn post_code_reports_a_non_success_status(#[case] status: u16) {
         PostCode {
             url: "http://sandbox.example/code",
             headers: headers(),
-            body: body,
+            body,
         },
         None,
     ))
@@ -113,7 +114,7 @@ fn post_code_uses_a_supplied_client_over_the_injected_one() {
         PostCode {
             url: "http://sandbox.example/code",
             headers: headers(),
-            body: body,
+            body,
         },
         Some(&supplied),
     ))
