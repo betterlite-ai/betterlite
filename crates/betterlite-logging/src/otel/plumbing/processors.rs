@@ -79,12 +79,8 @@ pub fn processor_for(exporter: SpanSink, use_simple: Option<bool>) -> ExportProc
 }
 
 impl SpanProcessor for ExportProcessor {
-    fn on_start(&self, span: &mut Span, cx: &Context) {
-        match self {
-            Self::Simple(processor) => processor.on_start(span, cx),
-            Self::Batch(processor) => processor.on_start(span, cx),
-        }
-    }
+    // Simple and Batch span processors ignore on_start, so there is nothing to forward.
+    fn on_start(&self, _span: &mut Span, _cx: &Context) {}
 
     fn on_end(&self, span: SpanData) {
         match self {

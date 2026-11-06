@@ -136,6 +136,11 @@ impl Clock for FixedClock {
 }
 
 #[test]
+fn system_clock_now_is_a_wall_clock_time() {
+    assert!(SystemClock.now() > UNIX_EPOCH);
+}
+
+#[test]
 fn event_operation_exception_defaults_the_timestamp_to_the_injected_clock() {
     let now = UNIX_EPOCH + Duration::from_secs(1_700_000_000);
     let record = record_exception_with_clock(Box::new(FixedClock(now)), None, None);

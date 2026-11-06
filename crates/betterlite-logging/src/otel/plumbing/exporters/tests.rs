@@ -9,12 +9,13 @@ use h2::server::handshake;
 use http::HeaderMap;
 use http::StatusCode;
 use http::header::{CONTENT_TYPE, HeaderValue};
-use opentelemetry::Context;
 use opentelemetry::trace::{
     Link, Span as _, SpanContext, SpanId, TraceContextExt as _, TraceFlags, TraceId, TraceState,
     Tracer as _, TracerProvider as _,
 };
+use opentelemetry::{Context, KeyValue};
 use opentelemetry_http::{Bytes, HttpClient, HttpError, Request, Response};
+use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
 use rstest::rstest;
 use serde::Deserialize;
@@ -520,8 +521,28 @@ struct Payload {
 
 #[derive(Deserialize)]
 struct ResourceSpans {
+    #[serde(default)]
+    resource: WireResource,
     #[serde(rename = "scopeSpans")]
     scope_spans: Vec<ScopeSpans>,
+}
+
+#[derive(Default, Deserialize)]
+struct WireResource {
+    #[serde(default)]
+    attributes: Vec<WireAttribute>,
+}
+
+#[derive(Deserialize)]
+struct WireAttribute {
+    key: String,
+    value: WireValue,
+}
+
+#[derive(Deserialize)]
+struct WireValue {
+    #[serde(rename = "stringValue")]
+    string_value: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -618,6 +639,34 @@ fn codec_json_kind_posts_ids_as_hex_and_enums_as_integers() {
     assert!(wire.trace_id.chars().all(|digit| digit.is_ascii_hexdigit()));
     assert!(wire.span_id.chars().all(|digit| digit.is_ascii_hexdigit()));
     assert_eq!(wire.kind, 1_i32);
+}
+
+#[test]
+fn exporter_resource_reaches_the_otlp_payload() {
+    let (factories, recorder) = factories();
+    let mut json = spec("http/json");
+    json.endpoint = Some("http://collector:4318".to_owned());
+    let sink = factories.exporter_from_spec(&json).expect("sink");
+    let resource = Resource::builder()
+        .with_attributes([KeyValue::new("service.name", "resource-probe")])
+        .build();
+    let provider = SdkTracerProvider::builder()
+        .with_resource(resource)
+        .with_span_processor(processor_for(sink, Some(true)))
+        .build();
+    provider.tracer("codec").start("operation").end();
+    provider.shutdown().expect("shutdown");
+    let posted = recorder.recorded();
+    let payload: Payload = serde_json::from_slice(&posted[0].body).expect("json body");
+    let service = payload.resource_spans[0]
+        .resource
+        .attributes
+        .iter()
+        .find(|attribute| attribute.key == "service.name");
+    assert_eq!(
+        service.and_then(|attribute| attribute.value.string_value.as_deref()),
+        Some("resource-probe")
+    );
 }
 
 #[rstest]

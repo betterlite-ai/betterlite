@@ -118,3 +118,6 @@ impl PushMetricExporter for MetricSink {
         }
     }
 }
+
+#[path = "sinks/tests.rs"]
+mod tests;
