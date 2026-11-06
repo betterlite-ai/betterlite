@@ -2139,6 +2139,7 @@ dependencies = [
  "betterlite-env",
  "http 1.5.0",
  "num-traits",
+ "percent-encoding",
  "regex",
  "rstest",
  "secrecy",
