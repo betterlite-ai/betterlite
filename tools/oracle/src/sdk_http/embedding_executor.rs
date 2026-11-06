@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, BTreeSet};
+use std::iter::once;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -145,38 +146,32 @@ where
 }
 
 // the harness owns api_base, so every deployment the case names points at the mock
-fn entry<'call>(
-    model_name: &'call str,
-    model: &'call str,
-    call: &'call VectorStoreEmbeddingCall,
-    api_base: &'call str,
-) -> Entry<'call> {
-    Entry {
-        model_name,
-        litellm_params: EntryParams {
-            model,
-            api_base,
-            api_key: &call.api_key,
-            timeout: TIMEOUT_SECONDS,
-        },
-    }
-}
-
 fn entries<'call>(
     call: &'call VectorStoreEmbeddingCall,
     api_base: &'call str,
 ) -> (Vec<Entry<'call>>, Vec<Entry<'call>>) {
+    let routed = call
+        .router
+        .iter()
+        .flatten()
+        .map(|deployment| (&deployment.model_name, &deployment.litellm_params.model));
+    let mut direct_entries = Vec::new();
     let mut router_entries = Vec::new();
-    for deployment in call.router.iter().flatten() {
-        router_entries.push(entry(
-            &deployment.model_name,
-            &deployment.litellm_params.model,
-            call,
-            api_base,
-        ));
+    for (index, (model_name, model)) in once((&call.model, &call.model)).chain(routed).enumerate() {
+        let entry = Entry {
+            model_name,
+            litellm_params: EntryParams {
+                model,
+                api_base,
+                api_key: &call.api_key,
+                timeout: TIMEOUT_SECONDS,
+            },
+        };
+        direct_entries.push(entry);
+        if index > 0 {
+            router_entries.push(entry);
+        }
     }
-    let mut direct_entries = vec![entry(&call.model, &call.model, call, api_base)];
-    direct_entries.extend(router_entries.iter().copied());
     (direct_entries, router_entries)
 }
 

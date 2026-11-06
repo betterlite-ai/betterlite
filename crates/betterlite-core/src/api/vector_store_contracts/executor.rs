@@ -27,17 +27,6 @@ impl VectorStoreEmbeddingExecutor for DirectEmbeddingExecutor {
         query: &str,
         configuration: &Params,
     ) -> Result<EmbeddingResponse, VectorStoreEmbeddingError> {
-        self.send(model, query, configuration).await
-    }
-}
-
-impl DirectEmbeddingExecutor {
-    async fn send(
-        &self,
-        model: &str,
-        query: &str,
-        configuration: &Params,
-    ) -> Result<EmbeddingResponse, VectorStoreEmbeddingError> {
         let deployment = self.deployment(model, configuration)?;
         let request = embedding_request(query, configuration)?;
         send_embedding(&self.executor, &deployment, &request)
@@ -45,7 +34,9 @@ impl DirectEmbeddingExecutor {
             .map(|outcome| outcome.response)
             .map_err(|source| VectorStoreEmbeddingError::Embedding { source })
     }
+}
 
+impl DirectEmbeddingExecutor {
     fn deployment(
         &self,
         model: &str,
