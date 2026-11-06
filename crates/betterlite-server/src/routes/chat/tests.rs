@@ -335,6 +335,68 @@ async fn a_mock_tool_call_fills_litellm_defaults() {
 }
 
 #[tokio::test]
+async fn a_pinned_model_id_stays_as_declared() {
+    let source = "model_list:\n  - {model_name: g, litellm_params: {model: openai/up, api_base: 'http://127.0.0.1:1', api_key: k, mock_response: hello}, model_info: {id: my-fixed-id}}\n";
+    let (status, _bytes, headers) = mock_reply(
+        source,
+        "/v1/chat/completions",
+        r#"{"model":"g","messages":[]}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(header(&headers, "x-litellm-model-id"), Some("my-fixed-id"));
+}
+
+#[tokio::test]
+async fn a_generated_model_id_hashes_the_mock_response() {
+    let source = "model_list:\n  - {model_name: text, litellm_params: {model: openai/gpt-4o, api_base: 'http://127.0.0.1:1', api_key: k, mock_response: 'hello world'}}\n";
+    let (status, _bytes, headers) = mock_reply(
+        source,
+        "/v1/chat/completions",
+        r#"{"model":"text","messages":[]}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        header(&headers, "x-litellm-model-id"),
+        Some("51b4bb57c0b10832fe43c4dcfb0e49425af84e287cde4b72b07164cfd11a705a")
+    );
+}
+
+#[rstest]
+#[case::shorthand(
+    r#"{"model":"g","messages":[],"mock_tool_calls":[{"function":{"arguments":"{}"}}]}"#
+)]
+#[case::indexed(r#"{"model":"g","messages":[],"mock_tool_calls":[{"index":0,"function":{"name":"f","arguments":"{}"}}]}"#)]
+#[case::object(r#"{"model":"g","messages":[],"mock_tool_calls":{"a":1}}"#)]
+#[case::no_choice_fields(
+    r#"{"model":"g","messages":[],"mock_response":{"choices":[{"logprobs":null}]}}"#
+)]
+#[case::object_arguments(r#"{"model":"g","messages":[],"mock_response":{"choices":[{"message":{"tool_calls":[{"function":{"name":"f","arguments":{"a":1}}}]}}]}}"#)]
+#[tokio::test]
+async fn a_stripped_client_mock_field_never_reaches_the_provider(#[case] request: &str) {
+    let answered = exchange(
+        "/v1/chat/completions",
+        request,
+        "denied-mock",
+        (200, ANSWER),
+        (NO_DELAY, "30"),
+    )
+    .await;
+    assert_eq!(answered.status, 200);
+    assert!(
+        !answered.sent.contains("mock_response"),
+        "{}",
+        answered.sent
+    );
+    assert!(
+        !answered.sent.contains("mock_tool_calls"),
+        "{}",
+        answered.sent
+    );
+}
+
+#[tokio::test]
 async fn a_mock_is_keyed_by_its_own_deployment() {
     let source = "model_list:\n  - {model_name: g, litellm_params: {model: openai/up, api_base: 'http://127.0.0.1:1', api_key: k, mock_response: answer-a}}\n  - {model_name: g, litellm_params: {model: openai/up, api_base: 'http://127.0.0.1:1', api_key: k, mock_response: answer-b}}\n  - {model_name: g, litellm_params: {model: openai/up, api_base: 'http://127.0.0.1:1', api_key: k}}\n";
     let config = ConfigLoader {
