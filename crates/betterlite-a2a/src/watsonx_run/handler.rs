@@ -57,7 +57,6 @@ where
 }
 
 struct Prepared {
-    base_url: String,
     runs_url: String,
     stream_url: String,
     headers: BTreeMap<String, String>,
@@ -99,7 +98,7 @@ where
         let started = call_run(&self.transport, &request, Method::Post).await?;
         let run = poll_run(
             &self.transport,
-            &prepared.base_url,
+            &prepared.runs_url,
             started,
             &prepared.headers,
             limits,
@@ -168,7 +167,7 @@ where
             serde_json::from_slice::<RunEvent>(&chunks.concat()).map_err(ApiError::Decode)?;
         let run = poll_run(
             &self.transport,
-            &prepared.base_url,
+            &prepared.runs_url,
             event,
             &prepared.headers,
             limits,
@@ -242,7 +241,6 @@ fn planned(
     Prepared {
         runs_url: format!("{base}/v1/orchestrate/runs"),
         stream_url: format!("{base}/v1/orchestrate/runs/stream"),
-        base_url: base,
         headers: BTreeMap::from([
             (
                 "Authorization".to_owned(),

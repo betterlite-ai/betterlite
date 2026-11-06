@@ -12,7 +12,7 @@ use betterlite_core::agents::json::AgentJson;
 use serde::Deserialize;
 
 use crate::helpers::{Helper, HelperResult};
-use report::{CallError, Failure, Outcome, Output, PacedEvent, helper_error, kind, normalize};
+use report::{CallError, Outcome, Output, PacedEvent, helper_error, kind, normalize};
 use script::{Clock, Script, Source};
 
 mod report;
@@ -122,7 +122,7 @@ impl Helper for Op {
         };
         let outcome = match runtime.block_on(call(&mut config, input)) {
             Ok(value) => Outcome::Ok(value),
-            Err(error) => Outcome::Error(Failure { kind: kind(&error) }),
+            Err(error) => Outcome::Error { kind: kind(&error) },
         };
         drop(config);
         let output = Output {

@@ -11,7 +11,7 @@ use crate::watsonx_run::event::RunEvent;
 use crate::watsonx_run::run_api::ApiError;
 use crate::watsonx_run::tests::{Fail, Reply, Script, limits};
 
-const BASE: &str = "https://cp4d.example.com/orchestrate/cpd/instances/inst-1";
+const BASE: &str = "https://cp4d.example.com/orchestrate/cpd/instances/inst-1/v1/orchestrate/runs";
 const RUN: &str =
     "https://cp4d.example.com/orchestrate/cpd/instances/inst-1/v1/orchestrate/runs/run-1";
 const TIMEOUT: Duration = Duration::from_secs(90);

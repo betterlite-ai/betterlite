@@ -169,16 +169,21 @@ impl Script {
         Ok(())
     }
 
-    fn answer_json(
-        &self,
-        method: &'static str,
-        request: &RunRequest<'_>,
-    ) -> Result<RunResponse, ScriptError> {
+    fn reply(&self, method: &'static str, request: &RunRequest<'_>) -> Result<Reply, ScriptError> {
         self.record(method, request)?;
         let reply = self.next()?;
         if matches!(reply.fail, Some(Fail::Transport)) {
             return Err(ScriptError::Transport);
         }
+        Ok(reply)
+    }
+
+    fn answer_json(
+        &self,
+        method: &'static str,
+        request: &RunRequest<'_>,
+    ) -> Result<RunResponse, ScriptError> {
+        let reply = self.reply(method, request)?;
         let body = serde_json::to_vec(&reply.body).map_err(ScriptError::Record)?;
         Ok(RunResponse {
             status: reply.status,
@@ -190,11 +195,7 @@ impl Script {
         &self,
         request: &RunRequest<'_>,
     ) -> Result<StreamResponse<ScriptError>, ScriptError> {
-        self.record("POST", request)?;
-        let reply = self.next()?;
-        if matches!(reply.fail, Some(Fail::Transport)) {
-            return Err(ScriptError::Transport);
-        }
+        let reply = self.reply("POST", request)?;
         let body = match reply.fail {
             Some(Fail::Read) => StreamBody::ReadFailed(ScriptError::Read),
             Some(Fail::TooLarge) => StreamBody::TooLarge {

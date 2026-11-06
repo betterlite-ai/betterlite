@@ -32,12 +32,7 @@ pub(super) struct PacedEvent<'event> {
 #[serde(rename_all = "snake_case")]
 pub(super) enum Outcome {
     Ok(AgentJson),
-    Error(Failure),
-}
-
-#[derive(Serialize)]
-pub(super) struct Failure {
-    pub(super) kind: &'static str,
+    Error { kind: &'static str },
 }
 
 #[derive(Serialize)]

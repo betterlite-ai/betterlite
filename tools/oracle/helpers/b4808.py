@@ -52,24 +52,11 @@ _TOKEN_CACHE = cast(dict[str, object], vars(_HANDLER_MODULE)["_token_cache"])
 
 
 class Provider(Protocol):
-    def handle_non_streaming(
-        self, request_id: str, params: Json, api_base: str | None, **kwargs: Json
-    ) -> Awaitable[Json]: ...
-
-    def handle_streaming(
-        self, request_id: str, params: Json, api_base: str | None, **kwargs: Json
-    ) -> AsyncIterator[dict[str, Json]]: ...
+    handle_non_streaming: Callable[..., Awaitable[Json]]
+    handle_streaming: Callable[..., AsyncIterator[dict[str, Json]]]
 
 
 _PROVIDER = cast(Provider, vars(_CONFIG_MODULE)["WatsonxOrchestrateA2AConfig"]())
-
-
-class FakeTime:
-    def monotonic(self) -> float:
-        return 0.0
-
-    def time(self) -> float:
-        return 1_700_000_000.0
 
 
 class SleepRecorder:
@@ -222,10 +209,11 @@ def run(input_value: dict[str, Json]) -> Json:
     recorder = SleepRecorder()
     ids = (UUID(int=value) for value in range(1, 100))
     fake_asyncio = SimpleNamespace(sleep=recorder.sleep, TimeoutError=TimeoutError)
+    fake_time = SimpleNamespace(monotonic=lambda: 0.0, time=lambda: 1_700_000_000.0)
     with (
         patch.object(_HANDLER_MODULE, "get_async_httpx_client", _client_factory(script, clients)),
         patch.object(_HANDLER_MODULE, "asyncio", fake_asyncio),
-        patch.object(_HANDLER_MODULE, "time", FakeTime()),
+        patch.object(_HANDLER_MODULE, "time", fake_time),
         patch.object(_TRANSFORMATION_MODULE, "asyncio", fake_asyncio),
         patch.object(_TRANSFORMATION_MODULE, "uuid4", side_effect=ids),
     ):

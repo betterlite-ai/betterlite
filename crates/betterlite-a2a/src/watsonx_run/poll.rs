@@ -40,7 +40,7 @@ pub fn run_id(event: &RunEvent) -> Option<&str> {
 
 pub async fn poll_run<T>(
     transport: &T,
-    base_url: &str,
+    runs_url: &str,
     started: RunEvent,
     headers: &BTreeMap<String, String>,
     limits: RunLimits,
@@ -51,7 +51,7 @@ where
     let mut run = started;
     if RunState::parse(run.status.as_deref().unwrap_or_default()).is_none() {
         let id = run_id(&run).ok_or(PollError::NoRunId)?.to_owned();
-        let url = format!("{base_url}/v1/orchestrate/runs/{id}");
+        let url = format!("{runs_url}/{id}");
         let mut polled = None;
         for _ in 0..MAX_POLL_ATTEMPTS {
             transport.pause(POLL_INTERVAL).await;
