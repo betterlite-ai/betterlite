@@ -37,11 +37,13 @@ def run(input_value: dict[str, Json]) -> Json:
     else:
         raise ValueError(f"unknown engine: {name!r}")
     operation = input_value.get("operation")
-    if operation == "encode":
+    if operation in {"encode", "count"}:
         source = _text(input_value)
         if isinstance(engine, tiktoken.Encoding):
-            return cast(Json, engine.encode(source, disallowed_special=()))
-        return cast(Json, engine.encode(source).ids)
+            ids = engine.encode(source, disallowed_special=())
+        else:
+            ids = engine.encode(source).ids
+        return len(ids) if operation == "count" else cast(Json, ids)
     if operation == "decode":
         ids = _tokens(input_value)
         if isinstance(engine, tiktoken.Encoding):

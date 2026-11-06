@@ -18,6 +18,7 @@ pub(crate) struct Input {
 enum Operation {
     Encode,
     Decode,
+    Count,
 }
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -40,6 +41,12 @@ impl crate::helpers::Helper for Op {
                 engine
                     .encode(&text(input)?)
                     .map_err(|error: EngineError| failure(error.to_string()))?,
+            ),
+            Operation::Count => json(
+                engine
+                    .encode(&text(input)?)
+                    .map_err(|error: EngineError| failure(error.to_string()))?
+                    .len(),
             ),
             Operation::Decode => json(
                 engine
