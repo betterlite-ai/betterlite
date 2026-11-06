@@ -183,3 +183,10 @@ path = "fuzz_targets/xai_models.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "passthrough_bytes"
+path = "fuzz_targets/passthrough_bytes.rs"
+test = false
+doc = false
+bench = false

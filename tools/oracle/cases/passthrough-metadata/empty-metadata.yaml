@@ -1,0 +1,8 @@
+kind: helper
+name: passthrough-empty-metadata
+call:
+  b3570:
+    function: model_group
+    litellm_params: {}
+env: {}
+compare: {ignore: []}
