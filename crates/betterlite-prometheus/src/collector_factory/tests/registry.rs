@@ -20,8 +20,8 @@ impl<'callbacks, L> CallbackRegistry<'callbacks, L> {
         for entry in &self.entries {
             let configured = entry.class_name == PROMETHEUS_CALLBACK_NAME
                 || entry.class_name == PROMETHEUS_LOGGER_CLASS;
-            if configured {
-                return entry.logger;
+            if configured && let Some(logger) = entry.logger {
+                return Some(logger);
             }
         }
         None

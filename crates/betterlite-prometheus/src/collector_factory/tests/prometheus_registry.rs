@@ -44,6 +44,17 @@ fn prometheus_registry_matches_the_configured_callback_name() {
 }
 
 #[test]
+fn prometheus_registry_continues_past_a_configured_entry_without_a_logger() {
+    let registry = CallbackRegistry {
+        entries: vec![
+            entry(PROMETHEUS_CALLBACK_NAME, None),
+            entry(PROMETHEUS_LOGGER_CLASS, Some(&LOGGER)),
+        ],
+    };
+    assert_eq!(registry.get_instance(), Some(&LOGGER));
+}
+
+#[test]
 fn prometheus_registry_skips_loggers_of_other_classes() {
     let registry = CallbackRegistry {
         entries: vec![
