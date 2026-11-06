@@ -11,21 +11,14 @@ description: 'Implement CompactionHistory, tool-pair partitioning, token budget,
   _unavailable (L173-L176), _blocks (L179-L181), _tool_ids (L184-L202), _history (L205-L232), _count (L235-L241),
   _budget (L244-L263), _compactor_model (L266-L297), _native_prefix (L300-L314), _compactor_input (L339-L357),
   _portable_history (L390-L413). Implement these behaviors through the typed Rust services above; synchronous
-  facades and structural accessors reuse the same primitive instead of separate ports.'
+  facades and structural accessors reuse the same primitive instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B336 calls this service.'
 scope:
   paths:
   - crates/betterlite-router/src/compaction_history.rs
   - crates/betterlite-router/src/compaction_history/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/compaction_history.rs
   - crates/betterlite-server/src/routing/compaction_history/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/compaction_history.rs
   - tools/oracle/src/router_probes/compaction_history/**
   - tools/oracle/litellm/probes/compaction_history.py

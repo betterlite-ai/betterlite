@@ -61,7 +61,11 @@ enum Command {
     )]
     Validate,
     #[command(about = "Print the checks a task runs")]
-    List { task: String },
+    List {
+        task: String,
+        #[arg(long, help = "Print only the checks a dispatch runs locally")]
+        local: bool,
+    },
     #[command(
         about = "Check task prerequisites without running builds, tests, coverage or mutants"
     )]
@@ -136,7 +140,11 @@ enum Command {
     },
 }
 
-fn listing(development: &Development, task_id: &str) -> Result<Vec<String>, GateError> {
+fn listing(
+    development: &Development,
+    task_id: &str,
+    local: bool,
+) -> Result<Vec<String>, GateError> {
     let task = development.task(task_id)?;
     let builtin = development
         .catalog
@@ -146,7 +154,14 @@ fn listing(development: &Development, task_id: &str) -> Result<Vec<String>, Gate
         .map(|check| format!("{:16} builtin", <&str>::from(check.id)));
     let commands = checks::commands(development, &task)?
         .into_iter()
-        .map(|check| format!("{:16} {}", check.id, check.run));
+        .filter(|check| !local || checks::selection::lint(&check.id))
+        .map(|check| {
+            format!(
+                "{:16} {}",
+                check.id,
+                check.run.replace('\n', "\n                 ")
+            )
+        });
     Ok(builtin.chain(commands).collect())
 }
 
@@ -209,10 +224,14 @@ fn run_command(
             Ok((vec!["a worker vendor is available".to_owned()], true))
         }
         Command::Validate => validate_command(development),
-        Command::List { task } => Ok((listing(development, &task)?, true)),
+        Command::List { task, local } => Ok((listing(development, &task, local)?, true)),
         Command::Preflight { task: id } => {
             let task = development.task(&id)?;
-            let selection = checks::selection::preflight(development, &task)?;
+            let selection = checks::selection::builtins_and(
+                development,
+                &task,
+                checks::selection::prerequisite,
+            )?;
             let verdict = checks::run(development, &task, &selection)?;
             Ok((verdict.lines, verdict.passed))
         }

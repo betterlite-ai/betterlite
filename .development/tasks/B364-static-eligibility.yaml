@@ -15,21 +15,14 @@ description: 'Build EligibilityInput and EligibilityResult over the immutable ca
   Router._deployment_max_input_tokens (L12387-L12400), Router._pre_call_checks_need_token_count (L12402-L12412),
   Router._acount_pre_call_check_tokens (L12414-L12442), Router._pre_call_checks (L12444-L12625). Implement
   these behaviors through the typed Rust services above; synchronous facades and structural accessors
-  reuse the same primitive instead of separate ports.'
+  reuse the same primitive instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B016 wires this service into RouteContext.'
 scope:
   paths:
   - crates/betterlite-router/src/static_eligibility.rs
   - crates/betterlite-router/src/static_eligibility/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/static_eligibility.rs
   - crates/betterlite-server/src/routing/static_eligibility/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/static_eligibility.rs
   - tools/oracle/src/router_probes/static_eligibility/**
   - tools/oracle/litellm/probes/static_eligibility.py
