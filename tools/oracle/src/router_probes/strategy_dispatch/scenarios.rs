@@ -15,7 +15,7 @@ use crate::router_probes::error::OperationError;
 use crate::router_probes::random::InjectedRandom;
 use crate::router_probes::single_candidate::Deployment;
 
-use super::{Function, Input, Output, State};
+use super::{Input, Output, State};
 
 fn strategy_field(field: Option<&str>) -> Result<RoutingStrategy, OperationError> {
     let text = field.ok_or_else(|| OperationError::InvalidRequest {
@@ -26,7 +26,7 @@ fn strategy_field(field: Option<&str>) -> Result<RoutingStrategy, OperationError
     })
 }
 
-fn start(input: &Input) -> Result<StrategyDispatch, OperationError> {
+pub(super) fn start(input: &Input) -> Result<StrategyDispatch, OperationError> {
     let strategy = strategy_field(input.strategy.as_deref())?;
     StrategyDispatch::new(strategy, None).map_err(|error| OperationError::InvalidRequest {
         message: error.to_string(),
@@ -99,18 +99,6 @@ fn override_selector_fields(
     (selector, selector_is_default, selector_cached, bound)
 }
 
-pub(super) fn validate(input: &Input) -> Result<Output, OperationError> {
-    let value = input
-        .value
-        .as_deref()
-        .ok_or_else(|| OperationError::InvalidRequest {
-            message: "validate needs the value to check".to_owned(),
-        })?;
-    Ok(Output::Validate {
-        valid: RoutingStrategy::parse(value).is_ok(),
-    })
-}
-
 pub(super) fn reinit(input: &Input) -> Result<Output, OperationError> {
     let mut dispatch = start(input)?;
     let next = strategy_field(input.next_strategy.as_deref())?;
@@ -142,21 +130,7 @@ pub(super) fn reinit(input: &Input) -> Result<Output, OperationError> {
     })
 }
 
-pub(super) fn scenario(
-    input: &Input,
-    random: &mut InjectedRandom<'_>,
-) -> Result<Output, OperationError> {
-    let mut dispatch = start(input)?;
-    match input.function {
-        Function::Override => Ok(override_output(&mut dispatch, input)),
-        Function::Dispatch => dispatch_output(&mut dispatch, input, random),
-        Function::Validate | Function::Reinit => Err(OperationError::InvalidRequest {
-            message: "validate and reinit do not run a selection scenario".to_owned(),
-        }),
-    }
-}
-
-fn override_output(dispatch: &mut StrategyDispatch, input: &Input) -> Output {
+pub(super) fn override_output(dispatch: &mut StrategyDispatch, input: &Input) -> Output {
     let raw = input
         .routing_strategy
         .as_deref()
@@ -190,7 +164,7 @@ fn simple_shuffle_index(selection: Selection) -> Result<usize, OperationError> {
     }
 }
 
-fn dispatch_output(
+pub(super) fn dispatch_output(
     dispatch: &mut StrategyDispatch,
     input: &Input,
     random: &mut InjectedRandom<'_>,

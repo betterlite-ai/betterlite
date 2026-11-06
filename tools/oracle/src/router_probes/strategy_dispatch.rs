@@ -1,3 +1,4 @@
+use betterlite_router::strategy_dispatch::strategy::RoutingStrategy;
 use serde::{Deserialize, Serialize};
 
 use crate::router_probes::ProbeOutput;
@@ -76,9 +77,26 @@ pub(crate) fn run(
     random: &mut InjectedRandom<'_>,
 ) -> Result<ProbeOutput, OperationError> {
     let output = match input.function {
-        Function::Validate => scenarios::validate(input)?,
+        Function::Validate => {
+            let value = input
+                .value
+                .as_deref()
+                .ok_or_else(|| OperationError::InvalidRequest {
+                    message: "validate needs the value to check".to_owned(),
+                })?;
+            Output::Validate {
+                valid: RoutingStrategy::parse(value).is_ok(),
+            }
+        }
         Function::Reinit => scenarios::reinit(input)?,
-        Function::Override | Function::Dispatch => scenarios::scenario(input, random)?,
+        Function::Override => {
+            let mut dispatch = scenarios::start(input)?;
+            scenarios::override_output(&mut dispatch, input)
+        }
+        Function::Dispatch => {
+            let mut dispatch = scenarios::start(input)?;
+            scenarios::dispatch_output(&mut dispatch, input, random)?
+        }
     };
     Ok(ProbeOutput::StrategyDispatch(output))
 }
