@@ -66,7 +66,7 @@ impl Script {
         steps.pop_front().ok_or(ScriptError::Exhausted)
     }
 
-    fn record(&self, method: &'static str, request: &RunRequest<'_>) -> Result<(), ScriptError> {
+    fn reply(&self, method: &'static str, request: &RunRequest<'_>) -> Result<Step, ScriptError> {
         let body = match request.body {
             Some(body) => serde_json::to_value(body).map_err(ScriptError::Record)?,
             None => AgentJson::Null,
@@ -81,11 +81,6 @@ impl Script {
                 body,
                 timeout: request.limits.timeout.as_secs_f64(),
             });
-        Ok(())
-    }
-
-    fn reply(&self, method: &'static str, request: &RunRequest<'_>) -> Result<Step, ScriptError> {
-        self.record(method, request)?;
         let step = self.next()?;
         if matches!(step.fail, Some(Fail::Transport)) {
             return Err(ScriptError::Transport);
