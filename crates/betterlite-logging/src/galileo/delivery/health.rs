@@ -20,7 +20,6 @@ pub struct HealthStatus {
     pub error_message: Option<String>,
 }
 
-// GalileoObserve.async_health_check.
 pub fn check(delivery: &GalileoDelivery, transport: &dyn Transport) -> HealthStatus {
     match probe(delivery, transport) {
         Ok(()) => HealthStatus {

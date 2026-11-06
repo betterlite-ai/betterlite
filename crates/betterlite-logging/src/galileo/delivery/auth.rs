@@ -13,7 +13,7 @@ struct LoginBody {
     access_token: SecretString,
 }
 
-// GalileoObserve._ensure_headers: the cached headers, else the API key header, else a token from POST /login.
+// Checking the cache first keeps a token login to one POST instead of one per flush.
 pub fn ensure_headers(delivery: &GalileoDelivery, transport: &dyn Transport) -> bool {
     let cached = delivery
         .state
@@ -51,7 +51,6 @@ pub fn ensure_headers(delivery: &GalileoDelivery, transport: &dyn Transport) -> 
     }
 }
 
-// GalileoObserve.async_set_galileo_headers.
 fn login(
     delivery: &GalileoDelivery,
     transport: &dyn Transport,

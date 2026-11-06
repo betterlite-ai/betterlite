@@ -30,7 +30,7 @@ pub fn json_headers(credential_name: &str, credential: SecretString) -> Vec<Head
     headers
 }
 
-// GalileoObserve._redact_headers: more than 12 characters keep the first 8 and last 4, anything shorter is masked whole.
+// A value of 12 characters or fewer would be shown in full by the 8 and 4 split, so it is masked whole.
 #[must_use]
 pub fn redact_headers(headers: &[Header]) -> Vec<(String, String)> {
     headers

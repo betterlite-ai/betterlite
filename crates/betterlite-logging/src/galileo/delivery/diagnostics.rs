@@ -39,7 +39,7 @@ fn trace_missing_fields(trace_index: usize, trace: &Record) -> Vec<String> {
     missing
 }
 
-// GalileoObserve._log_v2_payload_validation: the ids a /ingest/traces payload must carry, named by position.
+// A trace missing its id can only be named by position for the operator.
 #[must_use]
 pub fn v2_payload_missing_fields(payload: &Record) -> Vec<String> {
     let traces = list_items(payload.get("traces"));
@@ -55,7 +55,6 @@ pub fn v2_payload_missing_fields(payload: &Record) -> Vec<String> {
     missing
 }
 
-// GalileoObserve._log_flush_payload.
 pub fn log_flush_payload(use_v2_api: bool, url: &str, payload: &Record) {
     let trace_count = list_items(payload.get("traces")).len();
     tracing::debug!("Galileo Logger flush URL: {url} trace_count={trace_count}");

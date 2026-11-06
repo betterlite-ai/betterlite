@@ -43,7 +43,6 @@ pub fn ingest_request(
     ))
 }
 
-// GalileoObserve.flush_in_memory_records.
 pub fn deliver(
     delivery: &GalileoDelivery,
     transport: &dyn Transport,
@@ -120,7 +119,6 @@ fn settle(delivery: &GalileoDelivery, response: &HttpResponse, captured: usize) 
     FlushOutcome::Rejected
 }
 
-// GalileoObserve._log_flush_config.
 fn log_flush_config(delivery: &GalileoDelivery, record_count: usize) {
     let config = &delivery.config;
     tracing::debug!(
