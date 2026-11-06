@@ -184,6 +184,21 @@ async fn backend_answer_that_is_not_json_is_a_server_error() {
 }
 
 #[tokio::test]
+async fn backend_answer_without_a_result_object_passes_the_request() {
+    let server = serve(StatusCode::OK, "{}".to_owned()).await;
+    let instance = guardrail(&server.base);
+    let mut data = data_with_messages(vec![user("hello")]);
+    let mut recorder = Recorder::default();
+    let transformed = instance
+        .async_pre_call_hook(&mut data, "completion", &mut recorder)
+        .await
+        .unwrap();
+    assert!(!transformed);
+    assert_eq!(data.messages, Some(vec![user("hello")]));
+    assert_eq!(recorder.names, [GUARDRAIL_NAME]);
+}
+
+#[tokio::test]
 async fn backend_answer_larger_than_the_cap_is_a_server_error() {
     let server = serve(StatusCode::OK, "x".repeat(1024 * 1024 + 1)).await;
     let instance = guardrail(&server.base);
