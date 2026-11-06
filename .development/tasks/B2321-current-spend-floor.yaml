@@ -44,6 +44,7 @@ description: >-
   below 300 lines. The 157 nonblank non-comment lines excluding docstrings allow 210 production,
   290 tests, 65 adapters, 60 config and 100 server wiring, 725 within 775. Cache decoders belong to
   B733; no new byte boundary.
+  B1100 registers state/current_spend.rs as a stub slot, so fill only crates/betterlite-server/src/state/current_spend.rs and leave state.rs as it is.
 scope:
   paths:
     - crates/betterlite-auth/src/current_spend.rs
@@ -51,8 +52,8 @@ scope:
     - crates/betterlite-auth/Cargo.toml
     - crates/betterlite-server/src/auth/current_spend.rs
     - crates/betterlite-server/src/auth/current_spend/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/state/current_spend.rs
+    - crates/betterlite-server/src/state/current_spend/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - crates/betterlite-config/Cargo.toml

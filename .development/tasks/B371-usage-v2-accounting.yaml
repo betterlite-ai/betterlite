@@ -15,21 +15,14 @@ description: 'Implement UsageV2Accounting with pre-call RPM increments and succe
   LowestTPMLoggingHandler_v2.async_pre_call_check (L176-L250), LowestTPMLoggingHandler_v2.log_success_event
   (L252-L292), LowestTPMLoggingHandler_v2.async_log_success_event (L294-L338). Implement these behaviors
   through the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
-  instead of separate ports.'
+  instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B318 wires this service in through the UsageBasedRoutingV2 stub.'
 scope:
   paths:
   - crates/betterlite-router/src/usage_v2_accounting.rs
   - crates/betterlite-router/src/usage_v2_accounting/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/usage_v2_accounting.rs
   - crates/betterlite-server/src/routing/usage_v2_accounting/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/usage_v2_accounting.rs
   - tools/oracle/src/router_probes/usage_v2_accounting/**
   - tools/oracle/litellm/probes/usage_v2_accounting.py

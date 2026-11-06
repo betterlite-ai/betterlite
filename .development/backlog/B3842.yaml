@@ -1,7 +1,7 @@
 id: B3842
 milestone: M7 observability
 title: OTel V2 settings and destination contracts
-status: todo
+status: done
 depends_on: [B002, B172, B3840]
 file: tasks/B3842-otel-settings.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/integrations/otel/plumbing/otlp_tls.py"
 parent: B110
 split_from: B110
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 716

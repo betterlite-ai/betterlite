@@ -25,21 +25,14 @@ description: 'Implement AffinityKey and AffinityPin, caller-key hashing, model-m
   through the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
   instead of separate ports. Bound the affinity outside-byte parser to 1048576 bytes before decoding;
   on excess use its typed invalid-input outcome (classifier/observation consumers keep their pinned warning/fallback
-  path).'
+  path).
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B324, B334 and B335 call this service.'
 scope:
   paths:
   - crates/betterlite-router/src/affinity_claims.rs
   - crates/betterlite-router/src/affinity_claims/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/affinity_claims.rs
   - crates/betterlite-server/src/routing/affinity_claims/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/affinity_claims.rs
   - tools/oracle/src/router_probes/affinity_claims/**
   - tools/oracle/litellm/probes/affinity_claims.py

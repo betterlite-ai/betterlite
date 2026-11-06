@@ -18,21 +18,16 @@ description: 'Extend B005''s stream lifecycle with the B310 fallback engine. Tra
   Router._acompletion_streaming_iterator.FallbackStreamWrapper.__anext__ (L2933-L2934), Router._acompletion_streaming_iterator.close_model_response
   (L2936-L2945), Router._acompletion_streaming_iterator.stream_with_fallbacks (L2947-L3047), Router._extract_partial_responses_usage
   (L3056-L3127). Implement these behaviors through the typed Rust services above; synchronous facades
-  and structural accessors reuse the same primitive instead of separate ports.'
+  and structural accessors reuse the same primitive instead of separate ports.
+  B016 registers RouteStage::ChatStreamFallback as a stub, so replace only that stub and its not-built test in crates/betterlite-router/src/context/chat_stream_fallback.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.'
 scope:
   paths:
   - crates/betterlite-router/src/chat_stream_fallback.rs
   - crates/betterlite-router/src/chat_stream_fallback/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-router/src/context/chat_stream_fallback.rs
+  - crates/betterlite-router/src/context/chat_stream_fallback/**
   - crates/betterlite-server/src/routing/chat_stream_fallback.rs
   - crates/betterlite-server/src/routing/chat_stream_fallback/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/chat_stream_fallback.rs
   - tools/oracle/src/router_probes/chat_stream_fallback/**
   - tools/oracle/litellm/probes/chat_stream_fallback.py

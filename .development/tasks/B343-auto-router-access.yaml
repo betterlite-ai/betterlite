@@ -10,15 +10,11 @@ description: 'Revalidate B377 automatic-router dependencies at inference using B
   of copying their algorithms. Function coverage in litellm/proxy/auth/auto_router_checks.py: _mapping
   (L16-L20), authorize_member_auto_router_inference (L23-L136). Implement these behaviors through the
   typed Rust services above; synchronous facades and structural accessors reuse the same primitive instead
-  of separate ports.'
+  of separate ports. This task adds no route or server state, so leave routes.rs and state.rs to B1100.'
 scope:
   paths:
   - crates/betterlite-server/src/auto_router_access.rs
   - crates/betterlite-server/src/auto_router_access/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/auto_router_access.rs
   - crates/betterlite-server/src/routing/auto_router_access/**
   - tools/oracle/src/router_probes/auto_router_access.rs

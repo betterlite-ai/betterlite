@@ -3,8 +3,7 @@ title: Batch cancellation and route composition
 description: >-
   Own complete cancel_batch with POST /batches/{batch_id:path}/cancel,
   /v1/batches/{batch_id:path}/cancel and /{provider}/v1/batches/{batch_id:path}/cancel.
-  Implement betterlite-server::api::batch_routes and betterlite-core::api::batch_routes, then
-  mount B1050 create, B1051 retrieve and B1133 list factories once. Do not re-register their paths.
+  Implement betterlite-server::api::batch_routes and betterlite-core::api::batch_routes. B1050 create, B1051 retrieve and B1133 list mount from their own route stubs, so do not mount them here. Do not re-register their paths.
   B1019 owns both ID formats, B1021 managed requirements, B1020 grants/credentials, B844 model-id
   name lookup, B1038 SDK cancellation, B162 router cancellation and B1112 fallback/runner selection.
 
@@ -26,14 +25,13 @@ description: >-
   api::batch_routes::tests in both crates. Source handler/decorators contain 200 nonblank,
   non-comment lines; budget 215 implementation, 170 tests, 210 fixtures and 45 composition lines,
   totaling 640. Existing request/ID decoders handle external input.
+  B1100 registers routes/batch.rs as a stub, so fill only crates/betterlite-server/src/routes/batch.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/routes/batch.rs
+  - crates/betterlite-server/src/routes/batch/**
   - crates/betterlite-server/src/api/batch_routes.rs
   - crates/betterlite-server/src/api/batch_routes/**
   - crates/betterlite-core/src/api/batch_routes.rs
@@ -145,7 +143,7 @@ deviations:
   why: Max must decide managed files and batches. Preserve the current no-hook behavior without imposing an enterprise license gate or inventing a store implementation.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/batches_endpoints/endpoints.py#L89-L105
 out_of_scope:
-- B1112 owns endpoint support helpers L82-L215; B1050 create_batch L233-L524; B1051 retrieve_batch L542-L829; B1133 list_batches L847-L1014. Their route factories are only composed here.
+- B1112 owns endpoint support helpers L82-L215; B1050 create_batch L233-L524; B1051 retrieve_batch L542-L829; B1133 list_batches L847-L1014. Their route factories mount from their own route stubs.
 - B1049 owns the runner's cancel method, terminal status checks and CAS retry. Without the ManagedBatchStore hook its invocation is unreachable from this route; B1043 refund work is not a direct dependency.
 - B1041 owns database update/no-hook behavior; B1048 batch_error; B1020 model grants; B004 common request/call-id/header behavior; B2400 final error conversion.
 pitfalls:

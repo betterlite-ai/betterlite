@@ -92,6 +92,7 @@ description: >-
   Server wiring tests under betterlite-server::auth::auth_model_lists::tests are listing_service_is_registered
   and listing_reads_authorized_models; invoke the actual constructor and listing route without turning
   these helpers into a request admission stage.
+  B1100 registers state/auth_model_lists.rs as a stub slot, so fill only crates/betterlite-server/src/state/auth_model_lists.rs and leave state.rs as it is.
 scope:
   paths:
     - crates/betterlite-auth/src/auth_model_lists.rs
@@ -106,8 +107,8 @@ scope:
     - tools/oracle/fuzz/corpus/helper_case/auth-model-lists-*
     - crates/betterlite-server/src/auth.rs
     - crates/betterlite-server/src/auth/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/state/auth_model_lists.rs
+    - crates/betterlite-server/src/state/auth_model_lists/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/auth-model-lists/**
