@@ -4,6 +4,11 @@ call:
   response_tool_calls:
     function: get_tool_calls
     response:
+      choices:
+        - message:
+            role: assistant
+            content: hi
+            tool_calls: null
       output:
         - type: message
           role: assistant
