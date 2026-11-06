@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::fmt;
 use std::fs;
+use std::future::Future;
 use std::io::{self, Write};
 use std::mem;
 use std::net::{Ipv4Addr, SocketAddr};
@@ -19,7 +20,7 @@ use tempfile::TempDir;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpStream;
 use tokio::task::yield_now;
-use tokio::time::sleep;
+use tokio::time::{sleep, timeout};
 use tracing::field::Field as EventField;
 use tracing::subscriber::{DefaultGuard, set_default};
 use tracing::{Event, Subscriber};
@@ -29,13 +30,15 @@ use url::Url;
 use crate::xai_login::error::XaiLoginError;
 use crate::xai_login::listener::{CallbackServer, CallbackSettings};
 use crate::xai_login::pkce::Entropy;
-use crate::xai_login::service::{Browser, UserOutput, Uuids, XaiLogin};
+use crate::xai_login::service::{Browser, LoginOptions, UserOutput, Uuids, XaiLogin};
 use crate::xai_tokens::Clock;
 use crate::xai_tokens::XaiOauth;
 use crate::xai_tokens::files::LocalFiles;
+use crate::xai_tokens::rules::OauthRecord;
 use crate::xai_tokens::transport::Transport;
 
 pub(crate) const NOW: i64 = 1_000;
+const TEST_TIMEOUT: Duration = Duration::from_secs(5);
 pub(crate) const STATE: &str = "state-test";
 pub(crate) const NONCE: &str = "nonce-test";
 pub(crate) const FRESH: &str = r#"{"access_token":"live-access","refresh_token":"live-refresh","id_token":"live-id","token_type":"Bearer","token_endpoint":"https://auth.x.ai/oauth2/token","expires_at":5000}"#;
@@ -228,7 +231,20 @@ pub(crate) struct Fixture {
     pub(crate) service: TestLogin,
 }
 
+pub(crate) async fn bounded<F>(future: F) -> F::Output
+where
+    F: Future,
+{
+    timeout(TEST_TIMEOUT, future)
+        .await
+        .expect("the awaited step did not finish within the test bound")
+}
+
 impl Fixture {
+    pub(crate) async fn login(&self, options: LoginOptions) -> Result<OauthRecord, XaiLoginError> {
+        bounded(self.service.login(options)).await
+    }
+
     pub(crate) fn new(existing: Option<&str>, replies: Vec<Reply>) -> Self {
         let dir = tempfile::tempdir().unwrap();
         let settings = Settings {

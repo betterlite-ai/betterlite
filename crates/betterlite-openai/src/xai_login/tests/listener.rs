@@ -15,7 +15,8 @@ use crate::xai_login::listener::{
 };
 
 use super::support::{
-    FixedClock, NOW, STATE, SteppingClock, capture_events, get, send, server_port, transcript,
+    FixedClock, NOW, STATE, SteppingClock, bounded, capture_events, get, send, server_port,
+    transcript,
 };
 
 fn settings() -> CallbackSettings {
@@ -83,10 +84,13 @@ async fn reproduces_the_pinned_python_callback_transcript(#[case] name: &str) {
         .await
         .unwrap();
     let port = server_port(&server);
-    let (response, outcome) = tokio::join!(
-        get(port, &case.target),
-        timeout(Duration::from_millis(1_000), server.wait(&clock)),
-    );
+    let (response, outcome) = bounded(async {
+        tokio::join!(
+            get(port, &case.target),
+            timeout(Duration::from_millis(1_000), server.wait(&clock)),
+        )
+    })
+    .await;
     assert_eq!(response.status, case.status);
     assert_eq!(response.content_type, case.content_type);
     assert_eq!(response.body, case.body);
@@ -134,17 +138,23 @@ async fn an_unrelated_path_keeps_the_wait_running() {
     let port = server_port(&server);
     let wait = server.wait(&clock);
     tokio::pin!(wait);
-    let (response, outcome) = tokio::join!(
-        get(port, "/favicon.ico"),
-        timeout(Duration::from_millis(150), &mut wait),
-    );
+    let (response, outcome) = bounded(async {
+        tokio::join!(
+            get(port, "/favicon.ico"),
+            timeout(Duration::from_millis(150), &mut wait),
+        )
+    })
+    .await;
     assert_eq!(response.status, 404);
     assert_eq!(response.content_type, None);
     outcome.unwrap_err();
-    let (received, waiting) = tokio::join!(
-        get(port, "/callback?code=code-1&state=state-test"),
-        &mut wait,
-    );
+    let (received, waiting) = bounded(async {
+        tokio::join!(
+            get(port, "/callback?code=code-1&state=state-test"),
+            &mut wait,
+        )
+    })
+    .await;
     assert_eq!(received.status, 200);
     let request = waiting.unwrap();
     assert_eq!(
@@ -161,10 +171,13 @@ async fn a_method_other_than_get_keeps_the_wait_running() {
     let port = server_port(&server);
     let wait = server.wait(&clock);
     tokio::pin!(wait);
-    let (response, outcome) = tokio::join!(
-        send(port, "POST /callback HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"),
-        timeout(Duration::from_millis(150), &mut wait),
-    );
+    let (response, outcome) = bounded(async {
+        tokio::join!(
+            send(port, "POST /callback HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n"),
+            timeout(Duration::from_millis(150), &mut wait),
+        )
+    })
+    .await;
     assert_eq!(response.status, 501);
     outcome.unwrap_err();
 }
@@ -180,10 +193,13 @@ async fn an_oversized_request_head_is_refused_and_keeps_waiting() {
     let prefix = "GET /";
     let request = format!("{prefix}{}", "a".repeat(bound - prefix.len()));
     assert_eq!(request.len(), bound);
-    let (response, outcome) = tokio::join!(
-        send(port, &request),
-        timeout(Duration::from_millis(300), &mut wait),
-    );
+    let (response, outcome) = bounded(async {
+        tokio::join!(
+            send(port, &request),
+            timeout(Duration::from_millis(300), &mut wait),
+        )
+    })
+    .await;
     assert_eq!(response.status, 400);
     outcome.unwrap_err();
 }
@@ -197,10 +213,13 @@ async fn too_many_headers_are_refused_and_keep_waiting() {
     tokio::pin!(wait);
     let headers = "X-Probe: a\r\n".repeat(100);
     let request = format!("GET /callback?code=c&state=state-test HTTP/1.1\r\n{headers}\r\n");
-    let (response, outcome) = tokio::join!(
-        send(port, &request),
-        timeout(Duration::from_millis(300), &mut wait),
-    );
+    let (response, outcome) = bounded(async {
+        tokio::join!(
+            send(port, &request),
+            timeout(Duration::from_millis(300), &mut wait),
+        )
+    })
+    .await;
     assert_eq!(response.status, 431);
     outcome.unwrap_err();
 }
@@ -213,16 +232,22 @@ async fn the_receiver_writes_no_access_log() {
     let port = server_port(&server);
     let wait = server.wait(&clock);
     tokio::pin!(wait);
-    let (missing, outcome) = tokio::join!(
-        get(port, "/favicon.ico"),
-        timeout(Duration::from_millis(150), &mut wait),
-    );
+    let (missing, outcome) = bounded(async {
+        tokio::join!(
+            get(port, "/favicon.ico"),
+            timeout(Duration::from_millis(150), &mut wait),
+        )
+    })
+    .await;
     assert_eq!(missing.status, 404);
     outcome.unwrap_err();
-    let (received, request) = tokio::join!(
-        get(port, "/callback?code=code-1&state=state-test"),
-        &mut wait,
-    );
+    let (received, request) = bounded(async {
+        tokio::join!(
+            get(port, "/callback?code=code-1&state=state-test"),
+            &mut wait,
+        )
+    })
+    .await;
     assert_eq!(received.status, 200);
     request.unwrap();
     assert!(captured.0.lock().unwrap().is_empty());
@@ -247,10 +272,13 @@ async fn a_taken_preferred_port_falls_back_to_an_ephemeral_port() {
         format!("http://127.0.0.1:{}/callback", server_port(&server))
     );
     let port = server_port(&server);
-    let (response, request) = tokio::join!(
-        get(port, "/callback?code=code-1&state=state-test"),
-        server.wait(&clock),
-    );
+    let (response, request) = bounded(async {
+        tokio::join!(
+            get(port, "/callback?code=code-1&state=state-test"),
+            server.wait(&clock),
+        )
+    })
+    .await;
     assert_eq!(response.status, 200);
     assert_eq!(
         request
@@ -275,7 +303,7 @@ async fn the_wait_times_out_at_the_deadline() {
     };
     let server = CallbackServer::bind(&settings, STATE).await.unwrap();
     assert!(matches!(
-        server.wait(&clock).await,
+        bounded(server.wait(&clock)).await,
         Err(XaiLoginError::Timeout)
     ));
 }
@@ -289,10 +317,13 @@ async fn the_listener_is_closed_when_the_wait_ends(#[case] deliver: bool) {
     let server = CallbackServer::bind(&settings(), STATE).await.unwrap();
     let port = server_port(&server);
     if deliver {
-        let (response, _fields) = tokio::join!(
-            get(port, "/callback?code=code-1&state=state-test"),
-            server.wait(&clock),
-        );
+        let (response, _fields) = bounded(async {
+            tokio::join!(
+                get(port, "/callback?code=code-1&state=state-test"),
+                server.wait(&clock),
+            )
+        })
+        .await;
         assert_eq!(response.status, 200);
     } else {
         let stepping = SteppingClock {
@@ -300,7 +331,7 @@ async fn the_listener_is_closed_when_the_wait_ends(#[case] deliver: bool) {
             step: Decimal::from(30_i32),
         };
         assert!(matches!(
-            server.wait(&stepping).await,
+            bounded(server.wait(&stepping)).await,
             Err(XaiLoginError::Timeout)
         ));
     }

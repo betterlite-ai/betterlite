@@ -13,8 +13,8 @@ use crate::xai_tokens::error::XaiOauthError;
 use crate::xai_tokens::rules::CLIENT_ID;
 
 use super::support::{
-    BrokenWriter, DISCOVERY_REPLY, FRESH, Fixture, NOW, Reply, STALE, STALE_WITHOUT_REFRESH,
-    TOKEN_REPLY, callback_when, port_of,
+    BrokenWriter, DISCOVERY_REPLY, FRESH, Fixture, NOW, Reply, STALE, STALE_WITHOUT_REFRESH, Seen,
+    TOKEN_REPLY, bounded, callback_when, port_of,
 };
 
 const VERIFIER: &str = "BwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc";
@@ -35,10 +35,22 @@ fn stored(json: &str) -> StoredRecord {
     decode_xai_oauth(json.as_bytes()).unwrap()
 }
 
+fn assert_exchange(exchange: &Seen, port: u16) {
+    assert_eq!(exchange.method, "POST");
+    assert_eq!(exchange.url, "https://auth.x.ai/oauth2/token");
+    assert_eq!(exchange.content_type, "application/x-www-form-urlencoded");
+    assert_eq!(
+        exchange.body,
+        format!(
+            "grant_type=authorization_code&code=code-1&redirect_uri=http%3A%2F%2F127.0.0.1%3A{port}%2Fcallback&client_id={CLIENT_ID}&code_verifier={VERIFIER}"
+        )
+    );
+}
+
 #[tokio::test]
 async fn an_unexpired_record_is_returned_without_a_request() {
     let fixture = Fixture::new(Some(FRESH), Vec::new());
-    let record = fixture.service.login(options()).await.unwrap();
+    let record = fixture.login(options()).await.unwrap();
     assert_eq!(record.access_token.expose_secret(), "live-access");
     assert_eq!(record.refresh_token.expose_secret(), "live-refresh");
     assert_eq!(record.id_token.unwrap().expose_secret(), "live-id");
@@ -53,7 +65,6 @@ async fn an_unexpired_record_is_returned_without_a_request() {
 async fn force_ignores_the_existing_record() {
     let fixture = Fixture::new(Some(FRESH), vec![Reply::Fail]);
     let error = fixture
-        .service
         .login(LoginOptions {
             force: true,
             no_browser: false,
@@ -73,7 +84,7 @@ async fn force_ignores_the_existing_record() {
 #[tokio::test]
 async fn an_expired_record_is_refreshed_before_authorizing() {
     let fixture = Fixture::new(Some(STALE), vec![Reply::Body(200, TOKEN_REPLY)]);
-    let record = fixture.service.login(options()).await.unwrap();
+    let record = fixture.login(options()).await.unwrap();
     assert_eq!(record.access_token.expose_secret(), "new-access");
     let seen = fixture.seen();
     assert_eq!(seen.len(), 1);
@@ -91,7 +102,7 @@ async fn a_failed_refresh_falls_through_to_authorization() {
         Some(STALE),
         vec![Reply::Body(400, "{}"), Reply::Body(500, "{}")],
     );
-    let error = fixture.service.login(options()).await.unwrap_err();
+    let error = fixture.login(options()).await.unwrap_err();
     assert!(matches!(error, XaiLoginError::Oauth(_)));
     let seen = fixture.seen();
     assert_eq!(seen.len(), 2);
@@ -106,7 +117,7 @@ async fn a_failed_refresh_falls_through_to_authorization() {
 #[tokio::test]
 async fn a_fresh_record_with_a_blank_refresh_token_is_returned() {
     let fixture = Fixture::new(Some(FRESH_BLANK_REFRESH), Vec::new());
-    let record = fixture.service.login(options()).await.unwrap();
+    let record = fixture.login(options()).await.unwrap();
     assert_eq!(record.access_token.expose_secret(), "live-access");
     assert_eq!(record.refresh_token.expose_secret(), "");
     assert!(fixture.seen().is_empty());
@@ -116,7 +127,7 @@ async fn a_fresh_record_with_a_blank_refresh_token_is_returned() {
 #[tokio::test]
 async fn a_transport_failure_on_refresh_ends_the_login() {
     let fixture = Fixture::new(Some(STALE), vec![Reply::Fail]);
-    let error = fixture.service.login(options()).await.unwrap_err();
+    let error = fixture.login(options()).await.unwrap_err();
     assert!(matches!(
         error,
         XaiLoginError::Oauth(XaiOauthError::Transport { stage: "token", .. })
@@ -130,7 +141,7 @@ async fn a_transport_failure_on_refresh_ends_the_login() {
 #[tokio::test]
 async fn a_record_without_a_refresh_token_authorizes() {
     let fixture = Fixture::new(Some(STALE_WITHOUT_REFRESH), vec![Reply::Fail]);
-    let error = fixture.service.login(options()).await.unwrap_err();
+    let error = fixture.login(options()).await.unwrap_err();
     assert!(matches!(error, XaiLoginError::Oauth(_)));
     let seen = fixture.seen();
     assert_eq!(seen.len(), 1);
@@ -140,7 +151,7 @@ async fn a_record_without_a_refresh_token_authorizes() {
 #[tokio::test]
 async fn a_record_without_an_access_token_authorizes() {
     let fixture = Fixture::new(Some(ONLY_REFRESH), vec![Reply::Fail]);
-    let error = fixture.service.login(options()).await.unwrap_err();
+    let error = fixture.login(options()).await.unwrap_err();
     assert!(matches!(error, XaiLoginError::Oauth(_)));
     let seen = fixture.seen();
     assert_eq!(seen.len(), 1);
@@ -157,13 +168,16 @@ async fn a_matching_callback_exchanges_the_code_and_stores_the_record() {
         ],
     );
     let service = &fixture.service;
-    let (login, response) = tokio::join!(
-        service.login(options()),
-        callback_when(
-            || service.browser.url(),
-            "/callback?code=code-1&state=state-test"
-        ),
-    );
+    let (login, response) = bounded(async {
+        tokio::join!(
+            service.login(options()),
+            callback_when(
+                || service.browser.url(),
+                "/callback?code=code-1&state=state-test"
+            ),
+        )
+    })
+    .await;
     let record = login.unwrap();
     assert_eq!(response.status, 200);
     assert_eq!(record.access_token.expose_secret(), "new-access");
@@ -177,16 +191,7 @@ async fn a_matching_callback_exchanges_the_code_and_stores_the_record() {
         seen[0].url,
         "https://auth.x.ai/.well-known/openid-configuration"
     );
-    let exchange = &seen[1];
-    assert_eq!(exchange.method, "POST");
-    assert_eq!(exchange.url, "https://auth.x.ai/oauth2/token");
-    assert_eq!(exchange.content_type, "application/x-www-form-urlencoded");
-    assert_eq!(
-        exchange.body,
-        format!(
-            "grant_type=authorization_code&code=code-1&redirect_uri=http%3A%2F%2F127.0.0.1%3A{port}%2Fcallback&client_id={CLIENT_ID}&code_verifier={VERIFIER}"
-        )
-    );
+    assert_exchange(&seen[1], port);
     assert!(fixture.stored_file().contains("new-access"));
 }
 
@@ -200,13 +205,16 @@ async fn the_authorization_url_reaches_the_browser() {
         ],
     );
     let service = &fixture.service;
-    let (_record, _response) = tokio::join!(
-        service.login(options()),
-        callback_when(
-            || service.browser.url(),
-            "/callback?code=code-1&state=state-test"
-        ),
-    );
+    let (_record, _response) = bounded(async {
+        tokio::join!(
+            service.login(options()),
+            callback_when(
+                || service.browser.url(),
+                "/callback?code=code-1&state=state-test"
+            ),
+        )
+    })
+    .await;
     let url = service.browser.url().unwrap();
     let port = port_of(&url);
     assert_eq!(service.browser.opens(), 1);
@@ -229,16 +237,19 @@ async fn no_browser_prints_the_url_without_opening_it() {
         ],
     );
     let service = &fixture.service;
-    let (record, response) = tokio::join!(
-        service.login(LoginOptions {
-            force: false,
-            no_browser: true,
-        }),
-        callback_when(
-            || service.output.text().lines().nth(1).map(str::to_owned),
-            "/callback?code=code-1&state=state-test",
-        ),
-    );
+    let (record, response) = bounded(async {
+        tokio::join!(
+            service.login(LoginOptions {
+                force: false,
+                no_browser: true,
+            }),
+            callback_when(
+                || service.output.text().lines().nth(1).map(str::to_owned),
+                "/callback?code=code-1&state=state-test",
+            ),
+        )
+    })
+    .await;
     record.unwrap();
     assert_eq!(response.status, 200);
     assert_eq!(service.browser.opens(), 0);
@@ -259,13 +270,16 @@ async fn a_refused_browser_prints_the_url() {
     );
     fixture.service.browser.result = false;
     let service = &fixture.service;
-    let (record, _response) = tokio::join!(
-        service.login(options()),
-        callback_when(
-            || service.output.text().lines().nth(1).map(str::to_owned),
-            "/callback?code=code-1&state=state-test",
-        ),
-    );
+    let (record, _response) = bounded(async {
+        tokio::join!(
+            service.login(options()),
+            callback_when(
+                || service.output.text().lines().nth(1).map(str::to_owned),
+                "/callback?code=code-1&state=state-test",
+            ),
+        )
+    })
+    .await;
     record.unwrap();
     assert_eq!(service.browser.opens(), 1);
     assert!(service.output.text().contains("https://auth.x.ai"));
@@ -275,13 +289,16 @@ async fn a_refused_browser_prints_the_url() {
 async fn a_state_mismatch_ends_the_login() {
     let fixture = Fixture::new(None, vec![Reply::Body(200, DISCOVERY_REPLY)]);
     let service = &fixture.service;
-    let (result, response) = tokio::join!(
-        service.login(options()),
-        callback_when(
-            || service.browser.url(),
-            "/callback?code=code-1&state=state-other"
-        ),
-    );
+    let (result, response) = bounded(async {
+        tokio::join!(
+            service.login(options()),
+            callback_when(
+                || service.browser.url(),
+                "/callback?code=code-1&state=state-other"
+            ),
+        )
+    })
+    .await;
     assert!(matches!(result, Err(XaiLoginError::StateMismatch)));
     assert_eq!(response.status, 400);
     assert_eq!(
@@ -295,13 +312,16 @@ async fn a_state_mismatch_ends_the_login() {
 async fn a_provider_error_ends_the_login_with_its_description() {
     let fixture = Fixture::new(None, vec![Reply::Body(200, DISCOVERY_REPLY)]);
     let service = &fixture.service;
-    let (result, response) = tokio::join!(
-        service.login(options()),
-        callback_when(
-            || service.browser.url(),
-            "/callback?error=access_denied&error_description=user+denied&state=state-test",
-        ),
-    );
+    let (result, response) = bounded(async {
+        tokio::join!(
+            service.login(options()),
+            callback_when(
+                || service.browser.url(),
+                "/callback?error=access_denied&error_description=user+denied&state=state-test",
+            ),
+        )
+    })
+    .await;
     assert_eq!(response.status, 200);
     assert!(matches!(
         result,
@@ -314,10 +334,13 @@ async fn a_provider_error_ends_the_login_with_its_description() {
 async fn a_missing_code_ends_the_login() {
     let fixture = Fixture::new(None, vec![Reply::Body(200, DISCOVERY_REPLY)]);
     let service = &fixture.service;
-    let (result, response) = tokio::join!(
-        service.login(options()),
-        callback_when(|| service.browser.url(), "/callback?state=state-test"),
-    );
+    let (result, response) = bounded(async {
+        tokio::join!(
+            service.login(options()),
+            callback_when(|| service.browser.url(), "/callback?state=state-test"),
+        )
+    })
+    .await;
     assert_eq!(response.status, 200);
     assert!(matches!(result, Err(XaiLoginError::MissingCode)));
     assert_eq!(fixture.seen().len(), 1);
@@ -327,7 +350,7 @@ async fn a_missing_code_ends_the_login() {
 async fn an_entropy_failure_stops_the_login() {
     let mut fixture = Fixture::new(None, vec![Reply::Body(200, DISCOVERY_REPLY)]);
     fixture.service.entropy.fail = true;
-    let error = fixture.service.login(options()).await.unwrap_err();
+    let error = fixture.login(options()).await.unwrap_err();
     assert!(matches!(error, XaiLoginError::Entropy { .. }));
     assert_eq!(fixture.service.browser.opens(), 0);
 }
@@ -337,7 +360,6 @@ async fn an_output_failure_stops_the_login() {
     let mut fixture = Fixture::new(None, vec![Reply::Body(200, DISCOVERY_REPLY)]);
     fixture.service.output.fail = true;
     let error = fixture
-        .service
         .login(LoginOptions {
             force: false,
             no_browser: true,
@@ -352,7 +374,6 @@ async fn an_overflowing_deadline_stops_the_login() {
     let mut fixture = Fixture::new(None, vec![Reply::Body(200, DISCOVERY_REPLY)]);
     fixture.service.oauth.clock = super::support::FixedClock(Decimal::MAX);
     let error = fixture
-        .service
         .login(LoginOptions {
             force: false,
             no_browser: true,
