@@ -30,9 +30,7 @@ fn logging_fields_behavior_tests_behavior(
 ) {
     let base = combined.map(usage);
     let fields = mapping.map(decode_object);
-    let response = fields
-        .as_ref()
-        .map_or(ResponseUsage::Absent, ResponseUsage::Mapping);
+    let response = fields.map_or(ResponseUsage::Absent, ResponseUsage::Mapping);
     assert_eq!(get_usage_as_dict(response, base.as_ref()), decode(expected));
 }
 
@@ -40,7 +38,7 @@ fn logging_fields_behavior_tests_behavior(
 fn the_combined_usage_is_read_before_the_response_mapping() {
     let combined = usage(r#"{"prompt_tokens":9,"completion_tokens":8,"total_tokens":17}"#);
     let empty = IndexMap::new();
-    let projected = get_usage_as_dict(ResponseUsage::Mapping(&empty), Some(&combined));
+    let projected = get_usage_as_dict(ResponseUsage::Mapping(empty), Some(&combined));
     let expected = serde_json::from_str::<Json>(
         r#"{"prompt_tokens":9,"completion_tokens":8,"total_tokens":17,"completion_tokens_details":null,"prompt_tokens_details":null}"#,
     )

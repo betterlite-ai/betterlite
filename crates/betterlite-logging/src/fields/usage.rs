@@ -36,10 +36,10 @@ pub enum UsageError {
 }
 
 // The usage value a response object carries; an endpoint owner hands over its native usage as the typed Usage.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 pub enum ResponseUsage<'usage> {
     Absent,
-    Mapping(&'usage IndexMap<String, Json>),
+    Mapping(IndexMap<String, Json>),
     Usage(&'usage Usage),
 }
 
@@ -61,7 +61,7 @@ pub fn get_usage_from_response_obj(
     match response {
         ResponseUsage::Absent => Ok(Usage::default()),
         ResponseUsage::Usage(usage) => Ok(usage.clone()),
-        ResponseUsage::Mapping(mapping) => parse::usage_from_mapping(mapping),
+        ResponseUsage::Mapping(mapping) => parse::usage_from_mapping(&mapping),
     }
 }
 
@@ -85,7 +85,7 @@ fn projected_usage_json(response: ResponseUsage<'_>) -> Json {
             ("total_tokens".to_owned(), Json::Number(Number::from(0))),
         ])),
         ResponseUsage::Usage(usage) => project::usage_json(usage),
-        ResponseUsage::Mapping(mapping) => Json::Object(mapping.clone()),
+        ResponseUsage::Mapping(mapping) => Json::Object(mapping),
     }
 }
 

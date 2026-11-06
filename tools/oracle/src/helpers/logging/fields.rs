@@ -142,13 +142,9 @@ fn combined_usage(input: &Value) -> Result<Option<Usage>, Box<crate::helpers::He
 
 fn usage(input: &Value) -> crate::helpers::HelperResult {
     let combined = combined_usage(input)?;
-    if let Some(mapping) = optional_value::<IndexMap<String, Json>>(input, "usage")? {
-        return encode(get_usage_as_dict(
-            ResponseUsage::Mapping(&mapping),
-            combined.as_ref(),
-        ));
-    }
-    encode(get_usage_as_dict(ResponseUsage::Absent, combined.as_ref()))
+    let response = optional_value::<IndexMap<String, Json>>(input, "usage")?
+        .map_or(ResponseUsage::Absent, ResponseUsage::Mapping);
+    encode(get_usage_as_dict(response, combined.as_ref()))
 }
 
 fn decode_init(

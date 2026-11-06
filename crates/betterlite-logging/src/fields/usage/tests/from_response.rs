@@ -29,9 +29,7 @@ fn logging_fields_behavior_tests_behavior(
 ) {
     let base = combined.map(usage);
     let fields = mapping.map(decode_object);
-    let response = fields
-        .as_ref()
-        .map_or(ResponseUsage::Absent, ResponseUsage::Mapping);
+    let response = fields.map_or(ResponseUsage::Absent, ResponseUsage::Mapping);
     let result = get_usage_from_response_obj(response, base.as_ref()).unwrap();
     assert_eq!(usage_json(&result), decode(expected));
 }
@@ -40,14 +38,14 @@ fn logging_fields_behavior_tests_behavior(
 fn the_combined_usage_is_returned_before_an_invalid_mapping_is_parsed() {
     let combined = usage(r#"{"prompt_tokens":9,"completion_tokens":8,"total_tokens":17}"#);
     let mapping = decode_object(r#"{"prompt_tokens":2.5}"#);
-    let result = get_usage_from_response_obj(ResponseUsage::Mapping(&mapping), Some(&combined));
+    let result = get_usage_from_response_obj(ResponseUsage::Mapping(mapping), Some(&combined));
     assert_eq!(result, Ok(combined));
 }
 
 #[test]
 fn an_invalid_mapping_is_parsed_when_no_combined_usage_exists() {
     let mapping = decode_object(r#"{"prompt_tokens":2.5}"#);
-    let _error = get_usage_from_response_obj(ResponseUsage::Mapping(&mapping), None).unwrap_err();
+    let _error = get_usage_from_response_obj(ResponseUsage::Mapping(mapping), None).unwrap_err();
 }
 
 #[test]
