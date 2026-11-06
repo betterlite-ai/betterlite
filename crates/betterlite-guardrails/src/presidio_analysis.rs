@@ -53,6 +53,8 @@ mod json_escaped_len_cases;
 mod merge_chunks;
 #[path = "presidio_analysis/tests/merge_sort.rs"]
 mod merge_sort;
+#[path = "presidio_analysis/tests/response_cap.rs"]
+mod response_cap;
 #[path = "presidio_analysis/tests/shared.rs"]
 mod shared;
 #[path = "presidio_analysis/tests/text_split.rs"]
