@@ -33,23 +33,29 @@ pub enum Ranker {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RankingOptions {
     pub score_threshold: Number,
-    pub ranker: Option<Ranker>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    pub ranker: Option<Option<Ranker>>,
 }
 
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileSearchOptions {
-    pub max_num_results: Option<u32>,
-    pub ranking_options: Option<RankingOptions>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    pub max_num_results: Option<Option<u32>>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    pub ranking_options: Option<Option<RankingOptions>>,
 }
 
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FunctionDefinition {
     pub name: String,
-    pub description: Option<String>,
-    pub parameters: Option<Map<String, Value>>,
-    pub strict: Option<bool>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    pub description: Option<Option<String>>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    pub parameters: Option<Option<Map<String, Value>>>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    pub strict: Option<Option<bool>>,
 }
 
 #[serde_with::skip_serializing_none]
@@ -58,7 +64,8 @@ pub struct FunctionDefinition {
 pub enum AssistantTool {
     CodeInterpreter,
     FileSearch {
-        file_search: Option<FileSearchOptions>,
+        #[serde(default, with = "serde_with::rust::double_option")]
+        file_search: Option<Option<FileSearchOptions>>,
     },
     Function {
         function: FunctionDefinition,
@@ -84,38 +91,49 @@ pub enum ChunkingStrategy {
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct VectorStoreSpec {
-    pub chunking_strategy: Option<ChunkingStrategy>,
-    pub file_ids: Option<Vec<String>>,
-    pub metadata: Option<BTreeMap<String, String>>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    pub chunking_strategy: Option<Option<ChunkingStrategy>>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    pub file_ids: Option<Option<Vec<String>>>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    pub metadata: Option<Option<BTreeMap<String, String>>>,
 }
 
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CodeInterpreterResources {
-    pub file_ids: Option<Vec<String>>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    pub file_ids: Option<Option<Vec<String>>>,
 }
 
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct FileSearchResources {
-    pub vector_store_ids: Option<Vec<String>>,
-    pub vector_stores: Option<Vec<VectorStoreSpec>>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    pub vector_store_ids: Option<Option<Vec<String>>>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    pub vector_stores: Option<Option<Vec<VectorStoreSpec>>>,
 }
 
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolResources {
-    pub code_interpreter: Option<CodeInterpreterResources>,
-    pub file_search: Option<FileSearchResources>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    pub code_interpreter: Option<Option<CodeInterpreterResources>>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    pub file_search: Option<Option<FileSearchResources>>,
 }
 
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct JsonSchemaFormat {
     pub name: String,
-    pub description: Option<String>,
-    pub schema: Option<Map<String, Value>>,
-    pub strict: Option<bool>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    pub description: Option<Option<String>>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    pub schema: Option<Option<Map<String, Value>>>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    pub strict: Option<Option<bool>>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -139,21 +157,32 @@ pub enum ResponseFormat {
     Typed(TypedFormat),
 }
 
+// A create key that arrived as null stays null in the request body; one the caller left out is skipped.
 #[serde_with::skip_serializing_none]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct AssistantCreate {
     pub model: String,
-    pub description: Option<String>,
-    pub instructions: Option<String>,
-    pub metadata: Option<BTreeMap<String, String>>,
-    pub name: Option<String>,
-    pub reasoning_effort: Option<ReasoningEffort>,
-    pub response_format: Option<ResponseFormat>,
-    pub temperature: Option<Number>,
-    pub tool_resources: Option<ToolResources>,
-    pub tools: Option<Vec<AssistantTool>>,
-    pub top_p: Option<Number>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    pub description: Option<Option<String>>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    pub instructions: Option<Option<String>>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    pub metadata: Option<Option<BTreeMap<String, String>>>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    pub name: Option<Option<String>>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    pub reasoning_effort: Option<Option<ReasoningEffort>>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    pub response_format: Option<Option<ResponseFormat>>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    pub temperature: Option<Option<Number>>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    pub tool_resources: Option<Option<ToolResources>>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    pub tools: Option<Option<Vec<AssistantTool>>>,
+    #[serde(default, with = "serde_with::rust::double_option")]
+    pub top_p: Option<Option<Number>>,
 }
 
 #[serde_with::skip_serializing_none]

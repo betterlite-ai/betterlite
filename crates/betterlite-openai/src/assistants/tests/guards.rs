@@ -23,7 +23,7 @@ async fn openai_assistants_credential_identity_isolation() {
     assert_eq!(client_b.organization, None);
     let kept = api.get_openai_client(ClientKind::Async, tenant_b, Some(client_a));
     assert_eq!(kept.base_url.as_deref(), Some("https://example.test/v1"));
-    api.get_assistants(tenant_a, None, None, &ListParams::default())
+    api.get_assistants(tenant_a, None, false, &ListParams::default())
         .await
         .unwrap();
     let rebuilt = ClientOptions {
@@ -33,7 +33,7 @@ async fn openai_assistants_credential_identity_isolation() {
         max_retries: None,
         organization: None,
     };
-    api.get_assistants(rebuilt, None, None, &ListParams::default())
+    api.get_assistants(rebuilt, None, false, &ListParams::default())
         .await
         .unwrap();
     let seen = transport.requests();

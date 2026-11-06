@@ -1,6 +1,5 @@
 use betterlite_http::proxy::transport_error::TransportError;
 use http::header::InvalidHeaderValue;
-use serde_json::error::Category;
 use thiserror::Error;
 use url::ParseError;
 
@@ -49,14 +48,4 @@ pub enum AssistantsError {
         #[source]
         source: serde_json::Error,
     },
-}
-
-impl From<serde_json::Error> for AssistantsError {
-    fn from(source: serde_json::Error) -> Self {
-        match source.classify() {
-            Category::Eof => Self::Truncated { source },
-            Category::Data => Self::Shape { source },
-            Category::Syntax | Category::Io => Self::Malformed { source },
-        }
-    }
 }

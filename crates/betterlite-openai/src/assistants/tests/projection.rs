@@ -93,13 +93,13 @@ pub(super) async fn beta_header() {
     transport.queue(200, ASSISTANT);
     transport.queue(200, DELETED);
     let create: AssistantCreate = serde_json::from_str(r#"{"model":"gpt-4o"}"#).unwrap();
-    api.get_assistants(options(KEY), None, None, &ListParams::default())
+    api.get_assistants(options(KEY), None, false, &ListParams::default())
         .await
         .unwrap();
-    api.create_assistants(options(KEY), &create, None, None)
+    api.create_assistants(options(KEY), &create, None, false)
         .await
         .unwrap();
-    api.delete_assistant(options(KEY), "asst_1", None, None)
+    api.delete_assistant(options(KEY), "asst_1", None, false)
         .await
         .unwrap();
     let betas: Vec<_> = transport

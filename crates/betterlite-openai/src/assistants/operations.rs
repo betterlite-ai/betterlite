@@ -45,12 +45,12 @@ impl<T: AssistantsTransport> AssistantsApi<T> {
             .await
     }
 
-    // Only the literal true selects the async helper, and that helper gets its own defaults rather than the caller's pagination.
+    // A true flag selects the async helper, which gets its own defaults rather than the caller's pagination.
     pub async fn get_assistants(
         &self,
         options: ClientOptions,
         client: Option<SdkClient<T>>,
-        aget_assistants: Option<bool>,
+        aget_assistants: bool,
         params: &ListParams,
     ) -> Result<AssistantPage, AssistantsError> {
         let kind = client_kind(aget_assistants);
@@ -68,7 +68,7 @@ impl<T: AssistantsTransport> AssistantsApi<T> {
         options: ClientOptions,
         create_assistant_data: &AssistantCreate,
         client: Option<SdkClient<T>>,
-        async_create_assistants: Option<bool>,
+        async_create_assistants: bool,
     ) -> Result<AssistantObject, AssistantsError> {
         let kind = client_kind(async_create_assistants);
         let creator = self.get_openai_client(kind, options, client);
@@ -81,7 +81,7 @@ impl<T: AssistantsTransport> AssistantsApi<T> {
         options: ClientOptions,
         assistant_id: &str,
         client: Option<SdkClient<T>>,
-        async_delete_assistants: Option<bool>,
+        async_delete_assistants: bool,
     ) -> Result<AssistantDeleted, AssistantsError> {
         let kind = client_kind(async_delete_assistants);
         self.get_openai_client(kind, options, client)
@@ -90,8 +90,8 @@ impl<T: AssistantsTransport> AssistantsApi<T> {
     }
 }
 
-const fn client_kind(flag: Option<bool>) -> ClientKind {
-    if matches!(flag, Some(true)) {
+const fn client_kind(async_requested: bool) -> ClientKind {
+    if async_requested {
         ClientKind::Async
     } else {
         ClientKind::Sync

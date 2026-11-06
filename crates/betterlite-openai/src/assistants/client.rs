@@ -146,7 +146,7 @@ impl<T: AssistantsTransport> SdkClient<T> {
             RequestBody::Empty,
         )?;
         let body = self.send_checked(request).await?;
-        serde_json::from_slice(&body).map_err(AssistantsError::from)
+        decode_assistant_object(&body)
     }
 
     pub async fn create(&self, data: &AssistantCreate) -> Result<AssistantObject, AssistantsError> {
@@ -181,6 +181,6 @@ impl<T: AssistantsTransport> SdkClient<T> {
             .headers
             .insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         let body = self.send_checked(request).await?;
-        serde_json::from_slice(&body).map_err(AssistantsError::from)
+        decode_assistant_object(&body)
     }
 }

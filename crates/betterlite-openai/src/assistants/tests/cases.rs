@@ -10,6 +10,7 @@ use super::support::{ASSISTANT, BASE, DELETED, KEY, PAGE, api_with, options, par
 
 const ALL_PARAMS: &str = r#"{"order":"asc","limit":5,"before":"b","after":"a"}"#;
 const ERROR_BODY: &str = r#"{"error":{"message":"nope","type":"invalid_request_error"}}"#;
+const NULL_BODY: &str = r#"{"model":"gpt-4o","name":null,"description":null,"tool_resources":{"code_interpreter":null,"file_search":null},"tools":[{"type":"file_search","file_search":null},{"type":"function","function":{"name":"lookup","strict":null}}]}"#;
 const CREATE_BODY: &str = r#"{"model":"gpt-4o","name":"Helper","reasoning_effort":"high","response_format":{"type":"json_schema","json_schema":{"name":"answer","strict":true,"schema":{"type":"object"}}},"tools":[{"type":"code_interpreter"},{"type":"file_search","file_search":{"max_num_results":4,"ranking_options":{"score_threshold":0.5,"ranker":"auto"}}},{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}],"tool_resources":{"code_interpreter":{"file_ids":["file-1"]},"file_search":{"vector_stores":[{"file_ids":["file-2"],"chunking_strategy":{"type":"static","static":{"chunk_overlap_tokens":10,"max_chunk_size_tokens":800}}}]}}}"#;
 
 #[derive(Debug)]
@@ -82,7 +83,7 @@ async fn list_assistants_pagination() {
         let page = if case.direct {
             api.async_get_assistants(options(KEY), None, &params).await
         } else {
-            api.get_assistants(options(KEY), None, case.flag, &params)
+            api.get_assistants(options(KEY), None, case.flag.unwrap_or(false), &params)
                 .await
         };
         assert!(page.unwrap().data.is_empty(), "{}", case.params);
@@ -100,14 +101,23 @@ async fn create_tools_resources() {
     let (api, transport) = api_with(200, ASSISTANT);
     let data: AssistantCreate = serde_json::from_str(CREATE_BODY).unwrap();
     let created = api
-        .create_assistants(options(KEY), &data, None, None)
+        .create_assistants(options(KEY), &data, None, false)
         .await
         .unwrap();
     assert_eq!(serde_json::to_value(&created).unwrap(), parse(ASSISTANT));
     let url = format!("{BASE}/assistants");
+    // A key the caller sent as null is forwarded as null; one the caller left out stays out.
+    let nulls: AssistantCreate = serde_json::from_str(NULL_BODY).unwrap();
+    transport.queue(200, ASSISTANT);
+    api.create_assistants(options(KEY), &nulls, None, false)
+        .await
+        .unwrap();
     assert_eq!(
         transport.requests(),
-        vec![wire("POST", &url, Some(CREATE_BODY))]
+        vec![
+            wire("POST", &url, Some(CREATE_BODY)),
+            wire("POST", &url, Some(NULL_BODY)),
+        ]
     );
 }
 
@@ -115,7 +125,7 @@ async fn delete_assistant() {
     for (id, flag, segment) in DELETE_CASES {
         let (api, transport) = api_with(200, DELETED);
         let gone = api
-            .delete_assistant(options(KEY), id, None, flag)
+            .delete_assistant(options(KEY), id, None, flag.unwrap_or(false))
             .await
             .unwrap();
         assert!(gone.deleted, "{id}");
@@ -129,7 +139,7 @@ async fn delete_assistant() {
     for id in ["", ".."] {
         let (api, transport) = api_with(200, DELETED);
         let error = api
-            .delete_assistant(options(KEY), id, None, None)
+            .delete_assistant(options(KEY), id, None, false)
             .await
             .unwrap_err();
         assert!(
@@ -155,20 +165,20 @@ async fn assistant_error() {
         transport.queue(status, body);
     }
     let params = ListParams::default();
-    let listed = api.get_assistants(options(KEY), None, None, &params).await;
+    let listed = api.get_assistants(options(KEY), None, false, &params).await;
     assert!(
         matches!(&listed, Err(AssistantsError::Status { status: 404, body }) if body == ERROR_BODY.as_bytes()),
         "{listed:?}"
     );
     let created = api
-        .create_assistants(options(KEY), &create, None, None)
+        .create_assistants(options(KEY), &create, None, false)
         .await;
     assert!(
         matches!(created, Err(AssistantsError::Status { status: 400, .. })),
         "{created:?}"
     );
     let deleted = api
-        .delete_assistant(options(KEY), "asst_1", None, None)
+        .delete_assistant(options(KEY), "asst_1", None, false)
         .await;
     assert!(
         matches!(deleted, Err(AssistantsError::Status { status: 401, .. })),
@@ -185,14 +195,14 @@ async fn undecodable_replies() {
     let (api, transport) = api_with(200, r#"{"id":"#);
     transport.queue(200, "{}");
     let cut = api
-        .create_assistants(options(KEY), &create, None, None)
+        .create_assistants(options(KEY), &create, None, false)
         .await;
     assert!(
         matches!(cut, Err(AssistantsError::Truncated { .. })),
         "{cut:?}"
     );
     let empty = api
-        .create_assistants(options(KEY), &create, None, None)
+        .create_assistants(options(KEY), &create, None, false)
         .await;
     assert!(
         matches!(empty, Err(AssistantsError::Shape { .. })),
