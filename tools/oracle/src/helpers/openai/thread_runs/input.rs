@@ -13,7 +13,6 @@ pub(crate) struct OptionFields {
     pub(super) max_retries: Option<u32>,
     pub(super) organization: Option<String>,
 }
-
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Reply {
@@ -22,7 +21,6 @@ pub(crate) struct Reply {
     pub(super) headers: BTreeMap<String, String>,
     pub(super) body: String,
 }
-
 // The switch fields stay as raw JSON so a case can pass the non-boolean values LiteLLM's `is True` tests refuse.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -37,7 +35,6 @@ pub(crate) struct Round {
     #[serde(default)]
     pub(super) replies: Vec<Reply>,
 }
-
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Fields {
@@ -45,7 +42,6 @@ pub(crate) struct Fields {
     pub(super) options: OptionFields,
     pub(super) rounds: Vec<Round>,
 }
-
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum ThreadRunsCall {

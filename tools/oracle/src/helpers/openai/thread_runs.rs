@@ -21,7 +21,6 @@ pub(super) fn invalid_input(message: String) -> Box<crate::helpers::HelperError>
         message,
     })
 }
-
 fn client_options(fields: &Fields) -> Result<ClientOptions, Box<crate::helpers::HelperError>> {
     let options = &fields.options;
     let timeout = options
@@ -37,7 +36,6 @@ fn client_options(fields: &Fields) -> Result<ClientOptions, Box<crate::helpers::
         organization: options.organization.clone(),
     })
 }
-
 const fn selected(kind: ClientKind, streaming: bool) -> &'static str {
     match (kind, streaming) {
         (ClientKind::Sync, false) => "sync_run",
@@ -46,28 +44,32 @@ const fn selected(kind: ClientKind, streaming: bool) -> &'static str {
         (ClientKind::Async, true) => "async_stream",
     }
 }
-
 fn failure(error: &ThreadRunsError) -> Result<Value, Box<crate::helpers::HelperError>> {
     match error {
-        ThreadRunsError::Status { status, .. } => Ok(json!({"kind": "status", "status": status})),
+        ThreadRunsError::Status(status, _) => Ok(json!({"kind": "status", "status": status})),
         ThreadRunsError::MissingApiKey => Ok(json!({"kind": "configuration"})),
         ThreadRunsError::EmptyThreadId
         | ThreadRunsError::EmptyRunId
-        | ThreadRunsError::DotSegment { .. } => Ok(json!({"kind": "invalid_thread_id"})),
-        ThreadRunsError::Shape { .. } => Ok(json!({"kind": "shape"})),
-        ThreadRunsError::BaseUrl { .. }
-        | ThreadRunsError::BaseUrlPath
-        | ThreadRunsError::Header { .. }
-        | ThreadRunsError::Encode { .. }
-        | ThreadRunsError::Transport { .. }
-        | ThreadRunsError::Malformed { .. }
-        | ThreadRunsError::Truncated { .. }
-        | ThreadRunsError::UnsupportedEvent { .. }
-        | ThreadRunsError::PollAfterHeader { .. }
-        | ThreadRunsError::PollAfter { .. } => Err(invalid_input(error.to_string())),
+        | ThreadRunsError::DotSegment(_) => Ok(json!({"kind": "invalid_thread_id"})),
+        ThreadRunsError::Shape(_) => Ok(json!({"kind": "shape"})),
+        ThreadRunsError::ProviderError { body } => {
+            let value = serde_json::from_slice::<Value>(body).unwrap_or(Value::Null);
+            Ok(
+                json!({"kind": "stream_error", "type": value.get("type"), "code": value.get("code")}),
+            )
+        }
+        ThreadRunsError::BaseUrl(_)
+        | ThreadRunsError::Header(_)
+        | ThreadRunsError::Encode(_)
+        | ThreadRunsError::Transport(_)
+        | ThreadRunsError::Malformed(_)
+        | ThreadRunsError::Truncated(_)
+        | ThreadRunsError::PollAfterHeader(_)
+        | ThreadRunsError::PollAfter { .. }
+        | ThreadRunsError::StreamTooLarge
+        | ThreadRunsError::Timeout => Err(invalid_input(error.to_string())),
     }
 }
-
 async fn stream_outcome(
     wire: &Wire,
     stream: RunStream<Wire>,
@@ -75,12 +77,6 @@ async fn stream_outcome(
     recorded: bool,
 ) -> Result<Value, Box<crate::helpers::HelperError>> {
     let kind = selected(stream.kind, true);
-    let handler = if stream.handler.is_some() {
-        "supplied"
-    } else {
-        "default"
-    };
-    let requests_before = wire.requests().len();
     let events = stream.consume().await;
     let logged = if recorded {
         calls.lock().unwrap_or_else(PoisonError::into_inner).clone()
@@ -90,23 +86,18 @@ async fn stream_outcome(
     match events {
         Ok(decoded) => Ok(json!({
             "selected": kind,
-            "handler": handler,
-            "requests_before": requests_before,
             "requests": wire.requests(),
             "events": decoded,
             "calls": logged,
         })),
         Err(error) => Ok(json!({
             "selected": kind,
-            "handler": handler,
-            "requests_before": requests_before,
             "requests": wire.requests(),
             "calls": logged,
             "error": failure(&error)?,
         })),
     }
 }
-
 async fn round_outcome(
     fields: &Fields,
     round: &Round,
@@ -148,7 +139,6 @@ async fn round_outcome(
         })),
     }
 }
-
 async fn rounds(fields: &Fields) -> Result<Value, Box<crate::helpers::HelperError>> {
     let mut outcomes = Vec::new();
     for round in &fields.rounds {
@@ -156,7 +146,6 @@ async fn rounds(fields: &Fields) -> Result<Value, Box<crate::helpers::HelperErro
     }
     Ok(json!({ "rounds": outcomes }))
 }
-
 fn invoke(call: &ThreadRunsCall) -> crate::helpers::HelperResult {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .build()
@@ -173,17 +162,13 @@ fn invoke(call: &ThreadRunsCall) -> crate::helpers::HelperResult {
     };
     runtime.block_on(rounds(fields))
 }
-
 pub(crate) struct Op;
-
 impl crate::helpers::Helper for Op {
     type Input = ThreadRunsCall;
-
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         invoke(input)
     }
 }
-
 mod input;
 mod tests;
 mod wire;

@@ -19,15 +19,10 @@ from openai.types.beta import AssistantStreamEvent
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 Object: TypeAlias = dict[str, Json]
+Reply: TypeAlias = tuple[int, dict[str, str], str]
+Options: TypeAlias = tuple[str | None, str | None, float | None, int | None, str | None]
 
 NO_REPLY = '{"error":{"message":"the fixture queues no reply"}}'
-
-
-@dataclass
-class Reply:
-    status: int
-    headers: dict[str, str]
-    body: str
 
 
 @dataclass
@@ -48,13 +43,11 @@ class Wire:
                 "body": cast(Json, json.loads(content)) if content else None,
             }
         )
-        reply = self.replies.pop(0) if self.replies else Reply(500, {}, NO_REPLY)
-        return httpx.Response(reply.status, content=reply.body, headers=reply.headers)
+        status, headers, body = self.replies.pop(0) if self.replies else (500, {}, NO_REPLY)
+        return httpx.Response(status, content=body, headers=headers)
 
 
-@dataclass
-class Calls:
-    entries: list[str] = field(default_factory=lambda: cast(list[str], []))
+Calls: TypeAlias = list[str]
 
 
 class Recorder(AssistantEventHandler):
@@ -63,10 +56,16 @@ class Recorder(AssistantEventHandler):
         self.calls = calls
 
     def on_event(self, event: AssistantStreamEvent) -> None:
-        self.calls.entries.append(event.event)
+        self.calls.append(event_name(event))
+
+    def on_exception(self, exception: Exception) -> None:
+        self.calls.append("exception:" + error_label(exception))
+
+    def on_timeout(self) -> None:
+        self.calls.append("timeout")
 
     def on_end(self) -> None:
-        self.calls.entries.append("end")
+        self.calls.append("end")
 
 
 class AsyncRecorder(AsyncAssistantEventHandler):
@@ -75,19 +74,16 @@ class AsyncRecorder(AsyncAssistantEventHandler):
         self.calls = calls
 
     async def on_event(self, event: AssistantStreamEvent) -> None:
-        self.calls.entries.append(event.event)
+        self.calls.append(event_name(event))
+
+    async def on_exception(self, exception: Exception) -> None:
+        self.calls.append("exception:" + error_label(exception))
+
+    async def on_timeout(self) -> None:
+        self.calls.append("timeout")
 
     async def on_end(self) -> None:
-        self.calls.entries.append("end")
-
-
-@dataclass
-class Options:
-    api_key: str | None
-    api_base: str | None
-    timeout: float | None
-    max_retries: int | None
-    organization: str | None
+        self.calls.append("end")
 
 
 def object_of(raw: Json) -> Object:
@@ -96,36 +92,22 @@ def object_of(raw: Json) -> Object:
     return cast(Object, raw)
 
 
-def options_of(raw: Json) -> Options:
-    fields = object_of(raw)
-    timeout = fields.get("timeout")
-    return Options(
-        api_key=cast("str | None", fields.get("api_key")),
-        api_base=cast("str | None", fields.get("api_base")),
-        timeout=None if timeout is None else float(cast(float, timeout)),
-        max_retries=cast("int | None", fields.get("max_retries")),
-        organization=cast("str | None", fields.get("organization")),
-    )
-
-
-def replies_of(raw: Json) -> list[Reply]:
-    entries = cast("list[Json]", raw or [])
-    replies: list[Reply] = []
-    for entry in entries:
-        fields = object_of(entry)
-        replies.append(
-            Reply(
-                status=cast(int, fields["status"]),
-                headers=cast("dict[str, str]", fields.get("headers") or {}),
-                body=cast(str, fields["body"]),
-            )
-        )
-    return replies
+def error_label(error: Exception) -> str:
+    if isinstance(error, openai.APIStatusError):
+        return "status"
+    if isinstance(error, openai.APIError):
+        return "stream_error"
+    return "other"
 
 
 def failure(error: Exception) -> Json:
     if isinstance(error, openai.APIStatusError):
         return {"kind": "status", "status": error.status_code}
+    if isinstance(error, openai.APIError):
+        body = cast(object, error.body)
+        if isinstance(body, dict):
+            fields = cast("dict[str, Json]", body)
+            return {"kind": "stream_error", "type": fields.get("type"), "code": fields.get("code")}
     if isinstance(error, pydantic.ValidationError):
         return {"kind": "shape"}
     if isinstance(error, openai.OpenAIError):
@@ -135,8 +117,22 @@ def failure(error: Exception) -> Json:
     raise error
 
 
+def event_name(event: object) -> str:
+    if not isinstance(event, openai.BaseModel):
+        return "payload"
+    name = cast("str | None", cast(AssistantStreamEvent, event).event)
+    return name if name is not None else "payload"
+
+
 def event_dump(event: object) -> Json:
-    return cast(Json, cast(openai.BaseModel, event).model_dump(exclude_none=True))
+    if not isinstance(event, openai.BaseModel):
+        return cast(Json, event)
+    stream_event = cast(AssistantStreamEvent, event)
+    name = cast("str | None", stream_event.event)
+    step = name is not None and name.startswith("thread.run.step.")
+    if name is not None and name.startswith("thread.run.") and not step:
+        return cast(Json, stream_event.model_dump())
+    return cast(Json, stream_event.model_dump(exclude_none=True))
 
 
 def sdk_clients(wire: Wire) -> tuple[object, object]:
@@ -150,35 +146,10 @@ def sdk_clients(wire: Wire) -> tuple[object, object]:
     return sync, asynchronous
 
 
-def manager_stores(manager: object, name: str, handler: object) -> bool:
-    return cast(object, getattr(manager, name)) is handler
-
-
-def handler_name(manager: object) -> str:
-    if isinstance(manager, AssistantStreamManager):
-        return "_AssistantStreamManager__event_handler"
-    return "_AsyncAssistantStreamManager__event_handler"
-
-
-def handler_kind(manager: object, *, supplied: bool, handler: object) -> str:
-    if supplied and manager_stores(manager, handler_name(manager), handler):
-        return "supplied"
-    return "default"
-
-
-def stream_body(selected: str, kind: str, before: int, wire: Wire, calls: Calls) -> Object:
-    return {
-        "selected": selected,
-        "handler": kind,
-        "requests_before": before,
-        "requests": cast(Json, wire.seen),
-        "calls": cast(Json, calls.entries),
-    }
-
-
-def consume_sync(manager: object, wire: Wire, kind: str, calls: Calls) -> Json:
+def consume_sync(manager: object, wire: Wire, calls: Calls) -> Json:
     sync = cast(AssistantStreamManager[AssistantEventHandler], manager)
-    body = stream_body("sync_stream", kind, len(wire.seen), wire, calls)
+    body: Object = {"selected": "sync_stream", "requests": cast(Json, wire.seen)}
+    body["calls"] = cast(Json, calls)
     try:
         with sync as entered:
             events = [event_dump(event) for event in entered]
@@ -189,9 +160,10 @@ def consume_sync(manager: object, wire: Wire, kind: str, calls: Calls) -> Json:
     return body
 
 
-def consume_async(manager: object, wire: Wire, kind: str, calls: Calls) -> Json:
+def consume_async(manager: object, wire: Wire, calls: Calls) -> Json:
     asynchronous = cast(AsyncAssistantStreamManager[AsyncAssistantEventHandler], manager)
-    body = stream_body("async_stream", kind, len(wire.seen), wire, calls)
+    body: Object = {"selected": "async_stream", "requests": cast(Json, wire.seen)}
+    body["calls"] = cast(Json, calls)
 
     async def drain() -> list[Json]:
         async with asynchronous as entered:
@@ -204,6 +176,18 @@ def consume_async(manager: object, wire: Wire, kind: str, calls: Calls) -> Json:
         return body
     body["events"] = cast(Json, events)
     return body
+
+
+def buffered(selected: str, wire: Wire, result: object) -> Json:
+    if inspect.iscoroutine(result):
+        run = asyncio.run(cast(Coroutine[object, object, openai.BaseModel], result))
+    else:
+        run = result
+    return {
+        "selected": selected,
+        "requests": cast(Json, wire.seen),
+        "result": cast(Json, cast(openai.BaseModel, run).model_dump()),
+    }
 
 
 def call_run_thread(
@@ -222,56 +206,58 @@ def call_run_thread(
         model=cast("str | None", request.get("model")),
         stream=cast("bool | None", round_value.get("stream")),
         tools=cast("object", request.get("tools")),  # pyright: ignore[reportArgumentType]
-        api_key=options.api_key,
-        api_base=options.api_base,
-        timeout=options.timeout,  # pyright: ignore[reportArgumentType]
-        max_retries=options.max_retries,
-        organization=options.organization,
+        api_key=options[0],
+        api_base=options[1],
+        timeout=options[2],  # pyright: ignore[reportArgumentType]
+        max_retries=options[3],
+        organization=options[4],
         client=None,
         arun_thread=cast("bool | None", round_value.get("arun_thread")),  # pyright: ignore[reportArgumentType]
         event_handler=handler,  # pyright: ignore[reportArgumentType]
     ))
 
 
-def buffered(selected: str, wire: Wire, result: object) -> Json:
-    if inspect.iscoroutine(result):
-        run = asyncio.run(cast(Coroutine[object, object, openai.BaseModel], result))
-    else:
-        run = result
-    return {
-        "selected": selected,
-        "requests": cast(Json, wire.seen),
-        "result": cast(Json, cast(openai.BaseModel, run).model_dump(exclude_none=True)),
-    }
-
-
 def run_round(fields: Object, round_value: Object) -> Json:
-    options = options_of(fields.get("options"))
-    wire = Wire(replies_of(round_value.get("replies")))
+    settings = object_of(fields.get("options"))
+    timeout = settings.get("timeout")
+    options: Options = (
+        cast("str | None", settings.get("api_key")),
+        cast("str | None", settings.get("api_base")),
+        None if timeout is None else float(cast(float, timeout)),
+        cast("int | None", settings.get("max_retries")),
+        cast("str | None", settings.get("organization")),
+    )
+    replies: list[Reply] = [
+        (
+            cast(int, object_of(entry)["status"]),
+            cast("dict[str, str]", object_of(entry).get("headers") or {}),
+            cast(str, object_of(entry)["body"]),
+        )
+        for entry in cast("list[Json]", round_value.get("replies") or [])
+    ]
+    wire = Wire(replies)
     sync, asynchronous = sdk_clients(wire)
     request = object_of(round_value["request"])
     arun_thread = round_value.get("arun_thread")
     supplied = bool(round_value.get("handler"))
-    calls = Calls()
+    calls: Calls = []
     handler: object = None
     if supplied:
         handler = AsyncRecorder(calls) if arun_thread is True else Recorder(calls)
-    api = OpenAIAssistantsAPI()
     with (
         patch.dict(os.environ, {}, clear=True),
         patch.object(litellm_openai, "OpenAI", sync),
         patch.object(litellm_openai, "AsyncOpenAI", asynchronous),
     ):
         try:
-            result = call_run_thread(api, options, request, round_value, handler)
+            result = call_run_thread(OpenAIAssistantsAPI(), options, request, round_value, handler)
             if inspect.iscoroutine(result):
                 return buffered("async_run", wire, result)
             manager: object = result
             if isinstance(result, (AssistantStreamManager, AsyncAssistantStreamManager)):
-                kind = handler_kind(manager, supplied=supplied, handler=handler)
                 if isinstance(result, AssistantStreamManager):
-                    return consume_sync(manager, wire, kind, calls)
-                return consume_async(manager, wire, kind, calls)
+                    return consume_sync(manager, wire, calls)
+                return consume_async(manager, wire, calls)
             return buffered("sync_run", wire, result)
         except Exception as error:  # noqa: BLE001 - every SDK failure is a reported result
             return {"requests": cast(Json, wire.seen), "error": failure(error)}
