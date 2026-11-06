@@ -104,12 +104,10 @@ fn nearest_double_integer(number: i64) -> Option<i64> {
     let rounded = kept
         .checked_add(u64::from(round_up))?
         .checked_mul(1_u64.checked_shl(drop)?)?;
-    let signed = i64::try_from(rounded).ok()?;
-    Some(if number < 0 {
-        signed.checked_neg()?
-    } else {
-        signed
-    })
+    if number < 0 {
+        return 0_i64.checked_sub_unsigned(rounded);
+    }
+    i64::try_from(rounded).ok()
 }
 fn power(op: InplaceOp, first: i64, second: i64) -> Result<Value, InplaceError> {
     if second >= 0 {
