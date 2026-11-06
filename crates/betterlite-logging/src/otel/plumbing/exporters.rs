@@ -17,8 +17,7 @@ use crate::otel::plumbing::endpoints::signal_endpoint;
 use crate::otel::plumbing::headers::parse_headers;
 use crate::otel::plumbing::sinks::{LogSink, MetricSink, SpanSink};
 
-pub type ExporterFactory =
-    Arc<dyn Fn(&ExporterSpec) -> Result<SpanSink, ExporterError> + Send + Sync>;
+pub type ExporterFactory = Arc<dyn Fn(&ExporterSpec) -> ExportResult<SpanSink> + Send + Sync>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ExporterError {
@@ -31,6 +30,8 @@ pub enum ExporterError {
     #[error("building the OTLP exporter failed: {0}")]
     Build(#[from] ExporterBuildError),
 }
+
+pub type ExportResult<T> = Result<T, ExporterError>;
 
 // One client per signal, because the TLS policy is resolved per signal.
 #[derive(Clone)]
@@ -83,7 +84,7 @@ fn http_exporter<B>(
     endpoint: Option<&str>,
     raw_headers: Option<&str>,
     client: &Arc<dyn HttpClient>,
-) -> Result<B, ExporterError>
+) -> ExportResult<B>
 where
     B: WithExportConfig + WithHttpConfig,
 {
@@ -103,7 +104,7 @@ where
     })
 }
 
-fn metadata_from_headers(raw_headers: Option<&str>) -> Result<MetadataMap, ExporterError> {
+fn metadata_from_headers(raw_headers: Option<&str>) -> ExportResult<MetadataMap> {
     let mut headers = HeaderMap::new();
     for (name, value) in parse_headers(raw_headers) {
         headers.insert(
@@ -118,7 +119,7 @@ fn grpc_exporter<B>(
     builder: B,
     endpoint: Option<&str>,
     raw_headers: Option<&str>,
-) -> Result<B, ExporterError>
+) -> ExportResult<B>
 where
     B: WithExportConfig + WithTonicConfig,
 {
@@ -160,7 +161,7 @@ impl ExporterFactories {
         }
     }
 
-    pub fn exporter_from_spec(&self, spec: &ExporterSpec) -> Result<SpanSink, ExporterError> {
+    pub fn exporter_from_spec(&self, spec: &ExporterSpec) -> ExportResult<SpanSink> {
         let lowered = spec.kind.to_lowercase();
         if let Some(factory) = self.factories.get(&lowered) {
             return factory(spec);
@@ -200,7 +201,7 @@ impl ExporterFactories {
     }
 
     // The top-level exporter/endpoint/headers fields are the one-exporter shorthand.
-    pub fn build_span_exporter(&self, config: &OtelConfig) -> Result<SpanSink, ExporterError> {
+    pub fn build_span_exporter(&self, config: &OtelConfig) -> ExportResult<SpanSink> {
         self.exporter_from_spec(&ExporterSpec {
             kind: config.exporter.clone(),
             endpoint: config.endpoint.clone(),
@@ -242,19 +243,13 @@ macro_rules! signal_sink {
 }
 
 // Metrics ignore traces_endpoint and always speak protobuf; an unrecognized kind prints to the console.
-pub fn metric_sink(
-    config: &OtelConfig,
-    clients: &HttpClients,
-) -> Result<MetricSink, ExporterError> {
+pub fn metric_sink(config: &OtelConfig, clients: &HttpClients) -> ExportResult<MetricSink> {
     signal_sink!(MetricExporter => MetricSink, config, &clients.metrics, Signal::Metrics, {
         Kind::Console | Kind::InMemory | Kind::Unrecognized => Ok(MetricSink::Console(Box::default())),
     })
 }
 
-pub fn build_log_exporter(
-    config: &OtelConfig,
-    clients: &HttpClients,
-) -> Result<LogSink, ExporterError> {
+pub fn build_log_exporter(config: &OtelConfig, clients: &HttpClients) -> ExportResult<LogSink> {
     signal_sink!(LogExporter => LogSink, config, &clients.logs, Signal::Logs, {
         Kind::InMemory => Ok(LogSink::InMemory(InMemoryLogExporter::default())),
         Kind::Console | Kind::Unrecognized => Ok(LogSink::Console(opentelemetry_stdout::LogExporter::default())),
