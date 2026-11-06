@@ -4,7 +4,7 @@ use betterlite_config::sections::budget_reset::{
 };
 use betterlite_config::sections::settings::JsonValue;
 use betterlite_core::budget_reset::{
-    ResetClocks, compute_budget_reset_at, is_persistable_budget_duration,
+    ResetClocks, budget_duration_error, compute_budget_reset_at, is_persistable_budget_duration,
 };
 use betterlite_core::duration::error::{DurationError, DurationWarning};
 use betterlite_core::duration::seconds::duration_in_seconds;
@@ -195,7 +195,6 @@ fn persists(settings: &RawSettings, duration: &str, context: &RunContext<'_>) ->
         return false;
     };
     is_persistable_budget_duration(duration, &current, context.clocks, context.database)
-        .unwrap_or(false)
 }
 
 fn persistent_diagnostic(
@@ -206,10 +205,19 @@ fn persistent_diagnostic(
     let Some(budget_duration) = duration else {
         return JsonValue::Null;
     };
-    if persists(settings, budget_duration, context) {
-        return JsonValue::Null;
-    }
-    JsonValue::String("invalid".to_owned())
+    let Ok(current) = get_budget_reset_settings(&settings.timezone, &settings.reset_time_of_day)
+    else {
+        return JsonValue::String("invalid".to_owned());
+    };
+    budget_duration_error(
+        Some(budget_duration),
+        &current,
+        context.clocks,
+        context.database,
+    )
+    .map_or(JsonValue::Null, |_diagnostic| {
+        JsonValue::String("invalid".to_owned())
+    })
 }
 
 fn moment(text: &str) -> Result<DateTime<Utc>, Box<crate::helpers::HelperError>> {

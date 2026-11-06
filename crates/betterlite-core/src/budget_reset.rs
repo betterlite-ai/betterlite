@@ -37,12 +37,13 @@ pub fn compute_budget_reset_at(
     )
 }
 
+#[must_use]
 pub fn is_persistable_budget_duration(
     duration: &str,
     settings: &BudgetResetSettings,
     clocks: ResetClocks<'_>,
     database: &TimeZoneDatabase,
-) -> Result<bool, DurationError> {
+) -> bool {
     // every DurationError mirrors one of the source's ValueError or OverflowError paths
     let Ok(budget) = duration_in_seconds(
         duration,
@@ -50,28 +51,24 @@ pub fn is_persistable_budget_duration(
         clocks.calendar_timezone,
         database,
     ) else {
-        return Ok(false);
+        return false;
     };
     if budget.seconds <= 0 {
-        return Ok(false);
+        return false;
     }
-    match compute_budget_reset_at(duration, settings, clocks.reset_now, database) {
-        Ok(_reset) => Ok(true),
-        Err(_error) => Ok(false),
-    }
+    compute_budget_reset_at(duration, settings, clocks.reset_now, database).is_ok()
 }
 
+#[must_use]
 pub fn budget_duration_error(
     duration: Option<&str>,
     settings: &BudgetResetSettings,
     clocks: ResetClocks<'_>,
     database: &TimeZoneDatabase,
-) -> Result<Option<String>, DurationError> {
-    let Some(budget_duration) = duration else {
-        return Ok(None);
-    };
-    if is_persistable_budget_duration(budget_duration, settings, clocks, database)? {
-        return Ok(None);
+) -> Option<String> {
+    let budget_duration = duration?;
+    if is_persistable_budget_duration(budget_duration, settings, clocks, database) {
+        return None;
     }
-    Ok(Some(INVALID_BUDGET_DURATION.to_owned()))
+    Some(INVALID_BUDGET_DURATION.to_owned())
 }

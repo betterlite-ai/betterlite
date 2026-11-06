@@ -187,16 +187,26 @@ fn offset_preserved() {
 fn separate_local_and_utc_clock_samples() {
     let configured = settings("UTC", "00:00");
     let calendar_overflow = clocks("2024-06-15T12:00:00Z", "9999-12-15T00:00:00Z", None);
-    assert!(
-        !is_persistable_budget_duration("1mo", &configured, calendar_overflow, &DATABASE())
-            .unwrap()
-    );
+    assert!(!is_persistable_budget_duration(
+        "1mo",
+        &configured,
+        calendar_overflow,
+        &DATABASE()
+    ));
     let reset_overflow = clocks("9999-12-15T00:00:00Z", "2024-06-15T12:00:00Z", None);
-    assert!(
-        !is_persistable_budget_duration("1mo", &configured, reset_overflow, &DATABASE()).unwrap()
-    );
+    assert!(!is_persistable_budget_duration(
+        "1mo",
+        &configured,
+        reset_overflow,
+        &DATABASE()
+    ));
     let both_valid = clocks("2024-06-15T12:00:00Z", "2024-06-15T12:00:00Z", None);
-    assert!(is_persistable_budget_duration("1mo", &configured, both_valid, &DATABASE()).unwrap());
+    assert!(is_persistable_budget_duration(
+        "1mo",
+        &configured,
+        both_valid,
+        &DATABASE()
+    ));
     let month = duration_in_seconds("1mo", both_valid.calendar_now, None, &DATABASE()).unwrap();
     assert!(month.seconds > 0);
 }
@@ -209,7 +219,7 @@ fn absent_duration_skips_everything() {
         clocks("2024-06-15T12:00:00Z", "2024-06-15T12:00:00Z", None),
         &DATABASE(),
     );
-    assert_eq!(result.unwrap(), None);
+    assert_eq!(result, None);
 }
 
 #[rstest]
@@ -222,9 +232,14 @@ fn absent_duration_skips_everything() {
 fn positive_duration_accepted(#[case] duration: &str) {
     let configured = settings("UTC", "00:00");
     let clock = clocks("2024-06-15T12:00:00Z", "2024-06-15T12:00:00Z", None);
-    assert!(is_persistable_budget_duration(duration, &configured, clock, &DATABASE()).unwrap());
+    assert!(is_persistable_budget_duration(
+        duration,
+        &configured,
+        clock,
+        &DATABASE()
+    ));
     assert_eq!(
-        budget_duration_error(Some(duration), &configured, clock, &DATABASE()).unwrap(),
+        budget_duration_error(Some(duration), &configured, clock, &DATABASE()),
         None
     );
 }
@@ -240,19 +255,20 @@ fn nonpositive_short_circuits_settings(#[case] duration: &str) {
     let configured = settings("UTC", "06:00");
     let clock = clocks("2024-06-15T12:00:00Z", "2024-06-15T12:00:00Z", None);
     let persistable = is_persistable_budget_duration(duration, &configured, clock, &DATABASE());
-    assert!(!persistable.unwrap());
+    assert!(!persistable);
 }
 
 #[test]
 fn two_month_duration_rejected() {
     let configured = settings("UTC", "00:00");
     let clock = clocks("2024-06-15T12:00:00Z", "2024-06-15T12:00:00Z", None);
-    assert!(!is_persistable_budget_duration("2mo", &configured, clock, &DATABASE()).unwrap());
-    assert!(
-        budget_duration_error(Some("2mo"), &configured, clock, &DATABASE())
-            .unwrap()
-            .is_some()
-    );
+    assert!(!is_persistable_budget_duration(
+        "2mo",
+        &configured,
+        clock,
+        &DATABASE()
+    ));
+    assert!(budget_duration_error(Some("2mo"), &configured, clock, &DATABASE()).is_some());
     let error =
         compute_budget_reset_at("2mo", &configured, clock.reset_now, &DATABASE()).unwrap_err();
     assert!(matches!(
@@ -276,7 +292,12 @@ fn seconds_or_reset_value_error_rejected(#[case] duration: &str, #[case] seconds
         &DATABASE(),
     );
     assert_eq!(seconds.is_err(), seconds_step, "{duration}");
-    assert!(!is_persistable_budget_duration(duration, &configured, clock, &DATABASE()).unwrap());
+    assert!(!is_persistable_budget_duration(
+        duration,
+        &configured,
+        clock,
+        &DATABASE()
+    ));
 }
 
 #[rstest]
@@ -291,7 +312,12 @@ fn overflow_rejected(#[case] duration: &str) {
         failure,
         DurationError::QuantityOverflow { .. } | DurationError::Calendar { .. }
     ));
-    assert!(!is_persistable_budget_duration(duration, &configured, clock, &DATABASE()).unwrap());
+    assert!(!is_persistable_budget_duration(
+        duration,
+        &configured,
+        clock,
+        &DATABASE()
+    ));
 }
 
 #[rstest]
@@ -302,24 +328,30 @@ fn overflow_rejected(#[case] duration: &str) {
 #[case::twelve_month("12mo")]
 #[case::overflow("99999999999999999999d")]
 #[case::negative("-5m")]
-fn rejection_never_returns_an_error(#[case] duration: &str) {
+fn rejected_durations_report_the_diagnostic(#[case] duration: &str) {
     let configured = settings("UTC", "06:00");
     let clock = clocks("2024-06-15T12:00:00Z", "2024-06-15T12:00:00Z", None);
-    assert!(!is_persistable_budget_duration(duration, &configured, clock, &DATABASE()).unwrap());
-    assert!(
-        budget_duration_error(Some(duration), &configured, clock, &DATABASE())
-            .unwrap()
-            .is_some()
-    );
+    assert!(!is_persistable_budget_duration(
+        duration,
+        &configured,
+        clock,
+        &DATABASE()
+    ));
+    assert!(budget_duration_error(Some(duration), &configured, clock, &DATABASE()).is_some());
 }
 
 #[test]
 fn positive_prefix_unknown_reset_unit_accepted() {
     let configured = settings("UTC", "00:00");
     let clock = clocks("2024-06-15T12:00:00Z", "2024-06-15T12:00:00Z", None);
-    assert!(is_persistable_budget_duration("1hour", &configured, clock, &DATABASE()).unwrap());
+    assert!(is_persistable_budget_duration(
+        "1hour",
+        &configured,
+        clock,
+        &DATABASE()
+    ));
     assert_eq!(
-        budget_duration_error(Some("1hour"), &configured, clock, &DATABASE()).unwrap(),
+        budget_duration_error(Some("1hour"), &configured, clock, &DATABASE()),
         None
     );
     let reset =
@@ -350,7 +382,6 @@ fn invalid_duration_names_field_and_examples(#[case] example: &str) {
         clocks("2024-06-15T12:00:00Z", "2024-06-15T12:00:00Z", None),
         &DATABASE(),
     )
-    .unwrap()
     .unwrap();
     assert!(message.contains("budget_duration"));
     assert!(message.contains(example));
