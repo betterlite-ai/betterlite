@@ -317,15 +317,26 @@ fn converse_only_request_fields() {
     );
 }
 
-fn response_format_map() -> ParamMap {
+fn capability_map() -> ParamMap {
     params(&[
         (
             "openai.gpt-5.6",
-            flag_entry(RESPONSE_FORMAT_FLAG, ParamValue::Bool(true)),
+            mapping(&[
+                ("supported_endpoints", list(&["/v1/chat/completions"])),
+                (RESPONSE_FORMAT_FLAG, ParamValue::Bool(true)),
+            ]),
         ),
         (
             "openai.gpt-oss-20b-1:0",
-            endpoint_entry("/v1/chat/completions"),
+            flag_entry(TOOLS_REASONING_FLAG, ParamValue::Bool(true)),
+        ),
+        (
+            "openai.gpt-5.6-literal",
+            flag_entry(TOOLS_REASONING_FLAG, text("true")),
+        ),
+        (
+            "openai.gpt-5.6-number",
+            flag_entry(TOOLS_REASONING_FLAG, number(1)),
         ),
     ])
 }
@@ -351,14 +362,15 @@ fn format_outcomes(route: &ModelRouteSelector<'_>, model: &str) -> Vec<bool> {
         Some(mapping(&[])),
         Some(mapping(&[("type", number(5))])),
     ];
-    formats
-        .iter()
-        .map(|format| format_needs_converse(route, model, format.as_ref()).unwrap())
-        .collect()
+    let mut outcomes = Vec::new();
+    for format in &formats {
+        outcomes.push(format_needs_converse(route, model, format.as_ref()).unwrap());
+    }
+    outcomes
 }
 
 fn response_format_needs_converse() {
-    let price_map = response_format_map();
+    let price_map = capability_map();
     let converse = IndexSet::new();
     let route = selector(&price_map, &converse, false);
     check_cases(
@@ -383,24 +395,6 @@ fn response_format_needs_converse() {
     assert!(format_needs_converse(&route, "openai.gpt-5.6", Some(&list(&[]))).unwrap());
     let null_request = params(&[("response_format", ParamValue::Null)]);
     assert!(!request_needs_converse(&route, "openai.gpt-oss-20b-1:0", &null_request).unwrap());
-}
-
-fn tools_map() -> ParamMap {
-    params(&[
-        ("openai.gpt-5.6", endpoint_entry("/v1/chat/completions")),
-        (
-            "openai.gpt-oss-20b-1:0",
-            flag_entry(TOOLS_REASONING_FLAG, ParamValue::Bool(true)),
-        ),
-        (
-            "openai.gpt-5.6-literal",
-            flag_entry(TOOLS_REASONING_FLAG, text("true")),
-        ),
-        (
-            "openai.gpt-5.6-number",
-            flag_entry(TOOLS_REASONING_FLAG, number(1)),
-        ),
-    ])
 }
 
 fn tool_outcomes(route: &ModelRouteSelector<'_>, model: &str) -> Vec<bool> {
@@ -429,7 +423,7 @@ fn tool_outcomes(route: &ModelRouteSelector<'_>, model: &str) -> Vec<bool> {
 }
 
 fn tools_with_reasoning() {
-    let price_map = tools_map();
+    let price_map = capability_map();
     let converse = IndexSet::new();
     let route = selector(&price_map, &converse, false);
     check_cases(
