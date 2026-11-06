@@ -3,9 +3,9 @@ use std::str;
 use std::time::Duration;
 
 use betterlite_http::error::HttpError;
-use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_http::proxy::{ProxiedClient, StreamResponse};
 use futures_util::StreamExt as _;
 use futures_util::stream::{BoxStream, iter};
 use http::header::CONTENT_TYPE;
@@ -52,7 +52,7 @@ async fn buffered_result(
     limit: Duration,
 ) -> Result<CoreSendResponse, ClientError> {
     let url_text = request.url.to_string();
-    let response = timeout(limit, http.send_buffered(request))
+    let response = timeout(limit, http.send(request))
         .await
         .map_err(|_elapsed| ClientError::Timeout {
             url: url_text.clone(),
@@ -60,8 +60,9 @@ async fn buffered_result(
             source: None,
         })?
         .map_err(|source| transport_error(&url_text, limit, source))?;
-    check_status(response.status, &url_text)?;
-    parse_rpc(&response.body, &url_text)
+    check_status(response.response.status().as_u16(), &url_text)?;
+    let body = read_body(response, http.limits.body_bytes, limit, &url_text).await?;
+    parse_rpc(&body, &url_text)
 }
 
 fn send_event(response: CoreSendResponse) -> Option<CoreStreamEvent> {
@@ -96,15 +97,26 @@ pub(super) async fn streaming_events(
     if content_type.contains("text/event-stream") {
         return Ok(sse_events(response.body_stream(), url_text, limit));
     }
-    let buffered = timeout(limit, response.buffered(http.limits.body_bytes))
-        .await
-        .map_err(|_elapsed| ClientError::Timeout {
-            url: url_text.clone(),
-            timeout: limit,
-            source: None,
-        })?
-        .map_err(|source| transport_error(&url_text, limit, source))?;
-    Ok(iter(Some(stream_event(&buffered.body, &url_text))).boxed())
+    let body = read_body(response, http.limits.body_bytes, limit, &url_text).await?;
+    Ok(iter(Some(stream_event(&body, &url_text))).boxed())
+}
+
+// Every read is bounded by the configured timeout, and the whole body by the pooled client's byte cap
+#[rustfmt::skip]
+async fn read_body(response: StreamResponse, cap: usize, limit: Duration, url: &str) -> Result<Vec<u8>, ClientError> {
+    let mut stream = response.body_stream();
+    let mut body = Vec::new();
+    loop {
+        let chunk = match timeout(limit, stream.next()).await {
+            Ok(Some(chunk)) => chunk,
+            Ok(None) => break,
+            Err(_elapsed) => return Err(ClientError::Timeout { url: url.to_owned(), timeout: limit, source: None }),
+        };
+        let bytes = match chunk { Ok(bytes) => bytes, Err(source) => return Err(read_error(url, limit, source)) };
+        if body.len().saturating_add(bytes.len()) > cap { return Err(transport_error(url, limit, TransportError::BodyTooLarge { limit: cap })); }
+        body.extend_from_slice(&bytes);
+    }
+    Ok(body)
 }
 
 fn check_status(status: u16, url: &str) -> Result<(), ClientError> {

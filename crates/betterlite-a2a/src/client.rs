@@ -8,7 +8,7 @@ use betterlite_core::a2a::exception_mapping::{
     A2aSdk, CardUrls, ClientConfig, ClientStash, map_a2a_exception,
 };
 use betterlite_core::agents::json::AgentJson;
-use betterlite_http::proxy::{ProxiedClient, limits::TransportLimits};
+use betterlite_http::proxy::{ProxiedClient, base_builder, limits::TransportLimits};
 use secrecy::SecretString;
 use url::Url;
 
@@ -124,14 +124,13 @@ impl From<&ClientError> for A2AError {
     }
 }
 
+// httpx applies the configured timeout to connect and every read, so the client itself must carry those limits
+#[rustfmt::skip]
 fn effective_client(pool: &ProxiedClient, timeout: Duration) -> ProxiedClient {
-    ProxiedClient {
-        limits: TransportLimits {
-            connect_timeout: timeout,
-            read_timeout: timeout,
-            ..pool.limits
-        },
-        ..pool.clone()
+    let limits = TransportLimits { connect_timeout: timeout, read_timeout: timeout, ..pool.limits };
+    match ProxiedClient::build(base_builder(), &pool.policy, limits) {
+        Ok(mut client) => { client.network_mock = pool.network_mock; client }
+        Err(_failure) => ProxiedClient { limits, ..pool.clone() },
     }
 }
 

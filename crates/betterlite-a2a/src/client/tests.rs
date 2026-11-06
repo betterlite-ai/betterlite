@@ -21,7 +21,7 @@ use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
 use betterlite_core::agents::json::AgentJson;
 use betterlite_core::agents::provider::a2a::JsonRpcId;
-use betterlite_http::proxy::ProxiedClient;
+use betterlite_http::proxy::{ProxiedClient, base_builder, limits::TransportLimits};
 use futures_util::StreamExt as _;
 use rstest::rstest;
 use secrecy::{ExposeSecret, SecretString};
@@ -55,6 +55,8 @@ const TEAM_HEADER: &str = "x-team";
 #[derive(Clone)]
 enum Reply {
     Json(String),
+    JsonGaps(Vec<(u64, String)>),
+    StallJson(u64),
     Sse(Vec<String>),
     SseGaps(Vec<(u64, String)>),
     Slow(Duration, String),
@@ -131,22 +133,14 @@ async fn message(
     );
     match state.reply {
         Reply::Json(reply) => ([(CONTENT_TYPE, "application/json")], reply).into_response(),
+        Reply::JsonGaps(chunks) => chunked_body("application/json", chunks),
+        Reply::StallJson(delay) => {
+            chunked_body("application/json", vec![(delay, buffered_message("late"))])
+        }
         Reply::Sse(frames) => {
             ([(CONTENT_TYPE, "text/event-stream")], frames.concat()).into_response()
         }
-        Reply::SseGaps(frames) => {
-            let stream = async_stream::stream! {
-                for (delay, frame) in frames {
-                    sleep(Duration::from_millis(delay)).await;
-                    yield Ok::<_, io::Error>(Bytes::from(frame));
-                }
-            };
-            (
-                [(CONTENT_TYPE, "text/event-stream")],
-                Body::from_stream(stream),
-            )
-                .into_response()
-        }
+        Reply::SseGaps(frames) => chunked_body("text/event-stream", frames),
         Reply::Slow(delay, reply) => {
             sleep(delay).await;
             ([(CONTENT_TYPE, "application/json")], reply).into_response()
@@ -155,6 +149,17 @@ async fn message(
             (StatusCode::TEMPORARY_REDIRECT, [(LOCATION, location)]).into_response()
         }
     }
+}
+
+fn chunked_body(content_type: &'static str, chunks: Vec<(u64, String)>) -> Response {
+    let headers = [(CONTENT_TYPE, content_type)];
+    let stream = async_stream::stream! {
+        for (delay, chunk) in chunks {
+            sleep(Duration::from_millis(delay)).await;
+            yield Ok::<_, io::Error>(Bytes::from(chunk));
+        }
+    };
+    (headers, Body::from_stream(stream)).into_response()
 }
 
 async fn start_agent() -> (TcpListener, String) {
@@ -197,6 +202,11 @@ fn unused_base() -> String {
 fn pooled_client() -> ProxiedClient {
     let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap();
     ProxiedClient::outbound(&Arc::new(policy)).unwrap()
+}
+
+fn limited_client(limits: TransportLimits) -> ProxiedClient {
+    let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
+    ProxiedClient::build(base_builder(), &policy, limits).unwrap()
 }
 
 fn card_json(endpoint: &str, streaming: bool) -> String {
@@ -620,7 +630,7 @@ async fn client_timeout(#[case] env_value: Option<&str>, #[case] configured_ms: 
     let pool = pooled_client();
     let request = send_request("hello");
     let configured = configured_ms.map(Duration::from_millis);
-    let (sent, _seen) = run_agent(
+    let (outcome, _seen) = run_agent(
         listener,
         state,
         Box::pin(async move {
@@ -629,13 +639,17 @@ async fn client_timeout(#[case] env_value: Option<&str>, #[case] configured_ms: 
             let client = create_a2a_client(&pool, settings, &environment(env_value))
                 .await
                 .unwrap();
-            send_message(&client, &request).await
+            let client_timeout = client.timeout;
+            let sent = send_message(&client, &request).await;
+            (client_timeout, sent)
         }),
     )
     .await;
+    let (client_timeout, sent) = outcome;
     if env_value.is_some() || configured_ms.is_some() {
         assert!(matches!(sent, Err(ClientError::Timeout { .. })));
     } else {
+        assert_eq!(client_timeout, DEFAULT_A2A_AGENT_TIMEOUT);
         sent.unwrap();
     }
 }
