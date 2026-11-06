@@ -1,0 +1,10 @@
+kind: helper
+name: password-policy-legacy-sha256
+call:
+  password_policy:
+    function: verify
+    password: Tr0ub4dor&3-horse
+    stored: ed959ca4a127cf7607afafe90c900b004d51ae2e40be4d1419114915a1f3db01
+env: {}
+compare:
+  ignore: []
