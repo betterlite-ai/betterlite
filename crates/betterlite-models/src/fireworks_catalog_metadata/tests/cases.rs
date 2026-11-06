@@ -131,6 +131,10 @@ const FUZZY_CATALOG: &[(&str, &str)] = &[
         "fireworks_ai/accounts/fireworks/models/quiet-model-turbo",
         r#"{"supports_vision":true}"#,
     ),
+    (
+        "fireworks_ai/accounts/fireworks/models/start-model",
+        r#"{"supports_vision":true}"#,
+    ),
     ("openai/gpt-4o", r#"{"supports_vision":true}"#),
     (
         "fireworks_ai/accounts/fireworks/models/",
@@ -299,6 +303,7 @@ fn malformed_entries_fail() {
 fn indexed_fuzzy_capability() {
     fuzzy_matching_rules();
     fuzzy_rejects_unrelated_substrings();
+    fuzzy_matches_a_leading_word();
     fuzzy_index_leaves_out_invalid_rows();
     fuzzy_ties_keep_order();
     cache_follows_identity_and_generation();
@@ -321,6 +326,12 @@ fn fuzzy_rejects_unrelated_substrings() {
     let catalog = catalog_of(FUZZY_CATALOG);
     let mut metadata = FireworksMetadata::default();
     assert_capability(&mut metadata, &catalog, "awesome-model", None);
+}
+
+fn fuzzy_matches_a_leading_word() {
+    let catalog = catalog_of(FUZZY_CATALOG);
+    let mut metadata = FireworksMetadata::default();
+    assert_capability(&mut metadata, &catalog, "start-model-lite", Some(true));
 }
 
 fn fuzzy_index_leaves_out_invalid_rows() {

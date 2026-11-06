@@ -14,6 +14,7 @@ call:
       - {key: "fireworks_ai/accounts/fireworks/models/tie-a", model_info: {supports_vision: true}}
       - {key: "fireworks_ai/accounts/fireworks/models/stable-model", model_info: {supports_vision: false}}
       - {key: "fireworks_ai/accounts/fireworks/models/retiring-model", model_info: {supports_vision: true}}
+      - {key: "fireworks_ai/accounts/fireworks/models/start-model", model_info: {supports_vision: true}}
       - {key: "fireworks_ai/accounts/fireworks/models/", model_info: {supports_vision: true}}
     steps:
       - {op: capability, model: "custom-qwen3-8b-instruct", capability: supports_vision}
@@ -22,6 +23,7 @@ call:
       - {op: capability, model: "awesome-model", capability: supports_vision}
       - {op: capability, model: "tie-a-tie-b", capability: supports_vision}
       - {op: capability, model: "custom-stable-model", capability: supports_vision}
+      - {op: capability, model: "start-model-lite", capability: supports_vision}
       - {op: capability, model: "custom--model", capability: supports_vision}
       - {op: capability, model: "gpt-4o", capability: supports_vision}
       - {op: add, key: "fireworks_ai/accounts/fireworks/models/extra-model", model_info: {supports_vision: true}}
@@ -46,6 +48,7 @@ call:
           - {key: "fireworks_ai/accounts/fireworks/models/tie-a", model_info: {supports_vision: true}}
           - {key: "fireworks_ai/accounts/fireworks/models/stable-model", model_info: {supports_vision: false}}
           - {key: "fireworks_ai/accounts/fireworks/models/alternate-model", model_info: {supports_vision: true}}
+          - {key: "fireworks_ai/accounts/fireworks/models/start-model", model_info: {supports_vision: true}}
           - {key: "fireworks_ai/accounts/fireworks/models/", model_info: {supports_vision: true}}
       - {op: capability, model: "custom-fresh-model", capability: supports_vision}
       - {op: capability, model: "custom-alternate-model", capability: supports_vision}
