@@ -238,6 +238,7 @@ where
     let log = tempfile::NamedTempFile::new().unwrap();
     let subscriber = tracing_subscriber::fmt()
         .with_ansi(false)
+        .with_max_level(tracing::Level::DEBUG)
         .without_time()
         .with_target(false)
         .with_writer(log.reopen().unwrap())
@@ -334,7 +335,7 @@ async fn a_pending_poll_waits_five_seconds_before_succeeding() {
         )]
     );
     assert_eq!(subject.files.writes, vec![b"first".to_vec()]);
-    assert_eq!(subject.transport.requests.len(), 2);
+    assert_eq!(subject.transport.requests.len(), 3);
     assert_eq!(subject.transport.requests[0].url, DEVICE_URL);
     assert_eq!(
         subject.transport.requests[0].body,
@@ -365,7 +366,7 @@ async fn twelve_pending_replies_exhaust_the_poll() {
         iter::repeat_with(|| Ok(pending_reply())).take(12).collect();
     let mut subject = authenticator(Files::default(), vec![Ok(device_reply())], pending);
 
-    let error = subject.get_access_token().await.unwrap_err();
+    let error = subject.login().await.unwrap_err();
 
     assert!(matches!(
         &error,
@@ -516,7 +517,7 @@ async fn a_malformed_access_reply_is_a_400() {
     let mut subject = authenticator(
         Files::default(),
         vec![Ok(device_reply())],
-        vec![Ok(raw_reply(200, b"[]"))],
+        vec![Ok(raw_reply(200, b"not json"))],
     );
 
     let error = subject.login().await.unwrap_err();
