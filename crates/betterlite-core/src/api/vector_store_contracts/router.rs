@@ -3,7 +3,7 @@ use betterlite_config::types::ModelDeployment;
 use betterlite_models::decisions::Json;
 use betterlite_openai::embedding::EmbeddingResponse;
 use betterlite_provider::api::vector_store_contracts::config::{
-    Params, VectorStoreEmbeddingExecutor,
+    EmbeddingEntry, Params, VectorStoreEmbeddingExecutor,
 };
 use betterlite_provider::api::vector_store_contracts::error::{
     BaseLlmException, VectorStoreEmbeddingError,
@@ -18,15 +18,10 @@ pub trait VectorStoreRouter: Send + Sync {
 
     fn model_list(&self) -> Vec<ModelDeployment>;
 
+    // Router.embedding for the embed entry and Router.aembedding for the aembed one
     async fn embedding(
         &self,
-        model: &str,
-        input: &[String],
-        configuration: Params,
-    ) -> Result<EmbeddingResponse, BaseLlmException>;
-
-    async fn aembedding(
-        &self,
+        entry: EmbeddingEntry,
         model: &str,
         input: &[String],
         configuration: Params,
@@ -94,36 +89,19 @@ impl<R: VectorStoreRouter> RouterEmbeddingExecutor<R> {
 impl<R: VectorStoreRouter> VectorStoreEmbeddingExecutor for RouterEmbeddingExecutor<R> {
     async fn embed(
         &self,
+        entry: EmbeddingEntry,
         model: &str,
         query: &str,
         configuration: &Params,
     ) -> Result<EmbeddingResponse, VectorStoreEmbeddingError> {
         let kwargs = self.embedding_kwargs(configuration);
-        let input = [query.to_owned()];
         if self.router_serves(model) {
             return self
                 .router
-                .embedding(model, &input, kwargs)
+                .embedding(entry, model, &[query.to_owned()], kwargs)
                 .await
                 .map_err(|source| VectorStoreEmbeddingError::Router { source });
         }
-        self.direct.embed(model, query, &kwargs).await
-    }
-    async fn aembed(
-        &self,
-        model: &str,
-        query: &str,
-        configuration: &Params,
-    ) -> Result<EmbeddingResponse, VectorStoreEmbeddingError> {
-        let kwargs = self.embedding_kwargs(configuration);
-        let input = [query.to_owned()];
-        if self.router_serves(model) {
-            return self
-                .router
-                .aembedding(model, &input, kwargs)
-                .await
-                .map_err(|source| VectorStoreEmbeddingError::Router { source });
-        }
-        self.direct.aembed(model, query, &kwargs).await
+        self.direct.embed(entry, model, query, &kwargs).await
     }
 }

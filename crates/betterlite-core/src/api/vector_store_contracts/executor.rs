@@ -9,7 +9,7 @@ use betterlite_openai::embedding::{
     EmbeddingError, EmbeddingRequest, EmbeddingResponse, send as send_embedding,
 };
 use betterlite_provider::api::vector_store_contracts::config::{
-    Params, VectorStoreEmbeddingExecutor,
+    EmbeddingEntry, Params, VectorStoreEmbeddingExecutor,
 };
 use betterlite_provider::api::vector_store_contracts::error::VectorStoreEmbeddingError;
 use secrecy::SecretString;
@@ -42,8 +42,10 @@ pub struct DirectEmbeddingExecutor {
 
 #[async_trait]
 impl VectorStoreEmbeddingExecutor for DirectEmbeddingExecutor {
+    // LiteLLM's embed and aembed send the same request, so the entry point changes nothing here
     async fn embed(
         &self,
+        _entry: EmbeddingEntry,
         model: &str,
         query: &str,
         configuration: &Params,

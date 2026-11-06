@@ -17,7 +17,7 @@ use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::embedding::EmbeddingResponse;
 use betterlite_openai::openai_base_config::CatalogCapabilities;
 use betterlite_provider::api::vector_store_contracts::config::{
-    Params, VectorStoreEmbeddingExecutor,
+    EmbeddingEntry, Params, VectorStoreEmbeddingExecutor,
 };
 use betterlite_provider::api::vector_store_contracts::error::{
     BaseLlmException, VectorStoreEmbeddingError,
@@ -143,10 +143,20 @@ where
     let mut configuration = call.configuration.clone();
     configuration.insert("api_base".to_owned(), Json::Text(api_base.to_owned()));
     let sync = executor
-        .embed(&call.model, &call.query, &configuration)
+        .embed(
+            EmbeddingEntry::Embedding,
+            &call.model,
+            &call.query,
+            &configuration,
+        )
         .await?;
     let asynchronous = executor
-        .aembed(&call.model, &call.query, &configuration)
+        .embed(
+            EmbeddingEntry::Aembedding,
+            &call.model,
+            &call.query,
+            &configuration,
+        )
         .await?;
     Ok(EmbeddingOutcomes { sync, asynchronous })
 }
@@ -229,36 +239,17 @@ impl VectorStoreRouter for FakeRouter {
         self.deployments.clone()
     }
 
+    // the deployment the router picked is the one in its model list, with its own key and base
     async fn embedding(
         &self,
+        entry: EmbeddingEntry,
         model: &str,
         input: &[String],
         configuration: Params,
-    ) -> Result<EmbeddingResponse, BaseLlmException> {
-        self.serve(model, input, &configuration).await
-    }
-
-    async fn aembedding(
-        &self,
-        model: &str,
-        input: &[String],
-        configuration: Params,
-    ) -> Result<EmbeddingResponse, BaseLlmException> {
-        self.serve(model, input, &configuration).await
-    }
-}
-
-impl FakeRouter {
-    // the deployment the router picked is the one in its model list, with its own key and base
-    async fn serve(
-        &self,
-        model: &str,
-        input: &[String],
-        configuration: &Params,
     ) -> Result<EmbeddingResponse, BaseLlmException> {
         let query = input.first().map_or("", String::as_str);
         self.direct
-            .embed(model, query, configuration)
+            .embed(entry, model, query, &configuration)
             .await
             .map_err(|source| BaseLlmException {
                 status_code: 502,

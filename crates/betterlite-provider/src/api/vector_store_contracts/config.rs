@@ -155,22 +155,20 @@ pub trait VectorStoreConfig: Send + Sync {
     }
 }
 
+// which of LiteLLM's two embedding entry points the caller used: embed or aembed
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmbeddingEntry {
+    Embedding,
+    Aembedding,
+}
+
 #[async_trait]
 pub trait VectorStoreEmbeddingExecutor: Send + Sync {
     async fn embed(
         &self,
+        entry: EmbeddingEntry,
         model: &str,
         query: &str,
         configuration: &Params,
     ) -> Result<EmbeddingResponse, VectorStoreEmbeddingError>;
-
-    // betterlite has one async execution, so LiteLLM's aembed is the same call
-    async fn aembed(
-        &self,
-        model: &str,
-        query: &str,
-        configuration: &Params,
-    ) -> Result<EmbeddingResponse, VectorStoreEmbeddingError> {
-        self.embed(model, query, configuration).await
-    }
 }

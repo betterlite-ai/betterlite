@@ -16,8 +16,8 @@ use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::embedding::EmbeddingResponse;
 use betterlite_openai::openai_base_config::CatalogCapabilities;
 use betterlite_provider::api::vector_store_contracts::config::{
-    AuthCredentials, EndpointsByType, Params, PreparedRequest, SearchRequest, VectorStoreConfig,
-    VectorStoreEmbeddingExecutor as _, VectorStoreLogging, VectorStoreResponse,
+    AuthCredentials, EmbeddingEntry, EndpointsByType, Params, PreparedRequest, SearchRequest,
+    VectorStoreConfig, VectorStoreEmbeddingExecutor as _, VectorStoreLogging, VectorStoreResponse,
 };
 use betterlite_provider::api::vector_store_contracts::error::{
     BaseLlmException, VectorStoreContractError, VectorStoreEmbeddingError,
@@ -357,7 +357,12 @@ async fn direct_executor_posts_query_embedding_and_returns_the_mock_vector() {
     let configuration = params(r#"{"dimensions": 2}"#);
     let (sent, answered) = tokio::join!(
         provider(listener),
-        executor.embed("openai/text-embedding-3-small", "hello", &configuration)
+        executor.embed(
+            EmbeddingEntry::Embedding,
+            "openai/text-embedding-3-small",
+            "hello",
+            &configuration
+        )
     );
     assert!(sent.starts_with("POST /v1/embeddings HTTP/1.1\r\n"));
     assert!(sent.contains("authorization: Bearer sk-test"));
@@ -380,7 +385,12 @@ async fn direct_executor_aembed_posts_the_same_request() {
     let configuration = params(r#"{"dimensions": 2}"#);
     let (sent, answered) = tokio::join!(
         provider(listener),
-        executor.aembed("openai/text-embedding-3-small", "hello", &configuration)
+        executor.embed(
+            EmbeddingEntry::Aembedding,
+            "openai/text-embedding-3-small",
+            "hello",
+            &configuration
+        )
     );
     assert_eq!(
         request_body(&sent),
@@ -397,7 +407,12 @@ async fn direct_executor_rejects_explicit_arguments_in_the_configuration(#[case]
     let executor = direct_executor("http://127.0.0.1:9/v1");
     let configuration = Params::from([(name.to_owned(), text("given"))]);
     let error = executor
-        .embed("openai/text-embedding-3-small", "hello", &configuration)
+        .embed(
+            EmbeddingEntry::Embedding,
+            "openai/text-embedding-3-small",
+            "hello",
+            &configuration,
+        )
         .await
         .expect_err("duplicate argument");
     assert!(matches!(
@@ -413,7 +428,12 @@ async fn direct_executor_keeps_metadata_out_of_the_provider_body() {
     let configuration = params(r#"{"dimensions": 2, "metadata": {"keep": "yes"}}"#);
     let (sent, answered) = tokio::join!(
         provider(listener),
-        executor.embed("openai/text-embedding-3-small", "hello", &configuration)
+        executor.embed(
+            EmbeddingEntry::Embedding,
+            "openai/text-embedding-3-small",
+            "hello",
+            &configuration
+        )
     );
     let _answered = answered.expect("embedding");
     assert_eq!(
@@ -430,7 +450,12 @@ async fn embed_through(executor: &DirectEmbeddingExecutor, given: &str) -> (Stri
         .or_insert_with(|| text(&base));
     let (sent, answered) = tokio::join!(
         provider(listener),
-        executor.embed("openai/text-embedding-3-small", "hello", &configuration)
+        executor.embed(
+            EmbeddingEntry::Embedding,
+            "openai/text-embedding-3-small",
+            "hello",
+            &configuration
+        )
     );
     let _answered = answered.expect("embedding");
     let body = request_body(&sent);
@@ -496,7 +521,12 @@ async fn direct_executor_calls_a_model_no_deployment_serves() {
     ]);
     let (sent, answered) = tokio::join!(
         provider(listener),
-        executor.embed("openai/some-new-model", "hello", &configuration)
+        executor.embed(
+            EmbeddingEntry::Embedding,
+            "openai/some-new-model",
+            "hello",
+            &configuration
+        )
     );
     let _answered = answered.expect("embedding");
     assert!(sent.contains("authorization: Bearer sk-config"));
@@ -521,7 +551,12 @@ async fn direct_executor_falls_back_to_the_environment_defaults_without_a_deploy
     let configuration = Params::new();
     let (sent, answered) = tokio::join!(
         provider(listener),
-        executor.embed("openai/some-new-model", "hello", &configuration)
+        executor.embed(
+            EmbeddingEntry::Embedding,
+            "openai/some-new-model",
+            "hello",
+            &configuration
+        )
     );
     let _answered = answered.expect("embedding");
     assert!(sent.contains("authorization: Bearer sk-default"));
@@ -534,7 +569,12 @@ async fn direct_executor_keeps_the_deployment_when_options_are_null() {
     let configuration = params(r#"{"api_base": null, "api_key": null, "timeout": null}"#);
     let (sent, answered) = tokio::join!(
         provider(listener),
-        executor.embed("openai/text-embedding-3-small", "hello", &configuration)
+        executor.embed(
+            EmbeddingEntry::Embedding,
+            "openai/text-embedding-3-small",
+            "hello",
+            &configuration
+        )
     );
     let _answered = answered.expect("embedding");
     assert!(sent.contains("authorization: Bearer sk-test"));
@@ -550,7 +590,12 @@ async fn direct_executor_overrides_the_deployment_base_and_key() {
     ]);
     let (sent, answered) = tokio::join!(
         provider(listener),
-        executor.embed("openai/text-embedding-3-small", "hello", &configuration)
+        executor.embed(
+            EmbeddingEntry::Embedding,
+            "openai/text-embedding-3-small",
+            "hello",
+            &configuration
+        )
     );
     let _answered = answered.expect("embedding");
     assert!(sent.starts_with("POST /v1/embeddings HTTP/1.1\r\n"));
@@ -569,7 +614,12 @@ async fn direct_executor_gives_up_after_the_configured_timeout() {
     let configuration = params(r#"{"timeout": 0.2}"#);
     let ((), outcome) = tokio::join!(
         silent,
-        executor.embed("openai/text-embedding-3-small", "hello", &configuration)
+        executor.embed(
+            EmbeddingEntry::Embedding,
+            "openai/text-embedding-3-small",
+            "hello",
+            &configuration
+        )
     );
     assert!(matches!(
         outcome,
@@ -592,6 +642,7 @@ async fn direct_executor_names_the_field_of_the_wrong_type(
     let executor = direct_executor("http://127.0.0.1:9/v1");
     let error = executor
         .embed(
+            EmbeddingEntry::Embedding,
             "openai/text-embedding-3-small",
             "hello",
             &params(&format!(r#"{{"{name}": {value}}}"#)),
@@ -610,6 +661,7 @@ async fn direct_executor_rejects_a_timeout_no_wait_can_last() {
     let executor = direct_executor("http://127.0.0.1:9/v1");
     let error = executor
         .embed(
+            EmbeddingEntry::Embedding,
             "openai/text-embedding-3-small",
             "hello",
             &params(r#"{"timeout": -1}"#),
@@ -627,6 +679,7 @@ async fn direct_executor_names_a_typed_parameter_of_the_wrong_type() {
     let executor = direct_executor("http://127.0.0.1:9/v1");
     let error = executor
         .embed(
+            EmbeddingEntry::Embedding,
             "openai/text-embedding-3-small",
             "hello",
             &params(r#"{"dimensions": "two"}"#),
@@ -648,7 +701,12 @@ async fn direct_executor_reports_defaults_that_make_no_deployment() {
         },
     );
     let error = executor
-        .embed("openai/some-new-model", "hello", &Params::new())
+        .embed(
+            EmbeddingEntry::Embedding,
+            "openai/some-new-model",
+            "hello",
+            &Params::new(),
+        )
         .await
         .expect_err("deployment");
     assert!(matches!(
@@ -659,7 +717,7 @@ async fn direct_executor_reports_defaults_that_make_no_deployment() {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 struct RouterCall {
-    entry: &'static str,
+    entry: EmbeddingEntry,
     model: String,
     input: Vec<String>,
     configuration: Params,
@@ -704,22 +762,6 @@ impl FakeRouter {
     fn teams(&self) -> Vec<Option<String>> {
         self.teams.lock().expect("teams").clone()
     }
-
-    fn record(
-        &self,
-        entry: &'static str,
-        model: &str,
-        input: &[String],
-        configuration: Params,
-    ) -> EmbeddingResponse {
-        self.calls.lock().expect("calls").push(RouterCall {
-            entry,
-            model: model.to_owned(),
-            input: input.to_vec(),
-            configuration,
-        });
-        answer()
-    }
 }
 
 fn answer() -> EmbeddingResponse {
@@ -742,20 +784,18 @@ impl VectorStoreRouter for FakeRouter {
 
     async fn embedding(
         &self,
+        entry: EmbeddingEntry,
         model: &str,
         input: &[String],
         configuration: Params,
     ) -> Result<EmbeddingResponse, BaseLlmException> {
-        Ok(self.record("embedding", model, input, configuration))
-    }
-
-    async fn aembedding(
-        &self,
-        model: &str,
-        input: &[String],
-        configuration: Params,
-    ) -> Result<EmbeddingResponse, BaseLlmException> {
-        Ok(self.record("aembedding", model, input, configuration))
+        self.calls.lock().expect("calls").push(RouterCall {
+            entry,
+            model: model.to_owned(),
+            input: input.to_vec(),
+            configuration,
+        });
+        Ok(answer())
     }
 }
 
@@ -772,6 +812,7 @@ async fn router_is_selected_when_a_model_resolves() {
     let executor = router(FakeRouter::with_resolved("openai/text-embedding-3-small"));
     let response = executor
         .embed(
+            EmbeddingEntry::Embedding,
             "openai/text-embedding-3-small",
             "hello",
             &params(r#"{"model": "ignored", "input": "ignored", "metadata": {"keep": "yes", "team": "old"}, "dimensions": 2}"#),
@@ -782,7 +823,7 @@ async fn router_is_selected_when_a_model_resolves() {
     assert_eq!(
         executor.router.calls(),
         vec![RouterCall {
-            entry: "embedding",
+            entry: EmbeddingEntry::Embedding,
             model: String::from("openai/text-embedding-3-small"),
             input: vec![String::from("hello")],
             configuration: params(
@@ -799,7 +840,8 @@ async fn router_is_selected_when_a_deployment_serves_the_model() {
         "model_list:\n  - model_name: alias\n    litellm_params: {model: openai/text-embedding-3-small}\n",
     ));
     let response = executor
-        .aembed(
+        .embed(
+            EmbeddingEntry::Aembedding,
             "openai/text-embedding-3-small",
             "hello",
             &params(r#"{"dimensions": 2}"#),
@@ -813,32 +855,30 @@ async fn router_is_selected_when_a_deployment_serves_the_model() {
         calls.first().map(|call| call.model.as_str()),
         Some("openai/text-embedding-3-small")
     );
-    assert_eq!(calls.first().map(|call| call.entry), Some("aembedding"));
+    assert_eq!(
+        calls.first().map(|call| call.entry),
+        Some(EmbeddingEntry::Aembedding)
+    );
 }
 
 #[rstest]
-#[case::sync(false, "embedding")]
-#[case::asynchronous(true, "aembedding")]
+#[case::embed(EmbeddingEntry::Embedding)]
+#[case::aembed(EmbeddingEntry::Aembedding)]
 #[tokio::test]
-async fn router_entry_point_follows_the_called_method(
-    #[case] asynchronous: bool,
-    #[case] expected: &str,
-) {
+async fn router_entry_point_follows_the_called_method(#[case] entry: EmbeddingEntry) {
     let executor = router(FakeRouter::with_resolved("openai/text-embedding-3-small"));
-    if asynchronous {
-        executor
-            .aembed("openai/text-embedding-3-small", "hello", &params("{}"))
-            .await
-            .expect("router embedding");
-    } else {
-        executor
-            .embed("openai/text-embedding-3-small", "hello", &params("{}"))
-            .await
-            .expect("router embedding");
-    }
+    executor
+        .embed(
+            entry,
+            "openai/text-embedding-3-small",
+            "hello",
+            &params("{}"),
+        )
+        .await
+        .expect("router embedding");
     let calls = executor.router.calls();
     assert_eq!(calls.len(), 1);
-    assert_eq!(calls.first().map(|call| call.entry), Some(expected));
+    assert_eq!(calls.first().map(|call| call.entry), Some(entry));
 }
 
 #[tokio::test]
@@ -849,7 +889,12 @@ async fn direct_execution_is_selected_without_a_resolved_model_or_deployment() {
     let configuration = params("{}");
     let (sent, answered) = tokio::join!(
         provider(listener),
-        executor.embed("openai/text-embedding-3-small", "hello", &configuration)
+        executor.embed(
+            EmbeddingEntry::Embedding,
+            "openai/text-embedding-3-small",
+            "hello",
+            &configuration
+        )
     );
     assert_eq!(
         request_body(&sent),
@@ -874,7 +919,12 @@ async fn non_string_team_ids_resolve_without_a_team(
         direct: direct_executor("http://127.0.0.1:9/v1"),
     };
     executor
-        .embed("openai/text-embedding-3-small", "hello", &params("{}"))
+        .embed(
+            EmbeddingEntry::Embedding,
+            "openai/text-embedding-3-small",
+            "hello",
+            &params("{}"),
+        )
         .await
         .expect("router embedding");
     assert_eq!(executor.router.teams(), vec![expected.map(str::to_owned)]);
@@ -885,6 +935,7 @@ async fn configured_metadata_that_is_not_a_map_is_ignored() {
     let executor = router(FakeRouter::with_resolved("openai/text-embedding-3-small"));
     executor
         .embed(
+            EmbeddingEntry::Embedding,
             "openai/text-embedding-3-small",
             "hello",
             &params(
