@@ -1092,7 +1092,10 @@ dependencies = [
  "betterlite-config",
  "betterlite-context",
  "betterlite-env",
+ "betterlite-logging",
+ "betterlite-models",
  "betterlite-openai",
+ "betterlite-prompts",
  "betterlite-redact",
  "bytes",
  "chrono",
@@ -1113,6 +1116,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
