@@ -14,17 +14,5 @@ pub const SEND_STREAMING_MESSAGE_METHOD: &str = "SendStreamingMessage";
 
 // Both protocol versions carry these message fields under the same names, so they pass through unchanged
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct MessageCommon {
-    pub message_id: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub context_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub task_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub reference_task_ids: Option<Vec<String>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<AgentJson>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub extensions: Option<Vec<String>>,
-}
+#[serde(rename_all = "camelCase")] #[rustfmt::skip]
+pub struct MessageCommon { pub message_id: String, #[serde(default, skip_serializing_if = "Option::is_none")] pub context_id: Option<String>, #[serde(default, skip_serializing_if = "Option::is_none")] pub task_id: Option<String>, #[serde(default, skip_serializing_if = "Option::is_none")] pub reference_task_ids: Option<Vec<String>>, #[serde(default, skip_serializing_if = "Option::is_none")] pub metadata: Option<AgentJson>, #[serde(default, skip_serializing_if = "Option::is_none")] pub extensions: Option<Vec<String>> }
