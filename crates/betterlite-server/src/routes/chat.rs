@@ -22,6 +22,8 @@ use std::sync::Arc;
 use std::time::Instant;
 use uuid::Uuid;
 
+use crate::routing::simple_shuffle::pick_deployment;
+
 use headers::{failure_headers, success_headers};
 
 // LiteLLM's MAX_LITELLM_CALL_ID_LENGTH
@@ -134,7 +136,7 @@ fn picked_deployment<'executor>(
     let model = path_model
         .map(|Path(model)| model)
         .or_else(|| request.model.clone());
-    state.executor.pick(model.as_deref().unwrap_or("None"))
+    pick_deployment(&state.executor, model.as_deref().unwrap_or("None"))
 }
 
 async fn execute_chat(

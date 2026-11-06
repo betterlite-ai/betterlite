@@ -14,6 +14,8 @@ use std::sync::Arc;
 use std::time::Instant;
 use uuid::Uuid;
 
+use crate::routing::simple_shuffle::pick_deployment;
+
 use super::chat::headers::{failure_headers, success_headers};
 
 mod tests;
@@ -74,7 +76,7 @@ async fn embeddings(
         .map(|Path(model)| model)
         .or_else(|| request.model.clone())
         .unwrap_or_else(|| String::from("None"));
-    let Ok(deployment) = executor.pick(&model) else {
+    let Ok(deployment) = pick_deployment(&executor, &model) else {
         return failure(&EmbeddingError::UnknownModel { model }, &call_id, None);
     };
     match embedding::send(&executor, deployment, &request).await {
