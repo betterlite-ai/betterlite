@@ -12,8 +12,8 @@ type Expectation = Option<Vec<(&'static str, &'static str)>>;
 enum Lookup {
     Route(&'static str),
     Filtered(&'static str, &'static [&'static str]),
-    GetPattern(&'static str, &'static str),
-    Deployments(&'static str, &'static str),
+    GetPattern(&'static str, Option<&'static str>),
+    Deployments(&'static str, Option<&'static str>),
 }
 
 enum Boundary {
@@ -52,12 +52,10 @@ fn resolve(catalog: &PatternCatalog, lookup: &Lookup) -> Option<Vec<Resolved>> {
             let keys: Vec<String> = patterns.iter().map(|name| (*name).to_owned()).collect();
             catalog.route(request, Some(&keys))
         }
-        Lookup::GetPattern(model, provider) => catalog.get_pattern(model, Some(*provider)),
-        Lookup::Deployments(model, provider) => Some(
-            catalog
-                .get_pattern(model, Some(*provider))
-                .unwrap_or_default(),
-        ),
+        Lookup::GetPattern(model, provider) => catalog.get_pattern(model, *provider),
+        Lookup::Deployments(model, provider) => {
+            Some(catalog.get_deployments_by_pattern(model, *provider))
+        }
     };
     matched.map(|entries| {
         entries
@@ -151,20 +149,30 @@ fn assert_lookups(catalog: &PatternCatalog, lookups: &[Lookup], expectations: Ve
     vec![("openai/*", "provider", "azure/*")],
     vec![],
     vec![
-        Lookup::GetPattern("gpt-4", "openai"),
-        Lookup::GetPattern("openai/gpt-4", "azure"),
+        Lookup::GetPattern("gpt-4", Some("openai")),
+        Lookup::GetPattern("openai/gpt-4", Some("azure")),
+        Lookup::GetPattern("gpt-4", None),
+        Lookup::GetPattern("openai/gpt-4", None),
     ],
     vec![
         Some(vec![("provider", "azure/gpt-4")]),
         Some(vec![("provider", "azure/gpt-4")]),
+        None,
+        Some(vec![("provider", "azure/gpt-4")]),
     ],
+)]
+#[case::get_pattern_prefers_the_bare_model_over_the_qualified_name(
+    vec![("gpt*", "direct", "direct/*"), ("openai/*", "qualified", "qualified/*")],
+    vec![],
+    vec![Lookup::GetPattern("gpt-4", Some("openai"))],
+    vec![Some(vec![("direct", "direct/-4")])],
 )]
 #[case::a_missed_lookup_yields_no_candidates(
     vec![("openai/*", "provider", "azure/*")],
     vec![],
     vec![
-        Lookup::Deployments("gpt-4", "openai"),
-        Lookup::Deployments("claude", "anthropic"),
+        Lookup::Deployments("gpt-4", Some("openai")),
+        Lookup::Deployments("claude", Some("anthropic")),
     ],
     vec![Some(vec![("provider", "azure/gpt-4")]), Some(vec![])],
 )]
@@ -195,7 +203,7 @@ fn wildcard_catalog_behaviors(
 #[case::an_empty_catalog_has_no_pattern(Boundary::Routes {
     deployments: vec![],
     removed: vec![],
-    lookups: vec![Lookup::Route("anything"), Lookup::GetPattern("model", "openai")],
+    lookups: vec![Lookup::Route("anything"), Lookup::GetPattern("model", Some("openai"))],
     expectations: vec![None, None],
 })]
 #[case::an_empty_filter_allows_no_pattern(Boundary::Routes {
@@ -234,12 +242,18 @@ fn wildcard_catalog_behaviors(
     lookups: vec![Lookup::Route("a\u{e9}")],
     expectations: vec![Some(vec![("ascii", "ascii/\u{e9}")])],
 })]
-#[case::the_fallback_returns_the_whole_request_of_a_prefix_match(Boundary::Routes {
-    deployments: vec![("llmengine/fo::*::static::*", "fallback", "openai/one*")],
+#[case::the_match_must_start_at_the_request(Boundary::Routes {
+    deployments: vec![("openai/*", "anchor", "azure/*")],
     removed: vec![],
-    lookups: vec![Lookup::Route("llmengine/fo::hi::static::bye::tail")],
+    lookups: vec![Lookup::Route("azure/openai/gpt-4")],
+    expectations: vec![None],
+})]
+#[case::the_fallback_returns_the_whole_request_of_a_prefix_match(Boundary::Routes {
+    deployments: vec![("llmengine/fo::*::static::*::end", "fallback", "openai/one*")],
+    removed: vec![],
+    lookups: vec![Lookup::Route("llmengine/fo::hi::static::bye::end-tail")],
     expectations: vec![Some(vec![
-        ("fallback", "llmengine/fo::hi::static::bye::tail"),
+        ("fallback", "llmengine/fo::hi::static::bye::end-tail"),
     ])],
 })]
 #[case::removing_an_unknown_model_id_changes_nothing(Boundary::Routes {

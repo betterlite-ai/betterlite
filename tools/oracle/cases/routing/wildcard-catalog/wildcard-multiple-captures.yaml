@@ -13,8 +13,8 @@ probes:
     operation:
       wildcard_catalog:
         steps:
-          - {action: add, pattern: "llmengine/fo::*::static::*", model: "openai/one*", model_id: "fallback"}
-          - {action: route, request: "llmengine/fo::hi::static::bye"}
+          - {action: add, pattern: "llmengine/fo::*::static::*::end", model: "openai/one*", model_id: "fallback"}
+          - {action: route, request: "llmengine/fo::hi::static::bye::end-tail"}
   - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
     samples: []
     operation:
@@ -54,3 +54,19 @@ probes:
           - {action: add, pattern: "openai/*", model: "azure/*", model_id: "provider"}
           - {action: get_deployments, model: "gpt-4", provider: "openai"}
           - {action: get_deployments, model: "claude", provider: "anthropic"}
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      wildcard_catalog:
+        steps:
+          - {action: add, pattern: "gpt*", model: "direct/*", model_id: "direct"}
+          - {action: add, pattern: "openai/*", model: "qualified/*", model_id: "qualified"}
+          - {action: get_pattern, model: "gpt-4", provider: "openai"}
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      wildcard_catalog:
+        steps:
+          - {action: add, pattern: "openai/*", model: "azure/*", model_id: "provider"}
+          - {action: get_pattern, model: "zzz-unknown-model-zzz"}
+          - {action: get_pattern, model: "openai/gpt-4"}

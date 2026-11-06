@@ -130,6 +130,17 @@ impl PatternCatalog {
         let provider = resolved_provider?;
         self.route(&format!("{provider}/{model}"), None)
     }
+
+    #[must_use]
+    pub fn get_deployments_by_pattern(
+        &self,
+        model: &str,
+        resolved_provider: Option<&str>,
+    ) -> Vec<Candidate> {
+        // a pattern miss is the empty deployment list LiteLLM answers with instead of none
+        self.get_pattern(model, resolved_provider)
+            .unwrap_or_default()
+    }
 }
 
 // LiteLLM keys its pattern map by this string, so the escaping decides both duplicates and ties

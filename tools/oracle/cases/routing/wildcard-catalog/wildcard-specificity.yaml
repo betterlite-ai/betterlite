@@ -44,3 +44,10 @@ probes:
           - {action: route, request: "openai/gpt-4", filtered_model_names: ["anthropic/*"]}
           - {action: route, request: "anthropic/claude", filtered_model_names: ["anthropic/*"]}
           - {action: route, request: "openai/gpt-4", filtered_model_names: []}
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      wildcard_catalog:
+        steps:
+          - {action: add, pattern: "openai/*", model: "azure/*", model_id: "anchor"}
+          - {action: route, request: "azure/openai/gpt-4"}
