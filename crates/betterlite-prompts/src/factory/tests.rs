@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
@@ -11,6 +12,7 @@ use chrono::{TimeZone as _, Utc};
 use rstest::rstest;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::time::timeout;
 
 use super::hub::{Hub, HubClient, builtin_entries};
 use super::{Output, PromptFactory, prompt_factory};
@@ -20,6 +22,7 @@ use crate::error::FactoryError;
 const LLAMA3_RENDERED: &str = "<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n\ns<|eot_id|><|start_header_id|>user<|end_header_id|>\n\nu<|eot_id|><|start_header_id|>assistant<|end_header_id|>\n\n";
 const MISTRAL_RENDERED: &str = "<s>Error message - Conversation roles must alternate user/assistant/user/assistant/...Error message - Only user and assistant roles are supported!Error message - Conversation roles must alternate user/assistant/user/assistant/...[INST] u [/INST]";
 const DEEPSEEK_RENDERED: &str = "<\u{ff5c}begin\u{2581}of\u{2581}sentence\u{ff5c}>s<\u{ff5c}User\u{ff5c}>u<\u{ff5c}Assistant\u{ff5c}><think>\n";
+const EXCHANGE_TIMEOUT: Duration = Duration::from_secs(3);
 
 #[derive(Clone, Copy)]
 enum Answer {
@@ -95,6 +98,27 @@ async fn respond(listener: &TcpListener, answer: &Answer) -> String {
     stream.write_all(head.as_bytes()).await.unwrap();
     stream.write_all(body).await.unwrap();
     request
+}
+
+async fn serve(listener: &TcpListener, answers: &[Answer]) -> Vec<String> {
+    let mut requests = Vec::new();
+    for answer in answers {
+        requests.push(respond(listener, answer).await);
+    }
+    requests
+}
+
+// a scripted case that makes a different number of requests than it scripts fails here, not at the harness timeout
+async fn exchange<T, F>(listener: &TcpListener, answers: &[Answer], call: F) -> (T, Vec<String>)
+where
+    F: Future<Output = T>,
+{
+    let exchange = timeout(EXCHANGE_TIMEOUT, async {
+        tokio::join!(call, serve(listener, answers))
+    });
+    exchange
+        .await
+        .expect("the case made every request it scripts")
 }
 
 #[rstest]
@@ -282,7 +306,7 @@ async fn hub_templates_follow_litellm(
     let now = clock();
     let (output, requests) = match call {
         Call::Template => {
-            let (rendered, requests) = Box::pin(fetch_case(
+            let (rendered, requests) = Box::pin(exchange(
                 &listener,
                 &answers,
                 factory.hf_chat_template(model, &messages, now),
@@ -292,7 +316,7 @@ async fn hub_templates_follow_litellm(
         }
         Call::Selector | Call::Uncached => {
             let selection = prompt_factory(&factory, model, &messages, provider, now);
-            Box::pin(fetch_case(&listener, &answers, selection)).await
+            Box::pin(exchange(&listener, &answers, selection)).await
         }
     };
     assert_eq!(requests.len(), answers.len());
@@ -303,33 +327,5 @@ async fn hub_templates_follow_litellm(
     match expected {
         Expect::Exact(text) => assert_eq!(output.unwrap(), Output::Text(text.to_owned())),
         Expect::NoTemplate => assert!(matches!(output, Err(FactoryError::NoChatTemplate))),
-    }
-}
-
-async fn fetch_case<T, F>(listener: &TcpListener, answers: &[Answer], call: F) -> (T, Vec<String>)
-where
-    F: Future<Output = T>,
-{
-    match answers {
-        [] => (call.await, Vec::new()),
-        [one] => {
-            let (result, first) = tokio::join!(call, respond(listener, one));
-            (result, vec![first])
-        }
-        [one, two] => {
-            let (result, first, second) =
-                tokio::join!(call, respond(listener, one), respond(listener, two));
-            (result, vec![first, second])
-        }
-        [one, two, three] => {
-            let (result, first, second, third) = tokio::join!(
-                call,
-                respond(listener, one),
-                respond(listener, two),
-                respond(listener, three)
-            );
-            (result, vec![first, second, third])
-        }
-        _ => panic!("the case carries more answers than the fetch can use"),
     }
 }

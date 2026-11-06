@@ -30,7 +30,7 @@ url = "2.5.8"
 betterlite-config = { path = "../betterlite-config" }
 rstest = "=0.27.0"
 tempfile = "3.27.0"
-tokio = { workspace = true, features = ["rt", "macros"] }
+tokio = { workspace = true, features = ["rt", "macros", "time"] }
 
 [lints]
 workspace = true
