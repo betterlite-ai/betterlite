@@ -86,13 +86,16 @@ pub(super) struct Recorded {
 
 impl Recorded {
     pub(super) fn challenge() -> Self {
+        let owned = |pairs: &[(&str, &str)]| -> Vec<(String, String)> {
+            pairs
+                .iter()
+                .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+                .collect()
+        };
         Self {
             url: ENDPOINT.to_owned(),
-            query: vec![
-                ("api-version".to_owned(), "2020-06-01".to_owned()),
-                ("resource".to_owned(), RESOURCE.to_owned()),
-            ],
-            headers: vec![("Metadata".to_owned(), "true".to_owned())],
+            query: owned(&[("api-version", "2020-06-01"), ("resource", RESOURCE)]),
+            headers: owned(&[("Metadata", "true")]),
         }
     }
 
