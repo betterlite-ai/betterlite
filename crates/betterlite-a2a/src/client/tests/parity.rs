@@ -1,6 +1,7 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use betterlite_core::a2a::exception_mapping::{A2AException, map_a2a_exception};
 use betterlite_core::agents::provider::a2a::JsonRpcId;
 use futures_util::StreamExt as _;
 use rstest::rstest;
@@ -10,6 +11,7 @@ use super::{
     message_frame, pooled_client, run_agent, send_message, send_request, settings, start_agent,
     status_frame, team_of,
 };
+use crate::client::NativeA2aSdk;
 use crate::client::convert::{to_compat_stream_response, to_core_send_message_request};
 use crate::client::error::ClientError;
 use crate::client::records::compat::SendMessageRequest;
@@ -163,6 +165,24 @@ async fn redirect_not_followed() {
         Err(ClientError::Status { status: 307, .. })
     ));
     assert!(seen.iter().all(|entry| entry.path != "/moved"));
+}
+
+#[test]
+fn connection_words_in_urls_stay_generic() {
+    let json_rpc = ClientError::JsonRpc {
+        url: "https://connect.example.com/rpc".to_owned(),
+        code: -32601,
+        message: "method not found".to_owned(),
+    };
+    let mapped = map_a2a_exception(&NativeA2aSdk, &json_rpc, None, None, None);
+    assert!(matches!(mapped, A2AException::Other { .. }));
+    let timeout = ClientError::Timeout {
+        url: "https://connect.example.com/rpc".to_owned(),
+        timeout: Duration::from_secs(1),
+        source: None,
+    };
+    let mapped_timeout = map_a2a_exception(&NativeA2aSdk, &timeout, None, None, None);
+    assert!(matches!(mapped_timeout, A2AException::Other { .. }));
 }
 
 #[test]
