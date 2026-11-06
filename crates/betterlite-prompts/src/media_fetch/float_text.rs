@@ -1,4 +1,5 @@
 pub(crate) fn float_text(value: f64) -> String {
+    // python_float is private in betterlite-router, betterlite-server and betterlite-harness, whose files this task's scope excludes
     if value.is_nan() {
         return "nan".to_owned();
     }
