@@ -6,11 +6,11 @@ vendors:
   - id: anthropic
     limit_markers: ["You've hit your", "Not logged in", "Can't reach the API server"]
     max_parallel: 16
-    max_writers: 12
+    max_writers: 4
   - id: deepseek
     limit_markers: ["Insufficient Balance", "Authentication Fails", "Rate Limit Reached", "Server Overloaded", "Can't reach the API server"]
-    max_parallel: 5
-    max_writers: 5
+    max_parallel: 32
+    max_writers: 32
 runners:
   - id: codex-worker
     vendor: openai
@@ -50,7 +50,6 @@ roles:
         effort: max
         attempts: 2
         timeout_minutes: 180
-        tasks: [B3798, B3800, B3961, B598, B3064]
       - runner: codex-worker
         model: gpt-6-luna
         effort: medium
