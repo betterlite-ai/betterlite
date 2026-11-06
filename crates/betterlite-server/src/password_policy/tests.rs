@@ -217,7 +217,7 @@ struct Seen {
 
 #[derive(Clone)]
 struct Mock {
-    replies: Arc<BTreeMap<String, (u16, String)>>,
+    replies: Arc<BTreeMap<String, (u16, Vec<u8>)>>,
     delay: Duration,
     seen: Arc<Mutex<Vec<Seen>>>,
 }
@@ -226,7 +226,7 @@ async fn range(
     State(mock): State<Mock>,
     Path(prefix): Path<String>,
     headers: HeaderMap,
-) -> (StatusCode, String) {
+) -> (StatusCode, Vec<u8>) {
     let header = |name: &str| {
         headers
             .get(name)
@@ -241,7 +241,7 @@ async fn range(
     sleep(mock.delay).await;
     match mock.replies.get(&prefix) {
         Some((status, body)) => (StatusCode::from_u16(*status).unwrap(), body.clone()),
-        None => (StatusCode::OK, String::new()),
+        None => (StatusCode::OK, Vec::new()),
     }
 }
 
@@ -268,12 +268,20 @@ fn client() -> ProxiedClient {
 }
 
 async fn hibp(replies: &[(&str, u16, &str)], delay: Duration, timeout: Duration) -> Hibp {
+    let bytes: Vec<(&str, u16, &[u8])> = replies
+        .iter()
+        .map(|(prefix, status, body)| (*prefix, *status, body.as_bytes()))
+        .collect();
+    hibp_bytes(&bytes, delay, timeout).await
+}
+
+async fn hibp_bytes(replies: &[(&str, u16, &[u8])], delay: Duration, timeout: Duration) -> Hibp {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let mock = Mock {
         replies: Arc::new(
             replies
                 .iter()
-                .map(|(prefix, status, body)| ((*prefix).to_owned(), (*status, (*body).to_owned())))
+                .map(|(prefix, status, body)| ((*prefix).to_owned(), (*status, (*body).to_vec())))
                 .collect(),
         ),
         delay,
@@ -464,6 +472,24 @@ async fn bad_range_answers_fail_open_with_a_warning() {
 
     let output = read_to_string(log.path()).unwrap();
     assert_eq!(output.matches(SKIPPED).count(), 2);
+}
+
+#[tokio::test]
+async fn invalid_utf8_body_fails_open_with_a_warning() {
+    let (log, _guard) = capture_warnings();
+    let garbled = hibp_bytes(
+        &[("5BAA6", 200, b"1\xff")],
+        Duration::ZERO,
+        Duration::from_secs(5),
+    )
+    .await;
+    assert!(!garbled.checker.is_breached(&secret("password")).await);
+    assert!(matches!(
+        garbled.checker.lookup(&secret("password")).await,
+        Err(LookupError::Body(_))
+    ));
+    let output = read_to_string(log.path()).unwrap();
+    assert_eq!(output.matches(SKIPPED).count(), 1);
 }
 
 #[tokio::test]
