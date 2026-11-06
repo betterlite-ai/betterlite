@@ -39,6 +39,10 @@ pub(crate) struct Tool {
 pub(crate) struct Settings {
     #[schemars(description = "Globs every task may change, on top of its own scope.")]
     pub(crate) always_in_scope: Vec<String>,
+    #[schemars(
+        description = "Globs two running tasks may both have in scope. Only the overlap check reads this, so each task's own scope still decides who may write them."
+    )]
+    pub(crate) overlap_allowed: Vec<String>,
     #[schemars(description = "Globs left out of the changed-line budget.")]
     pub(crate) budget_excludes: Vec<String>,
     #[schemars(

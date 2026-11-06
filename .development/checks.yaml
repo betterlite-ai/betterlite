@@ -49,6 +49,10 @@ settings:
     - "**/fuzz/fuzz_targets/**"
     - "**/fuzz/corpus/**"
     - crates/betterlite-config/tests/fixtures/unsupported/**
+  overlap_allowed:
+    - deny.toml
+    - "**/fuzz/.gitignore"
+    - "**/fuzz/.gitattributes"
   budget_excludes:
     - .development/backlog/**
     - .development/tasks/**
