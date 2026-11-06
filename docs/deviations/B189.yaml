@@ -6,3 +6,6 @@ deviations:
   - what: A callback_settings value that is a list or an object fails the load with ConfigError::Unsupported naming callback_settings.<name>.<key>, except a nested key that otel_settings declares under callback_settings.otel.
     why: LiteLLM stores callback_settings as an open dict and hands any shape to the adapter. Betterlite types the scalar integration variables and cannot honor a nested value it has no typed shape for, so it names the path instead of dropping it; the nested otel keys stay with otel_settings, which parses them.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6282-L6285
+  - what: An os.environ/ reference in a callback_settings value that names an unset variable fails the load with MissingEnvironment. LiteLLM stores None instead, so the proxy starts with the setting unset.
+    why: Every betterlite callback setting resolves references through the same resolve_string rule, so a mistyped credential variable can't quietly become None and leave an adapter unauthenticated.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5782-L5787
