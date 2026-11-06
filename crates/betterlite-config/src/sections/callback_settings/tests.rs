@@ -94,7 +94,7 @@ fn callback_registry_tests_behavior(#[case] scenario: Scenario) {
         }
         Scenario::SettingsScalars => {
             let settings = load(
-                "callback_settings:\n  otel:\n    endpoint: https://collector\n    capture: true\n    retries: 3\n    empty: null\n    exporters: [{kind: console}]\n",
+                "callback_settings:\n  otel:\n    endpoint: https://collector\n    capture: true\n    retries: 3\n    timeout: 1.5\n    empty: null\n    exporters: [{kind: console}]\n",
                 &[],
             )
             .unwrap();
@@ -108,6 +108,7 @@ fn callback_registry_tests_behavior(#[case] scenario: Scenario) {
             );
             assert_eq!(otel.get("capture").map(String::as_str), Some("True"));
             assert_eq!(otel.get("retries").map(String::as_str), Some("3"));
+            assert_eq!(otel.get("timeout").map(String::as_str), Some("1.5"));
             assert!(!otel.contains_key("empty"));
             assert!(!otel.contains_key("exporters"));
             assert_eq!(settings.max_callbacks, 100);

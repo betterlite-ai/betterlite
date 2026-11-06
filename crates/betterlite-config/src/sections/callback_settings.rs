@@ -37,7 +37,7 @@ struct RawLiteLlm {
 #[serde(untagged)]
 enum RawValue {
     Text(String),
-    Integer(i64),
+    Number(serde_json::Number),
     Flag(bool),
     Other(IgnoredAny),
 }
@@ -46,7 +46,7 @@ impl RawValue {
     fn text(self) -> Option<String> {
         match self {
             Self::Text(text) => Some(text),
-            Self::Integer(number) => Some(number.to_string()),
+            Self::Number(number) => Some(number.to_string()),
             Self::Flag(set) => Some(if set { "True" } else { "False" }.to_owned()),
             Self::Other(_) => None,
         }
