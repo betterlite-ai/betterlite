@@ -13,21 +13,14 @@ description: 'Implement RoutingReadBatch and RoutingPrefetch ownership over B360
   (L149-L151), RoutingReadBatch.scoped (L155-L160), RoutingReadBatch.active (L163-L164), RoutingReadBatch.for_strategy
   (L167-L173), RoutingReadBatch.async_get_cooldown_deployments (L175-L210), RoutingReadBatch._read_prefetched
   (L213-L235). Implement these behaviors through the typed Rust services above; synchronous facades and
-  structural accessors reuse the same primitive instead of separate ports.'
+  structural accessors reuse the same primitive instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B304 and B318 call this service.'
 scope:
   paths:
   - crates/betterlite-router/src/routing_read_batch.rs
   - crates/betterlite-router/src/routing_read_batch/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/routing_read_batch.rs
   - crates/betterlite-server/src/routing/routing_read_batch/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/routing_read_batch.rs
   - tools/oracle/src/router_probes/routing_read_batch/**
   - tools/oracle/litellm/probes/routing_read_batch.py

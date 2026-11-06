@@ -110,15 +110,14 @@ description: >-
   HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
   exercise real virtual-key lookup and permission policy. Apply B865 ManagementEffects to this source-decorated
   route; its concrete cache eviction is a direct dependency, not deferred logging infrastructure.
+  B895 mounts the one /key/{*tail} dispatcher in crates/betterlite-server/src/routes/key_regenerate.rs, so install the reset_spend handler into its typed slot there and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/key_spend_reset.rs
     - crates/betterlite-server/src/key_spend_reset/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/key_regenerate.rs
+    - crates/betterlite-server/src/routes/key_regenerate/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/key-spend-reset/**
