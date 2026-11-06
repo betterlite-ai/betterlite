@@ -6,9 +6,9 @@ use super::codec::DecodeError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum XaiOauthError {
-    #[error("xAI OAuth login required. Run `litellm xai-oauth login`.")]
+    #[error("xAI OAuth login required")]
     LoginRequired,
-    #[error("xAI OAuth refresh token missing. Run `litellm xai-oauth login`.")]
+    #[error("xAI OAuth refresh token missing")]
     RefreshTokenMissing,
     #[error("xAI OAuth {stage} request could not be sent")]
     Transport {
