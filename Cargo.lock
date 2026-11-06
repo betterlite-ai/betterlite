@@ -1921,10 +1921,13 @@ dependencies = [
 name = "betterlite-prompts"
 version = "0.1.0"
 dependencies = [
+ "betterlite-config",
+ "betterlite-http",
  "betterlite-logging",
  "betterlite-models",
  "chrono",
  "fancy-regex",
+ "http 1.5.0",
  "indexmap 2.14.2",
  "minijinja",
  "minijinja-contrib",
@@ -1937,6 +1940,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+ "url",
 ]
 
 [[package]]
