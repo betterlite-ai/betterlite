@@ -12,3 +12,6 @@ deviations:
   - what: ensure_private_dir refuses a path with no final name, such as the filesystem root, instead of changing its mode.
     why: Chmodding the root because a caller passed it is a bug no working setup relies on, and the typed error names the path.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/private_json.py#L12-L16
+  - what: The recursion depth bound is a caller parameter that defaults to 100; this module never reads DEFAULT_MAX_RECURSE_DEPTH from the environment.
+    why: Only the config crate reads the environment, so the bound comes from the caller and no config key exposes the variable yet.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L85
