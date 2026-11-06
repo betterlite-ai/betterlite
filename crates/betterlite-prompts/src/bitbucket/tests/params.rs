@@ -1,3 +1,6 @@
+use betterlite_prompts::bitbucket::manager::BitBucketPromptManager;
+use tokio::sync::OnceCell;
+
 use betterlite_models::decisions::Json as ContractJson;
 use betterlite_models::prompt_contracts::PromptParams;
 
@@ -17,11 +20,12 @@ fn contract_number(value: Option<&ContractJson>) -> Option<f64> {
 
 async fn compiled_params(template: &str) -> PromptParams {
     let server = support::Server::start(&[("greeting.prompt", 200, template)]);
-    let manager = support::manager(
-        support::config(&server.base_url),
-        None,
-        support::transport(),
-    );
+    let manager = BitBucketPromptManager {
+        bitbucket_config: support::config(&server.base_url),
+        prompt_id: None,
+        transport: support::transport(),
+        template_manager: OnceCell::const_new(),
+    };
     let client = manager
         .compile_prompt_helper(Some("greeting"), None, None, None)
         .await

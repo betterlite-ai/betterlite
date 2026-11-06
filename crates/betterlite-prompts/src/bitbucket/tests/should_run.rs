@@ -1,13 +1,17 @@
+use betterlite_prompts::bitbucket::manager::BitBucketPromptManager;
+use tokio::sync::OnceCell;
+
 use crate::support;
 
 #[tokio::test]
 async fn should_run_prompt_management_runs_an_empty_id_but_not_a_missing_one() {
     let server = support::Server::start(&[]);
-    let manager = support::manager(
-        support::config(&server.base_url),
-        None,
-        support::transport(),
-    );
+    let manager = BitBucketPromptManager {
+        bitbucket_config: support::config(&server.base_url),
+        prompt_id: None,
+        transport: support::transport(),
+        template_manager: OnceCell::const_new(),
+    };
 
     let missing = manager
         .compile_prompt_helper(None, None, None, None)

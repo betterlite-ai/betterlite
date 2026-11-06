@@ -1,13 +1,17 @@
+use betterlite_prompts::bitbucket::manager::BitBucketPromptManager;
+use tokio::sync::OnceCell;
+
 use crate::support;
 
 #[tokio::test]
 async fn compile_exception_wrap_names_the_prompt_and_the_cause() {
     let server = support::Server::start(&[("greeting.prompt", 500, "boom")]);
-    let manager = support::manager(
-        support::config(&server.base_url),
-        None,
-        support::transport(),
-    );
+    let manager = BitBucketPromptManager {
+        bitbucket_config: support::config(&server.base_url),
+        prompt_id: None,
+        transport: support::transport(),
+        template_manager: OnceCell::const_new(),
+    };
 
     let error = manager
         .compile_prompt_helper(Some("greeting"), None, None, None)

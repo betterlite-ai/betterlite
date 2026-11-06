@@ -1,13 +1,17 @@
+use betterlite_prompts::bitbucket::manager::BitBucketPromptManager;
+use tokio::sync::OnceCell;
+
 use crate::support;
 
 #[tokio::test]
 async fn lazy_prompt_manager_is_built_once_and_reused() {
     let server = support::Server::start(&[("greeting.prompt", 200, "Hi {{ name }}")]);
-    let manager = support::manager(
-        support::config(&server.base_url),
-        Some("greeting"),
-        support::transport(),
-    );
+    let manager = BitBucketPromptManager {
+        bitbucket_config: support::config(&server.base_url),
+        prompt_id: Some("greeting".to_owned()),
+        transport: support::transport(),
+        template_manager: OnceCell::const_new(),
+    };
 
     let first = manager
         .prompt_manager()
@@ -32,11 +36,12 @@ async fn lazy_prompt_manager_is_built_once_and_reused() {
 
 #[tokio::test]
 async fn lazy_construction_does_not_fetch_without_a_prompt_id() {
-    let manager = support::manager(
-        support::config(support::CLOSED_BASE),
-        None,
-        support::transport(),
-    );
+    let manager = BitBucketPromptManager {
+        bitbucket_config: support::config(support::CLOSED_BASE),
+        prompt_id: None,
+        transport: support::transport(),
+        template_manager: OnceCell::const_new(),
+    };
 
     let guard = manager
         .prompt_manager()

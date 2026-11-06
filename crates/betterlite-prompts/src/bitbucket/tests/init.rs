@@ -1,3 +1,5 @@
+use tokio::sync::OnceCell;
+
 use betterlite_prompts::bitbucket::initializer::prompt_initializer;
 use betterlite_prompts::bitbucket::manager::BitBucketPromptManager;
 
@@ -5,11 +7,12 @@ use crate::support;
 
 #[tokio::test]
 async fn init_accepts_the_config_without_building_the_template_manager() {
-    let manager = support::manager(
-        support::config(support::CLOSED_BASE),
-        Some("greeting"),
-        support::transport(),
-    );
+    let manager = BitBucketPromptManager {
+        bitbucket_config: support::config(support::CLOSED_BASE),
+        prompt_id: Some("greeting".to_owned()),
+        transport: support::transport(),
+        template_manager: OnceCell::const_new(),
+    };
 
     let error = manager
         .prompt_manager()

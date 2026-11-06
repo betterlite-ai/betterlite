@@ -1,3 +1,6 @@
+use betterlite_prompts::bitbucket::manager::BitBucketPromptManager;
+use tokio::sync::OnceCell;
+
 use betterlite_prompts::arguments::json::Object;
 
 use crate::support;
@@ -6,11 +9,12 @@ use crate::support;
 async fn compile_loads_the_missing_prompt_and_parses_the_rendered_messages() {
     let template = "---\nmodel: gpt-4\n---\nSystem: You greet\nUser: Hello {{ name }}";
     let server = support::Server::start(&[("greeting.prompt", 200, template)]);
-    let manager = support::manager(
-        support::config(&server.base_url),
-        None,
-        support::transport(),
-    );
+    let manager = BitBucketPromptManager {
+        bitbucket_config: support::config(&server.base_url),
+        prompt_id: None,
+        transport: support::transport(),
+        template_manager: OnceCell::const_new(),
+    };
     let variables: Object = serde_json::from_str(r#"{"name": "Ann"}"#).expect("variables");
 
     let client = manager
@@ -30,11 +34,12 @@ async fn compile_loads_the_missing_prompt_and_parses_the_rendered_messages() {
 
 #[tokio::test]
 async fn compile_requires_a_prompt_id() {
-    let manager = support::manager(
-        support::config(support::CLOSED_BASE),
-        None,
-        support::transport(),
-    );
+    let manager = BitBucketPromptManager {
+        bitbucket_config: support::config(support::CLOSED_BASE),
+        prompt_id: None,
+        transport: support::transport(),
+        template_manager: OnceCell::const_new(),
+    };
 
     let error = manager
         .compile_prompt_helper(None, None, None, None)
