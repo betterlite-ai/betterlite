@@ -133,6 +133,20 @@ fn assert_lookup(
     "us-gov.anthropic.claude", "us-gov.anthropic.claude-v2", "anthropic.claude",
     "anthropic.claude-v2", "bedrock/anthropic.claude", "bedrock/anthropic.claude-v2"]"#
 )]
+#[case::composite_dotted_version_date(
+    Call::Candidates,
+    "us.anthropic.claude-sonnet-4.6-20260301-v1:0",
+    "{}",
+    "{}",
+    r#"["us.anthropic.claude-sonnet-4.6-20260301-v1:0", "anthropic.claude-sonnet-4.6-20260301-v1:0",
+    "bedrock/anthropic.claude-sonnet-4.6-20260301-v1:0", "us.anthropic.claude-sonnet-4.6-20260301",
+    "us.anthropic.claude-sonnet-4.6-20260301-v1", "us.anthropic.claude-sonnet-4-6-20260301-v1:0",
+    "us.anthropic.claude-sonnet-4-6", "anthropic.claude-sonnet-4.6-20260301",
+    "anthropic.claude-sonnet-4.6-20260301-v1", "anthropic.claude-sonnet-4-6-20260301-v1:0",
+    "anthropic.claude-sonnet-4-6", "bedrock/anthropic.claude-sonnet-4.6-20260301",
+    "bedrock/anthropic.claude-sonnet-4.6-20260301-v1", "bedrock/anthropic.claude-sonnet-4-6-20260301-v1:0",
+    "bedrock/anthropic.claude-sonnet-4-6"]"#
+)]
 #[case::string_skipped_for_packaged(
     Call::Capability,
     "m",
