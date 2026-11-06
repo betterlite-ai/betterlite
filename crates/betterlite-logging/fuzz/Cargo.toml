@@ -33,8 +33,22 @@ bench = false
 
 
 [[bin]]
+name = "phoenix_response"
+path = "fuzz_targets/phoenix_response.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "s3_v2"
 path = "fuzz_targets/s3_v2.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "prometheus_query"
+path = "fuzz_targets/prometheus_query.rs"
 test = false
 doc = false
 bench = false
