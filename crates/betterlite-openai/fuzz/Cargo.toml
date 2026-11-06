@@ -143,6 +143,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "vector_file_contracts"
+path = "fuzz_targets/vector_file_contracts.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "openai_batches"
 path = "fuzz_targets/openai_batches.rs"
 test = false
