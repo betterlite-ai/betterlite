@@ -173,15 +173,21 @@ fn start_mock(
     Ok((mock, base))
 }
 
-// with no answer the listener stays bound and silent until the call ends, so the request is never refused
-fn bind_silent_listener() -> Result<(TcpListener, tokio::runtime::Runtime), Box<HelperError>> {
-    TcpListener::bind(("127.0.0.1", 0))
-        .and_then(|listener| {
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()?;
-            Ok((listener, runtime))
+fn apply_guardrail(apply: &Apply) -> HelperResult {
+    // with no answer the listener stays bound and silent until the call ends, so the request is never refused
+    let silent = TcpListener::bind(("127.0.0.1", 0)).map_err(|error| {
+        Box::new(HelperError {
+            class: "OSError".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: error.to_string(),
         })
+    })?;
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
         .map_err(|error| {
             Box::new(HelperError {
                 class: "OSError".to_owned(),
@@ -191,11 +197,7 @@ fn bind_silent_listener() -> Result<(TcpListener, tokio::runtime::Runtime), Box<
                 code: None,
                 message: error.to_string(),
             })
-        })
-}
-
-fn apply_guardrail(apply: &Apply) -> HelperResult {
-    let (silent, runtime) = bind_silent_listener()?;
+        })?;
     let (mock, base) = start_mock(apply.answer.as_ref(), &silent)?;
     let mut moderation = build(&apply.settings, &apply.environment, &apply.global_keys)?;
     moderation.api_base = base;
@@ -203,7 +205,17 @@ fn apply_guardrail(apply: &Apply) -> HelperResult {
     let outcome =
         runtime.block_on(moderation.apply_guardrail(apply.inputs.clone(), &mut request_data));
     drop(silent);
-    let calls = mock
+    summarize(apply, &moderation, &outcome, &request_data, mock)
+}
+
+fn summarize(
+    apply: &Apply,
+    moderation: &OpenAiModerationGuardrail,
+    outcome: &Result<Inputs, ModerationError>,
+    request_data: &RequestData,
+    mock: Option<MockProvider>,
+) -> HelperResult {
+    let calls: Vec<ProviderCall> = mock
         .map(MockProvider::finish)
         .transpose()
         .map_err(|error| {
@@ -215,30 +227,15 @@ fn apply_guardrail(apply: &Apply) -> HelperResult {
                 code: None,
                 message: error.to_string(),
             })
-        })?;
-    Ok(summarize(
-        &apply.inputs,
-        &moderation,
-        &outcome,
-        &request_data,
-        calls.unwrap_or_default(),
-    ))
-}
-
-fn summarize(
-    inputs: &Inputs,
-    moderation: &OpenAiModerationGuardrail,
-    outcome: &Result<Inputs, ModerationError>,
-    request_data: &RequestData,
-    calls: Vec<ProviderCall>,
-) -> Value {
+        })?
+        .unwrap_or_default();
     let sent = calls
         .into_iter()
         .next()
         .map(|call| sent_request(&call.request, moderation));
-    json!({
+    Ok(json!({
         "request": sent,
-        "inputs_unchanged": outcome.as_ref().ok() == Some(inputs),
+        "inputs_unchanged": outcome.as_ref().ok() == Some(&apply.inputs),
         "error": outcome.as_ref().err().map(error_summary),
         "stash_left": request_data.metadata.openai_moderation_response.is_some(),
         "records": request_data
@@ -247,7 +244,7 @@ fn summarize(
             .iter()
             .map(record_summary)
             .collect::<Vec<_>>(),
-    })
+    }))
 }
 
 fn sent_request(request: &ProviderRequest, moderation: &OpenAiModerationGuardrail) -> Value {
