@@ -104,15 +104,21 @@ fn repetition(left: &Value, right: &Value) -> Option<Result<Value, InplaceError>
     repeat_value(right, count)
 }
 fn repeat_value(value: &Value, count: i64) -> Option<Result<Value, InplaceError>> {
-    match value {
-        Value::Str(text) => {
-            Some(repeated_length(text.len(), count).map(|times| Value::Str(text.repeat(times))))
-        }
-        Value::Bytes(text) => {
-            Some(repeated_length(text.len(), count).map(|times| Value::Bytes(text.repeat(times))))
-        }
-        Value::List(items) => Some(repeated_items(items, count).map(Value::List)),
-        Value::Tuple(items) => Some(repeated_items(items, count).map(Value::Tuple)),
-        Value::None | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::Dict(_) => None,
+    if let Value::Str(text) = value {
+        return Some(
+            repeated_length(text.len(), count).map(|times| Value::Str(text.repeat(times))),
+        );
     }
+    if let Value::Bytes(text) = value {
+        return Some(
+            repeated_length(text.len(), count).map(|times| Value::Bytes(text.repeat(times))),
+        );
+    }
+    if let Value::List(items) = value {
+        return Some(repeated_items(items, count).map(Value::List));
+    }
+    if let Value::Tuple(items) = value {
+        return Some(repeated_items(items, count).map(Value::Tuple));
+    }
+    None
 }
