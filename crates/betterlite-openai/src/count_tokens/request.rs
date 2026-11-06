@@ -3,7 +3,7 @@ use http::{HeaderMap, HeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
-use serde_with::{DefaultOnNull, serde_as};
+use serde_with::rust::double_option;
 
 use crate::count_tokens::error::CountTokensError;
 use crate::count_tokens::messages::InputItem;
@@ -22,21 +22,50 @@ pub struct CountRequestBody<'call> {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub instructions: Option<&'call str>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub tools: Option<Vec<Value>>,
+    pub tools: Option<Vec<ResponsesTool>>,
 }
 
-#[serde_as]
+type PresentOrNull = Option<Value>;
+
 #[derive(Deserialize)]
 struct ChatFunction {
-    #[serde(default)]
-    #[serde_as(as = "DefaultOnNull")]
-    name: String,
-    #[serde(default)]
-    #[serde_as(as = "DefaultOnNull")]
-    description: String,
-    #[serde(default)]
-    #[serde_as(as = "DefaultOnNull")]
-    parameters: Map<String, Value>,
+    #[serde(default = "default_name")]
+    name: Value,
+    #[serde(default = "default_description")]
+    description: Value,
+    #[serde(default = "default_parameters")]
+    parameters: Value,
+    #[serde(default, with = "double_option")]
+    strict: Option<PresentOrNull>,
+}
+
+fn default_name() -> Value {
+    Value::from("")
+}
+
+fn default_description() -> Value {
+    Value::from("")
+}
+
+fn default_parameters() -> Value {
+    Value::Object(Map::new())
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+pub struct ResponsesFunction {
+    r#type: &'static str,
+    name: Value,
+    description: Value,
+    parameters: Value,
+    #[serde(skip_serializing_if = "Option::is_none", with = "double_option")]
+    strict: Option<PresentOrNull>,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize)]
+#[serde(untagged)]
+pub enum ResponsesTool {
+    Function(ResponsesFunction),
+    Other(Map<String, Value>),
 }
 
 pub const fn validate_request(model: &str, input: &ResponsesInput) -> Result<(), CountTokensError> {
@@ -53,31 +82,29 @@ pub const fn validate_request(model: &str, input: &ResponsesInput) -> Result<(),
     Ok(())
 }
 
-fn flatten_function(function: &Value) -> Result<Value, CountTokensError> {
+fn flatten_function(function: &Value) -> Result<ResponsesFunction, CountTokensError> {
     let Value::Object(fields) = function else {
         return Err(CountTokensError::ToolNotObject);
     };
-    let parsed: ChatFunction = serde_json::from_value(function.clone())
-        .map_err(|source| CountTokensError::Tool { source })?;
-    let mut item = Map::new();
-    item.insert(String::from("type"), Value::from("function"));
-    item.insert(String::from("name"), Value::from(parsed.name));
-    item.insert(String::from("description"), Value::from(parsed.description));
-    item.insert(String::from("parameters"), Value::Object(parsed.parameters));
-    if let Some(strict) = fields.get("strict") {
-        item.insert(String::from("strict"), strict.clone());
-    }
-    Ok(Value::Object(item))
+    let parsed =
+        ChatFunction::deserialize(fields).map_err(|source| CountTokensError::Tool { source })?;
+    Ok(ResponsesFunction {
+        r#type: "function",
+        name: parsed.name,
+        description: parsed.description,
+        parameters: parsed.parameters,
+        strict: parsed.strict,
+    })
 }
 
-pub fn flatten_tools(tools: &[Map<String, Value>]) -> Result<Vec<Value>, CountTokensError> {
+pub fn flatten_tools(tools: &[Map<String, Value>]) -> Result<Vec<ResponsesTool>, CountTokensError> {
     tools
         .iter()
         .map(|tool| match (tool.get("type"), tool.get("function")) {
             (Some(Value::String(kind)), Some(function)) if kind == "function" => {
-                flatten_function(function)
+                flatten_function(function).map(ResponsesTool::Function)
             }
-            _ => Ok(Value::Object(tool.clone())),
+            _ => Ok(ResponsesTool::Other(tool.clone())),
         })
         .collect()
 }

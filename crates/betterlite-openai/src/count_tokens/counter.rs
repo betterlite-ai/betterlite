@@ -77,28 +77,12 @@ fn failure(call: &CountTokensCall<'_>, error: &CountTokensError) -> TokenCountRe
     }
 }
 
-fn success(call: &CountTokensCall<'_>, result: Map<String, Value>) -> TokenCountResponse {
-    let total_tokens = match result.get("input_tokens") {
-        None => 0,
-        Some(Value::Number(number)) => match number.as_i64() {
-            Some(total) => total,
-            None => return failure(call, &CountTokensError::InputTokensType),
-        },
-        Some(_) => return failure(call, &CountTokensError::InputTokensType),
-    };
-    TokenCountResponse {
-        original_response: Some(result),
-        ..response(call, total_tokens)
-    }
-}
-
 impl OpenAiTokenCounter {
     pub async fn count_tokens(&self, call: &CountTokensCall<'_>) -> Option<TokenCountResponse> {
         if call.messages.is_empty() {
             return None;
         }
-        let params = call.deployment;
-        let configured = params.and_then(|found| found.api_key.as_ref());
+        let configured = call.deployment.and_then(|found| found.api_key.as_ref());
         let Some(api_key) = [configured, self.environment_api_key.as_ref()]
             .into_iter()
             .flatten()
@@ -121,14 +105,16 @@ impl OpenAiTokenCounter {
             model: call.model_to_use,
             input: &input,
             api_key,
-            api_base: params.and_then(|found| found.api_base.as_deref()),
+            api_base: call.deployment.and_then(|found| found.api_base.as_deref()),
             timeout: None,
             tools: call.tools,
             instructions: instructions.as_deref(),
         };
         match self.handler.handle_count_tokens_request(&request).await {
-            Ok(Some(result)) => Some(success(call, result)),
-            Ok(None) => None,
+            Ok(answer) => answer.map(|counted| TokenCountResponse {
+                original_response: Some(counted.original_response),
+                ..response(call, counted.input_tokens)
+            }),
             Err(error) => Some(failure(call, &error)),
         }
     }

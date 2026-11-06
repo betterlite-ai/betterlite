@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::fmt::Display;
+use std::slice;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -18,12 +19,12 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 use serde_json::{Map, Value, json};
-use tokio::net::{TcpListener, TcpStream};
 
+use crate::case::UpstreamAnswer;
 use crate::helpers::{HelperError, HelperResult};
-use server::{Reply, serve};
+use crate::mock::{MockProvider, ProviderRequest};
+use crate::routing_mock_scripts::{MockScript, redact};
 
-mod server;
 mod tests;
 
 #[derive(Deserialize)]
@@ -38,7 +39,7 @@ pub(crate) struct CountRequest {
     #[serde(default = "default_status")]
     status: u16,
     #[serde(default = "default_body")]
-    body: String,
+    body: Value,
     #[serde(default = "default_base_path")]
     base_path: String,
     #[serde(default)]
@@ -71,8 +72,8 @@ const fn default_status() -> u16 {
     200
 }
 
-fn default_body() -> String {
-    String::from(r#"{"input_tokens":7}"#)
+fn default_body() -> Value {
+    json!({"input_tokens": 7})
 }
 
 fn default_base_path() -> String {
@@ -104,11 +105,11 @@ fn handler() -> Result<CountTokensHandler, Box<HelperError>> {
     })
 }
 
-fn deployment(request: &CountRequest, address: &str) -> LiteLlmParams {
+fn deployment(request: &CountRequest, base_url: &str) -> LiteLlmParams {
     LiteLlmParams {
         ssl_verify: None,
         model: None,
-        api_base: Some(format!("http://{address}{}", request.base_path)),
+        api_base: Some(format!("{base_url}{}", request.base_path)),
         api_key: request.api_key.clone().map(SecretString::from),
         api_version: None,
         timeout: None,
@@ -131,15 +132,34 @@ fn token_counter(request: &CountRequest) -> Result<OpenAiTokenCounter, Box<Helpe
     })
 }
 
+// The mock redacts credential headers, so the key is identified by which configured source produced it
+fn key_source(seen: &ProviderRequest, request: &CountRequest) -> Option<&'static str> {
+    let sent = seen.headers.get("authorization")?;
+    let sources = [
+        ("api_key", request.api_key.as_ref()),
+        ("env", request.env.get("OPENAI_API_KEY")),
+    ];
+    let found = sources.into_iter().find_map(|(name, key)| {
+        let mut expected = BTreeMap::new();
+        expected.insert(String::from("authorization"), format!("Bearer {}", key?));
+        redact(&mut expected);
+        (expected.get("authorization") == Some(sent)).then_some(name)
+    });
+    Some(found.unwrap_or("other"))
+}
+
 async fn count(request: &CountRequest) -> HelperResult {
-    let listener = TcpListener::bind(("127.0.0.1", 0))
-        .await
-        .map_err(|error| fail("OSError", &error))?;
-    let local = listener
-        .local_addr()
-        .map_err(|error| fail("OSError", &error))?;
-    let address = local.to_string();
-    let params = deployment(request, &address);
+    let answer = UpstreamAnswer {
+        status: request.status,
+        headers: BTreeMap::new(),
+        body: Some(request.body.clone()),
+        events: None,
+    };
+    let provider = MockScript::try_from(slice::from_ref(&answer))
+        .and_then(MockProvider::start)
+        .map_err(|error| fail("MockError", &error))?;
+    let host = provider.base_url.trim_start_matches("http://").to_owned();
+    let params = deployment(request, &provider.base_url);
     let counter = token_counter(request)?;
     let call = CountTokensCall {
         model_to_use: &request.model,
@@ -149,23 +169,21 @@ async fn count(request: &CountRequest) -> HelperResult {
         tools: request.tools.as_deref(),
         system: request.system.as_ref(),
     };
-    let reply = Reply {
-        status: request.status,
-        body: &request.body,
-    };
-    let (result, served) = tokio::join!(
-        async {
-            let outcome = counter.count_tokens(&call).await;
-            TcpStream::connect(local).await.map(|_| outcome)
-        },
-        serve(&listener, &reply)
-    );
-    let recorded = served.map_err(|error| fail("OSError", &error))?;
-    let outcome = result.map_err(|error| fail("OSError", &error))?;
+    let outcome = counter.count_tokens(&call).await;
+    let calls = provider
+        .finish()
+        .map_err(|error| fail("MockError", &error))?;
+    let seen = calls.first().map(|recorded| &recorded.request);
     Ok(json!({
         "selected": counter.should_use_token_counting_api(request.provider.as_deref()),
         "result": outcome,
-        "request": recorded.first().map(|seen| seen.view(&address)),
+        "request": seen.map(|found| json!({
+            "path": found.path,
+            "content_type": found.headers.get("content-type"),
+            "authorization_source": key_source(found, request),
+            "body": found.body,
+            "deployment_base": found.headers.get("host") == Some(&host),
+        })),
     }))
 }
 

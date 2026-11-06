@@ -1,5 +1,6 @@
 use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use serde_with::{DefaultOnNull, serde_as};
 
 use crate::count_tokens::python_text::{PyValue, display_text};
@@ -13,23 +14,30 @@ pub enum MessageContent {
     Blocks(Vec<PyValue>),
 }
 
-#[serde_as]
+// LiteLLM reads these with dict.get(key, ""), so a null or non-string value is sent on as given
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(transparent)]
+pub struct Forwarded(Value);
+
+impl Default for Forwarded {
+    fn default() -> Self {
+        Self(Value::from(""))
+    }
+}
+
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct ToolCallFunction {
     #[serde(default)]
-    #[serde_as(as = "DefaultOnNull")]
-    pub name: String,
+    pub name: Forwarded,
     #[serde(default)]
-    #[serde_as(as = "DefaultOnNull")]
-    pub arguments: String,
+    pub arguments: Forwarded,
 }
 
 #[serde_as]
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct ToolCall {
     #[serde(default)]
-    #[serde_as(as = "DefaultOnNull")]
-    pub id: String,
+    pub id: Forwarded,
     #[serde(default)]
     #[serde_as(as = "DefaultOnNull")]
     pub function: ToolCallFunction,
@@ -47,8 +55,7 @@ pub struct ChatMessage {
     #[serde_as(as = "DefaultOnNull")]
     pub tool_calls: Vec<ToolCall>,
     #[serde(default)]
-    #[serde_as(as = "DefaultOnNull")]
-    pub tool_call_id: String,
+    pub tool_call_id: Forwarded,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -77,12 +84,12 @@ pub enum ContentRole {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum CallItem {
     FunctionCall {
-        call_id: String,
-        name: String,
-        arguments: String,
+        call_id: Forwarded,
+        name: Forwarded,
+        arguments: Forwarded,
     },
     FunctionCallOutput {
-        call_id: String,
+        call_id: Forwarded,
         output: String,
     },
 }

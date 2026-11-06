@@ -40,7 +40,10 @@ pub enum CountTokensError {
     #[error("the answer is not a JSON object")]
     NotAnObject,
     #[error("input_tokens is not an integer")]
-    InputTokensType,
+    InputTokens {
+        #[source]
+        source: serde_json::Error,
+    },
     #[error("a function tool is not a valid chat function: {source}")]
     Tool {
         #[source]
@@ -78,7 +81,9 @@ impl CountTokensError {
     #[must_use]
     pub fn into_openai_error(self) -> Self {
         match self {
-            Self::Api(_) | Self::Tool { .. } | Self::ToolNotObject | Self::InputTokensType => self,
+            Self::Api(_) | Self::Tool { .. } | Self::ToolNotObject | Self::InputTokens { .. } => {
+                self
+            }
             Self::Status { status, text } => Self::openai_error(status, text),
             Self::BodyNotUtf8 { status } => Self::openai_error(status, self.to_string()),
             Self::ModelRequired

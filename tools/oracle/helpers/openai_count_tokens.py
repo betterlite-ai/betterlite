@@ -19,7 +19,7 @@ HOST = "openai.test"
 
 
 class Provider:
-    def __init__(self, status: int, body: str) -> None:
+    def __init__(self, status: int, body: Json) -> None:
         self.status = status
         self.body = body
         self.calls: list[Object] = []
@@ -38,7 +38,9 @@ class Provider:
             }
         )
         return httpx.Response(
-            self.status, content=self.body.encode(), headers={"content-type": "application/json"}
+            self.status,
+            content=json.dumps(self.body, separators=(",", ":")).encode(),
+            headers={"content-type": "application/json"},
         )
 
     def client(self) -> AsyncHTTPHandler:
@@ -63,9 +65,21 @@ def environment(fields: Object) -> dict[str, str]:
     return dict(raw)
 
 
+def key_source(call: Object, fields: Object) -> str | None:
+    authorization = call["authorization"]
+    if authorization is None:
+        return None
+    env_key = environment(fields).get("OPENAI_API_KEY")
+    for name, key in (("api_key", text(fields, "api_key")), ("env", env_key)):
+        if key is not None and authorization == f"Bearer {key}":
+            return name
+    return "other"
+
+
 def count(fields: Object) -> Json:
     status = cast(int, fields.get("status", 200))
-    provider = Provider(status, text(fields, "body") or '{"input_tokens":7}')
+    default_body: Json = {"input_tokens": 7}
+    provider = Provider(status, fields.get("body", default_body))
     base_path = text(fields, "base_path") or "/v1"
     overrides = cast(Object, fields.get("module_overrides") or {})
     deployment: dict[str, object] = {"litellm_params": {"api_base": f"http://{HOST}{base_path}"}}
@@ -94,8 +108,9 @@ def count(fields: Object) -> Json:
     call = provider.calls[0] if provider.calls else None
     request = None
     if call is not None:
-        names = ("path", "content_type", "authorization", "body", "deployment_base")
+        names = ("path", "content_type", "body", "deployment_base")
         request = {name: call[name] for name in names}
+        request["authorization_source"] = key_source(call, fields)
     return {
         "selected": counter.should_use_token_counting_api(text(fields, "provider")),
         "result": None if result is None else cast(Json, result.model_dump()),

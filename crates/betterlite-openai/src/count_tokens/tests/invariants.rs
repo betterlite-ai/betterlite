@@ -70,6 +70,7 @@ fn replays(path: &Path) -> bool {
         "valid" => matches!(decoded, Ok(Some(_))),
         "null" => matches!(decoded, Ok(None)),
         "scalar" => matches!(decoded, Err(CountTokensError::NotAnObject)),
+        "tokens" => matches!(decoded, Err(CountTokensError::InputTokens { .. })),
         "malformed" | "truncated" => matches!(decoded, Err(CountTokensError::Decode { .. })),
         other => panic!("unknown corpus category {other}"),
     }

@@ -13,7 +13,7 @@ use super::super::messages::{
     ChatMessage, ContentRole, ResponsesContent, blocks_to_content, messages_to_responses_input,
 };
 use super::super::python_text::{PyValue, display_text};
-use super::super::request::{ResponsesInput, flatten_tools};
+use super::super::request::{ResponsesInput, ResponsesTool, flatten_tools};
 use super::{KEY, OK, counter, params, run};
 
 #[rstest]
@@ -162,7 +162,25 @@ fn a_tool_with_a_function_key_but_another_type_passes_through() {
     let tool: serde_json::Map<String, serde_json::Value> =
         serde_json::from_str(r#"{"type":"custom","function":{"name":"x"}}"#).unwrap();
     let flattened = flatten_tools(slice::from_ref(&tool)).unwrap();
-    assert_eq!(flattened, vec![serde_json::Value::Object(tool)]);
+    assert_eq!(flattened, vec![ResponsesTool::Other(tool)]);
+}
+
+#[tokio::test]
+async fn null_and_non_string_function_fields_are_sent_as_given() {
+    let scenario = r#"{"model":"m","key":"k",
+        "tools":[{"type":"function","function":{"name":123,"description":null,"parameters":null,"strict":null}}],
+        "messages":[
+            {"role":"assistant","content":"","tool_calls":[{"id":null,"function":{"name":5,"arguments":null}}]},
+            {"role":"tool","tool_call_id":null,"content":"done"}]}"#;
+    let (_, request) = run(scenario, 200, OK).await;
+    let expected: serde_json::Value = serde_json::from_str(
+        r#"{"model":"m",
+        "tools":[{"type":"function","name":123,"description":null,"parameters":null,"strict":null}],
+        "input":[{"type":"function_call","call_id":null,"name":5,"arguments":null},
+            {"type":"function_call_output","call_id":null,"output":"done"}]}"#,
+    )
+    .unwrap();
+    assert_eq!(request.unwrap().1, expected);
 }
 
 #[test]

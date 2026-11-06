@@ -4,6 +4,7 @@ use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use http::Method;
 use secrecy::SecretString;
+use serde::Deserialize;
 use serde_json::{Map, Value};
 use url::Url;
 
@@ -31,13 +32,30 @@ pub struct HandlerRequest<'call> {
     pub instructions: Option<&'call str>,
 }
 
+#[derive(Deserialize)]
+struct InputTokens {
+    #[serde(default)]
+    input_tokens: i64,
+}
+
+#[derive(Debug)]
+pub struct InputTokenCount {
+    pub input_tokens: i64,
+    pub original_response: Map<String, Value>,
+}
+
 // A JSON null answer is LiteLLM's "no result", so the counter returns None for it
-pub fn decode_input_token_count(
-    body: &[u8],
-) -> Result<Option<Map<String, Value>>, CountTokensError> {
+pub fn decode_input_token_count(body: &[u8]) -> Result<Option<InputTokenCount>, CountTokensError> {
     match serde_json::from_slice(body).map_err(|source| CountTokensError::Decode { source })? {
         Value::Null => Ok(None),
-        Value::Object(fields) => Ok(Some(fields)),
+        Value::Object(fields) => {
+            let counted = InputTokens::deserialize(&fields)
+                .map_err(|source| CountTokensError::InputTokens { source })?;
+            Ok(Some(InputTokenCount {
+                input_tokens: counted.input_tokens,
+                original_response: fields,
+            }))
+        }
         Value::Bool(_) | Value::Number(_) | Value::String(_) | Value::Array(_) => {
             Err(CountTokensError::NotAnObject)
         }
@@ -82,7 +100,7 @@ impl CountTokensHandler {
     async fn send(
         &self,
         request: &HandlerRequest<'_>,
-    ) -> Result<Option<Map<String, Value>>, CountTokensError> {
+    ) -> Result<Option<InputTokenCount>, CountTokensError> {
         tracing::debug!(
             model = request.model,
             "Processing OpenAI CountTokens request"
@@ -111,7 +129,7 @@ impl CountTokensHandler {
     pub async fn handle_count_tokens_request(
         &self,
         request: &HandlerRequest<'_>,
-    ) -> Result<Option<Map<String, Value>>, CountTokensError> {
+    ) -> Result<Option<InputTokenCount>, CountTokensError> {
         self.send(request)
             .await
             .map_err(CountTokensError::into_openai_error)

@@ -1,5 +1,5 @@
 kind: helper
 name: native-count-success
-call: {openai_count_tokens: {"count": {"model": "gpt-5", "messages": [{"role": "user", "content": "hi"}], "body": "{\"object\":\"response.input_tokens\"}", "api_key": "sk-deployment"}}}
+call: {openai_count_tokens: {"count": {"model": "gpt-5", "messages": [{"role": "user", "content": "hi"}], "body": {"object": "response.input_tokens"}, "api_key": "sk-deployment"}}}
 env: {}
 compare: {ignore: []}
