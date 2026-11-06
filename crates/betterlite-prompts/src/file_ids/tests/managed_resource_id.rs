@@ -17,6 +17,7 @@ const VECTOR_BY_FILE_ID: &str =
     Some("vs_raw")
 )]
 #[case::plain_id("vs_plain", None)]
+#[case::plain_id_carrying_a_marker("vendor;resource_id,vs_x", None)]
 #[case::decoded_marker_behind_a_plain_prefix(NON_PREFIXED_RESOURCE, None)]
 fn model_file_ids_behavior_tests_behavior(
     #[case] unified_id: &str,
