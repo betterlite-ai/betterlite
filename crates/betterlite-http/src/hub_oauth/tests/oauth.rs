@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io;
 use std::os::unix::fs::PermissionsExt as _;
@@ -8,11 +9,17 @@ use std::time::Duration;
 
 use tokio::time::sleep;
 
+use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::sections::huggingface_hub::{OfflineSetting, Settings};
+use betterlite_config::types::ProxyTrust;
 
 use super::support::{Env, Logs, body_of, header, implicit, oidc_settings};
+use crate::hub_oauth::clock::{ClockRangeError, HubClock};
 use crate::hub_oauth::error::StoredTokensError;
-use crate::hub_token::{HubTokenError, HubTokenFileReader, HubTokenResolver};
+use crate::hub_token::{
+    HubTokenError, HubTokenFileReader, HubTokenResolver, TokioHubTokenFileReader,
+};
+use crate::proxy::ProxiedClient;
 
 const NOW: i64 = 1_700_000_000;
 const EXPIRES_SOON: i64 = 1_700_003_600;
@@ -340,4 +347,35 @@ pub(super) async fn offline_refresh_warns_once_and_keeps_the_token() {
     assert_eq!(implicit(&fixture.lookup).await.unwrap().unwrap(), "old");
     assert!(fixture.env.server.requests().is_empty());
     assert_eq!(logs.text().matches("Could not refresh").count(), 1);
+}
+
+struct OutOfRangeClock;
+
+impl HubClock for OutOfRangeClock {
+    fn monotonic_seconds(&self) -> u64 {
+        0
+    }
+
+    fn unix_seconds(&self) -> Result<i64, ClockRangeError> {
+        Err(ClockRangeError)
+    }
+}
+
+pub(super) async fn a_clock_outside_the_i64_range_is_an_error() {
+    let env = Env::new().await;
+    let hub = env.hub();
+    fs::create_dir_all(hub.token_path.parent().unwrap()).unwrap();
+    fs::write(&hub.token_path, "old\n").unwrap();
+    let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
+    let lookup = HubTokenResolver::new(
+        hub,
+        oidc_settings(None),
+        Arc::new(ProxiedClient::outbound(&policy).unwrap()),
+        Arc::new(TokioHubTokenFileReader),
+        Arc::new(OutOfRangeClock),
+    );
+    assert!(matches!(
+        implicit(&lookup).await,
+        Err(HubTokenError::Clock(ClockRangeError))
+    ));
 }

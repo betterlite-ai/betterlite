@@ -18,7 +18,7 @@ use tracing::subscriber::DefaultGuard;
 use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::util::SubscriberInitExt as _;
 
-use crate::hub_oauth::clock::HubClock;
+use crate::hub_oauth::clock::{ClockRangeError, HubClock};
 use crate::hub_token::{
     HubToken, HubTokenError, HubTokenFileReader, HubTokenResolver, TokioHubTokenFileReader,
 };
@@ -52,8 +52,8 @@ impl HubClock for FakeClock {
         self.monotonic.load(Ordering::SeqCst)
     }
 
-    fn unix_seconds(&self) -> i64 {
-        self.unix.load(Ordering::SeqCst)
+    fn unix_seconds(&self) -> Result<i64, ClockRangeError> {
+        Ok(self.unix.load(Ordering::SeqCst))
     }
 }
 

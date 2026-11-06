@@ -45,6 +45,7 @@ async fn oauth_refresh_follows_huggingface_hub() {
     oauth::token_file_rewritten_during_the_lookup_is_served().await;
     oauth::token_file_switched_back_is_served_again().await;
     oauth::offline_refresh_warns_once_and_keeps_the_token().await;
+    oauth::a_clock_outside_the_i64_range_is_an_error().await;
 }
 
 #[rstest]

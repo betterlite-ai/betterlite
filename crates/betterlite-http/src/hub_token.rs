@@ -11,7 +11,7 @@ use tokio::sync::Mutex;
 use betterlite_config::sections::huggingface_hub::Settings;
 use betterlite_config::sections::huggingface_oidc::Settings as OidcSettings;
 
-use crate::hub_oauth::clock::HubClock;
+use crate::hub_oauth::clock::{ClockRangeError, HubClock};
 use crate::hub_oauth::error::{OidcError, StoredTokensError};
 use crate::hub_oauth::oidc::OidcExchange;
 use crate::hub_oauth::refresh::{LOCK_TIMEOUT, OauthRefresh, State};
@@ -41,6 +41,8 @@ pub enum HubTokenError {
     Oidc(#[from] OidcError),
     #[error(transparent)]
     StoredTokens(#[from] StoredTokensError),
+    #[error(transparent)]
+    Clock(#[from] ClockRangeError),
 }
 
 pub struct HubTokenResolver {

@@ -14,7 +14,7 @@ fn system_clock_reads_the_wall_clock() {
             .as_secs(),
     )
     .unwrap();
-    assert!(clock.unix_seconds().abs_diff(wall) <= 5);
+    assert!(clock.unix_seconds().unwrap().abs_diff(wall) <= 5);
 }
 
 #[tokio::test]

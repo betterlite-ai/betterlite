@@ -66,7 +66,7 @@ impl OauthRefresh {
         token: SecretString,
     ) -> Result<SecretString, HubTokenError> {
         let mut state = self.state.lock().await;
-        let now = self.clock.unix_seconds();
+        let now = self.clock.unix_seconds()?;
         if let Some(cached) = &state.cache
             && cached.file_token.expose_secret() == token.expose_secret()
             && now < cached.recheck_at
