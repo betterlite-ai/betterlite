@@ -28,6 +28,7 @@ url = "2.5.8"
 uuid.workspace = true
 [dev-dependencies]
 rstest = "=0.27.0"
+temp-env = { version = "0.3.6", features = ["async_closure"] }
 tempfile = "3.27.0"
 tokio = { workspace = true, features = ["test-util"] }
 [lints]

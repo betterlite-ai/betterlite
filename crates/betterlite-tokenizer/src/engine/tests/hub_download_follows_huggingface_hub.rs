@@ -6,6 +6,7 @@ use betterlite_config::sections::huggingface_hub::{
     OfflineSetting, Settings as HubSettings, TransferSetting,
 };
 use secrecy::SecretString;
+use temp_env::async_with_vars;
 use tokio::fs;
 use tracing::span::{Attributes, Id, Record};
 use tracing::subscriber::with_default;
@@ -254,7 +255,7 @@ async fn stalled_body_fails_with_the_download_timeout() {
 }
 
 #[tokio::test]
-async fn token_header_is_present_and_absent() {
+async fn token_header_is_present() {
     let server = Server::start(|request| standard_reply(request, BODY)).await;
     let directory = tempfile::tempdir().unwrap();
     let mut settings = hub_settings(&server.endpoint, directory.path());
@@ -273,24 +274,38 @@ async fn token_header_is_present_and_absent() {
         .first()
         .and_then(|request| request.header("authorization").map(str::to_owned));
     assert_eq!(authorization.as_deref(), Some("Bearer hf_test_token"));
-    let anonymous = Server::start(|request| standard_reply(request, BODY)).await;
-    let anonymous_directory = tempfile::tempdir().unwrap();
-    let anonymous_settings = hub_settings(&anonymous.endpoint, anonymous_directory.path());
-    assert_eq!(
-        downloader(&anonymous_settings)
-            .download(REPO, "main", None)
-            .await
-            .unwrap(),
-        BODY
-    );
-    assert!(
-        anonymous
-            .requests
-            .lock()
-            .unwrap()
-            .first()
-            .is_some_and(|request| request.header("authorization").is_none())
-    );
+}
+
+#[tokio::test]
+async fn token_header_is_absent() {
+    async_with_vars(
+        [
+            ("HF_TOKEN", None::<String>),
+            ("HF_TOKEN_PATH", None::<String>),
+            ("HF_HOME", None::<String>),
+        ],
+        async {
+            let server = Server::start(|request| standard_reply(request, BODY)).await;
+            let directory = tempfile::tempdir().unwrap();
+            let settings = hub_settings(&server.endpoint, directory.path());
+            assert_eq!(
+                downloader(&settings)
+                    .download(REPO, "main", None)
+                    .await
+                    .unwrap(),
+                BODY
+            );
+            assert!(
+                server
+                    .requests
+                    .lock()
+                    .unwrap()
+                    .first()
+                    .is_some_and(|request| request.header("authorization").is_none())
+            );
+        },
+    )
+    .await;
 }
 
 #[tokio::test]

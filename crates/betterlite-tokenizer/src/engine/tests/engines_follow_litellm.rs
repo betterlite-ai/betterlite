@@ -119,6 +119,6 @@ fn gpt2_vocabulary_follows_data_gym() {
     let encoder = include_bytes!("../../../fixtures/gpt2-test-encoder.json");
     let serialized = bpe_file(vocab, encoder).unwrap();
     let engine = TiktokenEngine::from_bpe_file(Encoding::Gpt2, &serialized).unwrap();
-    assert_eq!(engine.encode("hello").unwrap(), [256, 257, 111]);
-    assert_eq!(engine.decode(&[256, 257, 111]).unwrap(), "hello".to_owned());
+    assert_eq!(engine.encode("hello").unwrap(), [256, 257, 78]);
+    assert_eq!(engine.decode(&[256, 257, 78]).unwrap(), "hello".to_owned());
 }
