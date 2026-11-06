@@ -118,6 +118,24 @@ fn create_body_writes_secure_access_only_when_requested(
 }
 
 #[test]
+fn create_body_keeps_an_explicit_empty_mapping_and_entrypoint() {
+    let empty = BTreeMap::new();
+    let no_entrypoint: Vec<String> = Vec::new();
+    let body = create_body(&CreateSandbox {
+        metadata: Some(&empty),
+        env_vars: Some(&empty),
+        resource_limits: Some(&empty),
+        resource_requests: Some(&empty),
+        entrypoint: Some(&no_entrypoint),
+        ..request()
+    });
+    assert_eq!(
+        serde_json::to_string(&body).unwrap(),
+        r#"{"image":{"uri":"opensandbox/code-interpreter:v1.1.0"},"entrypoint":[],"timeout":300,"resourceLimits":{},"metadata":{},"env":{},"resourceRequests":{},"networkPolicy":{"defaultAction":"deny","egress":[]}}"#
+    );
+}
+
+#[test]
 fn default_resource_limits_are_one_cpu_and_two_gib() {
     assert_eq!(
         default_resource_limits(),

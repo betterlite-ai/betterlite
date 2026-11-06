@@ -38,6 +38,12 @@ fn validate_environment_reads_the_open_sandbox_api_key() {
 }
 
 #[test]
+fn validate_environment_is_empty_without_the_variable() {
+    let sandbox = sandbox(FakeHttp::new(&[]), environment(&[]));
+    assert_eq!(sandbox.validate_environment(None).expose_secret(), "");
+}
+
+#[test]
 fn validate_environment_treats_an_empty_variable_as_unset() {
     let sandbox = sandbox(FakeHttp::new(&[]), environment(&[(API_KEY_VARIABLE, "")]));
     assert_eq!(sandbox.validate_environment(None).expose_secret(), "");
