@@ -105,11 +105,7 @@ impl CallbackServer {
 
     async fn serve(&self, stream: &mut TcpStream) -> Option<CallbackRequest> {
         let head = match read_head(stream).await {
-            Ok(Some(head)) => head,
-            Ok(None) => {
-                reply(stream, 431, "Request Header Fields Too Large", "").await;
-                return None;
-            }
+            Ok(head) => head,
             Err(error) => {
                 tracing::debug!(%error, "Could not read the xAI OAuth callback request");
                 return None;
@@ -169,19 +165,18 @@ pub(crate) fn wait_slot(now: Decimal, deadline: Decimal, poll: Duration) -> Opti
     Some(Duration::from_nanos(nanos).min(poll))
 }
 
-async fn read_head(stream: &mut TcpStream) -> io::Result<Option<Vec<u8>>> {
+async fn read_head(stream: &mut TcpStream) -> io::Result<Vec<u8>> {
     let mut buffer = Vec::new();
     let mut chunk = [0_u8; 1024];
+    let limit = u64::try_from(MAX_REQUEST_BYTES).unwrap_or(u64::MAX);
+    let mut limited = stream.take(limit);
     loop {
         if buffer.windows(4).any(|window| window == b"\r\n\r\n") {
-            return Ok(Some(buffer));
+            return Ok(buffer);
         }
-        if buffer.len() >= MAX_REQUEST_BYTES {
-            return Ok(None);
-        }
-        let read = stream.read(&mut chunk).await?;
+        let read = limited.read(&mut chunk).await?;
         if read == 0 {
-            return Ok(Some(buffer));
+            return Ok(buffer);
         }
         let bytes = chunk
             .get(..read)

@@ -167,15 +167,14 @@ async fn an_oversized_request_head_is_refused_and_keeps_waiting() {
     let port = server_port(&server);
     let wait = server.wait(&clock);
     tokio::pin!(wait);
-    let request = format!(
-        "GET /callback?code={} HTTP/1.1\r\nHost: 127.0.0.1\r\n\r\n",
-        "a".repeat(MAX_REQUEST_BYTES)
-    );
+    let prefix = "GET /";
+    let request = format!("{prefix}{}", "a".repeat(MAX_REQUEST_BYTES - prefix.len()));
+    assert_eq!(request.len(), MAX_REQUEST_BYTES);
     let (response, outcome) = tokio::join!(
         send(port, &request),
         timeout(Duration::from_millis(300), &mut wait),
     );
-    assert_eq!(response.status, 431);
+    assert_eq!(response.status, 400);
     outcome.unwrap_err();
 }
 
