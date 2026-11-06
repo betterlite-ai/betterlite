@@ -66,6 +66,15 @@ fn fail_open_keeps_a_changed_tool_call_list() {
 }
 
 #[test]
+fn a_missing_config_error_names_the_field() {
+    let error = VigilGuardError::MissingConfig { field: "api_base" };
+    assert_eq!(
+        error.to_string(),
+        "Vigil Guard api_base is required; set it in the guardrail config"
+    );
+}
+
+#[test]
 fn fail_closed_blocks_the_request() {
     let inputs = inputs(Some(vec!["a".to_owned()]), None);
     let final_texts = vec!["a".to_owned()];
