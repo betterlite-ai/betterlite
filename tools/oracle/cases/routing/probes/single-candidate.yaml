@@ -1,0 +1,14 @@
+kind: probe
+name: single-candidate
+clock:
+  unix_millis: 1700000000123
+  monotonic_millis: 42000
+samples:
+  - 0
+operation:
+  single_candidate:
+    deployments:
+      - id: only-deployment
+        weight: 3
+        rpm: 0
+        tpm: 0
