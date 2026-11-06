@@ -31,13 +31,34 @@ pub(crate) struct Input {
     steps: Vec<Step>,
 }
 
+#[derive(Clone, Copy, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum Action {
+    Normalize,
+    Project,
+    Create,
+    List,
+    Retrieve,
+    Cancel,
+}
+
+#[derive(Clone, Copy, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum BuilderMode {
+    #[default]
+    Default,
+    None,
+    Strict,
+}
+
 #[derive(Clone, Deserialize)]
 struct Step {
-    action: String,
+    action: Action,
     #[serde(default)]
     is_async: bool,
     client: Option<String>,
-    builder: Option<String>,
+    #[serde(default)]
+    builder: BuilderMode,
     reply: Option<Planned>,
     data: Option<FineTuneCreate>,
     job_id: Option<String>,
@@ -86,7 +107,7 @@ impl JobsApi for Recorded {
 }
 
 struct Builder {
-    mode: String,
+    mode: BuilderMode,
     reply: Reply,
     log: Log,
     constructed: Log,
@@ -98,13 +119,14 @@ impl ClientBuilder for Builder {
         is_async: bool,
         args: &ClientArgs,
     ) -> Result<Option<Box<dyn JobsApi>>, BuildError> {
-        if self.mode == "none" {
-            return Ok(None);
-        }
-        if self.mode == "strict" && args.api_version.is_some() {
-            return Err(BuildError::UnexpectedArgument {
-                name: "api_version".to_owned(),
-            });
+        match self.mode {
+            BuilderMode::None => return Ok(None),
+            BuilderMode::Strict if args.api_version.is_some() => {
+                return Err(BuildError::UnexpectedArgument {
+                    name: "api_version".to_owned(),
+                });
+            }
+            BuilderMode::Default | BuilderMode::Strict => {}
         }
         let mut kwargs = json!({
             "api_key": args.api_key.as_ref().map(ExposeSecret::expose_secret),
@@ -157,7 +179,9 @@ fn outcome(result: Result<Value, FineTuneError>) -> Value {
         } }),
         Err(FineTuneError::Build { .. }) => json!({ "raised": { "class": "TypeError" } }),
         Err(FineTuneError::Decode { .. }) => json!({ "raised": { "class": "ValidationError" } }),
-        Err(other) => json!({ "raised": { "class": "ValueError", "message": other.to_string() } }),
+        Err(error @ (FineTuneError::ClientMissing | FineTuneError::NotAsyncClient)) => {
+            json!({ "raised": { "class": "ValueError", "message": error.to_string() } })
+        }
     }
 }
 
@@ -167,29 +191,29 @@ fn perform(
     constructed: &Log,
 ) -> Result<Value, FineTuneError> {
     let job_id = step.job_id.unwrap_or_default();
-    match step.action.as_str() {
-        "normalize" => Ok(Value::Object(normalize_fine_tuning_job_dict(
+    match step.action {
+        Action::Normalize => Ok(Value::Object(normalize_fine_tuning_job_dict(
             step.record.unwrap_or_default(),
             step.is_azure,
         ))),
-        "project" => connection.get_openai_client().map(|_| {
+        Action::Project => connection.get_openai_client().map(|_| {
             let built = constructed.lock().unwrap_or_else(PoisonError::into_inner);
             built
                 .first()
                 .cloned()
                 .unwrap_or_else(|| json!({ "supplied": true }))
         }),
-        "create" => {
+        Action::Create => {
             let data = step.data.unwrap_or_default();
             request_fine_tuning_job(connection, &JobRequest::Create(&data)).map(|job| json!(job))
         }
-        "list" => {
+        Action::List => {
             let page = list_fine_tuning_jobs(connection, step.after.as_deref(), step.limit)?;
             serde_json::from_slice(&page).map_err(|source| FineTuneError::Decode { source })
         }
-        "retrieve" => request_fine_tuning_job(connection, &JobRequest::Retrieve(&job_id))
+        Action::Retrieve => request_fine_tuning_job(connection, &JobRequest::Retrieve(&job_id))
             .map(|job| json!(job)),
-        _ => {
+        Action::Cancel => {
             request_fine_tuning_job(connection, &JobRequest::Cancel(&job_id)).map(|job| json!(job))
         }
     }
@@ -206,7 +230,7 @@ fn run_step(mut step: Step) -> Value {
         })
     });
     let builder = Builder {
-        mode: step.builder.take().unwrap_or_default(),
+        mode: step.builder,
         reply,
         log: Arc::clone(&log),
         constructed: Arc::clone(&constructed),

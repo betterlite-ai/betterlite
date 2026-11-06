@@ -2,7 +2,7 @@ import asyncio
 from collections.abc import Callable, Coroutine
 from contextlib import ExitStack
 from functools import partial
-from typing import TypeAlias, TypedDict, cast
+from typing import Protocol, TypeAlias, TypedDict, cast
 from unittest import mock
 
 import httpx
@@ -138,18 +138,73 @@ class Probe:
         ]
 
 
+class ClientInit(Protocol):
+    def __call__(
+        self,
+        client: SdkClient,
+        *,
+        api_key: str,
+        base_url: str,
+        max_retries: int,
+        http_client: httpx.Client | httpx.AsyncClient,
+    ) -> None: ...
+
+
+# the probes replace the class __init__ attributes, so the real constructors are captured first
+_OPENAI_INIT = OpenAI.__init__
+_ASYNC_OPENAI_INIT = AsyncOpenAI.__init__
+
+
+def openai_init(
+    client: SdkClient,
+    *,
+    api_key: str,
+    base_url: str,
+    max_retries: int,
+    http_client: httpx.Client | httpx.AsyncClient,
+) -> None:
+    if not isinstance(client, OpenAI) or not isinstance(http_client, httpx.Client):
+        raise TypeError("the sync OpenAI client needs an httpx.Client transport")
+    _OPENAI_INIT(
+        client,
+        api_key=api_key,
+        base_url=base_url,
+        max_retries=max_retries,
+        http_client=http_client,
+    )
+
+
+def async_openai_init(
+    client: SdkClient,
+    *,
+    api_key: str,
+    base_url: str,
+    max_retries: int,
+    http_client: httpx.Client | httpx.AsyncClient,
+) -> None:
+    if not isinstance(client, AsyncOpenAI) or not isinstance(http_client, httpx.AsyncClient):
+        raise TypeError("the async OpenAI client needs an httpx.AsyncClient transport")
+    _ASYNC_OPENAI_INIT(
+        client,
+        api_key=api_key,
+        base_url=base_url,
+        max_retries=max_retries,
+        http_client=http_client,
+    )
+
+
 class Recorder:
     def __init__(
         self,
         probe: Probe,
-        init: Callable[..., None],
+        init: ClientInit,
         make_http: Callable[..., httpx.Client | httpx.AsyncClient],
-    ) -> None:  # pyright: ignore[reportExplicitAny]
+    ) -> None:
         self.probe = probe
         self.init = init
         self.make_http = make_http
 
-    def __get__(self, instance: SdkClient, _owner: type) -> Callable[..., None]:  # pyright: ignore[reportExplicitAny]
+    def __get__(self, instance: SdkClient, _owner: type) -> partial[None]:
         return partial(self.construct, instance)
 
     def construct(self, client: SdkClient, **kwargs: Json) -> None:
@@ -190,11 +245,11 @@ def install_builder(probe: Probe, builder: str | None) -> None:
         )
     elif builder != "strict":
         probe.stack.enter_context(
-            mock.patch.object(OpenAI, "__init__", Recorder(probe, OpenAI.__init__, httpx.Client))
+            mock.patch.object(OpenAI, "__init__", Recorder(probe, openai_init, httpx.Client))
         )
         probe.stack.enter_context(
             mock.patch.object(
-                AsyncOpenAI, "__init__", Recorder(probe, AsyncOpenAI.__init__, httpx.AsyncClient)
+                AsyncOpenAI, "__init__", Recorder(probe, async_openai_init, httpx.AsyncClient)
             )
         )
 

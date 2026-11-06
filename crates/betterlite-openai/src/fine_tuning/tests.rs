@@ -32,13 +32,34 @@ struct Planned {
     body: Value,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum Action {
+    Normalize,
+    Project,
+    Create,
+    List,
+    Retrieve,
+    Cancel,
+}
+
+#[derive(Clone, Copy, Default, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum BuilderMode {
+    #[default]
+    Default,
+    None,
+    Strict,
+}
+
 #[derive(Deserialize)]
 struct Step {
-    action: String,
+    action: Action,
     #[serde(default)]
     is_async: bool,
     client: Option<String>,
-    builder: Option<String>,
+    #[serde(default)]
+    builder: BuilderMode,
     reply: Option<Planned>,
     data: Option<FineTuneCreate>,
     job_id: Option<String>,
@@ -156,7 +177,7 @@ impl JobsApi for Fake {
 }
 
 struct Builder {
-    mode: String,
+    mode: BuilderMode,
     reply: Reply,
     log: Log,
     constructed: Log,
@@ -168,13 +189,14 @@ impl ClientBuilder for Builder {
         is_async: bool,
         args: &ClientArgs,
     ) -> Result<Option<Box<dyn JobsApi>>, BuildError> {
-        if self.mode == "none" {
-            return Ok(None);
-        }
-        if self.mode == "strict" && args.api_version.is_some() {
-            return Err(BuildError::UnexpectedArgument {
-                name: "api_version".to_owned(),
-            });
+        match self.mode {
+            BuilderMode::None => return Ok(None),
+            BuilderMode::Strict if args.api_version.is_some() => {
+                return Err(BuildError::UnexpectedArgument {
+                    name: "api_version".to_owned(),
+                });
+            }
+            BuilderMode::Default | BuilderMode::Strict => {}
         }
         let made = Constructed {
             class: if is_async { "AsyncOpenAI" } else { "OpenAI" },
@@ -271,8 +293,14 @@ fn dispatch(
     constructed: &Log,
 ) -> Result<Value, FineTuneError> {
     let job_id = step.job_id.as_deref().unwrap_or_default();
-    let job = match step.action.as_str() {
-        "project" => {
+    let job = match step.action {
+        Action::Normalize => {
+            return Ok(Value::Object(normalize_fine_tuning_job_dict(
+                step.record.clone().unwrap_or_default(),
+                step.is_azure,
+            )));
+        }
+        Action::Project => {
             return connection.get_openai_client().map(|_| {
                 let built = constructed.lock().unwrap_or_else(PoisonError::into_inner);
                 built
@@ -281,30 +309,22 @@ fn dispatch(
                     .unwrap_or_else(|| parse(r#"{"supplied":true}"#))
             });
         }
-        "list" => {
+        Action::List => {
             let page = list_fine_tuning_jobs(connection, step.after.as_deref(), step.limit)?;
             return serde_json::from_slice(&page)
                 .map_err(|source| FineTuneError::Decode { source });
         }
-        "create" => {
+        Action::Create => {
             let data = step.data.clone().unwrap_or_default();
             request_fine_tuning_job(connection, &JobRequest::Create(&data))
         }
-        "retrieve" => request_fine_tuning_job(connection, &JobRequest::Retrieve(job_id)),
-        _ => request_fine_tuning_job(connection, &JobRequest::Cancel(job_id)),
+        Action::Retrieve => request_fine_tuning_job(connection, &JobRequest::Retrieve(job_id)),
+        Action::Cancel => request_fine_tuning_job(connection, &JobRequest::Cancel(job_id)),
     }?;
     serde_json::to_value(job).map_err(|source| FineTuneError::Decode { source })
 }
 
 fn run(step: &Step) -> Report {
-    if step.action == "normalize" {
-        let record = step.record.clone().unwrap_or_default();
-        let normalized = normalize_fine_tuning_job_dict(record, step.is_azure);
-        return Report {
-            outcome: Outcome::Returned(Value::Object(normalized)),
-            calls: Vec::new(),
-        };
-    }
     let (log, constructed) = (Log::default(), Log::default());
     let reply = planned(step.reply.as_ref());
     let client = step.client.as_ref().map(|kind| -> Box<dyn JobsApi> {
@@ -315,7 +335,7 @@ fn run(step: &Step) -> Report {
         })
     });
     let builder = Builder {
-        mode: step.builder.clone().unwrap_or_default(),
+        mode: step.builder,
         reply,
         log: Arc::clone(&log),
         constructed: Arc::clone(&constructed),
@@ -402,9 +422,9 @@ fn settings(key: &str, organization: Option<&str>) -> ClientSettings {
     }
 }
 
-fn silent_builder(mode: &str, constructed: &Log) -> Builder {
+fn silent_builder(mode: BuilderMode, constructed: &Log) -> Builder {
     Builder {
-        mode: mode.to_owned(),
+        mode,
         reply: Ok(Vec::new()),
         log: Log::default(),
         constructed: Arc::clone(constructed),
@@ -424,7 +444,7 @@ fn connect(builder: &Builder, settings: ClientSettings) -> Connection<'_> {
 #[test]
 fn openai_fine_tuning_credential_identity_isolation() {
     let log = Log::default();
-    let builder = silent_builder("", &log);
+    let builder = silent_builder(BuilderMode::Default, &log);
     let alpha = connect(&builder, settings("sk-alpha", Some("org-a"))).get_openai_client();
     let beta = connect(&builder, settings("sk-beta", Some("org-b"))).get_openai_client();
     assert!(alpha.is_ok_and(|built| built.is_some()));
@@ -452,7 +472,7 @@ fn openai_fine_tuning_secret_safe_failure() {
         organization: None,
         litellm_params: serde_json::from_str(r#"{"api_key":"sk-fixture-secret"}"#).ok(),
     };
-    let missing = silent_builder("none", &Log::default());
+    let missing = silent_builder(BuilderMode::None, &Log::default());
     let request = JobRequest::Retrieve("ft_1");
     let failure = request_fine_tuning_job(connect(&missing, configured.clone()), &request);
     let message = failure.as_ref().err().map(ToString::to_string);
