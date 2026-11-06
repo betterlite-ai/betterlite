@@ -20,8 +20,9 @@ pub mod wire;
 
 pub const DEFAULT_API_BASE: &str = "https://api.openai.com/v1";
 pub const DEFAULT_SAMPLING_RATE: u32 = 5;
-// httpx's default read timeout in LiteLLM's guardrail HTTP handler.
+// LiteLLM's guardrail client defaults to httpx.Timeout(timeout=600, connect=5); the injected client sets connect_timeout from CONNECT_TIMEOUT.
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
+pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 pub const OPENAI_API_KEY_VARIABLE: &str = "OPENAI_API_KEY";
 
 pub const SUPPORTED_EVENT_HOOKS: [EventHook; 3] = [

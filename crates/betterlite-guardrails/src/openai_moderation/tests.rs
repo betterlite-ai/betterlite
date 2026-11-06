@@ -4,18 +4,20 @@ use std::collections::BTreeMap;
 use std::future::IntoFuture as _;
 use std::io;
 use std::sync::{Arc, Mutex};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use axum::Router;
 use axum::body::Bytes;
 use axum::http::{HeaderMap, Uri};
 use betterlite_config::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity as _;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_http::proxy::base_builder;
 use reqwest::StatusCode;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpSocket, TcpStream};
 use tokio::task::JoinSet;
+use tokio::time::timeout;
 
 use super::check::check_moderation_result;
 use super::config::{BaseModerationConfigModel, OpenAiModerationConfigModel};
@@ -27,8 +29,8 @@ use super::logging::{
 use super::transport::async_make_request;
 use super::wire::ModerationResponse;
 use super::{
-    EventHook, GlobalApiKeys, Inputs, ModerationModel, ModerationParams, OpenAiModerationGuardrail,
-    RequestData, SUPPORTED_EVENT_HOOKS,
+    CONNECT_TIMEOUT, DEFAULT_TIMEOUT, EventHook, GlobalApiKeys, Inputs, ModerationModel,
+    ModerationParams, OpenAiModerationGuardrail, RequestData, SUPPORTED_EVENT_HOOKS,
 };
 use crate::content_filter::risk_scoring::GuardrailStatus;
 
@@ -90,13 +92,11 @@ fn build(
     global_keys: GlobalApiKeys,
     lookup: &BTreeMap<String, String>,
 ) -> Result<OpenAiModerationGuardrail, ModerationError> {
-    OpenAiModerationGuardrail::new(
-        params,
-        global_keys,
-        lookup,
-        reqwest::Client::default(),
-        CLOCK,
-    )
+    let client = base_builder()
+        .connect_timeout(params.timeout.unwrap_or(CONNECT_TIMEOUT))
+        .build()
+        .map_err(|source| ModerationError::Request { source })?;
+    OpenAiModerationGuardrail::new(params, global_keys, lookup, client, CLOCK)
 }
 
 fn params(api_key: Option<SecretString>, api_base: Option<String>) -> ModerationParams {
@@ -279,7 +279,28 @@ async fn make_request_times_out_when_the_server_never_answers() {
     instance.timeout = Duration::from_millis(100);
     let error = async_make_request(&instance, "x").await.unwrap_err();
     assert!(matches!(error, ModerationError::Timeout { .. }));
+    assert_eq!(error.status_code(), StatusCode::REQUEST_TIMEOUT);
     assert!(error.detail().is_none());
+}
+
+#[tokio::test]
+async fn make_request_stops_connecting_after_five_seconds_when_no_timeout_is_set() {
+    let socket = TcpSocket::new_v4().unwrap();
+    socket.bind("127.0.0.1:0".parse().unwrap()).unwrap();
+    let full = socket.listen(1).unwrap();
+    let address = full.local_addr().unwrap();
+    // The listener never accepts, so once its backlog holds these connections further SYNs are dropped.
+    let attempt = || timeout(Duration::from_millis(200), TcpStream::connect(address));
+    let _queued = tokio::join!(attempt(), attempt(), attempt(), attempt());
+    let instance = guardrail(&format!("http://{address}/v1"));
+    assert_eq!(instance.timeout, DEFAULT_TIMEOUT);
+    let started = Instant::now();
+    let error = async_make_request(&instance, "x").await.unwrap_err();
+    assert!(matches!(error, ModerationError::Timeout { .. }));
+    assert_eq!(error.status_code(), StatusCode::REQUEST_TIMEOUT);
+    assert!(started.elapsed() >= CONNECT_TIMEOUT);
+    assert!(started.elapsed() < Duration::from_secs(10));
+    drop(full);
 }
 
 #[tokio::test]

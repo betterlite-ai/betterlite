@@ -42,9 +42,10 @@ impl ModerationError {
         match self {
             Self::Api { status, .. } | Self::ApiBodyNotUtf8 { status, .. } => *status,
             Self::Flagged { .. } => StatusCode::BAD_REQUEST,
+            // AsyncHTTPHandler.post turns httpx.TimeoutException into litellm.Timeout, which carries 408.
+            Self::Timeout { .. } => StatusCode::REQUEST_TIMEOUT,
             Self::MissingApiKey
             | Self::InvalidHeader { .. }
-            | Self::Timeout { .. }
             | Self::Request { .. }
             | Self::ResponseTooLarge { .. }
             | Self::ResponseJson { .. } => StatusCode::INTERNAL_SERVER_ERROR,

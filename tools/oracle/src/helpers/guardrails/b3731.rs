@@ -5,9 +5,10 @@ use std::time::Duration;
 use betterlite_guardrails::openai_moderation::error::ModerationError;
 use betterlite_guardrails::openai_moderation::logging::{GuardrailLogRecord, GuardrailResponse};
 use betterlite_guardrails::openai_moderation::{
-    GlobalApiKeys, Inputs, ModerationModel, ModerationParams, OpenAiModerationGuardrail,
-    RequestData, SUPPORTED_EVENT_HOOKS,
+    CONNECT_TIMEOUT, GlobalApiKeys, Inputs, ModerationModel, ModerationParams,
+    OpenAiModerationGuardrail, RequestData, SUPPORTED_EVENT_HOOKS,
 };
+use betterlite_http::proxy::base_builder;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Value, json};
 
@@ -111,16 +112,19 @@ fn build(
         api_key: global_keys.api_key.clone().map(SecretString::from),
         openai_key: global_keys.openai_key.clone().map(SecretString::from),
     };
-    let client = reqwest::Client::builder().build().map_err(|error| {
-        Box::new(HelperError {
-            class: "OSError".to_owned(),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: error.to_string(),
-        })
-    })?;
+    let client = base_builder()
+        .connect_timeout(CONNECT_TIMEOUT)
+        .build()
+        .map_err(|error| {
+            Box::new(HelperError {
+                class: "OSError".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
+        })?;
     OpenAiModerationGuardrail::new(params, keys, environment, client, || Duration::ZERO).map_err(
         |error| {
             Box::new(HelperError {
