@@ -49,6 +49,14 @@ fn joins_a_carriage_return_and_newline_split_across_chunks() {
 }
 
 #[test]
+fn a_newline_after_a_swallowed_carriage_return_still_ends_a_line() {
+    assert_eq!(
+        lines_from(&[b"one\r", b"\n\ntwo\n"]),
+        ["one".to_owned(), String::new(), "two".to_owned()]
+    );
+}
+
+#[test]
 fn treats_a_bare_carriage_return_as_a_line_ending() {
     assert_eq!(
         lines_from(&[b"one\rtwo\n"]),
@@ -125,7 +133,8 @@ fn skips_payloads_without_run_text(#[case] line: &str) {
 fn joins_the_text_of_every_event() {
     let lines = [
         "data: {\"last_message\":{\"content\":[{\"text\":\"one \"}]}}".to_owned(),
-        "data: {\"result\":{\"data\":{\"message\":{\"content\":[{\"text\":\"two\"}]}}}}".to_owned(),
+        "data: {\"result\":{\"data\":{\"message\":{\"content\":[{\"text\":\"two \"}]}}}}"
+            .to_owned(),
         "data: {\"results\":\"three\"}".to_owned(),
     ];
     assert_eq!(accumulate_text(&lines).unwrap(), "one two three");

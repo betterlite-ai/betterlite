@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+use betterlite_core::agents::json::AgentJson;
 use rstest::rstest;
 
 use super::{ApiError, Method, RunBody, RunContent, RunMessage, call_run};
@@ -54,8 +55,11 @@ async fn submission_posts_the_run_body_to_the_runs_endpoint() {
     assert_eq!(recorded[0].headers, headers);
     assert_eq!(recorded[0].timeout, Duration::from_secs(90));
     assert_eq!(
-        serde_json::to_string(&recorded[0].body).unwrap(),
-        r#"{"agent_id":"agent-1","message":{"role":"user","content":[{"response_type":"text","text":"hello"}]},"thread_id":"thread-1"}"#
+        recorded[0].body,
+        serde_json::from_str::<AgentJson>(
+            r#"{"agent_id":"agent-1","message":{"role":"user","content":[{"response_type":"text","text":"hello"}]},"thread_id":"thread-1"}"#
+        )
+        .unwrap()
     );
 }
 

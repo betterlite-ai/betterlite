@@ -57,10 +57,17 @@ fn malformed_run_events_are_errors_not_panics(#[case] body: &str) {
 #[rstest]
 #[case::absent("{}")]
 #[case::null(r#"{"status": null, "run_id": null, "id": null}"#)]
-#[case::unknown_fields(r#"{"status": "running", "extra": {"deep": [1]}}"#)]
 fn absent_or_null_run_fields_take_defaults(#[case] body: &str) {
     let event = decode(body);
     assert_eq!(event.status.as_deref(), None);
+    assert_eq!(event.run_id, None);
+    assert_eq!(event.id, None);
+}
+
+#[test]
+fn unknown_run_fields_are_ignored() {
+    let event = decode(r#"{"status": "running", "extra": {"deep": [1]}}"#);
+    assert_eq!(event.status.as_deref(), Some("running"));
     assert_eq!(event.run_id, None);
     assert_eq!(event.id, None);
 }

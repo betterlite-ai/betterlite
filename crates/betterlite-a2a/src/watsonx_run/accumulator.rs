@@ -72,7 +72,10 @@ pub fn accumulate_text(lines: &[String]) -> Result<String, SseError> {
             continue;
         };
         let payload = data.trim();
-        if payload.is_empty() || payload == "[DONE]" {
+        if payload == "[DONE]" {
+            continue;
+        }
+        if payload.is_empty() {
             continue;
         }
         let Ok(event) = serde_json::from_str::<RunEvent>(payload) else {
