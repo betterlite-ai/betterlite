@@ -87,3 +87,17 @@ path = "fuzz_targets/bitbucket_prompt_file.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "model_file_ids"
+path = "fuzz_targets/model_file_ids.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "response_tool_calls"
+path = "fuzz_targets/response_tool_calls.rs"
+test = false
+doc = false
+bench = false

@@ -1,0 +1,12 @@
+kind: helper
+name: media-fetch-unknown-media-type
+call:
+  b5083:
+    call: read_response
+    status: 200
+    headers: {}
+    body_base64: "aGVsbG8="
+    url: "https://example.com/image"
+env: {}
+compare:
+  ignore: []

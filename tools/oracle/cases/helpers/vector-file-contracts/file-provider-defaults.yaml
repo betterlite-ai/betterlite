@@ -1,0 +1,15 @@
+kind: helper
+name: vector-file-provider-defaults
+call:
+  vector_file_contracts:
+    operation: file_provider_defaults
+    optional_params: {limit: 3, extra: null}
+    non_default_params: {limit: 3, order: asc}
+    headers: {Authorization: Bearer x}
+    request_data: {file_id: file_a}
+    api_base: https://api.example.test/v1
+    api_key: key
+    api_bases: [null, "", "https://api.example.test/v1"]
+    error: {message: bad, status_code: 429, headers: {Retry-After: 3}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+kind: helper
+name: openai-threads-thread-metadata
+call: {openai_threads: {create_thread: {options: {api_key: sk-test, api_base: 'https://example.test/v1'}, messages: [], metadata: {}, acreate_thread: false, reply: {status: 200, body: '{"id":"thread_1","object":"thread","created_at":7,"metadata":{}}'}}}}
+env: {}
+compare: {ignore: []}

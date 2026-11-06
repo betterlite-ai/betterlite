@@ -1,0 +1,16 @@
+kind: helper
+name: invalid
+call:
+  duration:
+    calls:
+      - {function: duration_in_seconds, duration: "", now: "2024-01-01T00:00:00Z"}
+      - {function: duration_in_seconds, duration: "abc", now: "2024-01-01T00:00:00Z"}
+      - {function: duration_in_seconds, duration: " 5m", now: "2024-01-01T00:00:00Z"}
+      - {function: duration_in_seconds, duration: "-5m", now: "2024-01-01T00:00:00Z"}
+      - {function: duration_in_seconds, duration: "5", now: "2024-01-01T00:00:00Z"}
+      - {function: duration_in_seconds, duration: "5x", now: "2024-01-01T00:00:00Z"}
+      - {function: duration_in_seconds, duration: "5M", now: "2024-01-01T00:00:00Z"}
+      - {function: duration_in_seconds, duration: "mo", now: "2024-01-01T00:00:00Z"}
+      - {function: duration_in_seconds, duration: "1H", now: "2024-01-01T00:00:00Z"}
+env: {}
+compare: {ignore: []}
