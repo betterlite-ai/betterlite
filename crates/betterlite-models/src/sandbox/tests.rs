@@ -33,6 +33,9 @@ fn container_handle_serializes_identity_and_keeps_hidden_params_private() {
     assert_eq!(json, r#"{"id":"sbx_1","provider":"e2b","domain":null}"#);
     assert!(!json.contains("envd-token"));
     assert!(!json.contains("e2b-key"));
+    let debug = format!("{handle:?}");
+    assert!(!debug.contains("envd-token"));
+    assert!(!debug.contains("e2b-key"));
 }
 
 #[test]

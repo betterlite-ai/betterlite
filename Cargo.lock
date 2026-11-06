@@ -1764,6 +1764,7 @@ dependencies = [
 name = "betterlite-oracle"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "aws-credential-types",
  "aws-smithy-async",
  "aws-smithy-runtime-api",
@@ -1797,6 +1798,7 @@ dependencies = [
  "betterlite-paths",
  "betterlite-postgres-fixture",
  "betterlite-prompts",
+ "betterlite-provider",
  "betterlite-rate-limit",
  "betterlite-redact",
  "betterlite-redis",

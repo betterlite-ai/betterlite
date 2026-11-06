@@ -1,0 +1,38 @@
+task: B3516
+deviations:
+  - what: E2B access tokens are stored in the handle's hidden params and never appear in logs, JSON or error messages.
+    why: They are credentials required to execute code on a running sandbox; leaking them is a security issue.
+    link: ""
+  - what: >-
+      betterlite's arun_code takes a ContainerHandle, so a bare sandbox id cannot execute code, while LiteLLM accepts a
+      str and only fails when the hidden access token is missing.
+    why: The envd access token returned at creation is the only way to reach the Jupyter endpoint.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/e2b/sandbox/transformation.py#L103-L111
+  - what: >-
+      When E2B_API_KEY is missing and not available from the injected environment lookup, betterlite raises with a
+      message about E2B_API_KEY, whereas LiteLLM attempts get_secret_str("E2B_API_KEY") to consult its configured
+      secret manager.
+    why: Full secret-manager dispatch is unresolved; betterlite uses only the env var lookup supplied by B002.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/e2b/sandbox/transformation.py#L42-L46
+  - what: >-
+      acreate_sandbox does not send metadata, whereas LiteLLM forwards it into the sandbox-creation POST body under the
+      metadata key.
+    why: Sandbox metadata is beyond the scope of this task; only template, timeout, secure and allow_internet_access are supported.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/e2b/sandbox/transformation.py#L48-L69
+  - what: >-
+      A NDJSON line that is valid JSON but not an object is skipped, whereas LiteLLM keeps it in its messages tuple and
+      raises AttributeError when it reads the type field.
+    why: >-
+      A working E2B setup never sends such a line; the decoder only reads objects, and crashing on one is a bug no
+      caller relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/e2b/sandbox/transformation.py#L165-L170
+  - what: >-
+      A ContainerHandle without a domain uses e2b.app when betterlite builds the execute URL, whereas LiteLLM formats
+      the Python None into the host name.
+    why: The record declares the domain optional and an absent value takes the provider default; a host of "None" fails DNS.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/e2b/sandbox/transformation.py#L116
+  - what: >-
+      read_capped_lines fails once an unterminated line has buffered more than 10 MiB, whereas LiteLLM counts only
+      completed lines and buffers a partial line without a limit.
+    why: Keeps memory bounded when a provider sends no separator, a case no working E2B setup produces.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/sandbox/transformation.py#L84-L93

@@ -2,19 +2,26 @@
 
 use std::collections::BTreeMap;
 use std::fs;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::types::ProxyTrust;
+use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::sandbox::{ContainerHandle, HiddenParams};
 use futures_util::{StreamExt as _, stream};
 use http::Method;
 use http::header::CONTENT_TYPE;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::net::TcpListener;
+use tokio::task::JoinSet;
 
 use super::operations::CreateBody;
 use super::operations::RunBody;
 use super::parse::parse_ndjson;
+use super::transport::ProxiedSandboxHttp;
 use super::{
     CreateSandbox, DeleteSandbox, E2B_API_BASE, E2B_DEFAULT_DOMAIN, E2B_DEFAULT_TEMPLATE, E2bError,
     E2bSandbox, RunCode, SandboxHttp, SandboxRef, SandboxRequest, SandboxResponse, SandboxStream,
@@ -253,6 +260,30 @@ async fn create_uses_the_template_timeout_internet_choice_and_api_base() {
     assert_eq!(sent.template_id, "my-template");
     assert_eq!(sent.timeout, 42);
     assert!(!sent.allow_internet_access);
+}
+
+#[tokio::test]
+async fn create_sends_only_the_supported_options() {
+    let sandbox = E2bSandbox {
+        http: fake(200, r#"{"sandboxID":"sbx_2"}"#),
+        environment: Environment::new(),
+    };
+    sandbox
+        .acreate_sandbox(CreateSandbox {
+            template: None,
+            timeout: None,
+            allow_internet_access: None,
+            api_key: Some("e2b-key"),
+            api_base: None,
+        })
+        .await
+        .unwrap();
+    let sent = String::from_utf8(sandbox.http.only_request().body).unwrap();
+    assert_eq!(
+        sent,
+        r#"{"templateID":"code-interpreter-v1","timeout":300,"secure":true,"allow_internet_access":true}"#
+    );
+    assert!(!sent.contains("metadata"));
 }
 
 #[tokio::test]
@@ -814,4 +845,146 @@ fn replays_the_sandbox_ndjson_corpus() {
         })
         .count();
     assert!(seen > 0_usize);
+}
+
+#[tokio::test]
+async fn run_defaults_the_domain_when_the_handle_has_none() {
+    let container = ContainerHandle {
+        id: "sbx_1".to_owned(),
+        provider: "e2b".to_owned(),
+        domain: None,
+        hidden_params: HiddenParams {
+            envd_access_token: Some(SecretString::from("envd-token")),
+            traffic_access_token: None,
+            api_key: None,
+            api_base: None,
+        },
+    };
+    let sandbox = E2bSandbox {
+        http: fake(200, ""),
+        environment: Environment::new(),
+    };
+    sandbox
+        .arun_code(RunCode {
+            container: &container,
+            code: "1",
+            env_vars: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        sandbox.http.only_request().url.as_str(),
+        "https://49999-sbx_1.e2b.app/execute"
+    );
+}
+
+async fn answer_once(listener: TcpListener, status: &str, body: &str) -> String {
+    let (mut stream, _) = listener.accept().await.unwrap();
+    let mut head = Vec::new();
+    while !head.ends_with(b"\r\n\r\n") {
+        head.push(stream.read_u8().await.unwrap());
+    }
+    let head_text = String::from_utf8(head).unwrap();
+    let length: usize = head_text
+        .lines()
+        .find_map(|line| line.strip_prefix("content-length: "))
+        .map_or(0, |value| value.parse().unwrap());
+    let mut sent = vec![0_u8; length];
+    stream.read_exact(&mut sent).await.unwrap();
+    let response = format!(
+        "HTTP/1.1 {status}\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+        body.len()
+    );
+    stream.write_all(response.as_bytes()).await.unwrap();
+    format!("{head_text}{}", String::from_utf8(sent).unwrap())
+}
+
+fn pooled_http() -> ProxiedSandboxHttp {
+    let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
+    ProxiedSandboxHttp {
+        client: ProxiedClient::outbound(&policy).unwrap(),
+    }
+}
+
+#[tokio::test]
+async fn create_goes_through_the_pooled_http_client() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let mut server = JoinSet::new();
+    server.spawn(answer_once(
+        listener,
+        "200 OK",
+        r#"{"sandboxID":"sbx_7","envdAccessToken":"envd"}"#,
+    ));
+    let sandbox = E2bSandbox {
+        http: pooled_http(),
+        environment: Environment::new(),
+    };
+    let api_base = format!("http://{address}");
+    let created = sandbox
+        .acreate_sandbox(CreateSandbox {
+            template: None,
+            timeout: None,
+            allow_internet_access: None,
+            api_key: Some("e2b-key"),
+            api_base: Some(&api_base),
+        })
+        .await
+        .unwrap();
+    assert_eq!(created.id, "sbx_7");
+    let seen = server.join_next().await.unwrap().unwrap();
+    assert!(seen.starts_with("POST /sandboxes HTTP/1.1"));
+    assert!(seen.contains(r#""templateID":"code-interpreter-v1""#));
+    assert!(seen.to_ascii_lowercase().contains("x-api-key: e2b-key"));
+}
+
+#[tokio::test]
+async fn delete_returns_false_through_the_pooled_http_client() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let mut server = JoinSet::new();
+    server.spawn(answer_once(listener, "404 Not Found", ""));
+    let sandbox = E2bSandbox {
+        http: pooled_http(),
+        environment: Environment::new(),
+    };
+    let api_base = format!("http://{address}");
+    let deleted = sandbox
+        .adelete_sandbox(DeleteSandbox {
+            container: SandboxRef::Id("sbx_9"),
+            api_key: Some("e2b-key"),
+            api_base: Some(&api_base),
+        })
+        .await
+        .unwrap();
+    assert!(!deleted);
+    let seen = server.join_next().await.unwrap().unwrap();
+    assert!(seen.starts_with("DELETE /sandboxes/sbx_9 HTTP/1.1"));
+}
+
+#[tokio::test]
+async fn create_reports_a_server_error_through_the_pooled_http_client() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let mut server = JoinSet::new();
+    server.spawn(answer_once(listener, "500 Internal Server Error", "{}"));
+    let sandbox = E2bSandbox {
+        http: pooled_http(),
+        environment: Environment::new(),
+    };
+    let api_base = format!("http://{address}");
+    assert!(matches!(
+        sandbox
+            .acreate_sandbox(CreateSandbox {
+                template: None,
+                timeout: None,
+                allow_internet_access: None,
+                api_key: Some("e2b-key"),
+                api_base: Some(&api_base),
+            })
+            .await
+            .unwrap_err(),
+        E2bError::HttpStatus { status: 500 }
+    ));
+    server.join_next().await.unwrap().unwrap();
 }
