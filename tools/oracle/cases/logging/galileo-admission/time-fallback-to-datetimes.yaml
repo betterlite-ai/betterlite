@@ -1,0 +1,5 @@
+kind: helper
+name: galileo-admission-time-fallback-to-datetimes
+call: {"b3965":{"environment":{"GALILEO_API_KEY":"key-0123456789abcdef","GALILEO_PROJECT_ID":"project-1"},"batch_size":10,"offset_minutes":120,"actions":[{"do":"success","kwargs":{"call_type":"acompletion","model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"standard_logging_object":{"call_type":"acompletion","model":"gpt-5.2","prompt_tokens":3,"completion_tokens":4,"total_tokens":7,"response_cost":0.001}},"response":{"family":"chat","message":{"role":"assistant","content":"Hi"}},"start_time":"2026-05-25T12:00:00","end_time":"2026-05-25T12:00:01.5"},{"do":"success","kwargs":{"call_type":"acompletion","model":"gpt-4o","messages":[{"role":"user","content":"hi"}],"standard_logging_object":{"call_type":"acompletion","model":"gpt-5.2","prompt_tokens":3,"completion_tokens":4,"total_tokens":7,"response_cost":0.001}},"response":{"family":"chat","message":{"role":"assistant","content":"Hi"}},"start_time":"2026-05-25T12:00:00+02:00","end_time":"2026-05-25T12:00:01.5+02:00"}]}}
+env: {}
+compare: {ignore: []}
