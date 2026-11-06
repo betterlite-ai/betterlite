@@ -1,12 +1,13 @@
 use std::fs::{read, read_dir};
 use std::path::Path;
+use std::time::Duration;
 
 use axum::http::StatusCode;
 use rstest::rstest;
 use secrecy::SecretString;
 use serde_json::value::RawValue;
 
-use super::support::{guardrail, metadata, serve, settings};
+use super::support::{guardrail, metadata, serve, serve_after, settings};
 use crate::panw_prisma_airs::audit::Direction;
 use crate::panw_prisma_airs::construct::{ConstructError, PanwPrismaAirs};
 use crate::panw_prisma_airs::metadata::ScanMetadata;
@@ -210,6 +211,16 @@ async fn a_response_without_an_action_is_a_plain_api_error_block() {
     assert_eq!(verdict.action, Action::Block);
     assert_eq!(verdict.category.as_deref(), Some("api_error"));
     assert_eq!(verdict.failure, None);
+}
+
+#[tokio::test]
+async fn an_invalid_timeout_uses_the_default_instead_of_failing() {
+    let server = serve_after(StatusCode::OK, ALLOW, Duration::from_millis(200)).await;
+    let mut config = settings(&server.base);
+    config.timeout = -1.0_f64;
+    let verdict = call_panw_api(&guardrail(config), request("hello", None)).await;
+    assert_eq!(verdict.action, Action::Allow);
+    assert_eq!(server.captured.lock().await.len(), 1);
 }
 
 #[test]
