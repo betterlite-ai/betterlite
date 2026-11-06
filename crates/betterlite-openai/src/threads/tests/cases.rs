@@ -381,6 +381,7 @@ async fn thread_metadata() {
 
 async fn assistants_beta_default() {
     let (api, transport) = api_with(200, THREAD);
+    transport.queue(200, THREAD);
     transport.queue(200, MESSAGE);
     transport.queue(200, PAGE);
     let bare = thread_create("{}");
