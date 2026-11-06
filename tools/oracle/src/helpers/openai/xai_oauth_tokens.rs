@@ -43,12 +43,11 @@ impl Helper for Op {
                 payload,
                 token_endpoint,
                 fallback,
-            } => {
-                match build_auth_record(*now, payload.clone(), token_endpoint, fallback.as_ref()) {
-                    Ok(record) => json!({ "record": record.stored() }),
-                    Err(error) => json!({ "error": error.to_string() }),
-                }
-            }
+            } => build_auth_record(*now, payload.clone(), token_endpoint, fallback.as_ref())
+                .map_or_else(
+                    |_| json!({ "error": true }),
+                    |record| json!({ "record": record.stored() }),
+                ),
         })
     }
 }

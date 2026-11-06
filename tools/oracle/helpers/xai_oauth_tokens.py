@@ -51,8 +51,8 @@ class Fixture(XAIOAuthAuthenticator):
                     built = self._build_auth_record(
                         record["payload"], record["token_endpoint"], record["fallback"]
                     )
-                except XAIOAuthError as error:
-                    return {"error": str(error)}
+                except XAIOAuthError:
+                    return {"error": True}
             return {"record": cast(JsonValue, dict(built))}
         raise ValueError("xai_oauth_tokens input needs endpoint, expired or record")
 
