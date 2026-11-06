@@ -65,35 +65,27 @@ impl Server {
         H: Fn(&Request) -> Reply + Send + Sync + 'static,
     {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let endpoint = format!("http://{}", listener.local_addr().unwrap());
-        let requests: Arc<Mutex<Vec<Request>>> = Arc::default();
-        let tasks: Arc<Mutex<JoinSet<()>>> = Arc::default();
-        let shared_handler = Arc::new(handler);
-        tasks.lock().unwrap().spawn(accept_loop(
-            listener,
-            shared_handler,
-            Arc::clone(&requests),
-            Arc::clone(&tasks),
-        ));
-        Self {
-            endpoint,
-            requests,
-            tasks,
-        }
+        Self::serving(listener, handler)
     }
 
     pub(crate) fn on_listener<H>(listener: StdTcpListener, handler: H) -> Self
     where
         H: Fn(&Request) -> Reply + Send + Sync + 'static,
     {
-        let endpoint = format!("http://{}", listener.local_addr().unwrap());
         listener.set_nonblocking(true).unwrap();
-        let bound = TcpListener::from_std(listener).unwrap();
+        Self::serving(TcpListener::from_std(listener).unwrap(), handler)
+    }
+
+    fn serving<H>(listener: TcpListener, handler: H) -> Self
+    where
+        H: Fn(&Request) -> Reply + Send + Sync + 'static,
+    {
+        let endpoint = format!("http://{}", listener.local_addr().unwrap());
         let requests: Arc<Mutex<Vec<Request>>> = Arc::default();
         let tasks: Arc<Mutex<JoinSet<()>>> = Arc::default();
         let shared_handler = Arc::new(handler);
         tasks.lock().unwrap().spawn(accept_loop(
-            bound,
+            listener,
             shared_handler,
             Arc::clone(&requests),
             Arc::clone(&tasks),
