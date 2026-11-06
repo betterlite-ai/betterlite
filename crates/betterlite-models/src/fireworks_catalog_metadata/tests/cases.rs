@@ -5,8 +5,8 @@ use serde_json::value::RawValue;
 
 use crate::entry::ModelFields;
 use crate::fireworks_catalog_metadata::{
-    Capability, Catalog, FireworksMetadata, MODEL_COST_KEY_PREFIX, ProviderSpecificModelInfo,
-    capability_exact, resolve_resource_name,
+    Capability, Catalog, FireworksMetadata, ProviderSpecificModelInfo, capability_exact,
+    get_model_cost_key, resolve_resource_name,
 };
 
 #[rstest]
@@ -241,8 +241,7 @@ fn resource_names() {
         assert_eq!(resolve_resource_name(model), *expected);
     }
     for (model, expected) in COST_KEYS {
-        let resolved = resolve_resource_name(model);
-        assert_eq!(format!("{MODEL_COST_KEY_PREFIX}{resolved}"), *expected);
+        assert_eq!(get_model_cost_key(model), *expected);
     }
 }
 
@@ -257,11 +256,8 @@ fn exact_candidate_order() {
     let catalog = catalog_of(EXACT_CATALOG);
     assert_exact(&catalog, "raw-model", Some(true));
     assert_exact(&catalog, "some-model", Some(true));
-    assert_exact(
-        &catalog,
-        "accounts/fireworks/models/some-model",
-        Some(false),
-    );
+    // the short-key candidate answers before the accounts/fireworks/models/ candidate
+    assert_exact(&catalog, "accounts/fireworks/models/some-model", Some(true));
 }
 
 fn exact_later_candidates() {

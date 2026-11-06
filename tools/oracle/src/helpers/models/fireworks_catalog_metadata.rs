@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use betterlite_models::entry::ModelFields;
 use betterlite_models::fireworks_catalog_metadata::{
-    Capability, Catalog, FireworksMetadata, MODEL_COST_KEY_PREFIX, capability_exact,
+    Capability, Catalog, FireworksMetadata, capability_exact, get_model_cost_key,
     resolve_resource_name,
 };
 use serde::Deserialize;
@@ -91,10 +91,7 @@ impl Session {
     fn apply(&mut self, step: &Step) -> Result<Value, Box<HelperError>> {
         match step {
             Step::ResolveResource { model } => Ok(json!(resolve_resource_name(model))),
-            Step::CostKey { model } => Ok(json!(format!(
-                "{MODEL_COST_KEY_PREFIX}{}",
-                resolve_resource_name(model)
-            ))),
+            Step::CostKey { model } => Ok(json!(get_model_cost_key(model))),
             Step::ExactCapability { model, capability } => Ok(json!(capability_exact(
                 self.catalog.as_ref(),
                 model,

@@ -81,6 +81,12 @@ pub fn resolve_resource_name(model: &str) -> String {
 }
 
 #[must_use]
+pub fn get_model_cost_key(model: &str) -> String {
+    let resource_name = resolve_resource_name(model);
+    format!("{MODEL_COST_KEY_PREFIX}{resource_name}")
+}
+
+#[must_use]
 pub fn capability_exact(catalog: &Catalog, model: &str, capability: Capability) -> Option<bool> {
     let short_name = short_model_name(model);
     let mut candidates = vec![
