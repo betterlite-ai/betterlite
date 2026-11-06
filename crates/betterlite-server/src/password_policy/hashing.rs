@@ -76,6 +76,10 @@ impl<S: SaltSource> PasswordHasher<S> {
         let Some(encoded) = stored.strip_prefix(SCRYPT_PREFIX) else {
             return verify_sha256(password, stored);
         };
+        // Python's b64decode encodes the text as ASCII first, so any other character fails the verify.
+        if !encoded.is_ascii() {
+            return false;
+        }
         let kept: String = encoded
             .chars()
             .filter(|character| character.is_ascii_alphanumeric() || "+/=".contains(*character))

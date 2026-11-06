@@ -2,13 +2,19 @@ task: B786
 deviations:
   - what: A bulk validation runs at most 64 breach lookups at the same time. LiteLLM starts one lookup per unique password at once.
     why: A batch of thousands of passwords would open thousands of connections to the range API in one burst. The verdicts and the order of results are the same.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/password_policy.py#L211-L213
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/password_policy.py#L209-L211
   - what: Hashing and verification run on a bounded pool of scrypt workers. LiteLLM computes scrypt inline in the calling coroutine.
     why: scrypt takes tens of milliseconds and 16 MiB. Running it inline would stall the async runtime, and unbounded parallel runs would exhaust memory. Hash strings and verdicts are unchanged.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7128-L7136
   - what: The breach lookup has one 5 second deadline for the whole request. LiteLLM's httpx client applies 5 seconds to connect, read, write and pool waits separately.
     why: A single deadline is what the setting is meant to bound, and the reqwest client has no per-phase equivalent. A slow lookup still fails open with a warning.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/password_policy.py#L38
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/password_policy.py#L28
   - what: A range response body that is not valid UTF-8 fails open with the warning and allows the password. LiteLLM decodes it with replacement characters and reads it.
     why: Replacement characters can only change the suffix text, so the body from a working range API is always ASCII and no working setup depends on this.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/password_policy.py#L122
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/password_policy.py#L138
+  - what: Only a 2xx range response is read. LiteLLM raises on 4xx and 5xx but still parses the body of a 1xx or 3xx answer.
+    why: A redirect or informational answer carries no range list, and reading it could only turn a broken endpoint into a false breach verdict. The lookup fails open with the warning instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/password_policy.py#L137
+  - what: A match count is read as a plain decimal integer. LiteLLM's int() also accepts underscores between digits and non-ASCII decimal digits.
+    why: The range API sends ASCII decimal counts. Anything else is a malformed answer, and the lookup fails open with the warning instead of treating it as a breach.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/password_policy.py#L121

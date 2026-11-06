@@ -105,6 +105,8 @@ async fn scrypt_payload_ignores_characters_outside_the_alphabet() {
     let (head, tail) = PYTHON_SCRYPT.split_at(30);
     let wrapped = format!("{head}\n{tail}");
     assert!(hasher.verify(&secret(PASSWORD), &wrapped).await);
+    let accented = format!("{head}\u{e9}{tail}");
+    assert!(!hasher.verify(&secret(PASSWORD), &accented).await);
 }
 
 #[tokio::test]
@@ -299,6 +301,7 @@ async fn hibp(replies: &[(&str, u16, &str)], delay: Duration, timeout: Duration)
 }
 
 const PASSWORD_RANGE: &str = "0018A45C4D1DEF81644B54AB7F969B88D65:3\r\n1E4C9B93F3F0682250B6CF8331B7EE68FD8:3730471\r\n011053FD0102E94D6AE2F8B83D76FAF94F6:0";
+const ODD_COUNT: &str = "1E4C9B93F3F0682250B6CF8331B7EE68FD8:1_0";
 
 fn relaxed() -> Settings {
     Settings {
@@ -459,6 +462,35 @@ async fn bad_range_answers_fail_open_with_a_warning() {
         Err(LookupError::Count { .. })
     ));
 
+    let output = read_to_string(log.path()).unwrap();
+    assert_eq!(output.matches(SKIPPED).count(), 2);
+}
+
+#[tokio::test]
+async fn non_2xx_and_odd_counts_fail_open_with_a_warning() {
+    let (log, _guard) = capture_warnings();
+    let denied = hibp(
+        &[("5BAA6", 302, PASSWORD_RANGE)],
+        Duration::ZERO,
+        Duration::from_secs(5),
+    )
+    .await;
+    let odd = hibp(
+        &[("5BAA6", 200, ODD_COUNT)],
+        Duration::ZERO,
+        Duration::from_secs(5),
+    )
+    .await;
+    assert!(!denied.checker.is_breached(&secret("password")).await);
+    assert!(matches!(
+        denied.checker.lookup(&secret("password")).await,
+        Err(LookupError::Status { status: 302 })
+    ));
+    assert!(!odd.checker.is_breached(&secret("password")).await);
+    assert!(matches!(
+        odd.checker.lookup(&secret("password")).await,
+        Err(LookupError::Count { .. })
+    ));
     let output = read_to_string(log.path()).unwrap();
     assert_eq!(output.matches(SKIPPED).count(), 2);
 }
