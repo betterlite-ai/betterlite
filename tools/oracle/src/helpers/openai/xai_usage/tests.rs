@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 
 use crate::case::{HelperCase, helper::validate_helper};
 
-fn run_case(file: &str) -> serde_json::Value {
+fn run_case(file: &str) -> Value {
     use crate::helpers::Helper as _;
 
     let path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -18,10 +18,10 @@ fn run_case(file: &str) -> serde_json::Value {
     super::Op::decode_and_run(&case.call.input).unwrap()
 }
 
-fn run_input(input: Value) -> Value {
+fn run_input(input: &Value) -> Value {
     use crate::helpers::Helper as _;
 
-    super::Op::decode_and_run(&input).unwrap()
+    super::Op::decode_and_run(input).unwrap()
 }
 
 #[test]
@@ -61,20 +61,20 @@ fn oracle_reported_zero_suppresses_the_generic_price() {
 #[rstest]
 #[case::boolean_true(json!(true))]
 #[case::boolean_false(json!(false))]
-#[case::negative(json!(-5))]
-#[case::float(json!(2.5))]
+#[case::negative(json!(-5_i64))]
+#[case::float(json!(2.5_f64))]
 #[case::text(json!("100"))]
 fn oracle_ticks_reject_non_integer_or_negative_counts(#[case] ticks: Value) {
-    let result = run_input(json!({ "action": "ticks", "ticks": ticks }));
+    let result = run_input(&json!({ "action": "ticks", "ticks": ticks }));
     assert_eq!(result["cost"], Value::Null);
     assert_eq!(result["restated_cost"], Value::Null);
 }
 
 #[test]
 fn oracle_pricing_counts_reasoning_once() {
-    let result = run_input(json!({
+    let result = run_input(&json!({
         "action": "cost",
-        "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 35, "reasoning_tokens": 5},
+        "usage": {"prompt_tokens": 10_i64, "completion_tokens": 20_i64, "total_tokens": 35_i64, "reasoning_tokens": 5_i64},
     }));
     assert_eq!(result["prompt_cost"], "10");
     assert_eq!(result["completion_cost"], "25");
@@ -83,13 +83,13 @@ fn oracle_pricing_counts_reasoning_once() {
 #[rstest]
 #[case::malformed_text(json!("many"))]
 #[case::fractional_text(json!("2.5"))]
-#[case::negative(json!(-1))]
+#[case::negative(json!(-1_i64))]
 fn oracle_malformed_search_counts_attach_without_a_charge(#[case] calls: Value) {
-    let result = run_input(json!({
+    let result = run_input(&json!({
         "action": "search",
-        "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
-        "details": {"web_search_calls": calls.clone()},
-        "search_costs": {"search_context_size_medium": 0.01},
+        "usage": {"prompt_tokens": 1_i64, "completion_tokens": 1_i64, "total_tokens": 2_i64},
+        "details": {"web_search_calls": calls},
+        "search_costs": {"search_context_size_medium": 0.01_f64},
     }));
     assert_eq!(result["attached"], json!({"web_search_calls": calls}));
     assert_eq!(result["web_search_requests"], Value::Null);

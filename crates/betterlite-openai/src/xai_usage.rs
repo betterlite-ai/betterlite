@@ -37,8 +37,8 @@ pub trait GenericTokenPricing {
 
 // a JSON integer that is not a boolean and not negative, in ticks of a ten-billionth of a dollar
 #[must_use]
-pub fn xai_reported_cost_in_usd(ticks: &Value) -> Option<Decimal> {
-    let Value::Number(number) = ticks else {
+pub fn xai_reported_cost_in_usd(cost_in_usd_ticks: &Value) -> Option<Decimal> {
+    let Value::Number(number) = cost_in_usd_ticks else {
         return None;
     };
     let lexeme = number.to_string();
@@ -140,7 +140,7 @@ pub fn cost_per_web_search_request(
         .into_iter()
         .flatten()
         .find(|rate| *rate > Decimal::ZERO)
-        .unwrap_or(Decimal::new(5, 3));
+        .unwrap_or_else(|| Decimal::new(5, 3));
     rate.checked_mul(Decimal::from(calls))
         .ok_or(XaiUsageError::Overflow)
 }

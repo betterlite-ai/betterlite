@@ -4,7 +4,7 @@ use betterlite_config::sections::xai_identity::Settings;
 use betterlite_openai::xai_identity::{
     KeyOrder, get_api_base, get_api_key, get_base_model, validate_environment,
 };
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use serde_json::{Value, json};
 
@@ -47,7 +47,7 @@ fn module_settings(call: &Call) -> Settings {
             .env
             .get("XAI_API_KEY")
             .filter(|value| !value.is_empty())
-            .map(SecretString::from),
+            .map(|value| SecretString::from(value.as_str())),
         api_base: call
             .env
             .get("XAI_API_BASE")

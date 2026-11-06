@@ -30,7 +30,10 @@ pub struct Settings {
 impl Section for Raw {
     type Settings = Settings;
 
-    fn convert<L: EnvironmentLookup>(self, lookup: &L) -> Result<Self::Settings, ConfigError> {
+    fn convert<L>(self, lookup: &L) -> Result<Self::Settings, ConfigError>
+    where
+        L: EnvironmentLookup,
+    {
         let module = self.litellm_settings;
         Ok(Settings {
             xai_key: resolve_secret(module.xai_key, "litellm_settings.xai_key", lookup)?,

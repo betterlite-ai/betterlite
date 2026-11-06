@@ -74,7 +74,7 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         match input.action {
-            Action::Ticks => ticks(&input.ticks),
+            Action::Ticks => Ok(ticks(&input.ticks)),
             Action::Cost => priced(&input.usage),
             Action::Reconcile => reconciled(&input.usage),
             Action::Search => searched(
@@ -134,7 +134,7 @@ fn counts(usage: &XaiUsage) -> Value {
     })
 }
 
-fn ticks(ticks: &Value) -> crate::helpers::HelperResult {
+fn ticks(ticks: &Value) -> Value {
     let carrier = XaiUsage {
         tokens: CostUsage::default(),
         cost: None,
@@ -142,10 +142,10 @@ fn ticks(ticks: &Value) -> crate::helpers::HelperResult {
         server_side_tool_usage_details: None,
     };
     let restated = usage_restated_from_xai_ticks(&carrier).and_then(|restated| restated.cost);
-    Ok(json!({
+    json!({
         "cost": xai_reported_cost_in_usd(ticks).map(|amount| amount.normalize().to_string()),
         "restated_cost": restated.map(|amount| amount.normalize().to_string()),
-    }))
+    })
 }
 
 fn priced(fields: &UsageFields) -> crate::helpers::HelperResult {

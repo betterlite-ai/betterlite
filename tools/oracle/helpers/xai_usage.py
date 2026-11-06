@@ -43,23 +43,15 @@ def build_usage(fields: dict[str, Json]) -> Usage:
     return usage
 
 
-def counts(usage: Usage) -> Json:
-    return {
-        "prompt_tokens": usage.prompt_tokens,
-        "completion_tokens": usage.completion_tokens,
-        "total_tokens": usage.total_tokens,
-    }
-
-
 def run_ticks(value: dict[str, Json]) -> Json:
-    ticks = value["ticks"]
     usage = build_usage({})
-    usage.cost_in_usd_ticks = ticks  # pyright: ignore[reportAttributeAccessIssue]
+    usage.cost_in_usd_ticks = value["ticks"]  # pyright: ignore[reportAttributeAccessIssue]
     restated = _usage_restated_from_xai_ticks(usage)
     restated_cost = None
     if restated is not None:
         restated_cost = cast(float | None, getattr(restated, "cost", None))
-    return {"cost": money(xai_reported_cost_in_usd(ticks)), "restated_cost": money(restated_cost)}
+    reported = money(xai_reported_cost_in_usd(value["ticks"]))
+    return {"cost": reported, "restated_cost": money(restated_cost)}
 
 
 def run_cost(value: dict[str, Json]) -> Json:
@@ -75,7 +67,13 @@ def run_reconcile(value: dict[str, Json]) -> Json:
     for _ in range(2):
         XAIChatConfig.fold_reasoning_tokens_into_completion(usage)
         XAIChatConfig._normalize_openai_compatible_usage_totals(usage)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-        steps.append(counts(usage))
+        steps.append(
+            {
+                "prompt_tokens": usage.prompt_tokens,
+                "completion_tokens": usage.completion_tokens,
+                "total_tokens": usage.total_tokens,
+            }
+        )
     return {"once": steps[0], "twice": steps[1]}
 
 
