@@ -39,10 +39,13 @@ betterlite-openapi = { path = "../../crates/betterlite-openapi" }
 betterlite-paths = { path = "../../crates/betterlite-paths" }
 betterlite-postgres-fixture = { path = "../postgres-fixture" }
 betterlite-prompts = { path = "../../crates/betterlite-prompts" }
+betterlite-proxy = { path = "../../crates/betterlite-proxy" }
 betterlite-rate-limit = { path = "../../crates/betterlite-rate-limit" }
 betterlite-redact = { path = "../../crates/betterlite-redact" }
 betterlite-redis = { path = "../../crates/betterlite-redis" }
 betterlite-router = { path = "../../crates/betterlite-router" }
+betterlite-sdk = { path = "../../crates/betterlite-sdk" }
+betterlite-secret-managers = { path = "../../crates/betterlite-secret-managers" }
 betterlite-secrets = { path = "../../crates/betterlite-secrets" }
 betterlite-server = { path = "../../crates/betterlite-server" }
 betterlite-streaming = { path = "../../crates/betterlite-streaming" }
@@ -52,6 +55,7 @@ clap = { version = "4.6.7", features = ["derive", "env"] }
 cookie_store = "0.22.0"
 futures-util = { version = "0.3.34", default-features = false }
 hex = "0.4.3"
+http = "1.5.0"
 indexmap = { version = "2.14.2", features = ["serde"] }
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 percent-encoding.workspace = true
@@ -62,7 +66,7 @@ secrecy = { version = "0.10.3", features = ["serde"] }
 serde = { version = "1.0.228", features = ["derive"] }
 serde-saphyr = "2.0.0"
 serde_json = { version = "1.0.145", features = ["arbitrary_precision", "raw_value"] }
-serde_with = { version = "3.24.0", default-features = false, features = ["alloc", "indexmap_2"] }
+serde_with = { version = "3.24.0", default-features = false, features = ["alloc", "indexmap_2", "macros"] }
 sha2.workspace = true
 soft-canonicalize = "0.5.6"
 tempfile = "3.27.0"
@@ -70,6 +74,7 @@ thiserror = "2.0.17"
 tl = "0.7.8"
 tokio = { version = "=1.53.3", features = ["rt", "net", "sync", "test-util", "time", "io-util", "macros", "process", "fs"] }
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = ["connect", "handshake"] }
+tower = { workspace = true, features = ["util"] }
 tracing = "0.1.44"
 tracing-subscriber = { version = "0.3.23", default-features = false, features = ["registry"] }
 ulid = "3.0.0"
