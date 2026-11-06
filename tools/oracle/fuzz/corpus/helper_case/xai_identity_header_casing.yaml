@@ -1,0 +1,16 @@
+kind: helper
+name: xai-identity-header-casing
+call:
+  xai_identity:
+    calls:
+      - {model: grok-4, api_key: null, headers: {}}
+      - {model: grok-4, api_key: fresh, headers: {}}
+      - {model: grok-4, api_key: fresh, headers: {Authorization: "Bearer old"}}
+      - {model: grok-4, api_key: null, headers: {Authorization: "Bearer old"}}
+      - {model: grok-4, api_key: fresh, headers: {authorization: "Bearer old"}}
+      - {model: grok-4, api_key: null, headers: {content-type: "text/plain"}}
+      - {model: grok-4, api_key: null, headers: {Content-Type: "text/plain"}}
+      - {model: grok-4, api_key: null, headers: {CONTENT-TYPE: "text/plain"}}
+      - {model: grok-4, api_key: fresh, headers: {X-Caller: kept, content-type: "application/xml"}}
+env: {}
+compare: {ignore: []}
