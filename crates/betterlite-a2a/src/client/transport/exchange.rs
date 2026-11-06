@@ -11,6 +11,7 @@ use futures_util::stream::{BoxStream, iter};
 use http::header::CONTENT_TYPE;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
+use tokio::time::timeout;
 
 use super::EventStream;
 use crate::client::error::{ClientError, transport_error};
@@ -38,9 +39,9 @@ struct JsonRpcError {
 pub(super) async fn buffered_event(
     http: ProxiedClient,
     request: OutboundRequest,
-    timeout: Duration,
+    limit: Duration,
 ) -> Result<EventStream, ClientError> {
-    buffered_result(http, request, timeout)
+    buffered_result(http, request, limit)
         .await
         .map(|result| iter(send_event(result).map(Ok)).boxed())
 }
@@ -48,13 +49,17 @@ pub(super) async fn buffered_event(
 async fn buffered_result(
     http: ProxiedClient,
     request: OutboundRequest,
-    timeout: Duration,
+    limit: Duration,
 ) -> Result<CoreSendResponse, ClientError> {
     let url_text = request.url.to_string();
-    let response = http
-        .send_buffered(request)
+    let response = timeout(limit, http.send_buffered(request))
         .await
-        .map_err(|source| transport_error(&url_text, timeout, source))?;
+        .map_err(|_elapsed| ClientError::Timeout {
+            url: url_text.clone(),
+            timeout: limit,
+            source: None,
+        })?
+        .map_err(|source| transport_error(&url_text, limit, source))?;
     check_status(response.status, &url_text)?;
     parse_rpc(&response.body, &url_text)
 }
@@ -69,13 +74,17 @@ fn send_event(response: CoreSendResponse) -> Option<CoreStreamEvent> {
 pub(super) async fn streaming_events(
     http: ProxiedClient,
     request: OutboundRequest,
-    timeout: Duration,
+    limit: Duration,
 ) -> Result<EventStream, ClientError> {
     let url_text = request.url.to_string();
-    let response = http
-        .send(request)
+    let response = timeout(limit, http.send(request))
         .await
-        .map_err(|source| transport_error(&url_text, timeout, source))?;
+        .map_err(|_elapsed| ClientError::Timeout {
+            url: url_text.clone(),
+            timeout: limit,
+            source: None,
+        })?
+        .map_err(|source| transport_error(&url_text, limit, source))?;
     check_status(response.response.status().as_u16(), &url_text)?;
     let content_type = response
         .response
@@ -85,12 +94,16 @@ pub(super) async fn streaming_events(
         .unwrap_or_default()
         .to_owned();
     if content_type.contains("text/event-stream") {
-        return Ok(sse_events(response.body_stream(), url_text, timeout));
+        return Ok(sse_events(response.body_stream(), url_text, limit));
     }
-    let buffered = response
-        .buffered(http.limits.body_bytes)
+    let buffered = timeout(limit, response.buffered(http.limits.body_bytes))
         .await
-        .map_err(|source| transport_error(&url_text, timeout, source))?;
+        .map_err(|_elapsed| ClientError::Timeout {
+            url: url_text.clone(),
+            timeout: limit,
+            source: None,
+        })?
+        .map_err(|source| transport_error(&url_text, limit, source))?;
     Ok(iter(Some(stream_event(&buffered.body, &url_text))).boxed())
 }
 
@@ -110,19 +123,16 @@ struct EventFrames {
 }
 
 impl EventFrames {
+    #[rustfmt::skip]
     fn push(&mut self, bytes: &[u8], url: &str) -> Result<Vec<SseFrame>, ClientError> {
         if self.buffer.len().saturating_add(bytes.len()) > MAX_EVENT_BYTES {
-            return Err(ClientError::EventTooLarge {
-                url: url.to_owned(),
-            });
+            return Err(ClientError::EventTooLarge { url: url.to_owned() });
         }
         self.buffer.extend_from_slice(bytes);
         let mut frames = Vec::new();
         while let Some(end) = blank_line(&self.buffer) {
             let frame: Vec<u8> = self.buffer.drain(..end).collect();
-            if let Some(parts) = frame_parts(&frame) {
-                frames.push(parts);
-            }
+            if let Some(parts) = frame_parts(&frame) { frames.push(parts); }
         }
         Ok(frames)
     }
@@ -136,35 +146,22 @@ impl EventFrames {
     }
 }
 
+#[rustfmt::skip]
 fn blank_line(buffer: &[u8]) -> Option<usize> {
-    let lf = buffer
-        .windows(2)
-        .position(|pair| pair == b"\n\n")
-        .and_then(|at| at.checked_add(2));
-    let crlf = buffer
-        .windows(4)
-        .position(|pair| pair == b"\r\n\r\n")
-        .and_then(|at| at.checked_add(4));
+    let lf = buffer.windows(2).position(|pair| pair == b"\n\n").and_then(|at| at.checked_add(2));
+    let crlf = buffer.windows(4).position(|pair| pair == b"\r\n\r\n").and_then(|at| at.checked_add(4));
     [lf, crlf].into_iter().flatten().min()
 }
 
+#[rustfmt::skip]
 fn frame_parts(frame: &[u8]) -> Option<SseFrame> {
     let mut event = None;
     let mut data = Vec::new();
     for line in frame.split(|byte| *byte == b'\n') {
         let trimmed = line.strip_suffix(b"\r").unwrap_or(line);
-        if let Some(name) = trimmed.strip_prefix(b"event:") {
-            event = str::from_utf8(name)
-                .ok()
-                .map(|value| value.trim().to_owned());
-            continue;
-        }
-        let Some(value) = trimmed.strip_prefix(b"data:") else {
-            continue;
-        };
-        if !data.is_empty() {
-            data.push(b'\n');
-        }
+        if let Some(name) = trimmed.strip_prefix(b"event:") { event = str::from_utf8(name).ok().map(|value| value.trim().to_owned()); continue; }
+        let Some(value) = trimmed.strip_prefix(b"data:") else { continue; };
+        if !data.is_empty() { data.push(b'\n'); }
         data.extend_from_slice(value.strip_prefix(b" ").unwrap_or(value));
     }
     (!data.is_empty()).then_some((event, data))
@@ -180,47 +177,31 @@ fn frame_event(frame: SseFrame, url: &str) -> Result<CoreStreamEvent, ClientErro
     stream_event(&payload, url)
 }
 
-fn sse_events(
-    mut body: BoxStream<'static, Result<Vec<u8>, HttpError>>,
-    url: String,
-    timeout: Duration,
-) -> EventStream {
+#[rustfmt::skip]
+fn sse_events(mut body: BoxStream<'static, Result<Vec<u8>, HttpError>>, url: String, limit: Duration) -> EventStream {
     async_stream::stream! {
         let mut parser = EventFrames::default();
-        while let Some(chunk) = body.next().await {
-            let bytes = match chunk {
-                Ok(bytes) => bytes,
-                Err(source) => {
-                    yield Err(read_error(&url, timeout, source));
-                    return;
-                }
+        loop {
+            let bytes = match timeout(limit, body.next()).await {
+                Ok(Some(Ok(bytes))) => bytes,
+                Ok(Some(Err(source))) => { yield Err(read_error(&url, limit, source)); return; }
+                Ok(None) => break,
+                Err(_elapsed) => { yield Err(ClientError::Timeout { url: url.clone(), timeout: limit, source: None }); return; }
             };
             let frames = match parser.push(&bytes, &url) {
                 Ok(frames) => frames,
-                Err(error) => {
-                    yield Err(error);
-                    return;
-                }
+                Err(error) => { yield Err(error); return; }
             };
             for frame in frames {
                 match frame_event(frame, &url) {
-                    Ok(event @ CoreStreamEvent::Message(_)) => {
-                        yield Ok(event);
-                        return;
-                    }
+                    Ok(event @ CoreStreamEvent::Message(_)) => { yield Ok(event); return; }
                     Ok(event) => yield Ok(event),
-                    Err(error) => {
-                        yield Err(error);
-                        return;
-                    }
+                    Err(error) => { yield Err(error); return; }
                 }
             }
         }
         if let Some(frame) = parser.finish() {
-            match frame_event(frame, &url) {
-                Ok(event) => yield Ok(event),
-                Err(error) => yield Err(error),
-            }
+            match frame_event(frame, &url) { Ok(event) => yield Ok(event), Err(error) => yield Err(error) }
         }
     }
     .boxed()
@@ -246,10 +227,15 @@ fn parse_rpc<T>(payload: &[u8], url: &str) -> Result<T, ClientError> where T: De
 }
 
 #[rustfmt::skip]
-fn read_error(url: &str, timeout: Duration, failure: HttpError) -> ClientError {
+fn read_error(url: &str, limit: Duration, failure: HttpError) -> ClientError {
     match failure {
-        HttpError::Request(source) => ClientError::Connection { url: url.to_owned(), source: TransportError::Request(source) },
-        HttpError::Timeout => ClientError::Timeout { url: url.to_owned(), timeout, source: None },
+        HttpError::Request(source) => {
+            if source.is_timeout() {
+                return ClientError::Timeout { url: url.to_owned(), timeout: limit, source: Some(TransportError::Deadline(source)) };
+            }
+            ClientError::Connection { url: url.to_owned(), source: TransportError::Request(source) }
+        }
+        HttpError::Timeout => ClientError::Timeout { url: url.to_owned(), timeout: limit, source: None },
         HttpError::TooLarge { .. } => ClientError::EventTooLarge { url: url.to_owned() },
         other @ (HttpError::Required { .. } | HttpError::DotSegment { .. } | HttpError::UnsupportedProxyScheme { .. } | HttpError::InvalidProxyUrl { .. } | HttpError::Client(_)) => ClientError::Request { url: url.to_owned(), source: TransportError::Rejected(other) },
     }

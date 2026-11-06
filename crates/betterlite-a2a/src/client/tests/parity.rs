@@ -3,8 +3,13 @@ use std::time::Duration;
 
 use betterlite_core::a2a::exception_mapping::{A2AException, map_a2a_exception};
 use betterlite_core::agents::provider::a2a::JsonRpcId;
+use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
+use betterlite_http::proxy::transport_error::TransportError;
 use futures_util::StreamExt as _;
+use http::Method;
+use http::header::HeaderMap;
 use rstest::rstest;
+use url::Url;
 
 use super::{
     AgentState, CARD_PATH, Reply, buffered_message, card_json, create_a2a_client, environment,
@@ -13,7 +18,7 @@ use super::{
 };
 use crate::client::NativeA2aSdk;
 use crate::client::convert::{to_compat_stream_response, to_core_send_message_request};
-use crate::client::error::ClientError;
+use crate::client::error::{ClientError, transport_error};
 use crate::client::records::compat::SendMessageRequest;
 use crate::client::records::core::{
     CoreArtifact, CoreArtifactUpdate, CoreMessage, CorePart, CoreStreamEvent,
@@ -328,4 +333,106 @@ async fn sse_error_event_fails_the_stream() {
         &chunks[0],
         Err(ClientError::SseError { message }) if message.contains("boom")
     ));
+}
+
+#[tokio::test]
+async fn additional_interfaces_choose_jsonrpc() {
+    let (listener, base) = start_agent().await;
+    let card = format!(
+        r#"{{"name":"fake-agent","url":"{base}/rest","preferredTransport":"HTTP+JSON","additionalInterfaces":[{{"url":"{base}/rpc","transport":"JSONRPC"}}],"capabilities":{{"streaming":true}},"defaultInputModes":["text"],"defaultOutputModes":["text"],"skills":[]}}"#
+    );
+    let state = AgentState {
+        card,
+        reply: Reply::Json(buffered_message("hi")),
+        seen: Arc::default(),
+    };
+    let pool = pooled_client();
+    let request = send_request("hello");
+    let agent_base = base.clone();
+    let (outcome, seen) = run_agent(
+        listener,
+        state,
+        Box::pin(async move {
+            let client = create_a2a_client(
+                &pool,
+                settings(&agent_base, false, Duration::from_secs(5)),
+                &environment(None),
+            )
+            .await
+            .unwrap();
+            let endpoint = client.endpoint.clone();
+            let sent = send_message(&client, &request).await;
+            (endpoint, sent)
+        }),
+    )
+    .await;
+    let (endpoint, sent) = outcome;
+    assert_eq!(endpoint.as_str(), format!("{base}/rpc"));
+    sent.unwrap();
+    assert_eq!(team_of(&seen, "/rpc").as_deref(), Some("blue"));
+}
+
+#[tokio::test]
+async fn stream_stall_is_a_timeout() {
+    let (listener, base) = start_agent().await;
+    let state = AgentState {
+        card: card_json(&base, true),
+        reply: Reply::SseGaps(vec![(0, status_frame()), (300, status_frame())]),
+        seen: Arc::default(),
+    };
+    let pool = pooled_client();
+    let request = send_request("hello");
+    let (chunks, _seen) = run_agent(
+        listener,
+        state,
+        Box::pin(async move {
+            let client = create_a2a_client(
+                &pool,
+                settings(&base, true, Duration::from_millis(50)),
+                &environment(None),
+            )
+            .await
+            .unwrap();
+            stream_messages(&client, &request)
+                .await
+                .collect::<Vec<_>>()
+                .await
+        }),
+    )
+    .await;
+    assert_eq!(chunks.len(), 2);
+    chunks[0].as_ref().unwrap();
+    let Err(error) = &chunks[1] else {
+        panic!("expected a timeout error");
+    };
+    assert!(matches!(error, ClientError::Timeout { .. }));
+    assert!(matches!(
+        map_a2a_exception(&NativeA2aSdk, error, None, None, None),
+        A2AException::Other { .. }
+    ));
+}
+
+#[tokio::test]
+async fn connect_timeout_classifies_as_timeout() {
+    let pool = pooled_client();
+    let request = OutboundRequest {
+        method: Method::POST,
+        url: Url::parse("http://127.0.0.1:1/").unwrap(),
+        query: Vec::new(),
+        headers: HeaderMap::new(),
+        body: RequestBody::Empty,
+        deadline: Duration::from_millis(100),
+    };
+    let Err(failure) = pool.send(request).await else {
+        panic!("expected a connect failure");
+    };
+    let TransportError::Connect(source) = failure else {
+        panic!("expected a connect failure");
+    };
+    let classified = transport_error(
+        "http://127.0.0.1:1/",
+        Duration::from_millis(100),
+        TransportError::ConnectTimeout(source),
+    );
+    assert!(matches!(classified, ClientError::Timeout { .. }));
 }

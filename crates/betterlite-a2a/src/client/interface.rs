@@ -27,7 +27,14 @@ fn card_interfaces(card: &AgentCard) -> Vec<Interface> {
         return Vec::new();
     };
     let binding = wire_text(card.preferred_transport.as_ref()).unwrap_or("JSONRPC");
-    vec![Interface { url: Some(Some(WireValue::Typed(url.to_owned()))), protocol_binding: Some(Some(WireValue::Typed(binding.to_owned()))), protocol_version: card.protocol_version.clone(), passthrough: BTreeMap::new() }]
+    let mut interfaces = vec![Interface { url: Some(Some(WireValue::Typed(url.to_owned()))), protocol_binding: Some(Some(WireValue::Typed(binding.to_owned()))), protocol_version: card.protocol_version.clone(), passthrough: BTreeMap::new() }];
+    let additional = card.passthrough.get("additionalInterfaces").and_then(AgentJson::as_array);
+    for extra in additional.into_iter().flatten() {
+        let Some(extra_url) = extra.get("url").and_then(AgentJson::as_str) else { continue; };
+        let Some(extra_binding) = extra.get("transport").and_then(AgentJson::as_str) else { continue; };
+        interfaces.push(Interface { url: Some(Some(WireValue::Typed(extra_url.to_owned()))), protocol_binding: Some(Some(WireValue::Typed(extra_binding.to_owned()))), protocol_version: card.protocol_version.clone(), passthrough: BTreeMap::new() });
+    }
+    interfaces
 }
 
 #[rustfmt::skip]

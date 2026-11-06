@@ -13,6 +13,7 @@ use axum::body::{Body, Bytes};
 use axum::extract::State;
 use axum::http::HeaderMap as HttpHeaders;
 use axum::http::StatusCode;
+use axum::http::Uri;
 use axum::http::header::{ACCEPT, CACHE_CONTROL, CONTENT_TYPE, LOCATION};
 use axum::response::{IntoResponse as _, Response};
 use axum::routing::{get, post};
@@ -119,11 +120,12 @@ async fn card(State(state): State<AgentState>, headers: HttpHeaders) -> Response
 async fn message(
     State(state): State<AgentState>,
     headers: HttpHeaders,
+    uri: Uri,
     request: Bytes,
 ) -> Response {
     record(
         &state,
-        "/",
+        uri.path(),
         &headers,
         String::from_utf8(request.to_vec()).unwrap(),
     );
@@ -217,14 +219,6 @@ fn environment(value: Option<&str>) -> BTreeMap<String, String> {
     value
         .map(|text| BTreeMap::from([(A2A_TIMEOUT_ENV.to_owned(), text.to_owned())]))
         .unwrap_or_default()
-}
-
-fn env_seconds(text: &str) -> Option<Duration> {
-    let seconds = text.parse::<f64>().ok()?;
-    if !seconds.is_finite() || seconds < 0.0_f64 {
-        return None;
-    }
-    Duration::try_from_secs_f64(seconds).ok()
 }
 
 fn send_request(text: &str) -> SendMessageRequest {
@@ -525,10 +519,7 @@ async fn native_send_retry(#[case] scenario: &str) {
         dead
     };
     let reply = if scenario == "stream-propagate" {
-        Reply::Sse(vec![
-            message_frame("first"),
-            String::from("data: not-json\n\n"),
-        ])
+        Reply::Sse(vec![status_frame(), String::from("data: not-json\n\n")])
     } else if streaming {
         Reply::Sse(vec![message_frame("chunk")])
     } else {
@@ -629,10 +620,7 @@ async fn client_timeout(#[case] env_value: Option<&str>, #[case] configured_ms: 
     let pool = pooled_client();
     let request = send_request("hello");
     let configured = configured_ms.map(Duration::from_millis);
-    let expected = configured
-        .or_else(|| env_value.and_then(env_seconds))
-        .unwrap_or(DEFAULT_A2A_AGENT_TIMEOUT);
-    let (outcome, _seen) = run_agent(
+    let (sent, _seen) = run_agent(
         listener,
         state,
         Box::pin(async move {
@@ -641,20 +629,14 @@ async fn client_timeout(#[case] env_value: Option<&str>, #[case] configured_ms: 
             let client = create_a2a_client(&pool, settings, &environment(env_value))
                 .await
                 .unwrap();
-            let sent = send_message(&client, &request).await;
-            (
-                client.timeout,
-                client.http_client.limits.connect_timeout,
-                sent,
-            )
+            send_message(&client, &request).await
         }),
     )
     .await;
-    let (client_timeout, connect_timeout, sent) = outcome;
-    assert_eq!(client_timeout, expected);
-    assert_eq!(connect_timeout, expected);
     if env_value.is_some() || configured_ms.is_some() {
         assert!(matches!(sent, Err(ClientError::Timeout { .. })));
+    } else {
+        sent.unwrap();
     }
 }
 
