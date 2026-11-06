@@ -1,0 +1,15 @@
+kind: helper
+name: vector-file-list-query-filter
+call:
+  vector_file_contracts:
+    operation: list_query_filter
+    queries:
+      - {after: "", before: file_b, filter: failed, limit: 0, order: asc, unknown: 1}
+      - {after: null, before: null, filter: null, limit: null, order: null}
+      - {filter: unexpected, order: sideways, limit: -1}
+      - {filter: in_progress, order: desc}
+      - {filter: completed}
+      - {filter: cancelled}
+      - {}
+env: {}
+compare: {ignore: []}

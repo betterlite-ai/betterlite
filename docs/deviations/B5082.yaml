@@ -1,0 +1,14 @@
+task: B5082
+deviations:
+  - what: "A DNS failure names the resolver's I/O error where LiteLLM prints Python's '[Errno -2] Name or service not known'; the prefix \"DNS resolution failed for 'host'\" is the same."
+    why: The text of a system call error is formatted by each language runtime.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L324-L327
+  - what: A non-ASCII host in a redirect Location is converted with the idna crate (UTS 46 mapping, after lowercasing) where httpx uses the idna package (IDNA 2008).
+    why: No Rust crate implements the IDNA 2008 registration rules, and the two agree on lowercase labels.
+    link: https://github.com/encode/httpx/blob/0.28.1/httpx/_urlparse.py#L348-L395
+  - what: An httpx InvalidURL from a Location header or from the unvalidated start URL is its own error kind, UserUrlError::InvalidUrl, apart from SSRF errors and the ValueError kind of urllib.parse.
+    why: httpx.InvalidURL is not a ValueError in Python, so callers that answer ValueError and SSRFError differently need a third kind.
+    link: https://github.com/encode/httpx/blob/0.28.1/httpx/_exceptions.py#L271-L277
+  - what: The scope id of a link-local IPv6 address ("fe80::1%eth0") is not kept from getaddrinfo, and an IPv4-compatible IPv6 address is printed as Rust prints it, not as inet_ntop does.
+    why: Rust's resolver returns a socket address without the zone text, and both forms only reach the error message of a blocked address.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/url_utils.py#L250-L264

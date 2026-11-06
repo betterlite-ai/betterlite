@@ -1,0 +1,25 @@
+kind: helper
+name: fireworks-catalog-metadata-provider-defaults
+call:
+  fireworks_catalog_metadata:
+    catalog:
+      - {key: "fireworks_ai/accounts/fireworks/models/no-tools", model_info: {supports_function_calling: false}}
+      - {key: "fireworks_ai/accounts/fireworks/models/reasoning-off", model_info: {supports_reasoning: false}}
+      - {key: "fireworks_ai/accounts/fireworks/models/reasoning-on", model_info: {supports_reasoning: true}}
+      - {key: "fireworks_ai/accounts/fireworks/models/vision-off", model_info: {supports_vision: false}}
+      - {key: "fireworks_ai/accounts/fireworks/models/pdf-in", model_info: {supports_pdf_input: true}}
+      - {key: "fireworks_ai/accounts/fireworks/models/caching-off", model_info: {supports_prompt_caching: false}}
+      - {key: "fireworks_ai/accounts/fireworks/models/extra-flags", model_info: {supports_tool_choice: true, supports_web_search: true, supports_mid_conversation_system: true}}
+      - {key: "fireworks_ai/accounts/fireworks/models/fully-known", model_info: {supports_function_calling: false, supports_reasoning: true, supports_vision: true, supports_pdf_input: false}}
+    steps:
+      - {op: provider_info, model: "unknown-model"}
+      - {op: provider_info, model: "extra-flags"}
+      - {op: provider_info, model: "no-tools"}
+      - {op: provider_info, model: "reasoning-off"}
+      - {op: provider_info, model: "reasoning-on"}
+      - {op: provider_info, model: "vision-off"}
+      - {op: provider_info, model: "custom-pdf-in"}
+      - {op: provider_info, model: "caching-off"}
+      - {op: provider_info, model: "custom-fully-known"}
+env: {}
+compare: {ignore: []}

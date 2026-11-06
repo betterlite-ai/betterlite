@@ -1,0 +1,10 @@
+kind: helper
+name: openai-files-sdk-client-missing
+call:
+  openai_files:
+    action: retrieve_file
+    client: {supplied: null, is_async: true, missing: true}
+    request:
+      file_id: file-x
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,11 @@
+kind: helper
+name: user-url-mapped-loopback-blocked
+call:
+  b5082:
+    call: validate_url
+    url: "http://[::ffff:127.0.0.1]/"
+    user_url_allowed_hosts: []
+    ssl_verify: true
+env: {}
+compare:
+  ignore: []
