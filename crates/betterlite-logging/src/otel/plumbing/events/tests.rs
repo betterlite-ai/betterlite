@@ -1,5 +1,5 @@
 #![cfg(test)]
-use std::time::{Duration, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use betterlite_config::sections::otel_settings::Settings as OtelConfig;
 use opentelemetry::logs::{AnyValue, Severity};
@@ -7,7 +7,7 @@ use opentelemetry::trace::{SpanContext, SpanId, TraceFlags, TraceId, TraceState}
 use opentelemetry_sdk::logs::{InMemoryLogExporter, SdkLogRecord};
 use rstest::rstest;
 
-use super::{GenAIEventRecorder, OperationException};
+use super::{Clock, GenAIEventRecorder, OperationException, SystemClock};
 use crate::otel::plumbing::providers::{build_logger_provider, get_event_logger};
 use crate::otel::plumbing::sinks::LogSink;
 
@@ -22,11 +22,20 @@ fn span_context() -> SpanContext {
 }
 
 fn record_exception(stack_trace: Option<&str>, timestamp_ns: Option<u64>) -> SdkLogRecord {
+    record_exception_with_clock(Box::new(SystemClock), stack_trace, timestamp_ns)
+}
+
+fn record_exception_with_clock(
+    clock: Box<dyn Clock>,
+    stack_trace: Option<&str>,
+    timestamp_ns: Option<u64>,
+) -> SdkLogRecord {
     let exporter = InMemoryLogExporter::default();
     let provider =
         build_logger_provider(&OtelConfig::default(), LogSink::InMemory(exporter.clone()));
     let recorder = GenAIEventRecorder {
         event_logger: get_event_logger(&provider, "litellm"),
+        clock,
     };
     let context = span_context();
     recorder.record_operation_exception(&OperationException {
@@ -118,11 +127,17 @@ fn event_operation_exception_uses_the_given_timestamp(
     assert_eq!(nanos.ok(), expected.map(u128::from));
 }
 
+struct FixedClock(SystemTime);
+
+impl Clock for FixedClock {
+    fn now(&self) -> SystemTime {
+        self.0
+    }
+}
+
 #[test]
-fn event_operation_exception_defaults_the_timestamp_to_now() {
-    let record = record_exception(None, None);
-    let stamped = record.timestamp().expect("timestamp");
-    let age = stamped.elapsed().unwrap_or(Duration::ZERO);
-    assert!(age < Duration::from_secs(60));
-    assert!(stamped > UNIX_EPOCH);
+fn event_operation_exception_defaults_the_timestamp_to_the_injected_clock() {
+    let now = UNIX_EPOCH + Duration::from_secs(1_700_000_000);
+    let record = record_exception_with_clock(Box::new(FixedClock(now)), None, None);
+    assert_eq!(record.timestamp(), Some(now));
 }

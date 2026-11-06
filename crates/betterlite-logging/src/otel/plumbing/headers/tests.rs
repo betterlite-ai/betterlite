@@ -1,6 +1,18 @@
 #![cfg(test)]
-use super::parse_headers;
+use std::fmt::Debug;
+use std::fs;
+use std::path::PathBuf;
+use std::str;
+use std::sync::{Arc, Mutex};
+
 use rstest::rstest;
+use tracing::field::{Field, Visit};
+use tracing::subscriber::with_default;
+use tracing::{Event, Subscriber};
+use tracing_subscriber::layer::SubscriberExt as _;
+use tracing_subscriber::layer::{Context, Layer};
+
+use super::parse_headers;
 
 #[rstest]
 #[case::empty(None, &[])]
@@ -30,4 +42,55 @@ fn exporter_headers_parse_like_the_sdk(
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
         .collect();
     assert_eq!(parse_headers(raw), owned);
+}
+
+#[derive(Clone, Default)]
+struct Warnings(Arc<Mutex<Vec<String>>>);
+
+impl<S: Subscriber> Layer<S> for Warnings {
+    fn on_event(&self, event: &Event<'_>, _context: Context<'_, S>) {
+        let mut fields = Fields::default();
+        event.record(&mut fields);
+        if let Ok(mut events) = self.0.lock() {
+            events.push(fields.0.join(" "));
+        }
+    }
+}
+
+#[derive(Default)]
+struct Fields(Vec<String>);
+
+impl Visit for Fields {
+    fn record_debug(&mut self, field: &Field, value: &dyn Debug) {
+        self.0.push(format!("{}={value:?}", field.name()));
+    }
+
+    fn record_u64(&mut self, field: &Field, value: u64) {
+        self.0.push(format!("{}={value}", field.name()));
+    }
+}
+
+#[test]
+fn exporter_headers_warn_when_an_entry_is_dropped() {
+    let events = Arc::new(Mutex::new(Vec::new()));
+    let subscriber = tracing_subscriber::registry().with(Warnings(Arc::clone(&events)));
+    let headers = with_default(subscriber, || {
+        parse_headers(Some("a=b,Authorization: Bearer sk-live-secret"))
+    });
+    assert_eq!(headers.len(), 1);
+    assert!(headers.contains_key("a"));
+    let captured = events.lock().expect("events");
+    assert_eq!(captured.len(), 1);
+    assert!(captured[0].contains("position=2"));
+    assert!(!captured[0].contains("sk-live-secret"));
+    drop(captured);
+}
+
+#[rstest]
+fn replays_the_exporter_headers_corpus(#[files("fuzz/corpus/parse_headers/*")] path: PathBuf) {
+    let data = fs::read(&path).expect("corpus file");
+    let Ok(text) = str::from_utf8(&data) else {
+        return;
+    };
+    drop(parse_headers(Some(text)));
 }

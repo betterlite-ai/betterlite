@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use percent_encoding::percent_decode_str;
+use tracing::warn;
 
 const SPACE_OR_TAB: [char; 2] = [' ', '\t'];
 
@@ -29,8 +30,11 @@ fn split_pair(header: &str, liberal: bool) -> Option<(&str, &str)> {
 #[must_use]
 pub fn parse_headers(raw: Option<&str>) -> BTreeMap<String, String> {
     let mut headers = BTreeMap::new();
-    for line in raw.unwrap_or_default().split(',') {
+    for (index, line) in raw.unwrap_or_default().split(',').enumerate() {
         let header = line.trim();
+        if header.is_empty() {
+            continue;
+        }
         let strict = split_pair(header, false).map(|(name, value)| {
             let decoded_name = percent_decode_str(name).decode_utf8_lossy();
             let decoded_value = percent_decode_str(value).decode_utf8_lossy();
@@ -42,9 +46,15 @@ pub fn parse_headers(raw: Option<&str>) -> BTreeMap<String, String> {
         let pair = strict.or_else(|| {
             split_pair(header, true).map(|(name, value)| (name.to_owned(), value.to_owned()))
         });
-        if let Some((name, value)) = pair {
-            headers.insert(name.trim().to_lowercase(), value.trim().to_owned());
-        }
+        let Some((name, value)) = pair else {
+            // An entry that does not parse may carry a credential, so only its position is logged.
+            warn!(
+                position = index.saturating_add(1),
+                "otel: dropping an OTLP header entry that does not parse as name=value"
+            );
+            continue;
+        };
+        headers.insert(name.trim().to_lowercase(), value.trim().to_owned());
     }
     headers
 }

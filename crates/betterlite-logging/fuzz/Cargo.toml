@@ -38,3 +38,17 @@ path = "fuzz_targets/s3_v2.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "parse_headers"
+path = "fuzz_targets/parse_headers.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "parse_database_endpoint"
+path = "fuzz_targets/parse_database_endpoint.rs"
+test = false
+doc = false
+bench = false

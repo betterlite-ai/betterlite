@@ -48,6 +48,14 @@ deviations:
       betterlite does not port. Proven by event_operation_exception_uses_the_given_timestamp.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/events.py#L54
   - what: >-
+      A header entry that fails both OTLP header patterns is logged by its position only. The OTel
+      Python parser logs the raw entry text, which can carry a credential.
+    why: >-
+      A malformed header is often a mistyped authorization value, and naming the text in a log line
+      would leak the secret the entry was meant to send. Proven by
+      exporter_headers_warn_when_an_entry_is_dropped.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/providers.py#L159
+  - what: >-
       An empty endpoint or traces_endpoint string is treated as unset, so the exporter falls back to the
       SDK default endpoint for the signal. A header name or value that parse_headers keeps but either
       transport cannot carry (for example a percent-decoded newline) is an ExporterError instead of a

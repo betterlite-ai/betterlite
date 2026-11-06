@@ -3,6 +3,9 @@ use super::{DatabaseEndpoint, db_span_attributes, parse_database_endpoint, postg
 use betterlite_config::loader::EnvironmentLookup;
 use rstest::rstest;
 use std::collections::BTreeMap;
+use std::fs;
+use std::path::PathBuf;
+use std::str;
 use std::sync::Mutex;
 
 type Expected<'text> = Option<(Option<&'text str>, Option<i64>, Option<&'text str>)>;
@@ -74,6 +77,17 @@ fn database_endpoint_parses_dsn(#[case] url: Option<&str>, #[case] expected: Exp
         parsed,
         expected.map(|(address, port, namespace)| endpoint(address, port, namespace))
     );
+}
+
+#[rstest]
+fn replays_the_database_endpoint_corpus(
+    #[files("fuzz/corpus/parse_database_endpoint/*")] path: PathBuf,
+) {
+    let data = fs::read(&path).expect("corpus file");
+    let Ok(text) = str::from_utf8(&data) else {
+        return;
+    };
+    drop(parse_database_endpoint(Some(text)));
 }
 
 #[rstest]

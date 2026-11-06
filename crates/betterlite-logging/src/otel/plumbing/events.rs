@@ -6,6 +6,19 @@ use opentelemetry_sdk::logs::SdkLogger;
 
 use crate::otel::vocabulary::constants::attribute_keys::{exception_event, gen_ai_event};
 
+pub trait Clock: Send + Sync {
+    fn now(&self) -> SystemTime;
+}
+
+#[derive(Debug, Default)]
+pub struct SystemClock;
+
+impl Clock for SystemClock {
+    fn now(&self) -> SystemTime {
+        SystemTime::now()
+    }
+}
+
 pub struct OperationException<'span> {
     pub span_context: &'span SpanContext,
     pub error_type: &'span str,
@@ -17,6 +30,7 @@ pub struct OperationException<'span> {
 // The GenAI conventions record client exceptions as a WARN log event correlated to the failed span.
 pub struct GenAIEventRecorder {
     pub event_logger: SdkLogger,
+    pub clock: Box<dyn Clock>,
 }
 
 impl GenAIEventRecorder {
@@ -25,7 +39,7 @@ impl GenAIEventRecorder {
         let timestamp = exception
             .timestamp_ns
             .and_then(|nanos| UNIX_EPOCH.checked_add(Duration::from_nanos(nanos)))
-            .unwrap_or_else(SystemTime::now);
+            .unwrap_or_else(|| self.clock.now());
         record.set_timestamp(timestamp);
         record.set_trace_context(
             exception.span_context.trace_id(),
