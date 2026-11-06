@@ -61,29 +61,44 @@ fn assert_lookup(
 #[rstest]
 #[case::candidate_order(
     Call::Candidates,
-    "bedrock/invoke/us.anthropic.Claude-Sonnet-4.6-20260219-v1:0@x",
+    "bedrock/invoke/us.anthropic.Claude-Sonnet-4.6@x-20260219-v1:0",
     "{}",
     "{}",
-    r#"["bedrock/invoke/us.anthropic.Claude-Sonnet-4.6-20260219-v1:0@x",
-    "us.anthropic.Claude-Sonnet-4.6-20260219-v1:0@x",
-    "invoke/us.anthropic.Claude-Sonnet-4.6-20260219-v1:0@x",
-    "anthropic.Claude-Sonnet-4.6-20260219-v1:0@x",
-    "bedrock/anthropic.Claude-Sonnet-4.6-20260219-v1:0@x",
-    "bedrock/invoke/us.anthropic.Claude-Sonnet-4-6-20260219-v1:0@x",
-    "bedrock/invoke/us.anthropic.Claude-Sonnet-4.6-20260219-v1:0",
-    "us.anthropic.Claude-Sonnet-4-6-20260219-v1:0@x",
-    "us.anthropic.Claude-Sonnet-4.6-20260219-v1:0",
-    "invoke/us.anthropic.Claude-Sonnet-4-6-20260219-v1:0@x",
-    "invoke/us.anthropic.Claude-Sonnet-4.6-20260219-v1:0",
-    "anthropic.Claude-Sonnet-4-6-20260219-v1:0@x",
-    "anthropic.Claude-Sonnet-4.6-20260219-v1:0",
-    "bedrock/anthropic.Claude-Sonnet-4-6-20260219-v1:0@x",
-    "bedrock/anthropic.Claude-Sonnet-4.6-20260219-v1:0"]"#
+    r#"["bedrock/invoke/us.anthropic.Claude-Sonnet-4.6@x-20260219-v1:0",
+    "us.anthropic.Claude-Sonnet-4.6@x-20260219-v1:0",
+    "invoke/us.anthropic.Claude-Sonnet-4.6@x-20260219-v1:0",
+    "anthropic.Claude-Sonnet-4.6@x-20260219-v1:0",
+    "bedrock/anthropic.Claude-Sonnet-4.6@x-20260219-v1:0",
+    "bedrock/invoke/us.anthropic.Claude-Sonnet-4.6@x-20260219",
+    "bedrock/invoke/us.anthropic.Claude-Sonnet-4.6@x-20260219-v1",
+    "bedrock/invoke/us.anthropic.Claude-Sonnet-4-6@x-20260219-v1:0",
+    "bedrock/invoke/us.anthropic.Claude-Sonnet-4-6@x",
+    "bedrock/invoke/us.anthropic.Claude-Sonnet-4.6",
+    "us.anthropic.Claude-Sonnet-4.6@x-20260219",
+    "us.anthropic.Claude-Sonnet-4.6@x-20260219-v1",
+    "us.anthropic.Claude-Sonnet-4-6@x-20260219-v1:0",
+    "us.anthropic.Claude-Sonnet-4-6@x",
+    "us.anthropic.Claude-Sonnet-4.6",
+    "invoke/us.anthropic.Claude-Sonnet-4.6@x-20260219",
+    "invoke/us.anthropic.Claude-Sonnet-4.6@x-20260219-v1",
+    "invoke/us.anthropic.Claude-Sonnet-4-6@x-20260219-v1:0",
+    "invoke/us.anthropic.Claude-Sonnet-4-6@x",
+    "invoke/us.anthropic.Claude-Sonnet-4.6",
+    "anthropic.Claude-Sonnet-4.6@x-20260219",
+    "anthropic.Claude-Sonnet-4.6@x-20260219-v1",
+    "anthropic.Claude-Sonnet-4-6@x-20260219-v1:0",
+    "anthropic.Claude-Sonnet-4-6@x",
+    "anthropic.Claude-Sonnet-4.6",
+    "bedrock/anthropic.Claude-Sonnet-4.6@x-20260219",
+    "bedrock/anthropic.Claude-Sonnet-4.6@x-20260219-v1",
+    "bedrock/anthropic.Claude-Sonnet-4-6@x-20260219-v1:0",
+    "bedrock/anthropic.Claude-Sonnet-4-6@x",
+    "bedrock/anthropic.Claude-Sonnet-4.6"]"#
 )]
 #[case::catalog_precedence(
     Call::Capability,
     "claude-sonnet-4.6-20260219",
-    r#"{"claude-sonnet-4-6": {"flag": false}}"#,
+    r#"{"claude-sonnet-4.6": {"flag": false}}"#,
     r#"{"claude-sonnet-4.6-20260219": {"flag": true}}"#,
     "false"
 )]
@@ -95,11 +110,11 @@ fn assert_lookup(
     r#""catalog entry claude-sonnet-4-6 is not an object""#
 )]
 #[case::fast_host_only(
-    Call::FastMode("anthropic"),
+    Call::FastMode("bedrock"),
     "claude-opus-4-6",
     r#"{"claude-opus-4-6": {"supports_fast_mode": true}}"#,
     "{}",
-    "true"
+    "false"
 )]
 #[case::bare_prefix_raises(Call::Candidates, "invoke/global", "{}", "{}", r#"["invoke/global"]"#)]
 #[case::bare_prefix_after_bedrock(
@@ -254,6 +269,22 @@ fn assert_lookup(
     r#"{"m": null}"#,
     "{}",
     r#""catalog entry m is not an object""#
+)]
+#[case::fast_host_anthropic(
+    Call::FastMode("anthropic"),
+    "claude-opus-4-6",
+    r#"{"claude-opus-4-6": {"supports_fast_mode": true}}"#,
+    "{}",
+    "true"
+)]
+#[case::dated_release(
+    Call::Candidates,
+    "claude-sonnet-4.6-20260219",
+    "{}",
+    "{}",
+    r#"["claude-sonnet-4.6-20260219", "bedrock/claude-sonnet-4.6-20260219", "claude-sonnet-4.6",
+    "claude-sonnet-4-6-20260219", "claude-sonnet-4-6", "bedrock/claude-sonnet-4.6",
+    "bedrock/claude-sonnet-4-6-20260219", "bedrock/claude-sonnet-4-6"]"#
 )]
 fn anthropic_catalog_lookup_cases(
     #[case] call: Call,

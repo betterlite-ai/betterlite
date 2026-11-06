@@ -1,5 +1,5 @@
 kind: helper
 name: fast-host-only
-call: {anthropic_catalog_lookup: {function: fast_mode, model: claude-opus-4-6, provider: anthropic, runtime: {claude-opus-4-6: {supports_fast_mode: true}}}}
+call: {anthropic_catalog_lookup: {function: fast_mode, model: claude-opus-4-6, provider: bedrock, runtime: {claude-opus-4-6: {supports_fast_mode: true}}}}
 env: {}
 compare: {ignore: []}
