@@ -5,4 +5,4 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/mavvrik_destination.py#L118
   - what: An error body that is not valid UTF-8 is cut where the valid text ends, and the 200 and 400 limits count bytes.
     why: The rules refuse lossy decoding of bytes, and the task sets the limits in bytes. LiteLLM slices decoded text by characters and replaces bad bytes.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/mavvrik_destination.py#L79
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/mavvrik_destination.py#L159
