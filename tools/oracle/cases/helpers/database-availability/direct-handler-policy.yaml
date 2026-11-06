@@ -1,0 +1,53 @@
+kind: helper
+name: database-availability-direct-handler-policy
+call:
+  database_availability:
+    scenarios:
+      - chain:
+          - {kind: database, error_type: connect, message: connection refused}
+        allow_requests: true
+      - chain:
+          - {kind: database, error_type: connect, message: connection refused}
+        allow_requests: false
+      - chain:
+          - {kind: database, error_type: data, message: invalid byte sequence}
+        allow_requests: true
+      - chain:
+          - {kind: database, error_type: data, message: repository failed, cause: 1}
+          - {kind: database, error_type: connect, message: connection refused}
+        allow_requests: true
+      - chain:
+          - {kind: database, error_type: connect, message: connection refused}
+        allow_requests: 17
+      - chain:
+          - {kind: os, message: connection refused}
+        allow_requests: true
+      - chain:
+          - {kind: database, error_type: no_db_connection, message: no database}
+        allow_requests: true
+      - chain:
+          - {kind: database, error_type: engine_connection, message: engine is gone}
+        allow_requests: true
+      - chain:
+          - {kind: database, error_type: deadline, message: lookup deadline exceeded}
+        allow_requests: true
+      - chain:
+          - {kind: database, error_type: connect, message: connection refused}
+        allow_requests: "True"
+      - chain:
+          - {kind: database, error_type: connect, message: connection refused}
+        allow_requests: [true]
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/0/error/message, why: betterlite writes its own message}
+    - {pointer: /value/1/error/message, why: betterlite writes its own message}
+    - {pointer: /value/2/error/message, why: betterlite writes its own message}
+    - {pointer: /value/3/error/message, why: betterlite writes its own message}
+    - {pointer: /value/4/error/message, why: betterlite writes its own message}
+    - {pointer: /value/5/error/message, why: betterlite writes its own message}
+    - {pointer: /value/6/error/message, why: betterlite writes its own message}
+    - {pointer: /value/7/error/message, why: betterlite writes its own message}
+    - {pointer: /value/8/error/message, why: betterlite writes its own message}
+    - {pointer: /value/9/error/message, why: betterlite writes its own message}
+    - {pointer: /value/10/error/message, why: betterlite writes its own message}
