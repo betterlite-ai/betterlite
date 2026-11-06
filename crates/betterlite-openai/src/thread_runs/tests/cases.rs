@@ -104,6 +104,22 @@ async fn run_poll_completion() {
         "{error}"
     );
     assert_eq!(transport.requests().len(), 1);
+
+    let empty = RunRequest {
+        thread_id: String::new(),
+        ..request()
+    };
+    let (empty_api, empty_transport) = harness();
+    let rejected = empty_api
+        .run_thread(call(Some(false), Some(false)), &empty)
+        .await
+        .err()
+        .unwrap();
+    assert!(
+        matches!(rejected, ThreadRunsError::EmptyThreadId),
+        "{rejected}"
+    );
+    assert!(empty_transport.requests().is_empty());
 }
 
 async fn requires_action() {

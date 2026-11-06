@@ -40,5 +40,9 @@ call:
           replies:
             - {status: 200, headers: {content-type: application/json}, body: '{"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","thread_id":"thread_a","status":"queued","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}'}
             - {status: 404, headers: {content-type: application/json}, body: '{"error":{"message":"no run","type":"invalid_request_error"}}'}
+        - arun_thread: false
+          stream: false
+          request: {thread_id: '', assistant_id: asst_a, additional_instructions: null, instructions: null, metadata: null, model: null, tools: null}
+          replies: []
 env: {}
 compare: {ignore: []}

@@ -148,22 +148,20 @@ fn run_segments<'call>(
     run_id: &'call str,
 ) -> Result<[&'call str; 4], ThreadRunsError> {
     check_segment(thread_id, ThreadRunsError::EmptyThreadId)?;
-    if run_id.is_empty() {
-        return Err(ThreadRunsError::EmptyRunId);
-    }
-    if matches!(run_id, "." | "..") {
-        return Err(ThreadRunsError::DotSegment {
-            segment: run_id.to_owned(),
-        });
-    }
+    check_segment(run_id, ThreadRunsError::EmptyRunId)?;
     Ok(["threads", thread_id, "runs", run_id])
 }
 
+// The SDK refuses both the literal and the percent-encoded dot segments before building the path.
 fn check_segment(segment: &str, empty: ThreadRunsError) -> Result<(), ThreadRunsError> {
     if segment.is_empty() {
         return Err(empty);
     }
-    if matches!(segment, "." | "..") {
+    let folded = segment.to_ascii_lowercase();
+    if matches!(
+        folded.as_str(),
+        "." | ".." | "%2e" | "%2e%2e" | ".%2e" | "%2e."
+    ) {
         return Err(ThreadRunsError::DotSegment {
             segment: segment.to_owned(),
         });
