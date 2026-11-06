@@ -207,11 +207,10 @@ pub(super) async fn serve_once(
 ) -> (String, impl Future<Output = Received>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
-    let response_body = reply.to_owned();
     let served = async move {
         let (mut stream, _) = listener.accept().await.unwrap();
         let received = receive(&mut stream).await;
-        answer(&mut stream, status, &response_body).await;
+        answer(&mut stream, status, reply).await;
         received
     };
     (format!("http://{address}"), served)
@@ -264,11 +263,11 @@ async fn answer(stream: &mut TcpStream, status: u16, reply: &str) {
     stream.flush().await.unwrap();
 }
 
-pub(super) fn assert_metering_request(
-    received: &Received,
+pub(super) fn assert_metering_request<'received>(
+    received: &'received Received,
     content_type: &str,
     api_key: &str,
-) -> Vec<u8> {
+) -> &'received [u8] {
     assert_eq!(received.method, "POST");
     assert_eq!(received.path, "/api/v1/events");
     assert_eq!(
@@ -279,5 +278,5 @@ pub(super) fn assert_metering_request(
         received.headers.get("content-type").map(String::as_str),
         Some(content_type)
     );
-    received.body.clone()
+    &received.body
 }

@@ -30,7 +30,7 @@ async fn post_sends_the_bearer_header_and_json_body_through_the_http_sender() {
     let call = event();
     let (result, received) = tokio::join!(logger.log_success_event(&call), served);
     result.unwrap();
-    let body: LagoBody = serde_json::from_slice(&assert_metering_request(
+    let body: LagoBody = serde_json::from_slice(assert_metering_request(
         &received,
         "application/json",
         API_KEY,

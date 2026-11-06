@@ -31,7 +31,7 @@ async fn post_sends_the_bearer_header_and_cloudevent_through_the_http_sender() {
     result.unwrap();
     let content_type = "application/cloudevents+json";
     let body: CloudEventBody =
-        serde_json::from_slice(&assert_metering_request(&received, content_type, API_KEY)).unwrap();
+        serde_json::from_slice(assert_metering_request(&received, content_type, API_KEY)).unwrap();
     assert_eq!(body.source, "litellm-proxy");
     assert_eq!(body.subject, "end-user-1");
 }
