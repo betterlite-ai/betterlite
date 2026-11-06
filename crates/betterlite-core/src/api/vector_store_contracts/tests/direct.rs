@@ -203,6 +203,10 @@ async fn direct_executor_keeps_other_providers_credentials_out_of_the_body() {
     r#"{"additional_drop_params": ["user"], "user": "u", "encoding_format": "float"}"#,
     r#"{"encoding_format": "float"}"#
 )]
+#[case::encoding_format_stays(
+    r#"{"additional_drop_params": ["encoding_format"], "encoding_format": "float"}"#,
+    r#"{"encoding_format": "float"}"#
+)]
 #[case::unknown_parameter_stays(
     r#"{"additional_drop_params": ["input_type"], "input_type": "x"}"#,
     r#"{"input_type": "x"}"#

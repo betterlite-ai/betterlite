@@ -5,7 +5,7 @@ call:
   vector_store_embedding_executor:
     model: text-embedding-3-small
     query: hello
-    configuration: {api_key: sk-direct, timeout: 20, additional_drop_params: [dimensions, input_type], dimensions: 2, input_type: x, aws_secret_access_key: k, aws_region_name: r, vertex_project: p, vertex_credentials: c}
+    configuration: {api_key: sk-direct, timeout: 20, additional_drop_params: [dimensions, input_type, encoding_format], dimensions: 2, input_type: x, encoding_format: float, aws_secret_access_key: k, aws_region_name: r, vertex_project: p, vertex_credentials: c}
 upstream:
   - status: 200
     headers: {content-type: application/json}

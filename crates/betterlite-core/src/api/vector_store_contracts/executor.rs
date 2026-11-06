@@ -231,7 +231,8 @@ fn embedding_request(
                 return Err(VectorStoreEmbeddingError::DuplicateArgument { name: name.clone() });
             }
             "extra_body" => {}
-            "dimensions" | "encoding_format" | "user" if dropped.contains(&name.as_str()) => {}
+            // main.py writes the named encoding_format back after the drop, so it is always sent
+            "dimensions" | "user" if dropped.contains(&name.as_str()) => {}
             // only openai is served, and LiteLLM keeps aws_*, vertex_* and hf_model_name for other providers
             option
                 if CALL_ARGUMENTS.contains(&option)
