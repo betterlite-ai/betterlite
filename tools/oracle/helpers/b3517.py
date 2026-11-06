@@ -35,13 +35,6 @@ class _Handler:
             status, body = self._responses.pop(0)
         else:
             status, body = self._responses[0]
-        request = httpx.Request("GET", "http://sandbox.invalid")
-        if not httpx.codes.is_success(status):
-            raise httpx.HTTPStatusError(
-                "the API answered with an error status",
-                request=request,
-                response=httpx.Response(status, request=request),
-            )
         return _Response(status, body)
 
     async def get(
@@ -80,7 +73,15 @@ class _Handler:
                 "timeout": _timeout_fields(timeout),
             }
         )
-        return self._next()
+        response = self._next()
+        if not httpx.codes.is_success(response.status_code):
+            request = httpx.Request("POST", url)
+            raise httpx.HTTPStatusError(
+                "the API answered with an error status",
+                request=request,
+                response=httpx.Response(response.status_code, request=request),
+            )
+        return response
 
 
 def _timeout_fields(timeout: httpx.Timeout | None) -> dict[str, Json]:
