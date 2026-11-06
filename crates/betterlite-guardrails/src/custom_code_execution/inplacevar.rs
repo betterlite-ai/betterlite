@@ -87,22 +87,21 @@ impl InplaceOp {
 
 mod operators;
 
-use operators::{numeric, sequence};
+use operators::numeric;
+use operators::sequence::sequence;
 
 // `x += y` compiles to `x = _inplacevar_("+=", x, y)`, so this is the function that call resolves to.
 pub fn inplacevar(op: InplaceOp, left: &Value, right: &Value) -> Result<Value, InplaceError> {
     match op {
-        InplaceOp::Add | InplaceOp::Multiply => {
+        InplaceOp::Add | InplaceOp::Multiply | InplaceOp::BitOr | InplaceOp::Modulo => {
             sequence(op, left, right).unwrap_or_else(|| numeric(op, left, right))
         }
         other @ (InplaceOp::Subtract
         | InplaceOp::TrueDivide
         | InplaceOp::FloorDivide
-        | InplaceOp::Modulo
         | InplaceOp::Power
         | InplaceOp::MatrixMultiply
         | InplaceOp::BitAnd
-        | InplaceOp::BitOr
         | InplaceOp::BitXor
         | InplaceOp::ShiftLeft
         | InplaceOp::ShiftRight) => numeric(other, left, right),

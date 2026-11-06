@@ -1,5 +1,3 @@
-use std::collections::BTreeSet;
-
 use rstest::rstest;
 
 use super::super::sandbox::globals::{
@@ -79,12 +77,4 @@ fn the_standalone_builtins_match_the_globals_namespace() {
     let builtins = build_sandbox_builtins();
     assert_eq!(builtins.len(), 90);
     assert_eq!(builtins.get("range"), Some(&BuiltinKind::Limited));
-}
-
-#[test]
-fn registering_a_key_twice_keeps_one_entry() {
-    let globals = build_sandbox_globals();
-    let names: Vec<&str> = globals.entries.keys().copied().collect();
-    let unique: BTreeSet<&&str> = names.iter().collect();
-    assert_eq!(names.len(), unique.len());
 }

@@ -5,12 +5,21 @@ use tree_sitter::{Language, Node, Parser, Tree};
 use super::error::CompileError;
 
 mod checks;
+mod rules;
 
-use checks::{NameKind, check_call, check_name};
+use rules::{definition_rules, expression_rules, statement_rules};
 
 const MAX_DEPTH: usize = 200;
 const BUDGET_GUARD: &str = "_budget_ok_() and (";
-const ITER_GUARD: &str = "_getiter_";
+const ITER_GUARD: &str = "_getiter_((";
+
+// What the walker knows about its enclosing statement: return needs a function, break a loop, await an async one.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Scope {
+    pub function_depth: usize,
+    pub loop_depth: usize,
+    pub is_async: bool,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Function {
@@ -46,44 +55,58 @@ pub fn analyze(tree: &Tree, source: &str, filename: &str) -> Result<Analysis, Co
     let root = tree.root_node();
     if root.has_error() {
         let broken = first_error(root).unwrap_or(root);
-        let line = u32::try_from(broken.start_position().row.saturating_add(1)).unwrap_or(u32::MAX);
-        return Err(CompileError::syntax(filename, line, "invalid syntax"));
+        return Err(CompileError::syntax(
+            filename,
+            u32::try_from(broken.start_position().row.saturating_add(1)).unwrap_or(u32::MAX),
+            "invalid syntax",
+        ));
     }
     let mut analysis = Analysis::default();
-    walk(root, source, filename, 0, &mut analysis)?;
+    walk(root, (source, filename), 0, Scope::default(), &mut analysis)?;
     Ok(analysis)
 }
 
-fn first_error(node: Node<'_>) -> Option<Node<'_>> {
-    if node.is_error() || node.is_missing() {
-        return Some(node);
+pub(super) fn first_error(root: Node<'_>) -> Option<Node<'_>> {
+    let mut stack = vec![(root, 0_usize)];
+    while let Some((node, depth)) = stack.pop() {
+        if node.is_error() || node.is_missing() {
+            return Some(node);
+        }
+        if depth >= MAX_DEPTH {
+            continue;
+        }
+        for index in (0..node.child_count()).rev() {
+            if let Some(child) = node.child(index)
+                && child.has_error()
+            {
+                stack.push((child, depth.saturating_add(1)));
+            }
+        }
     }
-    let mut cursor = node.walk();
-    node.children(&mut cursor)
-        .filter(Node::has_error)
-        .find_map(first_error)
+    None
 }
 
 fn check_node(
     node: Node<'_>,
     source: &str,
     filename: &str,
-    line: u32,
+    scope: Scope,
     analysis: &mut Analysis,
 ) -> Result<(), CompileError> {
+    let line = u32::try_from(node.start_position().row.saturating_add(1)).unwrap_or(u32::MAX);
     if let Some(reason) = forbidden(node.kind()) {
         return Err(CompileError::forbidden(filename, line, reason.to_owned()));
     }
-    if node.kind() == "function_definition" {
-        record_function(node, source, filename, line, analysis)?;
-    }
+    statement_rules(node, filename, line, scope)?;
+    expression_rules(node, source, filename, line)?;
+    definition_rules(node, source, filename, scope, analysis)?;
     if matches!(
         node.kind(),
         "while_statement" | "for_statement" | "for_in_clause"
     ) {
         loop_guard(node, analysis);
     }
-    check_details(node, source, filename, line)
+    Ok(())
 }
 
 fn forbidden(kind: &str) -> Option<&'static str> {
@@ -93,59 +116,33 @@ fn forbidden(kind: &str) -> Option<&'static str> {
             Some("import statements are not allowed in the sandbox")
         }
         "nonlocal_statement" => Some("nonlocal statements are not allowed in the sandbox"),
+        "print_statement" => Some("Python 2 print statements are not allowed in the sandbox"),
+        "exec_statement" => Some("Exec calls are not allowed."),
         _ => None,
     }
 }
 
-fn check_details(
-    node: Node<'_>,
-    source: &str,
-    filename: &str,
-    line: u32,
-) -> Result<(), CompileError> {
-    match node.kind() {
-        "attribute" => {
-            let field = node.child_by_field_name("attribute");
-            field.map_or(Ok(()), |attribute| {
-                check_name(
-                    source.get(attribute.byte_range()).unwrap_or_default(),
-                    filename,
-                    line,
-                    NameKind::Attribute,
-                )
-            })
-        }
-        "call" => {
-            let field = node
-                .child_by_field_name("function")
-                .filter(|function| function.kind() == "identifier");
-            field.map_or(Ok(()), |function| {
-                check_call(
-                    source.get(function.byte_range()).unwrap_or_default(),
-                    filename,
-                    line,
-                )
-            })
-        }
-        "identifier" => {
-            let attribute = node
-                .parent()
-                .is_some_and(|parent| parent.kind() == "attribute");
-            if attribute {
-                return Ok(());
-            }
-            check_name(
-                source.get(node.byte_range()).unwrap_or_default(),
-                filename,
-                line,
-                NameKind::Variable,
-            )
-        }
-        _ => Ok(()),
+fn scope_after(node: Node<'_>, scope: Scope) -> Scope {
+    if node.kind() == "function_definition" {
+        let mut cursor = node.walk();
+        return Scope {
+            function_depth: scope.function_depth.saturating_add(1),
+            loop_depth: 0,
+            is_async: node
+                .children(&mut cursor)
+                .any(|child| child.kind() == "async"),
+        };
     }
+    if matches!(node.kind(), "for_statement" | "while_statement") {
+        return Scope {
+            loop_depth: scope.loop_depth.saturating_add(1),
+            ..scope
+        };
+    }
+    scope
 }
 
-// A while test is prefixed with `_budget_ok_()` and a for iterable wrapped in `_getiter_`, so a loop stops at the deadline.
+// While tests and sync for iterables get their guards; an async for keeps its bare iterable, as visit_AsyncFor adds none.
 fn loop_guard(node: Node<'_>, analysis: &mut Analysis) {
     if let Some(condition) = node.child_by_field_name("condition") {
         analysis.edits.push(Edit {
@@ -157,10 +154,18 @@ fn loop_guard(node: Node<'_>, analysis: &mut Analysis) {
             text: ")".to_owned(),
         });
     }
+    let mut cursor = node.walk();
+    let is_async = node
+        .children(&mut cursor)
+        .any(|child| child.kind() == "async");
+    let guarded = node.kind() == "for_in_clause" || (node.kind() == "for_statement" && !is_async);
+    if !guarded {
+        return;
+    }
     if let Some(iterable) = node.child_by_field_name("right") {
         analysis.edits.push(Edit {
             position: iterable.start_byte(),
-            text: format!("{ITER_GUARD}(("),
+            text: ITER_GUARD.to_owned(),
         });
         analysis.edits.push(Edit {
             position: iterable.end_byte(),
@@ -171,11 +176,12 @@ fn loop_guard(node: Node<'_>, analysis: &mut Analysis) {
 
 fn walk(
     node: Node<'_>,
-    source: &str,
-    filename: &str,
+    location: (&str, &str),
     depth: usize,
+    scope: Scope,
     analysis: &mut Analysis,
 ) -> Result<(), CompileError> {
+    let (source, filename) = location;
     let line = u32::try_from(node.start_position().row.saturating_add(1)).unwrap_or(u32::MAX);
     if depth > MAX_DEPTH {
         return Err(CompileError::syntax(
@@ -184,47 +190,20 @@ fn walk(
             "the guardrail program nests too deeply",
         ));
     }
-    check_node(node, source, filename, line, analysis)?;
+    check_node(node, source, filename, scope, analysis)?;
+    let child_scope = scope_after(node, scope);
     let mut cursor = node.walk();
     let children: Vec<Node<'_>> = node.named_children(&mut cursor).collect();
     for child in children {
-        walk(child, source, filename, depth.saturating_add(1), analysis)?;
+        walk(
+            child,
+            location,
+            depth.saturating_add(1),
+            child_scope,
+            analysis,
+        )?;
     }
     Ok(())
-}
-
-fn record_function(
-    node: Node<'_>,
-    source: &str,
-    filename: &str,
-    line: u32,
-    analysis: &mut Analysis,
-) -> Result<(), CompileError> {
-    let name = node.child_by_field_name("name").map_or("", |field| {
-        source.get(field.byte_range()).unwrap_or_default()
-    });
-    check_name(name, filename, line, NameKind::Variable)?;
-    if let Some(function) = module_function(node, name) {
-        analysis.functions.push(function);
-    }
-    Ok(())
-}
-
-// Only a definition at module level is callable from outside; a nested one belongs to its enclosing body.
-fn module_function(node: Node<'_>, name: &str) -> Option<Function> {
-    if node.parent().is_none_or(|parent| parent.kind() != "module") {
-        return None;
-    }
-    Some(Function {
-        name: name.to_owned(),
-        is_async: has_async(node),
-    })
-}
-
-fn has_async(node: Node<'_>) -> bool {
-    let mut cursor = node.walk();
-    node.children(&mut cursor)
-        .any(|child| child.kind() == "async")
 }
 
 // Applies the insertions from the end of the source backwards, so an earlier position stays valid.

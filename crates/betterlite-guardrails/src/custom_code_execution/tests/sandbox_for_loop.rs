@@ -39,13 +39,10 @@ fn wraps_a_trailing_comma_iterable_as_one_argument() {
 }
 
 #[test]
-fn wraps_the_iterable_of_an_async_for() {
+fn an_async_for_keeps_its_iterable_bare() {
     let program = compiled("async def f(stream):\n    async for chunk in stream:\n        pass\n");
-    assert!(
-        program
-            .source
-            .contains("async for chunk in _getiter_((stream)):")
-    );
+    assert!(program.source.contains("async for chunk in stream:"));
+    assert!(!program.source.contains("_getiter_((stream))"));
 }
 
 #[test]

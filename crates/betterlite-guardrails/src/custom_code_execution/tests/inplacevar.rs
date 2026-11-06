@@ -103,6 +103,14 @@ fn divides_like_python() {
         Ok(Value::Float(2.5))
     );
     assert_eq!(
+        inplacevar(InplaceOp::TrueDivide, &Value::Int(1), &Value::Int(3)),
+        Ok(Value::Float(0.333_333_333_333_333_3))
+    );
+    assert_eq!(
+        inplacevar(InplaceOp::TrueDivide, &Value::Int(2), &Value::Int(3)),
+        Ok(Value::Float(0.666_666_666_666_666_6))
+    );
+    assert_eq!(
         inplacevar(InplaceOp::FloorDivide, &Value::Int(-7), &Value::Int(2)),
         Ok(Value::Int(-4))
     );
@@ -207,5 +215,111 @@ fn a_zero_or_negative_count_gives_an_empty_value() {
             &Value::Int(0x0010_0001)
         ),
         Err(InplaceError::RepetitionTooLong)
+    );
+}
+
+#[test]
+fn shifts_check_the_result_and_saturate_like_python() {
+    assert_eq!(
+        inplacevar(InplaceOp::ShiftLeft, &Value::Int(3), &Value::Int(62)),
+        Err(InplaceError::Overflow { symbol: "<<=" })
+    );
+    assert_eq!(
+        inplacevar(InplaceOp::ShiftRight, &Value::Int(1), &Value::Int(64)),
+        Ok(Value::Int(0))
+    );
+    assert_eq!(
+        inplacevar(InplaceOp::ShiftRight, &Value::Int(-1), &Value::Int(64)),
+        Ok(Value::Int(-1))
+    );
+    assert_eq!(
+        inplacevar(InplaceOp::ShiftLeft, &Value::Int(1), &Value::Int(10)),
+        Ok(Value::Int(1024))
+    );
+}
+
+#[test]
+fn booleans_act_as_integers_and_keep_boolean_bitwise_results() {
+    assert_eq!(
+        inplacevar(InplaceOp::Add, &Value::Bool(true), &Value::Int(1)),
+        Ok(Value::Int(2))
+    );
+    assert_eq!(
+        inplacevar(InplaceOp::Add, &Value::Int(1), &Value::Bool(true)),
+        Ok(Value::Int(2))
+    );
+    assert_eq!(
+        inplacevar(InplaceOp::BitOr, &Value::Bool(false), &Value::Bool(true)),
+        Ok(Value::Bool(true))
+    );
+    assert_eq!(
+        inplacevar(InplaceOp::BitAnd, &Value::Bool(true), &Value::Bool(false)),
+        Ok(Value::Bool(false))
+    );
+}
+
+#[test]
+fn a_list_extends_from_a_tuple_and_a_dict_updates_from_another() {
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Add,
+            &Value::List(vec![Value::Int(1)]),
+            &Value::Tuple(vec![Value::Int(2)])
+        ),
+        Ok(Value::List(vec![Value::Int(1), Value::Int(2)]))
+    );
+    let mut first = IndexMap::new();
+    first.insert("a".to_owned(), Value::Int(1));
+    let mut second = IndexMap::new();
+    second.insert("b".to_owned(), Value::Int(2));
+    let mut merged = first.clone();
+    merged.insert("b".to_owned(), Value::Int(2));
+    assert_eq!(
+        inplacevar(InplaceOp::BitOr, &Value::Dict(first), &Value::Dict(second)),
+        Ok(Value::Dict(merged))
+    );
+}
+
+#[test]
+fn a_string_percent_formats_its_value() {
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Modulo,
+            &Value::Str("%s".to_owned()),
+            &Value::Int(1)
+        ),
+        Ok(Value::Str("1".to_owned()))
+    );
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Modulo,
+            &Value::Str("%d".to_owned()),
+            &Value::Int(5)
+        ),
+        Ok(Value::Str("5".to_owned()))
+    );
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Modulo,
+            &Value::Str("plain".to_owned()),
+            &Value::Int(1)
+        ),
+        Ok(Value::Str("plain".to_owned()))
+    );
+    assert!(matches!(
+        inplacevar(
+            InplaceOp::Modulo,
+            &Value::Str("%s %s".to_owned()),
+            &Value::Int(1)
+        ),
+        Err(InplaceError::UnsupportedOperand { .. })
+    ));
+}
+
+#[test]
+fn a_negative_exponent_gives_a_float() {
+    assert_eq!(
+        inplacevar(InplaceOp::Power, &Value::Int(2), &Value::Int(-1)),
+        Ok(Value::Float(0.5))
     );
 }

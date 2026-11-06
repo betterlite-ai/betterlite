@@ -1,4 +1,5 @@
 use std::future::{pending, ready};
+use std::thread;
 use std::time::{Duration, Instant};
 
 use tokio::time::sleep;
@@ -76,5 +77,30 @@ async fn an_ordinary_failure_crosses_the_task_boundary_unchanged() {
     assert!(matches!(
         result,
         Err(ExecutionError::Sandbox(SandboxError::Failed("bad")))
+    ));
+}
+
+#[tokio::test]
+async fn a_success_that_lands_after_the_deadline_is_a_timeout() {
+    let late = async {
+        thread::park_timeout(Duration::from_millis(60));
+        Ok::<u8, SandboxError<&'static str>>(1)
+    };
+    let result = await_with_timeout(late, Duration::from_millis(10), "late-ok").await;
+    assert!(matches!(result, Err(ExecutionError::Timeout(_))));
+}
+
+#[tokio::test]
+async fn a_failure_that_lands_after_the_deadline_stays_a_failure() {
+    let late = async {
+        thread::park_timeout(Duration::from_millis(60));
+        Err::<u8, _>(SandboxError::Failed("late failure"))
+    };
+    let result = await_with_timeout(late, Duration::from_millis(10), "late-fail").await;
+    assert!(matches!(
+        result,
+        Err(ExecutionError::Sandbox(SandboxError::Failed(
+            "late failure"
+        )))
     ));
 }

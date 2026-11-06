@@ -1,10 +1,7 @@
 use rust_decimal::Decimal;
-use rust_decimal::prelude::ToPrimitive as _;
 
 use super::super::value::Value;
 use super::{InplaceError, InplaceOp};
-
-const MAX_REPEATED_ITEMS: usize = 0x0010_0000;
 
 #[must_use]
 pub(super) const fn unsupported(op: InplaceOp, left: &Value, right: &Value) -> InplaceError {
@@ -15,14 +12,25 @@ pub(super) const fn unsupported(op: InplaceOp, left: &Value, right: &Value) -> I
     }
 }
 
-const fn integer_pair(
-    op: InplaceOp,
-    left: &Value,
-    right: &Value,
-) -> Result<(i64, i64), InplaceError> {
-    match (left, right) {
-        (Value::Int(first), Value::Int(second)) => Ok((*first, *second)),
+fn integer_pair(op: InplaceOp, left: &Value, right: &Value) -> Result<(i64, i64), InplaceError> {
+    match (integer(left), integer(right)) {
+        (Some(first), Some(second)) => Ok((first, second)),
         _ => Err(unsupported(op, left, right)),
+    }
+}
+
+// Python treats bool as an integer in arithmetic; the bitwise operators keep bool results separately.
+pub(super) fn integer(value: &Value) -> Option<i64> {
+    match value {
+        Value::Int(number) => Some(*number),
+        Value::Bool(flag) => Some(i64::from(*flag)),
+        Value::None
+        | Value::Float(_)
+        | Value::Str(_)
+        | Value::Bytes(_)
+        | Value::List(_)
+        | Value::Tuple(_)
+        | Value::Dict(_) => None,
     }
 }
 
@@ -62,11 +70,14 @@ fn float_quotient(first: i64, second: i64) -> Result<Value, InplaceError> {
         return Err(InplaceError::DivideByZero);
     }
     let symbol = InplaceOp::TrueDivide.symbol();
-    Decimal::from(first)
+    let quotient = Decimal::from(first)
         .checked_div(Decimal::from(second))
-        .and_then(|value| value.to_f64())
+        .ok_or(InplaceError::Overflow { symbol })?;
+    // f64 parsing is correctly rounded, which Decimal::to_f64 is not.
+    format!("{quotient}")
+        .parse::<f64>()
         .map(Value::Float)
-        .ok_or(InplaceError::Overflow { symbol })
+        .map_err(|_error| InplaceError::Overflow { symbol })
 }
 
 type IntOperation = fn(i64, i64) -> Option<i64>;
@@ -91,8 +102,7 @@ pub(super) fn numeric(op: InplaceOp, left: &Value, right: &Value) -> Result<Valu
         return Ok(Value::Int(remainder));
     }
     if op == InplaceOp::Power {
-        let exponent = u32::try_from(second).map_err(|_error| unsupported(op, left, right))?;
-        return int_result(op, first.checked_pow(exponent));
+        return power(op, first, second, left, right);
     }
     if op == InplaceOp::TrueDivide {
         return float_quotient(first, second);
@@ -100,14 +110,54 @@ pub(super) fn numeric(op: InplaceOp, left: &Value, right: &Value) -> Result<Valu
     bitwise(op, left, right)
 }
 
+fn power(
+    op: InplaceOp,
+    first: i64,
+    second: i64,
+    left: &Value,
+    right: &Value,
+) -> Result<Value, InplaceError> {
+    if second < 0 {
+        let magnitude =
+            u32::try_from(second.unsigned_abs()).map_err(|_error| unsupported(op, left, right))?;
+        let symbol = op.symbol();
+        let denominator = first
+            .checked_pow(magnitude)
+            .ok_or(InplaceError::Overflow { symbol })?;
+        return float_quotient(1, denominator);
+    }
+    let exponent = u32::try_from(second).map_err(|_error| unsupported(op, left, right))?;
+    int_result(op, first.checked_pow(exponent))
+}
+
 fn bitwise(op: InplaceOp, left: &Value, right: &Value) -> Result<Value, InplaceError> {
+    if let (Value::Bool(first), Value::Bool(second)) = (left, right)
+        && matches!(op, InplaceOp::BitAnd | InplaceOp::BitOr | InplaceOp::BitXor)
+    {
+        let flag = match op {
+            InplaceOp::BitAnd => *first && *second,
+            InplaceOp::BitOr => *first || *second,
+            InplaceOp::BitXor => *first ^ *second,
+            InplaceOp::Add
+            | InplaceOp::Subtract
+            | InplaceOp::Multiply
+            | InplaceOp::TrueDivide
+            | InplaceOp::FloorDivide
+            | InplaceOp::Modulo
+            | InplaceOp::Power
+            | InplaceOp::MatrixMultiply
+            | InplaceOp::ShiftLeft
+            | InplaceOp::ShiftRight => return Err(unsupported(op, left, right)),
+        };
+        return Ok(Value::Bool(flag));
+    }
     let (first, second) = integer_pair(op, left, right)?;
     let bits = match op {
         InplaceOp::BitAnd => first & second,
         InplaceOp::BitOr => first | second,
         InplaceOp::BitXor => first ^ second,
-        InplaceOp::ShiftLeft => return shifted_value(op, first, second, i64::checked_shl),
-        InplaceOp::ShiftRight => return shifted_value(op, first, second, i64::checked_shr),
+        InplaceOp::ShiftLeft => return shift_left(op, first, second),
+        InplaceOp::ShiftRight => return shift_right(op, first, second),
         other @ (InplaceOp::Add
         | InplaceOp::Subtract
         | InplaceOp::Multiply
@@ -120,88 +170,35 @@ fn bitwise(op: InplaceOp, left: &Value, right: &Value) -> Result<Value, InplaceE
     Ok(Value::Int(bits))
 }
 
-fn shifted_value(
-    op: InplaceOp,
-    first: i64,
-    second: i64,
-    shift: fn(i64, u32) -> Option<i64>,
-) -> Result<Value, InplaceError> {
+fn shift_left(op: InplaceOp, first: i64, second: i64) -> Result<Value, InplaceError> {
     let symbol = op.symbol();
     let amount = u32::try_from(second).map_err(|_error| InplaceError::Overflow { symbol })?;
-    let value = shift(first, amount).ok_or(InplaceError::Overflow { symbol })?;
-    Ok(Value::Int(value))
+    if amount >= 64 {
+        return if first == 0 {
+            Ok(Value::Int(0))
+        } else {
+            Err(InplaceError::Overflow { symbol })
+        };
+    }
+    let shifted = first
+        .checked_shl(amount)
+        .ok_or(InplaceError::Overflow { symbol })?;
+    if shifted >> amount == first {
+        return Ok(Value::Int(shifted));
+    }
+    Err(InplaceError::Overflow { symbol })
 }
 
-fn repeated_length(length: usize, count: i64) -> Result<usize, InplaceError> {
-    let times = usize::try_from(count).unwrap_or(0);
-    let total = length
-        .checked_mul(times)
-        .ok_or(InplaceError::RepetitionTooLong)?;
-    if total > MAX_REPEATED_ITEMS {
-        return Err(InplaceError::RepetitionTooLong);
+fn shift_right(op: InplaceOp, first: i64, second: i64) -> Result<Value, InplaceError> {
+    let symbol = op.symbol();
+    let amount = u32::try_from(second).map_err(|_error| InplaceError::Overflow { symbol })?;
+    if amount >= 64 {
+        return Ok(Value::Int(if first < 0 { -1 } else { 0 }));
     }
-    Ok(times)
+    first
+        .checked_shr(amount)
+        .map(Value::Int)
+        .ok_or(InplaceError::Overflow { symbol })
 }
 
-fn repeated_items(items: &[Value], count: i64) -> Result<Vec<Value>, InplaceError> {
-    let times = repeated_length(items.len(), count)?;
-    let mut repeated = Vec::new();
-    for _ in 0..times {
-        repeated.extend(items.iter().cloned());
-    }
-    Ok(repeated)
-}
-
-pub(super) fn sequence(
-    op: InplaceOp,
-    left: &Value,
-    right: &Value,
-) -> Option<Result<Value, InplaceError>> {
-    if op == InplaceOp::Add {
-        return concatenate(left, right);
-    }
-    if op == InplaceOp::Multiply {
-        return repetition(left, right);
-    }
-    None
-}
-
-fn concatenate(left: &Value, right: &Value) -> Option<Result<Value, InplaceError>> {
-    if let (Value::Str(first), Value::Str(second)) = (left, right) {
-        return Some(Ok(Value::Str(format!("{first}{second}"))));
-    }
-    if let (Value::Bytes(first), Value::Bytes(second)) = (left, right) {
-        let mut joined = first.clone();
-        joined.extend_from_slice(second);
-        return Some(Ok(Value::Bytes(joined)));
-    }
-    if let (Value::List(first), Value::List(second)) = (left, right) {
-        let mut joined = first.clone();
-        joined.extend(second.iter().cloned());
-        return Some(Ok(Value::List(joined)));
-    }
-    if let (Value::Tuple(first), Value::Tuple(second)) = (left, right) {
-        let mut joined = first.clone();
-        joined.extend(second.iter().cloned());
-        return Some(Ok(Value::Tuple(joined)));
-    }
-    None
-}
-
-fn repetition(left: &Value, right: &Value) -> Option<Result<Value, InplaceError>> {
-    match (left, right) {
-        (Value::Str(text), Value::Int(count)) | (Value::Int(count), Value::Str(text)) => {
-            Some(repeated_length(text.len(), *count).map(|times| Value::Str(text.repeat(times))))
-        }
-        (Value::Bytes(text), Value::Int(count)) | (Value::Int(count), Value::Bytes(text)) => {
-            Some(repeated_length(text.len(), *count).map(|times| Value::Bytes(text.repeat(times))))
-        }
-        (Value::List(items), Value::Int(count)) | (Value::Int(count), Value::List(items)) => {
-            Some(repeated_items(items, *count).map(Value::List))
-        }
-        (Value::Tuple(items), Value::Int(count)) | (Value::Int(count), Value::Tuple(items)) => {
-            Some(repeated_items(items, *count).map(Value::Tuple))
-        }
-        _ => None,
-    }
-}
+pub(crate) mod sequence;

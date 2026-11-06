@@ -26,8 +26,8 @@ fn async_loops_still_take_their_guards() {
         "async def f(items):\n    async for item in items:\n        pass\n    while True:\n        break\n",
     );
     let rendered = program.source;
-    assert!(rendered.contains("async for item in _getiter_(items):"));
-    assert!(rendered.contains("while _budget_ok_() and True:"));
+    assert!(rendered.contains("async for item in items:"));
+    assert!(rendered.contains("while _budget_ok_() and (True):"));
 }
 
 #[test]

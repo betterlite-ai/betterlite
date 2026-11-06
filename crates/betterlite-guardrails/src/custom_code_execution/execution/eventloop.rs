@@ -10,16 +10,20 @@ use super::error::{
 };
 use super::interrupt::cancel_task;
 
-// Turns an ExecutionInterrupted through the pending work into the call's timeout, and a late result into one too.
+// A late successful result becomes the call's timeout; a failure keeps its own type, as the source's _contain does.
 async fn contain<T, E, F>(pending: F, timeout: Duration) -> Result<T, ExecutionError<E>>
 where
     F: Future<Output = Result<T, SandboxError<E>>>,
 {
-    let outcome = pending.await.map_err(|error| sandbox_error(error, timeout));
-    if deadline::past_deadline() {
-        return Err(ExecutionError::Timeout(ExecutionTimeoutError { timeout }));
+    match pending.await {
+        Ok(value) => {
+            if deadline::past_deadline() {
+                return Err(ExecutionError::Timeout(ExecutionTimeoutError { timeout }));
+            }
+            Ok(value)
+        }
+        Err(error) => Err(sandbox_error(error, timeout)),
     }
-    outcome
 }
 
 // Awaits work on the event loop under a deadline and gives it up at that deadline.

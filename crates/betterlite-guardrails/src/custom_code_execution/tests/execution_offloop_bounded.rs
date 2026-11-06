@@ -3,11 +3,13 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 use tokio::time::sleep;
+use tokio::time::timeout as deadline_timeout;
 
 use super::super::deadline::budget_ok;
 use super::super::execution::error::{ExecutionError, SandboxError};
+use super::super::execution::interrupt::{INTERRUPT_GRACE, INTERRUPT_POLL};
 use super::super::execution::offloop::call_off_loop_with_timeout;
-use super::{LONG, SHORT};
+use super::{LONG, SHORT, budget_worker, captured_logs};
 
 #[tokio::test]
 async fn returns_the_value_the_worker_produced() {
@@ -66,4 +68,62 @@ async fn a_worker_stuck_outside_a_budget_check_still_times_out_on_schedule() {
     .await;
     assert!(matches!(result, Err(ExecutionError::Timeout(_))));
     assert!(start.elapsed() < Duration::from_secs(3));
+}
+
+#[test]
+fn the_offloop_interrupt_grace_and_poll_match_the_synchronous_path() {
+    assert_eq!(INTERRUPT_GRACE, Duration::from_secs(1));
+    assert_eq!(INTERRUPT_POLL, Duration::from_millis(50));
+}
+
+#[tokio::test]
+async fn a_stuck_worker_spends_the_grace_period_and_is_logged() {
+    let _logs = captured_logs();
+    let start = Instant::now();
+    let result: Result<(), ExecutionError<&'static str>> = call_off_loop_with_timeout(
+        || {
+            thread::park_timeout(Duration::from_secs(5));
+            Ok(())
+        },
+        SHORT,
+        "stuck-offloop",
+    )
+    .await;
+    assert!(matches!(result, Err(ExecutionError::Timeout(_))));
+    assert!(
+        start.elapsed() >= INTERRUPT_GRACE,
+        "the caller returned after {:?}",
+        start.elapsed()
+    );
+    assert!(
+        captured_logs().contains("guardrail-code:stuck-offloop is still running"),
+        "the stuck worker was not logged"
+    );
+}
+
+#[tokio::test]
+async fn a_worker_sees_its_budget_expire_at_the_deadline() {
+    let (sender, receiver) = sync_channel(1);
+    let result: Result<(), ExecutionError<&'static str>> = call_off_loop_with_timeout(
+        move || budget_worker(&sender),
+        SHORT,
+        "budget-signal-offloop",
+    )
+    .await;
+    assert!(matches!(result, Err(ExecutionError::Timeout(_))));
+    receiver.recv_timeout(Duration::from_secs(2)).unwrap();
+}
+
+#[tokio::test]
+async fn dropping_the_future_interrupts_the_worker() {
+    let (sender, receiver) = sync_channel(1);
+    let work = move || budget_worker(&sender);
+    let dropped = deadline_timeout(Duration::from_millis(30), async {
+        let outcome: Result<(), ExecutionError<&'static str>> =
+            call_off_loop_with_timeout(work, LONG, "cancel").await;
+        outcome
+    })
+    .await;
+    dropped.unwrap_err();
+    receiver.recv_timeout(Duration::from_secs(2)).unwrap();
 }

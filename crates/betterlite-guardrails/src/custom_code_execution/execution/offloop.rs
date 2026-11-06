@@ -1,4 +1,6 @@
 use std::sync::Arc;
+use std::sync::atomic::Ordering;
+use std::thread;
 use std::time::{Duration, Instant};
 
 use tokio::task::JoinSet;
@@ -12,12 +14,25 @@ use super::error::{
 use super::interrupt::interrupt_worker;
 use super::settle::settle;
 
-// Sets the interrupt flag when the waiting future is dropped, so the worker's next budget check raises.
-struct InterruptOnCancel(InterruptGate);
+// On cancellation a daemon thread keeps interrupting the worker and logs it stuck, as LiteLLM does.
+struct InterruptOnCancel {
+    gate: InterruptGate,
+    label: String,
+}
 
 impl Drop for InterruptOnCancel {
     fn drop(&mut self) {
-        let _requested = self.0.interrupt();
+        if self.gate.interrupted.load(Ordering::SeqCst) {
+            return;
+        }
+        let gate = self.gate.clone();
+        let label = self.label.clone();
+        let spawned = thread::Builder::new()
+            .name(format!("guardrail-interrupt:{}", self.label))
+            .spawn(move || interrupt_worker(&gate, || false, &label));
+        if spawned.is_err() {
+            tracing::error!("could not start the guardrail interrupt thread");
+        }
     }
 }
 
@@ -37,7 +52,10 @@ where
         .checked_add(timeout)
         .ok_or(ExecutionError::TimeoutOutOfRange { timeout })?;
     let gate = InterruptGate::new();
-    let _cancel = InterruptOnCancel(gate.clone());
+    let _cancel = InterruptOnCancel {
+        gate: gate.clone(),
+        label: label.to_owned(),
+    };
     let mut workers = JoinSet::new();
     let worker_gate = gate.clone();
     workers.spawn_blocking(move || {
@@ -62,7 +80,7 @@ where
             let interrupt_gate = gate.clone();
             let name = label.to_owned();
             interrupts.spawn_blocking(move || interrupt_worker(&interrupt_gate, || false, &name));
-            interrupts.shutdown().await;
+            let _interrupted = interrupts.join_next().await;
             drop(workers);
             Err(ExecutionError::Timeout(ExecutionTimeoutError { timeout }))
         }

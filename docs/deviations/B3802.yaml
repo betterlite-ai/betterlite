@@ -16,7 +16,7 @@ deviations:
     why: Aborting a Tokio task takes effect at its next await point and has no hook for ignoring cancellation.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/bounded_execution.py#L192-L200
   - what: _inplacevar_ covers integer arithmetic, sequence concatenation, repetition and /= on two integers; float operands and matrix multiplication report an unsupported operand.
-    why: The value model has no host numeric types, and the lint table forbids float arithmetic in Rust.
+    why: The value model has no host numeric types, the lint table forbids float arithmetic, and integers are 64-bit so a value or intermediate above i64 reports an overflow.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/sandbox.py#L103-L111
   - what: Source nesting deeper than 200 levels is rejected at compile time, and a repeated text or list larger than one million items is refused by _inplacevar_.
     why: Both are ways for untrusted source to exhaust the stack or memory before a deadline applies.

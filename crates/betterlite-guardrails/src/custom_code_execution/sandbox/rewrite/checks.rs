@@ -1,6 +1,17 @@
 use super::super::error::CompileError;
 
-const FORBIDDEN_NAMES: [&str; 4] = ["print", "printed", "builtins", "breakpoint"];
+const RESERVED_NAMES: [&str; 2] = ["builtins", "breakpoint"];
+
+const ALLOWED_METHODS: [&str; 8] = [
+    "__init__",
+    "__contains__",
+    "__lt__",
+    "__le__",
+    "__eq__",
+    "__ne__",
+    "__gt__",
+    "__ge__",
+];
 
 const INSPECT_ATTRIBUTES: [&str; 20] = [
     "tb_frame",
@@ -28,6 +39,7 @@ const INSPECT_ATTRIBUTES: [&str; 20] = [
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum NameKind {
     Variable,
+    Method,
     Attribute,
 }
 
@@ -38,38 +50,30 @@ pub(super) fn check_name(
     kind: NameKind,
 ) -> Result<(), CompileError> {
     let subject = match kind {
-        NameKind::Variable => "variable",
+        NameKind::Variable | NameKind::Method => "variable",
         NameKind::Attribute => "attribute",
     };
-    if name.starts_with('_') && name != "_" {
-        return Err(CompileError::forbidden(
-            filename,
-            line,
-            format!("\"{name}\" is an invalid {subject} name because it starts with \"_\""),
-        ));
-    }
-    if name.ends_with("__roles__") {
-        return Err(CompileError::forbidden(
-            filename,
-            line,
-            format!("\"{name}\" is an invalid {subject} name because it ends with \"__roles__\""),
-        ));
-    }
-    match kind {
-        NameKind::Variable if FORBIDDEN_NAMES.contains(&name) => Err(CompileError::forbidden(
-            filename,
-            line,
-            format!("\"{name}\" is a reserved name."),
-        )),
-        NameKind::Attribute if INSPECT_ATTRIBUTES.contains(&name) => Err(CompileError::forbidden(
-            filename,
-            line,
-            format!(
-                "\"{name}\" is a restricted name, that is forbidden to access in RestrictedPython."
-            ),
-        )),
-        NameKind::Variable | NameKind::Attribute => Ok(()),
-    }
+    let magic = kind == NameKind::Method && ALLOWED_METHODS.contains(&name);
+    let problem = if !magic && name.starts_with('_') && name != "_" {
+        Some(format!(
+            "\"{name}\" is an invalid {subject} name because it starts with \"_\""
+        ))
+    } else if name.ends_with("__roles__") {
+        Some(format!(
+            "\"{name}\" is an invalid {subject} name because it ends with \"__roles__\""
+        ))
+    } else if kind != NameKind::Attribute && RESERVED_NAMES.contains(&name) {
+        Some(format!("\"{name}\" is a reserved name."))
+    } else if kind == NameKind::Attribute && INSPECT_ATTRIBUTES.contains(&name) {
+        Some(format!(
+            "\"{name}\" is a restricted name, that is forbidden to access in RestrictedPython."
+        ))
+    } else {
+        None
+    };
+    problem.map_or(Ok(()), |message| {
+        Err(CompileError::forbidden(filename, line, message))
+    })
 }
 
 pub(super) fn check_call(name: &str, filename: &str, line: u32) -> Result<(), CompileError> {
