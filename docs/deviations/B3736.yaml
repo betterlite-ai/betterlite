@@ -3,9 +3,12 @@ deviations:
   - what: betterlite caps every IBM detector response at 1 MiB and returns a typed error above it, where LiteLLM reads the body without a limit.
     why: An unbounded read from a guardrail server is a denial-of-service surface, and detector answers are small, so a working setup never reaches the cap (rule bounded-inputs).
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/ibm_detector.py#L145-L146
-  - what: betterlite uses a litellm_params.timeout on the guardrail entry as given and falls back to 600 seconds only when it is absent or null; LiteLLM passes timeout=self.timeout, which stays None when no guardrail timeout is configured, and httpx reads None as no timeout at all.
+  - what: betterlite uses a litellm_params.timeout on the guardrail entry as given and falls back to 600 seconds only when it is absent, null or an empty string; LiteLLM passes timeout=self.timeout, which stays None when no guardrail timeout is configured, and httpx reads None as no timeout at all.
     why: A detector server that accepts the connection and never answers would hang the proxy request forever; 600 seconds is the read/write fallback the shared AsyncHTTPHandler client itself is built with.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/ibm_detector.py#L138-L144
+  - what: negative, nonfinite and overflowing timeouts are rejected when the IBM config loads.
+    why: the timeout becomes a finite nonnegative Duration before the call so an invalid value cannot disable the bounded wait; LiteLLM only floats the value and hands it to httpx.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1240-L1250
   - what: an extra header whose name differs from a default header only by case replaces it in betterlite, while LiteLLM's dict keeps both spellings and sends the header twice.
     why: betterlite builds a HeaderMap, which is case-insensitive by definition, so one config cannot produce two spellings of the same header.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/ibm_detector.py#L122-L130
