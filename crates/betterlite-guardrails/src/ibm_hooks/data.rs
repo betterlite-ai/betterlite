@@ -119,20 +119,18 @@ fn push_input_object(object: &InputObject, texts: &mut Vec<String>) {
         push_content_text(object.summary.as_ref(), texts);
         return;
     }
-    let Some(content) = &object.content else {
-        push_output_text(object, texts);
+    if object.content.is_some() {
+        push_content_text(object.content.as_ref(), texts);
         return;
-    };
-    push_content_text(Some(content), texts);
-}
-
-fn push_output_text(object: &InputObject, texts: &mut Vec<String>) {
-    if object
+    }
+    let is_output_item = object
         .kind
         .as_deref()
-        .is_some_and(|kind| OUTPUT_ITEM_TYPES.contains(&kind))
-        && let Some(output) = &object.output
-    {
+        .is_some_and(|kind| OUTPUT_ITEM_TYPES.contains(&kind));
+    if !is_output_item {
+        return;
+    }
+    if let Some(output) = &object.output {
         push_content_text(Some(output), texts);
     }
 }
