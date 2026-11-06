@@ -133,7 +133,7 @@ fn first_bytes_message(redactor: &Redactor) {
     let mut tally = EventStreamTally::default();
     tally.add_chunk(&[b'x'; 150]);
     tally.add_chunk(b"y\n\r\t\\'\"\x01\xff");
-    tally.add_chunk(&[b'z'; 40]);
+    tally.add_chunk(&[b'z'; 60]);
     let headers = request_headers();
     let error = tally
         .undecoded_stream_error(Some(&headers), redactor)
@@ -150,13 +150,13 @@ fn first_bytes_message(redactor: &Redactor) {
     head.push('"');
     head.push_str(r"\x01");
     head.push_str(r"\xff");
-    head.push_str(&"z".repeat(40));
+    head.push_str(&"z".repeat(41));
     head.push('\'');
     assert!(
         second.ends_with(&format!("first bytes={head})")),
         "{second}"
     );
-    assert!(second.contains("content-type='application/vnd.amazon.eventstream', x-amzn-requestid='req-1', 200 bytes received"));
+    assert!(second.contains("content-type='application/vnd.amazon.eventstream', x-amzn-requestid='req-1', 219 bytes received"));
 }
 
 fn textual_diagnostics(empty: &EventStreamTally, redactor: &Redactor) {
@@ -174,6 +174,7 @@ fn textual_diagnostics(empty: &EventStreamTally, redactor: &Redactor) {
     );
     let mut expected = String::from("content-type='a");
     expected.push_str(r"\\");
+    expected.push('b');
     expected.push_str(r"\'");
     expected.push_str("c\"d");
     expected.push_str(r"\n");
