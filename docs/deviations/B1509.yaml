@@ -1,0 +1,11 @@
+task: B1509
+deviations:
+  - what: A device_code_requested_at dated in the future holds each cooldown wait for at most the 300 second cooldown. LiteLLM waits for the full remaining time.
+    why: A record with a bad clock or a hand-edited date would block every login for days, and no working setup relies on that. Tested by far_future_cooldown_waits_no_longer_than_the_cooldown.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/chatgpt/authenticator.py#L367-L370
+  - what: A device code poll interval above 900 seconds is cut to 900 before polling. LiteLLM sleeps for the whole interval.
+    why: Both end the poll at the 900 second window, so only the length of the last sleep differs, and a sleep past the window only delays the timeout error. Tested by device_interval_forms.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/chatgpt/authenticator.py#L251
+  - what: A redirect answer from the OAuth endpoints is not followed and fails with its own status. LiteLLM's HTTP client follows redirects.
+    why: The shared outbound client never follows redirects, so a credential request cannot be sent on to another host. The OAuth endpoints do not redirect today. Tested by polling_failures_keep_status.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L618
