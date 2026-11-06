@@ -1,4 +1,3 @@
-use std::io;
 use std::path::Path;
 
 use super::{FileAccess, GROUP_WORLD_BITS, PRIVATE_DIR_MODE, StagedFile};
@@ -53,28 +52,6 @@ pub(super) fn commit_blocking(
     if let Err(source) = files.replace(&staged.path, target) {
         remove_quietly(files, &staged.path);
         return Err(PrivateJsonError::Commit(target.to_owned(), source));
-    }
-    Ok(())
-}
-
-pub(super) fn discard_blocking(
-    files: &dyn FileAccess,
-    staged: &Path,
-) -> Result<(), PrivateJsonError> {
-    match files.remove(staged) {
-        Ok(()) => Ok(()),
-        Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(()),
-        Err(source) => Err(PrivateJsonError::Discard(staged.to_owned(), source)),
-    }
-}
-
-pub(super) fn overwrite_blocking(
-    files: &dyn FileAccess,
-    target: &Path,
-    bytes: &[u8],
-) -> Result<(), PrivateJsonError> {
-    if let Err(source) = files.rewrite_existing(target, bytes) {
-        return Err(PrivateJsonError::Overwrite(target.to_owned(), source));
     }
     Ok(())
 }
