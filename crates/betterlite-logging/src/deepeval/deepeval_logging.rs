@@ -20,7 +20,7 @@ use self::types::{Environment, SpanTimes, TraceApi, TraceSpanApiStatus};
 use self::utils::{EnvironmentError, to_zod_compatible_iso, validate_environment};
 use crate::http_analytics_loggers::delivery::Delivery;
 
-// litellm.integrations.deepeval.DeepEvalLogger receives the callback kwargs and its two datetimes.
+// The litellm.integrations.deepeval.DeepEvalLogger callback surface, without the response object it never reads.
 #[derive(Clone, Copy, Debug)]
 pub struct Call<'event> {
     pub kwargs: &'event CallbackKwargs,
