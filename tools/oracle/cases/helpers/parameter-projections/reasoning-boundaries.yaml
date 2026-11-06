@@ -3,14 +3,17 @@ name: parameter-projections-reasoning-boundaries
 call:
   parameter_projections:
     steps:
-      - {function: reasoning_effort, budget_tokens: -1}
-      - {function: reasoning_effort, budget_tokens: 0}
-      - {function: reasoning_effort, budget_tokens: 1023}
-      - {function: reasoning_effort, budget_tokens: 1024}
-      - {function: reasoning_effort, budget_tokens: 2047}
-      - {function: reasoning_effort, budget_tokens: 2048}
-      - {function: reasoning_effort, budget_tokens: 4095}
-      - {function: reasoning_effort, budget_tokens: 4096}
-      - {function: reasoning_effort, budget_tokens: 8192}
-env: {}
+      - {function: reasoning_effort, budget_tokens: -1, thresholds: {low: 512, medium: 1024, high: 2048}}
+      - {function: reasoning_effort, budget_tokens: 0, thresholds: {low: 512, medium: 1024, high: 2048}}
+      - {function: reasoning_effort, budget_tokens: 511, thresholds: {low: 512, medium: 1024, high: 2048}}
+      - {function: reasoning_effort, budget_tokens: 512, thresholds: {low: 512, medium: 1024, high: 2048}}
+      - {function: reasoning_effort, budget_tokens: 1023, thresholds: {low: 512, medium: 1024, high: 2048}}
+      - {function: reasoning_effort, budget_tokens: 1024, thresholds: {low: 512, medium: 1024, high: 2048}}
+      - {function: reasoning_effort, budget_tokens: 2047, thresholds: {low: 512, medium: 1024, high: 2048}}
+      - {function: reasoning_effort, budget_tokens: 2048, thresholds: {low: 512, medium: 1024, high: 2048}}
+      - {function: reasoning_effort, budget_tokens: 4096, thresholds: {low: 512, medium: 1024, high: 2048}}
+env:
+  DEFAULT_REASONING_EFFORT_LOW_THINKING_BUDGET: "512"
+  DEFAULT_REASONING_EFFORT_MEDIUM_THINKING_BUDGET: "1024"
+  DEFAULT_REASONING_EFFORT_HIGH_THINKING_BUDGET: "2048"
 compare: {ignore: []}

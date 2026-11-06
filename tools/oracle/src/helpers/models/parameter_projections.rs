@@ -4,7 +4,9 @@ use betterlite_models::projections::parameter_names::{
     CONTENT_PARAMETER_NAMES, ModelParameters, PROVIDER_CHAT_PARAMETER_NAMES,
     logging_model_parameters,
 };
-use betterlite_models::projections::reasoning_effort::effort_from_thinking_budget;
+use betterlite_models::projections::reasoning_effort::{
+    ThinkingBudgetThresholds, effort_from_thinking_budget,
+};
 use betterlite_models::projections::service_tier::resolved_service_tier;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -27,6 +29,8 @@ enum Step {
     ProviderChatNames,
     ReasoningEffort {
         budget_tokens: i64,
+        #[serde(default)]
+        thresholds: ThinkingBudgetThresholds,
     },
     ResolvedServiceTier {
         response_tier: Option<String>,
@@ -57,9 +61,10 @@ impl Step {
                         .collect::<BTreeSet<_>>()
                 )
             }
-            Self::ReasoningEffort { budget_tokens } => {
-                json!(effort_from_thinking_budget(*budget_tokens))
-            }
+            Self::ReasoningEffort {
+                budget_tokens,
+                thresholds,
+            } => json!(effort_from_thinking_budget(*budget_tokens, *thresholds)),
             Self::ResolvedServiceTier {
                 response_tier,
                 usage_tier,
