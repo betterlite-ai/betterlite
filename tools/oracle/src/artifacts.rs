@@ -2,11 +2,13 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use serde::Serialize;
+use serde_json::Value;
 
 use crate::case::Case;
 use crate::compare;
 use crate::mock::ProviderRequest;
 use crate::paths::{safe_name, unique_id};
+use crate::sdk_http::capture::Capture;
 
 use crate::OracleError;
 use crate::http::Response;
@@ -25,14 +27,7 @@ pub(crate) struct ArtifactInput<'input> {
 }
 
 pub(crate) fn write(input: ArtifactInput<'_>) -> Result<PathBuf, OracleError> {
-    let directory = input
-        .root
-        .join(safe_name(&input.case.name))
-        .join(unique_id()?);
-    fs::create_dir_all(&directory).map_err(|source| OracleError::Filesystem {
-        path: directory.clone(),
-        source,
-    })?;
+    let directory = fresh_directory(input.root, &input.case.name)?;
     for (name, response, requests, log) in [
         (
             "litellm",
@@ -52,6 +47,54 @@ pub(crate) fn write(input: ArtifactInput<'_>) -> Result<PathBuf, OracleError> {
         copy_file(log, &directory.join(format!("{name}.log")))?;
     }
     write_json(&directory.join("diff.json"), &input.result)?;
+    Ok(directory)
+}
+
+pub(crate) struct SdkArtifactInput<'input> {
+    pub(crate) root: &'input Path,
+    pub(crate) name: &'input str,
+    pub(crate) labels: [&'input str; 2],
+    pub(crate) captures: [&'input Capture; 2],
+    pub(crate) difference: &'input compare::Difference,
+}
+
+// both logs and captures stay for a mismatch and for a crash alike
+pub(crate) fn write_sdk(input: &SdkArtifactInput<'_>) -> Result<PathBuf, OracleError> {
+    let directory = fresh_directory(&input.root.join("sdk-http"), input.name)?;
+    for (label, capture) in input.labels.iter().zip(input.captures) {
+        write_json(
+            &directory.join(format!("client-{label}.json")),
+            &client_value(capture)?,
+        )?;
+        write_json(
+            &directory.join(format!("provider-{label}.json")),
+            &capture.requests,
+        )?;
+        let log = directory.join(format!("{label}.log"));
+        fs::write(&log, &capture.execution.log)
+            .map_err(|source| OracleError::Filesystem { path: log, source })?;
+    }
+    write_json(&directory.join("diff.json"), input.difference)?;
+    Ok(directory)
+}
+
+fn client_value(capture: &Capture) -> Result<Value, OracleError> {
+    match &capture.execution.result {
+        Ok(result) => serde_json::to_value(result).map_err(OracleError::Json),
+        Err(error) => {
+            let mut failed = serde_json::Map::new();
+            failed.insert("error".to_owned(), Value::String(error.to_string()));
+            Ok(Value::Object(failed))
+        }
+    }
+}
+
+fn fresh_directory(root: &Path, case_name: &str) -> Result<PathBuf, OracleError> {
+    let directory = root.join(safe_name(case_name)).join(unique_id()?);
+    fs::create_dir_all(&directory).map_err(|source| OracleError::Filesystem {
+        path: directory.clone(),
+        source,
+    })?;
     Ok(directory)
 }
 

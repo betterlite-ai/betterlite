@@ -1,0 +1,5 @@
+kind: helper
+name: openai-fine-tuning-seed-projection
+call: {openai_fine_tuning: {steps: [{action: project, is_async: true, args: {api_key: k, api_base: "https://x.test", timeout: 0.0, max_retries: 0, organization: ""}}]}}
+env: {}
+compare: {ignore: []}

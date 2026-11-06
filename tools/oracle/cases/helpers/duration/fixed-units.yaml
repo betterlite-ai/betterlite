@@ -1,0 +1,13 @@
+kind: helper
+name: fixed_units
+call:
+  duration:
+    calls:
+      - {function: duration_in_seconds, duration: "30s", now: "2024-06-15T12:00:00Z"}
+      - {function: duration_in_seconds, duration: "2m", now: "2024-06-15T12:00:00Z"}
+      - {function: duration_in_seconds, duration: "3h", now: "2024-06-15T12:00:00Z"}
+      - {function: duration_in_seconds, duration: "4d", now: "2024-06-15T12:00:00Z"}
+      - {function: duration_in_seconds, duration: "2w", now: "2024-06-15T12:00:00Z"}
+      - {function: duration_in_seconds, duration: "0s", now: "2024-06-15T12:00:00Z"}
+env: {}
+compare: {ignore: []}

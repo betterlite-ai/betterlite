@@ -3,7 +3,6 @@ from typing import TypeAlias, cast
 from unittest.mock import patch
 
 import litellm
-from litellm.constants import known_tokenizer_config
 from litellm.litellm_core_utils.prompt_templates import factory, huggingface_template_handler
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
@@ -72,7 +71,6 @@ def run(input_value: dict[str, Json]) -> Json:
         messages = cast(list[dict[str, Json]], input_value["messages"])
         custom_llm_provider = cast(str | None, input_value.get("custom_llm_provider"))
         with (
-            patch.dict(cast(dict[str, Json], known_tokenizer_config), {}, clear=True),
             patch.object(huggingface_template_handler, "_get_tokenizer_config", _unreachable),
             patch.object(huggingface_template_handler, "_get_chat_template_file", _unreachable),
         ):

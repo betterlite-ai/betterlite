@@ -1,0 +1,17 @@
+kind: helper
+name: exhausted_logins
+call:
+  copilot_device:
+    access_token_file: null
+    device_replies:
+      - status: 200
+        body: {"device_code": "dev-1"}
+      - status: 200
+        body: {"device_code": "dev-1"}
+      - status: 200
+        body: {"device_code": "dev-1"}
+    access_replies: []
+    fail_write: false
+env: {}
+compare:
+  ignore: []

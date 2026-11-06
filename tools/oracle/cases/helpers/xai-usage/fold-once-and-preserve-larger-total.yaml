@@ -1,0 +1,6 @@
+kind: helper
+name: xai-usage-fold-once-and-preserve-larger-total
+call:
+  xai_usage: {action: reconcile, usage: {prompt_tokens: 10, completion_tokens: 20, total_tokens: 35, reasoning_tokens: 5}}
+env: {}
+compare: {ignore: []}
