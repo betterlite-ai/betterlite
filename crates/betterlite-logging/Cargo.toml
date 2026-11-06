@@ -19,6 +19,9 @@ flate2 = "1.1.5"
 hex.workspace = true
 http = "1.5.0"
 indexmap = { version = "2.14.2", features = ["serde"] }
+jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
+minijinja = { version = "3.0.4", features = ["builtins", "fuel", "preserve_order", "serde"] }
+minijinja-contrib = { version = "3.0.4", default-features = false, features = ["pycompat"] }
 opentelemetry = { version = "0.33.1", default-features = false, features = ["logs", "metrics", "trace"] }
 opentelemetry-http = { version = "0.33.1", default-features = false }
 opentelemetry-otlp = { version = "0.33.1", default-features = false, features = ["grpc-tonic", "http-json", "http-proto", "logs", "metrics", "trace"] }
@@ -36,10 +39,12 @@ secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["arbitrary_precision", "raw_value"] }
 serde_path_to_error = "0.1.20"
-serde_with = { version = "3.24.0", default-features = false, features = ["alloc"] }
+serde_with = { version = "3.24.0", default-features = false, features = ["alloc", "macros"] }
 sha2.workspace = true
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true
+tokio = { workspace = true, features = ["time"] }
+tokio-util = { version = "0.7.20", features = ["rt"] }
 tonic = { version = "0.14.9", default-features = false }
 tracing.workspace = true
 unicode-properties = { version = "0.1.4", default-features = false, features = ["general-category"] }
@@ -55,7 +60,7 @@ rstest = "=0.27.0"
 serde-saphyr.workspace = true
 serde_json = { version = "1.0.154", features = ["arbitrary_precision", "raw_value"] }
 temp-env = "0.3.6"
-tokio.workspace = true
+tokio = { workspace = true, features = ["test-util", "time"] }
 tracing-subscriber.workspace = true
 
 [[test]]
@@ -68,6 +73,10 @@ workspace = true
 [[test]]
 name = "sdk_analytics"
 path = "src/analytics/suite.rs"
+
+[[test]]
+name = "mavvrik_delivery"
+path = "src/mavvrik_delivery/tests/suite.rs"
 
 [[test]]
 name = "opik"

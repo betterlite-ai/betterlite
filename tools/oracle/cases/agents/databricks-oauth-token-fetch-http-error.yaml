@@ -1,0 +1,5 @@
+kind: helper
+name: databricks-oauth-token-fetch-http-error
+call: {"b4782": {"operation": "header", "upstream": {"status": 401, "body": "{\"error\":\"denied\"}"}, "rounds": [{"params": {"databricks_oauth": {"client_id": "id", "client_secret": "s3cret", "workspace_url": "UPSTREAM"}}}]}}
+env: {}
+compare: {ignore: []}

@@ -18,6 +18,13 @@ libfuzzer-sys = "0.4.9"
 serde_json = { version = "1.0.154", features = ["raw_value"] }
 
 [[bin]]
+name = "callback_config"
+path = "fuzz_targets/callback_config.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "otlp_decode"
 path = "fuzz_targets/otlp_decode.rs"
 test = false
@@ -31,10 +38,23 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "phoenix_response"
+path = "fuzz_targets/phoenix_response.rs"
+test = false
+doc = false
+bench = false
 
 [[bin]]
 name = "s3_v2"
 path = "fuzz_targets/s3_v2.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "prometheus_query"
+path = "fuzz_targets/prometheus_query.rs"
 test = false
 doc = false
 bench = false

@@ -1,0 +1,5 @@
+kind: helper
+name: base-url-precedence
+call: {"openai_vector_stores": {"complete_url": {"api_base": null, "litellm_api_base": "https://global.example.test/v1///", "vector_store_id": "vs_abc", "env": {"OPENAI_BASE_URL": "https://env.example.test/v1", "OPENAI_API_BASE": "https://env2.example.test/v1"}}}}
+env: {}
+compare: {ignore: []}

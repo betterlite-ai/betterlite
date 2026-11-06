@@ -262,3 +262,21 @@ fn compare_provider_request(
     }
     Ok(())
 }
+
+pub(crate) fn compare_sdk(
+    left: &serde_json::Value,
+    right: &serde_json::Value,
+    ignores: &[Ignore],
+) -> Result<(), Difference> {
+    let (mut left_value, mut right_value) = (left.clone(), right.clone());
+    for ignored in ignores {
+        remove_pointer(&mut left_value, &ignored.pointer);
+        remove_pointer(&mut right_value, &ignored.pointer);
+    }
+    first_difference(&left_value, &right_value, "").map_or(Ok(()), |pointer| {
+        Err(Difference {
+            pointer,
+            message: "SDK results or provider requests differ".to_owned(),
+        })
+    })
+}

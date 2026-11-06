@@ -64,3 +64,17 @@ path = "fuzz_targets/prisma_content.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "vigil_guard_analysis"
+path = "fuzz_targets/vigil_guard_analysis.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "prisma_scan"
+path = "fuzz_targets/prisma_scan.rs"
+test = false
+doc = false
+bench = false

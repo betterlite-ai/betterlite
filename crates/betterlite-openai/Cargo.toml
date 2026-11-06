@@ -15,7 +15,9 @@ futures-util = { version = "0.3.34", default-features = false }
 hex.workspace = true
 http = "1.5.0"
 indexmap = { version = "2.14.2", features = ["serde"] }
+mime_guess = { version = "2.0.5", default-features = false }
 nix = { version = "0.31.3", default-features = false, features = ["feature"] }
+percent-encoding.workspace = true
 rand = { version = "0.10.3", default-features = false, features = ["std", "std_rng", "sys_rng"] }
 rust_decimal.workspace = true
 secrecy = { workspace = true, features = ["serde"] }
@@ -25,6 +27,7 @@ serde_with = { version = "3.24.0", default-features = false, features = ["macros
 sha2.workspace = true
 speedate = "0.18.0"
 thiserror.workspace = true
+tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true
 unicode-normalization = "0.1.26"
 url = "2.5.8"
@@ -33,7 +36,6 @@ uuid.workspace = true
 [dev-dependencies]
 rstest = "=0.27.0"
 tempfile = "3.27.0"
-tokio.workspace = true
 tracing-subscriber.workspace = true
 
 [lints]
