@@ -98,7 +98,7 @@ fn recorded(request: &OutboundRequest) -> Seen {
 fn answer_response(reply: Reply) -> UpstreamResponse {
     let mut headers = HeaderMap::new();
     for (name, value) in reply.headers {
-        headers.insert(
+        headers.append(
             HeaderName::from_bytes(name.as_bytes()).unwrap(),
             HeaderValue::from_str(&value).unwrap(),
         );
