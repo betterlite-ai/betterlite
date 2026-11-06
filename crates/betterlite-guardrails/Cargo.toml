@@ -16,6 +16,7 @@ betterlite-http = { path = "../betterlite-http" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-redact = { path = "../betterlite-redact" }
 fancy-regex = "0.19.2"
+futures-util = { version = "0.3.34", default-features = false, features = ["alloc"] }
 indexmap = { version = "2.14.2", features = ["serde"] }
 lru = "0.18.4"
 mime_guess = { version = "2.0.5", default-features = false }
@@ -38,5 +39,4 @@ uuid.workspace = true
 axum.workspace = true
 rstest = "=0.27.0"
 temp-env = "0.3.6"
-tokio = { workspace = true, features = ["rt", "macros"] }
 tracing-subscriber.workspace = true
