@@ -3,12 +3,13 @@
 use std::collections::BTreeSet;
 
 use betterlite_prometheus::collector_factory::{
-    CollectorFactory, NON_ENUM_METRIC_LABELS, PrometheusMetricsConfig, all_defined_labels,
-    is_metric_enabled, pretty_print_prometheus_config, pretty_print_validation_errors,
+    CollectorFactory, CollectorFactoryError, NON_ENUM_METRIC_LABELS, PrometheusMetricsConfig,
+    all_defined_labels, is_metric_enabled, pretty_print_prometheus_config,
+    pretty_print_validation_errors,
 };
 use betterlite_prometheus::label_names_catalog::UserApiKeyLabelName;
 use betterlite_prometheus::validation::{
-    LabelValidationError, MetricValidationError, ValidationResults,
+    LabelValidationError, MetricValidationError, ValidationResults, ValidationSummary as _,
 };
 
 use crate::support::FakeSchema;
@@ -36,7 +37,7 @@ fn prometheus_config_parses_metrics_and_label_filters() {
         config(&["litellm_requests_metric"], &[]),
     ];
     factory.parse_prometheus_config(&configs).unwrap();
-    let enabled = factory.enabled_metrics.as_ref().unwrap();
+    let enabled = &factory.enabled_metrics;
     assert_eq!(enabled.len(), 2);
     assert!(enabled.contains("litellm_spend_metric"));
     assert!(enabled.contains("litellm_requests_metric"));
@@ -55,7 +56,7 @@ fn prometheus_config_parses_metrics_and_label_filters() {
 fn prometheus_config_without_groups_leaves_every_metric_enabled() {
     let mut factory = CollectorFactory::new(schema());
     factory.parse_prometheus_config(&[]).unwrap();
-    assert!(factory.enabled_metrics.is_none());
+    assert!(factory.enabled_metrics.is_empty());
     assert!(factory.label_filters.is_empty());
     assert!(is_metric_enabled(
         &factory.enabled_metrics,
@@ -80,6 +81,10 @@ fn prometheus_config_rejects_unknown_metric_names() {
             .to_string()
             .contains("Configuration validation failed:")
     );
+    let CollectorFactoryError::Configuration { results } = &error else {
+        panic!("expected a typed configuration error");
+    };
+    assert!(results.has_errors());
     assert!(factory.label_filters.is_empty());
 }
 

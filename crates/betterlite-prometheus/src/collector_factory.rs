@@ -85,8 +85,8 @@ pub trait LabelSchema {
 }
 #[derive(Debug, thiserror::Error)]
 pub enum CollectorFactoryError<E> {
-    #[error("Configuration validation failed:\n{}", .messages.join("\n"))]
-    Configuration { messages: Vec<String> },
+    #[error("Configuration validation failed:\n{}", .results.all_error_messages().join("\n"))]
+    Configuration { results: ValidationResults },
     #[error("Prometheus exclude configuration validation failed:\n{}", .messages.join("\n"))]
     Exclusions { messages: Vec<String> },
     #[error(transparent)]
@@ -94,7 +94,7 @@ pub enum CollectorFactoryError<E> {
 }
 pub struct CollectorFactory<S> {
     pub schema: S,
-    pub enabled_metrics: Option<MetricSet>,
+    pub enabled_metrics: MetricSet,
     pub exclude_metrics: MetricSet,
     pub exclude_labels: MetricSet,
     pub label_filters: BTreeMap<String, Vec<String>>,
@@ -102,20 +102,18 @@ pub struct CollectorFactory<S> {
 }
 // LiteLLM enables every metric unless an explicit include list or exclude list says otherwise
 #[must_use]
-pub fn is_metric_enabled(enabled: &Option<MetricSet>, excluded: &MetricSet, metric: &str) -> bool {
+pub fn is_metric_enabled(enabled: &MetricSet, excluded: &MetricSet, metric: &str) -> bool {
     if excluded.contains(metric) {
         return false;
     }
-    enabled
-        .as_ref()
-        .is_none_or(|metrics| metrics.is_empty() || metrics.contains(metric))
+    enabled.is_empty() || enabled.contains(metric)
 }
 impl<S: LabelSchema> CollectorFactory<S> {
     #[must_use]
     pub const fn new(schema: S) -> Self {
         Self {
             schema,
-            enabled_metrics: None,
+            enabled_metrics: MetricSet::new(),
             exclude_metrics: MetricSet::new(),
             exclude_labels: MetricSet::new(),
             label_filters: BTreeMap::new(),
@@ -148,11 +146,10 @@ impl<S: LabelSchema> CollectorFactory<S> {
                 &mut found,
             )?;
         }
-        self.enabled_metrics = Some(enabled);
+        self.enabled_metrics = enabled;
         if found.has_errors() {
-            let messages = found.all_error_messages();
             tracing::error!("{}", pretty_print_validation_errors(&found));
-            return Err(CollectorFactoryError::Configuration { messages });
+            return Err(CollectorFactoryError::Configuration { results: found });
         }
         self.label_filters = filters;
         let summary = pretty_print_prometheus_config(&self.enabled_metrics, &self.label_filters);
@@ -285,17 +282,18 @@ pub fn pretty_print_validation_errors(results: &ValidationResults) -> String {
 }
 #[must_use]
 #[rustfmt::skip]
-pub fn pretty_print_prometheus_config(enabled: &Option<MetricSet>, filters: &BTreeMap<String, Vec<String>>) -> String {
-    let names = enabled.iter().flatten().map(String::as_str).collect::<Vec<_>>().join(", ");
+pub fn pretty_print_prometheus_config(enabled: &MetricSet, filters: &BTreeMap<String, Vec<String>>) -> String {
+    let names = enabled.iter().map(String::as_str).collect::<Vec<_>>().join(", ");
     format!("Enabled metrics: {names}; label filters: {filters:?}")
 }
 // the callback list from B189 viewed by slot: each slot holds the logger when it is one
-#[must_use]
-#[rustfmt::skip]
-pub fn get_instance<'callbacks, L>(
-    callbacks: &'callbacks [Option<&'callbacks L>],
-) -> Option<&'callbacks L> {
-    callbacks
-        .iter()
-        .find_map(|callback| *callback)
+pub trait CallbackSlots {
+    type Logger;
+
+    fn registered_callbacks(&self) -> &[Option<&Self::Logger>];
+
+    #[must_use]
+    fn get_instance(&self) -> Option<&Self::Logger> {
+        self.registered_callbacks().iter().find_map(|slot| *slot)
+    }
 }

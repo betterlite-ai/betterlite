@@ -1,38 +1,54 @@
 #![cfg(test)]
 
-use betterlite_prometheus::collector_factory::get_instance;
+use betterlite_prometheus::collector_factory::CallbackSlots;
 
 #[derive(Debug, Eq, PartialEq)]
 struct FakeLogger {
     name: &'static str,
 }
 
+static FIRST: FakeLogger = FakeLogger { name: "first" };
+static SECOND: FakeLogger = FakeLogger { name: "second" };
+static LOGGER: FakeLogger = FakeLogger { name: "logger" };
+
+struct FakeCallbacks {
+    slots: Vec<Option<&'static FakeLogger>>,
+}
+
+impl CallbackSlots for FakeCallbacks {
+    type Logger = FakeLogger;
+
+    fn registered_callbacks(&self) -> &[Option<&FakeLogger>] {
+        &self.slots
+    }
+}
+
 #[test]
 fn prometheus_registry_returns_the_first_logger() {
-    let first = FakeLogger { name: "first" };
-    let second = FakeLogger { name: "second" };
-    let callbacks = [Some(&first), Some(&second)];
-    assert_eq!(get_instance(&callbacks), Some(&first));
+    let callbacks = FakeCallbacks {
+        slots: vec![Some(&FIRST), Some(&SECOND)],
+    };
+    assert_eq!(callbacks.get_instance(), Some(&FIRST));
 }
 
 #[test]
 fn prometheus_registry_skips_other_callbacks() {
-    let logger = FakeLogger { name: "logger" };
-    let callbacks = [None, Some(&logger)];
-    assert_eq!(get_instance(&callbacks), Some(&logger));
+    let callbacks = FakeCallbacks {
+        slots: vec![None, Some(&LOGGER)],
+    };
+    assert_eq!(callbacks.get_instance(), Some(&LOGGER));
 }
 
 #[test]
 fn prometheus_registry_returns_none_when_not_registered() {
-    let callbacks: [Option<&FakeLogger>; 1] = [None];
-    assert_eq!(get_instance(&callbacks), None);
+    let callbacks = FakeCallbacks { slots: vec![None] };
+    assert_eq!(callbacks.get_instance(), None);
 }
 
 #[test]
 fn prometheus_registry_reads_the_slots_at_call_time() {
-    let logger = FakeLogger { name: "logger" };
-    let mut callbacks: Vec<Option<&FakeLogger>> = vec![None];
-    assert_eq!(get_instance(&callbacks), None);
-    callbacks.push(Some(&logger));
-    assert_eq!(get_instance(&callbacks), Some(&logger));
+    let mut callbacks = FakeCallbacks { slots: vec![None] };
+    assert_eq!(callbacks.get_instance(), None);
+    callbacks.slots.push(Some(&LOGGER));
+    assert_eq!(callbacks.get_instance(), Some(&LOGGER));
 }

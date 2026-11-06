@@ -32,13 +32,12 @@ fn set(names: &[&str]) -> MetricSet {
 }
 
 #[rstest]
-#[case::excluded(None, set(&["litellm_spend_metric"]), false)]
-#[case::no_enable_list(None, MetricSet::new(), true)]
-#[case::empty_enable_list(Some(MetricSet::new()), MetricSet::new(), true)]
-#[case::listed(Some(set(&["litellm_spend_metric"])), MetricSet::new(), true)]
-#[case::unlisted(Some(set(&["litellm_requests_metric"])), MetricSet::new(), false)]
+#[case::excluded(MetricSet::new(), set(&["litellm_spend_metric"]), false)]
+#[case::empty_enable_list(MetricSet::new(), MetricSet::new(), true)]
+#[case::listed(set(&["litellm_spend_metric"]), MetricSet::new(), true)]
+#[case::unlisted(set(&["litellm_requests_metric"]), MetricSet::new(), false)]
 fn prometheus_factory_is_metric_enabled(
-    #[case] enabled: Option<MetricSet>,
+    #[case] enabled: MetricSet,
     #[case] excluded: MetricSet,
     #[case] expected: bool,
 ) {
