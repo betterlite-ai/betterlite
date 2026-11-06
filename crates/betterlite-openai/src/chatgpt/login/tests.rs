@@ -96,6 +96,7 @@ impl FileAccess for Files {
 
 struct Time {
     now: Decimal,
+    sleeps: Vec<Duration>,
     pauses: Vec<Duration>,
     arrival: Option<(Shared, Vec<u8>)>,
     hang: bool,
@@ -116,7 +117,8 @@ impl Clock for Time {
         self.now
     }
     fn sleep(&mut self, duration: Duration) {
-        self.pauses.push(duration);
+        // the login may only wait on the async pause; a blocking sleep here fails the cooldown tests
+        self.sleeps.push(duration);
         self.advance(duration);
     }
 }
@@ -211,6 +213,7 @@ fn subject(content: Option<Vec<u8>>, now: i64, replies: Vec<Reply>) -> Subject {
     };
     let clock = Time {
         now: Decimal::from(now),
+        sleeps: Vec::new(),
         pauses: Vec::new(),
         arrival: None,
         hang: false,
@@ -475,6 +478,7 @@ async fn concurrent_login_in_cooldown_returns_the_other_token() {
     let token = subject.get_access_token().await.unwrap();
     assert_eq!(token.expose_secret(), access);
     assert_eq!(subject.store.clock.pauses, [Duration::from_secs(5)]);
+    assert!(subject.store.clock.sleeps.is_empty());
     assert!(subject.http.posts.is_empty());
 }
 
@@ -489,6 +493,8 @@ async fn device_login_rechecks_the_cooldown_before_requesting_a_code() {
     ));
     let token = subject.login_device_code().await.unwrap();
     assert_eq!(token.expose_secret(), access);
+    assert_eq!(subject.store.clock.pauses, [Duration::from_secs(5)]);
+    assert!(subject.store.clock.sleeps.is_empty());
     assert!(subject.http.posts.is_empty());
 }
 
@@ -500,6 +506,7 @@ async fn expired_cooldown_without_a_token_requests_a_code() {
     assert_eq!(error.status(), 503);
     let waited: Duration = subject.store.clock.pauses.iter().sum();
     assert_eq!(waited, Duration::from_secs(290));
+    assert!(subject.store.clock.sleeps.is_empty());
     assert_eq!(subject.http.posts.len(), 1);
 }
 
@@ -511,6 +518,7 @@ async fn far_future_cooldown_waits_no_longer_than_the_cooldown() {
     let waited: Duration = subject.store.clock.pauses.iter().sum();
     // the wait runs once in get_access_token and once in login_device_code, each capped at the cooldown
     assert_eq!(waited, Duration::from_secs(600));
+    assert!(subject.store.clock.sleeps.is_empty());
 }
 
 #[tokio::test]
