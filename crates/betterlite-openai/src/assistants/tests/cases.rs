@@ -29,7 +29,7 @@ struct ListCase {
     query: &'static str,
 }
 
-const LIST_CASES: [ListCase; 5] = [
+const LIST_CASES: [ListCase; 6] = [
     ListCase {
         params: "{}",
         flag: None,
@@ -41,6 +41,12 @@ const LIST_CASES: [ListCase; 5] = [
         flag: None,
         direct: false,
         query: "?after=x",
+    },
+    ListCase {
+        params: r#"{"order":""}"#,
+        flag: None,
+        direct: false,
+        query: "?limit=20",
     },
     ListCase {
         params: ALL_PARAMS,
