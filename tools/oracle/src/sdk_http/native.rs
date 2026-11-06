@@ -132,26 +132,20 @@ fn deployments(
 // the same defaults the server builds, so proxy-wide base URLs, keys and the organization resolve from the case env
 fn openai_defaults(config: &LoadedConfig) -> OpenAiDefaults {
     let settings = &config.sections.resource_sdk_settings;
+    let bases = [
+        &settings.api_base,
+        &settings.openai_base_url,
+        &settings.openai_api_base,
+    ];
+    let keys = [
+        &settings.api_key,
+        &settings.openai_key,
+        &settings.openai_api_key,
+    ];
     OpenAiDefaults {
         request_timeout: config.litellm_settings.request_timeout,
-        api_bases: [
-            &settings.api_base,
-            &settings.openai_base_url,
-            &settings.openai_api_base,
-        ]
-        .into_iter()
-        .flatten()
-        .cloned()
-        .collect(),
-        api_keys: [
-            &settings.api_key,
-            &settings.openai_key,
-            &settings.openai_api_key,
-        ]
-        .into_iter()
-        .flatten()
-        .cloned()
-        .collect(),
+        api_bases: bases.into_iter().flatten().cloned().collect(),
+        api_keys: keys.into_iter().flatten().cloned().collect(),
         organization: settings
             .organization
             .clone()
