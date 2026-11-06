@@ -38,6 +38,7 @@ uuid.workspace = true
 [dev-dependencies]
 axum.workspace = true
 rstest = "=0.27.0"
+rustls = { workspace = true, features = ["std", "tls12"] }
 temp-env = "0.3.6"
 tracing-subscriber.workspace = true
 
