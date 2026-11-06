@@ -5,7 +5,10 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use betterlite_config::sections::otel_settings::Settings as OtelConfig;
+use h2::server::handshake;
 use http::HeaderMap;
+use http::StatusCode;
+use http::header::{CONTENT_TYPE, HeaderValue};
 use opentelemetry::Context;
 use opentelemetry::trace::{
     Link, Span as _, SpanContext, SpanId, TraceContextExt as _, TraceFlags, TraceId, TraceState,
@@ -15,7 +18,9 @@ use opentelemetry_http::{Bytes, HttpClient, HttpError, Request, Response};
 use opentelemetry_sdk::trace::{InMemorySpanExporter, SdkTracerProvider};
 use rstest::rstest;
 use serde::Deserialize;
-use tokio::time::sleep;
+use tokio::net::TcpListener;
+use tokio::task::JoinSet;
+use tokio::time::{sleep, timeout};
 use tonic::Request as GrpcRequest;
 use tonic::service::Interceptor as _;
 
@@ -291,6 +296,74 @@ fn otlp_http_configured_headers_replace_the_environment_headers() {
         .and_then(|value| value.to_str().ok());
     assert_eq!(authorization, Some("Bearer tenant"));
     assert!(posted.headers.get("x-env").is_none());
+}
+
+async fn serve_one_grpc_request(listener: TcpListener) -> HeaderMap {
+    let (stream, _) = listener.accept().await.expect("grpc connection");
+    let mut connection = handshake(stream).await.expect("grpc handshake");
+    let (request, mut respond) = connection
+        .accept()
+        .await
+        .expect("a grpc request")
+        .expect("a grpc request");
+    let headers = request.headers().clone();
+    let response = Response::builder()
+        .status(StatusCode::OK)
+        .header(CONTENT_TYPE, "application/grpc")
+        .body(())
+        .expect("grpc response");
+    let mut send = respond
+        .send_response(response, false)
+        .expect("grpc headers");
+    send.send_data(Bytes::from_static(&[0, 0, 0, 0, 0]), false)
+        .expect("grpc body");
+    let mut trailers = HeaderMap::new();
+    trailers.insert("grpc-status", HeaderValue::from_static("0"));
+    send.send_trailers(trailers).expect("grpc trailers");
+    // Poll the connection so the queued response reaches the exporter.
+    let _next = timeout(Duration::from_secs(1), connection.accept()).await;
+    headers
+}
+
+fn export_one_span(spec: &ExporterSpec) {
+    let (factories, _recorder) = factories();
+    let sink = factories.exporter_from_spec(spec).expect("sink");
+    let provider = SdkTracerProvider::builder()
+        .with_span_processor(processor_for(sink, Some(true)))
+        .build();
+    provider.tracer("grpc").start("operation").end();
+    provider.shutdown().expect("shutdown");
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn otlp_grpc_configured_headers_replace_the_environment_headers() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let address = listener.local_addr().expect("address");
+    let mut server = JoinSet::new();
+    server.spawn(serve_one_grpc_request(listener));
+    let mut grpc = spec("otlp_grpc");
+    grpc.endpoint = Some(format!("http://{address}"));
+    grpc.headers = Some("authorization=Bearer tenant".to_owned());
+    temp_env::with_vars(
+        [
+            (
+                "OTEL_EXPORTER_OTLP_HEADERS",
+                Some("authorization=Bearer operator,x-env=1"),
+            ),
+            ("OTEL_EXPORTER_OTLP_TRACES_HEADERS", None),
+        ],
+        || export_one_span(&grpc),
+    );
+    let headers = server
+        .join_next()
+        .await
+        .expect("the server task")
+        .expect("the received request headers");
+    let authorization = headers
+        .get("authorization")
+        .and_then(|value| value.to_str().ok());
+    assert_eq!(authorization, Some("Bearer tenant"));
+    assert!(headers.get("x-env").is_none());
 }
 
 #[test]
