@@ -56,6 +56,9 @@ pub struct ChatDeployment {
     pub timeout: Duration,
     pub timeout_seconds: f64,
     pub model_id: String,
+    pub weight: u32,
+    pub rpm: u32,
+    pub tpm: u32,
 }
 
 impl ChatDeployment {
@@ -95,6 +98,9 @@ impl ChatDeployment {
             organization: defaults.organization.clone(),
             timeout_seconds: seconds,
             model_id: model_id(deployment),
+            weight: params.weight.unwrap_or_default(),
+            rpm: params.rpm.unwrap_or_default(),
+            tpm: params.tpm.unwrap_or_default(),
             litellm_model,
             provider,
         })

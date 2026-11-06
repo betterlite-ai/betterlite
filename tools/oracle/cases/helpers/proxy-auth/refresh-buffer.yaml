@@ -1,0 +1,17 @@
+kind: helper
+name: proxy-auth-refresh-buffer
+call:
+  proxy_auth:
+    operation: handler
+    params:
+      scope: 'api://proxy/.default'
+      replies:
+        - {token: first, expires_on: 1100}
+        - {token: second, expires_on: 5000}
+      calls:
+        - {at: 1000}
+        - {at: 1039}
+        - {at: 1040}
+        - {at: 4000}
+env: {}
+compare: {ignore: []}

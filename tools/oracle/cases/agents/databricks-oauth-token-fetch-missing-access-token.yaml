@@ -1,0 +1,5 @@
+kind: helper
+name: databricks-oauth-token-fetch-missing-access-token
+call: {"b4782": {"operation": "header", "upstream": {"status": 200, "body": "{\"expires_in\":3600}"}, "rounds": [{"params": {"databricks_oauth": {"client_id": "id", "client_secret": "s3cret", "workspace_url": "UPSTREAM"}}}]}}
+env: {}
+compare: {ignore: []}

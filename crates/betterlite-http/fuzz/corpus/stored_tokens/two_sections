@@ -1,0 +1,6 @@
+[a]
+hf_token = x
+
+[b]
+hf_token = y
+refresh_token = z

@@ -1,0 +1,23 @@
+[package]
+name = "betterlite-azure-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+betterlite-azure = { path = ".." }
+libfuzzer-sys = "0.4.9"
+
+[[bin]]
+name = "azure_arc_identity"
+path = "fuzz_targets/azure_arc_identity.rs"
+test = false
+doc = false
+bench = false
