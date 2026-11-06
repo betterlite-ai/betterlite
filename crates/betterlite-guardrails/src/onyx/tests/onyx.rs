@@ -100,7 +100,7 @@ fn timeout_rejects_a_fractional_environment_value() {
     let error = build(None, None, None, &environment).unwrap_err();
     assert!(matches!(
         error,
-        OnyxGuardrailError::InvalidTimeout { value } if value == "7.5"
+        OnyxGuardrailError::TimeoutNotInteger(_, value) if value == "7.5"
     ));
 }
 
@@ -110,7 +110,7 @@ fn timeout_rejects_a_negative_environment_value() {
     let error = build(None, None, None, &environment).unwrap_err();
     assert!(matches!(
         error,
-        OnyxGuardrailError::InvalidTimeout { value } if value == "-7"
+        OnyxGuardrailError::TimeoutNegative(_, value) if value == "-7"
     ));
 }
 

@@ -1,9 +1,13 @@
 use std::collections::BTreeMap;
-use std::time::{Duration, TryFromFloatSecsError};
+use std::{
+    num::TryFromIntError,
+    time::{Duration, TryFromFloatSecsError},
+};
 
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
+use betterlite_env::EnvError;
 use reqwest::StatusCode;
 use reqwest::header::CONTENT_TYPE;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -15,12 +19,9 @@ use crate::generic_guardrail_contracts::GuardrailInputType;
 
 pub const DEFAULT_API_BASE: &str = "https://ai-guard.onyx.security";
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
-pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 pub const ONYX_API_KEY_VARIABLE: &str = "ONYX_API_KEY";
 pub const ONYX_API_BASE_VARIABLE: &str = "ONYX_API_BASE";
 pub const ONYX_TIMEOUT_VARIABLE: &str = "ONYX_TIMEOUT";
-const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
-const EMPTY_OBJECT: GuardrailValue = GuardrailValue::Object(BTreeMap::new());
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EventHook {
@@ -38,8 +39,10 @@ pub const SUPPORTED_EVENT_HOOKS: [EventHook; 3] = [
 pub enum OnyxGuardrailError {
     #[error("ONYX_API_KEY environment variable is not set")]
     MissingApiKey,
-    #[error("ONYX_TIMEOUT must be a non-negative integer number of seconds, got {value:?}")]
-    InvalidTimeout { value: String },
+    #[error("ONYX_TIMEOUT must be an integer number of seconds, got {1:?}")]
+    TimeoutNotInteger(#[source] EnvError, String),
+    #[error("ONYX_TIMEOUT must not be negative, got {1:?}")]
+    TimeoutNegative(#[source] TryFromIntError, String),
     #[error("the Onyx Guard timeout is not a representable duration")]
     UnrepresentableTimeout { source: TryFromFloatSecsError },
     #[error("the Onyx Guard HTTP client could not be built")]
@@ -119,7 +122,7 @@ impl OnyxGuardrail {
             None => environment_timeout(lookup)?,
         };
         let client = client_builder
-            .connect_timeout(CONNECT_TIMEOUT)
+            .connect_timeout(Duration::from_secs(5))
             .build()
             .map_err(|source| OnyxGuardrailError::Client { source })?;
         tracing::info!(api_base = %api_base, "OnyxGuard initialized with server");
@@ -210,15 +213,13 @@ where
     let Some(text) = lookup.lookup(ONYX_TIMEOUT_VARIABLE) else {
         return Ok(DEFAULT_TIMEOUT);
     };
-    let invalid = |value: &str| OnyxGuardrailError::InvalidTimeout {
-        value: value.to_owned(),
-    };
-    let Some(parsed) = betterlite_env::number::<i64>(ONYX_TIMEOUT_VARIABLE, &text)
-        .map_err(|_source| invalid(&text))?
-    else {
+    let parsed = betterlite_env::number::<i64>(ONYX_TIMEOUT_VARIABLE, &text)
+        .map_err(|source| OnyxGuardrailError::TimeoutNotInteger(source, text.clone()))?;
+    let Some(parsed_seconds) = parsed else {
         return Ok(DEFAULT_TIMEOUT);
     };
-    let seconds = u64::try_from(parsed).map_err(|_source| invalid(&text))?;
+    let seconds = u64::try_from(parsed_seconds)
+        .map_err(|source| OnyxGuardrailError::TimeoutNegative(source, text))?;
     Ok(Duration::from_secs(seconds))
 }
 
@@ -231,7 +232,7 @@ fn payload_for(
             .get("proxy_server_request")
             .filter(|value| !matches!(value, GuardrailValue::Null))
             .cloned()
-            .unwrap_or(EMPTY_OBJECT),
+            .unwrap_or_else(|| GuardrailValue::Object(BTreeMap::new())),
         GuardrailInputType::Response if !model_response_accepts(request_data) => {
             GuardrailValue::Object(request_data.clone())
         }
@@ -239,7 +240,7 @@ fn payload_for(
             .get("response")
             .filter(|value| !matches!(value, GuardrailValue::Null))
             .cloned()
-            .unwrap_or(EMPTY_OBJECT),
+            .unwrap_or_else(|| GuardrailValue::Object(BTreeMap::new())),
     }
 }
 
@@ -275,10 +276,8 @@ async fn read_capped_body(mut response: reqwest::Response) -> Result<Vec<u8>, On
     let mut body = Vec::new();
     while let Some(chunk) = response.chunk().await.map_err(request_error)? {
         body.extend_from_slice(&chunk);
-        if body.len() > MAX_RESPONSE_BYTES {
-            return Err(OnyxGuardrailError::ResponseTooLarge {
-                limit: MAX_RESPONSE_BYTES,
-            });
+        if body.len() > 1024 * 1024 {
+            return Err(OnyxGuardrailError::ResponseTooLarge { limit: 1024 * 1024 });
         }
     }
     Ok(body)

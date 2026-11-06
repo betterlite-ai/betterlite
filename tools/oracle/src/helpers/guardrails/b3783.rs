@@ -75,12 +75,14 @@ fn call(input: &OnyxCall) -> HelperResult {
 
 fn start_mock(answer: Option<&UpstreamAnswer>) -> Result<Prepared, Box<HelperError>> {
     let io = |error: std::io::Error| failure("OSError", None, error.to_string());
-    let mock_error = |error: crate::OracleError| failure("MockError", None, error.to_string());
     // with no answer the listener accepts the connection and never replies, so the call times out
     let silent = TcpListener::bind(("127.0.0.1", 0)).map_err(io)?;
-    let start =
-        |reply| MockScript::try_from(std::slice::from_ref(reply)).and_then(MockProvider::start);
-    let mock = answer.map(start).transpose().map_err(mock_error)?;
+    let mock = answer
+        .map(|reply| {
+            MockScript::try_from(std::slice::from_ref(reply)).and_then(MockProvider::start)
+        })
+        .transpose()
+        .map_err(|error| failure("MockError", None, error.to_string()))?;
     let base = match &mock {
         Some(provider) => provider.base_url.clone(),
         None => format!("http://{}", silent.local_addr().map_err(io)?),
@@ -116,7 +118,8 @@ fn onyx_failure(error: &OnyxGuardrailError) -> Box<HelperError> {
     let class = match error {
         OnyxGuardrailError::Blocked { .. } => "HTTPException",
         OnyxGuardrailError::MissingApiKey
-        | OnyxGuardrailError::InvalidTimeout { .. }
+        | OnyxGuardrailError::TimeoutNotInteger(..)
+        | OnyxGuardrailError::TimeoutNegative(..)
         | OnyxGuardrailError::UnrepresentableTimeout { .. } => "ValueError",
         OnyxGuardrailError::Client { .. }
         | OnyxGuardrailError::Timeout { .. }
