@@ -1,0 +1,101 @@
+kind: helper
+name: parameter-projections-logging-projection
+call:
+  parameter_projections:
+    steps:
+      - function: logging_projection
+        model_parameters:
+          audio: 1
+          background: true
+          best_of: 2
+          cache_control: 1
+          chunking_strategy: auto
+          compaction: 1
+          container: 1
+          context_management: 1
+          conversation: 1
+          dimensions: 3
+          documents: ["first", "second"]
+          echo: 1
+          encoding_format: 1
+          file: 1
+          frequency_penalty: 1
+          function_call: 1
+          functions: 1
+          include: 1
+          inference_geo: 1
+          instruction: 1
+          instructions: 1
+          keywords: 1
+          known_speaker_names: 1
+          known_speaker_references: 1
+          language: 1
+          languages: 1
+          logit_bias: 1
+          logprobs: 1
+          max_chunks_per_doc: 1
+          max_completion_tokens: 1
+          max_output_tokens: 1
+          max_tokens: 1
+          max_tokens_per_doc: 1
+          max_tokens_per_query: 1
+          max_tool_calls: 1
+          mcp_servers: 1
+          modalities: 1
+          model: 1
+          moderation: 1
+          n: 1
+          output_config: 1
+          output_format: 1
+          parallel_tool_calls: 1
+          prediction: 1
+          presence_penalty: 1
+          previous_response_id: 1
+          prompt_cache_key: 1
+          prompt_cache_options: 1
+          prompt_cache_retention: 1
+          query: 1
+          rank_fields: 1
+          reasoning: 1
+          reasoning_effort: 1
+          response_format: 1
+          return_documents: 1
+          safeguards: 1
+          safety_identifier: 1
+          seed: 1
+          service_tier: 1
+          speed: 1
+          stop: 1
+          stop_sequences: ["end"]
+          store: 1
+          stream: 1
+          stream_options: 1
+          suffix: 1
+          temperature: 0
+          text: 1
+          thinking: {type: enabled, budget_tokens: 2048}
+          timestamp_granularities: 1
+          tool_choice: 1
+          tools: 1
+          top_k: 1
+          top_logprobs: 1
+          top_n: 1
+          top_p: 1
+          truncate_prompt_tokens: 1
+          truncation: 1
+          truncation_side: 1
+          user: 1
+          verbosity: 1
+          web_search_options: 1
+          input: "content"
+          messages: [{role: user, content: "hi"}]
+          prompt: "content"
+          system: "content"
+          metadata: {trace: "x"}
+          litellm_metadata: {trace: "x"}
+          unknown_parameter: 1
+          vendor_extension: {a: 1}
+      - function: excluded_content_names
+      - function: provider_chat_names
+env: {}
+compare: {ignore: []}

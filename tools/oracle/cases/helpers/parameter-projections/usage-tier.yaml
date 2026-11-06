@@ -1,0 +1,10 @@
+kind: helper
+name: parameter-projections-usage-tier
+call:
+  parameter_projections:
+    steps:
+      - {function: resolved_service_tier, usage_tier: priority}
+      - {function: resolved_service_tier, usage_tier: batch, requested_tier: auto}
+      - {function: resolved_service_tier, usage_tier: standard_only}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,16 @@
+kind: helper
+name: parameter-projections-reasoning-boundaries
+call:
+  parameter_projections:
+    steps:
+      - {function: reasoning_effort, budget_tokens: -1}
+      - {function: reasoning_effort, budget_tokens: 0}
+      - {function: reasoning_effort, budget_tokens: 1023}
+      - {function: reasoning_effort, budget_tokens: 1024}
+      - {function: reasoning_effort, budget_tokens: 2047}
+      - {function: reasoning_effort, budget_tokens: 2048}
+      - {function: reasoning_effort, budget_tokens: 4095}
+      - {function: reasoning_effort, budget_tokens: 4096}
+      - {function: reasoning_effort, budget_tokens: 8192}
+env: {}
+compare: {ignore: []}
