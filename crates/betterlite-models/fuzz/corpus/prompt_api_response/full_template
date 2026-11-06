@@ -1,0 +1,1 @@
+{"prompt_id":"welcome","prompt_template":[{"role":"system","content":"Hi {name}"},{"role":"user","content":"{{question}}"}],"prompt_template_model":"gpt-4","prompt_template_optional_params":{"temperature":0.7}}

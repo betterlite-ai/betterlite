@@ -1,0 +1,5 @@
+kind: helper
+name: galileo-delivery-health-check-unhealthy-no-project-id
+call: {"b3964": {"environment": {"GALILEO_API_KEY": "key-0123456789abcdef"}, "replies": [], "actions": [{"do": "health_check"}]}}
+env: {}
+compare: {ignore: []}
