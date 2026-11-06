@@ -5,6 +5,7 @@ use std::fs::{self, File, TryLockError};
 use std::io::ErrorKind;
 use std::io::{BufReader, Read as _, Write as _};
 use std::path::{Path, PathBuf};
+use std::process;
 use std::thread;
 use std::time::{Duration, SystemTime};
 
@@ -14,7 +15,7 @@ use crate::spec::agents::{Agents, Vendor};
 
 // a marker counts only near the end of a run's output, so one the agent read during its work doesn't
 const TAIL_LINES: usize = 20;
-const SEAT_WAIT: Duration = Duration::from_secs(30);
+const SEAT_WAIT: Duration = Duration::from_secs(5);
 
 pub(crate) fn find_vendor<'agents>(
     agents: &'agents Agents,
@@ -188,19 +189,96 @@ pub(crate) fn take_seat(
     seat: Seat,
 ) -> Result<Option<Vec<File>>, GateError> {
     let folder = seats_folder(git_common_dir)?;
-    loop {
+    let kind = match seat {
+        Seat::Worker => "worker",
+        Seat::Reviewer | Seat::ReviewerAgain | Seat::ParityReviewer | Seat::ParityReviewerAgain => {
+            "reviewer"
+        }
+    };
+    let queue = git_common_dir.join("betterlite").join("seat-queue");
+    let line = queue.join(format!("{}-{kind}", vendor.id));
+    let (ticket, _waiting) = join_line(&queue, &line)?;
+    let taken = loop {
         super::maintenance::check(git_common_dir, "")?;
         if limited(git_common_dir, agents, &vendor.id)? {
-            return Ok(None);
+            break None;
         }
-        if let Some(held) = free_seats(&folder, agents, vendor, seat)? {
+        if first_in_line(&line, &ticket)?
+            && let Some(held) = free_seats(&folder, agents, vendor, seat)?
+        {
             if limited(git_common_dir, agents, &vendor.id)? {
-                return Ok(None);
+                break None;
             }
-            return Ok(Some(held));
+            break Some(held);
         }
         thread::sleep(SEAT_WAIT);
+    };
+    fs::remove_file(&ticket).map_err(|source| GateError::Write {
+        path: ticket,
+        source,
+    })?;
+    Ok(taken)
+}
+
+fn join_line(queue: &Path, line: &Path) -> Result<(PathBuf, File), GateError> {
+    fs::create_dir_all(line).map_err(|source| GateError::Write {
+        path: line.to_path_buf(),
+        source,
+    })?;
+    let part = tempfile::NamedTempFile::new_in(queue).map_err(|source| GateError::Write {
+        path: queue.to_path_buf(),
+        source,
+    })?;
+    part.as_file().lock().map_err(|source| GateError::Lock {
+        path: part.path().to_path_buf(),
+        source,
+    })?;
+    let arrived = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let ticket = line.join(format!("{arrived:020}-{:010}", process::id()));
+    let held = part
+        .persist_noclobber(&ticket)
+        .map_err(|error| GateError::Write {
+            path: ticket.clone(),
+            source: error.error,
+        })?;
+    Ok((ticket, held))
+}
+
+fn first_in_line(line: &Path, ticket: &Path) -> Result<bool, GateError> {
+    let entries = fs::read_dir(line).map_err(|source| GateError::Read {
+        path: line.to_path_buf(),
+        source,
+    })?;
+    for entry in entries {
+        let path = entry
+            .map_err(|source| GateError::Read {
+                path: line.to_path_buf(),
+                source,
+            })?
+            .path();
+        if path.file_name() >= ticket.file_name() {
+            continue;
+        }
+        let other = match File::open(&path) {
+            Ok(other) => other,
+            Err(error) if error.kind() == ErrorKind::NotFound => continue,
+            Err(source) => return Err(GateError::Read { path, source }),
+        };
+        // a waiter that stopped leaves its ticket unlocked, and the first waiter behind it removes it
+        match other.try_lock() {
+            Ok(()) => match fs::remove_file(&path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == ErrorKind::NotFound => {}
+                Err(source) => return Err(GateError::Write { path, source }),
+            },
+            Err(TryLockError::WouldBlock) => return Ok(false),
+            Err(TryLockError::Error(source)) => return Err(GateError::Lock { path, source }),
+        }
     }
+    Ok(true)
 }
 
 pub(crate) fn available(git: &Path, agents: &Agents, task: &str) -> Result<(), GateError> {
