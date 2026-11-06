@@ -1032,6 +1032,7 @@ dependencies = [
 name = "betterlite-auth"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "betterlite-db",
  "chrono",
  "hex",
@@ -1050,6 +1051,7 @@ dependencies = [
  "strum",
  "thiserror",
  "tracing",
+ "tracing-subscriber",
  "unicode-normalization",
  "uuid",
 ]
