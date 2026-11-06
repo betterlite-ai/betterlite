@@ -17,21 +17,14 @@ description: 'Implement ClassifierText over B010 typed messages: bounded human a
   (L729-L755), _iter_system_scope_texts (L758-L780), _matched_plan_mode_sentinel (L783-L851), ComplexityRouter._resolve_messages
   (L4068-L4083), ComplexityRouter._extract_user_message_and_system_prompt (L4086-L4095), ComplexityRouter._reminder_markers_for_request
   (L4097-L4107). Implement these behaviors through the typed Rust services above; synchronous facades
-  and structural accessors reuse the same primitive instead of separate ports.'
+  and structural accessors reuse the same primitive instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B330 calls this service.'
 scope:
   paths:
   - crates/betterlite-router/src/classifier_message_text.rs
   - crates/betterlite-router/src/classifier_message_text/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/classifier_message_text.rs
   - crates/betterlite-server/src/routing/classifier_message_text/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/classifier_message_text.rs
   - tools/oracle/src/router_probes/classifier_message_text/**
   - tools/oracle/litellm/probes/classifier_message_text.py

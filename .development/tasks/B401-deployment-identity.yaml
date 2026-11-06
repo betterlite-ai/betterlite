@@ -15,21 +15,14 @@ description: 'Build DeploymentSpec and stable IDs from B002 config and B010 prov
   Deployment.__init__ (L654-L676), Deployment.to_json (L678-L683), Deployment.__contains__ (L685-L687),
   Deployment.get (L689-L691), Deployment.__getitem__ (L693-L695), Deployment.__setitem__ (L697-L699).
   Implement these behaviors through the typed Rust services above; synchronous facades and structural
-  accessors reuse the same primitive instead of separate ports.'
+  accessors reuse the same primitive instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B302 and B368 call this service.'
 scope:
   paths:
   - crates/betterlite-router/src/deployment_identity.rs
   - crates/betterlite-router/src/deployment_identity/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/deployment_identity.rs
   - crates/betterlite-server/src/routing/deployment_identity/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/deployment_identity.rs
   - tools/oracle/src/router_probes/deployment_identity/**
   - tools/oracle/litellm/probes/deployment_identity.py

@@ -18,21 +18,16 @@ description: 'Add least-busy as one exhaustive strategy variant using B304 state
   (L153-L166), LeastBusyLoggingHandler.async_get_available_deployments (L168-L181), LeastBusyLoggingHandler._increment
   (L183-L199), LeastBusyLoggingHandler._async_increment (L201-L217). Implement these behaviors through
   the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
-  instead of separate ports.'
+  instead of separate ports.
+  B016 registers Strategy::LeastBusy as a stub, so replace only that stub and its not-built test in crates/betterlite-router/src/strategy/least_busy.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.'
 scope:
   paths:
   - crates/betterlite-router/src/least_busy.rs
   - crates/betterlite-router/src/least_busy/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-router/src/strategy/least_busy.rs
+  - crates/betterlite-router/src/strategy/least_busy/**
   - crates/betterlite-server/src/routing/least_busy.rs
   - crates/betterlite-server/src/routing/least_busy/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/least_busy.rs
   - tools/oracle/src/router_probes/least_busy/**
   - tools/oracle/litellm/probes/least_busy.py

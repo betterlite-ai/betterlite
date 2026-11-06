@@ -85,6 +85,7 @@ description: >-
   and failure_stops_downstream. The registration test invokes the actual B732 constructor with this production
   stage; the failure test asserts its public error translation and that the downstream handler was not
   called. These tests are part of the behavior-test allowance already budgeted above.
+  B1100 registers state/auth_backend_dispatch.rs as a stub slot, so fill only crates/betterlite-server/src/state/auth_backend_dispatch.rs and leave state.rs as it is.
 scope:
   paths:
     - crates/betterlite-auth/src/auth_backend_dispatch.rs
@@ -92,8 +93,8 @@ scope:
     - crates/betterlite-auth/Cargo.toml
     - crates/betterlite-server/src/auth.rs
     - crates/betterlite-server/src/auth/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/state/auth_backend_dispatch.rs
+    - crates/betterlite-server/src/state/auth_backend_dispatch/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/auth-backend-dispatch/**

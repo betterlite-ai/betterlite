@@ -38,14 +38,15 @@ description: >-
   successful persistence. The five owned methods contain about 370 source lines. Budget
   800 changed lines for composition, config, request-order/fault tests and runtime shutdown
   integration with PostgreSQL and Redis; wire behavior remains tested by B069's callbacks.
+  B1100 registers state/spend_runtime.rs as a stub slot, so fill only crates/betterlite-server/src/state/spend_runtime.rs and leave state.rs as it is.
 scope:
   paths:
     - crates/betterlite-db/src/spend_writer.rs
     - crates/betterlite-db/src/spend_writer/**
     - crates/betterlite-server/src/spend/runtime.rs
     - crates/betterlite-server/src/spend/runtime/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/state/spend_runtime.rs
+    - crates/betterlite-server/src/state/spend_runtime/**
     - crates/betterlite-config/src/spend_storage.rs
     - crates/betterlite-config/src/spend_storage/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/spend-writer-*
