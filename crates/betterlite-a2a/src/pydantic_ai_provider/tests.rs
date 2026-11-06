@@ -95,12 +95,36 @@ async fn pydantic_ai_provider_treats_null_kwargs_as_absent() {
 #[rstest]
 #[case::timeout_text(r#"{"timeout": "slow"}"#)]
 #[case::headers_list(r#"{"agent_extra_headers": ["a"]}"#)]
-#[case::zero_chunk(r#"{"chunk_size": 0}"#)]
 #[case::delay_text(r#"{"delay_ms": "slow"}"#)]
 #[tokio::test]
 async fn pydantic_ai_provider_rejects_wrong_typed_kwargs(#[case] text: &str) {
     let mut provider = provider(&[COMPLETED]);
     let (params, extra) = (json("{}"), kwargs(text));
+    let error = provider
+        .handle::<ReplayedStream>(&call(&params, AGENT, &extra))
+        .await
+        .unwrap_err();
+    assert!(matches!(error, ProviderError::Kwargs(_)));
+    assert!(
+        provider
+            .handler
+            .transformation
+            .transport
+            .recorded()
+            .is_empty()
+    );
+}
+
+#[rstest]
+#[case::zero(0)]
+#[case::negative(-1)]
+#[tokio::test]
+async fn pydantic_ai_provider_rejects_a_non_positive_chunk_size(#[case] chunk_size: i64) {
+    let mut provider = provider(&[COMPLETED]);
+    let (params, extra) = (
+        json("{}"),
+        BTreeMap::from([("chunk_size".to_owned(), AgentJson::from(chunk_size))]),
+    );
     let error = provider
         .handle::<ReplayedStream>(&call(&params, AGENT, &extra))
         .await
