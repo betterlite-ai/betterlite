@@ -1,0 +1,9 @@
+kind: helper
+name: opensandbox-create-with-secure-access
+call:
+  b3517:
+    operation: create_body
+    secure_access: true
+env: {}
+compare:
+  ignore: []
