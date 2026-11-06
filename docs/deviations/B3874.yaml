@@ -9,8 +9,8 @@ deviations:
   - what: pretty_print_validation_errors and pretty_print_prometheus_config return the rendered report instead of printing Rich tables, and the parser writes the report through tracing at error and info level.
     why: Rust has no rich console; the caller chooses the sink and a display failure never fails startup.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1027-L1167
-  - what: get_instance reads the first Prometheus logger from a callback list viewed as slots of an optional logger reference, instead of scanning litellm.callbacks with isinstance.
-    why: B189's callback registry keeps identities and sinks rather than logger instances, and Rust has no isinstance; the typed slot view keeps the first-registered answer and the registry adapter decides what each slot holds.
+  - what: get_instance scans the exporter's CallbackRegistry of class-named entries and returns the logger held by the first entry whose class name is PrometheusLogger, instead of an isinstance check over litellm.callbacks.
+    why: B189's callback registry keeps identities and sinks rather than logger instances, and Rust has no isinstance; the registry adapter records each callback's B189 class name next to the optional logger handle and the first matching class wins.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L257-L265
   - what: The label defaults and caller-identity mode arrive through a LabelSchema trait implemented outside this crate instead of the process-wide litellm module state.
     why: The label schema lives in betterlite-logging, which already depends on betterlite-prometheus, so a trait keeps the dependency direction and injects the schema through the factory constructor.
