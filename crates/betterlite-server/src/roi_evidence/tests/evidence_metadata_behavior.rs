@@ -151,12 +151,14 @@ async fn evidence_keeps_an_unusable_commit_address_out_of_the_emails() {
 }
 
 #[rstest]
-#[case::files_differ(Some(5), Some(1))]
-#[case::commits_differ(Some(2), Some(4))]
+#[case::files_differ(Some(5), Some(1), 5, 1)]
+#[case::commits_differ(Some(2), Some(4), 2, 4)]
 #[tokio::test]
 async fn evidence_flags_incomplete_metadata_when_the_counts_differ(
     #[case] changed_files: Option<i64>,
     #[case] commits: Option<i64>,
+    #[case] reported_files: i64,
+    #[case] reported_commits: i64,
 ) {
     let script = evidence_script(
         &pull_detail_json(7, Some("Octo"), changed_files, commits),
@@ -166,6 +168,8 @@ async fn evidence_flags_incomplete_metadata_when_the_counts_differ(
     );
     let github = github(script);
     let evidence = evidence(&github, "o/r", &pull_list_item(7)).await.unwrap();
+    assert_eq!(evidence.changed_files, reported_files);
+    assert_eq!(evidence.commit_count, reported_commits);
     assert_eq!(evidence.files.len(), 2);
     assert_eq!(evidence.commits.len(), 1);
     assert!(evidence.incomplete_metadata);
