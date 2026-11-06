@@ -79,10 +79,10 @@ impl<D: Delivery> Api<D> {
         Err(status_error(&response))
     }
 
-    // Api.a_send_request: the async handler raises for a non-2xx status and the answer itself is dropped.
+    // Api.a_send_request: raise_for_status only fails a 4xx or 5xx answer, and the answer itself is dropped.
     pub async fn a_send_request(&self, method: HttpMethod, trace: &TraceApi) -> Ack<D::Error> {
         let response = self.deliver(method, trace).await?;
-        if (200..300).contains(&response.status) {
+        if response.status < 400 {
             return Ok(());
         }
         Err(status_error(&response))

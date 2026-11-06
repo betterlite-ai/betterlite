@@ -139,6 +139,14 @@ async fn a_send_request_accepts_a_2xx_status_without_rechecking_200() {
 }
 
 #[tokio::test]
+async fn a_send_request_accepts_a_redirect_like_raise_for_status() {
+    let api = api([Answer::status(302)]);
+    api.a_send_request(HttpMethod::Post, &trace())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
 async fn a_send_request_raises_on_a_server_error_status() {
     let api = api([Answer::reply(500, "boom")]);
     let Err(ApiError::Status { status, body }) =
