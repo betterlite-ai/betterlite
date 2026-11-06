@@ -1,0 +1,53 @@
+kind: helper
+name: structured-messages
+call:
+  response_tool_calls:
+    function: resolve_structured_messages
+    calls:
+      - messages: null
+        request_kwargs:
+          litellm_metadata:
+            user_api_key_request_route: /chat/completions
+        routes:
+          - route: /chat/completions
+            call_types: [completion, acompletion]
+        handlers:
+          - call_types: [anthropic_messages]
+            messages: null
+          - call_types: [completion]
+            messages:
+              - role: user
+                content: routed
+      - messages: null
+        request_kwargs: {}
+        routes: []
+        handlers:
+          - call_types: [completion]
+            messages: null
+          - call_types: [anthropic_messages]
+            messages:
+              - role: user
+                content: second
+      - messages:
+          - role: system
+            content: given
+        request_kwargs:
+          litellm_metadata:
+            user_api_key_request_route: /v1/messages
+        routes:
+          - route: /v1/messages
+            call_types: [anthropic_messages]
+        handlers:
+          - call_types: [anthropic_messages]
+            messages:
+              - role: user
+                content: ignored
+      - messages: null
+        request_kwargs: {}
+        routes: []
+        handlers:
+          - call_types: [completion]
+            messages: null
+env: {}
+compare:
+  ignore: []

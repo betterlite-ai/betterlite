@@ -1,0 +1,25 @@
+kind: helper
+name: responses-function
+call:
+  response_tool_calls:
+    function: get_tool_calls
+    response:
+      output:
+        - type: message
+          role: assistant
+          content:
+            - type: output_text
+              text: calling
+        - type: function_call
+          id: fc_1
+          call_id: call_1
+          name: lookup
+          arguments: '{"q":"x"}'
+        - type: function_call
+          id: fc_2
+          name: lookup
+          arguments:
+            q: y
+env: {}
+compare:
+  ignore: []

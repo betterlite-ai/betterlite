@@ -1,0 +1,23 @@
+kind: helper
+name: anthropic-tool-use
+call:
+  response_tool_calls:
+    function: get_tool_calls
+    response:
+      content:
+        - type: text
+          text: searching
+        - type: tool_use
+          id: toolu_1
+          name: search
+          input:
+            query: weather
+        - type: tool_use
+          id: toolu_2
+          name: search
+          input: not a dict
+        - type: tool_use
+          name: no_id
+env: {}
+compare:
+  ignore: []
