@@ -17,6 +17,7 @@ description: >-
 scope:
   paths:
     - crates/betterlite-prompts/src/dotprompt_templates.rs
+    - crates/betterlite-prompts/src/gitlab_templates/sandbox.rs
     - crates/betterlite-prompts/src/orchestration.rs
     - crates/betterlite-prompts/src/orchestration/**
   lint_tables: false
