@@ -133,8 +133,46 @@ async fn run_poll_completion() {
     assert_eq!(transport.requests().len(), 1);
 
     empty_thread_is_refused().await;
+    dot_segments_are_refused().await;
+    empty_run_id_is_refused().await;
     poll_intervals().await;
     poll_interval_failures().await;
+}
+
+async fn dot_segments_are_refused() {
+    for thread_id in [".", "%2e"] {
+        let dotted = RunRequest {
+            thread_id: String::from(thread_id),
+            ..request()
+        };
+        let (api, transport) = harness();
+        let rejected = api
+            .run_thread(call(Facade::SyncRun), &dotted)
+            .await
+            .err()
+            .unwrap();
+        assert!(
+            matches!(rejected, ThreadRunsError::DotSegment { .. }),
+            "{thread_id}: {rejected}"
+        );
+        assert!(transport.requests().is_empty());
+    }
+}
+
+async fn empty_run_id_is_refused() {
+    let created = QUEUED.replace(r#""run_1""#, r#""""#);
+    let (api, transport) = harness();
+    transport.queue(200, &[], &created);
+    let rejected = api
+        .run_thread(call(Facade::SyncRun), &request())
+        .await
+        .err()
+        .unwrap();
+    assert!(
+        matches!(rejected, ThreadRunsError::EmptyRunId),
+        "{rejected}"
+    );
+    assert_eq!(transport.requests().len(), 1);
 }
 
 async fn empty_thread_is_refused() {
@@ -275,27 +313,29 @@ async fn stream_incremental_events() {
         vec![wire("POST", RUNS, Some(STREAM_BODY))]
     );
 
-    crlf_stream_decodes().await;
+    stream_terminators_decode().await;
 }
 
-// A CRLF frame terminator is one terminator, not a line end plus a blank line that would cut the frame.
-async fn crlf_stream_decodes() {
-    let (api, transport) = harness();
-    let crlf = sse().replace('\n', "\r\n");
-    transport.queue(200, &[("content-type", "text/event-stream")], &crlf);
-    let outcome = api
-        .run_thread(call(Facade::SyncStream), &request())
-        .await
-        .unwrap();
-    let RunInvocation::Streaming(stream) = outcome else {
-        panic!("expected a stream manager");
-    };
-    let events = stream.consume().await.unwrap();
-    assert_eq!(events.len(), 3);
-    assert_eq!(
-        transport.requests(),
-        vec![wire("POST", RUNS, Some(STREAM_BODY))]
-    );
+// CRLF is one terminator, not a line end plus a blank line that would cut the frame; a lone CR is a terminator too.
+async fn stream_terminators_decode() {
+    for terminator in ["\r\n", "\r"] {
+        let (api, transport) = harness();
+        let body = sse().replace('\n', terminator);
+        transport.queue(200, &[("content-type", "text/event-stream")], &body);
+        let outcome = api
+            .run_thread(call(Facade::SyncStream), &request())
+            .await
+            .unwrap();
+        let RunInvocation::Streaming(stream) = outcome else {
+            panic!("expected a stream manager");
+        };
+        let events = stream.consume().await.unwrap();
+        assert_eq!(events.len(), 3, "{terminator:?}");
+        assert_eq!(
+            transport.requests(),
+            vec![wire("POST", RUNS, Some(STREAM_BODY))]
+        );
+    }
 }
 
 async fn instructions_tools_overrides() {
