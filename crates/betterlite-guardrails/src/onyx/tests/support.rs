@@ -20,6 +20,23 @@ use uuid::Uuid;
 
 pub(crate) const API_KEY: &str = "oracle-key";
 
+#[derive(Clone, Default)]
+pub(crate) struct CapturedLog(pub(crate) Arc<Mutex<Vec<u8>>>);
+
+impl io::Write for CapturedLog {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .map_err(|_poisoned| io::Error::other("poisoned log buffer"))?
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
 #[derive(Debug)]
 pub(crate) struct Seen {
     pub(crate) path: String,

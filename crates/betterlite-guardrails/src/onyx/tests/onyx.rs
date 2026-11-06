@@ -11,10 +11,12 @@ use betterlite_guardrails::onyx::{
 use betterlite_http::proxy::base_builder;
 use secrecy::ExposeSecret as _;
 use secrecy::SecretString;
+use tokio::runtime::Builder;
+use tracing::subscriber::with_default;
 
 use crate::support::{
-    captured, captured_path, guardrail, guardrail_with_timeout, inputs, mock_onyx, object,
-    silent_onyx, value,
+    CapturedLog, captured, captured_path, guardrail, guardrail_with_timeout, inputs, mock_onyx,
+    object, silent_onyx, value,
 };
 
 fn lookup(entries: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -407,4 +409,74 @@ async fn fail_open_returns_the_inputs_on_a_timeout() {
         .await
         .unwrap();
     assert_eq!(returned, inputs(r#"{"texts": ["hello"]}"#));
+}
+
+#[tokio::test]
+async fn fail_open_returns_the_inputs_on_an_oversized_response() {
+    let mock = mock_onyx(StatusCode::OK, "a".repeat(1024 * 1024 + 1)).await;
+    let returned = guardrail(&mock.base)
+        .apply_guardrail(
+            inputs(r#"{"texts": ["hello"]}"#),
+            &object("{}"),
+            GuardrailInputType::Request,
+            Some("call-1"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(returned, inputs(r#"{"texts": ["hello"]}"#));
+}
+
+#[tokio::test]
+async fn request_payload_defaults_to_an_empty_object_when_proxy_server_request_is_null() {
+    let mock = mock_onyx(StatusCode::OK, String::from(r#"{"allowed": true}"#)).await;
+    guardrail(&mock.base)
+        .apply_guardrail(
+            inputs(r#"{"texts": ["hello"]}"#),
+            &object(r#"{"proxy_server_request": null}"#),
+            GuardrailInputType::Request,
+            Some("call-1"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(captured(&mock).payload, value("{}"));
+}
+
+#[tokio::test]
+async fn response_payload_defaults_to_an_empty_object_when_response_is_null() {
+    let mock = mock_onyx(StatusCode::OK, String::from(r#"{"allowed": true}"#)).await;
+    guardrail(&mock.base)
+        .apply_guardrail(
+            inputs(r#"{"texts": ["done"]}"#),
+            &object(r#"{"response": null}"#),
+            GuardrailInputType::Response,
+            Some("call-1"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(captured(&mock).payload, value("{}"));
+}
+
+#[test]
+fn fail_open_logs_the_transport_error_without_the_api_key() {
+    let guardrail = guardrail("http://127.0.0.1:1");
+    let captured_log = CapturedLog::default();
+    let writer = captured_log.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::ERROR)
+        .with_writer(move || writer.clone())
+        .finish();
+    let runtime = Builder::new_current_thread().enable_all().build().unwrap();
+    let returned = with_default(subscriber, || {
+        runtime.block_on(guardrail.apply_guardrail(
+            inputs(r#"{"texts": ["hello"]}"#),
+            &object("{}"),
+            GuardrailInputType::Request,
+            Some("call-1"),
+        ))
+    })
+    .unwrap();
+    assert_eq!(returned, inputs(r#"{"texts": ["hello"]}"#));
+    let output = String::from_utf8(captured_log.0.lock().unwrap().clone()).unwrap();
+    assert!(output.contains("could not be reached"));
+    assert!(!output.contains("oracle-key"));
 }
