@@ -141,9 +141,11 @@ fn the_callback_input_is_copied_into_the_span() {
     assert_eq!(span.input, SpanValue::List(vec![expected]));
 }
 
-#[test]
-fn missing_identifiers_use_generated_uuids() {
-    let kwargs = kwargs("{}");
+#[rstest]
+#[case::absent("{}")]
+#[case::null(r#"{"standard_logging_object": {"id": null, "trace_id": null}}"#)]
+fn missing_identifiers_use_generated_uuids(#[case] raw: &str) {
+    let kwargs = kwargs(raw);
     let uuids = CountingUuids::default();
     let span = base_api_span(&kwargs, times(), TraceSpanApiStatus::Success, &uuids);
     let trace_uuid = span.trace_uuid.clone();
