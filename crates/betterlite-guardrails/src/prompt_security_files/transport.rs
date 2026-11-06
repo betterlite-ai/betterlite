@@ -74,22 +74,15 @@ async fn poll(
     let attempts = sanitizer.settings.max_poll_attempts;
     for attempt in 1..=attempts {
         sleep(sanitizer.settings.poll_interval).await;
-        log_api_request("GET", url, headers, &format!("jobId={job_id}"));
-        let request = with_headers(sanitizer.client.get(url), headers)
-            .query(&[("jobId", job_id)])
-            .timeout(sanitizer.settings.request_timeout);
-        let response = request.send().await.map_err(request_error)?;
-        let status_code = response.status().as_u16();
-        let polled: StatusResponse =
-            read_json(response, sanitizer.settings.max_response_bytes).await?;
-        let status = polled.status.clone();
-        log_api_response(
-            url,
-            status_code,
-            &format!("jobId={job_id} status={status:?}"),
-        );
-        match status.as_deref() {
-            Some("done") => return Ok(SanitizeResult::from(polled)),
+        let polled = poll_once(sanitizer, url, headers, job_id).await?;
+        match polled.status.as_deref() {
+            Some("done") => {
+                tracing::debug!(
+                    job_id,
+                    "Prompt Security Guardrail: File sanitization completed"
+                );
+                return Ok(SanitizeResult::from(polled));
+            }
             Some(queued) if QUEUED_STATUSES.contains(&queued) => {
                 tracing::debug!(
                     queued,
@@ -107,6 +100,27 @@ async fn poll(
         }
     }
     Err(FileSanitizationError::Timeout)
+}
+
+async fn poll_once(
+    sanitizer: &FileSanitizer,
+    url: &str,
+    headers: &BTreeMap<String, String>,
+    job_id: &str,
+) -> Result<StatusResponse, FileSanitizationError> {
+    log_api_request("GET", url, headers, &format!("jobId={job_id}"));
+    let request = with_headers(sanitizer.client.get(url), headers)
+        .query(&[("jobId", job_id)])
+        .timeout(sanitizer.settings.request_timeout);
+    let response = request.send().await.map_err(request_error)?;
+    let status_code = response.status().as_u16();
+    let polled: StatusResponse = read_json(response, sanitizer.settings.max_response_bytes).await?;
+    log_api_response(
+        url,
+        status_code,
+        &format!("jobId={job_id} status={:?}", polled.status),
+    );
+    Ok(polled)
 }
 
 fn request_error(source: reqwest::Error) -> FileSanitizationError {

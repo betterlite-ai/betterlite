@@ -2,7 +2,10 @@
 
 use std::time::{Duration, Instant};
 
-use super::shared::{CREATED, IN_PROGRESS, UPLOADED, done, sanitizer, vendor};
+use tracing::Level;
+use tracing::subscriber::set_default;
+
+use super::shared::{CREATED, Capture, DONE_ALLOW, IN_PROGRESS, UPLOADED, done, sanitizer, vendor};
 use crate::prompt_security_files::wire::Action;
 
 #[tokio::test]
@@ -48,6 +51,23 @@ async fn polling_keeps_the_vendor_metadata_on_the_result() {
         result.metadata.violations,
         Some(vec!["secret".to_owned(), "pii".to_owned()])
     );
+}
+
+#[tokio::test]
+async fn polling_logs_completion_at_debug_level() {
+    let server = vendor(UPLOADED, &[DONE_ALLOW.to_owned()]).await;
+    let capture = Capture::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(capture.clone())
+        .with_max_level(Level::DEBUG)
+        .with_ansi(false)
+        .finish();
+    let _guard = set_default(subscriber);
+    sanitizer(&server.base)
+        .sanitize_file_content(b"a", "image.png", None)
+        .await
+        .expect("done");
+    assert!(capture.text().contains("File sanitization completed"));
 }
 
 #[tokio::test]
