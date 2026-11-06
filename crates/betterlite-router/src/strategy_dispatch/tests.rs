@@ -207,6 +207,7 @@ fn strategy_dispatch_behaviors(#[case] behavior: Behavior) {
             let resolution = resolve(&mut dispatch, &mut request, &RoutingGroups::default());
             assert_eq!(resolution.strategy, RoutingStrategy::LeastBusy);
             assert_eq!(resolution.source, ResolutionSource::RequestOverride);
+            assert!(resolution.bound);
             assert_eq!(
                 bindings.dynamic_callbacks,
                 vec![resolution.selector.unwrap()]
@@ -386,6 +387,7 @@ fn strategy_dispatch_behaviors(#[case] behavior: Behavior) {
             };
             let resolution = resolve(&mut dispatch, &mut request, &groups);
             assert_eq!(resolution.strategy, RoutingStrategy::LeastBusy);
+            assert!(!resolution.bound);
             assert!(bindings.dynamic_callbacks.is_empty());
             assert_eq!(
                 globally_registered_strategies(&dispatch, &groups),
