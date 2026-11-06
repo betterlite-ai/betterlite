@@ -587,7 +587,8 @@ async fn error_passthrough() {
 
 // Reading stops once 64 KiB are collected, so 65 chunks of 1 KiB keep 64 of them
 async fn error_body_limit() {
-    let chunks: Vec<Result<Vec<u8>, HttpError>> = (0..65).map(|_| Ok(vec![b'x'; 1024])).collect();
+    let chunks: Vec<Result<Vec<u8>, HttpError>> =
+        vec![vec![b'x'; 1024]; 65].into_iter().map(Ok).collect();
     let collected = read_error_body(stream::iter(chunks).boxed()).await;
     assert_eq!(collected.len(), 64 * 1024);
 }
