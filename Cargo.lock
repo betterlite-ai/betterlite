@@ -975,11 +975,16 @@ dependencies = [
  "betterlite-http",
  "chrono",
  "futures-core",
+ "hex",
  "http 1.5.0",
+ "lru",
+ "num-traits",
  "rstest",
+ "secrecy",
  "serde",
  "serde_json",
  "serde_with",
+ "sha2 0.11.1",
  "strum",
  "thiserror",
  "tokio",
@@ -1056,8 +1061,19 @@ dependencies = [
  "betterlite-error",
  "indexmap 2.14.2",
  "rstest",
+ "secrecy",
  "serde",
  "serde_json",
+ "serde_path_to_error",
+ "thiserror",
+]
+
+[[package]]
+name = "betterlite-azure-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-azure",
+ "libfuzzer-sys",
 ]
 
 [[package]]
@@ -1436,6 +1452,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-redact",
  "fancy-regex",
+ "futures-util",
  "indexmap 2.14.2",
  "lru",
  "mime_guess",
@@ -1517,6 +1534,7 @@ dependencies = [
  "h2",
  "hex",
  "http 1.5.0",
+ "libc",
  "opentelemetry-http",
  "percent-encoding",
  "rcgen",
@@ -1537,6 +1555,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "url",
  "uuid",
  "webpki-roots",
  "zip",
@@ -1816,11 +1835,13 @@ dependencies = [
  "betterlite-paths",
  "betterlite-postgres-fixture",
  "betterlite-prompts",
+ "betterlite-proxy",
  "betterlite-rate-limit",
  "betterlite-redact",
  "betterlite-redis",
  "betterlite-router",
  "betterlite-sdk",
+ "betterlite-secret-managers",
  "betterlite-secrets",
  "betterlite-server",
  "betterlite-streaming",
@@ -1830,6 +1851,7 @@ dependencies = [
  "cookie_store",
  "futures-util",
  "hex",
+ "http 1.5.0",
  "indexmap 2.14.2",
  "jiff",
  "percent-encoding",
@@ -1850,6 +1872,7 @@ dependencies = [
  "tokio",
  "tokio-postgres",
  "tokio-tungstenite",
+ "tower",
  "tracing",
  "tracing-subscriber",
  "ulid",
@@ -1943,6 +1966,7 @@ dependencies = [
 name = "betterlite-prompts"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "betterlite-logging",
  "betterlite-models",
  "chrono",
@@ -1950,7 +1974,9 @@ dependencies = [
  "indexmap 2.14.2",
  "minijinja",
  "minijinja-contrib",
+ "percent-encoding",
  "rstest",
+ "secrecy",
  "serde",
  "serde-saphyr",
  "serde_json",
@@ -1979,6 +2005,24 @@ version = "0.1.0"
 [[package]]
 name = "betterlite-proxy"
 version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "betterlite-config",
+ "betterlite-context",
+ "betterlite-http",
+ "hex",
+ "http 1.5.0",
+ "rstest",
+ "rust_decimal",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "url",
+]
 
 [[package]]
 name = "betterlite-rag"
@@ -2131,6 +2175,7 @@ dependencies = [
  "betterlite-env",
  "http 1.5.0",
  "num-traits",
+ "percent-encoding",
  "regex",
  "rstest",
  "secrecy",
