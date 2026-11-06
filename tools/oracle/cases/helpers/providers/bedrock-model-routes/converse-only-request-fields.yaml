@@ -1,0 +1,49 @@
+kind: helper
+name: bedrock-converse-only-request-fields
+call:
+  bedrock_model_routes:
+    price_map:
+      openai.gpt-5.6:
+        supported_endpoints: ["/v1/chat/completions"]
+    converse_models: []
+    request_metadata_fields: []
+    tool_names: {}
+    step:
+      routes:
+        models:
+          - chat_completions/openai.gpt-4o
+          - openai.gpt-5.6
+        requests:
+          - model: chat_completions/openai.gpt-4o
+            request_params: {guardrailConfig: false}
+          - model: chat_completions/openai.gpt-4o
+            request_params: {performanceConfig: ""}
+          - model: chat_completions/openai.gpt-4o
+            request_params: {serviceTier: []}
+          - model: chat_completions/openai.gpt-4o
+            request_params: {requestMetadata: {}}
+          - model: chat_completions/openai.gpt-4o
+            request_params: {outputConfig: 0}
+          - model: chat_completions/openai.gpt-4o
+            request_params: {thinking: false}
+          - model: chat_completions/openai.gpt-4o
+            request_params: {additionalModelRequestFields: []}
+          - model: chat_completions/openai.gpt-4o
+            request_params: {top_k: 0}
+          - model: chat_completions/openai.gpt-4o
+            request_params: {stop: []}
+          - model: chat_completions/openai.gpt-4o
+            request_params: {model_id: ""}
+          - model: openai.gpt-5.6
+            request_params: {serviceTier: default}
+          - model: openai.gpt-5.6
+            request_params: {}
+          - model: chat_completions/openai.gpt-4o
+            request_params: {guardrailConfig: null}
+          - model: chat_completions/openai.gpt-4o
+            request_params: {response_format: null}
+          - model: chat_completions/openai.gpt-4o
+            request_params: {temperature: 0.2}
+env: {}
+compare:
+  ignore: []
