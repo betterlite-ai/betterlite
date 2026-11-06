@@ -136,7 +136,7 @@ fn an_absent_or_null_input_falls_back_to_no_input(#[case] raw: &str) {
 fn the_callback_input_is_copied_into_the_span() {
     let kwargs = kwargs(r#"{"input": [{"role": "user", "content": "hi"}]}"#);
     let span = span(&kwargs, TraceSpanApiStatus::Success);
-    let expected: Json = serde_json::from_str(r#"[{"role": "user", "content": "hi"}]"#).unwrap();
+    let expected: Json = serde_json::from_str(r#"{"role": "user", "content": "hi"}"#).unwrap();
     assert_eq!(span.input, SpanValue::List(vec![expected]));
 }
 
