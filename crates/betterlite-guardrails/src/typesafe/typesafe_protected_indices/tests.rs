@@ -59,6 +59,33 @@ fn protected_indices_keeps_an_unprotected_completed_exchange_out_of_the_set() {
     );
 }
 
+#[test]
+fn protected_indices_keeps_the_prompt_cache_prefix_and_expands_it() {
+    let messages = vec![
+        json(r#"{"role":"system","content":"rules"}"#),
+        json(r#"{"role":"user","content":"question"}"#),
+        json(r#"{"role":"assistant","tool_calls":[{"id":"call_1"},{"id":"call_2"}]}"#),
+        json(
+            r#"{"role":"tool","tool_call_id":"call_1","content":[{"type":"text","text":"first","cache_control":{"type":"ephemeral"}}]}"#,
+        ),
+        json(r#"{"role":"tool","tool_call_id":"call_2","content":"second"}"#),
+        json(r#"{"role":"user","content":"follow up"}"#),
+        json(r#"{"role":"assistant","content":"done"}"#),
+    ];
+    assert_eq!(
+        compression_protected_indices(&messages),
+        vec![0, 1, 2, 3, 5, 6]
+    );
+    assert_eq!(
+        protected_indices(
+            &messages,
+            compression_protected_indices,
+            group_tool_exchanges
+        ),
+        BTreeSet::from([0, 1, 2, 3, 4, 5, 6])
+    );
+}
+
 fn shared_indices(_messages: &[Json]) -> Vec<usize> {
     vec![1]
 }
