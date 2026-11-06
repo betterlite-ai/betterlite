@@ -22,6 +22,7 @@ enum Projected {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FileCreateParams {
     pub file_id: Option<String>,
     pub attributes: Option<Attributes>,
@@ -44,6 +45,7 @@ struct UpdateBody {
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct FileListParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub after: Option<String>,
@@ -58,6 +60,7 @@ pub struct FileListParams {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct FileUpdateParams {
     pub attributes: Attributes,
 }

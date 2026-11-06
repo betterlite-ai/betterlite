@@ -360,6 +360,16 @@ fn vector_stores_cases(#[case] scenario: fn()) {
 }
 
 #[test]
+fn unknown_option_fields_are_rejected() {
+    serde_json::from_str::<SearchParams>(r#"{"max_results": 5}"#).unwrap_err();
+    serde_json::from_str::<CreateParams>(r#"{"name": "n", "extra": true}"#).unwrap_err();
+    serde_json::from_str::<FileCreateParams>(r#"{"file_ids": ["f"]}"#).unwrap_err();
+    serde_json::from_str::<FileListParams>(r#"{"page": 2}"#).unwrap_err();
+    serde_json::from_str::<files::FileUpdateParams>(r#"{"attributes": {}, "metadata": {}}"#)
+        .unwrap_err();
+}
+
+#[test]
 fn openai_vector_stores_credential_identity_isolation() {
     let none = LiteLlmGlobals::default;
     let team = caller(&[("X-Team", "a")]);

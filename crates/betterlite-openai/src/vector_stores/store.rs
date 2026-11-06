@@ -17,6 +17,7 @@ pub enum Query {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SearchParams {
     pub filters: Option<Value>,
     pub max_num_results: Option<i64>,
@@ -25,6 +26,7 @@ pub struct SearchParams {
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct CreateParams {
     pub name: Option<String>,
     pub file_ids: Option<Vec<String>>,
