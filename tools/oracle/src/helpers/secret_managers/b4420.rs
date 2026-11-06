@@ -204,6 +204,7 @@ impl crate::helpers::Helper for Op {
             return Ok(serde_json::json!({"initialized": false}));
         };
         let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
             .build()
             .map_err(runtime_failure)?;
         let steps = play(&runtime, &session, &input.steps);
