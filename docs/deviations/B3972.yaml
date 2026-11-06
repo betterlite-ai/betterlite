@@ -24,4 +24,4 @@ deviations:
     why: >-
       LiteLLM's own two ids cannot both be honored, and the span is orphaned from its trace, so no working
       setup can rely on the second value; one id keeps the span inside the trace it is sent with.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/deepeval.py#L113-L117
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/deepeval.py#L134-L137

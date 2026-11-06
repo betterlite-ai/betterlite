@@ -46,7 +46,7 @@ pub struct ResponseFields {
     #[serde(default)]
     pub usage: Option<Usage>,
     #[serde(default)]
-    pub choices: Vec<Choice>,
+    pub choices: Option<Vec<Choice>>,
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize)]
@@ -164,5 +164,12 @@ fn success_output(standard: Option<&StandardLoggingObject>) -> Option<SpanValue>
     let ResponseBody::Object(fields) = response else {
         return None;
     };
-    fields.choices.first()?.message.as_ref()?.content.clone()
+    fields
+        .choices
+        .as_ref()?
+        .first()?
+        .message
+        .as_ref()?
+        .content
+        .clone()
 }

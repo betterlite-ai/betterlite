@@ -104,6 +104,7 @@ fn failure_span_outputs_an_empty_string_without_an_error_string(#[case] raw: &st
     r#"{"standard_logging_object": {"response": {"choices": [{"message": {}}]}}}"#
 )]
 #[case::empty_choices(r#"{"standard_logging_object": {"response": {"choices": []}}}"#)]
+#[case::null_choices(r#"{"standard_logging_object": {"response": {"choices": null}}}"#)]
 #[case::text_response(r#"{"standard_logging_object": {"response": "upstream text"}}"#)]
 fn success_span_falls_back_to_no_output(#[case] raw: &str) {
     let span = span(&kwargs(raw), TraceSpanApiStatus::Success);
