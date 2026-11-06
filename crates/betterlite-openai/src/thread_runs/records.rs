@@ -3,7 +3,8 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
 
-use crate::assistants::records::{AssistantTool, ResponseFormat};
+use crate::assistants::records::AssistantTool;
+use crate::thread_runs::events::{RunMessage, RunMessageDeltaEvent, RunStep, RunStepDeltaEvent};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -36,16 +37,22 @@ pub struct LastError {
 pub struct ToolCallFunction {
     pub arguments: String,
     pub name: String,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RequiredActionToolCall {
     pub id: String,
     pub function: ToolCallFunction,
     pub r#type: String,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SubmitToolOutputs {
     pub tool_calls: Vec<RequiredActionToolCall>,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RequiredAction {
@@ -79,17 +86,77 @@ pub enum ToolChoiceMode {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ToolChoiceFunction {
     pub name: String,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AssistantToolChoice {
     pub r#type: String,
     pub function: Option<ToolChoiceFunction>,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ToolChoiceOption {
     Mode(ToolChoiceMode),
     Tool(AssistantToolChoice),
+}
+// The reply keeps the SDK's tool dump: a declared key the provider left out stays null and extras stay.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "Value")]
+pub struct RunTool(Value);
+impl From<Value> for RunTool {
+    fn from(mut value: Value) -> Self {
+        normalise_tool(&mut value);
+        Self(value)
+    }
+}
+fn normalise_tool(value: &mut Value) {
+    let Some(object) = value.as_object_mut() else {
+        return;
+    };
+    match object.get("type").and_then(Value::as_str) {
+        Some("file_search") => {
+            object.entry("file_search").or_insert(Value::Null);
+        }
+        Some("function") => {
+            if let Some(Value::Object(function)) = object.get_mut("function") {
+                for key in ["description", "parameters", "strict"] {
+                    function.entry(key).or_insert(Value::Null);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+// The SDK dumps a JSON schema format under its field name, so the reply renames schema to schema_.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "Value")]
+pub struct RunResponseFormat(Value);
+impl From<Value> for RunResponseFormat {
+    fn from(mut value: Value) -> Self {
+        normalise_format(&mut value);
+        Self(value)
+    }
+}
+fn normalise_format(value: &mut Value) {
+    let Some(object) = value.as_object_mut() else {
+        return;
+    };
+    if object.get("type").and_then(Value::as_str) != Some("json_schema") {
+        return;
+    }
+    let Some(Value::Object(schema)) = object.get_mut("json_schema") else {
+        return;
+    };
+    for key in ["description", "strict"] {
+        schema.entry(key).or_insert(Value::Null);
+    }
+    if let Some(item) = schema.remove("schema") {
+        schema.insert(String::from("schema_"), item);
+    }
+    schema.entry("schema_").or_insert(Value::Null);
 }
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RunReply {
@@ -110,12 +177,12 @@ pub struct RunReply {
     pub object: String,
     pub parallel_tool_calls: bool,
     pub required_action: Option<RequiredAction>,
-    pub response_format: Option<ResponseFormat>,
+    pub response_format: Option<RunResponseFormat>,
     pub started_at: Option<i64>,
     pub status: RunStatus,
     pub thread_id: String,
     pub tool_choice: Option<ToolChoiceOption>,
-    pub tools: Vec<AssistantTool>,
+    pub tools: Vec<RunTool>,
     pub truncation_strategy: Option<TruncationStrategy>,
     pub usage: Option<RunUsage>,
     pub temperature: Option<Number>,
@@ -123,19 +190,46 @@ pub struct RunReply {
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
 }
-// Run events carry a typed run; other thread.* events keep their payload and the rest stay bare.
+// Run, step and message events carry a typed record; other thread.* events stay raw or bare.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(untagged)]
 pub enum RunEvent {
-    Typed { event: String, data: Box<RunReply> },
-    Named { event: String, data: Value },
+    Typed {
+        event: String,
+        data: Box<RunReply>,
+    },
+    Message {
+        event: String,
+        data: Box<RunMessage>,
+    },
+    MessageDelta {
+        event: String,
+        data: Box<RunMessageDeltaEvent>,
+    },
+    Step {
+        event: String,
+        data: Box<RunStep>,
+    },
+    StepDelta {
+        event: String,
+        data: Box<RunStepDeltaEvent>,
+    },
+    Named {
+        event: String,
+        data: Value,
+    },
     Bare(Value),
 }
 impl RunEvent {
     #[must_use]
     pub fn name(&self) -> &str {
         match self {
-            Self::Typed { event, .. } | Self::Named { event, .. } => event,
+            Self::Typed { event, .. }
+            | Self::Message { event, .. }
+            | Self::MessageDelta { event, .. }
+            | Self::Step { event, .. }
+            | Self::StepDelta { event, .. }
+            | Self::Named { event, .. } => event,
             Self::Bare(_) => "payload",
         }
     }

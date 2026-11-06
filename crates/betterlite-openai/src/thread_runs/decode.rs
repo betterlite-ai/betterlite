@@ -5,6 +5,7 @@ use serde_json::Value;
 use serde_json::error::Category;
 
 use crate::thread_runs::error::ThreadRunsError;
+use crate::thread_runs::events::{RunMessage, RunMessageDeltaEvent, RunStep, RunStepDeltaEvent};
 use crate::thread_runs::records::{RunEvent, RunReply};
 
 const MAX_FRAME_BYTES: usize = 0x0010_0000;
@@ -28,34 +29,70 @@ pub enum FrameOutcome {
 }
 // The SDK wraps thread.* events and yields other payloads bare, raising when one carries an error key.
 pub fn decode_run_event(bytes: &[u8]) -> Result<FrameOutcome, ThreadRunsError> {
-    let (event, data) = event_and_data(bytes);
-    if data.starts_with(b"[DONE]") {
+    let frame = event_and_data(bytes);
+    if frame.data.starts_with(b"[DONE]") {
         return Ok(FrameOutcome::End);
     }
-    if data.is_empty() {
+    if !frame.touched {
         return Ok(FrameOutcome::Skip);
     }
-    let value = serde_json::from_slice::<Value>(&data).map_err(classify)?;
-    let thread_event = event.as_deref().filter(|name| name.starts_with("thread."));
-    let Some(name) = thread_event else {
-        if reports_error(&value) {
-            return Err(provider_error(&value));
+    let value = serde_json::from_slice::<Value>(&frame.data).map_err(classify)?;
+    let named = frame
+        .event
+        .as_deref()
+        .filter(|name| name.starts_with("thread."));
+    if let Some(name) = named {
+        return Ok(FrameOutcome::Event(Box::new(typed_event(name, value)?)));
+    }
+    if reports_error(&value) {
+        return Err(provider_error(&value));
+    }
+    match value.get("event").and_then(Value::as_str) {
+        Some(name) => {
+            let data = value.get("data").cloned().unwrap_or(Value::Null);
+            Ok(FrameOutcome::Event(Box::new(typed_event(name, data)?)))
         }
-        return Ok(FrameOutcome::Event(Box::new(RunEvent::Bare(value))));
-    };
-    let frame = if RUN_EVENTS.contains(&name) {
+        None => Ok(FrameOutcome::Event(Box::new(RunEvent::Bare(value)))),
+    }
+}
+fn typed_event(name: &str, value: Value) -> Result<RunEvent, ThreadRunsError> {
+    let event = String::from(name);
+    if RUN_EVENTS.contains(&name) {
         let run = serde_json::from_value::<RunReply>(value).map_err(classify)?;
-        RunEvent::Typed {
-            event: name.to_owned(),
+        return Ok(RunEvent::Typed {
+            event,
             data: Box::new(run),
-        }
-    } else {
-        RunEvent::Named {
-            event: name.to_owned(),
-            data: value,
-        }
-    };
-    Ok(FrameOutcome::Event(Box::new(frame)))
+        });
+    }
+    if name == "thread.message.delta" {
+        let delta = serde_json::from_value::<RunMessageDeltaEvent>(value).map_err(classify)?;
+        return Ok(RunEvent::MessageDelta {
+            event,
+            data: Box::new(delta),
+        });
+    }
+    if name.starts_with("thread.message.") {
+        let message = serde_json::from_value::<RunMessage>(value).map_err(classify)?;
+        return Ok(RunEvent::Message {
+            event,
+            data: Box::new(message),
+        });
+    }
+    if name == "thread.run.step.delta" {
+        let delta = serde_json::from_value::<RunStepDeltaEvent>(value).map_err(classify)?;
+        return Ok(RunEvent::StepDelta {
+            event,
+            data: Box::new(delta),
+        });
+    }
+    if name.starts_with("thread.run.step.") {
+        let step = serde_json::from_value::<RunStep>(value).map_err(classify)?;
+        return Ok(RunEvent::Step {
+            event,
+            data: Box::new(step),
+        });
+    }
+    Ok(RunEvent::Named { event, data: value })
 }
 fn reports_error(value: &Value) -> bool {
     let Value::Object(fields) = value else {
@@ -98,21 +135,46 @@ fn lines(body: &[u8]) -> Vec<&[u8]> {
     }
     lines
 }
-fn event_and_data(frame: &[u8]) -> (Option<String>, Vec<u8>) {
-    let mut event = None;
-    let mut data = Vec::new();
+struct Frame {
+    event: Option<String>,
+    data: Vec<u8>,
+    touched: bool,
+}
+fn event_and_data(frame: &[u8]) -> Frame {
+    let mut parsed = Frame {
+        event: None,
+        data: Vec::new(),
+        touched: false,
+    };
     for line in lines(frame) {
-        if let Some(rest) = line.strip_prefix(b"event:") {
-            event = str::from_utf8(rest.trim_ascii()).ok().map(str::to_owned);
-        }
-        if let Some(rest) = line.strip_prefix(b"data:") {
-            if !data.is_empty() {
-                data.push(b'\n');
+        let (name, rest) = split_field(line);
+        match name {
+            b"event" => {
+                parsed.event = str::from_utf8(rest.trim_ascii()).ok().map(str::to_owned);
+                parsed.touched = true;
             }
-            data.extend_from_slice(rest.strip_prefix(b" ").unwrap_or(rest));
+            b"data" => {
+                if !parsed.data.is_empty() {
+                    parsed.data.push(b'\n');
+                }
+                parsed
+                    .data
+                    .extend_from_slice(rest.strip_prefix(b" ").unwrap_or(rest));
+                parsed.touched = true;
+            }
+            b"id" | b"retry" => parsed.touched = true,
+            _ => {}
         }
     }
-    (event, data)
+    parsed
+}
+fn split_field(line: &[u8]) -> (&[u8], &[u8]) {
+    line.iter()
+        .position(|byte| *byte == b':')
+        .map_or((line, &[]), |at| {
+            let (name, rest) = line.split_at(at);
+            (name, rest.get(1..).unwrap_or_default())
+        })
 }
 // Frames end at a blank line, so a tail the provider cut off before one is never dispatched.
 #[derive(Debug, Default)]

@@ -3,9 +3,10 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use futures_util::StreamExt as _;
 use rstest::rstest;
 use serde_json::Value;
-use tokio::time::Instant;
+use tokio::time::{Instant, timeout};
 
 use crate::assistants::client::ClientKind;
 use crate::thread_runs::error::ThreadRunsError;
@@ -15,7 +16,7 @@ use crate::thread_runs::stream::RunEventHandler;
 
 use super::support::{
     COMPLETED, FAILED, GatedHandler, IN_PROGRESS, KEY, QUEUED, REQUIRES_ACTION, Recorder,
-    RecordingHandler, Seen, harness, options, parse, wire,
+    RecordingHandler, Seen, harness, options, parse, parts_chunks, trickle_chunks, wire,
 };
 
 const RUNS: &str = "https://example.test/v1/threads/thread_a/runs";
@@ -29,6 +30,7 @@ const ERROR_BODY: &str = r#"{"error":{"message":"no run","type":"invalid_request
 const STEP: &str = r#"{"id":"step_1","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"message_creation","status":"in_progress","step_details":{"type":"message_creation","message_creation":{"message_id":"msg_1"}}}"#;
 const MESSAGE: &str = r#"{"id":"msg_1","object":"thread.message","created_at":1700000000,"thread_id":"thread_a","role":"assistant","content":[],"status":"in_progress"}"#;
 const MESSAGE_DELTA: &str = r#"{"id":"msg_1","object":"thread.message.delta","delta":{}}"#;
+const STEP_DELTA: &str = r#"{"id":"step_1","object":"thread.run.step.delta","delta":{}}"#;
 const FUTURE: &str = r#"{"thing":true}"#;
 
 #[derive(Clone, Copy)]
@@ -78,6 +80,8 @@ fn poll_wire() -> Seen {
 
 fn stream_wire(custom_handler: bool) -> Seen {
     let mut seen = wire("POST", RUNS, Some(STREAM_BODY));
+    // A stream carries the transport ceiling, not the caller timeout, which bounds each read instead.
+    seen.deadline = Duration::from_mins(100);
     seen.stream_helper = Some(String::from("threads.runs.create_and_stream"));
     seen.custom_handler = Some(String::from(if custom_handler { "true" } else { "false" }));
     seen
@@ -315,7 +319,7 @@ async fn poll_interval_failures() {
     assert_eq!(odd_transport.requests().len(), 2);
 }
 
-// The client timeout is the deadline on every request instead of the 600s default.
+// The client timeout bounds each buffered request and each stream read, never the whole stream.
 async fn configured_timeout_is_the_deadline() {
     let (api, transport) = harness();
     transport.queue(200, &[], QUEUED);
@@ -338,10 +342,11 @@ async fn configured_timeout_is_the_deadline() {
     let RunInvocation::Streaming(stream) = outcome else {
         panic!("expected a stream manager");
     };
+    assert_eq!(stream.read_timeout, Duration::from_millis(2500));
     stream.consume().await.unwrap();
     assert_eq!(
         stream_transport.requests()[0].deadline,
-        Duration::from_millis(2500)
+        Duration::from_mins(100)
     );
 }
 
@@ -531,6 +536,212 @@ async fn stream_delivers_per_chunk() {
     );
 }
 
+// Without a handler the caller still reads events one at a time and keeps the ones before a failure.
+async fn stream_without_handler_sees_events() {
+    let (api, transport) = harness();
+    let sender = transport.gate();
+    let outcome = api
+        .run_thread(call(Facade::SyncStream), &request())
+        .await
+        .unwrap();
+    let RunInvocation::Streaming(stream) = outcome else {
+        panic!("expected a stream manager");
+    };
+    assert!(stream.handler.is_none());
+    let mut events = stream.events().await.unwrap();
+    sender
+        .try_send(format!("event: thread.run.created\ndata: {QUEUED}\n\n").into_bytes())
+        .unwrap();
+    let first = timeout(Duration::from_millis(10), events.next())
+        .await
+        .expect("the first event arrives before more chunks")
+        .expect("an event")
+        .unwrap();
+    assert_eq!(first.name(), "thread.run.created");
+    sender.try_send(b"data: {not json\n\n".to_vec()).unwrap();
+    let failure = events.next().await.expect("a failure").err().unwrap();
+    assert!(
+        matches!(failure, ThreadRunsError::Malformed(_)),
+        "{failure}"
+    );
+}
+
+// The SDK reports a timeout before the exception it wraps and ends the handler once.
+async fn stream_timeout_calls_the_handler() {
+    let (api, transport) = harness();
+    transport.stream_chunks(parts_chunks(vec![
+        Ok(frame("thread.run.created", QUEUED).into_bytes()),
+        Err(ThreadRunsError::Timeout),
+    ]));
+    let recorder = Arc::new(RecordingHandler::default());
+    let concrete: Arc<RecordingHandler> = Arc::clone(&recorder);
+    let supplied: Arc<dyn RunEventHandler> = concrete;
+    let mut supplied_call = call(Facade::SyncStream);
+    supplied_call.handler = Some(supplied);
+    let outcome = api.run_thread(supplied_call, &request()).await.unwrap();
+    let RunInvocation::Streaming(stream) = outcome else {
+        panic!("expected a stream manager");
+    };
+    let error = stream.consume().await.err().unwrap();
+    assert!(matches!(error, ThreadRunsError::Timeout), "{error}");
+    assert_eq!(
+        recorder.take().join(","),
+        "thread.run.created,timeout,exception:timeout,end"
+    );
+}
+
+// The timeout bounds each read, so chunks spaced inside it finish even when their total passes it.
+async fn stream_reads_may_outlast_the_timeout() {
+    let (api, transport) = harness();
+    transport.stream_chunks(trickle_chunks(
+        vec![
+            frame("thread.run.created", QUEUED).into_bytes(),
+            frame("thread.run.in_progress", IN_PROGRESS).into_bytes(),
+            String::from("data: [DONE]\n\n").into_bytes(),
+        ],
+        Duration::from_millis(200),
+    ));
+    let outcome = api
+        .run_thread(call(Facade::SyncStream), &request())
+        .await
+        .unwrap();
+    let RunInvocation::Streaming(mut stream) = outcome else {
+        panic!("expected a stream manager");
+    };
+    stream.read_timeout = Duration::from_millis(300);
+    let events = stream.consume().await.unwrap();
+    assert_eq!(events.len(), 2);
+}
+
+// A gap longer than the timeout fails the stream with a timeout.
+async fn stream_gap_exceeds_the_timeout() {
+    let (api, transport) = harness();
+    transport.stream_chunks(trickle_chunks(
+        vec![
+            frame("thread.run.created", QUEUED).into_bytes(),
+            String::from("data: [DONE]\n\n").into_bytes(),
+        ],
+        Duration::from_secs(1),
+    ));
+    let outcome = api
+        .run_thread(call(Facade::SyncStream), &request())
+        .await
+        .unwrap();
+    let RunInvocation::Streaming(mut stream) = outcome else {
+        panic!("expected a stream manager");
+    };
+    stream.read_timeout = Duration::from_millis(300);
+    let error = stream.consume().await.err().unwrap();
+    assert!(matches!(error, ThreadRunsError::Timeout), "{error}");
+}
+
+// The decoded stream is capped, so a provider cannot grow it without bound.
+async fn stream_cap_is_bounded() {
+    let (api, transport) = harness();
+    transport.stream_chunks(parts_chunks(vec![
+        Ok(frame("thread.run.created", QUEUED).into_bytes()),
+        Ok(frame("thread.run.in_progress", IN_PROGRESS).into_bytes()),
+    ]));
+    let outcome = api
+        .run_thread(call(Facade::SyncStream), &request())
+        .await
+        .unwrap();
+    let RunInvocation::Streaming(mut stream) = outcome else {
+        panic!("expected a stream manager");
+    };
+    stream.max_bytes = 300;
+    let mut events = stream.events().await.unwrap();
+    let first = events.next().await.expect("an event").unwrap();
+    assert_eq!(first.name(), "thread.run.created");
+    let failure = events.next().await.expect("a failure").err().unwrap();
+    assert!(
+        matches!(failure, ThreadRunsError::StreamTooLarge),
+        "{failure}"
+    );
+}
+
+// A data-only frame carrying an event and data pair decodes to that event, as the SDK builds it.
+async fn stream_embedded_event_decodes() {
+    let body =
+        format!("data: {{\"event\":\"thread.run.created\",\"data\":{QUEUED}}}\n\ndata: [DONE]\n\n");
+    let events = consume_body(&body).await;
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].name(), "thread.run.created");
+}
+
+// A frame that set an event or retry field but carried no payload fails as truncated.
+async fn stream_empty_payload_fields() {
+    for body in ["event: thread.run.queued\n\n", "retry: 5\n\n", "data\n\n"] {
+        let (api, transport) = harness();
+        transport.queue(200, &[("content-type", "text/event-stream")], body);
+        let outcome = api
+            .run_thread(call(Facade::SyncStream), &request())
+            .await
+            .unwrap();
+        let RunInvocation::Streaming(stream) = outcome else {
+            panic!("expected a stream manager");
+        };
+        let error = stream.consume().await.err().unwrap();
+        assert!(matches!(error, ThreadRunsError::Truncated(_)), "{body:?}");
+    }
+}
+
+// Step and message events keep the declared keys the provider left out as null.
+async fn stream_step_and_message_records() {
+    let body = format!(
+        "{}{}{}{}{}data: [DONE]\n\n",
+        frame("thread.run.step.created", STEP),
+        frame("thread.run.step.delta", STEP_DELTA),
+        frame("thread.message.completed", MESSAGE),
+        frame("thread.message.delta", MESSAGE_DELTA),
+        frame("thread.run.step.completed", STEP),
+    );
+    let events = consume_body(&body).await;
+    let step = serde_json::to_value(&events[0]).unwrap();
+    assert_eq!(step.pointer("/data/usage"), Some(&Value::Null));
+    assert_eq!(step.pointer("/data/metadata"), Some(&Value::Null));
+    let delta = serde_json::to_value(&events[1]).unwrap();
+    assert_eq!(
+        delta.pointer("/data/delta/step_details"),
+        Some(&Value::Null)
+    );
+    let message = serde_json::to_value(&events[2]).unwrap();
+    assert_eq!(message.pointer("/data/assistant_id"), Some(&Value::Null));
+    assert_eq!(message.pointer("/data/run_id"), Some(&Value::Null));
+}
+
+// Reply records keep declared nulls and extras the SDK dump keeps.
+async fn reply_shapes_match_the_sdk_dump() {
+    let action = r#"{"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","thread_id":"thread_a","status":"requires_action","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tool_choice":{"type":"function","function":{"name":"lookup","x":1},"extra_choice":true},"required_action":{"submit_tool_outputs":{"tool_calls":[{"id":"call_1","function":{"arguments":"{}","name":"lookup","note":"n"},"type":"function","extra_tc":true}],"extra_sto":true},"type":"submit_tool_outputs","extra_ra":true},"tools":[]}"#;
+    let (_, run) = poll_state(action, false).await;
+    let value = serde_json::to_value(&run).unwrap();
+    assert_eq!(
+        value.pointer("/required_action/submit_tool_outputs/extra_sto"),
+        Some(&Value::Bool(true))
+    );
+    assert_eq!(
+        value.pointer("/required_action/submit_tool_outputs/tool_calls/0/function/note"),
+        Some(&Value::String(String::from("n")))
+    );
+    assert_eq!(
+        value.pointer("/tool_choice/function/x"),
+        Some(&Value::from(1_i64))
+    );
+
+    let completed = r#"{"id":"run_1","object":"thread.run","created_at":1700000000,"completed_at":1700000005,"assistant_id":"asst_1","thread_id":"thread_a","status":"completed","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"file_search"},{"type":"function","function":{"name":"lookup"}}],"response_format":{"type":"json_schema","json_schema":{"name":"reply"}}}"#;
+    let (_, reply) = poll_state(completed, false).await;
+    let dumped = serde_json::to_value(&reply).unwrap();
+    assert_eq!(dumped.pointer("/tools/0/file_search"), Some(&Value::Null));
+    assert_eq!(
+        dumped.pointer("/tools/1/function/description"),
+        Some(&Value::Null)
+    );
+    assert_eq!(
+        dumped.pointer("/response_format/json_schema/schema_"),
+        Some(&Value::Null)
+    );
+}
+
 async fn stream_incremental_events() {
     let (api, transport) = harness();
     transport.queue(200, &[("content-type", "text/event-stream")], &sse());
@@ -559,10 +770,7 @@ async fn stream_incremental_events() {
         Some(&Value::String(String::from("queued")))
     );
     assert_eq!(events[2].name(), "thread.run.completed");
-    assert_eq!(
-        transport.requests(),
-        vec![wire("POST", RUNS, Some(STREAM_BODY))]
-    );
+    assert_eq!(transport.requests(), vec![stream_wire(false)]);
 
     stream_terminators_decode().await;
 }
@@ -582,10 +790,7 @@ async fn stream_terminators_decode() {
         };
         let events = stream.consume().await.unwrap();
         assert_eq!(events.len(), 3, "{terminator:?}");
-        assert_eq!(
-            transport.requests(),
-            vec![wire("POST", RUNS, Some(STREAM_BODY))]
-        );
+        assert_eq!(transport.requests(), vec![stream_wire(false)]);
     }
 }
 
@@ -734,7 +939,10 @@ async fn assistants_beta_default() {
 async fn thread_runs_cases(#[case] scenario: Scenario) {
     match scenario {
         Scenario::RunPollCompletion => run_poll_completion().await,
-        Scenario::RequiresAction => requires_action().await,
+        Scenario::RequiresAction => {
+            requires_action().await;
+            reply_shapes_match_the_sdk_dump().await;
+        }
         Scenario::FailedRun => failed_run().await,
         Scenario::StreamIncrementalEvents => {
             stream_incremental_events().await;
@@ -744,6 +952,14 @@ async fn thread_runs_cases(#[case] scenario: Scenario) {
             stream_stops_at_done().await;
             stream_provider_error().await;
             stream_delivers_per_chunk().await;
+            stream_without_handler_sees_events().await;
+            stream_timeout_calls_the_handler().await;
+            stream_reads_may_outlast_the_timeout().await;
+            stream_gap_exceeds_the_timeout().await;
+            stream_cap_is_bounded().await;
+            stream_embedded_event_decodes().await;
+            stream_empty_payload_fields().await;
+            stream_step_and_message_records().await;
         }
         Scenario::InstructionsToolsOverrides => instructions_tools_overrides().await,
         Scenario::RunDispatch => dispatch_selections().await,

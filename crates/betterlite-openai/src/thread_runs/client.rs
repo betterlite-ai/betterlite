@@ -18,7 +18,9 @@ const OPENAI_ORGANIZATION: HeaderName = HeaderName::from_static("openai-organiza
 const POLL_HELPER: HeaderName = HeaderName::from_static("x-stainless-poll-helper");
 const STREAM_HELPER: HeaderName = HeaderName::from_static("x-stainless-stream-helper");
 const CUSTOM_HANDLER: HeaderName = HeaderName::from_static("x-stainless-custom-event-handler");
-const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
+pub(crate) const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
+// The shared transport caps a response; the caller's timeout applies to each stream read instead.
+const STREAM_DEADLINE: Duration = Duration::from_mins(100);
 // The SDK quotes a path id with Python's quote(safe="!$&'()*+,;=:@"), so "/" is encoded and the unreserved marks stay.
 const PATH_SEGMENT: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'_')
@@ -59,7 +61,10 @@ pub(crate) fn outbound<T>(
         query: Vec::new(),
         headers,
         body,
-        deadline: client.timeout.unwrap_or(DEFAULT_TIMEOUT),
+        deadline: match kind {
+            CallKind::Stream { .. } => STREAM_DEADLINE,
+            CallKind::Create | CallKind::Poll => client.timeout.unwrap_or(DEFAULT_TIMEOUT),
+        },
     })
 }
 fn run_url<T>(client: &SdkClient<T>, segments: &[&str]) -> Result<Url, ThreadRunsError> {

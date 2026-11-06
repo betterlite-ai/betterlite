@@ -8,11 +8,11 @@ use tokio::time::sleep;
 use crate::assistants::client::{ClientKind, ClientOptions, SdkClient};
 use crate::assistants::operations::AssistantsApi;
 use crate::assistants::transport::AssistantsTransport;
-use crate::thread_runs::client::{CallKind, outbound, send};
+use crate::thread_runs::client::{CallKind, DEFAULT_TIMEOUT, outbound, send};
 use crate::thread_runs::decode::classify;
 use crate::thread_runs::error::ThreadRunsError;
 use crate::thread_runs::records::{RunCreate, RunReply, RunRequest, RunStatus};
-use crate::thread_runs::stream::{RunEventHandler, RunStream};
+use crate::thread_runs::stream::{MAX_EVENT_BYTES, RunEventHandler, RunStream};
 
 pub struct RunsApi<T> {
     pub transport: Arc<T>,
@@ -93,6 +93,8 @@ impl<T: AssistantsTransport> RunsApi<T> {
             handler,
             transport: Arc::clone(&self.transport),
             request: stream_request,
+            read_timeout: client.timeout.unwrap_or(DEFAULT_TIMEOUT),
+            max_bytes: MAX_EVENT_BYTES,
         })
     }
     pub async fn run_thread(

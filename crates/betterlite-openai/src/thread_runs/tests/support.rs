@@ -11,11 +11,12 @@ use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody, merge_query};
 use betterlite_http::proxy::transport_error::TransportError;
 use futures_util::Stream;
-use futures_util::stream::iter;
+use futures_util::stream::{iter, unfold};
 use http::{HeaderMap, HeaderName, HeaderValue};
 use secrecy::SecretString;
 use serde_json::Value;
 use tokio::sync::mpsc;
+use tokio::time::sleep;
 
 use crate::assistants::client::ClientOptions;
 use crate::assistants::transport::AssistantsTransport;
@@ -54,6 +55,7 @@ pub(super) struct Recorder {
     seen: Mutex<Vec<Seen>>,
     replies: Mutex<VecDeque<(u16, HeaderMap, Vec<u8>)>>,
     gate: Mutex<Option<mpsc::Receiver<Vec<u8>>>>,
+    prepared: Mutex<Option<RunChunks>>,
 }
 
 struct GateChunks {
@@ -106,6 +108,11 @@ impl Recorder {
         let (sender, receiver) = mpsc::channel(1);
         *self.gate.lock().unwrap() = Some(receiver);
         sender
+    }
+
+    // A prepared chunk stream, so a case can script delays or errors between chunks.
+    pub(super) fn stream_chunks(&self, chunks: RunChunks) {
+        *self.prepared.lock().unwrap() = Some(chunks);
     }
 
     pub(super) fn requests(&self) -> Vec<Seen> {
@@ -175,6 +182,10 @@ impl RunStreamTransport for Recorder {
         request: OutboundRequest,
     ) -> impl Future<Output = Result<RunChunks, ThreadRunsError>> + Send {
         self.record(&request);
+        let prepared = self.prepared.lock().unwrap().take();
+        if let Some(chunks) = prepared {
+            return ready(Ok(chunks));
+        }
         let gated = self.gate.lock().unwrap().take();
         if let Some(receiver) = gated {
             let chunks: RunChunks = Box::pin(GateChunks { receiver });
@@ -293,6 +304,26 @@ pub(super) fn harness() -> (RunsApi<Recorder>, Arc<Recorder>) {
 
 pub(super) fn parse(text: &str) -> Value {
     serde_json::from_str(text).unwrap()
+}
+
+pub(super) fn parts_chunks(parts: Vec<Result<Vec<u8>, ThreadRunsError>>) -> RunChunks {
+    Box::pin(iter(parts))
+}
+
+// Every part after the first waits the delay, so a paused clock can race it against a read timeout.
+pub(super) fn trickle_chunks(parts: Vec<Vec<u8>>, delay: Duration) -> RunChunks {
+    let stream = unfold(
+        (VecDeque::from(parts), false),
+        move |(mut queued, started)| async move {
+            if started {
+                sleep(delay).await;
+            }
+            queued
+                .pop_front()
+                .map(|part| (Ok::<Vec<u8>, ThreadRunsError>(part), (queued, true)))
+        },
+    );
+    Box::pin(stream)
 }
 
 // The request every case expects: the SDK's 600s default, JSON accept, bearer key, organization and the assistants beta header.
