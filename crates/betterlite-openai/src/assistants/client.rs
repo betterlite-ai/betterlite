@@ -21,7 +21,7 @@ const OPENAI_BETA: HeaderName = HeaderName::from_static("openai-beta");
 const OPENAI_ORGANIZATION: HeaderName = HeaderName::from_static("openai-organization");
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
 // The OpenAI SDK quotes a path id with Python's quote(safe="!$&'()*+,;=:@"), so "/" is encoded and the unreserved marks stay.
-const PATH_SEGMENT: &AsciiSet = &NON_ALPHANUMERIC
+pub(crate) const PATH_SEGMENT: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'_')
     .remove(b'.')
     .remove(b'-')
@@ -80,7 +80,7 @@ impl<T> fmt::Debug for SdkClient<T> {
 }
 
 impl<T: AssistantsTransport> SdkClient<T> {
-    fn outbound(
+    pub(crate) fn outbound(
         &self,
         method: Method,
         tail: &str,
@@ -120,7 +120,10 @@ impl<T: AssistantsTransport> SdkClient<T> {
         })
     }
 
-    async fn send_checked(&self, request: OutboundRequest) -> Result<Vec<u8>, AssistantsError> {
+    pub(crate) async fn send_checked(
+        &self,
+        request: OutboundRequest,
+    ) -> Result<Vec<u8>, AssistantsError> {
         let response = self
             .transport
             .send(request)

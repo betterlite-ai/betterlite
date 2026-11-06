@@ -1235,6 +1235,7 @@ dependencies = [
  "aws-sigv4",
  "aws-smithy-runtime-api",
  "betterlite-auth",
+ "betterlite-db",
  "betterlite-env",
  "betterlite-models",
  "betterlite-rate-limit",

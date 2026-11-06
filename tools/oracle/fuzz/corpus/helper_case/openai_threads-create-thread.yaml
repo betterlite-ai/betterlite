@@ -1,0 +1,5 @@
+kind: helper
+name: openai-threads-seed-create-thread
+call: {openai_threads: {create_thread: {options: {api_key: sk-seed, api_base: 'https://example.test/v1'}, messages: [{role: user, content: hi}], metadata: {team: core}, acreate_thread: true, reply: {status: 201, body: '{"id":"thread_1","object":"thread","created_at":7,"metadata":null}'}}}}
+env: {}
+compare: {ignore: []}
