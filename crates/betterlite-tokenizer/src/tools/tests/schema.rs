@@ -41,8 +41,8 @@ use super::{format, wrapper};
 #[case::nested_objects_indent_their_properties(
     r#"[{"type":"function","function":{"name":"nested","parameters":{"type":"object","properties":{"inner":{"type":"object","description":"Inner object","properties":{"flag":{"type":"boolean"},"label":{"type":"string"}},"required":["flag"]}}}}}]"#,
     &[
-        "// Inner object",
         "type nested = (_: {",
+        "// Inner object",
         "inner?: {",
         "  flag: boolean,",
         "  label?: string,",
