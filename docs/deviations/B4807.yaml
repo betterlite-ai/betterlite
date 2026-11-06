@@ -1,2 +1,8 @@
 task: B4807
-deviations: []
+deviations:
+  - what: 'The wall clock, the monotonic clock and the UUID4 source are injected values instead of calls to time.time, time.monotonic and uuid4.'
+    why: 'Tests and the oracle pin both clocks and every id, and the A2A provider tasks share one injected clock and event source.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/watsonx_orchestrate/handler.py#L124
+  - what: 'Bearer tokens live in a bounded cache passed in when BearerTokens is built, not in the module-level _token_cache dict.'
+    why: 'Two providers do not share tokens, the cache has a capacity, and a test drives the eviction path.'
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/watsonx_orchestrate/handler.py#L29
