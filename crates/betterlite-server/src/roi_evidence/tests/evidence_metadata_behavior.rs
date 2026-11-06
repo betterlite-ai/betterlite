@@ -2,6 +2,8 @@
 
 use std::iter::repeat_with;
 
+use rstest::rstest;
+
 use super::evidence;
 use super::tests::{
     NEXT_LINK, Script, evidence_script, github, json_reply, pull_detail_json, pull_list_item,
@@ -80,10 +82,13 @@ async fn evidence_requests_files_and_commits_for_the_listed_pull_number() {
     );
 }
 
+#[rstest]
+#[case::user_missing(None)]
+#[case::login_empty(Some(""))]
 #[tokio::test]
-async fn evidence_keeps_the_detail_number_and_names_a_deleted_user() {
+async fn evidence_keeps_the_detail_number_and_names_a_deleted_user(#[case] author: Option<&str>) {
     let script = evidence_script(
-        &pull_detail_json(99, None, Some(0), Some(0)),
+        &pull_detail_json(99, author, Some(0), Some(0)),
         "[]",
         r#"{"email":""}"#,
         "[]",
@@ -106,14 +111,15 @@ async fn evidence_keeps_the_detail_number_and_names_a_deleted_user() {
 #[tokio::test]
 async fn evidence_matches_commit_authors_by_case_insensitive_login() {
     let commits = r#"[
-      {"sha":"1","author":{"login":"octo"},"commit":{"author":{"email":"A@Example.com"}}},
-      {"sha":"2","author":{"login":"OCTO"},"commit":{"author":{"email":"b@example.com"}}},
-      {"sha":"3","author":{"login":"other"},"commit":{"author":{"email":"c@example.com"}}},
-      {"sha":"4","author":null,"commit":{"author":{"email":"d@example.com"}}},
-      {"sha":"5","author":{"login":""},"commit":{"author":{"email":"e@example.com"}}}
+      {"sha":"1","author":{"login":"octo"},"commit":{"author":{"email":"b@example.com"}}},
+      {"sha":"2","author":{"login":"OCTO"},"commit":{"author":{"email":"A@Example.com"}}},
+      {"sha":"3","author":{"login":"octo"},"commit":{"author":{"email":"a@example.com"}}},
+      {"sha":"4","author":{"login":"other"},"commit":{"author":{"email":"c@example.com"}}},
+      {"sha":"5","author":null,"commit":{"author":{"email":"d@example.com"}}},
+      {"sha":"6","author":{"login":""},"commit":{"author":{"email":"e@example.com"}}}
     ]"#;
     let script = evidence_script(
-        &pull_detail_json(7, Some("Octo"), Some(0), Some(5)),
+        &pull_detail_json(7, Some("Octo"), Some(0), Some(6)),
         "[]",
         r#"{"email":""}"#,
         commits,
@@ -144,21 +150,40 @@ async fn evidence_keeps_an_unusable_commit_address_out_of_the_emails() {
     assert!(evidence.emails.is_empty());
 }
 
+#[rstest]
+#[case::files_differ(Some(5), Some(1))]
+#[case::commits_differ(Some(2), Some(4))]
 #[tokio::test]
-async fn evidence_flags_incomplete_metadata_when_the_counts_differ() {
+async fn evidence_flags_incomplete_metadata_when_the_counts_differ(
+    #[case] changed_files: Option<i64>,
+    #[case] commits: Option<i64>,
+) {
     let script = evidence_script(
-        &pull_detail_json(7, Some("Octo"), Some(5), Some(4)),
+        &pull_detail_json(7, Some("Octo"), changed_files, commits),
         TWO_FILES,
         r#"{"email":""}"#,
         ONE_COMMIT,
     );
     let github = github(script);
     let evidence = evidence(&github, "o/r", &pull_list_item(7)).await.unwrap();
-    assert_eq!(evidence.changed_files, 5);
     assert_eq!(evidence.files.len(), 2);
     assert_eq!(evidence.commits.len(), 1);
-    assert_eq!(evidence.commit_count, 4);
     assert!(evidence.incomplete_metadata);
+}
+
+#[tokio::test]
+async fn evidence_keeps_the_pull_description() {
+    let detail = pull_detail_json(7, Some("Octo"), Some(2), Some(1))
+        .replace(r#""body":null"#, r#""body":"Fixes the retry loop""#);
+    let script = evidence_script(
+        &detail,
+        TWO_FILES,
+        r#"{"email":"Octo@Example.com"}"#,
+        ONE_COMMIT,
+    );
+    let github = github(script);
+    let record = evidence(&github, "o/r", &pull_list_item(7)).await.unwrap();
+    assert_eq!(record.body, "Fixes the retry loop");
 }
 
 #[tokio::test]

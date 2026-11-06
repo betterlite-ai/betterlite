@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::iter::repeat_with;
+
 use rstest::rstest;
 
 use super::pulls;
@@ -122,6 +124,29 @@ async fn pulls_compare_the_last_updated_date_with_the_start_day(
         .await
         .unwrap();
     assert_eq!(script.seen().len(), expected_requests);
+}
+
+#[tokio::test]
+async fn pulls_stop_at_ten_thousand_pages() {
+    let page = json_array(&[pull_item(
+        1,
+        Some("2026-01-05T00:00:00Z"),
+        "2026-01-05T00:00:00Z",
+    )]);
+    let script = Script::new(
+        repeat_with(|| with_link(json_reply(200, &page), NEXT_LINK))
+            .take(10_000)
+            .collect(),
+    );
+    let github = github(script.clone());
+    let error = pulls(&github, "o/r", date("2026-01-01"), date("2026-01-31"))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "GitHub's pagination limit was reached. Narrow the date range."
+    );
+    assert_eq!(script.seen().len(), 10_000);
 }
 
 #[tokio::test]

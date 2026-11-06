@@ -4,8 +4,8 @@ use std::iter::repeat_with;
 
 use super::commit_metadata;
 use super::tests::{
-    GraphQlRequestBody, NEXT_LINK, Script, Seen, github, github_with_token, graphql_page,
-    json_reply, pull_detail, with_link,
+    ENDLESS_GRAPHQL_PAGE, GraphQlRequestBody, NEXT_LINK, Script, Seen, github, github_with_token,
+    graphql_page, json_reply, pull_detail, with_link,
 };
 use crate::roi_github::models::GRAPHQL_QUERY;
 
@@ -118,6 +118,24 @@ async fn commit_metadata_with_a_token_posts_the_graphql_query() {
     assert_eq!(payload.variables.name, "r");
     assert_eq!(payload.variables.number, 7);
     assert_eq!(payload.variables.cursor, None);
+}
+
+#[tokio::test]
+async fn commit_metadata_graphql_stops_at_one_hundred_pages() {
+    let script = Script::new(
+        repeat_with(|| json_reply(200, ENDLESS_GRAPHQL_PAGE))
+            .take(100)
+            .collect(),
+    );
+    let github = github_with_token(script.clone(), "secret", "https://api.github.com");
+    let error = commit_metadata(&github, "o/r", 7, &pull_detail(Some(0)))
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "GitHub's pagination limit was reached. Narrow the date range."
+    );
+    assert_eq!(script.seen().len(), 100);
 }
 
 #[tokio::test]
