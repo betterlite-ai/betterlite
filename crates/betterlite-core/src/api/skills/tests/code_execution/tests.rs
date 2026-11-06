@@ -52,6 +52,40 @@ fn skill_files() -> SkillFiles {
     files
 }
 
+fn chart() -> SandboxFile {
+    SandboxFile {
+        name: "chart.png".to_owned(),
+        mime_type: "image/png".to_owned(),
+        content_base64: "aGVsbG8=".to_owned(),
+    }
+}
+
+fn data() -> SandboxFile {
+    SandboxFile {
+        name: "data.json".to_owned(),
+        mime_type: "application/json".to_owned(),
+        content_base64: "e30=".to_owned(),
+    }
+}
+
+fn collected_chart() -> GeneratedFile {
+    GeneratedFile {
+        name: "chart.png".to_owned(),
+        mime_type: "image/png".to_owned(),
+        content_base64: "aGVsbG8=".to_owned(),
+        size: 5,
+    }
+}
+
+fn collected_data() -> GeneratedFile {
+    GeneratedFile {
+        name: "data.json".to_owned(),
+        mime_type: "application/json".to_owned(),
+        content_base64: "e30=".to_owned(),
+        size: 2,
+    }
+}
+
 #[tokio::test]
 async fn code_execution_passes_the_code_and_skill_files_to_the_executor() {
     let hook = hook(FakeSandbox::new(Ok(SandboxOutcome {
@@ -80,11 +114,7 @@ async fn code_execution_collects_generated_files_with_the_decoded_size() {
     let hook = hook(FakeSandbox::new(Ok(SandboxOutcome {
         output: Some("rendered".to_owned()),
         error: None,
-        files: vec![SandboxFile {
-            name: "chart.png".to_owned(),
-            mime_type: "image/png".to_owned(),
-            content_base64: "aGVsbG8=".to_owned(),
-        }],
+        files: vec![chart()],
     })));
     let mut generated = Vec::new();
     let result = hook
@@ -149,6 +179,92 @@ async fn code_execution_turns_executor_failures_into_the_result_text() {
         .await;
     assert_eq!(result, "Code execution failed: container is gone");
     assert!(generated.is_empty());
+}
+
+#[tokio::test]
+async fn code_execution_skips_an_empty_error_string() {
+    let hook = hook(FakeSandbox::new(Ok(SandboxOutcome {
+        output: Some("hi".to_owned()),
+        error: Some(String::new()),
+        files: Vec::new(),
+    })));
+    let mut generated = Vec::new();
+    let result = hook
+        .execute_code("run()", &skill_files(), &mut generated)
+        .await;
+    assert_eq!(result, "hi");
+}
+
+#[tokio::test]
+async fn code_execution_skips_an_empty_error_string_without_output() {
+    let hook = hook(FakeSandbox::new(Ok(SandboxOutcome {
+        output: None,
+        error: Some(String::new()),
+        files: Vec::new(),
+    })));
+    let mut generated = Vec::new();
+    let result = hook
+        .execute_code("run()", &skill_files(), &mut generated)
+        .await;
+    assert_eq!(result, "Code executed successfully");
+}
+
+#[tokio::test]
+async fn code_execution_appends_the_error_after_the_generated_file_lines() {
+    let hook = hook(FakeSandbox::new(Ok(SandboxOutcome {
+        output: Some("done".to_owned()),
+        error: Some("deprecated call".to_owned()),
+        files: vec![chart()],
+    })));
+    let mut generated = Vec::new();
+    let result = hook
+        .execute_code("render()", &skill_files(), &mut generated)
+        .await;
+    assert_eq!(
+        result,
+        "done\n\nGenerated file: chart.png\n\nError: deprecated call"
+    );
+    assert_eq!(generated, vec![collected_chart()]);
+}
+
+#[tokio::test]
+async fn code_execution_collects_every_generated_file() {
+    let hook = hook(FakeSandbox::new(Ok(SandboxOutcome {
+        output: Some("rendered".to_owned()),
+        error: None,
+        files: vec![chart(), data()],
+    })));
+    let mut generated = Vec::new();
+    let result = hook
+        .execute_code("render()", &skill_files(), &mut generated)
+        .await;
+    assert_eq!(
+        result,
+        "rendered\n\nGenerated file: chart.png\n\nGenerated file: data.json"
+    );
+    assert_eq!(generated, vec![collected_chart(), collected_data()]);
+}
+
+#[tokio::test]
+async fn code_execution_keeps_files_before_a_bad_payload() {
+    let hook = hook(FakeSandbox::new(Ok(SandboxOutcome {
+        output: Some("rendered".to_owned()),
+        error: None,
+        files: vec![
+            chart(),
+            SandboxFile {
+                name: "data.json".to_owned(),
+                mime_type: "application/json".to_owned(),
+                content_base64: "not base64!".to_owned(),
+            },
+        ],
+    })));
+    let mut generated = Vec::new();
+    let result = hook
+        .execute_code("render()", &skill_files(), &mut generated)
+        .await;
+    assert!(result.starts_with("Code execution failed: "));
+    assert_eq!(generated, vec![collected_chart()]);
 }
 
 #[tokio::test]

@@ -147,7 +147,7 @@ async fn skill_tool_execution_ignores_the_tool_name_and_input() {
     second
         .execute_skill_tool(
             "litellm_skill_other",
-            &serde_json::from_str("{}").unwrap(),
+            &serde_json::from_str(r#"{"style": "flat"}"#).unwrap(),
             &files,
             &mut generated,
         )
@@ -156,16 +156,16 @@ async fn skill_tool_execution_ignores_the_tool_name_and_input() {
 }
 
 #[rstest]
-#[case::builder_after_plain(&["core/main.py", "core/gif_builder.py"], "core.gif_builder")]
-#[case::creator(&["core/main.py", "core/creator.py"], "core.creator")]
-#[case::generator_any_case(&["core/tool.py", "core/Generator.py"], "core.Generator")]
-#[case::first_plain_module(&["core/helpers.py", "core/main.py"], "core.helpers")]
-#[case::skips_init(&["core/__init__.py", "core/main.py"], "core.main")]
-#[case::skips_non_python(&["notes.txt", "core/main.py"], "core.main")]
-fn skill_tool_execution_selects_the_module(#[case] paths: &[&str], #[case] import_path: &str) {
+#[case::builder_after_plain(&["core/main.py", "core/gif_builder.py"], "core/gif_builder.py")]
+#[case::creator(&["core/main.py", "core/creator.py"], "core/creator.py")]
+#[case::generator_any_case(&["core/tool.py", "core/Generator.py"], "core/Generator.py")]
+#[case::first_plain_module(&["core/helpers.py", "core/main.py"], "core/helpers.py")]
+#[case::skips_init(&["core/__init__.py", "core/main.py"], "core/main.py")]
+#[case::skips_non_python(&["notes.txt", "core/main.py"], "core/main.py")]
+fn skill_tool_execution_selects_the_module(#[case] paths: &[&str], #[case] module_path: &str) {
     let files = skill_files(paths);
     let selected = select_skill_module(&files);
-    assert_eq!(selected, Some(import_path));
+    assert_eq!(selected, Some(module_path));
 }
 
 #[tokio::test]

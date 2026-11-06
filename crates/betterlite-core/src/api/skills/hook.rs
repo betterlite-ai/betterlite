@@ -51,7 +51,8 @@ impl<PromptHandler: Sync, Sandbox: SkillsSandbox + Sync>
                 size: decoded.len(),
             });
         }
-        if let Some(error) = outcome.error {
+        // LiteLLM skips the error text when the executor reports an empty string for a clean run
+        if let Some(error) = outcome.error.filter(|error| !error.is_empty()) {
             result.push_str("\n\nError: ");
             result.push_str(&error);
         }
