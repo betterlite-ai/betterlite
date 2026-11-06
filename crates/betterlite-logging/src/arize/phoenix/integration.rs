@@ -38,6 +38,12 @@ pub struct PhoenixPromptManager {
 impl PhoenixPromptManager {
     pub const INTEGRATION_NAME: &'static str = "arize";
 
+    #[must_use]
+    pub const fn should_run_prompt_management(prompt_id: Option<&str>) -> bool {
+        // LiteLLM compares the id against None, so an empty id still runs the manager.
+        prompt_id.is_some()
+    }
+
     pub async fn compile_prompt_helper(
         &self,
         requested_id: Option<&str>,

@@ -2,6 +2,7 @@
 
 use betterlite_models::decisions::Json;
 use betterlite_models::prompt_contracts::{PromptManagementClient, PromptParams};
+use rstest::rstest;
 
 use super::{CompileError, PhoenixPromptManager};
 use crate::arize::phoenix::caching::TemplateCache;
@@ -202,6 +203,20 @@ async fn integration_fails_a_compilation_when_the_configured_prompt_cannot_load(
     assert_eq!(
         error.to_string(),
         "Error compiling prompt 'other': Failed to load prompt version 'configured' from Arize Phoenix: Prompt version 'configured' not found"
+    );
+}
+
+#[rstest]
+#[case::named(Some("UHJvbXB0VmVyc2lvbjox"), true)]
+#[case::empty(Some(""), true)]
+#[case::absent(None, false)]
+fn integration_runs_prompt_management_whenever_the_request_names_a_prompt(
+    #[case] prompt_id: Option<&str>,
+    #[case] runs: bool,
+) {
+    assert_eq!(
+        PhoenixPromptManager::should_run_prompt_management(prompt_id),
+        runs
     );
 }
 
