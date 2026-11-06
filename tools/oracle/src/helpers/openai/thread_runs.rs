@@ -52,6 +52,9 @@ fn failure(error: &ThreadRunsError) -> Result<Value, Box<crate::helpers::HelperE
         | ThreadRunsError::EmptyRunId
         | ThreadRunsError::DotSegment(_) => Ok(json!({"kind": "invalid_thread_id"})),
         ThreadRunsError::Shape(_) => Ok(json!({"kind": "shape"})),
+        ThreadRunsError::Malformed(_) | ThreadRunsError::Truncated(_) => {
+            Ok(json!({"kind": "malformed"}))
+        }
         ThreadRunsError::ProviderError { body } => {
             let value = serde_json::from_slice::<Value>(body).unwrap_or(Value::Null);
             Ok(
@@ -62,8 +65,6 @@ fn failure(error: &ThreadRunsError) -> Result<Value, Box<crate::helpers::HelperE
         | ThreadRunsError::Header(_)
         | ThreadRunsError::Encode(_)
         | ThreadRunsError::Transport(_)
-        | ThreadRunsError::Malformed(_)
-        | ThreadRunsError::Truncated(_)
         | ThreadRunsError::PollAfterHeader(_)
         | ThreadRunsError::PollAfter { .. }
         | ThreadRunsError::StreamTooLarge

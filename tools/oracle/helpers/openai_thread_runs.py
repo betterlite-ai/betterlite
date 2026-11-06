@@ -103,6 +103,8 @@ def error_label(error: Exception) -> str:
 def failure(error: Exception) -> Json:
     if isinstance(error, openai.APIStatusError):
         return {"kind": "status", "status": error.status_code}
+    if isinstance(error, json.JSONDecodeError):
+        return {"kind": "malformed"}
     if isinstance(error, openai.APIError):
         body = cast(object, error.body)
         if isinstance(body, dict):
@@ -129,8 +131,8 @@ def event_dump(event: object) -> Json:
         return cast(Json, event)
     stream_event = cast(AssistantStreamEvent, event)
     name = cast("str | None", stream_event.event)
-    step = name is not None and name.startswith("thread.run.step.")
-    if name is not None and name.startswith("thread.run.") and not step:
+    typed = name is not None and name.startswith(("thread.run.", "thread.message."))
+    if typed:
         return cast(Json, stream_event.model_dump())
     return cast(Json, stream_event.model_dump(exclude_none=True))
 
