@@ -1,26 +1,27 @@
-use crate::client::convert::ConvertError;
 use crate::client::convert::messages::to_compat_message;
 use crate::client::convert::parts::to_compat_part;
-use crate::client::records::compat::{Artifact, Task, TaskState, TaskStatus};
+use crate::client::records::compat::{Artifact, Task, TaskKind, TaskState, TaskStatus};
 use crate::client::records::core::{CoreArtifact, CoreTask, CoreTaskState, CoreTaskStatus};
 
-pub fn to_compat_task(task: &CoreTask) -> Result<Task, ConvertError> {
-    let status = compat_status_of(task.status.as_ref())?;
-    let history = convert_list(&task.history, to_compat_message)?;
-    let artifacts = convert_list(&task.artifacts, to_compat_artifact)?;
-    Ok(Task {
+pub fn to_compat_task(task: &CoreTask) -> Task {
+    let status = compat_status_of(task.status.as_ref());
+    let history = converted_list(&task.history, to_compat_message);
+    let artifacts = converted_list(&task.artifacts, to_compat_artifact);
+    Task {
+        kind: TaskKind::Task,
         status,
         history,
         artifacts,
         metadata: task.metadata.clone(),
         id: task.id.clone(),
         context_id: task.context_id.clone().unwrap_or_default(),
-    })
+    }
 }
 
-pub fn compat_status_of(status: Option<&CoreTaskStatus>) -> Result<TaskStatus, ConvertError> {
+#[must_use]
+pub fn compat_status_of(status: Option<&CoreTaskStatus>) -> TaskStatus {
     let Some(present) = status else {
-        return Ok(unknown_status());
+        return unknown_status();
     };
     to_compat_status(present)
 }
@@ -33,12 +34,12 @@ pub const fn is_final(status: &TaskStatus) -> bool {
     )
 }
 
-pub fn to_compat_status(status: &CoreTaskStatus) -> Result<TaskStatus, ConvertError> {
-    Ok(TaskStatus {
+pub fn to_compat_status(status: &CoreTaskStatus) -> TaskStatus {
+    TaskStatus {
         state: compat_state(status.state),
-        message: status.message.as_ref().map(to_compat_message).transpose()?,
+        message: status.message.as_ref().map(to_compat_message),
         timestamp: status.timestamp.clone().filter(|value| !value.is_empty()),
-    })
+    }
 }
 
 const fn unknown_status() -> TaskStatus {
@@ -63,8 +64,8 @@ const fn compat_state(state: CoreTaskState) -> TaskState {
     }
 }
 
-pub fn to_compat_artifact(artifact: &CoreArtifact) -> Result<Artifact, ConvertError> {
-    Ok(Artifact {
+pub fn to_compat_artifact(artifact: &CoreArtifact) -> Artifact {
+    Artifact {
         parts: artifact.parts.iter().map(to_compat_part).collect(),
         metadata: artifact.metadata.clone(),
         extensions: (!artifact.extensions.is_empty()).then(|| artifact.extensions.clone()),
@@ -74,16 +75,15 @@ pub fn to_compat_artifact(artifact: &CoreArtifact) -> Result<Artifact, ConvertEr
             .description
             .clone()
             .filter(|value| !value.is_empty()),
-    })
+    }
 }
 
-fn convert_list<T, U, F>(items: &[T], convert: F) -> Result<Option<Vec<U>>, ConvertError>
+fn converted_list<T, U, F>(items: &[T], convert: F) -> Option<Vec<U>>
 where
-    F: Fn(&T) -> Result<U, ConvertError>,
+    F: Fn(&T) -> U,
 {
     if items.is_empty() {
-        return Ok(None);
+        return None;
     }
-    let converted = items.iter().map(convert).collect::<Result<Vec<_>, _>>()?;
-    Ok(Some(converted))
+    Some(items.iter().map(convert).collect())
 }

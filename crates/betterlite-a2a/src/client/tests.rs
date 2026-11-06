@@ -523,7 +523,6 @@ async fn client_timeout(#[case] timeout_ms: u64) {
         6000,
         "the A2A default timeout is 6000 seconds"
     );
-    assert_eq!(DEFAULT_A2A_AGENT_TIMEOUT.as_secs(), 6000);
     if timeout_ms == 0 {
         return;
     }
@@ -561,8 +560,7 @@ fn compat_stream_response_round_trip() {
     let response = to_compat_stream_response(
         CoreStreamEvent::Message(message),
         serde_json::from_str::<JsonRpcId>(r#""request-1""#).unwrap(),
-    )
-    .unwrap();
+    );
     let value = &response.result;
     assert_eq!(response.jsonrpc, "2.0");
     assert_eq!(

@@ -64,13 +64,7 @@ pub async fn stream_messages(
         let mut pending = events;
         while let Some(event) = pending.next().await {
             match event {
-                Ok(chunk) => match to_compat_stream_response(chunk, request_id.clone()) {
-                    Ok(response) => yield Ok(response),
-                    Err(error) => {
-                        yield Err(ClientError::Convert(error));
-                        return;
-                    }
-                },
+                Ok(chunk) => yield Ok(to_compat_stream_response(chunk, request_id.clone())),
                 Err(error) => {
                     yield Err(error);
                     return;

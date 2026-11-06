@@ -3,7 +3,9 @@ use thiserror::Error;
 
 use crate::client::records::JSONRPC_VERSION;
 use crate::client::records::compat::SendMessageRequest;
-use crate::client::records::compat::{TaskArtifactUpdate, TaskStatusUpdate};
+use crate::client::records::compat::{
+    ArtifactUpdateKind, StatusUpdateKind, TaskArtifactUpdate, TaskStatusUpdate,
+};
 use crate::client::records::core::{CoreSendMessageRequest, CoreStreamEvent};
 use crate::client::records::response::{SendMessageResponse, StreamResult};
 
@@ -33,19 +35,21 @@ pub fn to_core_send_message_request(
     })
 }
 
+#[must_use]
 pub fn to_compat_stream_response(
     event: CoreStreamEvent,
     request_id: JsonRpcId,
-) -> Result<SendMessageResponse, ConvertError> {
+) -> SendMessageResponse {
     let result = match event {
         CoreStreamEvent::Message(message) => {
-            StreamResult::Message(messages::to_compat_message(&message)?)
+            StreamResult::Message(messages::to_compat_message(&message))
         }
-        CoreStreamEvent::Task(task) => StreamResult::Task(response::to_compat_task(&task)?),
+        CoreStreamEvent::Task(task) => StreamResult::Task(response::to_compat_task(&task)),
         CoreStreamEvent::StatusUpdate(update) => {
-            let status = response::compat_status_of(update.status.as_ref())?;
+            let status = response::compat_status_of(update.status.as_ref());
             let is_final = response::is_final(&status);
             StreamResult::StatusUpdate(TaskStatusUpdate {
+                kind: StatusUpdateKind::StatusUpdate,
                 status,
                 is_final,
                 metadata: update.metadata,
@@ -55,18 +59,19 @@ pub fn to_compat_stream_response(
         }
         CoreStreamEvent::ArtifactUpdate(update) => {
             StreamResult::ArtifactUpdate(TaskArtifactUpdate {
+                kind: ArtifactUpdateKind::ArtifactUpdate,
                 append: update.append,
                 last_chunk: update.last_chunk,
                 metadata: update.metadata,
                 task_id: update.task_id,
                 context_id: update.context_id.unwrap_or_default(),
-                artifact: response::to_compat_artifact(&update.artifact)?,
+                artifact: response::to_compat_artifact(&update.artifact),
             })
         }
     };
-    Ok(SendMessageResponse {
+    SendMessageResponse {
         jsonrpc: JSONRPC_VERSION.to_owned(),
         id: request_id,
         result,
-    })
+    }
 }

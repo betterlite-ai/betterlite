@@ -1,6 +1,6 @@
 use crate::client::convert::ConvertError;
 use crate::client::convert::parts::{to_compat_part, to_core_part};
-use crate::client::records::compat::{Message, Role};
+use crate::client::records::compat::{Message, MessageKind, Role};
 use crate::client::records::core::{CoreMessage, CoreRole};
 
 pub fn to_core_message(message: Message) -> Result<CoreMessage, ConvertError> {
@@ -8,26 +8,34 @@ pub fn to_core_message(message: Message) -> Result<CoreMessage, ConvertError> {
         role,
         parts,
         common,
+        ..
     } = message;
+    let mut converted = Vec::with_capacity(parts.len());
+    for part in parts {
+        converted.push(to_core_part(part)?);
+    }
     Ok(CoreMessage {
-        role: match role {
-            Role::User => CoreRole::User,
-            Role::Agent => CoreRole::Agent,
-        },
-        parts: parts
-            .into_iter()
-            .map(to_core_part)
-            .collect::<Result<Vec<_>, _>>()?,
+        role: core_role(role),
+        parts: converted,
         common,
     })
 }
 
-pub fn to_compat_message(message: &CoreMessage) -> Result<Message, ConvertError> {
-    Ok(Message {
+pub fn to_compat_message(message: &CoreMessage) -> Message {
+    let parts = message.parts.iter().map(to_compat_part).collect();
+    Message {
+        kind: MessageKind::Message,
         role: compat_role(message.role),
-        parts: message.parts.iter().map(to_compat_part).collect(),
+        parts,
         common: message.common.clone(),
-    })
+    }
+}
+
+const fn core_role(role: Role) -> CoreRole {
+    match role {
+        Role::User => CoreRole::User,
+        Role::Agent => CoreRole::Agent,
+    }
 }
 
 const fn compat_role(role: CoreRole) -> Role {

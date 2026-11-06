@@ -24,9 +24,25 @@ pub struct PushNotificationConfig { pub url: String, #[serde(default, skip_seria
 #[serde(rename_all = "camelCase")] #[rustfmt::skip]
 pub struct AuthenticationInfo { #[serde(default)] pub schemes: Vec<String>, #[serde(default, skip_serializing_if = "Option::is_none")] pub credentials: Option<String> }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")] #[rustfmt::skip]
+pub enum MessageKind { #[default] Message }
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")] #[rustfmt::skip]
+pub enum TaskKind { #[default] Task }
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")] #[rustfmt::skip]
+pub enum StatusUpdateKind { #[default] StatusUpdate }
+
+#[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")] #[rustfmt::skip]
+pub enum ArtifactUpdateKind { #[default] ArtifactUpdate }
+
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[rustfmt::skip]
-pub struct Message { pub role: Role, pub parts: Vec<Part>, #[serde(flatten)] pub common: MessageCommon }
+pub struct Message { #[serde(default)] pub kind: MessageKind, pub role: Role, pub parts: Vec<Part>, #[serde(flatten)] pub common: MessageCommon }
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")] #[rustfmt::skip]
@@ -62,7 +78,7 @@ pub struct FileWithUri { pub uri: String, #[serde(default, skip_serializing_if =
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")] #[rustfmt::skip]
-pub struct Task { pub id: String, pub context_id: String, pub status: TaskStatus, #[serde(default, skip_serializing_if = "Option::is_none")] pub history: Option<Vec<Message>>, #[serde(default, skip_serializing_if = "Option::is_none")] pub artifacts: Option<Vec<Artifact>>, #[serde(default, skip_serializing_if = "Option::is_none")] pub metadata: Option<AgentJson> }
+pub struct Task { #[serde(default)] pub kind: TaskKind, pub id: String, pub context_id: String, pub status: TaskStatus, #[serde(default, skip_serializing_if = "Option::is_none")] pub history: Option<Vec<Message>>, #[serde(default, skip_serializing_if = "Option::is_none")] pub artifacts: Option<Vec<Artifact>>, #[serde(default, skip_serializing_if = "Option::is_none")] pub metadata: Option<AgentJson> }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")] #[rustfmt::skip]
@@ -78,8 +94,8 @@ pub struct Artifact { pub artifact_id: String, #[serde(default, skip_serializing
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")] #[rustfmt::skip]
-pub struct TaskStatusUpdate { pub task_id: String, pub context_id: String, pub status: TaskStatus, #[serde(rename = "final")] pub is_final: bool, #[serde(default, skip_serializing_if = "Option::is_none")] pub metadata: Option<AgentJson> }
+pub struct TaskStatusUpdate { #[serde(default)] pub kind: StatusUpdateKind, pub task_id: String, pub context_id: String, pub status: TaskStatus, #[serde(rename = "final")] pub is_final: bool, #[serde(default, skip_serializing_if = "Option::is_none")] pub metadata: Option<AgentJson> }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")] #[rustfmt::skip]
-pub struct TaskArtifactUpdate { pub task_id: String, pub context_id: String, pub artifact: Artifact, #[serde(default, skip_serializing_if = "Option::is_none")] pub append: Option<bool>, #[serde(default, skip_serializing_if = "Option::is_none")] pub last_chunk: Option<bool>, #[serde(default, skip_serializing_if = "Option::is_none")] pub metadata: Option<AgentJson> }
+pub struct TaskArtifactUpdate { #[serde(default)] pub kind: ArtifactUpdateKind, pub task_id: String, pub context_id: String, pub artifact: Artifact, #[serde(default, skip_serializing_if = "Option::is_none")] pub append: Option<bool>, #[serde(default, skip_serializing_if = "Option::is_none")] pub last_chunk: Option<bool>, #[serde(default, skip_serializing_if = "Option::is_none")] pub metadata: Option<AgentJson> }
