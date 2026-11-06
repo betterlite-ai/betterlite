@@ -159,8 +159,13 @@ fn detail_number(fields: &IndexMap<String, Json>, name: &str) -> Option<i64> {
     }
 }
 
+// A JSON float may arrive in exponent notation, which Decimal::from_str refuses; from_scientific reads it.
 fn decimal_number(number: &Number, name: &'static str) -> Result<Decimal, UsageError> {
-    Decimal::from_str(&number.to_string())
-        .ok()
-        .ok_or(UsageError::NotANumber { field: name })
+    let text = number.to_string();
+    let parsed = if text.contains(['e', 'E']) {
+        Decimal::from_scientific(&text)
+    } else {
+        Decimal::from_str(&text)
+    };
+    parsed.ok().ok_or(UsageError::NotANumber { field: name })
 }
