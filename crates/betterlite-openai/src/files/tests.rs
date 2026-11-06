@@ -20,13 +20,12 @@ use http::HeaderMap;
 use http::header::{HeaderName, HeaderValue};
 use indexmap::IndexMap;
 use secrecy::SecretString;
-use serde_json::Value;
 use uuid::Uuid;
 
 use super::error::{FilesError, StatusError};
 use super::records::{
-    CreatePurpose, ExpiresAfter, FileContentRequest, FileCreate, FileQuery, FileUpload,
-    decode_file_object,
+    CreatePurpose, ExpiresAfter, FileContentRequest, FileCreate, FileObject, FileQuery, FileUpload,
+    ListKind, decode_file_object,
 };
 use super::stream::{DEFAULT_CHUNK_SIZE, FileContentStreamingResult, StreamExit, flatten_headers};
 use super::transport::{FileTransport, StreamReply};
@@ -125,7 +124,10 @@ fn client(key: &str, organization: Option<&str>) -> FilesClient {
 }
 
 fn api(fixture: &Arc<Fixture>) -> FilesApi<Arc<Fixture>> {
-    FilesApi::new(Arc::clone(fixture), || Uuid::from_u128(0x0123_4567))
+    FilesApi {
+        transport: Arc::clone(fixture),
+        boundaries: || Uuid::from_u128(0x0123_4567),
+    }
 }
 
 fn content_request(file_id: &str) -> FileContentRequest {
@@ -218,6 +220,34 @@ async fn upload() {
     };
     assert_eq!(boundary, "00000000000000000000000001234567");
     assert_upload_parts(&parts);
+    guessed_part_types();
+}
+
+fn guessed_part_types() {
+    for (filename, guessed) in [
+        (Some("a.txt"), Some("text/plain")),
+        (Some("b.JSON"), Some("application/json")),
+        (Some("x.csv"), Some("text/csv")),
+        (Some("noext"), Some("application/octet-stream")),
+        (None, Some("application/octet-stream")),
+        (Some(""), None),
+    ] {
+        let mut data = create_data();
+        data.file.filename = filename.map(str::to_owned);
+        data.file.content_type = None;
+        let request = client("sk-a", None)
+            .create_request(&data, "b".to_owned())
+            .expect("request");
+        let RequestBody::Multipart { parts, .. } = request.body else {
+            panic!("upload is multipart");
+        };
+        let file = parts.last().expect("file part");
+        assert_eq!(file.content_type.as_deref(), guessed, "{filename:?}");
+        assert_eq!(
+            file.file_name.as_deref(),
+            Some(filename.unwrap_or("upload"))
+        );
+    }
 }
 
 fn assert_upload_parts(parts: &[MultipartPart]) {
@@ -253,7 +283,8 @@ async fn list_purpose() {
             .list_files(&client("sk-a", None), &query)
             .await
             .expect("listed");
-        assert_eq!(page["object"], "list");
+        assert_eq!(page.object, Some(ListKind::List));
+        assert_eq!(page.has_more, Some(false));
         let request = fixture.only_request();
         assert_eq!(request.url.as_str(), "https://api.test/v1/files");
         let sent: Vec<(&str, &str)> = request
@@ -306,15 +337,13 @@ async fn retrieve_escaped_id() {
 }
 
 async fn delete_object() {
-    let body: Value =
-        serde_json::from_str(r#"{"id":"file-1","object":"file","deleted":true,"extra":[1,null]}"#)
-            .expect("fixture json");
-    let fixture = Fixture::answering(200, &body.to_string());
+    let body = r#"{"id":"file-1","object":"file","deleted":true}"#;
+    let fixture = Fixture::answering(200, body);
     let deleted = api(&fixture)
         .delete_file(&client("sk-a", None), "file-1")
         .await
         .expect("deleted");
-    assert_eq!(deleted, body);
+    assert_eq!(serde_json::to_string(&deleted).expect("serializable"), body);
     let request = fixture.only_request();
     assert_eq!(request.method, http::Method::DELETE);
     assert_eq!(request.url.path(), "/v1/files/file-1");
@@ -654,7 +683,7 @@ fn replays_the_openai_files_corpus() {
                 .file_name()
                 .and_then(OsStr::to_str)
                 .expect("utf-8 file name");
-            let decoded = decode_file_object(&bytes);
+            let decoded = decode_file_object::<FileObject>(200, &bytes);
             if name.starts_with("valid") || name.starts_with("boundary_ok") {
                 decoded.expect("this seed is a file object");
             } else {

@@ -8,10 +8,12 @@ use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::files::transport::{FileTransport, StreamReply};
 use futures_util::StreamExt as _;
 use futures_util::stream;
+use http::header::{InvalidHeaderName, InvalidHeaderValue};
 use http::{HeaderMap, HeaderName, HeaderValue};
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use thiserror::Error;
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(default, deny_unknown_fields)]
@@ -21,6 +23,20 @@ pub(super) struct Reply {
     json: Option<Value>,
     chunks: Vec<Vec<u8>>,
     fail_after: bool,
+}
+
+#[derive(Debug, Error)]
+pub(super) enum FixtureError {
+    #[error("a fixture reply header name is not valid")]
+    HeaderName {
+        #[source]
+        source: InvalidHeaderName,
+    },
+    #[error("a fixture reply header value is not valid")]
+    HeaderValue {
+        #[source]
+        source: InvalidHeaderValue,
+    },
 }
 
 // One recorded upstream answer; the request the production code sent is kept for the comparison
@@ -34,7 +50,7 @@ pub(super) struct Fixture {
 
 impl Fixture {
     // Without a reply the call is not expected to reach the transport
-    pub(super) fn new(given: Option<&Reply>) -> Result<Self, String> {
+    pub(super) fn new(given: Option<&Reply>) -> Result<Self, FixtureError> {
         let absent = Reply {
             status: 599,
             headers: Vec::new(),
@@ -46,8 +62,10 @@ impl Fixture {
         let mut headers = HeaderMap::new();
         for (name, value) in &reply.headers {
             headers.append(
-                HeaderName::from_bytes(name.as_bytes()).map_err(|error| error.to_string())?,
-                HeaderValue::from_str(value).map_err(|error| error.to_string())?,
+                HeaderName::from_bytes(name.as_bytes())
+                    .map_err(|source| FixtureError::HeaderName { source })?,
+                HeaderValue::from_str(value)
+                    .map_err(|source| FixtureError::HeaderValue { source })?,
             );
         }
         let chunks = reply.json.as_ref().map_or_else(

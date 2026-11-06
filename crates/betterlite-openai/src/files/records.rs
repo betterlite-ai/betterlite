@@ -2,9 +2,10 @@ use std::time::Duration;
 
 use betterlite_http::proxy::UpstreamResponse;
 use indexmap::IndexMap;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use crate::files::error::FilesError;
+use crate::files::error::{FilesError, StatusError};
 use crate::files::stream::flatten_headers;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -56,11 +57,44 @@ pub struct FileObject {
     pub status_details: Option<String>,
 }
 
-pub fn decode_file_object(body: &[u8]) -> Result<FileObject, FilesError> {
-    match serde_json::from_slice(body) {
-        Ok(object) => Ok(object),
-        Err(source) => Err(FilesError::Decode { source }),
+// The SDK's FileDeleted
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FileDeleted {
+    pub id: String,
+    pub object: FileKind,
+    pub deleted: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ListKind {
+    List,
+}
+
+// The SDK's cursor page of file objects, with the list fields the files API reference declares
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FilePage {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object: Option<ListKind>,
+    pub data: Vec<FileObject>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub has_more: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub first_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_id: Option<String>,
+}
+
+// Every JSON files reply: a non-2xx status is the SDK's status error, a 2xx body is the typed record
+pub fn decode_file_object<R>(status: u16, body: &[u8]) -> Result<R, FilesError>
+where
+    R: DeserializeOwned,
+{
+    if !(200..300).contains(&status) {
+        let failure = StatusError::from_response(status, body);
+        return Err(FilesError::Status(Box::new(failure)));
     }
+    serde_json::from_slice(body).map_err(|source| FilesError::Decode { source })
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]

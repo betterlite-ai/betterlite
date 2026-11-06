@@ -146,7 +146,10 @@ async fn invoke(
     input: &Input,
     fixture: &Fixture,
 ) -> Result<Value, FilesError> {
-    let api = FilesApi::new(fixture, || Uuid::from_u128(0x0123_4567));
+    let api = FilesApi {
+        transport: fixture,
+        boundaries: || Uuid::from_u128(0x0123_4567),
+    };
     let request = &input.request;
     match input.action {
         Action::CreateFile => Ok(json!(api.create_file(client, &create_data(request)).await?)),
@@ -159,13 +162,13 @@ async fn invoke(
             }))
         }
         Action::FileContentStreaming => read_stream(&api, client, input, fixture).await,
-        Action::RetrieveFile => api.retrieve_file(client, &request.file_id).await,
-        Action::DeleteFile => api.delete_file(client, &request.file_id).await,
+        Action::RetrieveFile => Ok(json!(api.retrieve_file(client, &request.file_id).await?)),
+        Action::DeleteFile => Ok(json!(api.delete_file(client, &request.file_id).await?)),
         Action::ListFiles => {
             let query = FileQuery {
                 purpose: request.list_purpose.clone(),
             };
-            api.list_files(client, &query).await
+            Ok(json!(api.list_files(client, &query).await?))
         }
         Action::Client => Ok(Value::Null),
     }

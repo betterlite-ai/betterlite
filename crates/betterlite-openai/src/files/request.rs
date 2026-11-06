@@ -82,13 +82,18 @@ fn multipart_parts(data: &FileCreate) -> Vec<MultipartPart> {
         })
         .collect();
     let file = &data.file;
-    let content_type = file.content_type.as_deref();
+    let file_name = file.filename.clone().unwrap_or_else(|| "upload".to_owned());
+    // httpx guesses a missing part type from the file name, and sends none for an empty name
+    let content_type = file.content_type.clone().or_else(|| {
+        (!file_name.is_empty()).then(|| {
+            let guessed = mime_guess::from_path(&file_name).first_raw();
+            guessed.unwrap_or("application/octet-stream").to_owned()
+        })
+    });
     parts.push(MultipartPart {
         name: "file".to_owned(),
-        file_name: file.filename.clone().or_else(|| Some("upload".to_owned())),
-        content_type: content_type
-            .or(Some("application/octet-stream"))
-            .map(str::to_owned),
+        file_name: Some(file_name),
+        content_type,
         data: file.data.clone(),
     });
     parts

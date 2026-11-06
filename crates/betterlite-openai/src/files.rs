@@ -1,17 +1,17 @@
 use std::num::NonZeroUsize;
 use std::time::Duration;
 
-use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::OutboundRequest;
 use http::Method;
 use secrecy::SecretString;
-use serde_json::Value;
+use serde::de::DeserializeOwned;
 use url::Url;
 use uuid::Uuid;
 
 use crate::files::error::{FilesError, StatusError};
 use crate::files::records::{
-    BinaryContent, FileContentRequest, FileCreate, FileObject, FileQuery, decode_file_object,
+    BinaryContent, FileContentRequest, FileCreate, FileDeleted, FileObject, FilePage, FileQuery,
+    decode_file_object,
 };
 use crate::files::request::file_path;
 use crate::files::stream::{FileContentStreamingResult, read_error_body};
@@ -22,8 +22,6 @@ pub mod records;
 pub mod request;
 pub mod stream;
 pub mod transport;
-
-type JsonReply = Result<Value, FilesError>;
 
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1/";
 
@@ -104,29 +102,21 @@ pub fn select_client(
 }
 
 pub struct FilesApi<T> {
-    transport: T,
-    boundaries: fn() -> Uuid,
+    pub transport: T,
+    pub boundaries: fn() -> Uuid,
 }
 
 impl<T: FileTransport> FilesApi<T> {
-    pub const fn new(transport: T, boundaries: fn() -> Uuid) -> Self {
-        Self {
-            transport,
-            boundaries,
-        }
-    }
-
-    async fn buffered(&self, request: OutboundRequest) -> Result<UpstreamResponse, FilesError> {
+    async fn json_call<R>(&self, request: OutboundRequest) -> Result<R, FilesError>
+    where
+        R: DeserializeOwned,
+    {
         let reply = self
             .transport
             .send_buffered(request)
             .await
             .map_err(|source| FilesError::Transport { source })?;
-        if !(200..300).contains(&reply.status) {
-            let failure = StatusError::from_response(reply.status, &reply.body);
-            return Err(FilesError::Status(Box::new(failure)));
-        }
-        Ok(reply)
+        decode_file_object(reply.status, &reply.body)
     }
 
     pub async fn create_file(
@@ -134,11 +124,8 @@ impl<T: FileTransport> FilesApi<T> {
         client: &FilesClient,
         data: &FileCreate,
     ) -> Result<FileObject, FilesError> {
-        let boundary = (self.boundaries)().simple().to_string();
-        let reply = self
-            .buffered(client.create_request(data, boundary)?)
-            .await?;
-        decode_file_object(&reply.body)
+        self.json_call(client.create_request(data, (self.boundaries)().simple().to_string())?)
+            .await
     }
 
     pub async fn file_content(
@@ -146,9 +133,16 @@ impl<T: FileTransport> FilesApi<T> {
         client: &FilesClient,
         request: &FileContentRequest,
     ) -> Result<BinaryContent, FilesError> {
-        Ok(BinaryContent::from_response(
-            self.buffered(client.content_request(request)?).await?,
-        ))
+        let reply = self
+            .transport
+            .send_buffered(client.content_request(request)?)
+            .await
+            .map_err(|source| FilesError::Transport { source })?;
+        if !(200..300).contains(&reply.status) {
+            let failure = StatusError::from_response(reply.status, &reply.body);
+            return Err(FilesError::Status(Box::new(failure)));
+        }
+        Ok(BinaryContent::from_response(reply))
     }
 
     // The response context is entered before this returns; the stream owns leaving it
@@ -175,32 +169,31 @@ impl<T: FileTransport> FilesApi<T> {
         ))
     }
 
-    async fn json_call(
+    pub async fn retrieve_file(
         &self,
         client: &FilesClient,
-        method: Method,
-        path: String,
-        query: Vec<(String, String)>,
-    ) -> JsonReply {
-        let reply = self
-            .buffered(client.bare_request(method, path, query)?)
-            .await?;
-        serde_json::from_slice(&reply.body).map_err(|source| FilesError::Decode { source })
-    }
-
-    pub async fn retrieve_file(&self, client: &FilesClient, file_id: &str) -> JsonReply {
-        self.json_call(client, Method::GET, file_path(file_id, "")?, Vec::new())
+        file_id: &str,
+    ) -> Result<FileObject, FilesError> {
+        self.json_call(client.bare_request(Method::GET, file_path(file_id, "")?, Vec::new())?)
             .await
     }
 
-    pub async fn delete_file(&self, client: &FilesClient, file_id: &str) -> JsonReply {
-        self.json_call(client, Method::DELETE, file_path(file_id, "")?, Vec::new())
+    pub async fn delete_file(
+        &self,
+        client: &FilesClient,
+        file_id: &str,
+    ) -> Result<FileDeleted, FilesError> {
+        self.json_call(client.bare_request(Method::DELETE, file_path(file_id, "")?, Vec::new())?)
             .await
     }
 
     // Only purpose is forwarded; after, limit and order are not arguments of this wrapper
-    pub async fn list_files(&self, client: &FilesClient, query: &FileQuery) -> JsonReply {
-        self.json_call(client, Method::GET, "/files".to_owned(), query.pairs())
+    pub async fn list_files(
+        &self,
+        client: &FilesClient,
+        query: &FileQuery,
+    ) -> Result<FilePage, FilesError> {
+        self.json_call(client.bare_request(Method::GET, "/files".to_owned(), query.pairs())?)
             .await
     }
 }
