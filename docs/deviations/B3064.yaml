@@ -1,0 +1,8 @@
+task: B3064
+deviations:
+  - what: "A CRLF header keeps its last supported column. betterlite drops the trailing CR before it matches header names against the 25 supported columns."
+    why: "LiteLLM splits the header off at the first LF, so the CR stays on the last name, which then never equals a supported name, and that column is dropped from every upload of CRLF content."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/vantage_destination.py#L70-L71"
+  - what: "A quoted cell that holds a line feed stays inside one row when rows are counted and batched. betterlite splits records on line feeds outside quotes."
+    why: "LiteLLM splits on every LF, so a multi-line cell is counted as several rows and can be cut across two batches, which leaves both uploads with an unterminated quote."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/focus/destinations/vantage_destination.py#L139-L141"

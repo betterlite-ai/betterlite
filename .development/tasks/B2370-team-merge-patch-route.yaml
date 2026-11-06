@@ -24,14 +24,13 @@ description: >-
   through B806 without inventing a response header. Keep the executor's write ordering and cache effects.
   Request bytes are decoded by B1231, so this adapter adds no parser. Budget 61 source lines, 95 Rust
   adapter lines, 225 behavior/HTTP fixture lines and 50 registration lines, within 400 changed lines.
+  B1100 registers routes/team_merge_patch.rs as a stub, so fill only crates/betterlite-server/src/routes/team_merge_patch.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/team_merge_patch.rs
     - crates/betterlite-server/src/team_merge_patch/**
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/team_merge_patch.rs
+    - crates/betterlite-server/src/routes/team_merge_patch/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - crates/betterlite-server/Cargo.toml

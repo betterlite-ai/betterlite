@@ -17,8 +17,7 @@ description: >-
 
 
   Register exactly these routes in this task: GET /claude-code/marketplace.json. Each alias is exercised through
-  the booted proxy. Every route factory is mounted once; a family composer mounts its child factories without re-registering
-  their methods/paths.
+  the booted proxy. Every route factory is mounted once, from its own route stub; no family composer mounts it again.
 
 
   Extraction uses the typed path/query/body records named by the owned handler signatures.
@@ -81,6 +80,7 @@ description: >-
   still uses FastAPI detail, while explicit JSONResponse helpers keep their own code/null fields; do not coerce
   those into ProxyException semantics. The constructor inventory above is not a claim that the raw HTTPException
   reaches the client unchanged.
+  B1100 registers routes/claude_plugin_access.rs as a stub, so fill only crates/betterlite-server/src/routes/claude_plugin_access.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
   - crates/betterlite-server/Cargo.toml
@@ -88,10 +88,8 @@ scope:
   - crates/betterlite-server/src/api/claude_plugin_access/**
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/routes/claude_plugin_access.rs
+  - crates/betterlite-server/src/routes/claude_plugin_access/**
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/claude_plugin_access.rs
   - crates/betterlite-core/src/api/claude_plugin_access/**

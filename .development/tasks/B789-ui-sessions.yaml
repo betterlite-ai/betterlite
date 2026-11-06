@@ -73,14 +73,13 @@ description: >-
   Sizing: about 199 nonblank, noncomment source lines including docstrings before translation;
   allow 200 production, 330 behavior/Postgres tests, 65 HTTP wiring and 45 fuzz, 640 within 700.
   Keeping the cleanup manager, settings and helper adapter here would exceed 800.
+  B1100 registers routes/ui_sessions.rs as a stub, so fill only crates/betterlite-server/src/routes/ui_sessions.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/ui_sessions.rs
     - crates/betterlite-server/src/ui_sessions/**
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/ui_sessions.rs
+    - crates/betterlite-server/src/routes/ui_sessions/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - crates/betterlite-server/Cargo.toml
