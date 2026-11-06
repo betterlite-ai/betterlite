@@ -103,29 +103,13 @@ async fn list_assistants_pagination() {
             case.params
         );
     }
-}
-
-// A reply key outside the typed record stays on the result, as it does on the SDK model.
-async fn extra_reply_fields() {
-    let (page_api, _page_transport) = api_with(200, PAGE_EXTRA);
-    let page = page_api
+    // A page key outside the typed record stays on the result, as it does on the SDK model.
+    let (api, _transport) = api_with(200, PAGE_EXTRA);
+    let page = api
         .get_assistants(options(KEY), None, false, &ListParams::default())
         .await
         .unwrap();
     assert_eq!(serde_json::to_value(&page).unwrap(), parse(PAGE_EXTRA));
-    let data: AssistantCreate = serde_json::from_str(CREATE_BODY).unwrap();
-    let (create_api, _create_transport) = api_with(200, EXTRA_REPLY);
-    let created = create_api
-        .create_assistants(options(KEY), &data, None, false)
-        .await
-        .unwrap();
-    assert_eq!(serde_json::to_value(&created).unwrap(), parse(EXTRA_REPLY));
-    let (delete_api, _delete_transport) = api_with(200, DELETED_EXTRA);
-    let gone = delete_api
-        .delete_assistant(options(KEY), "asst_1", None, false)
-        .await
-        .unwrap();
-    assert_eq!(serde_json::to_value(&gone).unwrap(), parse(DELETED_EXTRA));
 }
 
 // The configured timeout reaches the request; wire() already expects the SDK's 600s default on every other call.
@@ -187,6 +171,16 @@ async fn create_tools_resources() {
             wire("POST", &url, Some(NULL_BODY)),
         ]
     );
+    // A reply key outside the typed record stays on the result, as it does on the SDK model.
+    transport.queue(200, EXTRA_REPLY);
+    let with_extra = api
+        .create_assistants(options(KEY), &data, None, false)
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::to_value(&with_extra).unwrap(),
+        parse(EXTRA_REPLY)
+    );
 }
 
 async fn delete_assistant() {
@@ -219,6 +213,13 @@ async fn delete_assistant() {
         );
         assert!(transport.requests().is_empty(), "{id:?}");
     }
+    // A reply key outside the typed record stays on the result, as it does on the SDK model.
+    let (api, _transport) = api_with(200, DELETED_EXTRA);
+    let gone = api
+        .delete_assistant(options(KEY), "asst_1", None, false)
+        .await
+        .unwrap();
+    assert_eq!(serde_json::to_value(&gone).unwrap(), parse(DELETED_EXTRA));
 }
 
 async fn assistant_error() {
@@ -292,10 +293,7 @@ async fn assistants_cases(#[case] scenario: Scenario) {
             list_assistants_pagination().await;
             configured_timeouts().await;
         }
-        Scenario::CreateToolsResources => {
-            create_tools_resources().await;
-            extra_reply_fields().await;
-        }
+        Scenario::CreateToolsResources => create_tools_resources().await,
         Scenario::DeleteAssistant => delete_assistant().await,
         Scenario::AssistantError => {
             assistant_error().await;
