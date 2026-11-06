@@ -3,6 +3,7 @@ use std::time::Duration;
 
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::RequestBody;
+use serde_json::{Map, Value};
 use tokio::time::sleep;
 
 use crate::assistants::client::{ClientKind, ClientOptions, SdkClient};
@@ -11,14 +12,13 @@ use crate::assistants::transport::AssistantsTransport;
 use crate::thread_runs::client::{CallKind, DEFAULT_TIMEOUT, outbound, send};
 use crate::thread_runs::error::ThreadRunsError;
 use crate::thread_runs::records::reply;
-use crate::thread_runs::records::{RunCreate, RunReply, RunRequest};
-use crate::thread_runs::stream::{MAX_EVENT_BYTES, RunEventHandler, RunStream};
+use crate::thread_runs::records::{RunReply, RunRequest};
+use crate::thread_runs::stream::{RunEventHandler, RunStream};
 
 const TERMINAL: &str = "requires_action cancelled completed failed expired incomplete";
 pub struct RunsApi<T> {
     pub transport: Arc<T>,
 }
-// Both run tests compare with `is True`, so the caller resolves every other value to false before dispatch.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RunDispatch {
     pub arun_thread: bool,
@@ -32,10 +32,7 @@ pub struct RunCall<T> {
 }
 // The buffered and streaming results stay distinct, and each names the facade it was built for.
 pub enum RunInvocation<T> {
-    Polled {
-        kind: ClientKind,
-        run: Box<RunReply>,
-    },
+    Polled(ClientKind, Box<RunReply>),
     Streaming(Box<RunStream<T>>),
 }
 impl<T: AssistantsTransport> RunsApi<T> {
@@ -45,7 +42,7 @@ impl<T: AssistantsTransport> RunsApi<T> {
         request: &RunRequest,
     ) -> Result<RunReply, ThreadRunsError> {
         let segments = thread_segments(&request.thread_id)?;
-        let bytes = create_body(request, false)?;
+        let bytes = create_body(request, false);
         let create = outbound(
             client,
             CallKind::Create,
@@ -76,10 +73,8 @@ impl<T: AssistantsTransport> RunsApi<T> {
         handler: Option<Arc<dyn RunEventHandler>>,
     ) -> Result<RunStream<T>, ThreadRunsError> {
         let segments = thread_segments(&request.thread_id)?;
-        let bytes = create_body(request, true)?;
-        let kind = CallKind::Stream {
-            custom_handler: handler.is_some(),
-        };
+        let bytes = create_body(request, true);
+        let kind = CallKind::Stream;
         let stream_request = outbound(client, kind, &segments, RequestBody::Json(bytes))?;
         Ok(RunStream {
             kind: client.kind,
@@ -87,7 +82,6 @@ impl<T: AssistantsTransport> RunsApi<T> {
             transport: Arc::clone(&self.transport),
             request: stream_request,
             read_timeout: client.timeout.unwrap_or(DEFAULT_TIMEOUT),
-            max_bytes: MAX_EVENT_BYTES,
         })
     }
     pub async fn run_thread(
@@ -109,24 +103,35 @@ impl<T: AssistantsTransport> RunsApi<T> {
             return Ok(RunInvocation::Streaming(Box::new(stream)));
         }
         let run = self.create_and_poll(&client, request).await?;
-        Ok(RunInvocation::Polled {
-            kind,
-            run: Box::new(run),
-        })
+        Ok(RunInvocation::Polled(kind, Box::new(run)))
     }
 }
 // The SDK always sends every keyword LiteLLM's wrapper received, so a None argument stays null on the wire.
-fn create_body(request: &RunRequest, stream: bool) -> Result<Vec<u8>, ThreadRunsError> {
-    let body = RunCreate {
-        assistant_id: &request.assistant_id,
-        additional_instructions: request.additional_instructions.as_deref(),
-        instructions: request.instructions.as_deref(),
-        metadata: request.metadata.as_ref(),
-        model: request.model.as_deref(),
-        stream,
-        tools: request.tools.as_deref(),
-    };
-    serde_json::to_vec(&body).map_err(ThreadRunsError::Encode)
+fn create_body(request: &RunRequest, stream: bool) -> Vec<u8> {
+    let mut body = Map::new();
+    body.insert(
+        String::from("assistant_id"),
+        Value::from(request.assistant_id.as_str()),
+    );
+    body.insert(
+        String::from("additional_instructions"),
+        Value::from(request.additional_instructions.as_deref()),
+    );
+    body.insert(
+        String::from("instructions"),
+        Value::from(request.instructions.as_deref()),
+    );
+    body.insert(
+        String::from("metadata"),
+        request.metadata.clone().unwrap_or(Value::Null),
+    );
+    body.insert(String::from("model"), Value::from(request.model.as_deref()));
+    body.insert(String::from("stream"), Value::from(stream));
+    body.insert(
+        String::from("tools"),
+        request.tools.clone().unwrap_or(Value::Null),
+    );
+    Value::Object(body).to_string().into_bytes()
 }
 fn thread_segments(thread_id: &str) -> Result<[&str; 3], ThreadRunsError> {
     check_segment(thread_id, ThreadRunsError::EmptyThreadId)?;

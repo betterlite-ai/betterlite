@@ -73,17 +73,13 @@ fn call(facade: Facade) -> RunCall<Recorder> {
 }
 
 fn poll_wire() -> Seen {
-    let mut seen = wire("GET", RUN_1, None);
-    seen.poll_helper = Some(String::from("true"));
-    seen
+    wire("GET", RUN_1, None)
 }
 
-fn stream_wire(custom_handler: bool) -> Seen {
+fn stream_wire() -> Seen {
     let mut seen = wire("POST", RUNS, Some(STREAM_BODY));
     // A stream carries the transport ceiling, not the caller timeout, which bounds each read instead.
     seen.deadline = Duration::from_mins(100);
-    seen.stream_helper = Some(String::from("threads.runs.create_and_stream"));
-    seen.custom_handler = Some(String::from(if custom_handler { "true" } else { "false" }));
     seen
 }
 
@@ -110,7 +106,7 @@ async fn poll_state(state: &str, arun_thread: bool) -> (Vec<Seen>, RunReply) {
         Facade::SyncRun
     };
     let outcome = api.run_thread(call(facade), &request()).await.unwrap();
-    let RunInvocation::Polled { kind, run } = outcome else {
+    let RunInvocation::Polled(kind, run) = outcome else {
         panic!("expected a polled invocation");
     };
     let expected = if arun_thread {
@@ -269,7 +265,7 @@ async fn poll_intervals() {
         .run_thread(call(Facade::SyncRun), &request())
         .await
         .unwrap();
-    let RunInvocation::Polled { run, .. } = outcome else {
+    let RunInvocation::Polled(_, run) = outcome else {
         panic!("expected a polled invocation");
     };
     assert_eq!(run.status, "completed");
@@ -467,7 +463,7 @@ async fn stream_result(body: &str) -> Result<Vec<RunEvent>, ThreadRunsError> {
         panic!("expected a stream manager");
     };
     let result = stream.consume().await;
-    assert_eq!(transport.requests(), vec![stream_wire(false)]);
+    assert_eq!(transport.requests(), vec![stream_wire()]);
     result
 }
 
@@ -627,24 +623,51 @@ async fn stream_timeout_bounds_each_read() {
     }
 }
 
-// The decoded stream is capped, so a provider cannot grow it without bound.
+// The frame buffer is capped, so one oversized frame fails while a long stream of small ones completes.
 async fn stream_cap_is_bounded() {
+    long_stream_completes().await;
+    oversized_frame_fails().await;
+}
+
+async fn long_stream_completes() {
     let (api, transport) = harness();
-    transport.stream_chunks(parts_chunks(vec![
-        Ok(frame("thread.run.created", QUEUED).into_bytes()),
-        Ok(frame("thread.run.in_progress", IN_PROGRESS).into_bytes()),
-    ]));
+    let long = format!(
+        "{}{}data: [DONE]\n\n",
+        frame("thread.run.created", QUEUED),
+        frame("thread.run.completed", COMPLETED)
+    );
+    transport.stream_chunks(parts_chunks(vec![Ok(long.into_bytes())]));
     let outcome = api
         .run_thread(call(Facade::SyncStream), &request())
         .await
         .unwrap();
-    let RunInvocation::Streaming(mut stream) = outcome else {
+    let RunInvocation::Streaming(stream) = outcome else {
         panic!("expected a stream manager");
     };
-    stream.max_bytes = 300;
     let mut events = stream.events().await.unwrap();
-    let first = events.next().await.expect("an event").unwrap();
-    assert_eq!(first.name(), "thread.run.created");
+    assert_eq!(
+        events.next().await.expect("an event").unwrap().name(),
+        "thread.run.created"
+    );
+    assert_eq!(
+        events.next().await.expect("an event").unwrap().name(),
+        "thread.run.completed"
+    );
+    assert!(events.next().await.is_none());
+}
+
+async fn oversized_frame_fails() {
+    let (api, transport) = harness();
+    let oversized = format!("data: {}\n\n", "x".repeat(0x0010_0000));
+    transport.stream_chunks(parts_chunks(vec![Ok(oversized.into_bytes())]));
+    let outcome = api
+        .run_thread(call(Facade::SyncStream), &request())
+        .await
+        .unwrap();
+    let RunInvocation::Streaming(stream) = outcome else {
+        panic!("expected a stream manager");
+    };
+    let mut events = stream.events().await.unwrap();
     let failure = events.next().await.expect("a failure").err().unwrap();
     assert!(
         matches!(failure, ThreadRunsError::StreamTooLarge),
@@ -661,11 +684,24 @@ async fn stream_embedded_event_decodes() {
     assert_eq!(events[0].name(), "thread.run.created");
 }
 
-// A frame that set an event or retry field but carried no payload fails as truncated.
+// A frame that recorded a usable field but carried no payload fails as truncated.
 async fn stream_empty_payload_fields() {
-    for body in ["event: thread.run.queued\n\n", "retry: 5\n\n", "data\n\n"] {
+    for body in [
+        "event: thread.run.queued\n\n",
+        "retry: 5\n\n",
+        "data\n\n",
+        "id: 7\n\n",
+    ] {
         let error = stream_result(body).await.err().unwrap();
         assert!(matches!(error, ThreadRunsError::Truncated(_)), "{body:?}");
+    }
+}
+
+// A frame whose fields the SDK cannot use is ignored, so the stream ends normally.
+async fn stream_unusable_fields_are_skipped() {
+    for body in ["retry: soon\n\n", "id:\n\n", "event:\n\n", "id: a\0b\n\n"] {
+        let events = stream_result(body).await.unwrap();
+        assert!(events.is_empty(), "{body:?}");
     }
 }
 
@@ -753,7 +789,7 @@ async fn stream_incremental_events() {
         Some(&Value::String(String::from("queued")))
     );
     assert_eq!(events[2].name(), "thread.run.completed");
-    assert_eq!(transport.requests(), vec![stream_wire(false)]);
+    assert_eq!(transport.requests(), vec![stream_wire()]);
 
     stream_terminators_decode().await;
 }
@@ -818,7 +854,7 @@ async fn dispatch_selections() {
         }
         let outcome = api.run_thread(call(facade), &request()).await.unwrap();
         match outcome {
-            RunInvocation::Polled { kind, .. } => {
+            RunInvocation::Polled(kind, _) => {
                 assert!(!streaming);
                 assert_eq!(kind, expected);
             }
@@ -845,7 +881,7 @@ async fn stream_event_handler() {
     assert!(default_transport.requests().is_empty());
     let default_events = default_stream.consume().await.unwrap();
     assert_eq!(default_events.len(), 3);
-    assert_eq!(default_transport.requests(), vec![stream_wire(false)]);
+    assert_eq!(default_transport.requests(), vec![stream_wire()]);
 
     let (sink_api, sink_transport) = harness();
     sink_transport.queue(200, &[("content-type", "text/event-stream")], &sse());
@@ -869,7 +905,7 @@ async fn stream_event_handler() {
         recorder.take().join(","),
         "thread.run.created,thread.run.in_progress,thread.run.completed,end"
     );
-    assert_eq!(sink_transport.requests(), vec![stream_wire(true)]);
+    assert_eq!(sink_transport.requests(), vec![stream_wire()]);
 }
 
 async fn assistants_beta_default() {
@@ -931,6 +967,7 @@ async fn thread_runs_cases(#[case] scenario: Scenario) {
             stream_cap_is_bounded().await;
             stream_embedded_event_decodes().await;
             stream_empty_payload_fields().await;
+            stream_unusable_fields_are_skipped().await;
             stream_step_and_message_records().await;
         }
         Scenario::InstructionsToolsOverrides => instructions_tools_overrides().await,

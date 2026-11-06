@@ -11,8 +11,6 @@ pub enum ThreadRunsError {
     BaseUrl(#[source] ParseError),
     #[error("a credential is not a valid header value: {0}")]
     Header(#[source] InvalidHeaderValue),
-    #[error("the request could not be written as JSON: {0}")]
-    Encode(#[source] serde_json::Error),
     #[error("expected a non-empty value for thread_id")]
     EmptyThreadId,
     #[error("expected a non-empty value for run_id")]

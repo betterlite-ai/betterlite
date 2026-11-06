@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::mem;
 use std::str;
 
@@ -56,27 +57,95 @@ fn typed_event(name: &str, mut value: Value) -> Result<RunEvent, ThreadRunsError
         return Ok(RunEvent::Named {
             event: name.to_owned(),
             data,
+            extra: BTreeMap::new(),
         });
     }
+    if name == "thread.created" {
+        add_keys(&mut value, "id created_at metadata object tool_resources");
+        let extra = BTreeMap::from([(String::from("enabled"), Value::Null)]);
+        return Ok(RunEvent::Named {
+            event: name.to_owned(),
+            data: value,
+            extra,
+        });
+    }
+    fill_event(name, &mut value);
+    Ok(RunEvent::Named {
+        event: name.to_owned(),
+        data: value,
+        extra: BTreeMap::new(),
+    })
+}
+fn fill_event(name: &str, value: &mut Value) {
     match name {
         "thread.message.delta" => {
             if let Some(delta) = value.get_mut("delta") {
                 add_keys(delta, "content role");
+                if let Some(content) = delta.get_mut("content") {
+                    fill_parts(content);
+                }
             }
         }
         "thread.run.step.delta" => {
             if let Some(delta) = value.get_mut("delta") {
                 add_keys(delta, "step_details");
+                if let Some(details) = delta.get_mut("step_details") {
+                    fill_calls(details, true);
+                }
             }
         }
-        _ if name.starts_with("thread.message.") => add_keys(&mut value, MESSAGE_KEYS),
-        _ if name.starts_with("thread.run.step.") => add_keys(&mut value, STEP_KEYS),
+        _ if name.starts_with("thread.message.") => {
+            add_keys(value, MESSAGE_KEYS);
+            if let Some(Value::Array(items)) = value.get_mut("attachments") {
+                for item in items {
+                    add_keys(item, "file_id tools");
+                }
+            }
+        }
+        _ if name.starts_with("thread.run.step.") => {
+            add_keys(value, STEP_KEYS);
+            if let Some(details) = value.get_mut("step_details") {
+                fill_calls(details, false);
+            }
+        }
         _ => {}
     }
-    Ok(RunEvent::Named {
-        event: name.to_owned(),
-        data: value,
-    })
+}
+fn fill_parts(content: &mut Value) {
+    let Value::Array(parts) = content else {
+        return;
+    };
+    for part in parts {
+        if let Some(Value::Object(text)) = part.get_mut("text") {
+            insert_keys(text, "annotations");
+        }
+    }
+}
+fn fill_calls(details: &mut Value, delta: bool) {
+    let Value::Object(object) = details else {
+        return;
+    };
+    let Some(Value::Array(calls)) = object.get_mut("tool_calls") else {
+        return;
+    };
+    for call in calls {
+        if delta {
+            add_keys(call, "id");
+        }
+        match call.get("type").and_then(Value::as_str) {
+            Some("code_interpreter") => {
+                if let Some(Value::Object(inner)) = call.get_mut("code_interpreter") {
+                    insert_keys(inner, "input outputs");
+                }
+            }
+            Some("file_search") if !delta => {
+                if let Some(Value::Object(inner)) = call.get_mut("file_search") {
+                    insert_keys(inner, "ranking_options results");
+                }
+            }
+            _ => {}
+        }
+    }
 }
 fn add_keys(target: &mut Value, keys: &str) {
     let Value::Object(object) = target else {
@@ -100,30 +169,10 @@ fn provider_error(value: &Value) -> Option<ThreadRunsError> {
         }),
     }
 }
-// The shared SseParser strips non-data fields and its event_end is private, so this keeps the event line and CRLF.
 fn lines(body: &[u8]) -> Vec<&[u8]> {
-    let mut lines = Vec::new();
-    let (mut start, mut cursor) = (0_usize, 0_usize);
-    while let Some(byte) = body.get(cursor) {
-        if !matches!(*byte, b'\r' | b'\n') {
-            cursor = cursor.saturating_add(1);
-            continue;
-        }
-        if let Some(line) = body.get(start..cursor) {
-            lines.push(line);
-        }
-        let next = cursor.saturating_add(1);
-        cursor = if *byte == b'\r' && body.get(next) == Some(&b'\n') {
-            next.saturating_add(1)
-        } else {
-            next
-        };
-        start = cursor;
-    }
-    if let Some(tail) = body.get(start..) {
-        lines.push(tail);
-    }
-    lines
+    body.split(|byte| matches!(*byte, b'\r' | b'\n'))
+        .filter(|line| !line.is_empty())
+        .collect()
 }
 type Frame = (Option<String>, Vec<u8>, bool);
 fn event_and_data(frame: &[u8]) -> Frame {
@@ -136,8 +185,9 @@ fn event_and_data(frame: &[u8]) -> Frame {
         });
         match name {
             b"event" => {
-                parsed.0 = str::from_utf8(rest.trim_ascii()).ok().map(str::to_owned);
-                parsed.2 = true;
+                let field = rest.trim_ascii();
+                parsed.0 = str::from_utf8(field).ok().map(str::to_owned);
+                parsed.2 = !field.is_empty();
             }
             b"data" => {
                 if !parsed.1.is_empty() {
@@ -148,7 +198,11 @@ fn event_and_data(frame: &[u8]) -> Frame {
                     .extend_from_slice(rest.strip_prefix(b" ").unwrap_or(rest));
                 parsed.2 = true;
             }
-            b"id" | b"retry" => parsed.2 = true,
+            b"id" => parsed.2 = !rest.trim_ascii().is_empty() && !rest.contains(&0),
+            b"retry" => {
+                parsed.2 =
+                    str::from_utf8(rest.trim_ascii()).is_ok_and(|text| text.parse::<u64>().is_ok());
+            }
             _ => {}
         }
     }
@@ -160,14 +214,16 @@ pub(crate) struct RunFrames {
     buffer: Vec<u8>,
 }
 impl RunFrames {
-    pub(crate) fn push(&mut self, bytes: &[u8]) -> Vec<Vec<u8>> {
+    pub(crate) fn push(&mut self, bytes: &[u8]) -> Result<Vec<Vec<u8>>, ThreadRunsError> {
+        if self.buffer.len().saturating_add(bytes.len()) > 0x0010_0000 {
+            return Err(ThreadRunsError::StreamTooLarge);
+        }
         self.buffer.extend_from_slice(bytes);
         let (frames, end) = frames_in(&self.buffer);
         self.buffer.drain(..end);
-        frames
+        Ok(frames)
     }
 }
-// Frames end at a blank line, so a tail the provider cut off before one is never dispatched.
 fn frames_in(buffer: &[u8]) -> (Vec<Vec<u8>>, usize) {
     let mut frames = Vec::new();
     let mut frame: Vec<u8> = Vec::new();

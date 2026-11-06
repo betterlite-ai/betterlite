@@ -6,15 +6,6 @@ use crate::thread_runs::decode::{classify, insert_keys};
 use crate::thread_runs::error::ThreadRunsError;
 use serde_json::{Number, Value};
 
-use crate::assistants::records::AssistantTool;
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct TruncationStrategy {
-    pub r#type: String,
-    pub last_messages: Option<i64>,
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, Value>,
-}
 // Declared fields the provider left out stay null in the reply, as the SDK model dump keeps them.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct RunReply {
@@ -41,18 +32,22 @@ pub struct RunReply {
     pub thread_id: String,
     pub tool_choice: Option<Value>,
     pub tools: Vec<Value>,
-    pub truncation_strategy: Option<TruncationStrategy>,
+    pub truncation_strategy: Option<Value>,
     pub usage: Option<Value>,
     pub temperature: Option<Number>,
     pub top_p: Option<Number>,
     #[serde(flatten)]
     pub extra: BTreeMap<String, Value>,
 }
-// An event with a name keeps its payload; a frame with no name is the bare payload the SDK yields.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(untagged)]
 pub enum RunEvent {
-    Named { event: String, data: Value },
+    Named {
+        event: String,
+        data: Value,
+        #[serde(flatten)]
+        extra: BTreeMap<String, Value>,
+    },
     Bare(Value),
 }
 impl RunEvent {
@@ -72,9 +67,9 @@ pub struct RunRequest {
     pub assistant_id: String,
     pub additional_instructions: Option<String>,
     pub instructions: Option<String>,
-    pub metadata: Option<BTreeMap<String, String>>,
+    pub metadata: Option<Value>,
     pub model: Option<String>,
-    pub tools: Option<Vec<AssistantTool>>,
+    pub tools: Option<Value>,
 }
 
 pub(crate) fn reply(bytes: &[u8]) -> Result<RunReply, ThreadRunsError> {
@@ -96,6 +91,15 @@ fn normalise_reply(value: &mut Value) {
     if let Some(format) = object.get_mut("response_format") {
         normalise_format(format);
     }
+    if let Some(Value::Object(choice)) = object.get_mut("tool_choice") {
+        choice.entry("function").or_insert(Value::Null);
+    }
+    if let Some(Value::Object(details)) = object.get_mut("incomplete_details") {
+        details.entry("reason").or_insert(Value::Null);
+    }
+    if let Some(Value::Object(strategy)) = object.get_mut("truncation_strategy") {
+        strategy.entry("last_messages").or_insert(Value::Null);
+    }
 }
 fn normalise_tool(value: &mut Value) {
     let Value::Object(object) = value else {
@@ -103,7 +107,13 @@ fn normalise_tool(value: &mut Value) {
     };
     match object.get("type").and_then(Value::as_str) {
         Some("file_search") => {
-            object.entry("file_search").or_insert(Value::Null);
+            let entry = object.entry("file_search").or_insert(Value::Null);
+            if let Value::Object(list) = entry {
+                insert_keys(list, "max_num_results ranking_options");
+                if let Some(Value::Object(ranking)) = list.get_mut("ranking_options") {
+                    insert_keys(ranking, "ranker score_threshold");
+                }
+            }
         }
         Some("function") => {
             if let Some(Value::Object(function)) = object.get_mut("function") {
@@ -128,15 +138,4 @@ fn normalise_format(value: &mut Value) {
         schema.insert(String::from("schema_"), item);
     }
     schema.entry("schema_").or_insert(Value::Null);
-}
-// A None argument reaches the provider as null, as it does through the SDK's transform.
-#[derive(Debug, Serialize)]
-pub(crate) struct RunCreate<'call> {
-    pub(crate) assistant_id: &'call str,
-    pub(crate) additional_instructions: Option<&'call str>,
-    pub(crate) instructions: Option<&'call str>,
-    pub(crate) metadata: Option<&'call BTreeMap<String, String>>,
-    pub(crate) model: Option<&'call str>,
-    pub(crate) stream: bool,
-    pub(crate) tools: Option<&'call [AssistantTool]>,
 }

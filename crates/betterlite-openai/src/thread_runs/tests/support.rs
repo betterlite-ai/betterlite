@@ -332,7 +332,7 @@ pub(super) fn wire(method: &str, url: &str, body: Option<&str>) -> Seen {
         method: method.to_owned(),
         url: url.to_owned(),
         deadline: Duration::from_secs(600),
-        accept: Some(String::from("application/json")),
+        accept: None,
         authorization: Some(format!("Bearer {KEY}")),
         organization: Some(String::from("org-fixture")),
         beta: Some(String::from("assistants=v2")),

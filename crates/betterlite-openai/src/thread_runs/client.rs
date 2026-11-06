@@ -3,7 +3,7 @@ use std::time::Duration;
 use betterlite_config::sections::openai_credentials::DEFAULT_API_BASE;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
-use http::header::{ACCEPT, AUTHORIZATION};
+use http::header::AUTHORIZATION;
 use http::{HeaderMap, HeaderName, HeaderValue, Method};
 use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use secrecy::ExposeSecret as _;
@@ -15,11 +15,7 @@ use crate::thread_runs::error::ThreadRunsError;
 
 const OPENAI_BETA: HeaderName = HeaderName::from_static("openai-beta");
 const OPENAI_ORGANIZATION: HeaderName = HeaderName::from_static("openai-organization");
-const POLL_HELPER: HeaderName = HeaderName::from_static("x-stainless-poll-helper");
-const STREAM_HELPER: HeaderName = HeaderName::from_static("x-stainless-stream-helper");
-const CUSTOM_HANDLER: HeaderName = HeaderName::from_static("x-stainless-custom-event-handler");
 pub(crate) const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
-// The shared transport caps a response; the caller's timeout applies to each stream read instead.
 const STREAM_DEADLINE: Duration = Duration::from_mins(100);
 // The SDK quotes a path id with Python's quote(safe="!$&'()*+,;=:@"), so "/" is encoded and the unreserved marks stay.
 const PATH_SEGMENT: &AsciiSet = &NON_ALPHANUMERIC
@@ -40,12 +36,11 @@ const PATH_SEGMENT: &AsciiSet = &NON_ALPHANUMERIC
     .remove(b'=')
     .remove(b':')
     .remove(b'@');
-// The SDK marks the poll and stream helpers on the request; the provider reads the custom-handler flag.
 #[derive(Clone, Copy)]
 pub(crate) enum CallKind {
     Create,
     Poll,
-    Stream { custom_handler: bool },
+    Stream,
 }
 pub(crate) fn outbound<T>(
     client: &SdkClient<T>,
@@ -62,7 +57,7 @@ pub(crate) fn outbound<T>(
         headers,
         body,
         deadline: match kind {
-            CallKind::Stream { .. } => STREAM_DEADLINE,
+            CallKind::Stream => STREAM_DEADLINE,
             CallKind::Create | CallKind::Poll => client.timeout.unwrap_or(DEFAULT_TIMEOUT),
         },
     })
@@ -91,7 +86,6 @@ fn call_headers<T>(
         .map_err(ThreadRunsError::Header)?;
     bearer.set_sensitive(true);
     headers.insert(AUTHORIZATION, bearer);
-    headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
     headers.insert(OPENAI_BETA, HeaderValue::from_static("assistants=v2"));
     if let Some(organization) = &client.organization {
         let value =
@@ -99,20 +93,9 @@ fn call_headers<T>(
         headers.insert(OPENAI_ORGANIZATION, value);
     }
     let method = match kind {
-        CallKind::Create | CallKind::Stream { .. } => Method::POST,
-        CallKind::Poll => {
-            headers.insert(POLL_HELPER, HeaderValue::from_static("true"));
-            Method::GET
-        }
+        CallKind::Create | CallKind::Stream => Method::POST,
+        CallKind::Poll => Method::GET,
     };
-    if let CallKind::Stream { custom_handler } = kind {
-        headers.insert(
-            STREAM_HELPER,
-            HeaderValue::from_static("threads.runs.create_and_stream"),
-        );
-        let flag = if custom_handler { "true" } else { "false" };
-        headers.insert(CUSTOM_HANDLER, HeaderValue::from_static(flag));
-    }
     Ok((method, headers))
 }
 pub(crate) async fn send<T>(
