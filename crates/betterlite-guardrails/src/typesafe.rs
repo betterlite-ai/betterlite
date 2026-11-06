@@ -42,8 +42,8 @@ pub struct TypeSafeGuardrail {
     pub settings: TypeSafeSettings,
     pub api_key: SecretString,
     pub client: reqwest::Client,
-    // LiteLLM falls back to its 30 second Jev timeout only after __init__ passed no timeout.
-    pub timeout: Option<Duration>,
+    // B108's constructor resolves LiteLLM's __init__ fallback to DEFAULT_JEV_TIMEOUT before building the guardrail.
+    pub timeout: Duration,
     pub content_to_text: ContentToText,
     pub get_protected_indices: GetProtectedIndices,
     pub group_tool_exchanges: GroupToolExchanges,

@@ -11,7 +11,7 @@ use crate::typesafe::typesafe_failure_handling::{TypeSafeError, handle_failure};
 use crate::typesafe::typesafe_instructions::question_instructions;
 use crate::typesafe::typesafe_message_parsing::safe_response_text;
 use crate::typesafe::typesafe_state_building::TypeSafeState;
-use crate::typesafe::{DEFAULT_JEV_TIMEOUT, DEFAULT_RESPONSE_TEXT_LIMIT, TypeSafeGuardrail};
+use crate::typesafe::{DEFAULT_RESPONSE_TEXT_LIMIT, TypeSafeGuardrail};
 
 const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 
@@ -138,7 +138,7 @@ async fn send_request(
         .post(endpoint)
         .header(AUTHORIZATION, authorization)
         .json(request)
-        .timeout(guardrail.timeout.unwrap_or(DEFAULT_JEV_TIMEOUT))
+        .timeout(guardrail.timeout)
         .send()
         .await;
     match response {

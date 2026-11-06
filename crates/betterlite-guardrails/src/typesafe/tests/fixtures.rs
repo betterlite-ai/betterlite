@@ -4,9 +4,9 @@ use betterlite_prompts::anthropic_history::groups::group_tool_exchanges;
 use betterlite_prompts::arguments::json::Json;
 use secrecy::SecretString;
 
-use crate::typesafe::TypeSafeGuardrail;
 use crate::typesafe::typesafe_config::TypeSafeSettings;
 use crate::typesafe::typesafe_protected_indices::compression_protected_indices;
+use crate::typesafe::{DEFAULT_JEV_TIMEOUT, TypeSafeGuardrail};
 
 pub(crate) fn json(text: &str) -> Json {
     serde_json::from_str(text).expect("fixture json")
@@ -38,7 +38,7 @@ pub(crate) fn guardrail(settings: TypeSafeSettings) -> TypeSafeGuardrail {
         settings,
         api_key: SecretString::from("secret-key"),
         client: reqwest::Client::default(),
-        timeout: None,
+        timeout: DEFAULT_JEV_TIMEOUT,
         content_to_text,
         get_protected_indices: compression_protected_indices,
         group_tool_exchanges,
