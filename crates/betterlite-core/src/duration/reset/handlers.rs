@@ -94,12 +94,6 @@ pub(super) fn handle_month(
     ))
 }
 
-#[derive(Clone, Copy)]
-enum SubMinuteField {
-    Minute,
-    Second,
-}
-
 fn clock_target(
     current: civil::DateTime,
     value: i128,
@@ -107,8 +101,8 @@ fn clock_target(
 ) -> Result<ClockTarget, DurationError> {
     match field {
         ClockField::Hour => hour_target(current, value),
-        ClockField::Minute => sub_minute_target(current, value, SubMinuteField::Minute),
-        ClockField::Second => sub_minute_target(current, value, SubMinuteField::Second),
+        ClockField::Minute => minute_target(current, value),
+        ClockField::Second => second_target(current, value),
     }
 }
 
@@ -120,57 +114,55 @@ fn hour_target(current: civil::DateTime, value: i128) -> Result<ClockTarget, Dur
     })
 }
 
-fn sub_minute_target(
-    current: civil::DateTime,
-    value: i128,
-    field: SubMinuteField,
-) -> Result<ClockTarget, DurationError> {
-    match field {
-        SubMinuteField::Minute => {
-            let (aligned, carried_hours) = align_and_carry(i128::from(current.minute()), value)?;
-            let hour = i128::from(current.hour())
-                .checked_add(carried_hours)
-                .ok_or(DurationError::CalendarOverflow)?;
-            let minute = aligned
-                .checked_rem(60)
-                .ok_or(DurationError::CalendarOverflow)?;
-            Ok(ClockTarget {
-                hour,
-                minute,
-                second: 0,
-            })
-        }
-        SubMinuteField::Second => {
-            let aligned = align_to_next(i128::from(current.second()), value)?;
-            let prefix = i128::from(current.hour())
-                .checked_mul(3_600)
-                .and_then(|hours| hours.checked_add(i128::from(current.minute()).checked_mul(60)?))
-                .ok_or(DurationError::CalendarOverflow)?;
-            let total = prefix
-                .checked_add(aligned)
-                .ok_or(DurationError::CalendarOverflow)?;
-            Ok(ClockTarget {
-                hour: total
-                    .checked_div(3_600)
-                    .ok_or(DurationError::CalendarOverflow)?,
-                minute: total
-                    .checked_rem(3_600)
-                    .and_then(|rest| rest.checked_div(60))
-                    .ok_or(DurationError::CalendarOverflow)?,
-                second: total
-                    .checked_rem(60)
-                    .ok_or(DurationError::CalendarOverflow)?,
-            })
-        }
-    }
-}
-
-fn align_and_carry(field: i128, value: i128) -> Result<(i128, i128), DurationError> {
-    let aligned = align_to_next(field, value)?;
-    let carried = aligned
+fn minute_target(current: civil::DateTime, value: i128) -> Result<ClockTarget, DurationError> {
+    let aligned = align_to_next(i128::from(current.minute()), value)?;
+    let carried_hours = aligned
         .checked_div(60)
         .ok_or(DurationError::CalendarOverflow)?;
-    Ok((aligned, carried))
+    let hour = i128::from(current.hour())
+        .checked_add(carried_hours)
+        .ok_or(DurationError::CalendarOverflow)?;
+    let minute = aligned
+        .checked_rem(60)
+        .ok_or(DurationError::CalendarOverflow)?;
+    Ok(ClockTarget {
+        hour,
+        minute,
+        second: 0,
+    })
+}
+
+fn second_target(current: civil::DateTime, value: i128) -> Result<ClockTarget, DurationError> {
+    let aligned = align_to_next(i128::from(current.second()), value)?;
+    let total = seconds_since_midnight(current)?
+        .checked_add(aligned)
+        .ok_or(DurationError::CalendarOverflow)?;
+    clock_from_total(total)
+}
+
+fn seconds_since_midnight(current: civil::DateTime) -> Result<i128, DurationError> {
+    i128::from(current.hour())
+        .checked_mul(3_600)
+        .and_then(|hours| hours.checked_add(i128::from(current.minute()).checked_mul(60)?))
+        .ok_or(DurationError::CalendarOverflow)
+}
+
+fn clock_from_total(total: i128) -> Result<ClockTarget, DurationError> {
+    let seconds_in_minute = total
+        .checked_rem(60)
+        .ok_or(DurationError::CalendarOverflow)?;
+    let rest_of_hour = total
+        .checked_rem(3_600)
+        .ok_or(DurationError::CalendarOverflow)?;
+    Ok(ClockTarget {
+        hour: total
+            .checked_div(3_600)
+            .ok_or(DurationError::CalendarOverflow)?,
+        minute: rest_of_hour
+            .checked_div(60)
+            .ok_or(DurationError::CalendarOverflow)?,
+        second: seconds_in_minute,
+    })
 }
 
 fn align_to_next(field: i128, value: i128) -> Result<i128, DurationError> {
