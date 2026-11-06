@@ -593,6 +593,10 @@ async fn run_skips_malformed_and_non_object_lines() {
         "\n",
         r#"{"type":"unknown","text":"ignored"}"#,
         "\n",
+        r#"{"type":"stdout","text":5}"#,
+        "\n",
+        r#"{"type":"number_of_executions","execution_count":"many"}"#,
+        "\n",
         r#"{"type":"stdout","text":"kept"}"#,
     );
     let container = handle(Some("envd-token"), None);
@@ -612,6 +616,7 @@ async fn run_skips_malformed_and_non_object_lines() {
     assert!(result.stderr.is_empty());
     assert!(result.results.is_empty());
     assert!(result.error.is_none());
+    assert!(result.execution_count.is_none());
 }
 
 #[tokio::test]

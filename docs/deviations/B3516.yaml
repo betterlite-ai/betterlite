@@ -20,12 +20,13 @@ deviations:
     why: Sandbox metadata is beyond the scope of this task; only template, timeout, secure and allow_internet_access are supported.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/e2b/sandbox/transformation.py#L48-L69
   - what: >-
-      A NDJSON line that is valid JSON but not an object is skipped, whereas LiteLLM keeps it in its messages tuple and
-      raises AttributeError when it reads the type field.
+      A NDJSON line that is valid JSON but not an object is skipped, a stdout or stderr message whose text is not a
+      string contributes nothing, and a non-integer execution count reads as absent, whereas LiteLLM keeps non-object
+      values and raises AttributeError, TypeError or a pydantic validation error on them.
     why: >-
-      A working E2B setup never sends such a line; the decoder only reads objects, and crashing on one is a bug no
-      caller relies on.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/e2b/sandbox/transformation.py#L165-L170
+      A working E2B setup never sends such lines; the decoder only reads objects, strings and integers, and crashing on
+      one is a bug no caller relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/e2b/sandbox/transformation.py#L165-L181
   - what: >-
       A ContainerHandle without a domain uses e2b.app when betterlite builds the execute URL, whereas LiteLLM formats
       the Python None into the host name.
