@@ -24,12 +24,19 @@ fn jinja_delimiters_are_double_braces_percent_blocks_and_hash_comments(
     );
 }
 
-#[rstest]
-#[case::handlebars_blocks_are_plain_text("{{#if x}}y{{/if}}")]
-#[case::single_braces_are_plain_text("{x} [% x %] <# x #>")]
-fn other_delimiters_are_left_alone_or_rejected_not_interpreted(#[case] content: &str) {
-    let rendered = render_sandboxed("t", content, &variables(r#"{"x": 1}"#));
-    assert!(rendered.is_err() || rendered.is_ok_and(|text| !text.contains('y')));
+#[test]
+fn other_delimiters_render_as_plain_text() {
+    let scope = variables(r#"{"x": 1}"#);
+    assert_eq!(
+        render_sandboxed("t", "{x} [% x %] <# x #>", &scope).unwrap(),
+        "{x} [% x %] <# x #>"
+    );
+}
+
+#[test]
+fn handlebars_blocks_are_a_syntax_error() {
+    let scope = variables(r#"{"x": 1}"#);
+    render_sandboxed("t", "{{#if x}}y{{/if}}", &scope).unwrap_err();
 }
 
 #[rstest]
