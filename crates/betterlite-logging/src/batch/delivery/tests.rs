@@ -2,9 +2,13 @@
 
 use std::collections::VecDeque;
 use std::future::Future;
-use std::sync::Mutex;
+use std::io::{Result as IoResult, Write};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use rstest::rstest;
+use tracing::Level;
+use tracing::subscriber::set_default;
+use tracing_subscriber::fmt::MakeWriter;
 
 use super::{BatchCancelled, BatchTransport, SendFailure, send_batch_with_413_split};
 use crate::batch::retry::RequeuePolicy;
@@ -40,6 +44,38 @@ struct Expectation {
     delivered: &'static [&'static str],
     undelivered: &'static [&'static str],
     cancelled: bool,
+    logs: &'static [&'static str],
+}
+
+#[derive(Clone, Default)]
+struct Buffer(Arc<Mutex<Vec<u8>>>);
+
+impl Buffer {
+    fn contents(&self) -> String {
+        String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
+    }
+}
+
+impl Write for Buffer {
+    fn write(&mut self, buf: &[u8]) -> IoResult<usize> {
+        self.0
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> IoResult<()> {
+        Ok(())
+    }
+}
+
+impl<'writer> MakeWriter<'writer> for Buffer {
+    type Writer = Self;
+
+    fn make_writer(&'writer self) -> Self::Writer {
+        self.clone()
+    }
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -150,6 +186,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &["e0", "e1"],
         undelivered: &["e2", "e3"],
         cancelled: false,
+        logs: &["a retry can clear"],
     }
 )]
 #[case::raised_413_splits_the_batch(
@@ -167,6 +204,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &["e0", "e1"],
         undelivered: &[],
         cancelled: false,
+        logs: &[],
     }
 )]
 #[case::single_event_413_is_dropped(
@@ -184,6 +222,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &[],
         undelivered: &[],
         cancelled: false,
+        logs: &["rejected as too large"],
     }
 )]
 #[case::oversized_single_event_is_sent_then_dropped(
@@ -201,6 +240,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &[],
         undelivered: &[],
         cancelled: false,
+        logs: &["rejected as too large"],
     }
 )]
 #[case::oversized_batch_splits_before_sending(
@@ -218,6 +258,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &["e0", "e1", "e2", "e3"],
         undelivered: &[],
         cancelled: false,
+        logs: &[],
     }
 )]
 #[case::count_limit_splits_before_sending(
@@ -235,6 +276,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &["e0", "e1", "e2"],
         undelivered: &[],
         cancelled: false,
+        logs: &[],
     }
 )]
 #[case::unserializable_batch_splits_until_the_record_is_isolated(
@@ -252,6 +294,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &["e0", "e1", "e3"],
         undelivered: &[],
         cancelled: false,
+        logs: &["cannot be measured"],
     }
 )]
 #[case::unserializable_single_record_is_dropped(
@@ -269,6 +312,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &[],
         undelivered: &[],
         cancelled: false,
+        logs: &["cannot be measured", "cannot be serialized"],
     }
 )]
 #[case::failed_left_half_skips_the_right_half(
@@ -286,6 +330,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &[],
         undelivered: &["e0", "e1", "e2", "e3"],
         cancelled: false,
+        logs: &["a retry can clear"],
     }
 )]
 #[case::non_retryable_status_drops_the_batch(
@@ -303,6 +348,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &[],
         undelivered: &[],
         cancelled: false,
+        logs: &["a retry cannot clear"],
     }
 )]
 #[case::requeue_policy_keeps_a_non_retryable_batch(
@@ -320,6 +366,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &[],
         undelivered: &["e0", "e1"],
         cancelled: false,
+        logs: &["a retry can clear"],
     }
 )]
 #[case::retryable_status_requeues_the_batch(
@@ -337,6 +384,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &[],
         undelivered: &["e0", "e1"],
         cancelled: false,
+        logs: &["a retry can clear"],
     }
 )]
 #[case::generic_failure_requeues_the_batch(
@@ -354,6 +402,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &[],
         undelivered: &["e0", "e1"],
         cancelled: false,
+        logs: &["whole batch is requeued", "scripted transport failure"],
     }
 )]
 #[case::cancellation_keeps_only_the_remainder(
@@ -376,6 +425,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &["e0"],
         undelivered: &["e1", "e2", "e3"],
         cancelled: true,
+        logs: &[],
     }
 )]
 #[case::empty_batch_sends_nothing(
@@ -393,6 +443,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &[],
         undelivered: &[],
         cancelled: false,
+        logs: &[],
     }
 )]
 #[case::accepted_status_codes_are_the_only_success(
@@ -410,6 +461,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &["e0", "e1"],
         undelivered: &[],
         cancelled: false,
+        logs: &[],
     }
 )]
 #[case::odd_batch_halves_at_the_floor(
@@ -427,6 +479,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &["e0", "e1", "e2", "e3", "e4"],
         undelivered: &[],
         cancelled: false,
+        logs: &[],
     }
 )]
 #[tokio::test]
@@ -434,6 +487,14 @@ async fn batch_delivery_behavior_tests_behavior(
     #[case] case: SendCase,
     #[case] expected: Expectation,
 ) {
+    let buffer = Buffer::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_max_level(Level::DEBUG)
+        .with_writer(buffer.clone())
+        .finish();
+    let _guard = set_default(subscriber);
     let (result, transport) = drive(&case).await;
     let attempted: Vec<Vec<String>> = transport
         .attempts
@@ -462,4 +523,11 @@ async fn batch_delivery_behavior_tests_behavior(
             assert_eq!(cancelled.undelivered, owned(expected.undelivered));
         }
     }
+    let logs = buffer.contents();
+    let missing: Vec<&&str> = expected
+        .logs
+        .iter()
+        .filter(|entry| !logs.contains(**entry))
+        .collect();
+    assert!(missing.is_empty(), "missing {missing:?} in {logs}");
 }

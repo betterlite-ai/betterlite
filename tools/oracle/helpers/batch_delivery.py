@@ -208,6 +208,7 @@ class ScriptedLogger(CustomBatchLogger):
         self.script: list[FlushReply] = []
         self.attempts: list[list[str]] = []
         self.outcomes: list[FlushReply] = []
+        self.during: list[str] = []
 
     async def async_send_batch(self, *_args: object, **_kwargs: object) -> None:
         if not self.script:
@@ -216,6 +217,7 @@ class ScriptedLogger(CustomBatchLogger):
         queue = cast("list[str]", self.log_queue)
         self.attempts.append(list(queue))
         self.outcomes.append(outcome)
+        queue.extend(self.during)
         if outcome == "failed":
             raise DeliveryError("the scripted delivery failed")
 
@@ -229,9 +231,14 @@ def flush_reply(value: Json) -> FlushReply:
     raise InputError(f"unknown flush reply: {outcome}")
 
 
-def flush_dropped(sent: list[str], outcome: FlushReply | Literal["skipped"], limit: int) -> int:
+def flush_dropped(
+    sent: list[str],
+    during: list[str],
+    outcome: FlushReply | Literal["skipped"],
+    limit: int,
+) -> int:
     if outcome == "failed":
-        return max(0, len(sent) - limit)
+        return max(0, len(sent) + len(during) - limit)
     return 0
 
 
@@ -254,7 +261,9 @@ async def flush_section(value: Json) -> Json:
                 )
             elif operation == "flush":
                 script = list_value(step.get("script", []), "flush script")
+                during = event_ids(step.get("during", []), "flush step during")
                 logger.script = [flush_reply(entry) for entry in script]
+                logger.during = during
                 logger.attempts.clear()
                 logger.outcomes.clear()
                 await logger.flush_queue()
@@ -268,7 +277,9 @@ async def flush_section(value: Json) -> Json:
                     "sent": as_json(sent),
                     "outcome": outcome,
                     "queue": as_json(list(cast("list[str]", logger.log_queue))),
-                    "dropped_oldest": flush_dropped(sent, outcome, logger.max_queue_size),
+                    "dropped_oldest": flush_dropped(
+                        sent, during, outcome, logger.max_queue_size
+                    ),
                 }
                 flushes.append(entry)
             else:

@@ -1,3 +1,4 @@
+use std::fmt::Display;
 use std::future::Future;
 use std::marker::PhantomData;
 use std::pin::Pin;
@@ -19,8 +20,8 @@ pub struct BatchCancelled<E> {
 }
 
 pub trait BatchTransport<E>: Send + Sync {
-    type SendError: Send;
-    type LimitError: Send;
+    type SendError: Send + Display;
+    type LimitError: Send + Display;
 
     fn send(
         &self,
@@ -51,25 +52,14 @@ impl<E, S> Splitter<'_, E, S>
 where
     E: Clone + Send + Sync,
     S: BatchTransport<E> + Sync,
-    S::SendError: Send,
-    S::LimitError: Send,
 {
     fn deliver<'send>(&'send self, batch: &'send [E]) -> Delivery<'send, E> {
         Box::pin(async move {
             if batch.is_empty() {
                 return Ok(Vec::new());
             }
-            match self.transport.exceeds_limits(batch) {
-                Ok(true) if batch.len() > 1 => return self.halve(batch).await,
-                Ok(_) => {}
-                Err(_) => {
-                    return self
-                        .halve_or_drop(
-                            batch,
-                            "batch delivery dropped an event that cannot be measured against the destination limits",
-                        )
-                        .await;
-                }
+            if let Some(outcome) = self.split_when_oversized(batch).await {
+                return outcome;
             }
             match self.transport.send(batch).await {
                 Ok(PAYLOAD_TOO_LARGE)
@@ -89,15 +79,53 @@ where
                 Err(SendFailure::Cancelled) => Err(BatchCancelled {
                     undelivered: batch.to_vec(),
                 }),
-                Err(SendFailure::Other(_)) => Ok(batch.to_vec()),
+                Err(SendFailure::Other(error)) => {
+                    tracing::error!(
+                        %error,
+                        records = batch.len(),
+                        "the batch delivery send failed; the whole batch is requeued"
+                    );
+                    Ok(batch.to_vec())
+                }
             }
         })
     }
 
+    async fn split_when_oversized(&self, batch: &[E]) -> Option<Result<Vec<E>, BatchCancelled<E>>> {
+        match self.transport.exceeds_limits(batch) {
+            Ok(true) if batch.len() > 1 => Some(self.halve(batch).await),
+            Ok(_) => None,
+            Err(error) => {
+                tracing::error!(
+                    %error,
+                    records = batch.len(),
+                    "batch delivery cannot measure a record against the destination limits"
+                );
+                Some(
+                    self.halve_or_drop(
+                        batch,
+                        "batch delivery dropped a record that cannot be serialized",
+                    )
+                    .await,
+                )
+            }
+        }
+    }
+
     fn retained(&self, batch: &[E], status: u16) -> Vec<E> {
         if self.policy.retains(status) {
+            tracing::error!(
+                status,
+                records = batch.len(),
+                "the destination answered with a status a retry can clear; the records will be retried"
+            );
             batch.to_vec()
         } else {
+            tracing::error!(
+                status,
+                records = batch.len(),
+                "the destination answered with a status a retry cannot clear; the records are dropped"
+            );
             Vec::new()
         }
     }
@@ -142,8 +170,6 @@ pub fn send_batch_with_413_split<'delivery, E, S>(
 where
     E: Clone + Send + Sync,
     S: BatchTransport<E> + Sync,
-    S::SendError: Send,
-    S::LimitError: Send,
 {
     Box::pin(async move {
         let splitter = Splitter {

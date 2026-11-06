@@ -5,8 +5,8 @@ call:
     flush:
       settings: {batch_size: 4, flush_interval_seconds: 5, max_queue_size: 3}
       steps:
-        - {op: enqueue, events: [a, b, c, d]}
-        - {op: flush, script: [{outcome: failed}]}
+        - {op: enqueue, events: [a, b]}
+        - {op: flush, during: [c, d], script: [{outcome: failed}]}
 env: {}
 compare:
   ignore: []

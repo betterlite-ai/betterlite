@@ -51,6 +51,8 @@ enum FlushStep {
     Flush {
         #[serde(default)]
         script: Vec<FlushReply>,
+        #[serde(default)]
+        during: Vec<String>,
     },
 }
 
@@ -65,6 +67,8 @@ struct ScriptedDelivery {
     script: Mutex<VecDeque<FlushReply>>,
     attempts: Mutex<Vec<Vec<String>>>,
     delivered: Mutex<Vec<String>>,
+    queue: BatchQueue<String>,
+    during: Vec<String>,
 }
 
 impl BatchDelivery<String> for ScriptedDelivery {
@@ -88,6 +92,9 @@ impl BatchDelivery<String> for ScriptedDelivery {
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(batch.to_vec());
+        for event in &self.during {
+            let _enqueued = self.queue.enqueue(event.clone());
+        }
         let remaining = batch.to_vec();
         async move {
             match reply {
@@ -104,11 +111,17 @@ struct Flushed {
     overflowed: bool,
 }
 
-async fn flush_once(queue: &BatchQueue<String>, script: &[FlushReply]) -> Flushed {
+async fn flush_once(
+    queue: &BatchQueue<String>,
+    script: &[FlushReply],
+    during: &[String],
+) -> Flushed {
     let delivery = ScriptedDelivery {
         script: Mutex::new(script.iter().copied().collect()),
         attempts: Mutex::new(Vec::new()),
         delivered: Mutex::new(Vec::new()),
+        queue: queue.clone(),
+        during: during.to_vec(),
     };
     let report = queue.flush(&delivery).await;
     let delivered = delivery
@@ -146,11 +159,11 @@ pub(super) async fn flush_outcome(scenario: &FlushScenario) -> Value {
         match step {
             FlushStep::Enqueue { events } => {
                 for event in events {
-                    let _depth = queue.enqueue(event.clone());
+                    let _enqueued = queue.enqueue(event.clone());
                 }
             }
-            FlushStep::Flush { script } => {
-                let finished = flush_once(&queue, script).await;
+            FlushStep::Flush { script, during } => {
+                let finished = flush_once(&queue, script, during).await;
                 flushes.push(finished.entry);
                 delivered.extend(finished.delivered);
                 if finished.overflowed {

@@ -64,6 +64,12 @@ pub struct FlushReport {
     pub cancelled: bool,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Enqueued {
+    pub depth: usize,
+    pub dropped_oldest: usize,
+}
+
 #[derive(Debug)]
 pub struct BatchQueue<E> {
     pub settings: BatchSettings,
@@ -92,10 +98,24 @@ impl<E> BatchQueue<E> {
     }
 
     #[must_use]
-    pub fn enqueue(&self, event: E) -> usize {
+    pub fn enqueue(&self, event: E) -> Enqueued {
         let mut queue = self.queue.lock().unwrap_or_else(PoisonError::into_inner);
         queue.push_back(event);
-        queue.len()
+        let dropped_oldest = queue.len().saturating_sub(self.settings.max_queue_size);
+        queue.drain(..dropped_oldest);
+        let depth = queue.len();
+        drop(queue);
+        if dropped_oldest > 0 {
+            tracing::warn!(
+                max_queue_size = self.settings.max_queue_size,
+                dropped = dropped_oldest,
+                "batch queue exceeded max_queue_size; dropped the oldest events"
+            );
+        }
+        Enqueued {
+            depth,
+            dropped_oldest,
+        }
     }
 
     #[must_use]

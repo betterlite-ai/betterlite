@@ -11,7 +11,7 @@ use tracing::Level;
 use tracing::subscriber::set_default;
 use tracing_subscriber::fmt::MakeWriter;
 
-use super::{BatchQueue, BatchSettings, FlushReport};
+use super::{BatchQueue, BatchSettings, Enqueued, FlushReport};
 use crate::batch::delivery::{BatchCancelled, BatchDelivery};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -52,7 +52,7 @@ struct Expectation {
     sent: &'static [&'static [&'static str]],
     delivered: &'static [&'static str],
     queue: &'static [&'static str],
-    depths: &'static [usize],
+    enqueued: &'static [Enqueued],
     reports: &'static [ReportExpectation],
     warns: bool,
 }
@@ -82,7 +82,7 @@ impl BatchDelivery<String> for ScriptedDelivery {
             .extend(batch.iter().take(accepted).cloned());
         self.attempts.lock().unwrap().push(batch.to_vec());
         for event in &self.arrivals {
-            let _depth = self.queue.enqueue(event.clone());
+            let _enqueued = self.queue.enqueue(event.clone());
         }
         let mut remaining = batch.to_vec();
         async move {
@@ -134,7 +134,7 @@ struct Outcome {
     queue: Vec<String>,
     reports: Vec<FlushReport>,
     attempts: Vec<Vec<String>>,
-    depths: Vec<usize>,
+    enqueued: Vec<Enqueued>,
     delivered: Vec<String>,
 }
 
@@ -169,14 +169,14 @@ async fn drive(case: &FlushCase) -> Outcome {
         queue: Vec::new(),
         reports: Vec::new(),
         attempts: Vec::new(),
-        depths: Vec::new(),
+        enqueued: Vec::new(),
         delivered: Vec::new(),
     };
     for step in case.steps {
         match step {
             FlushStep::Enqueue(events) => {
                 for event in *events {
-                    outcome.depths.push(queue.enqueue((*event).to_owned()));
+                    outcome.enqueued.push(queue.enqueue((*event).to_owned()));
                 }
             }
             FlushStep::Flush { reply, arrivals } => {
@@ -194,6 +194,17 @@ async fn drive(case: &FlushCase) -> Outcome {
 fn owned(events: &[&str]) -> Vec<String> {
     events.iter().map(|event| (*event).to_owned()).collect()
 }
+
+const fn queued(depth: usize, dropped_oldest: usize) -> Enqueued {
+    Enqueued {
+        depth,
+        dropped_oldest,
+    }
+}
+
+const ENQUEUED_TWO: &[Enqueued] = &[queued(1, 0), queued(2, 0)];
+const ENQUEUED_THREE: &[Enqueued] = &[queued(1, 0), queued(2, 0), queued(3, 0)];
+const ENQUEUED_OVERFLOW: &[Enqueued] = &[queued(1, 0), queued(2, 0), queued(3, 0), queued(3, 1)];
 
 fn report_expectation(report: &FlushReport) -> ReportExpectation {
     ReportExpectation {
@@ -224,7 +235,7 @@ const SMALL: BatchSettings = BatchSettings {
         sent: &[&[]],
         delivered: &[],
         queue: &[],
-        depths: &[],
+        enqueued: &[],
         reports: &[ReportExpectation { batch: 0, delivered: 0, requeued: 0, dropped_oldest: 0, cancelled: false }],
         warns: false,
     }
@@ -242,7 +253,7 @@ const SMALL: BatchSettings = BatchSettings {
         sent: &[&["a", "b"]],
         delivered: &["a", "b"],
         queue: &[],
-        depths: &[1, 2],
+        enqueued: ENQUEUED_TWO,
         reports: &[ReportExpectation { batch: 2, delivered: 2, requeued: 0, dropped_oldest: 0, cancelled: false }],
         warns: false,
     }
@@ -261,7 +272,7 @@ const SMALL: BatchSettings = BatchSettings {
         sent: &[&["a", "b"], &["a", "b"]],
         delivered: &["a", "b"],
         queue: &[],
-        depths: &[1, 2],
+        enqueued: ENQUEUED_TWO,
         reports: &[
             ReportExpectation { batch: 2, delivered: 0, requeued: 2, dropped_oldest: 0, cancelled: false },
             ReportExpectation { batch: 2, delivered: 2, requeued: 0, dropped_oldest: 0, cancelled: false },
@@ -274,16 +285,31 @@ const SMALL: BatchSettings = BatchSettings {
         settings: SMALL,
         preserve: false,
         steps: &[
-            FlushStep::Enqueue(&["a", "b", "c", "d"]),
-            FlushStep::Flush { reply: Reply::Failed, arrivals: &[] },
+            FlushStep::Enqueue(&["a", "b"]),
+            FlushStep::Flush { reply: Reply::Failed, arrivals: &["c", "d"] },
         ],
     },
     Expectation {
-        sent: &[&["a", "b", "c", "d"]],
+        sent: &[&["a", "b"]],
         delivered: &[],
         queue: &["b", "c", "d"],
-        depths: &[1, 2, 3, 4],
-        reports: &[ReportExpectation { batch: 4, delivered: 0, requeued: 4, dropped_oldest: 1, cancelled: false }],
+        enqueued: ENQUEUED_TWO,
+        reports: &[ReportExpectation { batch: 2, delivered: 0, requeued: 2, dropped_oldest: 1, cancelled: false }],
+        warns: true,
+    }
+)]
+#[case::enqueue_overflow_drops_the_oldest(
+    FlushCase {
+        settings: SMALL,
+        preserve: false,
+        steps: &[FlushStep::Enqueue(&["a", "b", "c", "d"])],
+    },
+    Expectation {
+        sent: &[],
+        delivered: &[],
+        queue: &["b", "c", "d"],
+        enqueued: ENQUEUED_OVERFLOW,
+        reports: &[],
         warns: true,
     }
 )]
@@ -300,7 +326,7 @@ const SMALL: BatchSettings = BatchSettings {
         sent: &[&["a", "b"]],
         delivered: &["a"],
         queue: &["b", "c"],
-        depths: &[1, 2],
+        enqueued: ENQUEUED_TWO,
         reports: &[ReportExpectation { batch: 2, delivered: 1, requeued: 1, dropped_oldest: 0, cancelled: false }],
         warns: false,
     }
@@ -318,7 +344,7 @@ const SMALL: BatchSettings = BatchSettings {
         sent: &[&["a", "b", "c"]],
         delivered: &["a"],
         queue: &["b", "c", "d"],
-        depths: &[1, 2, 3],
+        enqueued: ENQUEUED_THREE,
         reports: &[ReportExpectation { batch: 3, delivered: 1, requeued: 2, dropped_oldest: 0, cancelled: true }],
         warns: false,
     }
@@ -336,7 +362,7 @@ const SMALL: BatchSettings = BatchSettings {
         sent: &[&["a", "b"]],
         delivered: &["a", "b"],
         queue: &["c"],
-        depths: &[1, 2],
+        enqueued: ENQUEUED_TWO,
         reports: &[ReportExpectation { batch: 2, delivered: 2, requeued: 0, dropped_oldest: 0, cancelled: false }],
         warns: false,
     }
@@ -354,7 +380,7 @@ const SMALL: BatchSettings = BatchSettings {
         sent: &[&["a", "b"]],
         delivered: &["a", "b"],
         queue: &[],
-        depths: &[1, 2],
+        enqueued: ENQUEUED_TWO,
         reports: &[ReportExpectation { batch: 2, delivered: 2, requeued: 0, dropped_oldest: 0, cancelled: false }],
         warns: false,
     }
@@ -375,7 +401,7 @@ const SMALL: BatchSettings = BatchSettings {
         sent: &[&["a", "b", "c"]],
         delivered: &["a"],
         queue: &["c", "d", "e"],
-        depths: &[1, 2, 3],
+        enqueued: ENQUEUED_THREE,
         reports: &[ReportExpectation { batch: 3, delivered: 1, requeued: 2, dropped_oldest: 1, cancelled: false }],
         warns: true,
     }
@@ -399,7 +425,7 @@ async fn batch_delivery_behavior_tests_behavior(
     let expected_reports: Vec<ReportExpectation> = expected.reports.to_vec();
     assert_eq!(outcome.attempts, expected_sent);
     assert_eq!(outcome.queue, owned(expected.queue));
-    assert_eq!(outcome.depths, expected.depths);
+    assert_eq!(outcome.enqueued, expected.enqueued);
     assert_eq!(outcome.delivered, owned(expected.delivered));
     assert_eq!(
         outcome
