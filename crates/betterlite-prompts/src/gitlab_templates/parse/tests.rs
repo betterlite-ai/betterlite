@@ -54,6 +54,22 @@ fn the_template_content_follows_the_frontmatter_split(
     "---\n1: a\nmodel: m\n---\nx",
     "{}"
 )]
+#[case::a_plain_n_key_stays_text(
+    "---\nmodel: gpt-4\nn: 2\nstop: n\nflag: y\n---\nx",
+    r#"{"model":"gpt-4","n":2,"stop":"n","flag":"y"}"#
+)]
+#[case::yaml11_bool_spellings_are_booleans(
+    "---\na: yes\nb: Yes\nc: YES\nd: on\ne: On\nf: ON\ng: no\nh: No\ni: NO\nj: off\nk: Off\nl: OFF\n---\nx",
+    r#"{"a":true,"b":true,"c":true,"d":true,"e":true,"f":true,"g":false,"h":false,"i":false,"j":false,"k":false,"l":false}"#
+)]
+#[case::other_bool_casings_stay_text(
+    "---\na: tRuE\nb: yEs\nc: oN\nd: fAlSe\n---\nx",
+    r#"{"a":"tRuE","b":"yEs","c":"oN","d":"fAlSe"}"#
+)]
+#[case::nested_lists_and_maps_resolve_bools(
+    "---\nstop: [yes, no, y]\ninput:\n  schema:\n    strict: off\n---\nx",
+    r#"{"stop":[true,false,"y"],"input":{"schema":{"strict":false}}}"#
+)]
 fn yaml_frontmatter_becomes_the_metadata(#[case] content: &str, #[case] expected: &str) {
     assert_eq!(metadata_json(content), expected);
 }

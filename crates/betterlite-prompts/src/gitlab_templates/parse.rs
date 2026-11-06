@@ -60,16 +60,39 @@ fn split_frontmatter(content: &str) -> (&str, &str) {
 
 // A YAML error leaves the metadata empty; a document that is not a mapping fails later, at the template.
 fn yaml_metadata(frontmatter: &str) -> Result<Object, ParseError> {
-    let options = options! { duplicate_keys: DuplicateKeyPolicy::LastWins };
+    let options = options! {
+        duplicate_keys: DuplicateKeyPolicy::LastWins,
+        strict_booleans: true,
+    };
     let Ok(document) = from_str_with_options::<Json>(frontmatter, options) else {
         return Ok(Object::new());
     };
-    match document {
+    match resolve_yaml11_booleans(document) {
         Json::Object(metadata) => Ok(metadata),
         other if !other.is_truthy() => Ok(Object::new()),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
             Err(ParseError::MetadataNotMapping)
         }
+    }
+}
+
+// PyYAML's resolver takes exactly these plain spellings as booleans; serde-saphyr's strict mode takes YAML 1.2 true/false only.
+const YAML11_TRUE_SPELLINGS: [&str; 6] = ["yes", "Yes", "YES", "on", "On", "ON"];
+const YAML11_FALSE_SPELLINGS: [&str; 6] = ["no", "No", "NO", "off", "Off", "OFF"];
+
+fn resolve_yaml11_booleans(value: Json) -> Json {
+    match value {
+        Json::Text(text) if YAML11_TRUE_SPELLINGS.contains(&text.as_str()) => Json::Bool(true),
+        Json::Text(text) if YAML11_FALSE_SPELLINGS.contains(&text.as_str()) => Json::Bool(false),
+        Json::Text(text) => Json::Text(text),
+        Json::List(items) => Json::List(items.into_iter().map(resolve_yaml11_booleans).collect()),
+        Json::Object(fields) => Json::Object(
+            fields
+                .into_iter()
+                .map(|(key, field)| (key, resolve_yaml11_booleans(field)))
+                .collect(),
+        ),
+        Json::Null | Json::Bool(_) | Json::Number(_) => value,
     }
 }
 
