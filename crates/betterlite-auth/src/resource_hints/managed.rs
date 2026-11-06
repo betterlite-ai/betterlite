@@ -25,8 +25,8 @@ pub struct DecodedCharacterId {
 }
 
 pub(crate) struct DecodedParts {
-    pub(crate) custom_llm_provider: Option<String>,
-    pub(crate) model_id: Option<String>,
+    pub(crate) custom_llm_provider: String,
+    pub(crate) model_id: String,
     pub(crate) resource_id: String,
 }
 
@@ -38,20 +38,32 @@ pub(crate) enum PartsOutcome {
 
 #[must_use]
 pub fn decode_video_id(encoded_video_id: &str) -> DecodedVideoId {
-    let decoded = decode_managed_id(encoded_video_id, ManagedKind::Video);
-    DecodedVideoId {
-        custom_llm_provider: decoded.custom_llm_provider,
-        model_id: decoded.model_id,
-        video_id: decoded.resource_id,
+    match decode_managed_id(encoded_video_id, ManagedKind::Video) {
+        Some(decoded) => DecodedVideoId {
+            custom_llm_provider: Some(decoded.custom_llm_provider),
+            model_id: Some(decoded.model_id),
+            video_id: decoded.resource_id,
+        },
+        None => DecodedVideoId {
+            custom_llm_provider: None,
+            model_id: None,
+            video_id: encoded_video_id.to_owned(),
+        },
     }
 }
 
 #[must_use]
 pub fn decode_character_id(encoded_character_id: &str) -> DecodedCharacterId {
-    let decoded = decode_managed_id(encoded_character_id, ManagedKind::Character);
+    let Some(decoded) = decode_managed_id(encoded_character_id, ManagedKind::Character) else {
+        return DecodedCharacterId {
+            custom_llm_provider: None,
+            model_id: None,
+            character_id: encoded_character_id.to_owned(),
+        };
+    };
     DecodedCharacterId {
-        custom_llm_provider: decoded.custom_llm_provider,
-        model_id: decoded.model_id,
+        custom_llm_provider: Some(decoded.custom_llm_provider),
+        model_id: Some(decoded.model_id),
         character_id: decoded.resource_id,
     }
 }
@@ -62,7 +74,7 @@ enum ManagedKind {
     Character,
 }
 
-fn decode_managed_id(encoded: &str, kind: ManagedKind) -> DecodedParts {
+fn decode_managed_id(encoded: &str, kind: ManagedKind) -> Option<DecodedParts> {
     let outcome = match kind {
         ManagedKind::Video => decode_parts(encoded, VIDEO_ID_PREFIX, VIDEO_ID_LABEL, None),
         ManagedKind::Character => {
@@ -73,12 +85,8 @@ fn decode_managed_id(encoded: &str, kind: ManagedKind) -> DecodedParts {
         tracing::debug!("managed resource id could not be decoded");
     }
     match outcome {
-        PartsOutcome::Decoded(parts) => parts,
-        PartsOutcome::Native | PartsOutcome::Undecodable => DecodedParts {
-            custom_llm_provider: None,
-            model_id: None,
-            resource_id: encoded.to_owned(),
-        },
+        PartsOutcome::Decoded(parts) => Some(parts),
+        PartsOutcome::Native | PartsOutcome::Undecodable => None,
     }
 }
 
@@ -115,8 +123,8 @@ pub(crate) fn decode_parts(
         return PartsOutcome::Native;
     };
     PartsOutcome::Decoded(DecodedParts {
-        custom_llm_provider: Some(provider_part.replace(PROVIDER_LABEL, "")),
-        model_id: Some(model_part.replace(MODEL_LABEL, "")),
+        custom_llm_provider: provider_part.replace(PROVIDER_LABEL, ""),
+        model_id: model_part.replace(MODEL_LABEL, ""),
         resource_id: id_part.replace(id_label, ""),
     })
 }

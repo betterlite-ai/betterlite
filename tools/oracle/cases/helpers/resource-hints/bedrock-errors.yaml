@@ -18,6 +18,14 @@ call:
       - kind: bedrock_model
         endpoint: "/model/application-inference-profile/p1/invoke"
       - kind: bedrock_model
+        endpoint: "/model/m/invoke-with-response-stream"
+      - kind: bedrock_model
+        endpoint: "/model/m/converse-stream"
+      - kind: bedrock_model
+        endpoint: "/model/m/count_tokens"
+      - kind: bedrock_model
+        endpoint: "/model/m/count-tokens"
+      - kind: bedrock_model
         endpoint: "/model/"
       - kind: bedrock_model
         endpoint: ""

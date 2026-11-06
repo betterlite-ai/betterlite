@@ -18,8 +18,8 @@ pub enum ResourceKind {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ModelHint {
-    pub custom_llm_provider: Option<String>,
-    pub model_id: Option<String>,
+    pub custom_llm_provider: String,
+    pub model_id: String,
 }
 
 #[must_use]

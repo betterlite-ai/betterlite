@@ -25,5 +25,21 @@ call:
         encoded: "character_bm8tc2VtaWNvbG9u"
       - kind: character_id
         encoded: "character_Q"
+      - kind: video_id
+        encoded: ""
+      - kind: character_id
+        encoded: ""
+      - kind: video_id
+        encoded: "not-managed"
+      - kind: character_id
+        encoded: "not-managed"
+      - kind: video_id
+        encoded: "video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOmxpdGVsbG06Y3VzdG9tX2xsbV9wcm92aWRlcjphejttb2RlbF9pZDptb2RlbF9pZDptO3ZpZGVvX2lkOnZpZGVvX2lkOnY="
+      - kind: character_id
+        encoded: "character_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOmxpdGVsbG06Y3VzdG9tX2xsbV9wcm92aWRlcjphejttb2RlbF9pZDptb2RlbF9pZDptO2NoYXJhY3Rlcl9pZDpjaGFyYWN0ZXJfaWQ6Yw=="
+      - kind: character_id
+        encoded: "character_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOmF6O21vZGVsX2lkOmdwdC00O2NoYXJhY3Rlcl9pZDpjaGFyLTE"
+      - kind: character_id
+        encoded: "character_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOjttb2RlbF9pZDo7Y2hhcmFjdGVyX2lkOg=="
 env: {}
 compare: {ignore: []}

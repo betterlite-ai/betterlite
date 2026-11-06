@@ -7,6 +7,7 @@ pub const ENDPOINT_ACTIONS: [&str; 6] = [
     "count-tokens",
 ];
 pub const STREAMING_ACTIONS: [&str; 2] = ["invoke-with-response-stream", "converse-stream"];
+pub const COUNT_TOKENS_MARKERS: [&str; 2] = ["count_tokens", "count-tokens"];
 
 const MODEL_SEGMENT: &str = "model";
 const PROFILE_SEGMENT: &str = "application-inference-profile";
@@ -21,13 +22,6 @@ pub enum EndpointError {
         "No model ID found after 'model' keyword. Expected format: /model/{{modelId}}/{{action}}. Got: {endpoint}"
     )]
     NoModelId { endpoint: String },
-}
-
-#[must_use]
-pub fn is_count_tokens_endpoint(endpoint: &str) -> bool {
-    let underscored = endpoint.contains("count_tokens");
-    let hyphenated = endpoint.contains("count-tokens");
-    underscored || hyphenated
 }
 
 pub fn extract_model(endpoint: &str) -> Result<String, EndpointError> {
@@ -80,8 +74,7 @@ fn model_after_marker(
     action_index: Option<usize>,
 ) -> Result<String, EndpointError> {
     if let Some(index) = action_index.filter(|index| *index > after_model) {
-        let model_parts: Vec<&str> = parts.get(after_model..index).unwrap_or_default().to_vec();
-        return Ok(model_parts.join("/"));
+        return Ok(parts.get(after_model..index).unwrap_or_default().join("/"));
     }
     let model_parts: Vec<&str> = parts
         .get(after_model..)

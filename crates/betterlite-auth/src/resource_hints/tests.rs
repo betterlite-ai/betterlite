@@ -16,14 +16,14 @@ use tracing_subscriber::layer::{Context, Layer};
 
 use super::azure::router_model_in_endpoint;
 use super::bedrock::{
-    ENDPOINT_ACTIONS, EndpointError, STREAMING_ACTIONS, extract_model, is_count_tokens_endpoint,
+    COUNT_TOKENS_MARKERS, ENDPOINT_ACTIONS, EndpointError, STREAMING_ACTIONS, extract_model,
 };
 use super::managed::{
     DecodedCharacterId, DecodedVideoId, PartsOutcome, decode_character_id, decode_parts,
     decode_video_id,
 };
 use super::nvidia::{
-    DeploymentHint, is_nim_deployment, model_group_in_path, model_groups,
+    DeploymentHint, MODEL_PREFIX, PROVIDER, model_group_in_path, model_groups,
     router_model_in_endpoint as nim_router_model_in_endpoint,
 };
 use super::{MAX_ENCODED_BYTES, ModelHint, ResourceKind, decode_resource_hint};
@@ -106,10 +106,19 @@ fn azure_requires_separator() {
 
 #[test]
 fn nim_provider_or_model_prefix() {
-    assert!(is_nim_deployment(Some("nvidia_nim"), None));
-    assert!(is_nim_deployment(None, Some("nvidia_nim/meta")));
-    assert!(!is_nim_deployment(Some("openai"), Some("openai/meta")));
-    assert!(!is_nim_deployment(None, Some("NVIDIA_NIM/meta")));
+    let classified = |custom_llm_provider: Option<&str>, model: Option<&str>| {
+        let deployments = [DeploymentHint {
+            model_name: "group",
+            custom_llm_provider,
+            model,
+        }];
+        !model_groups(&deployments).is_empty()
+    };
+    assert!(classified(Some(PROVIDER), None));
+    assert!(classified(None, Some("nvidia_nim/meta")));
+    assert!(!classified(Some("openai"), Some("openai/meta")));
+    assert!(!classified(None, Some("NVIDIA_NIM/meta")));
+    assert_eq!(MODEL_PREFIX, "nvidia_nim/");
 }
 
 #[test]
@@ -187,11 +196,16 @@ fn nim_casefold_prefix_only() {
 
 #[test]
 fn bedrock_count_substrings() {
-    assert!(is_count_tokens_endpoint("/model/x/count_tokens"));
-    assert!(is_count_tokens_endpoint("/model/x/count-tokens"));
-    assert!(is_count_tokens_endpoint("count_tokens"));
-    assert!(!is_count_tokens_endpoint("/COUNT_TOKENS"));
-    assert!(!is_count_tokens_endpoint("/x/counttokens"));
+    let counts_tokens = |endpoint: &str| {
+        COUNT_TOKENS_MARKERS
+            .iter()
+            .any(|marker| endpoint.contains(marker))
+    };
+    assert!(counts_tokens("/model/x/count_tokens"));
+    assert!(counts_tokens("/model/x/count-tokens"));
+    assert!(counts_tokens("count_tokens"));
+    assert!(!counts_tokens("/COUNT_TOKENS"));
+    assert!(!counts_tokens("/x/counttokens"));
 }
 
 #[rstest]
@@ -312,6 +326,12 @@ fn missing_padding_permissive_base64() {
     assert_eq!(with_junk.model_id.as_deref(), Some("gpt-4"));
     let extra_padding = decode_video_id(&format!("video_{padded}===="));
     assert_eq!(extra_padding.model_id.as_deref(), Some("gpt-4"));
+    let character = character_payload("az", "gpt-4", "c1");
+    let character_unpadded = character.trim_end_matches('=');
+    assert_ne!(character_unpadded, character);
+    let decoded_character = decode_character_id(&format!("character_{character_unpadded}"));
+    assert_eq!(decoded_character.model_id.as_deref(), Some("gpt-4"));
+    assert_eq!(decoded_character.character_id, "c1");
 }
 
 #[test]
@@ -389,6 +409,15 @@ fn empty_fields_preserved() {
             video_id: String::new(),
         }
     );
+    let character = "litellm:custom_llm_provider:;model_id:;character_id:";
+    assert_eq!(
+        decode_character_id(&format!("character_{}", STANDARD.encode(character))),
+        DecodedCharacterId {
+            custom_llm_provider: Some(String::new()),
+            model_id: Some(String::new()),
+            character_id: String::new(),
+        }
+    );
 }
 
 #[test]
@@ -406,16 +435,16 @@ fn native_resource_hint_limits() {
     assert_eq!(
         decode_resource_hint(ResourceKind::Video, video.as_bytes()),
         Some(ModelHint {
-            custom_llm_provider: Some("az".to_owned()),
-            model_id: Some("m".to_owned()),
+            custom_llm_provider: "az".to_owned(),
+            model_id: "m".to_owned(),
         })
     );
     let character = format!("character_{}", character_payload("az", "m", "c"));
     assert_eq!(
         decode_resource_hint(ResourceKind::Character, character.as_bytes()),
         Some(ModelHint {
-            custom_llm_provider: Some("az".to_owned()),
-            model_id: Some("m".to_owned()),
+            custom_llm_provider: "az".to_owned(),
+            model_id: "m".to_owned(),
         })
     );
     let limited = decode_parts(

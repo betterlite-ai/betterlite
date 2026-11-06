@@ -3,10 +3,10 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use betterlite_auth::resource_hints::azure::router_model_in_endpoint;
-use betterlite_auth::resource_hints::bedrock::{extract_model, is_count_tokens_endpoint};
+use betterlite_auth::resource_hints::bedrock::{COUNT_TOKENS_MARKERS, extract_model};
 use betterlite_auth::resource_hints::managed::{decode_character_id, decode_video_id};
 use betterlite_auth::resource_hints::nvidia::{
-    DeploymentHint, is_nim_deployment, model_group_in_path, model_groups,
+    DeploymentHint, MODEL_PREFIX, PROVIDER, model_group_in_path, model_groups,
     router_model_in_endpoint as nim_model_in_endpoint,
 };
 use serde::Deserialize;
@@ -103,26 +103,25 @@ fn run_step(step: &Step) -> Value {
             model,
         } => json!({
             "ok": true,
-            "value": {"is_nim": is_nim_deployment(custom_llm_provider.as_deref(), model.as_deref())},
+            "value": {"is_nim": custom_llm_provider.as_deref() == Some(PROVIDER) || model.as_deref().unwrap_or("").starts_with(MODEL_PREFIX)},
         }),
         Step::NimGroups { deployments } => {
-            let hints = deployment_hints(deployments);
-            json!({"ok": true, "value": {"groups": model_groups(&hints)}})
+            json!({"ok": true, "value": {"groups": model_groups(&deployment_hints(deployments))}})
         }
         Step::NimPath { path, deployments } => {
-            let hints = deployment_hints(deployments);
-            json!({"ok": true, "value": {"model": model_group_in_path(path, &hints)}})
+            json!({"ok": true, "value": {"model": model_group_in_path(path, &deployment_hints(deployments))}})
         }
         Step::NimEndpoint {
             endpoint,
             router_models,
-        } => {
-            let models: BTreeSet<String> = router_models.iter().cloned().collect();
-            json!({"ok": true, "value": {"model": nim_model_in_endpoint(endpoint, &models)}})
-        }
-        Step::BedrockCount { endpoint } => {
-            json!({"ok": true, "value": {"count_endpoint": is_count_tokens_endpoint(endpoint)}})
-        }
+        } => json!({
+            "ok": true,
+            "value": {"model": nim_model_in_endpoint(endpoint, &router_models.iter().cloned().collect::<BTreeSet<String>>())},
+        }),
+        Step::BedrockCount { endpoint } => json!({
+            "ok": true,
+            "value": {"count_endpoint": COUNT_TOKENS_MARKERS.iter().any(|marker| endpoint.contains(marker))},
+        }),
         Step::BedrockModel { endpoint } => extract_model(endpoint).map_or_else(
             |_| json!({"ok": false}),
             |model| json!({"ok": true, "value": {"model": model}}),
