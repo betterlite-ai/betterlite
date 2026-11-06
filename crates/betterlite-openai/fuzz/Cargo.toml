@@ -134,3 +134,10 @@ path = "fuzz_targets/openai_fine_tuning.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "openai_assistants"
+path = "fuzz_targets/openai_assistants.rs"
+test = false
+doc = false
+bench = false
