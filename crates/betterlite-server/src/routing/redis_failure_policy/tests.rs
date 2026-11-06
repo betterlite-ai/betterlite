@@ -7,6 +7,7 @@ use std::time::Duration;
 use betterlite_config::sections::redis_failure_policy as config;
 use betterlite_router::redis_failure_policy::log::LogDecision;
 use betterlite_router::redis_failure_policy::{BreakerEvent, Settings};
+use tracing::Level;
 use tracing::subscriber::with_default;
 use tracing_subscriber::fmt;
 
@@ -37,6 +38,7 @@ where
     let subscriber = fmt()
         .without_time()
         .with_ansi(false)
+        .with_max_level(Level::DEBUG)
         .with_writer(move || Captured(Arc::clone(&sink)))
         .finish();
     with_default(subscriber, log);
