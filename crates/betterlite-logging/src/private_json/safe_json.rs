@@ -20,11 +20,26 @@ impl ValueTransform for Redactor {
     }
 }
 
-// The named passthrough field: untyped integration JSON travels inside this type and never as a bare value in a record
+// The named passthrough field: untyped integration JSON enters a record only through this type, which bounds it
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
 pub struct Passthrough {
-    pub value: Value,
+    value: Value,
+}
+
+impl TryFrom<Value> for Passthrough {
+    type Error = PrivateJsonError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        if container_depth(&value) > MAX_JSON_DEPTH {
+            return Err(PrivateJsonError::TooDeep(MAX_JSON_DEPTH));
+        }
+        let encoded = serde_json::to_vec(&value).map_err(PrivateJsonError::Encode)?;
+        if encoded.len() > MAX_JSON_BYTES {
+            return Err(PrivateJsonError::TooLarge(encoded.len(), MAX_JSON_BYTES));
+        }
+        Ok(Self { value })
+    }
 }
 
 pub fn safe_dumps<T>(
@@ -61,7 +76,7 @@ struct Structure<'depth> {
 }
 
 impl Structure<'_> {
-    // safe_json_dumps.py's _serialize: depth first, so even a scalar past the bound becomes the marker
+    // The check runs first, so a scalar past the bound becomes the marker too
     fn value(&self, value: &Value, depth: usize, key: Option<&str>) -> Value {
         if depth > self.max_depth {
             return Value::String(MAX_DEPTH_MARKER.to_owned());
@@ -74,11 +89,12 @@ impl Structure<'_> {
                     .map(|item| self.value(item, depth.saturating_add(1), key))
                     .collect(),
             ),
+            // PostgreSQL text and jsonb columns reject NUL bytes, so safe_json_dumps.py strips them from keys and values
             Value::Object(fields) => Value::Object(
                 fields
                     .iter()
                     .map(|(name, item)| {
-                        let clean_name = strip_nul(name);
+                        let clean_name = name.replace('\0', "");
                         let child = self.value(item, depth.saturating_add(1), Some(&clean_name));
                         (clean_name, child)
                     })
@@ -89,7 +105,7 @@ impl Structure<'_> {
     }
 
     fn text(&self, key: Option<&str>, text: &str) -> String {
-        let cleaned = strip_nul(text);
+        let cleaned = text.replace('\0', "");
         let Some(transform) = self.transform else {
             return cleaned;
         };
@@ -97,30 +113,23 @@ impl Structure<'_> {
     }
 }
 
-// PostgreSQL text and jsonb columns reject NUL bytes, so safe_json_dumps.py removes them before any writer sees them
-fn strip_nul(text: &str) -> String {
-    if text.contains('\0') {
-        text.replace('\0', "")
-    } else {
-        text.to_owned()
-    }
-}
-
 // Counts container nesting only, so a scalar at the innermost level does not push a document over the bound
 fn container_depth(value: &Value) -> usize {
-    match value {
-        Value::Array(items) => deepest(items.iter()),
-        Value::Object(fields) => deepest(fields.values()),
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => 0,
+    let mut pending = vec![(value, 0_usize)];
+    let mut deepest = 0;
+    while let Some((node, depth)) = pending.pop() {
+        let next = depth.saturating_add(1);
+        match node {
+            Value::Array(items) => {
+                pending.extend(items.iter().map(|item| (item, next)));
+                deepest = deepest.max(next);
+            }
+            Value::Object(fields) => {
+                pending.extend(fields.values().map(|field| (field, next)));
+                deepest = deepest.max(next);
+            }
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+        }
     }
-}
-
-fn deepest<'value, I>(children: I) -> usize
-where
-    I: Iterator<Item = &'value Value>,
-{
-    children
-        .map(|child| container_depth(child).saturating_add(1))
-        .max()
-        .unwrap_or(1)
+    deepest
 }

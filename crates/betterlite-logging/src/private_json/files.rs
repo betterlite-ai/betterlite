@@ -3,7 +3,6 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use serde_json::Value;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::task::JoinSet;
 
@@ -12,6 +11,9 @@ use super::error::PrivateJsonError;
 
 mod blocking;
 mod local;
+pub mod overwrite_json;
+pub mod stage_json;
+pub mod write_json;
 
 pub const PRIVATE_DIR_MODE: u32 = 0o700;
 pub const PRIVATE_FILE_MODE: u32 = 0o600;
@@ -78,14 +80,6 @@ impl PrivateFiles {
         .await
     }
 
-    pub async fn stage_private_json(&self, path: &Path, data: &Value) -> FileResult<StagedFile> {
-        let bytes = serde_json::to_vec_pretty(data).map_err(PrivateJsonError::Encode)?;
-        self.run_with_target(path, move |files, target| {
-            stage_blocking(files, target, Some(JSON_SUFFIX), &bytes)
-        })
-        .await
-    }
-
     pub async fn stage_private_bytes(&self, path: &Path, data: &[u8]) -> FileResult<StagedFile> {
         let bytes = data.to_vec();
         self.run_with_target(path, move |files, target| {
@@ -104,36 +98,20 @@ impl PrivateFiles {
 
     // private_json.discard_staged_json unlinks missing_ok, so a staged file that is already gone is still discarded
     pub async fn discard_staged_json(&self, staged: &StagedFile) -> FileResult<()> {
-        let path = staged.path.clone();
-        self.run_with_target(&path, move |files, target| match files.remove(target) {
-            Ok(()) => Ok(()),
-            Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(()),
-            Err(source) => Err(PrivateJsonError::Discard(target.to_owned(), source)),
+        self.run_with_target(&staged.path, move |files, target| {
+            match files.remove(target) {
+                Ok(()) => Ok(()),
+                Err(source) if source.kind() == io::ErrorKind::NotFound => Ok(()),
+                Err(source) => Err(PrivateJsonError::Discard(target.to_owned(), source)),
+            }
         })
         .await
-    }
-
-    // private_json.overwrite_private_json opens O_WRONLY | O_TRUNC; O_NOFOLLOW refuses to write through a symlink
-    pub async fn overwrite_private_json(&self, path: &Path, data: &Value) -> FileResult<()> {
-        let document = serde_json::to_vec_pretty(data).map_err(PrivateJsonError::Encode)?;
-        self.run_with_target(path, move |files, destination| {
-            files
-                .rewrite_existing(destination, &document)
-                .map_err(|source| PrivateJsonError::Overwrite(destination.to_owned(), source))
-        })
-        .await
-    }
-
-    pub async fn write_private_json(&self, path: &Path, data: &Value) -> FileResult<()> {
-        let bytes = serde_json::to_vec_pretty(data).map_err(PrivateJsonError::Encode)?;
-        let staged = self.stage_private_bytes(path, &bytes).await?;
-        self.commit_staged_json(&staged, path).await
     }
 
     pub async fn write_private_bytes(&self, path: &Path, data: Vec<u8>) -> FileResult<()> {
-        self.run_with_target(path, move |files, scratch| {
-            let staged = stage_blocking(files, scratch, None, &data)?;
-            commit_blocking(files, &staged, scratch)
+        self.run_with_target(path, move |files, target| {
+            let staged = stage_blocking(files, target, None, &data)?;
+            commit_blocking(files, &staged, target)
         })
         .await
     }
@@ -155,7 +133,7 @@ impl PrivateFiles {
         self.spawn(permit, move |files| work(files, &target)).await
     }
 
-    // The owned JoinSet runs the blocking file work on tokio's bounded pool, and the permit keeps the queue bounded
+    // The permit moves into the job because tokio cannot abort a started blocking task, so a cancelled caller keeps its slot
     async fn spawn<T, F>(&self, permit: OwnedSemaphorePermit, work: F) -> FileResult<T>
     where
         T: Send + 'static,
@@ -163,12 +141,14 @@ impl PrivateFiles {
     {
         let access = Arc::clone(&self.access);
         let mut tasks = JoinSet::new();
-        tasks.spawn_blocking(move || work(access.as_ref()));
+        tasks.spawn_blocking(move || {
+            let _held = permit;
+            work(access.as_ref())
+        });
         let joined = tasks
             .join_next()
             .await
             .ok_or(PrivateJsonError::WorkerStopped)?;
-        drop(permit);
         joined.map_err(PrivateJsonError::Worker)?
     }
 }

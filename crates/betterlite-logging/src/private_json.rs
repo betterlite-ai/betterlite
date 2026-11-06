@@ -1,6 +1,6 @@
 #![expect(
     clippy::disallowed_types,
-    reason = "private json is the serialization boundary: the named Passthrough field is the one place untyped integration JSON enters, and the module strips NULs and bounds it before any writer sees it"
+    reason = "private json models JSON-native values: the loader bounds untrusted JSON, the named Passthrough field carries untyped data through TryFrom, and the writers take Serialize records"
 )]
 
 pub mod error;
