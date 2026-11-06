@@ -1,0 +1,6 @@
+litellm_settings:
+  user_url_validation: null
+  user_url_allowed_hosts: null
+general_settings:
+  user_url_validation: 0
+  user_url_allowed_hosts: null
