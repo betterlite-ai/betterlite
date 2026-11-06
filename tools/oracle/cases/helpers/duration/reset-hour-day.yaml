@@ -1,0 +1,18 @@
+kind: helper
+name: reset_hour_day
+call:
+  duration:
+    calls:
+      - {function: reset, duration: "1h", now: "2024-01-01T10:30:00Z"}
+      - {function: reset, duration: "2h", now: "2024-01-01T10:30:00Z"}
+      - {function: reset, duration: "3h", now: "2024-01-01T10:00:00Z"}
+      - {function: reset, duration: "25h", now: "2024-01-01T00:00:00Z"}
+      - {function: reset, duration: "24h", now: "2024-01-01T10:00:00Z"}
+      - {function: reset, duration: "1d", now: "2024-01-01T10:00:00Z"}
+      - {function: reset, duration: "2d", now: "2024-01-01T10:00:00Z"}
+      - {function: reset, duration: "7d", now: "2024-01-03T10:00:00Z"}
+      - {function: reset, duration: "7d", now: "2024-01-01T00:00:00Z"}
+      - {function: reset, duration: "30d", now: "2024-01-15T10:00:00Z"}
+      - {function: reset, duration: "10d", now: "2024-01-01T10:00:00Z"}
+env: {}
+compare: {ignore: []}
