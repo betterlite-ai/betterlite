@@ -6,6 +6,7 @@ use serde_json::value::RawValue;
 #[must_use]
 pub fn parse_ndjson(lines: &[String]) -> CodeExecutionResult {
     let mut result = CodeExecutionResult::default();
+    let mut count_seen = false;
     for line in lines {
         let Ok(fields) = serde_json::from_str::<BTreeMap<String, Box<RawValue>>>(line.trim())
         else {
@@ -33,7 +34,8 @@ pub fn parse_ndjson(lines: &[String]) -> CodeExecutionResult {
                     traceback: fields.get("traceback").cloned(),
                 });
             }
-            "number_of_executions" if result.execution_count.is_none() => {
+            "number_of_executions" if !count_seen => {
+                count_seen = true;
                 result.execution_count = fields
                     .get("execution_count")
                     .and_then(|raw| serde_json::from_str::<i64>(raw.get()).ok());

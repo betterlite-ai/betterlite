@@ -124,10 +124,10 @@ pub struct DeleteSandbox<'request> {
 }
 
 pub(crate) const fn check_status(status: u16) -> Result<(), E2bError> {
-    if status >= 400 {
-        return Err(E2bError::HttpStatus { status });
+    match status {
+        200..=299 => Ok(()),
+        _ => Err(E2bError::HttpStatus { status }),
     }
-    Ok(())
 }
 
 pub(crate) fn secret_header_value(secret: &SecretString) -> Result<HeaderValue, E2bError> {

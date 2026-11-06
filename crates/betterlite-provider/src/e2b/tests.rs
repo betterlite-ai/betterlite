@@ -131,13 +131,14 @@ fn validate_environment_uses_an_explicit_empty_key_as_given() {
 }
 
 #[rstest]
+#[case::below_success(199, Some(199))]
 #[case::success(200, None)]
 #[case::success_at_the_top(299, None)]
-#[case::redirect_is_not_an_error(302, None)]
+#[case::redirect(302, Some(302))]
 #[case::client_error(400, Some(400))]
 #[case::not_found(404, Some(404))]
 #[case::server_error(500, Some(500))]
-fn statuses_at_400_and_up_are_errors(#[case] status: u16, #[case] wanted: Option<u16>) {
+fn statuses_outside_success_are_errors(#[case] status: u16, #[case] wanted: Option<u16>) {
     match (check_status(status), wanted) {
         (Ok(()), None) => {}
         (Err(E2bError::HttpStatus { status: found }), Some(expected)) => {
@@ -561,6 +562,47 @@ async fn run_returns_the_first_error_and_execution_count_in_encounter_order() {
     assert_eq!(error.traceback.unwrap().get(), r#"["line"]"#);
 }
 
+#[rstest]
+#[case::missing(r#"{"type":"number_of_executions"}"#)]
+#[case::null(r#"{"type":"number_of_executions","execution_count":null}"#)]
+#[tokio::test]
+async fn run_keeps_the_first_execution_record_even_without_a_count(#[case] first: &str) {
+    let body = format!("{first}\n{{\"type\":\"number_of_executions\",\"execution_count\":2}}");
+    let container = handle(Some("envd-token"), None);
+    let sandbox = E2bSandbox {
+        http: fake(200, &body),
+        environment: Environment::new(),
+    };
+    let result = sandbox
+        .arun_code(RunCode {
+            container: &container,
+            code: "1",
+            env_vars: None,
+        })
+        .await
+        .unwrap();
+    assert!(result.execution_count.is_none());
+}
+
+#[tokio::test]
+async fn run_keeps_a_line_that_holds_a_unicode_line_separator() {
+    let body = "{\"type\":\"stdout\",\"text\":\"a\u{2028}b\"}\n";
+    let container = handle(Some("envd-token"), None);
+    let sandbox = E2bSandbox {
+        http: fake(200, body),
+        environment: Environment::new(),
+    };
+    let result = sandbox
+        .arun_code(RunCode {
+            container: &container,
+            code: "1",
+            env_vars: None,
+        })
+        .await
+        .unwrap();
+    assert_eq!(result.stdout, "a\u{2028}b");
+}
+
 #[tokio::test]
 async fn run_returns_results_without_the_type_field() {
     let body = concat!(
@@ -644,6 +686,26 @@ async fn run_reports_an_error_status_before_parsing() {
             .await
             .unwrap_err(),
         E2bError::HttpStatus { status: 404 }
+    ));
+}
+
+#[tokio::test]
+async fn run_reports_a_redirect_status_before_parsing() {
+    let container = handle(Some("envd-token"), None);
+    let sandbox = E2bSandbox {
+        http: fake(302, r#"{"type":"stdout","text":"never parsed"}"#),
+        environment: Environment::new(),
+    };
+    assert!(matches!(
+        sandbox
+            .arun_code(RunCode {
+                container: &container,
+                code: "1",
+                env_vars: None,
+            })
+            .await
+            .unwrap_err(),
+        E2bError::HttpStatus { status: 302 }
     ));
 }
 
@@ -829,22 +891,23 @@ async fn delete_returns_false_on_not_found() {
 }
 
 #[tokio::test]
-async fn delete_returns_false_for_a_redirect_response() {
+async fn delete_reports_a_redirect_status() {
     let container = handle(None, None);
     let sandbox = E2bSandbox {
         http: fake(302, ""),
         environment: environment(&[("E2B_API_KEY", "env-key")]),
     };
-    assert!(
-        !sandbox
+    assert!(matches!(
+        sandbox
             .adelete_sandbox(DeleteSandbox {
                 container: SandboxRef::Handle(&container),
                 api_key: None,
                 api_base: None,
             })
             .await
-            .unwrap()
-    );
+            .unwrap_err(),
+        E2bError::HttpStatus { status: 302 }
+    ));
 }
 
 #[tokio::test]

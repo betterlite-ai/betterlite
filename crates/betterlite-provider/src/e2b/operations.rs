@@ -132,7 +132,7 @@ where
             return Ok(false);
         }
         check_status(response.status)?;
-        Ok((200..300).contains(&response.status))
+        Ok(true)
     }
 }
 

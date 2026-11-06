@@ -11,12 +11,17 @@ pub struct ProxiedSandboxHttp {
 
 impl ProxiedSandboxHttp {
     fn outbound(&self, request: SandboxRequest) -> OutboundRequest {
+        let body = if request.body.is_empty() {
+            RequestBody::Empty
+        } else {
+            RequestBody::Json(request.body)
+        };
         OutboundRequest {
             method: request.method,
             url: request.url,
             query: Vec::new(),
             headers: request.headers,
-            body: RequestBody::Json(request.body),
+            body,
             deadline: self.client.limits.read_timeout,
         }
     }

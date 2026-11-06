@@ -97,6 +97,7 @@ async fn delete_returns_false_through_the_pooled_http_client() {
     assert!(!deleted);
     let seen = server.join_next().await.unwrap().unwrap();
     assert!(seen.starts_with("DELETE /sandboxes/sbx_9 HTTP/1.1"));
+    assert!(!seen.to_ascii_lowercase().contains("content-type"));
 }
 
 #[tokio::test]

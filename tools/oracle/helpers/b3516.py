@@ -9,7 +9,6 @@ from litellm.llms.custom_httpx.http_handler import AsyncHTTPHandler
 from litellm.llms.e2b.sandbox.transformation import E2BSandboxConfig
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
-_ERROR_STATUS = 400
 
 
 class _Response:
@@ -21,7 +20,7 @@ class _Response:
         return cast(Json, json.loads(self._body))
 
     async def aiter_lines(self) -> AsyncIterator[str]:
-        for line in self._body.split("\n"):
+        for line in self._body.splitlines():
             yield line
 
 
@@ -40,7 +39,7 @@ class _Handler:
                 "json": body,
             }
         )
-        if self._status >= _ERROR_STATUS:
+        if not httpx.codes.is_success(self._status):
             request = httpx.Request(method, url)
             raise httpx.HTTPStatusError(
                 "the API answered with an error status",

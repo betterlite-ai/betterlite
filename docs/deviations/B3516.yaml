@@ -37,3 +37,13 @@ deviations:
       completed lines and buffers a partial line without a limit.
     why: Keeps memory bounded when a provider sends no separator, a case no working E2B setup produces.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/sandbox/transformation.py#L82-L92
+  - what: >-
+      read_capped_lines splits only on \n and strips a trailing \r, so a line holding a raw U+0085, U+2028 or U+2029
+      stays one line, whereas httpx aiter_lines splits on every str.splitlines boundary and would cut it into fragments
+      that fail to parse. An invalid UTF-8 byte fails the run with an error, whereas httpx decodes with errors="replace"
+      and continues with U+FFFD.
+    why: >-
+      Keeping the line preserves a JSON string a sandbox can legitimately send; refusing invalid bytes follows
+      betterlite's rule that bytes which are not UTF-8 are an error rather than a mangled value. Neither changes a
+      well-formed E2B stream.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/sandbox/transformation.py#L82-L92
