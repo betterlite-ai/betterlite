@@ -30,6 +30,24 @@ fn missing_claims_render_as_empty_values() {
 }
 
 #[rstest]
+#[case::whole_second(r#"{"exp":1700000000}"#, "1700000000")]
+#[case::fractional_second(r#"{"exp":1700000000.5}"#, "1700000000.5")]
+#[case::past_i64(r#"{"exp":18446744073709551615}"#, "18446744073709551615")]
+fn exp_keeps_the_value_the_claim_holds(#[case] json: &str, #[case] rendered: &str) {
+    let claims = claims(json);
+    assert!(render(&claims, "kid-1").ends_with(&format!("exp={rendered}; scope=")));
+}
+
+#[test]
+fn a_non_text_signing_claim_renders_the_value_it_holds() {
+    let claims = claims(r#"{"sub":42,"iss":["issuer"],"scope":"mcp:tools/list"}"#);
+    assert_eq!(
+        render(&claims, "kid-1"),
+        "v=1; kid=kid-1; sub=42; iss=[\"issuer\"]; exp=0; scope=mcp:tools/list"
+    );
+}
+
+#[rstest]
 #[case::short(12, false)]
 #[case::at_the_limit(80, false)]
 #[case::one_past_the_limit(81, true)]

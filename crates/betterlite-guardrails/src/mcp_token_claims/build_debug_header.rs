@@ -9,22 +9,25 @@ const SCOPE_KEPT_CHARS: usize = 77;
 
 #[must_use]
 pub fn render(claims: &Claims, kid: &str) -> String {
-    let sub = claims.get("sub").and_then(Json::as_str).unwrap_or_default();
-    let iss = claims.get("iss").and_then(Json::as_str).unwrap_or_default();
-    let exp = match claims.get("exp") {
-        Some(Json::Number(number)) => number.as_i64().unwrap_or_default(),
-        Some(Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_))
-        | None => 0,
-    };
-    let raw_scope = claims
-        .get("scope")
-        .and_then(Json::as_str)
-        .unwrap_or_default();
+    let sub = claims.get("sub").map_or_else(String::new, claim_text);
+    let iss = claims.get("iss").map_or_else(String::new, claim_text);
+    let exp = claims.get("exp").map_or_else(|| "0".to_owned(), claim_text);
+    let raw_scope = claims.get("scope").map_or_else(String::new, claim_text);
     let scope = if raw_scope.chars().count() > SCOPE_LIMIT_CHARS {
         let kept: String = raw_scope.chars().take(SCOPE_KEPT_CHARS).collect();
         format!("{kept}...")
     } else {
-        raw_scope.to_owned()
+        raw_scope
     };
     format!("v=1; kid={kid}; sub={sub}; iss={iss}; exp={exp}; scope={scope}")
+}
+
+fn claim_text(value: &Json) -> String {
+    match value {
+        Json::Number(number) => number.to_string(),
+        Json::Text(text) => text.clone(),
+        Json::Bool(flag) => flag.to_string(),
+        Json::Null => "null".to_owned(),
+        Json::List(_) | Json::Object(_) => serde_json::to_string(value).unwrap_or_default(),
+    }
 }
