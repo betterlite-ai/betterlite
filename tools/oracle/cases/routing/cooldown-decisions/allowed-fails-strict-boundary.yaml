@@ -5,7 +5,7 @@ probes:
     samples: []
     operation:
       cooldown_decisions:
-        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        router: {allowed_fails: 3, default_allowed_fails: 0, cooldown_time: 5.0, disable_cooldowns: false}
         deployment: {id: dep-1, model_group_size: 2, has_alternatives: false, provider_default: false}
         failure: {class: rate_limit, status: 429, advisor_orchestration: false, background_response_cost_poll: false}
         minute: {successes: 0, failures: 0}
@@ -14,7 +14,7 @@ probes:
     samples: []
     operation:
       cooldown_decisions:
-        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        router: {allowed_fails: 3, default_allowed_fails: 0, cooldown_time: 5.0, disable_cooldowns: false}
         deployment: {id: dep-1, model_group_size: 2, has_alternatives: false, provider_default: false}
         failure: {class: rate_limit, status: 429, advisor_orchestration: false, background_response_cost_poll: false}
         minute: {successes: 0, failures: 0}
@@ -23,7 +23,7 @@ probes:
     samples: []
     operation:
       cooldown_decisions:
-        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        router: {allowed_fails: 3, default_allowed_fails: 0, cooldown_time: 5.0, disable_cooldowns: false}
         deployment: {id: dep-1, model_group_size: 2, has_alternatives: false, provider_default: false}
         failure: {class: rate_limit, status: 429, advisor_orchestration: false, background_response_cost_poll: false}
         minute: {successes: 0, failures: 0}
@@ -32,7 +32,7 @@ probes:
     samples: []
     operation:
       cooldown_decisions:
-        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        router: {allowed_fails: 3, default_allowed_fails: 0, cooldown_time: 5.0, disable_cooldowns: false}
         deployment:
           id: dep-1
           model_group_size: 2
@@ -46,7 +46,7 @@ probes:
     samples: []
     operation:
       cooldown_decisions:
-        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        router: {allowed_fails: 3, default_allowed_fails: 0, cooldown_time: 5.0, disable_cooldowns: false}
         deployment:
           id: dep-1
           model_group_size: 1
@@ -60,7 +60,7 @@ probes:
     samples: []
     operation:
       cooldown_decisions:
-        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        router: {allowed_fails: 3, default_allowed_fails: 0, cooldown_time: 5.0, disable_cooldowns: false}
         deployment:
           id: dep-1
           model_group_size: 2

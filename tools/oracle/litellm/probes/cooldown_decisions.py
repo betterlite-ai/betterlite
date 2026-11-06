@@ -3,23 +3,30 @@ from datetime import UTC, datetime, timedelta
 from typing import Annotated, ClassVar, Final, Literal, final
 from unittest.mock import patch
 
+import httpx
 import litellm
 from litellm.caching.dual_cache import DualCache
 from litellm.constants import INTERNAL_CALL_ORIGIN_METADATA_KEY
 from litellm.exceptions import (
     APIConnectionError,
     APIError,
+    APIResponseValidationError,
     AuthenticationError,
     BadGatewayError,
     BadRequestError,
+    BudgetExceededError,
     ContentPolicyViolationError,
     ContextWindowExceededError,
+    GuardrailRaisedException,
     InternalServerError,
+    JSONSchemaValidationError,
     MidStreamFallbackError,
     NotFoundError,
+    PermissionDeniedError,
     RateLimitError,
     ServiceUnavailableError,
     Timeout,
+    UnprocessableEntityError,
     UnsupportedParamsError,
 )
 from litellm.router import Router
@@ -48,6 +55,8 @@ _MESSAGE: Final = "probe failure"
 _MODEL: Final = "openai/gpt-4o"
 _PROVIDER: Final = "openai"
 _MODEL_GROUP: Final = "probe-group"
+_TEAM: Final = "probe-team"
+_PUBLIC_MODEL: Final = "probe-public-model"
 _CALL_START: Final = datetime(2023, 11, 14, tzinfo=UTC)
 
 FailureClassName = Literal[
@@ -97,6 +106,28 @@ _FACTORIES: dict[FailureClassName, Callable[[], Exception]] = {
         message=_MESSAGE, model=_MODEL, llm_provider=_PROVIDER
     ),
     "mid_stream_fallback": lambda: MidStreamFallbackError(message=_MESSAGE, model=_MODEL, llm_provider=_PROVIDER),
+    "permission_denied": lambda: PermissionDeniedError(
+        message=_MESSAGE,
+        llm_provider=_PROVIDER,
+        model=_MODEL,
+        response=httpx.Response(403, request=httpx.Request("GET", "https://probe.invalid")),
+    ),
+    "unprocessable_entity": lambda: UnprocessableEntityError(
+        message=_MESSAGE,
+        model=_MODEL,
+        llm_provider=_PROVIDER,
+        response=httpx.Response(422, request=httpx.Request("GET", "https://probe.invalid")),
+    ),
+    "budget_exceeded": lambda: BudgetExceededError(
+        current_cost=0.0, max_budget=1.0, message=_MESSAGE, llm_provider=_PROVIDER
+    ),
+    "api_response_validation": lambda: APIResponseValidationError(
+        message=_MESSAGE, llm_provider=_PROVIDER, model=_MODEL
+    ),
+    "json_schema_validation": lambda: JSONSchemaValidationError(
+        model=_MODEL, llm_provider=_PROVIDER, raw_response="", schema=""
+    ),
+    "guardrail_raised": lambda: GuardrailRaisedException(guardrail_name="probe", message=_MESSAGE),
     "unclassified": lambda: Exception(_MESSAGE),
 }
 
@@ -208,6 +239,9 @@ def policy_values(policy: AllowedFailsPolicy) -> dict[str, object]:
 
 def model_info(deployment: DeploymentInput) -> dict[str, object]:
     info: dict[str, object] = {"id": deployment.id}
+    if deployment.has_alternatives:
+        info["team_id"] = _TEAM
+        info["team_public_model_name"] = _PUBLIC_MODEL
     if deployment.allowed_fails_policy is not None:
         info["allowed_fails_policy"] = policy_values(deployment.allowed_fails_policy)
     if deployment.allowed_fails is not None:
@@ -269,6 +303,18 @@ class CooldownDecisions(Operation):
                 )
                 for index in range(deployment.model_group_size)
             )
+            if deployment.has_alternatives:
+                entries.append(
+                    DeploymentTypedDict(
+                        model_name=f"{_MODEL_GROUP}-alternative",
+                        litellm_params={"model": _MODEL, "api_key": "sk-probe"},
+                        model_info={
+                            "id": f"{deployment.id}-alternative",
+                            "team_id": _TEAM,
+                            "team_public_model_name": _PUBLIC_MODEL,
+                        },
+                    )
+                )
         router = Router(
             model_list=entries,
             allowed_fails=self.router.allowed_fails,
