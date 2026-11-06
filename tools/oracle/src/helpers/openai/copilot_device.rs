@@ -5,13 +5,14 @@ use std::path::Path;
 use std::time::Duration;
 
 use betterlite_config::loader::ConfigLoader;
+use betterlite_openai::copilot::device_auth::Authenticator;
+use betterlite_openai::copilot::device_auth::error::DeviceAuthError;
 use betterlite_openai::copilot::device_auth::files::{FileAccess, LocalFiles};
 use betterlite_openai::copilot::device_auth::output::OperatorOutput;
 use betterlite_openai::copilot::device_auth::sleeper::Sleeper;
 use betterlite_openai::copilot::device_auth::transport::{
     Post, Reply, Transport, TransportFailure,
 };
-use betterlite_openai::copilot::device_auth::{Authenticator, DeviceAuthError};
 use secrecy::ExposeSecret as _;
 use serde::Deserialize;
 use serde_json::{Value, json};

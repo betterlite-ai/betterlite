@@ -15,3 +15,5 @@ impl Sleeper for TokioSleeper {
         sleep(duration)
     }
 }
+
+mod tests;

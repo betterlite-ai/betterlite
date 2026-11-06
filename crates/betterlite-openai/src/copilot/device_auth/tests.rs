@@ -1,36 +1,28 @@
 #![cfg(test)]
 
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::VecDeque;
 use std::fs;
 use std::future::{Future, ready};
 use std::io;
 use std::iter;
-use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::sections::copilot_device::Settings;
-use betterlite_config::types::ProxyTrust;
-use betterlite_http::proxy::ProxiedClient;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::{Value, json};
-use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
-use tokio::net::TcpListener;
+use serde_json::Value;
 use tokio::runtime::Builder as RuntimeBuilder;
 use tracing::subscriber::with_default;
 use uuid::Uuid;
 
-use super::decode::{AccessReply, DeviceReply, REPLY_LIMIT, ReplyError};
-use super::files::{FILE_LIMIT, FileAccess, LocalFiles};
-use super::output::{OperatorOutput, StreamOutput};
-use super::sleeper::{Sleeper, TokioSleeper};
-use super::transport::{HttpTransport, Post, Reply, Transport, TransportFailure};
-use super::{
-    AccessTokenFailure, Authenticator, DeviceAuthError, DeviceCodeFailure, github_headers,
-};
+use super::decode::ReplyError;
+use super::error::{AccessTokenFailure, DeviceAuthError, DeviceCodeFailure};
+use super::files::FileAccess;
+use super::output::OperatorOutput;
+use super::sleeper::Sleeper;
+use super::transport::{Post, Reply, Transport, TransportFailure};
+use super::{Authenticator, github_headers};
 use crate::copilot::headers::{
     API_VERSION, COPILOT_VERSION, DEFAULT_COPILOT_API_BASE, EDITOR_PLUGIN_VERSION, USER_AGENT,
     copilot_default_headers,
@@ -713,175 +705,6 @@ fn copilot_constants_match_the_source() {
 }
 
 #[test]
-fn device_reply_decodes_typed_and_additional_fields() {
-    let reply: DeviceReply = super::decode::decode_device_reply(
-        br#"{"device_code":"d","user_code":"u","verification_uri":"v","interval":5,"expires_in":900}"#,
-    )
-    .unwrap();
-
-    assert_eq!(reply.device_code.as_deref(), Some("d"));
-    assert_eq!(reply.user_code.as_deref(), Some("u"));
-    assert_eq!(reply.verification_uri.as_deref(), Some("v"));
-    assert_eq!(reply.additional_fields.get("interval"), Some(&json!(5_i32)));
-    assert_eq!(
-        reply.additional_fields.get("expires_in"),
-        Some(&json!(900_i32))
-    );
-    assert_eq!(reply.additional_fields.len(), 2);
-}
-
-#[rstest]
-#[case::array(b"[]".as_slice())]
-#[case::truncated(b"{".as_slice())]
-#[case::wrong_type(br#"{"device_code": 5}"#.as_slice())]
-fn device_reply_rejects_malformed_json(#[case] bytes: &[u8]) {
-    assert!(matches!(
-        super::decode::decode_device_reply(bytes),
-        Err(ReplyError::Json(_))
-    ));
-}
-
-#[test]
-fn device_reply_is_bounded_by_its_limit() {
-    let bounded = format!("{{}}{}", " ".repeat(REPLY_LIMIT - 2));
-    super::decode::decode_device_reply(bounded.as_bytes()).unwrap();
-    assert!(matches!(
-        super::decode::decode_device_reply(format!("{bounded} ").as_bytes()),
-        Err(ReplyError::Size { limit: REPLY_LIMIT })
-    ));
-}
-
-#[test]
-fn access_reply_reads_presence_and_accepts_an_empty_token() {
-    let empty: AccessReply = super::decode::decode_access_reply(br#"{"access_token":""}"#).unwrap();
-    assert_eq!(empty.access_token.unwrap().expose_secret(), "");
-
-    let missing: AccessReply = super::decode::decode_access_reply(b"{}").unwrap();
-    assert!(missing.access_token.is_none());
-    assert!(missing.error.is_none());
-
-    let pending: AccessReply =
-        super::decode::decode_access_reply(br#"{"error":"authorization_pending"}"#).unwrap();
-    assert_eq!(pending.error.as_deref(), Some("authorization_pending"));
-}
-
-#[test]
-fn access_reply_is_bounded_by_its_limit() {
-    let bounded = format!("{{}}{}", " ".repeat(REPLY_LIMIT - 2));
-    super::decode::decode_access_reply(bounded.as_bytes()).unwrap();
-    assert!(matches!(
-        super::decode::decode_access_reply(format!("{bounded} ").as_bytes()),
-        Err(ReplyError::Size { limit: REPLY_LIMIT })
-    ));
-}
-
-#[rstest]
-fn replays_the_device_reply_corpus(#[files("fuzz/corpus/device_reply/*")] path: PathBuf) {
-    let bytes = fs::read(path).expect("corpus file");
-    let _device = super::decode::decode_device_reply(&bytes);
-    let _access = super::decode::decode_access_reply(&bytes);
-}
-
-#[test]
-fn local_files_write_then_read_and_truncate() {
-    let directory = tempfile::tempdir().unwrap();
-    let mut files = LocalFiles;
-    files.ensure_dir(directory.path()).unwrap();
-    let path = directory.path().join("access-token");
-
-    files.write(&path, b"first-token").unwrap();
-    assert_eq!(files.read(&path).unwrap(), b"first-token");
-    files.write(&path, b"new").unwrap();
-    assert_eq!(files.read(&path).unwrap(), b"new");
-
-    let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
-    assert_eq!(mode, 0o600);
-}
-
-#[test]
-fn local_files_create_a_missing_directory_and_skip_an_existing_one() {
-    let directory = tempfile::tempdir().unwrap();
-    let nested = directory.path().join("tokens");
-    let mut files = LocalFiles;
-
-    files.ensure_dir(&nested).unwrap();
-    assert!(nested.is_dir());
-    files.ensure_dir(&nested).unwrap();
-    assert!(files.ensure_dir(Path::new("")).is_err());
-}
-
-#[test]
-fn local_files_reject_oversized_or_missing_token_files() {
-    let directory = tempfile::tempdir().unwrap();
-    let path = directory.path().join("access-token");
-    let mut files = LocalFiles;
-
-    fs::write(&path, vec![b'x'; FILE_LIMIT]).unwrap();
-    assert_eq!(files.read(&path).unwrap().len(), FILE_LIMIT);
-    fs::write(&path, vec![b'x'; FILE_LIMIT + 1]).unwrap();
-    files.read(&path).unwrap_err();
-    files.read(&directory.path().join("missing")).unwrap_err();
-}
-
-#[test]
-fn local_files_report_a_write_into_a_missing_directory() {
-    let directory = tempfile::tempdir().unwrap();
-    let mut files = LocalFiles;
-
-    assert!(
-        files
-            .write(&directory.path().join("missing/access-token"), b"x")
-            .is_err()
-    );
-}
-
-#[test]
-fn stream_output_writes_the_instruction_line() {
-    let mut output = StreamOutput { writer: Vec::new() };
-
-    output.instructions("Please visit https://github.com/login/device and enter code ABCD.");
-
-    assert_eq!(
-        output.writer,
-        b"Please visit https://github.com/login/device and enter code ABCD.\n"
-    );
-}
-
-struct FailingWriter;
-
-impl io::Write for FailingWriter {
-    fn write(&mut self, _buffer: &[u8]) -> io::Result<usize> {
-        Err(io::Error::other("closed"))
-    }
-
-    fn flush(&mut self) -> io::Result<()> {
-        Err(io::Error::other("closed"))
-    }
-}
-
-#[test]
-fn stream_output_logs_a_write_failure() {
-    let ((), output) = logged(|| {
-        let mut output = StreamOutput {
-            writer: FailingWriter,
-        };
-        output.instructions("Please visit the device page.");
-    });
-
-    assert!(output.contains("WARN the Copilot device login instructions could not be written"));
-}
-
-#[tokio::test]
-async fn tokio_sleeper_waits_for_the_requested_duration() {
-    let mut sleeper = TokioSleeper;
-    let started = Instant::now();
-
-    sleeper.sleep(Duration::from_millis(20)).await;
-
-    assert!(started.elapsed() >= Duration::from_millis(10));
-}
-
-#[test]
 fn login_diagnostics_never_contain_the_access_token() {
     let (token, output) = logged(|| {
         block_on(async {
@@ -957,175 +780,4 @@ fn an_unexpected_reply_logs_a_warning() {
 
     result.unwrap();
     assert!(output.contains("WARN GitHub returned an unexpected access token reply"));
-}
-
-fn policy() -> Arc<ProxyPolicy> {
-    Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap())
-}
-
-fn http_transport() -> HttpTransport {
-    HttpTransport {
-        client: ProxiedClient::outbound(&policy()).unwrap(),
-        deadline: Duration::from_secs(5),
-    }
-}
-
-async fn serve(listener: TcpListener, status: u16, body: &'static str) -> String {
-    let (mut stream, _) = listener.accept().await.unwrap();
-    let mut received = Vec::new();
-    while !received.ends_with(b"\r\n\r\n") {
-        received.push(stream.read_u8().await.unwrap());
-    }
-    let head = String::from_utf8(received).unwrap();
-    let length: usize = head
-        .lines()
-        .find_map(|line| line.strip_prefix("content-length: "))
-        .map_or(0, |value| value.parse().unwrap());
-    let mut sent = vec![0_u8; length];
-    stream.read_exact(&mut sent).await.unwrap();
-    let reply = format!(
-        "HTTP/1.1 {status} X\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
-        body.len()
-    );
-    let _written = stream.write_all(reply.as_bytes()).await;
-    format!("{head}{}", String::from_utf8(sent).unwrap())
-}
-
-#[tokio::test]
-async fn http_transport_posts_json_with_its_headers() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    let mut transport = http_transport();
-    let url = format!("http://{address}/login/device/code");
-    let body = br#"{"client_id":"c","scope":"read:user"}"#.to_vec();
-    let post = Post {
-        url: &url,
-        headers: github_headers(None),
-        body,
-    };
-
-    let (received, answered) = tokio::join!(
-        serve(listener, 200, r#"{"device_code":"d"}"#),
-        transport.post_json(post)
-    );
-
-    let reply = answered.unwrap();
-    assert_eq!(reply.status, 200);
-    assert_eq!(reply.body, br#"{"device_code":"d"}"#);
-    assert!(received.starts_with("POST /login/device/code HTTP/1.1\r\n"));
-    assert!(received.contains("accept: application/json"));
-    assert!(received.contains("editor-version: vscode/1.85.1"));
-    assert!(received.contains("content-type: application/json"));
-    assert!(received.ends_with(r#"{"client_id":"c","scope":"read:user"}"#));
-}
-
-#[tokio::test]
-async fn http_transport_returns_error_statuses_as_replies() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    let mut transport = http_transport();
-    let url = format!("http://{address}/login/oauth/access_token");
-    let post = Post {
-        url: &url,
-        headers: Headers::new(),
-        body: b"{}".to_vec(),
-    };
-
-    let (_received, answered) = tokio::join!(
-        serve(listener, 400, r#"{"error":"bad_verification_code"}"#),
-        transport.post_json(post)
-    );
-
-    let reply = answered.unwrap();
-    assert_eq!(reply.status, 400);
-}
-
-#[tokio::test]
-async fn http_transport_rejects_an_invalid_url() {
-    let mut transport = http_transport();
-    let post = Post {
-        url: "not a url",
-        headers: Headers::new(),
-        body: Vec::new(),
-    };
-
-    let error = transport.post_json(post).await.unwrap_err();
-
-    assert!(matches!(error, TransportFailure::Url(_)));
-}
-
-#[tokio::test]
-async fn http_transport_rejects_an_invalid_header_name() {
-    let mut transport = http_transport();
-    let mut headers = Headers::new();
-    headers.insert(String::from("bad header"), String::from("value"));
-    let post = Post {
-        url: "http://127.0.0.1:1/login/device/code",
-        headers,
-        body: Vec::new(),
-    };
-
-    let error = transport.post_json(post).await.unwrap_err();
-
-    assert!(matches!(
-        error,
-        TransportFailure::HeaderName { name, .. } if name == "bad header"
-    ));
-}
-
-#[tokio::test]
-async fn http_transport_rejects_an_invalid_header_value() {
-    let mut transport = http_transport();
-    let mut headers = Headers::new();
-    headers.insert(String::from("accept"), String::from("bad\nvalue"));
-    let post = Post {
-        url: "http://127.0.0.1:1/login/device/code",
-        headers,
-        body: Vec::new(),
-    };
-
-    let error = transport.post_json(post).await.unwrap_err();
-
-    assert!(matches!(
-        error,
-        TransportFailure::HeaderValue { name, .. } if name == "accept"
-    ));
-}
-
-#[tokio::test]
-async fn http_transport_reports_a_refused_connection() {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    drop(listener);
-    let mut transport = http_transport();
-    let url = format!("http://{address}/login/device/code");
-    let post = Post {
-        url: &url,
-        headers: Headers::new(),
-        body: Vec::new(),
-    };
-
-    let error = transport.post_json(post).await.unwrap_err();
-
-    assert!(matches!(error, TransportFailure::Request(_)));
-}
-
-#[test]
-fn post_debug_hides_header_values() {
-    let mut headers = Headers::new();
-    headers.insert(
-        String::from("authorization"),
-        String::from("token private-access-token"),
-    );
-    let post = Post {
-        url: DEVICE_URL,
-        headers,
-        body: b"{}".to_vec(),
-    };
-
-    let debug = format!("{post:?}");
-
-    assert!(!debug.contains("private-access-token"));
-    assert!(debug.contains("authorization"));
-    assert!(debug.contains("body_bytes"));
 }

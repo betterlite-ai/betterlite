@@ -48,3 +48,5 @@ impl FileAccess for LocalFiles {
         file.write_all(content)
     }
 }
+
+mod tests;

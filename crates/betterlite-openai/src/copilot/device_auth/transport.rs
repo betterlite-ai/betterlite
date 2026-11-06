@@ -114,3 +114,5 @@ impl Transport for HttpTransport {
         })
     }
 }
+
+mod tests;

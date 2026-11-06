@@ -21,3 +21,5 @@ impl<W: io::Write> OperatorOutput for StreamOutput<W> {
 }
 
 pub type StdoutOutput = StreamOutput<io::Stdout>;
+
+mod tests;

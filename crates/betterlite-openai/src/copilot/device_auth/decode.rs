@@ -47,3 +47,5 @@ pub fn decode_access_reply(bytes: &[u8]) -> Result<AccessReply, ReplyError> {
     }
     serde_json::from_slice(bytes).map_err(ReplyError::Json)
 }
+
+mod tests;
