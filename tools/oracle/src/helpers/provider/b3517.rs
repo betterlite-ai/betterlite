@@ -12,7 +12,7 @@ use http::{HeaderMap, HeaderName, HeaderValue};
 
 use crate::helpers::HelperError;
 
-use input::{Body, Input, Operation};
+use input::{Input, Operation};
 use output::{request_output, requests_output, single_request};
 use transport::{block_on, recording_sandbox};
 
@@ -36,8 +36,7 @@ impl crate::helpers::Helper for Op {
 }
 
 fn create_output(input: &Input) -> crate::helpers::HelperResult {
-    let entrypoint = input.entrypoint.as_deref();
-    let body = create_body(&CreateSandbox {
+    serde_json::to_value(create_body(&CreateSandbox {
         template: input.template.as_deref(),
         timeout: input.timeout,
         allow_internet_access: input.allow_internet_access,
@@ -45,25 +44,19 @@ fn create_output(input: &Input) -> crate::helpers::HelperResult {
         env_vars: input.env_vars.as_ref(),
         resource_limits: input.resource_limits.as_ref(),
         resource_requests: input.resource_requests.as_ref(),
-        entrypoint,
+        entrypoint: input.entrypoint.as_deref(),
         network_policy: input.network_policy.as_deref(),
         secure_access: input.secure_access.unwrap_or(false),
-    });
-    serde_json::to_value(body).map_err(|error| helper_error("BodyEncoding", error))
+    }))
+    .map_err(|error| helper_error("BodyEncoding", error))
 }
 
 fn wait_until_running_output(input: &Input) -> crate::helpers::HelperResult {
     let sandbox = recording_sandbox(input);
     let headers = headers(input)?;
     let request = WaitUntilRunning {
-        sandbox_id: input
-            .sandbox_id
-            .as_deref()
-            .ok_or_else(|| helper_error("InvalidInput", "sandbox_id is required"))?,
-        api_base: input
-            .api_base
-            .as_deref()
-            .ok_or_else(|| helper_error("InvalidInput", "api_base is required"))?,
+        sandbox_id: required_field(input.sandbox_id.as_deref(), "sandbox_id")?,
+        api_base: required_field(input.api_base.as_deref(), "api_base")?,
         headers: &headers,
         ready_timeout: seconds(input.ready_timeout, "ready_timeout")?,
         poll_interval: seconds(input.poll_interval, "poll_interval")?,
@@ -73,25 +66,22 @@ fn wait_until_running_output(input: &Input) -> crate::helpers::HelperResult {
 }
 
 fn wait_for_endpoint_output(input: &Input) -> crate::helpers::HelperResult {
-    let sandbox = recording_sandbox(input);
+    let ready_timeout = seconds(input.ready_timeout, "ready_timeout")?;
+    let poll_interval = seconds(input.poll_interval, "poll_interval")?;
     let headers = headers(input)?;
-    let request = WaitForEndpoint {
-        endpoint: GetEndpoint {
-            sandbox_id: input
-                .sandbox_id
-                .as_deref()
-                .ok_or_else(|| helper_error("InvalidInput", "sandbox_id is required"))?,
-            api_base: input
-                .api_base
-                .as_deref()
-                .ok_or_else(|| helper_error("InvalidInput", "api_base is required"))?,
-            headers: &headers,
-            use_server_proxy: input.use_server_proxy.unwrap_or(false),
-        },
-        ready_timeout: seconds(input.ready_timeout, "ready_timeout")?,
-        poll_interval: seconds(input.poll_interval, "poll_interval")?,
+    let target = GetEndpoint {
+        sandbox_id: required_field(input.sandbox_id.as_deref(), "sandbox_id")?,
+        api_base: required_field(input.api_base.as_deref(), "api_base")?,
+        headers: &headers,
+        use_server_proxy: input.use_server_proxy.unwrap_or(false),
     };
-    let endpoint = block_on(sandbox.wait_for_execd_endpoint(&request, Some(&sandbox.http)))?;
+    let request = WaitForEndpoint {
+        endpoint: target,
+        ready_timeout,
+        poll_interval,
+    };
+    let sandbox = recording_sandbox(input);
+    let endpoint = block_on(sandbox.wait_for_execd_endpoint(request, Some(&sandbox.http)))?;
     Ok(serde_json::json!({
         "requests": requests_output(&sandbox.http)?,
         "endpoint": endpoint.url,
@@ -101,32 +91,27 @@ fn wait_for_endpoint_output(input: &Input) -> crate::helpers::HelperResult {
 
 fn run_output(input: &Input) -> crate::helpers::HelperResult {
     let sandbox = recording_sandbox(input);
-    let body = input
-        .body
-        .as_ref()
-        .ok_or_else(|| helper_error("InvalidInput", "run needs a body"))?;
-    let post_body = post_body(body);
-    let post = PostCode {
-        url: input
-            .url
-            .as_deref()
-            .ok_or_else(|| helper_error("InvalidInput", "url is required"))?,
-        headers: headers(input)?,
-        body: &post_body,
-    };
-    let lines = block_on(sandbox.post_code(post, Some(&sandbox.http)))?;
+    let lines = block_on(sandbox.post_code(post_request(input)?, Some(&sandbox.http)))?;
     let result = parse_lines(&lines);
     let request = request_output(&single_request(&sandbox.http)?)?;
     Ok(serde_json::json!({"request": request, "result": result}))
 }
 
-fn post_body(body: &Body) -> PostCodeBody {
-    PostCodeBody {
-        code: body.code.clone(),
-        context: ExecutionContext {
-            language: body.context.language.clone(),
+fn post_request(input: &Input) -> Result<PostCode<'_>, Box<HelperError>> {
+    let body = input
+        .body
+        .as_ref()
+        .ok_or_else(|| helper_error("InvalidInput", "run needs a body"))?;
+    Ok(PostCode {
+        url: required_field(input.url.as_deref(), "url")?,
+        headers: headers(input)?,
+        body: PostCodeBody {
+            code: body.code.clone(),
+            context: ExecutionContext {
+                language: body.context.language.clone(),
+            },
         },
-    }
+    })
 }
 
 fn headers(input: &Input) -> Result<HeaderMap, Box<HelperError>> {
@@ -141,6 +126,16 @@ fn headers(input: &Input) -> Result<HeaderMap, Box<HelperError>> {
         }
     }
     Ok(map)
+}
+
+fn required_field<'input>(
+    value: Option<&'input str>,
+    name: &str,
+) -> Result<&'input str, Box<HelperError>> {
+    if let Some(found) = value {
+        return Ok(found);
+    }
+    Err(helper_error("InvalidInput", format!("{name} is required")))
 }
 
 fn seconds(value: Option<f64>, name: &str) -> Result<Duration, Box<HelperError>> {

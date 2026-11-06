@@ -13,6 +13,12 @@ use super::super::reply::MAX_RESPONSE_BYTES;
 use super::super::{MonotonicClock, OpenSandboxError, PollClock as _};
 use super::{FakeHttp, block_on, environment, sandbox};
 
+#[derive(Clone, Copy)]
+enum Answer {
+    MissingEndpoint,
+    Decode,
+}
+
 fn headers() -> HeaderMap {
     let mut headers = HeaderMap::new();
     headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
@@ -259,7 +265,7 @@ fn wait_for_execd_endpoint_returns_the_first_endpoint() {
         ready_timeout: Duration::from_secs(30),
         poll_interval: Duration::from_millis(200),
     };
-    let endpoint = block_on(sandbox.wait_for_execd_endpoint(&request, None)).unwrap();
+    let endpoint = block_on(sandbox.wait_for_execd_endpoint(request, None)).unwrap();
     assert_eq!(
         endpoint,
         Endpoint {
@@ -293,7 +299,7 @@ fn wait_for_execd_endpoint_retries_a_404() {
         ready_timeout: Duration::from_secs(30),
         poll_interval: Duration::from_millis(200),
     };
-    let endpoint = block_on(sandbox.wait_for_execd_endpoint(&request, None)).unwrap();
+    let endpoint = block_on(sandbox.wait_for_execd_endpoint(request, None)).unwrap();
     assert_eq!(endpoint.url, "10.0.0.5:44772");
     assert_eq!(sandbox.http.requests().len(), 2);
     assert_eq!(sandbox.clock.elapsed(), Duration::from_millis(200));
@@ -319,7 +325,7 @@ fn wait_for_execd_endpoint_retries_a_missing_endpoint(#[case] body: &str) {
         ready_timeout: Duration::from_secs(30),
         poll_interval: Duration::from_millis(200),
     };
-    block_on(sandbox.wait_for_execd_endpoint(&request, None)).unwrap();
+    block_on(sandbox.wait_for_execd_endpoint(request, None)).unwrap();
     assert_eq!(sandbox.http.requests().len(), 2);
 }
 
@@ -337,7 +343,7 @@ fn wait_for_execd_endpoint_does_not_retry_another_status() {
         ready_timeout: Duration::from_secs(30),
         poll_interval: Duration::from_millis(200),
     };
-    let error = block_on(sandbox.wait_for_execd_endpoint(&request, None)).unwrap_err();
+    let error = block_on(sandbox.wait_for_execd_endpoint(request, None)).unwrap_err();
     assert!(matches!(
         error,
         OpenSandboxError::HttpStatus { status: 500 }
@@ -359,7 +365,7 @@ fn wait_for_execd_endpoint_times_out_and_keeps_the_last_error() {
         ready_timeout: Duration::from_millis(500),
         poll_interval: Duration::from_millis(200),
     };
-    let error = block_on(sandbox.wait_for_execd_endpoint(&request, None)).unwrap_err();
+    let error = block_on(sandbox.wait_for_execd_endpoint(request, None)).unwrap_err();
     assert!(matches!(
         error,
         OpenSandboxError::EndpointNotReady { timeout, .. }
@@ -374,14 +380,16 @@ fn wait_for_execd_endpoint_times_out_and_keeps_the_last_error() {
 }
 
 #[rstest]
-#[case::absent("{}")]
-#[case::null(r#"{"endpoint":null}"#)]
-#[case::empty(r#"{"endpoint":""}"#)]
-#[case::number(r#"{"endpoint":5}"#)]
-#[case::boolean(r#"{"endpoint":false}"#)]
-#[case::array(r#"{"endpoint":[]}"#)]
-#[case::object(r#"{"endpoint":{}}"#)]
-fn get_execd_endpoint_requires_a_usable_endpoint(#[case] body: &str) {
+#[case::absent("{}", Answer::MissingEndpoint)]
+#[case::null(r#"{"endpoint":null}"#, Answer::MissingEndpoint)]
+#[case::empty(r#"{"endpoint":""}"#, Answer::MissingEndpoint)]
+#[case::number(r#"{"endpoint":5}"#, Answer::MissingEndpoint)]
+#[case::boolean(r#"{"endpoint":false}"#, Answer::MissingEndpoint)]
+#[case::array(r#"{"endpoint":[]}"#, Answer::MissingEndpoint)]
+#[case::object(r#"{"endpoint":{}}"#, Answer::MissingEndpoint)]
+#[case::not_json("not json", Answer::Decode)]
+#[case::not_an_object("[]", Answer::Decode)]
+fn get_execd_endpoint_refuses_an_unusable_answer(#[case] body: &str, #[case] answer: Answer) {
     let sandbox = sandbox(FakeHttp::new(&[(200, body)]), environment(&[]));
     let headers = headers();
     let request = GetEndpoint {
@@ -391,10 +399,13 @@ fn get_execd_endpoint_requires_a_usable_endpoint(#[case] body: &str) {
         use_server_proxy: false,
     };
     let error = block_on(sandbox.get_execd_endpoint(request, None)).unwrap_err();
-    assert!(matches!(
-        error,
-        OpenSandboxError::MissingEndpoint { sandbox_id } if sandbox_id == "sbx_1"
-    ));
+    match answer {
+        Answer::MissingEndpoint => assert!(matches!(
+            error,
+            OpenSandboxError::MissingEndpoint { sandbox_id } if sandbox_id == "sbx_1"
+        )),
+        Answer::Decode => assert!(matches!(error, OpenSandboxError::Decode { .. })),
+    }
 }
 
 #[test]
@@ -438,22 +449,6 @@ fn get_execd_endpoint_reads_string_headers_only_from_an_object() {
             ("n".to_owned(), "5".to_owned()),
         ])
     );
-}
-
-#[rstest]
-#[case::not_json("not json")]
-#[case::not_an_object("[]")]
-fn get_execd_endpoint_rejects_a_document_it_cannot_read(#[case] body: &str) {
-    let sandbox = sandbox(FakeHttp::new(&[(200, body)]), environment(&[]));
-    let headers = headers();
-    let request = GetEndpoint {
-        sandbox_id: "sbx_1",
-        api_base: "http://sandbox.example",
-        headers: &headers,
-        use_server_proxy: false,
-    };
-    let error = block_on(sandbox.get_execd_endpoint(request, None)).unwrap_err();
-    assert!(matches!(error, OpenSandboxError::Decode { .. }));
 }
 
 #[test]

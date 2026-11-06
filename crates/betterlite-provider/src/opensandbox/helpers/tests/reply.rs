@@ -36,7 +36,7 @@ fn post_code_sends_the_execution_request_and_returns_every_line() {
         PostCode {
             url: "http://sandbox.example/code",
             headers: headers(),
-            body: &body,
+            body: body,
         },
         None,
     ))
@@ -73,7 +73,7 @@ fn post_code_reports_a_non_success_status(#[case] status: u16) {
         PostCode {
             url: "http://sandbox.example/code",
             headers: headers(),
-            body: &body,
+            body: body,
         },
         None,
     ))
@@ -93,7 +93,7 @@ fn post_code_stops_at_the_output_cap() {
         PostCode {
             url: "http://sandbox.example/code",
             headers: headers(),
-            body: &post,
+            body: post,
         },
         None,
     ))
@@ -113,7 +113,7 @@ fn post_code_uses_a_supplied_client_over_the_injected_one() {
         PostCode {
             url: "http://sandbox.example/code",
             headers: headers(),
-            body: &body,
+            body: body,
         },
         Some(&supplied),
     ))

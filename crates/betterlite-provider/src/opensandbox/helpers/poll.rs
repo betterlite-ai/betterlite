@@ -82,31 +82,18 @@ where
     ) -> Result<(), OpenSandboxError> {
         let deadline = self.clock.now().saturating_add(request.ready_timeout);
         loop {
-            let url = Url::parse(&format!(
-                "{}/sandboxes/{}",
-                request.api_base, request.sandbox_id
-            ))
-            .map_err(|source| OpenSandboxError::Url { source })?;
-            let response = client
-                .unwrap_or(&self.http)
-                .send(get_request(url, request.headers))
-                .await?;
-            check_status(response.status)?;
-            let body = collect_reply(response.body).await?;
-            let document: Box<RawValue> = serde_json::from_slice(&body)
-                .map_err(|source| OpenSandboxError::Decode { source })?;
-            let state = sandbox_state(&document);
-            match state.as_deref() {
-                Some("Running") => return Ok(()),
-                Some(terminal @ ("Failed" | "Stopping" | "Terminated")) => {
+            match self.poll_state(request, client).await? {
+                PollState::Running => return Ok(()),
+                PollState::Terminal(state) => {
                     return Err(OpenSandboxError::UnexpectedState {
                         sandbox_id: request.sandbox_id.to_owned(),
-                        state: terminal.to_owned(),
+                        state,
                     });
                 }
-                _ => {}
+                PollState::Waiting => {}
             }
-            if deadline.saturating_sub(self.clock.now()).is_zero() {
+            let remaining = deadline.checked_sub(self.clock.now());
+            if remaining.is_none_or(|left| left.is_zero()) {
                 return Err(OpenSandboxError::NotRunning {
                     sandbox_id: request.sandbox_id.to_owned(),
                     timeout: request.ready_timeout,
@@ -116,32 +103,54 @@ where
         }
     }
 
+    async fn poll_state(
+        &self,
+        request: &WaitUntilRunning<'_>,
+        client: Option<&Http>,
+    ) -> Result<PollState, OpenSandboxError> {
+        let url = Url::parse(&format!(
+            "{}/sandboxes/{}",
+            request.api_base, request.sandbox_id
+        ))
+        .map_err(|source| OpenSandboxError::Url { source })?;
+        let body = self.get_body(url, request.headers, client).await?;
+        let document: Box<RawValue> =
+            serde_json::from_slice(&body).map_err(|source| OpenSandboxError::Decode { source })?;
+        match sandbox_state(&document).as_deref() {
+            Some("Running") => Ok(PollState::Running),
+            Some(terminal @ ("Failed" | "Stopping" | "Terminated")) => {
+                Ok(PollState::Terminal(terminal.to_owned()))
+            }
+            _ => Ok(PollState::Waiting),
+        }
+    }
+
     pub async fn wait_for_execd_endpoint(
         &self,
-        request: &WaitForEndpoint<'_>,
+        request: WaitForEndpoint<'_>,
         client: Option<&Http>,
     ) -> Result<Endpoint, OpenSandboxError> {
-        let deadline = self.clock.now().saturating_add(request.ready_timeout);
-        let mut last_error: Option<Box<OpenSandboxError>>;
+        let expires = request.ready_timeout.saturating_add(self.clock.now());
+        let mut failure: Option<Box<OpenSandboxError>>;
         loop {
-            match self.get_execd_endpoint(request.endpoint, client).await {
+            let error = match self.get_execd_endpoint(request.endpoint, client).await {
                 Ok(endpoint) => return Ok(endpoint),
-                Err(
-                    error @ (OpenSandboxError::HttpStatus { status: 404 }
-                    | OpenSandboxError::MissingEndpoint { .. }),
-                ) => {
-                    last_error = Some(Box::new(error));
-                }
-                Err(other) => return Err(other),
+                Err(error) => error,
+            };
+            if is_retryable(&error) {
+                failure = Some(Box::new(error));
+            } else {
+                return Err(error);
             }
-            if deadline.saturating_sub(self.clock.now()).is_zero() {
-                return Err(OpenSandboxError::EndpointNotReady {
-                    sandbox_id: request.endpoint.sandbox_id.to_owned(),
-                    timeout: request.ready_timeout,
-                    last: last_error,
-                });
+            if expires.saturating_sub(self.clock.now()).is_zero() {
+                return Err(endpoint_timeout(
+                    request.endpoint.sandbox_id,
+                    request.ready_timeout,
+                    failure,
+                ));
             }
-            self.clock.sleep(request.poll_interval).await;
+            let interval = request.poll_interval;
+            self.clock.sleep(interval).await;
         }
     }
 
@@ -163,12 +172,7 @@ where
                 "false"
             },
         );
-        let response = client
-            .unwrap_or(&self.http)
-            .send(get_request(url, request.headers))
-            .await?;
-        check_status(response.status)?;
-        let body = collect_reply(response.body).await?;
+        let body = self.get_body(url, request.headers, client).await?;
         let document: EndpointDocument =
             serde_json::from_slice(&body).map_err(|source| OpenSandboxError::Decode { source })?;
         let endpoint = document
@@ -184,6 +188,45 @@ where
             headers: as_str_dict(document.headers.as_ref()),
         })
     }
+
+    async fn get_body(
+        &self,
+        url: Url,
+        headers: &HeaderMap,
+        client: Option<&Http>,
+    ) -> Result<Vec<u8>, OpenSandboxError> {
+        let response = client
+            .unwrap_or(&self.http)
+            .send(get_request(url, headers))
+            .await?;
+        check_status(response.status)?;
+        collect_reply(response.body).await
+    }
+}
+
+enum PollState {
+    Running,
+    Terminal(String),
+    Waiting,
+}
+
+fn endpoint_timeout(
+    sandbox_id: &str,
+    timeout: Duration,
+    last: Option<Box<OpenSandboxError>>,
+) -> OpenSandboxError {
+    OpenSandboxError::EndpointNotReady {
+        sandbox_id: sandbox_id.to_owned(),
+        timeout,
+        last,
+    }
+}
+
+const fn is_retryable(error: &OpenSandboxError) -> bool {
+    if matches!(error, OpenSandboxError::HttpStatus { status: 404 }) {
+        return true;
+    }
+    matches!(error, OpenSandboxError::MissingEndpoint { .. })
 }
 
 fn get_request(url: Url, headers: &HeaderMap) -> SandboxRequest {

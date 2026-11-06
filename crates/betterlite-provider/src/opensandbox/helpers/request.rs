@@ -28,7 +28,7 @@ const EXECUTION_TIMEOUT: RequestTimeout = RequestTimeout {
 pub struct PostCode<'request> {
     pub url: &'request str,
     pub headers: HeaderMap,
-    pub body: &'request PostCodeBody,
+    pub body: PostCodeBody,
 }
 
 #[derive(Debug, Serialize)]
@@ -90,16 +90,11 @@ where
         api_key: Option<&SecretString>,
         handle: &ContainerHandle,
     ) -> SecretString {
-        api_key.map_or_else(
-            || {
-                handle
-                    .hidden_params
-                    .api_key
-                    .as_ref()
-                    .map_or_else(|| self.validate_environment(None), Clone::clone)
-            },
-            Clone::clone,
-        )
+        if let Some(key) = api_key {
+            return key.clone();
+        }
+        let stored = handle.hidden_params.api_key.as_ref();
+        stored.map_or_else(|| self.validate_environment(None), Clone::clone)
     }
 
     pub fn as_handle<'request>(
@@ -131,7 +126,7 @@ where
         client: Option<&Http>,
     ) -> Result<Vec<String>, OpenSandboxError> {
         let url = Url::parse(request.url).map_err(|source| OpenSandboxError::Url { source })?;
-        let body = serde_json::to_vec(request.body)
+        let body = serde_json::to_vec(&request.body)
             .map_err(|source| OpenSandboxError::Encode { source })?;
         let sent = SandboxRequest {
             method: Method::POST,
