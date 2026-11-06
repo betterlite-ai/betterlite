@@ -41,9 +41,7 @@ fn ids_for_call(
     };
     let mut ids = Vec::with_capacity(count);
     ids.push(Some(call_id.to_owned()));
-    if count > 1
-        && let Some(generator) = suffixes.get_mut(&sanitize(call_id))
-    {
+    if let Some(generator) = suffixes.get_mut(&sanitize(call_id)) {
         for _ in 1..count {
             ids.push(Some(generator.next_id(taken)));
         }
@@ -58,15 +56,19 @@ struct SuffixGenerator {
 
 impl SuffixGenerator {
     fn next_id(&mut self, taken: &BTreeSet<String>) -> String {
-        loop {
+        // Candidates differ by number and each taken id matches at most one, so this many attempts always reaches a free one.
+        let attempts = taken.len().saturating_add(1);
+        let mut candidate = String::new();
+        for _ in 0..attempts {
             let call_id = self.call_id.as_str();
             let number = self.next;
-            let candidate = format!("{call_id}__concat_{number}");
+            candidate = format!("{call_id}__concat_{number}");
             self.next = self.next.saturating_add(1);
             if !taken.contains(&sanitize(&candidate)) {
                 return candidate;
             }
         }
+        candidate
     }
 }
 

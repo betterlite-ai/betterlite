@@ -65,6 +65,7 @@ fn response_tool_calls_parse_failures_behavior(#[case] body: &str) {
 
 #[test]
 fn response_tool_calls_rejects_oversized_bodies() {
+    assert_eq!(MAX_RESPONSE_BYTES, 0x0080_0000);
     let body = vec![b' '; MAX_RESPONSE_BYTES.saturating_add(1)];
     let parsed = parse_tool_call_response(&body);
     assert!(matches!(
@@ -72,6 +73,14 @@ fn response_tool_calls_rejects_oversized_bodies() {
         Err(ResponseToolCallError::TooLarge { length, limit })
             if length == MAX_RESPONSE_BYTES.saturating_add(1) && limit == MAX_RESPONSE_BYTES
     ));
+}
+
+#[test]
+fn response_tool_calls_accepts_a_body_at_the_byte_limit() {
+    let mut body = br#"{"choices":[]}"#.to_vec();
+    body.resize(MAX_RESPONSE_BYTES, b' ');
+    let parsed = parse_tool_call_response(&body).expect("a body at the limit parses");
+    assert_eq!(get_tool_calls_from_response(&parsed, false).len(), 0);
 }
 
 #[rstest]

@@ -46,6 +46,17 @@ use rstest::rstest;
         {"id":"dup__concat_2","name":"tool","arguments":{"a":2}}
     ]"#
 )]
+#[case::sanitized_ids_keep_their_generators_apart(
+    r#"{"choices":[{"message":{"tool_calls":[
+        {"id":"a_b","function":{"name":"tool","arguments":"{\"a\":1}{\"a\":2}"}},
+        {"id":"a b","function":{"name":"tool","arguments":"{}"}}
+    ]}}]}"#,
+    r#"[
+        {"id":"a_b","name":"tool","arguments":{"a":1}},
+        {"id":"a_b__concat_1","name":"tool","arguments":{"a":2}},
+        {"id":"a b","name":"tool","arguments":{}}
+    ]"#
+)]
 #[case::single_argument_calls_keep_their_ids(
     r#"{"choices":[{"message":{"tool_calls":[
         {"id":"x","function":{"name":"tool","arguments":"{}"}},
