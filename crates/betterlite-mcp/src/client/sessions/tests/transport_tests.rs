@@ -79,7 +79,7 @@ async fn stdio_transport_requires_a_configuration() {
 }
 
 #[tokio::test]
-async fn provided_stdio_environment_is_used_unchanged() {
+async fn a_provided_stdio_environment_is_kept_and_gets_the_sdk_defaults_under_it() {
     let provided = BTreeMap::from([("OPENAI_API_KEY".to_owned(), "sk-secret".to_owned())]);
     let runtime = FakeRuntime::new(Plan::default());
     let client = build_client(
@@ -95,6 +95,15 @@ async fn provided_stdio_environment_is_used_unchanged() {
     client.create_transport_context().unwrap();
     let parameters = client.runtime.stdio().unwrap();
     assert_eq!(parameters.env, provided);
+    assert_eq!(
+        parameters.defaults.get("PATH").map(String::as_str),
+        Some("/usr/bin")
+    );
+    assert_eq!(
+        parameters.defaults.get("HOME").map(String::as_str),
+        Some("/home/user")
+    );
+    assert!(!parameters.defaults.contains_key("OPENAI_API_KEY"));
 }
 
 #[test]

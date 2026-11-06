@@ -9,7 +9,7 @@ use tracing::debug;
 
 use crate::credentials;
 
-use super::environment::safe_stdio_env;
+use super::environment::{safe_stdio_env, sdk_default_env};
 use super::error::{SessionConfigError, SessionError};
 use super::factory::{AuthSource, HttpClientConfig, RedirectGuard, SseRequest, TlsSettings};
 use super::negotiate::{Callbacks, ProtocolVersion};
@@ -58,6 +58,7 @@ impl<Runtime: McpRuntime> SessionClient<Runtime> {
                         &self.settings.environment,
                         &self.settings.npm_cache_dir,
                     ),
+                    defaults: sdk_default_env(&self.settings.environment),
                 };
                 Ok(TransportContexts {
                     transport: self.runtime.stdio_client(parameters),

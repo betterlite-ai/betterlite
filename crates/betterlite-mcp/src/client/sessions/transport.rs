@@ -32,6 +32,8 @@ pub struct StdioServerParameters {
     pub command: String,
     pub args: Vec<String>,
     pub env: BTreeMap<String, String>,
+    // The SDK's inherited variables, merged under env when the server starts
+    pub defaults: BTreeMap<String, String>,
 }
 
 pub trait TransportContext: Sized + Send + 'static {

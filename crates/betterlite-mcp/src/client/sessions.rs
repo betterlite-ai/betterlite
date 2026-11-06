@@ -7,6 +7,7 @@ pub mod negotiate;
 pub mod run;
 pub mod runtime;
 pub mod stdio;
+pub mod stdio_runtime;
 pub mod stream;
 pub mod transport;
 
