@@ -1,0 +1,35 @@
+task: B199
+deviations:
+  - what: >-
+      A duration quantity with more digits than a u64 holds, or a fixed-unit duration whose seconds do not fit i64,
+      returns DurationError::QuantityOverflow or DurationError::SecondsOverflow. LiteLLM multiplies Python's unbounded
+      int and returns it from duration_in_seconds, and its second, minute and hour resets reduce such a value modulo the
+      unit cycle instead of failing.
+    why: >-
+      The task requires bounded parsing with typed overflow outcomes; a quantity near 10^19 units is not a budget any
+      working proxy uses, and naming the overflow beats returning a number no downstream type can hold.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/duration_parser.py#L51-L75
+  - what: >-
+      The duration grammar reads ASCII decimal digits only. Python's \d matches every Unicode decimal digit and int()
+      accepts it, so "٥m" is 300 seconds in LiteLLM and an InvalidFormat error in betterlite.
+    why: >-
+      Recognizing the decimal digits of every script needs a Unicode table this task does not add; a budget duration
+      written in Arabic-Indic digits is not a setup any proxy configuration uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/duration_parser.py#L29-L38
+  - what: >-
+      betterlite reports a typed warning when text trails a parsed duration, when a reset duration does not parse,
+      when a reset unit is unknown, and when a reset timezone name is invalid. LiteLLM truncates the trailing text
+      silently, silently falls back for an unknown unit and an invalid timezone, and logs only the duration it cannot
+      parse.
+    why: >-
+      The task asks for an explicit trailing-input diagnostic and typed warnings instead of silent truncation and silent
+      fallbacks; the returned seconds and reset instants stay the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/duration_parser.py#L139-L166
+  - what: >-
+      betterlite takes the current instant, the local timezone and the reset time of day as arguments, while
+      duration_in_seconds calls time.time() with the process local timezone and the reset helpers default timezone_str
+      to "UTC".
+    why: >-
+      The task requires explicit injected inputs so no business logic reads the wall clock or the ambient local time;
+      the results match LiteLLM's when the caller injects the instant and zone the Python process would have used.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/duration_parser.py#L76-L88

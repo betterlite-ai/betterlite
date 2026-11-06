@@ -1,0 +1,103 @@
+from decimal import Decimal
+from typing import TypeAlias, cast
+from unittest.mock import patch
+
+from litellm.llms.xai import cost_calculator
+from litellm.llms.xai.chat.transformation import (
+    XAIChatConfig,
+    _usage_restated_from_xai_ticks,  # pyright: ignore[reportPrivateUsage]
+)
+from litellm.llms.xai.common_utils import xai_reported_cost_in_usd
+from litellm.types.utils import CompletionTokensDetailsWrapper, ModelInfo, Usage
+
+Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
+
+
+class UnexpectedPricingCallError(Exception):
+    pass
+
+
+class CountPricing:
+    def __call__(
+        self, *, model: str, usage: Usage, custom_llm_provider: str
+    ) -> tuple[float, float]:
+        if (model, custom_llm_provider) != ("oracle-model", "xai"):
+            raise UnexpectedPricingCallError(model, custom_llm_provider)
+        return float(usage.prompt_tokens), float(usage.completion_tokens)
+
+
+def money(value: float | None) -> str | None:
+    return None if value is None else format(Decimal(repr(float(value))).normalize(), "f")
+
+
+def build_usage(fields: dict[str, Json]) -> Usage:
+    reasoning = cast(int | None, fields.get("reasoning_tokens"))
+    details = None
+    if reasoning is not None:
+        details = CompletionTokensDetailsWrapper.model_construct(reasoning_tokens=reasoning)
+    usage = Usage.model_construct(
+        prompt_tokens=cast(int, fields.get("prompt_tokens", 0)),
+        completion_tokens=cast(int, fields.get("completion_tokens", 0)),
+        total_tokens=cast(int, fields.get("total_tokens", 0)),
+        prompt_tokens_details=None,
+        completion_tokens_details=details,
+    )
+    cost = fields.get("cost")
+    if cost is not None:
+        usage.cost = cost  # pyright: ignore[reportAttributeAccessIssue]
+    return usage
+
+
+def run_ticks(value: dict[str, Json]) -> Json:
+    usage = build_usage({})
+    usage.cost_in_usd_ticks = value["ticks"]  # pyright: ignore[reportAttributeAccessIssue]
+    restated = _usage_restated_from_xai_ticks(usage)
+    restated_cost = None
+    if restated is not None:
+        restated_cost = cast(float | None, getattr(restated, "cost", None))
+    reported = money(xai_reported_cost_in_usd(value["ticks"]))
+    return {"cost": reported, "restated_cost": money(restated_cost)}
+
+
+def run_cost(value: dict[str, Json]) -> Json:
+    usage = build_usage(cast(dict[str, Json], value["usage"]))
+    with patch.object(cost_calculator, "generic_cost_per_token", CountPricing()):
+        prompt_cost, completion_cost = cost_calculator.cost_per_token("oracle-model", usage)
+    return {"prompt_cost": money(prompt_cost), "completion_cost": money(completion_cost)}
+
+
+def run_reconcile(value: dict[str, Json]) -> Json:
+    usage = build_usage(cast(dict[str, Json], value["usage"]))
+    steps: list[Json] = []
+    for _ in range(2):
+        XAIChatConfig.fold_reasoning_tokens_into_completion(usage)
+        XAIChatConfig._normalize_openai_compatible_usage_totals(usage)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+        steps.append(
+            {
+                "prompt_tokens": usage.prompt_tokens,
+                "completion_tokens": usage.completion_tokens,
+                "total_tokens": usage.total_tokens,
+            }
+        )
+    return {"once": steps[0], "twice": steps[1]}
+
+
+def run_search(value: dict[str, Json]) -> Json:
+    usage = build_usage(cast(dict[str, Json], value["usage"]))
+    details = cast(dict[str, Json] | None, value.get("details"))
+    cost_calculator.apply_server_side_tool_usage_details_to_usage(usage, details)
+    search_costs = value.get("search_costs")
+    model_info = {} if search_costs is None else {"search_context_cost_per_query": search_costs}
+    search_cost = cost_calculator.cost_per_web_search_request(usage, cast(ModelInfo, model_info))
+    prompt_details = usage.prompt_tokens_details
+    requests = None if prompt_details is None else prompt_details.web_search_requests
+    return {
+        "attached": cast(Json, getattr(usage, "server_side_tool_usage_details", None)),
+        "web_search_requests": requests,
+        "search_cost": money(search_cost),
+    }
+
+
+def run(value: dict[str, Json]) -> Json:
+    handlers = {"ticks": run_ticks, "cost": run_cost, "reconcile": run_reconcile}
+    return handlers.get(cast(str, value["action"]), run_search)(value)

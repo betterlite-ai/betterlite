@@ -37,3 +37,7 @@ tokio = { workspace = true, features = ["rt", "macros", "time"] }
 
 [lints]
 workspace = true
+
+[[test]]
+name = "bitbucket_prompt_manager"
+path = "src/bitbucket/tests.rs"

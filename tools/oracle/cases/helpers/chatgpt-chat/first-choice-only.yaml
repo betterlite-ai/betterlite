@@ -1,0 +1,14 @@
+kind: helper
+name: first_choice_only
+call:
+  chatgpt_chat:
+    environment: {}
+    platform: {system: "Linux", release: "6.1.0-oracle", machine: "x86_64"}
+    record: null
+    now: 1000
+    step:
+      normalize:
+        chunks:
+          - {id: "chatcmpl-3", object: "chat.completion.chunk", created: 3, model: "gpt-5", system_fingerprint: "fp-3", choices: [{index: 0, delta: {tool_calls: [{index: 3, id: "alpha", type: "function", function: {name: "lookup", arguments: ""}}]}}, {index: 1, finish_reason: "stop", delta: {content: "kept", tool_calls: [{index: 9, id: "omega", type: "function", function: {name: "other", arguments: "{}"}}]}}]}
+env: {}
+compare: {ignore: []}
