@@ -1,0 +1,17 @@
+task: B3072
+deviations:
+  - what: "A response that carries a usage object of null produces an event without the prompt_tokens, completion_tokens and total_tokens fields. LiteLLM calls .get on the null usage and raises AttributeError instead."
+    why: "The declared ModelResponse usage field is optional, so a working setup can complete a request whose response carries no usage; failing the callback there is a LiteLLM bug no setup relies on."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/lago.py#L70-L77"
+  - what: "Lago and OpenMeter settings are resolved once, when the logger is built, from the environment snapshot; LiteLLM re-reads LAGO_API_BASE, LAGO_API_KEY, LAGO_API_EVENT_CODE, LAGO_API_CHARGE_BY, OPENMETER_API_ENDPOINT, OPENMETER_EVENT_TYPE and OPENMETER_TRUST_REQUEST_USER for every event."
+    why: "betterlite resolves configuration once at the boundary, so an environment read happens only at startup; a process that mutates its own environment after the logger exists would see the old values."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/lago.py#L86-L97"
+  - what: "One pooled async HTTP client (B173) serves both the sync and the async callback entry points. LiteLLM builds a blocking HTTPHandler and an AsyncHTTPHandler per logger, and both Rust entry points are async."
+    why: "betterlite has one async request path and one owned transport per adapter, so a second blocking client would duplicate the gateway transport the task says not to add."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/lago.py#L32-L36"
+  - what: "OPENMETER_TRUST_REQUEST_USER is read as a boolean through the shared betterlite-env parser. LiteLLM lowercases it and treats every value except \"false\" as true."
+    why: "betterlite reads every environment variable into its declared type in one place; a value the parser does not recognize names the field and fails instead of meaning true."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/openmeter.py#L71"
+  - what: "A metering response body is read up to 1 MiB; a larger body fails the callback with a transport error. LiteLLM reads the whole response text for its debug log and its OpenMeter error message."
+    why: "Every outbound read is bounded; a Lago or OpenMeter acknowledgement or error body larger than 1 MiB is not something a working setup relies on."
+    link: "https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/openmeter.py#L114-L121"
