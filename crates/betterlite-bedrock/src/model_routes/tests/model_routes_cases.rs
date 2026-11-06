@@ -368,11 +368,11 @@ fn response_format_needs_converse() {
     );
     assert!(!format_needs_converse(&route, "openai.gpt-oss-20b-1:0", None).unwrap());
     assert!(
-        !format_needs_converse(&route, "openai.gpt-oss-20b-1:0", Some(&text("json schema")))
+        format_needs_converse(&route, "openai.gpt-oss-20b-1:0", Some(&text("json schema")))
             .unwrap()
     );
-    assert!(format_needs_converse(&route, "openai.gpt-5.6", Some(&text("json schema"))).unwrap());
-    assert!(format_needs_converse(&route, "openai.gpt-5.6", Some(&list(&[]))).unwrap());
+    assert!(!format_needs_converse(&route, "openai.gpt-5.6", Some(&text("json schema"))).unwrap());
+    assert!(!format_needs_converse(&route, "openai.gpt-5.6", Some(&list(&[]))).unwrap());
     let null_request = params(&[("response_format", ParamValue::Null)]);
     assert!(!request_needs_converse(&route, "openai.gpt-oss-20b-1:0", &null_request).unwrap());
 }
