@@ -1,0 +1,5 @@
+task: B4801
+deviations:
+  - what: 'The A2A client is a native JSON-RPC client over the injected HTTP pool, and its compat-v0.3 to core record conversions are native too, where LiteLLM calls the Python a2a-sdk 1.1.0 client and its conversions module.'
+    why: 'No Rust crate provides the a2a-sdk surface, so the client and the conversions it delegates are built here. The observable client behavior stays as LiteLLM drives it: the v1.0 core JSON-RPC transport, the final-event selection, the two-attempt localhost retry and the streaming response boundary.'
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L767-L845'

@@ -9,10 +9,14 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+async-stream = "0.3.6"
+base64 = "0.22.1"
 betterlite-core = { path = "../betterlite-core" }
 betterlite-http = { path = "../betterlite-http" }
+betterlite-openai = { path = "../betterlite-openai" }
 chrono = { workspace = true }
 futures-core = "0.3.34"
+futures-util = { version = "0.3.34", default-features = false, features = ["async-await"] }
 hex.workspace = true
 http = "1.5.0"
 lru = "0.18.4"
