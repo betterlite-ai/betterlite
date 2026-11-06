@@ -1,0 +1,23 @@
+kind: helper
+name: bedrock-model-info-passthrough
+call:
+  bedrock_model_routes:
+    price_map: {}
+    converse_models: []
+    request_metadata_fields: []
+    tool_names: {}
+    step:
+      model_info:
+        probes:
+          - api_base: null
+            api_key: null
+            headers: {}
+          - api_base: ""
+            api_key: ""
+            headers: {"x-amz-target": ""}
+          - api_base: "https://base.example"
+            api_key: "sk-fixture"
+            headers: {"X-Amz-Target": BedrockRuntime.Converse, keep: "1"}
+env: {}
+compare:
+  ignore: []
