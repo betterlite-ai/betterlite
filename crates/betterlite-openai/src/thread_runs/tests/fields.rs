@@ -88,26 +88,16 @@ fn assert_step_records(events: &[RunEvent]) {
 
 fn assert_message_records(events: &[RunEvent]) {
     assert!(events.len() > 7);
-    let text = serde_json::to_value(&events[4]).unwrap();
-    assert_eq!(
-        text.pointer("/data/delta/content/0/text/value"),
-        Some(&Value::Null)
-    );
-    let image_delta = serde_json::to_value(&events[5]).unwrap();
-    assert_eq!(
-        image_delta.pointer("/data/delta/content/0/image_file/detail"),
-        Some(&Value::Null)
-    );
-    let url_delta = serde_json::to_value(&events[6]).unwrap();
-    assert_eq!(
-        url_delta.pointer("/data/delta/content/0/image_url/detail"),
-        Some(&Value::Null)
-    );
-    let image = serde_json::to_value(&events[7]).unwrap();
-    assert_eq!(
-        image.pointer("/data/content/0/image_file/detail"),
-        Some(&Value::Null)
-    );
+    let pointers = [
+        "/data/delta/content/0/text/value",
+        "/data/delta/content/0/image_file/detail",
+        "/data/delta/content/0/image_url/detail",
+        "/data/content/0/image_file/detail",
+    ];
+    for (event, pointer) in events.iter().skip(4).zip(pointers) {
+        let value = serde_json::to_value(event).unwrap();
+        assert_eq!(value.pointer(pointer), Some(&Value::Null), "{pointer}");
+    }
 }
 
 fn assert_thread_record(events: &[RunEvent]) {
