@@ -36,4 +36,4 @@ deviations:
       read_capped_lines fails once an unterminated line has buffered more than 10 MiB, whereas LiteLLM counts only
       completed lines and buffers a partial line without a limit.
     why: Keeps memory bounded when a provider sends no separator, a case no working E2B setup produces.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/sandbox/transformation.py#L84-L93
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/sandbox/transformation.py#L82-L92
