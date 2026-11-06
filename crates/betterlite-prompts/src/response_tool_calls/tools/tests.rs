@@ -38,6 +38,16 @@ fn tools(json: &str) -> Vec<Json> {
     "beta",
     true
 )]
+#[case::openai_tool_ignores_its_top_level_name(
+    r#"[{"type":"function","function":{"name":"alpha"},"name":"beta"}]"#,
+    "beta",
+    false
+)]
+#[case::function_without_function_type_is_not_openai_shaped(
+    r#"[{"function":{"name":"alpha"}}]"#,
+    "alpha",
+    false
+)]
 fn response_tool_calls_behavior_tests_behavior(
     #[case] json: &str,
     #[case] tool_name: &str,

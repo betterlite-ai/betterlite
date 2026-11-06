@@ -18,6 +18,10 @@ call:
           input: not a dict
         - type: tool_use
           name: no_id
+        - type: tool_use
+          id: ''
+          name: ''
+          input: {}
 env: {}
 compare:
   ignore: []

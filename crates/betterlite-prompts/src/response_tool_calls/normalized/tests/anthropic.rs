@@ -16,6 +16,10 @@ use rstest::rstest;
     r#"[{"id":"t","name":"n","arguments":{}}]"#
 )]
 #[case::block_id_and_name_are_taken_as_sent(
+    r#"{"content":[{"type":"tool_use","id":"","name":"","input":{}}]}"#,
+    r#"[{"id":"","name":"","arguments":{}}]"#
+)]
+#[case::block_without_id_or_name_yields_nulls(
     r#"{"content":[{"type":"tool_use","input":{}}]}"#,
     r#"[{"id":null,"name":null,"arguments":{}}]"#
 )]

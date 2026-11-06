@@ -13,7 +13,9 @@ call:
             call_types: [completion, acompletion]
         handlers:
           - call_types: [anthropic_messages]
-            messages: null
+            messages:
+              - role: user
+                content: unrouted
           - call_types: [completion]
             messages:
               - role: user
@@ -48,6 +50,20 @@ call:
         handlers:
           - call_types: [completion]
             messages: null
+      - messages: null
+        request_kwargs:
+          litellm_metadata:
+            user_api_key_request_route: /v1/embeddings
+        routes:
+          - route: /v1/embeddings
+            call_types: [embedding, aembedding]
+        handlers:
+          - call_types: [embedding]
+            messages: null
+          - call_types: [completion]
+            messages:
+              - role: user
+                content: should not be reached
 env: {}
 compare:
   ignore: []

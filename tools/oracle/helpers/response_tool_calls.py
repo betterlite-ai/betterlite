@@ -18,10 +18,12 @@ Messages: TypeAlias = list[dict[str, object]]
 
 CALL_TYPES: Final[dict[str, CallTypes]] = {
     "acompletion": CallTypes.acompletion,
+    "aembedding": CallTypes.aembedding,
     "aanthropic_messages": CallTypes.aanthropic_messages,
     "anthropic_messages": CallTypes.anthropic_messages,
     "aresponses": CallTypes.aresponses,
     "completion": CallTypes.completion,
+    "embedding": CallTypes.embedding,
     "responses": CallTypes.responses,
 }
 

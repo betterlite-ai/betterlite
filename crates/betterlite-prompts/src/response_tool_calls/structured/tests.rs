@@ -132,6 +132,15 @@ fn run_scenario(scenario: &Scenario) -> Option<Vec<Message>> {
     },
     Some(SECOND)
 )]
+#[case::a_routed_handler_that_returns_none_is_the_only_one_tried(
+    Scenario {
+        messages: None,
+        metadata: Metadata::Route("/chat/completions"),
+        handlers: &[(&[1], None), (&[9], Some(SECOND))],
+        routes: &[("/chat/completions", &[1])],
+    },
+    None
+)]
 #[case::a_handler_without_messages_falls_through(
     Scenario {
         messages: None,
