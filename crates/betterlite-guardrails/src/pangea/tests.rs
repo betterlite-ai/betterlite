@@ -7,17 +7,19 @@ use std::time::Duration;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_http::proxy::base_builder;
 use reqwest::StatusCode;
+use secrecy::SecretString;
 
 pub(crate) mod support;
 
+use crate::pangea::config::{PangeaGuardrailConfigModel, PangeaOptionalParams};
+use crate::pangea::error::PangeaGuardrailError;
+use crate::pangea::hooks::{
+    CallbackRegistry, GuardrailResponse, PangeaGuardrail, RequestData, SUPPORTED_EVENT_HOOKS,
+    initialize_guardrail,
+};
 use crate::pangea::tests::support::{
     GUARDRAIL_NAME, Recorder, config, data_with_messages, guardrail, payload, serve, serve_hanging,
     user,
-};
-use crate::pangea::{
-    CallbackRegistry, GuardrailResponse, PangeaGuardrail, PangeaGuardrailConfigModel,
-    PangeaGuardrailError, PangeaOptionalParams, RequestData, SUPPORTED_EVENT_HOOKS,
-    initialize_guardrail,
 };
 
 const ALLOWED: &str = r#"{"result":{"blocked":false,"transformed":false}}"#;
@@ -408,7 +410,7 @@ fn initialize_guardrail_requires_a_guardrail_name() {
 #[test]
 fn guardrail_fields_are_built_from_the_parameters() {
     let config = PangeaGuardrailConfigModel {
-        api_key: Some("config-key".to_owned()),
+        api_key: Some(SecretString::from("config-key".to_owned())),
         api_base: Some("https://pangea.test".to_owned()),
         optional_params: Some(PangeaOptionalParams {
             pangea_input_recipe: Some("in".to_owned()),
