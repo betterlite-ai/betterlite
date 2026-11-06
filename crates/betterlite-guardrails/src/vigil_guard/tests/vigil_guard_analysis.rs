@@ -1,3 +1,6 @@
+use std::fs;
+use std::path::Path;
+
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::vigil_guard::vigil_guard_analysis::{
     Analysis, Decision, Source, analyze,
@@ -111,4 +114,15 @@ async fn analysis_fields_load_from_camel_case_keys() {
 async fn unknown_decision_is_not_valid() {
     let result = analysis(r#"{"decision":"UNKNOWN"}"#);
     assert_eq!(decision(&result), None);
+}
+
+#[test]
+fn replays_the_vigil_guard_analysis_corpus() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/vigil_guard_analysis");
+    let paths: Vec<_> = fs::read_dir(corpus).unwrap().collect();
+    assert!(!paths.is_empty());
+    assert!(paths.into_iter().all(|entry| {
+        let bytes = fs::read(entry.unwrap().path()).unwrap();
+        serde_json::from_slice::<Analysis>(&bytes).is_ok()
+    }));
 }
