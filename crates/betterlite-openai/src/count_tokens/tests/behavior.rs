@@ -184,6 +184,20 @@ async fn null_and_non_string_function_fields_are_sent_as_given() {
 }
 
 #[test]
+fn an_absent_function_field_takes_its_default() {
+    let tool: serde_json::Map<String, serde_json::Value> =
+        serde_json::from_str(r#"{"type":"function","function":{}}"#).unwrap();
+    let flattened = flatten_tools(slice::from_ref(&tool)).unwrap();
+    assert_eq!(
+        serde_json::to_value(flattened).unwrap(),
+        serde_json::from_str::<serde_json::Value>(
+            r#"[{"type":"function","name":"","description":"","parameters":{}}]"#
+        )
+        .unwrap()
+    );
+}
+
+#[test]
 fn an_empty_image_url_string_is_dropped() {
     let blocks: Vec<PyValue> =
         serde_json::from_str(r#"[{"type":"image_url","image_url":""}]"#).unwrap();
