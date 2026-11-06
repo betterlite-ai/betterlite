@@ -1,0 +1,11 @@
+kind: helper
+name: openai-moderation-upstream-400
+call:
+  b3731:
+    apply:
+      settings: {api_key: test-key}
+      inputs: {texts: [hello]}
+      request_data: {model: gpt-4o}
+      answer: {status: 400, headers: {}, body: {error: {message: bad request}}}
+env: {}
+compare: {ignore: []}

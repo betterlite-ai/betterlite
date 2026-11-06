@@ -1,0 +1,14 @@
+kind: helper
+name: dst_gap
+call:
+  duration:
+    calls:
+      - {function: reset, duration: "1d", now: "2024-03-09T12:00:00Z", timezone: "America/New_York", reset_time_of_day: "02:30:00"}
+      - {function: reset, duration: "1d", now: "2024-03-10T06:30:00Z", timezone: "America/New_York", reset_time_of_day: "02:30:00"}
+      - {function: reset, duration: "1h", now: "2024-03-10T06:30:00Z", timezone: "America/New_York"}
+      - {function: reset, duration: "30m", now: "2024-03-10T06:45:00Z", timezone: "America/New_York"}
+      - {function: reset, duration: "1mo", now: "2024-03-01T00:00:00Z", timezone: "America/New_York", reset_time_of_day: "02:30:00"}
+      - {function: duration_in_seconds, duration: "1mo", now: "2024-03-09T12:00:00Z", timezone: "America/New_York"}
+      - {function: duration_in_seconds, duration: "1d", now: "2024-03-09T12:00:00Z", timezone: "America/New_York"}
+env: {}
+compare: {ignore: []}
