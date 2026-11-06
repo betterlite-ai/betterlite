@@ -54,7 +54,7 @@ fn compiles_a_guardrail_program_and_returns_the_source() {
 #[case::await_outside("def f():\n    await g()\n", "await outside async function")]
 #[case::duplicate_parameter("def f(a, a):\n    pass\n", "duplicate parameter")]
 #[case::default_before_plain("def f(a=1, b):\n    pass\n", "non-default parameter")]
-#[case::positional_after_keyword("f(a=1, 2)\n", "positional argument after a keyword")]
+#[case::positional_after_keyword("f(a=1, 2)\n", "positional after a keyword argument")]
 #[case::comprehension_tuple("values = [x for x in a, b]\n", "single iterable")]
 #[case::comparison_python_two("def f(a, b):\n    return a <> b\n", "Python 2")]
 #[case::except_star("try:\n    pass\nexcept* E:\n    pass\n", "except* is not allowed")]

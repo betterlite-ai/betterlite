@@ -1,16 +1,12 @@
-use std::future::Future;
-use std::time::{Duration, Instant};
-
-use tokio::task::JoinSet;
-use tokio::time::timeout as deadline_timeout;
-
 use super::super::deadline;
 use super::error::{
     ExecutionError, ExecutionTimeoutError, SandboxError, SandboxExit, sandbox_error,
 };
 use super::interrupt::cancel_task;
-
-// A late successful result becomes the call's timeout; a failure keeps its own type, as the source's _contain does.
+use std::future::Future;
+use std::time::{Duration, Instant};
+use tokio::task::JoinSet;
+use tokio::time::timeout as deadline_timeout;
 async fn contain<T, E, F>(pending: F, timeout: Duration) -> Result<T, ExecutionError<E>>
 where
     F: Future<Output = Result<T, SandboxError<E>>>,
@@ -25,8 +21,6 @@ where
         Err(error) => Err(sandbox_error(error, timeout)),
     }
 }
-
-// Awaits work on the event loop under a deadline and gives it up at that deadline.
 pub async fn await_with_timeout<T, E, F>(
     pending: F,
     timeout: Duration,

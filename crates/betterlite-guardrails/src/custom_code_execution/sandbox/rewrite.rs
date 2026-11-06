@@ -1,46 +1,34 @@
-use std::cmp::Reverse;
-
-use tree_sitter::{Language, Node, Parser, Tree};
-
 use super::error::CompileError;
-
+use std::cmp::Reverse;
+use tree_sitter::{Language, Node, Parser, Tree};
 mod checks;
 mod rules;
-
 use rules::definitions::definition_rules;
-use rules::{expression_rules, statement_rules};
-
+use rules::{identifier_rules, statement_rules, syntax_rules};
 const MAX_DEPTH: usize = 200;
 const BUDGET_GUARD: &str = "_budget_ok_() and (";
 const ITER_GUARD: &str = "_getiter_((";
-
-// What the walker knows about its enclosing statement: return needs a function, break a loop, await an async one.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Scope {
     pub function_depth: usize,
     pub loop_depth: usize,
     pub is_async: bool,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Function {
     pub name: String,
     pub is_async: bool,
 }
-
-// A pure insertion into the source, so edits at different offsets never invalidate each other.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Edit {
     pub position: usize,
     pub text: String,
 }
-
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct Analysis {
     pub edits: Vec<Edit>,
     pub functions: Vec<Function>,
 }
-
 pub fn parse(source: &str, filename: &str) -> Result<Tree, CompileError> {
     let mut parser = Parser::new();
     let language = Language::from(tree_sitter_python::LANGUAGE);
@@ -51,7 +39,6 @@ pub fn parse(source: &str, filename: &str) -> Result<Tree, CompileError> {
         .parse(source, None)
         .ok_or_else(|| CompileError::syntax(filename, 1, "the Python parser produced no tree"))
 }
-
 pub fn analyze(tree: &Tree, source: &str, filename: &str) -> Result<Analysis, CompileError> {
     let root = tree.root_node();
     if root.has_error() {
@@ -66,7 +53,6 @@ pub fn analyze(tree: &Tree, source: &str, filename: &str) -> Result<Analysis, Co
     walk(root, (source, filename), 0, Scope::default(), &mut analysis)?;
     Ok(analysis)
 }
-
 pub(super) fn first_error(root: Node<'_>) -> Option<Node<'_>> {
     let mut stack = vec![(root, 0_usize)];
     while let Some((node, depth)) = stack.pop() {
@@ -86,7 +72,6 @@ pub(super) fn first_error(root: Node<'_>) -> Option<Node<'_>> {
     }
     None
 }
-
 fn check_node(
     node: Node<'_>,
     source: &str,
@@ -99,7 +84,18 @@ fn check_node(
         return Err(CompileError::forbidden(filename, line, reason.to_owned()));
     }
     statement_rules(node, filename, line, scope)?;
-    expression_rules(node, source, filename, line)?;
+    if node.kind() == "attribute"
+        && let Some(attribute) = node.child_by_field_name("attribute")
+    {
+        rules::check_attribute(attribute, source, filename, line)?;
+    }
+    if node.kind() == "call"
+        && let Some(function) = node.child_by_field_name("function")
+    {
+        rules::check_called(function, source, filename, line)?;
+    }
+    syntax_rules(node, filename, line)?;
+    identifier_rules(node, source, filename, line)?;
     definition_rules(node, source, filename, scope, analysis)?;
     if matches!(
         node.kind(),
@@ -109,7 +105,6 @@ fn check_node(
     }
     Ok(())
 }
-
 fn forbidden(kind: &str) -> Option<&'static str> {
     match kind {
         "class_definition" => Some("class definitions are not allowed in the sandbox"),
@@ -122,7 +117,6 @@ fn forbidden(kind: &str) -> Option<&'static str> {
         _ => None,
     }
 }
-
 fn scope_after(node: Node<'_>, scope: Scope) -> Scope {
     if node.kind() == "function_definition" {
         let mut cursor = node.walk();
@@ -142,8 +136,6 @@ fn scope_after(node: Node<'_>, scope: Scope) -> Scope {
     }
     scope
 }
-
-// While tests and sync for iterables get their guards; an async for keeps its bare iterable, as visit_AsyncFor adds none.
 fn loop_guard(node: Node<'_>, analysis: &mut Analysis) {
     if let Some(condition) = node.child_by_field_name("condition") {
         analysis.edits.push(Edit {
@@ -174,7 +166,6 @@ fn loop_guard(node: Node<'_>, analysis: &mut Analysis) {
         });
     }
 }
-
 fn walk(
     node: Node<'_>,
     location: (&str, &str),
@@ -188,7 +179,7 @@ fn walk(
         return Err(CompileError::syntax(
             filename,
             line,
-            "the guardrail program nests too deeply",
+            "the program nests too deeply",
         ));
     }
     check_node(node, source, filename, scope, analysis)?;
@@ -206,8 +197,6 @@ fn walk(
     }
     Ok(())
 }
-
-// Applies the insertions from the end of the source backwards, so an earlier position stays valid.
 pub fn apply(source: &str, edits: &[Edit], filename: &str) -> Result<String, CompileError> {
     let mut ordered: Vec<&Edit> = edits.iter().collect();
     ordered.sort_by_key(|edit| Reverse(edit.position));
@@ -217,7 +206,7 @@ pub fn apply(source: &str, edits: &[Edit], filename: &str) -> Result<String, Com
             return Err(CompileError::syntax(
                 filename,
                 1,
-                "the rewrite position is not a character boundary",
+                "a rewrite position is not a character boundary",
             ));
         }
         rendered.insert_str(edit.position, &edit.text);

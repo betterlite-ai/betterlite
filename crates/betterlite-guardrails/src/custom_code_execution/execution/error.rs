@@ -1,19 +1,14 @@
 use std::io;
 use std::time::Duration;
-
 use thiserror::Error;
-
-// Raised inside sandboxed code once its budget is spent; the boundary turns it into ExecutionTimeoutError.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 #[error("the sandboxed code used up its wall-clock budget")]
 pub struct ExecutionInterrupted;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 #[error("exceeded the {timeout:?} execution timeout")]
 pub struct ExecutionTimeoutError {
     pub timeout: Duration,
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ExitKind {
     SystemExit,
@@ -21,7 +16,6 @@ pub enum ExitKind {
     BaseException,
     Panic,
 }
-
 impl ExitKind {
     const fn label(self) -> &'static str {
         match self {
@@ -32,15 +26,12 @@ impl ExitKind {
         }
     }
 }
-
-// Sandboxed code raised something outside the exception tree, delivered as an ordinary error so it cannot stop the loop.
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 #[error("{}: {message}", kind.label())]
 pub struct SandboxExit {
     pub kind: ExitKind,
     pub message: String,
 }
-
 impl SandboxExit {
     #[must_use]
     pub const fn system_exit(message: String) -> Self {
@@ -49,7 +40,6 @@ impl SandboxExit {
             message,
         }
     }
-
     #[must_use]
     pub const fn panic(message: String) -> Self {
         Self {
@@ -58,7 +48,6 @@ impl SandboxExit {
         }
     }
 }
-
 #[derive(Debug, Error)]
 pub enum SandboxError<E> {
     #[error(transparent)]
@@ -68,13 +57,11 @@ pub enum SandboxError<E> {
     #[error(transparent)]
     Failed(E),
 }
-
 impl<E> From<ExecutionInterrupted> for SandboxError<E> {
     fn from(interrupted: ExecutionInterrupted) -> Self {
         Self::Interrupted(interrupted)
     }
 }
-
 #[derive(Debug, Error)]
 pub enum ExecutionError<E> {
     #[error(transparent)]
@@ -89,13 +76,11 @@ pub enum ExecutionError<E> {
     #[error("the execution timeout {timeout:?} is too large to schedule")]
     TimeoutOutOfRange { timeout: Duration },
 }
-
 impl<E> From<SandboxError<E>> for ExecutionError<E> {
     fn from(error: SandboxError<E>) -> Self {
         Self::Sandbox(error)
     }
 }
-
 #[must_use]
 pub fn sandbox_error<E>(error: SandboxError<E>, timeout: Duration) -> ExecutionError<E> {
     match error {

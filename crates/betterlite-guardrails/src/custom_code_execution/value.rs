@@ -1,6 +1,4 @@
 use indexmap::IndexMap;
-
-// The Python literals guardrail code builds, without host objects; the runtime converts its values into this.
 #[derive(Debug, Clone, PartialEq)]
 pub enum Value {
     None,
@@ -13,7 +11,6 @@ pub enum Value {
     Tuple(Vec<Self>),
     Dict(IndexMap<String, Self>),
 }
-
 impl Value {
     #[must_use]
     pub const fn type_name(&self) -> &'static str {

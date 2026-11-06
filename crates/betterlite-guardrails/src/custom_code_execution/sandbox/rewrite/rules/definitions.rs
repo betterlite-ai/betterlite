@@ -1,11 +1,8 @@
-use tree_sitter::Node;
-use unicode_normalization::UnicodeNormalization as _;
-
-use crate::custom_code_execution::sandbox::error::CompileError;
-
 use super::super::checks::{NameKind, check_name};
 use super::super::{Analysis, Function, Scope};
-
+use crate::custom_code_execution::sandbox::error::CompileError;
+use tree_sitter::Node;
+use unicode_normalization::UnicodeNormalization as _;
 pub(crate) fn definition_rules(
     node: Node<'_>,
     source: &str,
@@ -14,26 +11,16 @@ pub(crate) fn definition_rules(
     analysis: &mut Analysis,
 ) -> Result<(), CompileError> {
     let line = u32::try_from(node.start_position().row.saturating_add(1)).unwrap_or(u32::MAX);
-    match node.kind() {
-        "function_definition" => definition(node, source, filename, scope, analysis),
-        "argument_list" => arguments(node, filename, line),
-        _ => Ok(()),
+    if node.kind() == "argument_list" {
+        return arguments(node, filename, line);
     }
-}
-
-fn definition(
-    node: Node<'_>,
-    source: &str,
-    filename: &str,
-    scope: Scope,
-    analysis: &mut Analysis,
-) -> Result<(), CompileError> {
-    let line = u32::try_from(node.start_position().row.saturating_add(1)).unwrap_or(u32::MAX);
+    if node.kind() != "function_definition" {
+        return Ok(());
+    }
     let name = node.child_by_field_name("name").map_or("", |field| {
         source.get(field.byte_range()).unwrap_or_default()
     });
-    let nested = node.start_position().column > 0;
-    let kind = if nested {
+    let kind = if node.start_position().column > 0 {
         NameKind::Method
     } else {
         NameKind::Variable
@@ -45,11 +32,12 @@ fn definition(
     if scope.function_depth == 0 {
         analysis.functions.retain(|function| function.name != name);
         let mut cursor = node.walk();
+        let is_async = node
+            .children(&mut cursor)
+            .any(|child| child.kind() == "async");
         analysis.functions.push(Function {
             name: name.nfkc().collect::<String>(),
-            is_async: node
-                .children(&mut cursor)
-                .any(|child| child.kind() == "async"),
+            is_async,
         });
     }
     Ok(())
@@ -89,7 +77,6 @@ fn parameters_rule(
     }
     Ok(())
 }
-
 fn parameter<'source>(node: Node<'_>, source: &'source str) -> (Option<&'source str>, bool) {
     let field = match node.kind() {
         "identifier" => Some((node, false)),
@@ -110,7 +97,6 @@ fn parameter<'source>(node: Node<'_>, source: &'source str) -> (Option<&'source 
         None => (None, false),
     }
 }
-
 fn arguments(node: Node<'_>, filename: &str, line: u32) -> Result<(), CompileError> {
     let mut keyword_seen = false;
     let mut cursor = node.walk();
@@ -122,7 +108,7 @@ fn arguments(node: Node<'_>, filename: &str, line: u32) -> Result<(), CompileErr
                 return Err(CompileError::syntax(
                     filename,
                     line,
-                    "positional argument after a keyword argument",
+                    "positional after a keyword argument",
                 ));
             }
             _ => {}

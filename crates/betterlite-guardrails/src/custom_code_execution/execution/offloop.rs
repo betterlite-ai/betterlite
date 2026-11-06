@@ -1,11 +1,3 @@
-use std::sync::Arc;
-use std::sync::atomic::Ordering;
-use std::thread;
-use std::time::{Duration, Instant};
-
-use tokio::task::JoinSet;
-use tokio::time::timeout as deadline_timeout;
-
 use super::super::deadline;
 use super::super::gate::InterruptGate;
 use super::error::{
@@ -13,13 +5,16 @@ use super::error::{
 };
 use super::interrupt::interrupt_worker;
 use super::settle::settle;
-
-// On cancellation a daemon thread keeps interrupting the worker and logs it stuck, as LiteLLM does.
+use std::sync::Arc;
+use std::sync::atomic::Ordering;
+use std::thread;
+use std::time::{Duration, Instant};
+use tokio::task::JoinSet;
+use tokio::time::timeout as deadline_timeout;
 struct InterruptOnCancel {
     gate: InterruptGate,
     label: String,
 }
-
 impl Drop for InterruptOnCancel {
     fn drop(&mut self) {
         if self.gate.interrupted.load(Ordering::SeqCst) {
@@ -35,8 +30,6 @@ impl Drop for InterruptOnCancel {
         }
     }
 }
-
-// Runs the sandboxed call on a worker thread and awaits it without blocking the event loop.
 pub async fn call_off_loop_with_timeout<T, E, F>(
     work: F,
     timeout: Duration,

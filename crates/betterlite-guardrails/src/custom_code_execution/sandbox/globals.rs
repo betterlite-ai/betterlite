@@ -1,8 +1,5 @@
-use indexmap::IndexMap;
-
 use crate::primitives::registry::{Primitive, RegistryEntry, get_custom_code_primitives};
-
-// The RestrictedPython guards the compiled bytecode expects to find by name.
+use indexmap::IndexMap;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Guard {
     Getattr,
@@ -13,7 +10,6 @@ pub enum Guard {
     Inplacevar,
     BudgetOk,
 }
-
 const GUARDS: [(&str, Guard); 7] = [
     ("_getattr_", Guard::Getattr),
     ("_getitem_", Guard::Getitem),
@@ -23,14 +19,12 @@ const GUARDS: [(&str, Guard); 7] = [
     ("_inplacevar_", Guard::Inplacevar),
     ("_budget_ok_", Guard::BudgetOk),
 ];
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BuiltinKind {
     Safe,
     Limited,
     Utility,
 }
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Global {
     Primitive(Primitive),
@@ -38,12 +32,8 @@ pub enum Global {
     Guard(Guard),
     Builtins,
 }
-
-// The names RestrictedPython's safe_builtins exports, from its Guards module.
 const SAFE_BUILTINS: &str = "__build_class__ None False True Ellipsis abs bool bytes callable chr complex divmod float hash hex id int isinstance issubclass len oct ord pow range repr round slice sorted str tuple zip setattr delattr ArithmeticError AssertionError AttributeError BaseException BufferError BytesWarning DeprecationWarning EOFError EnvironmentError Exception FloatingPointError FutureWarning GeneratorExit IOError ImportError ImportWarning IndentationError IndexError KeyError KeyboardInterrupt LookupError MemoryError NameError NotImplementedError OSError OverflowError PendingDeprecationWarning ReferenceError RuntimeError RuntimeWarning StopIteration SyntaxError SyntaxWarning SystemError SystemExit TabError TypeError UnboundLocalError UnicodeDecodeError UnicodeEncodeError UnicodeError UnicodeTranslateError UnicodeWarning UserWarning ValueError Warning ZeroDivisionError";
-
 const LIMITED_BUILTINS: &[&str] = &["range", "list", "tuple"];
-
 const UTILITY_BUILTINS: &[&str] = &[
     "string",
     "math",
@@ -55,8 +45,6 @@ const UTILITY_BUILTINS: &[&str] = &[
     "test",
     "reorder",
 ];
-
-// `__builtins__`: safe_builtins with limited_builtins' range, list and tuple replacing theirs, plus utility_builtins.
 #[must_use]
 pub fn build_sandbox_builtins() -> IndexMap<&'static str, BuiltinKind> {
     let mut builtins: IndexMap<&'static str, BuiltinKind> = SAFE_BUILTINS
@@ -75,14 +63,11 @@ pub fn build_sandbox_builtins() -> IndexMap<&'static str, BuiltinKind> {
     );
     builtins
 }
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SandboxGlobals {
     pub entries: IndexMap<&'static str, Global>,
     pub builtins: IndexMap<&'static str, BuiltinKind>,
 }
-
-// The execution globals: the primitives registry, the RestrictedPython guards, and the safe builtins namespace.
 #[must_use]
 pub fn build_sandbox_globals() -> SandboxGlobals {
     let mut entries = IndexMap::new();

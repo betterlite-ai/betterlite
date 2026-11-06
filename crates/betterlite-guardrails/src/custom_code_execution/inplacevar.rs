@@ -1,8 +1,5 @@
-use thiserror::Error;
-
 use super::value::Value;
-
-// Every augmented-assignment operator Python's ast can carry, spelled as `_inplacevar_` receives it.
+use thiserror::Error;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum InplaceOp {
     Add,
@@ -19,7 +16,6 @@ pub enum InplaceOp {
     ShiftLeft,
     ShiftRight,
 }
-
 #[derive(Debug, Clone, PartialEq, Eq, Error)]
 pub enum InplaceError {
     #[error("augmented assignment {symbol:?} is not supported")]
@@ -37,7 +33,6 @@ pub enum InplaceError {
     #[error("text or list repetition is longer than the sandbox allows")]
     RepetitionTooLong,
 }
-
 impl InplaceOp {
     pub const ALL: [Self; 13] = [
         Self::Add,
@@ -54,7 +49,6 @@ impl InplaceOp {
         Self::ShiftLeft,
         Self::ShiftRight,
     ];
-
     #[must_use]
     pub const fn symbol(self) -> &'static str {
         match self {
@@ -73,8 +67,6 @@ impl InplaceOp {
             Self::ShiftRight => ">>=",
         }
     }
-
-    // A symbol outside ALL is a SyntaxError, matching the source's `_inplacevar_` raising for an unknown operator.
     pub fn from_symbol(symbol: &str) -> Result<Self, InplaceError> {
         Self::ALL
             .into_iter()
@@ -84,13 +76,9 @@ impl InplaceOp {
             })
     }
 }
-
 mod operators;
-
 use operators::numeric;
 use operators::sequence::sequence;
-
-// `x += y` compiles to `x = _inplacevar_("+=", x, y)`, so this is the function that call resolves to.
 pub fn inplacevar(op: InplaceOp, left: &Value, right: &Value) -> Result<Value, InplaceError> {
     match op {
         InplaceOp::Add | InplaceOp::Multiply | InplaceOp::BitOr | InplaceOp::Modulo => {

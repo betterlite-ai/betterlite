@@ -1,8 +1,3 @@
-use std::sync::Arc;
-use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, sync_channel};
-use std::thread::{self, JoinHandle};
-use std::time::{Duration, Instant};
-
 use super::super::deadline;
 use super::super::gate::InterruptGate;
 use super::error::{
@@ -10,8 +5,10 @@ use super::error::{
 };
 use super::interrupt::interrupt_worker;
 use super::settle::settle;
-
-// Runs the sandboxed call on a worker thread and waits for it from sync code, interrupting a stuck worker.
+use std::sync::Arc;
+use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, sync_channel};
+use std::thread::{self, JoinHandle};
+use std::time::{Duration, Instant};
 pub fn call_with_timeout<T, E, F>(
     work: F,
     timeout: Duration,
@@ -30,7 +27,6 @@ where
     let handle = spawn_worker(work, deadline, Arc::new(gate.clone()), sender, label)?;
     wait_for_worker(&receiver, handle, timeout, &gate, label)
 }
-
 fn spawn_worker<T, E, F>(
     work: F,
     deadline: Instant,
@@ -56,7 +52,6 @@ where
         })
         .map_err(|source| ExecutionError::Spawn { source })
 }
-
 fn wait_for_worker<T, E>(
     receiver: &Receiver<Result<T, SandboxError<E>>>,
     handle: JoinHandle<()>,
@@ -91,8 +86,6 @@ fn wait_for_worker<T, E>(
         }
     }
 }
-
-// Reaps a worker that already delivered its outcome; a panic there cannot change the result.
 fn reap(handle: JoinHandle<()>) {
     if handle.join().is_err() {
         tracing::error!("the guardrail worker panicked after delivering its result");

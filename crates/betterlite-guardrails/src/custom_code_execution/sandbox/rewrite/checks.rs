@@ -1,7 +1,5 @@
 use super::super::error::CompileError;
-
 const RESERVED_NAMES: [&str; 2] = ["builtins", "breakpoint"];
-
 const ALLOWED_METHODS: [&str; 8] = [
     "__init__",
     "__contains__",
@@ -12,7 +10,6 @@ const ALLOWED_METHODS: [&str; 8] = [
     "__gt__",
     "__ge__",
 ];
-
 const INSPECT_ATTRIBUTES: [&str; 20] = [
     "tb_frame",
     "tb_next",
@@ -35,14 +32,12 @@ const INSPECT_ATTRIBUTES: [&str; 20] = [
     "ag_frame",
     "ag_code",
 ];
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum NameKind {
     Variable,
     Method,
     Attribute,
 }
-
 pub(super) fn check_name(
     name: &str,
     filename: &str,
@@ -75,7 +70,6 @@ pub(super) fn check_name(
         Err(CompileError::forbidden(filename, line, message))
     })
 }
-
 pub(super) fn check_call(name: &str, filename: &str, line: u32) -> Result<(), CompileError> {
     match name {
         "exec" => Err(CompileError::forbidden(
