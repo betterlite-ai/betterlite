@@ -225,6 +225,15 @@ async fn unreadable_auth_file_means_login_required(#[case] text: Option<&str>) {
 }
 
 #[tokio::test]
+async fn an_auth_file_that_is_not_utf8_means_login_required() {
+    let fixture = Fixture::new(None, vec![]);
+    fs::create_dir_all(fixture.oauth.auth_file.parent().unwrap()).unwrap();
+    fs::write(&fixture.oauth.auth_file, b"{\"access_token\":\"\xff\"}").unwrap();
+    let error = fixture.oauth.get_access_token().await.unwrap_err();
+    assert!(matches!(error, XaiOauthError::LoginRequired));
+}
+
+#[tokio::test]
 async fn oversized_auth_file_means_login_required() {
     let padding = " ".repeat(DOCUMENT_LIMIT);
     let fixture = Fixture::new(Some(&format!("{STALE}{padding}")), vec![]);
@@ -312,6 +321,8 @@ async fn discovery_supplies_the_token_endpoint() {
     r#"{"authorization_endpoint":"","token_endpoint":"https://auth.x.ai/t"}"#,
     "missing endpoints"
 )]
+#[case::array("[]", "not a valid JSON object")]
+#[case::truncated("{", "not a valid JSON object")]
 #[case::foreign_authorization(
     r#"{"authorization_endpoint":"https://evil.com/a","token_endpoint":"https://auth.x.ai/t"}"#,
     "outside https x.ai"

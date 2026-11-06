@@ -10,7 +10,8 @@ deviations:
     why: Python float() accepts those words and the comparison then never reports expiry, which keeps a dead token in use forever.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/oauth.py#L256-L263
   - what: >-
-      Documents above 1 MiB are rejected, and transport failures, a non-object discovery document and auth-file write
-      failures are typed XaiOauthError values; LiteLLM reads any size and lets httpx errors, AttributeError and OSError escape.
+      Documents above 1 MiB are rejected and a non-UTF-8 auth file reads as no login; transport failures, a non-object
+      discovery document and auth-file write failures are typed XaiOauthError values, where LiteLLM reads any size and
+      lets httpx errors, AttributeError, UnicodeDecodeError and OSError escape.
     why: A fixed bound caps allocation, and a typed failure keeps the authentication envelope instead of a 500.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/oauth.py#L265-L276
