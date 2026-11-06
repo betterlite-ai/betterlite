@@ -51,14 +51,21 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
+        let path = "general_settings.allow_requests_on_db_unavailable";
         let allow_requests = match self.general_settings.allow_requests {
             Entry::Absent | Entry::Null(()) => AllowRequestsOnOutage::Boolean(false),
             Entry::Value(RawValue::Boolean(allow)) => AllowRequestsOnOutage::Boolean(allow),
-            Entry::Value(RawValue::Text(text)) => AllowRequestsOnOutage::Text(resolve_string(
-                text,
-                "general_settings.allow_requests_on_db_unavailable",
-                lookup,
-            )?),
+            Entry::Value(RawValue::Text(text)) => {
+                // LiteLLM resolves an unset os.environ reference to None, which this setting reads as false
+                let unset = text
+                    .strip_prefix("os.environ/")
+                    .is_some_and(|variable| lookup.lookup(variable).is_none());
+                if unset {
+                    AllowRequestsOnOutage::Boolean(false)
+                } else {
+                    AllowRequestsOnOutage::Text(resolve_string(text, path, lookup)?)
+                }
+            }
             Entry::Value(RawValue::Other(_)) => AllowRequestsOnOutage::Unsupported,
         };
         Ok(Settings { allow_requests })
