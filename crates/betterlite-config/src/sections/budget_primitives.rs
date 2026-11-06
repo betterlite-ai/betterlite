@@ -56,14 +56,9 @@ fn text_value<L>(text: &str, path: &str, lookup: &L) -> Result<Option<f64>, Conf
 where
     L: EnvironmentLookup,
 {
+    // LiteLLM keeps a plain string in the global and its type check disables throttling
     let Some(name) = text.strip_prefix("os.environ/") else {
-        let parsed = text
-            .parse::<f64>()
-            .map_err(|source| ConfigError::InvalidFloat {
-                path: path.to_owned(),
-                source,
-            })?;
-        return Ok(Some(parsed));
+        return Ok(None);
     };
     let Some(value) = lookup.lookup(name) else {
         return Err(ConfigError::MissingEnvironment {

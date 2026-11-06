@@ -66,6 +66,8 @@ fn valid_fraction_and_one(
 #[case::zero("0", &[])]
 #[case::negative("-0.5", &[])]
 #[case::above_one("2.5", &[])]
+#[case::quoted_fraction("\"0.5\"", &[])]
+#[case::non_numeric_text("abc", &[])]
 #[case::overflowing_environment(
     "os.environ/THROTTLE_PCT",
     &[("THROTTLE_PCT", "1e999")]

@@ -3,8 +3,9 @@ use betterlite_db::identity_rows::Payload;
 use betterlite_db::identity_rows::user::LiteLLMUserTable;
 use betterlite_db::resource_rows::organization::OrganizationTable;
 use betterlite_db::team_rows::team::LiteLLMTeamTable;
-use chrono::{Datelike as _, FixedOffset, NaiveDateTime, Timelike as _};
+use chrono::{Datelike as _, NaiveDateTime, Timelike as _};
 use serde_json::value::RawValue;
+use speedate::{Date, DateTime as SpeedateDateTime, Time};
 use std::collections::BTreeMap;
 
 use crate::budget_snapshots::lax_datetime::LaxDateTime;
@@ -20,14 +21,14 @@ pub fn carry_team_and_user(
 ) {
     if let Some(team_row) = team {
         token.extra.team_budget_snapshot = Some(TeamBudgetSnapshot {
-            budget_reset_at: team_row.fields.budget_reset_at.map(snapshot_datetime),
+            budget_reset_at: team_row.fields.budget_reset_at.and_then(snapshot_datetime),
             max_budget: team_row.fields.base.max_budget,
         });
         token.view.team_model_max_budget = team_row.fields.model_max_budget.0.clone().map(Payload);
     }
     if let Some(user_row) = user {
         token.extra.user_budget_snapshot = Some(UserBudgetSnapshot {
-            budget_reset_at: user_row.budget_reset_at.map(snapshot_datetime),
+            budget_reset_at: user_row.budget_reset_at.and_then(snapshot_datetime),
             max_budget: user_row.max_budget,
             user_alias: user_row.user_alias.clone(),
         });
@@ -84,56 +85,28 @@ pub fn carried_metadata(
     Ok(merged)
 }
 
-fn snapshot_datetime(timestamp: Timestamp) -> LaxDateTime {
+fn snapshot_datetime(timestamp: Timestamp) -> Option<LaxDateTime> {
     match timestamp {
-        Timestamp::Aware(value) => LaxDateTime::Offset(pydantic_datetime(
-            value.naive_local(),
-            Some(*value.offset()),
-        )),
-        Timestamp::Naive(value) => LaxDateTime::Naive(pydantic_datetime(value, None)),
+        Timestamp::Aware(value) => {
+            let text = speedate_text(value.naive_local(), Some(value.offset().local_minus_utc()))?;
+            Some(LaxDateTime::Offset(text))
+        }
+        Timestamp::Naive(value) => Some(LaxDateTime::Naive(speedate_text(value, None)?)),
     }
 }
 
-fn pydantic_datetime(value: NaiveDateTime, offset: Option<FixedOffset>) -> String {
-    let date = format!(
-        "{:04}-{:02}-{:02}",
-        value.year(),
-        value.month(),
-        value.day()
-    );
-    let clock = format!(
-        "{:02}:{:02}:{:02}",
-        value.hour(),
-        value.minute(),
-        value.second()
-    );
-    let micro = value.and_utc().timestamp_subsec_micros();
-    let fraction = if micro == 0 {
-        String::new()
-    } else {
-        format!(".{micro:06}")
+fn speedate_text(value: NaiveDateTime, tz_offset: Option<i32>) -> Option<String> {
+    let date = Date {
+        year: u16::try_from(value.year()).ok()?,
+        month: u8::try_from(value.month()).ok()?,
+        day: u8::try_from(value.day()).ok()?,
     };
-    let zone = match offset {
-        None => String::new(),
-        Some(zone) if zone.local_minus_utc() == 0_i32 => "Z".to_owned(),
-        Some(zone) => offset_text(zone),
+    let time = Time {
+        hour: u8::try_from(value.hour()).ok()?,
+        minute: u8::try_from(value.minute()).ok()?,
+        second: u8::try_from(value.second()).ok()?,
+        microsecond: value.and_utc().timestamp_subsec_micros(),
+        tz_offset,
     };
-    format!("{date}T{clock}{fraction}{zone}")
-}
-
-fn offset_text(offset: FixedOffset) -> String {
-    let total = offset.local_minus_utc();
-    let sign = if total < 0_i32 { '-' } else { '+' };
-    let magnitude = total.unsigned_abs();
-    let hours = magnitude.checked_div(3_600).unwrap_or(0);
-    let minutes = magnitude
-        .checked_rem(3_600)
-        .and_then(|rest| rest.checked_div(60))
-        .unwrap_or(0);
-    let seconds = magnitude.checked_rem(60).unwrap_or(0);
-    if seconds == 0 {
-        format!("{sign}{hours:02}:{minutes:02}")
-    } else {
-        format!("{sign}{hours:02}:{minutes:02}:{seconds:02}")
-    }
+    Some(SpeedateDateTime { date, time }.to_string())
 }

@@ -47,7 +47,7 @@ fn parse_datetime(text: &str) -> Option<DateTime<FixedOffset>> {
     if normalized.parse::<f64>().is_ok() {
         return None;
     }
-    let config = truncating_config()?;
+    let config = truncating_config();
     if let Ok(parsed) = SpeedateDateTime::parse_str_with_config(&normalized, &config) {
         return fixed_offset(parsed);
     }
@@ -56,12 +56,13 @@ fn parse_datetime(text: &str) -> Option<DateTime<FixedOffset>> {
     fixed_offset(SpeedateDateTime::parse_str_with_config(&midnight, &config).ok()?)
 }
 
-fn truncating_config() -> Option<DateTimeConfig> {
-    let overflow = "truncate".parse().ok()?;
+fn truncating_config() -> DateTimeConfig {
+    // "truncate" is one of the two literals speedate's overflow policy parser accepts
+    let overflow = "truncate".parse().unwrap_or_default();
     let time_config = TimeConfig::builder()
         .microseconds_precision_overflow_behavior(overflow)
         .build();
-    Some(DateTimeConfig::builder().time_config(time_config).build())
+    DateTimeConfig::builder().time_config(time_config).build()
 }
 
 fn fixed_offset(value: SpeedateDateTime) -> Option<DateTime<FixedOffset>> {

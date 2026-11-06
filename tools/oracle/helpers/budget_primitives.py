@@ -1,7 +1,7 @@
 import os
 import time as time_module
 from datetime import datetime, tzinfo
-from typing import Any, TypeAlias, cast
+from typing import TypeAlias, cast
 from unittest.mock import patch
 
 import litellm
@@ -59,10 +59,6 @@ def object_fields(value: Json, name: str) -> dict[str, Json]:
     return value
 
 
-def object_value(value: Json, name: str) -> dict[str, Any]:  # pyright: ignore[reportExplicitAny]
-    return object_fields(value, name)
-
-
 def string_value(value: Json, name: str) -> str:
     if not isinstance(value, str):
         raise ValueError(f"{name} must be a string")
@@ -80,7 +76,7 @@ def injected(value: dict[str, Json]) -> float | None:
 
 
 def token(value: Json) -> UserAPIKeyAuth:
-    return UserAPIKeyAuth(**object_value(value, "token"))  # pyright: ignore[reportAny]
+    return UserAPIKeyAuth.model_validate(object_fields(value, "token"))
 
 
 def state(token_value: UserAPIKeyAuth) -> Json:
@@ -157,12 +153,12 @@ def carry_team_user(value: dict[str, Json]) -> Json:
     team = (
         None
         if raw_team is None
-        else LiteLLM_TeamTable(**object_value(raw_team, "team"))  # pyright: ignore[reportAny]
+        else LiteLLM_TeamTable.model_validate(object_fields(raw_team, "team"))
     )
     user = (
         None
         if raw_user is None
-        else LiteLLM_UserTable(**object_value(raw_user, "user"))  # pyright: ignore[reportAny]
+        else LiteLLM_UserTable.model_validate(object_fields(raw_user, "user"))
     )
     carry_team_and_user_budget_state(valid_token, team, user)
     return state(valid_token)
@@ -170,8 +166,8 @@ def carry_team_user(value: dict[str, Json]) -> Json:
 
 def carry_organization(value: dict[str, Json]) -> Json:
     valid_token = token(required(value, "token"))
-    organization = LiteLLM_OrganizationTable(
-        **object_value(required(value, "organization"), "organization")  # pyright: ignore[reportAny]
+    organization = LiteLLM_OrganizationTable.model_validate(
+        object_fields(required(value, "organization"), "organization")
     )
     carry_organization_budget_state(valid_token, organization)
     return state(valid_token)
