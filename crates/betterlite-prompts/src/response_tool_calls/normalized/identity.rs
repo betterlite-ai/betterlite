@@ -20,14 +20,13 @@ pub(super) fn split_tool_call_ids(calls: &[(Option<&str>, usize)]) -> Vec<Vec<Op
                 SuffixGenerator {
                     call_id: call_id.to_owned(),
                     next: 1,
-                    taken: taken.clone(),
                 },
             );
         }
     }
     calls
         .iter()
-        .map(|&(id, count)| ids_for_call(id, count, &mut suffixes))
+        .map(|&(id, count)| ids_for_call(id, count, &mut suffixes, &taken))
         .collect()
 }
 
@@ -35,6 +34,7 @@ fn ids_for_call(
     id: Option<&str>,
     count: usize,
     suffixes: &mut BTreeMap<String, SuffixGenerator>,
+    taken: &BTreeSet<String>,
 ) -> Vec<Option<String>> {
     let Some(call_id) = id.filter(|value| !value.is_empty()) else {
         return vec![None; count];
@@ -45,7 +45,7 @@ fn ids_for_call(
         && let Some(generator) = suffixes.get_mut(&sanitize(call_id))
     {
         for _ in 1..count {
-            ids.push(Some(generator.next_id()));
+            ids.push(Some(generator.next_id(taken)));
         }
     }
     ids
@@ -54,17 +54,16 @@ fn ids_for_call(
 struct SuffixGenerator {
     call_id: String,
     next: u64,
-    taken: BTreeSet<String>,
 }
 
 impl SuffixGenerator {
-    fn next_id(&mut self) -> String {
+    fn next_id(&mut self, taken: &BTreeSet<String>) -> String {
         loop {
             let call_id = self.call_id.as_str();
             let number = self.next;
             let candidate = format!("{call_id}__concat_{number}");
             self.next = self.next.saturating_add(1);
-            if !self.taken.contains(&sanitize(&candidate)) {
+            if !taken.contains(&sanitize(&candidate)) {
                 return candidate;
             }
         }
