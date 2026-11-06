@@ -41,7 +41,10 @@ pub fn openai_tokenizer_encoding_name(model: &str, catalog: &ModelCatalog) -> En
     if normalized.contains("gpt-4o") {
         return Encoding::O200kBase;
     }
-    encoding::tiktoken_encoding_name(&normalized).unwrap_or(Encoding::Cl100kBase)
+    encoding::tiktoken_encoding_name(&normalized).unwrap_or_else(|| {
+        tracing::debug!("model {normalized} has no tiktoken encoding; using cl100k_base");
+        Encoding::Cl100kBase
+    })
 }
 
 fn is_openai_chat_model(model: &str, catalog: &ModelCatalog) -> bool {
