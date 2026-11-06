@@ -8,7 +8,14 @@ use crate::spec::backlog::Status;
 use crate::spec::task::Task;
 
 pub(crate) fn overlaps(development: &Development, task: &Task) -> Result<Vec<String>, GateError> {
-    let shared = glob_set(&development.catalog.settings.always_in_scope)?;
+    let settings = &development.catalog.settings;
+    let shared = glob_set(
+        &[
+            settings.always_in_scope.as_slice(),
+            &settings.overlap_allowed,
+        ]
+        .concat(),
+    )?;
     let tracked = git(&development.root, &["ls-files"])?;
     let own = glob_set(&task.scope.paths)?;
     let own_probes = probes(&task.scope.paths);

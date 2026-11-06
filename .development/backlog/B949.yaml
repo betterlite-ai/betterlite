@@ -2,7 +2,7 @@ id: B949
 milestone: M5 api families
 title: Responses mcp discovery
 status: todo
-depends_on: [B136, B137, B171, B948, B1087, B905]
+depends_on: [B136, B4654, B4667, B171, B948, B1087, B905]
 file: tasks/B949-responses-mcp-discovery.yaml
 covers:
   - "litellm/responses/mcp/litellm_proxy_mcp_handler.py"
