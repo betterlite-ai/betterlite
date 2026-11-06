@@ -294,8 +294,8 @@ async fn an_expired_record_is_replaced_by_the_refreshed_one() {
     );
 }
 
-#[tokio::test]
-async fn a_missing_api_key_file_refreshes() {
+#[test]
+fn a_missing_api_key_file_refreshes() {
     let (token, output) = logged(|| {
         block_on(async {
             let mut subject = authenticator(
@@ -310,8 +310,8 @@ async fn a_missing_api_key_file_refreshes() {
     assert!(output.contains("WARN no Copilot API key file was found"));
 }
 
-#[tokio::test]
-async fn a_malformed_api_key_file_warns_and_refreshes() {
+#[test]
+fn a_malformed_api_key_file_warns_and_refreshes() {
     let (token, output) = logged(|| {
         block_on(async {
             let mut subject = authenticator(
@@ -520,8 +520,8 @@ async fn get_api_base_returns_the_endpoint_of_an_expired_record() {
     assert_eq!(subject.files.reads, vec![PathBuf::from(API_KEY_PATH)]);
 }
 
-#[tokio::test]
-async fn get_api_base_returns_none_without_a_file() {
+#[test]
+fn get_api_base_returns_none_without_a_file() {
     let (base, output) = logged(|| {
         block_on(async {
             let mut subject = authenticator(Files::given(None, None, false), Vec::new());
@@ -533,8 +533,8 @@ async fn get_api_base_returns_none_without_a_file() {
     assert!(output.contains("WARN no Copilot API key file was found"));
 }
 
-#[tokio::test]
-async fn get_api_base_returns_none_for_a_malformed_file() {
+#[test]
+fn get_api_base_returns_none_for_a_malformed_file() {
     let (base, output) = logged(|| {
         block_on(async {
             let mut subject =
