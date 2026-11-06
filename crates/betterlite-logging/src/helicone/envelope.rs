@@ -127,3 +127,5 @@ pub fn assemble(
         },
     })
 }
+
+mod tests;
