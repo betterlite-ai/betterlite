@@ -175,7 +175,8 @@ fn card() -> FakeCard {
 #[case("Failed to CONNECT to host", true)]
 #[case("Connection reset by peer", true)]
 #[case("Network is unreachable", true)]
-#[case("connect: Refused", true)]
+#[case("ECONNREFUSED", true)]
+#[case("Connect: Failed", true)]
 #[case("401 unauthorized", false)]
 #[case("", false)]
 fn exception_checkers_connection(#[case] error: &str, #[case] expected: bool) {
@@ -258,6 +259,16 @@ fn exception_checkers_localhost(#[case] card_url: &str, #[case] expected: bool) 
     Some("https://agents.example.com"),
     A2AException::Other {
         message: "boom".to_owned(),
+        model: Some("agent-1".to_owned()),
+    },
+)]
+#[case::connection_prefers_card_url_over_api_base(
+    "network down",
+    Some("https://public.example.com/"),
+    Some("https://agents.example.com"),
+    A2AException::Connection {
+        message: "network down".to_owned(),
+        url: Some("https://public.example.com/".to_owned()),
         model: Some("agent-1".to_owned()),
     },
 )]
