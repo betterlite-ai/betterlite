@@ -1,17 +1,14 @@
 use super::*;
-use crate::arguments::json::Object;
 use crate::file_ids::tools::{ResponsesTool, decode_vector_store_ids, update_tools_with_file_ids};
 use rstest::rstest;
 
 fn file_search(vector_ids: &[&str]) -> Vec<ResponsesTool> {
-    let ids = vector_ids
-        .iter()
-        .map(|id| Json::Text((*id).to_owned()))
-        .collect();
-    vec![ResponsesTool {
-        kind: Some("file_search".to_owned()),
-        fields: Object::from_iter([("vector_store_ids".to_owned(), Json::List(ids))]),
-    }]
+    let ids: Vec<String> = vector_ids.iter().map(|id| format!("\"{id}\"")).collect();
+    serde_json::from_str(&format!(
+        r#"[{{"type":"file_search","vector_store_ids":[{}]}}]"#,
+        ids.join(",")
+    ))
+    .expect("test tools decode")
 }
 
 fn vector_ids(tools: &[ResponsesTool]) -> Vec<&str> {

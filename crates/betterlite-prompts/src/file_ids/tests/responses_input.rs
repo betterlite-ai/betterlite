@@ -17,14 +17,22 @@ fn input_file(file_id: &str) -> ResponsesInput {
     }])
 }
 
-fn updated_file_id(input: &ResponsesInput) -> Option<&str> {
-    let ResponsesInput::Items(items) = input else {
+fn updated_file_id(input: &ResponsesInput) -> Option<String> {
+    let Json::List(items) = serialized(input) else {
         return None;
     };
-    let Some(ResponsesContent::Parts(parts)) = items.first()?.content.as_ref() else {
+    let Json::Object(item) = items.first()? else {
         return None;
     };
-    parts.first()?.fields.get("file_id").and_then(Json::as_str)
+    let Json::List(parts) = item.get("content")? else {
+        return None;
+    };
+    let Json::Object(part) = parts.first()? else {
+        return None;
+    };
+    part.get("file_id")
+        .and_then(Json::as_str)
+        .map(str::to_owned)
 }
 
 #[rstest]
@@ -80,5 +88,5 @@ fn model_file_ids_behavior_tests_behavior(
         None => FileIdMapping::default(),
     };
     let updated = update_responses_file_ids(&input_file(file_id), model_id, &mapping);
-    assert_eq!(updated_file_id(&updated), Some(expected));
+    assert_eq!(updated_file_id(&updated).as_deref(), Some(expected));
 }
