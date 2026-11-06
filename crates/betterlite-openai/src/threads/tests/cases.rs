@@ -93,6 +93,11 @@ async fn create_thread_initial_messages() {
 }
 
 async fn retrieve_thread() {
+    retrieve_thread_projection().await;
+    retrieve_thread_failures().await;
+}
+
+async fn retrieve_thread_projection() {
     let (api, transport) = api_with(200, THREAD);
     let reply = api
         .call(options(KEY), None, false, ThreadCall::Retrieve("thread_1"))
@@ -113,6 +118,33 @@ async fn retrieve_thread() {
         transport.seen()[1],
         request("GET", &format!("{BASE}/threads/a%2Fb%20c"), None)
     );
+}
+
+async fn retrieve_thread_failures() {
+    let (api, transport) = api_with(404, r#"{"error":{"message":"No thread found"}}"#);
+    let missing = api
+        .call(
+            options(KEY),
+            None,
+            false,
+            ThreadCall::Retrieve("thread_missing"),
+        )
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(&missing, ThreadsError::Status { status: 404, .. }),
+        "{missing:?}"
+    );
+    let mut anonymous = options(KEY);
+    anonymous.api_key = None;
+    let unauthenticated = api
+        .call(anonymous, None, false, ThreadCall::Retrieve("thread_1"))
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(unauthenticated, ThreadsError::MissingApiKey),
+        "{unauthenticated:?}"
+    );
     for bad in ["", ".."] {
         let error = api
             .call(options(KEY), None, false, ThreadCall::Retrieve(bad))
@@ -126,7 +158,8 @@ async fn retrieve_thread() {
             "{bad:?}"
         );
     }
-    assert_eq!(transport.seen().len(), 2);
+    // Only the rejected status call reached the provider.
+    assert_eq!(transport.seen().len(), 1);
 }
 
 async fn append_multimodal_message() {
