@@ -1,0 +1,30 @@
+kind: helper
+name: inline-media-data-document
+call:
+  inline_media:
+    call: inline
+    mode: concurrent
+    messages:
+      - role: user
+        content:
+          - type: document
+            title: Report
+            source:
+              type: url
+              url: "https://files.example.com/report.pdf"
+              media_type: application/pdf
+          - type: image
+            source:
+              type: url
+              url: "https://files.example.com/photo.png"
+          - type: file
+            file:
+              file_id: "https://files.example.com/notes.txt"
+              filename: notes.txt
+    data_urls:
+      "https://files.example.com/report.pdf": "data:application/pdf;base64,cGRm"
+      "https://files.example.com/photo.png": "data:image/png;base64,cGhvdG8="
+      "https://files.example.com/notes.txt": "data:text/plain;base64,bm90ZXM="
+env: {}
+compare:
+  ignore: []

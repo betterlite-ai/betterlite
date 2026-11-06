@@ -1,0 +1,38 @@
+kind: helper
+name: inline-media-inline-traversal
+call:
+  inline_media:
+    call: inline
+    mode: concurrent
+    should_inline: image_urls
+    messages:
+      - role: system
+        content: plain text
+      - role: user
+        content:
+          - type: text
+            text: hi
+          - type: image_url
+            image_url:
+              url: "https://a.example/1.png"
+          - type: image_url
+            image_url:
+              url: "https://a.example/1.png"
+          - type: image_url
+            image_url:
+              url: "data:image/png;base64,AAAA"
+          - type: document
+            source:
+              type: url
+              url: "https://a.example/doc.pdf"
+      - role: user
+        content:
+          - type: image_url
+            image_url:
+              url: "http://b.example/2.png"
+    data_urls:
+      "https://a.example/1.png": "data:image/png;base64,b25l"
+      "http://b.example/2.png": "data:image/png;base64,dHdv"
+env: {}
+compare:
+  ignore: []

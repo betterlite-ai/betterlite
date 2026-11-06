@@ -1,0 +1,15 @@
+kind: helper
+name: inline-media-base64-classification
+call:
+  inline_media:
+    call: is_base64_encoded
+    values:
+      - "data:image/png;base64,YWJj"
+      - "data:image/png;base64,"
+      - "YWJj"
+      - "data:image/png;base64,!!!bad"
+      - "data:image/png;base64,YR=="
+      - "data:text/plain;base64,YQ=="
+env: {}
+compare:
+  ignore: []
