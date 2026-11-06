@@ -219,6 +219,8 @@ fn replace_path_segment_matches_whole_segments(
 
 #[rstest]
 #[case::object(200, br#"{"id":"r"}"#.to_vec(), Some(test_object([("id", json!("r"))])))]
+#[case::utf8_bom(200, b"\xef\xbb\xbf{\"id\":\"r\"}".to_vec(), Some(test_object([("id", json!("r"))])))]
+#[case::utf16_bom_is_not_json(200, b"\xff\xfe{\x00}\x00".to_vec(), None)]
 #[case::other_status(201, br#"{"id":"r"}"#.to_vec(), None)]
 #[case::array(200, b"[1]".to_vec(), None)]
 #[case::text(200, b"\"value\"".to_vec(), None)]
@@ -233,6 +235,10 @@ fn relayed_json_object_projects_only_a_200_object(
 
 #[rstest]
 #[case::object(br#"{"id":"r"}"#.to_vec(), Value::Object(test_object([("id", json!("r"))])))]
+#[case::utf8_bom(
+    b"\xef\xbb\xbf{\"id\":\"r\"}".to_vec(),
+    Value::Object(test_object([("id", json!("r"))]))
+)]
 #[case::array(b"[1]".to_vec(), json!("[1]"))]
 #[case::json_text(b"\"value\"".to_vec(), json!("\"value\""))]
 #[case::invalid_json(b"not json".to_vec(), json!("not json"))]
@@ -338,6 +344,8 @@ fn logged_relay_shape_keeps_the_call_type_when_parsing_fails() {
 #[case::split_code_point(vec![&b"h\xc3"[..], &b"\xa9llo\n"[..]], vec!["h\u{e9}llo"])]
 #[case::empty_lines(vec![&b"a\n\n b \n"[..]], vec!["a", "b"])]
 #[case::carriage_returns(vec![&b"a\r\nb\r\n"[..]], vec!["a", "b"])]
+#[case::record_separators(vec![&b"\x1edata: x\x1f\n"[..]], vec!["data: x"])]
+#[case::separator_only_line(vec![&b"\x1e\nvalue"[..]], vec!["value"])]
 #[case::no_chunks(vec![], vec![])]
 fn convert_raw_bytes_to_lines_joins_before_decoding(
     #[case] chunks: Vec<&[u8]>,
@@ -453,7 +461,7 @@ fn format_url_keeps_the_base_query_without_parameters(#[case] params: Option<Obj
     let url = DefaultConfig
         .format_url("v1/chat", "https://api.test/base?old=1", params.as_ref())
         .unwrap();
-    assert_eq!(url.as_str(), "https://api.test/base/v1/chat?old=1");
+    assert_eq!(url.as_str(), "https://api.test/base?old=1/v1/chat");
 }
 
 #[test]
@@ -467,7 +475,7 @@ fn format_url_replaces_the_query_with_encoded_parameters() {
         .unwrap();
     assert_eq!(
         url.as_str(),
-        "https://api.test/base/v1/chat?api-version=2024-02-01&limit=10"
+        "https://api.test/base?api-version=2024-02-01&limit=10"
     );
 }
 

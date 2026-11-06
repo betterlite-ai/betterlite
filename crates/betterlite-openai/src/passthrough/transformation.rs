@@ -13,12 +13,18 @@ use types::{
 mod tests;
 pub mod types;
 
+const UTF8_BOM: &[u8] = b"\xef\xbb\xbf";
+
 #[must_use]
 pub fn model_group_from(litellm_params: &Object) -> String {
-    litellm_params
-        .get("litellm_metadata")
-        .and_then(|metadata| PassthroughMetadata::deserialize(metadata).ok())
-        .map_or_else(String::new, |metadata| metadata.model_group)
+    let Some(metadata) = litellm_params.get("litellm_metadata") else {
+        return String::new();
+    };
+    if !metadata.is_object() {
+        return String::new();
+    }
+    PassthroughMetadata::deserialize(metadata)
+        .map_or_else(|_| String::new(), |parsed| parsed.model_group)
 }
 
 #[must_use]
@@ -55,14 +61,14 @@ pub fn relayed_json_object(status_code: u16, body: &[u8]) -> Option<Object> {
     if status_code != 200 {
         return None;
     }
-    match serde_json::from_slice::<Value>(body) {
+    match serde_json::from_slice::<Value>(body.strip_prefix(UTF8_BOM).unwrap_or(body)) {
         Ok(Value::Object(object)) => Some(object),
         Ok(_) | Err(_) => None,
     }
 }
 
 pub fn relayed_body(body: &[u8]) -> Result<RelayedBody, PassthroughError> {
-    match serde_json::from_slice::<Value>(body) {
+    match serde_json::from_slice::<Value>(body.strip_prefix(UTF8_BOM).unwrap_or(body)) {
         Ok(Value::Object(object)) => Ok(RelayedBody::Json(object)),
         Ok(_) | Err(_) => String::from_utf8(body.to_vec())
             .map(RelayedBody::Text)
@@ -97,10 +103,17 @@ pub fn convert_raw_bytes_to_lines(chunks: &[&[u8]]) -> Result<Vec<String>, Passt
     })?;
     Ok(text
         .split('\n')
-        .map(str::trim)
+        .map(|line| line.trim_matches(space_to_strip))
         .filter(|line| !line.is_empty())
         .map(str::to_owned)
         .collect())
+}
+
+const fn space_to_strip(character: char) -> bool {
+    match character {
+        '\u{1c}'..='\u{1f}' => true,
+        _ => character.is_whitespace(),
+    }
 }
 
 pub trait PassthroughStreamCollector {

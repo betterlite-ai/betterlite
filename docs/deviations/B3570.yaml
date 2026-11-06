@@ -24,3 +24,10 @@ deviations:
       Both spellings decode to the same parameter names and values, so a provider sees
       the same query; only the raw text differs, and the workspace keeps one encoder.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/passthrough/transformation.py#L166-L167
+  - what: >-
+      A body encoded as UTF-16 or UTF-32 with a byte-order mark is treated as a non-JSON
+      body, where json.loads detects the encoding and parses it.
+    why: >-
+      JSON is UTF-8 on the wire (RFC 8259). betterlite strips a UTF-8 BOM exactly as
+      json.loads does but does not implement the legacy UTF-16 and UTF-32 detections.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/passthrough/transformation.py#L62-L77
