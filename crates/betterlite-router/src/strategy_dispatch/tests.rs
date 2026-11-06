@@ -10,12 +10,20 @@ use crate::simple_shuffle::Candidate;
 use crate::strategy_dispatch::args::{LatencyArgs, SelectorArgs, UsageArgs};
 use crate::strategy_dispatch::error::StrategyDispatchError;
 use crate::strategy_dispatch::groups::{GroupStrategy, RoutingGroupRoute, RoutingGroups};
-use crate::strategy_dispatch::selector::{SelectorId, SelectorState};
-use crate::strategy_dispatch::service::{
-    ArgsUpdate, OverrideDecision, RequestBindings, ResolutionSource, RoutingRequest, Selection,
-    SelectorCall, StrategyDispatch, StrategyOverride, selector_call,
+use crate::strategy_dispatch::override_resolution::{
+    bind_override_selector, globally_registered_strategies, override_pre_call_target,
+    override_selector, request_override, resolve,
 };
+use crate::strategy_dispatch::selection::{
+    Selection, SelectorCall, read_prefetch_plan, select, selector_call,
+};
+use crate::strategy_dispatch::selector::{SelectorId, SelectorState};
+use crate::strategy_dispatch::service::StrategyDispatch;
 use crate::strategy_dispatch::strategy::RoutingStrategy;
+use crate::strategy_dispatch::types::{
+    ArgsUpdate, OverrideDecision, RequestBindings, ResolutionSource, RoutingRequest,
+    StrategyOverride,
+};
 
 const SEED: u64 = 7;
 
@@ -80,7 +88,6 @@ enum Behavior {
     RequestOverrideHonored,
     RequestOverrideMatchesDefault,
     RequestOverrideIgnored {
-        configured: RoutingStrategy,
         raw: StrategyOverride<'static>,
         raw_text: Option<&'static str>,
     },
@@ -106,9 +113,9 @@ enum Behavior {
 #[case::updated_args_without_selector(Behavior::ApplyArgsNoSelector)]
 #[case::request_override_honored(Behavior::RequestOverrideHonored)]
 #[case::request_override_matches_default(Behavior::RequestOverrideMatchesDefault)]
-#[case::request_override_ignores_lar1(Behavior::RequestOverrideIgnored { configured: RoutingStrategy::UsageBasedRoutingV2, raw: StrategyOverride::Text("lar1"), raw_text: Some("lar1") })]
-#[case::request_override_ignores_unknown(Behavior::RequestOverrideIgnored { configured: RoutingStrategy::UsageBasedRoutingV2, raw: StrategyOverride::Text("nope"), raw_text: Some("nope") })]
-#[case::request_override_ignores_non_text(Behavior::RequestOverrideIgnored { configured: RoutingStrategy::UsageBasedRoutingV2, raw: StrategyOverride::NotText, raw_text: None })]
+#[case::request_override_ignores_lar1(Behavior::RequestOverrideIgnored { raw: StrategyOverride::Text("lar1"), raw_text: Some("lar1") })]
+#[case::request_override_ignores_unknown(Behavior::RequestOverrideIgnored { raw: StrategyOverride::Text("nope"), raw_text: Some("nope") })]
+#[case::request_override_ignores_non_text(Behavior::RequestOverrideIgnored { raw: StrategyOverride::NotText, raw_text: None })]
 #[case::group_resolution(Behavior::Groups)]
 #[case::read_prefetch_plan(Behavior::PrefetchPlan)]
 #[case::binding_skips_globally_registered(Behavior::BindSkipsGlobal)]
@@ -197,29 +204,30 @@ fn strategy_dispatch_behaviors(#[case] behavior: Behavior) {
                 strategy: StrategyOverride::Text("least-busy"),
                 bindings: Some(&mut bindings),
             };
-            let resolution = dispatch.resolve(&mut request, &RoutingGroups::default());
+            let resolution = resolve(&mut dispatch, &mut request, &RoutingGroups::default());
             assert_eq!(resolution.strategy, RoutingStrategy::LeastBusy);
             assert_eq!(resolution.source, ResolutionSource::RequestOverride);
             assert_eq!(
                 bindings.dynamic_callbacks,
                 vec![resolution.selector.unwrap()]
             );
-            let cached = dispatch.override_selector(RoutingStrategy::LeastBusy);
+            let cached = override_selector(&mut dispatch, RoutingStrategy::LeastBusy);
             assert_eq!(cached.selector, resolution.selector);
             assert!(!cached.is_default);
             assert_eq!(
-                dispatch.override_pre_call_target(RoutingStrategy::LeastBusy, cached.selector),
+                override_pre_call_target(&dispatch, RoutingStrategy::LeastBusy, cached.selector),
                 cached.selector
             );
         }
         Behavior::RequestOverrideMatchesDefault => {
             let mut dispatch = new_dispatch(RoutingStrategy::UsageBasedRoutingV2);
             let default = dispatch.state().selector.unwrap().id;
-            let overridden = dispatch.override_selector(RoutingStrategy::UsageBasedRoutingV2);
+            let overridden = override_selector(&mut dispatch, RoutingStrategy::UsageBasedRoutingV2);
             assert_eq!(overridden.selector, Some(default));
             assert!(overridden.is_default);
             let mut bindings = RequestBindings::default();
-            let bound = dispatch.bind_override_selector(
+            let bound = bind_override_selector(
+                &dispatch,
                 RoutingStrategy::UsageBasedRoutingV2,
                 overridden.selector,
                 &RoutingGroups::default(),
@@ -228,23 +236,19 @@ fn strategy_dispatch_behaviors(#[case] behavior: Behavior) {
             assert!(!bound);
             assert!(bindings.dynamic_callbacks.is_empty());
             assert_eq!(
-                dispatch.override_pre_call_target(
+                override_pre_call_target(
+                    &dispatch,
                     RoutingStrategy::UsageBasedRoutingV2,
                     overridden.selector
                 ),
                 None
             );
         }
-        Behavior::RequestOverrideIgnored {
-            configured,
-            raw,
-            raw_text,
-        } => {
-            let dispatch = new_dispatch(configured);
+        Behavior::RequestOverrideIgnored { raw, raw_text } => {
             let OverrideDecision::Ignored {
                 raw: value,
                 supported,
-            } = dispatch.request_override(raw)
+            } = request_override(raw)
             else {
                 panic!("the override must be ignored");
             };
@@ -268,18 +272,18 @@ fn strategy_dispatch_behaviors(#[case] behavior: Behavior) {
         Behavior::Groups => {
             let mut dispatch = new_dispatch(RoutingStrategy::UsageBasedRoutingV2);
             let groups = cheap_groups();
-            let callable = dispatch.resolve(&mut request_for("cheap"), &groups);
+            let callable = resolve(&mut dispatch, &mut request_for("cheap"), &groups);
             assert_eq!(callable.strategy, RoutingStrategy::LeastBusy);
             assert_eq!(
                 callable.source,
                 ResolutionSource::RoutingGroup("cheap".to_owned())
             );
-            let member = dispatch.resolve(&mut request_for("fast"), &groups);
+            let member = resolve(&mut dispatch, &mut request_for("fast"), &groups);
             assert_eq!(member.strategy, RoutingStrategy::LeastBusy);
-            let priority = dispatch.resolve(&mut request_for("prio"), &groups);
+            let priority = resolve(&mut dispatch, &mut request_for("prio"), &groups);
             assert_eq!(priority.strategy, RoutingStrategy::SimpleShuffle);
             assert_eq!(priority.selector, None);
-            let default = dispatch.resolve(&mut request_for("slow"), &groups);
+            let default = resolve(&mut dispatch, &mut request_for("slow"), &groups);
             assert_eq!(default.strategy, RoutingStrategy::UsageBasedRoutingV2);
             assert_eq!(default.source, ResolutionSource::Default);
         }
@@ -287,26 +291,26 @@ fn strategy_dispatch_behaviors(#[case] behavior: Behavior) {
             let mut dispatch = new_dispatch(RoutingStrategy::UsageBasedRoutingV2);
             let deployments = ["one".to_owned(), "two".to_owned()];
             let mut random = StdRng::seed_from_u64(SEED);
-            let plan = dispatch
-                .read_prefetch_plan(
-                    &mut request_for("gpt"),
-                    &RoutingGroups::default(),
-                    &deployments,
-                )
-                .unwrap();
+            let plan = read_prefetch_plan(
+                &mut dispatch,
+                &mut request_for("gpt"),
+                &RoutingGroups::default(),
+                &deployments,
+            )
+            .unwrap();
             assert_eq!(
                 plan.usage_selector,
                 dispatch.state().selector.map(|item| item.id)
             );
             assert_eq!(plan.deployments.len(), 2);
             assert!(
-                dispatch
-                    .read_prefetch_plan(
-                        &mut request_for("gpt"),
-                        &RoutingGroups::default(),
-                        &Vec::<String>::new(),
-                    )
-                    .is_none()
+                read_prefetch_plan(
+                    &mut dispatch,
+                    &mut request_for("gpt"),
+                    &RoutingGroups::default(),
+                    &Vec::<String>::new(),
+                )
+                .is_none()
             );
             let mut simple = new_dispatch(RoutingStrategy::SimpleShuffle);
             let candidates = [Candidate {
@@ -314,22 +318,22 @@ fn strategy_dispatch_behaviors(#[case] behavior: Behavior) {
                 rpm: 0,
                 tpm: 0,
             }];
-            let outcome = simple
-                .select(
-                    &mut request_for("gpt"),
-                    &RoutingGroups::default(),
-                    &candidates,
-                    &mut random,
-                )
-                .unwrap();
+            let outcome = select(
+                &mut simple,
+                &mut request_for("gpt"),
+                &RoutingGroups::default(),
+                &candidates,
+                &mut random,
+            )
+            .unwrap();
             assert_eq!(outcome.selection, Selection::SimpleShuffle { index: 0 });
-            let simple_plan = simple
-                .read_prefetch_plan(
-                    &mut request_for("gpt"),
-                    &RoutingGroups::default(),
-                    &deployments,
-                )
-                .unwrap();
+            let simple_plan = read_prefetch_plan(
+                &mut simple,
+                &mut request_for("gpt"),
+                &RoutingGroups::default(),
+                &deployments,
+            )
+            .unwrap();
             assert_eq!(simple_plan.usage_selector, None);
         }
         Behavior::GroupSelectors => {
@@ -380,11 +384,11 @@ fn strategy_dispatch_behaviors(#[case] behavior: Behavior) {
                 strategy: StrategyOverride::Text("least-busy"),
                 bindings: Some(&mut bindings),
             };
-            let resolution = dispatch.resolve(&mut request, &groups);
+            let resolution = resolve(&mut dispatch, &mut request, &groups);
             assert_eq!(resolution.strategy, RoutingStrategy::LeastBusy);
             assert!(bindings.dynamic_callbacks.is_empty());
             assert_eq!(
-                dispatch.globally_registered_strategies(&groups),
+                globally_registered_strategies(&dispatch, &groups),
                 BTreeSet::from([
                     RoutingStrategy::UsageBasedRoutingV2,
                     RoutingStrategy::LeastBusy,
@@ -482,27 +486,27 @@ fn strategy_dispatch_boundaries(#[case] boundary: Boundary) {
                 tpm: 0,
             }];
             let mut random = StdRng::seed_from_u64(SEED);
-            let outcome = dispatch
-                .select(
-                    &mut request_for("gpt"),
-                    &RoutingGroups::default(),
-                    &candidates,
-                    &mut random,
-                )
-                .unwrap();
+            let outcome = select(
+                &mut dispatch,
+                &mut request_for("gpt"),
+                &RoutingGroups::default(),
+                &candidates,
+                &mut random,
+            )
+            .unwrap();
             assert_eq!(outcome.selection, Selection::SimpleShuffle { index: 0 });
         }
         Boundary::EmptyCandidates => {
             let mut dispatch = new_dispatch(RoutingStrategy::SimpleShuffle);
             let mut random = StdRng::seed_from_u64(SEED);
-            let error = dispatch
-                .select(
-                    &mut request_for("gpt"),
-                    &RoutingGroups::default(),
-                    &[],
-                    &mut random,
-                )
-                .unwrap_err();
+            let error = select(
+                &mut dispatch,
+                &mut request_for("gpt"),
+                &RoutingGroups::default(),
+                &[],
+                &mut random,
+            )
+            .unwrap_err();
             assert!(matches!(error, StrategyDispatchError::Shuffle { .. }));
         }
         Boundary::SelectorCalls => {
@@ -544,7 +548,7 @@ fn strategy_dispatch_boundaries(#[case] boundary: Boundary) {
         }
         Boundary::OverrideWithoutSelector => {
             let mut dispatch = new_dispatch(RoutingStrategy::UsageBasedRoutingV2);
-            let overridden = dispatch.override_selector(RoutingStrategy::SimpleShuffle);
+            let overridden = override_selector(&mut dispatch, RoutingStrategy::SimpleShuffle);
             assert_eq!(overridden.selector, None);
             assert!(!overridden.is_default);
             assert_eq!(
@@ -554,7 +558,7 @@ fn strategy_dispatch_boundaries(#[case] boundary: Boundary) {
                 Some(&None)
             );
             assert_eq!(
-                dispatch.override_pre_call_target(RoutingStrategy::SimpleShuffle, None),
+                override_pre_call_target(&dispatch, RoutingStrategy::SimpleShuffle, None),
                 None
             );
         }
@@ -598,15 +602,15 @@ fn strategy_dispatch_boundaries(#[case] boundary: Boundary) {
         }
         Boundary::InitClearsOverrideCache => {
             let mut dispatch = new_dispatch(RoutingStrategy::UsageBasedRoutingV2);
-            let cached = dispatch.override_selector(RoutingStrategy::CostBasedRouting);
-            let again = dispatch.override_selector(RoutingStrategy::CostBasedRouting);
+            let cached = override_selector(&mut dispatch, RoutingStrategy::CostBasedRouting);
+            let again = override_selector(&mut dispatch, RoutingStrategy::CostBasedRouting);
             assert_eq!(cached.selector, again.selector);
             let state = dispatch.init(RoutingStrategy::LeastBusy, None).unwrap();
             assert_eq!(
                 state.selector.map(|selector| selector.strategy),
                 Some(RoutingStrategy::LeastBusy)
             );
-            let rebuilt = dispatch.override_selector(RoutingStrategy::CostBasedRouting);
+            let rebuilt = override_selector(&mut dispatch, RoutingStrategy::CostBasedRouting);
             assert_ne!(rebuilt.selector, cached.selector);
             assert!(dispatch.selectors[cached.selector.unwrap().0].retired);
         }

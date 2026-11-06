@@ -1,11 +1,15 @@
 use betterlite_router::simple_shuffle::Candidate;
 use betterlite_router::strategy_dispatch::groups::RoutingGroups;
-use betterlite_router::strategy_dispatch::selector::{Selector, SelectorState};
-use betterlite_router::strategy_dispatch::service::{
-    OverrideDecision, RequestBindings, RoutingRequest, Selection, StrategyDispatch,
-    StrategyOverride,
+use betterlite_router::strategy_dispatch::override_resolution::{
+    bind_override_selector, override_selector, request_override,
 };
+use betterlite_router::strategy_dispatch::selection::{Selection, select};
+use betterlite_router::strategy_dispatch::selector::{Selector, SelectorState};
+use betterlite_router::strategy_dispatch::service::StrategyDispatch;
 use betterlite_router::strategy_dispatch::strategy::RoutingStrategy;
+use betterlite_router::strategy_dispatch::types::{
+    OverrideDecision, RequestBindings, RoutingRequest, StrategyOverride,
+};
 use serde::{Deserialize, Serialize};
 
 use crate::router_probes::ProbeOutput;
@@ -149,13 +153,14 @@ fn override_selector_fields(
     dispatch: &mut StrategyDispatch,
     honored: RoutingStrategy,
 ) -> (Option<String>, bool, bool, bool) {
-    let first = dispatch.override_selector(honored);
-    let second = dispatch.override_selector(honored);
+    let first = override_selector(dispatch, honored);
+    let second = override_selector(dispatch, honored);
     let selector_is_default = first.is_default && first.selector.is_some();
     let selector_cached = first.selector == second.selector;
     let selector = first.selector.map(|_| honored.wire_name().to_owned());
     let mut bindings = RequestBindings::default();
-    let bound = dispatch.bind_override_selector(
+    let bound = bind_override_selector(
+        dispatch,
         honored,
         first.selector,
         &RoutingGroups::default(),
@@ -184,8 +189,8 @@ fn reinit(input: &Input) -> Result<Output, OperationError> {
             message: error.to_string(),
         })?;
     let before = dispatch.state();
-    let cached = dispatch.override_selector(RoutingStrategy::CostBasedRouting);
-    let again = dispatch.override_selector(RoutingStrategy::CostBasedRouting);
+    let cached = override_selector(&mut dispatch, RoutingStrategy::CostBasedRouting);
+    let again = override_selector(&mut dispatch, RoutingStrategy::CostBasedRouting);
     let override_cached_before = cached.selector.is_some() && cached.selector == again.selector;
     dispatch
         .init(next, None)
@@ -200,7 +205,7 @@ fn reinit(input: &Input) -> Result<Output, OperationError> {
             .iter()
             .any(|selector| Some(selector.id) == old);
     let new = after.selector.map(|selector| selector.id);
-    let rebuilt = dispatch.override_selector(RoutingStrategy::CostBasedRouting);
+    let rebuilt = override_selector(&mut dispatch, RoutingStrategy::CostBasedRouting);
     Ok(Output::Reinit {
         before: snapshot(&before),
         after: snapshot(&after),
@@ -221,7 +226,7 @@ fn override_scenario(input: &Input) -> Result<Output, OperationError> {
         .routing_strategy
         .as_deref()
         .map_or(StrategyOverride::Absent, StrategyOverride::Text);
-    let decision = dispatch.request_override(raw);
+    let decision = request_override(raw);
     let (override_strategy, ignored, supported) = decision_fields(&decision);
     let (selector, selector_is_default, selector_cached, bound) = match decision {
         OverrideDecision::Honored(honored) => override_selector_fields(&mut dispatch, honored),
@@ -270,16 +275,16 @@ fn dispatch_scenario(
         strategy: StrategyOverride::Absent,
         bindings: None,
     };
-    let outcome = dispatch
-        .select(
-            &mut request,
-            &RoutingGroups::default(),
-            &candidates(&input.deployments),
-            random,
-        )
-        .map_err(|error| OperationError::InvalidRequest {
-            message: error.to_string(),
-        })?;
+    let outcome = select(
+        &mut dispatch,
+        &mut request,
+        &RoutingGroups::default(),
+        &candidates(&input.deployments),
+        random,
+    )
+    .map_err(|error| OperationError::InvalidRequest {
+        message: error.to_string(),
+    })?;
     let index = simple_shuffle_index(outcome.selection)?;
     let deployment =
         input
