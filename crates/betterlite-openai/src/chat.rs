@@ -4,14 +4,25 @@ pub mod execution;
 pub mod provider_error;
 pub mod response;
 
+use std::collections::BTreeMap;
+
+use betterlite_config::sections::mock_response::failure::MockError;
+use betterlite_config::sections::mock_response::selection::{MockPermission, MockPlan};
+use betterlite_config::sections::mock_response::{MockResponse, MockToolCall, UsageDefaults};
+use betterlite_http::proxy::UpstreamResponse;
+use http::HeaderMap;
 use indexmap::IndexMap;
+
+use crate::chat::execution::ChatError;
+use crate::chat::response::ChatResponse;
+use crate::embedding::EmbeddingResponse;
 use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
 use serde_with::skip_serializing_none;
 use thiserror::Error;
 
 // LiteLLM reads these request keys itself and never forwards them, and betterlite does not act on them yet
-const LITELLM_REQUEST_KEYS: [&str; 13] = [
+const LITELLM_REQUEST_KEYS: [&str; 14] = [
     "api_base",
     "api_key",
     "api_version",
@@ -21,7 +32,8 @@ const LITELLM_REQUEST_KEYS: [&str; 13] = [
     "extra_headers",
     "fallbacks",
     "max_retries",
-    "mock_response",
+    "mock_delay",
+    "mock_timeout",
     "num_retries",
     "stream_timeout",
     "timeout",
@@ -36,6 +48,33 @@ pub enum RequestError {
     },
     #[error("betterlite does not support the {name} request parameter yet")]
     Unsupported { name: String },
+}
+
+pub type MockChatBuilder =
+    fn(&MockPlan<'_>, UsageDefaults, &str, &str, u64) -> Result<ChatResponse, MockError>;
+pub type MockEmbeddingBuilder =
+    fn(Option<&MockResponse>, &str) -> Result<EmbeddingResponse, MockError>;
+
+#[derive(Debug, Clone, Default)]
+pub struct MockSettings {
+    pub responses: BTreeMap<String, MockResponse>,
+    pub usage: UsageDefaults,
+    pub permission: MockPermission,
+}
+
+// the shared failure classifier maps these statuses to LiteLLM's type and code; no provider was called
+#[must_use]
+pub fn mock_failure(error: MockError) -> ChatError {
+    if error == MockError::Timeout {
+        return ChatError::Timeout;
+    }
+    ChatError::Provider {
+        response: Box::new(UpstreamResponse {
+            status: error.failure().status.unwrap_or(500),
+            headers: HeaderMap::new(),
+            body: Vec::new(),
+        }),
+    }
 }
 
 #[skip_serializing_none]
@@ -65,6 +104,8 @@ pub struct ChatRequest {
     pub tool_choice: Option<ToolChoice>,
     pub parallel_tool_calls: Option<bool>,
     pub response_format: Option<ResponseFormat>,
+    pub mock_response: Option<MockResponse>,
+    pub mock_tool_calls: Option<Vec<MockToolCall>>,
     // parameters betterlite does not model: LiteLLM forwards unknown ones and filters the OpenAI ones it knows
     #[serde(flatten)]
     pub passthrough: IndexMap<String, Value>,

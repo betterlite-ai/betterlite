@@ -129,3 +129,61 @@ async fn embedding_error_classification(
     assert_eq!(envelope.error.error_type, expected_type);
     assert_eq!(envelope.error.param.as_deref(), expected_param);
 }
+
+#[derive(serde::Deserialize)]
+struct MockEmbeddingReply {
+    model: String,
+    object: String,
+    data: Vec<MockEmbeddingData>,
+    usage: MockEmbeddingUsage,
+}
+
+#[derive(serde::Deserialize)]
+struct MockEmbeddingData {
+    object: String,
+    embedding: Vec<f64>,
+    index: u32,
+}
+
+#[derive(serde::Deserialize)]
+struct MockEmbeddingUsage {
+    #[serde(rename = "prompt_tokens")]
+    prompt: u64,
+    #[serde(rename = "completion_tokens")]
+    completion: u64,
+    #[serde(rename = "total_tokens")]
+    total: u64,
+}
+
+#[tokio::test]
+async fn mock_calls_behavior_tests_behavior() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(
+        "model_list:\n  - {model_name: embed, litellm_params: {model: openai/embed, api_base: 'http://127.0.0.1:1', timeout: 0.1, mock_response: [0.1, 0.2]}}\n",
+    )
+    .expect("config");
+    let executor =
+        chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).expect("executor");
+    let request = Request::post("/v1/embeddings")
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"model":"embed","input":"hello"}"#))
+        .expect("request");
+    let response = embedding_routes(Arc::new(executor))
+        .oneshot(request)
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 8192).await.expect("body");
+    let reply: MockEmbeddingReply = serde_json::from_slice(&body).expect("reply");
+    assert_eq!(reply.model, "embed");
+    assert_eq!(reply.object, "list");
+    let record = reply.data.first().expect("embedding");
+    assert_eq!(record.object, "embedding");
+    assert_eq!(record.embedding, vec![0.1_f64, 0.2_f64]);
+    assert_eq!(record.index, 0);
+    assert_eq!(reply.usage.prompt, 10);
+    assert_eq!(reply.usage.completion, 0);
+    assert_eq!(reply.usage.total, 0);
+}

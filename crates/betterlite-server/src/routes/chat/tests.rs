@@ -130,6 +130,75 @@ fn header<'map>(headers: &'map HeaderMap, name: &str) -> Option<&'map str> {
     headers.get(name).map(|value| value.to_str().unwrap())
 }
 
+#[derive(Deserialize)]
+struct MockAnswer {
+    model: String,
+    choices: Vec<MockChoice>,
+    usage: MockUsage,
+}
+
+#[derive(Deserialize)]
+struct MockChoice {
+    message: MockMessage,
+}
+
+#[derive(Deserialize)]
+struct MockMessage {
+    content: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct MockUsage {
+    #[serde(rename = "prompt_tokens")]
+    prompt: u64,
+    #[serde(rename = "completion_tokens")]
+    completion: u64,
+    #[serde(rename = "total_tokens")]
+    total: u64,
+}
+
+#[tokio::test]
+async fn mock_calls_behavior_tests_behavior() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}/v1", listener.local_addr().unwrap());
+    let source = format!(
+        "model_list:\n  - {{model_name: g, litellm_params: {{model: openai/up, api_base: '{base}', api_key: k, mock_response: hello, timeout: 0.1}}}}\n"
+    );
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(&source)
+    .unwrap();
+    let executor = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(3)).unwrap();
+    let request = Request::post("/v1/chat/completions")
+        .header("content-type", "application/json")
+        .header("x-litellm-call-id", "mock-call")
+        .body(Body::from(r#"{"model":"g","messages":[]}"#))
+        .unwrap();
+    let response = chat_routes_with_call_id(Arc::new(executor), false)
+        .unwrap()
+        .oneshot(request)
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let headers = response.headers().clone();
+    let body = to_bytes(response.into_body(), 8192).await.unwrap();
+    let answer: MockAnswer = serde_json::from_slice(&body).unwrap();
+    assert_eq!(answer.model, "g");
+    assert_eq!(
+        answer
+            .choices
+            .first()
+            .and_then(|choice| choice.message.content.as_deref()),
+        Some("hello")
+    );
+    assert_eq!(answer.usage.prompt, 10);
+    assert_eq!(answer.usage.completion, 20);
+    assert_eq!(answer.usage.total, 30);
+    assert_eq!(header(&headers, "x-litellm-call-id"), Some("mock-call"));
+    assert_eq!(header(&headers, "x-litellm-model-group"), Some("g"));
+}
+
 #[rstest]
 #[case::chat("/chat/completions", r#"{"model":"g","messages":[]}"#, "g")]
 #[case::v1("/v1/chat/completions", r#"{"model":"g","messages":[]}"#, "g")]

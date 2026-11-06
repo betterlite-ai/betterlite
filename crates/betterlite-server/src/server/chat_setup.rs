@@ -1,9 +1,13 @@
 use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::sections::mock_response::selection::MockPermission;
 use betterlite_config::tls::{TlsPolicy, TlsPolicyError};
 use betterlite_config::types::{Config, RoutingStrategy};
+use betterlite_core::mock::chat::response as mock_chat;
+use betterlite_core::mock::embedding::response as mock_embedding;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::pool::{ClientChoice, ClientPool, PoolError};
+use betterlite_openai::chat::MockSettings;
 use betterlite_openai::chat::deployment::{ChatDeployment, DeploymentError, OpenAiDefaults};
 use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::openai_base_config::CatalogCapabilities;
@@ -51,8 +55,32 @@ pub fn chat_executor(
     {
         return Err(ChatSetupError::RoutingStrategy { strategy });
     }
+    let defaults = openai_defaults(config);
+    let deployments = config
+        .model_list
+        .iter()
+        .map(|deployment| ChatDeployment::resolve(deployment, &defaults))
+        .collect::<Result<Vec<_>, _>>()?;
+    let client = outbound_client(config, environment, &deployments)?;
+    let mock = mock_settings(config, &deployments);
+    Ok(ChatExecutor {
+        client,
+        deployments,
+        // the model cost map is not loaded yet, so no model counts as a catalog model
+        catalog: CatalogCapabilities {
+            chat_models: BTreeSet::new(),
+            text_models: BTreeSet::new(),
+        },
+        random: Mutex::new(random),
+        mock,
+        mock_chat,
+        mock_embedding,
+    })
+}
+
+fn openai_defaults(config: &Config) -> OpenAiDefaults {
     let sdk = &config.sections.resource_sdk_settings;
-    let defaults = OpenAiDefaults {
+    OpenAiDefaults {
         request_timeout: config.litellm_settings.request_timeout,
         api_bases: [&sdk.api_base, &sdk.openai_base_url, &sdk.openai_api_base]
             .into_iter()
@@ -68,23 +96,23 @@ pub fn chat_executor(
             .organization
             .clone()
             .or_else(|| sdk.openai_organization.clone()),
-    };
-    let deployments = config
-        .model_list
-        .iter()
-        .map(|deployment| ChatDeployment::resolve(deployment, &defaults))
-        .collect::<Result<Vec<_>, _>>()?;
-    let client = outbound_client(config, environment, &deployments)?;
-    Ok(ChatExecutor {
-        client,
-        deployments,
-        // the model cost map is not loaded yet, so no model counts as a catalog model
-        catalog: CatalogCapabilities {
-            chat_models: BTreeSet::new(),
-            text_models: BTreeSet::new(),
-        },
-        random: Mutex::new(random),
-    })
+    }
+}
+
+fn mock_settings(config: &Config, deployments: &[ChatDeployment]) -> MockSettings {
+    let mock_response = &config.sections.mock_response;
+    let mut responses = BTreeMap::new();
+    for (operator, deployment) in mock_response.deployments.iter().zip(deployments) {
+        if let Some(response) = operator {
+            responses.insert(deployment.model_id.clone(), response.clone());
+        }
+    }
+    MockSettings {
+        responses,
+        usage: mock_response.usage,
+        // auth metadata is not wired yet, so a client mock field is always stripped until B052 and B057
+        permission: MockPermission::default(),
+    }
 }
 
 fn outbound_client(

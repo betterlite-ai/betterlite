@@ -91,6 +91,7 @@ struct ChatRouteState {
 pub(super) struct CallContext<'id> {
     pub(super) id: &'id str,
     pub(super) include_in_body: bool,
+    pub(super) started: Instant,
     errors: &'id ErrorLayer,
 }
 
@@ -109,6 +110,7 @@ async fn chat_completion(
     let mut call = CallContext {
         id: &call_id,
         include_in_body: state.include_call_id,
+        started,
         errors: &state.errors,
     };
     let request = match ChatRequest::parse(&body) {
@@ -125,7 +127,7 @@ async fn chat_completion(
         Ok(deployment) => deployment,
         Err(error) => return failure(&error, call, None),
     };
-    execute_chat(&state, &request, deployment, call, started).await
+    execute_chat(&state, &request, deployment, call).await
 }
 
 fn picked_deployment<'executor>(
@@ -144,10 +146,9 @@ async fn execute_chat(
     request: &ChatRequest,
     deployment: &ChatDeployment,
     call: CallContext<'_>,
-    started: Instant,
 ) -> Response {
     if request.stream {
-        return stream_chat(&state.executor, deployment, request, call, started).await;
+        return stream_chat(&state.executor, deployment, request, call).await;
     }
     match state.executor.send(deployment, request).await {
         Ok(outcome) => {
@@ -156,7 +157,7 @@ async fn execute_chat(
                 deployment,
                 call.id,
                 outcome.upstream_time,
-                started.elapsed(),
+                call.started.elapsed(),
             );
             (headers, Json(outcome.response)).into_response()
         }

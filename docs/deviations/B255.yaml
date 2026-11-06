@@ -1,0 +1,20 @@
+task: B255
+deviations:
+  - what: A mock_response object with stream=true answers 400 naming the misuse instead of LiteLLM's 500 attribute error.
+    why: LiteLLM returns a ModelResponse where the stream path expects an async iterator, so a working setup cannot rely on that failure; a 4xx names the unsupported combination.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L964-L965
+  - what: A mock_response object without usage answers with a zeroed usage block, where LiteLLM omits usage.
+    why: betterlite's ChatResponse always carries usage, and changing that shared record is outside this task.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L964-L965
+  - what: A mock_response object only accepts the completion fields betterlite models, and any other key is an error naming it.
+    why: betterlite models wire values through typed records, so an unmodelled key cannot be carried through unchanged.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L964-L965
+  - what: The Exception - mock_streaming_error sentinel answers with error type internal_server_error, where LiteLLM's envelope carries a null type.
+    why: betterlite's shared failure taxonomy always names a type for a 529; the status and code match LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L953-L958
+  - what: A client-supplied mock_timeout or mock_delay is rejected as an unsupported request parameter even when general_settings dangerously_allow_mock_testing_request_params is true.
+    why: That general setting and its gate are outside this task, and betterlite never forwards a request field it does not act on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L19-L26
+  - what: An integer mock timeout sleeps for the same number of seconds, where LiteLLM's isinstance(float) check skips the sleep for an int.
+    why: The declared timeout type accepts the whole number as seconds, and a skipped sleep is a Python accident no setup can rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L847-L853

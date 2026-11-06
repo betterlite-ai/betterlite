@@ -4,11 +4,16 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
 use std::path::PathBuf;
 
+use crate::chat::MockSettings;
 use crate::chat::deployment::{ChatDeployment, OpenAiDefaults, Provider};
 use crate::chat::execution::ChatExecutor;
+use crate::chat::response::ChatResponse;
 use crate::openai_base_config::CatalogCapabilities;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::sections::mock_response::failure::MockError;
+use betterlite_config::sections::mock_response::selection::MockPlan;
+use betterlite_config::sections::mock_response::{MockResponse, UsageDefaults};
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
 use rand::SeedableRng as _;
@@ -124,6 +129,24 @@ async fn reports_embedding_provider_failures() {
         .expect("responder");
 }
 
+// the executor tests own the mock decision; the real content builders live in betterlite-core
+fn unused_chat(
+    _plan: &MockPlan<'_>,
+    _usage: UsageDefaults,
+    _model: &str,
+    _id: &str,
+    _created: u64,
+) -> Result<ChatResponse, MockError> {
+    Err(MockError::InternalServerError)
+}
+
+fn unused_embedding(
+    _response: Option<&MockResponse>,
+    _model: &str,
+) -> Result<super::EmbeddingResponse, MockError> {
+    Err(MockError::EmbeddingFailure)
+}
+
 fn embedding_executor(base: &str) -> (ChatExecutor, ChatDeployment) {
     let config = ConfigLoader {
         lookup: BTreeMap::new(),
@@ -146,6 +169,9 @@ fn embedding_executor(base: &str) -> (ChatExecutor, ChatDeployment) {
             text_models: BTreeSet::new(),
         },
         random: Mutex::new(StdRng::seed_from_u64(1)),
+        mock: MockSettings::default(),
+        mock_chat: unused_chat,
+        mock_embedding: unused_embedding,
     };
     (executor, deployment)
 }

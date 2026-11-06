@@ -1,18 +1,25 @@
 use std::collections::VecDeque;
 use std::io;
-use std::time::Instant;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use axum::body::{Body, Bytes};
+use axum::http::HeaderMap;
 use axum::response::{IntoResponse as _, Response};
+use betterlite_config::sections::mock_response::UsageDefaults;
+use betterlite_config::sections::mock_response::failure::MockError;
+use betterlite_config::sections::mock_response::selection::{MockPlan, resolve_mock};
+use betterlite_core::mock::chat::{ChatAnswer, answer};
+use betterlite_core::mock::stream::{StreamSpec, chunks, usage_chunk};
 use betterlite_http::error::HttpError;
-use betterlite_http::proxy::StreamResponse;
 use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::chat::deployment::ChatDeployment;
-use betterlite_openai::chat::execution::ChatExecutor;
+use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
+use betterlite_openai::chat::mock_failure;
 use betterlite_openai::stream::SseParser;
-use betterlite_openai::stream::chunk::Chunk;
+use betterlite_openai::stream::chunk::{Choice, Chunk, Delta};
 use futures_util::StreamExt as _;
 use futures_util::stream::{self, BoxStream};
+use uuid::Uuid;
 
 use super::headers::stream_headers;
 use super::{CallContext, failure};
@@ -31,8 +38,17 @@ pub(super) async fn stream_chat(
     deployment: &ChatDeployment,
     request: &ChatRequest,
     call: CallContext<'_>,
-    started: Instant,
 ) -> Response {
+    let mock = resolve_mock(
+        executor.mock.responses.get(&deployment.model_id),
+        executor.mock.permission,
+        request.mock_response.as_ref(),
+        request.mock_tool_calls.as_deref(),
+        request.choice_count,
+    );
+    if let Some(plan) = mock {
+        return mock_stream(executor, deployment, request, &plan, call);
+    }
     let upstream_started = Instant::now();
     match executor.stream(deployment, request).await {
         Ok(upstream) => {
@@ -42,21 +58,112 @@ pub(super) async fn stream_chat(
                 deployment,
                 call.id,
                 upstream_time,
-                started.elapsed(),
+                call.started.elapsed(),
             );
-            let stream_body = Body::from_stream(relay_sse(upstream, request));
+            let stream_body = Body::from_stream(relay_bytes(upstream.body_stream(), request));
             (headers, stream_body).into_response()
         }
         Err(error) => failure(&error, call, Some(deployment)),
     }
 }
 
-fn relay_sse(
-    upstream: StreamResponse,
+fn mock_stream(
+    executor: &ChatExecutor,
+    deployment: &ChatDeployment,
+    request: &ChatRequest,
+    plan: &MockPlan<'_>,
+    call: CallContext<'_>,
+) -> Response {
+    let answer = match answer(plan.response) {
+        Ok(answer) => answer,
+        Err(error) => return failure(&mock_failure(error), call, Some(deployment)),
+    };
+    let ChatAnswer::Content(content) = answer else {
+        // LiteLLM answers a 500 attribute error here; a 400 names the misuse instead
+        return failure(
+            &mock_failure(MockError::ObjectStream),
+            call,
+            Some(deployment),
+        );
+    };
+    let model = request.model.clone().unwrap_or_default();
+    let id = format!("chatcmpl-{}", Uuid::new_v4());
+    let spec = StreamSpec {
+        content,
+        choice_count: plan.choice_count,
+        model: &model,
+        id: &id,
+        created: SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_secs()),
+    };
+    let frames = match mock_frames(&spec, plan.prompt_tokens, executor.mock.usage) {
+        Ok(frames) => frames,
+        Err(source) => return failure(&ChatError::Encode { source }, call, Some(deployment)),
+    };
+    let headers = stream_headers(
+        &HeaderMap::new(),
+        deployment,
+        call.id,
+        Duration::ZERO,
+        call.started.elapsed(),
+    );
+    let body = stream::iter(frames.into_iter().map(Ok)).boxed();
+    (headers, Body::from_stream(relay_bytes(body, request))).into_response()
+}
+
+// LiteLLM's stream wrapper keeps the role on the first delta and on choices after the first
+fn mock_frames(
+    spec: &StreamSpec<'_>,
+    prompt_tokens: Option<u64>,
+    usage: UsageDefaults,
+) -> Result<Vec<Vec<u8>>, serde_json::Error> {
+    let mut frames = Vec::new();
+    for (position, mut chunk) in chunks(spec).enumerate() {
+        if position > 0
+            && let Some(first) = chunk.choices.first_mut()
+        {
+            first.delta.role = None;
+        }
+        // the wrapper drops a chunk with no choice, which is every content chunk when n is zero
+        if chunk.choices.is_empty() {
+            continue;
+        }
+        frames.push(sse_frame(&chunk)?);
+    }
+    frames.push(sse_frame(&Chunk {
+        id: spec.id.to_owned(),
+        object: String::from("chat.completion.chunk"),
+        created: spec.created,
+        model: spec.model.to_owned(),
+        choices: vec![Choice {
+            index: 0,
+            delta: Delta::default(),
+            finish_reason: Some(String::from("stop")),
+            logprobs: None,
+        }],
+        usage: None,
+        system_fingerprint: None,
+        service_tier: None,
+    })?);
+    if let Some(count) = prompt_tokens {
+        frames.push(sse_frame(&usage_chunk(spec, count, usage))?);
+    }
+    frames.push(b"data: [DONE]\n\n".to_vec());
+    Ok(frames)
+}
+
+fn sse_frame(chunk: &Chunk) -> Result<Vec<u8>, serde_json::Error> {
+    let text = serde_json::to_string(chunk)?;
+    Ok(format!("data: {text}\n\n").into_bytes())
+}
+
+fn relay_bytes(
+    upstream: BoxStream<'static, Result<Vec<u8>, HttpError>>,
     request: &ChatRequest,
 ) -> impl futures_util::Stream<Item = Result<Bytes, io::Error>> + use<> {
     let state = RelayState {
-        upstream: upstream.body_stream(),
+        upstream,
         parser: SseParser::default(),
         pending: VecDeque::new(),
         finished: false,

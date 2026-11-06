@@ -1,8 +1,12 @@
 use std::io;
 use std::time::{Duration, Instant};
 
+use betterlite_config::sections::mock_response::failure::MockError;
+use betterlite_config::sections::mock_response::selection::resolve_mock;
+use betterlite_config::sections::mock_response::{MockResponse, MockToolCall};
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::{JsonPost, UpstreamResponse};
+use http::HeaderMap;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -31,6 +35,10 @@ pub struct EmbeddingRequest {
     pub dimensions: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mock_response: Option<MockResponse>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mock_tool_calls: Option<Vec<MockToolCall>>,
     #[serde(flatten)]
     pub passthrough: serde_json::Map<String, Value>,
 }
@@ -125,6 +133,11 @@ pub enum EmbeddingError {
     UnsupportedProvider { model: String },
     #[error("no API key is set for this deployment, in litellm_settings or in OPENAI_API_KEY")]
     MissingApiKey,
+    #[error("the mock embedding answer failed: {source}")]
+    Mock {
+        #[from]
+        source: MockError,
+    },
 }
 
 pub struct EmbeddingOutcome {
@@ -156,6 +169,17 @@ pub async fn send(
     deployment: &ChatDeployment,
     request: &EmbeddingRequest,
 ) -> Result<EmbeddingOutcome, EmbeddingError> {
+    let mock = resolve_mock(
+        executor.mock.responses.get(&deployment.model_id),
+        executor.mock.permission,
+        request.mock_response.as_ref(),
+        request.mock_tool_calls.as_deref(),
+        None,
+    );
+    // LiteLLM mocks an embedding only when mock_response itself is set, unlike the chat path
+    if let Some(response) = mock.and_then(|plan| plan.response) {
+        return mocked_embedding(executor, deployment, request, response);
+    }
     let (model, api_key) = servable(deployment)?;
     let post = post(deployment, request, model, api_key)?;
     let started = Instant::now();
@@ -180,6 +204,24 @@ pub async fn send(
     })
 }
 
+fn mocked_embedding(
+    executor: &ChatExecutor,
+    deployment: &ChatDeployment,
+    request: &EmbeddingRequest,
+    response: &MockResponse,
+) -> Result<EmbeddingOutcome, EmbeddingError> {
+    let answer = (executor.mock_embedding)(Some(response), &deployment.litellm_model)?;
+    Ok(EmbeddingOutcome {
+        response: answer.for_client(request.model.as_deref()),
+        upstream: UpstreamResponse {
+            status: 200,
+            headers: HeaderMap::new(),
+            body: Vec::new(),
+        },
+        upstream_time: Duration::ZERO,
+    })
+}
+
 fn post<'key>(
     deployment: &'key ChatDeployment,
     request: &EmbeddingRequest,
@@ -196,6 +238,9 @@ fn post<'key>(
         });
     };
     object.insert(String::from("model"), Value::String(model.to_owned()));
+    // the mock control fields are read before the call and never reach the provider
+    object.remove("mock_response");
+    object.remove("mock_tool_calls");
     let url = deployment
         .endpoint_for("embeddings")
         .map_err(|source| EmbeddingError::Endpoint { source })?;
