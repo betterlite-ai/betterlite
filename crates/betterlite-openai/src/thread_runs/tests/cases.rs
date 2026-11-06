@@ -438,22 +438,23 @@ async fn stream_comment_frames() {
         frame("thread.run.created", QUEUED),
         frame("thread.run.completed", COMPLETED),
     );
-    assert_eq!(consume_body(&body).await.len(), 2);
+    assert_eq!(stream_result(&body).await.unwrap().len(), 2);
 }
 
 // A tail without its blank line, complete or cut mid-JSON, is never dispatched.
 async fn stream_tail_edges() {
     let unterminated = format!("event: thread.run.completed\ndata: {COMPLETED}");
     let tail = format!("{}{unterminated}", frame("thread.run.created", QUEUED));
-    assert_eq!(consume_body(&tail).await.len(), 1);
+    assert_eq!(stream_result(&tail).await.unwrap().len(), 1);
     let cut = format!(
         "{}event: thread.run.completed\ndata: {{\"id\":",
         frame("thread.run.created", QUEUED)
     );
-    assert_eq!(consume_body(&cut).await.len(), 1);
+    assert_eq!(stream_result(&cut).await.unwrap().len(), 1);
 }
 
-async fn consume_body(body: &str) -> Vec<RunEvent> {
+// Every streaming case goes through one production entry and the same request.
+async fn stream_result(body: &str) -> Result<Vec<RunEvent>, ThreadRunsError> {
     let (api, transport) = harness();
     transport.queue(200, &[("content-type", "text/event-stream")], body);
     let outcome = api
@@ -463,7 +464,9 @@ async fn consume_body(body: &str) -> Vec<RunEvent> {
     let RunInvocation::Streaming(stream) = outcome else {
         panic!("expected a stream manager");
     };
-    stream.consume().await.unwrap()
+    let result = stream.consume().await;
+    assert_eq!(transport.requests(), vec![stream_wire(false)]);
+    result
 }
 
 async fn stream_stops_at_done() {
@@ -472,7 +475,7 @@ async fn stream_stops_at_done() {
         frame("thread.run.created", QUEUED),
         frame("thread.run.completed", COMPLETED),
     );
-    let events = consume_body(&body).await;
+    let events = stream_result(&body).await.unwrap();
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].name(), "thread.run.created");
 }
@@ -590,49 +593,36 @@ async fn stream_timeout_calls_the_handler() {
     );
 }
 
-// The timeout bounds each read, so chunks spaced inside it finish even when their total passes it.
-async fn stream_reads_may_outlast_the_timeout() {
-    let (api, transport) = harness();
-    transport.stream_chunks(trickle_chunks(
-        vec![
-            frame("thread.run.created", QUEUED).into_bytes(),
-            frame("thread.run.in_progress", IN_PROGRESS).into_bytes(),
-            String::from("data: [DONE]\n\n").into_bytes(),
-        ],
-        Duration::from_millis(200),
-    ));
-    let outcome = api
-        .run_thread(call(Facade::SyncStream), &request())
-        .await
-        .unwrap();
-    let RunInvocation::Streaming(mut stream) = outcome else {
-        panic!("expected a stream manager");
-    };
-    stream.read_timeout = Duration::from_millis(300);
-    let events = stream.consume().await.unwrap();
-    assert_eq!(events.len(), 2);
-}
-
-// A gap longer than the timeout fails the stream with a timeout.
-async fn stream_gap_exceeds_the_timeout() {
-    let (api, transport) = harness();
-    transport.stream_chunks(trickle_chunks(
-        vec![
-            frame("thread.run.created", QUEUED).into_bytes(),
-            String::from("data: [DONE]\n\n").into_bytes(),
-        ],
-        Duration::from_secs(1),
-    ));
-    let outcome = api
-        .run_thread(call(Facade::SyncStream), &request())
-        .await
-        .unwrap();
-    let RunInvocation::Streaming(mut stream) = outcome else {
-        panic!("expected a stream manager");
-    };
-    stream.read_timeout = Duration::from_millis(300);
-    let error = stream.consume().await.err().unwrap();
-    assert!(matches!(error, ThreadRunsError::Timeout), "{error}");
+// The timeout bounds each read: chunks spaced inside it finish and a wider gap fails the stream.
+async fn stream_timeout_bounds_each_read() {
+    for (delay, fails) in [
+        (Duration::from_millis(200), false),
+        (Duration::from_secs(1), true),
+    ] {
+        let (api, transport) = harness();
+        transport.stream_chunks(trickle_chunks(
+            vec![
+                frame("thread.run.created", QUEUED).into_bytes(),
+                frame("thread.run.in_progress", IN_PROGRESS).into_bytes(),
+                String::from("data: [DONE]\n\n").into_bytes(),
+            ],
+            delay,
+        ));
+        let outcome = api
+            .run_thread(call(Facade::SyncStream), &request())
+            .await
+            .unwrap();
+        let RunInvocation::Streaming(mut stream) = outcome else {
+            panic!("expected a stream manager");
+        };
+        stream.read_timeout = Duration::from_millis(300);
+        let result = stream.consume().await;
+        if fails {
+            assert!(matches!(result.err().unwrap(), ThreadRunsError::Timeout));
+        } else {
+            assert_eq!(result.unwrap().len(), 2);
+        }
+    }
 }
 
 // The decoded stream is capped, so a provider cannot grow it without bound.
@@ -664,7 +654,7 @@ async fn stream_cap_is_bounded() {
 async fn stream_embedded_event_decodes() {
     let body =
         format!("data: {{\"event\":\"thread.run.created\",\"data\":{QUEUED}}}\n\ndata: [DONE]\n\n");
-    let events = consume_body(&body).await;
+    let events = stream_result(&body).await.unwrap();
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].name(), "thread.run.created");
 }
@@ -672,16 +662,7 @@ async fn stream_embedded_event_decodes() {
 // A frame that set an event or retry field but carried no payload fails as truncated.
 async fn stream_empty_payload_fields() {
     for body in ["event: thread.run.queued\n\n", "retry: 5\n\n", "data\n\n"] {
-        let (api, transport) = harness();
-        transport.queue(200, &[("content-type", "text/event-stream")], body);
-        let outcome = api
-            .run_thread(call(Facade::SyncStream), &request())
-            .await
-            .unwrap();
-        let RunInvocation::Streaming(stream) = outcome else {
-            panic!("expected a stream manager");
-        };
-        let error = stream.consume().await.err().unwrap();
+        let error = stream_result(body).await.err().unwrap();
         assert!(matches!(error, ThreadRunsError::Truncated(_)), "{body:?}");
     }
 }
@@ -696,7 +677,7 @@ async fn stream_step_and_message_records() {
         frame("thread.message.delta", MESSAGE_DELTA),
         frame("thread.run.step.completed", STEP),
     );
-    let events = consume_body(&body).await;
+    let events = stream_result(&body).await.unwrap();
     let step = serde_json::to_value(&events[0]).unwrap();
     assert_eq!(step.pointer("/data/usage"), Some(&Value::Null));
     assert_eq!(step.pointer("/data/metadata"), Some(&Value::Null));
@@ -778,19 +759,9 @@ async fn stream_incremental_events() {
 // CRLF is one terminator, not a line end plus a blank line that would cut the frame; a lone CR is a terminator too.
 async fn stream_terminators_decode() {
     for terminator in ["\r\n", "\r"] {
-        let (api, transport) = harness();
         let body = sse().replace('\n', terminator);
-        transport.queue(200, &[("content-type", "text/event-stream")], &body);
-        let outcome = api
-            .run_thread(call(Facade::SyncStream), &request())
-            .await
-            .unwrap();
-        let RunInvocation::Streaming(stream) = outcome else {
-            panic!("expected a stream manager");
-        };
-        let events = stream.consume().await.unwrap();
+        let events = stream_result(&body).await.unwrap();
         assert_eq!(events.len(), 3, "{terminator:?}");
-        assert_eq!(transport.requests(), vec![stream_wire(false)]);
     }
 }
 
@@ -954,8 +925,7 @@ async fn thread_runs_cases(#[case] scenario: Scenario) {
             stream_delivers_per_chunk().await;
             stream_without_handler_sees_events().await;
             stream_timeout_calls_the_handler().await;
-            stream_reads_may_outlast_the_timeout().await;
-            stream_gap_exceeds_the_timeout().await;
+            stream_timeout_bounds_each_read().await;
             stream_cap_is_bounded().await;
             stream_embedded_event_decodes().await;
             stream_empty_payload_fields().await;
