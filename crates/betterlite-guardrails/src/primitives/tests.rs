@@ -1,7 +1,6 @@
 #![cfg(test)]
 
 use std::future::{Future, ready};
-use std::time::Duration;
 
 use indexmap::IndexMap;
 
@@ -28,6 +27,7 @@ enum Outcome {
     Echo,
     Reply(HttpReply),
     Fail(TransportFailure),
+    ValidationRefused(TransportFailure),
 }
 
 // Answers every request with a JSON description of what the transport was asked to send.
@@ -48,10 +48,21 @@ impl Default for FakeTransport {
 impl FakeTransport {
     fn respond(&self, via: &str, request: &OutboundRequest) -> Result<HttpReply, TransportFailure> {
         match &self.outcome {
-            Outcome::Reply(reply) => return Ok(reply.clone()),
-            Outcome::Fail(failure) => return Err(failure.clone()),
-            Outcome::Echo => {}
+            Outcome::Reply(reply) => Ok(reply.clone()),
+            Outcome::Fail(failure) => Err(failure.clone()),
+            Outcome::Echo | Outcome::ValidationRefused(_) => Ok(Self::echo(via, request)),
         }
+    }
+
+    fn body(body: &RequestBody) -> JsonValue {
+        match body {
+            RequestBody::Empty => JsonValue::Null,
+            RequestBody::Json(fields) => JsonValue::Object(fields.clone()),
+            RequestBody::Text(text) => JsonValue::String(text.clone()),
+        }
+    }
+
+    fn echo(via: &str, request: &OutboundRequest) -> HttpReply {
         let method = match request.method {
             HttpMethod::Get => "GET",
             HttpMethod::Post => "POST",
@@ -59,11 +70,7 @@ impl FakeTransport {
             HttpMethod::Delete => "DELETE",
             HttpMethod::Patch => "PATCH",
         };
-        let body = match &request.body {
-            RequestBody::Empty => JsonValue::Null,
-            RequestBody::Json(fields) => JsonValue::Object(fields.clone()),
-            RequestBody::Text(text) => JsonValue::String(text.clone()),
-        };
+        let body = Self::body(&request.body);
         let headers = request
             .headers
             .iter()
@@ -80,11 +87,20 @@ impl FakeTransport {
             "timeout_ms".to_owned(),
             JsonValue::Number(serde_json::Number::from(millis)),
         );
-        Ok(HttpReply {
+        let connect = u64::try_from(request.connect_timeout.as_millis()).unwrap_or_default();
+        echo.insert(
+            "connect_ms".to_owned(),
+            JsonValue::Number(serde_json::Number::from(connect)),
+        );
+        echo.insert(
+            "redirects".to_owned(),
+            JsonValue::Bool(request.follow_redirects),
+        );
+        HttpReply {
             status: 200,
-            headers: IndexMap::new(),
+            headers: Vec::new(),
             body: json_stringify(&JsonValue::Object(echo)),
-        })
+        }
     }
 }
 
@@ -98,7 +114,7 @@ impl OutboundHttp for FakeTransport {
         url: &str,
     ) -> impl Future<Output = Result<ValidatedDestination, TransportFailure>> + Send {
         ready(match &self.outcome {
-            Outcome::Fail(failure) => Err(failure.clone()),
+            Outcome::Fail(failure) | Outcome::ValidationRefused(failure) => Err(failure.clone()),
             Outcome::Echo | Outcome::Reply(_) => Ok(ValidatedDestination {
                 url: url.replacen("example.com", "93.184.216.34", 1),
                 host_header: "example.com".to_owned(),
@@ -108,17 +124,8 @@ impl OutboundHttp for FakeTransport {
 
     fn safe_get(
         &self,
-        url: &str,
-        headers: Vec<(String, String)>,
-        timeout: Duration,
+        request: OutboundRequest,
     ) -> impl Future<Output = Result<HttpReply, TransportFailure>> + Send {
-        let request = OutboundRequest {
-            method: HttpMethod::Get,
-            url: url.to_owned(),
-            headers,
-            body: RequestBody::Empty,
-            timeout,
-        };
         ready(self.respond("safe_get", &request))
     }
 

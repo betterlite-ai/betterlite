@@ -39,7 +39,7 @@ pub enum RequestBody {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HttpReply {
     pub status: u16,
-    pub headers: IndexMap<String, String>,
+    pub headers: Vec<(String, String)>,
     pub body: String,
 }
 
@@ -56,6 +56,8 @@ pub struct OutboundRequest {
     pub headers: Vec<(String, String)>,
     pub body: RequestBody,
     pub timeout: Duration,
+    pub connect_timeout: Duration,
+    pub follow_redirects: bool,
 }
 
 // The message is what LiteLLM puts in the result's error field, so custom code sees the same text.
@@ -77,9 +79,7 @@ pub trait OutboundHttp: Sync {
 
     fn safe_get(
         &self,
-        url: &str,
-        headers: Vec<(String, String)>,
-        timeout: Duration,
+        request: OutboundRequest,
     ) -> impl Future<Output = Result<HttpReply, TransportFailure>> + Send;
 
     fn send(

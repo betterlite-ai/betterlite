@@ -1,5 +1,3 @@
-use indexmap::IndexMap;
-
 use super::{FakeTransport, HttpReply, Outcome, TransportFailure, run};
 
 const VALIDATING: FakeTransport = FakeTransport {
@@ -12,7 +10,7 @@ const TIMING_OUT: FakeTransport = FakeTransport {
 };
 
 fn reply(status: u16, body: &str) -> Outcome {
-    let headers = IndexMap::from([("x-reply".to_owned(), "yes".to_owned())]);
+    let headers = vec![("x-reply".to_owned(), "yes".to_owned())];
     Outcome::Reply(HttpReply {
         status,
         headers,
@@ -126,10 +124,43 @@ fn reply(status: u16, body: &str) -> Outcome {
     r#"{"status_code":404,"body":"not json","headers":{"x-reply":"yes"},"success":false,"error":null}"#)]
 #[case::status_299_succeeds(FakeTransport { validating: false, outcome: reply(299, "") }, "http_get", r#"["https://example.com/x"]"#, "{}",
     r#""status_code":299,"body":"","headers":{"x-reply":"yes"},"success":true"#)]
-#[case::status_300_fails(FakeTransport { validating: false, outcome: reply(300, "") }, "http_get", r#"["https://example.com/x"]"#, "{}", r#""status_code":300"#)]
+#[case::status_300_fails(FakeTransport { validating: false, outcome: reply(300, "") }, "http_get", r#"["https://example.com/x"]"#, "{}",
+    r#""status_code":300,"body":"","headers":{"x-reply":"yes"},"success":false"#)]
+#[case::repeated_headers_are_lowercased_and_joined(
+    FakeTransport { validating: false, outcome: Outcome::Reply(HttpReply {
+        status: 200,
+        headers: vec![("Set-Cookie".to_owned(), "a=1".to_owned()), ("set-cookie".to_owned(), "b=2".to_owned())],
+        body: String::new(),
+    }) },
+    "http_get",
+    r#"["https://example.com/x"]"#,
+    "{}",
+    r#""headers":{"set-cookie":"a=1, b=2"}"#
+)]
+#[case::get_validation_turns_redirects_off(
+    VALIDATING,
+    "http_get",
+    r#"["https://example.com/x"]"#,
+    "{}",
+    r#""connect_ms":5000,"redirects":false"#
+)]
+#[case::get_without_validation_follows_redirects(
+    FakeTransport::default(),
+    "http_get",
+    r#"["https://example.com/x"]"#,
+    "{}",
+    r#""connect_ms":5000,"redirects":true"#
+)]
+#[case::post_validation_turns_redirects_off(
+    VALIDATING,
+    "http_post",
+    r#"["https://example.com/p"]"#,
+    "{}",
+    r#""connect_ms":5000,"redirects":false"#
+)]
 #[case::refused_destination(FakeTransport { validating: false, outcome: Outcome::Fail(TransportFailure::Refused { message: "private address".to_owned() }) }, "http_get", r#"["https://example.com/x"]"#, "{}",
     r#""success":false,"error":"Blocked URL: private address""#)]
-#[case::refused_by_validation_before_a_post(FakeTransport { validating: true, outcome: Outcome::Fail(TransportFailure::Refused { message: "metadata address".to_owned() }) }, "http_post",
+#[case::refused_by_validation_before_a_post(FakeTransport { validating: true, outcome: Outcome::ValidationRefused(TransportFailure::Refused { message: "metadata address".to_owned() }) }, "http_post",
     r#"["https://example.com/p"]"#, "{}", r#""error":"Blocked URL: metadata address""#)]
 #[case::timeout_names_the_default(
     TIMING_OUT,

@@ -12,6 +12,7 @@ use transport::{
     HttpMethod, HttpReply, OutboundHttp, OutboundRequest, RequestBody, TransportFailure,
 };
 
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
 const DEFAULT_TIMEOUT_SECONDS: f64 = 30.0;
 const MIN_TIMEOUT_SECONDS: f64 = 0.1;
@@ -91,21 +92,31 @@ where
     Transport: OutboundHttp,
 {
     let validating = transport.user_url_validation();
+    let redirects = !validating;
     let mut headers: Vec<(String, String)> = request.headers.into_iter().collect();
     if validating {
         headers.retain(|(name, _)| !name.eq_ignore_ascii_case("host"));
     }
-    if method == HttpMethod::Get {
-        return transport.safe_get(&request.url, headers, timeout).await;
-    }
-    let url = if validating {
-        let destination = transport.validate_url(&request.url).await?;
-        headers.push(("Host".to_owned(), destination.host_header));
-        destination.url
-    } else {
-        request.url
+    let mut outbound = OutboundRequest {
+        method,
+        url: request.url,
+        headers,
+        body: RequestBody::Empty,
+        timeout,
+        connect_timeout: CONNECT_TIMEOUT,
+        follow_redirects: redirects,
     };
-    let body = match request.body {
+    if method == HttpMethod::Get {
+        return transport.safe_get(outbound).await;
+    }
+    if validating {
+        let destination = transport.validate_url(&outbound.url).await?;
+        outbound
+            .headers
+            .push(("Host".to_owned(), destination.host_header));
+        outbound.url = destination.url;
+    }
+    outbound.body = match request.body {
         JsonValue::Null => RequestBody::Empty,
         JsonValue::Object(fields) => RequestBody::Json(fields),
         JsonValue::String(text) => RequestBody::Text(text),
@@ -113,23 +124,22 @@ where
             RequestBody::Text(json_stringify(&other))
         }
     };
-    transport
-        .send(OutboundRequest {
-            method,
-            url,
-            headers,
-            body,
-            timeout,
-        })
-        .await
+    transport.send(outbound).await
 }
 
 fn success(reply: HttpReply) -> HttpResponseResult {
     let body = serde_json::from_str(&reply.body).unwrap_or(JsonValue::String(reply.body));
+    let mut headers: IndexMap<String, String> = IndexMap::new();
+    for (name, value) in reply.headers {
+        headers
+            .entry(name.to_lowercase())
+            .and_modify(|joined| joined.extend([", ", value.as_str()]))
+            .or_insert(value);
+    }
     HttpResponseResult {
         status_code: reply.status,
         body,
-        headers: reply.headers,
+        headers,
         success: (200..300).contains(&reply.status),
         error: None,
     }
