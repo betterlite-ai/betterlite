@@ -1,5 +1,4 @@
 import asyncio
-import json
 import os
 from collections.abc import Awaitable, Callable
 from datetime import datetime
@@ -67,29 +66,18 @@ class Recorder:
         return self.answers.pop(0) if self.answers else {}
 
 
-class FakeResponse:
-    def __init__(self, status: int, body: Json) -> None:
-        self.status_code = status
-        self.text = json.dumps(body)
-        self._body = body
-
-    def json(self) -> Json:
-        return self._body
-
-
-def reply(recorded: Json, url: str) -> FakeResponse:
+def reply(recorded: Json, url: str) -> httpx.Response:
     answer = recorded if isinstance(recorded, dict) else {}
     status = answer.get("status")
     status_code = status if isinstance(status, int) and not isinstance(status, bool) else 200
-    body = answer.get("body")
+    response = httpx.Response(status_code, json=answer.get("body"))
     if status_code not in SUCCESS_STATUSES:
-        response = httpx.Response(status_code, json=body)
         raise httpx.HTTPStatusError(
             f"status {status_code}",
             request=httpx.Request("POST", url),
             response=response,
         )
-    return FakeResponse(status_code, body)
+    return response
 
 
 class FakeSyncClient:
@@ -101,7 +89,7 @@ class FakeSyncClient:
         url: str,
         headers: dict[str, Json] | None = None,
         json: Json = None,
-    ) -> FakeResponse:
+    ) -> httpx.Response:
         return reply(self.recorder.record(url, headers, json), url)
 
 
@@ -114,7 +102,7 @@ class FakeAsyncClient:
         url: str,
         headers: dict[str, Json] | None = None,
         json: Json = None,
-    ) -> FakeResponse:
+    ) -> httpx.Response:
         return reply(self.recorder.record(url, headers, json), url)
 
 
