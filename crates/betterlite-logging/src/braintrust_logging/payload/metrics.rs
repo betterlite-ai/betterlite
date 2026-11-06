@@ -75,13 +75,15 @@ fn usage(event: &SuccessEvent<'_>) -> Result<Option<IndexMap<String, Json>>, Pay
 }
 
 fn token(usage: &IndexMap<String, Json>, name: &'static str) -> Result<Json, PayloadError> {
-    match usage.get(name) {
-        None => Ok(Json::Number(Number::from(0_u8))),
-        Some(Json::Number(number)) if number.is_i64() || number.is_u64() => {
-            Ok(Json::Number(number.clone()))
-        }
-        Some(_) => Err(PayloadError::UsageToken { name }),
+    let Some(value) = usage.get(name) else {
+        return Ok(Json::Number(Number::from(0_u8)));
+    };
+    if let Json::Number(number) = value
+        && (number.is_i64() || number.is_u64())
+    {
+        return Ok(Json::Number(number.clone()));
     }
+    Err(PayloadError::UsageToken { name })
 }
 
 pub(super) fn micros(moment: DateTime<Utc>) -> Result<i64, PayloadError> {

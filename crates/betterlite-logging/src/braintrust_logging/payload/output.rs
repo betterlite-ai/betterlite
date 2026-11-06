@@ -117,14 +117,22 @@ fn finish_reason(
 }
 
 fn index(value: Option<&Json>, kind: ChoiceKind) -> Result<Json, PayloadError> {
-    let zero = Json::Number(Number::from(0_u8));
-    match value {
-        Some(present) if kind == ChoiceKind::Text => Ok(present.clone()),
-        Some(Json::Number(number)) if number.is_i64() || number.is_u64() => {
+    let Some(present) = value.filter(|present| !matches!(present, Json::Null)) else {
+        return Ok(Json::Number(Number::from(0_u8)));
+    };
+    if kind == ChoiceKind::Text {
+        return Ok(present.clone());
+    }
+    match present {
+        Json::Number(number) if number.is_i64() || number.is_u64() => {
             Ok(Json::Number(number.clone()))
         }
-        None | Some(Json::Null) => Ok(zero),
-        Some(_) => Err(PayloadError::WrongType("choices[].index", "an integer")),
+        Json::Null
+        | Json::Bool(_)
+        | Json::Number(_)
+        | Json::Text(_)
+        | Json::List(_)
+        | Json::Object(_) => Err(PayloadError::WrongType("choices[].index", "an integer")),
     }
 }
 

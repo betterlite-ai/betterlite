@@ -127,51 +127,33 @@ async fn run_scenario(scenario: &Scenario, action: Action) -> Result<Value, Box<
     let capture = Capture::new(&scenario.answers);
     let logger = BraintrustLogger::new(settings(scenario)?, capture.clone());
     let path = callback_path(scenario.path)?;
+    let mut ids = Vec::new();
     match action {
         Action::Project => {
-            let ids = resolve_project(scenario, &logger, path).await?;
+            let name = scenario
+                .project_name
+                .as_deref()
+                .ok_or_else(|| helper("ValueError", "project_name must be a string"))?;
+            for _ in 0..scenario.calls {
+                let id = logger
+                    .resolve_project(name, path)
+                    .await
+                    .map_err(|error| helper("BraintrustError", &error.to_string()))?;
+                ids.push(Value::String(id));
+            }
             Ok(json!({"requests": capture.requests(), "project_ids": ids}))
         }
         Action::Log => {
-            log_events(scenario, &logger, path).await?;
+            let event = event(scenario)?;
+            for _ in 0..scenario.calls {
+                logger
+                    .log_success_event(&event, path)
+                    .await
+                    .map_err(|error| helper("BraintrustError", &error.to_string()))?;
+            }
             Ok(json!({"requests": capture.requests()}))
         }
     }
-}
-
-async fn resolve_project(
-    scenario: &Scenario,
-    logger: &BraintrustLogger<Capture>,
-    path: CallbackPath,
-) -> Result<Vec<Value>, Box<HelperError>> {
-    let name = scenario
-        .project_name
-        .as_deref()
-        .ok_or_else(|| helper("ValueError", "project_name must be a string"))?;
-    let mut ids = Vec::new();
-    for _ in 0..scenario.calls {
-        let id = logger
-            .resolve_project(name, path)
-            .await
-            .map_err(|error| helper("BraintrustError", &error.to_string()))?;
-        ids.push(Value::String(id));
-    }
-    Ok(ids)
-}
-
-async fn log_events(
-    scenario: &Scenario,
-    logger: &BraintrustLogger<Capture>,
-    path: CallbackPath,
-) -> Result<(), Box<HelperError>> {
-    let event = event(scenario)?;
-    for _ in 0..scenario.calls {
-        logger
-            .log_success_event(&event, path)
-            .await
-            .map_err(|error| helper("BraintrustError", &error.to_string()))?;
-    }
-    Ok(())
 }
 
 fn event(scenario: &Scenario) -> Result<SuccessEvent<'_>, Box<HelperError>> {

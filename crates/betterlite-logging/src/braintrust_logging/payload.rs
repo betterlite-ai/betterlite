@@ -136,10 +136,13 @@ pub(crate) fn optional_object<'json>(
     value: Option<&'json Json>,
     field: &'static str,
 ) -> Result<Option<&'json IndexMap<String, Json>>, PayloadError> {
-    match value {
-        None | Some(Json::Null) => Ok(None),
-        Some(present) => object(present, field).map(Some),
+    let Some(present) = value else {
+        return Ok(None);
+    };
+    if matches!(present, Json::Null) {
+        return Ok(None);
     }
+    object(present, field).map(Some)
 }
 
 pub(crate) fn metadata_text<'json>(
