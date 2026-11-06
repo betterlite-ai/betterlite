@@ -140,8 +140,8 @@ fn provider_fields(
     native: Option<String>,
 ) -> Result<Option<Json>, PayloadError> {
     let mut provider = match fields.get("provider_specific_fields") {
-        None | Some(Json::Null) => IndexMap::new(),
-        Some(Json::Object(provider)) => provider.clone(),
+        None | Some(Json::Null) => None,
+        Some(Json::Object(provider)) => Some(provider.clone()),
         Some(_) => {
             return Err(PayloadError::WrongType(
                 "choices[].provider_specific_fields",
@@ -150,12 +150,10 @@ fn provider_fields(
         }
     };
     if let Some(reason) = native {
-        provider.insert("native_finish_reason".to_owned(), Json::Text(reason));
+        let target = provider.get_or_insert_with(IndexMap::new);
+        target.insert("native_finish_reason".to_owned(), Json::Text(reason));
     }
-    if provider.is_empty() {
-        return Ok(None);
-    }
-    Ok(Some(Json::Object(provider)))
+    Ok(provider.map(Json::Object))
 }
 
 fn message(value: Option<&Json>) -> Result<Json, PayloadError> {
