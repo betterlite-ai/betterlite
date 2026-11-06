@@ -162,20 +162,8 @@ pub(super) async fn classify(
     if matches!(&error, HFError::RevisionNotFound { .. }) {
         return HubError::RevisionNotFound(repository.to_owned(), revision.to_owned(), error);
     }
-    if let HFError::EntryNotFound { context, .. } = &error {
-        let code = context
-            .as_ref()
-            .and_then(|found| found.error_code.as_deref());
-        if code == Some("RepoNotFound") {
-            return HubError::RepoNotFound(repository.to_owned(), error);
-        }
-        if code == Some("RevisionNotFound") {
-            return HubError::RevisionNotFound(repository.to_owned(), revision.to_owned(), error);
-        }
-        if code == Some("EntryNotFound") {
-            return HubError::EntryNotFound(repository.to_owned(), error);
-        }
-        return missing_entry(client, error, repository, start).await;
+    if matches!(&error, HFError::EntryNotFound { .. }) {
+        return missing_entry(client, error, repository, revision, start).await;
     }
     if matches!(&error, HFError::RepoNotFound { .. }) {
         return HubError::RepoNotFound(repository.to_owned(), error);
@@ -196,17 +184,26 @@ pub(super) async fn classify(
     }
     HubError::Download(repository.to_owned(), error)
 }
+// hf-hub turns a 404 on the file HEAD into EntryNotFound without the response context, so huggingface_hub's X-Error-Code is gone; the repository and then the revision say which of the three errors this is
 async fn missing_entry(
     client: &HFClient,
     error: HFError,
     repository: &str,
+    revision: &str,
     start: Duration,
 ) -> HubError {
     let (owner, name) = split_id(repository);
     let repo = client.model(owner.to_owned(), name.to_owned());
-    let probe = repo.exists().send();
+    match within(start, repo.exists().send()).await {
+        Ok(Ok(true)) => {}
+        Ok(Ok(false)) => return HubError::RepoNotFound(repository.to_owned(), error),
+        _ => return HubError::EntryNotFound(repository.to_owned(), error),
+    }
+    let probe = repo.revision_exists().revision(revision).send();
     match within(start, probe).await {
-        Ok(Ok(false)) => HubError::RepoNotFound(repository.to_owned(), error),
+        Ok(Ok(false)) => {
+            HubError::RevisionNotFound(repository.to_owned(), revision.to_owned(), error)
+        }
         _ => HubError::EntryNotFound(repository.to_owned(), error),
     }
 }

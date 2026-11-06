@@ -152,14 +152,26 @@ async fn unauthorized_is_reported() {
 #[tokio::test]
 async fn missing_revision_and_file_do_not_fall_back() {
     let server = Server::start(|request| {
-        let code = if request.path.contains("missing-revision") {
-            "RevisionNotFound"
-        } else {
-            "EntryNotFound"
-        };
+        let revision = request.path.starts_with("/api/models/owner/name/revision/");
+        let existing = request.path == "/api/models/owner/name"
+            || (revision && !request.path.ends_with("missing-revision"));
+        if existing {
+            return Reply::Response {
+                status: 200,
+                headers: Vec::new(),
+                body: b"{}".to_vec(),
+            };
+        }
+        if revision {
+            return Reply::Response {
+                status: 404,
+                headers: Vec::new(),
+                body: b"{}".to_vec(),
+            };
+        }
         Reply::Response {
             status: 404,
-            headers: vec![("X-Error-Code", code.to_owned())],
+            headers: vec![("X-Error-Code", "EntryNotFound".to_owned())],
             body: Vec::new(),
         }
     })
@@ -171,12 +183,12 @@ async fn missing_revision_and_file_do_not_fall_back() {
         hub.download(REPO, "missing-revision", None).await,
         Err(HubError::RevisionNotFound(..))
     ));
-    assert_eq!(server.request_count(), 1);
+    assert_eq!(server.request_count(), 3);
     assert!(matches!(
         hub.download(REPO, "main", None).await,
         Err(HubError::EntryNotFound(..))
     ));
-    assert_eq!(server.request_count(), 2);
+    assert_eq!(server.request_count(), 6);
 }
 
 #[tokio::test]
@@ -221,7 +233,7 @@ async fn missing_repository_without_a_cached_file_is_reported() {
         downloader(&settings).download(REPO, "main", None).await,
         Err(HubError::RepoNotFound(..))
     ));
-    assert_eq!(server.request_count(), 1);
+    assert_eq!(server.request_count(), 2);
 }
 
 #[tokio::test]
