@@ -113,6 +113,7 @@ async fn explicit_initialize_rejects_a_different_server_version() {
 #[tokio::test]
 async fn callbacks_control_the_advertised_capabilities() {
     let config = make_config(|value| {
+        value.protocol_version = legacy("2025-06-18");
         value.callbacks = BTreeSet::from([Callback::Sampling, Callback::Elicitation]);
     });
     let expected = ClientCapabilities {
