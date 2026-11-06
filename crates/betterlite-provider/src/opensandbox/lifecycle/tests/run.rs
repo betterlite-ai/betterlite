@@ -3,10 +3,11 @@ use std::time::Duration;
 use http::Method;
 use secrecy::SecretString;
 
-use super::super::super::helpers::{OpenSandboxError, RequestTimeout};
+use super::super::super::helpers::{OpenSandbox, OpenSandboxError, RequestTimeout};
 use super::super::{ContainerRef, LifecycleError};
 use super::support::{
-    block_on, cached_handle, environment, header, plain_handle, run_request, sandbox,
+    ScriptedHttp, StepClock, block_on, cached_handle, environment, header, plain_handle,
+    run_request, sandbox,
 };
 
 const ENDPOINT: &str =
@@ -227,4 +228,106 @@ fn run_forwards_the_server_proxy_flag_when_it_reacquires_the_endpoint() {
         sandbox.http.request(0).url.as_str(),
         "http://stored.example/sandboxes/sbx_1/endpoints/44772?use_server_proxy=true"
     );
+}
+
+const SCHEMELESS: &str =
+    r#"{"endpoint":"10.0.0.5:44772","headers":{"X-Execd-Token":"execd-token"}}"#;
+
+#[test]
+fn run_borrows_the_https_scheme_from_the_stored_base() {
+    let sandbox = sandbox(&[(200, SCHEMELESS), (200, OUTPUT)], environment(&[]));
+    let handle = plain_handle(Some("https://sandbox.example"), Some("stored-key"));
+    block_on(sandbox.arun_code(run_request(ContainerRef::Handle(&handle), "1"), None)).unwrap();
+
+    assert_eq!(
+        sandbox.http.request(1).url.as_str(),
+        "https://10.0.0.5:44772/code"
+    );
+}
+
+#[test]
+fn run_borrows_the_scheme_from_the_handle_domain() {
+    let sandbox = sandbox(&[(200, OUTPUT)], environment(&[]));
+    let mut handle = cached_handle("http://stored.example", "stored-key", "10.0.0.5:44772");
+    handle.container.domain = Some("https://domain.example".to_owned());
+    handle.container.hidden_params.api_base = None;
+    block_on(sandbox.arun_code(run_request(ContainerRef::Cached(&handle), "1"), None)).unwrap();
+
+    assert_eq!(
+        sandbox.http.request(0).url.as_str(),
+        "https://10.0.0.5:44772/code"
+    );
+}
+
+#[test]
+fn run_borrows_the_scheme_from_the_api_base_argument() {
+    let sandbox = sandbox(&[(200, OUTPUT)], environment(&[]));
+    let mut handle = cached_handle("http://stored.example", "stored-key", "10.0.0.5:44772");
+    handle.container.domain = None;
+    handle.container.hidden_params.api_base = None;
+    let mut request = run_request(ContainerRef::Cached(&handle), "1");
+    request.options.api_base = Some("https://argument.example");
+    block_on(sandbox.arun_code(request, None)).unwrap();
+
+    assert_eq!(
+        sandbox.http.request(0).url.as_str(),
+        "https://10.0.0.5:44772/code"
+    );
+}
+
+#[test]
+fn the_endpoint_headers_replace_the_execution_defaults() {
+    let sandbox = sandbox(&[(200, OUTPUT)], environment(&[]));
+    let mut handle = cached_handle("http://stored.example", "stored-key", "http://execd.local");
+    handle
+        .execd_headers
+        .insert("Accept".to_owned(), SecretString::from("application/json"));
+    handle
+        .execd_headers
+        .insert("Cache-Control".to_owned(), SecretString::from("no-store"));
+    block_on(sandbox.arun_code(run_request(ContainerRef::Cached(&handle), "1"), None)).unwrap();
+
+    let request = sandbox.http.request(0);
+    assert_eq!(header(&request, "accept"), Some("application/json"));
+    assert_eq!(header(&request, "cache-control"), Some("no-store"));
+    assert_eq!(request.headers.get_all("accept").iter().count(), 1);
+}
+
+#[test]
+fn run_uses_the_supplied_client_for_a_bare_id() {
+    let pool = ScriptedHttp::new(&[]);
+    let caller = ScriptedHttp::new(&[(200, ENDPOINT), (200, OUTPUT)]);
+    let sandbox = OpenSandbox {
+        http: pool,
+        environment: environment(&[]),
+        clock: StepClock::new(),
+    };
+    let api_key = SecretString::from("key-1");
+    let mut request = run_request(ContainerRef::Id("sbx_1"), "1");
+    request.options.api_base = Some("http://sandbox.example");
+    request.options.api_key = Some(&api_key);
+    block_on(sandbox.arun_code(request, Some(&caller))).unwrap();
+
+    assert!(sandbox.http.requests().is_empty());
+    assert_eq!(caller.requests().len(), 2);
+}
+
+#[test]
+fn run_uses_the_supplied_client_for_a_cached_handle() {
+    let pool = ScriptedHttp::new(&[]);
+    let caller = ScriptedHttp::new(&[(200, OUTPUT)]);
+    let sandbox = OpenSandbox {
+        http: pool,
+        environment: environment(&[]),
+        clock: StepClock::new(),
+    };
+    let handle = cached_handle("http://stored.example", "stored-key", "http://execd.local");
+    block_on(sandbox.arun_code(
+        run_request(ContainerRef::Cached(&handle), "1"),
+        Some(&caller),
+    ))
+    .unwrap();
+
+    assert!(sandbox.http.requests().is_empty());
+    assert_eq!(caller.requests().len(), 1);
 }

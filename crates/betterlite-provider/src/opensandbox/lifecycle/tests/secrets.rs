@@ -1,3 +1,5 @@
+use secrecy::SecretString;
+
 use super::super::ContainerRef;
 use super::support::{block_on, cached_handle, environment, run_request, sandbox};
 
@@ -16,10 +18,14 @@ fn handle_debug_redacts_the_endpoint_headers() {
 #[test]
 fn the_execution_request_hides_the_endpoint_header_value() {
     let sandbox = sandbox(&[(200, OUTPUT)], environment(&[]));
-    let handle = cached_handle("http://stored.example", "stored-key", "http://execd.local");
+    let mut handle = cached_handle("http://stored.example", "stored-key", "http://execd.local");
+    handle.execd_headers.insert(
+        "X-Execd-Token".to_owned(),
+        SecretString::from("secret-value"),
+    );
     block_on(sandbox.arun_code(run_request(ContainerRef::Cached(&handle), "1"), None)).unwrap();
 
     let printed = format!("{:?}", sandbox.http.request(0).headers);
     assert!(printed.contains("Sensitive"));
-    assert!(!printed.contains("execd-token"));
+    assert!(!printed.contains("secret-value"));
 }

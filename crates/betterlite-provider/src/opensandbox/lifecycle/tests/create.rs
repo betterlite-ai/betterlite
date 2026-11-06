@@ -429,3 +429,34 @@ fn create_never_panics_on_an_unusable_response_body() {
         LifecycleError::Sandbox(OpenSandboxError::Decode { .. })
     ));
 }
+
+#[test]
+fn create_sends_no_network_policy_when_the_caller_allows_internet_access() {
+    let sandbox = sandbox(&[(200, RUNNING), (200, ENDPOINT)], environment(&[]));
+    let api_key = SecretString::from("key-1");
+    let mut request = create_request("http://sandbox.example", &api_key);
+    request.allow_internet_access = Some(true);
+    block_on(sandbox.acreate_sandbox(request, None)).unwrap();
+
+    let body = String::from_utf8(sandbox.http.request(0).body).unwrap();
+    assert!(!body.contains("networkPolicy"));
+    assert!(body.contains(r#""timeout":300"#));
+}
+
+#[test]
+fn create_waits_through_the_supplied_client() {
+    let pool = ScriptedHttp::new(&[]);
+    let caller = ScriptedHttp::new(&[(200, PENDING), (200, RUNNING), (200, ENDPOINT)]);
+    let sandbox = OpenSandbox {
+        http: pool,
+        environment: environment(&[]),
+        clock: StepClock::new(),
+    };
+    let api_key = SecretString::from("key-1");
+    let mut request = create_request("http://sandbox.example", &api_key);
+    request.options.poll_interval = Some(Duration::from_millis(10));
+    block_on(sandbox.acreate_sandbox(request, Some(&caller))).unwrap();
+
+    assert!(sandbox.http.requests().is_empty());
+    assert_eq!(caller.requests().len(), 3);
+}

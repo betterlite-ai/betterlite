@@ -22,12 +22,13 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         let sandbox = recording_sandbox(input);
+        let client = Some(&sandbox.http);
         let api_key = input.api_key.as_deref().map(SecretString::from);
         let options = sandbox_options(input, api_key.as_ref())?;
         match input.operation {
             Operation::Create => {
                 let handle =
-                    block_on(sandbox.acreate_sandbox(prepared_create(input, options), None))?;
+                    block_on(sandbox.acreate_sandbox(prepared_create(input, options), client))?;
                 Ok(serde_json::json!({
                     "handle": handle_output(&handle),
                     "requests": requests_output(&sandbox.http)?,
@@ -35,9 +36,8 @@ impl crate::helpers::Helper for Op {
             }
             Operation::Run => {
                 let container = container_input(input)?;
-                let result = block_on(
-                    sandbox.arun_code(prepared_run(input, container.reference(), options)?, None),
-                )?;
+                let prepared = prepared_run(input, container.reference(), options)?;
+                let result = block_on(sandbox.arun_code(prepared, client))?;
                 Ok(serde_json::json!({
                     "requests": requests_output(&sandbox.http)?,
                     "result": result,
@@ -45,13 +45,11 @@ impl crate::helpers::Helper for Op {
             }
             Operation::Delete => {
                 let container = container_input(input)?;
-                let deleted = block_on(sandbox.adelete_sandbox(
-                    DeleteSandbox {
-                        container: container.reference(),
-                        options,
-                    },
-                    None,
-                ))?;
+                let prepared = DeleteSandbox {
+                    container: container.reference(),
+                    options,
+                };
+                let deleted = block_on(sandbox.adelete_sandbox(prepared, client))?;
                 Ok(serde_json::json!({
                     "deleted": deleted,
                     "requests": requests_output(&sandbox.http)?,

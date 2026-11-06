@@ -1,0 +1,24 @@
+kind: helper
+name: opensandbox-run-scheme-from-base
+call:
+  b3518:
+    operation: run
+    container:
+      id: sbx_1
+      provider: opensandbox
+      domain: https://sandbox.example
+      hidden_params:
+        api_base: https://sandbox.example
+        api_key: stored-key
+        execd_endpoint: '10.0.0.5:44772'
+        execd_headers:
+          X-Execd-Token: execd-token
+        use_server_proxy: false
+    code: 1 + 1
+    responses:
+      - status: 200
+        body: |
+          data: {"type":"stdout","text":"2\n"}
+env: {}
+compare:
+  ignore: []
