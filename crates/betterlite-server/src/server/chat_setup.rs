@@ -1,5 +1,4 @@
 use betterlite_config::proxy::ProxyPolicy;
-use betterlite_config::sections::mock_response::MockResponse;
 use betterlite_config::sections::mock_response::selection::MockPermission;
 use betterlite_config::tls::{TlsPolicy, TlsPolicyError};
 use betterlite_config::types::{Config, RoutingStrategy};
@@ -54,20 +53,32 @@ pub fn chat_executor(
     environment: &BTreeMap<String, String>,
     random: StdRng,
 ) -> Result<ChatExecutor, ChatSetupError> {
-    if let Some(strategy) = config.router_settings.routing_strategy
-        && strategy != RoutingStrategy::SimpleShuffle
-    {
-        return Err(ChatSetupError::RoutingStrategy { strategy });
-    }
-    let defaults = openai_defaults(config);
+    reject_other_strategies(config)?;
+    let sdk = &config.sections.resource_sdk_settings;
+    let defaults = OpenAiDefaults {
+        request_timeout: config.litellm_settings.request_timeout,
+        api_bases: [&sdk.api_base, &sdk.openai_base_url, &sdk.openai_api_base]
+            .into_iter()
+            .flatten()
+            .cloned()
+            .collect(),
+        api_keys: [&sdk.api_key, &sdk.openai_key, &sdk.openai_api_key]
+            .into_iter()
+            .flatten()
+            .cloned()
+            .collect(),
+        organization: sdk
+            .organization
+            .clone()
+            .or_else(|| sdk.openai_organization.clone()),
+    };
     let mut deployments = config
         .model_list
         .iter()
         .map(|deployment| ChatDeployment::resolve(deployment, &defaults))
         .collect::<Result<Vec<_>, _>>()?;
-    disambiguate_mock_ids(&mut deployments, &config.sections.mock_response.deployments);
+    let mock = mock_settings(config, &mut deployments);
     let client = outbound_client(config, environment, &deployments)?;
-    let mock = mock_settings(config, &deployments);
     Ok(ChatExecutor {
         client,
         deployments,
@@ -91,47 +102,32 @@ fn unix_seconds() -> u64 {
         .map_or(0, |elapsed| elapsed.as_secs())
 }
 
+fn reject_other_strategies(config: &Config) -> Result<(), ChatSetupError> {
+    match config.router_settings.routing_strategy {
+        Some(strategy) if strategy != RoutingStrategy::SimpleShuffle => {
+            Err(ChatSetupError::RoutingStrategy { strategy })
+        }
+        Some(_) | None => Ok(()),
+    }
+}
+
 // LiteLLM's model id hashes litellm_params, mock_response included, so deployments that differ only in it stay distinct
-fn disambiguate_mock_ids(deployments: &mut [ChatDeployment], responses: &[Option<MockResponse>]) {
-    for (deployment, response) in deployments.iter_mut().zip(responses) {
-        let Some(mock) = response else {
+fn mock_settings(config: &Config, deployments: &mut [ChatDeployment]) -> MockSettings {
+    let mock_response = &config.sections.mock_response;
+    let mut responses = BTreeMap::new();
+    for (operator, deployment) in mock_response.deployments.iter().zip(deployments.iter_mut()) {
+        let Some(response) = operator else {
             continue;
         };
         let mut hasher = Sha256::new();
         hasher.update(deployment.model_id.as_bytes());
-        hasher.update(serde_json::to_string(mock).unwrap_or_default().as_bytes());
+        hasher.update(
+            serde_json::to_string(response)
+                .unwrap_or_default()
+                .as_bytes(),
+        );
         deployment.model_id = hex::encode(hasher.finalize());
-    }
-}
-
-fn openai_defaults(config: &Config) -> OpenAiDefaults {
-    let sdk = &config.sections.resource_sdk_settings;
-    OpenAiDefaults {
-        request_timeout: config.litellm_settings.request_timeout,
-        api_bases: [&sdk.api_base, &sdk.openai_base_url, &sdk.openai_api_base]
-            .into_iter()
-            .flatten()
-            .cloned()
-            .collect(),
-        api_keys: [&sdk.api_key, &sdk.openai_key, &sdk.openai_api_key]
-            .into_iter()
-            .flatten()
-            .cloned()
-            .collect(),
-        organization: sdk
-            .organization
-            .clone()
-            .or_else(|| sdk.openai_organization.clone()),
-    }
-}
-
-fn mock_settings(config: &Config, deployments: &[ChatDeployment]) -> MockSettings {
-    let mock_response = &config.sections.mock_response;
-    let mut responses = BTreeMap::new();
-    for (operator, deployment) in mock_response.deployments.iter().zip(deployments) {
-        if let Some(response) = operator {
-            responses.insert(deployment.model_id.clone(), response.clone());
-        }
+        responses.insert(deployment.model_id.clone(), response.clone());
     }
     MockSettings {
         responses,

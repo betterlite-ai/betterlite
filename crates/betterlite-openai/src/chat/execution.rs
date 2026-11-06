@@ -13,6 +13,7 @@ use serde_json::{Map, Value};
 use thiserror::Error;
 use uuid::Uuid;
 
+use super::mock_model;
 use crate::chat::deployment::{ChatDeployment, Provider};
 use crate::chat::response::ChatResponse;
 use crate::chat::{
@@ -90,14 +91,7 @@ impl ChatExecutor {
         if request.stream {
             return Err(ChatError::Streaming);
         }
-        let mock = resolve_mock(
-            self.mock.responses.get(&deployment.model_id),
-            self.mock.permission,
-            request.mock_response.as_ref(),
-            request.mock_tool_calls.as_deref(),
-            request.choice_count,
-        );
-        if let Some(plan) = mock {
+        if let Some(plan) = self.mock_plan(deployment, request) {
             return self.mocked_outcome(&plan, deployment);
         }
         let outbound = self.outbound(deployment, request, "application/json")?;
@@ -121,6 +115,21 @@ impl ChatExecutor {
             upstream,
             upstream_time,
         })
+    }
+
+    #[must_use]
+    pub fn mock_plan<'plan>(
+        &'plan self,
+        deployment: &ChatDeployment,
+        request: &'plan ChatRequest,
+    ) -> Option<MockPlan<'plan>> {
+        resolve_mock(
+            self.mock.responses.get(&deployment.model_id),
+            self.mock.permission,
+            request.mock_response.as_ref(),
+            request.planned_tool_calls.as_deref(),
+            request.choice_count,
+        )
     }
 
     fn mocked_outcome(
@@ -239,14 +248,6 @@ impl ChatExecutor {
         }
         optional.extend(forwarded);
         Ok(policy.request_body(model, messages, &optional))
-    }
-}
-
-// LiteLLM strips the provider prefix before mock_completion receives the model
-pub(crate) fn mock_model(litellm_model: &str) -> &str {
-    match litellm_model.split_once('/') {
-        Some((_, model)) => model,
-        None => litellm_model,
     }
 }
 

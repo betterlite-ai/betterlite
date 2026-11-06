@@ -1,9 +1,7 @@
-use std::collections::BTreeMap;
-
 use betterlite_config::sections::mock_response::failure::MockError;
 use betterlite_config::sections::mock_response::selection::MockPlan;
 use betterlite_config::sections::mock_response::{
-    MockArguments, MockChatChoice, MockChatObject, MockFunctionCall, MockResponse, MockToolCall,
+    MockChatChoice, MockChatMessage, MockChatObject, MockResponse, MockToolCall, MockUsage,
     UsageDefaults,
 };
 use betterlite_openai::chat::response::{
@@ -16,17 +14,26 @@ use uuid::Uuid;
 pub const DEFAULT_CONTENT: &str = "This is a mock request";
 // LiteLLM builds one choice per n before it answers, so a mock caps n instead of allocating billions
 pub const MAX_MOCK_CHOICES: u32 = 128;
-
 pub enum ChatAnswer<'content> {
     Content(&'content str),
     Object(&'content MockChatObject),
 }
-
 // LiteLLM raises a sentinel before it looks at n, and builds every choice in memory after that
 pub fn answer<'plan>(plan: &'plan MockPlan<'plan>) -> Result<ChatAnswer<'plan>, MockError> {
     let answer = match plan.response {
         None => ChatAnswer::Content(DEFAULT_CONTENT),
-        Some(MockResponse::Text(text)) => content(text)?,
+        Some(MockResponse::Text(text)) => match text.as_str() {
+            "litellm.RateLimitError" => return Err(MockError::RateLimit),
+            "litellm.ContextWindowExceededError" => return Err(MockError::ContextWindowExceeded),
+            "litellm.InternalServerError" => return Err(MockError::InternalServerError),
+            _ if text.starts_with("Exception: content_filter_policy") => {
+                return Err(MockError::ContentFilter);
+            }
+            _ if text.starts_with("Exception: mock_streaming_error") => {
+                return Err(MockError::Streaming);
+            }
+            _ => ChatAnswer::Content(text),
+        },
         Some(MockResponse::Object(object)) => ChatAnswer::Object(object),
         Some(MockResponse::Numbers(_)) => {
             return Err(MockError::WrongType {
@@ -34,20 +41,15 @@ pub fn answer<'plan>(plan: &'plan MockPlan<'plan>) -> Result<ChatAnswer<'plan>, 
             });
         }
     };
-    checked_choice_count(plan)?;
-    Ok(answer)
-}
-
-// LiteLLM raises these before it looks at the stream flag or the dict branch, so they win over both
-fn content(text: &str) -> Result<ChatAnswer<'_>, MockError> {
-    match text {
-        "litellm.RateLimitError" => Err(MockError::RateLimit),
-        "litellm.ContextWindowExceededError" => Err(MockError::ContextWindowExceeded),
-        "litellm.InternalServerError" => Err(MockError::InternalServerError),
-        _ if text.starts_with("Exception: content_filter_policy") => Err(MockError::ContentFilter),
-        _ if text.starts_with("Exception: mock_streaming_error") => Err(MockError::Streaming),
-        _ => Ok(ChatAnswer::Content(text)),
+    if let Some(count) = plan.choice_count
+        && count > MAX_MOCK_CHOICES
+    {
+        return Err(MockError::TooManyChoices {
+            count,
+            limit: MAX_MOCK_CHOICES,
+        });
     }
+    Ok(answer)
 }
 
 pub fn response(
@@ -58,46 +60,35 @@ pub fn response(
     created: u64,
 ) -> Result<ChatResponse, MockError> {
     match answer(plan)? {
-        ChatAnswer::Content(content) => Ok(ChatResponse {
-            id: id.to_owned(),
-            object: String::from("chat.completion"),
+        ChatAnswer::Content(content) => Ok(object_response(
+            &MockChatObject {
+                id: Some(id.to_owned()),
+                created: Some(created),
+                model: Some(model.to_owned()),
+                object: None,
+                system_fingerprint: None,
+                service_tier: None,
+                choices: Some(content_choices(content, plan)?),
+                usage: Some(usage_from(plan, usage)),
+            },
+            model,
+            id,
             created,
-            model: model.to_owned(),
-            choices: content_choices(content, plan)?,
-            usage: usage_from(plan, usage),
-            system_fingerprint: None,
-            service_tier: None,
-        }),
+        )),
         ChatAnswer::Object(object) => Ok(object_response(object, model, id, created)),
     }
 }
 
-const fn checked_choice_count(plan: &MockPlan<'_>) -> Result<Option<u32>, MockError> {
-    match plan.choice_count {
-        Some(count) if count > MAX_MOCK_CHOICES => Err(MockError::TooManyChoices {
-            count,
-            limit: MAX_MOCK_CHOICES,
-        }),
-        count => Ok(count),
-    }
-}
-
-fn content_choices(content: &str, plan: &MockPlan<'_>) -> Result<Vec<ChatChoice>, MockError> {
+fn content_choices(content: &str, plan: &MockPlan<'_>) -> Result<Vec<MockChatChoice>, MockError> {
     let mut choices = (0..plan.choice_count.unwrap_or(1))
-        .map(|index| ChatChoice {
+        .map(|index| MockChatChoice {
             index,
-            message: AssistantMessage {
+            message: MockChatMessage {
                 role: String::from("assistant"),
                 content: Some(content.to_owned()),
                 tool_calls: None,
-                annotations: None,
-                audio: None,
-                refusal: None,
-                provider_specific_fields: MessageProviderFields::default(),
             },
             finish_reason: Some(String::from("stop")),
-            logprobs: None,
-            provider_specific_fields: BTreeMap::new(),
         })
         .collect::<Vec<_>>();
     // LiteLLM attaches mock_tool_calls to choices[0] only, even when n asks for more
@@ -105,12 +96,12 @@ fn content_choices(content: &str, plan: &MockPlan<'_>) -> Result<Vec<ChatChoice>
         let first = choices
             .first_mut()
             .ok_or(MockError::ToolCallsWithoutChoice)?;
-        first.message.tool_calls = Some(tool_calls.iter().map(wire_tool_call).collect());
+        first.message.tool_calls = Some(tool_calls.to_vec());
     }
     Ok(choices)
 }
 
-// ChatCompletionMessageToolCall fills a uuid id and the function type, and Function encodes object arguments as JSON
+// ChatCompletionMessageToolCall fills a uuid id and the function type, and a missing argument list is empty
 fn wire_tool_call(call: &MockToolCall) -> ToolCall {
     ToolCall {
         id: call
@@ -123,28 +114,17 @@ fn wire_tool_call(call: &MockToolCall) -> ToolCall {
             .unwrap_or_else(|| String::from("function")),
         function: FunctionCall {
             name: call.function.name.clone(),
-            arguments: tool_arguments(&call.function),
+            arguments: call.function.arguments.clone().unwrap_or_default(),
         },
     }
 }
-
-fn tool_arguments(function: &MockFunctionCall) -> String {
-    match &function.arguments {
-        None => String::new(),
-        Some(MockArguments::Text(text)) => text.clone(),
-        Some(MockArguments::Object(value)) => value.to_string(),
-    }
-}
-
-fn usage_from(plan: &MockPlan<'_>, defaults: UsageDefaults) -> ChatUsage {
+fn usage_from(plan: &MockPlan<'_>, defaults: UsageDefaults) -> MockUsage {
     let prompt_tokens = plan.prompt_tokens.unwrap_or(defaults.prompt_tokens);
     let completion_tokens = defaults.completion_tokens;
-    ChatUsage {
+    MockUsage {
         prompt_tokens,
         completion_tokens,
         total_tokens: prompt_tokens.saturating_add(completion_tokens),
-        prompt_tokens_details: None,
-        completion_tokens_details: None,
     }
 }
 
@@ -159,23 +139,19 @@ fn object_response(object: &MockChatObject, model: &str, id: &str, created: u64)
         created: timestamp,
         model: name,
         choices: object_choices(object),
-        usage: object_usage(object),
+        usage: object
+            .usage
+            .as_ref()
+            .map_or_else(ChatUsage::default, |usage| ChatUsage {
+                prompt_tokens: usage.prompt_tokens,
+                completion_tokens: usage.completion_tokens,
+                total_tokens: usage.total_tokens,
+                prompt_tokens_details: None,
+                completion_tokens_details: None,
+            }),
         system_fingerprint: object.system_fingerprint.clone(),
         service_tier: object.service_tier.clone(),
     }
-}
-
-fn object_usage(object: &MockChatObject) -> ChatUsage {
-    object
-        .usage
-        .as_ref()
-        .map_or_else(ChatUsage::default, |usage| ChatUsage {
-            prompt_tokens: usage.prompt_tokens,
-            completion_tokens: usage.completion_tokens,
-            total_tokens: usage.total_tokens,
-            prompt_tokens_details: None,
-            completion_tokens_details: None,
-        })
 }
 
 fn object_choices(object: &MockChatObject) -> Vec<ChatChoice> {

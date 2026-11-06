@@ -3,8 +3,8 @@
 use betterlite_config::sections::mock_response::failure::MockError;
 use betterlite_config::sections::mock_response::selection::MockPlan;
 use betterlite_config::sections::mock_response::{
-    MockArguments, MockChatChoice, MockChatMessage, MockChatObject, MockFunctionCall, MockResponse,
-    MockToolCall, MockUsage, UsageDefaults,
+    MockChatChoice, MockChatMessage, MockChatObject, MockFunctionCall, MockResponse, MockToolCall,
+    MockUsage, UsageDefaults,
 };
 use betterlite_openai::chat::response::ChatUsage;
 use rstest::rstest;
@@ -24,7 +24,7 @@ fn calls() -> Vec<MockToolCall> {
         kind: Some(String::from("function")),
         function: MockFunctionCall {
             name: String::from("lookup"),
-            arguments: Some(MockArguments::Text(String::from("{}"))),
+            arguments: Some(String::from("{}")),
         },
     }]
 }
@@ -322,13 +322,12 @@ fn a_choice_count_above_the_cap_is_a_typed_failure() {
 #[test]
 fn tool_calls_fill_litellm_defaults() {
     let value = MockResponse::Text(String::from("abc"));
-    let arguments: MockArguments = serde_json::from_str(r#"{"a": 1}"#).expect("object arguments");
     let calls = vec![MockToolCall {
         id: None,
         kind: None,
         function: MockFunctionCall {
             name: String::from("lookup"),
-            arguments: Some(arguments),
+            arguments: Some(String::from(r#"{"a":1}"#)),
         },
     }];
     let plan = MockPlan {

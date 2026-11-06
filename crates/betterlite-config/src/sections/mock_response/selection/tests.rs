@@ -7,7 +7,7 @@ use rstest::rstest;
 use tracing::subscriber::{DefaultGuard, set_default};
 
 use super::{MockPermission, resolve_mock};
-use crate::sections::mock_response::{MockArguments, MockFunctionCall, MockResponse, MockToolCall};
+use crate::sections::mock_response::{MockFunctionCall, MockResponse, MockToolCall};
 
 fn text(value: &str) -> MockResponse {
     MockResponse::Text(value.to_owned())
@@ -19,7 +19,7 @@ fn tool_calls() -> Vec<MockToolCall> {
         kind: Some(String::from("function")),
         function: MockFunctionCall {
             name: String::from("lookup"),
-            arguments: Some(MockArguments::Text(String::from("{}"))),
+            arguments: Some(String::from("{}")),
         },
     }]
 }

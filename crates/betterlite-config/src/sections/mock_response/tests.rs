@@ -7,8 +7,8 @@ use rstest::rstest;
 use crate::loader::{ConfigError, ConfigLoader};
 
 use super::{
-    MockArguments, MockChatChoice, MockChatMessage, MockChatObject, MockResponse, MockToolCall,
-    MockUsage, Settings,
+    MockChatChoice, MockChatMessage, MockChatObject, MockResponse, MockToolCall, MockUsage,
+    Settings,
 };
 
 fn load(source: &str, environment: &BTreeMap<String, String>) -> Result<Settings, ConfigError> {
@@ -99,7 +99,7 @@ fn reads_tool_calls_and_usage_in_a_response_object() {
             kind: Some(String::from("function")),
             function: super::MockFunctionCall {
                 name: String::from("f"),
-                arguments: Some(MockArguments::Text(String::from("{}"))),
+                arguments: Some(String::from("{}")),
             },
         }])
     );
@@ -116,7 +116,7 @@ fn reads_tool_calls_and_usage_in_a_response_object() {
 #[test]
 fn reads_a_tool_call_that_leaves_litellm_defaults_open() {
     let value = deployment(
-        "model_list:\n  - model_name: mock\n    litellm_params:\n      mock_response:\n        choices:\n          - message:\n              tool_calls:\n                - function: {name: f, arguments: {a: 1}}\n",
+        "model_list:\n  - model_name: mock\n    litellm_params:\n      mock_response:\n        choices:\n          - message:\n              tool_calls:\n                - function: {name: f, arguments: '{\"a\": 1}'}\n",
     )
     .expect("config");
     let Some(MockResponse::Object(MockChatObject {
@@ -133,10 +133,7 @@ fn reads_a_tool_call_that_leaves_litellm_defaults_open() {
         .expect("tool call");
     assert_eq!(call.id, None);
     assert_eq!(call.kind, None);
-    let Some(MockArguments::Object(arguments)) = &call.function.arguments else {
-        panic!("expected object arguments");
-    };
-    assert_eq!(arguments.to_string(), r#"{"a":1}"#);
+    assert_eq!(call.function.arguments.as_deref(), Some(r#"{"a": 1}"#));
 }
 
 #[test]

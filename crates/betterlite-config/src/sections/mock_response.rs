@@ -1,8 +1,3 @@
-#![expect(
-    clippy::disallowed_types,
-    reason = "a mock tool call carries arbitrary JSON arguments that LiteLLM serializes to text"
-)]
-
 pub mod failure;
 pub mod selection;
 
@@ -41,7 +36,6 @@ pub struct MockChatObject {
     pub choices: Option<Vec<MockChatChoice>>,
     pub usage: Option<MockUsage>,
 }
-
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct MockChatChoice {
@@ -49,7 +43,6 @@ pub struct MockChatChoice {
     pub message: MockChatMessage,
     pub finish_reason: Option<String>,
 }
-
 impl Default for MockChatChoice {
     fn default() -> Self {
         Self {
@@ -67,33 +60,20 @@ pub struct MockChatMessage {
     pub content: Option<String>,
     pub tool_calls: Option<Vec<MockToolCall>>,
 }
-
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct MockToolCall {
-    #[serde(default)]
     pub id: Option<String>,
-    #[serde(rename = "type", default)]
+    #[serde(rename = "type")]
     pub kind: Option<String>,
     pub function: MockFunctionCall,
 }
-
-// LiteLLM encodes an object arguments value as JSON text and accepts any other value as given
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(untagged)]
-pub enum MockArguments {
-    Text(String),
-    Object(serde_json::Value),
-}
-
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct MockFunctionCall {
     pub name: String,
-    #[serde(default)]
-    pub arguments: Option<MockArguments>,
+    pub arguments: Option<String>,
 }
-
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct MockUsage {
@@ -101,7 +81,6 @@ pub struct MockUsage {
     pub completion_tokens: u64,
     pub total_tokens: u64,
 }
-
 impl Default for MockChatMessage {
     fn default() -> Self {
         Self {

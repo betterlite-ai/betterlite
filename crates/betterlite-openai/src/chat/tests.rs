@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use betterlite_config::sections::mock_response::{MockArguments, MockResponse};
+use betterlite_config::sections::mock_response::MockResponse;
 use rstest::rstest;
 
 use super::{ChatRequest, MessageContent, RequestError, Role, Stop, ToolChoice};
@@ -66,8 +66,10 @@ fn parses_a_mock_tool_call_with_litellm_defaults_open() {
     let calls = request.mock_tool_calls.expect("tool calls");
     assert_eq!(calls[0].id, None);
     assert_eq!(calls[0].kind, None);
-    let expected: MockArguments = serde_json::from_str(r#"{"a":1}"#).expect("arguments");
-    assert_eq!(calls[0].function.arguments, Some(expected));
+    let arguments: serde_json::Value = serde_json::from_str(r#"{"a":1}"#).expect("arguments");
+    assert_eq!(calls[0].function.arguments, Some(arguments));
+    let planned = request.planned_tool_calls.expect("planned tool calls");
+    assert_eq!(planned[0].function.arguments.as_deref(), Some(r#"{"a":1}"#));
 }
 
 #[rstest]

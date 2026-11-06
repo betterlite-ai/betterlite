@@ -29,29 +29,25 @@ pub fn chunks<'stream>(
             object: String::from("chat.completion.chunk"),
             created: spec.created,
             model: spec.model.to_owned(),
-            choices: delta_choices(spec.choice_count, &content),
+            choices: (0..spec.choice_count.unwrap_or(1))
+                .map(|index| Choice {
+                    index,
+                    delta: Delta {
+                        role: Some(String::from("assistant")),
+                        content: Some(content.clone()),
+                        refusal: None,
+                        tool_calls: None,
+                        function_call: None,
+                    },
+                    finish_reason: None,
+                    logprobs: None,
+                })
+                .collect(),
             usage: None,
             system_fingerprint: None,
             service_tier: None,
         }
     })
-}
-
-fn delta_choices(choice_count: Option<u32>, content: &str) -> Vec<Choice> {
-    (0..choice_count.unwrap_or(1))
-        .map(|index| Choice {
-            index,
-            delta: Delta {
-                role: Some(String::from("assistant")),
-                content: Some(content.to_owned()),
-                refusal: None,
-                tool_calls: None,
-                function_call: None,
-            },
-            finish_reason: None,
-            logprobs: None,
-        })
-        .collect()
 }
 
 // mock_stream_usage_chunk reports the prompt count the caller injected and the completion default

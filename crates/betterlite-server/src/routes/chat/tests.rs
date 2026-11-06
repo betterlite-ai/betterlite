@@ -313,7 +313,7 @@ async fn a_mock_answers_with_the_stripped_deployment_model() {
 
 #[tokio::test]
 async fn a_mock_tool_call_fills_litellm_defaults() {
-    let source = "model_list:\n  - model_name: g\n    litellm_params:\n      model: openai/up\n      api_base: 'http://127.0.0.1:1'\n      api_key: k\n      mock_response:\n        choices:\n          - message:\n              tool_calls:\n                - function: {name: lookup, arguments: {a: 1}}\n";
+    let source = "model_list:\n  - model_name: g\n    litellm_params:\n      model: openai/up\n      api_base: 'http://127.0.0.1:1'\n      api_key: k\n      mock_response:\n        choices:\n          - message:\n              tool_calls:\n                - function: {name: lookup, arguments: '{\"a\": 1}'}\n";
     let (status, bytes, _headers) = mock_reply(
         source,
         "/v1/chat/completions",
@@ -330,7 +330,7 @@ async fn a_mock_tool_call_fills_litellm_defaults() {
         .expect("tool call");
     assert_eq!(call.kind, "function");
     assert_eq!(call.function.name, "lookup");
-    assert_eq!(call.function.arguments, r#"{"a":1}"#);
+    assert_eq!(call.function.arguments, r#"{"a": 1}"#);
     uuid::Uuid::parse_str(&call.id).expect("generated id");
 }
 

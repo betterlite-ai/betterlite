@@ -7,7 +7,7 @@ use axum::http::HeaderMap;
 use axum::response::{IntoResponse as _, Response};
 use betterlite_config::sections::mock_response::UsageDefaults;
 use betterlite_config::sections::mock_response::failure::MockError;
-use betterlite_config::sections::mock_response::selection::{MockPlan, resolve_mock};
+use betterlite_config::sections::mock_response::selection::MockPlan;
 use betterlite_core::mock::chat::{ChatAnswer, answer};
 use betterlite_core::mock::stream::{StreamSpec, chunks, usage_chunk};
 use betterlite_http::error::HttpError;
@@ -36,16 +36,9 @@ pub(super) async fn stream_chat(
     executor: &ChatExecutor,
     deployment: &ChatDeployment,
     request: &ChatRequest,
-    call: CallContext<'_>,
+    call: &CallContext<'_>,
 ) -> Response {
-    let mock = resolve_mock(
-        executor.mock.responses.get(&deployment.model_id),
-        executor.mock.permission,
-        request.mock_response.as_ref(),
-        request.mock_tool_calls.as_deref(),
-        request.choice_count,
-    );
-    if let Some(plan) = mock {
+    if let Some(plan) = executor.mock_plan(deployment, request) {
         return mock_stream(executor, deployment, request, &plan, call);
     }
     let upstream_started = Instant::now();
@@ -71,7 +64,7 @@ fn mock_stream(
     deployment: &ChatDeployment,
     request: &ChatRequest,
     plan: &MockPlan<'_>,
-    call: CallContext<'_>,
+    call: &CallContext<'_>,
 ) -> Response {
     let answer = match answer(plan) {
         Ok(answer) => answer,
@@ -89,16 +82,11 @@ fn mock_stream(
     let spec = StreamSpec {
         content,
         choice_count: plan.choice_count,
-        model: call.model.unwrap_or_default(),
+        model: request.model.as_deref().unwrap_or(&deployment.model_group),
         id: &id,
         created: (executor.clock)(),
     };
-    let frames = match mock_frames(
-        &spec,
-        plan.prompt_tokens,
-        executor.mock.usage,
-        call.include_usage,
-    ) {
+    let frames = match mock_frames(&spec, request, plan.prompt_tokens, executor.mock.usage) {
         Ok(frames) => frames,
         Err(source) => return failure(&ChatError::Encode { source }, call, Some(deployment)),
     };
@@ -116,9 +104,9 @@ fn mock_stream(
 // LiteLLM's stream wrapper keeps the role on the first delta and on choices after the first
 fn mock_frames(
     spec: &StreamSpec<'_>,
+    request: &ChatRequest,
     prompt_tokens: Option<u64>,
     usage: UsageDefaults,
-    include_usage: bool,
 ) -> Result<Vec<Vec<u8>>, serde_json::Error> {
     let mut frames = Vec::new();
     for (position, mut chunk) in chunks(spec).enumerate() {
@@ -148,6 +136,10 @@ fn mock_frames(
         system_fingerprint: None,
         service_tier: None,
     })?);
+    let include_usage = request
+        .stream_options
+        .as_ref()
+        .is_some_and(|options| options.include_usage);
     if include_usage || prompt_tokens.is_some() {
         let count = prompt_tokens.unwrap_or(usage.prompt_tokens);
         frames.push(sse_frame(&usage_chunk(spec, count, usage))?);

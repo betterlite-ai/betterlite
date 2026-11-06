@@ -1,9 +1,9 @@
 use std::io;
 use std::time::{Duration, Instant};
 
+use betterlite_config::sections::mock_response::MockResponse;
 use betterlite_config::sections::mock_response::failure::MockError;
 use betterlite_config::sections::mock_response::selection::resolve_mock;
-use betterlite_config::sections::mock_response::{MockResponse, MockToolCall};
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::{JsonPost, UpstreamResponse};
 use http::HeaderMap;
@@ -13,7 +13,8 @@ use serde_json::Value;
 use thiserror::Error;
 
 use crate::chat::deployment::{ChatDeployment, DeploymentError, Provider};
-use crate::chat::execution::{ChatExecutor, mock_model};
+use crate::chat::execution::ChatExecutor;
+use crate::chat::mock_model;
 
 // LiteLLM's raise_if_mock_testing_params_disallowed rejects these before a request is routed
 const GATED_MOCK_PARAMS: [&str; 2] = ["mock_delay", "mock_timeout"];
@@ -40,8 +41,6 @@ pub struct EmbeddingRequest {
     pub user: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mock_response: Option<MockResponse>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mock_tool_calls: Option<Vec<MockToolCall>>,
     #[serde(flatten)]
     pub passthrough: serde_json::Map<String, Value>,
 }
@@ -184,7 +183,7 @@ pub async fn send(
         executor.mock.responses.get(&deployment.model_id),
         executor.mock.permission,
         request.mock_response.as_ref(),
-        request.mock_tool_calls.as_deref(),
+        None,
         None,
     );
     // LiteLLM mocks an embedding only when mock_response itself is set, unlike the chat path

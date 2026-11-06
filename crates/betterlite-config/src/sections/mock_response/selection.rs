@@ -4,7 +4,6 @@ use super::{MockResponse, MockToolCall};
 pub struct MockPermission {
     pub allow_client_mock_response: bool,
 }
-
 #[derive(Debug, Clone, Copy)]
 pub struct MockPlan<'request> {
     pub response: Option<&'request MockResponse>,
@@ -12,7 +11,6 @@ pub struct MockPlan<'request> {
     pub choice_count: Option<u32>,
     pub prompt_tokens: Option<u64>,
 }
-
 // an allowed client field survives stripping, and the router merges it after litellm_params, so it wins
 #[must_use]
 pub fn resolve_mock<'request>(

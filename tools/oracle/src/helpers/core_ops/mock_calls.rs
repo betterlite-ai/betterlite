@@ -18,17 +18,14 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        let outcome = match input.mode {
-            Mode::Embedding => embedding_outcome(input),
-            Mode::Chat | Mode::Stream => chat_outcome(input),
+        let outcome = if input.mode == "embedding" {
+            embedding_outcome(input)
+        } else {
+            chat_outcome(input)
         };
-        Ok(match outcome {
-            Ok(value) => value,
-            Err(failure) => error_value(&failure),
-        })
+        Ok(outcome.unwrap_or_else(|failure| error_value(&failure)))
     }
 }
-
 #[derive(Debug, Error)]
 enum Failure {
     #[error(transparent)]
@@ -61,7 +58,6 @@ fn embedding_outcome(input: &Input) -> Result<Value, Failure> {
         "response": serde_json::to_value(&answer)?,
     }))
 }
-
 fn chat_outcome(input: &Input) -> Result<Value, Failure> {
     let (effective, tool_calls) = effective_mock(input);
     if effective.is_none() && tool_calls.is_none() && input.mock_timeout != Some(true) {
@@ -83,7 +79,7 @@ fn chat_outcome(input: &Input) -> Result<Value, Failure> {
     };
     let id = format!("chatcmpl-{}", input.uuid);
     let resolved = chat::answer(&plan)?;
-    if input.mode == Mode::Stream
+    if input.mode == "stream"
         && let ChatAnswer::Content(content) = resolved
     {
         return stream_outcome(input, &plan, content, &id);
@@ -170,36 +166,21 @@ fn normalize(value: &mut Value) {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum Mode {
-    Chat,
-    Stream,
-    Embedding,
-}
-
 #[derive(Debug, serde::Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
     model: String,
-    mode: Mode,
+    mode: String,
     clock: u64,
     uuid: String,
-    #[serde(default, rename = "n")]
+    #[serde(rename = "n")]
     choice_count: Option<u32>,
-    #[serde(default)]
     prompt_tokens: Option<u64>,
-    #[serde(default)]
     timeout: Option<TimeoutValue>,
-    #[serde(default)]
     mock_timeout: Option<bool>,
-    #[serde(default)]
     mock_delay: Option<f64>,
-    #[serde(default)]
     operator_mock_response: Option<MockResponse>,
-    #[serde(default)]
     client_mock_response: Option<MockResponse>,
-    #[serde(default)]
     client_mock_tool_calls: Option<Vec<MockToolCall>>,
     #[serde(default)]
     allow_client_mock_response: bool,
