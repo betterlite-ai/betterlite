@@ -11,7 +11,7 @@ use axum::Router;
 use axum::body::Bytes;
 use axum::extract::State;
 use axum::http::HeaderMap as HttpHeaders;
-use axum::http::header::CONTENT_TYPE;
+use axum::http::header::{ACCEPT, CACHE_CONTROL, CONTENT_TYPE};
 use axum::response::{IntoResponse as _, Response};
 use axum::routing::{get, post};
 use betterlite_config::proxy::ProxyPolicy;
@@ -56,6 +56,8 @@ enum Reply {
 #[derive(Clone)]
 struct Seen {
     path: String,
+    accept: Option<String>,
+    cache_control: Option<String>,
     team: Option<String>,
     body: String,
 }
@@ -79,8 +81,18 @@ fn record(state: &AgentState, path: &str, headers: &HttpHeaders, body: String) {
         .get(TEAM_HEADER)
         .and_then(|value| value.to_str().ok())
         .map(str::to_owned);
+    let accept = headers
+        .get(ACCEPT)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
+    let cache_control = headers
+        .get(CACHE_CONTROL)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
     state.seen.lock().unwrap().push(Seen {
         path: path.to_owned(),
+        accept,
+        cache_control,
         team,
         body,
     });
@@ -181,7 +193,7 @@ fn send_request(text: &str) -> SendMessageRequest {
 
 fn configured_request(text: &str) -> SendMessageRequest {
     let body = format!(
-        r#"{{"id":"request-1","params":{{"message":{{"kind":"message","messageId":"m-1","role":"user","parts":[{{"kind":"text","text":"{text}"}}]}},"configuration":{{"acceptedOutputModes":["text/plain"],"blocking":false,"historyLength":3,"pushNotificationConfig":{{"url":"https://hooks.example/"}}}}}}}}"#
+        r#"{{"id":"request-1","params":{{"message":{{"kind":"message","messageId":"m-1","role":"user","parts":[{{"kind":"text","text":"{text}"}}]}},"configuration":{{"acceptedOutputModes":["text/plain"],"blocking":false,"historyLength":3,"pushNotificationConfig":{{"url":"https://hooks.example/","authentication":{{"schemes":["bearer"],"credentials":"cred-1"}}}}}}}}}}"#
     );
     serde_json::from_str(&body).unwrap()
 }
@@ -376,6 +388,11 @@ async fn native_send_behavior(#[case] streaming: bool, #[case] scenario: &str) {
         other => panic!("unknown scenario {other}"),
     }
     assert_eq!(team_of(&seen, "/").as_deref(), Some("blue"));
+    if streaming {
+        let posted = seen.iter().find(|entry| entry.path == "/").unwrap();
+        assert_eq!(posted.accept.as_deref(), Some("text/event-stream"));
+        assert_eq!(posted.cache_control.as_deref(), Some("no-store"));
+    }
     let body = body_of(&seen);
     let method = if streaming {
         "SendStreamingMessage"
@@ -396,6 +413,7 @@ async fn native_send_behavior(#[case] streaming: bool, #[case] scenario: &str) {
         assert!(
             body.contains("\"taskPushNotificationConfig\":{\"url\":\"https://hooks.example/\"")
         );
+        assert!(body.contains(r#""authentication":{"scheme":"bearer","credentials":"cred-1"}"#));
     }
 
     let (empty_listener, empty_base) = start_agent().await;
