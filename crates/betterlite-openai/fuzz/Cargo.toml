@@ -108,6 +108,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "openai_count_tokens"
+path = "fuzz_targets/openai_count_tokens.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "oauth_reply"
 path = "fuzz_targets/oauth_reply.rs"
 test = false
@@ -117,6 +124,13 @@ bench = false
 [[bin]]
 name = "xai_oauth"
 path = "fuzz_targets/xai_oauth.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openai_fine_tuning"
+path = "fuzz_targets/openai_fine_tuning.rs"
 test = false
 doc = false
 bench = false

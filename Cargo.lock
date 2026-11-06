@@ -1098,6 +1098,7 @@ dependencies = [
  "chrono",
  "crc32fast",
  "encoding_rs",
+ "fancy-regex",
  "futures-util",
  "hex",
  "indexmap 2.14.2",
