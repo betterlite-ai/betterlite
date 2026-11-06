@@ -4,9 +4,6 @@ use std::path::{Path, PathBuf};
 
 use betterlite_logging::private_json::error::PrivateJsonError;
 use betterlite_logging::private_json::files::PrivateFiles;
-use betterlite_logging::private_json::files::overwrite_json::overwrite_private_json;
-use betterlite_logging::private_json::files::stage_json::stage_private_json;
-use betterlite_logging::private_json::files::write_json::write_private_json;
 use betterlite_logging::private_json::safe_json::{
     DEFAULT_MAX_RECURSE_DEPTH, safe_dumps, safe_json_loads,
 };
@@ -88,7 +85,7 @@ struct Fixture {
 impl Fixture {
     async fn stage(&self, name: &str, data: &Value, commit: bool) -> HelperResult {
         let target = self.root.path().join(name);
-        let staged = stage_private_json(&self.files, &target, data).await?;
+        let staged = self.files.stage_private_json(&target, data).await?;
         if commit {
             self.files.commit_staged_json(&staged, &target).await?;
         } else {
@@ -99,7 +96,7 @@ impl Fixture {
 
     async fn overwrite(&self, name: &str, data: &Value) -> HelperResult {
         let target = self.seed_readable(name)?;
-        overwrite_private_json(&self.files, &target, data).await?;
+        self.files.overwrite_private_json(&target, data).await?;
         Ok(file_view(&target))
     }
 
@@ -115,7 +112,7 @@ impl Fixture {
         let directory = self.root.path().join("conf");
         self.files.ensure_private_dir(&directory).await?;
         let target = directory.join(name);
-        write_private_json(&self.files, &target, data).await?;
+        self.files.write_private_json(&target, data).await?;
         let directory_mode = fs::metadata(&directory)
             .map_err(failure)?
             .permissions()
@@ -129,7 +126,9 @@ impl Fixture {
         fs::create_dir_all(&real).map_err(failure)?;
         let link = self.root.path().join("link");
         std::os::unix::fs::symlink(&real, &link).map_err(failure)?;
-        write_private_json(&self.files, &link.join(name), data).await?;
+        self.files
+            .write_private_json(&link.join(name), data)
+            .await?;
         let parent_is_symlink = fs::symlink_metadata(&link)
             .map_err(failure)?
             .file_type()

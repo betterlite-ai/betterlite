@@ -3,6 +3,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use serde::Serialize;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::task::JoinSet;
 
@@ -11,9 +12,6 @@ use super::error::PrivateJsonError;
 
 mod blocking;
 mod local;
-pub mod overwrite_json;
-pub mod stage_json;
-pub mod write_json;
 
 pub const PRIVATE_DIR_MODE: u32 = 0o700;
 pub const PRIVATE_FILE_MODE: u32 = 0o600;
@@ -70,6 +68,42 @@ impl From<Arc<dyn FileAccess>> for PrivateFiles {
     }
 }
 
+// The bytes a job writes and the staging suffix they are named with: JSON keeps LiteLLM's .json, raw bytes have none
+struct Encoded {
+    suffix: Option<&'static str>,
+    bytes: Vec<u8>,
+}
+
+trait Payload {
+    fn encoded(&self) -> FileResult<Encoded>;
+}
+
+struct JsonPayload<'payload, T>(&'payload T);
+
+struct RawPayload<'payload>(&'payload [u8]);
+
+impl<T> Payload for JsonPayload<'_, T>
+where
+    T: Serialize,
+{
+    fn encoded(&self) -> FileResult<Encoded> {
+        let bytes = serde_json::to_vec_pretty(self.0).map_err(PrivateJsonError::Encode)?;
+        Ok(Encoded {
+            suffix: Some(JSON_SUFFIX),
+            bytes,
+        })
+    }
+}
+
+impl Payload for RawPayload<'_> {
+    fn encoded(&self) -> FileResult<Encoded> {
+        Ok(Encoded {
+            suffix: None,
+            bytes: self.0.to_vec(),
+        })
+    }
+}
+
 impl PrivateFiles {
     pub async fn ensure_private_dir(&self, directory: &Path) -> FileResult<()> {
         let permit = self.reserve().await?;
@@ -80,12 +114,25 @@ impl PrivateFiles {
         .await
     }
 
-    pub async fn stage_private_bytes(&self, path: &Path, data: &[u8]) -> FileResult<StagedFile> {
-        let bytes = data.to_vec();
-        self.run_with_target(path, move |files, target| {
-            stage_blocking(files, target, None, &bytes)
-        })
-        .await
+    pub async fn stage_private_json<T>(
+        &self,
+        target_path: &Path,
+        data: &T,
+    ) -> FileResult<StagedFile>
+    where
+        T: Serialize + Sync,
+    {
+        self.stage_encoded(target_path, JsonPayload(data).encoded()?)
+            .await
+    }
+
+    pub async fn stage_private_bytes(
+        &self,
+        target_path: &Path,
+        data: &[u8],
+    ) -> FileResult<StagedFile> {
+        self.stage_encoded(target_path, RawPayload(data).encoded()?)
+            .await
     }
 
     pub async fn commit_staged_json(&self, staged: &StagedFile, path: &Path) -> FileResult<()> {
@@ -108,10 +155,64 @@ impl PrivateFiles {
         .await
     }
 
-    pub async fn write_private_bytes(&self, path: &Path, data: Vec<u8>) -> FileResult<()> {
+    pub async fn write_private_json<T>(&self, target_path: &Path, data: &T) -> FileResult<()>
+    where
+        T: Serialize + Sync,
+    {
+        self.write_encoded(target_path, JsonPayload(data).encoded()?)
+            .await
+    }
+
+    pub async fn write_private_bytes(&self, target_path: &Path, data: &[u8]) -> FileResult<()> {
+        self.write_encoded(target_path, RawPayload(data).encoded()?)
+            .await
+    }
+
+    pub async fn overwrite_private_json<T>(&self, target_path: &Path, data: &T) -> FileResult<()>
+    where
+        T: Serialize + Sync,
+    {
+        self.overwrite_encoded(target_path, JsonPayload(data).encoded()?.bytes)
+            .await
+    }
+
+    async fn stage_encoded(&self, path: &Path, encoded: Encoded) -> FileResult<StagedFile> {
+        self.encoded_job(path, encoded.suffix, encoded.bytes, |_, staged, _| {
+            Ok(staged.clone())
+        })
+        .await
+    }
+
+    async fn write_encoded(&self, path: &Path, encoded: Encoded) -> FileResult<()> {
+        self.encoded_job(path, encoded.suffix, encoded.bytes, commit_blocking)
+            .await
+    }
+
+    // Staging and the finish run in one blocking job, so a cancelled caller never leaves its staged bytes behind
+    async fn encoded_job<R, F>(
+        &self,
+        path: &Path,
+        suffix: Option<&'static str>,
+        bytes: Vec<u8>,
+        finish: F,
+    ) -> FileResult<R>
+    where
+        R: Send + 'static,
+        F: FnOnce(&dyn FileAccess, &StagedFile, &Path) -> FileResult<R> + Send + 'static,
+    {
         self.run_with_target(path, move |files, target| {
-            let staged = stage_blocking(files, target, None, &data)?;
-            commit_blocking(files, &staged, target)
+            let staged = stage_blocking(files, target, suffix, &bytes)?;
+            finish(files, &staged, target)
+        })
+        .await
+    }
+
+    // private_json.overwrite_private_json opens O_WRONLY | O_TRUNC; O_NOFOLLOW refuses to write through a symlink
+    async fn overwrite_encoded(&self, path: &Path, encoded: Vec<u8>) -> FileResult<()> {
+        self.run_with_target(path, move |files, target| {
+            files
+                .rewrite_existing(target, &encoded)
+                .map_err(|source| PrivateJsonError::Overwrite(target.to_owned(), source))
         })
         .await
     }
