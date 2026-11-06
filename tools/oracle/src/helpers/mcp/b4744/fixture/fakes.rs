@@ -62,16 +62,6 @@ pub(crate) struct FakeSession {
     pub(crate) handler: MessageHandler<TestError>,
 }
 
-impl FakeSession {
-    fn push_request(&self, request: InitializeRequest) {
-        self.script
-            .requests
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(request);
-    }
-}
-
 impl ClientSession for FakeSession {
     type Error = TestError;
     type InitializeResult = FakeInit;
@@ -90,14 +80,17 @@ impl ClientSession for FakeSession {
         &mut self,
         request: InitializeRequest,
     ) -> impl Future<Output = Result<FakeInit, TestError>> + Send {
-        self.push_request(request);
-        init_future(
-            &self.script,
-            &self.plan,
-            &self.handler,
-            "send_request",
-            InitStep::Ok,
-        )
+        let script = Arc::clone(&self.script);
+        let plan = Arc::clone(&self.plan);
+        let handler = self.handler.clone();
+        async move {
+            script
+                .requests
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .push(request);
+            init_future(&script, &plan, &handler, "send_request", InitStep::Ok).await
+        }
     }
 
     fn adopt(&mut self, _result: &FakeInit) {
