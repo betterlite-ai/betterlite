@@ -6,8 +6,8 @@ deviations:
   - what: "Raw file bodies and base64 payloads are decoded as UTF-8 with replacement characters. The charset in a text/* content-type header is not consulted."
     why: Python's resp.text follows the declared charset; GitLab serves repository files as UTF-8 and the transport trait does not expose headers.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_client.py#L200-L206
-  - what: "Errors from the raw request that falls back to the JSON endpoint are one flat error with the JSON endpoint message, not Python's nested exception text."
-    why: Python wraps str(exception) of the inner failure inside the outer message; a typed error carries the same message without re-wrapping.
+  - what: "A failure while fetching from the JSON endpoint is the fallback's own typed error (authentication, access denied, or a JSON endpoint failure), not Python's second wrap of it inside \"Failed to fetch file '<path>': ...\"."
+    why: Python re-catches the fallback exception in get_file_content and wraps its str a second time; a typed error names the failure once, and every caller branches on the variant rather than on the prefix.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_client.py#L193-L218
   - what: "The _parse_yaml_basic parser is a FrontmatterParser::Basic choice made by the caller; the default parser is YAML. LiteLLM switches to it only when `import yaml` fails."
     why: A Rust build always has its YAML parser, so the import failure can never happen; the selector keeps the fallback reachable and tested.
