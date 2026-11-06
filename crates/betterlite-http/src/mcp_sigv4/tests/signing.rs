@@ -63,6 +63,16 @@ async fn sign_covers_every_header_except_the_ones_botocore_skips() {
 }
 
 #[tokio::test]
+async fn sign_does_not_add_host_or_content_length_headers() {
+    let (auth, _recorder, _clock) = built(explicit_settings(), &[], Reply::Refused).await;
+    let signed = auth.auth_flow(mcp_request("{\"a\":1}")).await.unwrap();
+    assert!(signed.headers().get("host").is_none());
+    assert!(signed.headers().get("content-length").is_none());
+    assert!(signed.headers().get("authorization").is_some());
+    assert!(signed.headers().get("x-amz-date").is_some());
+}
+
+#[tokio::test]
 async fn sign_covers_the_request_body() {
     let (auth, _recorder, _clock) = built(explicit_settings(), &[], Reply::Refused).await;
     let first = auth.auth_flow(mcp_request("{\"a\":1}")).await.unwrap();

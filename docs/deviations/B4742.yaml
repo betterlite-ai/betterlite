@@ -9,18 +9,15 @@ deviations:
   - what: Signing and role assumption use the Rust AWS crates (aws-sigv4, aws-sdk-sts, aws-config) in place of boto3 and botocore, so the ImportError path for a missing boto3 does not exist.
     why: The Rust crates are always linked in, and the default chain needs no optional package.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L262-L300
-  - what: The error for missing credentials names the three options (explicit keys, AssumeRole, default credentials) in its own words. The oracle compares only the class name ValueError.
-    why: The text is not part of any declared type, and a Rust error enum carries its own message.
+  - what: The error for missing credentials names the three options (explicit keys, AssumeRole, default credentials) in its own words.
+    why: The text is not part of any declared type, and helper cases never compare an error's class or message, so the wording stays betterlite's own.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L300-L330
   - what: The default credential chain reads the environment, files and HTTP client from injected sources, not from the process.
     why: The rules forbid globals, and injection makes the chain testable without touching the real environment.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L300-L330
-  - what: Credentials from the default chain or AssumeRole are renewed when they are within ten minutes of expiry.
-    why: boto3 sessions refresh expiring credentials on their own, and the Rust crates have no public equivalent, so a small cache does it.
+  - what: Default-chain credentials that carry an expiry are fetched again when they are within ten minutes of expiring; botocore's refreshable providers refresh on access at their own advisory time.
+    why: boto3's credential objects refresh themselves when read, and the Rust providers return a fixed value until asked again, so a small cache decides when to ask.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L330-L350
-  - what: An empty string for a key, region or role counts as present.
-    why: docs/compatibility.md says an explicit empty value is used as given, where Python truthiness would treat it as unset.
-    link: ""
   - what: The adapter does not add the Host and Content-Length headers that httpx adds to a request. The caller sends the request it wants signed.
     why: The Rust request type does not add them. Host is derived by the signer from the URL.
     link: ""
