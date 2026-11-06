@@ -1,0 +1,5 @@
+kind: helper
+name: galileo-delivery-login-reads-access-token
+call: {"b3964": {"environment": {"GALILEO_USERNAME": "user", "GALILEO_PASSWORD": "pass", "GALILEO_PROJECT_ID": "project-1", "GALILEO_BASE_URL": "https://galileo.example/"}, "replies": [{"status": 200, "body": "{\"access_token\": \"tok-0123456789abcdef\"}"}, {"status": 200, "body": "{}"}], "actions": [{"do": "ensure_headers"}, {"do": "health_check"}]}}
+env: {}
+compare: {ignore: []}

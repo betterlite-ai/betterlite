@@ -1,0 +1,11 @@
+kind: helper
+name: runway-tasks-endpoint-suffix
+call:
+  runway_tasks:
+    operation: endpoint
+    params:
+      kind: speech
+      environment: {RUNWAYML_API_BASE: 'https://runway.test///'}
+      api_base: null
+env: {}
+compare: {ignore: []}
