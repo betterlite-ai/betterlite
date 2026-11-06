@@ -6,6 +6,6 @@ deviations:
   - what: A failed write of the callback page is logged and the wait continues.
     why: LiteLLM's do_GET raises out of the wait, so a client that disconnects first fails a login whose authorization already arrived.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/oauth.py#L94-L108
-  - what: The receiver reads at most 64 KiB of request head and answers 400 to a truncated or unparsable one; a connection that stays silent past one poll slot is dropped.
+  - what: The receiver reads at most 64 KiB of request head, answers 431 above 99 headers and 400 to a truncated or unparsable one; a connection that stays silent past one poll slot is dropped.
     why: LiteLLM reads headers without a bound, lets urlparse errors escape do_GET and blocks on a silent connection past its 180-second deadline.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/xai/oauth.py#L78-L111
