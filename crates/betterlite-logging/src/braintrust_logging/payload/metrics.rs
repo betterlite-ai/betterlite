@@ -6,7 +6,7 @@ use serde_json::Number;
 
 use super::super::event::{CallbackPath, ResponseObject, SuccessEvent};
 use super::PayloadError;
-use super::{object, optional_object};
+use super::object;
 
 pub(super) fn metrics(
     event: &SuccessEvent<'_>,
@@ -64,11 +64,21 @@ fn usage(event: &SuccessEvent<'_>) -> Result<Option<IndexMap<String, Json>>, Pay
         None | Some(ResponseObject::Image(_)) => Ok(None),
         Some(ResponseObject::Model(body)) => {
             let fields = object(body, "response")?;
-            Ok(optional_object(fields.get("usage"), "response.usage")?.cloned())
+            Ok(fields
+                .get("usage")
+                .filter(|value| !matches!(value, Json::Null))
+                .map(|value| object(value, "response.usage"))
+                .transpose()?
+                .cloned())
         }
         Some(ResponseObject::TextCompletion(body) | ResponseObject::Embedding(body)) => {
             let fields = object(body, "response")?;
-            let usage = optional_object(fields.get("usage"), "response.usage")?.cloned();
+            let usage = fields
+                .get("usage")
+                .filter(|value| !matches!(value, Json::Null))
+                .map(|value| object(value, "response.usage"))
+                .transpose()?
+                .cloned();
             Ok(Some(usage.unwrap_or_default()))
         }
     }

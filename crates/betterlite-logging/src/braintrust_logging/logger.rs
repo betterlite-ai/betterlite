@@ -12,7 +12,7 @@ use crate::http_analytics_loggers::delivery::{DELIVERY_DEADLINE, Delivery, PostR
 use super::error::BraintrustError;
 use super::event::{CallbackPath, SuccessEvent};
 use super::payload;
-use super::payload::{metadata_text, optional_object};
+use super::payload::{metadata_text, object};
 use super::settings::Settings;
 
 const DEFAULT_PROJECT_NAME: &str = "litellm";
@@ -103,7 +103,12 @@ impl<D: Delivery> BraintrustLogger<D> {
         event: &SuccessEvent<'_>,
         path: CallbackPath,
     ) -> Result<String, BraintrustError<D::Error>> {
-        let Some(fields) = optional_object(event.metadata, "litellm_params.metadata")? else {
+        let metadata = event
+            .metadata
+            .filter(|value| !matches!(value, Json::Null))
+            .map(|value| object(value, "litellm_params.metadata"))
+            .transpose()?;
+        let Some(fields) = metadata else {
             return self.default_project().await;
         };
         if let Some(id) = metadata_text(Some(fields), "project_id")? {

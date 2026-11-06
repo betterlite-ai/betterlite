@@ -27,7 +27,11 @@ pub(super) fn request_data(
     default_tags: &[String],
     path: CallbackPath,
 ) -> Result<Json, PayloadError> {
-    let metadata = optional_object(event.metadata, "litellm_params.metadata")?;
+    let metadata = event
+        .metadata
+        .filter(|value| !matches!(value, Json::Null))
+        .map(|value| object(value, "litellm_params.metadata"))
+        .transpose()?;
     let (logger_metadata, tags) =
         logging_object(metadata, event.standard_logging_object, default_tags)?;
     let span_name = metadata_text(metadata, "span_name")?
@@ -68,7 +72,10 @@ fn logging_object(
     standard_logging_object: Option<&Json>,
     default_tags: &[String],
 ) -> Result<(IndexMap<String, Json>, Vec<Json>), PayloadError> {
-    let mut logging = optional_object(standard_logging_object, "standard_logging_object")?
+    let standard = standard_logging_object.filter(|value| !matches!(value, Json::Null));
+    let mut logging = standard
+        .map(|value| object(value, "standard_logging_object"))
+        .transpose()?
         .cloned()
         .unwrap_or_default();
     let mut tags = Vec::new();
@@ -130,19 +137,6 @@ pub(crate) const fn object<'json>(
         return Ok(fields);
     }
     Err(PayloadError::WrongType(field, "a JSON object"))
-}
-
-pub(crate) fn optional_object<'json>(
-    value: Option<&'json Json>,
-    field: &'static str,
-) -> Result<Option<&'json IndexMap<String, Json>>, PayloadError> {
-    let Some(present) = value else {
-        return Ok(None);
-    };
-    if matches!(present, Json::Null) {
-        return Ok(None);
-    }
-    object(present, field).map(Some)
 }
 
 pub(crate) fn metadata_text<'json>(

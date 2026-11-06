@@ -191,6 +191,7 @@ pub(crate) struct Scenario {
 }
 
 impl Scenario {
+    #[cfg(test)]
     pub(crate) fn empty() -> Self {
         Self {
             call_id: Json::Null,
@@ -208,6 +209,7 @@ impl Scenario {
         }
     }
 
+    #[cfg(test)]
     pub(crate) fn event(&self) -> SuccessEvent<'_> {
         let response = match self.response_kind {
             ResponseKind::None => None,
