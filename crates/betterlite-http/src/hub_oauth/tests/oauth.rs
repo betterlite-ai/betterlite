@@ -79,6 +79,8 @@ pub(super) async fn tokens_without_usable_metadata_are_returned_as_they_are() {
         "[work]\nhf_token = old\n",
         "[work]\nhf_token = old\nrefresh_token = rt\n",
         "[work]\nhf_token = old\nexpires_at = soon\nrefresh_token = rt\n",
+        // Python's int() accepts underscores, betterlite's parser does not, so this counts as corrupt
+        "[work]\nhf_token = old\nexpires_at = 1_700_000_000\nrefresh_token = rt\n",
         "[work]\nhf_token = other\nrefresh_token = rt\nexpires_at = 1\n",
     ] {
         let fixture = Fixture::new(contents).await;
