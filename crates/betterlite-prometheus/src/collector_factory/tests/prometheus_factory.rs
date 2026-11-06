@@ -1,12 +1,15 @@
 #![cfg(test)]
 
-use std::sync::Arc;
-use std::sync::atomic::Ordering;
+use std::collections::VecDeque;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 
-use betterlite_prometheus::collector_factory::{
-    Collector as _, CollectorFactory, CollectorFactoryError, MetricLike, MetricSet, MetricValue,
-    PrometheusMetricsConfig, is_metric_enabled,
+use betterlite_prometheus::collector_factory::collector::{
+    Collector as _, MetricLike, MetricValue,
 };
+use betterlite_prometheus::collector_factory::config::{MetricSet, PrometheusMetricsConfig};
+use betterlite_prometheus::collector_factory::error::CollectorFactoryError;
+use betterlite_prometheus::collector_factory::factory::{CollectorFactory, is_metric_enabled};
 use rstest::rstest;
 use rust_decimal::Decimal;
 
@@ -130,7 +133,13 @@ fn prometheus_factory_get_labels_without_filters_keeps_the_schema() {
 
 #[test]
 fn prometheus_factory_get_labels_is_cached_for_the_instance() {
-    let schema = ChangingSchema::new(&[&["model"], &["team"]]);
+    let schema = ChangingSchema {
+        responses: Arc::new(Mutex::new(VecDeque::from([
+            Vec::from([String::from("model")]),
+            Vec::from([String::from("team")]),
+        ]))),
+        calls: Arc::new(AtomicUsize::new(0)),
+    };
     let calls = Arc::clone(&schema.calls);
     let mut factory = CollectorFactory::new(schema);
     let first = factory

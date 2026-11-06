@@ -1,8 +1,9 @@
 #![cfg(test)]
 
-use betterlite_prometheus::collector_factory::{
-    Collector as _, ExcludedLabelMetric, MetricSet, MetricUpdate, MetricValue,
+use betterlite_prometheus::collector_factory::collector::{
+    Collector as _, ExcludedLabelMetric, MetricUpdate, MetricValue,
 };
+use betterlite_prometheus::collector_factory::config::MetricSet;
 use rust_decimal::Decimal;
 
 use crate::support::FakeMetric;

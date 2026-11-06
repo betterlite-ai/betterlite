@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use betterlite_prometheus::collector_factory::CallbackSlots;
+use betterlite_prometheus::collector_factory::registry::CallbackSlots;
 
 #[derive(Debug, Eq, PartialEq)]
 struct FakeLogger {

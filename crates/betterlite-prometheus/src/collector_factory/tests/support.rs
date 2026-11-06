@@ -4,7 +4,8 @@ use std::collections::{BTreeMap, VecDeque};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use betterlite_prometheus::collector_factory::{Collector, LabelSchema, MetricUpdate};
+use betterlite_prometheus::collector_factory::collector::{Collector, MetricUpdate};
+use betterlite_prometheus::collector_factory::factory::LabelSchema;
 
 #[derive(Clone, Debug)]
 pub(crate) struct FakeSchema {
@@ -13,10 +14,16 @@ pub(crate) struct FakeSchema {
 }
 
 impl FakeSchema {
-    #[rustfmt::skip]
     pub(crate) fn new(entries: &[(&str, &[&str])]) -> Self {
-        let labels = entries.iter().map(|(metric, names)| ((*metric).to_owned(), names.iter().map(|name| (*name).to_owned()).collect())).collect();
-        Self { labels, mode: String::from("api_key_alias") }
+        let mut labels = BTreeMap::new();
+        for (metric, names) in entries {
+            let values = names.iter().map(|name| (*name).to_owned()).collect();
+            labels.insert((*metric).to_owned(), values);
+        }
+        Self {
+            labels,
+            mode: String::from("api_key_alias"),
+        }
     }
 }
 
@@ -45,14 +52,6 @@ impl LabelSchema for FakeSchema {
 pub(crate) struct ChangingSchema {
     pub(crate) responses: Arc<Mutex<VecDeque<Vec<String>>>>,
     pub(crate) calls: Arc<AtomicUsize>,
-}
-
-impl ChangingSchema {
-    #[rustfmt::skip]
-    pub(crate) fn new(entries: &[&[&str]]) -> Self {
-        let queued: VecDeque<Vec<String>> = entries.iter().map(|names| names.iter().map(|name| (*name).to_owned()).collect()).collect();
-        Self { responses: Arc::new(Mutex::new(queued)), calls: Arc::new(AtomicUsize::new(0)) }
-    }
 }
 
 impl LabelSchema for ChangingSchema {
@@ -85,10 +84,15 @@ pub(crate) struct FakeMetric {
 }
 
 impl FakeMetric {
-    #[rustfmt::skip]
     pub(crate) fn registered(name: &str, labelnames: &[&str]) -> Self {
         let recorded = labelnames.iter().map(|label| (*label).to_owned()).collect();
-        Self { name: name.to_owned(), labelnames: recorded, labels: Vec::new(), log: Arc::new(Mutex::new(Vec::new())), label_calls: Arc::new(AtomicUsize::new(0)) }
+        Self {
+            name: name.to_owned(),
+            labelnames: recorded,
+            labels: Vec::new(),
+            log: Arc::new(Mutex::new(Vec::new())),
+            label_calls: Arc::new(AtomicUsize::new(0)),
+        }
     }
 
     pub(crate) fn entries(&self) -> Vec<String> {

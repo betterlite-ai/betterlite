@@ -2,11 +2,12 @@
 
 use std::collections::BTreeSet;
 
-use betterlite_prometheus::collector_factory::{
-    CollectorFactory, CollectorFactoryError, NON_ENUM_METRIC_LABELS, PrometheusMetricsConfig,
-    all_defined_labels, is_metric_enabled, pretty_print_prometheus_config,
-    pretty_print_validation_errors,
+use betterlite_prometheus::collector_factory::config::{
+    NON_ENUM_METRIC_LABELS, PrometheusMetricsConfig, all_defined_labels,
+    pretty_print_prometheus_config, pretty_print_validation_errors,
 };
+use betterlite_prometheus::collector_factory::error::CollectorFactoryError;
+use betterlite_prometheus::collector_factory::factory::{CollectorFactory, is_metric_enabled};
 use betterlite_prometheus::label_names_catalog::UserApiKeyLabelName;
 use betterlite_prometheus::validation::{
     LabelValidationError, MetricValidationError, ValidationResults, ValidationSummary as _,
