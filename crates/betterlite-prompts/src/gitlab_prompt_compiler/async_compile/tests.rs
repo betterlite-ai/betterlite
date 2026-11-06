@@ -17,9 +17,10 @@ const CONFIG: &str = r#"{"project": "g/r", "access_token": "t", "prompts_path": 
 
 type Scripted = Vec<Result<GitLabResponse, io::Error>>;
 
-fn manager(responses: Scripted) -> GitLabPromptManager<FakeTransport> {
+async fn manager(responses: Scripted) -> GitLabPromptManager<FakeTransport> {
     let transport = FakeTransport::scripted(responses);
     GitLabPromptManager::new(config_from(CONFIG), None, None, None, transport)
+        .await
         .expect("the config builds a client")
 }
 
@@ -40,7 +41,7 @@ fn async_request<'request>(
 
 #[tokio::test]
 async fn a_missing_prompt_id_is_rejected() {
-    let manager = manager(vec![]);
+    let manager = manager(vec![]).await;
     let dynamic = ContractJson::Null;
 
     let error = async_compile_prompt_helper(&manager, &async_request(None, None, &dynamic))
@@ -53,7 +54,7 @@ async fn a_missing_prompt_id_is_rejected() {
 #[tokio::test]
 async fn the_async_helper_returns_what_the_sync_helper_compiles() {
     let template = "---\nmodel: gpt-4o\ntemperature: 0.5\n---\nUser: hello {{ name }}";
-    let manager = manager(vec![answer!(200, template)]);
+    let manager = manager(vec![answer!(200, template)]).await;
     let variables: PromptParams = serde_json::from_str(r#"{"name": "Ada"}"#).unwrap();
     let dynamic =
         ContractJson::Object(serde_json::from_str(r#"{"extra": {"git_ref": "v2"}}"#).unwrap());

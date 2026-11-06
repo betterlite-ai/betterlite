@@ -39,14 +39,16 @@ fn spec() -> PromptSpec {
     }
 }
 
-#[test]
-fn the_registry_serves_the_gitlab_initializer() {
+#[tokio::test]
+async fn the_registry_serves_the_gitlab_initializer() {
     let initializer =
         prompt_initializer_registry::<FakeTransport>(&SupportedPromptIntegrations::Gitlab)
             .expect("gitlab is registered");
     let spec = spec();
 
-    let manager = initializer(&spec.litellm_params, &spec, FakeTransport::default()).unwrap();
+    let manager = initializer(&spec.litellm_params, &spec, FakeTransport::default())
+        .await
+        .unwrap();
 
     assert_eq!(manager.prompt_id.as_deref(), Some("chat/hi"));
 }

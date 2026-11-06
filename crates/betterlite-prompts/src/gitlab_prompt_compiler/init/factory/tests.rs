@@ -8,6 +8,7 @@ use super::prompt_initializer;
 use crate::gitlab_client::error::GitLabClientError;
 use crate::gitlab_client::tests::FakeTransport;
 use crate::gitlab_prompt_compiler::error::InitializerError;
+use crate::gitlab_templates::error::ManagerError;
 
 fn params(extra: IndexMap<String, ContractJson>) -> PromptLiteLLMParams {
     PromptLiteLLMParams {
@@ -45,12 +46,13 @@ fn extra(config_json: &str) -> IndexMap<String, ContractJson> {
 
 const CONFIG: &str = r#"{"project": "g/r", "access_token": "t", "prompts_path": "prompts"}"#;
 
-#[test]
-fn the_initializer_builds_a_manager_from_the_config() {
+#[tokio::test]
+async fn the_initializer_builds_a_manager_from_the_config() {
     let spec = spec("chat/hi", extra(CONFIG));
 
-    let manager =
-        prompt_initializer(&spec.litellm_params, &spec, FakeTransport::default()).unwrap();
+    let manager = prompt_initializer(&spec.litellm_params, &spec, FakeTransport::default())
+        .await
+        .unwrap();
 
     assert_eq!(manager.prompt_id.as_deref(), Some("chat/hi"));
     assert_eq!(manager.ref_override, None);
@@ -60,24 +62,26 @@ fn the_initializer_builds_a_manager_from_the_config() {
     );
 }
 
-#[test]
-fn the_initializer_uses_the_outer_prompt_id_and_the_git_ref() {
+#[tokio::test]
+async fn the_initializer_uses_the_outer_prompt_id_and_the_git_ref() {
     let mut extra = extra(CONFIG);
     extra.insert("git_ref".to_owned(), ContractJson::Text("v2".to_owned()));
     let spec = spec("chat/hi", extra);
 
-    let manager =
-        prompt_initializer(&spec.litellm_params, &spec, FakeTransport::default()).unwrap();
+    let manager = prompt_initializer(&spec.litellm_params, &spec, FakeTransport::default())
+        .await
+        .unwrap();
 
     assert_eq!(manager.prompt_id.as_deref(), Some("chat/hi"));
     assert_eq!(manager.ref_override.as_deref(), Some("v2"));
 }
 
-#[test]
-fn a_missing_gitlab_config_is_an_error() {
+#[tokio::test]
+async fn a_missing_gitlab_config_is_an_error() {
     let spec = spec("chat/hi", IndexMap::new());
 
     let error = prompt_initializer(&spec.litellm_params, &spec, FakeTransport::default())
+        .await
         .err()
         .unwrap();
 
@@ -88,8 +92,8 @@ fn a_missing_gitlab_config_is_an_error() {
     );
 }
 
-#[test]
-fn a_git_ref_that_is_not_text_is_an_error() {
+#[tokio::test]
+async fn a_git_ref_that_is_not_text_is_an_error() {
     let mut extra = extra(CONFIG);
     extra.insert(
         "git_ref".to_owned(),
@@ -98,22 +102,24 @@ fn a_git_ref_that_is_not_text_is_an_error() {
     let spec = spec("chat/hi", extra);
 
     let error = prompt_initializer(&spec.litellm_params, &spec, FakeTransport::default())
+        .await
         .err()
         .unwrap();
 
     assert!(matches!(error, InitializerError::RefNotString));
 }
 
-#[test]
-fn a_config_without_credentials_is_an_error_naming_the_client() {
+#[tokio::test]
+async fn a_config_without_credentials_is_an_error_naming_the_client() {
     let spec = spec("chat/hi", extra(r#"{"project": "g/r"}"#));
 
     let error = prompt_initializer(&spec.litellm_params, &spec, FakeTransport::default())
+        .await
         .err()
         .unwrap();
 
     assert!(matches!(
         error,
-        InitializerError::Client(GitLabClientError::MissingCredentials)
+        InitializerError::Manager(ManagerError::Client(GitLabClientError::MissingCredentials))
     ));
 }

@@ -16,10 +16,11 @@ const CONFIG: &str = r#"{"project": "g/r", "access_token": "t", "prompts_path": 
 
 type Scripted = Vec<Result<GitLabResponse, io::Error>>;
 
-fn manager(responses: Scripted) -> (GitLabPromptManager<FakeTransport>, FakeTransport) {
+async fn manager(responses: Scripted) -> (GitLabPromptManager<FakeTransport>, FakeTransport) {
     let transport = FakeTransport::scripted(responses);
     let manager =
         GitLabPromptManager::new(config_from(CONFIG), None, None, None, transport.clone())
+            .await
             .expect("the config builds a client");
     (manager, transport)
 }
@@ -41,7 +42,7 @@ fn request<'request>(
 
 #[tokio::test]
 async fn a_missing_prompt_id_is_rejected() {
-    let (manager, transport) = manager(vec![]);
+    let (manager, transport) = manager(vec![]).await;
     let dynamic = ContractJson::Null;
 
     let error = manager
@@ -56,7 +57,7 @@ async fn a_missing_prompt_id_is_rejected() {
 #[tokio::test]
 async fn a_compiled_prompt_carries_messages_model_and_optional_params() {
     let template = "---\nmodel: gpt-4o\ntemperature: 0.5\nmax_tokens: 100\ntop_p: 0.9\n---\nSystem: be brief\nUser: hello {{ name }}";
-    let (manager, _transport) = manager(vec![answer!(200, template)]);
+    let (manager, _transport) = manager(vec![answer!(200, template)]).await;
     let variables: PromptParams = serde_json::from_str(r#"{"name": "Ada"}"#).unwrap();
     let dynamic = ContractJson::Null;
 
@@ -98,7 +99,8 @@ async fn a_compile_failure_names_the_requested_prompt() {
         answer!(404, ""),
         answer!(404, ""),
         answer!(404, ""),
-    ]);
+    ])
+    .await;
     let dynamic = ContractJson::Null;
 
     let error = manager
@@ -116,7 +118,7 @@ async fn a_compile_failure_names_the_requested_prompt() {
 #[tokio::test]
 async fn an_encoded_id_is_loaded_under_the_decoded_id_first() {
     let template = "User: hi";
-    let (manager, transport) = manager(vec![answer!(200, template), answer!(200, template)]);
+    let (manager, transport) = manager(vec![answer!(200, template), answer!(200, template)]).await;
     let dynamic = ContractJson::Null;
 
     let client = manager
@@ -136,7 +138,7 @@ async fn an_encoded_id_is_loaded_under_the_decoded_id_first() {
 
 #[tokio::test]
 async fn a_client_without_optional_params_still_reports_temperature_and_max_tokens() {
-    let (manager, _transport) = manager(vec![answer!(200, "User: hi")]);
+    let (manager, _transport) = manager(vec![answer!(200, "User: hi")]).await;
     let dynamic = ContractJson::Null;
 
     let client = manager

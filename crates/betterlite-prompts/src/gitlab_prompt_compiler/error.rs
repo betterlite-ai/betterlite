@@ -1,6 +1,5 @@
 use thiserror::Error;
 
-use crate::gitlab_client::error::GitLabClientError;
 use crate::gitlab_templates::error::ManagerError;
 
 #[derive(Debug, Error)]
@@ -12,17 +11,15 @@ pub enum InitializerError {
     #[error("litellm_params.git_ref must be a string")]
     RefNotString,
     #[error(transparent)]
-    Client(#[from] GitLabClientError),
+    Manager(#[from] ManagerError),
 }
 
 #[derive(Debug, Error)]
 pub enum GetPromptError {
     #[error(transparent)]
     Manager(#[from] ManagerError),
-    #[error("prompt variables are invalid: {0}")]
-    Variables(#[from] serde_json::Error),
-    #[error("the GitLab prompt manager is unavailable")]
-    Unavailable,
+    #[error("prompt values are invalid: {0}")]
+    Json(#[from] serde_json::Error),
     #[error("Prompt template '{prompt_id}' not found")]
     TemplateNotFound { prompt_id: String },
 }

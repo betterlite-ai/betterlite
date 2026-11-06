@@ -1,4 +1,3 @@
-use betterlite_models::decisions::Json as ContractJson;
 use betterlite_models::prompt_contracts::PromptParams;
 
 use crate::arguments::json::{Json, Object};
@@ -36,31 +35,19 @@ pub(crate) fn prompt_metadata(template: &GitLabPromptTemplate) -> Object {
     metadata
 }
 
-#[must_use]
-pub(crate) fn project_optional_params(metadata: &Object) -> PromptParams {
+pub(crate) fn project_optional_params(
+    metadata: &Object,
+) -> Result<PromptParams, serde_json::Error> {
     let mut projected = PromptParams::new();
     for name in PROJECTED_PARAMS {
         if let Some(value) = metadata.get(name) {
-            projected.insert(name.to_owned(), to_contract_json(value));
+            projected.insert(
+                name.to_owned(),
+                serde_json::from_value(serde_json::to_value(value)?)?,
+            );
         }
     }
-    projected
-}
-
-fn to_contract_json(value: &Json) -> ContractJson {
-    match value {
-        Json::Null => ContractJson::Null,
-        Json::Bool(flag) => ContractJson::Bool(*flag),
-        Json::Number(number) => ContractJson::Number(number.clone()),
-        Json::Text(text) => ContractJson::Text(text.clone()),
-        Json::List(items) => ContractJson::List(items.iter().map(to_contract_json).collect()),
-        Json::Object(fields) => ContractJson::Object(
-            fields
-                .iter()
-                .map(|(key, field_value)| (key.clone(), to_contract_json(field_value)))
-                .collect(),
-        ),
-    }
+    Ok(projected)
 }
 
 mod tests;

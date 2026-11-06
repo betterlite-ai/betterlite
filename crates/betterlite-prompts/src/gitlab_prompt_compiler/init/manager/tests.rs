@@ -3,13 +3,14 @@
 use crate::gitlab_client::GitLabClient;
 use crate::gitlab_client::error::GitLabClientError;
 use crate::gitlab_client::tests::{FakeTransport, config_from};
+use crate::gitlab_templates::error::ManagerError;
 
 use super::GitLabPromptManager;
 
 const CONFIG: &str = r#"{"project": "g/r", "access_token": "t", "prompts_path": "prompts"}"#;
 
-#[test]
-fn the_constructor_keeps_the_config_prompt_id_and_ref() {
+#[tokio::test]
+async fn the_constructor_keeps_the_config_prompt_id_and_ref() {
     let manager = GitLabPromptManager::new(
         config_from(CONFIG),
         Some("chat/hi".to_owned()),
@@ -17,6 +18,7 @@ fn the_constructor_keeps_the_config_prompt_id_and_ref() {
         None,
         FakeTransport::default(),
     )
+    .await
     .unwrap();
 
     assert_eq!(manager.prompt_id.as_deref(), Some("chat/hi"));
@@ -35,8 +37,8 @@ fn integration_name_is_gitlab() {
     );
 }
 
-#[test]
-fn an_injected_client_makes_an_empty_config_acceptable() {
+#[tokio::test]
+async fn an_injected_client_makes_an_empty_config_acceptable() {
     let client = GitLabClient::new(&config_from(CONFIG), FakeTransport::default()).unwrap();
 
     GitLabPromptManager::new(
@@ -46,11 +48,12 @@ fn an_injected_client_makes_an_empty_config_acceptable() {
         Some(client),
         FakeTransport::default(),
     )
+    .await
     .unwrap();
 }
 
-#[test]
-fn a_configured_prompt_id_ignores_the_injected_client() {
+#[tokio::test]
+async fn a_configured_prompt_id_ignores_the_injected_client() {
     let client = GitLabClient::new(&config_from(CONFIG), FakeTransport::default()).unwrap();
 
     let outcome = GitLabPromptManager::new(
@@ -59,26 +62,28 @@ fn a_configured_prompt_id_ignores_the_injected_client() {
         None,
         Some(client),
         FakeTransport::default(),
-    );
+    )
+    .await;
 
     assert!(matches!(
         outcome.err().unwrap(),
-        GitLabClientError::MissingCredentials
+        ManagerError::Client(GitLabClientError::MissingCredentials)
     ));
 }
 
-#[test]
-fn a_config_without_credentials_fails_at_construction() {
+#[tokio::test]
+async fn a_config_without_credentials_fails_at_construction() {
     let outcome = GitLabPromptManager::new(
         config_from(r#"{"project": "g/r"}"#),
         None,
         None,
         None,
         FakeTransport::default(),
-    );
+    )
+    .await;
 
     assert!(matches!(
         outcome.err().unwrap(),
-        GitLabClientError::MissingCredentials
+        ManagerError::Client(GitLabClientError::MissingCredentials)
     ));
 }

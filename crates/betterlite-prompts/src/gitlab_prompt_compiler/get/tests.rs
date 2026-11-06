@@ -14,7 +14,7 @@ const CONFIG: &str = r#"{"project": "g/r", "access_token": "t", "prompts_path": 
 
 type Scripted = Vec<Result<GitLabResponse, io::Error>>;
 
-fn manager(
+async fn manager(
     prompt_id: Option<&str>,
     ref_name: Option<&str>,
     responses: Scripted,
@@ -27,6 +27,7 @@ fn manager(
         None,
         transport.clone(),
     )
+    .await
     .expect("the config builds a client");
     (manager, transport)
 }
@@ -34,7 +35,7 @@ fn manager(
 #[tokio::test]
 async fn the_template_is_rendered_with_the_prompt_variables() {
     let template = "---\nmodel: gpt-4o\ntemperature: 0.5\n---\nUser: hello {{ name }}";
-    let (manager, _transport) = manager(None, None, vec![answer!(200, template)]);
+    let (manager, _transport) = manager(None, None, vec![answer!(200, template)]).await;
     let variables: PromptParams = serde_json::from_str(r#"{"name": "Ada"}"#).unwrap();
 
     let (rendered, metadata) = manager
@@ -53,7 +54,7 @@ async fn the_template_is_rendered_with_the_prompt_variables() {
 
 #[tokio::test]
 async fn a_loaded_prompt_is_not_fetched_again() {
-    let (manager, transport) = manager(None, None, vec![answer!(200, "User: hi")]);
+    let (manager, transport) = manager(None, None, vec![answer!(200, "User: hi")]).await;
 
     manager
         .get_prompt_template("chat/hi", None, None)
@@ -69,7 +70,7 @@ async fn a_loaded_prompt_is_not_fetched_again() {
 
 #[tokio::test]
 async fn a_missing_template_is_reported_by_name() {
-    let (manager, _transport) = manager(None, None, vec![answer!(404, ""), answer!(404, "")]);
+    let (manager, _transport) = manager(None, None, vec![answer!(404, ""), answer!(404, "")]).await;
 
     let error = manager
         .get_prompt_template("missing", None, None)
@@ -85,7 +86,7 @@ async fn a_missing_template_is_reported_by_name() {
 
 #[tokio::test]
 async fn the_ref_argument_overrides_the_stored_ref() {
-    let (manager, transport) = manager(None, Some("stored"), vec![answer!(200, "User: hi")]);
+    let (manager, transport) = manager(None, Some("stored"), vec![answer!(200, "User: hi")]).await;
 
     manager
         .get_prompt_template("chat/hi", None, Some("release/1"))
@@ -98,7 +99,7 @@ async fn the_ref_argument_overrides_the_stored_ref() {
 
 #[tokio::test]
 async fn the_stored_ref_is_used_without_a_ref_argument() {
-    let (manager, transport) = manager(None, Some("v2"), vec![answer!(200, "User: hi")]);
+    let (manager, transport) = manager(None, Some("v2"), vec![answer!(200, "User: hi")]).await;
 
     manager
         .get_prompt_template("chat/hi", None, None)
@@ -115,7 +116,8 @@ async fn rendering_failures_are_reported() {
         None,
         None,
         vec![answer!(200, "User: {{ missing | no_such_filter }}")],
-    );
+    )
+    .await;
 
     let error = manager
         .get_prompt_template("chat/hi", None, None)

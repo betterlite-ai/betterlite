@@ -1,5 +1,3 @@
-use std::sync::Mutex;
-
 use betterlite_models::prompt_contracts::{
     PromptCompileRequest, PromptManagementClient, PromptParams,
 };
@@ -9,9 +7,10 @@ use tokio::sync::MutexGuard;
 use crate::arguments::json::Object;
 use crate::gitlab_client::GitLabClient;
 use crate::gitlab_client::config::GitLabConfig;
-use crate::gitlab_client::error::GitLabClientError;
 use crate::gitlab_client::transport::GitLabTransport;
 use crate::gitlab_templates::error::ManagerError;
+use crate::gitlab_templates::manager_init::{self, ClientSource};
+use crate::gitlab_templates::parse::FrontmatterParser;
 
 use super::super::compile;
 use super::super::error::{CompileError, GetPromptError};
@@ -19,11 +18,10 @@ use super::super::get;
 use super::super::lazy::{self, TemplateSlot};
 
 pub struct GitLabPromptManager<T> {
-    pub(crate) gitlab_config: GitLabConfig,
-    pub(crate) prompt_id: Option<String>,
-    pub(crate) ref_override: Option<String>,
-    pub(crate) pending_client: Mutex<Option<GitLabClient<T>>>,
-    pub(crate) template_manager: AsyncMutex<TemplateSlot<T>>,
+    pub gitlab_config: GitLabConfig,
+    pub prompt_id: Option<String>,
+    pub ref_override: Option<String>,
+    pub template_manager: AsyncMutex<TemplateSlot<T>>,
 }
 
 impl<T> GitLabPromptManager<T>
@@ -33,38 +31,40 @@ where
     pub const INTEGRATION_NAME: &'static str = "gitlab";
 
     // LiteLLM's eager branch builds its template manager without the injected client.
-    pub fn new(
+    pub async fn new(
         gitlab_config: GitLabConfig,
         prompt_id: Option<String>,
         ref_override: Option<String>,
         injected_client: Option<GitLabClient<T>>,
         transport: T,
-    ) -> Result<Self, GitLabClientError> {
+    ) -> Result<Self, ManagerError> {
         let configured = prompt_id.as_deref().is_some_and(|id| !id.is_empty());
-        let mut client = match injected_client {
-            Some(client) if !configured => client,
-            Some(_) | None => GitLabClient::new(&gitlab_config, transport)?,
+        let source = match injected_client {
+            Some(client) if !configured => ClientSource::Provided(client),
+            Some(_) | None => ClientSource::Transport(transport),
         };
-        if let Some(requested) = ref_override.as_deref().filter(|name| !name.is_empty()) {
-            client.set_ref(requested)?;
-        }
+        let manager = manager_init::build(
+            &gitlab_config,
+            None,
+            ref_override.as_deref(),
+            source,
+            FrontmatterParser::Yaml,
+        )
+        .await?;
         Ok(Self {
             gitlab_config,
             prompt_id,
             ref_override,
-            pending_client: Mutex::new(Some(client)),
             template_manager: AsyncMutex::new(TemplateSlot {
-                manager: None,
+                manager,
                 configured_loaded: false,
             }),
         })
     }
 
-    pub(crate) async fn prompt_manager(
-        &self,
-    ) -> Result<MutexGuard<'_, TemplateSlot<T>>, ManagerError> {
+    pub async fn prompt_manager(&self) -> Result<MutexGuard<'_, TemplateSlot<T>>, ManagerError> {
         let mut slot = self.template_manager.lock().await;
-        lazy::ensure_ready(self, &mut slot).await?;
+        lazy::ensure_configured_loaded(self, &mut slot).await?;
         Ok(slot)
     }
 
@@ -74,14 +74,12 @@ where
         prompt_variables: Option<&PromptParams>,
         ref_name: Option<&str>,
     ) -> Result<(String, Object), GetPromptError> {
-        let mut slot = self.prompt_manager().await?;
-        get::prompt_template(
-            slot.manager.as_mut().ok_or(GetPromptError::Unavailable)?,
-            prompt_id,
-            prompt_variables,
-            ref_name,
-        )
-        .await
+        match self.prompt_manager().await {
+            Ok(mut slot) => {
+                get::prompt_template(&mut slot.manager, prompt_id, prompt_variables, ref_name).await
+            }
+            Err(source) => Err(GetPromptError::Manager(source)),
+        }
     }
 
     pub async fn compile_prompt_helper(
@@ -107,7 +105,7 @@ where
     ) -> Result<PromptManagementClient, GetPromptError> {
         let mut slot = self.prompt_manager().await?;
         compile::compile_inner(
-            slot.manager.as_mut().ok_or(GetPromptError::Unavailable)?,
+            &mut slot.manager,
             prompt_id,
             request.prompt_variables,
             request.dynamic_callback_params,

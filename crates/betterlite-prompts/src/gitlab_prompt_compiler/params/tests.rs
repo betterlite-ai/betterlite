@@ -53,7 +53,7 @@ fn the_five_parameters_are_projected_in_order() {
         "---\ntemperature: 0.5\nmax_tokens: 100\ntop_p: 0.9\nfrequency_penalty: 0.1\npresence_penalty: 0.2\nstop: [x]\n---\nUser: hi",
     ));
 
-    let projected = project_optional_params(&metadata);
+    let projected = project_optional_params(&metadata).unwrap();
 
     assert_eq!(
         keys(&projected),
@@ -71,7 +71,7 @@ fn the_five_parameters_are_projected_in_order() {
 fn only_temperature_and_max_tokens_are_projected_without_metadata() {
     let metadata = prompt_metadata(&template("User: hi"));
 
-    let projected = project_optional_params(&metadata);
+    let projected = project_optional_params(&metadata).unwrap();
 
     assert_eq!(keys(&projected), vec!["temperature", "max_tokens"]);
     assert!(projected.values().all(|value| *value == ContractJson::Null));
@@ -81,7 +81,7 @@ fn only_temperature_and_max_tokens_are_projected_without_metadata() {
 fn a_null_parameter_that_is_present_is_projected_as_null() {
     let metadata = prompt_metadata(&template("---\ntop_p: null\n---\nUser: hi"));
 
-    let projected = project_optional_params(&metadata);
+    let projected = project_optional_params(&metadata).unwrap();
 
     assert_eq!(keys(&projected), vec!["temperature", "max_tokens", "top_p"]);
     assert_eq!(projected.get("top_p"), Some(&ContractJson::Null));

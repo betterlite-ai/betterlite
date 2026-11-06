@@ -12,7 +12,7 @@ const CONFIG: &str = r#"{"project": "g/r", "access_token": "t", "prompts_path": 
 
 type Scripted = Vec<Result<GitLabResponse, io::Error>>;
 
-fn manager(
+async fn manager(
     config_json: &str,
     prompt_id: Option<&str>,
     responses: Scripted,
@@ -25,21 +25,20 @@ fn manager(
         None,
         transport.clone(),
     )
+    .await
     .expect("the config builds a client");
     (manager, transport)
 }
 
 #[tokio::test]
 async fn the_configured_prompt_is_fetched_on_the_first_access() {
-    let (manager, transport) = manager(CONFIG, Some("greet"), vec![answer!(200, "User: hi")]);
+    let (manager, transport) = manager(CONFIG, Some("greet"), vec![answer!(200, "User: hi")]).await;
 
     assert!(transport.requests().is_empty());
 
     let loaded = {
-        let slot = manager.prompt_manager().await.expect("the manager builds");
-        slot.manager
-            .as_ref()
-            .is_some_and(|template_manager| template_manager.prompts.contains_key("greet"))
+        let slot = manager.prompt_manager().await.expect("the manager loads");
+        slot.manager.prompts.contains_key("greet")
     };
 
     assert!(loaded);
@@ -48,29 +47,27 @@ async fn the_configured_prompt_is_fetched_on_the_first_access() {
 
 #[tokio::test]
 async fn the_configured_prompt_is_loaded_only_once() {
-    let (manager, transport) = manager(CONFIG, Some("greet"), vec![answer!(200, "User: hi")]);
+    let (manager, transport) = manager(CONFIG, Some("greet"), vec![answer!(200, "User: hi")]).await;
 
-    drop(manager.prompt_manager().await.expect("the manager builds"));
-    drop(manager.prompt_manager().await.expect("the manager builds"));
+    drop(manager.prompt_manager().await.expect("the manager loads"));
+    drop(manager.prompt_manager().await.expect("the manager loads"));
 
     assert_eq!(transport.requests().len(), 1);
 }
 
 #[tokio::test]
-async fn a_manager_without_a_prompt_id_fetches_nothing_while_it_is_built() {
-    let (manager, transport) = manager(CONFIG, None, vec![]);
+async fn a_manager_without_a_prompt_id_fetches_nothing() {
+    let (manager, transport) = manager(CONFIG, None, vec![]).await;
 
-    let built = {
-        let slot = manager.prompt_manager().await.expect("the manager builds");
-        slot.manager.is_some()
-    };
+    let slot = manager.prompt_manager().await.expect("the manager loads");
 
-    assert!(built);
+    assert!(slot.configured_loaded);
+    drop(slot);
     assert!(transport.requests().is_empty());
 }
 
 #[tokio::test]
-async fn a_lazily_built_manager_uses_the_injected_client() {
+async fn a_manager_uses_the_injected_client_when_no_prompt_id_is_configured() {
     let injected_transport = FakeTransport::scripted(vec![answer!(200, "User: hi")]);
     let client = GitLabClient::new(
         &config_from(r#"{"project": "own/project", "access_token": "t", "tag": "v9"}"#),
@@ -85,6 +82,7 @@ async fn a_lazily_built_manager_uses_the_injected_client() {
         Some(client),
         transport.clone(),
     )
+    .await
     .unwrap();
 
     let (rendered, _metadata) = manager
@@ -116,9 +114,10 @@ async fn a_configured_prompt_id_drops_the_injected_client() {
         Some(client),
         transport.clone(),
     )
+    .await
     .unwrap();
 
-    drop(manager.prompt_manager().await.expect("the manager builds"));
+    drop(manager.prompt_manager().await.expect("the manager loads"));
 
     assert!(injected_transport.requests().is_empty());
     assert_eq!(transport.requests().len(), 1);
@@ -134,7 +133,8 @@ async fn a_failed_configured_load_is_retried_on_the_next_access() {
             Err(io::Error::other("unreachable")),
             answer!(200, "User: hi"),
         ],
-    );
+    )
+    .await;
 
     assert!(manager.prompt_manager().await.is_err());
     drop(manager.prompt_manager().await.expect("the retry succeeds"));

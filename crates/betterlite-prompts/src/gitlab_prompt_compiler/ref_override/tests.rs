@@ -14,7 +14,7 @@ const CONFIG: &str = r#"{"project": "g/r", "access_token": "t", "prompts_path": 
 
 type Scripted = Vec<Result<GitLabResponse, io::Error>>;
 
-fn manager(
+async fn manager(
     ref_name: Option<&str>,
     responses: Scripted,
 ) -> (GitLabPromptManager<FakeTransport>, FakeTransport) {
@@ -26,6 +26,7 @@ fn manager(
         None,
         transport.clone(),
     )
+    .await
     .expect("the config builds a client");
     (manager, transport)
 }
@@ -53,7 +54,7 @@ fn request<'request>(
 
 #[tokio::test]
 async fn a_dynamic_git_ref_overrides_the_stored_ref_for_the_load() {
-    let (manager, transport) = manager(Some("stored"), vec![answer!(200, "User: hi")]);
+    let (manager, transport) = manager(Some("stored"), vec![answer!(200, "User: hi")]).await;
     let dynamic = dynamic_params(ContractJson::Text("feature".to_owned()));
 
     manager
@@ -66,7 +67,7 @@ async fn a_dynamic_git_ref_overrides_the_stored_ref_for_the_load() {
 
 #[tokio::test]
 async fn without_a_dynamic_git_ref_the_stored_ref_is_used() {
-    let (manager, transport) = manager(Some("stored"), vec![answer!(200, "User: hi")]);
+    let (manager, transport) = manager(Some("stored"), vec![answer!(200, "User: hi")]).await;
     let dynamic = ContractJson::Null;
 
     manager
@@ -79,7 +80,7 @@ async fn without_a_dynamic_git_ref_the_stored_ref_is_used() {
 
 #[tokio::test]
 async fn an_empty_dynamic_git_ref_falls_back_to_the_stored_ref() {
-    let (manager, transport) = manager(Some("stored"), vec![answer!(200, "User: hi")]);
+    let (manager, transport) = manager(Some("stored"), vec![answer!(200, "User: hi")]).await;
     let dynamic = dynamic_params(ContractJson::Text(String::new()));
 
     manager
@@ -95,7 +96,8 @@ async fn an_encoded_id_uses_the_dynamic_ref_first_and_the_stored_ref_second() {
     let (manager, transport) = manager(
         Some("stored"),
         vec![answer!(200, "User: hi"), answer!(200, "User: hi")],
-    );
+    )
+    .await;
     let dynamic = dynamic_params(ContractJson::Text("feature".to_owned()));
 
     manager
@@ -111,7 +113,7 @@ async fn an_encoded_id_uses_the_dynamic_ref_first_and_the_stored_ref_second() {
 
 #[tokio::test]
 async fn an_unknown_dynamic_key_changes_nothing() {
-    let (manager, transport) = manager(Some("stored"), vec![answer!(200, "User: hi")]);
+    let (manager, transport) = manager(Some("stored"), vec![answer!(200, "User: hi")]).await;
     let dynamic = ContractJson::Object(IndexMap::from([(
         "extra".to_owned(),
         ContractJson::Text("not a mapping".to_owned()),

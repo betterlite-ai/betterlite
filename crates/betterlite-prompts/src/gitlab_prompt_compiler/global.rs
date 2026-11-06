@@ -7,9 +7,9 @@ use crate::gitlab_client::config::GitLabConfig;
 use super::error::InitializerError;
 use super::init::config;
 
-// No get/set methods here: callers lock the cell directly instead of a one-line wrapper over it.
+// Callers lock the shared cell directly, as with dotprompt's GlobalPromptDirectory, so there is no getter.
 #[derive(Clone, Debug, Default)]
-pub struct GlobalGitLabConfig(pub(crate) Arc<Mutex<Option<GitLabConfig>>>);
+pub struct GlobalGitLabConfig(pub Arc<Mutex<Option<GitLabConfig>>>);
 
 pub fn set_global_gitlab_config(
     global: &GlobalGitLabConfig,

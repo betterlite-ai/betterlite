@@ -3,8 +3,8 @@ deviations:
   - what: "GitLabPromptManager fetches the configured prompt on the first compile or get_prompt_template call instead of inside the constructor; the injected-client omission of LiteLLM's eager branch is kept, so a manager with a prompt_id builds its template manager from gitlab_config and drops an injected client."
     why: "A Rust constructor cannot await the GitLab fetch LiteLLM performs in __init__. The same request is made once, before the manager is first used."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_prompt_manager.py#L306-L311
-  - what: "GitLabPromptManager::new resolves its GitLab client from gitlab_config and applies the ref override for every manager, including one without a prompt_id; LiteLLM's lazy prompt_manager property builds the client only when the property is read, so an invalid config fails at construction here and at first access there."
-    why: "The client is a constructor dependency in betterlite and the transport is injected; resolving it up front reports a bad config with a typed error where the manager is built."
+  - what: "GitLabPromptManager::new builds its GitLabTemplateManager and GitLab client for every manager, including one without a prompt_id; LiteLLM's __init__ builds them only when a prompt_id is set and otherwise defers the build to the prompt_manager property."
+    why: "The client and template manager are constructor dependencies in betterlite and the transport is injected; building them up front reports a bad config with a typed error where the manager is built."
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/gitlab/gitlab_prompt_manager.py#L317-L326
   - what: "GitLabPromptManager takes its GitLabTransport through the constructor and the prompt initializer rather than constructing an HTTP client itself; an injected GitLabClient wraps that transport."
     why: "reqwest is on this crate's deny list, so the HTTP client lives in the caller, as in B4053's GitLabClient."

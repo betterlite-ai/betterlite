@@ -37,7 +37,7 @@ where
             .get("model")
             .and_then(Json::as_str)
             .map(str::to_owned),
-        prompt_optional_params: Some(params::project_optional_params(&metadata)),
+        prompt_optional_params: Some(params::project_optional_params(&metadata)?),
         completed_messages: None,
     })
 }

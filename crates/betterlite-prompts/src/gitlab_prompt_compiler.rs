@@ -5,7 +5,7 @@ pub mod gate;
 pub(crate) mod get;
 pub mod global;
 pub mod init;
-pub(crate) mod lazy;
+pub mod lazy;
 pub(crate) mod params;
 pub(crate) mod parse;
 pub(crate) mod ref_override;
