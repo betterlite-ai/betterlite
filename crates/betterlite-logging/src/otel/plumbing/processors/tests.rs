@@ -13,7 +13,6 @@ use crate::otel::config::ExporterSpec;
 use crate::otel::plumbing::exporters::ExporterFactories;
 use crate::otel::plumbing::exporters::tests::{RecordingClient, clients};
 use crate::otel::plumbing::sinks::SpanSink;
-use crate::otel::vocabulary::constants::attribute_keys::litellm::METADATA_PREFIX;
 
 fn keys(names: &[&str]) -> Vec<String> {
     names.iter().map(|name| (*name).to_owned()).collect()
@@ -30,8 +29,7 @@ fn keys(names: &[&str]) -> Vec<String> {
 #[case::unrelated("session", false)]
 #[case::empty("", false)]
 fn baggage_allowlist_matches_a_key_or_a_prefix(#[case] key: &str, #[case] expected: bool) {
-    let processor =
-        BaggageSpanProcessor::new(keys(&["user.id", "team.id"]), keys(&[METADATA_PREFIX]));
+    let processor = BaggageSpanProcessor::new(keys(&["user.id", "team.id"]), None);
     assert_eq!(processor.is_allowed(key), expected);
 }
 
@@ -40,7 +38,7 @@ fn baggage_allowlist_matches_a_key_or_a_prefix(#[case] key: &str, #[case] expect
 #[case::default_prefix_replaced("litellm.metadata.a", false)]
 #[case::exact("exact", true)]
 fn baggage_custom_prefixes_replace_the_default(#[case] key: &str, #[case] expected: bool) {
-    let processor = BaggageSpanProcessor::new(keys(&["exact"]), keys(&["tenant."]));
+    let processor = BaggageSpanProcessor::new(keys(&["exact"]), Some(keys(&["tenant."])));
     assert_eq!(processor.is_allowed(key), expected);
 }
 
@@ -48,10 +46,7 @@ fn baggage_custom_prefixes_replace_the_default(#[case] key: &str, #[case] expect
 fn baggage_processor_stamps_only_allowed_entries_on_the_span() {
     let exporter = InMemorySpanExporter::default();
     let provider = SdkTracerProvider::builder()
-        .with_span_processor(BaggageSpanProcessor::new(
-            keys(&["user.id"]),
-            keys(&[METADATA_PREFIX]),
-        ))
+        .with_span_processor(BaggageSpanProcessor::new(keys(&["user.id"]), None))
         .with_span_processor(SimpleSpanProcessor::new(exporter.clone()))
         .build();
     let parent = Context::new().with_baggage(vec![
@@ -85,10 +80,7 @@ fn baggage_processor_stamps_only_allowed_entries_on_the_span() {
 fn baggage_processor_leaves_a_span_without_baggage_untouched() {
     let exporter = InMemorySpanExporter::default();
     let provider = SdkTracerProvider::builder()
-        .with_span_processor(BaggageSpanProcessor::new(
-            keys(&["user.id"]),
-            keys(&[METADATA_PREFIX]),
-        ))
+        .with_span_processor(BaggageSpanProcessor::new(keys(&["user.id"]), None))
         .with_span_processor(SimpleSpanProcessor::new(exporter.clone()))
         .build();
     provider.tracer("baggage").start("operation").end();

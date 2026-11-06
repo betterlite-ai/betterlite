@@ -37,7 +37,7 @@ impl GenAIEventRecorder {
         record.add_attribute(gen_ai_event::NAME_KEY, gen_ai_event::OPERATION_EXCEPTION);
         record.add_attribute(exception_event::TYPE, exception.error_type.to_owned());
         record.add_attribute(exception_event::MESSAGE, exception.message.to_owned());
-        if let Some(stack) = exception.stack_trace.filter(|text| !text.is_empty()) {
+        if let Some(stack) = exception.stack_trace {
             record.add_attribute(exception_event::STACKTRACE, stack.to_owned());
         }
         self.event_logger.emit(record);

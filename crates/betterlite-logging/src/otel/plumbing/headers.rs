@@ -32,9 +32,11 @@ pub fn parse_headers(raw: Option<&str>) -> BTreeMap<String, String> {
     for line in raw.unwrap_or_default().split(',') {
         let header = line.trim();
         let strict = split_pair(header, false).map(|(name, value)| {
+            let decoded_name = percent_decode_str(name).decode_utf8_lossy();
+            let decoded_value = percent_decode_str(value).decode_utf8_lossy();
             (
-                percent_decode_str(name).decode_utf8_lossy().into_owned(),
-                percent_decode_str(value).decode_utf8_lossy().into_owned(),
+                decoded_name.trim().to_owned(),
+                decoded_value.trim().to_owned(),
             )
         });
         let pair = strict.or_else(|| {

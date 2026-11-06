@@ -12,7 +12,9 @@ use opentelemetry_sdk::logs::{
 };
 use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
 
-use crate::otel::plumbing::exporters::{ExporterError, HttpClients, log_sink, metric_sink};
+use crate::otel::plumbing::exporters::{
+    ExporterError, HttpClients, build_log_exporter, metric_sink,
+};
 use crate::otel::plumbing::sinks::{LogSink, MetricSink};
 
 pub const METRIC_EXPORT_INTERVAL: Duration = Duration::from_secs(5);
@@ -38,11 +40,7 @@ pub enum Resolved<T> {
 pub fn build_resource(config: &OtelConfig) -> Resource {
     let mut attributes = BTreeMap::new();
     attributes.insert("service.name".to_owned(), config.service_name.clone());
-    if let Some(environment) = config
-        .deployment_environment
-        .as_ref()
-        .filter(|name| !name.is_empty())
-    {
+    if let Some(environment) = config.deployment_environment.as_ref() {
         attributes.insert("deployment.environment".to_owned(), environment.clone());
     }
     attributes.extend(config.resource_attributes.clone());
@@ -138,7 +136,12 @@ provider_resolver!(
 provider_resolver!(
     resolve_logger_provider,
     SdkLoggerProvider,
-    |config, clients| { Ok(build_logger_provider(config, log_sink(config, clients)?)) }
+    |config, clients| {
+        Ok(build_logger_provider(
+            config,
+            build_log_exporter(config, clients)?,
+        ))
+    }
 );
 
 #[must_use]

@@ -7,14 +7,15 @@ use std::time::Duration;
 use betterlite_config::sections::otel_settings::Settings as OtelConfig;
 use opentelemetry::logs::{LogRecord as _, Logger as _};
 use opentelemetry_sdk::logs::InMemoryLogExporter;
+use opentelemetry_sdk::metrics::{InMemoryMetricExporter, SdkMeterProvider};
 use rstest::rstest;
 
 use super::{
     METRIC_EXPORT_INTERVAL, ProviderState, Resolved, build_logger_provider, build_resource,
-    resolve_logger_provider, resolve_meter_provider, resolve_provider,
+    get_meter, resolve_logger_provider, resolve_meter_provider, resolve_provider,
 };
 use crate::otel::plumbing::exporters::tests::{RecordingClient, clients, config};
-use crate::otel::plumbing::exporters::{ExporterError, log_sink};
+use crate::otel::plumbing::exporters::{ExporterError, build_log_exporter};
 use crate::otel::plumbing::providers::get_event_logger;
 use crate::otel::plumbing::sinks::LogSink;
 
@@ -37,7 +38,11 @@ fn exporter_metric_interval_is_five_seconds() {
     &[],
     &[("service.name", "litellm-proxy"), ("deployment.environment", "prod")]
 )]
-#[case::empty_environment_skipped(Some(""), &[], &[("service.name", "litellm-proxy")])]
+#[case::empty_environment_kept(
+    Some(""),
+    &[],
+    &[("service.name", "litellm-proxy"), ("deployment.environment", "")]
+)]
 #[case::extra_attribute(
     None,
     &[("team", "blue")],
@@ -182,7 +187,7 @@ fn exporter_logger_provider_batches_network_sinks() {
     let recorder = Arc::new(RecordingClient::default());
     let mut settings = config("otlp_http");
     settings.endpoint = Some("http://collector:4318".to_owned());
-    let sink = log_sink(&settings, &clients(&recorder)).expect("sink");
+    let sink = build_log_exporter(&settings, &clients(&recorder)).expect("sink");
     let provider = build_logger_provider(&settings, sink);
     let logger = get_event_logger(&provider, "litellm");
     logger.emit(logger.create_log_record());
@@ -194,6 +199,29 @@ fn exporter_logger_provider_batches_network_sinks() {
         posted.first().map(|request| request.uri.as_str()),
         Some("http://collector:4318/v1/logs")
     );
+}
+
+#[test]
+fn exporter_meter_scope_carries_the_name_and_crate_version() {
+    let exporter = InMemoryMetricExporter::default();
+    let provider = SdkMeterProvider::builder()
+        .with_periodic_exporter(exporter.clone())
+        .build();
+    get_meter(&provider, "litellm.metrics")
+        .u64_counter("probe")
+        .build()
+        .add(1, &[]);
+    provider.force_flush().expect("flush");
+    let metrics = exporter.get_finished_metrics().expect("metrics");
+    let scope = metrics
+        .first()
+        .expect("exported metrics")
+        .scope_metrics()
+        .next()
+        .expect("one scope")
+        .scope();
+    assert_eq!(scope.name(), "litellm.metrics");
+    assert_eq!(scope.version(), Some(env!("CARGO_PKG_VERSION")));
 }
 
 #[test]

@@ -68,29 +68,50 @@ fn classify(kind: &str) -> Kind {
     }
 }
 
+// An empty endpoint is unset, as the SDK's own endpoint handling treats it.
+fn configured_endpoint(endpoint: Option<&str>) -> Option<&str> {
+    match endpoint {
+        Some("") | None => None,
+        Some(url) => Some(url),
+    }
+}
+
 // The SDK percent-decodes header values it is given, and parse_headers already did.
 fn http_exporter<B>(
     builder: B,
     protocol: Protocol,
-    endpoint: Option<String>,
+    endpoint: Option<&str>,
     raw_headers: Option<&str>,
     client: &Arc<dyn HttpClient>,
-) -> B
+) -> Result<B, ExporterError>
 where
     B: WithExportConfig + WithHttpConfig,
 {
-    let headers: HashMap<String, String> = parse_headers(raw_headers)
-        .into_iter()
-        .map(|(name, value)| (name, value.replace('%', "%25")))
-        .collect();
+    let mut headers: HashMap<String, String> = HashMap::new();
+    for (name, value) in parse_headers(raw_headers) {
+        HeaderName::from_bytes(name.as_bytes())?;
+        HeaderValue::from_str(&value)?;
+        headers.insert(name, value.replace('%', "%25"));
+    }
     let configured = builder
         .with_protocol(protocol)
         .with_shared_http_client(Arc::clone(client))
         .with_headers(headers);
-    match endpoint.filter(|url| !url.is_empty()) {
+    Ok(match configured_endpoint(endpoint) {
         Some(url) => configured.with_endpoint(url),
         None => configured,
+    })
+}
+
+fn metadata_from_headers(raw_headers: Option<&str>) -> Result<MetadataMap, ExporterError> {
+    let mut headers = HeaderMap::new();
+    for (name, value) in parse_headers(raw_headers) {
+        headers.insert(
+            HeaderName::from_bytes(name.as_bytes())?,
+            HeaderValue::from_str(&value)?,
+        );
     }
+    Ok(MetadataMap::from_headers(headers))
 }
 
 fn grpc_exporter<B>(
@@ -101,15 +122,8 @@ fn grpc_exporter<B>(
 where
     B: WithExportConfig + WithTonicConfig,
 {
-    let mut headers = HeaderMap::new();
-    for (name, value) in parse_headers(raw_headers) {
-        headers.insert(
-            HeaderName::from_bytes(name.as_bytes())?,
-            HeaderValue::from_str(&value)?,
-        );
-    }
-    let configured = builder.with_metadata(MetadataMap::from_headers(headers));
-    Ok(match endpoint.filter(|url| !url.is_empty()) {
+    let configured = builder.with_metadata(metadata_from_headers(raw_headers)?);
+    Ok(match configured_endpoint(endpoint) {
         Some(url) => configured.with_endpoint(url),
         None => configured,
     })
@@ -133,19 +147,16 @@ impl ExporterFactories {
         }
     }
 
-    // Routing reads this rather than a denylist, so a mistyped kind is never taken for OTLP.
+    // A registered factory is assumed to build an OTLP exporter, as LiteLLM documents.
     #[must_use]
     pub fn exporter_transport(&self, kind: &str) -> Transport {
+        if self.factories.contains_key(&kind.to_lowercase()) {
+            return Transport::Http;
+        }
         match classify(kind) {
             Kind::HttpJson | Kind::HttpProto => Transport::Http,
             Kind::Grpc => Transport::Grpc,
-            Kind::Console | Kind::InMemory | Kind::Unrecognized => {
-                if self.factories.contains_key(&kind.to_lowercase()) {
-                    Transport::Http
-                } else {
-                    Transport::Headerless
-                }
-            }
+            Kind::Console | Kind::InMemory | Kind::Unrecognized => Transport::Headerless,
         }
     }
 
@@ -166,14 +177,17 @@ impl ExporterFactories {
                 } else {
                     Protocol::HttpBinary
                 };
-                let endpoint = spec
-                    .traces_endpoint
-                    .clone()
-                    .filter(|url| !url.is_empty())
+                let endpoint = configured_endpoint(spec.traces_endpoint.as_deref())
+                    .map(str::to_owned)
                     .or_else(|| signal_endpoint(spec.endpoint.as_deref(), Signal::Traces));
                 let builder = opentelemetry_otlp::SpanExporter::builder().with_http();
-                let configured =
-                    http_exporter(builder, protocol, endpoint, headers, &self.clients.traces);
+                let configured = http_exporter(
+                    builder,
+                    protocol,
+                    endpoint.as_deref(),
+                    headers,
+                    &self.clients.traces,
+                )?;
                 Ok(SpanSink::Otlp(Box::new(configured.build()?)))
             }
             Kind::Grpc => {
@@ -208,8 +222,13 @@ macro_rules! signal_sink {
             Kind::HttpJson | Kind::HttpProto => {
                 let endpoint = signal_endpoint($config.endpoint.as_deref(), $signal);
                 let builder = opentelemetry_otlp::$exporter::builder().with_http();
-                let configured =
-                    http_exporter(builder, Protocol::HttpBinary, endpoint, headers, $client);
+                let configured = http_exporter(
+                    builder,
+                    Protocol::HttpBinary,
+                    endpoint.as_deref(),
+                    headers,
+                    $client,
+                )?;
                 Ok($sink::Otlp(Box::new(configured.build()?)))
             }
             Kind::Grpc => {
@@ -232,7 +251,10 @@ pub fn metric_sink(
     })
 }
 
-pub fn log_sink(config: &OtelConfig, clients: &HttpClients) -> Result<LogSink, ExporterError> {
+pub fn build_log_exporter(
+    config: &OtelConfig,
+    clients: &HttpClients,
+) -> Result<LogSink, ExporterError> {
     signal_sink!(LogExporter => LogSink, config, &clients.logs, Signal::Logs, {
         Kind::InMemory => Ok(LogSink::InMemory(InMemoryLogExporter::default())),
         Kind::Console | Kind::Unrecognized => Ok(LogSink::Console(opentelemetry_stdout::LogExporter::default())),

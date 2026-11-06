@@ -12,6 +12,7 @@ use opentelemetry_sdk::trace::{
 };
 
 use crate::otel::plumbing::sinks::SpanSink;
+use crate::otel::vocabulary::constants::attribute_keys::litellm::METADATA_PREFIX;
 
 // Stamps an allowlisted set of baggage entries onto every span at start.
 #[derive(Debug)]
@@ -22,10 +23,10 @@ pub struct BaggageSpanProcessor {
 
 impl BaggageSpanProcessor {
     #[must_use]
-    pub fn new(allowed_keys: Vec<String>, allowed_prefixes: Vec<String>) -> Self {
+    pub fn new(allowed_keys: Vec<String>, allowed_prefixes: Option<Vec<String>>) -> Self {
         Self {
             allowed_keys: allowed_keys.into_iter().collect(),
-            allowed_prefixes,
+            allowed_prefixes: allowed_prefixes.unwrap_or_else(|| vec![METADATA_PREFIX.to_owned()]),
         }
     }
 

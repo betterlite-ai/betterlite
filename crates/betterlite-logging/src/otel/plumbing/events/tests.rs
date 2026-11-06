@@ -77,18 +77,21 @@ fn event_operation_exception_is_a_warn_log_with_the_exception_attributes() {
 }
 
 #[rstest]
-#[case::absent(None)]
-#[case::empty(Some(""))]
-fn event_operation_exception_omits_a_missing_stack_trace(#[case] stack: Option<&str>) {
+#[case::absent(None, &["event.name", "exception.type", "exception.message"])]
+#[case::empty(
+    Some(""),
+    &["event.name", "exception.type", "exception.message", "exception.stacktrace"]
+)]
+fn event_operation_exception_keeps_the_stack_trace_it_is_given(
+    #[case] stack: Option<&str>,
+    #[case] expected: &[&str],
+) {
     let record = record_exception(stack, None);
     let names: Vec<String> = attributes(&record)
         .into_iter()
         .map(|(name, _)| name)
         .collect();
-    assert_eq!(
-        names,
-        vec!["event.name", "exception.type", "exception.message"]
-    );
+    assert_eq!(names, expected);
 }
 
 #[test]

@@ -16,8 +16,8 @@ use rstest::rstest;
 use serde::Deserialize;
 
 use super::{
-    ExporterError, ExporterFactories, ExporterFactory, HttpClients, Transport, log_sink,
-    metric_sink,
+    ExporterError, ExporterFactories, ExporterFactory, HttpClients, Transport, build_log_exporter,
+    configured_endpoint, metadata_from_headers, metric_sink,
 };
 use crate::otel::config::ExporterSpec;
 use crate::otel::plumbing::processors::processor_for;
@@ -187,6 +187,41 @@ async fn exporter_grpc_rejects_an_invalid_header_value() {
 }
 
 #[rstest]
+#[case::absent(None, None)]
+#[case::blank(Some(""), None)]
+#[case::value(Some("http://collector:4318"), Some("http://collector:4318"))]
+fn exporter_endpoint_treats_a_blank_as_unset(
+    #[case] endpoint: Option<&str>,
+    #[case] expected: Option<&str>,
+) {
+    assert_eq!(configured_endpoint(endpoint), expected);
+}
+
+#[test]
+fn otlp_grpc_headers_are_decoded_into_metadata() {
+    let metadata =
+        metadata_from_headers(Some("authorization=Basic%20dG9rZW4%3D")).expect("metadata");
+    let value = metadata
+        .get("authorization")
+        .expect("authorization header")
+        .to_str()
+        .expect("header text");
+    assert_eq!(value, "Basic dG9rZW4=");
+}
+
+#[test]
+fn exporter_http_rejects_an_invalid_header_value() {
+    let (factories, _recorder) = factories();
+    let mut http = spec("otlp_http");
+    http.endpoint = Some("http://collector:4318".to_owned());
+    http.headers = Some("x-key=line%0Abreak".to_owned());
+    let error = factories
+        .exporter_from_spec(&http)
+        .expect_err("invalid header value");
+    assert!(matches!(error, ExporterError::HeaderValue(_)));
+}
+
+#[rstest]
 #[case::unknown("jaeger")]
 #[case::typo("otlp_htp")]
 #[case::zipkin("zipkin")]
@@ -252,6 +287,14 @@ fn exporter_transport_of_a_registered_kind_carries_headers() {
 }
 
 #[test]
+fn exporter_transport_of_a_registered_grpc_kind_carries_headers() {
+    let in_memory: ExporterFactory =
+        Arc::new(|_spec| Ok(SpanSink::InMemory(InMemorySpanExporter::default())));
+    let (factories, _recorder) = factories_with(vec![("grpc", in_memory)]);
+    assert_eq!(factories.exporter_transport("grpc"), Transport::Http);
+}
+
+#[test]
 fn exporter_shorthand_fields_build_the_span_exporter() {
     let (factories, _recorder) = factories();
     let sink = factories
@@ -292,14 +335,14 @@ async fn exporter_metric_sink_builds_for_grpc() {
 #[case::http_json("http/json", "otlp")]
 fn exporter_log_sink_follows_the_kind(#[case] kind: &str, #[case] expected: &str) {
     let (_factories, recorder) = factories();
-    let sink = log_sink(&config(kind), &clients(&recorder)).expect("sink");
+    let sink = build_log_exporter(&config(kind), &clients(&recorder)).expect("sink");
     assert_eq!(log_label(&sink), expected);
 }
 
 #[tokio::test]
 async fn exporter_log_sink_builds_for_grpc() {
     let (_factories, recorder) = factories();
-    let sink = log_sink(&config("grpc"), &clients(&recorder)).expect("sink");
+    let sink = build_log_exporter(&config("grpc"), &clients(&recorder)).expect("sink");
     assert_eq!(log_label(&sink), "otlp");
 }
 
@@ -437,6 +480,7 @@ fn codec_protobuf_kinds_post_the_binary_content_type(#[case] kind: &str) {
     Some("http://other/custom/path"),
     "http://other/custom/path"
 )]
+#[case::blank_traces_endpoint("http://collector:4318", Some(""), "http://collector:4318/v1/traces")]
 fn otlp_span_endpoint_is_rewritten_per_signal(
     #[case] endpoint: &str,
     #[case] traces_endpoint: Option<&str>,

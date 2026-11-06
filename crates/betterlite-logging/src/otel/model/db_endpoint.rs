@@ -203,14 +203,11 @@ pub fn db_span_attributes(
         .then(|| postgres_endpoint(environment))
         .flatten();
     let text = |key: &'static str, value: Option<&str>| {
-        value
-            .filter(|text| !text.is_empty())
-            .map(|text| KeyValue::new(key, text.to_owned()))
+        value.map(|text| KeyValue::new(key, text.to_owned()))
     };
     let port = endpoint
         .as_ref()
         .and_then(|found| found.port)
-        .filter(|port| *port != 0)
         .map(|port| KeyValue::new(server::PORT, port));
     [
         text(db::SYSTEM_NAME, Some(system)),

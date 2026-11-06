@@ -8,6 +8,8 @@ use rstest::rstest;
 #[case::plain(Some("a=b,c=d"), &[("a", "b"), ("c", "d")])]
 #[case::name_lowercased(Some("X-Key=Value"), &[("x-key", "Value")])]
 #[case::percent_decoded(Some("authorization=Basic%20dG9rZW4%3D"), &[("authorization", "Basic dG9rZW4=")])]
+#[case::encoded_value_edges_trimmed(Some("a=%20v%20"), &[("a", "v")])]
+#[case::encoded_name_edges_trimmed(Some("%20a%20=v"), &[("a", "v")])]
 #[case::plus_kept(Some("a=1+2"), &[("a", "1+2")])]
 #[case::liberal_space(Some("authorization=Bearer abc def"), &[("authorization", "Bearer abc def")])]
 #[case::liberal_keeps_percent(Some("a=x y%20z"), &[("a", "x y%20z")])]

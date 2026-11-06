@@ -87,7 +87,7 @@ use rstest::rstest;
     Signal::Logs,
     Some("https://h/v2/trace/otlp/v1/logs")
 )]
-fn endpoint_signal_path_is_rewritten(
+fn otlp_signal_endpoint_is_rewritten_per_signal(
     #[case] endpoint: Option<&str>,
     #[case] signal: Signal,
     #[case] expected: Option<&str>,

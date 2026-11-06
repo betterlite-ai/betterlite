@@ -49,8 +49,8 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/plumbing/events.py#L54
   - what: >-
       An empty endpoint or traces_endpoint string is treated as unset, so the exporter falls back to the
-      SDK default endpoint for the signal. A header name or value that parse_headers keeps but the transport
-      cannot carry (for example a percent-decoded newline on gRPC) is an ExporterError instead of a
+      SDK default endpoint for the signal. A header name or value that parse_headers keeps but either
+      transport cannot carry (for example a percent-decoded newline) is an ExporterError instead of a
       deferred failure.
     why: >-
       docs/compatibility.md reads an empty string as unset for env-backed fields. Failing at build time names the
