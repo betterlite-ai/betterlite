@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use betterlite_models::projections::parameter_names::{
     CONTENT_PARAMETER_NAMES, ModelParameters, PROVIDER_CHAT_PARAMETER_NAMES,
@@ -9,7 +9,9 @@ use betterlite_models::projections::reasoning_effort::{
 };
 use betterlite_models::projections::service_tier::resolved_service_tier;
 use serde::Deserialize;
+use serde_json::value::to_raw_value;
 use serde_json::{Value, json};
+use thiserror::Error;
 
 pub(crate) struct Op;
 
@@ -23,7 +25,7 @@ pub(crate) struct Input {
 #[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
 enum Step {
     LoggingProjection {
-        model_parameters: ModelParameters,
+        model_parameters: BTreeMap<String, Value>,
     },
     ExcludedContentNames,
     ProviderChatNames,
@@ -39,11 +41,39 @@ enum Step {
     },
 }
 
+#[derive(Debug, Error)]
+enum RunError {
+    #[error(transparent)]
+    Parameters(#[from] serde_json::Error),
+}
+
+impl From<RunError> for Box<crate::helpers::HelperError> {
+    fn from(error: RunError) -> Self {
+        Self::new(crate::helpers::HelperError {
+            class: "SerializationError".to_owned(),
+            status: None,
+            error_type: Some(None),
+            param: Some(None),
+            code: Some(None),
+            message: error.to_string(),
+        })
+    }
+}
+
+fn raw_parameters(
+    parameters: &BTreeMap<String, Value>,
+) -> Result<ModelParameters, serde_json::Error> {
+    parameters
+        .iter()
+        .map(|(name, value)| Ok((name.clone(), to_raw_value(value)?)))
+        .collect()
+}
+
 impl Step {
-    fn run(&self) -> Value {
-        match self {
+    fn run(&self) -> Result<Value, RunError> {
+        Ok(match self {
             Self::LoggingProjection { model_parameters } => {
-                json!(logging_model_parameters(model_parameters))
+                json!(logging_model_parameters(&raw_parameters(model_parameters)?))
             }
             Self::ExcludedContentNames => {
                 json!(
@@ -74,7 +104,7 @@ impl Step {
                 usage_tier.as_deref(),
                 requested_tier.as_deref(),
             )),
-        }
+        })
     }
 }
 
@@ -84,7 +114,7 @@ impl crate::helpers::Helper for Op {
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         let mut results = Vec::new();
         for step in &input.steps {
-            results.push(step.run());
+            results.push(step.run()?);
         }
         Ok(Value::Array(results))
     }
