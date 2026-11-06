@@ -15,7 +15,8 @@ use tokio::{fs as async_fs, task};
 
 use super::super::error::PrivateJsonError;
 use super::super::files::{
-    FileAccess, LocalFiles, MAX_CONCURRENT_FILE_OPERATIONS, PrivateFiles, StagedFile,
+    FileAccess, LocalFiles, MAX_CONCURRENT_FILE_OPERATIONS, PrivateDocument, PrivateFiles,
+    StagedFile,
 };
 use super::super::safe_json::{
     DEFAULT_MAX_RECURSE_DEPTH, MAX_JSON_BYTES, MAX_JSON_DEPTH, Passthrough, ValueTransform,
@@ -42,6 +43,10 @@ struct CacheRecord {
 fn private_files_with(fault: Fault) -> PrivateFiles {
     let access: Arc<dyn FileAccess> = Arc::new(ScriptedFiles { fault, gate: None });
     PrivateFiles::from(access)
+}
+
+fn document(text: &str) -> PrivateDocument {
+    PrivateDocument::json(&value(text)).expect("encodes the document")
 }
 
 #[rstest]
@@ -187,13 +192,25 @@ async fn bytes_are_staged_and_written_with_owner_only_permissions() {
     let target = directory.path().join("token");
     let files = PrivateFiles::default();
     let staged = files
-        .stage_private_bytes(&target, b"first")
+        .stage_private(
+            &target,
+            PrivateDocument {
+                suffix: None,
+                bytes: b"first".to_vec(),
+            },
+        )
         .await
         .expect("stages the bytes");
     assert_eq!(mode_of(&staged.path), 0o600);
     assert!(!target.exists());
     files
-        .write_private_bytes(&target, b"second")
+        .write_private(
+            &target,
+            PrivateDocument {
+                suffix: None,
+                bytes: b"second".to_vec(),
+            },
+        )
         .await
         .expect("writes the bytes");
     assert_eq!(fs::read(&target).expect("reads"), b"second");
@@ -207,7 +224,7 @@ async fn failed_staging_preserves_originals_and_removes_temporaries() {
     fs::write(&target, "{\"old\": true}").expect("writes the original");
     let files = private_files_with(Fault::Write);
     let error = files
-        .stage_private_json(&target, &value(r#"{"fresh": 1}"#))
+        .stage_private(&target, document(r#"{"fresh": 1}"#))
         .await
         .expect_err("staging fails");
     assert!(matches!(error, PrivateJsonError::Stage(..)));
@@ -224,7 +241,7 @@ async fn a_failed_cleanup_keeps_the_staging_error() {
     let target = directory.path().join("cache.json");
     let files = private_files_with(Fault::WriteAndRemove);
     let error = files
-        .stage_private_json(&target, &value(r#"{"fresh": 1}"#))
+        .stage_private(&target, document(r#"{"fresh": 1}"#))
         .await
         .expect_err("staging fails");
     assert!(matches!(error, PrivateJsonError::Stage(..)));
@@ -237,7 +254,7 @@ async fn a_failed_commit_keeps_the_original_and_removes_the_staged_file() {
     fs::write(&target, "{\"old\": true}").expect("writes the original");
     let files = private_files_with(Fault::Replace);
     let staged = files
-        .stage_private_json(&target, &value(r#"{"fresh": 1}"#))
+        .stage_private(&target, document(r#"{"fresh": 1}"#))
         .await
         .expect("stages the file");
     let error = files
@@ -258,9 +275,9 @@ async fn discarding_a_staged_file_removes_it_and_ignores_a_missing_one() {
     let directory = TempDir::new().expect("temp dir");
     let files = PrivateFiles::default();
     let staged = files
-        .stage_private_json(
+        .stage_private(
             &directory.path().join("cache.json"),
-            &value(r#"{"fresh": 1}"#),
+            document(r#"{"fresh": 1}"#),
         )
         .await
         .expect("stages the file");
@@ -295,7 +312,7 @@ async fn staging_follows_a_symlinked_parent_directory() {
     let link = directory.path().join("link");
     symlink(&real, &link).expect("links the directory");
     PrivateFiles::default()
-        .write_private_json(&link.join("state.json"), &value(r#"{"through": "link"}"#))
+        .write_private(&link.join("state.json"), document(r#"{"through": "link"}"#))
         .await
         .expect("writes through the link");
     let written = fs::read_to_string(real.join("state.json")).expect("reads through the link");
@@ -345,7 +362,7 @@ async fn concurrent_writes_never_reveal_a_partial_document() {
     let files = PrivateFiles::default();
     let initial = value(r#"{"writer": "initial"}"#);
     files
-        .write_private_json(&target, &initial)
+        .write_private(&target, document(r#"{"writer": "initial"}"#))
         .await
         .expect("writes the original");
     let first = value(&format!(
@@ -356,8 +373,8 @@ async fn concurrent_writes_never_reveal_a_partial_document() {
         r#"{{"writer": "second", "padding": "{}"}}"#,
         "b".repeat(4096)
     ));
-    let writer_one = files.write_private_json(&target, &first);
-    let writer_two = files.write_private_json(&target, &second);
+    let writer_one = files.write_private(&target, PrivateDocument::json(&first).expect("encodes"));
+    let writer_two = files.write_private(&target, PrivateDocument::json(&second).expect("encodes"));
     let reader = observe_documents(&target);
     let (one, two, observed) = tokio::join!(writer_one, writer_two, reader);
     one.expect("first writer");

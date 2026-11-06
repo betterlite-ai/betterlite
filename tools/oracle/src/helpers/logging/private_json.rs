@@ -3,7 +3,7 @@ use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
 
 use betterlite_logging::private_json::error::PrivateJsonError;
-use betterlite_logging::private_json::files::PrivateFiles;
+use betterlite_logging::private_json::files::{PrivateDocument, PrivateFiles};
 use betterlite_logging::private_json::safe_json::{
     DEFAULT_MAX_RECURSE_DEPTH, safe_dumps, safe_json_loads,
 };
@@ -85,7 +85,10 @@ struct Fixture {
 impl Fixture {
     async fn stage(&self, name: &str, data: &Value, commit: bool) -> HelperResult {
         let target = self.root.path().join(name);
-        let staged = self.files.stage_private_json(&target, data).await?;
+        let staged = self
+            .files
+            .stage_private(&target, PrivateDocument::json(data)?)
+            .await?;
         if commit {
             self.files.commit_staged_json(&staged, &target).await?;
         } else {
@@ -112,7 +115,9 @@ impl Fixture {
         let directory = self.root.path().join("conf");
         self.files.ensure_private_dir(&directory).await?;
         let target = directory.join(name);
-        self.files.write_private_json(&target, data).await?;
+        self.files
+            .write_private(&target, PrivateDocument::json(data)?)
+            .await?;
         let directory_mode = fs::metadata(&directory)
             .map_err(failure)?
             .permissions()
@@ -127,7 +132,7 @@ impl Fixture {
         let link = self.root.path().join("link");
         std::os::unix::fs::symlink(&real, &link).map_err(failure)?;
         self.files
-            .write_private_json(&link.join(name), data)
+            .write_private(&link.join(name), PrivateDocument::json(data)?)
             .await?;
         let parent_is_symlink = fs::symlink_metadata(&link)
             .map_err(failure)?
