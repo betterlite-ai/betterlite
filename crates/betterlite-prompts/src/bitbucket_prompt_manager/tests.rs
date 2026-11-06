@@ -138,6 +138,14 @@ fn template_without_metadata_has_empty_defaults() {
     assert!(template.optional_params.is_empty());
 }
 
+#[test]
+fn template_keeps_a_null_schema_as_an_empty_schema() {
+    let metadata = object(r#"{"input": {"schema": null}}"#);
+    let template =
+        BitBucketPromptTemplate::new("t".to_owned(), String::new(), metadata, None).unwrap();
+    assert!(template.input_schema.is_empty());
+}
+
 #[rstest]
 #[case::model_not_text(r#"{"model": 4}"#, "metadata field 'model' must be a string")]
 #[case::temperature_not_number(
@@ -149,6 +157,7 @@ fn template_without_metadata_has_empty_defaults() {
     "metadata field 'max_tokens' must be a number"
 )]
 #[case::input_not_mapping(r#"{"input": ["a"]}"#, "metadata field 'input' must be a mapping")]
+#[case::input_null(r#"{"input": null}"#, "metadata field 'input' must be a mapping")]
 #[case::schema_not_mapping(
     r#"{"input": {"schema": "x"}}"#,
     "metadata field 'input.schema' must be a mapping"
@@ -290,17 +299,20 @@ fn render_fills_the_template_with_the_variables(
     );
 }
 
+#[test]
+fn render_sandbox_renders_a_dunder_attribute_as_empty() {
+    let manager = manager_with(&[("t", "{{ ''.__class__ }}")]);
+    assert_eq!(manager.render_template("t", &Object::new()).unwrap(), "");
+}
+
 #[rstest]
-#[case::dunder_class("{{ ''.__class__ }}")]
 #[case::dunder_mro("{{ ''.__class__.__mro__ }}")]
 #[case::subclasses("{{ ().__class__.__base__.__subclasses__() }}")]
-// the sandbox has no Python objects to reach, so a dunder lookup renders nothing or fails
-fn render_sandbox_exposes_no_interpreter_internals(#[case] content: &str) {
+// the sandbox has no Python objects to reach, and looking up an attribute of the undefined value it returns fails
+fn render_sandbox_rejects_dunder_traversal(#[case] content: &str) {
     let manager = manager_with(&[("t", content)]);
-    let rendered = manager
-        .render_template("t", &Object::new())
-        .unwrap_or_default();
-    assert_eq!(rendered, "");
+    let error = manager.render_template("t", &Object::new()).unwrap_err();
+    assert!(matches!(error, ManagerError::Render(_)));
 }
 
 #[test]

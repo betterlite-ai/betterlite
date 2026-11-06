@@ -37,18 +37,6 @@ fn number_field(metadata: &Object, field: &'static str) -> Result<Option<Number>
     }
 }
 
-fn mapping_field(
-    source: &Object,
-    field: &str,
-    error: TemplateError,
-) -> Result<Option<Object>, TemplateError> {
-    match source.get(field) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Object(mapping)) => Ok(Some(mapping.clone())),
-        Some(_) => Err(error),
-    }
-}
-
 impl BitBucketPromptTemplate {
     pub fn new(
         template_id: String,
@@ -61,11 +49,15 @@ impl BitBucketPromptTemplate {
             Some(Json::Text(text)) => Some(text.clone()),
             Some(_) => return Err(TemplateError::ModelNotString),
         };
-        let input_schema = match mapping_field(&metadata, "input", TemplateError::InputNotMapping)?
-        {
-            Some(section) => mapping_field(&section, "schema", TemplateError::SchemaNotMapping)?
-                .unwrap_or_default(),
+        // LiteLLM reads input.schema through two .get calls: a null input fails the load, a null schema does not
+        let input_schema = match metadata.get("input") {
             None => Object::new(),
+            Some(Json::Object(section)) => match section.get("schema") {
+                None | Some(Json::Null) => Object::new(),
+                Some(Json::Object(schema)) => schema.clone(),
+                Some(_) => return Err(TemplateError::SchemaNotMapping),
+            },
+            Some(_) => return Err(TemplateError::InputNotMapping),
         };
         let optional_params = metadata
             .iter()
