@@ -62,8 +62,13 @@ where
     where
         F: FnMut(&mut PromptManagementClient) -> R + Send,
     {
-        if let Some(result) = self.with_cached(humanloop_prompt_id, &mut use_prompt) {
-            return Ok(result);
+        {
+            let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
+            if let Some(prompt) = cache.peek(humanloop_prompt_id) {
+                let result = use_prompt(prompt);
+                drop(cache);
+                return Ok(result);
+            }
         }
         let prompt = fetch_prompt(
             &self.transport,
@@ -72,29 +77,10 @@ where
             humanloop_api_key,
         )
         .await?;
-        Ok(self.store_and(humanloop_prompt_id, prompt, &mut use_prompt))
-    }
-
-    fn with_cached<R, F>(&self, key: &str, use_prompt: F) -> Option<R>
-    where
-        F: FnOnce(&mut PromptManagementClient) -> R,
-    {
         let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
-        let prompt = cache.peek(key)?;
-        let result = use_prompt(prompt);
+        let result = use_prompt(cache.store(humanloop_prompt_id, prompt));
         drop(cache);
-        Some(result)
-    }
-
-    fn store_and<R, F>(&self, key: &str, prompt: PromptManagementClient, use_prompt: F) -> R
-    where
-        F: FnOnce(&mut PromptManagementClient) -> R,
-    {
-        let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
-        let entry = cache.store(key, prompt);
-        let result = use_prompt(entry);
-        drop(cache);
-        result
+        Ok(result)
     }
 }
 
