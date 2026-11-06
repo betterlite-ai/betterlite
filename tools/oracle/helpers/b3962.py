@@ -168,6 +168,11 @@ def parse_time(value: Json, name: str) -> datetime:
     return datetime.fromisoformat(string_value(value, name))
 
 
+def optional_time(scenario: dict[str, Json], name: str) -> datetime | None:
+    value = scenario.get(name)
+    return parse_time(value, name) if value is not None else None
+
+
 def build_kwargs(scenario: dict[str, Json]) -> dict[str, object]:
     metadata = scenario.get("metadata")
     kwargs: dict[str, object] = {
@@ -176,40 +181,13 @@ def build_kwargs(scenario: dict[str, Json]) -> dict[str, object]:
         "litellm_params": {"metadata": metadata if isinstance(metadata, dict) else {}},
         "response_cost": scenario.get("response_cost"),
         "call_type": scenario.get("call_type"),
-        "api_call_start_time": (
-            parse_time(scenario.get("api_call_start_time"), "api_call_start_time")
-            if scenario.get("api_call_start_time") is not None
-            else None
-        ),
-        "completion_start_time": (
-            parse_time(scenario.get("completion_start_time"), "completion_start_time")
-            if scenario.get("completion_start_time") is not None
-            else None
-        ),
+        "api_call_start_time": optional_time(scenario, "api_call_start_time"),
+        "completion_start_time": optional_time(scenario, "completion_start_time"),
     }
     standard = scenario.get("standard_logging_object")
     if isinstance(standard, dict):
         kwargs["standard_logging_object"] = standard
     return kwargs
-
-
-def apply_default_tags(scenario: dict[str, Json]) -> None:
-    tags = scenario.get("default_tags")
-    if isinstance(tags, list):
-        litellm.langfuse_default_tags = [tag for tag in tags if isinstance(tag, str)]
-    else:
-        litellm.langfuse_default_tags = None
-
-
-def log_sync(
-    logger: BraintrustLogger,
-    kwargs: dict[str, object],
-    response: ResponseObject | None,
-    start: datetime,
-    end: datetime,
-) -> None:
-    log_event = cast(Callable[..., None], logger.log_success_event)  # pyright: ignore[reportUnknownMemberType]
-    log_event(kwargs, response, start, end)
 
 
 async def log_async(
@@ -225,7 +203,10 @@ async def log_async(
 
 def log_result(scenario: dict[str, Json]) -> Json:
     logger = build_logger(scenario)
-    apply_default_tags(scenario)
+    tags = scenario.get("default_tags")
+    litellm.langfuse_default_tags = (
+        [tag for tag in tags if isinstance(tag, str)] if isinstance(tags, list) else None
+    )
     recorder = Recorder(answer_list(scenario))
     kwargs = build_kwargs(scenario)
     response = build_response(scenario.get("response"))
@@ -233,6 +214,7 @@ def log_result(scenario: dict[str, Json]) -> Json:
     end = parse_time(scenario.get("end_time"), "end_time")
     calls = scenario.get("calls")
     count = calls if isinstance(calls, int) and not isinstance(calls, bool) else 1
+    sync_call = cast(Callable[..., None], logger.log_success_event)  # pyright: ignore[reportUnknownMemberType]
     with (
         patch.object(logger, "global_braintrust_sync_http_handler", FakeSyncClient(recorder)),
         patch.object(logger, "global_braintrust_http_handler", FakeAsyncClient(recorder)),
@@ -241,7 +223,7 @@ def log_result(scenario: dict[str, Json]) -> Json:
             if scenario.get("path") == "async":
                 asyncio.run(log_async(logger, kwargs, response, start, end))
             else:
-                log_sync(logger, kwargs, response, start, end)
+                sync_call(kwargs, response, start, end)
     return cast(Json, {"requests": recorder.requests})
 
 

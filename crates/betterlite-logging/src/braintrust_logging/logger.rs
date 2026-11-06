@@ -46,24 +46,20 @@ impl<D: Delivery> BraintrustLogger<D> {
     ) -> Result<(), BraintrustError<D::Error>> {
         let project_id = self.project_id(event, path).await?;
         let request = payload::request_data(event, &self.settings.default_tags, path)?;
-        self.insert(&project_id, request).await
-    }
-
-    // LiteLLM's failure callback delegates to CustomLogger's no-op, so a failure event sends nothing
-    pub const fn log_failure_event(&self) {}
-
-    async fn insert(&self, project_id: &str, event: Json) -> Result<(), BraintrustError<D::Error>> {
         let url = format!(
             "{}/project_logs/{project_id}/insert",
             self.settings.api_base
         );
         let body = Json::Object(IndexMap::from([(
             "events".to_owned(),
-            Json::List(vec![event]),
+            Json::List(vec![request]),
         )]));
         let _response = self.send(&url, &body).await?;
         Ok(())
     }
+
+    // LiteLLM's failure callback delegates to CustomLogger's no-op, so a failure event sends nothing
+    pub const fn log_failure_event(&self) {}
 
     async fn send(&self, url: &str, body: &Json) -> Result<Vec<u8>, BraintrustError<D::Error>> {
         let encoded = serde_json::to_vec(body).map_err(BraintrustError::Encode)?;
