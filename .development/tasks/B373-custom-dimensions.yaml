@@ -15,21 +15,14 @@ description: 'Implement CustomDimension validation and pattern work accounting w
   custom_pattern_work (L798-L805), CustomDimension._validate_matchers (L825-L835), CustomDimension.pattern_work
   (L837-L841), ComplexityRouterConfig._validate_custom_dimensions (L1743-L1761). Implement these behaviors
   through the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
-  instead of separate ports.'
+  instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B329 calls this service.'
 scope:
   paths:
   - crates/betterlite-router/src/custom_dimensions.rs
   - crates/betterlite-router/src/custom_dimensions/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/custom_dimensions.rs
   - crates/betterlite-server/src/routing/custom_dimensions/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/custom_dimensions.rs
   - tools/oracle/src/router_probes/custom_dimensions/**
   - tools/oracle/litellm/probes/custom_dimensions.py

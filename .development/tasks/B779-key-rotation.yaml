@@ -93,13 +93,14 @@ description: >-
 
   rotation_log_redaction proves diagnostics retain a key name or a safe identifier without copying
   the token prefix used by LiteLLM when key_name is absent.
+  B1100 registers state/key_rotation.rs as a stub slot, so fill only crates/betterlite-server/src/state/key_rotation.rs and leave state.rs as it is.
 scope:
   paths:
     - crates/betterlite-server/src/key_rotation.rs
     - crates/betterlite-server/src/key_rotation/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/state/key_rotation.rs
+    - crates/betterlite-server/src/state/key_rotation/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - crates/betterlite-server/src/key_rotation/fixtures.rs

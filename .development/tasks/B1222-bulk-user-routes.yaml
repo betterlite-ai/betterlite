@@ -62,15 +62,14 @@ description: >-
   146 production, 220 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring, 0 decoder/fuzz
   and 0 config lines, 431 changed lines estimated within a 450-line gate. Only the repository fixture/corpus/lock
   exclusions apply; production SQL counts. Do not duplicate dependency implementations.
+  B1100 registers routes/bulk_user.rs as a stub, so fill only crates/betterlite-server/src/routes/bulk_user.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/bulk_user_routes.rs
     - crates/betterlite-server/src/bulk_user_routes/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/bulk_user.rs
+    - crates/betterlite-server/src/routes/bulk_user/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/bulk-user-routes/**
@@ -121,7 +120,7 @@ oracle_cases:
   - tools/oracle/cases/management/bulk-user-routes/non-admin-route-denied.yaml
 deviations: []
 out_of_scope:
-  - B007 owns ManagementProblem, problem_response and reject_unknown_query_params; B1665 owns ProblemDetail and MANAGEMENT_V1_PREFIX; B067 composes this router and is never a dependency.
+  - B007 owns ManagementProblem, problem_response and reject_unknown_query_params; B1665 owns ProblemDetail and MANAGEMENT_V1_PREFIX. This router mounts from its own route stub; B067 does not mount it again and is never a dependency.
   - No new untyped byte boundary; shared config/HTTP/row decoders remain with their named owners.
 pitfalls:
   - A helper's non-ManagementProblem exception becomes 500 even when it carries a 4xx status; dependency authentication failures occur before that catch.

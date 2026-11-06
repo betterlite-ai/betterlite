@@ -57,14 +57,13 @@ description: >-
   This task consumes the existing typed body decoder and introduces no settings or credential storage.
   The function plus decorator owns 147 nonblank/noncomment lines. Reserve 170 implementation, 310 tests
   and 65 registration lines, 545 within 550; keep each implementation file under 300 lines.
+  B1100 registers routes/organization_patch_v2.rs as a stub, so fill only crates/betterlite-server/src/routes/organization_patch_v2.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/organization_patch_v2.rs
     - crates/betterlite-server/src/organization_patch_v2/**
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/organization_patch_v2.rs
+    - crates/betterlite-server/src/routes/organization_patch_v2/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - crates/betterlite-server/Cargo.toml

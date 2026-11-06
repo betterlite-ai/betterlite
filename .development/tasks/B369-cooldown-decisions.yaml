@@ -22,21 +22,14 @@ description: 'Implement CooldownPolicy and CooldownDecision over typed B011 erro
   (L330-L424), should_cooldown_based_on_allowed_fails_policy (L561-L609), _increment_allowed_fails (L612-L622),
   _is_allowed_fails_set_on_router (L625-L639), cast_exception_status_to_int (L642-L651), is_caller_timeout_408
   (L654-L671). Implement these behaviors through the typed Rust services above; synchronous facades and
-  structural accessors reuse the same primitive instead of separate ports.'
+  structural accessors reuse the same primitive instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B308 calls this service.'
 scope:
   paths:
   - crates/betterlite-router/src/cooldown_decisions.rs
   - crates/betterlite-router/src/cooldown_decisions/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/cooldown_decisions.rs
   - crates/betterlite-server/src/routing/cooldown_decisions/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/cooldown_decisions.rs
   - tools/oracle/src/router_probes/cooldown_decisions/**
   - tools/oracle/litellm/probes/cooldown_decisions.py

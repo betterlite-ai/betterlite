@@ -139,15 +139,14 @@ description: >-
   HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
   exercise real virtual-key lookup and permission policy. Apply B865 ManagementEffects to this source-decorated
   route; its concrete cache eviction is a direct dependency, not deferred logging infrastructure.
+  B1100 registers routes/user_update.rs as a stub, so fill only crates/betterlite-server/src/routes/user_update.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/user_update.rs
     - crates/betterlite-server/src/user_update/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/user_update.rs
+    - crates/betterlite-server/src/routes/user_update/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/user-update/**

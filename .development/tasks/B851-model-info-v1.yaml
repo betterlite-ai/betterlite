@@ -77,15 +77,14 @@ description: >-
 
   The seven owned functions contain 207 nonblank noncomment lines excluding docstrings. Allow 230
   production, 330 tests, 65 route wiring and 45 config lines, 670 within 750.
+  B1100 registers routes/model_info_v1.rs as a stub, so fill only crates/betterlite-server/src/routes/model_info_v1.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/model_info_v1.rs
     - crates/betterlite-server/src/model_info_v1/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/model_info_v1.rs
+    - crates/betterlite-server/src/routes/model_info_v1/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/model-info-v1/**

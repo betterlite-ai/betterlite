@@ -22,16 +22,15 @@ description: >-
   captured provider credentials, never randomized ciphertext strings. Native clock tests cover exact
   expiry equality. Own 138 nonblank/non-comment lines; budget 155 handler,145 tests,150 HTTP fixtures,
   30 wiring =480 lines.
+  B1100 registers routes/realtime.rs as a stub, so fill only crates/betterlite-server/src/routes/realtime.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/api/realtime_routes.rs
   - crates/betterlite-server/src/api/realtime_routes/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/routes/realtime.rs
+  - crates/betterlite-server/src/routes/realtime/**
   - tools/oracle/cases/api/realtime-routes/**
   - tools/oracle/fixtures/realtime-routes/**
   - tools/oracle/helpers/b084.py

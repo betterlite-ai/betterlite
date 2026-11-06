@@ -19,21 +19,14 @@ description: 'Build ClassifierContext from B384 extracted messages, opening/curr
   (L2391-L2403), ComplexityRouter._classifier_context_payload (L2405-L2442), ComplexityRouter._native_classifier_payload
   (L2702-L2727), ComplexityRouter._build_classifier_user_payload (L2730-L2789). Implement these behaviors
   through the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
-  instead of separate ports.'
+  instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B331, B332, B335, B353, B359, B363 and B400 call this service.'
 scope:
   paths:
   - crates/betterlite-router/src/classifier_context.rs
   - crates/betterlite-router/src/classifier_context/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/classifier_context.rs
   - crates/betterlite-server/src/routing/classifier_context/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/classifier_context.rs
   - tools/oracle/src/router_probes/classifier_context/**
   - tools/oracle/litellm/probes/classifier_context.py

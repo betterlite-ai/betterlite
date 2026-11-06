@@ -20,12 +20,11 @@ description: >-
   including invalid/missing auth and exact error type/param/code, with message text excluded.
   These ranges own 301 nonblank, noncomment lines plus 32 type lines; reserve 350 product,
   200 behavior tests, 100 parsing/fuzz and 70 route wiring lines, a 725-line budget.
+  B1100 registers routes/tag_writes.rs as a stub, so fill only crates/betterlite-server/src/routes/tag_writes.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/tag_writes.rs
+    - crates/betterlite-server/src/routes/tag_writes/**
     - crates/betterlite-server/src/tag_writes.rs
     - crates/betterlite-server/src/tag_writes/**
     - crates/betterlite-server/fuzz/Cargo.toml

@@ -11,7 +11,8 @@ description: 'Integrate B365 IoReservation into B016 pre-call checks and B017 re
   io_token_reconcile_success (L528-L576), async_io_token_reconcile_success (L579-L637), io_token_refund_failure
   (L640-L661), refund_stale_reservation_before_retry (L664-L688), async_io_token_refund_failure (L691-L716),
   build_io_token_rate_limit_headers (L719-L738). Implement these behaviors through the typed Rust services
-  above; synchronous facades and structural accessors reuse the same primitive instead of separate ports.'
+  above; synchronous facades and structural accessors reuse the same primitive instead of separate ports.
+  B304 builds only in its own modules, so this task also installs the B304 shared counters in the server state and drains them at shutdown.'
 scope:
   paths:
   - crates/betterlite-router/src/io_token_limits.rs
