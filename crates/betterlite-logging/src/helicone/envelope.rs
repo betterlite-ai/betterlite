@@ -9,7 +9,7 @@ use super::claude_mapping::{self, ClaudeMappingError, ClaudeMessage};
 use super::event::SuccessEvent;
 use super::initialization::Settings;
 use super::metadata_cleanup;
-use super::model_fallback::{self, ResolvedModel};
+use super::model_fallback::{self, Provider, ResolvedModel};
 use super::routing::{self, RoutingError};
 use super::timing::{self, Timing, TimingError};
 
@@ -23,7 +23,7 @@ pub enum EnvelopeError {
     Timing(#[source] Box<TimingError>),
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Envelope {
     pub provider_request: ProviderRequest,
@@ -31,7 +31,8 @@ pub struct Envelope {
     pub timing: Timing,
 }
 
-#[derive(Debug, Serialize)]
+// No Debug: the meta map carries the Helicone bearer token that assembly wrote.
+#[derive(Serialize)]
 pub struct ProviderRequest {
     pub url: &'static str,
     pub json: RequestJson,
@@ -60,12 +61,15 @@ pub enum ResponseJson {
 
 impl ResponseJson {
     fn build(model: &ResolvedModel, response: &Json) -> Result<Self, EnvelopeError> {
-        if model.claude_format {
-            let mapped = claude_mapping::map(&model.name, response)
-                .map_err(|error| EnvelopeError::Claude(Box::new(error)))?;
-            Ok(Self::Claude(mapped))
-        } else {
-            Ok(Self::Passthrough(response.clone()))
+        match model.provider {
+            Provider::Claude => {
+                let mapped = claude_mapping::map(&model.name, response)
+                    .map_err(|error| EnvelopeError::Claude(Box::new(error)))?;
+                Ok(Self::Claude(mapped))
+            }
+            Provider::OpenAi | Provider::VertexAi | Provider::Gemini => {
+                Ok(Self::Passthrough(response.clone()))
+            }
         }
     }
 }
@@ -76,7 +80,7 @@ pub struct ResponseHeaders {
     pub openai_version: &'static str,
 }
 
-#[derive(Debug)]
+// No Debug: the envelope's meta carries the Helicone bearer token.
 pub struct Assembled {
     pub log_url: Url,
     pub envelope: Envelope,

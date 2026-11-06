@@ -13,11 +13,18 @@ const ACCEPTED_MODELS: [&str; 10] = [
 
 const FALLBACK_MODEL: &str = "gpt-3.5-turbo";
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Provider {
+    OpenAi,
+    Claude,
+    VertexAi,
+    Gemini,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResolvedModel {
     pub name: String,
-    pub vertex_ai: bool,
-    pub claude_format: bool,
+    pub provider: Provider,
 }
 
 // A name only has to contain an accepted word, and a Vertex AI model keeps its name whatever it is.
@@ -28,8 +35,20 @@ pub fn resolve(model: &str, custom_llm_provider: &str) -> ResolvedModel {
     let name = if accepted { model } else { FALLBACK_MODEL };
     ResolvedModel {
         name: name.to_owned(),
-        vertex_ai,
-        claude_format: name.contains("claude") && !vertex_ai,
+        provider: classify(name, vertex_ai),
+    }
+}
+
+// Vertex AI wins over the name-based routes, then Claude, then Gemini, and the rest goes to OpenAI.
+fn classify(name: &str, vertex_ai: bool) -> Provider {
+    if vertex_ai {
+        Provider::VertexAi
+    } else if name.contains("claude") {
+        Provider::Claude
+    } else if name.contains("gemini") {
+        Provider::Gemini
+    } else {
+        Provider::OpenAi
     }
 }
 
