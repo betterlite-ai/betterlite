@@ -20,9 +20,6 @@ pub(crate) fn run_cases(
     cases: &[SdkHttpCase],
 ) -> Result<Vec<bool>, OracleError> {
     let cancelled = AtomicBool::new(false);
-    if !cases.is_empty() {
-        sync_litellm(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."))?;
-    }
     cases
         .iter()
         .map(|case| run_case(options, case, &cancelled))
@@ -41,6 +38,7 @@ fn run_case(
         case_env: case.env.clone(),
         limits: limits.clone(),
     };
+    sync_litellm(&python.root)?;
     let [first, second] = sides(options.self_check);
     let mut captures = Vec::new();
     for side in [first, second] {

@@ -59,10 +59,9 @@ fn answering(id: &str) -> Vec<UpstreamAnswer> {
 }
 
 fn python_sdk(case: &SdkHttpCase) -> PythonSdk {
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-    sync_litellm(&root).unwrap();
+    sync_litellm(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")).unwrap();
     PythonSdk {
-        root,
+        root: Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."),
         inherited: ProcessEnvironment::try_parse_from([env!("CARGO_PKG_NAME")]).unwrap(),
         case_env: case.env.clone(),
         limits: OracleLimits::default(),
