@@ -109,18 +109,19 @@ impl DirectEmbeddingExecutor {
         model: &str,
         configuration: &Params,
     ) -> Result<String, VectorStoreEmbeddingError> {
-        Ok(match text_option(configuration, "custom_llm_provider")? {
-            Some(provider) if model.split('/').next() != Some(provider) => {
-                format!("{provider}/{model}")
+        if let Some(provider) = text_option(configuration, "custom_llm_provider")? {
+            if model.split('/').next() == Some(provider) {
+                return Ok(model.to_owned());
             }
-            None if self.catalog.metadata(model).is_some_and(|known| {
-                known.provider == "openai" && known.mode == Some(Mode::Embedding)
-            }) =>
-            {
-                format!("openai/{model}")
-            }
-            Some(_) | None => model.to_owned(),
-        })
+            return Ok(format!("{provider}/{model}"));
+        }
+        let known = self.catalog.metadata(model);
+        if known
+            .is_some_and(|entry| entry.provider == "openai" && entry.mode == Some(Mode::Embedding))
+        {
+            return Ok(format!("openai/{model}"));
+        }
+        Ok(model.to_owned())
     }
 }
 
