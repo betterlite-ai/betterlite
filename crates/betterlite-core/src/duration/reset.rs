@@ -5,7 +5,7 @@ use jiff::tz::TimeZoneDatabase;
 use super::error::{DurationError, DurationWarning};
 use super::spec::{self, ResetDurationSpec, ResetUnit};
 use super::zone;
-use handlers::{handle_day, handle_hour, handle_minute, handle_month, handle_second};
+use handlers::{ClockField, handle_clock, handle_day, handle_month};
 
 mod handlers;
 
@@ -36,35 +36,17 @@ impl Timeline {
         unit: ResetUnit,
     ) -> Result<(civil::DateTime, Fold), DurationError> {
         match unit {
-            ResetUnit::Second => handle_second(self.current, self.base_midnight, amount, self.fold),
-            ResetUnit::Minute => handle_minute(self.current, self.base_midnight, amount, self.fold),
-            ResetUnit::Hour => handle_hour(self.current, self.base_midnight, amount, self.fold),
-            ResetUnit::Day => handle_day(
-                self.current,
-                self.base_midnight,
-                amount,
-                self.time_of_day,
-                self.fold,
-            ),
+            ResetUnit::Second => handle_clock(self, amount, ClockField::Second),
+            ResetUnit::Minute => handle_clock(self, amount, ClockField::Minute),
+            ResetUnit::Hour => handle_clock(self, amount, ClockField::Hour),
+            ResetUnit::Day => handle_day(self, amount),
             ResetUnit::Week => {
                 let days = amount
                     .checked_mul(7)
                     .ok_or(DurationError::CalendarOverflow)?;
-                handle_day(
-                    self.current,
-                    self.base_midnight,
-                    days,
-                    self.time_of_day,
-                    self.fold,
-                )
+                handle_day(self, days)
             }
-            ResetUnit::Month => handle_month(
-                self.current,
-                self.base_midnight,
-                amount,
-                self.time_of_day,
-                self.fold,
-            ),
+            ResetUnit::Month => handle_month(self, amount),
         }
     }
 }

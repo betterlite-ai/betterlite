@@ -293,69 +293,106 @@ fn duration_parser_duration_tests_behavior_rejects_month_intervals_but_one(
 }
 
 #[rstest]
-#[case::same_day("1d", "2024-01-01T03:00:00Z", "06:00:00", "2024-01-01T06:00:00Z")]
-#[case::next_day("1d", "2024-01-01T10:00:00Z", "06:00:00", "2024-01-02T06:00:00Z")]
+#[case::same_day("1d", "2024-01-01T03:00:00Z", None, "06:00:00", "2024-01-01T06:00:00Z")]
+#[case::next_day("1d", "2024-01-01T10:00:00Z", None, "06:00:00", "2024-01-02T06:00:00Z")]
 #[case::custom_days_ignore_the_time(
     "2d",
     "2024-01-01T10:00:00Z",
+    None,
     "06:00:00",
     "2024-01-03T06:00:00Z"
 )]
-#[case::weekly_same_monday("7d", "2024-01-01T03:00:00Z", "06:00:00", "2024-01-01T06:00:00Z")]
-#[case::monthly("1mo", "2024-01-15T10:00:00Z", "06:00:00", "2024-02-01T06:00:00Z")]
+#[case::weekly_same_monday("7d", "2024-01-01T03:00:00Z", None, "06:00:00", "2024-01-01T06:00:00Z")]
+#[case::monthly(
+    "1mo",
+    "2024-01-15T10:00:00Z",
+    None,
+    "06:00:00",
+    "2024-02-01T06:00:00Z"
+)]
 #[case::fractional(
     "1d",
     "2024-01-01T03:00:00Z",
+    None,
     "00:00:00.500000",
     "2024-01-02T00:00:00.500000Z"
 )]
-fn duration_parser_duration_tests_behavior_reset_time_of_day(
+#[case::gap_day_handler(
+    "1d",
+    "2024-03-09T12:00:00Z",
+    Some("America/New_York"),
+    "02:30:00",
+    "2024-03-10T07:30:00Z"
+)]
+#[case::gap_day_handler_on_the_gap_day(
+    "1d",
+    "2024-03-10T06:30:00Z",
+    Some("America/New_York"),
+    "02:30:00",
+    "2024-03-10T07:30:00Z"
+)]
+#[case::gap_hour_handler(
+    "1h",
+    "2024-03-10T06:30:00Z",
+    Some("America/New_York"),
+    "00:00:00",
+    "2024-03-10T07:00:00Z"
+)]
+#[case::gap_minute_handler(
+    "30m",
+    "2024-03-10T06:45:00Z",
+    Some("America/New_York"),
+    "00:00:00",
+    "2024-03-10T07:00:00Z"
+)]
+#[case::first_fold_occurrence(
+    "1d",
+    "2024-11-03T04:30:00Z",
+    Some("America/New_York"),
+    "01:30:00",
+    "2024-11-03T05:30:00Z"
+)]
+#[case::second_fold_occurrence(
+    "1d",
+    "2024-11-03T06:00:00Z",
+    Some("America/New_York"),
+    "01:30:00",
+    "2024-11-03T06:30:00Z"
+)]
+#[case::just_after_the_fold(
+    "1d",
+    "2024-11-03T05:30:00Z",
+    Some("America/New_York"),
+    "01:30:00",
+    "2024-11-04T06:30:00Z"
+)]
+fn duration_parser_duration_tests_behavior_reset_instants(
     #[case] spec: &str,
     #[case] now: &str,
+    #[case] zone: Option<&str>,
     #[case] time_of_day: &str,
     #[case] expected: &str,
 ) {
-    assert_eq!(
-        reset_at(spec, now, None, time_of_day).instant,
-        moment(expected)
-    );
+    let result = reset_at(spec, now, zone, time_of_day);
+    assert_eq!(result.instant, moment(expected));
 }
 
 #[rstest]
-#[case::letters("abc")]
-#[case::digits_only("5")]
-#[case::uppercase_unit("5M")]
-#[case::leading_space(" 5m")]
-fn duration_parser_duration_tests_behavior_unparsable_reset_falls_back_to_midnight(
+#[case::unparsable_letters("abc", DurationWarning::UnrecognizedResetDuration { spec: "abc".to_owned() })]
+#[case::unparsable_digits("5", DurationWarning::UnrecognizedResetDuration { spec: "5".to_owned() })]
+#[case::unparsable_uppercase("5M", DurationWarning::UnrecognizedResetDuration { spec: "5M".to_owned() })]
+#[case::unparsable_leading_space(" 5m", DurationWarning::UnrecognizedResetDuration { spec: " 5m".to_owned() })]
+#[case::unknown_letter("5x", DurationWarning::UnknownResetUnit { unit: "x".to_owned() })]
+#[case::unknown_word("5mox", DurationWarning::UnknownResetUnit { unit: "mox".to_owned() })]
+#[case::unknown_plural("2hours", DurationWarning::UnknownResetUnit { unit: "hours".to_owned() })]
+#[case::unknown_huge("999999999999999999999999x", DurationWarning::UnknownResetUnit { unit: "x".to_owned() })]
+fn duration_parser_duration_tests_behavior_reset_fallbacks(
     #[case] spec: &str,
+    #[case] warning: DurationWarning,
 ) {
     let result = reset_at(spec, "2024-01-01T10:00:00Z", None, "06:00:00");
     assert_eq!(result.instant, moment("2024-01-02T00:00:00Z"));
-    assert_eq!(
-        result.warnings,
-        vec![DurationWarning::UnrecognizedResetDuration {
-            spec: spec.to_owned()
-        }]
-    );
-}
-
-#[rstest]
-#[case::letter("5x", "x")]
-#[case::word("5mox", "mox")]
-#[case::plural("2hours", "hours")]
-#[case::huge("999999999999999999999999x", "x")]
-fn duration_parser_duration_tests_behavior_unknown_reset_unit_falls_back_to_midnight(
-    #[case] spec: &str,
-    #[case] unit: &str,
-) {
-    let result = reset_at(spec, "2024-01-01T10:00:00Z", None, "06:00:00");
-    assert_eq!(result.instant, moment("2024-01-02T00:00:00Z"));
-    assert_eq!(
-        result.warnings,
-        vec![DurationWarning::UnknownResetUnit {
-            unit: unit.to_owned()
-        }]
-    );
+    assert_eq!(result.warnings, vec![warning]);
 }
 
 #[test]
@@ -385,39 +422,6 @@ fn duration_parser_duration_tests_behavior_reset_trailing_input_is_reported() {
             rest: "!".to_owned()
         }]
     );
-}
-
-#[rstest]
-#[case::day_handler("1d", "2024-03-09T12:00:00Z", "02:30:00", "2024-03-10T07:30:00Z")]
-#[case::day_handler_on_the_gap_day(
-    "1d",
-    "2024-03-10T06:30:00Z",
-    "02:30:00",
-    "2024-03-10T07:30:00Z"
-)]
-#[case::hour_handler("1h", "2024-03-10T06:30:00Z", "00:00:00", "2024-03-10T07:00:00Z")]
-#[case::minute_handler("30m", "2024-03-10T06:45:00Z", "00:00:00", "2024-03-10T07:00:00Z")]
-fn duration_parser_duration_tests_behavior_dst_gap_uses_the_pre_transition_offset(
-    #[case] spec: &str,
-    #[case] now: &str,
-    #[case] time_of_day: &str,
-    #[case] expected: &str,
-) {
-    let result = reset_at(spec, now, Some("America/New_York"), time_of_day);
-    assert_eq!(result.instant, moment(expected));
-}
-
-#[rstest]
-#[case::first_occurrence("1d", "2024-11-03T04:30:00Z", "05:30:00Z")]
-#[case::second_occurrence("1d", "2024-11-03T06:00:00Z", "06:30:00Z")]
-#[case::just_after_the_fold("1d", "2024-11-03T05:30:00Z", "2024-11-04T06:30:00Z")]
-fn duration_parser_duration_tests_behavior_dst_fold_keeps_the_current_occurrence(
-    #[case] spec: &str,
-    #[case] now: &str,
-    #[case] expected: &str,
-) {
-    let result = reset_at(spec, now, Some("America/New_York"), "01:30:00");
-    assert_eq!(result.instant, moment(expected));
 }
 
 #[test]

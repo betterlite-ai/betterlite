@@ -35,10 +35,7 @@ pub(crate) fn civil_time(
     moment: DateTime<Utc>,
     zone: &TimeZone,
 ) -> Result<(civil::DateTime, Fold), DurationError> {
-    let nanos = i32::try_from(moment.timestamp_subsec_nanos())
-        .map_err(|source| DurationError::CalendarField { source })?;
-    let timestamp = jiff::Timestamp::new(moment.timestamp(), nanos)
-        .map_err(|source| DurationError::Timestamp { source })?;
+    let timestamp = timestamp_of(moment)?;
     let civil = zone.to_datetime(timestamp);
     Ok((civil, fold_of(zone, civil, timestamp)?))
 }
@@ -61,9 +58,20 @@ pub(crate) fn instant(
     };
     let timestamp = offset
         .to_timestamp(civil)
-        .map_err(|source| DurationError::Timestamp { source })?;
+        .map_err(|error| DurationError::Timestamp { source: error })?;
+    chrono_time(timestamp)
+}
+
+fn timestamp_of(moment: DateTime<Utc>) -> Result<jiff::Timestamp, DurationError> {
+    let nanos = i32::try_from(moment.timestamp_subsec_nanos())
+        .map_err(|error| DurationError::CalendarField { source: error })?;
+    jiff::Timestamp::new(moment.timestamp(), nanos)
+        .map_err(|error| DurationError::Timestamp { source: error })
+}
+
+fn chrono_time(timestamp: jiff::Timestamp) -> Result<DateTime<Utc>, DurationError> {
     let nanos = u32::try_from(timestamp.subsec_nanosecond())
-        .map_err(|source| DurationError::CalendarField { source })?;
+        .map_err(|error| DurationError::CalendarField { source: error })?;
     DateTime::from_timestamp(timestamp.as_second(), nanos).ok_or(DurationError::TimestampOutOfRange)
 }
 
@@ -79,7 +87,7 @@ fn fold_of(
         AmbiguousOffset::Fold { .. } => {
             let earlier = ambiguous
                 .earlier()
-                .map_err(|source| DurationError::Timestamp { source })?;
+                .map_err(|error| DurationError::Timestamp { source: error })?;
             Ok(if earlier == timestamp {
                 Fold::Before
             } else {
