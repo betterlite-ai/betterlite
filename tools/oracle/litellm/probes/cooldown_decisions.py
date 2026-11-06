@@ -30,6 +30,7 @@ from litellm.exceptions import (
     UnsupportedParamsError,
 )
 from litellm.router import Router
+from litellm.router_utils import cooldown_handlers
 from litellm.router_utils.cooldown_handlers import (
     _should_cooldown_deployment,  # pyright: ignore[reportPrivateUsage]
     _should_run_cooldown_logic,  # pyright: ignore[reportPrivateUsage]
@@ -57,6 +58,9 @@ _PROVIDER: Final = "openai"
 _MODEL_GROUP: Final = "probe-group"
 _TEAM: Final = "probe-team"
 _PUBLIC_MODEL: Final = "probe-public-model"
+_FAILURE_THRESHOLD_PERCENT: Final = 0.5
+_FAILURE_THRESHOLD_MINIMUM: Final = 5
+_SINGLE_DEPLOYMENT_TRAFFIC: Final = 1000
 _CALL_START: Final = datetime(2023, 11, 14, tzinfo=UTC)
 
 FailureClassName = Literal[
@@ -277,7 +281,20 @@ class CooldownDecisions(Operation):
             }
         details = self.model_call_details()
         status = self.failure.status
-        with patch.object(litellm, "allowed_fails", self.router.default_allowed_fails):
+        with (
+            patch.object(litellm, "allowed_fails", self.router.default_allowed_fails),
+            patch.object(cooldown_handlers, "DEFAULT_FAILURE_THRESHOLD_PERCENT", _FAILURE_THRESHOLD_PERCENT),
+            patch.object(
+                cooldown_handlers,
+                "DEFAULT_FAILURE_THRESHOLD_MINIMUM_REQUESTS",
+                _FAILURE_THRESHOLD_MINIMUM,
+            ),
+            patch.object(
+                cooldown_handlers,
+                "SINGLE_DEPLOYMENT_TRAFFIC_FAILURE_THRESHOLD",
+                _SINGLE_DEPLOYMENT_TRAFFIC,
+            ),
+        ):
             if is_advisor_orchestration_failure(exception):
                 return Output(cooldown=False, counter=None)
             if is_background_response_cost_poll_not_found(exception, litellm_params):
