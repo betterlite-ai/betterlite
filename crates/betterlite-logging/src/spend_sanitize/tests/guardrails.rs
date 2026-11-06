@@ -110,5 +110,5 @@ fn yields_no_entries_for_values_outside_the_declared_list_or_mapping() {
         sanitize_guardrail_information(&SpendValue::Text("x".to_owned()), &policy(false));
     assert_eq!(sanitized, Json::List(Vec::new()));
     let absent = sanitize_guardrail_information(&SpendValue::Null, &policy(false));
-    assert_eq!(absent, Json::List(Vec::new()));
+    assert_eq!(absent, Json::Null);
 }

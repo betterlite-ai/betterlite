@@ -62,7 +62,7 @@ fn emits_max_depth_exceeded_at_the_depth_boundary() {
     );
     let beyond = convert_to_json_serializable(&nested(20));
     assert_eq!(
-        lookup(&beyond, &"n.".repeat(20)),
+        lookup(&beyond, "n.".repeat(20).trim_end_matches('.')),
         &Json::Text("<max_depth_exceeded>".to_owned())
     );
 }

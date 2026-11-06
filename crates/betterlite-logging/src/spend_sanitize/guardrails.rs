@@ -34,8 +34,9 @@ pub fn sanitize_guardrail_information(
                 .map(redact_entry)
                 .collect(),
         ),
-        SpendValue::Null
-        | SpendValue::Bool(_)
+        // LiteLLM returns None for an absent value and an empty list for a value outside the type
+        SpendValue::Null => Json::Null,
+        SpendValue::Bool(_)
         | SpendValue::Number(_)
         | SpendValue::Text(_)
         | SpendValue::Model(_)

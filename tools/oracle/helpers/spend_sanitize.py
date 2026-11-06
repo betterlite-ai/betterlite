@@ -123,7 +123,7 @@ def sanitize_body(spec: Json) -> Json:
     body_spec = object_value(spec, "body spec")
     body = object_value(body_spec.get("body"), "body")
     limit = int_value(body_spec.get("max_string_length"), "max_string_length")
-    return {"sanitized": cast(Json, sanitize(decode(body, {}), limit))}
+    return cast(Json, sanitize(decode(body, {}), limit))
 
 
 def error_information(input_value: dict[str, Json]) -> Json:
