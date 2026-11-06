@@ -19,21 +19,16 @@ description: 'Add the enforce_model_rate_limits optional pre-call check to the B
   (L239-L324), ModelRateLimitingCheck.async_log_success_event (L326-L382), ModelRateLimitingCheck.async_log_failure_event
   (L384-L395), ModelRateLimitingCheck.log_success_event (L397-L440), ModelRateLimitingCheck.log_failure_event
   (L442-L447). Implement these behaviors through the typed Rust services above; synchronous facades and
-  structural accessors reuse the same primitive instead of separate ports.'
+  structural accessors reuse the same primitive instead of separate ports.
+  B016 registers RouteStage::ModelRateLimits as a stub, so replace only that stub and its not-built test in crates/betterlite-router/src/context/model_rate_limits.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.'
 scope:
   paths:
   - crates/betterlite-router/src/model_rate_limits.rs
   - crates/betterlite-router/src/model_rate_limits/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-router/src/context/model_rate_limits.rs
+  - crates/betterlite-router/src/context/model_rate_limits/**
   - crates/betterlite-server/src/routing/model_rate_limits.rs
   - crates/betterlite-server/src/routing/model_rate_limits/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/model_rate_limits.rs
   - tools/oracle/src/router_probes/model_rate_limits/**
   - tools/oracle/litellm/probes/model_rate_limits.py

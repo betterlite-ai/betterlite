@@ -16,21 +16,14 @@ description: 'Replace the provisional B004 timeout resolution with a typed timeo
   Implement these behaviors through the typed Rust services above; synchronous facades and structural
   accessors reuse the same primitive instead of separate ports. Function coverage in litellm/litellm_core_utils/request_timeout_resolver.py:
   get_configured_request_timeout (L20-L29). Implement these behaviors through the typed Rust services
-  above; synchronous facades and structural accessors reuse the same primitive instead of separate ports.'
+  above; synchronous facades and structural accessors reuse the same primitive instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B017 wires this service in.'
 scope:
   paths:
   - crates/betterlite-router/src/routing_timeouts.rs
   - crates/betterlite-router/src/routing_timeouts/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/routing_timeouts.rs
   - crates/betterlite-server/src/routing/routing_timeouts/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/routing_timeouts.rs
   - tools/oracle/src/router_probes/routing_timeouts/**
   - tools/oracle/litellm/probes/routing_timeouts.py

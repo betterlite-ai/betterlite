@@ -33,16 +33,15 @@ description: >-
   B1101's. Every parity fixture boots both gateways with master_key=sk-test and mock provider credentials;
   multipart uses B900 capture, never a direct FastAPI helper adapter. Count 261 nonblank/non-comment lines;
   budget 250 implementation, 180 tests, 210 HTTP fixtures, 65 fuzz/replay and 45 wiring lines, total 750.
+  B1100 registers routes/image.rs as a stub, so fill only crates/betterlite-server/src/routes/image.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/**
   - crates/betterlite-server/src/api/image_routes.rs
   - crates/betterlite-server/src/api/image_routes/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/routes/image.rs
+  - crates/betterlite-server/src/routes/image/**
   - crates/betterlite-core/src/api/image_routes.rs
   - crates/betterlite-core/src/api/image_routes/**
   - crates/betterlite-core/src/operation/image_generation.rs

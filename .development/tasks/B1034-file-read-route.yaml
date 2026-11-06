@@ -18,14 +18,13 @@ description: >-
   is covered natively; no B171 adapter is needed. Test modules are api::file_read_route::tests in
   server/core. Owned source has 354 nonblank/non-comment lines; budget 280 implementation, 190 tests,
   245 cases and 35 wiring lines, totaling 750. Decoding remains B1100/B1019/provider owned.
+  B1100 registers routes/file_read.rs as a stub, so fill only crates/betterlite-server/src/routes/file_read.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/routes/file_read.rs
+  - crates/betterlite-server/src/routes/file_read/**
   - crates/betterlite-server/src/api/file_read_route.rs
   - crates/betterlite-server/src/api/file_read_route/**
   - crates/betterlite-core/src/api/file_read_route.rs

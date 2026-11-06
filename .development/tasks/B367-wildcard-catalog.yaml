@@ -14,21 +14,14 @@ description: 'Build PatternCatalog with ordered pattern registration/removal, st
   (L113-L123), PatternMatchRouter.route (L125-L159), PatternMatchRouter.set_deployment_model_name (L162-L208),
   PatternMatchRouter.get_pattern (L210-L222), PatternMatchRouter.get_deployments_by_pattern (L224-L238).
   Implement these behaviors through the typed Rust services above; synchronous facades and structural
-  accessors reuse the same primitive instead of separate ports.'
+  accessors reuse the same primitive instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B302 calls this service.'
 scope:
   paths:
   - crates/betterlite-router/src/wildcard_catalog.rs
   - crates/betterlite-router/src/wildcard_catalog/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/wildcard_catalog.rs
   - crates/betterlite-server/src/routing/wildcard_catalog/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/wildcard_catalog.rs
   - tools/oracle/src/router_probes/wildcard_catalog/**
   - tools/oracle/litellm/probes/wildcard_catalog.py

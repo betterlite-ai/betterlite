@@ -7,8 +7,10 @@ publish.workspace = true
 
 [dependencies]
 betterlite-config = { path = "../betterlite-config" }
+betterlite-models = { path = "../betterlite-models" }
 betterlite-redact = { path = "../betterlite-redact" }
 percent-encoding.workspace = true
+regex.workspace = true
 rust_decimal.workspace = true
 secrecy.workspace = true
 serde.workspace = true

@@ -12,21 +12,14 @@ description: 'Implement FallbackFailure and FallbackSuccessor over B309 plan int
   Router._refusal_fallback_available (L8475-L8496), Router._should_raise_content_policy_error (L8548-L8560),
   Router._should_raise_anthropic_refusal_error (L8562-L8579). Implement these behaviors through the typed
   Rust services above; synchronous facades and structural accessors reuse the same primitive instead of
-  separate ports.'
+  separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B309 calls this service.'
 scope:
   paths:
   - crates/betterlite-router/src/fallback_categories.rs
   - crates/betterlite-router/src/fallback_categories/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/fallback_categories.rs
   - crates/betterlite-server/src/routing/fallback_categories/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/fallback_categories.rs
   - tools/oracle/src/router_probes/fallback_categories/**
   - tools/oracle/litellm/probes/fallback_categories.py
