@@ -1,12 +1,18 @@
 #![cfg(test)]
 
 use std::fs;
+use std::fs::read_to_string;
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use betterlite_config::sections::mock_response::MockResponse;
+use betterlite_config::sections::mock_response::selection::MockPermission;
+use indexmap::IndexMap;
 use rstest::rstest;
+use serde_json::Value;
+use tracing::subscriber::with_default;
 
-use super::{ChatRequest, MessageContent, RequestError, Role, Stop, ToolChoice};
+use super::{ChatRequest, MessageContent, RequestError, Role, Stop, ToolChoice, client_mock};
 
 #[test]
 fn parses_typed_fields_and_keeps_unknown_parameters_for_forwarding() {
@@ -47,29 +53,66 @@ fn refuses_litellm_request_keys_it_does_not_act_on(#[case] name: &str) {
     assert!(matches!(error, RequestError::Unsupported { name: refused } if refused == name));
 }
 
-#[test]
-fn parses_the_mock_fields_it_acts_on() {
-    let body = br#"{"model":"m","messages":[],"mock_response":"client","mock_tool_calls":[]}"#;
-    let request = ChatRequest::parse(body).unwrap();
-    assert_eq!(
-        request.mock_response,
-        Some(MockResponse::Text(String::from("client")))
-    );
-    assert_eq!(request.mock_tool_calls, Some(Vec::new()));
+fn allowed() -> MockPermission {
+    MockPermission {
+        allow_client_mock_response: true,
+    }
 }
 
 #[test]
-fn parses_a_mock_tool_call_with_litellm_defaults_open() {
-    let body =
-        br#"{"model":"m","messages":[],"mock_tool_calls":[{"function":{"name":"f","arguments":{"a":1}}}]}"#;
+fn decodes_allowed_client_mock_fields() {
+    let body = br#"{"model":"m","messages":[],"mock_response":"client","mock_tool_calls":[]}"#;
     let request = ChatRequest::parse(body).unwrap();
-    let calls = request.mock_tool_calls.expect("tool calls");
-    assert_eq!(calls[0].id, None);
-    assert_eq!(calls[0].kind, None);
-    let arguments: serde_json::Value = serde_json::from_str(r#"{"a":1}"#).expect("arguments");
-    assert_eq!(calls[0].function.arguments, Some(arguments));
-    let planned = request.planned_tool_calls.expect("planned tool calls");
-    assert_eq!(planned[0].function.arguments.as_deref(), Some(r#"{"a":1}"#));
+    let (response, calls) = client_mock(&request.passthrough, allowed()).expect("mock fields");
+    assert_eq!(response, Some(MockResponse::Text(String::from("client"))));
+    assert_eq!(calls, Some(Vec::new()));
+}
+
+#[test]
+fn decodes_a_client_tool_call_with_litellm_defaults() {
+    let body = br#"{"model":"m","messages":[],"mock_tool_calls":[{"index":0,"function":{"name":"f","parameters":{"a":1}}}]}"#;
+    let request = ChatRequest::parse(body).unwrap();
+    let (_, calls) = client_mock(&request.passthrough, allowed()).expect("tool calls");
+    let call = &calls.expect("tool calls")[0];
+    assert_eq!(call.id, None);
+    assert_eq!(call.kind, None);
+    assert_eq!(call.function.arguments.as_deref(), Some(r#"{"a":1}"#));
+}
+
+fn capture_warnings<T, F>(run: F) -> (T, String)
+where
+    F: FnOnce() -> T,
+{
+    let log = tempfile::NamedTempFile::new().unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_writer(Arc::new(log.reopen().unwrap()))
+        .finish();
+    let result = with_default(subscriber, run);
+    (result, read_to_string(log.path()).unwrap())
+}
+
+#[test]
+fn encodes_object_arguments_as_json_text() {
+    let body = br#"{"model":"m","messages":[],"mock_tool_calls":[{"function":{"name":"f","arguments":{"a":1}}}]}"#;
+    let request = ChatRequest::parse(body).unwrap();
+    let (_, calls) = client_mock(&request.passthrough, allowed()).expect("tool calls");
+    let call = &calls.expect("tool calls")[0];
+    assert_eq!(call.function.arguments.as_deref(), Some(r#"{"a":1}"#));
+}
+#[test]
+fn a_denied_client_mock_field_is_stripped_with_a_warning() {
+    let choices: Value = serde_json::from_str(r#"{"choices": [{"logprobs": null}]}"#).unwrap();
+    let calls: Value = serde_json::from_str(r#"[{"function": {"arguments": "{}"}}]"#).unwrap();
+    let fields = IndexMap::from([
+        (String::from("mock_response"), choices),
+        (String::from("mock_tool_calls"), calls),
+    ]);
+    let (stripped, warnings) = capture_warnings(|| client_mock(&fields, MockPermission::default()));
+    assert_eq!(stripped.expect("strip"), (None, None));
+    assert!(warnings.contains("mock_response"), "{warnings}");
+    assert!(warnings.contains("mock_tool_calls"), "{warnings}");
 }
 
 #[rstest]

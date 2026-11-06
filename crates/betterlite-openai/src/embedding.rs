@@ -7,11 +7,13 @@ use betterlite_config::sections::mock_response::selection::resolve_mock;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::{JsonPost, UpstreamResponse};
 use http::HeaderMap;
+use indexmap::IndexMap;
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use thiserror::Error;
 
+use crate::chat::client_mock;
 use crate::chat::deployment::{ChatDeployment, DeploymentError, Provider};
 use crate::chat::execution::ChatExecutor;
 use crate::chat::mock_model;
@@ -39,10 +41,8 @@ pub struct EmbeddingRequest {
     pub dimensions: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub mock_response: Option<MockResponse>,
     #[serde(flatten)]
-    pub passthrough: serde_json::Map<String, Value>,
+    pub passthrough: IndexMap<String, Value>,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
@@ -179,11 +179,13 @@ pub async fn send(
     deployment: &ChatDeployment,
     request: &EmbeddingRequest,
 ) -> Result<EmbeddingOutcome, EmbeddingError> {
+    let (client_response, client_tool_calls) =
+        client_mock(&request.passthrough, executor.mock.permission)
+            .map_err(|source| EmbeddingError::Body { source })?;
     let mock = resolve_mock(
         executor.mock.responses.get(&deployment.model_id),
-        executor.mock.permission,
-        request.mock_response.as_ref(),
-        None,
+        client_response.as_ref(),
+        client_tool_calls.as_deref(),
         None,
     );
     // LiteLLM mocks an embedding only when mock_response itself is set, unlike the chat path

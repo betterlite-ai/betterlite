@@ -1,7 +1,5 @@
 use betterlite_config::sections::mock_response::failure::MockError;
-use betterlite_config::sections::mock_response::selection::{
-    MockPermission, MockPlan, resolve_mock,
-};
+use betterlite_config::sections::mock_response::selection::{MockPlan, resolve_mock};
 use betterlite_config::sections::mock_response::{MockResponse, MockToolCall, UsageDefaults};
 use betterlite_core::mock::chat::{self, ChatAnswer};
 use betterlite_core::mock::embedding;
@@ -53,10 +51,7 @@ fn embedding_outcome(input: &Input) -> Result<Value, Failure> {
         return Ok(serde_json::json!({"kind": "no_mock"}));
     };
     let answer = embedding::response(Some(response), &input.model)?;
-    Ok(serde_json::json!({
-        "kind": "embedding",
-        "response": serde_json::to_value(&answer)?,
-    }))
+    Ok(serde_json::json!({"kind": "embedding", "response": serde_json::to_value(&answer)?}))
 }
 fn chat_outcome(input: &Input) -> Result<Value, Failure> {
     let (effective, tool_calls) = effective_mock(input);
@@ -82,7 +77,15 @@ fn chat_outcome(input: &Input) -> Result<Value, Failure> {
     if input.mode == "stream"
         && let ChatAnswer::Content(content) = resolved
     {
-        return stream_outcome(input, &plan, content, &id);
+        let spec = StreamSpec {
+            content,
+            choice_count: plan.choice_count,
+            model: &input.model,
+            id: &id,
+            created: input.clock,
+        };
+        let chunks = stream_chunks(&spec, plan.prompt_tokens)?;
+        return Ok(serde_json::json!({"kind": "stream", "chunks": chunks}));
     }
     let response = chat::response(
         &plan,
@@ -91,48 +94,39 @@ fn chat_outcome(input: &Input) -> Result<Value, Failure> {
         &id,
         input.clock,
     )?;
-    Ok(serde_json::json!({
-        "kind": "response",
-        "response": project(&response, false)?,
-    }))
-}
-
-fn stream_outcome(
-    input: &Input,
-    plan: &MockPlan<'_>,
-    content: &str,
-    id: &str,
-) -> Result<Value, Failure> {
-    let spec = StreamSpec {
-        content,
-        choice_count: plan.choice_count,
-        model: &input.model,
-        id,
-        created: input.clock,
-    };
-    let mut chunks: Vec<Value> = stream::chunks(&spec)
-        .map(|chunk| project(&chunk, true))
-        .collect::<Result<_, _>>()?;
-    if let Some(prompt_tokens) = plan.prompt_tokens {
-        let chunk = stream::usage_chunk(&spec, prompt_tokens, UsageDefaults::default());
-        chunks.push(project(&chunk, true)?);
-    }
-    Ok(serde_json::json!({"kind": "stream", "chunks": chunks}))
+    Ok(serde_json::json!({"kind": "response", "response": project(&response, false)?}))
 }
 
 // the proxy strips a client mock field before routing unless the key or team allows it
 fn effective_mock(input: &Input) -> (Option<&MockResponse>, Option<&[MockToolCall]>) {
-    let permission = MockPermission {
-        allow_client_mock_response: input.allow_client_mock_response,
+    let (client_response, client_calls) = if input.allow_client_mock_response {
+        (
+            input.client_mock_response.as_ref(),
+            input.client_mock_tool_calls.as_deref(),
+        )
+    } else {
+        (None, None)
     };
     resolve_mock(
         input.operator_mock_response.as_ref(),
-        permission,
-        input.client_mock_response.as_ref(),
-        input.client_mock_tool_calls.as_deref(),
+        client_response,
+        client_calls,
         input.choice_count,
     )
     .map_or((None, None), |plan| (plan.response, plan.tool_calls))
+}
+
+fn stream_chunks(spec: &StreamSpec<'_>, prompt_tokens: Option<u64>) -> Result<Vec<Value>, Failure> {
+    let mut chunks = stream::chunks(spec)
+        .map(|chunk| project(&chunk, true))
+        .collect::<Result<Vec<_>, _>>()?;
+    if let Some(count) = prompt_tokens {
+        chunks.push(project(
+            &stream::usage_chunk(spec, count, UsageDefaults::default()),
+            true,
+        )?);
+    }
+    Ok(chunks)
 }
 
 // betterlite models provider_specific_fields and serialize_always fields the Python dump omits
@@ -153,15 +147,9 @@ fn normalize(value: &mut Value) {
     match value {
         Value::Object(object) => {
             object.retain(|key, child| key != "provider_specific_fields" && !child.is_null());
-            for child in object.values_mut() {
-                normalize(child);
-            }
+            object.values_mut().for_each(normalize);
         }
-        Value::Array(values) => {
-            for child in values {
-                normalize(child);
-            }
-        }
+        Value::Array(values) => values.iter_mut().for_each(normalize),
         Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
     }
 }

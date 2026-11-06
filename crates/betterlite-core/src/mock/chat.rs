@@ -41,9 +41,7 @@ pub fn answer<'plan>(plan: &'plan MockPlan<'plan>) -> Result<ChatAnswer<'plan>, 
             });
         }
     };
-    if let Some(count) = plan.choice_count
-        && count > MAX_MOCK_CHOICES
-    {
+    if let Some(count) = plan.choice_count.filter(|count| *count > MAX_MOCK_CHOICES) {
         return Err(MockError::TooManyChoices {
             count,
             limit: MAX_MOCK_CHOICES,
@@ -60,21 +58,28 @@ pub fn response(
     created: u64,
 ) -> Result<ChatResponse, MockError> {
     match answer(plan)? {
-        ChatAnswer::Content(content) => Ok(object_response(
-            &MockChatObject {
-                id: Some(id.to_owned()),
-                created: Some(created),
-                model: Some(model.to_owned()),
-                object: None,
-                system_fingerprint: None,
-                service_tier: None,
-                choices: Some(content_choices(content, plan)?),
-                usage: Some(usage_from(plan, usage)),
-            },
-            model,
-            id,
-            created,
-        )),
+        ChatAnswer::Content(content) => {
+            let prompt_tokens = plan.prompt_tokens.unwrap_or(usage.prompt_tokens);
+            Ok(object_response(
+                &MockChatObject {
+                    id: Some(id.to_owned()),
+                    created: Some(created),
+                    model: Some(model.to_owned()),
+                    object: None,
+                    system_fingerprint: None,
+                    service_tier: None,
+                    choices: Some(content_choices(content, plan)?),
+                    usage: Some(MockUsage {
+                        prompt_tokens,
+                        completion_tokens: usage.completion_tokens,
+                        total_tokens: prompt_tokens.saturating_add(usage.completion_tokens),
+                    }),
+                },
+                model,
+                id,
+                created,
+            ))
+        }
         ChatAnswer::Object(object) => Ok(object_response(object, model, id, created)),
     }
 }
@@ -103,31 +108,23 @@ fn content_choices(content: &str, plan: &MockPlan<'_>) -> Result<Vec<MockChatCho
 
 // ChatCompletionMessageToolCall fills a uuid id and the function type, and a missing argument list is empty
 fn wire_tool_call(call: &MockToolCall) -> ToolCall {
+    let id = call
+        .id
+        .clone()
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
+    let kind = call
+        .kind
+        .clone()
+        .unwrap_or_else(|| String::from("function"));
     ToolCall {
-        id: call
-            .id
-            .clone()
-            .unwrap_or_else(|| Uuid::new_v4().to_string()),
-        kind: call
-            .kind
-            .clone()
-            .unwrap_or_else(|| String::from("function")),
+        id,
+        kind,
         function: FunctionCall {
             name: call.function.name.clone(),
             arguments: call.function.arguments.clone().unwrap_or_default(),
         },
     }
 }
-fn usage_from(plan: &MockPlan<'_>, defaults: UsageDefaults) -> MockUsage {
-    let prompt_tokens = plan.prompt_tokens.unwrap_or(defaults.prompt_tokens);
-    let completion_tokens = defaults.completion_tokens;
-    MockUsage {
-        prompt_tokens,
-        completion_tokens,
-        total_tokens: prompt_tokens.saturating_add(completion_tokens),
-    }
-}
-
 fn object_response(object: &MockChatObject, model: &str, id: &str, created: u64) -> ChatResponse {
     // an object field wins over the id, timestamp and model LiteLLM generates for a mock
     let identifier = object.id.clone().unwrap_or_else(|| id.to_owned());

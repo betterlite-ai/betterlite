@@ -7,14 +7,14 @@ use axum::http::HeaderMap;
 use axum::response::{IntoResponse as _, Response};
 use betterlite_config::sections::mock_response::UsageDefaults;
 use betterlite_config::sections::mock_response::failure::MockError;
-use betterlite_config::sections::mock_response::selection::MockPlan;
+use betterlite_config::sections::mock_response::selection::{MockPlan, resolve_mock};
 use betterlite_core::mock::chat::{ChatAnswer, answer};
 use betterlite_core::mock::stream::{StreamSpec, chunks, usage_chunk};
 use betterlite_http::error::HttpError;
-use betterlite_openai::chat::ChatRequest;
 use betterlite_openai::chat::deployment::ChatDeployment;
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
 use betterlite_openai::chat::mock_failure;
+use betterlite_openai::chat::{ChatRequest, RequestError, client_mock};
 use betterlite_openai::stream::SseParser;
 use betterlite_openai::stream::chunk::{Choice, Chunk, Delta};
 use futures_util::StreamExt as _;
@@ -38,7 +38,24 @@ pub(super) async fn stream_chat(
     request: &ChatRequest,
     call: &CallContext<'_>,
 ) -> Response {
-    if let Some(plan) = executor.mock_plan(deployment, request) {
+    let (client_response, client_tool_calls) =
+        match client_mock(&request.passthrough, executor.mock.permission) {
+            Ok(client) => client,
+            Err(source) => {
+                return failure(
+                    &ChatError::from(RequestError::Body { source }),
+                    call,
+                    Some(deployment),
+                );
+            }
+        };
+    let resolved = resolve_mock(
+        executor.mock.responses.get(&deployment.model_id),
+        client_response.as_ref(),
+        client_tool_calls.as_deref(),
+        request.choice_count,
+    );
+    if let Some(plan) = resolved {
         return mock_stream(executor, deployment, request, &plan, call);
     }
     let upstream_started = Instant::now();
@@ -110,9 +127,7 @@ fn mock_frames(
 ) -> Result<Vec<Vec<u8>>, serde_json::Error> {
     let mut frames = Vec::new();
     for (position, mut chunk) in chunks(spec).enumerate() {
-        if position > 0
-            && let Some(first) = chunk.choices.first_mut()
-        {
+        if let Some(first) = chunk.choices.first_mut().filter(|_| position > 0) {
             first.delta.role = None;
         }
         // the wrapper drops a chunk with no choice, which is every content chunk when n is zero

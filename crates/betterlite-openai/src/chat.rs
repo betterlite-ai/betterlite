@@ -4,43 +4,25 @@ pub mod execution;
 pub mod provider_error;
 pub mod response;
 
-use std::collections::BTreeMap;
-
-use betterlite_config::sections::mock_response::failure::MockError;
-use betterlite_config::sections::mock_response::selection::{MockPermission, MockPlan};
-use betterlite_config::sections::mock_response::{
-    MockFunctionCall, MockResponse, MockToolCall, UsageDefaults,
-};
-use betterlite_http::proxy::UpstreamResponse;
-use http::HeaderMap;
-use indexmap::IndexMap;
-
 use crate::chat::execution::ChatError;
 use crate::chat::response::ChatResponse;
 use crate::embedding::EmbeddingResponse;
 use crate::text_completion_policy::reply::mapped_finish_reason;
+use betterlite_config::sections::mock_response::failure::MockError;
+use betterlite_config::sections::mock_response::selection::{MockPermission, MockPlan};
+use betterlite_config::sections::mock_response::{MockResponse, MockToolCall, UsageDefaults};
+use betterlite_http::proxy::UpstreamResponse;
+use http::HeaderMap;
+use indexmap::IndexMap;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
 use serde_with::skip_serializing_none;
+use std::collections::BTreeMap;
 use thiserror::Error;
 
 // LiteLLM reads these request keys itself and never forwards them, and betterlite does not act on them yet
-const LITELLM_REQUEST_KEYS: [&str; 14] = [
-    "api_base",
-    "api_key",
-    "api_version",
-    "base_url",
-    "caching",
-    "context_window_fallback_dict",
-    "extra_headers",
-    "fallbacks",
-    "max_retries",
-    "mock_delay",
-    "mock_timeout",
-    "num_retries",
-    "stream_timeout",
-    "timeout",
-];
+const LITELLM_REQUEST_KEYS: &str = "api_base api_key api_version base_url caching context_window_fallback_dict extra_headers fallbacks max_retries mock_delay mock_timeout num_retries stream_timeout timeout";
 
 #[derive(Debug, Error)]
 pub enum RequestError {
@@ -118,32 +100,10 @@ pub struct ChatRequest {
     pub tool_choice: Option<ToolChoice>,
     pub parallel_tool_calls: Option<bool>,
     pub response_format: Option<ResponseFormat>,
-    pub mock_response: Option<MockResponse>,
-    pub mock_tool_calls: Option<Vec<ClientToolCall>>,
-    // the mock plan reads arguments as text, so the client's object arguments are encoded at parse time
-    #[serde(skip, default)]
-    pub planned_tool_calls: Option<Vec<MockToolCall>>,
     // parameters betterlite does not model: LiteLLM forwards unknown ones and filters the OpenAI ones it knows
     #[serde(flatten)]
     pub passthrough: IndexMap<String, Value>,
 }
-// LiteLLM's Function accepts an argument string or an object it json-encodes, and ChatCompletionMessageToolCall fills the rest
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct ClientToolCall {
-    pub id: Option<String>,
-    #[serde(rename = "type")]
-    pub kind: Option<String>,
-    pub function: ClientFunctionCall,
-}
-
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct ClientFunctionCall {
-    pub name: String,
-    pub arguments: Option<Value>,
-}
-
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct StreamOptions {
@@ -153,46 +113,82 @@ pub struct StreamOptions {
 
 impl ChatRequest {
     pub fn parse(bytes: &[u8]) -> Result<Self, RequestError> {
-        let mut request: Self =
+        let request: Self =
             serde_json::from_slice(bytes).map_err(|source| RequestError::Body { source })?;
-        if let Some(name) = request
-            .passthrough
-            .keys()
-            .find(|name| LITELLM_REQUEST_KEYS.contains(&name.as_str()))
-        {
+        if let Some(name) = request.passthrough.keys().find(|name| {
+            LITELLM_REQUEST_KEYS
+                .split(' ')
+                .any(|known| known == name.as_str())
+        }) {
             return Err(RequestError::Unsupported { name: name.clone() });
         }
-        request.planned_tool_calls = request.mock_tool_calls.as_deref().map(planned_tool_calls);
         Ok(request)
     }
 }
 
-// LiteLLM strips the provider prefix before mock_completion receives the model
-pub(crate) fn mock_model(litellm_model: &str) -> &str {
-    match litellm_model.split_once('/') {
-        Some((_, model)) => model,
-        None => litellm_model,
+// LiteLLM strips a client mock field before it reads it, so a denied field is never decoded
+pub fn client_mock(
+    fields: &IndexMap<String, Value>,
+    permission: MockPermission,
+) -> Result<(Option<MockResponse>, Option<Vec<MockToolCall>>), serde_json::Error> {
+    let (response, tool_calls) = (fields.get("mock_response"), fields.get("mock_tool_calls"));
+    if !permission.allow_client_mock_response {
+        for field in ["mock_response", "mock_tool_calls"] {
+            if fields.contains_key(field) {
+                tracing::warn!(
+                    field,
+                    "a client-supplied mock field is stripped; set allow_client_mock_response on the key or team metadata to keep it"
+                );
+            }
+        }
+        return Ok((None, None));
+    }
+    Ok((decode(response)?, decode(tool_calls)?))
+}
+fn decode<T>(value: Option<&Value>) -> Result<Option<T>, serde_json::Error>
+where
+    T: DeserializeOwned,
+{
+    value
+        .map(|raw| {
+            let mut owned = raw.clone();
+            encode_arguments(&mut owned);
+            serde_json::from_value(owned)
+        })
+        .transpose()
+}
+// Function json-encodes an object arguments or parameters value, and a tool call ignores keys betterlite does not model
+fn encode_arguments(value: &mut Value) {
+    match value {
+        Value::Object(object) => {
+            if let Some(Value::Object(function)) = object.get_mut("function") {
+                let encoded = function
+                    .remove("arguments")
+                    .or_else(|| function.remove("parameters").filter(Value::is_object))
+                    .map(|given| {
+                        given
+                            .as_str()
+                            .map_or_else(|| given.to_string(), ToOwned::to_owned)
+                    });
+                if let Some(text) = encoded {
+                    function.insert(String::from("arguments"), Value::String(text));
+                }
+            }
+            if object.contains_key("function") {
+                object.retain(|key, _| matches!(key.as_str(), "id" | "type" | "function"));
+            }
+            object.values_mut().for_each(encode_arguments);
+        }
+        Value::Array(values) => values.iter_mut().for_each(encode_arguments),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
     }
 }
-
-fn planned_tool_calls(calls: &[ClientToolCall]) -> Vec<MockToolCall> {
-    calls
-        .iter()
-        .map(|call| MockToolCall {
-            id: call.id.clone(),
-            kind: call.kind.clone(),
-            function: MockFunctionCall {
-                name: call.function.name.clone(),
-                arguments: Some(match &call.function.arguments {
-                    None => String::new(),
-                    Some(Value::String(text)) => text.clone(),
-                    Some(value) => value.to_string(),
-                }),
-            },
-        })
-        .collect()
+// LiteLLM strips the provider prefix before mock_completion receives the model
+pub(crate) fn mock_model(litellm_model: &str) -> &str {
+    litellm_model
+        .split_once('/')
+        .map_or(litellm_model, |(_, model)| model)
 }
-
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum Role {
@@ -203,7 +199,6 @@ pub enum Role {
     Tool,
     Function,
 }
-
 #[skip_serializing_none]
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ChatMessage {
@@ -216,14 +211,12 @@ pub struct ChatMessage {
     #[serde(flatten)]
     pub passthrough: IndexMap<String, Value>,
 }
-
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(untagged)]
 pub enum MessageContent {
     Text(String),
     Parts(Vec<ContentPart>),
 }
-
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 pub struct ContentPart {
     #[serde(rename = "type")]

@@ -53,7 +53,6 @@ pub fn chunks<'stream>(
 // mock_stream_usage_chunk reports the prompt count the caller injected and the completion default
 #[must_use]
 pub fn usage_chunk(spec: &StreamSpec<'_>, prompt_tokens: u64, usage: UsageDefaults) -> Chunk {
-    let completion_tokens = usage.completion_tokens;
     Chunk {
         id: spec.id.to_owned(),
         object: String::from("chat.completion.chunk"),
@@ -62,8 +61,8 @@ pub fn usage_chunk(spec: &StreamSpec<'_>, prompt_tokens: u64, usage: UsageDefaul
         choices: Vec::new(),
         usage: Some(ChatUsage {
             prompt_tokens,
-            completion_tokens,
-            total_tokens: prompt_tokens.saturating_add(completion_tokens),
+            completion_tokens: usage.completion_tokens,
+            total_tokens: prompt_tokens.saturating_add(usage.completion_tokens),
             prompt_tokens_details: None,
             completion_tokens_details: None,
         }),

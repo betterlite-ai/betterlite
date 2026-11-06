@@ -36,21 +36,12 @@ pub struct MockChatObject {
     pub choices: Option<Vec<MockChatChoice>>,
     pub usage: Option<MockUsage>,
 }
-#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct MockChatChoice {
     pub index: u32,
     pub message: MockChatMessage,
     pub finish_reason: Option<String>,
-}
-impl Default for MockChatChoice {
-    fn default() -> Self {
-        Self {
-            index: 0,
-            message: MockChatMessage::default(),
-            finish_reason: Some(String::from("stop")),
-        }
-    }
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
@@ -137,18 +128,16 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let deployments = self
-            .model_list
-            .into_iter()
-            .enumerate()
-            .map(|(index, deployment)| {
+        let mut deployments = Vec::with_capacity(self.model_list.len());
+        for (index, deployment) in self.model_list.into_iter().enumerate() {
+            deployments.push(
                 deployment
                     .litellm_params
                     .mock_response
                     .map(|response| resolve(response, index, lookup))
-                    .transpose()
-            })
-            .collect::<Result<Vec<_>, _>>()?;
+                    .transpose()?,
+            );
+        }
         Ok(Settings {
             deployments,
             usage: UsageDefaults {
@@ -183,5 +172,5 @@ where
     let Some(text) = lookup.lookup(name) else {
         return Ok(None);
     };
-    betterlite_env::number::<u64>(name, &text).map_err(|source| ConfigError::Environment { source })
+    betterlite_env::number::<u64>(name, &text).map_err(ConfigError::from)
 }

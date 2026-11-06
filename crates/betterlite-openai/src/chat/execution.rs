@@ -13,7 +13,7 @@ use serde_json::{Map, Value};
 use thiserror::Error;
 use uuid::Uuid;
 
-use super::mock_model;
+use super::{client_mock, mock_model};
 use crate::chat::deployment::{ChatDeployment, Provider};
 use crate::chat::response::ChatResponse;
 use crate::chat::{
@@ -91,7 +91,16 @@ impl ChatExecutor {
         if request.stream {
             return Err(ChatError::Streaming);
         }
-        if let Some(plan) = self.mock_plan(deployment, request) {
+        let (client_response, client_tool_calls) =
+            client_mock(&request.passthrough, self.mock.permission)
+                .map_err(|source| ChatError::from(RequestError::Body { source }))?;
+        let resolved = resolve_mock(
+            self.mock.responses.get(&deployment.model_id),
+            client_response.as_ref(),
+            client_tool_calls.as_deref(),
+            request.choice_count,
+        );
+        if let Some(plan) = resolved {
             return self.mocked_outcome(&plan, deployment, request);
         }
         let outbound = self.outbound(deployment, request, "application/json")?;
@@ -115,21 +124,6 @@ impl ChatExecutor {
             upstream,
             upstream_time,
         })
-    }
-
-    #[must_use]
-    pub fn mock_plan<'plan>(
-        &'plan self,
-        deployment: &ChatDeployment,
-        request: &'plan ChatRequest,
-    ) -> Option<MockPlan<'plan>> {
-        resolve_mock(
-            self.mock.responses.get(&deployment.model_id),
-            self.mock.permission,
-            request.mock_response.as_ref(),
-            request.planned_tool_calls.as_deref(),
-            request.choice_count,
-        )
     }
 
     fn mocked_outcome(
