@@ -29,7 +29,7 @@ scope:
   - tools/oracle/helpers/vector_store_contracts.py
   - tools/oracle/helpers/vector_store_contracts/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/vector_store_embedding_executor.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/vector_store_embedding_executor.py
   - tools/oracle/cases/helpers/vector-store-contracts/**
