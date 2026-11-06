@@ -146,6 +146,8 @@ fn unpadded_components(#[case] raw: &str, #[case] expected: &str) {
 #[case::hour_two_arabic_tail("2\u{663}:00", None)]
 #[case::superscript_is_not_a_decimal_digit("\u{b2}:00", None)]
 #[case::circled_is_not_a_decimal_digit("\u{2460}:00", None)]
+#[case::arabic_percent_after_the_digits("\u{66a}:00", None)]
+#[case::arabic_percent_as_tail("1\u{66a}:00", None)]
 fn source_unicode_digit_acceptance(#[case] raw: &str, #[case] expected: Option<&str>) {
     match (clock(raw), expected) {
         (Ok(time), Some(text)) => assert_eq!(clock_text(time), text),

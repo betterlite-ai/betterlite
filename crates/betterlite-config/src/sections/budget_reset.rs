@@ -85,27 +85,19 @@ pub fn parse_budget_reset_time(value: &JsonValue) -> Result<NaiveTime, BudgetRes
 }
 
 fn reset_timezone(value: &JsonValue) -> Result<String, BudgetResetSettingsError> {
-    if let JsonValue::String(text) = value {
-        return Ok(if text.is_empty() {
-            "UTC".to_owned()
-        } else {
-            text.clone()
-        });
-    }
-    if holds_a_value(value) {
-        return Err(BudgetResetSettingsError::TimezoneNotText);
-    }
-    Ok("UTC".to_owned())
-}
-
-fn holds_a_value(value: &JsonValue) -> bool {
     match value {
-        JsonValue::Null => false,
-        JsonValue::Bool(flag) => *flag,
-        JsonValue::Number(number) => number.as_f64().is_some_and(|float| float != 0.0_f64),
-        JsonValue::String(text) => !text.is_empty(),
-        JsonValue::Array(items) => !items.is_empty(),
-        JsonValue::Object(fields) => !fields.is_empty(),
+        JsonValue::String(text) if text.is_empty() => Ok("UTC".to_owned()),
+        JsonValue::String(text) => Ok(text.clone()),
+        JsonValue::Null | JsonValue::Bool(false) => Ok("UTC".to_owned()),
+        JsonValue::Number(number) if number.as_f64().is_some_and(|float| float == 0.0_f64) => {
+            Ok("UTC".to_owned())
+        }
+        JsonValue::Array(items) if items.is_empty() => Ok("UTC".to_owned()),
+        JsonValue::Object(fields) if fields.is_empty() => Ok("UTC".to_owned()),
+        JsonValue::Bool(true)
+        | JsonValue::Number(_)
+        | JsonValue::Array(_)
+        | JsonValue::Object(_) => Err(BudgetResetSettingsError::TimezoneNotText),
     }
 }
 
