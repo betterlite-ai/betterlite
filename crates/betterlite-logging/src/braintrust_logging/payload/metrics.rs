@@ -4,9 +4,9 @@ use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde_json::Number;
 
-use super::super::event::{CallbackPath, ResponseObject, SuccessEvent};
 use super::PayloadError;
 use super::object;
+use super::{CallbackPath, ResponseObject, SuccessEvent};
 
 pub(super) fn metrics(
     event: &SuccessEvent<'_>,
@@ -34,7 +34,6 @@ pub(super) fn metrics(
     Ok(Some(Json::Object(metrics)))
 }
 
-// LiteLLM's sync callback times the whole call and its async callback times only to the first token
 fn insert_first_token(
     metrics: &mut IndexMap<String, Json>,
     event: &SuccessEvent<'_>,
@@ -118,7 +117,6 @@ pub(super) fn difference(
     text(elapsed, field)
 }
 
-// Python writes a timestamp or duration as the shortest decimal that round-trips, with a fraction digit.
 pub(super) fn text(seconds: Decimal, field: &'static str) -> Result<Json, PayloadError> {
     let normalized = seconds.normalize().to_string();
     let value = if normalized.contains('.') {

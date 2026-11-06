@@ -1,7 +1,7 @@
 use betterlite_models::decisions::Json;
 
 use super::support::{Scenario, answer, at_path, json, logger, posted_event};
-use crate::braintrust_logging::event::CallbackPath;
+use crate::braintrust_logging::payload::CallbackPath;
 
 #[tokio::test]
 async fn root_spans_carry_no_tags() {

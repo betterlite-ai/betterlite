@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
-use betterlite_logging::braintrust_logging::event::{CallbackPath, ResponseObject, SuccessEvent};
 use betterlite_logging::braintrust_logging::logger::BraintrustLogger;
+use betterlite_logging::braintrust_logging::payload::{CallbackPath, ResponseObject, SuccessEvent};
 use betterlite_logging::braintrust_logging::settings::Settings;
 use betterlite_models::decisions::Json;
 use chrono::{DateTime, Utc};

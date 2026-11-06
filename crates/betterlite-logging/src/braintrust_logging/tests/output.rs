@@ -1,7 +1,7 @@
 use betterlite_models::decisions::Json;
 
 use super::support::{ResponseKind, Scenario, answer, json, logger, posted, posted_event};
-use crate::braintrust_logging::event::CallbackPath;
+use crate::braintrust_logging::payload::CallbackPath;
 
 #[tokio::test]
 async fn model_choices_are_logged_as_choice_dicts() {

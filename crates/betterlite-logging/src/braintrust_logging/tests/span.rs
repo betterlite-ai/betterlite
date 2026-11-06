@@ -1,7 +1,7 @@
 use betterlite_models::decisions::Json;
 
 use super::support::{Scenario, answer, at_path, json, logger, posted_event};
-use crate::braintrust_logging::event::CallbackPath;
+use crate::braintrust_logging::payload::CallbackPath;
 
 #[tokio::test]
 async fn span_name_defaults_to_chat_completion() {

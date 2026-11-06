@@ -1,6 +1,6 @@
 use super::support::{BASE, Scenario, answer, failing, json, logger};
-use crate::braintrust_logging::error::BraintrustError;
-use crate::braintrust_logging::event::CallbackPath;
+use crate::braintrust_logging::logger::BraintrustError;
+use crate::braintrust_logging::payload::CallbackPath;
 
 #[tokio::test]
 async fn insert_posts_events_to_the_project_logs_endpoint() {

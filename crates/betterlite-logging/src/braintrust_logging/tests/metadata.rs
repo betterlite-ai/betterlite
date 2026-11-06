@@ -1,5 +1,5 @@
 use super::support::{Scenario, answer, json, logger, posted};
-use crate::braintrust_logging::event::CallbackPath;
+use crate::braintrust_logging::payload::CallbackPath;
 
 #[tokio::test]
 async fn string_metadata_extends_absent_keys() {

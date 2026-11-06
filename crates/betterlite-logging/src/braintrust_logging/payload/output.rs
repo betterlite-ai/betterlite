@@ -2,10 +2,10 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde_json::Number;
 
-use super::super::event::{ResponseObject, SuccessEvent};
 use super::PayloadError;
 use super::finish_reason::map_finish_reason;
 use super::object;
+use super::{ResponseObject, SuccessEvent};
 
 const MODEL_FIELDS: [&str; 5] = [
     "finish_reason",

@@ -7,8 +7,8 @@ use chrono::{DateTime, Utc};
 use secrecy::SecretString;
 use thiserror::Error;
 
-use crate::braintrust_logging::event::{ResponseObject, SuccessEvent};
 use crate::braintrust_logging::logger::BraintrustLogger;
+use crate::braintrust_logging::payload::{ResponseObject, SuccessEvent};
 use crate::braintrust_logging::settings::Settings;
 use crate::http_analytics_loggers::delivery::{Delivery, PostRequest, PostResponse};
 

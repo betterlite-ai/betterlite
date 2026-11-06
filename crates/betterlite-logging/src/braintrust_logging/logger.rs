@@ -1,21 +1,55 @@
 use std::collections::BTreeMap;
+use std::error::Error as StdError;
+use std::string::FromUtf8Error;
 use std::sync::Mutex;
 
 use betterlite_models::decisions::Json;
-use http::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
+use http::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue, InvalidHeaderValue};
 use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
+use thiserror::Error;
 use url::Url;
 
 use crate::http_analytics_loggers::delivery::{DELIVERY_DEADLINE, Delivery, PostRequest};
 
-use super::error::BraintrustError;
-use super::event::{CallbackPath, SuccessEvent};
 use super::payload;
+use super::payload::PayloadError;
+use super::payload::{CallbackPath, SuccessEvent};
 use super::payload::{metadata_text, object};
 use super::settings::Settings;
 
 const DEFAULT_PROJECT_NAME: &str = "litellm";
+
+#[derive(Debug, Error)]
+pub enum BraintrustError<E>
+where
+    E: StdError + 'static,
+{
+    #[error("the Braintrust request body could not be encoded")]
+    Encode(#[source] serde_json::Error),
+    #[error("the Braintrust request failed")]
+    Transport(#[source] E),
+    #[error("Braintrust answered with status {status}: {body}")]
+    Status { status: u16, body: String },
+    #[error("the Braintrust response body is not UTF-8")]
+    Body(#[source] FromUtf8Error),
+    #[error("the Braintrust response body is not JSON")]
+    Response(#[source] serde_json::Error),
+    #[error("the Braintrust response has no string {field}")]
+    ProjectField { field: &'static str },
+    #[error("the Braintrust URL {url} is not valid")]
+    Url {
+        url: String,
+        #[source]
+        source: url::ParseError,
+    },
+    #[error("the Braintrust Authorization header is not valid")]
+    Header(#[source] InvalidHeaderValue),
+    #[error("the Braintrust project cache is poisoned")]
+    CachePoisoned,
+    #[error(transparent)]
+    Payload(#[from] PayloadError),
+}
 
 #[derive(Default)]
 struct Projects {
@@ -38,7 +72,6 @@ impl<D: Delivery> BraintrustLogger<D> {
         }
     }
 
-    // The path picks LiteLLM's project endpoint and its time-to-first-token rule.
     pub async fn log_success_event(
         &self,
         event: &SuccessEvent<'_>,
@@ -58,7 +91,6 @@ impl<D: Delivery> BraintrustLogger<D> {
         Ok(())
     }
 
-    // LiteLLM's failure callback delegates to CustomLogger's no-op, so a failure event sends nothing
     pub const fn log_failure_event(&self) {}
 
     async fn send(&self, url: &str, body: &Json) -> Result<Vec<u8>, BraintrustError<D::Error>> {

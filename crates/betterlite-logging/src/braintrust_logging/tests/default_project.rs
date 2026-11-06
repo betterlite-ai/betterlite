@@ -1,5 +1,5 @@
 use super::support::{BASE, ResponseKind, Scenario, answer, json, logger, model_completion};
-use crate::braintrust_logging::event::CallbackPath;
+use crate::braintrust_logging::payload::CallbackPath;
 
 #[tokio::test]
 async fn missing_project_creates_the_litellm_default() {

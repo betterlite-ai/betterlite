@@ -1,8 +1,8 @@
 use super::support::{
     BASE, KEY, ResponseKind, Scenario, answer, failing, json, logger, model_completion,
 };
-use crate::braintrust_logging::error::BraintrustError;
-use crate::braintrust_logging::event::CallbackPath;
+use crate::braintrust_logging::logger::BraintrustError;
+use crate::braintrust_logging::payload::CallbackPath;
 
 fn named_project() -> Scenario {
     let mut scenario = Scenario::empty();

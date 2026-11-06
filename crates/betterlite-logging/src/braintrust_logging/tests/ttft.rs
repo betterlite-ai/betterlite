@@ -3,7 +3,7 @@ use betterlite_models::decisions::Json;
 use super::support::{
     ResponseKind, Scenario, answer, at, at_path, json, logger, model_completion, posted,
 };
-use crate::braintrust_logging::event::CallbackPath;
+use crate::braintrust_logging::payload::CallbackPath;
 
 fn with_usage() -> Scenario {
     let mut scenario = Scenario::empty();
