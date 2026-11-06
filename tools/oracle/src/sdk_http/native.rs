@@ -178,9 +178,11 @@ async fn send(
     let body = serde_json::to_vec(&wire).map_err(SdkHttpError::Serialize)?;
     let request =
         ChatRequest::parse(&body).map_err(|source| SdkHttpError::ChatParse(Box::new(source)))?;
-    let deployment = executor
-        .pick(&chat.model)
-        .map_err(|source| SdkHttpError::Chat(Box::new(source)))?;
+    let deployment = executor.deployments.first().ok_or_else(|| {
+        SdkHttpError::Chat(Box::new(ChatError::UnknownModel {
+            model: chat.model.clone(),
+        }))
+    })?;
     match executor.send(deployment, &request).await {
         Ok(outcome) => Ok(SdkResult::Success {
             value: completion(outcome.response),
