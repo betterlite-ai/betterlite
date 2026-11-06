@@ -1,3 +1,5 @@
+use betterlite_models::prompt_contracts::PromptIgnoreFlags;
+
 use crate::arguments::json::{Json, Object};
 use crate::dotprompt_compilation::global::GlobalPromptDirectory;
 use crate::dotprompt_compilation::init::manager::{DotpromptManager, PromptDataInput};
@@ -64,6 +66,24 @@ async fn dotprompt_hooks_append_the_client_messages_to_the_rendered_template() {
             message("user", "client question"),
         ]
     );
+}
+
+#[tokio::test]
+async fn dotprompt_sync_hook_forwards_the_callers_ignore_flags() {
+    let manager = manager("User: hi", Some("gpt-4"));
+    let dynamic = json("{}");
+    let mut completion = request(Some("greeting"), "dotprompt/gpt-4", &dynamic);
+    completion.ignore_flags = PromptIgnoreFlags {
+        model: true,
+        optional_params: true,
+    };
+
+    let outcome = manager
+        .get_chat_completion_prompt(completion)
+        .await
+        .expect("completion prompt");
+
+    assert_eq!(outcome.model, "dotprompt/gpt-4");
 }
 
 #[tokio::test]

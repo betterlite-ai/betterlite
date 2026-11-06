@@ -201,3 +201,26 @@ async fn generic_sync_hook_compiles_without_the_prompt_spec() {
             .any(|(key, value)| key == "prompt_id" && value == "greeting")
     );
 }
+
+#[tokio::test]
+async fn generic_sync_hook_forwards_the_callers_ignore_flags() {
+    let transport = FakePromptApi::replying(BODY);
+    let manager = generic_manager(transport);
+    let dynamic = json("{}");
+    let mut completion = request(Some("greeting"), "generic_prompt/gpt-4", &dynamic);
+    completion.ignore_flags = PromptIgnoreFlags {
+        model: true,
+        optional_params: true,
+    };
+
+    let outcome = manager
+        .get_chat_completion_prompt(completion)
+        .await
+        .expect("completion prompt");
+
+    assert_eq!(outcome.model, "generic_prompt/gpt-4");
+    assert_eq!(
+        outcome.non_default_params.get("temperature"),
+        Some(&json("0.2"))
+    );
+}
