@@ -31,8 +31,6 @@ pub(crate) struct Input {
     #[serde(default)]
     pub params: Vec<(String, String)>,
     #[serde(default)]
-    pub json_body: Option<Value>,
-    #[serde(default)]
     pub page: i64,
     #[serde(default)]
     pub limit: u32,
@@ -76,23 +74,38 @@ where
         .start_paused(true)
         .build()
         .map(|runtime| runtime.block_on(future))
-        .map_err(|error| input_error(&error.to_string()))
+        .map_err(|error| helper_error("ValueError", error.to_string()))
 }
 
 async fn run(input: &Input) -> HelperResult {
     let settings = settings(input)?;
     let script = Script::new(input.replies.clone());
-    let github = GitHub::new(&settings, script.clone()).map_err(|error| source_error(&error))?;
-    match input.operation.as_str() {
-        "init" => Ok(init(&github)),
-        "request" => request(&github, input, &script).await,
-        "fetch_page" => fetch_page(&github, input, &script).await,
-        "pages" => pages(&github, input, &script).await,
-        "repositories" => repositories(&github, input, &script).await,
-        "test_repositories" => test_repositories(&github, input, &script).await,
-        "profile_email" => profile_email(&github, input, &script).await,
-        other => Err(input_error(&format!("unsupported operation {other}"))),
-    }
+    let github = GitHub::new(&settings, script.clone())
+        .map_err(|error| helper_error("SourceError", error.to_string()))?;
+    let payload = match input.operation.as_str() {
+        "init" => init(&github),
+        "request" => request(&github, input).await?,
+        "fetch_page" => fetch_page(&github, input).await?,
+        "pages" => pages(&github, input).await?,
+        "repositories" => repositories(&github, input).await?,
+        "test_repositories" => test_repositories(&github, input).await?,
+        "profile_email" => profile_email(&github, input).await?,
+        other => {
+            return Err(helper_error(
+                "ValueError",
+                format!("unsupported operation {other}"),
+            ));
+        }
+    };
+    Ok(with_requests(payload, &script))
+}
+
+fn with_requests(payload: Value, script: &Script) -> Value {
+    let Value::Object(mut fields) = payload else {
+        return payload;
+    };
+    fields.insert("requests".to_owned(), Value::from(script.seen()));
+    Value::Object(fields)
 }
 
 fn settings(input: &Input) -> Result<ROISettings, Box<HelperError>> {
@@ -100,7 +113,7 @@ fn settings(input: &Input) -> Result<ROISettings, Box<HelperError>> {
         "github_api_url": input.api_url,
         "github_token": input.token,
     }))
-    .map_err(|error| input_error(&error.to_string()))
+    .map_err(|error| helper_error("ValueError", error.to_string()))
 }
 
 fn init(github: &GitHub<Script>) -> Value {
@@ -113,97 +126,66 @@ fn init(github: &GitHub<Script>) -> Value {
     })
 }
 
-async fn request(github: &GitHub<Script>, input: &Input, script: &Script) -> HelperResult {
-    let body = input
-        .json_body
-        .as_ref()
-        .map(serde_json::to_vec)
-        .transpose()
-        .map_err(|error| input_error(&error.to_string()))?;
-    let response = github
-        .request(
-            Method::from_bytes(input.method.as_bytes())
-                .map_err(|error| input_error(&error.to_string()))?,
-            &input.path,
-            &input.params,
-            body,
-        )
-        .await
-        .map_err(|error| source_error(&error))?;
-    Ok(json!({"status": response.status, "requests": script.seen()}))
+async fn request(github: &GitHub<Script>, input: &Input) -> HelperResult {
+    let method = Method::from_bytes(input.method.as_bytes())
+        .map_err(|error| helper_error("ValueError", error.to_string()))?;
+    let response = github_result(github.request(method, &input.path, &input.params, None)).await?;
+    Ok(json!({"status": response.status}))
 }
 
-async fn fetch_page(github: &GitHub<Script>, input: &Input, script: &Script) -> HelperResult {
+async fn fetch_page(github: &GitHub<Script>, input: &Input) -> HelperResult {
     let message = input
         .error_message
         .clone()
         .unwrap_or_else(|| PAGINATION_ERROR.to_owned());
-    let (items, has_next) = github
-        .fetch_page::<RepositoryItem>(&input.path, &input.params, input.page, &message)
-        .await
-        .map_err(|error| source_error(&error))?;
-    Ok(json!({"items": items, "has_next": has_next, "requests": script.seen()}))
+    let fetch =
+        github.fetch_page::<RepositoryItem>(&input.path, &input.params, input.page, &message);
+    let (items, has_next) = github_result(fetch).await?;
+    Ok(json!({"items": items, "has_next": has_next}))
 }
 
-async fn pages(github: &GitHub<Script>, input: &Input, script: &Script) -> HelperResult {
-    let collected = github
-        .pages::<RepositoryItem>(&input.path, &input.params, input.limit)
-        .try_collect::<Vec<Vec<RepositoryItem>>>()
-        .await
-        .map_err(|error| source_error(&error))?;
-    Ok(json!({"pages": collected, "requests": script.seen()}))
+async fn pages(github: &GitHub<Script>, input: &Input) -> HelperResult {
+    let pages = github.pages::<RepositoryItem>(&input.path, &input.params, input.limit);
+    let collected = github_result(pages.try_collect::<Vec<Vec<RepositoryItem>>>()).await?;
+    Ok(json!({"pages": collected}))
 }
 
-async fn repositories(github: &GitHub<Script>, input: &Input, script: &Script) -> HelperResult {
-    let (repositories, has_more) = github
-        .repositories(&input.query, input.page)
-        .await
-        .map_err(|error| source_error(&error))?;
-    Ok(json!({
-        "repositories": repositories,
-        "has_more": has_more,
-        "requests": script.seen(),
-    }))
+async fn repositories(github: &GitHub<Script>, input: &Input) -> HelperResult {
+    let (repositories, has_more) =
+        github_result(github.repositories(&input.query, input.page)).await?;
+    Ok(json!({"repositories": repositories, "has_more": has_more}))
 }
 
-async fn test_repositories(
-    github: &GitHub<Script>,
-    input: &Input,
-    script: &Script,
-) -> HelperResult {
-    github
-        .test_repositories(&input.repos)
-        .await
-        .map_err(|error| source_error(&error))?;
-    Ok(json!({"requests": script.seen()}))
+async fn test_repositories(github: &GitHub<Script>, input: &Input) -> HelperResult {
+    github_result(github.test_repositories(&input.repos)).await?;
+    Ok(json!({}))
 }
 
-async fn profile_email(github: &GitHub<Script>, input: &Input, script: &Script) -> HelperResult {
+async fn profile_email(github: &GitHub<Script>, input: &Input) -> HelperResult {
     let mut emails = Vec::with_capacity(input.calls.len());
     for call in &input.calls {
         emails.push(github.profile_email(&call.login, &call.fallback).await);
     }
-    Ok(json!({"emails": emails, "requests": script.seen()}))
+    Ok(json!({"emails": emails}))
 }
 
-fn source_error(error: &SourceError) -> Box<HelperError> {
+async fn github_result<F, T>(future: F) -> Result<T, Box<HelperError>>
+where
+    F: Future<Output = Result<T, SourceError>>,
+{
+    match future.await {
+        Ok(value) => Ok(value),
+        Err(error) => Err(helper_error("SourceError", error.to_string())),
+    }
+}
+
+fn helper_error(class: &str, message: String) -> Box<HelperError> {
     Box::new(HelperError {
-        class: "SourceError".to_owned(),
+        class: class.to_owned(),
         status: None,
         error_type: None,
         param: None,
         code: None,
-        message: error.to_string(),
-    })
-}
-
-fn input_error(message: &str) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: "ValueError".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: message.to_owned(),
+        message,
     })
 }

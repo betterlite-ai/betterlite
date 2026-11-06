@@ -32,3 +32,17 @@ pub enum BuildError {
     #[error(transparent)]
     Source(#[from] SourceError),
 }
+
+pub(crate) const fn http_label(status: u16) -> &'static str {
+    match status {
+        401 => "Authentication failed. Check the configured GitHub token.",
+        403 => {
+            "GitHub denied access or reached a rate limit. Check token permissions and organization approval."
+        }
+        404 => {
+            "GitHub repository or organization not found. Check its name, token access, and API URL."
+        }
+        429 => "GitHub rate limit reached. Wait before syncing again.",
+        _ => "GitHub returned an error.",
+    }
+}

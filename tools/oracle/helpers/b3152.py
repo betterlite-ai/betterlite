@@ -84,7 +84,7 @@ def settings(input_value: dict[str, Json]) -> ROISettings:
     )
 
 
-def init(client: gh.GitHub) -> Json:
+def init(client: gh.GitHub) -> dict[str, Json]:
     headers = client._headers  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
     return {
         "api_url": client._api_url,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
@@ -110,7 +110,7 @@ def params_of(input_value: dict[str, Json]) -> dict[str, str]:
     return pairs
 
 
-async def request(client: gh.GitHub, input_value: dict[str, Json], script: Script) -> Json:
+async def request(client: gh.GitHub, input_value: dict[str, Json]) -> dict[str, Json]:
     method = input_value.get("method")
     path = input_value.get("path")
     if not isinstance(method, str) or not isinstance(path, str):
@@ -123,10 +123,10 @@ async def request(client: gh.GitHub, input_value: dict[str, Json], script: Scrip
         json_body=input_value.get("json_body"),
         headers=client._headers,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
     )
-    return {"status": response.status_code, "requests": script.log}
+    return {"status": response.status_code}
 
 
-async def fetch_page(client: gh.GitHub, input_value: dict[str, Json], script: Script) -> Json:
+async def fetch_page(client: gh.GitHub, input_value: dict[str, Json]) -> dict[str, Json]:
     path = input_value.get("path")
     page = input_value.get("page")
     message = input_value.get("error_message")
@@ -141,14 +141,10 @@ async def fetch_page(client: gh.GitHub, input_value: dict[str, Json], script: Sc
         headers=client._headers,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
         error_message=text_of(message, PAGINATION_ERROR),
     )
-    return {
-        "items": [item.model_dump() for item in items],
-        "has_next": has_next,
-        "requests": script.log,
-    }
+    return {"items": [item.model_dump() for item in items], "has_next": has_next}
 
 
-async def pages(client: gh.GitHub, input_value: dict[str, Json], script: Script) -> Json:
+async def pages(client: gh.GitHub, input_value: dict[str, Json]) -> dict[str, Json]:
     path = input_value.get("path")
     limit = input_value.get("limit")
     if not isinstance(path, str) or not isinstance(limit, int) or isinstance(limit, bool):
@@ -163,13 +159,10 @@ async def pages(client: gh.GitHub, input_value: dict[str, Json], script: Script)
             headers=client._headers,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
         )
     )
-    return {
-        "pages": [[item.model_dump() for item in page] for page in collected],
-        "requests": script.log,
-    }
+    return {"pages": [[item.model_dump() for item in page] for page in collected]}
 
 
-async def repositories(client: gh.GitHub, input_value: dict[str, Json], script: Script) -> Json:
+async def repositories(client: gh.GitHub, input_value: dict[str, Json]) -> dict[str, Json]:
     found, has_more = await client.repositories(
         query=text_of(input_value.get("query"), ""),
         page=integer_of(input_value.get("page"), 1),
@@ -180,13 +173,12 @@ async def repositories(client: gh.GitHub, input_value: dict[str, Json], script: 
             for name, visibility, archived in found
         ],
         "has_more": has_more,
-        "requests": script.log,
     }
 
 
 async def test_repositories(
-    client: gh.GitHub, input_value: dict[str, Json], script: Script
-) -> Json:
+    client: gh.GitHub, input_value: dict[str, Json]
+) -> dict[str, Json]:
     repos = input_value.get("repos") or []
     if not isinstance(repos, list):
         raise ValueError("repos must be a list")
@@ -196,10 +188,10 @@ async def test_repositories(
             raise ValueError("a repository must be a string")
         names.append(repo)
     await client.test_repositories(tuple(names))
-    return {"requests": script.log}
+    return {}
 
 
-async def profile_email(client: gh.GitHub, input_value: dict[str, Json], script: Script) -> Json:
+async def profile_email(client: gh.GitHub, input_value: dict[str, Json]) -> dict[str, Json]:
     calls = input_value.get("calls") or []
     if not isinstance(calls, list):
         raise ValueError("calls must be a list")
@@ -214,10 +206,10 @@ async def profile_email(client: gh.GitHub, input_value: dict[str, Json], script:
         emails.append(
             await client.profile_email(login, fallback=text_of(fallback, ""))
         )
-    return {"emails": emails, "requests": script.log}
+    return {"emails": emails}
 
 
-Handler: TypeAlias = Callable[[gh.GitHub, dict[str, Json], Script], Awaitable[Json]]
+Handler: TypeAlias = Callable[[gh.GitHub, dict[str, Json]], Awaitable[dict[str, Json]]]
 
 HANDLERS: dict[str, Handler] = {
     "request": request,
@@ -236,11 +228,14 @@ async def dispatch(input_value: dict[str, Json]) -> Json:
     script = Script(cast(list[Json], input_value.get("replies") or []))
     client = gh.GitHub(settings(input_value), transport=script)
     if operation == "init":
-        return init(client)
-    handler = HANDLERS.get(operation)
-    if handler is None:
-        raise ValueError(f"unknown b3152 operation: {operation}")
-    return await handler(client, input_value, script)
+        payload = init(client)
+    else:
+        handler = HANDLERS.get(operation)
+        if handler is None:
+            raise ValueError(f"unknown b3152 operation: {operation}")
+        payload = await handler(client, input_value)
+    payload["requests"] = script.log
+    return payload
 
 
 def run(input_value: dict[str, Json]) -> Json:

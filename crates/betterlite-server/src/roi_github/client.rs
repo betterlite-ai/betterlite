@@ -20,7 +20,7 @@ use tokio::time::sleep;
 use url::Url;
 
 use super::adapters::{RepositoryValue, repository_values};
-use super::error::{BuildError, SourceError};
+use super::error::{BuildError, SourceError, http_label};
 use super::models::{
     GitHubUserProfile, PAGINATION_ERROR, REPOSITORY_PAGE_ERROR, REPOSITORY_SEARCH_PAGES,
     RepositoryItem,
@@ -178,46 +178,21 @@ impl<T: Transport> GitHub<T> {
             ),
         ];
         if query.is_empty() {
-            let (repositories, has_more) = self
-                .fetch_page::<RepositoryItem>("user/repos", &params, page, REPOSITORY_PAGE_ERROR)
-                .await?;
-            return Ok((repository_values(&repositories), has_more));
+            return self.list_repositories(&params, page).await;
         }
-        self.search_repositories(query, page, &params).await
+        search_repositories(self, query, page, &params).await
     }
 
-    async fn search_repositories(
+    async fn list_repositories(
         &self,
-        query: &str,
-        page: i64,
         params: &[(String, String)],
+        page: i64,
     ) -> Result<(Vec<RepositoryValue>, bool), SourceError> {
-        let normalized_query = caseless::default_case_fold_str(query);
-        let mut github_page = page
-            .saturating_sub(1)
-            .saturating_mul(REPOSITORY_SEARCH_PAGES)
-            .saturating_add(1);
-        let mut pages_remaining = REPOSITORY_SEARCH_PAGES;
-        let mut matches: Vec<RepositoryItem> = Vec::new();
-        loop {
-            let (repositories, has_more) = self
-                .fetch_page::<RepositoryItem>(
-                    "user/repos",
-                    params,
-                    github_page,
-                    REPOSITORY_PAGE_ERROR,
-                )
-                .await?;
-            matches.extend(repositories.into_iter().filter(|repository| {
-                caseless::default_case_fold_str(&repository.full_name)
-                    .contains(normalized_query.as_str())
-            }));
-            if pages_remaining <= 1 || !has_more {
-                return Ok((repository_values(&matches), has_more));
-            }
-            github_page = github_page.saturating_add(1);
-            pages_remaining = pages_remaining.saturating_sub(1);
-        }
+        let (repositories, has_more) = self
+            .fetch_page::<RepositoryItem>("user/repos", params, page, REPOSITORY_PAGE_ERROR)
+            .await?;
+        let values = repository_values(&repositories);
+        Ok((values, has_more))
     }
 
     pub async fn test_repositories(&self, repos: &[String]) -> Result<(), SourceError> {
@@ -277,20 +252,6 @@ impl<T: Transport> GitHub<T> {
     pub fn close(self) {}
 }
 
-const fn http_label(status: u16) -> &'static str {
-    match status {
-        401 => "Authentication failed. Check the configured GitHub token.",
-        403 => {
-            "GitHub denied access or reached a rate limit. Check token permissions and organization approval."
-        }
-        404 => {
-            "GitHub repository or organization not found. Check its name, token access, and API URL."
-        }
-        429 => "GitHub rate limit reached. Wait before syncing again.",
-        _ => "GitHub returned an error.",
-    }
-}
-
 impl GitHub<ProxiedClient> {
     pub fn pooled(
         settings: &ROISettings,
@@ -302,5 +263,37 @@ impl GitHub<ProxiedClient> {
             Ok(client) => Self::new(settings, client).map_err(BuildError::Source),
             Err(error) => Err(BuildError::Pool(error)),
         }
+    }
+}
+
+async fn search_repositories<T>(
+    github: &GitHub<T>,
+    query: &str,
+    page: i64,
+    params: &[(String, String)],
+) -> Result<(Vec<RepositoryValue>, bool), SourceError>
+where
+    T: Transport,
+{
+    let normalized_query = caseless::default_case_fold_str(query);
+    let mut github_page = page
+        .saturating_sub(1)
+        .saturating_mul(REPOSITORY_SEARCH_PAGES)
+        .saturating_add(1);
+    let mut pages_remaining = REPOSITORY_SEARCH_PAGES;
+    let mut matches: Vec<RepositoryItem> = Vec::new();
+    loop {
+        let (repositories, has_more) = github
+            .fetch_page::<RepositoryItem>("user/repos", params, github_page, REPOSITORY_PAGE_ERROR)
+            .await?;
+        matches.extend(repositories.into_iter().filter(|repository| {
+            caseless::default_case_fold_str(&repository.full_name)
+                .contains(normalized_query.as_str())
+        }));
+        if pages_remaining <= 1 || !has_more {
+            return Ok((repository_values(&matches), has_more));
+        }
+        github_page = github_page.saturating_add(1);
+        pages_remaining = pages_remaining.saturating_sub(1);
     }
 }
