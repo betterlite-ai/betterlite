@@ -1084,15 +1084,19 @@ dependencies = [
  "aws-credential-types",
  "aws-sdk-sts",
  "aws-smithy-async",
+ "aws-smithy-eventstream",
  "aws-smithy-runtime-api",
  "aws-smithy-types",
  "aws-types",
+ "base64 0.23.1",
  "betterlite-config",
  "betterlite-context",
  "betterlite-env",
  "betterlite-openai",
  "betterlite-redact",
+ "bytes",
  "chrono",
+ "crc32fast",
  "encoding_rs",
  "futures-util",
  "hex",
@@ -1115,6 +1119,7 @@ name = "betterlite-bedrock-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-bedrock",
+ "bytes",
  "libfuzzer-sys",
 ]
 
@@ -1526,6 +1531,14 @@ name = "betterlite-http"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "aws-config",
+ "aws-credential-types",
+ "aws-sdk-sts",
+ "aws-sigv4",
+ "aws-smithy-async",
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
+ "aws-types",
  "base64 0.23.1",
  "betterlite-config",
  "bytes",
@@ -1846,6 +1859,7 @@ dependencies = [
  "betterlite-server",
  "betterlite-streaming",
  "betterlite-websearch",
+ "bytes",
  "chrono",
  "clap",
  "cookie_store",
@@ -2123,9 +2137,11 @@ name = "betterlite-router"
 version = "0.1.0"
 dependencies = [
  "indexmap 2.14.2",
+ "rand 0.10.3",
  "rstest",
  "serde",
  "serde_json",
+ "thiserror",
  "unicode-general-category",
 ]
 
@@ -2257,6 +2273,7 @@ dependencies = [
  "betterlite-postgres-fixture",
  "betterlite-redact",
  "betterlite-roi",
+ "betterlite-router",
  "betterlite-semantic",
  "caseless",
  "chrono",
