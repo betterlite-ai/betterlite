@@ -10,22 +10,16 @@ use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use serde_json::{Value, json};
 
+type Reply = Result<HttpResponse, TransportError>;
+
 // The oracle sends no request anywhere: every answer is scripted and every call is recorded for comparison.
 pub(super) struct Scripted {
     pub(super) replies: Mutex<VecDeque<HttpResponse>>,
     pub(super) calls: Mutex<Vec<Value>>,
 }
 
-struct Call<'call> {
-    method: &'call str,
-    url: &'call str,
-    headers: &'call [Header],
-    form: Option<Value>,
-    payload: Option<Value>,
-}
-
 impl Scripted {
-    fn answer(&self, url: &str, call: Value) -> Result<HttpResponse, TransportError> {
+    fn answer(&self, url: &str, call: Value) -> Reply {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -48,67 +42,39 @@ impl Scripted {
     }
 }
 
-fn recorded(call: &Call<'_>) -> Value {
-    let names: BTreeSet<String> = call
-        .headers
-        .iter()
-        .map(|header| header.name.clone())
-        .collect();
+fn call_record(
+    method: &str,
+    url: &str,
+    headers: &[Header],
+    form: Option<&Value>,
+    payload: Option<&Value>,
+) -> Value {
+    let names: BTreeSet<String> = headers.iter().map(|header| header.name.clone()).collect();
     json!({
-        "method": call.method,
-        "url": call.url,
+        "method": method,
+        "url": url,
         "headers": names.into_iter().collect::<Vec<String>>(),
-        "form": call.form.clone(),
-        "payload": call.payload.clone(),
+        "form": form,
+        "payload": payload,
     })
 }
 
 impl Transport for Scripted {
-    fn get(&self, url: &str, headers: &[Header]) -> Result<HttpResponse, TransportError> {
-        let call = recorded(&Call {
-            method: "GET",
-            url,
-            headers,
-            form: None,
-            payload: None,
-        });
-        self.answer(url, call)
+    fn get(&self, url: &str, headers: &[Header]) -> Reply {
+        self.answer(url, call_record("GET", url, headers, None, None))
     }
 
-    fn post_form(
-        &self,
-        url: &str,
-        headers: &[Header],
-        form: &[(&str, &str)],
-    ) -> Result<HttpResponse, TransportError> {
-        let fields: BTreeMap<String, String> = form
-            .iter()
-            .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-            .collect();
-        let call = recorded(&Call {
-            method: "POST",
+    fn post_form(&self, url: &str, headers: &[Header], form: &[(&str, &str)]) -> Reply {
+        let fields: BTreeMap<&str, &str> = form.iter().copied().collect();
+        self.answer(
             url,
-            headers,
-            form: Some(json!(fields)),
-            payload: None,
-        });
-        self.answer(url, call)
+            call_record("POST", url, headers, Some(&json!(fields)), None),
+        )
     }
 
-    fn post_json(
-        &self,
-        url: &str,
-        headers: &[Header],
-        payload: &IndexMap<String, Json>,
-    ) -> Result<HttpResponse, TransportError> {
-        let call = recorded(&Call {
-            method: "POST",
-            url,
-            headers,
-            form: None,
-            payload: Some(payload_view(payload)),
-        });
-        self.answer(url, call)
+    fn post_json(&self, url: &str, headers: &[Header], payload: &IndexMap<String, Json>) -> Reply {
+        let view = call_record("POST", url, headers, None, Some(&payload_view(payload)));
+        self.answer(url, view)
     }
 }
 

@@ -182,7 +182,7 @@ impl ScriptedTransport {
             .clone()
     }
 
-    fn answer(&self, url: &str) -> Result<HttpResponse, TransportError> {
+    fn answer(&self, url: &str) -> Reply {
         self.replies
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -194,26 +194,18 @@ impl ScriptedTransport {
     }
 }
 
+type Reply = Result<HttpResponse, TransportError>;
+
 impl Transport for ScriptedTransport {
-    fn get(&self, url: &str, _headers: &[Header]) -> Result<HttpResponse, TransportError> {
+    fn get(&self, url: &str, _headers: &[Header]) -> Reply {
         self.answer(url)
     }
 
-    fn post_form(
-        &self,
-        url: &str,
-        _headers: &[Header],
-        _form: &[(&str, &str)],
-    ) -> Result<HttpResponse, TransportError> {
+    fn post_form(&self, url: &str, _headers: &[Header], _form: &[(&str, &str)]) -> Reply {
         self.answer(url)
     }
 
-    fn post_json(
-        &self,
-        url: &str,
-        _headers: &[Header],
-        payload: &IndexMap<String, Json>,
-    ) -> Result<HttpResponse, TransportError> {
+    fn post_json(&self, url: &str, _headers: &[Header], payload: &IndexMap<String, Json>) -> Reply {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
