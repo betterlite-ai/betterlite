@@ -344,6 +344,31 @@ async fn head_past_etag_timeout_retries_for_sixty_seconds() {
     ));
     assert_eq!(server.request_count(), 2);
     assert!(started.elapsed() >= Duration::from_secs(90));
+    assert!(started.elapsed() < Duration::from_secs(91));
+}
+
+#[tokio::test(start_paused = true)]
+async fn stalled_repository_probe_is_bounded() {
+    let server = Server::start(|request| {
+        if request.path.starts_with("/api/models/") {
+            return Reply::Stall;
+        }
+        Reply::Response {
+            status: 404,
+            headers: Vec::new(),
+            body: Vec::new(),
+        }
+    })
+    .await;
+    let directory = tempfile::tempdir().unwrap();
+    let mut settings = hub_settings(&server.endpoint, directory.path());
+    settings.etag_timeout = 5;
+    let started = Instant::now();
+    assert!(matches!(
+        downloader(&settings).download(REPO, "main", None).await,
+        Err(HubError::EntryNotFound(..))
+    ));
+    assert!(started.elapsed() < Duration::from_secs(10));
 }
 
 #[tokio::test]

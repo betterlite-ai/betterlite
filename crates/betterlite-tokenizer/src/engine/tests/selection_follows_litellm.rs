@@ -9,7 +9,7 @@ use crate::engine::Engine;
 use crate::engine::fetch::TiktokenFetcher;
 use crate::engine::hub::{HubDownloader, HubError};
 use crate::engine::limits::CountingService;
-use crate::engine::selection::{CustomTokenizer, SelectionError, Selector, TokenizerType};
+use crate::engine::selection::{CustomTokenizer, Kind, SelectionError, Selector, TokenizerType};
 use crate::engine::tests::support::{
     InlineCounter, Reply, Request, Server, client, hub_settings, resolver, system_clock,
 };
@@ -191,7 +191,10 @@ async fn a_custom_tokenizer_is_downloaded_once_with_its_token() {
 async fn default_encoding_is_the_bundled_cl100k() {
     let directory = tempfile::tempdir().unwrap();
     let settings = hub_settings("http://127.0.0.1:1", directory.path());
-    let selected = selector(&settings, false).default_encoding().await.unwrap();
+    let selected = selector(&settings, false)
+        .load_kind(Kind::OpenAi)
+        .await
+        .unwrap();
     assert!(matches!(selected, Engine::Tiktoken(_)));
     assert_eq!(selected.encode("hello world").unwrap(), [15339, 1917]);
 }

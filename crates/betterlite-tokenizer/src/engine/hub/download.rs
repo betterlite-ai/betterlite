@@ -95,7 +95,13 @@ where
                     Ok(path) => return Ok(path),
                     Err(error) => error,
                 };
-                let failed = classify(watch.client, failure, request.repository, request.revision);
+                let failed = classify(
+                    watch.client,
+                    failure,
+                    request.repository,
+                    request.revision,
+                    bounds.start,
+                );
                 return Err(failed.await);
             }
             Ok(Either::Right((_permit, _))) => {

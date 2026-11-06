@@ -2,6 +2,7 @@
 use betterlite_tokenizer::engine::assets;
 use betterlite_tokenizer::engine::tiktoken::{Encoding, TiktokenEngine};
 use libfuzzer_sys::fuzz_target;
+use std::str::from_utf8;
 fuzz_target!(|bytes: &[u8]| {
     let Some(data) = assets::bundled(Encoding::P50kBase) else {
         return;
@@ -9,6 +10,11 @@ fuzz_target!(|bytes: &[u8]| {
     let Ok(engine) = TiktokenEngine::from_bpe_file(Encoding::P50kBase, &data) else {
         return;
     };
+    if let Ok(text) = from_utf8(bytes)
+        && let Ok(ids) = engine.encode(text)
+    {
+        let _round_trip = engine.decode(&ids);
+    }
     let ids: Vec<u32> = bytes
         .as_chunks::<4>()
         .0

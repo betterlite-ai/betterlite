@@ -40,7 +40,7 @@ pub enum SelectionError {
     Engine(#[from] EngineError),
 }
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum Kind {
+pub enum Kind {
     OpenAi,
     Cohere,
     Anthropic,
@@ -93,7 +93,7 @@ impl Selector {
                 Err(error) => tracing::debug!("Error selecting tokenizer: {error}"),
             }
         }
-        let engine = self.default_encoding().await?;
+        let engine = self.load_kind(Kind::OpenAi).await?;
         Ok((engine, TokenizerType::OpenAi))
     }
     async fn select_custom(
@@ -135,18 +135,7 @@ impl Selector {
         }
         Ok((engine, TokenizerType::HuggingFace))
     }
-    pub async fn default_encoding(&self) -> Result<Engine, SelectionError> {
-        if let Some(found) = self
-            .kinds
-            .lock()
-            .ok()
-            .and_then(|cache| cache.get(&Kind::OpenAi).cloned())
-        {
-            return Ok(found);
-        }
-        self.load_kind(Kind::OpenAi).await
-    }
-    async fn load_kind(&self, kind: Kind) -> Result<Engine, SelectionError> {
+    pub async fn load_kind(&self, kind: Kind) -> Result<Engine, SelectionError> {
         if let Some(found) = self
             .kinds
             .lock()

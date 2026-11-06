@@ -9,24 +9,24 @@ use crate::sections::Section as _;
 use crate::sections::tokenizer_engines::{Raw, Settings};
 
 #[rstest]
-#[case::absent("litellm_settings: {}", &[], None, None, 4)]
-#[case::settings_null("litellm_settings: null", &[], None, None, 4)]
-#[case::disable_null("litellm_settings: {disable_hf_tokenizer_download: null}", &[], None, None, 4)]
-#[case::disabled_true("litellm_settings: {disable_hf_tokenizer_download: true}", &[], Some(true), None, 4)]
-#[case::disabled_false("litellm_settings: {disable_hf_tokenizer_download: false}", &[], Some(false), None, 4)]
-#[case::counts_configured("litellm_settings: {}", &[("TOKEN_COUNTER_MAX_CONCURRENT_COUNTS", "8")], None, None, 8)]
-#[case::counts_padded("litellm_settings: {}", &[("TOKEN_COUNTER_MAX_CONCURRENT_COUNTS", " 16 ")], None, None, 16)]
-#[case::counts_zero("litellm_settings: {}", &[("TOKEN_COUNTER_MAX_CONCURRENT_COUNTS", "0")], None, None, 4)]
-#[case::counts_above_range("litellm_settings: {}", &[("TOKEN_COUNTER_MAX_CONCURRENT_COUNTS", "257")], None, None, 4)]
-#[case::counts_negative("litellm_settings: {}", &[("TOKEN_COUNTER_MAX_CONCURRENT_COUNTS", "-2")], None, None, 4)]
-#[case::counts_not_a_number("litellm_settings: {}", &[("TOKEN_COUNTER_MAX_CONCURRENT_COUNTS", "lots")], None, None, 4)]
-#[case::counts_empty("litellm_settings: {}", &[("TOKEN_COUNTER_MAX_CONCURRENT_COUNTS", "")], None, None, 4)]
-#[case::cache_dir("litellm_settings: {}", &[("CUSTOM_TIKTOKEN_CACHE_DIR", "/cache/tokens")], None, Some("/cache/tokens"), 4)]
-#[case::cache_dir_empty("litellm_settings: {}", &[("CUSTOM_TIKTOKEN_CACHE_DIR", "")], None, None, 4)]
+#[case::absent("litellm_settings: {}", &[], false, None, 4)]
+#[case::settings_null("litellm_settings: null", &[], false, None, 4)]
+#[case::disable_null("litellm_settings: {disable_hf_tokenizer_download: null}", &[], false, None, 4)]
+#[case::disabled_true("litellm_settings: {disable_hf_tokenizer_download: true}", &[], true, None, 4)]
+#[case::disabled_false("litellm_settings: {disable_hf_tokenizer_download: false}", &[], false, None, 4)]
+#[case::counts_configured("litellm_settings: {}", &[("TOKEN_COUNTER_MAX_CONCURRENT_COUNTS", "8")], false, None, 8)]
+#[case::counts_padded("litellm_settings: {}", &[("TOKEN_COUNTER_MAX_CONCURRENT_COUNTS", " 16 ")], false, None, 16)]
+#[case::counts_zero("litellm_settings: {}", &[("TOKEN_COUNTER_MAX_CONCURRENT_COUNTS", "0")], false, None, 4)]
+#[case::counts_above_range("litellm_settings: {}", &[("TOKEN_COUNTER_MAX_CONCURRENT_COUNTS", "257")], false, None, 4)]
+#[case::counts_negative("litellm_settings: {}", &[("TOKEN_COUNTER_MAX_CONCURRENT_COUNTS", "-2")], false, None, 4)]
+#[case::counts_not_a_number("litellm_settings: {}", &[("TOKEN_COUNTER_MAX_CONCURRENT_COUNTS", "lots")], false, None, 4)]
+#[case::counts_empty("litellm_settings: {}", &[("TOKEN_COUNTER_MAX_CONCURRENT_COUNTS", "")], false, None, 4)]
+#[case::cache_dir("litellm_settings: {}", &[("CUSTOM_TIKTOKEN_CACHE_DIR", "/cache/tokens")], false, Some("/cache/tokens"), 4)]
+#[case::cache_dir_empty("litellm_settings: {}", &[("CUSTOM_TIKTOKEN_CACHE_DIR", "")], false, None, 4)]
 fn settings_follow_litellm(
     #[case] yaml: &str,
     #[case] variables: &[(&str, &str)],
-    #[case] disable_download: Option<bool>,
+    #[case] disable_download: bool,
     #[case] cache_dir: Option<&str>,
     #[case] max_concurrent_counts: usize,
 ) {
@@ -49,7 +49,7 @@ fn unset_settings_match_defaults() {
     assert_eq!(
         Settings::default(),
         Settings {
-            disable_hf_tokenizer_download: None,
+            disable_hf_tokenizer_download: false,
             custom_tiktoken_cache_dir: None,
             max_concurrent_counts: 4,
         }

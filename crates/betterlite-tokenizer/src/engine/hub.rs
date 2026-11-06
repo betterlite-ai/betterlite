@@ -11,7 +11,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 use thiserror::Error;
 use tokio::fs;
-use tokio::time::Instant;
+use tokio::time::{Instant, timeout as within};
 mod download;
 use download::{Bounds, RETRY_START_TIMEOUT, download_bounded};
 const HF_TRANSFER_WARNING: &str = "The `HF_HUB_ENABLE_HF_TRANSFER` environment variable is deprecated as 'hf_transfer' is not used anymore. Please use `HF_XET_HIGH_PERFORMANCE` instead to enable high performance transfer with Xet. Visit https://huggingface.co/docs/huggingface_hub/package_reference/environment_variables#hfxethighperformance for more details.";
@@ -157,6 +157,7 @@ pub(super) async fn classify(
     error: HFError,
     repository: &str,
     revision: &str,
+    start: Duration,
 ) -> HubError {
     if matches!(&error, HFError::RevisionNotFound { .. }) {
         return HubError::RevisionNotFound(repository.to_owned(), revision.to_owned(), error);
@@ -174,7 +175,7 @@ pub(super) async fn classify(
         if code == Some("EntryNotFound") {
             return HubError::EntryNotFound(repository.to_owned(), error);
         }
-        return missing_entry(client, error, repository).await;
+        return missing_entry(client, error, repository, start).await;
     }
     if matches!(&error, HFError::RepoNotFound { .. }) {
         return HubError::RepoNotFound(repository.to_owned(), error);
@@ -195,15 +196,17 @@ pub(super) async fn classify(
     }
     HubError::Download(repository.to_owned(), error)
 }
-async fn missing_entry(client: &HFClient, error: HFError, repository: &str) -> HubError {
+async fn missing_entry(
+    client: &HFClient,
+    error: HFError,
+    repository: &str,
+    start: Duration,
+) -> HubError {
     let (owner, name) = split_id(repository);
-    let exists = client
-        .model(owner.to_owned(), name.to_owned())
-        .exists()
-        .send()
-        .await;
-    match exists {
-        Ok(false) => HubError::RepoNotFound(repository.to_owned(), error),
+    let repo = client.model(owner.to_owned(), name.to_owned());
+    let probe = repo.exists().send();
+    match within(start, probe).await {
+        Ok(Ok(false)) => HubError::RepoNotFound(repository.to_owned(), error),
         _ => HubError::EntryNotFound(repository.to_owned(), error),
     }
 }

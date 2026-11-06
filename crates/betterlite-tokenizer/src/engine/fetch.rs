@@ -34,10 +34,8 @@ pub enum FetchError {
     Status(String, u16),
     #[error("the downloaded file {0} does not match its sha256")]
     HashMismatch(String),
-    #[error("the tokenizer cache at {0} could not be read")]
-    CacheRead(PathBuf, #[source] IoError),
-    #[error("the tokenizer cache at {0} could not be written")]
-    CacheWrite(PathBuf, #[source] IoError),
+    #[error("the tokenizer cache at {0} could not be read or written")]
+    Cache(PathBuf, #[source] IoError),
     #[error("the gpt2 vocabulary could not be converted")]
     Gpt2(#[from] Gpt2Error),
 }
@@ -110,19 +108,19 @@ impl TiktokenFetcher {
                 let _removed = fs::remove_file(&path).await;
             }
             Err(source) if source.kind() == ErrorKind::NotFound => {}
-            Err(source) => return Err(FetchError::CacheRead(path, source)),
+            Err(source) => return Err(FetchError::Cache(path, source)),
         }
         let data = self.fetch(url, expected).await?;
         fs::create_dir_all(directory)
             .await
-            .map_err(|source| FetchError::CacheWrite(path.clone(), source))?;
+            .map_err(|source| FetchError::Cache(path.clone(), source))?;
         let temporary = directory.join(format!("{key}.{}.tmp", Uuid::new_v4()));
         fs::write(&temporary, &data)
             .await
-            .map_err(|source| FetchError::CacheWrite(temporary.clone(), source))?;
+            .map_err(|source| FetchError::Cache(temporary.clone(), source))?;
         fs::rename(&temporary, &path)
             .await
-            .map_err(|source| FetchError::CacheWrite(path, source))?;
+            .map_err(|source| FetchError::Cache(path, source))?;
         Ok(data)
     }
     async fn fetch(&self, url: &str, expected: &str) -> Result<Vec<u8>, FetchError> {
@@ -167,10 +165,8 @@ pub enum Gpt2Error {
     MissingVersion,
     #[error("a gpt2 merge line does not hold exactly two tokens")]
     MalformedMerge,
-    #[error("the gpt2 merge file uses a character outside its byte map")]
-    UnknownCharacter,
-    #[error("a gpt2 byte map character is not a Unicode scalar value")]
-    BadCodepoint,
+    #[error("a gpt2 character or codepoint is outside the byte map")]
+    ByteMap,
     #[error("the gpt2 encoder map is not valid JSON")]
     EncoderJson(#[source] serde_json::Error),
     #[error("a gpt2 token rank does not fit in 32 bits")]
@@ -181,7 +177,10 @@ pub enum Gpt2Error {
 // tiktoken's data_gym_to_mergeable_bpe_ranks; both files come sha256-checked, so the encoder map only has to parse
 pub(crate) fn bpe_file(vocabulary: &[u8], encoder: &[u8]) -> Result<Vec<u8>, Gpt2Error> {
     let text = from_utf8(vocabulary).map_err(Gpt2Error::VocabularyUtf8)?;
-    let mapping = byte_map()?;
+    let (printable, rest): (Vec<u8>, Vec<u8>) = (0_u8..=255).partition(|byte| {
+        byte.is_ascii_graphic() || ((0xA1..=0xFF).contains(byte) && *byte != 0xAD)
+    });
+    let mapping = byte_map(&printable, &rest)?;
     let parts: Vec<&str> = text.split('\n').collect();
     let end = parts
         .len()
@@ -190,13 +189,18 @@ pub(crate) fn bpe_file(vocabulary: &[u8], encoder: &[u8]) -> Result<Vec<u8>, Gpt
     let merges = parts.get(1..end).ok_or(Gpt2Error::MissingVersion)?;
     let _encoder: BTreeMap<String, u32> =
         serde_json::from_slice(encoder).map_err(Gpt2Error::EncoderJson)?;
-    Ok(bpe_lines(&tokens_from_merges(merges, &mapping)?))
+    Ok(bpe_lines(&tokens_from_merges(
+        merges, &mapping, printable, rest,
+    )?))
 }
 fn tokens_from_merges(
     merges: &[&str],
     mapping: &BTreeMap<char, u8>,
+    printable: Vec<u8>,
+    rest: Vec<u8>,
 ) -> Result<Vec<(Vec<u8>, u32)>, Gpt2Error> {
-    let ordered = rank_order();
+    let mut ordered = printable;
+    ordered.extend(rest);
     let mut tokens: Vec<(Vec<u8>, u32)> =
         Vec::with_capacity(ordered.len().saturating_add(merges.len()));
     for (rank, byte) in ordered.iter().enumerate() {
@@ -216,7 +220,7 @@ fn tokens_from_merges(
         };
         let mut piece = Vec::new();
         for character in first.chars().chain(second.chars()) {
-            piece.push(*mapping.get(&character).ok_or(Gpt2Error::UnknownCharacter)?);
+            piece.push(*mapping.get(&character).ok_or(Gpt2Error::ByteMap)?);
         }
         tokens.push((piece, next));
         next = next.checked_add(1).ok_or(Gpt2Error::TooManyTokens)?;
@@ -233,26 +237,16 @@ fn bpe_lines(tokens: &[(Vec<u8>, u32)]) -> Vec<u8> {
     }
     output
 }
-const PRINTABLE: fn(u8) -> bool =
-    |byte: u8| byte.is_ascii_graphic() || ((0xA1..=0xFF).contains(&byte) && byte != 0xAD);
-fn rank_order() -> Vec<u8> {
-    let (mut ordered, rest): (Vec<u8>, Vec<u8>) = (0_u8..=255).partition(|byte| PRINTABLE(*byte));
-    ordered.extend(rest);
-    ordered
-}
-fn byte_map() -> Result<BTreeMap<char, u8>, Gpt2Error> {
+fn byte_map(printable: &[u8], rest: &[u8]) -> Result<BTreeMap<char, u8>, Gpt2Error> {
     let mut mapping = BTreeMap::new();
-    for byte in (0_u8..=255).filter(|byte| PRINTABLE(*byte)) {
-        mapping.insert(char::from(byte), byte);
+    for byte in printable {
+        mapping.insert(char::from(*byte), *byte);
     }
     let mut extra = 0_u32;
-    for byte in (0_u8..=255).filter(|byte| !PRINTABLE(*byte)) {
-        let codepoint = 256_u32.checked_add(extra).ok_or(Gpt2Error::BadCodepoint)?;
-        mapping.insert(
-            char::from_u32(codepoint).ok_or(Gpt2Error::BadCodepoint)?,
-            byte,
-        );
-        extra = extra.checked_add(1).ok_or(Gpt2Error::BadCodepoint)?;
+    for byte in rest {
+        let codepoint = 256_u32.checked_add(extra).ok_or(Gpt2Error::ByteMap)?;
+        mapping.insert(char::from_u32(codepoint).ok_or(Gpt2Error::ByteMap)?, *byte);
+        extra = extra.checked_add(1).ok_or(Gpt2Error::ByteMap)?;
     }
     Ok(mapping)
 }
