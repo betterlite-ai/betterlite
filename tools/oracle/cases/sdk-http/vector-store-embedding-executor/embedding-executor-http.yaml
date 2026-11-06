@@ -1,12 +1,11 @@
 kind: sdk_http
 name: vector-store-embedding-executor-http
-env: {}
+env: {OPENAI_API_KEY: sk-env}
 call:
   vector_store_embedding_executor:
     model: openai/text-embedding-3-small
     query: hello
-    api_key: sk-test
-    configuration: {dimensions: 2}
+    configuration: {dimensions: 2, api_key: sk-direct, timeout: 20, num_retries: 0, extra_body: {input_type: query}}
 upstream:
   - status: 200
     headers: {content-type: application/json}
@@ -14,4 +13,4 @@ upstream:
   - status: 200
     headers: {content-type: application/json}
     body: {object: list, data: [{object: embedding, index: 0, embedding: [0.25, 0.5]}], model: text-embedding-3-small, usage: {prompt_tokens: 1, total_tokens: 1}}
-compare: {headers: [], headers_present: [], upstream_headers: [], ignore: []}
+compare: {headers: [], headers_present: [], upstream_headers: [authorization], ignore: []}

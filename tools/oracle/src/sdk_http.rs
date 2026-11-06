@@ -74,7 +74,6 @@ pub struct OpenaiChat {
 pub struct VectorStoreEmbeddingCall {
     pub(crate) model: String,
     pub(crate) query: String,
-    pub(crate) api_key: String,
     #[serde(default)]
     pub(crate) configuration: Params,
     #[serde(default)]
@@ -94,6 +93,7 @@ pub struct RouterDeploymentSpec {
 #[serde(deny_unknown_fields)]
 pub struct RouterDeploymentParams {
     pub(crate) model: String,
+    pub(crate) api_key: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

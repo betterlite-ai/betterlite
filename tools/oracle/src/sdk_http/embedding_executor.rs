@@ -1,5 +1,4 @@
 use std::collections::{BTreeMap, BTreeSet};
-use std::iter::once;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -12,7 +11,8 @@ use betterlite_core::api::vector_store_contracts::router::{
     RouterEmbeddingExecutor, VectorStoreRouter,
 };
 use betterlite_http::proxy::ProxiedClient;
-use betterlite_openai::chat::deployment::ChatDeployment;
+use betterlite_models::decisions::Json;
+use betterlite_openai::chat::deployment::{ChatDeployment, OpenAiDefaults};
 use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::embedding::EmbeddingResponse;
 use betterlite_openai::openai_base_config::CatalogCapabilities;
@@ -99,18 +99,20 @@ async fn send(
     );
     let client =
         ProxiedClient::outbound(&policy).map_err(|error| SdkHttpError::Client(Box::new(error)))?;
-    let (direct_entries, router_entries) = entries(call, api_base);
-    let (_direct_config, direct_deployments) = deployments(direct_entries, env)?;
+    let (router_config, router_deployments, defaults) =
+        deployments(router_entries(call, api_base), env)?;
+    // the direct side serves no deployment: its key and base come from the configuration and the env
     let direct = DirectEmbeddingExecutor {
-        executor: chat_executor(&client, direct_deployments.clone()),
-        deployments: direct_deployments,
+        executor: chat_executor(&client, Vec::new()),
+        deployments: Vec::new(),
+        defaults: defaults.clone(),
     };
     let outcomes = if call.router.is_some() {
-        let (router_config, router_deployments) = deployments(router_entries, env)?;
         let handle = FakeRouter {
             direct: DirectEmbeddingExecutor {
                 executor: chat_executor(&client, router_deployments.clone()),
                 deployments: router_deployments,
+                defaults,
             },
             deployments: router_config,
         };
@@ -119,9 +121,9 @@ async fn send(
             metadata: call.metadata.clone(),
             direct,
         };
-        both_modes(&executor, call).await
+        both_modes(&executor, call, api_base).await
     } else {
-        both_modes(&direct, call).await
+        both_modes(&direct, call, api_base).await
     };
     let projected = outcomes.map_err(|source| SdkHttpError::Embedding {
         source: Box::new(source),
@@ -132,53 +134,46 @@ async fn send(
 async fn both_modes<E>(
     executor: &E,
     call: &VectorStoreEmbeddingCall,
+    api_base: &str,
 ) -> Result<EmbeddingOutcomes, VectorStoreEmbeddingError>
 where
     E: VectorStoreEmbeddingExecutor,
 {
+    // the harness owns api_base, and a direct call has no deployment to take it from
+    let mut configuration = call.configuration.clone();
+    configuration.insert("api_base".to_owned(), Json::Text(api_base.to_owned()));
     let sync = executor
-        .embed(&call.model, &call.query, &call.configuration)
+        .embed(&call.model, &call.query, &configuration)
         .await?;
     let asynchronous = executor
-        .aembed(&call.model, &call.query, &call.configuration)
+        .aembed(&call.model, &call.query, &configuration)
         .await?;
     Ok(EmbeddingOutcomes { sync, asynchronous })
 }
 
-// the harness owns api_base, so every deployment the case names points at the mock
-fn entries<'call>(
+fn router_entries<'call>(
     call: &'call VectorStoreEmbeddingCall,
     api_base: &'call str,
-) -> (Vec<Entry<'call>>, Vec<Entry<'call>>) {
-    let routed = call
-        .router
+) -> Vec<Entry<'call>> {
+    call.router
         .iter()
         .flatten()
-        .map(|deployment| (&deployment.model_name, &deployment.litellm_params.model));
-    let mut direct_entries = Vec::new();
-    let mut router_entries = Vec::new();
-    for (index, (model_name, model)) in once((&call.model, &call.model)).chain(routed).enumerate() {
-        let entry = Entry {
-            model_name,
+        .map(|deployment| Entry {
+            model_name: &deployment.model_name,
             litellm_params: EntryParams {
-                model,
+                model: &deployment.litellm_params.model,
                 api_base,
-                api_key: &call.api_key,
+                api_key: &deployment.litellm_params.api_key,
                 timeout: TIMEOUT_SECONDS,
             },
-        };
-        direct_entries.push(entry);
-        if index > 0 {
-            router_entries.push(entry);
-        }
-    }
-    (direct_entries, router_entries)
+        })
+        .collect()
 }
 
 fn deployments(
     entries: Vec<Entry<'_>>,
     env: &BTreeMap<String, String>,
-) -> Result<(Vec<ModelDeployment>, Vec<ChatDeployment>), SdkHttpError> {
+) -> Result<(Vec<ModelDeployment>, Vec<ChatDeployment>, OpenAiDefaults), SdkHttpError> {
     let loader = ConfigLoader {
         lookup: env.clone(),
     };
@@ -198,7 +193,7 @@ fn deployments(
                 .map_err(|error| SdkHttpError::Deployment(Box::new(error)))
         })
         .collect::<Result<Vec<_>, _>>()?;
-    Ok((config.model_list, resolved))
+    Ok((config.model_list, resolved, defaults))
 }
 
 fn chat_executor(client: &ProxiedClient, deployments: Vec<ChatDeployment>) -> ChatExecutor {
@@ -240,9 +235,30 @@ impl VectorStoreRouter for FakeRouter {
         input: &[String],
         configuration: Params,
     ) -> Result<EmbeddingResponse, BaseLlmException> {
+        self.serve(model, input, &configuration).await
+    }
+
+    async fn aembedding(
+        &self,
+        model: &str,
+        input: &[String],
+        configuration: Params,
+    ) -> Result<EmbeddingResponse, BaseLlmException> {
+        self.serve(model, input, &configuration).await
+    }
+}
+
+impl FakeRouter {
+    // the deployment the router picked is the one in its model list, with its own key and base
+    async fn serve(
+        &self,
+        model: &str,
+        input: &[String],
+        configuration: &Params,
+    ) -> Result<EmbeddingResponse, BaseLlmException> {
         let query = input.first().map_or("", String::as_str);
         self.direct
-            .embed(model, query, &configuration)
+            .embed(model, query, configuration)
             .await
             .map_err(|source| BaseLlmException {
                 status_code: 502,

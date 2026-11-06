@@ -1,0 +1,5 @@
+task: B1058
+deviations:
+  - what: The direct embedding executor accepts extra_headers and headers in the configuration but does not send them to the provider.
+    why: B006's embedding sender builds a fixed header set and has no seam for caller headers, and the file that owns it is outside this task.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6362-L6367

@@ -1,8 +1,9 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
+use betterlite_config::types::{LiteLlmParams, ModelDeployment, ModelInfo};
 use betterlite_models::decisions::Json;
-use betterlite_openai::chat::deployment::ChatDeployment;
+use betterlite_openai::chat::deployment::{ChatDeployment, OpenAiDefaults};
 use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::embedding::{
     EmbeddingError, EmbeddingRequest, EmbeddingResponse, send as send_embedding,
@@ -13,10 +14,30 @@ use betterlite_provider::api::vector_store_contracts::config::{
 use betterlite_provider::api::vector_store_contracts::error::VectorStoreEmbeddingError;
 use secrecy::SecretString;
 
+// litellm.embedding reads these itself, so none of them reaches the provider body
+const CALL_OPTIONS: [&str; 15] = [
+    "api_base",
+    "api_key",
+    "api_type",
+    "api_version",
+    "caching",
+    "custom_llm_provider",
+    "drop_params",
+    "extra_headers",
+    "headers",
+    "litellm_call_id",
+    "logger_fn",
+    "max_retries",
+    "metadata",
+    "num_retries",
+    "timeout",
+];
+
 // LiteLLM's direct executor splats the configuration into the embedding call after model and input
 pub struct DirectEmbeddingExecutor {
     pub executor: ChatExecutor,
     pub deployments: Vec<ChatDeployment>,
+    pub defaults: OpenAiDefaults,
 }
 
 #[async_trait]
@@ -37,64 +58,84 @@ impl VectorStoreEmbeddingExecutor for DirectEmbeddingExecutor {
 }
 
 impl DirectEmbeddingExecutor {
+    // a model no deployment serves is still called, from the configuration and the environment defaults
     fn deployment(
         &self,
         model: &str,
         configuration: &Params,
     ) -> Result<ChatDeployment, VectorStoreEmbeddingError> {
-        let found = self
-            .deployments
-            .iter()
-            .find(|deployment| deployment.litellm_model == model || deployment.model_group == model)
-            .ok_or_else(|| VectorStoreEmbeddingError::UnknownModel {
-                model: model.to_owned(),
-            })?;
-        let mut deployment = found.clone();
+        let mut deployment =
+            match self.deployments.iter().find(|deployment| {
+                deployment.litellm_model == model || deployment.model_group == model
+            }) {
+                Some(found) => found.clone(),
+                None => ChatDeployment::resolve(
+                    &ModelDeployment {
+                        model_name: model.to_owned(),
+                        litellm_params: LiteLlmParams {
+                            ssl_verify: None,
+                            model: Some(model.to_owned()),
+                            api_base: None,
+                            api_key: None,
+                            api_version: None,
+                            timeout: None,
+                            stream_timeout: None,
+                            max_retries: None,
+                            rpm: None,
+                            tpm: None,
+                            weight: None,
+                        },
+                        model_info: ModelInfo::default(),
+                    },
+                    &self.defaults,
+                )
+                .map_err(|source| VectorStoreEmbeddingError::Deployment { source })?,
+            };
         apply_call_options(&mut deployment, configuration)?;
         Ok(deployment)
     }
 }
 
-// the parameters litellm.embedding reads itself, which never reach the provider body
+// a null option is an absent one, so the deployment keeps its own value
+fn text_option<'configuration>(
+    configuration: &'configuration Params,
+    field: &'static str,
+) -> Result<Option<&'configuration str>, VectorStoreEmbeddingError> {
+    match configuration.get(field) {
+        None | Some(Json::Null) => Ok(None),
+        Some(Json::Text(value)) => Ok(Some(value)),
+        Some(_) => Err(VectorStoreEmbeddingError::FieldType {
+            field,
+            expected: "string",
+        }),
+    }
+}
+
 fn apply_call_options(
     deployment: &mut ChatDeployment,
     configuration: &Params,
 ) -> Result<(), VectorStoreEmbeddingError> {
-    if let Some(value) = configuration.get("api_base") {
-        let Json::Text(base) = value else {
-            return Err(VectorStoreEmbeddingError::FieldType {
-                field: "api_base",
-                expected: "string",
-            });
-        };
+    if let Some(base) = text_option(configuration, "api_base")? {
         base.clone_into(&mut deployment.api_base);
     }
-    if let Some(value) = configuration.get("api_key") {
-        let Json::Text(key) = value else {
-            return Err(VectorStoreEmbeddingError::FieldType {
-                field: "api_key",
-                expected: "string",
-            });
-        };
-        deployment.api_key = Some(SecretString::from(key.clone()));
+    if let Some(key) = text_option(configuration, "api_key")? {
+        deployment.api_key = Some(SecretString::from(key.to_owned()));
     }
-    if let Some(value) = configuration.get("timeout") {
-        let Json::Number(number) = value else {
+    match configuration.get("timeout") {
+        None | Some(Json::Null) => {}
+        Some(Json::Number(number)) => {
+            // as_f64 only misses for arbitrary-precision numbers, and NaN is refused as a wait below
+            let seconds = number.as_f64().unwrap_or(f64::NAN);
+            deployment.timeout = Duration::try_from_secs_f64(seconds)
+                .map_err(|source| VectorStoreEmbeddingError::Timeout { seconds, source })?;
+            deployment.timeout_seconds = seconds;
+        }
+        Some(_) => {
             return Err(VectorStoreEmbeddingError::FieldType {
                 field: "timeout",
                 expected: "number",
             });
-        };
-        let seconds = number
-            .as_f64()
-            .ok_or(VectorStoreEmbeddingError::FieldValue {
-                field: "timeout",
-                expected: "number",
-            })?;
-        let wait = Duration::try_from_secs_f64(seconds)
-            .map_err(|source| VectorStoreEmbeddingError::Timeout { seconds, source })?;
-        deployment.timeout = wait;
-        deployment.timeout_seconds = seconds;
+        }
     }
     Ok(())
 }
@@ -113,13 +154,27 @@ fn embedding_request(
             "model" | "input" => {
                 return Err(VectorStoreEmbeddingError::DuplicateArgument { name: name.clone() });
             }
-            "api_base" | "api_key" | "metadata" | "timeout" => {}
-            "dimensions" | "encoding_format" | "user" => {
+            "extra_body" => {}
+            option if CALL_OPTIONS.contains(&option) => {}
+            _ => {
                 body.insert(name.clone(), value.clone());
             }
-            _ => {
-                return Err(VectorStoreEmbeddingError::UnsupportedParameter { name: name.clone() });
-            }
+        }
+    }
+    match configuration.get("extra_body") {
+        None | Some(Json::Null) => {}
+        Some(Json::Object(extra)) => {
+            body.extend(
+                extra
+                    .iter()
+                    .map(|(name, value)| (name.clone(), value.clone())),
+            );
+        }
+        Some(_) => {
+            return Err(VectorStoreEmbeddingError::FieldType {
+                field: "extra_body",
+                expected: "object",
+            });
         }
     }
     // B006's parser owns the typed request, including the passthrough map for provider parameters

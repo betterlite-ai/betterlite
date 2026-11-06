@@ -25,15 +25,12 @@ pub trait VectorStoreRouter: Send + Sync {
         configuration: Params,
     ) -> Result<EmbeddingResponse, BaseLlmException>;
 
-    // one async execution serves both LiteLLM entry points unless a router makes them differ
     async fn aembedding(
         &self,
         model: &str,
         input: &[String],
         configuration: Params,
-    ) -> Result<EmbeddingResponse, BaseLlmException> {
-        self.embedding(model, input, configuration).await
-    }
+    ) -> Result<EmbeddingResponse, BaseLlmException>;
 }
 
 pub struct RouterEmbeddingExecutor<R> {
@@ -111,5 +108,22 @@ impl<R: VectorStoreRouter> VectorStoreEmbeddingExecutor for RouterEmbeddingExecu
                 .map_err(|source| VectorStoreEmbeddingError::Router { source });
         }
         self.direct.embed(model, query, &kwargs).await
+    }
+    async fn aembed(
+        &self,
+        model: &str,
+        query: &str,
+        configuration: &Params,
+    ) -> Result<EmbeddingResponse, VectorStoreEmbeddingError> {
+        let kwargs = self.embedding_kwargs(configuration);
+        let input = [query.to_owned()];
+        if self.router_serves(model) {
+            return self
+                .router
+                .aembedding(model, &input, kwargs)
+                .await
+                .map_err(|source| VectorStoreEmbeddingError::Router { source });
+        }
+        self.direct.aembed(model, query, &kwargs).await
     }
 }

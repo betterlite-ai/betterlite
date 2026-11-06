@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 use std::time::TryFromFloatSecsError;
 
 use betterlite_models::decisions::Json;
+use betterlite_openai::chat::deployment::DeploymentError;
 use betterlite_openai::embedding::EmbeddingError;
 use thiserror::Error;
 
@@ -27,15 +28,8 @@ pub enum VectorStoreEmbeddingError {
         "{name} is passed explicitly, so setting it in the configuration is a duplicate argument"
     )]
     DuplicateArgument { name: String },
-    #[error("{name} is not an embedding configuration parameter betterlite supports")]
-    UnsupportedParameter { name: String },
     #[error("configuration field {field} must be a {expected}")]
     FieldType {
-        field: &'static str,
-        expected: &'static str,
-    },
-    #[error("configuration field {field} is not a valid {expected}")]
-    FieldValue {
         field: &'static str,
         expected: &'static str,
     },
@@ -45,8 +39,11 @@ pub enum VectorStoreEmbeddingError {
         #[source]
         source: TryFromFloatSecsError,
     },
-    #[error("no deployment serves the embedding model {model}")]
-    UnknownModel { model: String },
+    #[error("the embedding model has no usable deployment settings: {source}")]
+    Deployment {
+        #[source]
+        source: DeploymentError,
+    },
     #[error("the embedding request could not be built: {source}")]
     Request {
         #[source]

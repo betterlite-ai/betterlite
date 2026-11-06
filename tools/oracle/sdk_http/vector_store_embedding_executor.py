@@ -15,6 +15,7 @@ class RouterDeploymentParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     model: str
+    api_key: str
 
 
 class RouterDeployment(BaseModel):
@@ -29,7 +30,6 @@ class EmbeddingCall(BaseModel):
 
     model: str
     query: str
-    api_key: str
     configuration: dict[str, object] = Field(default_factory=dict)
     metadata: dict[str, object] = Field(default_factory=dict)
     router: list[RouterDeployment] | None = None
@@ -113,7 +113,7 @@ def build_executor(call: EmbeddingCall, api_base: str) -> VectorStoreEmbeddingEx
             "model_name": deployment.model_name,
             "litellm_params": {
                 "model": deployment.litellm_params.model,
-                "api_key": call.api_key,
+                "api_key": deployment.litellm_params.api_key,
                 "api_base": api_base,
             },
         }
@@ -125,11 +125,7 @@ def build_executor(call: EmbeddingCall, api_base: str) -> VectorStoreEmbeddingEx
 
 
 def run_embedding(call: EmbeddingCall, api_base: str) -> EmbeddingOutcome:
-    configuration: dict[str, object] = {
-        **call.configuration,
-        "api_base": api_base,
-        "api_key": call.api_key,
-    }
+    configuration: dict[str, object] = {**call.configuration, "api_base": api_base}
     executor = build_executor(call, api_base)
     sync = executor.embed(
         model=call.model, query=call.query, configuration=configuration
