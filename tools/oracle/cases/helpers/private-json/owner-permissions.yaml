@@ -1,5 +1,1 @@
-kind: helper
-name: owner-permissions
-call: {private_json: {function: owner_permissions, name: private.json, data: {"n": 1}}}
-env: {}
-compare: {ignore: []}
+{kind: helper, name: owner-permissions, call: {private_json: {function: owner_permissions, name: private.json, data: {"n": 1}}}, env: {}, compare: {ignore: []}}

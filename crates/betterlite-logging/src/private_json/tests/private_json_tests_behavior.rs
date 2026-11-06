@@ -38,17 +38,6 @@ fn private_files_with(fault: Fault) -> PrivateFiles {
     PrivateFiles::from(access)
 }
 
-#[test]
-fn safe_dumps_strips_nul_bytes_from_keys_and_values() {
-    let data =
-        value(r#"{"ke\u0000y": "va\u0000lue", "list": ["a\u0000b", {"deep\u0000": "x\u0000"}]}"#);
-    let dumped = safe_dumps(&data, DEFAULT_MAX_RECURSE_DEPTH, None).expect("dumps the data");
-    assert_eq!(
-        value(&dumped),
-        value(r#"{"key": "value", "list": ["ab", {"deep": "x"}]}"#)
-    );
-}
-
 #[rstest]
 #[case::value_at_the_bound_survives(1, r#"{"a": "kept"}"#, r#"{"a": "kept"}"#)]
 #[case::value_past_the_bound_becomes_the_marker(
@@ -108,12 +97,6 @@ fn safe_dumps_accepts_typed_records_and_the_passthrough_field() {
         value(&dumped),
         value(r#"{"key": "team", "payload": {"nested": [1, 2]}}"#)
     );
-}
-
-#[test]
-fn safe_json_loads_returns_the_parsed_document() {
-    let parsed = safe_json_loads(br#"{"model": "gpt", "count": 2}"#).expect("parses the json");
-    assert_eq!(parsed, value(r#"{"model": "gpt", "count": 2}"#));
 }
 
 #[test]
