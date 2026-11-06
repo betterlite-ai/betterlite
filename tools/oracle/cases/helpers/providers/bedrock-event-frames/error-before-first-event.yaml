@@ -1,0 +1,5 @@
+kind: helper
+name: error-before-first-event
+call: {"bedrock_event_frames": {"operation": "stream", "params": {"chunks": ["616227630a00ff"], "response_headers": {"content-type": "application/vnd.amazon.eventstream", "x-amzn-requestid": "req-1"}, "shape_loaded": true}}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,6 @@
+model_list:
+  - model_name: arc-gpt
+    litellm_params:
+      model: azure/gpt-4o
+      api_base: https://example.openai.azure.com
+litellm_settings: {}

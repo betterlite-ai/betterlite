@@ -46,6 +46,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "stored_tokens"
+path = "fuzz_targets/stored_tokens.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "user_url"
 path = "fuzz_targets/user_url.rs"
 test = false

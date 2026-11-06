@@ -1,4 +1,4 @@
-use std::sync::{Mutex, PoisonError};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
@@ -6,7 +6,6 @@ use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_http::proxy::{ProxiedClient, StreamResponse, UpstreamResponse};
 use http::header::{ACCEPT, AUTHORIZATION};
 use http::{HeaderMap, HeaderName, HeaderValue, Method};
-use rand::RngExt as _;
 use rand::rngs::StdRng;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Map, Value};
@@ -74,26 +73,6 @@ pub struct ChatExecutor {
 }
 
 impl ChatExecutor {
-    pub fn pick(&self, model: &str) -> Result<&ChatDeployment, ChatError> {
-        let candidates: Vec<&ChatDeployment> = self
-            .deployments
-            .iter()
-            .filter(|deployment| deployment.model_group == model)
-            .collect();
-        let unknown = || ChatError::UnknownModel {
-            model: model.to_owned(),
-        };
-        if candidates.is_empty() {
-            return Err(unknown());
-        }
-        let index = self
-            .random
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .random_range(0..candidates.len());
-        candidates.get(index).copied().ok_or_else(unknown)
-    }
-
     pub async fn send(
         &self,
         deployment: &ChatDeployment,

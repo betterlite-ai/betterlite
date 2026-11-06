@@ -1,0 +1,5 @@
+kind: helper
+name: databricks-oauth-token-cache-expired
+call: {"b4782": {"operation": "header", "upstream": {"status": 200, "body": "{\"access_token\":\"tok\",\"expires_in\":120}"}, "rounds": [{"params": {"databricks_oauth": {"client_id": "id", "client_secret": "s3cret", "workspace_url": "UPSTREAM"}}}, {"params": {"databricks_oauth": {"client_id": "id", "client_secret": "s3cret", "workspace_url": "UPSTREAM"}}, "advance": 61}]}}
+env: {}
+compare: {ignore: []}

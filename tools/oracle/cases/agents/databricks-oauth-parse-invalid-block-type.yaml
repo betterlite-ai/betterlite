@@ -1,0 +1,5 @@
+kind: helper
+name: databricks-oauth-parse-invalid-block-type
+call: {"b4782": {"operation": "parse", "params": {"databricks_oauth": ["id"]}}}
+env: {}
+compare: {ignore: []}
