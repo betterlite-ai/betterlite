@@ -6,3 +6,6 @@ deviations:
   - what: 'A 200 response with `"payload": null` is treated as missing payload data and the absence is cached.'
     why: LiteLLM raises an AttributeError on `None.get` and caches nothing, which no working setup can rely on.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/google_secret_manager.py#L90-L94
+  - what: A cache hit returns the plaintext string exactly as read; LiteLLM passes the stored string through json.loads, so a secret like "123" or a JSON document comes back as a number or an object on the second read.
+    why: The declared return type is str or None, and the first read returns the plaintext string, so no working setup can rely on the parsed form.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L211-L221

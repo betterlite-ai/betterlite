@@ -210,6 +210,23 @@ async fn fetches_the_latest_version_with_the_constructed_headers() {
     );
 }
 
+#[rstest]
+#[case::number("MQ==", "1")]
+#[case::json_document("eyJhIjoxfQ==", r#"{"a":1}"#)]
+#[tokio::test]
+async fn cached_value_keeps_its_plaintext(#[case] encoded: &str, #[case] plaintext: &str) {
+    let harness = harness();
+    harness
+        .transport
+        .queue(200, &format!(r#"{{"payload":{{"data":"{encoded}"}}}}"#));
+
+    harness.read("api-key").await.unwrap();
+    let again = harness.read("api-key").await.unwrap().unwrap();
+
+    assert_eq!(again.expose_secret(), plaintext);
+    assert_eq!(harness.transport.urls().len(), 1);
+}
+
 #[tokio::test]
 async fn cached_value_is_returned_without_a_request_or_header_construction() {
     let harness = harness();
