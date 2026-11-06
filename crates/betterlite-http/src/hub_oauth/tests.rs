@@ -41,6 +41,7 @@ async fn oauth_refresh_follows_huggingface_hub() {
     oauth::token_file_that_moved_meanwhile_is_not_overwritten().await;
     oauth::stored_tokens_that_are_not_utf8_are_an_error().await;
     oauth::unparsable_stored_tokens_count_as_empty().await;
+    oauth::token_file_rewritten_during_the_lookup_is_served().await;
 }
 
 #[rstest]

@@ -19,7 +19,9 @@ use tracing_subscriber::fmt::MakeWriter;
 use tracing_subscriber::util::SubscriberInitExt as _;
 
 use crate::hub_oauth::clock::HubClock;
-use crate::hub_token::{HubToken, HubTokenError, HubTokenResolver, TokioHubTokenFileReader};
+use crate::hub_token::{
+    HubToken, HubTokenError, HubTokenFileReader, HubTokenResolver, TokioHubTokenFileReader,
+};
 use crate::proxy::ProxiedClient;
 
 pub(super) const HANG: u16 = 0;
@@ -172,6 +174,15 @@ impl Env {
     }
 
     pub(super) fn lookup(&self, hub: Settings, oidc: OidcSettings) -> HubTokenResolver {
+        self.lookup_with_reader(hub, oidc, Arc::new(TokioHubTokenFileReader))
+    }
+
+    pub(super) fn lookup_with_reader(
+        &self,
+        hub: Settings,
+        oidc: OidcSettings,
+        reader: Arc<dyn HubTokenFileReader>,
+    ) -> HubTokenResolver {
         let policy =
             Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
         let clock: Arc<dyn HubClock> = Arc::<FakeClock>::clone(&self.clock);
@@ -179,7 +190,7 @@ impl Env {
             hub,
             oidc,
             Arc::new(ProxiedClient::outbound(&policy).unwrap()),
-            Arc::new(TokioHubTokenFileReader),
+            reader,
             clock,
         )
     }

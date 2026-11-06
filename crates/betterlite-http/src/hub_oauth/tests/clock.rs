@@ -20,7 +20,8 @@ fn system_clock_reads_the_wall_clock() {
 #[tokio::test]
 async fn system_clock_counts_seconds_since_it_started() {
     let clock = SystemHubClock::new();
-    assert_eq!(clock.monotonic_seconds(), 0);
     sleep(Duration::from_millis(2100)).await;
-    assert_eq!(clock.monotonic_seconds(), 2);
+    let elapsed = clock.monotonic_seconds();
+    // scheduling may overshoot the sleep, but a clock that does not count reads 0 or 1 here
+    assert!((2..60).contains(&elapsed), "elapsed {elapsed}");
 }

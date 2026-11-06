@@ -1,13 +1,16 @@
 use std::fs::{self, File};
+use std::io;
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use tokio::time::sleep;
 
 use super::support::{Env, Logs, body_of, header, implicit, oidc_settings};
 use crate::hub_oauth::error::StoredTokensError;
-use crate::hub_token::{HubTokenError, HubTokenResolver};
+use crate::hub_token::{HubTokenError, HubTokenFileReader, HubTokenResolver};
 
 const NOW: i64 = 1_700_000_000;
 const EXPIRES_SOON: i64 = 1_700_003_600;
@@ -255,4 +258,36 @@ pub(super) async fn unparsable_stored_tokens_count_as_empty() {
     let fixture = Fixture::new("not an ini file\n").await;
     assert_eq!(implicit(&fixture.lookup).await.unwrap().unwrap(), "old");
     assert!(logs.text().contains("Error parsing stored tokens file"));
+}
+
+// serves a different token file on each read, so a login that rewrites it between the two reads is visible
+struct RewrittenTokenFile {
+    reads: AtomicUsize,
+    first: Vec<u8>,
+    second: Vec<u8>,
+}
+
+#[async_trait::async_trait]
+impl HubTokenFileReader for RewrittenTokenFile {
+    async fn read(&self, _path: &Path) -> io::Result<Vec<u8>> {
+        let read = self.reads.fetch_add(1, Ordering::SeqCst);
+        Ok(if read == 0 {
+            self.first.clone()
+        } else {
+            self.second.clone()
+        })
+    }
+}
+
+// a login rewrote the token file before the refresh re-read it, so the new token is served instead of the stale one
+pub(super) async fn token_file_rewritten_during_the_lookup_is_served() {
+    let env = Env::new().await;
+    let reader = Arc::new(RewrittenTokenFile {
+        reads: AtomicUsize::new(0),
+        first: b"old\n".to_vec(),
+        second: b"switched\n".to_vec(),
+    });
+    let lookup = env.lookup_with_reader(env.hub(), oidc_settings(None), reader);
+    assert_eq!(implicit(&lookup).await.unwrap().unwrap(), "switched");
+    assert!(env.server.requests().is_empty());
 }
