@@ -12,13 +12,11 @@ use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::onyx::OnyxGuardrail;
 use betterlite_http::proxy::base_builder;
-use secrecy::SecretString;
 use serde::Deserialize;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 use tokio::time::sleep;
-use uuid::Uuid;
 
 pub(crate) const API_KEY: &str = "oracle-key";
 
@@ -160,9 +158,11 @@ async fn run_script(
             split_reply(&listener, &accepted, head, tail, &reply).await
         }
         Script::IncompleteThenDeny { reply } => {
-            incomplete_then_deny(&listener, &accepted, &reply).await
+            misbehave_then_deny(&listener, &accepted, &reply, FirstFailure::Incomplete).await
         }
-        Script::ResetThenDeny { reply } => reset_then_deny(&listener, &accepted, &reply).await,
+        Script::ResetThenDeny { reply } => {
+            misbehave_then_deny(&listener, &accepted, &reply, FirstFailure::Reset).await
+        }
     }
 }
 
@@ -192,32 +192,34 @@ async fn split_reply(
     stream.shutdown().await
 }
 
-async fn incomplete_then_deny(
-    listener: &TcpListener,
-    accepted: &AtomicUsize,
-    reply: &str,
-) -> io::Result<()> {
-    let mut first = accept_one(listener, accepted).await?;
-    write_head(&mut first, 100).await?;
-    first.write_all(b"{\"all").await?;
-    first.shutdown().await?;
-    drop(first);
-    let mut second = accept_one(listener, accepted).await?;
-    write_response(&mut second, reply).await
+enum FirstFailure {
+    Incomplete,
+    Reset,
 }
 
-async fn reset_then_deny(
+async fn misbehave_then_deny(
     listener: &TcpListener,
     accepted: &AtomicUsize,
     reply: &str,
+    first: FirstFailure,
 ) -> io::Result<()> {
-    let (mut first, _) = listener.accept().await?;
-    accepted.fetch_add(1, Ordering::SeqCst);
-    let mut byte = [0_u8; 1];
-    let _read = first.read(&mut byte).await;
-    // closing with the rest of the request unread makes the kernel send a reset instead of a fin
-    sleep(Duration::from_millis(20)).await;
-    drop(first);
+    match first {
+        FirstFailure::Incomplete => {
+            let mut stream = accept_one(listener, accepted).await?;
+            write_head(&mut stream, 100).await?;
+            stream.write_all(b"{\"all").await?;
+            stream.shutdown().await?;
+            drop(stream);
+        }
+        FirstFailure::Reset => {
+            let (mut stream, _) = listener.accept().await?;
+            accepted.fetch_add(1, Ordering::SeqCst);
+            let mut byte = [0_u8; 1];
+            let _read = stream.read(&mut byte).await;
+            // unread request bytes at close make the kernel send a reset instead of a fin
+            sleep(Duration::from_millis(20)).await;
+        }
+    }
     let mut second = accept_one(listener, accepted).await?;
     write_response(&mut second, reply).await
 }
@@ -251,22 +253,8 @@ async fn serve(router: Router) -> (String, JoinSet<io::Result<()>>) {
     (base, server)
 }
 
-pub(crate) fn fixed_id() -> Uuid {
-    Uuid::from_u128(1)
-}
-
-pub(crate) fn guardrail_with_timeout(base: &str, timeout: Duration) -> OnyxGuardrail {
-    OnyxGuardrail {
-        api_base: base.to_owned(),
-        api_key: SecretString::from(API_KEY.to_owned()),
-        timeout,
-        client: base_builder().build().unwrap(),
-        new_id: fixed_id,
-    }
-}
-
 pub(crate) fn guardrail(base: &str) -> OnyxGuardrail {
-    guardrail_with_timeout(base, Duration::from_secs(5))
+    timed_guardrail(base, 5.0)
 }
 
 pub(crate) fn timed_guardrail(base: &str, seconds: f64) -> OnyxGuardrail {
