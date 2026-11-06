@@ -16,21 +16,14 @@ description: 'Integrate B075''s existing cache prediction service with B334 plac
   of copying their algorithms. Function coverage in litellm/router_strategy/complexity_router/complexity_router.py:
   ComplexityRouter._apply_prompt_cache_routing (L4427-L4472). Implement these behaviors through the typed
   Rust services above; synchronous facades and structural accessors reuse the same primitive instead of
-  separate ports.'
+  separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B366 composes this service.'
 scope:
   paths:
   - crates/betterlite-router/src/cache_cost_routing.rs
   - crates/betterlite-router/src/cache_cost_routing/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/cache_cost_routing.rs
   - crates/betterlite-server/src/routing/cache_cost_routing/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/cache_cost_routing.rs
   - tools/oracle/src/router_probes/cache_cost_routing/**
   - tools/oracle/litellm/probes/cache_cost_routing.py

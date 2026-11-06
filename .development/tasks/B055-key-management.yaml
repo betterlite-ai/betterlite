@@ -46,15 +46,14 @@ description: >-
   Postgres schemas via POSTGRES_TEST_URL or testcontainers; B001 HttpCase compares real route bodies,
   errors and writes. Reuse B770 request decoding; no parser/fuzz target. Allow 210 production, 330
   table-driven tests and 90 wiring lines, 630 within a 700-line gate.
+  B1100 registers routes/key_management.rs as a stub, so fill only crates/betterlite-server/src/routes/key_management.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/key_management.rs
     - crates/betterlite-server/src/key_management/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/key_management.rs
+    - crates/betterlite-server/src/routes/key_management/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/key-management/**

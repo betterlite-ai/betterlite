@@ -6,7 +6,7 @@ use std::time::{Duration, SystemTime};
 
 use crate::dispatch::seat::Seat;
 use crate::dispatch::vendor::{
-    causes, find_vendor, limit_line, limited, mark, seat_free, take_seat,
+    causes, find_vendor, first_in_line, join_line, limit_line, limited, mark, seat_free, take_seat,
 };
 use crate::spec::agents::{Agents, Vendor};
 use crate::yaml::read_yaml;
@@ -189,4 +189,30 @@ fn an_expired_limit_allows_one_probe_instead_of_a_stampede() {
     assert!(!seat_free(git.path(), &agents, &codex(), Seat::Worker).unwrap());
     drop(probe);
     assert!(seat_free(git.path(), &agents, &codex(), Seat::Worker).unwrap());
+}
+
+#[test]
+fn only_the_first_waiter_in_line_tries_for_a_seat() {
+    let git = tempfile::tempdir().unwrap();
+    let queue = git.path().join("seat-queue");
+    let line = queue.join("anthropic-worker");
+    let (first, _first_waiting) = join_line(&queue, &line).unwrap();
+    let (second, _second_waiting) = join_line(&queue, &line).unwrap();
+    // nobody holds this older ticket, as when its waiter stopped
+    let stopped = line.join("00000000000000000001-0000000001");
+    File::create(&stopped).unwrap();
+    assert!(first_in_line(&line, &first).unwrap());
+    assert!(!stopped.exists());
+    assert!(!first_in_line(&line, &second).unwrap());
+    assert_eq!(fs::read_dir(&queue).unwrap().count(), 1);
+}
+
+#[test]
+fn a_seat_taken_leaves_no_ticket_behind() {
+    let agents = agents();
+    let git = tempfile::tempdir().unwrap();
+    let held = take_seat(git.path(), &agents, &codex(), Seat::Worker).unwrap();
+    assert!(held.is_some());
+    let line = git.path().join("betterlite/seat-queue/openai-worker");
+    assert_eq!(fs::read_dir(&line).unwrap().count(), 0);
 }

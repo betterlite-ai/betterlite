@@ -2,7 +2,7 @@ id: B395
 title: Native routing strategy dispatch
 description: 'Implement StrategyChoice, selector lifecycle and request/group override resolution using
   B008 simple-shuffle and typed selector interfaces. Own selector construction/retirement and request-local
-  strategy binding; later selectors add enum variants. B016 composes this service with eligibility and
+  strategy binding; B016 registers the later selectors as stub Strategy variants. B016 composes this service with eligibility and
   provider dispatch. Implement the owned native service in crates/betterlite-router/src/strategy_dispatch.rs.
   B301 registers ProbeOperation::StrategyDispatch and its Python entry as stubs, so fill only tools/oracle/src/router_probes/strategy_dispatch.rs and tools/oracle/litellm/probes/strategy_dispatch.py and leave mod.rs and registry.py as they are; the adapters only call production services. Budget allocation: at most 360 implementation lines, 220
   behavior-test lines, 140 Rust/Python adapter lines and 80 parser/fuzz/integration lines (800 total);
@@ -16,21 +16,14 @@ description: 'Implement StrategyChoice, selector lifecycle and request/group ove
   (L1714-L1721), Router._globally_registered_strategies (L1723-L1730), Router.arm_routing_read_prefetch
   (L1732-L1749), Router._get_routing_context (L1751-L1799), Router._select_deployment_async (L1801-L1852).
   Implement these behaviors through the typed Rust services above; synchronous facades and structural
-  accessors reuse the same primitive instead of separate ports.'
+  accessors reuse the same primitive instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B016 wires this service into RouteContext.'
 scope:
   paths:
   - crates/betterlite-router/src/strategy_dispatch.rs
   - crates/betterlite-router/src/strategy_dispatch/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/strategy_dispatch.rs
   - crates/betterlite-server/src/routing/strategy_dispatch/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/strategy_dispatch.rs
   - tools/oracle/src/router_probes/strategy_dispatch/**
   - tools/oracle/litellm/probes/strategy_dispatch.py

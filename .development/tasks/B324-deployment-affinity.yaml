@@ -14,21 +14,16 @@ description: 'Compose B372 affinity identities/claims with B080 previous-respons
   warn_on_unknown_model_group_affinity_flags (L45-L60), DeploymentAffinityCheck.__init__ (L74-L91), DeploymentAffinityCheck.async_filter_deployments
   (L348-L476), DeploymentAffinityCheck.async_pre_call_deployment_hook (L478-L617). Implement these behaviors
   through the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
-  instead of separate ports.'
+  instead of separate ports.
+  B016 registers RouteStage::DeploymentAffinity as a stub, so replace only that stub and its not-built test in crates/betterlite-router/src/context/deployment_affinity.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.'
 scope:
   paths:
   - crates/betterlite-router/src/deployment_affinity.rs
   - crates/betterlite-router/src/deployment_affinity/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-router/src/context/deployment_affinity.rs
+  - crates/betterlite-router/src/context/deployment_affinity/**
   - crates/betterlite-server/src/routing/deployment_affinity.rs
   - crates/betterlite-server/src/routing/deployment_affinity/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/deployment_affinity.rs
   - tools/oracle/src/router_probes/deployment_affinity/**
   - tools/oracle/litellm/probes/deployment_affinity.py

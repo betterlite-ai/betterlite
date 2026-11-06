@@ -19,21 +19,14 @@ description: 'Implement ContextFit and ContextPlacement from B013 catalog limits
   ComplexityRouter._request_context_fit (L3336-L3357), ComplexityRouter._context_window_placement (L3359-L3384),
   ComplexityRouter._placement_for_tokens (L3386-L3421). Implement these behaviors through the typed Rust
   services above; synchronous facades and structural accessors reuse the same primitive instead of separate
-  ports.'
+  ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B334 and B336 call this service.'
 scope:
   paths:
   - crates/betterlite-router/src/context_placement.rs
   - crates/betterlite-router/src/context_placement/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/context_placement.rs
   - crates/betterlite-server/src/routing/context_placement/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/context_placement.rs
   - tools/oracle/src/router_probes/context_placement/**
   - tools/oracle/litellm/probes/context_placement.py
