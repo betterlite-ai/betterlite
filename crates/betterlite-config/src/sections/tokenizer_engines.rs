@@ -5,23 +5,23 @@ mod tests;
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct Raw {
     #[serde(default, rename = "litellm_settings")]
-    settings: RawSettings,
+    settings: Option<RawSettings>,
 }
 #[derive(Debug, Default, serde::Deserialize)]
 struct RawSettings {
     #[serde(default)]
-    disable_hf_tokenizer_download: bool,
+    disable_hf_tokenizer_download: Option<bool>,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
-    pub disable_hf_tokenizer_download: bool,
+    pub disable_hf_tokenizer_download: Option<bool>,
     pub custom_tiktoken_cache_dir: Option<PathBuf>,
     pub max_concurrent_counts: usize,
 }
 impl Default for Settings {
     fn default() -> Self {
         Self {
-            disable_hf_tokenizer_download: false,
+            disable_hf_tokenizer_download: None,
             custom_tiktoken_cache_dir: None,
             max_concurrent_counts: 4,
         }
@@ -34,7 +34,10 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         Ok(Settings {
-            disable_hf_tokenizer_download: self.settings.disable_hf_tokenizer_download,
+            disable_hf_tokenizer_download: self
+                .settings
+                .unwrap_or_default()
+                .disable_hf_tokenizer_download,
             custom_tiktoken_cache_dir: lookup
                 .lookup("CUSTOM_TIKTOKEN_CACHE_DIR")
                 .filter(|value| !value.is_empty())
