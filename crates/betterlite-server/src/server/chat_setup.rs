@@ -13,8 +13,8 @@ use betterlite_openai::chat::deployment::{ChatDeployment, DeploymentError, OpenA
 use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::openai_base_config::CatalogCapabilities;
 use rand::rngs::StdRng;
+use sha2::{Digest as _, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
-use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
@@ -97,11 +97,10 @@ fn disambiguate_mock_ids(deployments: &mut [ChatDeployment], responses: &[Option
         let Some(mock) = response else {
             continue;
         };
-        let mut hasher = DefaultHasher::new();
-        serde_json::to_string(mock)
-            .unwrap_or_default()
-            .hash(&mut hasher);
-        deployment.model_id = format!("{}-{:016x}", deployment.model_id, hasher.finish());
+        let mut hasher = Sha256::new();
+        hasher.update(deployment.model_id.as_bytes());
+        hasher.update(serde_json::to_string(mock).unwrap_or_default().as_bytes());
+        deployment.model_id = hex::encode(hasher.finalize());
     }
 }
 
