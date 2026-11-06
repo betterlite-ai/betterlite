@@ -11,15 +11,11 @@ description: 'Implement MemberRouterAccess using B052 principal, B057 team membe
   authorize_member_auto_router_team (L109-L123), validate_member_auto_router_config (L126-L137), authorize_member_auto_router_dependencies
   (L140-L228), _load_member_auto_router_dependency_objects (L231-L260), authorize_member_auto_router_write
   (L279-L370). Implement these behaviors through the typed Rust services above; synchronous facades and
-  structural accessors reuse the same primitive instead of separate ports.'
+  structural accessors reuse the same primitive instead of separate ports. This task adds no route or server state, so leave routes.rs and state.rs to B1100.'
 scope:
   paths:
   - crates/betterlite-server/src/member_router_writes.rs
   - crates/betterlite-server/src/member_router_writes/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/member_router_writes.rs
   - crates/betterlite-server/src/routing/member_router_writes/**
   - tools/oracle/src/router_probes/member_router_writes.rs

@@ -65,6 +65,7 @@ description: >-
   Sizing: 242 nonblank, noncomment function lines plus four lines of owned organization projection models
   at L4795-L4800; allow 250 production, 360 behavior/Postgres tests, 0 helper adapters, 65 route/manifests/wiring,
   0 decoder/fuzz and 0 config lines, 675 changed lines within a 700-line gate.
+  B1100 registers routes/team_info.rs as a stub, so fill only crates/betterlite-server/src/routes/team_info.rs and leave routes.rs and state.rs as they are.
 
 
 scope:
@@ -72,10 +73,8 @@ scope:
     - crates/betterlite-server/src/team_info.rs
     - crates/betterlite-server/src/team_info/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/team_info.rs
+    - crates/betterlite-server/src/routes/team_info/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/team-info/**

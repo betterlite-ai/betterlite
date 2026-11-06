@@ -12,15 +12,13 @@ description: 'Implement GET /auto_router/shadow_eval and GET /auto_router/shadow
   the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
   instead of separate ports. Bound the shadow_q outside-byte parser to 1048576 bytes before decoding;
   on excess use its typed invalid-input outcome (classifier/observation consumers keep their pinned warning/fallback
-  path).'
+  path). B1100 registers routes/shadow_eval_results.rs as a stub, so fill only crates/betterlite-server/src/routes/shadow_eval_results.rs and leave routes.rs and state.rs as they are.'
 scope:
   paths:
   - crates/betterlite-server/src/shadow_eval_results.rs
   - crates/betterlite-server/src/shadow_eval_results/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/routes/shadow_eval_results.rs
+  - crates/betterlite-server/src/routes/shadow_eval_results/**
   - crates/betterlite-server/src/routing/shadow_eval_results.rs
   - crates/betterlite-server/src/routing/shadow_eval_results/**
   - tools/oracle/src/router_probes/shadow_eval_results.rs

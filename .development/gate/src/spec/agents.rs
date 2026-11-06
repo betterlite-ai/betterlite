@@ -79,6 +79,11 @@ pub(crate) struct Runner {
     )]
     pub(crate) resume: Option<Vec<String>>,
     pub(crate) output: OutputMode,
+    #[schemars(
+        length(min = 1),
+        description = "A file of NAME=VALUE lines that the run gets as environment variables, so a key stays out of the repository. {home} expands. Blank lines and lines that start with # are skipped, and a value in single quotes loses them."
+    )]
+    pub(crate) env_file: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
@@ -133,6 +138,21 @@ pub(crate) struct Rung {
     pub(crate) attempts: u32,
     #[schemars(range(min = 1))]
     pub(crate) timeout_minutes: u32,
+    #[schemars(
+        length(min = 1),
+        description = "The only tasks this worker rung runs for. Every other task's ladder leaves the rung out, so the places their saved progress points at stay the same."
+    )]
+    pub(crate) tasks: Option<Vec<String>>,
+}
+
+impl Role {
+    pub(crate) fn keep_rungs_for(&mut self, task: &str) {
+        self.ladder.retain(|rung| {
+            rung.tasks
+                .as_ref()
+                .is_none_or(|tasks| tasks.iter().any(|id| id == task))
+        });
+    }
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -181,9 +201,4 @@ pub(crate) struct Policy {
         description = "Folders a worker may write besides its worktree, like the repository's .git folder and tool caches. {git_common_dir} and {home} expand."
     )]
     pub(crate) writable: Vec<String>,
-    #[serde(default)]
-    #[schemars(
-        description = "Check ids the dispatcher's final gate leaves out, because CI runs them on the task's pull request: gate.yml runs mutants on a task pull request labeled mutants-in-ci. Empty runs every check locally."
-    )]
-    pub(crate) checks_in_pull_request: Vec<String>,
 }

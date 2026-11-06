@@ -30,15 +30,14 @@ description: >-
   B001 HttpCase exercises the real route; no helper-only substitute or invented not-found case.
   Reuse B003 query decoding; no new parser/fuzz target. Allow 100 production, 220 table-driven tests
   and 70 wiring lines, 390 within a 450-line gate.
+  B1100 registers routes/organization_activity.rs as a stub, so fill only crates/betterlite-server/src/routes/organization_activity.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/organization_activity.rs
     - crates/betterlite-server/src/organization_activity/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/organization_activity.rs
+    - crates/betterlite-server/src/routes/organization_activity/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/organization-activity/**

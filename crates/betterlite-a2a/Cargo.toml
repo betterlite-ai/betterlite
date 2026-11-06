@@ -10,9 +10,11 @@ workspace = true
 
 [dependencies]
 betterlite-core = { path = "../betterlite-core" }
+betterlite-http = { path = "../betterlite-http" }
 chrono = { workspace = true }
 futures-core = "0.3.34"
 hex.workspace = true
+http = "1.5.0"
 lru = "0.18.4"
 num-traits = "0.2.19"
 secrecy = { workspace = true, features = ["serde"] }
@@ -25,5 +27,7 @@ url = "2.5.8"
 uuid = { workspace = true }
 
 [dev-dependencies]
+axum = { workspace = true }
+betterlite-config = { path = "../betterlite-config" }
 rstest = "=0.27.0"
-tokio.workspace = true
+tokio = { workspace = true }
