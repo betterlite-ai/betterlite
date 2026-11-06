@@ -1,10 +1,15 @@
 use indexmap::IndexMap;
 use serde::Deserialize;
 use serde::de::DeserializeOwned;
+use serde_with::{As, DefaultOnNull};
 
 use crate::primitives::error::PrimitiveError;
 use crate::primitives::json_value::JsonValue;
 use crate::primitives::registry::Primitive;
+
+fn default_method() -> String {
+    "GET".to_owned()
+}
 
 #[derive(Deserialize)]
 pub enum Never {}
@@ -23,7 +28,8 @@ pub struct BlockArguments {
 #[serde(deny_unknown_fields)]
 pub struct FlagArguments {
     pub reason: String,
-    pub metadata: Option<IndexMap<String, JsonValue>>,
+    #[serde(default, deserialize_with = "As::<DefaultOnNull>::deserialize")]
+    pub metadata: IndexMap<String, JsonValue>,
 }
 
 #[derive(Deserialize)]
@@ -39,7 +45,8 @@ pub struct ModifyArguments {
 pub struct PatternArguments {
     pub text: String,
     pub pattern: String,
-    pub flags: Option<i64>,
+    #[serde(default)]
+    pub flags: i64,
 }
 
 #[derive(Deserialize)]
@@ -48,7 +55,8 @@ pub struct ReplaceArguments {
     pub text: String,
     pub pattern: String,
     pub replacement: String,
-    pub flags: Option<i64>,
+    #[serde(default)]
+    pub flags: i64,
 }
 
 #[derive(Deserialize)]
@@ -80,9 +88,12 @@ pub struct UrlArguments {
 #[serde(deny_unknown_fields)]
 pub struct HttpRequestArguments {
     pub url: String,
-    pub method: Option<String>,
-    pub headers: Option<IndexMap<String, String>>,
-    pub body: Option<JsonValue>,
+    #[serde(default = "default_method")]
+    pub method: String,
+    #[serde(default, deserialize_with = "As::<DefaultOnNull>::deserialize")]
+    pub headers: IndexMap<String, String>,
+    #[serde(default, deserialize_with = "As::<DefaultOnNull>::deserialize")]
+    pub body: JsonValue,
     pub timeout: Option<f64>,
 }
 
@@ -90,7 +101,8 @@ pub struct HttpRequestArguments {
 #[serde(deny_unknown_fields)]
 pub struct HttpGetArguments {
     pub url: String,
-    pub headers: Option<IndexMap<String, String>>,
+    #[serde(default, deserialize_with = "As::<DefaultOnNull>::deserialize")]
+    pub headers: IndexMap<String, String>,
     pub timeout: Option<f64>,
 }
 
@@ -98,8 +110,10 @@ pub struct HttpGetArguments {
 #[serde(deny_unknown_fields)]
 pub struct HttpPostArguments {
     pub url: String,
-    pub body: Option<JsonValue>,
-    pub headers: Option<IndexMap<String, String>>,
+    #[serde(default, deserialize_with = "As::<DefaultOnNull>::deserialize")]
+    pub body: JsonValue,
+    #[serde(default, deserialize_with = "As::<DefaultOnNull>::deserialize")]
+    pub headers: IndexMap<String, String>,
     pub timeout: Option<f64>,
 }
 

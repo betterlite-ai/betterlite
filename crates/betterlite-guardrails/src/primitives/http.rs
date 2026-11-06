@@ -22,7 +22,7 @@ const ALLOWED_METHODS: &str = "GET, POST, PUT, DELETE, PATCH";
 pub struct HttpRequest {
     pub url: String,
     pub method: String,
-    pub headers: Option<IndexMap<String, String>>,
+    pub headers: IndexMap<String, String>,
     pub body: JsonValue,
     pub timeout: Option<f64>,
 }
@@ -91,8 +91,7 @@ where
     Transport: OutboundHttp,
 {
     let validating = transport.user_url_validation();
-    let mut headers: Vec<(String, String)> =
-        request.headers.unwrap_or_default().into_iter().collect();
+    let mut headers: Vec<(String, String)> = request.headers.into_iter().collect();
     if validating {
         headers.retain(|(name, _)| !name.eq_ignore_ascii_case("host"));
     }

@@ -26,7 +26,7 @@ dispatch!(action(ActionPrimitive) -> PrimitiveOutput {
     });
     ActionPrimitive::Flag, FlagArguments, |args| PrimitiveOutput::Action(ActionResult::Flag {
         reason: args.reason,
-        metadata: args.metadata.unwrap_or_default(),
+        metadata: args.metadata,
     });
     ActionPrimitive::Modify, ModifyArguments, |args| PrimitiveOutput::Action(ActionResult::Modify {
         texts: args.texts,
@@ -37,20 +37,20 @@ dispatch!(action(ActionPrimitive) -> PrimitiveOutput {
 
 dispatch!(regex(RegexPrimitive) -> PrimitiveOutput {
     RegexPrimitive::Match, PatternArguments, |args| PrimitiveOutput::Truth(or_warn(
-        compile(&args.pattern, args.flags.unwrap_or_default()).and_then(|regex| regex.is_match(&args.text)),
+        compile(&args.pattern, args.flags).and_then(|regex| regex.is_match(&args.text)),
         false,
         "regex_match",
     ));
     RegexPrimitive::MatchAll, PatternArguments, |args| PrimitiveOutput::Truth(
-        regex_match_all(&args.text, &args.pattern, args.flags.unwrap_or_default())
+        regex_match_all(&args.text, &args.pattern, args.flags)
     );
     RegexPrimitive::Replace, ReplaceArguments, |args| PrimitiveOutput::Text(or_warn(
-        replace_all(&args.text, &args.pattern, &args.replacement, args.flags.unwrap_or_default()),
+        replace_all(&args.text, &args.pattern, &args.replacement, args.flags),
         args.text.clone(),
         "regex_replace",
     ));
     RegexPrimitive::FindAll, PatternArguments, |args| PrimitiveOutput::Value(JsonValue::Array(or_warn(
-        find_all(&args.text, &args.pattern, args.flags.unwrap_or_default()),
+        find_all(&args.text, &args.pattern, args.flags),
         Vec::new(),
         "regex_find_all",
     )));
@@ -74,9 +74,9 @@ dispatch!(url(UrlPrimitive, urls: &UrlExtractor) -> PrimitiveOutput {
 dispatch!(http(HttpPrimitive) -> HttpRequest {
     HttpPrimitive::Request, HttpRequestArguments, |args| HttpRequest {
         url: args.url,
-        method: args.method.unwrap_or_else(|| "GET".to_owned()),
+        method: args.method,
         headers: args.headers,
-        body: args.body.unwrap_or_default(),
+        body: args.body,
         timeout: args.timeout,
     };
     HttpPrimitive::Get, HttpGetArguments, |args| HttpRequest {
@@ -90,7 +90,7 @@ dispatch!(http(HttpPrimitive) -> HttpRequest {
         url: args.url,
         method: "POST".to_owned(),
         headers: args.headers,
-        body: args.body.unwrap_or_default(),
+        body: args.body,
         timeout: args.timeout,
     };
 });
