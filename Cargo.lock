@@ -1586,6 +1586,7 @@ dependencies = [
  "csv",
  "flate2",
  "hex",
+ "http 1.5.0",
  "indexmap 2.14.2",
  "insta",
  "parquet-format-safe",
