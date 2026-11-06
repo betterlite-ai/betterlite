@@ -1,37 +1,23 @@
 task: B3802
 deviations:
-  - what: >-
-      compile_sandboxed returns the guarded guardrail source instead of a CPython code object; the runtime
-      that executes guardrail code compiles that source.
+  - what: compile_sandboxed returns the guarded guardrail source instead of a CPython code object; the runtime that executes guardrail code compiles that source.
     why: betterlite is a Rust gateway with no CPython in process, so the transform result stays source.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/sandbox.py#L146-L157
-  - what: >-
-      import statements and class definitions are rejected at compile time; LiteLLM's RestrictedPython
-      accepts both, and a class it compiles then fails at execution without __metaclass__ in the globals.
+  - what: import statements and class definitions are rejected at compile time; LiteLLM's RestrictedPython accepts both, and a class it compiles then fails at execution without __metaclass__ in the globals.
     why: betterlite has no Python module system and no class model, so neither can run here.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/sandbox.py#L126-L143
-  - what: >-
-      Attribute and subscript reads and writes are not rewritten to _getattr_, _getitem_ and _write_; those
-      guards are bound in build_sandbox_globals for the runtime that executes the compiled source.
+  - what: Attribute and subscript reads and writes are not rewritten to _getattr_, _getitem_ and _write_; those guards are bound in build_sandbox_globals for the runtime that executes the compiled source.
     why: RestrictedPython's AST rewriting is a library call and out of this task's scope; the runtime owns it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/sandbox.py#L126-L143
-  - what: >-
-      ctypes.pythonapi.PyThreadState_SetAsyncExc is replaced by a cooperative interrupt flag that _budget_ok_
-      and _getiter_ check; a worker stuck in a native call keeps running past its deadline.
+  - what: ctypes.pythonapi.PyThreadState_SetAsyncExc is replaced by a cooperative interrupt flag that _budget_ok_ and _getiter_ check; a worker stuck in a native call keeps running past its deadline.
     why: Rust cannot raise inside a running thread, and the source's runtime mechanism is deferred as U7.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/bounded_execution.py#L91-L98
-  - what: >-
-      await_with_timeout aborts its task at the deadline, but a Rust future cannot swallow abort the way a
-      coroutine swallows CancelledError, so the repeated cancel loop stops at the first poll boundary.
+  - what: await_with_timeout aborts its task at the deadline, but a Rust future cannot swallow abort the way a coroutine swallows CancelledError, so the repeated cancel loop stops at the first poll boundary.
     why: Aborting a Tokio task takes effect at its next await point and has no hook for ignoring cancellation.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/bounded_execution.py#L192-L200
-  - what: >-
-      _inplacevar_ covers integer arithmetic, sequence concatenation, repetition and /= on two integers;
-      float operands and matrix multiplication report an unsupported operand.
+  - what: _inplacevar_ covers integer arithmetic, sequence concatenation, repetition and /= on two integers; float operands and matrix multiplication report an unsupported operand.
     why: The value model has no host numeric types, and the lint table forbids float arithmetic in Rust.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/sandbox.py#L103-L111
-  - what: >-
-      Source nesting deeper than 200 levels is rejected at compile time, and a repeated text or list larger
-      than one million items is refused by _inplacevar_.
+  - what: Source nesting deeper than 200 levels is rejected at compile time, and a repeated text or list larger than one million items is refused by _inplacevar_.
     why: Both are ways for untrusted source to exhaust the stack or memory before a deadline applies.
     link: ""
