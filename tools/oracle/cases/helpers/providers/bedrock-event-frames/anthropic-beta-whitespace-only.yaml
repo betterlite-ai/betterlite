@@ -1,0 +1,5 @@
+kind: helper
+name: anthropic-beta-whitespace-only
+call: {"bedrock_event_frames": {"operation": "beta", "params": {"headers": {"anthropic-beta": " "}}}}
+env: {}
+compare: {ignore: []}
