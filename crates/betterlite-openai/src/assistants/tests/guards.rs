@@ -52,7 +52,15 @@ async fn openai_assistants_secret_safe_failure() {
     let configured = options(secret);
     assert!(!format!("{configured:?}").contains(secret));
     let client = api.get_openai_client(ClientKind::Sync, configured, None);
-    assert!(!format!("{client:?}").contains(secret));
+    let client_debug = format!("{client:?}");
+    assert!(client_debug.contains("SdkClient"), "{client_debug}");
+    assert!(client_debug.contains("Sync"), "{client_debug}");
+    assert!(
+        client_debug.contains("https://example.test/v1"),
+        "{client_debug}"
+    );
+    assert!(client_debug.contains("org-fixture"), "{client_debug}");
+    assert!(!client_debug.contains(secret), "{client_debug}");
     let rejected = client.list(Vec::new()).await.unwrap_err();
     let missing_key = ClientOptions {
         api_key: None,
