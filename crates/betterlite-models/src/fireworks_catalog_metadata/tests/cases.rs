@@ -103,6 +103,10 @@ const EXACT_CATALOG: &[(&str, &str)] = &[
         "fireworks_ai/accounts/fireworks/models/glm-5p2",
         r#"{"supports_vision":false}"#,
     ),
+    (
+        "fireworks_ai/accounts/fireworks/models/deep-model",
+        r#"{"supports_vision":true}"#,
+    ),
 ];
 
 const FUZZY_CATALOG: &[(&str, &str)] = &[
@@ -264,6 +268,8 @@ fn exact_later_candidates() {
     let catalog = catalog_of(EXACT_CATALOG);
     // a present entry whose capability is absent hands the lookup to the next candidate
     assert_exact(&catalog, "later-model", Some(true));
+    // the accounts/fireworks/models/ candidate answers when the short-key candidate does not
+    assert_exact(&catalog, "deep-model", Some(true));
     assert_exact(&catalog, "vision-less", None);
     // the exact lookup never falls back to a substring match
     assert_exact(&catalog, "custom-glm-5p2", None);

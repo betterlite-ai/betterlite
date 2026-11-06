@@ -11,12 +11,14 @@ call:
       - {key: "fireworks_ai/later-model", model_info: {supports_vision: true}}
       - {key: "fireworks_ai/accounts/fireworks/routers/firerouter", model_info: {supports_vision: true, supports_function_calling: false}}
       - {key: "fireworks_ai/accounts/fireworks/models/glm-5p2", model_info: {supports_vision: false}}
+      - {key: "fireworks_ai/accounts/fireworks/models/deep-model", model_info: {supports_vision: true}}
     steps:
       - {op: exact_capability, model: "raw-model", capability: supports_vision}
       - {op: exact_capability, model: "some-model", capability: supports_vision}
       - {op: exact_capability, model: "fireworks_ai/some-model", capability: supports_vision}
       - {op: exact_capability, model: "accounts/fireworks/models/some-model", capability: supports_vision}
       - {op: exact_capability, model: "later-model", capability: supports_vision}
+      - {op: exact_capability, model: "deep-model", capability: supports_vision}
       - {op: exact_capability, model: "vision-less", capability: supports_vision}
       - {op: exact_capability, model: "firerouter/opus", capability: supports_vision}
       - {op: exact_capability, model: "firerouter/kimi-k3/deepseek-v4", capability: supports_function_calling}
