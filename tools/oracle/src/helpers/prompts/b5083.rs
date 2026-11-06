@@ -157,8 +157,7 @@ fn convert(url: &str, runtime: &Runtime) -> HelperResult {
         litellm_request_timeout: None,
         model_timeout_overrides: Vec::new(),
     };
-    let limits = transport_limits(&core).map_err(|error| invalid_input(error.to_string()))?;
-    let client = ProxiedClient::build(base_builder(), &policy, limits)
+    let client = ProxiedClient::build(base_builder(), &policy, transport_limits(&core))
         .map_err(|error| invalid_input(error.to_string()))?;
     let validator = UrlValidator::new(SystemResolver, &[], &Verification::Enabled);
     let fetcher = Fetcher::new(

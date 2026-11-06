@@ -31,7 +31,7 @@ use tokio::time::{sleep, timeout};
 
 use super::cache::ImageCache;
 use super::fetcher::Fetcher;
-use super::limits::{LimitsError, transport_limits};
+use super::limits::transport_limits;
 use super::response::{ImageResponse, ProcessError, process_image_response};
 
 const PNG: &[u8] = b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a\x00\x00\x00\x0dIHDR";
@@ -286,7 +286,7 @@ async fn response_reading_matches_litellm(#[case] scenario: &str) {
             let body = vec![0xAB_u8; 786_418];
             let data_url = reading(
                 &cache,
-                image(200, &[("Content-Type", "a/")], &body),
+                image(200, &[("Content-Type", "a/b")], &body),
                 url,
                 2.0,
             )
@@ -355,6 +355,9 @@ enum Reply {
         status: u16,
         body: Vec<u8>,
         delay: Duration,
+    },
+    CloseDelimited {
+        body: Vec<u8>,
     },
     Drip {
         interval: Duration,
@@ -506,6 +509,7 @@ async fn write_reply(stream: &mut TcpStream, reply: Option<&Reply>) -> io::Resul
             body,
             delay,
         }) => write_delayed(stream, *status, body, *delay).await,
+        Some(Reply::CloseDelimited { body }) => write_close_delimited(stream, body).await,
         Some(Reply::Drip { interval }) => write_drip(stream, *interval).await,
         None => write_status(stream, 404, None, b"").await,
     }
@@ -537,6 +541,13 @@ async fn write_delayed(
 ) -> io::Result<()> {
     sleep(delay).await;
     write_status(stream, status, None, body).await
+}
+
+async fn write_close_delimited(stream: &mut TcpStream, body: &[u8]) -> io::Result<()> {
+    stream
+        .write_all(b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n")
+        .await?;
+    stream.write_all(body).await
 }
 
 async fn write_drip(stream: &mut TcpStream, interval: Duration) -> io::Result<()> {
@@ -588,6 +599,7 @@ async fn closed_port() -> u16 {
 #[case::body_over_limit_is_not_retried("body_over_limit_not_retried")]
 #[case::ssrf_rejected_before_a_request("ssrf_rejected")]
 #[case::infinite_limit_retried("infinite_limit")]
+#[case::negative_timeout_fails_every_try("negative_timeout")]
 #[case::total_deadline("total_deadline")]
 #[tokio::test]
 async fn url_conversion_matches_litellm(#[case] scenario: &str) {
@@ -656,9 +668,8 @@ async fn url_conversion_matches_litellm(#[case] scenario: &str) {
             assert_eq!(server.request_count(), 1);
         }
         "body_over_limit_not_retried" => {
-            let reply = Reply::Status {
-                status: 200,
-                content_type: None,
+            // no Content-Length, so the declared-size check cannot answer before the body count does
+            let reply = Reply::CloseDelimited {
                 body: vec![0xAB_u8; 600_000],
             };
             let server = Server::start(vec![("/image.png".to_owned(), reply)]).await;
@@ -696,6 +707,35 @@ async fn url_conversion_matches_litellm(#[case] scenario: &str) {
                 format!("Error: Unable to fetch image from URL after 3 attempts. url={url}")
             );
             assert_eq!(server.request_count(), 3);
+        }
+        "negative_timeout" => {
+            let server = Server::start(vec![("/image.png".to_owned(), Reply::ok(b"body"))]).await;
+            let core = CoreSettings {
+                request_timeout_seconds: -5.0_f64,
+                request_timeout_explicit: true,
+                litellm_request_timeout: None,
+                model_timeout_overrides: Vec::new(),
+            };
+            let policy =
+                Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
+            let client =
+                ProxiedClient::build(base_builder(), &policy, transport_limits(&core)).unwrap();
+            let validator = UrlValidator::new(
+                SystemResolver,
+                &["127.0.0.1".to_owned()],
+                &Verification::Enabled,
+            );
+            let urls = UserUrlFetcher {
+                validator,
+                validation: true,
+            };
+            let fetcher = Fetcher::new(client, urls, 50.0, Arc::new(|| 0.0_f64)).unwrap();
+            let url = server.url("/image.png");
+            let error = fetcher.convert(&url).await.unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                format!("Error: Unable to fetch image from URL after 3 attempts. url={url}")
+            );
         }
         "total_deadline" => {
             let routes = vec![(
@@ -817,24 +857,27 @@ fn fetch_timeout_follows_litellm(
         litellm_request_timeout,
         model_timeout_overrides: Vec::new(),
     };
-    let limits = transport_limits(&core).unwrap();
+    let limits = transport_limits(&core);
     let expected = Duration::try_from_secs_f64(expected_seconds).unwrap();
     assert_eq!(limits.connect_timeout, expected);
     assert_eq!(limits.read_timeout, expected);
 }
 
-#[test]
-fn a_negative_fetch_timeout_is_an_error() {
+#[rstest]
+#[case::negative_fails_every_try(-5.0_f64, Duration::ZERO)]
+#[case::infinite_fails_every_try(f64::INFINITY, Duration::ZERO)]
+#[case::huge_is_no_timeout(1e20_f64, Duration::MAX)]
+#[case::zero_is_no_timeout(0.0_f64, Duration::MAX)]
+fn extreme_fetch_timeouts_follow_litellm(#[case] seconds: f64, #[case] expected: Duration) {
     let core = CoreSettings {
-        request_timeout_seconds: -5.0_f64,
+        request_timeout_seconds: seconds,
         request_timeout_explicit: true,
         litellm_request_timeout: None,
         model_timeout_overrides: Vec::new(),
     };
-    assert!(matches!(
-        transport_limits(&core),
-        Err(LimitsError::Invalid { .. })
-    ));
+    let limits = transport_limits(&core);
+    assert_eq!(limits.connect_timeout, expected);
+    assert_eq!(limits.read_timeout, expected);
 }
 
 fn movable_cache() -> (Arc<Mutex<f64>>, ImageCache) {
