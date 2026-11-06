@@ -1,0 +1,17 @@
+kind: helper
+name: model-catalog-keys-seed-lookup
+call:
+  model_catalog_keys:
+    model_cost: [gpt-4o, Known, None, bedrock]
+    steps:
+      - {op: direct, key: Known}
+      - {op: direct, key: known}
+      - {op: potential, names: {split_model: a, combined_model_name: b, stripped_model_name: c, combined_stripped_model_name: d, provider_prefixed_model_name: e, custom_llm_provider: f}}
+      - {op: potential, names: {split_model: KNOWN, combined_model_name: b, stripped_model_name: c, combined_stripped_model_name: d, provider_prefixed_model_name: e, custom_llm_provider: f}}
+      - {op: potential, names: {split_model: a, combined_model_name: b, stripped_model_name: c, combined_stripped_model_name: d, provider_prefixed_model_name: known, custom_llm_provider: f}}
+      - {op: potential, names: {split_model: a, combined_model_name: b, stripped_model_name: c, combined_stripped_model_name: d, provider_prefixed_model_name: e, custom_llm_provider: BEDROCK}}
+      - {op: potential, names: {split_model: a, combined_model_name: b, stripped_model_name: c, combined_stripped_model_name: d, provider_prefixed_model_name: e, custom_llm_provider: null}}
+      - {op: remove, key: None}
+      - {op: potential, names: {split_model: a, combined_model_name: b, stripped_model_name: c, combined_stripped_model_name: d, provider_prefixed_model_name: e, custom_llm_provider: null}}
+env: {}
+compare: {ignore: []}
