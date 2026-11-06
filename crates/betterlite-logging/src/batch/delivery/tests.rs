@@ -601,4 +601,8 @@ async fn batch_delivery_behavior_tests_behavior(
         .filter(|entry| !logs.contains(**entry))
         .collect();
     assert!(missing.is_empty(), "missing {missing:?} in {logs}");
+    assert!(
+        logs.matches("cannot be serialized").count() <= 1,
+        "a serialization drop must be logged once, got {logs}"
+    );
 }
