@@ -1,6 +1,6 @@
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::{TlsPolicy, TlsPolicyError};
-use betterlite_config::types::Config;
+use betterlite_config::types::{Config, RoutingStrategy};
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::pool::{ClientChoice, ClientPool, PoolError};
@@ -29,6 +29,10 @@ pub enum ChatSetupError {
         #[from]
         source: TlsPolicyError,
     },
+    #[error(
+        "router_settings.routing_strategy {strategy:?} is not supported, only simple-shuffle is"
+    )]
+    RoutingStrategy { strategy: RoutingStrategy },
     #[error("cannot build the outbound HTTP client: {source}")]
     Client {
         #[from]
@@ -42,6 +46,11 @@ pub fn chat_executor(
     environment: &BTreeMap<String, String>,
     random: StdRng,
 ) -> Result<ChatExecutor, ChatSetupError> {
+    if let Some(strategy) = config.router_settings.routing_strategy
+        && strategy != RoutingStrategy::SimpleShuffle
+    {
+        return Err(ChatSetupError::RoutingStrategy { strategy });
+    }
     let sdk = &config.sections.resource_sdk_settings;
     let defaults = OpenAiDefaults {
         request_timeout: config.litellm_settings.request_timeout,

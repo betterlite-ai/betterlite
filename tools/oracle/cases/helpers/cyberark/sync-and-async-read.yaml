@@ -1,0 +1,19 @@
+kind: helper
+name: cyberark-sync-and-async-read
+env: {}
+compare: {ignore: []}
+call:
+  b4418:
+    env: {CYBERARK_API_KEY: key-1}
+    routes:
+      - route: "POST http://127.0.0.1:8080/authn/default/admin/authenticate"
+        replies: [{status: 200, body: '{"protected":"abc"}'}]
+      - route: "GET http://127.0.0.1:8080/secrets/default/variable/prod%2Fdb"
+        replies: [{status: 200, body: s3cret}]
+      - route: "GET http://127.0.0.1:8080/secrets/default/variable/other"
+        replies: [{status: 200, body: ""}]
+    steps:
+      - {op: sync_read, name: prod/db}
+      - {op: read, name: prod/db}
+      - {op: read, name: other}
+      - {op: sync_read, name: other}

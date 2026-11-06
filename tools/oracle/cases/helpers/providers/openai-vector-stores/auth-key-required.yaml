@@ -1,0 +1,5 @@
+kind: helper
+name: auth-key-required
+call: {"openai_vector_stores": {"auth_credentials": {"api_key": null}}}
+env: {}
+compare: {ignore: []}
