@@ -1,0 +1,11 @@
+kind: helper
+name: "braintrust_logging: init seed"
+call:
+  b3962:
+    function: init
+    scenarios:
+      - environment: {BRAINTRUST_API_KEY: seed-key}
+      - environment: {BRAINTRUST_API_BASE: "http://seed.test/v1"}
+        api_key: seed-key
+env: {}
+compare: {ignore: []}

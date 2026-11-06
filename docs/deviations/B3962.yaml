@@ -1,0 +1,12 @@
+task: B3962
+deviations:
+  - what: >-
+      Metrics write time_to_first_token, start and end as exact decimal seconds. LiteLLM subtracts
+      IEEE doubles, so a sub-second duration carries float noise: 1.3 seconds comes out as
+      1.2999999523162842.
+    why: >-
+      betterlite does no floating-point arithmetic. A duration is a Decimal built from the two
+      timestamps, so it reports what the timestamps say. No working setup reads the low-order
+      digits LiteLLM's subtraction invents, and the oracle cases use half-second times, where both
+      agree.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/braintrust_logging.py#L192

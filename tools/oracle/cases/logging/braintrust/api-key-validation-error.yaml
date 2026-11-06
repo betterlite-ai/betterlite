@@ -1,0 +1,9 @@
+kind: helper
+name: braintrust api key validation rejects a missing BRAINTRUST_API_KEY
+call:
+  b3962:
+    function: init
+    scenarios:
+      - environment: {}
+env: {}
+compare: {ignore: []}
