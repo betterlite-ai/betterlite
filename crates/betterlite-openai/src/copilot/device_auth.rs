@@ -6,12 +6,12 @@ use betterlite_config::sections::copilot_device::Settings;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Serialize;
 
-use self::decode::{AccessReply, DeviceReply, decode_access_reply, decode_device_reply};
+use self::decode::{DeviceReply, decode_access_reply, decode_device_reply};
 use self::error::{AccessTokenFailure, DeviceAuthError, DeviceCodeFailure};
 use self::files::FileAccess;
 use self::output::OperatorOutput;
 use self::sleeper::Sleeper;
-use self::transport::{Post, Transport};
+use self::transport::{Post, Transport, TransportFailure};
 use crate::openai_base_config::Headers;
 
 pub mod decode;
@@ -121,6 +121,52 @@ where
     }
 }
 
+fn required_fields(reply: DeviceReply) -> Result<(String, String, String), DeviceCodeFailure> {
+    let Some(device_code) = reply.device_code else {
+        return Err(DeviceCodeFailure::MissingField {
+            name: "device_code",
+        });
+    };
+    let Some(user_code) = reply.user_code else {
+        return Err(DeviceCodeFailure::MissingField { name: "user_code" });
+    };
+    let Some(verification_uri) = reply.verification_uri else {
+        return Err(DeviceCodeFailure::MissingField {
+            name: "verification_uri",
+        });
+    };
+    Ok((device_code, user_code, verification_uri))
+}
+
+enum ReplyFailure {
+    Transport(TransportFailure),
+    Status(u16),
+}
+
+async fn github_reply<T>(
+    transport: &mut T,
+    url: &str,
+    body: Vec<u8>,
+) -> Result<Vec<u8>, ReplyFailure>
+where
+    T: Transport,
+{
+    let post = Post {
+        url,
+        headers: github_headers(None),
+        body,
+    };
+    let reply = transport
+        .post_json(post)
+        .await
+        .map_err(ReplyFailure::Transport)?;
+    if (200..300).contains(&reply.status) {
+        Ok(reply.body)
+    } else {
+        Err(ReplyFailure::Status(reply.status))
+    }
+}
+
 impl<F, C, T, O> Authenticator<F, C, T, O>
 where
     F: FileAccess,
@@ -175,86 +221,49 @@ where
     }
 
     async fn login(&mut self) -> Result<SecretString, DeviceAuthError> {
-        let reply = self.request_device_code().await?;
-        let Some(device_code) = reply.device_code else {
-            return Err(DeviceAuthError::DeviceCode(
-                DeviceCodeFailure::MissingField {
-                    name: "device_code",
-                },
-            ));
-        };
-        let Some(user_code) = reply.user_code else {
-            return Err(DeviceAuthError::DeviceCode(
-                DeviceCodeFailure::MissingField { name: "user_code" },
-            ));
-        };
-        let Some(verification_uri) = reply.verification_uri else {
-            return Err(DeviceAuthError::DeviceCode(
-                DeviceCodeFailure::MissingField {
-                    name: "verification_uri",
-                },
-            ));
-        };
+        let body = serde_json::to_vec(&DeviceCodeRequest {
+            client_id: &self.settings.client_id,
+            scope: "read:user",
+        })
+        .map_err(|source| DeviceAuthError::DeviceCode(DeviceCodeFailure::Encode(source)))?;
+        let bytes = github_reply(&mut self.transport, &self.settings.device_code_url, body)
+            .await
+            .map_err(|failure| {
+                DeviceAuthError::DeviceCode(match failure {
+                    ReplyFailure::Transport(source) => DeviceCodeFailure::Transport(source),
+                    ReplyFailure::Status(status) => DeviceCodeFailure::Status { status },
+                })
+            })?;
+        let reply = decode_device_reply(&bytes)
+            .map_err(DeviceCodeFailure::Reply)
+            .map_err(DeviceAuthError::DeviceCode)?;
+        let (device_code, user_code, verification_uri) =
+            required_fields(reply).map_err(DeviceAuthError::DeviceCode)?;
         self.output.instructions(&format!(
             "Please visit {verification_uri} and enter code {user_code} to authenticate."
         ));
         self.poll(&device_code).await
     }
 
-    async fn request_device_code(&mut self) -> Result<DeviceReply, DeviceAuthError> {
-        let body = serde_json::to_vec(&DeviceCodeRequest {
-            client_id: &self.settings.client_id,
-            scope: "read:user",
-        })
-        .map_err(|source| DeviceAuthError::DeviceCode(DeviceCodeFailure::Encode(source)))?;
-        let post = Post {
-            url: &self.settings.device_code_url,
-            headers: github_headers(None),
-            body,
-        };
-        let reply =
-            self.transport.post_json(post).await.map_err(|source| {
-                DeviceAuthError::DeviceCode(DeviceCodeFailure::Transport(source))
-            })?;
-        if !(200..300).contains(&reply.status) {
-            return Err(DeviceAuthError::DeviceCode(DeviceCodeFailure::Status {
-                status: reply.status,
-            }));
-        }
-        decode_device_reply(&reply.body)
-            .map_err(|source| DeviceAuthError::DeviceCode(DeviceCodeFailure::Reply(source)))
-    }
-
-    async fn request_access_token(
-        &mut self,
-        device_code: &str,
-    ) -> Result<AccessReply, DeviceAuthError> {
-        let body = serde_json::to_vec(&AccessTokenRequest {
-            client_id: &self.settings.client_id,
-            device_code,
-            grant_type: DEVICE_GRANT_TYPE,
-        })
-        .map_err(|source| DeviceAuthError::AccessToken(AccessTokenFailure::Encode(source)))?;
-        let post = Post {
-            url: &self.settings.access_token_url,
-            headers: github_headers(None),
-            body,
-        };
-        let reply = self.transport.post_json(post).await.map_err(|source| {
-            DeviceAuthError::AccessToken(AccessTokenFailure::Transport(source))
-        })?;
-        if !(200..300).contains(&reply.status) {
-            return Err(DeviceAuthError::AccessToken(AccessTokenFailure::Status {
-                status: reply.status,
-            }));
-        }
-        decode_access_reply(&reply.body)
-            .map_err(|source| DeviceAuthError::AccessToken(AccessTokenFailure::Reply(source)))
-    }
-
     async fn poll(&mut self, device_code: &str) -> Result<SecretString, DeviceAuthError> {
         for attempt in 1..=POLL_ATTEMPTS {
-            let reply = self.request_access_token(device_code).await?;
+            let body = serde_json::to_vec(&AccessTokenRequest {
+                client_id: &self.settings.client_id,
+                device_code,
+                grant_type: DEVICE_GRANT_TYPE,
+            })
+            .map_err(|source| DeviceAuthError::AccessToken(AccessTokenFailure::Encode(source)))?;
+            let bytes = github_reply(&mut self.transport, &self.settings.access_token_url, body)
+                .await
+                .map_err(|failure| {
+                    DeviceAuthError::AccessToken(match failure {
+                        ReplyFailure::Transport(source) => AccessTokenFailure::Transport(source),
+                        ReplyFailure::Status(status) => AccessTokenFailure::Status { status },
+                    })
+                })?;
+            let reply = decode_access_reply(&bytes)
+                .map_err(AccessTokenFailure::Reply)
+                .map_err(DeviceAuthError::AccessToken)?;
             if let Some(token) = reply.access_token {
                 tracing::info!("the GitHub Copilot device login succeeded");
                 return Ok(token);

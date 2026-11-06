@@ -164,19 +164,6 @@ impl OperatorOutput for ScriptOutput {
     }
 }
 
-fn scripted(
-    device: Vec<Result<Reply, TransportFailure>>,
-    access: Vec<Result<Reply, TransportFailure>>,
-) -> Scripted {
-    Scripted {
-        device_url: String::from(DEVICE_URL),
-        access_url: String::from(ACCESS_URL),
-        device_replies: VecDeque::from(device),
-        access_replies: VecDeque::from(access),
-        requests: Vec::new(),
-    }
-}
-
 type Subject = Authenticator<Files, ScriptSleeper, Scripted, ScriptOutput>;
 
 fn authenticator(
@@ -188,7 +175,13 @@ fn authenticator(
         settings(),
         files,
         ScriptSleeper::default(),
-        scripted(device, access),
+        Scripted {
+            device_url: String::from(DEVICE_URL),
+            access_url: String::from(ACCESS_URL),
+            device_replies: VecDeque::from(device),
+            access_replies: VecDeque::from(access),
+            requests: Vec::new(),
+        },
         ScriptOutput::default(),
     )
     .unwrap()
@@ -622,7 +615,13 @@ fn the_constructor_reports_a_directory_failure() {
         settings(),
         files,
         ScriptSleeper::default(),
-        scripted(Vec::new(), Vec::new()),
+        Scripted {
+            device_url: String::from(DEVICE_URL),
+            access_url: String::from(ACCESS_URL),
+            device_replies: VecDeque::new(),
+            access_replies: VecDeque::new(),
+            requests: Vec::new(),
+        },
         ScriptOutput::default(),
     )
     .unwrap_err();
