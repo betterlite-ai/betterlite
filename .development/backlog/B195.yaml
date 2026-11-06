@@ -1,7 +1,7 @@
 id: B195
 milestone: M1 openai data plane
 title: Tokenizer engines, bundled assets and Hugging Face tokenizers through hf-hub
-status: todo
+status: done
 depends_on: [B171, B173, B193, B5085, B5088, B5090]
 file: tasks/B195-tokenizer-engines.yaml
 covers:
@@ -11,7 +11,7 @@ covers:
   - "litellm/main.py"
 parent: B013
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 818
