@@ -1,0 +1,14 @@
+kind: helper
+name: batch-delivery-single-item-413
+call:
+  batch_delivery:
+    send:
+      events: [e0]
+      success_status_codes: [200]
+      policy: requeue
+      max_events_per_request: 0
+      script:
+        - {outcome: response, status: 413}
+env: {}
+compare:
+  ignore: []
