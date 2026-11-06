@@ -1424,6 +1424,7 @@ name = "betterlite-guardrails"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "betterlite-compression",
  "betterlite-config",
  "betterlite-http",
  "betterlite-prompts",
