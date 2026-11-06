@@ -147,7 +147,7 @@ fn response_mimetype(response: &reqwest::Response) -> String {
         )
 }
 
-async fn read_body(
+pub(super) async fn read_body(
     mut response: reqwest::Response,
     limit: usize,
 ) -> Result<Vec<u8>, PresidioActionsError> {

@@ -9,7 +9,7 @@ use super::shared::{
     anonymize_requests, anonymizer, item, json_reply, json_reply_with, plain_reply, seen_item,
     spawn_anonymizer,
 };
-use crate::presidio_actions::anonymize::post_anonymize;
+use crate::presidio_actions::anonymize::{post_anonymize, read_body};
 use crate::presidio_actions::error::PresidioActionsError;
 
 #[tokio::test]
@@ -132,6 +132,21 @@ async fn a_slow_anonymizer_hits_the_configured_timeout() {
         panic!("expected a request error");
     };
     assert!(source.is_timeout());
+}
+
+#[tokio::test]
+async fn a_response_body_past_the_limit_is_refused() {
+    let mock = spawn_anonymizer(|_| json_reply(r#"{"text":"0123456789"}"#), Duration::ZERO).await;
+    let response = reqwest::Client::default()
+        .post(format!("{}/anonymize", mock.base))
+        .send()
+        .await
+        .unwrap();
+    let error = read_body(response, 4).await.unwrap_err();
+    assert!(matches!(
+        error,
+        PresidioActionsError::ResponseTooLarge { limit: 4 }
+    ));
 }
 
 #[tokio::test]
