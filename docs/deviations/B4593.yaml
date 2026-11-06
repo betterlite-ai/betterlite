@@ -1,0 +1,14 @@
+task: B4593
+deviations:
+  - what: GenericOAuth2Credential posts the token request through the pooled B173 client, so it uses that client's TLS, proxy and read-timeout settings instead of httpx's default 5 second timeout.
+    why: Every outbound call goes through the shared bounded client, and the rules forbid building an ad hoc one. A token endpoint slower than 5 seconds now succeeds where LiteLLM fails.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy_auth/credentials.py#L184-L194
+  - what: AzureADCredential takes the default credential chain as an optional function built on the first get_token call. None stands for a missing azure-identity package and fails that first call with the same install message.
+    why: Rust has no azure-identity package to import at run time, so the host passes the chain it has, or None. Lazy build, one build per credential, and the failing first call all match LiteLLM.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy_auth/credentials.py#L117-L136
+  - what: A token lifetime that pushes expires_on past the largest 64-bit timestamp returns OAuth2Error::ExpiryOverflow instead of a token.
+    why: Python integers never overflow and Rust timestamps are i64, so the sum has no value to cache. No working setup gets an expires_in near 2^63.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy_auth/credentials.py#L196-L199
+  - what: A token holding bytes that cannot appear in a header value makes get_auth_headers return ProxyAuthError::InvalidHeader.
+    why: HeaderValue only accepts visible ASCII and tabs, so the Authorization value cannot be built. A real JWT or opaque bearer token is always valid.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy_auth/credentials.py#L265

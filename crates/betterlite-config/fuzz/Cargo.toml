@@ -37,3 +37,10 @@ path = "fuzz_targets/rag_ingest_options.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "collector_settings"
+path = "fuzz_targets/collector_settings.rs"
+test = false
+doc = false
+bench = false

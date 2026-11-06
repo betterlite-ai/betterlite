@@ -43,6 +43,7 @@ betterlite-rate-limit = { path = "../../crates/betterlite-rate-limit" }
 betterlite-redact = { path = "../../crates/betterlite-redact" }
 betterlite-redis = { path = "../../crates/betterlite-redis" }
 betterlite-router = { path = "../../crates/betterlite-router" }
+betterlite-sdk = { path = "../../crates/betterlite-sdk" }
 betterlite-secret-managers = { path = "../../crates/betterlite-secret-managers" }
 betterlite-secrets = { path = "../../crates/betterlite-secrets" }
 betterlite-server = { path = "../../crates/betterlite-server" }

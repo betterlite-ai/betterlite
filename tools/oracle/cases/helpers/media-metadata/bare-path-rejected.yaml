@@ -1,0 +1,13 @@
+kind: helper
+name: media-metadata-bare-path-rejected
+call:
+  media_metadata:
+    operation: extract_file_data
+    file_data:
+      kind: direct
+      content:
+        kind: bare_string
+        content: /etc/passwd
+env: {}
+compare:
+  ignore: []
