@@ -57,11 +57,15 @@ impl Candidates {
                 env,
                 TRACKER_API_BASE_ENV,
             ),
-            tracker_api_key: resolve_secret(
-                params.tracker_api_key.as_ref(),
+            tracker_api_key: resolve_value(
+                params
+                    .tracker_api_key
+                    .as_ref()
+                    .map(secrecy::ExposeSecret::expose_secret),
                 env,
                 TRACKER_API_KEY_ENV,
-            ),
+            )
+            .map(SecretString::from),
             application_id: resolve_value(
                 params.application_id.as_deref(),
                 env,
@@ -146,21 +150,6 @@ where
         .filter(|value| !value.is_empty())
         .map(str::to_owned)
         .or_else(|| env.lookup(name).filter(|value| !value.is_empty()))
-}
-
-fn resolve_secret<E>(explicit: Option<&SecretString>, env: &E, name: &str) -> Option<SecretString>
-where
-    E: EnvironmentLookup,
-{
-    explicit
-        .map(secrecy::ExposeSecret::expose_secret)
-        .filter(|value| !value.is_empty())
-        .map(SecretString::from)
-        .or_else(|| {
-            env.lookup(name)
-                .filter(|value| !value.is_empty())
-                .map(SecretString::from)
-        })
 }
 
 // a checkpoint id without its hook still runs, so the hook is added to whatever the config requested
