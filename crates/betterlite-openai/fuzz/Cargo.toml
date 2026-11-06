@@ -45,8 +45,22 @@ doc = false
 bench = false
 
 [[bin]]
+name = "device_reply"
+path = "fuzz_targets/device_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "embedding"
 path = "fuzz_targets/embedding.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openai_files"
+path = "fuzz_targets/openai_files.rs"
 test = false
 doc = false
 bench = false
@@ -108,6 +122,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "openai_count_tokens"
+path = "fuzz_targets/openai_count_tokens.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "oauth_reply"
 path = "fuzz_targets/oauth_reply.rs"
 test = false
@@ -124,6 +145,34 @@ bench = false
 [[bin]]
 name = "openai_fine_tuning"
 path = "fuzz_targets/openai_fine_tuning.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openai_assistants"
+path = "fuzz_targets/openai_assistants.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "vector_file_contracts"
+path = "fuzz_targets/vector_file_contracts.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openai_batches"
+path = "fuzz_targets/openai_batches.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "xai_models"
+path = "fuzz_targets/xai_models.rs"
 test = false
 doc = false
 bench = false

@@ -1,0 +1,9 @@
+kind: helper
+name: openai-moderation-init-global-key
+call:
+  b3731:
+    construct:
+      settings: {api_key: ""}
+      global_keys: {openai_key: openai-key}
+env: {}
+compare: {ignore: []}

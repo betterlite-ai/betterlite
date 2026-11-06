@@ -1,0 +1,46 @@
+kind: helper
+name: bedrock-route-helpers-and-workspace-keys
+call:
+  bedrock_model_routes:
+    price_map: {}
+    converse_models: []
+    request_metadata_fields: []
+    tool_names: {}
+    step:
+      prefixes:
+        models:
+          - converse/chat_completions/x
+          - chat_completions/converse/x
+          - converse/a/converse/b
+          - chat_completions/a/chat_completions/b
+          - xconverse/y
+          - bedrock/claude_platform/x/claude_platform/y
+          - claude_platform/x
+          - xclaude_platform/y
+          - converse/x
+          - bedrock/converse/x
+          - a/b/converse/x
+          - converse_like/x
+          - converse/claude_platform/x
+          - mantle/x
+          - x/mantle/y
+          - bedrock_mantle/x
+          - bedrock/chat_completions/x
+          - xchat_completions/x
+        workspace:
+          - passed:
+              workspace_id: w
+              aws_workspace_id: null
+              anthropic_workspace_id: ""
+            optional:
+              workspace_id: old
+              keep: "1"
+          - passed:
+              unrelated: ignored
+            optional:
+              keep: "1"
+          - passed: {}
+            optional: {}
+env: {}
+compare:
+  ignore: []

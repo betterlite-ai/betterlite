@@ -1,0 +1,5 @@
+kind: helper
+name: native-api-selected
+call: {openai_count_tokens: {"count": {"model": "gpt-5", "messages": [{"role": "user", "content": "hi"}], "provider": "openai", "api_key": "sk-deployment"}}}
+env: {}
+compare: {ignore: []}

@@ -13,7 +13,7 @@ fn helper_seeds_select_bedrock_model() {
         .filter(|path| {
             path.file_name()
                 .and_then(|name| name.to_str())
-                .is_some_and(|name| name.starts_with("bedrock_model"))
+                .is_some_and(|name| name.starts_with("bedrock_model-"))
         })
         .map(|path| fs::read_to_string(path).unwrap())
         .collect::<Vec<_>>();
