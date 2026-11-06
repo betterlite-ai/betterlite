@@ -75,8 +75,11 @@ class RecordingConfig(BaseVectorStoreConfig):
 
 
 def fixture(config_type: type[BaseVectorStoreConfig]) -> BaseVectorStoreConfig:
-    setattr(config_type, "__abstractmethods__", frozenset())  # noqa: B010 - type has no typed attribute for it
-    return config_type()
+    derived = cast(
+        "type[BaseVectorStoreConfig]", type("FixtureConfig", (config_type,), {})
+    )
+    setattr(derived, "__abstractmethods__", frozenset())  # noqa: B010 - type has no typed attribute for it
+    return derived()
 
 
 def to_json(value: object) -> Json:
@@ -255,7 +258,7 @@ def forward(config: BaseVectorStoreConfig, fields: Object, *, asynchronous: bool
 
 
 def defaults_report(fields: Object) -> Json:
-    config = fixture(BaseVectorStoreConfig)
+    config = fixture(Fixture)
     optional = cast("dict[str, object]", as_object(fields["optional_params"]))
     headers = cast("dict[str, str]", fields["headers"])
     signed = cast(
