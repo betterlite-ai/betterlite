@@ -74,7 +74,7 @@ fn missing_analyzer_base_is_an_error() {
 
 #[test]
 fn missing_anonymizer_base_is_an_error() {
-    let error = validate_environment(None, Some("anonymizer.local"), only_analyzer).unwrap_err();
+    let error = validate_environment(None, None, only_analyzer).unwrap_err();
     assert!(matches!(
         error,
         PresidioActionsError::MissingAnonymizerApiBase
