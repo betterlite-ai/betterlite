@@ -10,10 +10,7 @@ const DECODED_ID_PREFIX: &str = "litellm:";
 #[must_use]
 pub fn get_format_from_file_id(file_id: Option<&str>) -> Option<String> {
     let present = file_id.filter(|value| !value.is_empty())?;
-    let unified = match decode_base64_text(present) {
-        Some(decoded) if decoded.starts_with(FILE_ID_PREFIX) => decoded,
-        _ => present.to_owned(),
-    };
+    let unified = decode_base64_text(present).unwrap_or_else(|| present.to_owned());
     let rest = unified.strip_prefix(MANAGED_PREFIX)?;
     let end = rest.find(";unified_id")?;
     let format = rest.get(..end)?;
@@ -58,30 +55,18 @@ pub(crate) fn provider_resource_id(unified_id: &str) -> Option<String> {
 
 #[must_use]
 pub(crate) fn original_file_id(file_id: &str) -> Option<String> {
-    // The decoded model itself is unused; finding one marks the id as model-routed
-    let model = decode_model_from_file_id(file_id)?;
-    drop(model);
-    Some(get_original_file_id(file_id))
+    let (decoded, _model) = decoded_model_id(file_id)?;
+    let original = capture_before_field(&decoded, DECODED_ID_PREFIX, "model,");
+    Some(original.unwrap_or(file_id).to_owned())
 }
 
-fn decode_model_from_file_id(encoded_id: &str) -> Option<String> {
+fn decoded_model_id(encoded_id: &str) -> Option<(String, String)> {
     let decoded = decode_prefixed_id(encoded_id)?;
-    if !decoded.starts_with(DECODED_ID_PREFIX) || !decoded.contains(MODEL_FIELD) {
-        return None;
-    }
-    let model = capture_until_semicolon(&decoded, MODEL_FIELD)?;
-    Some(model.trim().to_owned())
-}
-
-fn get_original_file_id(encoded_id: &str) -> String {
-    let Some(decoded) = decode_prefixed_id(encoded_id) else {
-        return encoded_id.to_owned();
-    };
-    if !decoded.starts_with(DECODED_ID_PREFIX) || !decoded.contains(MODEL_FIELD) {
-        return encoded_id.to_owned();
-    }
-    capture_before_field(&decoded, DECODED_ID_PREFIX, "model,")
-        .map_or_else(|| encoded_id.to_owned(), str::to_owned)
+    let rest = decoded.strip_prefix(DECODED_ID_PREFIX)?;
+    let model = capture_until_semicolon(rest, MODEL_FIELD)?
+        .trim()
+        .to_owned();
+    Some((decoded, model))
 }
 
 fn decode_prefixed_id(encoded_id: &str) -> Option<String> {
