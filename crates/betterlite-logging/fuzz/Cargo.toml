@@ -45,3 +45,10 @@ path = "fuzz_targets/s3_v2.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "prometheus_query"
+path = "fuzz_targets/prometheus_query.rs"
+test = false
+doc = false
+bench = false
