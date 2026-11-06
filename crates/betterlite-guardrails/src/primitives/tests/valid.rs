@@ -7,6 +7,13 @@ use super::{FakeTransport, run};
 #[case::match_multiline_flag("regex_match", r#"["a\nb","^b$",8]"#, "{}", "true")]
 #[case::match_dot_all_flag("regex_match", r#"["a\nb","a.b",16]"#, "{}", "true")]
 #[case::match_named_flags("regex_match", r#"["ABC","abc"]"#, r#"{"flags":2}"#, "true")]
+#[case::match_dollar_requires_the_very_end("regex_match", r#"["abc\n","abc$"]"#, "{}", "false")]
+#[case::match_backslash_z_ignores_trailing_newlines(
+    "regex_match",
+    r#"["abc\n","abc\\Z"]"#,
+    "{}",
+    "true"
+)]
 #[case::match_all_whole_text("regex_match_all", r#"["abc","abc"]"#, "{}", "true")]
 #[case::match_all_rejects_a_prefix("regex_match_all", r#"["abcd","abc"]"#, "{}", "false")]
 #[case::match_all_alternation_is_grouped("regex_match_all", r#"["b","a|b"]"#, "{}", "true")]

@@ -51,6 +51,12 @@ enum Check {
     "{}",
     r#""a""#
 ))]
+#[case::replace_with_an_unknown_named_group_keeps_the_text(Check::Returns(
+    "regex_replace",
+    r#"["a","a","\\g<nope>"]"#,
+    "{}",
+    r#""a""#
+))]
 #[case::find_all_with_an_invalid_pattern(Check::Returns(
     "regex_find_all",
     r#"["text","[invalid"]"#,
