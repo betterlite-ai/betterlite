@@ -14,7 +14,10 @@ use tokio::net::TcpListener;
 use tokio::sync::mpsc;
 use tokio::task::JoinSet;
 
-use super::{JevAnswer, JevSystemOneResponse, MAX_RESPONSE_BYTES, NoulType, call_systemone};
+use super::{
+    JevAnswer, JevSystemOneResponse, MAX_RESPONSE_BYTES, NoulType, body_detail, call_systemone,
+    failure_detail, status_detail,
+};
 use crate::generic_guardrail_contracts::UnreachableFallback;
 use crate::typesafe::fixtures::{guardrail, json, settings};
 use crate::typesafe::typesafe_failure_handling::TypeSafeError;
@@ -313,9 +316,13 @@ async fn call_systemone_applies_the_guardrail_timeout() {
     server.shutdown().await;
 }
 
+// Hardcoded independently of MAX_RESPONSE_BYTES, so a mutation of that constant cannot move the boundary too.
+const SPEC_MAX_RESPONSE_BYTES: usize = 1024 * 1024;
+
 #[tokio::test]
 async fn call_systemone_rejects_an_oversized_response() {
-    let body = " ".repeat(MAX_RESPONSE_BYTES + 1);
+    assert_eq!(MAX_RESPONSE_BYTES, SPEC_MAX_RESPONSE_BYTES);
+    let body = " ".repeat(SPEC_MAX_RESPONSE_BYTES + 1);
     assert_eq!(
         call_against(StatusCode::OK, body.clone(), UnreachableFallback::FailOpen).await,
         Ok(None)
@@ -330,12 +337,43 @@ async fn call_systemone_rejects_an_oversized_response() {
 
 #[tokio::test]
 async fn call_systemone_reads_a_body_at_the_size_limit() {
-    let body = " ".repeat(MAX_RESPONSE_BYTES);
+    assert_eq!(MAX_RESPONSE_BYTES, SPEC_MAX_RESPONSE_BYTES);
+    let body = " ".repeat(SPEC_MAX_RESPONSE_BYTES);
     assert_eq!(
         call_against(StatusCode::OK, body, UnreachableFallback::FailClosed).await,
         Err(TypeSafeError::Unavailable {
             message: "TypeSafe evaluation service returned an unreadable response".to_owned()
         })
+    );
+}
+
+#[test]
+fn failure_detail_carries_the_error_type_and_the_message() {
+    let detail = failure_detail("reqwest::Error", "boom".to_owned());
+    assert_eq!(
+        serde_json::to_string(&detail).expect("serialize"),
+        r#"{"error_type":"reqwest::Error","detail":"boom"}"#
+    );
+}
+
+#[test]
+fn body_detail_carries_the_safe_response_text() {
+    let detail = body_detail(b"oops");
+    assert_eq!(
+        serde_json::to_string(&detail).expect("serialize"),
+        r#"{"body":"oops"}"#
+    );
+}
+
+#[test]
+fn status_detail_carries_the_status_code_and_the_extra_field() {
+    let detail = status_detail(
+        StatusCode::BAD_GATEWAY,
+        ("limit", Json::Number(serde_json::Number::from(7_u8))),
+    );
+    assert_eq!(
+        serde_json::to_string(&detail).expect("serialize"),
+        r#"{"status_code":502,"limit":7}"#
     );
 }
 
