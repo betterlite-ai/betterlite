@@ -1,0 +1,12 @@
+
+
+:
+data:
+data: {
+data: [1,2,3]
+data: "text"
+data: null
+{"type":"stdout","text":5}
+{"type":"result","results":[1]}
+not json at all
+data: {"type":"result","timestamp":1,"execution_count":3,"text":"kept"}
