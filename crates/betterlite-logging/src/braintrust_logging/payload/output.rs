@@ -37,14 +37,13 @@ pub(super) fn output(event: &SuccessEvent<'_>) -> Result<Json, PayloadError> {
     if event.call_type == Some("embedding") || matches!(response, ResponseObject::Embedding(_)) {
         return Ok(Json::List(Vec::new()));
     }
-    match response {
-        ResponseObject::Model(body) => choices(body, ChoiceKind::Model),
-        ResponseObject::TextCompletion(body) => choices(body, ChoiceKind::Text),
-        ResponseObject::Embedding(_) | ResponseObject::Image(_) => Ok(Json::List(Vec::new())),
-    }
-}
-
-fn choices(body: &Json, kind: ChoiceKind) -> Result<Json, PayloadError> {
+    let (body, kind) = match response {
+        ResponseObject::Model(body) => (body, ChoiceKind::Model),
+        ResponseObject::TextCompletion(body) => (body, ChoiceKind::Text),
+        ResponseObject::Embedding(_) | ResponseObject::Image(_) => {
+            return Ok(Json::List(Vec::new()));
+        }
+    };
     let fields = object(body, "response")?;
     let items = match fields.get("choices") {
         Some(Json::List(items)) => items.clone(),
