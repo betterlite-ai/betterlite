@@ -1,5 +1,6 @@
 use secrecy::SecretString;
 
+pub const API_KEY_VARIABLE: &str = "HUMANLOOP_API_KEY";
 pub const DEFAULT_CACHE_TTL_SECONDS: u64 = 60;
 const CACHE_TTL_VARIABLE: &str = "HUMANLOOP_PROMPT_CACHE_TTL_SECONDS";
 
