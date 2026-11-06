@@ -38,14 +38,6 @@ fn client_options(fields: &Fields) -> Result<ClientOptions, Box<crate::helpers::
     })
 }
 
-const fn switch(value: Option<&Value>) -> Option<bool> {
-    match value {
-        None => None,
-        Some(Value::Bool(flag)) => Some(*flag),
-        Some(_other) => Some(false),
-    }
-}
-
 const fn selected(kind: ClientKind, streaming: bool) -> &'static str {
     match (kind, streaming) {
         (ClientKind::Sync, false) => "sync_run",
@@ -133,9 +125,10 @@ async fn round_outcome(
     let call = RunCall {
         options: client_options(fields)?,
         client: None,
+        // LiteLLM tests `is True`, so an absent, false or non-boolean truthy switch takes the false branch.
         dispatch: RunDispatch {
-            arun_thread: switch(round.arun_thread.as_ref()),
-            stream: switch(round.stream.as_ref()),
+            arun_thread: matches!(round.arun_thread.as_ref(), Some(Value::Bool(true))),
+            stream: matches!(round.stream.as_ref(), Some(Value::Bool(true))),
         },
         handler,
     };

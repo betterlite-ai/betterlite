@@ -16,8 +16,11 @@ fn replays_the_openai_thread_runs_corpus() {
         .unwrap()
         .try_for_each(|entry| {
             let path = entry?.path();
-            let bytes = fs::read(&path)?;
             let name = path.file_name().unwrap().to_str().unwrap();
+            if name.starts_with('.') {
+                return Ok(());
+            }
+            let bytes = fs::read(&path)?;
             let outcome = match decode_run_event(&bytes) {
                 Ok(Some(_event)) => "ok",
                 Ok(None) => "done",

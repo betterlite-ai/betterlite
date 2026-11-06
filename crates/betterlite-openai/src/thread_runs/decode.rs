@@ -38,10 +38,36 @@ fn decode_named(name: &str, data: &[u8]) -> Result<RunEvent, ThreadRunsError> {
     }
 }
 
+// The shared SseParser strips non-data fields and its event_end is private, so this keeps the event line and CRLF.
+fn lines(body: &[u8]) -> Vec<&[u8]> {
+    let mut lines = Vec::new();
+    let (mut start, mut cursor) = (0_usize, 0_usize);
+    while let Some(byte) = body.get(cursor) {
+        if !matches!(*byte, b'\r' | b'\n') {
+            cursor = cursor.saturating_add(1);
+            continue;
+        }
+        if let Some(line) = body.get(start..cursor) {
+            lines.push(line);
+        }
+        let next = cursor.saturating_add(1);
+        cursor = if *byte == b'\r' && body.get(next) == Some(&b'\n') {
+            next.saturating_add(1)
+        } else {
+            next
+        };
+        start = cursor;
+    }
+    if let Some(tail) = body.get(start..) {
+        lines.push(tail);
+    }
+    lines
+}
+
 fn event_and_data(frame: &[u8]) -> (Option<String>, Vec<u8>) {
     let mut event = None;
     let mut data = Vec::new();
-    for line in frame.split(|byte| matches!(*byte, b'\n' | b'\r')) {
+    for line in lines(frame) {
         if let Some(rest) = line.strip_prefix(b"event:") {
             event = str::from_utf8(rest.trim_ascii()).ok().map(str::to_owned);
         }
@@ -59,7 +85,7 @@ fn event_and_data(frame: &[u8]) -> (Option<String>, Vec<u8>) {
 pub(crate) fn run_event_frames(body: &[u8]) -> Vec<Vec<u8>> {
     let mut frames = Vec::new();
     let mut frame: Vec<u8> = Vec::new();
-    for line in body.split(|byte| matches!(*byte, b'\n' | b'\r')) {
+    for line in lines(body) {
         if line.is_empty() {
             if !frame.is_empty() {
                 frames.push(mem::take(&mut frame));

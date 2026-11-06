@@ -62,6 +62,23 @@ impl Recorder {
             .push_back((status, map, body.as_bytes().to_vec()));
     }
 
+    // A header value that is not visible ASCII is legal in a response but unreadable as text.
+    pub(super) fn queue_opaque_header(
+        &self,
+        status: u16,
+        name: &'static str,
+        value: &[u8],
+        body: &str,
+    ) {
+        let mut headers = HeaderMap::new();
+        let header = HeaderValue::from_bytes(value).unwrap();
+        headers.insert(HeaderName::from_static(name), header);
+        self.replies
+            .lock()
+            .unwrap()
+            .push_back((status, headers, body.as_bytes().to_vec()));
+    }
+
     pub(super) fn requests(&self) -> Vec<Seen> {
         self.seen.lock().unwrap().clone()
     }

@@ -18,11 +18,11 @@ pub struct RunsApi<T> {
     pub transport: Arc<T>,
 }
 
-// Both run tests compare with `is True`, so only a literal true takes the async or streaming branch.
+// Both run tests compare with `is True`, so the caller resolves every other value to false before dispatch.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RunDispatch {
-    pub arun_thread: Option<bool>,
-    pub stream: Option<bool>,
+    pub arun_thread: bool,
+    pub stream: bool,
 }
 
 pub struct RunCall<T> {
@@ -58,6 +58,7 @@ impl<T: AssistantsTransport> RunsApi<T> {
         let created = send(self.transport.as_ref(), create).await?;
         let mut run = decode_json::<RunReply>(&created.body)?;
         let run_id = run.id.clone();
+        let mut interval = None;
         loop {
             let poll_segments = run_segments(&request.thread_id, &run_id)?;
             let poll = outbound(client, CallKind::Poll, &poll_segments, RequestBody::Empty)?;
@@ -74,7 +75,9 @@ impl<T: AssistantsTransport> RunsApi<T> {
             ) {
                 return Ok(run);
             }
-            sleep(poll_interval(&response)?).await;
+            let wait = interval.map_or_else(|| poll_interval(&response), Ok)?;
+            interval = Some(wait);
+            sleep(wait).await;
         }
     }
 
@@ -103,7 +106,7 @@ impl<T: AssistantsTransport> RunsApi<T> {
         call: RunCall<T>,
         request: &RunRequest,
     ) -> Result<RunInvocation<T>, ThreadRunsError> {
-        let kind = if call.dispatch.arun_thread == Some(true) {
+        let kind = if call.dispatch.arun_thread {
             ClientKind::Async
         } else {
             ClientKind::Sync
@@ -112,7 +115,7 @@ impl<T: AssistantsTransport> RunsApi<T> {
             transport: Arc::clone(&self.transport),
         }
         .get_openai_client(kind, call.options, call.client);
-        if call.dispatch.stream == Some(true) {
+        if call.dispatch.stream {
             let stream = self.create_stream(&client, request, call.handler)?;
             return Ok(RunInvocation::Streaming(Box::new(stream)));
         }

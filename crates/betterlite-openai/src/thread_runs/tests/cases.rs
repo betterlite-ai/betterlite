@@ -1,9 +1,11 @@
 #![cfg(test)]
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use rstest::rstest;
 use serde_json::Value;
+use tokio::time::Instant;
 
 use crate::assistants::client::ClientKind;
 use crate::thread_runs::error::ThreadRunsError;
@@ -25,18 +27,41 @@ const NULL_BODY: &str = r#"{"assistant_id":"asst_a","additional_instructions":nu
 const NULL_STREAM_BODY: &str = r#"{"assistant_id":"asst_a","additional_instructions":null,"instructions":null,"metadata":null,"model":null,"stream":true,"tools":null}"#;
 const ERROR_BODY: &str = r#"{"error":{"message":"no run","type":"invalid_request_error"}}"#;
 
+#[derive(Clone, Copy)]
+enum Facade {
+    SyncRun,
+    AsyncRun,
+    SyncStream,
+    AsyncStream,
+}
+
 fn request() -> RunRequest {
     serde_json::from_str(REQUEST).unwrap()
 }
 
-fn call(arun_thread: Option<bool>, stream: Option<bool>) -> RunCall<Recorder> {
+fn call(facade: Facade) -> RunCall<Recorder> {
+    let dispatch = match facade {
+        Facade::SyncRun => RunDispatch {
+            arun_thread: false,
+            stream: false,
+        },
+        Facade::AsyncRun => RunDispatch {
+            arun_thread: true,
+            stream: false,
+        },
+        Facade::SyncStream => RunDispatch {
+            arun_thread: false,
+            stream: true,
+        },
+        Facade::AsyncStream => RunDispatch {
+            arun_thread: true,
+            stream: true,
+        },
+    };
     RunCall {
         options: options(KEY),
         client: None,
-        dispatch: RunDispatch {
-            arun_thread,
-            stream,
-        },
+        dispatch,
         handler: None,
     }
 }
@@ -64,10 +89,12 @@ async fn poll_to(state: &str, arun_thread: bool) -> (Vec<Seen>, RunReply) {
     let (api, transport) = harness();
     transport.queue(200, &[], QUEUED);
     transport.queue(200, &[("openai-poll-after-ms", "0")], state);
-    let outcome = api
-        .run_thread(call(Some(arun_thread), Some(false)), &request())
-        .await
-        .unwrap();
+    let facade = if arun_thread {
+        Facade::AsyncRun
+    } else {
+        Facade::SyncRun
+    };
+    let outcome = api.run_thread(call(facade), &request()).await.unwrap();
     let RunInvocation::Polled { kind, run } = outcome else {
         panic!("expected a polled invocation");
     };
@@ -95,7 +122,7 @@ async fn run_poll_completion() {
     let (api, transport) = harness();
     transport.queue(404, &[], ERROR_BODY);
     let error = api
-        .run_thread(call(Some(false), Some(false)), &request())
+        .run_thread(call(Facade::SyncRun), &request())
         .await
         .err()
         .unwrap();
@@ -105,13 +132,19 @@ async fn run_poll_completion() {
     );
     assert_eq!(transport.requests().len(), 1);
 
+    empty_thread_is_refused().await;
+    poll_intervals().await;
+    poll_interval_failures().await;
+}
+
+async fn empty_thread_is_refused() {
     let empty = RunRequest {
         thread_id: String::new(),
         ..request()
     };
-    let (empty_api, empty_transport) = harness();
-    let rejected = empty_api
-        .run_thread(call(Some(false), Some(false)), &empty)
+    let (api, transport) = harness();
+    let rejected = api
+        .run_thread(call(Facade::SyncRun), &empty)
         .await
         .err()
         .unwrap();
@@ -119,7 +152,69 @@ async fn run_poll_completion() {
         matches!(rejected, ThreadRunsError::EmptyThreadId),
         "{rejected}"
     );
-    assert!(empty_transport.requests().is_empty());
+    assert!(transport.requests().is_empty());
+}
+
+// The SDK reads openai-poll-after-ms on the first non-terminal poll and reuses it for every later one.
+async fn poll_intervals() {
+    let started = Instant::now();
+    let (api, transport) = harness();
+    transport.queue(200, &[], QUEUED);
+    transport.queue(200, &[("openai-poll-after-ms", "250")], IN_PROGRESS);
+    transport.queue(200, &[("openai-poll-after-ms", "900")], IN_PROGRESS);
+    transport.queue(200, &[], COMPLETED);
+    let outcome = api
+        .run_thread(call(Facade::SyncRun), &request())
+        .await
+        .unwrap();
+    let RunInvocation::Polled { run, .. } = outcome else {
+        panic!("expected a polled invocation");
+    };
+    assert_eq!(serde_json::to_value(&run).unwrap(), parse(COMPLETED));
+    assert_eq!(transport.requests().len(), 4);
+    assert_eq!(started.elapsed(), Duration::from_millis(500));
+
+    let default_started = Instant::now();
+    let (default_api, default_transport) = harness();
+    default_transport.queue(200, &[], QUEUED);
+    default_transport.queue(200, &[], IN_PROGRESS);
+    default_transport.queue(200, &[("openai-poll-after-ms", "5")], IN_PROGRESS);
+    default_transport.queue(200, &[], COMPLETED);
+    default_api
+        .run_thread(call(Facade::SyncRun), &request())
+        .await
+        .unwrap();
+    assert_eq!(default_started.elapsed(), Duration::from_millis(2000));
+}
+
+async fn poll_interval_failures() {
+    let (api, transport) = harness();
+    transport.queue(200, &[], QUEUED);
+    transport.queue_opaque_header(200, "openai-poll-after-ms", b"\xff", IN_PROGRESS);
+    let error = api
+        .run_thread(call(Facade::SyncRun), &request())
+        .await
+        .err()
+        .unwrap();
+    assert!(
+        matches!(error, ThreadRunsError::PollAfterHeader { .. }),
+        "{error}"
+    );
+    assert_eq!(transport.requests().len(), 2);
+
+    let (odd_api, odd_transport) = harness();
+    odd_transport.queue(200, &[], QUEUED);
+    odd_transport.queue(200, &[("openai-poll-after-ms", "soon")], IN_PROGRESS);
+    let odd_error = odd_api
+        .run_thread(call(Facade::SyncRun), &request())
+        .await
+        .err()
+        .unwrap();
+    assert!(
+        matches!(odd_error, ThreadRunsError::PollAfter { .. }),
+        "{odd_error}"
+    );
+    assert_eq!(odd_transport.requests().len(), 2);
 }
 
 async fn requires_action() {
@@ -143,7 +238,7 @@ async fn failed_run() {
     transport.queue(200, &[], QUEUED);
     transport.queue(500, &[], ERROR_BODY);
     let error = api
-        .run_thread(call(Some(false), Some(false)), &request())
+        .run_thread(call(Facade::SyncRun), &request())
         .await
         .err()
         .unwrap();
@@ -158,7 +253,7 @@ async fn stream_incremental_events() {
     let (api, transport) = harness();
     transport.queue(200, &[("content-type", "text/event-stream")], &sse());
     let outcome = api
-        .run_thread(call(Some(false), Some(true)), &request())
+        .run_thread(call(Facade::SyncStream), &request())
         .await
         .unwrap();
     let RunInvocation::Streaming(stream) = outcome else {
@@ -179,6 +274,28 @@ async fn stream_incremental_events() {
         transport.requests(),
         vec![wire("POST", RUNS, Some(STREAM_BODY))]
     );
+
+    crlf_stream_decodes().await;
+}
+
+// A CRLF frame terminator is one terminator, not a line end plus a blank line that would cut the frame.
+async fn crlf_stream_decodes() {
+    let (api, transport) = harness();
+    let crlf = sse().replace('\n', "\r\n");
+    transport.queue(200, &[("content-type", "text/event-stream")], &crlf);
+    let outcome = api
+        .run_thread(call(Facade::SyncStream), &request())
+        .await
+        .unwrap();
+    let RunInvocation::Streaming(stream) = outcome else {
+        panic!("expected a stream manager");
+    };
+    let events = stream.consume().await.unwrap();
+    assert_eq!(events.len(), 3);
+    assert_eq!(
+        transport.requests(),
+        vec![wire("POST", RUNS, Some(STREAM_BODY))]
+    );
 }
 
 async fn instructions_tools_overrides() {
@@ -190,7 +307,7 @@ async fn instructions_tools_overrides() {
     poll_transport.queue(200, &[], QUEUED);
     poll_transport.queue(200, &[("openai-poll-after-ms", "0")], COMPLETED);
     poll_api
-        .run_thread(call(Some(false), Some(false)), &empty)
+        .run_thread(call(Facade::SyncRun), &empty)
         .await
         .unwrap();
     let polled = poll_transport.requests();
@@ -200,7 +317,7 @@ async fn instructions_tools_overrides() {
     let (stream_api, stream_transport) = harness();
     stream_transport.queue(200, &[("content-type", "text/event-stream")], &sse());
     let outcome = stream_api
-        .run_thread(call(Some(true), Some(true)), &empty)
+        .run_thread(call(Facade::AsyncStream), &empty)
         .await
         .unwrap();
     let RunInvocation::Streaming(stream) = outcome else {
@@ -217,14 +334,12 @@ async fn instructions_tools_overrides() {
 
 async fn dispatch_selections() {
     let selections = [
-        (Some(true), Some(false), ClientKind::Async, false),
-        (Some(false), Some(false), ClientKind::Sync, false),
-        (None, None, ClientKind::Sync, false),
-        (Some(true), Some(true), ClientKind::Async, true),
-        (Some(false), Some(true), ClientKind::Sync, true),
-        (None, Some(true), ClientKind::Sync, true),
+        (Facade::AsyncRun, ClientKind::Async, false),
+        (Facade::SyncRun, ClientKind::Sync, false),
+        (Facade::AsyncStream, ClientKind::Async, true),
+        (Facade::SyncStream, ClientKind::Sync, true),
     ];
-    for (arun_thread, stream_flag, expected, streaming) in selections {
+    for (facade, expected, streaming) in selections {
         let (api, transport) = harness();
         if streaming {
             transport.queue(200, &[("content-type", "text/event-stream")], &sse());
@@ -232,10 +347,7 @@ async fn dispatch_selections() {
             transport.queue(200, &[], QUEUED);
             transport.queue(200, &[("openai-poll-after-ms", "0")], COMPLETED);
         }
-        let outcome = api
-            .run_thread(call(arun_thread, stream_flag), &request())
-            .await
-            .unwrap();
+        let outcome = api.run_thread(call(facade), &request()).await.unwrap();
         match outcome {
             RunInvocation::Polled { kind, .. } => {
                 assert!(!streaming);
@@ -254,7 +366,7 @@ async fn stream_event_handler() {
     let (default_api, default_transport) = harness();
     default_transport.queue(200, &[("content-type", "text/event-stream")], &sse());
     let plain = default_api
-        .run_thread(call(Some(false), Some(true)), &request())
+        .run_thread(call(Facade::SyncStream), &request())
         .await
         .unwrap();
     let RunInvocation::Streaming(default_stream) = plain else {
@@ -271,7 +383,7 @@ async fn stream_event_handler() {
     let recorder = Arc::new(RecordingHandler::default());
     let concrete: Arc<RecordingHandler> = Arc::clone(&recorder);
     let supplied: Arc<dyn RunEventHandler> = concrete;
-    let mut supplied_call = call(Some(true), Some(true));
+    let mut supplied_call = call(Facade::AsyncStream);
     supplied_call.handler = Some(supplied);
     let supplied_outcome = sink_api
         .run_thread(supplied_call, &request())
@@ -295,13 +407,13 @@ async fn assistants_beta_default() {
     let (api, transport) = harness();
     transport.queue(200, &[], QUEUED);
     transport.queue(200, &[("openai-poll-after-ms", "0")], COMPLETED);
-    api.run_thread(call(Some(false), Some(false)), &request())
+    api.run_thread(call(Facade::SyncRun), &request())
         .await
         .unwrap();
     let (streaming_api, streaming_transport) = harness();
     streaming_transport.queue(200, &[("content-type", "text/event-stream")], &sse());
     let outcome = streaming_api
-        .run_thread(call(Some(true), Some(true)), &request())
+        .run_thread(call(Facade::AsyncStream), &request())
         .await
         .unwrap();
     let RunInvocation::Streaming(stream) = outcome else {
@@ -327,7 +439,7 @@ async fn assistants_beta_default() {
 #[case::run_dispatch(Scenario::RunDispatch)]
 #[case::stream_event_handler(Scenario::StreamEventHandler)]
 #[case::assistants_beta_default(Scenario::AssistantsBetaDefault)]
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn thread_runs_cases(#[case] scenario: Scenario) {
     match scenario {
         Scenario::RunPollCompletion => run_poll_completion().await,
