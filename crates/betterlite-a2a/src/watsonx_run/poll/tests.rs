@@ -6,7 +6,7 @@ use std::time::Duration;
 use betterlite_core::agents::json::AgentJson;
 use rstest::rstest;
 
-use super::{MAX_POLL_ATTEMPTS, POLL_INTERVAL, PollError, poll_run, run_id};
+use super::{MAX_POLL_ATTEMPTS, PollError, poll_run, run_id};
 use crate::watsonx_run::event::RunEvent;
 use crate::watsonx_run::run_api::ApiError;
 use crate::watsonx_run::tests::{Fail, Reply, Script};
@@ -39,7 +39,7 @@ async fn polling_waits_two_seconds_before_every_get_on_the_run_id_endpoint() {
         .await
         .unwrap();
     assert_eq!(polled.status.as_deref(), Some("completed"));
-    assert_eq!(*script.pauses.lock().unwrap(), [POLL_INTERVAL; 2]);
+    assert_eq!(*script.pauses.lock().unwrap(), [Duration::from_secs(2); 2]);
     let recorded = script.recorded();
     assert_eq!(recorded.len(), 2);
     assert_eq!(recorded[0].method, "GET");
@@ -52,11 +52,8 @@ async fn polling_waits_two_seconds_before_every_get_on_the_run_id_endpoint() {
 #[rstest]
 #[case::completed("completed")]
 #[case::succeeded("succeeded")]
-#[case::failed("failed")]
-#[case::error("error")]
-#[case::cancelled("cancelled")]
 #[tokio::test]
-async fn polling_returns_at_the_first_terminal_state(#[case] status: &str) {
+async fn polling_returns_at_the_first_successful_terminal_state(#[case] status: &str) {
     let answer = format!(r#"{{"run_id": "run-1", "status": "{status}"}}"#);
     let script = Script::new(vec![Reply::json(&answer)]);
     let polled = poll_run(&&script, BASE, started(), &headers(), TIMEOUT)
@@ -214,9 +211,14 @@ async fn polling_fails_a_terminal_run_that_is_not_a_success(#[case] status: &str
     assert_eq!(script.recorded().len(), 0);
 }
 
+#[rstest]
+#[case::failed("failed")]
+#[case::error("error")]
+#[case::cancelled("cancelled")]
 #[tokio::test]
-async fn polling_fails_a_polled_run_that_ended_without_success() {
-    let script = Script::new(vec![Reply::json(r#"{"status": "failed"}"#)]);
+async fn polling_stops_at_a_polled_run_that_ended_without_success(#[case] status: &str) {
+    let answer = format!(r#"{{"status": "{status}"}}"#);
+    let script = Script::new(vec![Reply::json(&answer)]);
     let error = poll_run(&&script, BASE, started(), &headers(), TIMEOUT)
         .await
         .unwrap_err();

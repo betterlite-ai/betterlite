@@ -7,7 +7,7 @@ use rstest::rstest;
 
 use crate::pydantic_ai_transformation::fake_streaming::StreamPacing;
 use crate::watsonx_credentials::params::WxoLitellmParams;
-use crate::watsonx_run::handler::{RunError, STREAMING_TIMEOUT};
+use crate::watsonx_run::handler::RunError;
 use crate::watsonx_run::run_api::ApiError;
 use crate::watsonx_run::tests::{
     Fail, Reply, Script, ScriptError, litellm_params, run_handler, send_params, token_reply,
@@ -175,7 +175,7 @@ async fn handler_uses_a_hundred_and_twenty_second_timeout_for_the_streaming_flow
         .iter()
         .map(|request| request.timeout)
         .collect();
-    assert_eq!(timeouts, [STREAMING_TIMEOUT; 2]);
+    assert_eq!(timeouts, [Duration::from_secs(120); 2]);
 }
 
 #[tokio::test]
@@ -211,7 +211,7 @@ async fn streaming_accumulates_the_text_of_every_sse_event() {
         recorded[0].headers["Accept"],
         "text/event-stream, application/json"
     );
-    assert_eq!(recorded[0].timeout, STREAMING_TIMEOUT);
+    assert_eq!(recorded[0].timeout, Duration::from_secs(120));
 }
 
 #[rstest]
@@ -279,7 +279,7 @@ async fn streaming_polls_when_the_content_type_is_not_event_stream(#[case] conte
     assert_eq!(recorded[0].url, STREAM);
     assert_eq!(recorded[1].method, "GET");
     assert_eq!(recorded[1].url, POLLED_RUN);
-    assert_eq!(recorded[1].timeout, STREAMING_TIMEOUT);
+    assert_eq!(recorded[1].timeout, Duration::from_secs(120));
 }
 
 #[tokio::test]
@@ -304,7 +304,7 @@ async fn fallback_submits_a_non_streaming_run_when_the_stream_post_fails() {
     let recorded = script.recorded();
     assert_eq!(recorded.len(), 2);
     assert_eq!(recorded[0].url, STREAM);
-    assert_eq!(recorded[0].timeout, STREAMING_TIMEOUT);
+    assert_eq!(recorded[0].timeout, Duration::from_secs(120));
     assert_eq!(recorded[1].url, RUN);
     assert_eq!(recorded[1].method, "POST");
     assert_eq!(recorded[1].timeout, Duration::from_secs(90));

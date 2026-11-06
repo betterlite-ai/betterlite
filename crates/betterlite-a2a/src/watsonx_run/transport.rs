@@ -5,7 +5,6 @@ use std::time::Duration;
 
 use super::run_api::RunBody;
 
-#[derive(Debug)]
 pub struct RunRequest<'request> {
     pub url: &'request str,
     pub headers: &'request BTreeMap<String, String>,

@@ -67,6 +67,12 @@ fn drops_a_line_that_is_not_text() {
 }
 
 #[test]
+fn accumulator_bounds_are_one_mebibyte_and_eight_mebibytes() {
+    assert_eq!(MAX_LINE_BYTES, 0x10_0000);
+    assert_eq!(MAX_TEXT_BYTES, 0x80_0000);
+}
+
+#[test]
 fn a_line_at_the_bound_still_passes() {
     let line = vec![b'a'; MAX_LINE_BYTES];
     let mut accumulator = LineAccumulator::default();
