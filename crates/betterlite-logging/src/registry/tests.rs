@@ -410,6 +410,8 @@ fn callback_registry_tests_behavior(#[case] scenario: Scenario) {
                 phase_keys(&registry, CallbackPhase::Success),
                 ["Logger", "Other"]
             );
+            assert!(!registry.remove_from_list(&identity, CallbackList::Success));
+            assert_eq!(keys(&registry, CallbackList::Callbacks), ["Logger"]);
             assert!(registry.remove_from_list(&identity, CallbackList::Callbacks));
             assert!(keys(&registry, CallbackList::Callbacks).is_empty());
             assert_eq!(keys(&registry, CallbackList::Success), ["Other"]);
