@@ -197,3 +197,10 @@ path = "fuzz_targets/passthrough_bytes.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "openai_threads"
+path = "fuzz_targets/openai_threads.rs"
+test = false
+doc = false
+bench = false
