@@ -1,0 +1,14 @@
+task: B4744
+deviations:
+  - what: A stdio MCP server receives the configured env when one is given, else the allowlisted standard variables, the Node and XDG caches and the configured npm cache directory; the SDK's six inherited variables (HOME, LOGNAME, PATH, SHELL, TERM, USER) are merged under that map. Every other parent variable is dropped.
+    why: LiteLLM inherited the whole parent environment, so a stdio MCP server could read OPENAI_API_KEY and every other proxy secret. Betterlite protects the subprocess surface by allowlisting while still passing the variables the SDK itself inherits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L497-L541
+  - what: The debug line for the streamable HTTP transport names the transport but not the request headers.
+    why: LiteLLM logs every auth header at debug, which writes the MCP credential into the log. Betterlite reports the same event without the secret.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L522-L524
+  - what: The redirect guard and the error-response capture hook are recorded on the HTTP client configuration (redirect_guard, capture_error_responses) instead of being attached as httpx event hooks. The guard's origin rule and the credential drop are implemented here; the error-response capture itself waits for its owner.
+    why: credential_redirect_hook and capture_upstream_error_response are unresolved callees with no owning task (their owner is pending B136), and Rust has no httpx event-hook layer to attach them to.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L802-L811
+  - what: When a stdio server exits on stdin close, betterlite still sends SIGTERM to its process group, waits the force-kill window and sends SIGKILL to any survivor. The MCP SDK (mcp 2.3.0) returns as soon as the leader exits and never calls terminate_posix_process_tree, so a descendant that ignores stdin EOF survives there.
+    why: Rule processes-die-with-owner (.development/rules.yaml:512) says the owner kills the process group it started; the SDK's early return leaked a child that outlived the leader. Sweeping the group is a leak fix, and SIGTERM returns ESRCH at once when nothing is left.
+    link: https://github.com/modelcontextprotocol/python-sdk/blob/main/src/mcp/client/stdio.py#L258

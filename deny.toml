@@ -11,7 +11,6 @@ targets = [
   "x86_64-apple-darwin",
   "aarch64-apple-darwin",
 ]
-
 [advisories]
 version = 2
 yanked = "deny"
@@ -19,8 +18,8 @@ ignore = [
   "RUSTSEC-2024-0449",
   { id = "RUSTSEC-2026-0440", reason = "astral-tokio-tar is unmaintained with no fix; testcontainers 0.28.0, its newest release, needs it, and only tools/postgres-fixture uses testcontainers" },
   { id = "RUSTSEC-2026-0441", reason = "pin-utils is unmaintained; aws-smithy-runtime drops it from 1.16.1, which needs the AWS SDK crates on aws-smithy-schema 1.x" },
+  { id = "RUSTSEC-2024-0436", reason = "paste is unmaintained; tokenizers 0.23.1, the version LiteLLM's lock pins, depends on it" },
 ]
-
 [licenses]
 version = 2
 private = { ignore = true }
@@ -36,8 +35,12 @@ allow = [
   "Zlib",
   "bzip2-1.0.6",
 ]
-exceptions = [{ allow = ["NCSA"], crate = "libfuzzer-sys" }]
-
+exceptions = [
+  { allow = ["NCSA"], crate = "libfuzzer-sys" },
+  # MPL-2.0 section 3.2(a) is answered in THIRD_PARTY_NOTICES.md; both crates are used unmodified
+  { allow = ["MPL-2.0"], crate = "colored" },
+  { allow = ["MPL-2.0"], crate = "option-ext" },
+]
 [bans]
 multiple-versions = "deny"
 wildcards = "deny"
@@ -71,17 +74,26 @@ skip = [
   "getrandom@0.3.4",
   "rand@0.9.5",
   "rand_core@0.9.5",
+  # the tokenizer stack's older releases: hf-hub and its xet crates pull these, and no kitoken or tokenizers release shares the locked regex, iteration and parser versions
+  "base64@0.13.1",
+  "core-foundation@0.9.4",
+  "fancy-regex@0.18.0",
+  "itertools@0.15.0",
+  "nom@7.1.3",
+  "darling@0.20.11",
+  "darling_core@0.20.11",
+  "darling_macro@0.20.11",
 ]
 deny = [
   { crate = "openssl", use-instead = "rustls" },
   { crate = "openssl-sys", use-instead = "rustls" },
   { crate = "native-tls", use-instead = "rustls" },
   { crate = "sqlx", use-instead = "tokio-postgres" },
-  { crate = "reqwest", wrappers = ["betterlite-http", "betterlite-oracle", "betterlite-guardrails"] },
-  { crate = "betterlite-router", wrappers = ["betterlite-server", "betterlite-oracle"] },
-  { crate = "betterlite-server", wrappers = ["betterlite", "betterlite-oracle"] },
+  # the tokenizer download is hf-hub's own client; xet-client and xet-runtime reach reqwest through it
+  { crate = "reqwest", wrappers = ["betterlite-http", "betterlite-oracle", "betterlite-guardrails", "hf-hub", "reqwest-middleware", "xet-client", "xet-runtime"] },
+  { crate = "betterlite-router", wrappers = ["betterlite-oracle", "betterlite-router-fuzz", "betterlite-server"] },
+  { crate = "betterlite-server", wrappers = ["betterlite", "betterlite-oracle", "betterlite-server-fuzz"] },
 ]
-
 [sources]
 unknown-registry = "deny"
 unknown-git = "deny"
