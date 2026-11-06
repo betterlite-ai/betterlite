@@ -201,7 +201,9 @@ fn execute(call: &Call) -> Result<Value, Failure> {
         Call::CarryOrganization { value } => {
             let mut carried = UserAPIKeyAuth::construct(AuthInput::Dict(value.token.clone()))
                 .map_err(Failure::Token)?;
-            let organization = read_required_row::<OrganizationTable>(&value.organization)?;
+            let converted = serde_json::to_value(&value.organization).map_err(Failure::Row)?;
+            let organization: OrganizationTable =
+                serde_json::from_value(converted).map_err(Failure::Row)?;
             carry_organization(&mut carried, &organization);
             state(&carried)
         }
@@ -230,16 +232,10 @@ where
     let Some(row) = value else {
         return Ok(None);
     };
-    read_required_row(row).map(Some)
-}
-
-fn read_required_row<T>(value: &JsonData) -> Result<T, Failure>
-where
-    T: serde::de::DeserializeOwned,
-{
-    let converted = serde_json::to_value(value).map_err(Failure::Row)?;
-    let decoded = serde_json::from_value(converted);
-    decoded.map_err(Failure::Row)
+    let converted = serde_json::to_value(row).map_err(Failure::Row)?;
+    serde_json::from_value(converted)
+        .map(Some)
+        .map_err(Failure::Row)
 }
 
 fn window_of(shape: &WindowShape) -> Result<BudgetWindow, Failure> {
