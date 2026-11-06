@@ -85,18 +85,11 @@ pub fn normalize_error(message: &Message) -> ExecutionError {
             (error, &["ename", "name"], &["evalue", "value"])
         });
     ExecutionError {
-        name: Some(first_raw(source, name_keys).unwrap_or_else(|| default_raw("\"\""))),
-        value: Some(first_raw(source, value_keys).unwrap_or_else(|| default_raw("\"\""))),
-        traceback: Some(first_raw(source, &["traceback"]).unwrap_or_else(|| default_raw("[]"))),
+        name: first_raw(source, name_keys).or_else(|| to_raw_value("").ok()),
+        value: first_raw(source, value_keys).or_else(|| to_raw_value("").ok()),
+        traceback: first_raw(source, &["traceback"])
+            .or_else(|| to_raw_value(&Vec::<String>::new()).ok()),
     }
-}
-
-// serializing a JSON literal cannot fail, so the null default is unreachable
-fn default_raw(json: &str) -> Box<RawValue> {
-    if let Ok(raw) = to_raw_value(json) {
-        return raw;
-    }
-    Box::default()
 }
 
 #[must_use]

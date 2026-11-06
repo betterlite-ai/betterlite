@@ -56,14 +56,6 @@ struct SandboxStatus {
     state: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
-struct EndpointDocument {
-    #[serde(default)]
-    endpoint: Option<Box<RawValue>>,
-    #[serde(default)]
-    headers: Option<BTreeMap<String, Box<RawValue>>>,
-}
-
 #[must_use]
 pub fn sandbox_state(document: &RawValue) -> Option<String> {
     let Ok(parsed) = serde_json::from_str::<SandboxDocument>(document.get()) else {
@@ -164,19 +156,21 @@ where
             },
         );
         let body = self.get_body(url, request.headers, client).await?;
-        let document: EndpointDocument =
+        let document: BTreeMap<String, Box<RawValue>> =
             serde_json::from_str(&body).map_err(|source| OpenSandboxError::Decode { source })?;
         let endpoint = document
-            .endpoint
-            .as_deref()
+            .get("endpoint")
             .and_then(|raw| serde_json::from_str::<String>(raw.get()).ok())
             .filter(|endpoint| !endpoint.is_empty())
             .ok_or_else(|| OpenSandboxError::MissingEndpoint {
                 sandbox_id: request.sandbox_id.to_owned(),
             })?;
+        let headers = document.get("headers").and_then(|raw| {
+            serde_json::from_str::<BTreeMap<String, Box<RawValue>>>(raw.get()).ok()
+        });
         Ok(Endpoint {
             url: endpoint,
-            headers: as_str_dict(document.headers.as_ref()),
+            headers: as_str_dict(headers.as_ref()),
         })
     }
 
