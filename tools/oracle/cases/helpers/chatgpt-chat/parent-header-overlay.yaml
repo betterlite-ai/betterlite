@@ -1,0 +1,20 @@
+kind: helper
+name: parent_header_overlay
+call:
+  chatgpt_chat:
+    environment:
+      CHATGPT_ORIGINATOR: "case_originator"
+    platform: {system: "Linux", release: "6.1.0-oracle", machine: "x86_64"}
+    record: '{"access_token": "stored-token", "account_id": "account-9", "expires_at": 4000000000}'
+    now: 1000
+    step:
+      headers:
+        api_key: "stored-token"
+        headers:
+          Authorization: "Bearer caller"
+          x-caller: "kept"
+        litellm_params:
+          litellm_session_id: "session-7"
+env:
+  CHATGPT_ORIGINATOR: "case_originator"
+compare: {ignore: []}
