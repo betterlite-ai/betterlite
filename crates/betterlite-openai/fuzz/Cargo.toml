@@ -106,3 +106,10 @@ path = "fuzz_targets/openai_count_tokens.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "xai_oauth"
+path = "fuzz_targets/xai_oauth.rs"
+test = false
+doc = false
+bench = false

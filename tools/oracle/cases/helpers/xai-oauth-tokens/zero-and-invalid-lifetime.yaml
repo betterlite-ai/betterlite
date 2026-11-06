@@ -1,0 +1,7 @@
+kind: helper
+name: zero_and_invalid_lifetime
+call:
+  xai_oauth_tokens: {"record": {"now": 1000, "payload": {"access_token": "a", "refresh_token": "r", "expires_in": 0}, "token_endpoint": "https://auth.x.ai/t", "fallback": null}}
+env: {}
+compare:
+  ignore: []
