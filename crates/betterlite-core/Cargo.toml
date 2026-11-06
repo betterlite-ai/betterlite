@@ -12,6 +12,7 @@ betterlite-config = { path = "../betterlite-config" }
 betterlite-env = { path = "../betterlite-env" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-logging = { path = "../betterlite-logging" }
+betterlite-mcp = { path = "../betterlite-mcp" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
 chrono = { version = "0.4.45", default-features = false, features = ["serde"] }
@@ -38,5 +39,6 @@ workspace = true
 betterlite-context = { path = "../betterlite-context" }
 rstest = "=0.27.0"
 tokio = { workspace = true, features = ["test-util"] }
+tokio-util = { version = "0.7.20", default-features = false, features = ["rt"] }
 tracing-subscriber.workspace = true
 uuid.workspace = true
