@@ -16,6 +16,13 @@ betterlite-provider = { path = ".." }
 libfuzzer-sys = "0.4.9"
 
 [[bin]]
+name = "opensandbox_sse"
+path = "fuzz_targets/opensandbox_sse.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "sandbox_ndjson"
 path = "fuzz_targets/sandbox_ndjson.rs"
 test = false
