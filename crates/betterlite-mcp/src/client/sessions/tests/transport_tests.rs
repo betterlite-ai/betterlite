@@ -106,6 +106,31 @@ async fn a_provided_stdio_environment_is_kept_and_gets_the_sdk_defaults_under_it
     assert!(!parameters.defaults.contains_key("OPENAI_API_KEY"));
 }
 
+#[tokio::test]
+async fn the_sdk_defaults_skip_shell_function_values() {
+    let runtime = FakeRuntime::new(Plan::default());
+    let client = build_client(
+        runtime,
+        make_config(|value| {
+            value.transport_type = TransportType::Stdio;
+            value.stdio = Some(stdio_config(Some(BTreeMap::new())));
+            value.environment = BTreeMap::from([
+                ("PATH".to_owned(), "/usr/bin".to_owned()),
+                ("TERM".to_owned(), "() { :; }; cmd".to_owned()),
+            ]);
+        }),
+        TaskTracker::new(),
+        CancellationToken::new(),
+    );
+    client.create_transport_context().unwrap();
+    let parameters = client.runtime.stdio().unwrap();
+    assert_eq!(
+        parameters.defaults.get("PATH").map(String::as_str),
+        Some("/usr/bin")
+    );
+    assert!(!parameters.defaults.contains_key("TERM"));
+}
+
 #[test]
 fn safe_environment_keeps_only_allowlisted_variables() {
     let safe = safe_stdio_env(None, &environment(), "/cache");

@@ -179,6 +179,32 @@ fn session_client(
 }
 
 #[tokio::test]
+async fn a_stdio_server_that_traps_term_finishes_before_the_kill() {
+    let owner = process::id();
+    let marker = env::temp_dir().join(format!("betterlite-b4744-stdio-term-{owner}.marker"));
+    drop(fs::remove_file(&marker));
+    let marker_path = marker.display().to_string();
+    let script = format!(
+        "trap 'printf done > {marker_path}; exit 0' TERM; while :; do /bin/sleep 0.1; done"
+    );
+    let runtime = StdioRuntime {
+        factory: Arc::new(TestFactory::default()),
+    };
+    let mut transport = runtime.stdio_client(parameters(
+        "/bin/sh",
+        vec!["-c".to_owned(), script],
+        BTreeMap::new(),
+    ));
+    let streams = transport.enter().await.unwrap();
+    let pid = streams.pid;
+    drop(streams);
+    transport.exit().await.unwrap();
+    assert!(marker.exists(), "the server did not finish on SIGTERM");
+    assert!(!process_exists(pid));
+    drop(fs::remove_file(&marker));
+}
+
+#[tokio::test]
 async fn a_stdio_server_that_exits_on_stdin_eof_finishes_before_the_kill() {
     let owner = process::id();
     let marker = env::temp_dir().join(format!("betterlite-b4744-stdio-{owner}.marker"));

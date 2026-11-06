@@ -14,6 +14,7 @@ use super::error::ExitFailure;
 use super::transport::{StdioServerParameters, TransportContext};
 
 pub const PROCESS_TERMINATION_TIMEOUT: Duration = Duration::from_secs(2);
+pub const FORCE_KILL_TIMEOUT: Duration = Duration::from_secs(2);
 
 pub struct StdioStreams {
     pub pid: u32,
@@ -85,8 +86,11 @@ impl StdioServer {
             .await
             .is_err()
         {
-            kill_group(leader)?;
-            child.wait().await.map_err(ExitFailure::from)?;
+            kill_group(leader, Signal::TERM)?;
+            if timeout(FORCE_KILL_TIMEOUT, child.wait()).await.is_err() {
+                kill_group(leader, Signal::KILL)?;
+                child.wait().await.map_err(ExitFailure::from)?;
+            }
         }
         Ok(())
     }
@@ -95,7 +99,7 @@ impl StdioServer {
 impl Drop for StdioServer {
     fn drop(&mut self) {
         if let Some(child) = self.child.as_ref() {
-            drop(kill_group(child.id()));
+            drop(kill_group(child.id(), Signal::KILL));
         }
     }
 }
@@ -130,14 +134,14 @@ fn unsupported(name: &'static str) -> io::Error {
     )
 }
 
-fn kill_group(pid: Option<u32>) -> Result<(), ExitFailure<io::Error>> {
+fn kill_group(pid: Option<u32>, signal: Signal) -> Result<(), ExitFailure<io::Error>> {
     let Some(leader) = pid
         .and_then(|raw| i32::try_from(raw).ok())
         .and_then(Pid::from_raw)
     else {
         return Ok(());
     };
-    match kill_process_group(leader, Signal::KILL) {
+    match kill_process_group(leader, signal) {
         Ok(()) | Err(Errno::SRCH) => Ok(()),
         Err(error) => Err(ExitFailure::Failure(Arc::new(io::Error::from(error)))),
     }

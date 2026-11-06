@@ -485,6 +485,26 @@ async fn a_cancelled_session_exit_lets_the_transport_failure_become_the_root_cau
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_timed_out_session_exit_expires_the_transport_cleanup_deadline() {
+    let plan = make_plan(|value| value.session_exit = Step::Timeout);
+    let runtime = FakeRuntime::new(plan);
+    let http_client = runtime.http_client.clone();
+    let mut client = build_client(
+        runtime,
+        base_config(),
+        TaskTracker::new(),
+        CancellationToken::new(),
+    );
+    let contexts = manual_contexts(&client.runtime, true);
+    let outcome =
+        execute_session_operation(&mut client, contexts, async |_session| Ok("done")).await;
+    assert!(matches!(outcome, Err(SessionError::CleanupTimedOut)));
+    let scopes = http_client.scopes();
+    assert_eq!(scopes.len(), 2);
+    assert!(scopes[1].deadline <= scopes[0].deadline);
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_timed_out_session_exit_lets_the_transport_failure_become_the_root_cause() {
     let plan = make_plan(|value| {
         value.session_exit = Step::Timeout;

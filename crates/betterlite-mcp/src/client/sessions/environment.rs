@@ -53,6 +53,7 @@ pub fn sdk_default_env(environment: &BTreeMap<String, String>) -> BTreeMap<Strin
         .filter_map(|key| {
             environment
                 .get(*key)
+                .filter(|value| !value.starts_with("()"))
                 .map(|value| ((*key).to_owned(), value.clone()))
         })
         .collect()
