@@ -6,7 +6,5 @@ pub mod config;
 pub mod error;
 #[path = "collector_factory/tests/factory.rs"]
 pub mod factory;
-#[path = "collector_factory/tests/registry.rs"]
-pub mod registry;
 
 mod tests;
