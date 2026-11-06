@@ -7,11 +7,14 @@ const REFRESH_INTERVAL_VARIABLE: &str = "GOOGLE_SECRET_MANAGER_REFRESH_INTERVAL"
 const ALWAYS_READ_VARIABLE: &str = "GOOGLE_SECRET_MANAGER_ALWAYS_READ_SECRET_MANAGER";
 const DEFAULT_REFRESH_VARIABLE: &str = "SECRET_MANAGER_REFRESH_INTERVAL";
 const DEFAULT_REFRESH_SECONDS: u64 = 86_400;
+// LiteLLM sends this call through the httpx client, whose default total timeout is 600 seconds
+const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Options {
     pub refresh_interval: Option<u64>,
     pub always_read_secret_manager: Option<bool>,
+    pub request_timeout: Option<Duration>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -19,6 +22,7 @@ pub struct Settings {
     pub project_id: String,
     pub refresh_interval: Duration,
     pub always_read_secret_manager: bool,
+    pub request_timeout: Duration,
 }
 
 impl Settings {
@@ -47,6 +51,7 @@ impl Settings {
             refresh_interval: Duration::from_secs(refresh_seconds),
             always_read_secret_manager: always_read_from_environment
                 || options.always_read_secret_manager.unwrap_or(false),
+            request_timeout: options.request_timeout.unwrap_or(DEFAULT_REQUEST_TIMEOUT),
         })
     }
 }

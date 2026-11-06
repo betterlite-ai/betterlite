@@ -8,6 +8,7 @@ use std::{
 
 use secrecy::SecretString;
 use thiserror::Error;
+use tokio::time::timeout;
 
 use crate::secret_contracts::SecretFuture;
 use cache::{CacheLookup, SecretCache};
@@ -134,12 +135,15 @@ impl GoogleSecretManager {
             .header_source
             .sync_construct_request_headers()
             .map_err(GoogleSecretManagerError::Headers)?;
-        let response = self
-            .dependencies
-            .transport
-            .get(&url, &headers)
-            .await
-            .map_err(GoogleSecretManagerError::Request)?;
+        let response = timeout(
+            self.settings.request_timeout,
+            self.dependencies.transport.get(&url, &headers),
+        )
+        .await
+        .map_err(|_elapsed| {
+            GoogleSecretManagerError::Request(io::Error::from(io::ErrorKind::TimedOut))
+        })?
+        .map_err(GoogleSecretManagerError::Request)?;
         if response.status != 200 {
             tracing::error!(
                 status = response.status,

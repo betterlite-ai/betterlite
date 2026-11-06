@@ -37,6 +37,26 @@ fn defaults_are_a_day_and_cached_reads() {
 }
 
 #[rstest]
+#[case::unset(None, 600)]
+#[case::configured(Some(7), 7)]
+fn request_timeout_resolution(#[case] parameter: Option<u64>, #[case] expected_seconds: u64) {
+    let settings = Settings::resolve(
+        &environment(&[("GOOGLE_SECRET_MANAGER_PROJECT_ID", "project-one")]),
+        Options {
+            refresh_interval: None,
+            always_read_secret_manager: None,
+            request_timeout: parameter.map(Duration::from_secs),
+        },
+    )
+    .unwrap();
+
+    assert_eq!(
+        settings.request_timeout,
+        Duration::from_secs(expected_seconds)
+    );
+}
+
+#[rstest]
 #[case::environment_beats_parameter(
     &[("GOOGLE_SECRET_MANAGER_REFRESH_INTERVAL", "30"), ("SECRET_MANAGER_REFRESH_INTERVAL", "90")],
     Some(60),
@@ -62,6 +82,7 @@ fn refresh_interval_resolution(
         Options {
             refresh_interval: parameter,
             always_read_secret_manager: None,
+            request_timeout: None,
         },
     )
     .unwrap();
@@ -124,6 +145,7 @@ fn always_read_resolution(
         Options {
             refresh_interval: None,
             always_read_secret_manager: parameter,
+            request_timeout: None,
         },
     )
     .unwrap();

@@ -2,6 +2,7 @@
 
 use std::{
     collections::{BTreeMap, VecDeque},
+    future::pending,
     io,
     sync::{
         Arc, Mutex,
@@ -12,10 +13,11 @@ use std::{
 
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
+use tokio::time::Instant;
 
 use super::{
     Dependencies, GoogleSecretManager, GoogleSecretManagerError, HttpResponse, NativeSecretReader,
-    RequestHeaderSource, RequestHeaders, SecretTransport, settings::Options,
+    RequestHeaderSource, RequestHeaders, SecretTransport, cache::CacheLookup, settings::Options,
 };
 use crate::secret_contracts::SecretFuture;
 
@@ -162,6 +164,7 @@ fn harness() -> Harness {
         Options {
             refresh_interval: Some(60),
             always_read_secret_manager: None,
+            request_timeout: None,
         },
         None,
     )
@@ -330,6 +333,7 @@ async fn always_read_ignores_cached_values_and_cached_absence() {
         Options {
             refresh_interval: Some(60),
             always_read_secret_manager: Some(true),
+            request_timeout: None,
         },
         None,
     );
@@ -392,4 +396,58 @@ async fn transport_failure_is_an_error_that_is_not_cached() {
 
     assert!(matches!(error, GoogleSecretManagerError::Request(_)));
     assert_eq!(retried.expose_secret(), "secret");
+}
+
+struct HangingTransport;
+
+impl SecretTransport for HangingTransport {
+    fn get<'request>(
+        &'request self,
+        _url: &'request str,
+        _headers: &'request RequestHeaders,
+    ) -> SecretFuture<'request, HttpResponse, io::Error> {
+        Box::pin(pending())
+    }
+}
+
+#[rstest]
+#[case::default(None, 600)]
+#[case::configured(Some(5), 5)]
+#[tokio::test(start_paused = true)]
+async fn a_hanging_request_times_out_and_caches_nothing(
+    #[case] request_timeout: Option<u64>,
+    #[case] expected_seconds: u64,
+) {
+    let manager = GoogleSecretManager::initialize(
+        &BTreeMap::from([(
+            "GOOGLE_SECRET_MANAGER_PROJECT_ID".to_owned(),
+            "project-one".to_owned(),
+        )]),
+        Options {
+            refresh_interval: None,
+            always_read_secret_manager: None,
+            request_timeout: request_timeout.map(Duration::from_secs),
+        },
+        Dependencies {
+            transport: Arc::new(HangingTransport),
+            header_source: Arc::new(CountingHeaders::default()),
+            native_reader: None,
+            clock: Arc::new(|| Duration::ZERO),
+        },
+    )
+    .unwrap();
+    let started = Instant::now();
+
+    let error = manager.get_secret("api-key").await.unwrap_err();
+
+    assert!(matches!(error, GoogleSecretManagerError::Request(_)));
+    assert_eq!(started.elapsed(), Duration::from_secs(expected_seconds));
+    assert!(matches!(
+        manager
+            .cache
+            .lock()
+            .unwrap()
+            .lookup("api-key", Duration::ZERO),
+        CacheLookup::Miss
+    ));
 }

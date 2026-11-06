@@ -155,6 +155,7 @@ fn open_session(input: &Input) -> Result<Session, GoogleSecretManagerError> {
         Options {
             refresh_interval: input.refresh_interval,
             always_read_secret_manager: input.always_read,
+            request_timeout: None,
         },
         Dependencies {
             transport: transport_dependency,
