@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -6,8 +7,8 @@ use betterlite_openai::thread_runs::error::ThreadRunsError;
 use betterlite_openai::thread_runs::operations::{RunCall, RunDispatch, RunInvocation, RunsApi};
 use betterlite_openai::thread_runs::records::RunRequest;
 use betterlite_openai::thread_runs::stream::{RunEventHandler, RunStream};
-use input::{Fields, Round, ThreadRunsCall};
 use secrecy::SecretString;
+use serde::Deserialize;
 use serde_json::{Value, json};
 use wire::{RecordingHandler, Wire};
 
@@ -63,7 +64,6 @@ fn failure(error: &ThreadRunsError) -> Result<Value, Box<crate::helpers::HelperE
         }
         ThreadRunsError::BaseUrl(_)
         | ThreadRunsError::Header(_)
-        | ThreadRunsError::Encode(_)
         | ThreadRunsError::Transport(_)
         | ThreadRunsError::PollAfter(_)
         | ThreadRunsError::StreamTooLarge
@@ -120,7 +120,7 @@ async fn round_outcome(
     };
     let request: &RunRequest = &round.request;
     match api.run_thread(call, request).await {
-        Ok(RunInvocation::Polled { kind, run }) => Ok(json!({
+        Ok(RunInvocation::Polled(kind, run)) => Ok(json!({
             "selected": selected(kind, false),
             "requests": wire.requests(),
             "result": run,
@@ -132,36 +132,71 @@ async fn round_outcome(
         })),
     }
 }
-async fn rounds(fields: &Fields) -> Result<Value, Box<crate::helpers::HelperError>> {
-    let mut outcomes = Vec::new();
-    for round in &fields.rounds {
-        outcomes.push(round_outcome(fields, round).await?);
-    }
-    Ok(json!({ "rounds": outcomes }))
-}
-fn invoke(call: &ThreadRunsCall) -> crate::helpers::HelperResult {
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .build()
-        .map_err(|error| invalid_input(error.to_string()))?;
-    let fields = match call {
-        ThreadRunsCall::RunPollCompletion(fields)
-        | ThreadRunsCall::RequiresAction(fields)
-        | ThreadRunsCall::FailedRun(fields)
-        | ThreadRunsCall::StreamIncrementalEvents(fields)
-        | ThreadRunsCall::InstructionsToolsOverrides(fields)
-        | ThreadRunsCall::RunDispatch(fields)
-        | ThreadRunsCall::StreamEventHandler(fields)
-        | ThreadRunsCall::AssistantsBetaDefault(fields) => fields,
-    };
-    runtime.block_on(rounds(fields))
-}
 pub(crate) struct Op;
 impl crate::helpers::Helper for Op {
-    type Input = ThreadRunsCall;
+    type Input = Call;
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        invoke(input)
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .map_err(|error| invalid_input(error.to_string()))?;
+        let Some(fields) = input.fields() else {
+            return Err(invalid_input(String::from("expected one case variant")));
+        };
+        runtime.block_on(async {
+            let mut outcomes = Vec::new();
+            for round in &fields.rounds {
+                outcomes.push(round_outcome(fields, round).await?);
+            }
+            Ok(json!({ "rounds": outcomes }))
+        })
     }
 }
-mod input;
 mod tests;
 mod wire;
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct OptionFields {
+    pub(super) api_key: Option<String>,
+    pub(super) api_base: Option<String>,
+    pub(super) timeout: Option<f64>,
+    pub(super) max_retries: Option<u32>,
+    pub(super) organization: Option<String>,
+}
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Reply {
+    pub(super) status: u16,
+    pub(super) headers: BTreeMap<String, String>,
+    pub(super) body: String,
+}
+// The switch fields stay as raw JSON so a case can pass the non-boolean values LiteLLM's `is True` tests refuse.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Round {
+    pub(super) arun_thread: Option<Value>,
+    pub(super) stream: Option<Value>,
+    #[serde(default)]
+    pub(super) handler: bool,
+    pub(super) request: RunRequest,
+    #[serde(default)]
+    pub(super) replies: Vec<Reply>,
+}
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct Fields {
+    pub(super) options: OptionFields,
+    pub(super) rounds: Vec<Round>,
+}
+#[derive(Debug, Clone, Deserialize)]
+pub(crate) struct Call {
+    #[serde(flatten)]
+    pub(super) variants: BTreeMap<String, Fields>,
+}
+impl Call {
+    pub(super) fn fields(&self) -> Option<&Fields> {
+        self.variants
+            .values()
+            .next()
+            .filter(|_fields| self.variants.len() == 1)
+    }
+}

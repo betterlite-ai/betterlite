@@ -10,7 +10,6 @@ from unittest.mock import patch
 import httpx
 import litellm.llms.openai.openai as litellm_openai
 import openai
-import pydantic
 from litellm.llms.openai.openai import OpenAIAssistantsAPI
 from openai import AssistantEventHandler, AsyncAssistantEventHandler
 from openai.lib.streaming import AssistantStreamManager, AsyncAssistantStreamManager
@@ -27,7 +26,15 @@ def obj(raw: Json) -> Object:
     return cast(Object, raw)
 
 
-def wire(replies: list[Reply]) -> tuple[httpx.MockTransport, list[Json]]:
+def wire(raw: Json) -> tuple[httpx.MockTransport, list[Json]]:
+    replies: list[Reply] = [
+        (
+            cast(int, obj(entry)["status"]),
+            cast("dict[str, str]", obj(entry).get("headers") or {}),
+            cast(str, obj(entry)["body"]),
+        )
+        for entry in cast("list[Json]", raw or [])
+    ]
     seen: list[Json] = []
 
     def handle(request: httpx.Request) -> httpx.Response:
@@ -54,8 +61,7 @@ class Recorder(AssistantEventHandler):
         self.calls = calls
 
     def on_event(self, event: AssistantStreamEvent) -> None:
-        name = cast("str | None", event.event)
-        self.calls.append(name if name is not None else "payload")
+        self.calls.append(cast("str | None", event.event) or "payload")
 
     def on_exception(self, exception: Exception) -> None:
         label = "stream_error" if isinstance(exception, openai.APIError) else "other"
@@ -74,8 +80,7 @@ class AsyncRecorder(AsyncAssistantEventHandler):
         self.calls = calls
 
     async def on_event(self, event: AssistantStreamEvent) -> None:
-        name = cast("str | None", event.event)
-        self.calls.append(name if name is not None else "payload")
+        self.calls.append(cast("str | None", event.event) or "payload")
 
     async def on_exception(self, exception: Exception) -> None:
         label = "stream_error" if isinstance(exception, openai.APIError) else "other"
@@ -98,8 +103,6 @@ def failure(error: Exception) -> Json:
         if isinstance(body, dict):
             fields = cast("dict[str, Json]", body)
             return {"kind": "stream_error", "type": fields.get("type"), "code": fields.get("code")}
-    if isinstance(error, pydantic.ValidationError):
-        return {"kind": "shape"}
     if isinstance(error, openai.OpenAIError):
         return {"kind": "configuration"}
     if isinstance(error, ValueError):
@@ -112,7 +115,9 @@ def event_dump(event: object) -> Json:
         return cast(Json, event)
     stream_event = cast(AssistantStreamEvent, event)
     name = cast("str | None", stream_event.event)
-    typed = name is not None and name.startswith(("thread.run.", "thread.message."))
+    typed = name is not None and name.startswith(
+        ("thread.run.", "thread.message.", "thread.created")
+    )
     if typed:
         return cast(Json, stream_event.model_dump())
     return cast(Json, stream_event.model_dump(exclude_none=True))
@@ -126,11 +131,8 @@ async def drain(manager: AsyncAssistantStreamManager[AsyncAssistantEventHandler]
 def consume(
     manager: object, seen: list[Json], calls: list[str], *, asynchronous: bool
 ) -> Json:
-    body: Object = {
-        "selected": "async_stream" if asynchronous else "sync_stream",
-        "requests": cast(Json, seen),
-        "calls": cast(Json, calls),
-    }
+    selected = "async_stream" if asynchronous else "sync_stream"
+    body: Object = {"selected": selected, "requests": cast(Json, seen), "calls": cast(Json, calls)}
     try:
         if asynchronous:
             queued = cast(AsyncAssistantStreamManager[AsyncAssistantEventHandler], manager)
@@ -153,13 +155,13 @@ def buffered(selected: str, seen: list[Json], result: object) -> Json:
 
 
 def call_run_thread(
-    api: OpenAIAssistantsAPI,
     settings: Object,
     request: Object,
     round_value: Object,
     handler: object,
 ) -> object:
     timeout = settings.get("timeout")
+    api = OpenAIAssistantsAPI()
     return cast(object, api.run_thread(  # pyright: ignore[reportCallIssue, reportUnknownMemberType]
         thread_id=cast(str, request["thread_id"]),
         assistant_id=cast(str, request["assistant_id"]),
@@ -182,34 +184,22 @@ def call_run_thread(
 
 def run_round(fields: Object, round_value: Object) -> Json:
     settings = obj(fields.get("options"))
-    replies: list[Reply] = [
-        (
-            cast(int, obj(entry)["status"]),
-            cast("dict[str, str]", obj(entry).get("headers") or {}),
-            cast(str, obj(entry)["body"]),
-        )
-        for entry in cast("list[Json]", round_value.get("replies") or [])
-    ]
-    transport, seen = wire(replies)
+    transport, seen = wire(round_value.get("replies"))
     sync = functools.partial(openai.OpenAI, http_client=httpx.Client(transport=transport))
     asynchronous = functools.partial(
         openai.AsyncOpenAI, http_client=httpx.AsyncClient(transport=transport)
     )
     request = obj(round_value["request"])
-    arun_thread = round_value.get("arun_thread")
+    arun = round_value.get("arun_thread") is True
     calls: list[str] = []
     handler: object = None
     if round_value.get("handler"):
-        handler = AsyncRecorder(calls) if arun_thread is True else Recorder(calls)
-    with (
-        patch.dict(os.environ, {}, clear=True),
-        patch.object(litellm_openai, "OpenAI", sync),
-        patch.object(litellm_openai, "AsyncOpenAI", asynchronous),
+        handler = AsyncRecorder(calls) if arun else Recorder(calls)
+    with patch.dict(os.environ, {}, clear=True), patch.multiple(
+        litellm_openai, OpenAI=sync, AsyncOpenAI=asynchronous
     ):
         try:
-            result = call_run_thread(
-                OpenAIAssistantsAPI(), settings, request, round_value, handler
-            )
+            result = call_run_thread(settings, request, round_value, handler)
             if inspect.iscoroutine(result):
                 return buffered("async_run", seen, result)
             if isinstance(result, AssistantStreamManager):

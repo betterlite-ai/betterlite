@@ -13,7 +13,7 @@ use futures_util::stream::iter;
 use http::{HeaderMap, HeaderName, HeaderValue};
 use serde_json::{Value, json};
 
-use super::input::Reply;
+use super::Reply;
 use super::invalid_input;
 
 const NO_REPLY: &str = r#"{"error":{"message":"the fixture queues no reply"}}"#;

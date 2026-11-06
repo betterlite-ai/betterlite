@@ -68,5 +68,11 @@ call:
           replies:
             - {status: 200, headers: {content-type: application/json}, body: '{"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","thread_id":"thread_a","status":"queued","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}'}
             - {status: 200, headers: {content-type: application/json}, body: '{"id":"run_1","object":"thread.run","created_at":1700000000,"completed_at":1700000005,"assistant_id":"asst_1","thread_id":"thread_a","status":"completed","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"file_search"},{"type":"function","function":{"name":"lookup"}}],"response_format":{"type":"json_schema","json_schema":{"name":"reply"}}}'}
+        - arun_thread: false
+          stream: false
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - {status: 200, headers: {content-type: application/json}, body: '{"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","thread_id":"thread_a","status":"queued","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}'}
+            - {status: 200, headers: {content-type: application/json}, body: '{"id":"run_1","object":"thread.run","created_at":1700000000,"completed_at":1700000005,"assistant_id":"asst_1","thread_id":"thread_a","status":"completed","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"incomplete_details":{},"tool_choice":{"type":"file_search"},"tools":[{"type":"file_search","file_search":{"ranking_options":{"score_threshold":0.0}}}]}'}
 env: {}
 compare: {ignore: []}
