@@ -83,9 +83,9 @@ fn mcp_settings(settings: &Settings) -> McpSigV4Settings {
     }
 }
 
-fn sources(input: &Input, recorder: &Recorder) -> Result<AwsSources, Failure> {
+fn sources(input: &Input, recorder: &Recorder, clock: SharedTimeSource) -> AwsSources {
     let sts = recorder.clone();
-    Ok(AwsSources {
+    AwsSources {
         environment: input
             .environment
             .iter()
@@ -93,18 +93,22 @@ fn sources(input: &Input, recorder: &Recorder) -> Result<AwsSources, Failure> {
             .collect(),
         filesystem: Fs::from_slice(&[]),
         client: http_client_fn(move |_, _| SharedHttpConnector::new(Sts(sts.clone()))),
-        clock: SharedTimeSource::new(StaticTimeSource::new(
-            UNIX_EPOCH
-                .checked_add(Duration::from_secs(input.now))
-                .ok_or(Failure::Clock(input.now))?,
-        )),
+        clock,
         sleep: SharedAsyncSleep::new(TokioSleep::new()),
         timeout: Duration::from_secs(5),
-    })
+    }
 }
 
 async fn sign_requests(input: &Input, recorder: &Recorder) -> Result<Vec<Value>, Failure> {
-    let auth = McpSigV4Auth::new(mcp_settings(&input.settings), sources(input, recorder)?).await?;
+    let start = UNIX_EPOCH
+        .checked_add(Duration::from_secs(input.now))
+        .ok_or(Failure::Clock(input.now))?;
+    let clock = SharedTimeSource::new(StaticTimeSource::new(start));
+    let auth = McpSigV4Auth::new(
+        mcp_settings(&input.settings),
+        sources(input, recorder, clock),
+    )
+    .await?;
     let mut signed = Vec::new();
     for call in &input.requests {
         let mut builder = Request::builder()
