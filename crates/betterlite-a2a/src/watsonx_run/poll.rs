@@ -30,6 +30,25 @@ where
     NonSuccess { status: String },
 }
 
+async fn poll_once<T>(
+    transport: &T,
+    url: &str,
+    headers: &BTreeMap<String, String>,
+    timeout: Duration,
+) -> Result<RunEvent, PollError<T::Error>>
+where
+    T: RunTransport,
+{
+    transport.pause(POLL_INTERVAL).await;
+    let request = RunRequest {
+        url,
+        headers,
+        body: None,
+        timeout,
+    };
+    Ok(call_run(transport, &request, Method::Get).await?)
+}
+
 pub async fn poll_run<T>(
     transport: &T,
     base_url: &str,
@@ -42,14 +61,7 @@ where
 {
     let url = format!("{base_url}/v1/orchestrate/runs/{run_id}");
     for _ in 0..MAX_POLL_ATTEMPTS {
-        transport.pause(POLL_INTERVAL).await;
-        let request = RunRequest {
-            url: &url,
-            headers,
-            body: None,
-            timeout,
-        };
-        let event = call_run(transport, &request, Method::Get).await?;
+        let event = poll_once(transport, &url, headers, timeout).await?;
         if RunState::parse(event.status.as_deref().unwrap_or_default()).is_some() {
             return Ok(event);
         }
@@ -70,8 +82,7 @@ pub async fn successful_run<T>(
 where
     T: RunTransport,
 {
-    let status = event.status.as_deref().unwrap_or_default();
-    let polled = if RunState::parse(status).is_some() {
+    let run = if RunState::parse(event.status.as_deref().unwrap_or_default()).is_some() {
         event
     } else {
         let run_id = [event.run_id.as_deref(), event.id.as_deref()]
@@ -82,14 +93,10 @@ where
             .to_owned();
         poll_run(transport, base_url, &run_id, headers, timeout).await?
     };
-    let final_status = polled.status.as_deref().unwrap_or_default();
-    if !matches!(
-        RunState::parse(final_status),
-        Some(RunState::Completed | RunState::Succeeded)
-    ) {
-        return Err(PollError::NonSuccess {
-            status: final_status.to_owned(),
-        });
+    match RunState::parse(run.status.as_deref().unwrap_or_default()) {
+        Some(RunState::Completed | RunState::Succeeded) => Ok(run),
+        _ => Err(PollError::NonSuccess {
+            status: run.status.unwrap_or_default(),
+        }),
     }
-    Ok(polled)
 }

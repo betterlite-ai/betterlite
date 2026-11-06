@@ -79,14 +79,10 @@ impl Reply {
     }
 
     pub(crate) fn sse(lines: &[&str]) -> Self {
-        Self {
-            status: 200,
-            body: AgentJson::Null,
-            content_type: Some("text/event-stream; charset=utf-8".to_owned()),
-            lines: lines.iter().map(|line| (*line).to_owned()).collect(),
-            fail: None,
-            repeat: false,
-        }
+        let mut reply = Self::json("null");
+        reply.content_type = Some("text/event-stream; charset=utf-8".to_owned());
+        reply.lines = lines.iter().map(|line| (*line).to_owned()).collect();
+        reply
     }
 }
 

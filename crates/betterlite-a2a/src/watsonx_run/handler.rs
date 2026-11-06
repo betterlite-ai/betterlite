@@ -28,6 +28,9 @@ use super::transport::{RunRequest, RunTransport, StreamBody};
 
 mod tests;
 
+const JSON_ACCEPT: &str = "application/json";
+const STREAM_ACCEPT: &str = "text/event-stream, application/json";
+
 pub const NON_STREAMING_TIMEOUT: Duration = Duration::from_secs(90);
 pub const STREAMING_TIMEOUT: Duration = Duration::from_secs(120);
 
@@ -53,6 +56,8 @@ where
 
 struct Prepared {
     base_url: String,
+    runs_url: String,
+    stream_url: String,
     headers: BTreeMap<String, String>,
     body: RunBody,
 }
@@ -77,10 +82,9 @@ where
         params: &WxoSendParams,
         raw: &WxoLitellmParams,
     ) -> Result<Event<ResponseMessage>, RunError<T::Error, K::Error>> {
-        let prepared = self.prepare(params, raw, "application/json").await?;
-        let url = format!("{}/v1/orchestrate/runs", prepared.base_url);
+        let prepared = self.prepare(params, raw, JSON_ACCEPT).await?;
         let request = RunRequest {
-            url: &url,
+            url: &prepared.runs_url,
             headers: &prepared.headers,
             body: Some(&prepared.body),
             timeout: NON_STREAMING_TIMEOUT,
@@ -109,17 +113,8 @@ where
         raw: &WxoLitellmParams,
         pacing: StreamPacing,
     ) -> Result<Vec<WxoStreamStep>, RunError<T::Error, K::Error>> {
-        let prepared = self
-            .prepare(params, raw, "text/event-stream, application/json")
-            .await?;
-        let url = format!("{}/v1/orchestrate/runs/stream", prepared.base_url);
-        let request = RunRequest {
-            url: &url,
-            headers: &prepared.headers,
-            body: Some(&prepared.body),
-            timeout: STREAMING_TIMEOUT,
-        };
-        let text = match self.open_stream(&request, &prepared).await {
+        let prepared = self.prepare(params, raw, STREAM_ACCEPT).await?;
+        let text = match self.open_stream(&prepared).await {
             Ok(text) => text,
             Err(RunError::Api(ApiError::Transport(_))) => {
                 self.fallback_text(request_id, params, raw).await?
@@ -146,12 +141,15 @@ where
             .bearer_token(&wxo)
             .await
             .map_err(RunError::Credentials)?;
+        let base = format!(
+            "{}/orchestrate/cpd/instances/{}",
+            wxo.cp4d_host.trim_end_matches('/'),
+            wxo.instance_id
+        );
         Ok(Prepared {
-            base_url: format!(
-                "{}/orchestrate/cpd/instances/{}",
-                wxo.cp4d_host.trim_end_matches('/'),
-                wxo.instance_id
-            ),
+            runs_url: format!("{base}/v1/orchestrate/runs"),
+            stream_url: format!("{base}/v1/orchestrate/runs/stream"),
+            base_url: base,
             headers: BTreeMap::from([
                 (
                     "Authorization".to_owned(),
@@ -176,12 +174,17 @@ where
 
     async fn open_stream(
         &self,
-        request: &RunRequest<'_>,
         prepared: &Prepared,
     ) -> Result<String, RunError<T::Error, K::Error>> {
+        let request = RunRequest {
+            url: &prepared.stream_url,
+            headers: &prepared.headers,
+            body: Some(&prepared.body),
+            timeout: STREAMING_TIMEOUT,
+        };
         let response = self
             .transport
-            .post_stream(request)
+            .post_stream(&request)
             .await
             .map_err(ApiError::Transport)?;
         if !(200..300).contains(&response.status) {

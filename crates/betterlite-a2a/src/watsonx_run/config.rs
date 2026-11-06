@@ -56,11 +56,7 @@ where
         &mut self,
         call: &ConfigCall<'_>,
     ) -> Result<Event<ResponseMessage>, ConfigError<T::Error, K::Error>> {
-        let raw = call
-            .kwargs
-            .get("litellm_params")
-            .ok_or(ConfigError::MissingLitellmParams)?;
-        let params = WxoLitellmParams::deserialize(raw).map_err(ConfigError::LitellmParams)?;
+        let params = litellm_params(call.kwargs)?;
         Ok(self
             .handler
             .handle_non_streaming(call.request_id, call.params, &params)
@@ -71,11 +67,7 @@ where
         &mut self,
         call: &ConfigCall<'_>,
     ) -> Result<Vec<WxoStreamStep>, ConfigError<T::Error, K::Error>> {
-        let raw = call
-            .kwargs
-            .get("litellm_params")
-            .ok_or(ConfigError::MissingLitellmParams)?;
-        let params = WxoLitellmParams::deserialize(raw).map_err(ConfigError::LitellmParams)?;
+        let params = litellm_params(call.kwargs)?;
         Ok(self
             .handler
             .handle_streaming(
@@ -86,4 +78,19 @@ where
             )
             .await?)
     }
+}
+
+fn litellm_params<E, F>(
+    kwargs: &BTreeMap<String, AgentJson>,
+) -> Result<WxoLitellmParams, ConfigError<E, F>>
+where
+    E: Error + 'static,
+    F: Error + 'static,
+{
+    WxoLitellmParams::deserialize(
+        kwargs
+            .get("litellm_params")
+            .ok_or(ConfigError::MissingLitellmParams)?,
+    )
+    .map_err(ConfigError::LitellmParams)
 }
