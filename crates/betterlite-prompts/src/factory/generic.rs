@@ -1,4 +1,5 @@
-use super::{Output, llamaguard};
+use super::hub::LLAMA3_INSTRUCT_MODEL;
+use super::{Output, PromptFactory, llamaguard};
 use crate::builtin::{self, Message, PromptError};
 use crate::error::FactoryError;
 use chrono::{DateTime, Utc};
@@ -13,55 +14,86 @@ impl IntoOutput for Result<String, PromptError> {
     }
 }
 
-pub(super) fn fallback(
+pub(super) async fn fallback(
+    factory: &PromptFactory,
     lower: &str,
+    original: &str,
     messages: &[Message],
     now: DateTime<Utc>,
 ) -> Result<Output, FactoryError> {
-    if let Ok(output) = try_generic(lower, messages, now) {
+    if let Ok(output) = try_generic(factory, lower, original, messages, now).await {
         return Ok(output);
     }
     builtin::default_pt(messages).into_output()
 }
 
-fn try_generic(
+async fn try_generic(
+    factory: &PromptFactory,
     lower: &str,
+    original: &str,
     messages: &[Message],
     now: DateTime<Utc>,
 ) -> Result<Output, FactoryError> {
     if lower.contains("meta-llama/llama-2") && lower.contains("chat") {
         return builtin::llama2(messages).into_output();
     }
+    if (lower.contains("meta-llama/llama-3") || lower.contains("meta-llama-3"))
+        && lower.contains("instruct")
+    {
+        return factory
+            .hf_chat_template(LLAMA3_INSTRUCT_MODEL, messages, now)
+            .await
+            .map(Output::Text);
+    }
+    if let Some(family) = named_family(lower, messages, now) {
+        return family;
+    }
+    factory
+        .hf_chat_template(original, messages, now)
+        .await
+        .map(Output::Text)
+}
+
+fn named_family(
+    lower: &str,
+    messages: &[Message],
+    now: DateTime<Utc>,
+) -> Option<Result<Output, FactoryError>> {
     if lower.contains("tiiuae/falcon") {
-        return falcon_variant(lower, messages);
+        return Some(falcon_variant(lower, messages));
     }
     if lower.contains("mosaicml/mpt") {
-        return optional_variant(lower, "chat", messages, builtin::mpt);
+        return Some(optional_variant(lower, "chat", messages, builtin::mpt));
     }
     if lower.contains("codellama/codellama") || lower.contains("togethercomputer/codellama") {
-        return optional_variant(lower, "instruct", messages, builtin::llama2);
+        return Some(optional_variant(
+            lower,
+            "instruct",
+            messages,
+            builtin::llama2,
+        ));
     }
     if lower.contains("wizardlm/wizardcoder") {
-        return builtin::wizardcoder(messages).into_output();
+        return Some(builtin::wizardcoder(messages).into_output());
     }
     if lower.contains("phind/phind-codellama") {
-        return builtin::phind(messages).into_output();
+        return Some(builtin::phind(messages).into_output());
     }
     if lower.contains("togethercomputer/llama-2")
         && (lower.contains("instruct") || lower.contains("chat"))
     {
-        return builtin::llama2(messages).into_output();
+        return Some(builtin::llama2(messages).into_output());
     }
     if matches!(
         lower,
         "gryphe/mythomax-l2-13b" | "gryphe/mythomix-l2-13b" | "gryphe/mythologic-l2-13b"
     ) {
-        return builtin::alpaca(messages).into_output();
+        return Some(builtin::alpaca(messages).into_output());
     }
     if lower.trim() == "meta-llama/llamaguard-7b" {
-        return llamaguard::render(messages, now);
+        return Some(llamaguard::render(messages, now));
     }
-    Err(FactoryError::NoChatTemplate)
+    None
 }
 
 fn falcon_variant(lower: &str, messages: &[Message]) -> Result<Output, FactoryError> {
