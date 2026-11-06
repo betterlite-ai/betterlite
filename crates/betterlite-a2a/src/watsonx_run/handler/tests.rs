@@ -12,7 +12,6 @@ use crate::watsonx_run::run_api::ApiError;
 use crate::watsonx_run::tests::{
     Fail, Reply, Script, ScriptError, litellm_params, run_handler, send_params, token_reply,
 };
-use crate::watsonx_run::transport::MAX_RESPONSE_BYTES;
 use crate::watsonx_transform::extract::WxoSendParams;
 use crate::watsonx_transform::fake_streaming::{WxoStreamResult, WxoStreamStep};
 
@@ -448,9 +447,7 @@ async fn handler_reports_a_stream_the_transport_could_not_carry() {
         .unwrap_err();
     assert!(matches!(
         error,
-        RunError::Api(ApiError::TooLarge {
-            max: MAX_RESPONSE_BYTES
-        })
+        RunError::Api(ApiError::TooLarge { max: 0x80_0000 })
     ));
 }
 
