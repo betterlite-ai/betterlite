@@ -1,0 +1,5 @@
+kind: helper
+name: file-update-attributes
+call: {"openai_vector_stores": {"file_update_request": {"file_id": "file-1", "params": {"attributes": {"a": "1", "hidden_params": "x", "b": 2}}, "api_base": "https://api.example.test/v1/vector_stores/vs_abc/files"}}}
+env: {}
+compare: {ignore: []}
