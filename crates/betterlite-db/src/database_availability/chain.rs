@@ -81,12 +81,13 @@ impl Chain {
 
     #[must_use]
     pub fn outages(&self) -> Vec<&Failure> {
-        self.links()
-            .into_iter()
-            .filter(|failure| {
-                !matches!(failure.origin, Origin::BaseException) && is_service_unavailable(failure)
-            })
-            .collect()
+        let mut outages = Vec::new();
+        for failure in self.links() {
+            if !matches!(failure.origin, Origin::BaseException) && is_service_unavailable(failure) {
+                outages.push(failure);
+            }
+        }
+        outages
     }
 
     #[must_use]

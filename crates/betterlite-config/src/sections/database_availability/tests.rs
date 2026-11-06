@@ -8,7 +8,7 @@ use betterlite_db::database_availability::policy::{
 use rstest::rstest;
 
 use super::Settings;
-use crate::loader::ConfigLoader;
+use crate::loader::{ConfigError, ConfigLoader};
 
 fn load(source: &str, variables: &[(&str, &str)]) -> Settings {
     let environment: BTreeMap<String, String> = variables
@@ -33,6 +33,16 @@ fn default_false() {
     );
     assert_eq!(
         allows_requests_during_outage(&settings.allow_requests),
+        Ok(false)
+    );
+
+    let null = load(
+        "general_settings:\n  allow_requests_on_db_unavailable: null\n",
+        &[],
+    );
+    assert_eq!(null.allow_requests, AllowRequestsOnOutage::Boolean(false));
+    assert_eq!(
+        allows_requests_during_outage(&null.allow_requests),
         Ok(false)
     );
 }
@@ -92,6 +102,20 @@ fn nonstring_policy_value_fails_at_consumer(#[case] value: &str) {
         allows_requests_during_outage(&settings.allow_requests),
         Err(PolicyError::UnsupportedValue)
     );
+}
+
+#[test]
+fn environment_reference_requires_the_variable() {
+    let error = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load("general_settings:\n  allow_requests_on_db_unavailable: os.environ/ALLOW_ON_DB_OUTAGE\n")
+    .expect_err("a missing reference is a load error");
+    let ConfigError::MissingEnvironment { variable, path } = error else {
+        panic!("expected a missing environment error");
+    };
+    assert_eq!(variable, "ALLOW_ON_DB_OUTAGE");
+    assert_eq!(path, "general_settings.allow_requests_on_db_unavailable");
 }
 
 #[rstest]

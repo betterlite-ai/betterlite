@@ -22,13 +22,8 @@ pub fn is_service_unavailable(failure: &Failure) -> bool {
 
 #[must_use]
 pub fn is_permanent_fault(failure: &Failure) -> bool {
-    match &failure.origin {
-        Origin::Database(error) => database_faults::is_permanent_database_fault(error),
-        Origin::Os
-        | Origin::AsyncTimeout
-        | Origin::Asyncpg(_)
-        | Origin::AsyncpgUnavailable(_)
-        | Origin::Other
-        | Origin::BaseException => false,
+    if let Origin::Database(error) = &failure.origin {
+        return database_faults::is_permanent_database_fault(error);
     }
+    false
 }

@@ -4,7 +4,7 @@ use std::iter;
 
 use rstest::rstest;
 
-use super::chain::{AsyncpgFault, Chain, Failure, MAX_CHAIN_DEPTH, Origin, has_outage_in_chain};
+use super::chain::{AsyncpgFault, Chain, Failure, Origin, has_outage_in_chain};
 use super::classification::{is_permanent_fault, is_service_unavailable};
 use super::message::{TRANSIENT_MESSAGE, database_unavailable_message};
 use super::policy::{
@@ -86,6 +86,14 @@ fn cause_precedes_context() {
         ],
     };
     assert_eq!(hidden_context.find_outage(), None);
+
+    let context_only = Chain {
+        failures: vec![
+            with_context(database(ErrorType::Data, "not an outage"), 1),
+            database(ErrorType::Connect, "connection refused"),
+        ],
+    };
+    assert_eq!(context_only.find_outage(), context_only.failures.get(1));
 }
 
 fn with_context(mut value: Failure, context: usize) -> Failure {
@@ -101,7 +109,7 @@ fn chain_stops_at_twenty() {
             .chain([database(ErrorType::Connect, "connection refused")])
             .collect(),
     );
-    assert_eq!(reachable.links().len(), MAX_CHAIN_DEPTH);
+    assert_eq!(reachable.links().len(), 20);
     assert_eq!(reachable.find_outage(), reachable.failures.get(19));
 
     let beyond = linear(
@@ -120,7 +128,7 @@ fn cyclic_chain_bounded() {
     let chain = Chain {
         failures: vec![first, second],
     };
-    assert_eq!(chain.links().len(), MAX_CHAIN_DEPTH);
+    assert_eq!(chain.links().len(), 20);
     assert_eq!(chain.find_outage(), None);
     assert!(!has_outage_in_chain(&chain));
 }
@@ -155,7 +163,10 @@ fn infrastructure_transport_engine(#[case] value: Failure) {
 
 #[test]
 fn stale_plan_casefold() {
-    let stale = database(ErrorType::Data, "CACHED PLAN MUST NOT CHANGE RESULT TYPE");
+    let stale = database(
+        ErrorType::Data,
+        "ERROR: CACHED PLAN MUST NOT CHANGE RESULT TYPE IN PREPARED STATEMENT",
+    );
     assert!(is_service_unavailable(&stale));
     let only_stale = Chain {
         failures: vec![stale.clone()],
@@ -350,6 +361,28 @@ fn from_error_preserves_the_cause_chain() {
     assert_eq!(chain.links().len(), 2);
     assert_eq!(chain.find_outage(), chain.failures.get(1));
     assert!(database_unavailable_message(&chain).contains("Prisma"));
+
+    let stale = DbError {
+        error_type: ErrorType::Data,
+        message: "cached plan must not change result type".to_owned(),
+        code: None,
+        meta_code: None,
+        traceback_modules: Vec::new(),
+        cause: None,
+    };
+    let stale_chain = Chain::from_error(&stale);
+    assert!(is_service_unavailable(&stale_chain.failures[0]));
+
+    let transport = DbError {
+        error_type: ErrorType::Prisma,
+        message: "cannot reach database server".to_owned(),
+        code: None,
+        meta_code: None,
+        traceback_modules: Vec::new(),
+        cause: None,
+    };
+    let transport_chain = Chain::from_error(&transport);
+    assert!(!is_permanent_fault(&transport_chain.failures[0]));
 }
 
 #[test]
