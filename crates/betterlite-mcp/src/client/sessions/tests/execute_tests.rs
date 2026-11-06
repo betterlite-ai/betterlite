@@ -303,7 +303,7 @@ async fn a_transport_failure_after_cancellation_becomes_the_root_cause() {
     .await;
     match outcome {
         Err(SessionError::Runtime(error)) => {
-            assert_eq!(*error, TestError::Boom("transport exit"));
+            assert_eq!(*error, TestError::Boom("transport.exit"));
         }
         Ok(()) => panic!("expected an error"),
         other @ Err(
@@ -338,7 +338,7 @@ async fn a_recorded_cleanup_error_is_not_the_root_cause() {
     assert!(matches!(outcome, Err(SessionError::Cancelled)));
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn the_http_cleanup_scope_is_shielded_and_reset_after_execution() {
     let runtime = FakeRuntime::new(Plan::default());
     let http_client = runtime.http_client.clone();
@@ -467,7 +467,7 @@ async fn a_cancelled_session_exit_lets_the_transport_failure_become_the_root_cau
         execute_session_operation(&mut client, contexts, async |_session| Ok("done")).await;
     match outcome {
         Err(SessionError::Runtime(error)) => {
-            assert_eq!(*error, TestError::Boom("transport exit"));
+            assert_eq!(*error, TestError::Boom("transport.exit"));
         }
         Ok(_) => panic!("expected an error"),
         other @ Err(
@@ -522,7 +522,7 @@ async fn a_timed_out_session_exit_lets_the_transport_failure_become_the_root_cau
         execute_session_operation(&mut client, contexts, async |_session| Ok("done")).await;
     match outcome {
         Err(SessionError::Runtime(error)) => {
-            assert_eq!(*error, TestError::Boom("transport exit"));
+            assert_eq!(*error, TestError::Boom("transport.exit"));
         }
         Ok(_) => panic!("expected an error"),
         other @ Err(

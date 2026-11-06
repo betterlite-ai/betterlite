@@ -336,7 +336,7 @@ impl TransportContext for FakeTransport {
     }
 
     fn exit(self) -> impl Future<Output = Result<(), ExitFailure<TestError>>> + Send + 'static {
-        exit_future(self.script, self.exit, self.http_client, "transport exit")
+        exit_future(self.script, self.exit, self.http_client, "transport.exit")
     }
 }
 
@@ -427,7 +427,7 @@ impl SessionContext for FakeSessionContext {
     }
 
     fn exit(self) -> impl Future<Output = Result<(), ExitFailure<TestError>>> + Send + 'static {
-        exit_future(self.script, self.plan.session_exit, None, "session exit")
+        exit_future(self.script, self.plan.session_exit, None, "session.exit")
     }
 }
 
@@ -559,7 +559,7 @@ impl McpRuntime for FakeRuntime {
         let step = self.plan.http_close;
         async move {
             client.mark_closed();
-            step_exit(step, None, "http close").await
+            step_exit(step, None, "http.close").await
         }
     }
 }
