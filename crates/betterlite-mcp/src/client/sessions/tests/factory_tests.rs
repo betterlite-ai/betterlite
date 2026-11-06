@@ -39,6 +39,24 @@ async fn factory_auth_precedence_is_explicit_then_resolved_then_aws(
     assert_eq!(config.auth, expected);
 }
 
+#[test]
+fn factory_debug_output_names_the_headers_without_printing_their_values() {
+    let client = build_client(
+        FakeRuntime::new(Plan::default()),
+        make_config(|value| {
+            value.auth_type = McpAuthType::ApiKey;
+            value.auth_value = Some(AuthValue::Text(SecretString::from("sk-secret".to_owned())));
+        }),
+        TaskTracker::new(),
+        CancellationToken::new(),
+    );
+    let headers = BTreeMap::from([("X-API-Key".to_owned(), "sk-secret".to_owned())]);
+    let config = client.create_http_client_config(&headers, Duration::from_secs(60), false);
+    let rendered = format!("{config:?}");
+    assert!(rendered.contains("X-API-Key"));
+    assert!(!rendered.contains("sk-secret"));
+}
+
 #[tokio::test]
 async fn factory_attaches_the_resolved_tls_settings() {
     let policy = TlsPolicy {

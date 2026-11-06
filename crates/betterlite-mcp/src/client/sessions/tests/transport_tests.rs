@@ -159,6 +159,9 @@ async fn sse_transport_carries_url_timeout_headers_and_a_client_config() {
     assert_eq!(request.client.auth, AuthSource::None);
     assert!(request.client.follow_redirects);
     assert!(request.client.capture_error_responses);
+    let rendered = format!("{request:?}");
+    assert!(rendered.contains("Authorization"));
+    assert!(!rendered.contains("token"));
 }
 
 #[tokio::test]

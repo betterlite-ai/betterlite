@@ -10,6 +10,7 @@ use tokio::time::{Instant, sleep};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
+use crate::client::cleanup::failure::ErrorContext;
 use crate::client::cleanup::http_client::CleanupScope;
 use crate::client::sessions::client::{SessionClient, SessionSettings};
 use crate::client::sessions::error::{ExitFailure, McpFailure, SessionError};
@@ -21,7 +22,7 @@ use crate::client::sessions::negotiate::{
 use crate::client::sessions::runtime::{
     HttpClientHandle, McpRuntime, SessionContext, SessionOptions,
 };
-use crate::client::sessions::stream::MessageHandler;
+use crate::client::sessions::stream::{MessageHandler, StreamFailure, StreamMessage};
 use crate::client::sessions::transport::{
     StdioConfig, StdioServerParameters, TransportContext, TransportContexts, TransportType,
 };
@@ -46,6 +47,8 @@ pub(crate) enum InitStep {
     #[default]
     Ok,
     Fail,
+    Timeout,
+    StreamFailure,
 }
 
 #[derive(Debug, Error, PartialEq, Eq)]
@@ -54,6 +57,8 @@ pub(crate) enum TestError {
     Boom(&'static str),
     #[error("status {0}")]
     Status(u16),
+    #[error("mcp error {0}")]
+    Protocol(McpFailure),
 }
 
 #[derive(Clone, Default)]
@@ -258,7 +263,7 @@ async fn enter_step(script: &Script, step: Step, name: &'static str) -> Result<(
 fn enter_session(
     script: Script,
     plan: Plan,
-    handler: MessageHandler,
+    handler: MessageHandler<TestError>,
 ) -> Result<FakeSession, TestError> {
     script.record("session.enter");
     match plan.session_enter {
@@ -274,17 +279,32 @@ fn enter_session(
 fn init_call(
     script: &Script,
     plan: &Plan,
+    handler: &MessageHandler<TestError>,
     name: &'static str,
-    fail: InitStep,
+    step: InitStep,
 ) -> Result<FakeInit, TestError> {
     script.record(name);
-    if fail == InitStep::Fail {
-        return Err(TestError::Boom("initialize"));
+    let protocol = |code: i32, context: Option<ErrorContext>| {
+        TestError::Protocol(McpFailure {
+            code,
+            message: "upstream error".to_owned(),
+            context,
+        })
+    };
+    match step {
+        InitStep::Ok => Ok(FakeInit {
+            version: plan.server_version.clone(),
+            instructions: plan.instructions.clone(),
+        }),
+        InitStep::Fail => Err(TestError::Boom("initialize")),
+        InitStep::Timeout => Err(protocol(-32_001, Some(ErrorContext::Timeout))),
+        InitStep::StreamFailure => {
+            let _failed = handler.handle(StreamMessage::Failure(StreamFailure::Http(Arc::new(
+                TestError::Status(401),
+            ))));
+            Err(protocol(-32_000, None))
+        }
     }
-    Ok(FakeInit {
-        version: plan.server_version.clone(),
-        instructions: plan.instructions.clone(),
-    })
 }
 
 pub(crate) struct FakeTransport {
@@ -338,7 +358,7 @@ impl InitializeOutcome for FakeInit {
 pub(crate) struct FakeSession {
     pub(crate) script: Script,
     pub(crate) plan: Plan,
-    pub(crate) handler: MessageHandler,
+    pub(crate) handler: MessageHandler<TestError>,
 }
 
 impl ClientSession for FakeSession {
@@ -348,7 +368,8 @@ impl ClientSession for FakeSession {
     fn initialize(&mut self) -> impl Future<Output = Result<FakeInit, TestError>> + Send {
         let script = self.script.clone();
         let plan = self.plan.clone();
-        async move { init_call(&script, &plan, "initialize", plan.initialize) }
+        let handler = self.handler.clone();
+        async move { init_call(&script, &plan, &handler, "initialize", plan.initialize) }
     }
 
     fn send_initialize(
@@ -357,13 +378,14 @@ impl ClientSession for FakeSession {
     ) -> impl Future<Output = Result<FakeInit, TestError>> + Send {
         let script = self.script.clone();
         let plan = self.plan.clone();
+        let handler = self.handler.clone();
         async move {
             script
                 .requests
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .push(request);
-            init_call(&script, &plan, "send_initialize", InitStep::Ok)
+            init_call(&script, &plan, &handler, "send_initialize", InitStep::Ok)
         }
     }
 
@@ -378,12 +400,19 @@ impl ClientSession for FakeSession {
             Ok(())
         }
     }
+
+    fn protocol_failure(error: &TestError) -> Option<McpFailure> {
+        match error {
+            TestError::Protocol(failure) => Some(failure.clone()),
+            TestError::Boom(_) | TestError::Status(_) => None,
+        }
+    }
 }
 
 pub(crate) struct FakeSessionContext {
     script: Script,
     plan: Plan,
-    handler: MessageHandler,
+    handler: MessageHandler<TestError>,
 }
 
 impl SessionContext for FakeSessionContext {
@@ -504,7 +533,11 @@ impl McpRuntime for FakeRuntime {
         Ok(self.http_client.clone())
     }
 
-    fn session_context(&self, _streams: (), options: SessionOptions) -> FakeSessionContext {
+    fn session_context(
+        &self,
+        _streams: (),
+        options: SessionOptions<TestError>,
+    ) -> FakeSessionContext {
         self.script.record("session_context");
         self.state
             .read_timeouts

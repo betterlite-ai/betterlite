@@ -47,7 +47,7 @@ async fn a_failed_session_logs_a_warning_by_default() {
     let runtime = FakeRuntime::new(plan);
     let mut client = build_client(
         runtime,
-        base_config(),
+        make_config(|value| value.transport_type = TransportType::Sse),
         TaskTracker::new(),
         CancellationToken::new(),
     );
@@ -85,7 +85,7 @@ async fn quiet_on_error_logs_at_debug() {
     let runtime = FakeRuntime::new(plan);
     let mut client = build_client(
         runtime,
-        base_config(),
+        make_config(|value| value.transport_type = TransportType::Sse),
         TaskTracker::new(),
         CancellationToken::new(),
     );
@@ -198,6 +198,53 @@ async fn a_cancelled_http_close_propagates() {
     );
     let outcome = run_with_session(&mut client, async |_session| Ok("done"), false).await;
     assert!(matches!(outcome, Err(SessionError::Cancelled)));
+}
+
+#[tokio::test]
+async fn a_cancelled_http_close_does_not_replace_the_operation_error() {
+    let plan = make_plan(|value| value.http_close = Step::Cancel);
+    let runtime = FakeRuntime::new(plan);
+    let mut client = build_client(
+        runtime,
+        make_config(|value| value.transport_type = TransportType::Http),
+        TaskTracker::new(),
+        CancellationToken::new(),
+    );
+    let outcome = run_with_session(
+        &mut client,
+        async |_session| Err::<(), _>(SessionError::Runtime(Arc::new(TestError::Status(502)))),
+        false,
+    )
+    .await;
+    match outcome {
+        Err(SessionError::Runtime(error)) => assert_eq!(*error, TestError::Status(502)),
+        Ok(()) => panic!("expected an error"),
+        other @ Err(
+            SessionError::Protocol(_)
+            | SessionError::Stream(_)
+            | SessionError::Cancelled
+            | SessionError::CleanupTimedOut
+            | SessionError::CleanupTask(_)
+            | SessionError::ReadTimeout(_)
+            | SessionError::Configuration(_),
+        ) => {
+            panic!("expected the operation error, got {other:?}")
+        }
+    }
+}
+
+#[tokio::test]
+async fn an_initialize_read_timeout_is_normalized() {
+    let plan = make_plan(|value| value.initialize = InitStep::Timeout);
+    let runtime = FakeRuntime::new(plan);
+    let mut client = build_client(
+        runtime,
+        base_config(),
+        TaskTracker::new(),
+        CancellationToken::new(),
+    );
+    let outcome = run_with_session(&mut client, async |_session| Ok("done"), false).await;
+    assert!(matches!(outcome, Err(SessionError::ReadTimeout(_))));
 }
 
 #[tokio::test]

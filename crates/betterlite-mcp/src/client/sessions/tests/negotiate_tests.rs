@@ -1,5 +1,6 @@
 use std::collections::BTreeSet;
 
+use crate::client::cleanup::failure::ErrorContext;
 use crate::client::sessions::error::SessionError;
 use crate::client::sessions::negotiate::{
     Callback, Callbacks, ClientCapabilities, InitializeOutcome as _, ProtocolVersion,
@@ -142,4 +143,30 @@ async fn failed_initialize_reports_the_runtime_error() {
         .err()
         .unwrap();
     assert!(matches!(error, SessionError::Runtime(_)));
+}
+
+#[tokio::test]
+async fn an_sdk_initialize_failure_keeps_its_mcp_error_shape() {
+    let script = Script::default();
+    let plan = make_plan(|value| value.initialize = InitStep::Timeout);
+    let mut session = session(&script, plan);
+    let error = initialize_session(&mut session, &settings(&base_config()))
+        .await
+        .err()
+        .unwrap();
+    match error {
+        SessionError::Protocol(failure) => {
+            assert_eq!(failure.code, -32_001_i32);
+            assert_eq!(failure.context, Some(ErrorContext::Timeout));
+        }
+        other @ (SessionError::Runtime(_)
+        | SessionError::Stream(_)
+        | SessionError::Cancelled
+        | SessionError::CleanupTimedOut
+        | SessionError::CleanupTask(_)
+        | SessionError::ReadTimeout(_)
+        | SessionError::Configuration(_)) => {
+            panic!("expected the SDK error shape, got {other:?}")
+        }
+    }
 }

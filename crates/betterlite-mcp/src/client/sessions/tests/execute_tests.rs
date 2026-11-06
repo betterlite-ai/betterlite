@@ -8,7 +8,9 @@ use tokio_util::task::TaskTracker;
 
 use crate::client::sessions::error::SessionError;
 use crate::client::sessions::execute::{SESSION_CLEANUP_TIMEOUT, execute_session_operation};
-use crate::client::sessions::stream::{MessageHandler, StreamFailure, StreamMessage};
+use crate::client::sessions::stream::{
+    MessageHandler, StreamFailure, StreamFailureKind, StreamMessage,
+};
 
 use super::fixture::{
     FakeRuntime, InitStep, Plan, Step, TestError, base_config, build_client, make_plan,
@@ -31,12 +33,64 @@ async fn a_stream_failure_replaces_a_protocol_error() {
         async |session| -> Result<(), SessionError<TestError>> {
             let _failed = session
                 .handler
-                .handle(StreamMessage::Failure(StreamFailure::Io));
+                .handle(StreamMessage::Failure(StreamFailure::Io(Arc::new(
+                    TestError::Boom("stream"),
+                ))));
             Err(protocol_error(-32000))
         },
     )
     .await;
-    assert!(matches!(outcome, Err(SessionError::Stream(_))));
+    match outcome {
+        Err(SessionError::Stream(failure)) => {
+            assert_eq!(failure.kind(), StreamFailureKind::Io);
+            assert_eq!(*failure.source_error().as_ref(), TestError::Boom("stream"));
+        }
+        Ok(()) => panic!("expected a stream error"),
+        other @ Err(
+            SessionError::Protocol(_)
+            | SessionError::Runtime(_)
+            | SessionError::Cancelled
+            | SessionError::CleanupTimedOut
+            | SessionError::CleanupTask(_)
+            | SessionError::ReadTimeout(_)
+            | SessionError::Configuration(_),
+        ) => {
+            panic!("expected the stream error, got {other:?}")
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_stream_failure_during_initialize_replaces_the_protocol_error() {
+    let plan = make_plan(|value| value.initialize = InitStep::StreamFailure);
+    let runtime = FakeRuntime::new(plan);
+    let mut client = build_client(
+        runtime,
+        base_config(),
+        TaskTracker::new(),
+        CancellationToken::new(),
+    );
+    let contexts = manual_contexts(&client.runtime, false);
+    let outcome =
+        execute_session_operation(&mut client, contexts, async |_session| Ok("done")).await;
+    match outcome {
+        Err(SessionError::Stream(failure)) => {
+            assert_eq!(failure.kind(), StreamFailureKind::Http);
+            assert_eq!(*failure.source_error().as_ref(), TestError::Status(401));
+        }
+        Ok(_) => panic!("expected a stream error"),
+        other @ Err(
+            SessionError::Protocol(_)
+            | SessionError::Runtime(_)
+            | SessionError::Cancelled
+            | SessionError::CleanupTimedOut
+            | SessionError::CleanupTask(_)
+            | SessionError::ReadTimeout(_)
+            | SessionError::Configuration(_),
+        ) => {
+            panic!("expected the stream error, got {other:?}")
+        }
+    }
 }
 
 #[tokio::test]
@@ -52,7 +106,9 @@ async fn a_stream_failure_does_not_replace_an_application_error() {
     let outcome = execute_session_operation(&mut client, contexts, async |session| {
         let _failed = session
             .handler
-            .handle(StreamMessage::Failure(StreamFailure::ValueError));
+            .handle(StreamMessage::Failure(StreamFailure::ValueError(Arc::new(
+                TestError::Boom("stream"),
+            ))));
         Err::<(), _>(SessionError::Runtime(Arc::new(TestError::Status(500))))
     })
     .await;
@@ -75,15 +131,19 @@ async fn a_stream_failure_does_not_replace_an_application_error() {
 
 #[test]
 fn the_handler_keeps_the_first_stream_failure_and_fails_the_call() {
-    let handler = MessageHandler::default();
+    let handler: MessageHandler<TestError> = MessageHandler::default();
     assert!(
         handler
-            .handle(StreamMessage::Failure(StreamFailure::Io))
+            .handle(StreamMessage::Failure(StreamFailure::Io(Arc::new(
+                TestError::Boom("first"),
+            ))))
             .is_err()
     );
     assert!(
         handler
-            .handle(StreamMessage::Failure(StreamFailure::Http))
+            .handle(StreamMessage::Failure(StreamFailure::Http(Arc::new(
+                TestError::Status(401),
+            ))))
             .is_err()
     );
     handler.handle(StreamMessage::Notification).unwrap();
@@ -91,8 +151,10 @@ fn the_handler_keeps_the_first_stream_failure_and_fails_the_call() {
         .recorded
         .lock()
         .unwrap_or_else(PoisonError::into_inner)
-        .clone();
-    assert_eq!(recorded.as_deref(), Some(&StreamFailure::Io));
+        .clone()
+        .expect("a stream failure is recorded");
+    assert_eq!(recorded.kind(), StreamFailureKind::Io);
+    assert_eq!(*recorded.source_error().as_ref(), TestError::Boom("first"));
 }
 
 #[tokio::test]
@@ -152,7 +214,7 @@ async fn transport_cleanup_is_bounded_to_five_seconds() {
 }
 
 #[tokio::test]
-async fn transport_exit_runs_when_the_transport_never_entered() {
+async fn transport_exit_is_skipped_when_the_transport_never_entered() {
     let plan = make_plan(|value| value.transport_enter = Step::Fail);
     let runtime = FakeRuntime::new(plan);
     let script = runtime.script.clone();
@@ -183,7 +245,7 @@ async fn transport_exit_runs_when_the_transport_never_entered() {
         }
     }
     let calls = script.calls();
-    assert!(calls.contains(&"transport.exit".to_owned()));
+    assert!(!calls.contains(&"transport.exit".to_owned()));
     assert!(!calls.contains(&"session.enter".to_owned()));
 }
 
@@ -384,7 +446,77 @@ async fn a_pre_cancelled_caller_never_opens_the_transport() {
     assert!(matches!(outcome, Err(SessionError::Cancelled)));
     let calls = script.calls();
     assert!(!calls.contains(&"transport.enter".to_owned()));
-    assert!(calls.contains(&"transport.exit".to_owned()));
+    assert!(!calls.contains(&"transport.exit".to_owned()));
+}
+
+#[tokio::test]
+async fn a_cancelled_session_exit_lets_the_transport_failure_become_the_root_cause() {
+    let plan = make_plan(|value| {
+        value.session_exit = Step::Cancel;
+        value.transport_exit = Step::Fail;
+    });
+    let runtime = FakeRuntime::new(plan);
+    let mut client = build_client(
+        runtime,
+        base_config(),
+        TaskTracker::new(),
+        CancellationToken::new(),
+    );
+    let contexts = manual_contexts(&client.runtime, false);
+    let outcome =
+        execute_session_operation(&mut client, contexts, async |_session| Ok("done")).await;
+    match outcome {
+        Err(SessionError::Runtime(error)) => {
+            assert_eq!(*error, TestError::Boom("transport exit"));
+        }
+        Ok(_) => panic!("expected an error"),
+        other @ Err(
+            SessionError::Protocol(_)
+            | SessionError::Stream(_)
+            | SessionError::Cancelled
+            | SessionError::CleanupTimedOut
+            | SessionError::CleanupTask(_)
+            | SessionError::ReadTimeout(_)
+            | SessionError::Configuration(_),
+        ) => {
+            panic!("expected the transport root cause, got {other:?}")
+        }
+    }
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_timed_out_session_exit_lets_the_transport_failure_become_the_root_cause() {
+    let plan = make_plan(|value| {
+        value.session_exit = Step::Timeout;
+        value.transport_exit = Step::Fail;
+    });
+    let runtime = FakeRuntime::new(plan);
+    let mut client = build_client(
+        runtime,
+        base_config(),
+        TaskTracker::new(),
+        CancellationToken::new(),
+    );
+    let contexts = manual_contexts(&client.runtime, false);
+    let outcome =
+        execute_session_operation(&mut client, contexts, async |_session| Ok("done")).await;
+    match outcome {
+        Err(SessionError::Runtime(error)) => {
+            assert_eq!(*error, TestError::Boom("transport exit"));
+        }
+        Ok(_) => panic!("expected an error"),
+        other @ Err(
+            SessionError::Protocol(_)
+            | SessionError::Stream(_)
+            | SessionError::Cancelled
+            | SessionError::CleanupTimedOut
+            | SessionError::CleanupTask(_)
+            | SessionError::ReadTimeout(_)
+            | SessionError::Configuration(_),
+        ) => {
+            panic!("expected the transport root cause, got {other:?}")
+        }
+    }
 }
 
 #[tokio::test]
