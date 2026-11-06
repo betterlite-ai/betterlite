@@ -44,6 +44,7 @@ fn run_case(
         let run = Run {
             call: &case.call,
             script: MockScript::try_from(case.upstream.as_slice())?,
+            env: &case.env,
             limits: &limits,
             cancelled,
         };

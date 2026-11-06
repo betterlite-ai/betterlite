@@ -117,10 +117,29 @@ pub fn decode_sdk_http_result(
     serde_json::from_slice(bytes).map_err(SdkHttpError::ResultParse)
 }
 
+// the harness owns the child's proxy routing, interpreter startup and loader paths, so a case never sets them
+fn reserved_environment(name: &str) -> bool {
+    let upper = name.to_ascii_uppercase();
+    matches!(
+        upper.as_str(),
+        "ALL_PROXY"
+            | "HOME"
+            | "HTTP_PROXY"
+            | "HTTPS_PROXY"
+            | "LITELLM_LOCAL_MODEL_COST_MAP"
+            | "NO_PROXY"
+            | "PATH"
+    ) || upper.starts_with("PYTHON")
+        || upper.starts_with("UV_")
+}
+
 fn validate(case: &SdkHttpCase, limits: &OracleLimits) -> Result<(), SdkHttpError> {
     let invalid = |message: &str| Err(SdkHttpError::Invalid(message.to_owned()));
     if case.kind != "sdk_http" || case.name.is_empty() {
         return invalid("the case needs kind sdk_http and a name");
+    }
+    if let Some(name) = case.env.keys().find(|name| reserved_environment(name)) {
+        return invalid(&format!("the case env may not set {name}"));
     }
     let SdkHttpCall::OpenaiChat(chat) = &case.call;
     if chat.timeout_seconds == 0 || chat.timeout_seconds > limits.max_execution.as_secs() {

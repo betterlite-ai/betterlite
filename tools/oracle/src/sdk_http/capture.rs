@@ -33,10 +33,16 @@ impl<'sdk> Sdk<'sdk> {
         }
     }
 
-    fn execute(&self, call: &SdkHttpCall, api_base: &str, stop: &Stop<'_>) -> Execution {
+    fn execute(
+        &self,
+        call: &SdkHttpCall,
+        api_base: &str,
+        env: &BTreeMap<String, String>,
+        stop: &Stop<'_>,
+    ) -> Execution {
         match self {
             Self::Python(python) => python.execute(call, api_base, stop),
-            Self::Native => native::execute(call, api_base, stop),
+            Self::Native => native::execute(call, api_base, env, stop),
         }
     }
 }
@@ -67,6 +73,7 @@ pub(crate) struct Capture {
 pub(crate) struct Run<'run> {
     pub(crate) call: &'run SdkHttpCall,
     pub(crate) script: MockScript,
+    pub(crate) env: &'run BTreeMap<String, String>,
     pub(crate) limits: &'run OracleLimits,
     pub(crate) cancelled: &'run AtomicBool,
 }
@@ -82,7 +89,7 @@ pub(crate) fn capture(sdk: &Sdk<'_>, run: Run<'_>) -> Result<Capture, OracleErro
         deadline,
         cancelled: run.cancelled,
     };
-    let mut execution = sdk.execute(run.call, &api_base, &stop);
+    let mut execution = sdk.execute(run.call, &api_base, run.env, &stop);
     let (calls, mock_failure) = mock.finish_recording()?;
     let requests: Vec<ProviderRequest> = calls.into_iter().map(|call| call.request).collect();
     if let Err(error) = check_captures(&requests, run.limits)

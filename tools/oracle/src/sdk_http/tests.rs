@@ -5,7 +5,7 @@ use std::fs;
 use std::net::TcpStream;
 use std::os::unix::fs::PermissionsExt as _;
 use std::os::unix::process::ExitStatusExt as _;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
@@ -21,7 +21,7 @@ use super::result::{Nullable, SdkResult};
 use super::{
     OracleLimits, SdkHttpCase, Side, child, decode_sdk_http_case, decode_sdk_http_result, sides,
 };
-use crate::case::UpstreamAnswer;
+use crate::case::{Ignore, UpstreamAnswer};
 use crate::mock::ProviderRequest;
 use crate::routing_mock_scripts::{MockScript, parse_script, redact};
 use crate::runner::sdk_http::judge;
@@ -76,6 +76,7 @@ fn run(
     let run = Run {
         call: &case.call,
         script,
+        env: &case.env,
         limits,
         cancelled,
     };
@@ -104,13 +105,14 @@ const FAKE_DISPATCH: &str = r#"
 import json, os, sys, time, urllib.error, urllib.request
 
 request = json.load(sys.stdin)
-with open(os.environ["FAKE_LOG"], "a") as log:
+log_path = os.environ["FAKE_LOG"]
+with open(log_path, "a") as log:
     log.write(request["api_base"] + "\n")
-if os.environ["FAKE_SLEEP"]:
-    time.sleep(30)
 body = json.dumps({"model": "gpt-4o-mini", "messages": [{"role": "user", "content": os.environ["FAKE_CONTENT"]}]}).encode()
 answer = None
 for _ in range(int(os.environ["FAKE_POSTS"])):
+    with open(log_path, "a") as log:
+        log.write("posting\n")
     post = urllib.request.Request(
         request["api_base"] + "/chat/completions",
         data=body,
@@ -121,6 +123,10 @@ for _ in range(int(os.environ["FAKE_POSTS"])):
             answer = answer or json.load(response)
     except urllib.error.HTTPError as error:
         error.read()
+if os.environ["FAKE_SLEEP"]:
+    time.sleep(30)
+if answer is None:
+    answer = {"id": "chat-empty", "created": 1, "object": "chat.completion", "model": "gpt-4o-mini"}
 value = {key: answer[key] for key in ("id", "created", "object", "model")}
 value["choices"] = [{"content": None, "finish_reason": None}]
 json.dump({"success": {"value": value}}, sys.stdout)
@@ -165,18 +171,39 @@ impl Fake {
         Self { directory, sdk }
     }
 
+    fn log_path(&self) -> PathBuf {
+        self.directory.path().join("log")
+    }
+
     fn api_bases(&self) -> Vec<String> {
-        fs::read_to_string(self.directory.path().join("log"))
+        fs::read_to_string(self.log_path())
             .unwrap()
             .lines()
+            .filter(|line| line.starts_with("http"))
             .map(ToOwned::to_owned)
             .collect()
     }
 }
 
-fn posted(case: &SdkHttpCase, posts: usize, content: &str, id: &str) -> Capture {
+fn posted_with(
+    case: &SdkHttpCase,
+    posts: usize,
+    content: &str,
+    answers: &[UpstreamAnswer],
+) -> Capture {
     let fake = Fake::new(case, posts, content, false);
-    run_answers(&Sdk::Python(&fake.sdk), case, &answering(id))
+    run_answers(&Sdk::Python(&fake.sdk), case, answers)
+}
+
+fn posted(case: &SdkHttpCase, posts: usize, content: &str, id: &str) -> Capture {
+    posted_with(case, posts, content, &answering(id))
+}
+
+fn succeeded(side: &Capture) -> String {
+    match &side.execution.result {
+        Ok(SdkResult::Success { value }) => value.id.clone(),
+        other => panic!("unexpected result {:?}", other.as_ref().err()),
+    }
 }
 
 fn mock_is_closed(api_base: &str) -> bool {
@@ -245,6 +272,31 @@ fn sdk_chat_http() {
     judge(&python, &native, &case).unwrap();
     let second = run_answers(&Sdk::Python(&python_sdk(&case)), &case, &case.upstream);
     judge(&python, &second, &case).unwrap();
+    assert_case_env_reaches_both_sides();
+}
+
+// LiteLLM reads OPENAI_ORGANIZATION for the OpenAI organization, and the native config section reads it through the same lookup
+fn assert_case_env_reaches_both_sides() {
+    let mut case = load("chat-success.yaml");
+    case.env = BTreeMap::from([("OPENAI_ORGANIZATION".to_owned(), "org-env".to_owned())]);
+    case.compare
+        .upstream_headers
+        .push("openai-organization".to_owned());
+    let native = run_answers(&Sdk::Native, &case, &case.upstream);
+    let python = run_answers(&Sdk::Python(&python_sdk(&case)), &case, &case.upstream);
+    for side in [&native, &python] {
+        let [request] = side.requests.as_slice() else {
+            panic!("expected one provider request")
+        };
+        assert_eq!(
+            request
+                .headers
+                .get("openai-organization")
+                .map(String::as_str),
+            Some("org-env")
+        );
+    }
+    judge(&python, &native, &case).unwrap();
 }
 
 fn assert_authentication_failure(side: &Capture) {
@@ -272,6 +324,46 @@ fn decoded_kind(text: &str) -> Nullable {
     }
 }
 
+fn error_body(text: &str) -> Value {
+    serde_json::from_str(text).unwrap()
+}
+
+fn failure_case(status: u16, body: Value) -> SdkHttpCase {
+    let mut case = load("chat-success.yaml");
+    case.upstream = vec![UpstreamAnswer {
+        status,
+        headers: BTreeMap::from([("content-type".to_owned(), "application/json".to_owned())]),
+        body: Some(body),
+        events: None,
+    }];
+    case.compare.ignore = vec![Ignore {
+        pointer: "/failure/message".to_owned(),
+        why: "LiteLLM prefixes its exception class and betterlite writes its own text".to_owned(),
+    }];
+    case
+}
+
+fn assert_failure_matches(case: &SdkHttpCase, expected: (&str, u16, Nullable, Nullable, Nullable)) {
+    let (class, status, kind, param, code) = expected;
+    let native = run_answers(&Sdk::Native, case, &case.upstream);
+    let python = run_answers(&Sdk::Python(&python_sdk(case)), case, &case.upstream);
+    for side in [&native, &python] {
+        assert_eq!(side.requests.len(), 1);
+        let Ok(SdkResult::Failure(failure)) = &side.execution.result else {
+            panic!(
+                "expected a failure: {:?}",
+                side.execution.result.as_ref().err()
+            )
+        };
+        assert_eq!((failure.class.as_str(), failure.status), (class, status));
+        assert_eq!(
+            (&failure.kind, &failure.param, &failure.code),
+            (&kind, &param, &code)
+        );
+    }
+    judge(&python, &native, case).unwrap();
+}
+
 #[test]
 fn sdk_failure_fields() {
     let case = load("chat-authentication-error.yaml");
@@ -290,45 +382,107 @@ fn sdk_failure_fields() {
         decoded_kind(r#"{"failure":{"class":"X","status":400,"type":"t","message":"m"}}"#),
     ];
     assert_eq!(kinds, [None, Some(None), Some(Some("t".to_owned()))]);
+    assert_provider_failures();
+}
+
+fn assert_provider_failures() {
+    let rate_limit = failure_case(
+        429,
+        error_body(
+            r#"{"error": {"type": "invalid_request_error", "message": "slow down", "param": "requests", "code": "rate_limit_exceeded"}}"#,
+        ),
+    );
+    assert_failure_matches(
+        &rate_limit,
+        (
+            "RateLimitError",
+            429,
+            Some(Some("throttling_error".to_owned())),
+            Some(Some("requests".to_owned())),
+            Some(Some("429".to_owned())),
+        ),
+    );
+    let timeout = failure_case(
+        504,
+        error_body(r#"{"error": {"message": "gateway timeout"}}"#),
+    );
+    assert_failure_matches(
+        &timeout,
+        ("Timeout", 504, Some(None), Some(None), Some(None)),
+    );
+    let api = failure_case(418, error_body(r#"{"error": {"message": "teapot"}}"#));
+    assert_failure_matches(&api, ("APIError", 418, Some(None), Some(None), Some(None)));
 }
 
 #[test]
 fn independent_captures() {
     let case = load("chat-success.yaml");
-    let first = posted(&case, 1, "hello", "chat_a");
-    let second = posted(&case, 1, "hello", "chat_b");
+    assert_separate_captures(&case);
+    assert_zero_request_captures(&case);
+}
+
+fn assert_separate_captures(case: &SdkHttpCase) {
+    let first = posted(case, 1, "hello", "chat_a");
+    let second = posted(case, 1, "hello", "chat_b");
     assert_eq!((first.requests.len(), second.requests.len()), (1, 1));
-    let ids = [&first, &second].map(|side| match &side.execution.result {
-        Ok(SdkResult::Success { value }) => value.id.clone(),
-        other => panic!("unexpected result {:?}", other.as_ref().err()),
-    });
-    assert_eq!(ids, ["chat_a", "chat_b"]);
     assert_eq!(
-        judge(&first, &second, &case).unwrap_err().pointer,
+        [succeeded(&first), succeeded(&second)],
+        ["chat_a", "chat_b"]
+    );
+    assert_eq!(
+        judge(&first, &second, case).unwrap_err().pointer,
         "/success/value/id"
     );
 
-    let wrong = posted(&case, 1, "wrong", "chat_a");
-    let difference = judge(&first, &wrong, &case).unwrap_err();
+    let wrong = posted(case, 1, "wrong", "chat_a");
+    let difference = judge(&first, &wrong, case).unwrap_err();
     assert_eq!(difference.pointer, "/upstream/0/body/messages/0/content");
 
-    let twice = posted(&case, 2, "hello", "chat_a");
-    let twice_again = posted(&case, 2, "hello", "chat_a");
+    let twice = posted(case, 2, "hello", "chat_a");
+    let twice_again = posted(case, 2, "hello", "chat_a");
     assert_eq!(twice.requests.len(), 2);
     assert!(twice.mock_failure.is_some());
     assert_eq!(
-        judge(&twice, &twice_again, &case).unwrap_err().pointer,
+        judge(&twice, &twice_again, case).unwrap_err().pointer,
         "/upstream"
     );
     assert_eq!(
-        judge(&first, &twice, &case).unwrap_err().pointer,
+        judge(&first, &twice, case).unwrap_err().pointer,
         "/upstream"
+    );
+}
+
+fn assert_zero_request_captures(case: &SdkHttpCase) {
+    let empty = posted_with(case, 0, "hello", &[]);
+    let empty_again = posted_with(case, 0, "hello", &[]);
+    assert!(empty.requests.is_empty());
+    assert_eq!(succeeded(&empty), "chat-empty");
+    judge(&empty, &empty_again, case).unwrap();
+
+    let after_empty = posted(case, 1, "hello", "chat_b");
+    assert_eq!(succeeded(&after_empty), "chat_b");
+    assert_eq!(after_empty.requests.len(), 1);
+    assert_eq!(
+        judge(&empty, &after_empty, case).unwrap_err().pointer,
+        "/success/value/id"
+    );
+    let one_request = posted(case, 1, "hello", "chat-empty");
+    assert_eq!(
+        judge(&empty, &one_request, case).unwrap_err().pointer,
+        "/upstream/0"
     );
 }
 
 fn invalid_case(call: &str, extra: &str) -> Result<SdkHttpCase, SdkHttpError> {
     let text = format!(
         "kind: sdk_http\nname: isolation\nenv: {{}}\n{extra}{call}\nupstream:\n  - status: 200\n    headers: {{}}\n    body: {{id: chat_a, object: chat.completion, created: 1, model: m, choices: []}}\ncompare:\n  headers: []\n  headers_present: []\n  upstream_headers: []\n  ignore: []\n"
+    );
+    decode_sdk_http_case(text.as_bytes(), &OracleLimits::default())
+}
+
+fn env_case(env: &str) -> Result<SdkHttpCase, SdkHttpError> {
+    let text = format!(
+        "kind: sdk_http\nname: env\nenv: {env}\ncall:\n{VALID_CALL}\nupstream:\n  - status: 200\n    headers: {{}}\n    body: {{id: chat_a, object: chat.completion, created: 1, model: m, choices: []}}\ncompare:\n  headers: []\n  headers_present: []\n  upstream_headers: []\n  ignore: []\n"
     );
     decode_sdk_http_case(text.as_bytes(), &OracleLimits::default())
 }
@@ -357,6 +511,28 @@ fn assert_rejected_cases() {
             "{outcome:?}"
         );
     }
+    assert_rejected_environment();
+}
+
+fn assert_rejected_environment() {
+    let reserved = [
+        "{HTTP_PROXY: 'http://external.test:8080'}",
+        "{https_proxy: 'http://external.test:8080'}",
+        "{ALL_PROXY: 'http://external.test:8080'}",
+        "{no_proxy: '*'}",
+        "{PYTHONPATH: /tmp/case-code}",
+        "{PATH: /tmp/case-bin}",
+        "{HOME: /tmp/case-home}",
+        "{UV_INDEX_URL: 'https://external.test/simple'}",
+        "{LITELLM_LOCAL_MODEL_COST_MAP: 'False'}",
+    ];
+    let rejected = reserved.map(|env| env_case(env).expect_err("a reserved variable must fail"));
+    assert!(
+        rejected
+            .iter()
+            .all(|error| matches!(error, SdkHttpError::Invalid(_))),
+        "{rejected:?}"
+    );
 }
 
 fn assert_python_has_no_proxy_server() {
@@ -512,6 +688,64 @@ fn assert_stops_children_and_mocks(case: &SdkHttpCase, short: &OracleLimits) {
     }
 }
 
+// the mock holds the reply, so only stopping the client and shutting the mock down ends the run early
+const HELD_REPLY: &[u8] = br#"{"deadline_ms":30000,"replies":[{"wait":{"delay":{"millis":20000}},"then":{"answer":{"status":200,"headers":{},"body":{"id":"chat_a","object":"chat.completion","created":1,"model":"gpt-4o-mini","choices":[]}}}}]}"#;
+
+fn mock_of(side: &Capture) -> String {
+    let [request] = side.requests.as_slice() else {
+        panic!("expected one provider request")
+    };
+    let host = request.headers.get("host").expect("captured host header");
+    format!("http://{host}/v1")
+}
+
+enum Trigger<'trigger> {
+    After(Duration),
+    Posted(&'trigger Path),
+}
+
+fn cancel_after(cancelled: &AtomicBool, trigger: &Trigger<'_>) {
+    match trigger {
+        Trigger::After(delay) => thread::park_timeout(*delay),
+        Trigger::Posted(log) => {
+            let started = Instant::now();
+            while !fs::read_to_string(log).is_ok_and(|text| text.contains("posting")) {
+                assert!(started.elapsed() < Duration::from_secs(30));
+                thread::park_timeout(Duration::from_millis(10));
+            }
+            thread::park_timeout(Duration::from_millis(300));
+        }
+    }
+    cancelled.store(true, Ordering::Release);
+}
+
+fn assert_cancels_mid_reply(
+    case: &SdkHttpCase,
+    sdk: &Sdk<'_>,
+    limits: &OracleLimits,
+    trigger: &Trigger<'_>,
+) {
+    let cancelled = AtomicBool::new(false);
+    let started = Instant::now();
+    let captured = thread::scope(|scope| {
+        scope.spawn(|| cancel_after(&cancelled, trigger));
+        run(
+            sdk,
+            case,
+            parse_script(HELD_REPLY).unwrap(),
+            limits,
+            &cancelled,
+        )
+    });
+    assert!(matches!(
+        captured.execution.result,
+        Err(SdkHttpError::Cancelled)
+    ));
+    assert_eq!(captured.requests.len(), 1);
+    assert!(mock_is_closed(&mock_of(&captured)));
+    assert!(started.elapsed() < Duration::from_secs(10));
+}
+
 fn assert_native_stops_at_deadline(case: &SdkHttpCase, short: &OracleLimits) {
     let delayed = br#"{"deadline_ms":30000,"replies":[{"wait":{"delay":{"millis":20000}},"then":{"answer":{"status":200,"headers":{},"body":{"id":"x"}}}}]}"#;
     let started = Instant::now();
@@ -539,6 +773,20 @@ fn sdk_limits() {
     };
     assert_stops_children_and_mocks(&case, &short);
     assert_native_stops_at_deadline(&case, &short);
+    assert_cancels_mid_reply(
+        &case,
+        &Sdk::Native,
+        &limits,
+        &Trigger::After(Duration::from_secs(1)),
+    );
+    let cancelling = Fake::new(&case, 1, "hello", false);
+    let log = cancelling.log_path();
+    assert_cancels_mid_reply(
+        &case,
+        &Sdk::Python(&cancelling.sdk),
+        &limits,
+        &Trigger::Posted(&log),
+    );
 }
 
 #[test]

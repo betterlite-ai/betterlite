@@ -11,6 +11,11 @@ class ExceptionFieldTypeError(TypeError):
         super().__init__(f"exception field {name} is neither text nor null")
 
 
+class MissingStatusError(TypeError):
+    def __init__(self, name: str) -> None:
+        super().__init__(f"exception {name} carries no integer status code")
+
+
 class StreamedResponseError(TypeError):
     def __init__(self) -> None:
         super().__init__(
@@ -65,7 +70,14 @@ class Outcome(BaseModel):
     failure: Failure | None = None
 
 
-def optional_text(error: openai.APIStatusError, name: str) -> dict[str, str | None]:
+def status_code(error: openai.APIError) -> int:
+    value: object = getattr(error, "status_code", MISSING)
+    if isinstance(value, int):
+        return value
+    raise MissingStatusError(type(error).__name__)
+
+
+def optional_text(error: openai.APIError, name: str) -> dict[str, str | None]:
     value: object = getattr(error, name, MISSING)
     if value is MISSING:
         return {}
@@ -74,10 +86,10 @@ def optional_text(error: openai.APIStatusError, name: str) -> dict[str, str | No
     raise ExceptionFieldTypeError(name)
 
 
-def project_failure(error: openai.APIStatusError) -> Outcome:
+def project_failure(error: openai.APIError) -> Outcome:
     fields: dict[str, str | int | None] = {
         "cls": type(error).__name__,
-        "status": error.status_code,
+        "status": status_code(error),
         "message": error.message,
     }
     for name in ("type", "param", "code"):
@@ -111,7 +123,7 @@ def run_chat(call: ChatCall, api_base: str) -> Outcome:
             custom_llm_provider="openai",
             num_retries=0,
         )
-    except openai.APIStatusError as error:
+    except openai.APIError as error:
         return project_failure(error)
     if not isinstance(response, ModelResponse):
         raise StreamedResponseError
