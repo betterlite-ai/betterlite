@@ -1,0 +1,5 @@
+kind: helper
+name: openai-assistants-seed-client-arguments
+call: {openai_assistants: {client_arguments: {kind: async, options: {api_key: sk-seed, timeout: 2.5, max_retries: 0}}}}
+env: {}
+compare: {ignore: []}

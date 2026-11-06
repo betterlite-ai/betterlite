@@ -1,0 +1,24 @@
+kind: sdk_http
+name: sdk-http-chat-success
+env: {}
+call:
+  openai_chat:
+    model: gpt-4o-mini
+    messages: [{role: user, content: hello}]
+    api_key: sk-test
+    timeout_seconds: 10
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body:
+      id: chat_a
+      object: chat.completion
+      created: 1
+      model: gpt-4o-mini
+      choices:
+        - {index: 0, message: {role: assistant, content: hi}, finish_reason: stop}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore: []

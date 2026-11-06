@@ -1,8 +1,15 @@
-use super::Output;
+use super::hub::LLAMA3_INSTRUCT_MODEL;
+use super::{Output, PromptFactory};
 use crate::builtin::{self, Message};
 use crate::error::FactoryError;
+use chrono::{DateTime, Utc};
 
-pub(super) fn dispatch(lower: &str, messages: &[Message]) -> Option<Result<Output, FactoryError>> {
+pub(super) async fn dispatch(
+    factory: &PromptFactory,
+    lower: &str,
+    messages: &[Message],
+    now: DateTime<Utc>,
+) -> Option<Result<Output, FactoryError>> {
     if lower.contains("amazon.titan-text") {
         Some(
             builtin::families::anthropic(messages, builtin::families::Style::Titan)
@@ -24,7 +31,12 @@ pub(super) fn dispatch(lower: &str, messages: &[Message]) -> Option<Result<Outpu
                 .map_err(FactoryError::from),
         )
     } else if (lower.contains("llama3") || lower.contains("llama4")) && lower.contains("instruct") {
-        Some(Err(FactoryError::NoChatTemplate))
+        Some(
+            factory
+                .hf_chat_template(LLAMA3_INSTRUCT_MODEL, messages, now)
+                .await
+                .map(Output::Text),
+        )
     } else {
         None
     }
