@@ -39,7 +39,9 @@ fn candidate_exchanges_keeps_an_unprotected_complete_exchange() {
 
 #[test]
 fn candidate_exchanges_skips_a_trailing_protected_exchange() {
-    let guardrail = guardrail(settings());
+    let mut settings = settings();
+    settings.min_chars_to_evaluate = MinCharsToEvaluate(0);
+    let guardrail = guardrail(settings);
     let messages = vec![
         json(r#"{"role":"system","content":"rules"}"#),
         json(r#"{"role":"user","content":"task"}"#),

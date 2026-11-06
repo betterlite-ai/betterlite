@@ -5,10 +5,11 @@ use std::io::Write;
 use std::sync::{Arc, Mutex};
 
 use betterlite_prompts::arguments::json::{Json, Object};
+use reqwest::StatusCode;
 use tracing::subscriber::with_default;
 use tracing_subscriber::fmt;
 
-use super::{TypeSafeError, UNREACHABLE_STATUS_CODE, handle_failure};
+use super::{TypeSafeError, handle_failure};
 use crate::generic_guardrail_contracts::UnreachableFallback;
 use crate::typesafe::fixtures::{guardrail, settings};
 
@@ -99,6 +100,16 @@ fn fail_closed_raises_no_warning_line() {
 }
 
 #[test]
-fn the_unreachable_error_status_matches_litellm() {
-    assert_eq!(UNREACHABLE_STATUS_CODE, 502);
+fn fail_closed_returns_the_litellm_bad_gateway_status() {
+    let mut settings = settings();
+    settings.unreachable_fallback = UnreachableFallback::FailClosed;
+    let guardrail = guardrail(settings);
+    let error = handle_failure(&guardrail, "boom", &detail()).expect_err("fail closed");
+    assert_eq!(error.status_code(), StatusCode::BAD_GATEWAY);
+    assert_eq!(
+        error,
+        TypeSafeError::Unavailable {
+            message: "boom".to_owned()
+        }
+    );
 }

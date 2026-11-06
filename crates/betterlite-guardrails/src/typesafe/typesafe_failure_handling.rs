@@ -1,15 +1,24 @@
 use betterlite_prompts::arguments::json::Object;
+use reqwest::StatusCode;
 use thiserror::Error;
 
 use crate::generic_guardrail_contracts::UnreachableFallback;
 use crate::typesafe::TypeSafeGuardrail;
 
-pub const UNREACHABLE_STATUS_CODE: u16 = 502;
-
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum TypeSafeError {
     #[error("{message}")]
     Unavailable { message: String },
+}
+
+impl TypeSafeError {
+    // LiteLLM raises HTTPException(status_code=502, detail={"error": message}) on the fail_closed path.
+    #[must_use]
+    pub const fn status_code(&self) -> StatusCode {
+        match self {
+            Self::Unavailable { .. } => StatusCode::BAD_GATEWAY,
+        }
+    }
 }
 
 pub fn handle_failure(

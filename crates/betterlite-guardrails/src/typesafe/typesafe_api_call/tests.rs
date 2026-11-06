@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::future::IntoFuture as _;
+use std::future::{IntoFuture as _, pending};
 use std::io;
 use std::time::Duration;
 
@@ -20,6 +20,7 @@ use crate::typesafe::fixtures::{guardrail, json, settings};
 use crate::typesafe::typesafe_failure_handling::TypeSafeError;
 use crate::typesafe::typesafe_instructions::question_instructions;
 use crate::typesafe::typesafe_state_building::{TypeSafeExchange, TypeSafeState};
+use crate::typesafe::typesafe_tool_extraction::ToolCallEntry;
 use crate::typesafe::{DEFAULT_JEV_TIMEOUT, TypeSafeGuardrail};
 
 fn state() -> TypeSafeState {
@@ -27,7 +28,10 @@ fn state() -> TypeSafeState {
     tool_exchanges.insert(
         "e0".to_owned(),
         TypeSafeExchange {
-            tool_calls: Vec::new(),
+            tool_calls: vec![ToolCallEntry {
+                name: Some(json(r#""lookup""#)),
+                arguments: None,
+            }],
             result: "result".to_owned(),
         },
     );
@@ -61,6 +65,11 @@ async fn serve(status: StatusCode, body: String) -> (String, JoinSet<io::Result<
             async move { (status, reply) }
         }),
     );
+    serve_router(router).await
+}
+
+async fn serve_never_answering() -> (String, JoinSet<io::Result<()>>) {
+    let router = Router::new().route("/v1/systemone", post(|| async { pending::<()>().await }));
     serve_router(router).await
 }
 
@@ -145,12 +154,10 @@ fn assert_body(request_body: &str) {
         Some("jev-latest")
     );
     assert_eq!(
-        fields
-            .get("state")
-            .and_then(Json::as_object)
-            .and_then(|state| state.get("task"))
-            .and_then(Json::as_str),
-        Some("task")
+        fields.get("state"),
+        Some(&json(
+            r#"{"task":"task","system":"system","tool_exchanges":{"e0":{"tool_calls":[{"name":"lookup","arguments":null}],"result":"result"}}}"#
+        ))
     );
     let question = fields
         .get("questions")
@@ -281,6 +288,25 @@ async fn call_systemone_fails_closed_when_the_service_is_unreachable() {
             message: "TypeSafe evaluation service request failed".to_owned()
         })
     );
+}
+
+// The handler never answers, so only the guardrail's own timeout can end either call.
+#[tokio::test]
+async fn call_systemone_applies_the_guardrail_timeout() {
+    let (base, mut server) = serve_never_answering().await;
+    let mut guardrail = guardrail_at(&base, UnreachableFallback::FailClosed);
+    guardrail.timeout = Duration::from_millis(100);
+    let closed = call_systemone(&guardrail, &state(), &["e0".to_owned()]).await;
+    assert_eq!(
+        closed,
+        Err(TypeSafeError::Unavailable {
+            message: "TypeSafe evaluation service request failed".to_owned()
+        })
+    );
+    guardrail.settings.unreachable_fallback = UnreachableFallback::FailOpen;
+    let open = call_systemone(&guardrail, &state(), &["e0".to_owned()]).await;
+    assert_eq!(open, Ok(None));
+    server.shutdown().await;
 }
 
 #[tokio::test]
