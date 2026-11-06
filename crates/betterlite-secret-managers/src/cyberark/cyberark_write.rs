@@ -118,7 +118,7 @@ where
     let header = manager.authorization().await?;
     let request = ConjurRequest {
         method: HttpMethod::Post,
-        url,
+        url: url.to_owned(),
         authorization: Some(&header),
         content_type,
         body: Some(body),

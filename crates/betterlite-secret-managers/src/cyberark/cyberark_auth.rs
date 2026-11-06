@@ -4,19 +4,27 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use super::CyberArkSecretManager;
 use super::error::CyberArkError;
-use super::transport::{ConjurResponse, ConjurTransport};
+use super::transport::{ConjurRequest, ConjurResponse, ConjurTransport, HttpMethod};
 
 mod tests;
 
 pub(super) const TOKEN_KEY: &str = "cyberark_auth_token";
 
-pub(super) fn begin_login<T>(manager: &CyberArkSecretManager<T>) -> String {
+pub(super) fn begin_login<T>(manager: &CyberArkSecretManager<T>) -> ConjurRequest<'_> {
     tracing::debug!("Authenticating with CyberArk Conjur...");
     let settings = &manager.settings;
-    format!(
-        "{}/authn/{}/{}/authenticate",
-        settings.api_base, settings.account, settings.username
-    )
+    ConjurRequest {
+        method: HttpMethod::Post,
+        url: format!(
+            "{}/authn/{}/{}/authenticate",
+            settings.api_base, settings.account, settings.username
+        ),
+        authorization: None,
+        content_type: None,
+        body: Some(&settings.api_key),
+        verify_tls: settings.verify_tls,
+        client_certificate: settings.client_certificate.as_ref(),
+    }
 }
 
 pub(super) fn finish_login<T>(

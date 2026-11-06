@@ -11,10 +11,10 @@ use crate::secret_contracts::options::{DeleteOptions, SecretOptions, SecretRotat
 use crate::secret_contracts::{BaseSecretManager, RotationError, SecretFuture};
 use crate::secret_helpers::read_boolean_text;
 use cyberark_auth::{TOKEN_KEY, begin_login, finish_login};
-use cyberark_read::{finish_read, secret_url};
+use cyberark_read::{finish_read, read_request};
 use error::{CyberArkError, CyberArkInitError};
 use operation::SecretOperation;
-use transport::{ClientCertificate, ConjurRequest, ConjurResponse, ConjurTransport, HttpMethod};
+use transport::{ClientCertificate, ConjurResponse, ConjurTransport};
 use ttl_cache::TtlCache;
 
 mod cyberark_auth;
@@ -124,16 +124,7 @@ impl<T: ConjurTransport> CyberArkSecretManager<T> {
         if let Some(header) = self.tokens.get(TOKEN_KEY) {
             return Ok(header);
         }
-        let url = begin_login(self);
-        let request = ConjurRequest {
-            method: HttpMethod::Post,
-            url: &url,
-            authorization: None,
-            content_type: None,
-            body: Some(&self.settings.api_key),
-            verify_tls: self.settings.verify_tls,
-            client_certificate: self.settings.client_certificate.as_ref(),
-        };
+        let request = begin_login(self);
         finish_login(self, self.transport.send(request).await)
     }
 
@@ -141,16 +132,7 @@ impl<T: ConjurTransport> CyberArkSecretManager<T> {
         if let Some(header) = self.tokens.get(TOKEN_KEY) {
             return Ok(header);
         }
-        let url = begin_login(self);
-        let request = ConjurRequest {
-            method: HttpMethod::Post,
-            url: &url,
-            authorization: None,
-            content_type: None,
-            body: Some(&self.settings.api_key),
-            verify_tls: self.settings.verify_tls,
-            client_certificate: self.settings.client_certificate.as_ref(),
-        };
+        let request = begin_login(self);
         finish_login(self, self.transport.send_blocking(request))
     }
 
@@ -172,32 +154,14 @@ impl<T: ConjurTransport> CyberArkSecretManager<T> {
 
     async fn fetch(&self, secret_name: &str) -> Result<ConjurResponse, CyberArkError<T::Error>> {
         let header = self.authorization().await?;
-        let url = secret_url(self, secret_name);
-        let request = ConjurRequest {
-            method: HttpMethod::Get,
-            url: &url,
-            authorization: Some(&header),
-            content_type: None,
-            body: None,
-            verify_tls: self.settings.verify_tls,
-            client_certificate: None,
-        };
+        let request = read_request(self, secret_name, &header);
         let reply = self.transport.send(request).await;
         reply.map_err(CyberArkError::Transport)?.require_success()
     }
 
     fn fetch_blocking(&self, secret_name: &str) -> Result<ConjurResponse, CyberArkError<T::Error>> {
         let header = self.authorization_blocking()?;
-        let url = secret_url(self, secret_name);
-        let request = ConjurRequest {
-            method: HttpMethod::Get,
-            url: &url,
-            authorization: Some(&header),
-            content_type: None,
-            body: None,
-            verify_tls: self.settings.verify_tls,
-            client_certificate: None,
-        };
+        let request = read_request(self, secret_name, &header);
         let reply = self.transport.send_blocking(request);
         reply.map_err(CyberArkError::Transport)?.require_success()
     }

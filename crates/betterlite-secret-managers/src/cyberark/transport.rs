@@ -20,7 +20,7 @@ pub struct ClientCertificate {
 #[derive(Debug)]
 pub struct ConjurRequest<'borrowed> {
     pub method: HttpMethod,
-    pub url: &'borrowed str,
+    pub url: String,
     pub authorization: Option<&'borrowed SecretString>,
     pub content_type: Option<&'static str>,
     pub body: Option<&'borrowed SecretString>,

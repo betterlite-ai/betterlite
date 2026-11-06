@@ -3,7 +3,7 @@ use secrecy::SecretString;
 
 use super::CyberArkSecretManager;
 use super::error::CyberArkError;
-use super::transport::{ConjurResponse, ConjurTransport};
+use super::transport::{ConjurRequest, ConjurResponse, ConjurTransport, HttpMethod};
 
 mod tests;
 
@@ -21,6 +21,22 @@ pub(super) fn secret_url<T>(manager: &CyberArkSecretManager<T>, secret_name: &st
         manager.settings.account,
         utf8_percent_encode(secret_name, NAME_ENCODING)
     )
+}
+
+pub(super) fn read_request<'borrowed, T>(
+    manager: &'borrowed CyberArkSecretManager<T>,
+    secret_name: &str,
+    header: &'borrowed SecretString,
+) -> ConjurRequest<'borrowed> {
+    ConjurRequest {
+        method: HttpMethod::Get,
+        url: secret_url(manager, secret_name),
+        authorization: Some(header),
+        content_type: None,
+        body: None,
+        verify_tls: manager.settings.verify_tls,
+        client_certificate: None,
+    }
 }
 
 pub(super) fn finish_read<T>(
