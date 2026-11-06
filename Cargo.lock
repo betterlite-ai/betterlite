@@ -1477,6 +1477,7 @@ dependencies = [
  "fancy-regex",
  "futures-util",
  "hex",
+ "hyper",
  "indexmap 2.14.2",
  "lru",
  "mime_guess",

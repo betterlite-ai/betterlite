@@ -7,8 +7,8 @@ use betterlite_config::sections::guardrail_identity::config_models::GuardrailCon
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::onyx::{
-    BLOCKED_STATUS, DEFAULT_API_BASE, DEFAULT_TIMEOUT, OnyxGuardrail, OnyxGuardrailConfigModel,
-    OnyxGuardrailError, SUPPORTED_EVENT_HOOKS,
+    BLOCKED_STATUS, OnyxGuardrail, OnyxGuardrailConfigModel, OnyxGuardrailError,
+    SUPPORTED_EVENT_HOOKS,
 };
 use betterlite_http::proxy::base_builder;
 use secrecy::ExposeSecret as _;
@@ -18,8 +18,8 @@ use tracing::subscriber::with_default;
 use uuid::Uuid;
 
 use crate::support::{
-    CapturedLog, captured, captured_content_type, captured_path, dropping_first_mock, guardrail,
-    guardrail_with_timeout, inputs, mock_onyx, object, silent_onyx, value,
+    CapturedLog, Script, captured, captured_content_type, captured_path, guardrail, inputs,
+    mock_onyx, object, scripted_mock, silent_onyx, timed_guardrail, value,
 };
 
 fn lookup(entries: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -54,8 +54,8 @@ fn environment_reads_api_key_api_base_and_timeout_from_the_environment() {
 #[test]
 fn environment_defaults_api_base_and_timeout_when_unset() {
     let guardrail = build(None, None, None, &lookup(&[("ONYX_API_KEY", "env-key")])).unwrap();
-    assert_eq!(guardrail.api_base, DEFAULT_API_BASE);
-    assert_eq!(guardrail.timeout, DEFAULT_TIMEOUT);
+    assert_eq!(guardrail.api_base, "https://ai-guard.onyx.security");
+    assert_eq!(guardrail.timeout, Duration::from_secs(10));
 }
 
 #[test]
@@ -94,14 +94,14 @@ fn environment_rejects_an_empty_api_key() {
 fn environment_treats_an_empty_api_base_as_unset() {
     let environment = lookup(&[("ONYX_API_KEY", "env-key"), ("ONYX_API_BASE", "")]);
     let guardrail = build(None, None, None, &environment).unwrap();
-    assert_eq!(guardrail.api_base, DEFAULT_API_BASE);
+    assert_eq!(guardrail.api_base, "https://ai-guard.onyx.security");
 }
 
 #[test]
 fn environment_treats_an_empty_timeout_as_unset() {
     let environment = lookup(&[("ONYX_API_KEY", "env-key"), ("ONYX_TIMEOUT", "")]);
     let guardrail = build(None, None, None, &environment).unwrap();
-    assert_eq!(guardrail.timeout, DEFAULT_TIMEOUT);
+    assert_eq!(guardrail.timeout, Duration::from_secs(10));
 }
 
 #[test]
@@ -324,16 +324,7 @@ async fn conversation_id_uses_the_logging_call_id() {
 #[tokio::test]
 async fn conversation_id_generates_a_version_4_uuid_without_a_logging_call_id() {
     let mock = mock_onyx(StatusCode::OK, String::from(r#"{"allowed": true}"#)).await;
-    let environment = lookup(&[("ONYX_API_KEY", "oracle-key")]);
-    let guardrail = OnyxGuardrail::new(
-        None,
-        Some(mock.base.clone()),
-        Some(5.0_f64),
-        &environment,
-        base_builder(),
-    )
-    .unwrap();
-    guardrail
+    timed_guardrail(&mock.base, 5.0)
         .apply_guardrail(
             inputs(r#"{"texts": ["hello"]}"#),
             &object("{}"),
@@ -465,7 +456,7 @@ async fn fail_open_returns_the_inputs_on_a_backend_status_error() {
 #[tokio::test]
 async fn fail_open_returns_the_inputs_on_a_timeout() {
     let mock = silent_onyx().await;
-    let returned = guardrail_with_timeout(&mock.base, Duration::from_millis(100))
+    let returned = timed_guardrail(&mock.base, 0.1)
         .apply_guardrail(
             inputs(r#"{"texts": ["hello"]}"#),
             &object("{}"),
@@ -475,6 +466,7 @@ async fn fail_open_returns_the_inputs_on_a_timeout() {
         .await
         .unwrap();
     assert_eq!(returned, inputs(r#"{"texts": ["hello"]}"#));
+    assert_eq!(mock.accepted.load(Ordering::SeqCst), 1);
 }
 
 #[tokio::test]
@@ -552,10 +544,10 @@ fn fail_open_logs_the_transport_error_without_the_api_key() {
 }
 
 #[tokio::test]
-async fn retries_once_when_the_first_connection_drops_and_blocks_the_second() {
-    let mock = dropping_first_mock(String::from(
-        r#"{"allowed": false, "violated_rules": ["pii"]}"#,
-    ))
+async fn retries_once_when_the_first_response_body_is_incomplete() {
+    let mock = scripted_mock(Script::IncompleteThenDeny {
+        reply: String::from(r#"{"allowed": false, "violated_rules": ["pii"]}"#),
+    })
     .await;
     let error = guardrail(&mock.base)
         .apply_guardrail(
@@ -571,6 +563,69 @@ async fn retries_once_when_the_first_connection_drops_and_blocks_the_second() {
         "Request blocked by Onyx Guard. Violations: pii."
     );
     assert_eq!(mock.accepted.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn a_reset_connection_is_not_retried() {
+    let mock = scripted_mock(Script::ResetThenDeny {
+        reply: String::from(r#"{"allowed": false, "violated_rules": ["pii"]}"#),
+    })
+    .await;
+    let returned = guardrail(&mock.base)
+        .apply_guardrail(
+            inputs(r#"{"texts": ["hello"]}"#),
+            &object("{}"),
+            GuardrailInputType::Request,
+            Some("call-1"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(returned, inputs(r#"{"texts": ["hello"]}"#));
+    assert_eq!(mock.accepted.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn the_read_timeout_fails_open_before_a_late_denial() {
+    let mock = scripted_mock(Script::Delayed {
+        delay: Duration::from_secs(1),
+        reply: String::from(r#"{"allowed": false, "violated_rules": ["pii"]}"#),
+    })
+    .await;
+    let returned = timed_guardrail(&mock.base, 0.1)
+        .apply_guardrail(
+            inputs(r#"{"texts": ["hello"]}"#),
+            &object("{}"),
+            GuardrailInputType::Request,
+            Some("call-1"),
+        )
+        .await
+        .unwrap();
+    assert_eq!(returned, inputs(r#"{"texts": ["hello"]}"#));
+    assert_eq!(mock.accepted.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn the_summed_deadline_lets_a_split_response_through() {
+    let mock = scripted_mock(Script::Split {
+        head: Duration::from_millis(80),
+        tail: Duration::from_millis(80),
+        reply: String::from(r#"{"allowed": false, "violated_rules": ["pii"]}"#),
+    })
+    .await;
+    let error = timed_guardrail(&mock.base, 0.1)
+        .apply_guardrail(
+            inputs(r#"{"texts": ["hello"]}"#),
+            &object("{}"),
+            GuardrailInputType::Request,
+            Some("call-1"),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Request blocked by Onyx Guard. Violations: pii."
+    );
+    assert_eq!(mock.accepted.load(Ordering::SeqCst), 1);
 }
 
 #[test]

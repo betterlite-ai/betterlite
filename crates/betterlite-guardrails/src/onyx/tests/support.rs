@@ -15,7 +15,7 @@ use betterlite_http::proxy::base_builder;
 use secrecy::SecretString;
 use serde::Deserialize;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
-use tokio::net::TcpListener;
+use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 use uuid::Uuid;
@@ -49,16 +49,21 @@ pub(crate) struct Seen {
 pub(crate) struct MockOnyx {
     pub(crate) base: String,
     pub(crate) seen: Arc<Mutex<Vec<Seen>>>,
+    pub(crate) accepted: Arc<AtomicUsize>,
     _server: JoinSet<io::Result<()>>,
 }
 
 pub(crate) async fn mock_onyx(status: StatusCode, reply: String) -> MockOnyx {
     let seen = Arc::new(Mutex::new(Vec::new()));
     let seen_by_handler = Arc::clone(&seen);
+    let accepted = Arc::new(AtomicUsize::new(0));
+    let accepted_by_handler = Arc::clone(&accepted);
     let answer = move |uri: Uri, headers: HeaderMap, bytes: Bytes| {
         let recorder = Arc::clone(&seen_by_handler);
+        let counter = Arc::clone(&accepted_by_handler);
         let reply_for_response = reply.clone();
         async move {
+            counter.fetch_add(1, Ordering::SeqCst);
             recorder.lock().unwrap().push(Seen {
                 path: uri.path().to_owned(),
                 content_type: headers
@@ -78,64 +83,164 @@ pub(crate) async fn mock_onyx(status: StatusCode, reply: String) -> MockOnyx {
     MockOnyx {
         base,
         seen,
+        accepted,
         _server: server,
     }
 }
 
-// The reply is a denial so a missing request timeout turns the test into a Blocked result, not a slow pass.
+// The reply is a denial so a missing read timeout turns the test into a Blocked result, not a slow pass.
 pub(crate) async fn silent_onyx() -> MockOnyx {
-    let answer = |_uri: Uri, _bytes: Bytes| async {
-        sleep(Duration::from_secs(30)).await;
-        (StatusCode::OK, String::from(r#"{"allowed": false}"#))
+    let accepted = Arc::new(AtomicUsize::new(0));
+    let accepted_by_handler = Arc::clone(&accepted);
+    let answer = move |_uri: Uri, _bytes: Bytes| {
+        let counter = Arc::clone(&accepted_by_handler);
+        async move {
+            counter.fetch_add(1, Ordering::SeqCst);
+            sleep(Duration::from_secs(30)).await;
+            (StatusCode::OK, String::from(r#"{"allowed": false}"#))
+        }
     };
     let (base, server) = serve(Router::new().fallback(answer)).await;
     MockOnyx {
         base,
         seen: Arc::new(Mutex::new(Vec::new())),
+        accepted,
         _server: server,
     }
 }
 
-pub(crate) struct DroppingMock {
+pub(crate) enum Script {
+    Delayed {
+        delay: Duration,
+        reply: String,
+    },
+    Split {
+        head: Duration,
+        tail: Duration,
+        reply: String,
+    },
+    IncompleteThenDeny {
+        reply: String,
+    },
+    ResetThenDeny {
+        reply: String,
+    },
+}
+
+pub(crate) struct RawMock {
     pub(crate) base: String,
     pub(crate) accepted: Arc<AtomicUsize>,
     _server: JoinSet<io::Result<()>>,
 }
 
-pub(crate) async fn dropping_first_mock(reply: String) -> DroppingMock {
+pub(crate) async fn scripted_mock(script: Script) -> RawMock {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
     let accepted = Arc::new(AtomicUsize::new(0));
-    let accepted_by_server = Arc::clone(&accepted);
+    let count = Arc::clone(&accepted);
     let mut server = JoinSet::new();
-    server.spawn(drop_first_then_reply(listener, accepted_by_server, reply));
-    DroppingMock {
+    server.spawn(run_script(listener, count, script));
+    RawMock {
         base,
         accepted,
         _server: server,
     }
 }
 
-async fn drop_first_then_reply(
+async fn run_script(
     listener: TcpListener,
     accepted: Arc<AtomicUsize>,
-    reply: String,
+    script: Script,
+) -> io::Result<()> {
+    match script {
+        Script::Delayed { delay, reply } => {
+            delayed_reply(&listener, &accepted, delay, &reply).await
+        }
+        Script::Split { head, tail, reply } => {
+            split_reply(&listener, &accepted, head, tail, &reply).await
+        }
+        Script::IncompleteThenDeny { reply } => {
+            incomplete_then_deny(&listener, &accepted, &reply).await
+        }
+        Script::ResetThenDeny { reply } => reset_then_deny(&listener, &accepted, &reply).await,
+    }
+}
+
+async fn delayed_reply(
+    listener: &TcpListener,
+    accepted: &AtomicUsize,
+    delay: Duration,
+    reply: &str,
+) -> io::Result<()> {
+    let mut stream = accept_one(listener, accepted).await?;
+    sleep(delay).await;
+    write_response(&mut stream, reply).await
+}
+
+async fn split_reply(
+    listener: &TcpListener,
+    accepted: &AtomicUsize,
+    head: Duration,
+    tail: Duration,
+    reply: &str,
+) -> io::Result<()> {
+    let mut stream = accept_one(listener, accepted).await?;
+    sleep(head).await;
+    write_head(&mut stream, reply.len()).await?;
+    sleep(tail).await;
+    stream.write_all(reply.as_bytes()).await?;
+    stream.shutdown().await
+}
+
+async fn incomplete_then_deny(
+    listener: &TcpListener,
+    accepted: &AtomicUsize,
+    reply: &str,
+) -> io::Result<()> {
+    let mut first = accept_one(listener, accepted).await?;
+    write_head(&mut first, 100).await?;
+    first.write_all(b"{\"all").await?;
+    first.shutdown().await?;
+    drop(first);
+    let mut second = accept_one(listener, accepted).await?;
+    write_response(&mut second, reply).await
+}
+
+async fn reset_then_deny(
+    listener: &TcpListener,
+    accepted: &AtomicUsize,
+    reply: &str,
 ) -> io::Result<()> {
     let (mut first, _) = listener.accept().await?;
     accepted.fetch_add(1, Ordering::SeqCst);
-    let mut buffer = [0_u8; 4096];
-    let _first_read = first.read(&mut buffer).await;
+    let mut byte = [0_u8; 1];
+    let _read = first.read(&mut byte).await;
+    // closing with the rest of the request unread makes the kernel send a reset instead of a fin
+    sleep(Duration::from_millis(20)).await;
     drop(first);
-    let (mut second, _) = listener.accept().await?;
+    let mut second = accept_one(listener, accepted).await?;
+    write_response(&mut second, reply).await
+}
+
+async fn accept_one(listener: &TcpListener, accepted: &AtomicUsize) -> io::Result<TcpStream> {
+    let (mut stream, _) = listener.accept().await?;
     accepted.fetch_add(1, Ordering::SeqCst);
-    let _second_read = second.read(&mut buffer).await;
-    let response = format!(
-        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{}",
-        reply.len(),
-        reply
+    let mut buffer = [0_u8; 4096];
+    let _read = stream.read(&mut buffer).await;
+    Ok(stream)
+}
+
+async fn write_head(stream: &mut TcpStream, body_length: usize) -> io::Result<()> {
+    let head = format!(
+        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {body_length}\r\nconnection: close\r\n\r\n"
     );
-    second.write_all(response.as_bytes()).await?;
-    second.shutdown().await
+    stream.write_all(head.as_bytes()).await
+}
+
+async fn write_response(stream: &mut TcpStream, reply: &str) -> io::Result<()> {
+    write_head(stream, reply.len()).await?;
+    stream.write_all(reply.as_bytes()).await?;
+    stream.shutdown().await
 }
 
 async fn serve(router: Router) -> (String, JoinSet<io::Result<()>>) {
@@ -162,6 +267,18 @@ pub(crate) fn guardrail_with_timeout(base: &str, timeout: Duration) -> OnyxGuard
 
 pub(crate) fn guardrail(base: &str) -> OnyxGuardrail {
     guardrail_with_timeout(base, Duration::from_secs(5))
+}
+
+pub(crate) fn timed_guardrail(base: &str, seconds: f64) -> OnyxGuardrail {
+    let environment = BTreeMap::from([(String::from("ONYX_API_KEY"), String::from(API_KEY))]);
+    OnyxGuardrail::new(
+        None,
+        Some(base.to_owned()),
+        Some(seconds),
+        &environment,
+        base_builder(),
+    )
+    .unwrap()
 }
 
 pub(crate) fn object(json: &str) -> BTreeMap<String, GuardrailValue> {

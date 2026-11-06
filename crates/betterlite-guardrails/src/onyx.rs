@@ -1,13 +1,14 @@
 use std::collections::BTreeMap;
-use std::{
-    num::TryFromIntError,
-    time::{Duration, TryFromFloatSecsError},
-};
+use std::error::Error as _;
+use std::num::TryFromIntError;
+use std::time::{Duration, TryFromFloatSecsError};
 
+use crate::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_env::EnvError;
+use hyper::Error as HyperError;
 use reqwest::StatusCode;
 use reqwest::header::CONTENT_TYPE;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -15,11 +16,6 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::generic_guardrail_contracts::GuardrailInputType;
-
-pub const DEFAULT_API_BASE: &str = "https://ai-guard.onyx.security";
-pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
-pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 pub const BLOCKED_STATUS: StatusCode = StatusCode::BAD_REQUEST;
 pub const SUPPORTED_EVENT_HOOKS: [&str; 3] = ["pre_call", "during_call", "post_call"];
 
@@ -46,7 +42,6 @@ pub enum OnyxGuardrailError {
     #[error("Request blocked by Onyx Guard. Violations: {message}.")]
     Blocked { message: String },
 }
-
 #[derive(Debug, Serialize)]
 struct OnyxRequest<'input> {
     payload: &'input GuardrailValue,
@@ -58,7 +53,6 @@ struct OnyxVerdict {
     allowed: Option<bool>,
     violated_rules: Option<Vec<String>>,
 }
-
 #[derive(Debug, Clone)]
 pub struct OnyxGuardrail {
     pub api_base: String,
@@ -88,14 +82,14 @@ impl OnyxGuardrail {
                     .lookup("ONYX_API_BASE")
                     .filter(|base| !base.is_empty())
             })
-            .unwrap_or_else(|| DEFAULT_API_BASE.to_owned());
+            .unwrap_or_else(|| "https://ai-guard.onyx.security".to_owned());
         let timeout = match configured_timeout {
             Some(seconds) => Duration::try_from_secs_f64(seconds)
                 .map_err(|source| OnyxGuardrailError::UnrepresentableTimeout { source })?,
             None => environment_timeout(lookup)?,
         };
         let client = client_builder
-            .connect_timeout(CONNECT_TIMEOUT)
+            .connect_timeout(Duration::from_secs(5))
             .read_timeout(timeout)
             .build()
             .map_err(|source| OnyxGuardrailError::Client { source })?;
@@ -107,7 +101,6 @@ impl OnyxGuardrail {
             new_id: Uuid::new_v4,
         })
     }
-
     pub async fn apply_guardrail(
         &self,
         inputs: BTreeMap<String, GuardrailValue>,
@@ -136,23 +129,31 @@ impl OnyxGuardrail {
         }
     }
 
-    async fn post(
+    // httpx times connect at 5s and each other phase at the timeout; the deadline is their sum.
+    async fn attempt(
         &self,
         endpoint: &str,
         request: &OnyxRequest<'_>,
-    ) -> Result<reqwest::Response, reqwest::Error> {
-        // httpx times connect at 5s and each other phase at the timeout; the deadline is their sum.
-        self.client
+    ) -> Result<OnyxVerdict, OnyxGuardrailError> {
+        let response = self
+            .client
             .post(endpoint)
             .header(CONTENT_TYPE, "application/json")
             .json(request)
             .timeout(
                 self.timeout
                     .saturating_mul(3)
-                    .saturating_add(CONNECT_TIMEOUT),
+                    .saturating_add(Duration::from_secs(5)),
             )
             .send()
             .await
+            .map_err(request_error)?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(OnyxGuardrailError::HttpStatus { status });
+        }
+        let body = read_capped_body(response).await?;
+        serde_json::from_slice(&body).map_err(|source| OnyxGuardrailError::ResponseJson { source })
     }
 
     async fn validate_with_guard_server(
@@ -171,22 +172,13 @@ impl OnyxGuardrail {
             input_type,
             conversation_id,
         };
-        let response = match self.post(&endpoint, &request).await {
-            Ok(response) => response,
-            // LiteLLM retries a connection or remote-protocol failure once; a timeout is not retried.
-            Err(error) if !error.is_timeout() && (error.is_connect() || error.is_request()) => self
-                .post(&endpoint, &request)
-                .await
-                .map_err(request_error)?,
-            Err(error) => return Err(request_error(error)),
+        let verdict = match self.attempt(&endpoint, &request).await {
+            Ok(verdict) => verdict,
+            Err(OnyxGuardrailError::Transport { source }) if retryable(&source) => {
+                self.attempt(&endpoint, &request).await?
+            }
+            Err(error) => return Err(error),
         };
-        let status = response.status();
-        if !status.is_success() {
-            return Err(OnyxGuardrailError::HttpStatus { status });
-        }
-        let body = read_capped_body(response).await?;
-        let verdict: OnyxVerdict = serde_json::from_slice(&body)
-            .map_err(|source| OnyxGuardrailError::ResponseJson { source })?;
         if verdict.allowed.unwrap_or(true) {
             return Ok(());
         }
@@ -198,24 +190,39 @@ impl OnyxGuardrail {
         Err(OnyxGuardrailError::Blocked { message })
     }
 }
-
+// LiteLLM retries a ConnectError or RemoteProtocolError once; a timeout or a reset is not retried.
+fn retryable(error: &reqwest::Error) -> bool {
+    if error.is_timeout() {
+        return false;
+    }
+    if error.is_connect() {
+        return true;
+    }
+    let mut source = error.source();
+    while let Some(cause) = source {
+        if let Some(hyper) = cause.downcast_ref::<HyperError>() {
+            return hyper.is_incomplete_message() || hyper.is_parse();
+        }
+        source = cause.source();
+    }
+    false
+}
 fn environment_timeout<L>(lookup: &L) -> Result<Duration, OnyxGuardrailError>
 where
     L: EnvironmentLookup,
 {
     let Some(text) = lookup.lookup("ONYX_TIMEOUT") else {
-        return Ok(DEFAULT_TIMEOUT);
+        return Ok(Duration::from_secs(10));
     };
     let parsed = betterlite_env::number::<i64>("ONYX_TIMEOUT", &text)
         .map_err(|source| OnyxGuardrailError::TimeoutNotInteger(source, text.clone()))?;
     let Some(parsed_seconds) = parsed else {
-        return Ok(DEFAULT_TIMEOUT);
+        return Ok(Duration::from_secs(10));
     };
     let seconds = u64::try_from(parsed_seconds)
         .map_err(|source| OnyxGuardrailError::TimeoutNegative(source, text))?;
     Ok(Duration::from_secs(seconds))
 }
-
 fn payload_for(
     request_data: &BTreeMap<String, GuardrailValue>,
     input_type: GuardrailInputType,
@@ -242,7 +249,6 @@ fn payload_for(
             .unwrap_or_else(|| GuardrailValue::Object(BTreeMap::new())),
     }
 }
-
 // ModelResponse(**request_data).json() raises on these top-level fields, and the hook then sends request_data itself.
 fn model_response_accepts(request_data: &BTreeMap<String, GuardrailValue>) -> bool {
     let text = |name: &str| {
@@ -262,7 +268,6 @@ fn model_response_accepts(request_data: &BTreeMap<String, GuardrailValue>) -> bo
             )
         })
 }
-
 fn request_error(source: reqwest::Error) -> OnyxGuardrailError {
     // The endpoint path carries the API key, so the URL never reaches a log line through the error.
     OnyxGuardrailError::Transport {
@@ -279,7 +284,6 @@ async fn read_capped_body(mut response: reqwest::Response) -> Result<Vec<u8>, On
     }
     Ok(body)
 }
-
 // No Debug derive: LiteLLM's config model carries api_key as a plain string, and Debug would print it.
 #[derive(Clone, Default, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
@@ -289,7 +293,6 @@ pub struct OnyxGuardrailConfigModel {
     pub api_key: Option<String>,
     pub timeout: Option<f64>,
 }
-
 impl GuardrailConfigModelIdentity for OnyxGuardrailConfigModel {
     fn ui_friendly_name() -> &'static str {
         "Onyx Guardrail"
