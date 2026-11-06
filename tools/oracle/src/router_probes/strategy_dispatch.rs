@@ -88,8 +88,7 @@ pub(crate) fn run(
     let output = match input.function {
         Function::Validate => validate(input)?,
         Function::Reinit => reinit(input)?,
-        Function::Override => override_scenario(input)?,
-        Function::Dispatch => dispatch_scenario(input, random)?,
+        Function::Override | Function::Dispatch => scenario(input, random)?,
     };
     Ok(ProbeOutput::StrategyDispatch(output))
 }
@@ -219,8 +218,18 @@ fn reinit(input: &Input) -> Result<Output, OperationError> {
     })
 }
 
-fn override_scenario(input: &Input) -> Result<Output, OperationError> {
+fn scenario(input: &Input, random: &mut InjectedRandom<'_>) -> Result<Output, OperationError> {
     let mut dispatch = start(input)?;
+    match input.function {
+        Function::Override => Ok(override_output(&mut dispatch, input)),
+        Function::Dispatch => dispatch_output(&mut dispatch, input, random),
+        Function::Validate | Function::Reinit => Err(OperationError::InvalidRequest {
+            message: "validate and reinit do not run a selection scenario".to_owned(),
+        }),
+    }
+}
+
+fn override_output(dispatch: &mut StrategyDispatch, input: &Input) -> Output {
     let raw = input
         .routing_strategy
         .as_deref()
@@ -228,12 +237,12 @@ fn override_scenario(input: &Input) -> Result<Output, OperationError> {
     let decision = request_override(raw);
     let (override_strategy, ignored, supported) = decision_fields(&decision);
     let (selector, selector_is_default, selector_cached, bound) = match decision {
-        OverrideDecision::Honored(honored) => override_selector_fields(&mut dispatch, honored),
+        OverrideDecision::Honored(honored) => override_selector_fields(dispatch, honored),
         OverrideDecision::NoOverride | OverrideDecision::Ignored { .. } => {
             (None, false, true, false)
         }
     };
-    Ok(Output::Override {
+    Output::Override {
         override_strategy,
         ignored,
         supported,
@@ -241,7 +250,7 @@ fn override_scenario(input: &Input) -> Result<Output, OperationError> {
         selector_is_default,
         selector_cached,
         bound,
-    })
+    }
 }
 
 fn simple_shuffle_index(selection: Selection) -> Result<usize, OperationError> {
@@ -254,11 +263,11 @@ fn simple_shuffle_index(selection: Selection) -> Result<usize, OperationError> {
     }
 }
 
-fn dispatch_scenario(
+fn dispatch_output(
+    dispatch: &mut StrategyDispatch,
     input: &Input,
     random: &mut InjectedRandom<'_>,
 ) -> Result<Output, OperationError> {
-    let mut dispatch = start(input)?;
     let model = input
         .model
         .as_deref()
@@ -271,7 +280,7 @@ fn dispatch_scenario(
         bindings: None,
     };
     let outcome = select(
-        &mut dispatch,
+        dispatch,
         &mut request,
         &RoutingGroups::default(),
         &candidates(&input.deployments),
