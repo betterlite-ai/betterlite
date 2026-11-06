@@ -4,21 +4,24 @@ use std::fs;
 use std::io;
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::thread;
+use std::time::Duration;
 
 use rstest::rstest;
 use serde_json::Value;
+use tokio::time::{sleep, timeout};
 
-use super::files::{FileAccess, LocalFiles, StagedTemp};
+use super::files::{
+    FileAccess, LocalFiles, MAX_CONCURRENT_FILE_OPERATIONS, PrivateFiles, StagedTemp,
+};
 use super::safe_json::{DEFAULT_MAX_RECURSE_DEPTH, safe_dumps, safe_json_loads};
 
 mod private_json_tests_behavior;
 
 fn value(text: &str) -> Value {
     serde_json::from_str(text).expect("valid json")
-}
-
-fn content_of(path: &Path) -> Value {
-    serde_json::from_slice(&fs::read(path).expect("reads the file")).expect("valid json")
 }
 
 fn mode_of(path: &Path) -> u32 {
@@ -44,8 +47,50 @@ fn entries_of(directory: &Path) -> Vec<String> {
     names
 }
 
+// A blocking gate for the fake file layer, so a test can hold blocking jobs open and cancel their callers
+#[derive(Default)]
+struct Gate {
+    open: AtomicBool,
+    entered: AtomicUsize,
+}
+
+impl Gate {
+    fn wait(&self) {
+        self.entered.fetch_add(1, Ordering::SeqCst);
+        while !self.open.load(Ordering::SeqCst) {
+            thread::park_timeout(Duration::from_millis(1));
+        }
+    }
+
+    fn release(&self) {
+        self.open.store(true, Ordering::SeqCst);
+    }
+
+    fn entered(&self) -> usize {
+        self.entered.load(Ordering::SeqCst)
+    }
+}
+
+async fn wait_until_entered(gate: &Gate, count: usize) {
+    for _ in 0_usize..200_usize {
+        if gate.entered() >= count {
+            return;
+        }
+        sleep(Duration::from_millis(10)).await;
+    }
+}
+
+// Each call is dropped after a short timeout, so its joined future is cancelled while its blocking job stays open
+async fn cancel_gated_calls(files: &PrivateFiles, directory: &Path) {
+    for _ in 0_usize..MAX_CONCURRENT_FILE_OPERATIONS {
+        let call = files.ensure_private_dir(directory);
+        let _cancelled = timeout(Duration::from_millis(50), call).await;
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Fault {
+    None,
     Write,
     WriteAndRemove,
     Replace,
@@ -53,6 +98,16 @@ enum Fault {
 
 struct ScriptedFiles {
     fault: Fault,
+    gate: Option<Arc<Gate>>,
+}
+
+impl ScriptedFiles {
+    fn gated(gate: Arc<Gate>) -> Self {
+        Self {
+            fault: Fault::None,
+            gate: Some(gate),
+        }
+    }
 }
 
 impl FileAccess for ScriptedFiles {
@@ -61,6 +116,9 @@ impl FileAccess for ScriptedFiles {
     }
 
     fn ensure_private_directory(&self, directory: &Path) -> io::Result<()> {
+        if let Some(gate) = &self.gate {
+            gate.wait();
+        }
         LocalFiles.ensure_private_directory(directory)
     }
 

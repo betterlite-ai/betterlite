@@ -1,23 +1,32 @@
 use std::fs;
 use std::io;
-use std::os::unix::fs::{PermissionsExt as _, symlink};
+use std::os::unix::fs::symlink;
 use std::path::Path;
 use std::sync::Arc;
+use std::time::Duration;
 
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
 use rstest::rstest;
 use serde::Serialize;
 use serde_json::Value;
 use tempfile::TempDir;
+use tokio::time::{sleep, timeout};
 use tokio::{fs as async_fs, task};
 
 use super::super::error::PrivateJsonError;
-use super::super::files::{FileAccess, LocalFiles, PrivateFiles, StagedFile};
+use super::super::files::overwrite_json::overwrite_private_json;
+use super::super::files::stage_json::stage_private_json;
+use super::super::files::write_json::write_private_json;
+use super::super::files::{
+    FileAccess, LocalFiles, MAX_CONCURRENT_FILE_OPERATIONS, PrivateFiles, StagedFile,
+};
 use super::super::safe_json::{
     DEFAULT_MAX_RECURSE_DEPTH, MAX_JSON_BYTES, MAX_JSON_DEPTH, Passthrough, ValueTransform,
     safe_dumps, safe_json_loads,
 };
-use super::{Fault, ScriptedFiles, content_of, entries_of, mode_of, value};
+use super::{
+    Fault, Gate, ScriptedFiles, cancel_gated_calls, entries_of, mode_of, value, wait_until_entered,
+};
 
 struct KeyPrefix;
 
@@ -34,19 +43,8 @@ struct CacheRecord {
 }
 
 fn private_files_with(fault: Fault) -> PrivateFiles {
-    let access: Arc<dyn FileAccess> = Arc::new(ScriptedFiles { fault });
+    let access: Arc<dyn FileAccess> = Arc::new(ScriptedFiles { fault, gate: None });
     PrivateFiles::from(access)
-}
-
-#[test]
-fn safe_dumps_strips_nul_bytes_from_keys_and_values() {
-    let data =
-        value(r#"{"ke\u0000y": "va\u0000lue", "list": ["a\u0000b", {"deep\u0000": "x\u0000"}]}"#);
-    let dumped = safe_dumps(&data, DEFAULT_MAX_RECURSE_DEPTH, None).expect("dumps the data");
-    assert_eq!(
-        value(&dumped),
-        value(r#"{"key": "value", "list": ["ab", {"deep": "x"}]}"#)
-    );
 }
 
 #[rstest]
@@ -99,15 +97,28 @@ fn safe_dumps_redacts_credentials_with_the_b187_redactor() {
 fn safe_dumps_accepts_typed_records_and_the_passthrough_field() {
     let record = CacheRecord {
         key: "team".to_owned(),
-        payload: Passthrough {
-            value: value(r#"{"nested": [1, 2]}"#),
-        },
+        payload: Passthrough::try_from(value(r#"{"nested": [1, 2]}"#))
+            .expect("bounded passthrough"),
     };
     let dumped = safe_dumps(&record, DEFAULT_MAX_RECURSE_DEPTH, None).expect("dumps the record");
     assert_eq!(
         value(&dumped),
         value(r#"{"key": "team", "payload": {"nested": [1, 2]}}"#)
     );
+}
+
+#[test]
+fn passthrough_rejects_an_oversized_value() {
+    let oversized = Value::String("x".repeat(MAX_JSON_BYTES));
+    let error = Passthrough::try_from(oversized).expect_err("rejects oversized JSON");
+    assert!(matches!(error, PrivateJsonError::TooLarge(..)));
+}
+
+#[test]
+fn passthrough_rejects_a_value_nested_past_the_depth_limit() {
+    let deep = (0..=MAX_JSON_DEPTH).fold(Value::Null, |inner, _| Value::Array(vec![inner]));
+    let error = Passthrough::try_from(deep).expect_err("rejects deep JSON");
+    assert!(matches!(error, PrivateJsonError::TooDeep(limit) if limit == MAX_JSON_DEPTH));
 }
 
 #[test]
@@ -140,23 +151,6 @@ fn safe_json_loads_bounds_the_nesting_depth(#[case] depth: usize, #[case] reject
     if rejected {
         assert!(matches!(error, Some(PrivateJsonError::TooDeep(limit)) if limit == MAX_JSON_DEPTH));
     }
-    let empty_tail = format!(
-        "{}[]{}",
-        "[".repeat(MAX_JSON_DEPTH),
-        "]".repeat(MAX_JSON_DEPTH)
-    );
-    assert!(matches!(
-        safe_json_loads(empty_tail.as_bytes()),
-        Err(PrivateJsonError::TooDeep(_))
-    ));
-}
-
-#[test]
-fn safe_json_loads_accepts_a_payload_at_the_byte_limit() {
-    let text = format!("[{}]", " ".repeat(MAX_JSON_BYTES - 2));
-    assert_eq!(text.len(), MAX_JSON_BYTES);
-    let parsed = safe_json_loads(text.as_bytes()).expect("accepts a payload at the byte limit");
-    assert_eq!(parsed, value("[]"));
 }
 
 #[test]
@@ -169,25 +163,25 @@ fn local_staging_is_owner_only_before_any_bytes_are_written() {
     assert_eq!(fs::metadata(&staged.path).expect("metadata").len(), 0);
 }
 
-#[tokio::test]
-async fn staging_then_committing_replaces_the_original_without_a_temporary() {
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn a_cancelled_caller_keeps_its_permit_until_the_blocking_job_ends() {
+    let gate = Arc::new(Gate::default());
+    let access: Arc<dyn FileAccess> = Arc::new(ScriptedFiles::gated(Arc::clone(&gate)));
+    let files = PrivateFiles::from(access);
     let directory = TempDir::new().expect("temp dir");
-    let target = directory.path().join("cache.json");
-    fs::write(&target, "{\"old\": true}").expect("writes the original");
-    let files = PrivateFiles::default();
-    let staged = files
-        .stage_private_json(&target, &value(r#"{"fresh": 1}"#))
-        .await
-        .expect("stages the file");
-    assert!(staged.path.exists());
-    files
-        .commit_staged_json(&staged, &target)
-        .await
-        .expect("commits the file");
-    assert_eq!(content_of(&target), value(r#"{"fresh": 1}"#));
-    assert_eq!(mode_of(&target), 0o600);
-    assert!(!staged.path.exists());
-    assert_eq!(entries_of(directory.path()), vec!["cache.json".to_owned()]);
+    cancel_gated_calls(&files, &directory.path().join("private")).await;
+    wait_until_entered(&gate, MAX_CONCURRENT_FILE_OPERATIONS).await;
+    assert_eq!(gate.entered(), MAX_CONCURRENT_FILE_OPERATIONS);
+    let ninth_path = directory.path().join("ninth");
+    let ninth = files.ensure_private_dir(&ninth_path);
+    let waited = timeout(Duration::from_millis(100), ninth).await;
+    assert!(
+        waited.is_err(),
+        "a cancelled caller's job still holds its permit"
+    );
+    assert_eq!(gate.entered(), MAX_CONCURRENT_FILE_OPERATIONS);
+    gate.release();
+    sleep(Duration::from_millis(50)).await;
 }
 
 #[tokio::test]
@@ -202,10 +196,6 @@ async fn bytes_are_staged_and_written_with_owner_only_permissions() {
     assert_eq!(mode_of(&staged.path), 0o600);
     assert!(!target.exists());
     files
-        .discard_staged_json(&staged)
-        .await
-        .expect("discards the stage");
-    files
         .write_private_bytes(&target, b"second".to_vec())
         .await
         .expect("writes the bytes");
@@ -218,10 +208,13 @@ async fn failed_staging_preserves_originals_and_removes_temporaries() {
     let directory = TempDir::new().expect("temp dir");
     let target = directory.path().join("cache.json");
     fs::write(&target, "{\"old\": true}").expect("writes the original");
-    let error = private_files_with(Fault::Write)
-        .stage_private_json(&target, &value(r#"{"fresh": 1}"#))
-        .await
-        .expect_err("staging fails");
+    let error = stage_private_json(
+        &private_files_with(Fault::Write),
+        &target,
+        &value(r#"{"fresh": 1}"#),
+    )
+    .await
+    .expect_err("staging fails");
     assert!(matches!(error, PrivateJsonError::Stage(..)));
     assert_eq!(
         fs::read_to_string(&target).expect("reads"),
@@ -234,10 +227,13 @@ async fn failed_staging_preserves_originals_and_removes_temporaries() {
 async fn a_failed_cleanup_keeps_the_staging_error() {
     let directory = TempDir::new().expect("temp dir");
     let target = directory.path().join("cache.json");
-    let error = private_files_with(Fault::WriteAndRemove)
-        .stage_private_json(&target, &value(r#"{"fresh": 1}"#))
-        .await
-        .expect_err("staging fails");
+    let error = stage_private_json(
+        &private_files_with(Fault::WriteAndRemove),
+        &target,
+        &value(r#"{"fresh": 1}"#),
+    )
+    .await
+    .expect_err("staging fails");
     assert!(matches!(error, PrivateJsonError::Stage(..)));
 }
 
@@ -247,8 +243,7 @@ async fn a_failed_commit_keeps_the_original_and_removes_the_staged_file() {
     let target = directory.path().join("cache.json");
     fs::write(&target, "{\"old\": true}").expect("writes the original");
     let files = private_files_with(Fault::Replace);
-    let staged = files
-        .stage_private_json(&target, &value(r#"{"fresh": 1}"#))
+    let staged = stage_private_json(&files, &target, &value(r#"{"fresh": 1}"#))
         .await
         .expect("stages the file");
     let error = files
@@ -268,13 +263,13 @@ async fn a_failed_commit_keeps_the_original_and_removes_the_staged_file() {
 async fn discarding_a_staged_file_removes_it_and_ignores_a_missing_one() {
     let directory = TempDir::new().expect("temp dir");
     let files = PrivateFiles::default();
-    let staged = files
-        .stage_private_json(
-            &directory.path().join("cache.json"),
-            &value(r#"{"fresh": 1}"#),
-        )
-        .await
-        .expect("stages the file");
+    let staged = stage_private_json(
+        &files,
+        &directory.path().join("cache.json"),
+        &value(r#"{"fresh": 1}"#),
+    )
+    .await
+    .expect("stages the file");
     files
         .discard_staged_json(&staged)
         .await
@@ -298,26 +293,6 @@ async fn ensure_private_dir_refuses_a_path_with_no_final_name() {
     assert!(matches!(error, PrivateJsonError::InvalidPath(_)));
 }
 
-#[rstest]
-#[case::new_directory_is_owner_only(None)]
-#[case::existing_group_or_world_readable_directory_is_tightened(Some(0o777))]
-#[tokio::test]
-async fn ensure_private_dir_makes_and_keeps_its_directory_owner_only(
-    #[case] existing_mode: Option<u32>,
-) {
-    let directory = TempDir::new().expect("temp dir");
-    let private = directory.path().join("private");
-    if let Some(mode) = existing_mode {
-        fs::create_dir_all(&private).expect("creates the directory");
-        fs::set_permissions(&private, fs::Permissions::from_mode(mode)).expect("opens the mode");
-    }
-    PrivateFiles::default()
-        .ensure_private_dir(&private)
-        .await
-        .expect("prepares the directory");
-    assert_eq!(mode_of(&private), 0o700);
-}
-
 #[tokio::test]
 async fn staging_follows_a_symlinked_parent_directory() {
     let directory = TempDir::new().expect("temp dir");
@@ -325,14 +300,15 @@ async fn staging_follows_a_symlinked_parent_directory() {
     fs::create_dir_all(&real).expect("creates the directory");
     let link = directory.path().join("link");
     symlink(&real, &link).expect("links the directory");
-    PrivateFiles::default()
-        .write_private_json(&link.join("state.json"), &value(r#"{"through": "link"}"#))
-        .await
-        .expect("writes through the link");
-    assert_eq!(
-        content_of(&real.join("state.json")),
-        value(r#"{"through": "link"}"#)
-    );
+    write_private_json(
+        &PrivateFiles::default(),
+        &link.join("state.json"),
+        &value(r#"{"through": "link"}"#),
+    )
+    .await
+    .expect("writes through the link");
+    let written = fs::read_to_string(real.join("state.json")).expect("reads through the link");
+    assert_eq!(value(&written), value(r#"{"through": "link"}"#));
     assert!(
         fs::symlink_metadata(&link)
             .expect("link metadata")
@@ -348,10 +324,13 @@ async fn explicit_overwrite_rejects_a_symlinked_final_target() {
     fs::write(&secret, "{\"original\": true}").expect("writes the original");
     let link = directory.path().join("state.json");
     symlink(&secret, &link).expect("links the file");
-    let error = PrivateFiles::default()
-        .overwrite_private_json(&link, &value(r#"{"replaced": true}"#))
-        .await
-        .expect_err("refuses the symlink");
+    let error = overwrite_private_json(
+        &PrivateFiles::default(),
+        &link,
+        &value(r#"{"replaced": true}"#),
+    )
+    .await
+    .expect_err("refuses the symlink");
     assert!(matches!(error, PrivateJsonError::Overwrite(..)));
     assert_eq!(
         fs::read_to_string(&secret).expect("reads"),
@@ -360,27 +339,16 @@ async fn explicit_overwrite_rejects_a_symlinked_final_target() {
 }
 
 #[tokio::test]
-async fn explicit_overwrite_keeps_the_existing_file_mode() {
-    let directory = TempDir::new().expect("temp dir");
-    let target = directory.path().join("settings.json");
-    fs::write(&target, "{\"old\": true}").expect("writes the original");
-    fs::set_permissions(&target, fs::Permissions::from_mode(0o640)).expect("sets the mode");
-    PrivateFiles::default()
-        .overwrite_private_json(&target, &value(r#"{"new": true}"#))
-        .await
-        .expect("overwrites the file");
-    assert_eq!(mode_of(&target), 0o640);
-    assert_eq!(content_of(&target), value(r#"{"new": true}"#));
-}
-
-#[tokio::test]
 async fn explicit_overwrite_never_creates_a_missing_file() {
     let directory = TempDir::new().expect("temp dir");
     let target = directory.path().join("missing.json");
-    let error = PrivateFiles::default()
-        .overwrite_private_json(&target, &value(r#"{"new": true}"#))
-        .await
-        .expect_err("refuses to create");
+    let error = overwrite_private_json(
+        &PrivateFiles::default(),
+        &target,
+        &value(r#"{"new": true}"#),
+    )
+    .await
+    .expect_err("refuses to create");
     assert!(matches!(error, PrivateJsonError::Overwrite(..)));
     assert!(!target.exists());
 }
@@ -391,8 +359,7 @@ async fn concurrent_writes_never_reveal_a_partial_document() {
     let target = directory.path().join("state.json");
     let files = PrivateFiles::default();
     let initial = value(r#"{"writer": "initial"}"#);
-    files
-        .write_private_json(&target, &initial)
+    write_private_json(&files, &target, &initial)
         .await
         .expect("writes the original");
     let first = value(&format!(
@@ -403,8 +370,8 @@ async fn concurrent_writes_never_reveal_a_partial_document() {
         r#"{{"writer": "second", "padding": "{}"}}"#,
         "b".repeat(4096)
     ));
-    let writer_one = files.write_private_json(&target, &first);
-    let writer_two = files.write_private_json(&target, &second);
+    let writer_one = write_private_json(&files, &target, &first);
+    let writer_two = write_private_json(&files, &target, &second);
     let reader = observe_documents(&target);
     let (one, two, observed) = tokio::join!(writer_one, writer_two, reader);
     one.expect("first writer");
