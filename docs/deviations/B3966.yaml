@@ -1,0 +1,36 @@
+task: B3966
+deviations:
+  - what: >-
+      Only headers whose name starts with the lowercase underscore prefix `helicone_` become metadata, so the
+      hyphenated `helicone-property-*` names in LiteLLM's docstring are not picked up.
+    why: >-
+      LiteLLM's code checks `startswith("helicone_")`, and the docstring example contradicts its own code.
+      betterlite follows the code.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/helicone.py#L117
+  - what: >-
+      log_success turns any failure into a debug diagnostic ("Helicone Logging Error") and returns nothing. It is
+      an async method that takes its HTTP timeout from the logger instead of using the requests default.
+    why: >-
+      LiteLLM wraps the whole body in a bare except that only prints. A logging failure must not fail the model
+      response, and the shared pooled client is asynchronous and needs an explicit timeout.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/helicone.py#L129-L210
+  - what: >-
+      litellm_parent_otel_span is removed from the metadata on every path, including the one with no proxy request.
+    why: >-
+      LiteLLM returns early when there is no proxy_server_request and leaves the span object in the metadata, so
+      its own JSON encoder then fails on it and the log is lost.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/helicone.py#L96-L125
+  - what: >-
+      A missing HELICONE_API_KEY skips the POST and logs a diagnostic instead of sending the literal token
+      "Bearer None" in the Authorization header and in Helicone-Auth.
+    why: >-
+      A literal "None" token can never be accepted by Helicone, so the request only sends the call content to an
+      endpoint that will reject it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/helicone.py#L30-L40
+  - what: >-
+      The Claude mapping does not build the Human/Assistant prompt string, so a message without `content` or a
+      missing anthropic SDK no longer breaks the mapping.
+    why: >-
+      LiteLLM builds the string from the messages and discards it, so no output depends on it. Building it only
+      adds ways to fail.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/helicone.py#L42-L94

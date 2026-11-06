@@ -1,0 +1,167 @@
+{
+  "kind": "helper",
+  "name": "callback-validation-newrelic-region",
+  "call": {
+    "callback_validation": {
+      "steps": [
+        {
+          "function": "newrelic_config_error",
+          "callback_vars": {
+            "dd_api_key": "k"
+          },
+          "otel_v2": false
+        },
+        {
+          "function": "newrelic_config_error",
+          "callback_vars": {
+            "newrelic_api_key": "k"
+          },
+          "otel_v2": false
+        },
+        {
+          "function": "newrelic_config_error",
+          "callback_vars": {
+            "newrelic_api_key": "k"
+          },
+          "otel_v2": true
+        },
+        {
+          "function": "newrelic_config_error",
+          "callback_vars": {
+            "newrelic_region": "EU",
+            "newrelic_api_key": "k"
+          },
+          "otel_v2": true
+        },
+        {
+          "function": "newrelic_config_error",
+          "callback_vars": {
+            "newrelic_region": "us",
+            "newrelic_api_key": "k"
+          },
+          "otel_v2": true
+        },
+        {
+          "function": "newrelic_config_error",
+          "callback_vars": {
+            "newrelic_region": "ap",
+            "newrelic_api_key": "k"
+          },
+          "otel_v2": true
+        },
+        {
+          "function": "newrelic_config_error",
+          "callback_vars": {
+            "newrelic_region": "us"
+          },
+          "otel_v2": true
+        },
+        {
+          "function": "newrelic_config_error",
+          "callback_vars": {
+            "newrelic_region": "us",
+            "newrelic_api_key": ""
+          },
+          "otel_v2": true
+        },
+        {
+          "function": "newrelic_config_error",
+          "callback_vars": {
+            "newrelic_region": "us",
+            "newrelic_api_key": "None"
+          },
+          "otel_v2": true
+        },
+        {
+          "function": "callback_config_error",
+          "callback_name": "newrelic",
+          "callback_vars": {
+            "newrelic_region": "us",
+            "newrelic_api_key": "k"
+          },
+          "otel_v2": false
+        },
+        {
+          "function": "callback_config_error",
+          "callback_name": "newrelic",
+          "callback_vars": {
+            "newrelic_region": "us",
+            "newrelic_api_key": "k"
+          },
+          "otel_v2": true
+        },
+        {
+          "function": "callback_config_error",
+          "callback_name": "langfuse",
+          "callback_vars": {
+            "newrelic_region": "zz"
+          },
+          "otel_v2": false
+        },
+        {
+          "function": "logging_metadata_config_error",
+          "metadata": {
+            "logging": [
+              {
+                "callback_name": "newrelic",
+                "callback_vars": {
+                  "newrelic_region": "us",
+                  "newrelic_api_key": null
+                }
+              }
+            ]
+          },
+          "otel_v2": true
+        },
+        {
+          "function": "logging_metadata_config_error",
+          "metadata": {
+            "logging": [
+              {
+                "callback_name": "newrelic",
+                "callback_vars": {
+                  "newrelic_region": "eu",
+                  "newrelic_api_key": "k"
+                }
+              }
+            ]
+          },
+          "otel_v2": true
+        }
+      ]
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": [
+      {
+        "pointer": "/value/1/error/message",
+        "why": "betterlite writes its own message"
+      },
+      {
+        "pointer": "/value/5/error/message",
+        "why": "betterlite writes its own message"
+      },
+      {
+        "pointer": "/value/6/error/message",
+        "why": "betterlite writes its own message"
+      },
+      {
+        "pointer": "/value/7/error/message",
+        "why": "betterlite writes its own message"
+      },
+      {
+        "pointer": "/value/8/error/message",
+        "why": "betterlite writes its own message"
+      },
+      {
+        "pointer": "/value/9/error/message",
+        "why": "betterlite writes its own message"
+      },
+      {
+        "pointer": "/value/12/error/message",
+        "why": "betterlite writes its own message"
+      }
+    ]
+  }
+}
