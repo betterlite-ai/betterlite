@@ -37,7 +37,7 @@ impl FixtureHost {
             platform: ArcPlatform::Linux,
             environment: BTreeMap::new(),
             program_data: "%ProgramData%".to_owned(),
-            program_files: "%ProgramFiles%".to_owned(),
+            program_files: "${ProgramFiles}".to_owned(),
             files: owned_pairs(files).into_iter().collect(),
             now: 1_700_000_000,
         }

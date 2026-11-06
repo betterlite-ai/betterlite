@@ -38,6 +38,14 @@ pub(super) fn endpoint_selection() {
     assert_eq!(select_arc_endpoint(&windows), None);
     windows.program_files = "C:\\Program Files".to_owned();
     assert_eq!(select_arc_endpoint(&windows), Some(ENDPOINT.to_owned()));
+
+    let literal = "${ProgramFiles}\\AzureConnectedMachineAgent\\himds.exe";
+    let mut unset_program_files = FixtureHost::linux(&[(literal, "")]);
+    unset_program_files.platform = ArcPlatform::Windows;
+    assert_eq!(
+        select_arc_endpoint(&unset_program_files),
+        Some(ENDPOINT.to_owned())
+    );
     windows.platform = ArcPlatform::Other("darwin".to_owned());
     assert_eq!(select_arc_endpoint(&windows), None);
 }

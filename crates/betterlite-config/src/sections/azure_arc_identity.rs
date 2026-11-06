@@ -4,7 +4,7 @@ use crate::sections::Section;
 mod tests;
 
 const UNEXPANDED_PROGRAM_DATA: &str = "%ProgramData%";
-const UNEXPANDED_PROGRAM_FILES: &str = "%ProgramFiles%";
+const UNEXPANDED_PROGRAM_FILES: &str = "${ProgramFiles}";
 
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct Raw {
@@ -12,7 +12,7 @@ pub struct Raw {
     _unused: (),
 }
 
-// Windows path expansion for the Azure Arc agent, as ntpath.expandvars does it: an unset variable stays as its literal %name% and an empty one expands to nothing.
+// Each name keeps the literal form MSAL writes it in: ntpath.expandvars leaves an unset ${ProgramFiles} or %ProgramData% untouched.
 #[derive(Debug, Clone)]
 pub struct Settings {
     pub program_data: String,
