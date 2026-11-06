@@ -24,6 +24,7 @@ pub trait Transport: Send + Sync + 'static {
 
     fn method(request: &Self::Request) -> &Method;
 
+    // Hands the body back unread; the client buffers a non-streamed one inside send so its failure is a send failure
     fn send(
         &self,
         request: Self::Request,
