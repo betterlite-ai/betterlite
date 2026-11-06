@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::time::Duration;
+
 use rstest::rstest;
 use serde_json::json;
 
@@ -78,6 +80,16 @@ async fn create_thread_initial_messages() {
         transport.seen(),
         vec![request("POST", &url, Some(CREATE_BODY))]
     );
+    // The caller's timeout reaches the request; otherwise the SDK's 600s default applies.
+    let mut timed = options(KEY);
+    timed.timeout = Some(Duration::from_millis(2500));
+    transport.queue(200, THREAD);
+    api.call(timed, None, false, ThreadCall::Create(&data))
+        .await
+        .unwrap();
+    let mut expected = request("POST", &url, Some(CREATE_BODY));
+    expected["deadline"] = json!(2.5_f64);
+    assert_eq!(transport.seen()[1], expected);
 }
 
 async fn retrieve_thread() {
