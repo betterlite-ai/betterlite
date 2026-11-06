@@ -327,6 +327,7 @@ async fn a2a_client_creation(#[case] with_headers: bool) {
 #[case::buffered_without_result(false, "empty")]
 #[case::streaming_empty_events(true, "empty-stream")]
 #[case::streaming_status_last(true, "status")]
+#[case::streaming_buffered_fallback(true, "streamed-json")]
 #[tokio::test]
 async fn native_send_behavior(#[case] streaming: bool, #[case] scenario: &str) {
     let (listener, base) = start_agent().await;
@@ -361,7 +362,9 @@ async fn native_send_behavior(#[case] streaming: bool, #[case] scenario: &str) {
     .await;
     match scenario {
         "task" => assert_eq!(kind_of(&outcome.unwrap()), Some("task")),
-        "message" | "configured" => assert_eq!(kind_of(&outcome.unwrap()), Some("message")),
+        "message" | "configured" | "streamed-json" => {
+            assert_eq!(kind_of(&outcome.unwrap()), Some("message"));
+        }
         "empty" | "empty-stream" => assert!(matches!(
             outcome,
             Err(ClientError::Final { message }) if message.contains("no response")
@@ -381,7 +384,7 @@ async fn native_send_behavior(#[case] streaming: bool, #[case] scenario: &str) {
     };
     assert!(body.contains(&format!("\"method\":\"{method}\"")));
     assert!(body.contains("\"id\":\"test-1\""));
-    if matches!(scenario, "message" | "configured") {
+    if matches!(scenario, "message" | "configured" | "streamed-json") {
         assert!(body.contains("\"messageId\":\"m-1\""));
         assert!(body.contains("\"role\":\"ROLE_USER\""));
         assert!(body.contains("\"text\":\"hello\""));
