@@ -100,7 +100,9 @@ fn span_keys(
     metadata: Option<&IndexMap<String, Json>>,
 ) -> Result<(), PayloadError> {
     for key in ["span_id", "root_span_id"] {
-        if let Some(value) = metadata_text(metadata, key)? {
+        if let Some(value) = metadata_text(metadata, key)?
+            && !value.is_empty()
+        {
             data.insert(key.to_owned(), Json::Text(value.to_owned()));
         }
     }
