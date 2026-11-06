@@ -21,7 +21,7 @@ use tracing_subscriber::layer::{Context, SubscriberExt as _};
 
 use crate::helpers::{HelperError, HelperResult};
 
-use super::super::fixture::{FakeSession, Fixture, Script, TestError};
+use super::super::fixtures::{FakeSession, Fixture, Script, TestError};
 use super::super::input::{ExecuteInput, Mode, Operation, Scenario, SettingsInput, StreamKind};
 use super::{invalid, make_client};
 

@@ -16,7 +16,7 @@ use tokio_util::task::TaskTracker;
 
 use crate::helpers::HelperError;
 
-use super::super::fixture::Fixture;
+use super::super::fixtures::Fixture;
 use super::super::input::{AuthKind, AuthValueInput, SettingsInput, TlsInput};
 use super::invalid;
 

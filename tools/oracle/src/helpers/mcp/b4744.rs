@@ -1,4 +1,4 @@
-mod fixture;
+mod fixtures;
 mod input;
 mod ops;
 

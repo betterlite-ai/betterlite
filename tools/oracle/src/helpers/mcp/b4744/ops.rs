@@ -18,7 +18,7 @@ use crate::helpers::{HelperError, HelperResult};
 mod client;
 use client::{make_client, tls_policy};
 
-use super::fixture::{Fixture, InitStep, Plan, Script, Step};
+use super::fixtures::{Fixture, InitStep, Plan, Script, Step};
 use super::input::{
     AuthSourceInput, FactoryInput, InitializeInput, SettingsInput, StdioInput, TlsInput,
     TransportInput,

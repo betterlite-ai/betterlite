@@ -4,7 +4,7 @@ use betterlite_mcp::client::sessions::negotiate::Callback;
 use betterlite_mcp::client::sessions::transport::TransportType;
 use serde::Deserialize;
 
-use super::fixture::Plan;
+use super::fixtures::Plan;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
