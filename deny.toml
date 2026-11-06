@@ -1,5 +1,7 @@
 [graph]
 all-features = true
+# the two fuzz tools build only test targets; clippy, shear and the crates check still cover them
+exclude = ["betterlite-router-fuzz", "betterlite-server-fuzz"]
 # reqwest with rustls pulls in webpki-root-certs (CDLA-Permissive-2.0) for wasm32 only, so checks cover the targets betterlite ships; add a target here before shipping a build for it
 targets = [
   "x86_64-unknown-linux-gnu",
