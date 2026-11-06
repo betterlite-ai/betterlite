@@ -93,6 +93,30 @@ fn a_dynamic_api_key_wins_over_the_configured_one() {
     );
 }
 
+#[rstest]
+#[case::null(r#"{"humanloop_api_key": null}"#)]
+#[case::empty(r#"{"humanloop_api_key": ""}"#)]
+#[case::absent(r#"{"other": "x"}"#)]
+fn an_unset_dynamic_api_key_uses_the_configured_one(#[case] dynamic: &str) {
+    let clock = fake_clock();
+    let (transport, recorded) = replying(200, PROMPT_BODY);
+    let logger = logger(transport, &clock, Some("env-key"));
+    let dynamic_params = json(dynamic);
+    let variables = params(r#"{"name": "Bob"}"#);
+    logger
+        .get_chat_completion_prompt(request(
+            Some("pr_abc123"),
+            Some(&variables),
+            &dynamic_params,
+        ))
+        .expect("prompt");
+    let fetches = recorded.lock().expect("lock");
+    assert_eq!(
+        fetches[0].headers.get("X-Api-Key").map(String::as_str),
+        Some("env-key")
+    );
+}
+
 #[test]
 fn a_dynamic_api_key_enables_the_integration_without_a_configured_one() {
     let clock = fake_clock();
