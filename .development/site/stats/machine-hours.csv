@@ -1,0 +1,3 @@
+hour,minutes,written_gb_h,read_gb_h,cpu_busy,iowait,memory_used,swap_gb,disk_used,io_stall,flows,rustc
+1793912400,60,3.1,2.8,9.6,0.1,23,16.3,60.5,0.1,0,0
+1793916000,10,1.7,1,8.5,0,21.5,15.9,60.4,0.1,0,0
