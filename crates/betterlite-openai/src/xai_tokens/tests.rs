@@ -212,6 +212,14 @@ async fn unexpired_file_is_returned_without_a_request() {
     assert_eq!(fixture.calls(), 0);
 }
 
+#[tokio::test]
+async fn an_empty_access_token_is_refreshed() {
+    let auth = r#"{"access_token":"","refresh_token":"old-refresh","token_endpoint":"https://auth.x.ai/oauth2/token","expires_at":5000}"#;
+    let fixture = Fixture::new(Some(auth), vec![Reply::Body(200, FRESH_REPLY)]);
+    let token = fixture.oauth.get_access_token().await.unwrap();
+    assert_eq!(token.expose_secret(), "new-access");
+}
+
 #[rstest]
 #[case::missing(None)]
 #[case::malformed(Some("{"))]
