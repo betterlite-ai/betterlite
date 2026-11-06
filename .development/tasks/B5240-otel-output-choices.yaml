@@ -1,0 +1,183 @@
+id: B5240
+title: OTel response output choices
+description: >-
+  LiteLLM's OTel model folds the `response` field of a StandardLoggingPayload into chat-shaped choices, so vendor mappers read one shape whichever endpoint ran. This task ports that fold and nothing else. B3844 calls it from `LLMCallSpanData`, and no span or route uses it yet.
+
+
+  Build `crates/betterlite-logging/src/otel/model/payloads/output_choices.rs` with two public functions. `output_choices(response: &MetadataMap) -> Vec<MetadataMap>` is LiteLLM's `_output_choices`. `finish_reasons(choices: &[MetadataMap]) -> Vec<String>` is `_finish_reasons`: it keeps each non-empty `finish_reason` string. `MetadataMap` is `crate::otel::model::metadata::wire::MetadataMap`, a `BTreeMap<String, OtelModelValue>`. The return type stays a map because a chat choice passes through with whatever keys the provider sent. Keep the readers below private and put them in `output_choices/responses.rs` and `output_choices/summaries.rs`, so each file stays under 300 lines. Tests go in `output_choices/tests.rs`, declared with `#[path = "output_choices/tests.rs"] mod tests;` as the sibling modules do. Reuse `helpers::dicts` and `helpers::float_value` from `payloads/helpers.rs` and `as_int` from `otel::model::utils::coercion`.
+
+
+  `output_choices` runs its readers in this order and returns the first result that isn't empty: completion, responses, OCR, transcription, moderation, rerank, search, image, binary. When all of them are empty it returns an empty list.
+
+
+  Two shapes recur. A text choice is `{"message": {"role": "assistant", "content": <text>, "refusal": null, "tool_calls": null}, "finish_reason": null}`. A joined choice is one text choice whose content is the parts joined with two newlines, and no parts means no choice.
+
+
+  Completion reads the objects in `choices`. A choice with no `message` key and a string `text` is rewritten: its other keys stay, `text` goes, `message` becomes the text choice's message with that text as content, and `finish_reason` is the choice's own string or null. Every other choice passes through unchanged.
+
+
+  Responses reads the objects in `output`. Message items have `type` `message`. Tool items have `type` `function_call` or `custom_tool_call`. With neither kind it returns nothing. Otherwise it returns one choice. Its role is the first non-empty `role` among the message items, or `assistant`. Its content joins, with no separator, the `text` of every `output_text` part across the message items' `content`, and its refusal does the same with the `refusal` field of `refusal` parts. Each is null only when no part of that type holds a string. Its `tool_calls` is the list of tool calls, or null when there are none. A tool call is `{"id": <call_id, else id, else "">, "type": "function", "function": {"name": <name or "">, "arguments": <input for custom_tool_call, arguments otherwise, or "">}}`. The finish reason comes from the response's `status`: `completed` gives `tool_calls` when there are tool calls and `stop` when there aren't, `incomplete` gives `content_filter` when `incomplete_details.reason` is `content_filter` and `length` otherwise, and any other status gives null.
+
+
+  OCR makes a joined choice from the `markdown` string of each object in `pages`. Transcription makes a text choice from a non-empty string `text`.
+
+
+  Moderation reads the objects in `results`, skips those whose `flagged` isn't a bool, and makes a joined choice of one verdict each: `not flagged`, `flagged: a, b` naming the `categories` keys whose value is true, or `flagged` when none is. Rerank reads the same `results` and needs `index` through `as_int` and `relevance_score` through `float_value`. It makes a joined choice of `[index] score` lines, each followed by a newline and `document.text` when that text is non-empty, and skips results missing either number. Search reads the same `results`. For each it joins the non-empty `title`, `url` and `snippet` with one newline, skips a result with none of them, and makes a joined choice of those lines.
+
+
+  Image reads the objects in `data`. An object's location is its `url` when that is a string, even an empty one. Failing that, a string `b64_json` gives `b64_json image (N bytes)`, where N is the string's length times 3, divided by 4 with the remainder dropped, minus the number of `=` signs in its last two characters. A non-empty `revised_prompt` goes on its own line before the location. Objects with no location are skipped and the rest make a joined choice. Binary reads `num_bytes` through `as_int` and makes one text choice: `<content_type> (<size> bytes)` with a non-empty `content_type`, `<size> bytes` without. The bytes themselves never reach a choice.
+
+
+  The oracle adapter is operation `b5240`, with tagged inputs `{"function": "output_choices", "response": {...}}` and `{"function": "finish_reasons", "choices": [...]}`. The Python side calls `payloads._output_choices` and `payloads._finish_reasons` and answers `{"result": ...}` the way `tools/oracle/helpers/b3843.py` does. Every case gets a fuzz seed of the same content at `tools/oracle/fuzz/corpus/helper_case/otel-output-choices-<case>.yaml`.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/otel/model/payloads/output_choices.rs
+    - crates/betterlite-logging/src/otel/model/payloads/output_choices/**
+    - tools/oracle/cases/helpers/otel-output-choices/**
+    - tools/oracle/fuzz/corpus/helper_case/otel-output-choices-*
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L728-L753
+    why: _finish_reasons and the TypedDicts that fix the choice, message and tool-call shapes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L756-L791
+    why: _responses_choices and the reader order in _output_choices.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L794-L826
+    why: The text and joined choice builders, the completion rewrite, OCR and transcription.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L829-L873
+    why: The three readers of `results`, moderation, rerank and search.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L876-L905
+    why: Image and binary size summaries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L908-L937
+    why: The Responses part text, tool call and finish reason helpers.
+
+dod:
+  - text: output_choices tries the readers in LiteLLM's order, returns the first non-empty result, and returns an empty list when nothing matches.
+    proof: [reader-order, oracle, helper-python]
+  - text: Chat choices pass through unchanged, and a text-completion choice becomes a chat-shaped choice that keeps its other keys.
+    proof: [completion-choices, oracle, helper-python]
+  - text: A Responses API output folds into one choice with LiteLLM's role, content, refusal, tool calls and finish reason.
+    proof: [responses-choices, oracle, helper-python]
+  - text: OCR pages and transcription text become text choices, with empty markdown kept and empty transcription text dropped.
+    proof: [document-text, oracle, helper-python]
+  - text: Moderation, rerank and search results become LiteLLM's joined lines, and results a reader can't use are skipped.
+    proof: [result-lines, oracle, helper-python]
+  - text: Image and binary responses become location or size summaries and never carry the bytes.
+    proof: [media-summaries, oracle, helper-python]
+  - text: finish_reasons returns each non-empty finish_reason in choice order.
+    proof: [finish-reasons, oracle, helper-python]
+  - text: Every oracle case has a seed in the helper case corpus and the corpus replays.
+    proof: [helper-case-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: reader-order
+      why: the order test is missing or a later reader beats an earlier one
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::payloads::output_choices::tests::first_non_empty_reader_wins($|::)/)'
+    - id: completion-choices
+      why: the completion test is missing or a rewritten choice loses a key or keeps text
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::payloads::output_choices::tests::completion_choices_match_litellm($|::)/)'
+    - id: responses-choices
+      why: the Responses test is missing or a field of the folded choice differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::payloads::output_choices::tests::responses_output_folds_into_one_choice($|::)/)'
+    - id: document-text
+      why: the OCR and transcription test is missing or an empty value is treated wrongly
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::payloads::output_choices::tests::ocr_and_transcription_text($|::)/)'
+    - id: result-lines
+      why: the results test is missing or a moderation, rerank or search line differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::payloads::output_choices::tests::moderation_rerank_and_search_lines($|::)/)'
+    - id: media-summaries
+      why: the media test is missing or an image or binary summary differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::payloads::output_choices::tests::media_becomes_size_summaries($|::)/)'
+    - id: finish-reasons
+      why: the finish reason test is missing or an empty or absent reason is kept
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::payloads::output_choices::tests::finish_reasons_keep_non_empty_values($|::)/)'
+    - id: helper-python
+      why: the oracle adapter is untouched or fails strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5240.py tools/oracle/helpers/b5240)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: the output choice seeds are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/otel-output-choices-*")" && grep -lE '^[[:space:]]+"?b5240"?:' tools/oracle/fuzz/corpus/helper_case/otel-output-choices-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/otel-output-choices/empty-response.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/order-choices-before-output.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/order-moderation-before-rerank.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/order-results-fall-to-search.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/completion-chat-passthrough.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/completion-text-rewritten.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/completion-no-finish-reason.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/completion-null-message-passthrough.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/responses-text-stop.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/responses-multiple-parts.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/responses-empty-text-part.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/responses-refusal.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/responses-function-call.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/responses-custom-tool-call.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/responses-no-role.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/responses-incomplete-length.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/responses-incomplete-content-filter.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/responses-in-progress.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/responses-reasoning-only.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/ocr-pages.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/ocr-empty-markdown.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/transcription-text.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/transcription-empty-text.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/moderation-not-flagged.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/moderation-flagged-categories.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/moderation-flagged-no-hits.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/moderation-multiple-results.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/rerank-with-document.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/rerank-without-document.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/rerank-whole-score.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/search-all-fields.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/search-partial-fields.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/search-blank-result-skipped.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/image-url.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/image-empty-url.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/image-b64-padding.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/image-b64-single-pad-sign.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/image-revised-prompt.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/image-no-location.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/binary-with-content-type.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/binary-without-content-type.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/binary-zero-bytes.yaml
+  - tools/oracle/cases/helpers/otel-output-choices/finish-reasons-filtered.yaml
+
+deviations:
+  - what: The hit list in a flagged moderation verdict names categories in sorted order, where LiteLLM keeps the order of the response's `categories` object.
+    why: >-
+      `OtelModelValue::Object` is a `BTreeMap`, so the key order is gone by the time the payload reaches this code. The verdict text exists only on the captured output attribute. Keeping the order would mean changing the shared value type that B3892 merged. The oracle case sends its categories in sorted order.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L839-L847
+
+out_of_scope:
+  - LLMCallSpanData and the capture gate on choices (payloads.py L398-L491), EmbeddingOutput, ToolDefinition, _tool_from_entry, _extract_tools, the MCP span records and their predicates belong to B3844.
+  - _parse_error (payloads.py L940-L951) is already built as SpanError::from_payload by B3843, and B3844 calls it.
+  - LLMRequestParams, LLMUsage, LLMCost, SpanError, ServerInfo, GuardrailSpanData, ServiceSpanData, ProxyRequestSpanData, sanitize_event_metadata and the helpers _cache_token_value, _json_or_none, _guardrail_mode_str, _total_masked_entities and _dicts (payloads.py L67-L365 and L632-L725) are merged under B3843.
+  - Reading choices into span attributes belongs to the mappers in B3845 and B3846.
+
+pitfalls:
+  - 'The completion rewrite tests `"message" not in choice`, so `{"message": null, "text": "hi"}` passes through unchanged and the check must be `contains_key`, not a null test.'
+  - The rewritten choice always has a `finish_reason` key, null when the source choice had none, and it keeps keys such as `index` and `logprobs`.
+  - An empty `choices` list gives an empty result, so the next reader runs, but a non-empty list ends the chain even when no choice has a `message` or `text`.
+  - Responses content is null only when no part holds a string, so a single `output_text` part with `text` set to "" gives "" and not null.
+  - The tool-call `arguments` field reads `input` for `custom_tool_call` only, and `type` in the result is always `function`, even for a custom tool.
+  - A Responses output holding only `reasoning` items returns nothing from that reader, so the chain moves on and may end empty.
+  - Moderation, rerank and search all read `results`, so one list can fall through two readers before search picks up its `title`.
+  - OCR keeps `markdown` set to "" because its filter is `is not None`, while transcription drops `text` set to "".
+  - 'A flagged result counts a category only when its value is the bool true, so `{"hate": 1}` gives plain `flagged`.'
+  - Rust prints the f64 `1.0` as `1` with `{}`, so format the rerank score with `{:?}` to get LiteLLM's `[0] 1.0`.
+  - An image `url` of "" is still a location, so the summary is "" and the choice exists with empty content, or `<revised_prompt>` plus a newline when a prompt is present.
+  - The `b64_json` size can go below zero, since the one-character text `=` gives `-1 bytes`, so count in `i64` with `i64::try_from` and not in `usize`.
+  - '`num_bytes` set to 0 still makes a choice, because LiteLLM tests `size is None`.'
+  - Python's `as_str` stringifies numbers but `OtelModelValue::as_str` returns None for them, and docs/compatibility.md lets that stand, so a case must send strings where LiteLLM declares strings.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

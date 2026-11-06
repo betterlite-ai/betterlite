@@ -1,0 +1,340 @@
+id: B4416
+title: Authenticate Vault requests and resolve secret targets
+description: >-
+  Build the core of the HashiCorp Vault manager in the new module
+  `betterlite_secret_managers::vault`: its settings, login, the token and namespace a Vault
+  call carries, the URL of a secret, and the decoders for Vault's JSON. B4417 builds read,
+  write, rotate and delete on top of this module and B1647's connection test calls it too,
+  so every name below is public unless it says otherwise. Follow the shape of
+  crates/betterlite-secret-managers/src/cyberark.rs: the environment arrives as
+  `&BTreeMap<String, String>`, HTTP goes through an injected transport trait with an async
+  and a blocking method, and time comes from the existing `crate::cyberark::Clock`. The
+  manager is `HashicorpSecretManager<T: VaultTransport>` in vault.rs, built with
+  `new(environment, transport, clock) -> Result<Self, VaultInitError>`.
+
+
+  vault/settings.rs holds `VaultSettings::from_environment(environment)`. An empty variable
+  counts as unset. Read HCP_VAULT_ADDR (default http://127.0.0.1:8200), HCP_VAULT_NAMESPACE,
+  HCP_VAULT_LOGIN_NAMESPACE, HCP_VAULT_SECRET_NAMESPACE, HCP_VAULT_MOUNT_NAME (default
+  secret), HCP_VAULT_PATH_PREFIX, HCP_VAULT_TOKEN, HCP_VAULT_APPROLE_ROLE_ID,
+  HCP_VAULT_APPROLE_SECRET_ID, HCP_VAULT_APPROLE_MOUNT_PATH (default approle),
+  HCP_VAULT_CLIENT_CERT, HCP_VAULT_CLIENT_KEY and HCP_VAULT_CERT_ROLE. The refresh interval
+  comes from HCP_VAULT_REFRESH_INTERVAL, then SECRET_MANAGER_REFRESH_INTERVAL, then 86400
+  seconds, each parsed with `betterlite_env::number::<u64>`. A bad value is
+  `VaultInitError::RefreshInterval`, carrying the parser's `EnvError`.
+
+
+  The login method is a closed choice, so `VaultSettings` holds the enum `VaultAuth` with
+  `AppRole { role_id, secret_id, mount_path }`, `TlsCert { client_certificate, role }` and
+  `Token(SecretString)`. Choose in that order: role id and secret id both present gives
+  AppRole, else certificate and key both present gives TlsCert, else a token gives Token, else
+  `VaultInitError::MissingCredentials`. AppRole wins even when HCP_VAULT_TOKEN is set, and one
+  half of a pair counts for nothing. The role id, secret id and token are `SecretString`.
+  `client_certificate` is the existing `crate::cyberark::transport::ClientCertificate`.
+
+
+  vault/transport.rs defines `VaultTransport` the way cyberark/transport.rs defines
+  `ConjurTransport`: `send` returns `impl Future<Output = Result<VaultResponse, Self::Error>> +
+  Send` and `send_blocking` makes the same call synchronously. `VaultRequest` has `method`
+  (enum `VaultMethod` with Get, Post and Delete, since B4417 needs all three), `url`,
+  `token: Option<SecretString>` for the X-Vault-Token header, `namespace: Option<String>` for
+  the X-Vault-Namespace header, `body: Option<SecretString>` holding JSON text,
+  `client_certificate: Option<ClientCertificate>`, `timeout: Duration`, `follow_redirects:
+  bool` and `max_response_bytes: usize`. `VaultResponse` has `status: u16` and `body:
+  SecretString`. Export `MAX_RESPONSE_BYTES`, 1 MiB. No real HTTP client is built here: tests
+  and the oracle helper use scripted transports.
+
+
+  vault/auth.rs adds `request_token(&self)` (async) and `request_token_blocking(&self)` to the
+  manager, both returning `Result<SecretString, VaultError<T::Error>>`. Token mode returns the
+  configured token with no HTTP call. AppRole checks the token slot first, and on a miss POSTs
+  `{addr}/v1/auth/{mount_path}/login` with the JSON body `{"role_id":...,"secret_id":...}`, the
+  login namespace, a 600 second timeout and follow_redirects true. TlsCert POSTs
+  `{addr}/v1/auth/cert/login` with the JSON body `{"name":role}`, the client certificate, the
+  login namespace, a 5 second timeout and follow_redirects false, and it logs in on every call.
+  Build both bodies from small Serialize structs so serde does the escaping. Split each login
+  into one function that builds the request and one that reads the response, as
+  cyberark/cyberark_auth.rs does, so the async and blocking paths differ only in the transport
+  call.
+
+
+  The AppRole token lives in its own slot on the manager, `Mutex<Option<CachedToken>>`, with
+  expiry set to now plus lease_duration seconds. It counts as expired once `now > expiry`. The
+  manager also owns the secret body cache for B4417: the existing
+  `crate::cyberark::ttl_cache::TtlCache`, built with the refresh interval as its TTL and reached
+  through `pub(crate) fn body_cache(&self)`. The architect's skeleton widens that type to
+  pub(crate), so use it and don't write a second cache. Its keys will be secret URLs and its
+  values raw response bodies. This task only creates it; reading and writing it is B4417's.
+
+
+  vault/target.rs defines `VaultSecretSettings` with `namespace`, `mount`, `path_prefix` and
+  `data`, all `Option<String>`, and `VaultSecretParams` with `secret_manager_settings:
+  Option<VaultSecretSettings>` plus the same four keys flat through `#[serde(flatten)]`. Both
+  derive Deserialize and ignore other keys. B4417 uses `VaultSecretParams` as its
+  `BaseSecretManager::Params`. `get_url(&self, secret_name, &VaultSecretSettings)` calls
+  `raise_if_unsafe_secret_name` first and then returns
+  `{addr}/v1/[{namespace}/]{mount}/data/[{path_prefix}/]{secret_name}`. For each of namespace,
+  mount and path_prefix: take the override, or the manager's value when the override is None,
+  trim whitespace, trim `/`, and treat an empty result as nothing. No namespace or prefix leaves
+  that segment out; no mount gives the word secret. `build_secret_target(&self, secret_name,
+  Option<&VaultSecretParams>)` picks the settings, calls `get_url` and returns
+  `VaultSecretTarget { url, data_key, secret_name }`. Both return
+  `Result<_, UnsafeSecretNameError>`. The manager also has `vault_addr()`,
+  `vault_login_namespace()` and `vault_secret_namespace()`, the last two giving the override
+  variable, else HCP_VAULT_NAMESPACE, as `Option<&str>`. B1647 builds its token lookup from
+  `request_token`, `vault_login_namespace` and `vault_addr`.
+
+
+  vault/response.rs holds three public decoders over raw bytes.
+  `decode_login_response(&[u8]) -> Result<VaultLogin, VaultResponseError>` reads
+  `auth.client_token` into a SecretString and `auth.lease_duration` as u64.
+  `json_object_body(&[u8]) -> Result<serde_json::Map<String, serde_json::Value>,
+  VaultResponseError>` is LiteLLM's `_json_object_body`, for B4417.
+  `secret_value(&[u8], data_key: &str) -> Option<SecretString>` walks `data`, `data`, then the
+  key, and gives None for bad JSON, a missing step, a non-object step or a non-string value.
+
+
+  vault/error.rs defines `VaultInitError`, `VaultResponseError` and `VaultError<E>`, whose
+  variants `Transport { method, source }`, `Status { method, status }`, `ResponseTooLarge {
+  method, limit }` and `InvalidLogin { method }` carry the enum `LoginMethod` (AppRole or
+  TlsCert). The text starts "Could not authenticate to Vault via AppRole" or "... via TLS cert".
+  Any status outside 200 to 299, a body longer than `max_response_bytes`, or a body that doesn't
+  decode is a failed login.
+
+
+  Add the cargo-fuzz target `vault_response` to crates/betterlite-secret-managers/fuzz. It feeds
+  the same bytes to all three decoders. Register its [[bin]] in fuzz/Cargo.toml, seed
+  fuzz/corpus/vault_response with real login and KV v2 bodies plus broken ones, and add the test
+  `replays_the_vault_response_corpus` in `vault::response::tests`, modeled on
+  crates/betterlite-secret-managers/src/oidc/tests/oidc_jwt_fuzz_corpus.rs.
+
+
+  The skeleton adds the oracle helper operation b4416. Its input has the same `env`, `routes` and
+  `steps` shape as the b4418 cases in tools/oracle/cases/helpers/cyberark, with the steps
+  `{op: token}`, `{op: token_blocking}`, `{op: namespaces}`, `{op: target, name, params}`,
+  `{op: value, body, data_key}` and `{op: advance, ms}`. The result lists each step's output and
+  every HTTP call with its method, URL, namespace header, JSON body and client certificate paths.
+  Failures come back as stable tags such as `missing_credentials`, `login_failed` and
+  `unsafe_secret_name`, so Python and Rust compare without their message text.
+scope:
+  paths:
+    - crates/betterlite-secret-managers/src/vault.rs
+    - crates/betterlite-secret-managers/src/vault/**
+    - crates/betterlite-secret-managers/fuzz/fuzz_targets/vault_response.rs
+    - crates/betterlite-secret-managers/fuzz/corpus/vault_response/**
+    - tools/oracle/cases/helpers/vault-auth/**
+    - tools/oracle/fuzz/corpus/helper_case/vault-auth-*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/hashicorp_secret_manager.py#L24-L91
+    why: Login, target and read response shapes, plus _vault_login_body, _json_object_body and _as_json_object. _vault_secret_read_body in this range is B4417's.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/hashicorp_secret_manager.py#L95-L150
+    why: __init__ and _verify_required_credentials_exist, with every environment variable, its default and the refresh interval.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/hashicorp_secret_manager.py#L152-L219
+    why: _auth_via_approle, with the cached token, login URL, JSON body, lease TTL and failure wrapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/hashicorp_secret_manager.py#L221-L274
+    why: _auth_via_tls_cert and _get_tls_cert_auth_body, with the fixed login path, the certificate pair and the role that may be null.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/hashicorp_secret_manager.py#L276-L291
+    why: vault_login_namespace, vault_secret_namespace and _get_login_headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/hashicorp_secret_manager.py#L293-L344
+    why: get_url, _sanitize_plain_value and _sanitize_path_component, the exact URL rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/hashicorp_secret_manager.py#L346-L376
+    why: _extract_secret_manager_settings and _build_secret_target, nested versus flat settings and the data key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/hashicorp_secret_manager.py#L378-L396
+    why: _get_request_headers, the AppRole then TLS then token order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/hashicorp_secret_manager.py#L719-L754
+    why: _get_secret_value_from_json_response, the walk to the secret value.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1889
+    why: SECRET_MANAGER_REFRESH_INTERVAL and its 86400 default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L1395-L1420
+    why: The sync client behind AppRole login sets follow_redirects and the 600 second default timeout. The TLS login uses a bare httpx.Client instead, with a 5 second default and no redirects.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/secret_managers/test_hashicorp_secret_manager.py
+    why: Expected URLs, namespaces and headers. Reuse its names as test case names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/unit/secret_managers/hashicorp_vault_parity.json
+    why: The six parity fixtures to carry over as oracle cases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/tests/litellm_utils_tests/test_hashicorp.py#L267-L361
+    why: The TLS and AppRole login tests, with exact request arguments. L313 is the only reader of hcp_vault_token.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/key_management_event_hooks.py#L480
+    why: The team hook passes metadata.secret_manager_settings as flat optional_params, the shape VaultSecretParams must accept next to the nested one.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/config_override_endpoints.py#L622-L633
+    why: Why the token, login namespace and address are public. B1647 owns this route.
+  - url: https://developer.hashicorp.com/vault/api-docs/auth/approle
+    why: Vault's AppRole login request and response.
+  - url: https://developer.hashicorp.com/vault/api-docs/auth/cert
+    why: Vault's certificate login request and response.
+dod:
+  - text: >-
+      The settings reader applies every default, counts an empty variable as unset, resolves the
+      refresh interval in order, rejects a bad interval by name and refuses a manager with no
+      complete credential. AppRole beats TLS and TLS beats the token, and half a pair is ignored.
+    proof: [vault-settings-tests, oracle, vault-helper-corpus]
+  - text: >-
+      AppRole login sends the right URL, body and namespace, reuses the token until its lease ends
+      and logs in again after, on both the async and the blocking path. TLS login sends the
+      certificate pair and the role, null included, and logs in on every call. Token mode makes no
+      HTTP call.
+    proof: [vault-auth-tests, oracle, vault-helper-corpus]
+  - text: >-
+      A login that fails on transport, status, body size or decoding gives a VaultError naming the
+      method, and no token, secret id or response body shows up in the error text or in the Debug
+      output of the settings or requests.
+    proof: [vault-auth-tests, oracle]
+  - text: >-
+      Secret URLs and targets match LiteLLM for defaults, namespaces, sanitized mounts and prefixes,
+      nested and flat settings, null and empty overrides, data keys and unsafe names, and
+      X-Vault-Namespace appears only on login requests.
+    proof: [vault-target-tests, oracle, vault-helper-corpus]
+  - text: >-
+      The three decoders match LiteLLM on valid bodies and never panic on arbitrary bytes, and the
+      vault_response fuzz target and its fresh corpus replay.
+    proof: [vault-response-tests, vault-response-corpus, oracle]
+  - text: The independently invoked LiteLLM helper matches the Rust operation and the new helper-case seed replays.
+    proof: [oracle, helper-python, vault-helper-corpus]
+checks:
+  optional:
+    - mutants
+  commands:
+    - id: vault-settings-tests
+      why: settings defaults, refresh interval and login method choice fail or are missing
+      run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^vault::(.*::)?settings::tests::/)'
+    - id: vault-auth-tests
+      why: login requests, token reuse, failures or redaction fail or are missing
+      run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^vault::(.*::)?auth::tests::/)'
+    - id: vault-target-tests
+      why: URL and secret target resolution fail or are missing
+      run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^vault::(.*::)?target::tests::/)'
+    - id: vault-response-tests
+      why: login and secret body decoding fail or are missing
+      run: cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(/^vault::(.*::)?response::tests::/) - test(replays_the_vault_response_corpus)'
+    - id: vault-response-corpus
+      why: the raw-byte decoder fuzz target or its fresh replay corpus is missing or fails
+      run: >-
+        test -f crates/betterlite-secret-managers/fuzz/fuzz_targets/vault_response.rs &&
+        grep -q 'name = "vault_response"' crates/betterlite-secret-managers/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-secret-managers/fuzz/corpus/vault_response)" &&
+        cargo nextest run --locked -p betterlite-secret-managers --no-tests=fail -E 'test(replays_the_vault_response_corpus)'
+    - id: helper-python
+      why: the independent LiteLLM helper is missing or fails ruff or basedpyright
+      run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b4416.py)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: vault-helper-corpus
+      why: newly added Vault helper seeds are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/vault-auth-*")" &&
+        grep -lE '^[[:space:]]+b4416:' tools/oracle/fuzz/corpus/helper_case/vault-auth-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/vault-auth/direct-token-defaults.yaml
+  - tools/oracle/cases/helpers/vault-auth/global-namespace.yaml
+  - tools/oracle/cases/helpers/vault-auth/namespace-overrides.yaml
+  - tools/oracle/cases/helpers/vault-auth/custom-mount-and-prefix.yaml
+  - tools/oracle/cases/helpers/vault-auth/approle-custom-mount.yaml
+  - tools/oracle/cases/helpers/vault-auth/approle-token-cached-until-lease-ends.yaml
+  - tools/oracle/cases/helpers/vault-auth/approle-beats-tls-and-token.yaml
+  - tools/oracle/cases/helpers/vault-auth/tls-login-every-call.yaml
+  - tools/oracle/cases/helpers/vault-auth/tls-null-role.yaml
+  - tools/oracle/cases/helpers/vault-auth/tls-beats-token.yaml
+  - tools/oracle/cases/helpers/vault-auth/partial-pairs-fall-through.yaml
+  - tools/oracle/cases/helpers/vault-auth/missing-credentials.yaml
+  - tools/oracle/cases/helpers/vault-auth/refresh-interval-invalid.yaml
+  - tools/oracle/cases/helpers/vault-auth/login-rejected.yaml
+  - tools/oracle/cases/helpers/vault-auth/login-body-malformed.yaml
+  - tools/oracle/cases/helpers/vault-auth/target-nested-and-flat-settings.yaml
+  - tools/oracle/cases/helpers/vault-auth/target-null-and-empty-overrides.yaml
+  - tools/oracle/cases/helpers/vault-auth/target-data-key.yaml
+  - tools/oracle/cases/helpers/vault-auth/target-unsafe-secret-name.yaml
+  - tools/oracle/cases/helpers/vault-auth/secret-value-extraction.yaml
+deviations:
+  - what: The Vault manager does not check for a premium license.
+    why: betterlite has no paid tier, so there is nothing to gate.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/hashicorp_secret_manager.py#L122-L125
+  - what: The AppRole token is kept in its own slot, apart from the cached secret bodies.
+    why: LiteLLM keeps both in one cache capped at 200 entries, so many cached secrets can evict the token and force an extra login. In its own slot only the lease ends the token.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/hashicorp_secret_manager.py#L129-L131
+  - what: An async caller logs in over the async transport.
+    why: LiteLLM's _get_request_headers is synchronous, so an async read blocks the event loop for the whole login. betterlite never blocks inside async code.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/hashicorp_secret_manager.py#L378-L396
+  - what: A failed login reports the method and the HTTP status or transport error in betterlite's own words, not the text of the Python exception.
+    why: The exception text comes from httpx and the JSON decoder and can quote response content, and a login response holds a token.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/hashicorp_secret_manager.py#L218-L219
+  - what: A negative HCP_VAULT_REFRESH_INTERVAL or SECRET_MANAGER_REFRESH_INTERVAL is rejected at construction.
+    why: The interval is an unsigned number of seconds. LiteLLM accepts a negative number and then expires every entry at once.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/hashicorp_secret_manager.py#L129-L131
+  - what: A login response with a negative or fractional lease_duration is a failed login.
+    why: Vault sends the lease as whole seconds, so betterlite reads it as an unsigned integer. LiteLLM would pass any number on to its cache.
+    link: https://developer.hashicorp.com/vault/api-docs/auth/approle
+  - what: A Vault response body over 1 MiB is refused, and the body cache has no separate per-item limit.
+    why: Every outside body has a size limit in betterlite. LiteLLM reads any size, and its cache's 1 MiB item check is not needed once the body is capped.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L56
+out_of_scope:
+  - B4417 owns async_read_secret, sync_read_secret, async_write_secret, async_rotate_secret, async_delete_secret, _vault_secret_read_body, the BaseSecretManager impl and every read and write of the body cache.
+  - B4410 owns raise_if_unsafe_secret_name, UnsafeSecretNameError and the BaseSecretManager contract.
+  - B4421 owns choosing the manager at startup and the dispatch. LiteLLM's constructor also sets litellm.secret_manager_client and litellm._key_management_system (L127-L128). This constructor sets no global, and the caller keeps the manager.
+  - B4421 owns the outbound wiring of a real client behind VaultTransport, the same split B4418 used for ConjurTransport.
+  - B1647 owns the Vault config override routes, test_hashicorp_vault_connection and HASHICORP_ENV_VAR_MAPPING.
+pitfalls:
+  - >-
+    The three URL segments don't treat an empty override alike. An explicit empty namespace or
+    path_prefix, or one of only spaces and slashes, removes the segment even when
+    HCP_VAULT_NAMESPACE is set. An explicit empty mount gives the literal secret, not
+    HCP_VAULT_MOUNT_NAME. A None override, absent or JSON null, uses the manager's value. So
+    Option<String> is enough for each field, and the empty string must stay Some("").
+  - >-
+    A present `secret_manager_settings` replaces the flat keys completely, even as an empty object:
+    `{"secret_manager_settings":{},"namespace":"x"}` uses the manager's namespace, not x. The flat
+    keys count only when the nested value is absent or null.
+  - >-
+    The data key is trimmed of whitespace only, never of slashes, so " /a/ " becomes "/a/". Empty or
+    None gives "key".
+  - >-
+    Don't normalize the URL. The secret name goes in raw, with no percent-encoding (CyberArk does
+    encode, Vault doesn't), a trailing slash on HCP_VAULT_ADDR stays and gives `//v1/`, and
+    HCP_VAULT_APPROLE_MOUNT_PATH is used as given with no trim. Build the string with format!, not a
+    URL type that would change any of these.
+  - >-
+    X-Vault-Namespace goes on login requests only, and its value isn't trimmed. The secret namespace
+    travels in the URL path, so HCP_VAULT_SECRET_NAMESPACE alone sends no login header and
+    HCP_VAULT_LOGIN_NAMESPACE never changes a secret URL.
+  - >-
+    An unset HCP_VAULT_CERT_ROLE sends `{"name":null}`, not `{}`. Keep the key: no
+    skip_serializing_if on that field.
+  - >-
+    TLS login never reuses a token. LiteLLM writes hcp_vault_token to its cache but no production code
+    reads that key, so every call logs in again. Don't store the TLS token in the slot. The TLS
+    response still needs lease_duration, because LiteLLM reads it and fails the login when it's
+    missing.
+  - >-
+    A lease of 0 means the token is stale as soon as the clock moves, not that it never expires. Don't
+    read 0 as "no expiry".
+  - >-
+    AppRole login follows redirects and TLS login doesn't, because LiteLLM's shared sync client sets
+    follow_redirects=True and a bare httpx.Client leaves it off. A standby node in a Vault HA cluster
+    answers 307, so AppRole reaches the active node while TLS fails on the 307: raise_for_status
+    treats every non-2xx as an error. Set the flag per method, and treat a 3xx that reaches the manager
+    as a failed login.
+  - >-
+    Don't pass serde_json's error along. Its text can quote the rejected value and a login response
+    holds a token, so `decode_login_response` drops the source error and `InvalidLogin` carries only
+    the method. Call expose_secret only to build a request body or to decode.
+  - >-
+    `secret_value` walks a serde_json::Value, not a derived struct. The secret object holds whatever the
+    user stored, so a number next to the wanted key must not fail the read, and a derived struct would
+    reject a repeated key where Python keeps the last one.
+  - >-
+    The async path calls `send`, never `send_blocking`, and doesn't hold the token slot's mutex across
+    the await: read the slot, drop the guard, log in, then lock again to store.
+  - >-
+    A refresh interval of 0 is used as given (docs/compatibility.md), while LiteLLM's cache turns 0 into
+    600 with `default_ttl or 600`. That needs no deviation, but no oracle case may set an interval to 0
+    or any variable to an empty string, since those two differ by design.
+  - >-
+    The base similarity check flags a copy of 8 or more lines at 85 percent. Reuse TtlCache and
+    ClientCertificate, and don't paste read_seconds from google_secret_manager/settings.rs: a short loop
+    over the two variable names covers the refresh interval.
+  - >-
+    The Python helper must set premium_user to True before it builds the manager, or LiteLLM refuses
+    to start, and it must replace both _get_httpx_client and httpx.Client since the two logins use
+    different clients. tools/oracle/helpers/b4418.py shows the clock and client patching.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

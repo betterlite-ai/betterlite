@@ -1,0 +1,175 @@
+id: B4307
+title: Describe cache settings and return redacted effective values
+description: >-
+  Serve GET /cache/settings from crates/betterlite-server. The response has three members: "fields", the catalog of 27 cache
+  settings the admin UI renders; "current_values", the effective cache settings with every credential replaced by the
+  marker ***REDACTED***; and "redis_type_descriptions", the three texts for node, cluster and sentinel. The route is
+  authenticated with the same dependency as the other management routes (any valid key, not admin only, as in LiteLLM).
+
+  Put the catalog in crates/betterlite-server/src/cache_settings_read/fields.rs. It ports CacheSettingsField and the lists
+  CACHE_SETTINGS_FIELDS and REDIS_TYPE_DESCRIPTIONS from litellm/types/management_endpoints/cache_settings_endpoints.py. A field
+  has field_name, field_type, field_value, field_description, field_default, options, ui_field_name, link and redis_type, and all
+  nine are always serialized (null when unset, as pydantic does). Copy names, types, descriptions, defaults, options and order
+  exactly from the Python file, in that order: redis_type, url, host, port, db, password, username, ssl, namespace, ttl,
+  max_connections, redis_startup_nodes, sentinel_nodes, service_name, sentinel_password, similarity_threshold,
+  redis_semantic_cache_embedding_model, semantic_cache_scope, gcp_service_account, gcp_ssl_ca_certs, ssl_cert_reqs,
+  ssl_check_hostname, aws_iam_auth, aws_iam_user_name, aws_iam_cache_name, aws_iam_region, aws_iam_serverless. That is 27 fields. The catalog is
+  a function that returns a fresh Vec each call, so filling field_value for one request never leaks into the next.
+
+  Build the effective values in crates/betterlite-server/src/cache_settings_read/view.rs, in this order, as LiteLLM does:
+  1. Load the stored settings. With no database connection the stored map is empty. Otherwise read the row with id "cache_config"
+     through B726's cache config repository. When the row exists and its cache_settings is not empty, parse it with B4306's
+     parse_stored_settings (JSON string or already-parsed object; anything that is not an object becomes an empty map), then decrypt
+     every value as B1600's decrypt_value_helper does with return_original_value true: a string that decrypts becomes the
+     plaintext, a string that does not decrypt stays as stored, and a non-string value (a port number, a node list) passes through.
+  2. Overlay the environment (overlay.rs). Only these 17 setting names are read from REDIS_<NAME IN UPPER CASE>: url, host, port,
+     db, password, username, ssl, max_connections, gcp_service_account, gcp_ssl_ca_certs, ssl_cert_reqs, ssl_check_hostname,
+     aws_iam_auth, aws_iam_user_name, aws_iam_cache_name, aws_iam_region, aws_iam_serverless (REDIS_SSL_CERT_REQS, REDIS_HOST and so
+     on). They are the intersection of LiteLLM's Redis environment variables with the catalog names, so namespace, ttl, the
+     startup and sentinel node lists, service_name and sentinel_password are never taken from the environment here. A variable that
+     is unset is skipped; a set one keeps its raw string (REDIS_PORT gives "6379", not 6379). Stored keys win: a key present in the
+     stored map, even with a null value, is not replaced. When at least one of the 17 was found, "type" is set to "redis" unless the
+     stored map already has a "type" key.
+  3. Apply B4306's resolve_cache_url_precedence, so a non-empty url drops host, port, db, password and username unless
+     redis_startup_nodes is set.
+  4. When "type" equals "redis", add "redis_type": "cluster" if redis_startup_nodes is truthy, else "sentinel" if sentinel_nodes is
+     truthy, else "node". Truthy means not null, not false, not 0, not "", not [] and not {}.
+  5. Redact with B4306's redact_credentials. The redacted map is current_values.
+  6. For each catalog field whose field_name is a key of current_values, set field_value to that (already redacted) value.
+
+  Any error while reading, parsing or decrypting answers HTTP 500 with the JSON body {"detail": "Error fetching cache settings: <error text>"}.
+  Take the environment through B4321's EnvironmentLookup trait (betterlite-redis) so a test passes a BTreeMap and the server passes
+  the process environment; if betterlite-server cannot depend on that crate, say so in a blocker and do not copy the trait.
+
+  The route handler lives in cache_settings_read/route.rs and exposes pub fn router(state) -> axum::Router for the architect to
+  merge. Do not register the route anywhere else and do not touch lib.rs.
+scope:
+  paths:
+  - crates/betterlite-server/src/cache_settings_read.rs
+  - crates/betterlite-server/src/cache_settings_read/**
+  - tools/oracle/cases/cache_settings_read/**
+  lint_tables: false
+
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cache_settings_endpoints.py#L442-L505
+  why: The GET /cache/settings decorator (response_model CacheSettingsResponse, auth dependency), the handler, the 500 rewrite and the order of read, overlay, precedence, redis_type, redact and field_value.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cache_settings_endpoints.py#L58-L73
+  why: _cache_config_table and the rule that only catalog field names are overlaid from the environment.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cache_settings_endpoints.py#L114-L133
+  why: _overlay_environment, stored values win, and "type" defaults to redis only when something was overlaid.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cache_settings_endpoints.py#L422-L426
+  why: CacheSettingsResponse, the three response members.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/cache_settings_endpoints.py#L10-L36
+  why: CacheSettingsField and REDIS_TYPE_DESCRIPTIONS.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/cache_settings_endpoints.py#L31-L285
+  why: CACHE_SETTINGS_FIELDS, the whole catalog in order.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L192-L196
+  why: The REDIS_<UPPER NAME> mapping the overlay is built on, and _redis_kwargs_from_environment at L272-L280.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/_redis.py#L67-L91
+  why: _get_redis_kwargs, the allowed names that the catalog is intersected with (redis.Redis arguments plus url, gcp_*, azure_* and aws_iam_*).
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py#L180-L206
+  why: decrypt_value_helper with return_original_value, used for every stored value.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7614-L7622
+  why: _decrypt_db_variables, the per-key loop the route calls.
+
+dod:
+- text: The catalog has every field of CACHE_SETTINGS_FIELDS in the same order with the same names, types, defaults, options, descriptions and redis_type, and REDIS_TYPE_DESCRIPTIONS has its three texts.
+  proof: [fields-tests]
+- text: Each catalog field serializes all nine keys, null when unset, and two calls return independent catalogs.
+  proof: [fields-tests]
+- text: With no stored row and none of the 17 REDIS_ variables set, current_values is empty and no field has a field_value.
+  proof: [overlay-tests, oracle]
+- text: Set REDIS_ variables among the 17 names fill current_values as raw strings and add type "redis"; REDIS_ variables outside the 17 (such as REDIS_SOCKET_TIMEOUT) change nothing.
+  proof: [overlay-tests, oracle]
+- text: A stored key, including one holding null, wins over the environment, and a stored "type" is kept.
+  proof: [overlay-tests, oracle, helper-python]
+- text: A non-empty url (stored or from the environment) drops host, port, db, password and username from current_values unless redis_startup_nodes is set.
+  proof: [view-tests, oracle, helper-python]
+- text: redis_type is cluster, sentinel or node by the order above, and only when type is redis.
+  proof: [view-tests, oracle, helper-python]
+- text: password, sentinel_password, url and any key B4306's classifier flags appear as ***REDACTED*** in current_values and in field_value, and a null credential stays null.
+  proof: [view-tests, oracle, helper-python]
+- text: Stored values are decrypted before the overlay, a value that does not decrypt is returned as stored, and non-string values pass through.
+  proof: [stored-read-tests]
+- text: >-
+    A repository error, invalid stored JSON or a decrypt failure answers 500 with a detail that starts with "Error fetching cache settings: " and no partial body.
+  proof: [stored-read-tests]
+- text: GET /cache/settings answers 401 without a valid key and 200 for any valid key, with fields, current_values and redis_type_descriptions in the body.
+  proof: [route-tests, oracle]
+- text: Settings are read at request time, so a changed environment shows on the next call.
+  proof: [route-tests]
+- text: The oracle adapter for the helper cases passes ruff and basedpyright.
+  proof: [helper-python]
+- text: Every mutant in the overlay, view and redaction wiring is caught by a test.
+  proof: [mutants]
+
+checks:
+  optional: [mutants]
+  commands:
+  - id: fields-tests
+    why: the field catalog or the redis type descriptions differ from LiteLLM's or are missing
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cache_settings_read::fields::/)'
+  - id: overlay-tests
+    why: the environment overlay reads the wrong variables or overrides stored keys
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cache_settings_read::overlay::/)'
+  - id: view-tests
+    why: url precedence, redis_type derivation or credential redaction is wrong in the effective values
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cache_settings_read::view::/)'
+  - id: stored-read-tests
+    why: the stored row is not parsed, decrypted or turned into a 500 on failure
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cache_settings_read::stored::/)'
+  - id: route-tests
+    why: the route does not serve the body, require a key or read the environment per request
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^cache_settings_read::route::/)'
+  - id: helper-python
+    why: strict oracle adapter lint or type checks fail
+    run: >-
+      test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b4307)" &&
+      uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b4307 &&
+      uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b4307/pyrightconfig.json
+
+oracle_cases:
+- tools/oracle/cases/cache_settings_read/get-empty.yaml
+- tools/oracle/cases/cache_settings_read/get-env-host-port.yaml
+- tools/oracle/cases/cache_settings_read/get-env-password.yaml
+- tools/oracle/cases/cache_settings_read/get-env-url-wins.yaml
+- tools/oracle/cases/cache_settings_read/get-env-not-in-catalog.yaml
+- tools/oracle/cases/cache_settings_read/get-without-key.yaml
+- tools/oracle/cases/cache_settings_read/view-stored-wins.yaml
+- tools/oracle/cases/cache_settings_read/view-stored-null-wins.yaml
+- tools/oracle/cases/cache_settings_read/view-redis-type-cluster.yaml
+- tools/oracle/cases/cache_settings_read/view-redis-type-sentinel.yaml
+- tools/oracle/cases/cache_settings_read/view-type-not-redis.yaml
+- tools/oracle/cases/cache_settings_read/view-classifier-key.yaml
+- tools/oracle/cases/cache_settings_read/view-url-with-cluster.yaml
+
+deviations:
+- what: >-
+    The text after the "Error fetching cache settings" prefix in a 500 body is betterlite error text, not the Python exception text.
+  why: Python exception strings (repr of a KeyError, a prisma error) have no Rust equivalent; status and the prefix match.
+
+out_of_scope:
+- POST /cache/settings/test and the saved-secret merge it uses; B4308 owns them.
+- POST /cache/settings, encryption of the saved row, the audit log row and CacheSettingsManager (init_cache_settings_in_db, update_cache_params); B125 owns them as the umbrella's remaining code, and B4308 owns the test route.
+- parse_stored_settings, resolve_cache_url_precedence, redact_credentials, is_credential_field; B4306 owns them and this task calls them.
+- Reading REDIS_ variables through a secret manager (get_secret); B4321 owns the lookup, this task only passes it a lookup.
+- The CacheConfigRepository table adapter itself; B726 owns it.
+- Building the cache from the settings (redis clients, semantic caches); the cache tasks under B125 and B126 own that.
+
+pitfalls:
+- "Only 17 REDIS_ variables are overlaid. REDIS_NAMESPACE, REDIS_TTL, REDIS_SENTINEL_PASSWORD, REDIS_SERVICE_NAME and REDIS_SENTINEL_NODES are Redis client settings elsewhere but never show up in this response."
+- "The overlay keeps raw strings. REDIS_PORT=6379 appears as the string \"6379\" and REDIS_SSL=true as the string \"true\", with no coercion."
+- "A stored key set to null still blocks the environment value for that key; check key presence, not value."
+- "type defaults to redis only when the overlay found something; an empty environment and empty store give no type key and no redis_type key."
+- "Url precedence runs after the overlay, so REDIS_URL from the environment removes a stored host and port, and REDIS_HOST from the environment is removed by a stored url."
+- "redis_type is a UI-only key in current_values and in the redis_type field's field_value; it is never stored."
+- "field_value gets the redacted value, so the password field in fields also reads ***REDACTED***."
+- "A stored non-string value such as the integer 6379 or a node list must not be run through string decryption."
+- "The route depends on the key check but not on an admin role; do not add a role check."
+- "Redaction treats url as a credential even though its name is not sensitive, because Redis URLs can carry a password."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

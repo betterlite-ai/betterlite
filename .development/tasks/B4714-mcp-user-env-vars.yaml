@@ -1,0 +1,242 @@
+id: B4714
+title: MCP per-user environment variable storage
+description: >-
+  Add `mcp_user_env_vars` to betterlite-db with the per-user environment variable storage of
+  db.py L2216-L2325: the stored-blob decoder, one-server and many-server reads, the locked
+  merge and the delete. A user's values for one MCP server live in one row of
+  LiteLLM_MCPUserEnvVars, keyed by (user_id, server_id). The row's `values_b64` column holds a
+  flat JSON object {name: value} sealed with the stored-value cipher. The values are secrets,
+  so the public type is `UserEnvVars = BTreeMap<String, SecretString>`, and a name or value
+  never reaches a log line or an error.
+
+  Use B1600's `betterlite_db::stored_cipher::DbCipher`, B726's typed handle for
+  litellm_mcpuserenvvars and the transaction trait B4711 defines for
+  _UserEnvVarsTransaction. Take them as constructor fields of a `UserEnvVarsStore`, never from
+  a global. Do not add a table accessor or a transaction type of your own.
+
+  Decoding (`_decode_user_env_vars`). Decrypt `values_b64` with `DbCipher::decrypt_value`,
+  field name `mcp_user_env_vars`, `DecryptPolicy { log: FailureLog::Debug, value:
+  FailureValue::Nothing }`. There is no legacy base64 path here, unlike per-user credentials.
+  When the decrypt gives nothing and the stored text is not empty, log one warning that the
+  per-user env vars failed to decrypt and are treated as unset so the user is asked again
+  (LITELLM_SALT_KEY may have changed), then return an empty map. An empty stored text gives an
+  empty map with no warning. Plaintext that is not valid JSON, or is JSON but not an object,
+  gives an empty map with no warning. Split the JSON step into
+  `parse_user_env_vars(decrypted: &str) -> UserEnvVars` so the fuzz target can reach it
+  without a cipher. A stored object with a non-string value is outside LiteLLM's declared
+  dict[str, str]: log a warning and return an empty map (see deviations).
+
+  Reads. `get_user_env_vars(user_id, server_id)` finds the row by the composite key and returns
+  the decoded map, or an empty map when there is no row. `get_user_env_vars_bulk(user_id,
+  server_ids)` returns an empty map without touching the database when `server_ids` is
+  empty. Otherwise it runs one find_many with where {user_id, server_id: {in: server_ids}} and
+  returns {server_id: decoded map} for each row found. A server with no row is absent from
+  the result. A server whose row cannot be decrypted is present with an empty map.
+
+  Merge (`merge_user_env_vars(user_id, server_id, updates, allowed_names)`). Inside one
+  transaction: first run `SELECT pg_advisory_xact_lock($1::bigint)` through the transaction's
+  execute_raw with the lock key, then find the row by the composite key, decode it (empty map
+  when absent), build `merged` from the existing map overlaid with `updates` (an update wins),
+  keep only names in `allowed_names`, serialize `merged` to JSON text, seal it with
+  `DbCipher::encrypt_value` and no override key, and upsert `values_b64` (create with user_id
+  and server_id, update with the new text). Return `merged`. An empty `merged` is still
+  written as sealed "{}", and a name outside `allowed_names` that was stored earlier is removed
+  by this write, which is how an admin retiring a user variable clears the stored value. If the
+  existing row cannot be decrypted it counts as empty, so the write replaces it. Any database
+  error rolls the transaction back and propagates as a typed error.
+
+  Lock key. BLAKE2b with an 8-byte digest over the UTF-8 text `{user_id}:{server_id}`, read as
+  a big-endian signed 64-bit integer. The text has no "mcp_identifier:" prefix, unlike the
+  identifier locks in B4711, so the two key spaces differ. Use one maintained BLAKE2 crate
+  (`blake2`, `Blake2bVar` with output size 8) and no hand-written hash. Known keys: "alice:srv-1"
+  gives 3488191928229801122, "user-1:server-1" gives -8965162404798766016.
+
+  Delete (`delete_user_env_vars(user_id, server_id)`). One delete_many with where {user_id,
+  server_id}. A missing row is not an error, and a database error propagates.
+
+  Error enum `UserEnvVarsError` in `mcp_user_env_vars/error.rs` wraps the cipher failure on
+  encrypt, the JSON serialization failure and the database failure as #[source] fields. Decrypt
+  failures never become an error on a read path, because they decode to an empty map.
+
+  Native tests use in-memory fakes of the table handle and of the transaction trait, with a
+  recorded event list, and a cipher with a fixed key and an injected nonce source. Do not
+  need a live Postgres.
+
+  Oracle helper cases. No route reaches this code yet (B4724 adds the HTTP routes and their
+  HTTP cases), so the cases are helper cases through the `b4714` operation. The Python
+  adapter runs the pinned functions against a small in-memory prisma double that offers
+  find_unique, find_many, upsert, delete_many and a transaction with execute_raw, and patches
+  it in where the pinned module builds its handles. Outputs are the returned maps, the
+  decrypted contents of each row after the steps, and the lock keys executed. Never output
+  ciphertext, because the pinned cipher draws a random nonce.
+
+scope:
+  paths:
+    - crates/betterlite-db/src/mcp_user_env_vars.rs
+    - crates/betterlite-db/src/mcp_user_env_vars/**
+    - crates/betterlite-db/Cargo.toml
+    - Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-db/fuzz/Cargo.toml
+    - crates/betterlite-db/fuzz/fuzz_targets/mcp_user_env_vars.rs
+    - crates/betterlite-db/fuzz/corpus/mcp_user_env_vars/**
+    - tools/oracle/cases/helpers/mcp-user-env-vars/**
+    - "tools/oracle/fuzz/corpus/helper_case/mcp-user-env-vars-*"
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L2216-L2239
+    why: Decoder, the decrypt key name, the warning case and every path that returns an empty map.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L2242-L2269
+    why: Single and bulk reads, including the empty server_ids shortcut and the missing-row rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L2272-L2312
+    why: Merge with the advisory lock, overlay order, pruning by allowed names and the sealed upsert.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L2315-L2325
+    why: delete_many keeps a missing row a no-op.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L65-L76
+    why: The transaction contract merge runs on (B4711 owns the trait).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2841-L2935
+    why: "Callers in the routes B4724 builds, with how updates and allowed_names are derived and the bulk call."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L4070-L4090
+    why: The gateway read path that calls get_user_env_vars and treats a missing database as an error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/key_management_endpoints.py#L5300-L5325
+    why: Master-key rotation reads the same column with the same key name; B2332 owns that code.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/encrypt_decrypt_utils.py
+    why: The cipher helpers B1600 already ported; read to see what decrypt returns for plain text.
+
+dod:
+  - text: >-
+      A stored blob that decrypts to a JSON object of strings decodes to that map, and the cipher is
+      called with field mcp_user_env_vars, debug logging and no original-value fallback.
+    proof: [decode-tests, oracle]
+  - text: >-
+      An undecryptable non-empty blob gives an empty map and one warning, an empty blob gives an empty
+      map and no warning, and invalid JSON or a JSON value that is not an object gives an empty map
+      and no warning.
+    proof: [decode-tests, oracle]
+  - text: >-
+      A stored object with a non-string value gives an empty map and a warning, and no secret appears in
+      the warning text.
+    proof: [decode-tests]
+  - text: >-
+      get_user_env_vars returns the decoded map for the composite key and an empty map when the row is
+      missing.
+    proof: [read-tests, oracle]
+  - text: >-
+      get_user_env_vars_bulk makes no database call for an empty id list, runs one find_many with the
+      user and the in-list otherwise, omits servers without a row and keeps an undecryptable row as an
+      empty map.
+    proof: [bulk-tests, oracle]
+  - text: >-
+      merge_user_env_vars overlays updates on the existing values, drops names outside allowed_names
+      (including previously stored ones), returns the merged map and upserts it sealed, creating the row
+      when absent.
+    proof: [merge-tests, oracle]
+  - text: >-
+      merge_user_env_vars runs the advisory lock statement before it reads the row, inside the
+      transaction, with the key from BLAKE2b-8 over "{user_id}:{server_id}" read as a signed big-endian
+      integer.
+    proof: [lock-tests, oracle]
+  - text: >-
+      merge_user_env_vars with an empty result still writes a sealed empty object, and a stored row
+      that cannot be decrypted is replaced instead of failing.
+    proof: [merge-tests, oracle]
+  - text: >-
+      A database or cipher failure inside merge propagates as UserEnvVarsError and no value is logged.
+    proof: [merge-tests]
+  - text: >-
+      delete_user_env_vars issues one delete_many for the user and server, treats a missing row as success
+      and propagates a database error.
+    proof: [delete-tests, oracle]
+  - text: >-
+      The JSON step of the decoder survives the fuzz corpus without a panic, and the seed corpus is new on
+      this branch.
+    proof: [decoder-corpus]
+  - text: The b4714 helper operation matches the pinned functions on every case and the seed corpus replays.
+    proof: [oracle, helper-python, helper-case-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: decode-tests
+      why: The blob decoder, its warning paths or its empty-map rules are missing.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp_user_env_vars::tests::decode_/)'
+    - id: read-tests
+      why: The single-server read is missing.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp_user_env_vars::tests::get_/)'
+    - id: bulk-tests
+      why: The many-server read, its empty-list shortcut or its omit rule is missing.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp_user_env_vars::tests::bulk_/)'
+    - id: merge-tests
+      why: The merge overlay, pruning, sealed write or failure propagation is missing.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp_user_env_vars::tests::merge_/)'
+    - id: lock-tests
+      why: The advisory lock statement, its order before the read or its key derivation is missing.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp_user_env_vars::tests::lock_/)'
+    - id: delete-tests
+      why: The delete or its missing-row rule is missing.
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^mcp_user_env_vars::tests::delete_/)'
+    - id: decoder-corpus
+      why: The fuzz target, its registration or the new corpus is missing, or a corpus entry panics.
+      run: >-
+        test -f crates/betterlite-db/fuzz/fuzz_targets/mcp_user_env_vars.rs &&
+        grep -q 'name = "mcp_user_env_vars"' crates/betterlite-db/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-db/fuzz/corpus/mcp_user_env_vars)" &&
+        cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(replays_the_mcp_user_env_vars_corpus)'
+    - id: helper-python
+      why: The b4714 adapter is missing or the strict Python checks fail.
+      run: >-
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: No seed was added for the b4714 operation or the helper case decoder fails the replay.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/mcp-user-env-vars-*")" &&
+        grep -rlq 'b4714' tools/oracle/fuzz/corpus/helper_case/mcp-user-env-vars-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-user-env-vars/decode-object.yaml
+  - tools/oracle/cases/helpers/mcp-user-env-vars/decode-undecryptable-and-empty.yaml
+  - tools/oracle/cases/helpers/mcp-user-env-vars/decode-not-an-object.yaml
+  - tools/oracle/cases/helpers/mcp-user-env-vars/get-missing-row.yaml
+  - tools/oracle/cases/helpers/mcp-user-env-vars/bulk-empty-ids-no-query.yaml
+  - tools/oracle/cases/helpers/mcp-user-env-vars/bulk-omits-missing-and-keeps-unreadable.yaml
+  - tools/oracle/cases/helpers/mcp-user-env-vars/merge-creates-row.yaml
+  - tools/oracle/cases/helpers/mcp-user-env-vars/merge-overlay-and-prune.yaml
+  - tools/oracle/cases/helpers/mcp-user-env-vars/merge-empty-result-written.yaml
+  - tools/oracle/cases/helpers/mcp-user-env-vars/merge-replaces-unreadable-row.yaml
+  - tools/oracle/cases/helpers/mcp-user-env-vars/merge-lock-key-signed.yaml
+  - tools/oracle/cases/helpers/mcp-user-env-vars/delete-missing-row.yaml
+
+deviations:
+  - what: A stored object with a non-string value decodes to an empty map and logs a warning. LiteLLM turns every value into text with str().
+    why: LiteLLM only ever writes dict[str, str], and str() of a number, bool or null is Python repr text that docs/compatibility.md leaves out. A hand-edited row therefore reads as unset and the user is asked again, as for any unreadable blob.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/db.py#L2239-L2240
+  - what: Values are held as SecretString and the warning texts carry no variable name or value.
+    why: The values are credentials and rule secrets-stay-secret keeps them out of logs and Debug output. LiteLLM's two warnings already carry none.
+
+out_of_scope:
+  - rotate_mcp_user_env_vars_master_key (db.py L1482-L1523), rotate_mcp_user_credentials_master_key, rotate_mcp_server_credentials_master_key, _reencrypt_global_env_var_values and _reencrypt_mcp_credentials_blob; B2332 owns all of them with the same mcp_user_env_vars key name. B4711's out_of_scope text says B4714 owns them, which is wrong (see notes).
+  - _user_env_var_actions, _MCPUserEnvVarsRepository, _db_find_user_env_var_rows, _db_transaction_manager and the transaction Protocol types; B4711 owns the table handles and the transaction trait this module calls.
+  - _encrypt_global_env_var_values, decrypt_global_env_var_values and _decrypt_env_vars_on_returned_row; those handle the admin's global values on the server row and belong to B4710.
+  - The gateway read cache around get_user_env_vars in mcp_server_manager.py (TTL, invalidate_user_env_vars_cache) and the "no database" RuntimeError; the manager task owns them.
+  - The /v1/mcp/server/{server_id}/user-env-vars routes, their allowed-name derivation and their HTTP oracle cases; B4724 owns them.
+  - encrypt_value_helper and decrypt_value_helper themselves; B1600 owns them.
+
+pitfalls:
+  - Per-user credentials accept legacy plain base64 and per-user env vars do not, so a base64 fallback in the decoder would turn old ciphertext into garbage values.
+  - The cipher key name is the literal mcp_user_env_vars, not the column name values_b64, and it must match B2332's rotation or rotated rows stop decrypting.
+  - The lock text is `{user_id}:{server_id}` with no prefix, so reusing B4711's lock-key function would lock a different number and let a merge race an identifier write on nothing, or fail to serialize two merges.
+  - Python's int.from_bytes(..., signed=True) is a big-endian i64, so the key is i64::from_be_bytes and not from_le_bytes or an unsigned cast.
+  - The lock must be taken before find_unique. Reading first and locking after lets two merges from one user lose an update.
+  - allowed_names prunes the existing map as well as the updates, so a stored name the admin retired disappears on the user's next merge even when the update does not mention it.
+  - get_user_env_vars_bulk returns an entry for an undecryptable row (empty map) but none for a missing row, so callers can tell "never set" from "needs re-entering".
+  - Empty server_ids returns before any query, because an empty `in` list is a pointless round trip and LiteLLM skips it.
+  - delete_many, not delete, is what makes a missing row a no-op, since delete raises on zero rows.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
