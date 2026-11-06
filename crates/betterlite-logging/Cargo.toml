@@ -51,7 +51,7 @@ insta = { version = "1.49.0", default-features = false, features = ["yaml"] }
 rstest = "=0.27.0"
 serde-saphyr.workspace = true
 serde_json = { version = "1.0.154", features = ["arbitrary_precision", "raw_value"] }
-tokio = { workspace = true, features = ["test-util"] }
+tokio = { workspace = true, features = ["test-util", "time"] }
 tracing-subscriber.workspace = true
 
 [[test]]
