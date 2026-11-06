@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use indexmap::IndexMap;
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde::de::IgnoredAny;
 
@@ -14,6 +15,8 @@ const CAPACITY_VARIABLE: &str = "LITELLM_MAX_CALLBACKS";
 const DEFAULT_CAPACITY: i64 = 100;
 // no exporter is compiled into betterlite yet, so every LiteLLM callback name is unavailable
 const INSTALLED_CALLBACKS: [&str; 0] = [];
+// these callback_settings entries belong to the section that parses their adapter options
+const OWNED_ENTRIES: [&str; 1] = ["otel"];
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
@@ -39,26 +42,63 @@ enum RawValue {
     Text(String),
     Number(serde_json::Number),
     Flag(bool),
+    Null,
     Other(IgnoredAny),
 }
 
 impl RawValue {
-    fn text(self) -> Option<String> {
+    fn into_callback_value(self) -> Option<CallbackValue> {
         match self {
-            Self::Text(text) => Some(text),
-            Self::Number(number) => Some(number.to_string()),
-            Self::Flag(set) => Some(if set { "True" } else { "False" }.to_owned()),
+            Self::Text(text) => Some(CallbackValue::Text(SecretString::from(text))),
+            Self::Number(number) => Some(CallbackValue::Number(number.to_string())),
+            Self::Flag(set) => Some(CallbackValue::Flag(set)),
+            Self::Null => Some(CallbackValue::Null),
             Self::Other(_) => None,
         }
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Clone, Debug)]
+enum CallbackValue {
+    Flag(bool),
+    Null,
+    Number(String),
+    Text(SecretString),
+}
+
+impl CallbackValue {
+    fn exposed_text(&self) -> Option<String> {
+        match self {
+            Self::Text(secret) => Some(secret.expose_secret().to_owned()),
+            Self::Number(number) => Some(number.clone()),
+            Self::Flag(set) => Some(if *set { "True" } else { "False" }.to_owned()),
+            Self::Null => None,
+        }
+    }
+}
+
+// every value stays a secret until the adapter or validator that reads it exposes it
+#[derive(Clone, Debug, Default)]
+pub struct CallbackEntry {
+    values: IndexMap<String, CallbackValue>,
+}
+
+impl CallbackEntry {
+    #[must_use]
+    pub fn exposed_variables(&self) -> IndexMap<String, String> {
+        self.values
+            .iter()
+            .filter_map(|(key, value)| value.exposed_text().map(|text| (key.clone(), text)))
+            .collect()
+    }
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct Settings {
     pub callbacks: Vec<String>,
     pub success_callback: Vec<String>,
     pub failure_callback: Vec<String>,
-    pub callback_settings: BTreeMap<String, IndexMap<String, String>>,
+    pub callback_settings: BTreeMap<String, CallbackEntry>,
     pub max_callbacks: usize,
 }
 
@@ -78,11 +118,27 @@ fn unavailable_paths(lists: &RawLiteLlm) -> Vec<String> {
     .collect()
 }
 
-fn text_variables(entry: IndexMap<String, RawValue>) -> IndexMap<String, String> {
-    entry
-        .into_iter()
-        .filter_map(|(key, value)| value.text().map(|text| (key, text)))
-        .collect()
+fn callback_entries(
+    raw: BTreeMap<String, IndexMap<String, RawValue>>,
+    paths: &mut Vec<String>,
+) -> BTreeMap<String, CallbackEntry> {
+    let mut entries = BTreeMap::new();
+    for (name, values) in raw {
+        if OWNED_ENTRIES.contains(&name.as_str()) {
+            continue;
+        }
+        let mut converted = IndexMap::new();
+        for (key, value) in values {
+            match value.into_callback_value() {
+                Some(setting) => {
+                    converted.insert(key, setting);
+                }
+                None => paths.push(format!("callback_settings.{name}.{key}")),
+            }
+        }
+        entries.insert(name, CallbackEntry { values: converted });
+    }
+    entries
 }
 
 impl Section for Raw {
@@ -98,15 +154,11 @@ impl Section for Raw {
         );
         // a negative or oversized limit admits nothing, exactly as LiteLLM's negative limit skips every add
         let max_callbacks = usize::try_from(raw_capacity).unwrap_or_default();
-        let paths = unavailable_paths(&self.litellm_settings);
+        let mut paths = unavailable_paths(&self.litellm_settings);
+        let callback_settings = callback_entries(self.callback_settings, &mut paths);
         if !paths.is_empty() {
             return Err(ConfigError::Unsupported { paths });
         }
-        let callback_settings = self
-            .callback_settings
-            .into_iter()
-            .map(|(name, entry)| (name, text_variables(entry)))
-            .collect();
         Ok(Settings {
             callbacks: self.litellm_settings.callbacks,
             success_callback: self.litellm_settings.success_callback,
