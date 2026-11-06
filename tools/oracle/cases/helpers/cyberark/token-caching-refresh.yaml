@@ -1,0 +1,22 @@
+kind: helper
+name: cyberark-token-caching-refresh
+env: {}
+compare: {ignore: []}
+call:
+  b4418:
+    env: {CYBERARK_API_KEY: key-1, CYBERARK_REFRESH_INTERVAL: "10"}
+    routes:
+      - route: "POST http://127.0.0.1:8080/authn/default/admin/authenticate"
+        replies: [{status: 200, body: '{"protected":"first"}'}, {status: 200, body: '{"protected":"second"}'}]
+      - route: "GET http://127.0.0.1:8080/secrets/default/variable/a"
+        replies: [{status: 200, body: one}]
+      - route: "GET http://127.0.0.1:8080/secrets/default/variable/b"
+        replies: [{status: 200, body: two}]
+      - route: "GET http://127.0.0.1:8080/secrets/default/variable/c"
+        replies: [{status: 200, body: three}]
+    steps:
+      - {op: read, name: a}
+      - {op: read, name: b}
+      - {op: advance, ms: 11000}
+      - {op: read, name: c}
+      - {op: read, name: a}

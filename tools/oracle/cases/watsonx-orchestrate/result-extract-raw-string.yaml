@@ -1,0 +1,8 @@
+kind: helper
+name: watsonx-result-extract-raw-string
+call:
+  b4807:
+    operation: result_text
+    result: {last_message: {content: []}, results: raw text}
+env: {}
+compare: {ignore: []}

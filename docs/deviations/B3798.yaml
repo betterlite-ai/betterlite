@@ -1,0 +1,11 @@
+task: B3798
+deviations:
+  - what: The Jev response body is read with a 1 MiB cap; a body past the cap, or a body that fails while being read, is treated as an unreadable response and follows unreachable_fallback. LiteLLM parses the body without a bound and lets a mid-read transport error escape.
+    why: Every betterlite inbound body has a size limit, and a Jev answer a working setup receives is a few hundred bytes, so the cap never changes a working result.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/typesafe/typesafe.py#L302-L317
+  - what: The 30 second default timeout is one reqwest request timeout covering connect, send and body read; LiteLLM passes httpx's timeout=30.0, which applies 30 seconds to connect, read, write and pool separately.
+    why: B173 owns client provisioning and betterlite bounds a request with a single timeout; an unreachable TypeSafe is still cut off, and a working answer returns well inside 30 seconds.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/typesafe/typesafe.py#L269-L277
+  - what: __init__, apply_guardrail and get_config_model are not part of this task; B108 assembles them on top of these helpers, the injected dependencies and TypeSafeSettings.
+    why: The split keeps the compaction logic independent of the hook class, and the task file's own deviation list allocates those three functions to B108.
+    link: ""
