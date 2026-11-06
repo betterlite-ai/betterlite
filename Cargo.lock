@@ -1425,9 +1425,12 @@ version = "0.1.0"
 dependencies = [
  "axum",
  "betterlite-config",
+ "betterlite-http",
  "betterlite-prompts",
+ "betterlite-redact",
  "fancy-regex",
  "indexmap 2.14.2",
+ "lru",
  "regex",
  "reqwest",
  "rstest",
@@ -1444,6 +1447,7 @@ dependencies = [
  "ulid",
  "unicode-normalization",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -1591,6 +1595,7 @@ dependencies = [
  "http 1.5.0",
  "indexmap 2.14.2",
  "insta",
+ "jiff",
  "parquet-format-safe",
  "parquet2",
  "pep440_rs",
