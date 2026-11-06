@@ -1,37 +1,7 @@
 use super::super::error::CompileError;
-const RESERVED_NAMES: [&str; 4] = ["print", "printed", "builtins", "breakpoint"];
-const ALLOWED_METHODS: [&str; 8] = [
-    "__init__",
-    "__contains__",
-    "__lt__",
-    "__le__",
-    "__eq__",
-    "__ne__",
-    "__gt__",
-    "__ge__",
-];
-const INSPECT_ATTRIBUTES: [&str; 20] = [
-    "tb_frame",
-    "tb_next",
-    "f_back",
-    "f_builtins",
-    "f_code",
-    "f_generator",
-    "f_globals",
-    "f_locals",
-    "f_trace",
-    "co_code",
-    "gi_frame",
-    "gi_code",
-    "gi_yieldfrom",
-    "cr_await",
-    "cr_frame",
-    "cr_code",
-    "cr_origin",
-    "ag_await",
-    "ag_frame",
-    "ag_code",
-];
+const RESERVED_NAMES: &str = " print printed builtins breakpoint";
+const ALLOWED_METHODS: &str = " __init__ __contains__ __lt__ __le__ __eq__ __ne__ __gt__ __ge__";
+const INSPECT_ATTRIBUTES: &str = " tb_frame tb_next f_back f_builtins f_code f_generator f_globals f_locals f_trace co_code gi_frame gi_code gi_yieldfrom cr_await cr_frame cr_code cr_origin ag_await ag_frame ag_code";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum NameKind {
     Variable,
@@ -48,7 +18,10 @@ pub(super) fn check_name(
         NameKind::Variable | NameKind::Method => "variable",
         NameKind::Attribute => "attribute",
     };
-    let magic = kind == NameKind::Method && ALLOWED_METHODS.contains(&name);
+    let magic = kind == NameKind::Method
+        && ALLOWED_METHODS
+            .split_whitespace()
+            .any(|candidate| candidate == name);
     let problem = if !magic && name.starts_with('_') && name != "_" {
         Some(format!(
             "\"{name}\" is an invalid {subject} name because it starts with \"_\""
@@ -57,9 +30,17 @@ pub(super) fn check_name(
         Some(format!(
             "\"{name}\" is an invalid {subject} name because it ends with \"__roles__\""
         ))
-    } else if kind != NameKind::Attribute && RESERVED_NAMES.contains(&name) {
+    } else if kind != NameKind::Attribute
+        && RESERVED_NAMES
+            .split_whitespace()
+            .any(|candidate| candidate == name)
+    {
         Some(format!("\"{name}\" is a reserved name."))
-    } else if kind == NameKind::Attribute && INSPECT_ATTRIBUTES.contains(&name) {
+    } else if kind == NameKind::Attribute
+        && INSPECT_ATTRIBUTES
+            .split_whitespace()
+            .any(|candidate| candidate == name)
+    {
         Some(format!(
             "\"{name}\" is a restricted name, that is forbidden to access in RestrictedPython."
         ))

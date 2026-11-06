@@ -34,21 +34,6 @@ pub enum InplaceError {
     RepetitionTooLong,
 }
 impl InplaceOp {
-    pub const ALL: [Self; 13] = [
-        Self::Add,
-        Self::Subtract,
-        Self::Multiply,
-        Self::TrueDivide,
-        Self::FloorDivide,
-        Self::Modulo,
-        Self::Power,
-        Self::MatrixMultiply,
-        Self::BitAnd,
-        Self::BitOr,
-        Self::BitXor,
-        Self::ShiftLeft,
-        Self::ShiftRight,
-    ];
     #[must_use]
     pub const fn symbol(self) -> &'static str {
         match self {
@@ -68,12 +53,24 @@ impl InplaceOp {
         }
     }
     pub fn from_symbol(symbol: &str) -> Result<Self, InplaceError> {
-        Self::ALL
-            .into_iter()
-            .find(|operator| operator.symbol() == symbol)
-            .ok_or_else(|| InplaceError::UnsupportedOperator {
+        match symbol {
+            "+=" => Ok(Self::Add),
+            "-=" => Ok(Self::Subtract),
+            "*=" => Ok(Self::Multiply),
+            "/=" => Ok(Self::TrueDivide),
+            "//=" => Ok(Self::FloorDivide),
+            "%=" => Ok(Self::Modulo),
+            "**=" => Ok(Self::Power),
+            "@=" => Ok(Self::MatrixMultiply),
+            "&=" => Ok(Self::BitAnd),
+            "|=" => Ok(Self::BitOr),
+            "^=" => Ok(Self::BitXor),
+            "<<=" => Ok(Self::ShiftLeft),
+            ">>=" => Ok(Self::ShiftRight),
+            _ => Err(InplaceError::UnsupportedOperator {
                 symbol: symbol.to_owned(),
-            })
+            }),
+        }
     }
 }
 mod operators;

@@ -48,12 +48,55 @@ fn floor_and_modulo(op: InplaceOp, first: i64, second: i64) -> Result<(i64, i64)
     }
     Ok((quotient, remainder))
 }
+struct Digits {
+    text: String,
+    exponent: i64,
+    started: bool,
+}
+impl Digits {
+    fn push(
+        &mut self,
+        remainder: &mut u128,
+        divisor: u128,
+        symbol: &'static str,
+    ) -> Result<(), InplaceError> {
+        while *remainder != 0 && self.text.len() < 25 {
+            let value = next_digit(remainder, divisor, symbol)?;
+            if self.started {
+                self.text.push(char::from(b'0'.saturating_add(value)));
+                continue;
+            }
+            self.exponent = self.exponent.saturating_sub(1);
+            if value == 0 {
+                continue;
+            }
+            self.started = true;
+            self.text.push(char::from(b'0'.saturating_add(value)));
+        }
+        Ok(())
+    }
+    fn value(&self, first: i64, second: i64, symbol: &'static str) -> Result<Value, InplaceError> {
+        if self.text.is_empty() {
+            return Ok(Value::Float(0.0));
+        }
+        let sign = if (first < 0) == (second < 0) { "" } else { "-" };
+        let (head, tail) = self.text.split_at(1);
+        let rendered = if tail.is_empty() {
+            format!("{sign}{head}e{}", self.exponent)
+        } else {
+            format!("{sign}{head}.{tail}e{}", self.exponent)
+        };
+        rendered
+            .parse::<f64>()
+            .map(Value::Float)
+            .map_err(|_error| InplaceError::Overflow { symbol })
+    }
+}
 fn float_quotient(first: i64, second: i64) -> Result<Value, InplaceError> {
     if second == 0 {
         return Err(InplaceError::DivideByZero);
     }
     let symbol = InplaceOp::TrueDivide.symbol();
-    let negative = (first < 0) != (second < 0);
     let divisor = u128::from(second.unsigned_abs());
     let mut remainder = u128::from(first.unsigned_abs());
     let integer = remainder
@@ -62,52 +105,32 @@ fn float_quotient(first: i64, second: i64) -> Result<Value, InplaceError> {
     remainder = remainder
         .checked_rem(divisor)
         .ok_or(InplaceError::DivideByZero)?;
-    let mut digits = String::new();
-    let exponent = if integer == 0 {
-        first_fraction_digit(&mut digits, &mut remainder, divisor)?
+    let text = if integer == 0 {
+        String::new()
     } else {
-        digits.push_str(&integer.to_string());
-        i64::try_from(digits.len())
+        integer.to_string()
+    };
+    let started = integer != 0;
+    let exponent = if started {
+        i64::try_from(text.len())
             .unwrap_or(i64::MAX)
             .saturating_sub(1)
-    };
-    while remainder != 0 && digits.len() < 25 {
-        let digit = next_digit(&mut remainder, divisor)?;
-        digits.push(char::from(b'0'.saturating_add(digit)));
-    }
-    if digits.is_empty() {
-        return Ok(Value::Float(0.0));
-    }
-    let sign = if negative { "-" } else { "" };
-    let (head, tail) = digits.split_at(1);
-    let text = if tail.is_empty() {
-        format!("{sign}{head}e{exponent}")
     } else {
-        format!("{sign}{head}.{tail}e{exponent}")
+        0
     };
-    text.parse::<f64>()
-        .map(Value::Float)
-        .map_err(|_error| InplaceError::Overflow { symbol })
+    let mut digits = Digits {
+        text,
+        exponent,
+        started,
+    };
+    digits.push(&mut remainder, divisor, symbol)?;
+    digits.value(first, second, symbol)
 }
-fn first_fraction_digit(
-    digits: &mut String,
+fn next_digit(
     remainder: &mut u128,
     divisor: u128,
-) -> Result<i64, InplaceError> {
-    let mut zeros = 0_i64;
-    while *remainder != 0 && digits.is_empty() {
-        let digit = next_digit(remainder, divisor)?;
-        if digit == 0 {
-            zeros = zeros.saturating_add(1);
-            continue;
-        }
-        digits.push(char::from(b'0'.saturating_add(digit)));
-        return Ok(0_i64.saturating_sub(zeros.saturating_add(1)));
-    }
-    Ok(0)
-}
-fn next_digit(remainder: &mut u128, divisor: u128) -> Result<u8, InplaceError> {
-    let symbol = InplaceOp::TrueDivide.symbol();
+    symbol: &'static str,
+) -> Result<u8, InplaceError> {
     *remainder = remainder
         .checked_mul(10)
         .ok_or(InplaceError::Overflow { symbol })?;

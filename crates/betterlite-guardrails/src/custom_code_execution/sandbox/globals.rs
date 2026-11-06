@@ -33,18 +33,8 @@ pub enum Global {
     Builtins,
 }
 const SAFE_BUILTINS: &str = "__build_class__ None False True Ellipsis abs bool bytes callable chr complex divmod float hash hex id int isinstance issubclass len oct ord pow range repr round slice sorted str tuple zip setattr delattr ArithmeticError AssertionError AttributeError BaseException BufferError BytesWarning DeprecationWarning EOFError EnvironmentError Exception FloatingPointError FutureWarning GeneratorExit IOError ImportError ImportWarning IndentationError IndexError KeyError KeyboardInterrupt LookupError MemoryError NameError NotImplementedError OSError OverflowError PendingDeprecationWarning ReferenceError RuntimeError RuntimeWarning StopIteration SyntaxError SyntaxWarning SystemError SystemExit TabError TypeError UnboundLocalError UnicodeDecodeError UnicodeEncodeError UnicodeError UnicodeTranslateError UnicodeWarning UserWarning ValueError Warning ZeroDivisionError";
-const LIMITED_BUILTINS: &[&str] = &["range", "list", "tuple"];
-const UTILITY_BUILTINS: &[&str] = &[
-    "string",
-    "math",
-    "random",
-    "whrandom",
-    "set",
-    "frozenset",
-    "same_type",
-    "test",
-    "reorder",
-];
+const LIMITED_BUILTINS: &str = " range list tuple";
+const UTILITY_BUILTINS: &str = " string math random whrandom set frozenset same_type test reorder";
 #[must_use]
 pub fn build_sandbox_builtins() -> IndexMap<&'static str, BuiltinKind> {
     let mut builtins: IndexMap<&'static str, BuiltinKind> = SAFE_BUILTINS
@@ -53,13 +43,13 @@ pub fn build_sandbox_builtins() -> IndexMap<&'static str, BuiltinKind> {
         .collect();
     builtins.extend(
         LIMITED_BUILTINS
-            .iter()
-            .map(|name| (*name, BuiltinKind::Limited)),
+            .split_whitespace()
+            .map(|name| (name, BuiltinKind::Limited)),
     );
     builtins.extend(
         UTILITY_BUILTINS
-            .iter()
-            .map(|name| (*name, BuiltinKind::Utility)),
+            .split_whitespace()
+            .map(|name| (name, BuiltinKind::Utility)),
     );
     builtins
 }

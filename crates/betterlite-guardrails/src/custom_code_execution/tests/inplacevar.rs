@@ -363,7 +363,7 @@ fn a_string_percent_formats_tuple_and_mapping_arguments() {
 }
 
 #[test]
-fn a_string_percent_formats_conversions_and_flags() {
+fn a_string_percent_formats_conversions_and_width() {
     assert_eq!(
         inplacevar(
             InplaceOp::Modulo,
