@@ -1898,6 +1898,7 @@ dependencies = [
  "betterlite-rate-limit",
  "betterlite-redact",
  "betterlite-redis",
+ "betterlite-roi",
  "betterlite-router",
  "betterlite-sdk",
  "betterlite-secret-managers",
