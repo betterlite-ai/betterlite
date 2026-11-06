@@ -201,6 +201,8 @@ pub struct AssistantObject {
     pub temperature: Option<Number>,
     pub tool_resources: Option<ToolResources>,
     pub top_p: Option<Number>,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
 }
 
 #[serde_with::skip_serializing_none]
@@ -211,6 +213,8 @@ pub struct AssistantPage {
     pub first_id: Option<String>,
     pub last_id: Option<String>,
     pub has_more: Option<bool>,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -218,6 +222,8 @@ pub struct AssistantDeleted {
     pub id: String,
     pub deleted: bool,
     pub object: String,
+    #[serde(flatten)]
+    pub extra: BTreeMap<String, Value>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize)]

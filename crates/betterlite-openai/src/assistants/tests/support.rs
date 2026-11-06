@@ -3,6 +3,7 @@
 use std::collections::VecDeque;
 use std::future::ready;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody, merge_query};
@@ -27,6 +28,8 @@ pub(super) const DELETED: &str = r#"{"id":"asst_1","deleted":true,"object":"assi
 pub(super) struct Seen {
     pub(super) method: String,
     pub(super) url: String,
+    pub(super) deadline: Duration,
+    pub(super) accept: Option<String>,
     pub(super) authorization: Option<String>,
     pub(super) organization: Option<String>,
     pub(super) beta: Option<String>,
@@ -82,6 +85,8 @@ impl AssistantsTransport for Recorder {
         self.seen.lock().unwrap().push(Seen {
             method: request.method.as_str().to_owned(),
             url: url.as_str().to_owned(),
+            deadline: request.deadline,
+            accept: header_of(&request.headers, "accept"),
             authorization: header_of(&request.headers, "authorization"),
             organization: header_of(&request.headers, "openai-organization"),
             beta: header_of(&request.headers, "openai-beta"),
@@ -120,11 +125,13 @@ pub(super) fn parse(text: &str) -> Value {
     serde_json::from_str(text).unwrap()
 }
 
-// The request every case expects: bearer key, organization and the assistants beta header.
+// The request every case expects: the SDK's 600s default, JSON accept, bearer key, organization and the assistants beta header.
 pub(super) fn wire(method: &str, url: &str, body: Option<&str>) -> Seen {
     Seen {
         method: method.to_owned(),
         url: url.to_owned(),
+        deadline: Duration::from_secs(600),
+        accept: Some(String::from("application/json")),
         authorization: Some(format!("Bearer {KEY}")),
         organization: Some(String::from("org-fixture")),
         beta: Some(String::from("assistants=v2")),

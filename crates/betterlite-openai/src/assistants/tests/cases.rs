@@ -1,7 +1,10 @@
 #![cfg(test)]
 
+use std::time::Duration;
+
 use rstest::rstest;
 
+use crate::assistants::client::ClientOptions;
 use crate::assistants::error::AssistantsError;
 use crate::assistants::records::{AssistantCreate, ListParams};
 
@@ -11,6 +14,11 @@ use super::support::{ASSISTANT, BASE, DELETED, KEY, PAGE, api_with, options, par
 const ALL_PARAMS: &str = r#"{"order":"asc","limit":5,"before":"b","after":"a"}"#;
 const ERROR_BODY: &str = r#"{"error":{"message":"nope","type":"invalid_request_error"}}"#;
 const NULL_BODY: &str = r#"{"model":"gpt-4o","name":null,"description":null,"tool_resources":{"code_interpreter":null,"file_search":null},"tools":[{"type":"file_search","file_search":null},{"type":"function","function":{"name":"lookup","strict":null}}]}"#;
+const EXTRA_REPLY: &str = r#"{"id":"asst_1","object":"assistant","created_at":1,"model":"gpt-4o","tools":[],"reasoning_effort":"high"}"#;
+const PAGE_EXTRA: &str =
+    r#"{"object":"list","data":[],"has_more":false,"reasoning_effort":"high"}"#;
+const DELETED_EXTRA: &str =
+    r#"{"id":"asst_1","deleted":true,"object":"assistant.deleted","reasoning_effort":"high"}"#;
 const CREATE_BODY: &str = r#"{"model":"gpt-4o","name":"Helper","reasoning_effort":"high","response_format":{"type":"json_schema","json_schema":{"name":"answer","strict":true,"schema":{"type":"object"}}},"tools":[{"type":"code_interpreter"},{"type":"file_search","file_search":{"max_num_results":4,"ranking_options":{"score_threshold":0.5,"ranker":"auto"}}},{"type":"function","function":{"name":"lookup","parameters":{"type":"object"}}}],"tool_resources":{"code_interpreter":{"file_ids":["file-1"]},"file_search":{"vector_stores":[{"file_ids":["file-2"],"chunking_strategy":{"type":"static","static":{"chunk_overlap_tokens":10,"max_chunk_size_tokens":800}}}]}}}"#;
 
 #[derive(Debug)]
@@ -95,6 +103,66 @@ async fn list_assistants_pagination() {
             case.params
         );
     }
+}
+
+// A reply key outside the typed record stays on the result, as it does on the SDK model.
+async fn extra_reply_fields() {
+    let (page_api, _page_transport) = api_with(200, PAGE_EXTRA);
+    let page = page_api
+        .get_assistants(options(KEY), None, false, &ListParams::default())
+        .await
+        .unwrap();
+    assert_eq!(serde_json::to_value(&page).unwrap(), parse(PAGE_EXTRA));
+    let data: AssistantCreate = serde_json::from_str(CREATE_BODY).unwrap();
+    let (create_api, _create_transport) = api_with(200, EXTRA_REPLY);
+    let created = create_api
+        .create_assistants(options(KEY), &data, None, false)
+        .await
+        .unwrap();
+    assert_eq!(serde_json::to_value(&created).unwrap(), parse(EXTRA_REPLY));
+    let (delete_api, _delete_transport) = api_with(200, DELETED_EXTRA);
+    let gone = delete_api
+        .delete_assistant(options(KEY), "asst_1", None, false)
+        .await
+        .unwrap();
+    assert_eq!(serde_json::to_value(&gone).unwrap(), parse(DELETED_EXTRA));
+}
+
+// The configured timeout reaches the request; wire() already expects the SDK's 600s default on every other call.
+async fn configured_timeouts() {
+    let timed = ClientOptions {
+        timeout: Some(Duration::from_millis(2500)),
+        ..options(KEY)
+    };
+    let (list_api, list_transport) = api_with(200, PAGE);
+    list_api
+        .get_assistants(timed.clone(), None, false, &ListParams::default())
+        .await
+        .unwrap();
+    let mut list_expected = wire(
+        "GET",
+        &format!("{BASE}/assistants?limit=20&order=desc"),
+        None,
+    );
+    list_expected.deadline = Duration::from_millis(2500);
+    assert_eq!(list_transport.requests(), vec![list_expected]);
+    let data: AssistantCreate = serde_json::from_str(CREATE_BODY).unwrap();
+    let (create_api, create_transport) = api_with(200, ASSISTANT);
+    create_api
+        .create_assistants(timed.clone(), &data, None, false)
+        .await
+        .unwrap();
+    let mut create_expected = wire("POST", &format!("{BASE}/assistants"), Some(CREATE_BODY));
+    create_expected.deadline = Duration::from_millis(2500);
+    assert_eq!(create_transport.requests(), vec![create_expected]);
+    let (delete_api, delete_transport) = api_with(200, DELETED);
+    delete_api
+        .delete_assistant(timed, "asst_1", None, false)
+        .await
+        .unwrap();
+    let mut delete_expected = wire("DELETE", &format!("{BASE}/assistants/asst_1"), None);
+    delete_expected.deadline = Duration::from_millis(2500);
+    assert_eq!(delete_transport.requests(), vec![delete_expected]);
 }
 
 async fn create_tools_resources() {
@@ -220,8 +288,14 @@ async fn undecodable_replies() {
 #[tokio::test]
 async fn assistants_cases(#[case] scenario: Scenario) {
     match scenario {
-        Scenario::ListAssistantsPagination => list_assistants_pagination().await,
-        Scenario::CreateToolsResources => create_tools_resources().await,
+        Scenario::ListAssistantsPagination => {
+            list_assistants_pagination().await;
+            configured_timeouts().await;
+        }
+        Scenario::CreateToolsResources => {
+            create_tools_resources().await;
+            extra_reply_fields().await;
+        }
         Scenario::DeleteAssistant => delete_assistant().await,
         Scenario::AssistantError => {
             assistant_error().await;
