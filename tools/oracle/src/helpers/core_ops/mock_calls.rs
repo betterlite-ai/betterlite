@@ -1,12 +1,14 @@
 use betterlite_config::sections::mock_response::failure::MockError;
-use betterlite_config::sections::mock_response::selection::{MockPlan, resolve_mock};
+use betterlite_config::sections::mock_response::selection::{
+    MockPermission, MockPlan, resolve_mock,
+};
 use betterlite_config::sections::mock_response::{MockResponse, MockToolCall, UsageDefaults};
 use betterlite_core::mock::chat::{self, ChatAnswer};
 use betterlite_core::mock::embedding;
 use betterlite_core::mock::stream::{self, StreamSpec};
 use betterlite_core::mock::timeout::{self, TimeoutValue};
-use betterlite_openai::chat::mock_failure;
 use betterlite_openai::chat::provider_error::ProviderFailure;
+use betterlite_openai::chat::{client_mock, mock_failure};
 use serde_json::Value;
 use thiserror::Error;
 
@@ -46,15 +48,15 @@ fn error_value(failure: &Failure) -> Value {
 }
 
 fn embedding_outcome(input: &Input) -> Result<Value, Failure> {
-    let (effective, _) = effective_mock(input);
-    let Some(response) = effective else {
+    let (effective, _) = effective_mock(input)?;
+    let Some(response) = effective.as_ref() else {
         return Ok(serde_json::json!({"kind": "no_mock"}));
     };
     let answer = embedding::response(Some(response), &input.model)?;
     Ok(serde_json::json!({"kind": "embedding", "response": serde_json::to_value(&answer)?}))
 }
 fn chat_outcome(input: &Input) -> Result<Value, Failure> {
-    let (effective, tool_calls) = effective_mock(input);
+    let (effective, tool_calls) = effective_mock(input)?;
     if effective.is_none() && tool_calls.is_none() && input.mock_timeout != Some(true) {
         return Ok(serde_json::json!({"kind": "no_mock"}));
     }
@@ -67,8 +69,8 @@ fn chat_outcome(input: &Input) -> Result<Value, Failure> {
     }
     timeout::delay_duration(input.mock_delay)?;
     let plan = MockPlan {
-        response: effective,
-        tool_calls,
+        response: effective.as_ref(),
+        tool_calls: tool_calls.as_deref(),
         choice_count: input.choice_count,
         prompt_tokens: input.prompt_tokens,
     };
@@ -98,22 +100,34 @@ fn chat_outcome(input: &Input) -> Result<Value, Failure> {
 }
 
 // the proxy strips a client mock field before routing unless the key or team allows it
-fn effective_mock(input: &Input) -> (Option<&MockResponse>, Option<&[MockToolCall]>) {
-    let (client_response, client_calls) = if input.allow_client_mock_response {
-        (
-            input.client_mock_response.as_ref(),
-            input.client_mock_tool_calls.as_deref(),
-        )
-    } else {
-        (None, None)
-    };
-    resolve_mock(
+fn effective_mock(
+    input: &Input,
+) -> Result<(Option<MockResponse>, Option<Vec<MockToolCall>>), Failure> {
+    let fields = [
+        ("mock_response", input.client_mock_response.as_ref()),
+        ("mock_tool_calls", input.client_mock_tool_calls.as_ref()),
+    ]
+    .into_iter()
+    .filter_map(|(name, value)| Some((String::from(name), value?.clone())))
+    .collect();
+    let (client_response, client_tool_calls) = client_mock(
+        &fields,
+        MockPermission {
+            allow_client_mock_response: input.allow_client_mock_response,
+        },
+    )?;
+    let plan = resolve_mock(
         input.operator_mock_response.as_ref(),
-        client_response,
-        client_calls,
+        client_response.as_ref(),
+        client_tool_calls.as_deref(),
         input.choice_count,
-    )
-    .map_or((None, None), |plan| (plan.response, plan.tool_calls))
+    );
+    Ok(plan.map_or((None, None), |resolved| {
+        (
+            resolved.response.cloned(),
+            resolved.tool_calls.map(ToOwned::to_owned),
+        )
+    }))
 }
 
 fn stream_chunks(spec: &StreamSpec<'_>, prompt_tokens: Option<u64>) -> Result<Vec<Value>, Failure> {
@@ -168,8 +182,8 @@ pub(crate) struct Input {
     mock_timeout: Option<bool>,
     mock_delay: Option<f64>,
     operator_mock_response: Option<MockResponse>,
-    client_mock_response: Option<MockResponse>,
-    client_mock_tool_calls: Option<Vec<MockToolCall>>,
+    client_mock_response: Option<Value>,
+    client_mock_tool_calls: Option<Value>,
     #[serde(default)]
     allow_client_mock_response: bool,
 }

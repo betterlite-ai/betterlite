@@ -29,9 +29,14 @@ REQUEST_SCOPE: Final[dict[str, object]] = {
 
 def run(input_value: dict[str, Json]) -> Json:
     try:
-        mode = _string(input_value, "mode")
+        mode = cast(str, input_value.get("mode"))
         if mode == "embedding":
-            return _embedding_outcome(input_value)
+            response, _ = _effective_mock(input_value)
+            if response is None:
+                return {"kind": "no_mock"}
+            vectors = cast(list[float] | None, response)
+            answer = mock_embedding(model=cast(str, input_value["model"]), mock_response=vectors)
+            return {"kind": "embedding", "response": cast(Json, answer.model_dump())}
         if mode not in ("chat", "stream"):
             raise ValueError(f"unknown mock_calls mode: {mode}")
         return _chat_outcome(input_value, stream=mode == "stream")
@@ -46,21 +51,13 @@ def _error_facts(error: BaseException) -> Json:
         "param": openai_error_param(error), "code": str(status),
     }
 
-def _embedding_outcome(input_value: dict[str, Json]) -> Json:
-    response, _ = _effective_mock(input_value)
-    if response is None:
-        return {"kind": "no_mock"}
-    vectors = cast(list[float] | None, response)
-    answer = mock_embedding(model=_string(input_value, "model"), mock_response=vectors)
-    return {"kind": "embedding", "response": cast(Json, answer.model_dump())}
-
 
 def _chat_outcome(input_value: dict[str, Json], *, stream: bool) -> Json:
     response, tool_calls = _effective_mock(input_value)
     mock_timeout = input_value.get("mock_timeout")
     if response is None and tool_calls is None and mock_timeout is not True:
         return {"kind": "no_mock"}
-    model = _string(input_value, "model")
+    model = cast(str, input_value["model"])
     n = cast(int | None, input_value.get("n"))
     prompt_tokens = cast(int | None, input_value.get("prompt_tokens"))
     calls = cast(list[object] | None, tool_calls)
@@ -68,7 +65,7 @@ def _chat_outcome(input_value: dict[str, Json], *, stream: bool) -> Json:
     clock = cast(int | None, input_value.get("clock"))
     if clock is None:
         raise ValueError("clock must be an integer")
-    identifier = uuid.UUID(_string(input_value, "uuid"))
+    identifier = uuid.UUID(cast(str, input_value["uuid"]))
     kwargs: dict[str, object] = {
         "n": n, "mock_response": answer, "mock_tool_calls": calls, "mock_timeout": mock_timeout,
         "timeout": input_value.get("timeout"), "prompt_tokens": prompt_tokens,
@@ -101,7 +98,8 @@ def _effective_mock(input_value: dict[str, Json]) -> tuple[Json, Json]:
     for field in ("mock_response", "mock_tool_calls"):
         if input_value.get(f"client_{field}") is not None:
             client[field] = input_value[f"client_{field}"]
-    data: dict[str, Json] = {"model": _string(input_value, "model"), "messages": MESSAGES, **client}
+    model = cast(str, input_value["model"])
+    data: dict[str, Json] = {"model": model, "messages": MESSAGES, **client}
     if client:
         allowed = input_value.get("allow_client_mock_response") is True
         data = asyncio.run(_strip_client_fields(data, allowed=allowed))
@@ -144,10 +142,3 @@ def _drop_betterlite_only_fields(value: Json) -> None:
     elif isinstance(value, list):
         for child in value:
             _drop_betterlite_only_fields(child)
-
-
-def _string(input_value: dict[str, Json], name: str) -> str:
-    value = input_value.get(name)
-    if not isinstance(value, str):
-        raise ValueError(f"{name} must be a string")
-    return value
