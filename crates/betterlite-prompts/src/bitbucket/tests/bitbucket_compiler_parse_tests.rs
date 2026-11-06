@@ -4,11 +4,11 @@ use crate::support::messages;
 
 #[test]
 fn no_role_prefix_single_user_message() {
-    let parsed = parse_prompt_to_messages("  first line\n\n  second line  ");
+    let parsed = parse_prompt_to_messages("  first\n\n\nsecond  ");
     assert_eq!(
         parsed,
-        messages(&[("user", "first line\n\nsecond line")]),
-        "an unprefixed template keeps its interior blank line"
+        messages(&[("user", "first\n\n\nsecond")]),
+        "an unprefixed template is used whole, blank lines included"
     );
 }
 
