@@ -25,3 +25,12 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+## MPL-2.0 components
+
+betterlite's tokenizer stack reaches two crates under the Mozilla Public License 2.0, both used unmodified and linked as published:
+
+- `colored`, https://crates.io/crates/colored, source at https://github.com/colored-rs/colored
+- `option-ext`, https://crates.io/crates/option-ext, source at https://github.com/soc/option-ext
+
+They are distributed under MPL-2.0, and their source is available at the repositories above. The full license text is at https://www.mozilla.org/en-US/MPL/2.0/.
