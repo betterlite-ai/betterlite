@@ -76,9 +76,17 @@ pub(crate) struct FileUpdateInput {
 }
 
 #[derive(Debug, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ReplyKindInput {
+    Search,
+    Create,
+    File,
+}
+
+#[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct ReplyInput {
-    kind: String,
+    kind: ReplyKindInput,
     status_code: u16,
     #[serde(default)]
     headers: Env,
@@ -180,10 +188,10 @@ fn urls(input: &UrlInput) -> HelperResult {
 }
 
 fn reply(input: &ReplyInput) -> HelperResult {
-    let kind = match input.kind.as_str() {
-        "search" => ReplyKind::Search,
-        "create" => ReplyKind::Create,
-        _ => ReplyKind::File,
+    let kind = match input.kind {
+        ReplyKindInput::Search => ReplyKind::Search,
+        ReplyKindInput::Create => ReplyKind::Create,
+        ReplyKindInput::File => ReplyKind::File,
     };
     let mut built = http::Response::builder().status(input.status_code);
     for (name, value) in &input.headers {
