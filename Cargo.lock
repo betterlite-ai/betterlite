@@ -1835,6 +1835,7 @@ dependencies = [
  "betterlite-paths",
  "betterlite-postgres-fixture",
  "betterlite-prompts",
+ "betterlite-proxy",
  "betterlite-rate-limit",
  "betterlite-redact",
  "betterlite-redis",
@@ -2000,6 +2001,24 @@ version = "0.1.0"
 [[package]]
 name = "betterlite-proxy"
 version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "betterlite-config",
+ "betterlite-context",
+ "betterlite-http",
+ "hex",
+ "http 1.5.0",
+ "rstest",
+ "rust_decimal",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "url",
+]
 
 [[package]]
 name = "betterlite-rag"
