@@ -9,7 +9,7 @@ pub(crate) fn float_text(value: f64) -> String {
         if let Some((mantissa, exponent)) = scientific.split_once('e')
             && let Ok(power) = exponent.parse::<i32>()
         {
-            let sign = if power < 0_i32 { '-' } else { '+' };
+            let sign = if power.is_negative() { '-' } else { '+' };
             return format!("{mantissa}e{sign}{:02}", power.unsigned_abs());
         }
         return scientific;

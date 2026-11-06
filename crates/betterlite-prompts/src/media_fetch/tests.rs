@@ -41,6 +41,22 @@ fn stream_of(body: &[u8]) -> BoxStream<'static, Result<Vec<u8>, HttpError>> {
     stream::iter(chunks).boxed()
 }
 
+fn stream_with_error(
+    body: &[u8],
+    error: HttpError,
+) -> BoxStream<'static, Result<Vec<u8>, HttpError>> {
+    let chunks: Vec<Result<Vec<u8>, HttpError>> = body
+        .chunks(8192)
+        .map(|chunk| Ok(chunk.to_vec()))
+        .chain([Err(error)])
+        .collect();
+    stream::iter(chunks).boxed()
+}
+
+fn single_chunk(body: Vec<u8>) -> BoxStream<'static, Result<Vec<u8>, HttpError>> {
+    stream::iter(vec![Ok(body)]).boxed()
+}
+
 fn headers_of(pairs: &[(&str, &str)]) -> HeaderMap {
     let mut headers = HeaderMap::new();
     for (name, value) in pairs {
@@ -77,6 +93,8 @@ async fn reading(
 #[case::status_404("status_404")]
 #[case::status_204("status_204")]
 #[case::content_length_over_limit("content_length_over_limit")]
+#[case::content_length_at_the_limit("content_length_at_the_limit")]
+#[case::content_length_fractional("content_length_fractional")]
 #[case::content_length_not_an_integer("content_length_not_an_integer")]
 #[case::body_one_byte_over_limit("body_one_byte_over_limit")]
 #[case::body_over_limit("body_over_limit")]
@@ -86,6 +104,10 @@ async fn reading(
 #[case::unknown_media_type("unknown_media_type")]
 #[case::cache_stores_the_data_url("cache_stores_the_data_url")]
 #[case::cache_skips_one_mebibyte("cache_skips_one_mebibyte")]
+#[case::cache_skips_exactly_one_mebibyte("cache_skips_exactly_one_mebibyte")]
+#[case::tiny_limit_prints_the_python_float("tiny_limit_prints_the_python_float")]
+#[case::body_error_after_the_block_past_the_limit("body_error_after_the_block_past_the_limit")]
+#[case::body_in_one_chunk("body_in_one_chunk")]
 #[tokio::test]
 async fn response_reading_matches_litellm(#[case] scenario: &str) {
     let cache = new_cache();
@@ -224,6 +246,86 @@ async fn response_reading_matches_litellm(#[case] scenario: &str) {
             .unwrap();
             assert!(data_url.len() >= 0x0010_0000);
             assert_eq!(cache.get(url), None);
+        }
+        "content_length_at_the_limit" => {
+            let data_url = reading(
+                &cache,
+                image(
+                    200,
+                    &[
+                        ("Content-Length", "52428800"),
+                        ("Content-Type", "image/png"),
+                    ],
+                    b"tiny",
+                ),
+                url,
+                50.0,
+            )
+            .await
+            .unwrap();
+            assert_eq!(
+                data_url,
+                format!("data:image/png;base64,{}", BASE64.encode(b"tiny"))
+            );
+        }
+        "content_length_fractional" => {
+            let error = reading(
+                &cache,
+                image(200, &[("Content-Length", "50.5")], b""),
+                url,
+                50.0,
+            )
+            .await
+            .unwrap_err();
+            assert!(matches!(error, ProcessError::ContentLength));
+        }
+        "cache_skips_exactly_one_mebibyte" => {
+            let body = vec![0xAB_u8; 786_418];
+            let data_url = reading(
+                &cache,
+                image(200, &[("Content-Type", "a/")], &body),
+                url,
+                2.0,
+            )
+            .await
+            .unwrap();
+            assert_eq!(data_url.len(), 0x0010_0000);
+            assert_eq!(cache.get(url), None);
+        }
+        "tiny_limit_prints_the_python_float" => {
+            let body = vec![0xAB_u8; 1000];
+            let error = reading(&cache, image(200, &[], &body), url, 1e-5)
+                .await
+                .unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                "Error: Image size (0.00MB) exceeds maximum allowed size (1e-05MB). url=https://example.com/image"
+            );
+        }
+        "body_error_after_the_block_past_the_limit" => {
+            let body = vec![0xAB_u8; 0x0008_2000];
+            let response = ImageResponse {
+                status: 200,
+                headers: headers_of(&[]),
+                body: stream_with_error(&body, HttpError::Timeout),
+            };
+            let error = reading(&cache, response, url, 0.5).await.unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                "Error: Image size (0.51MB) exceeds maximum allowed size (0.5MB). url=https://example.com/image"
+            );
+        }
+        "body_in_one_chunk" => {
+            let response = ImageResponse {
+                status: 200,
+                headers: headers_of(&[]),
+                body: single_chunk(vec![0xAB_u8; 600_000]),
+            };
+            let error = reading(&cache, response, url, 0.5).await.unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                "Error: Image size (0.51MB) exceeds maximum allowed size (0.5MB). url=https://example.com/image"
+            );
         }
         other => panic!("unknown scenario {other}"),
     }
@@ -454,6 +556,7 @@ async fn closed_port() -> u16 {
 
 #[rstest]
 #[case::data_url_passthrough("data_url_passthrough")]
+#[case::data_url_without_base64_is_not_passed_through("data_without_base64")]
 #[case::zero_limit("zero_limit")]
 #[case::cache_hit("cache_hit")]
 #[case::connection_refused_three_tries("connection_refused")]
@@ -468,6 +571,14 @@ async fn url_conversion_matches_litellm(#[case] scenario: &str) {
             assert_eq!(
                 fetcher.convert("data:image/png;base64,AAAA").await.unwrap(),
                 "data:image/png;base64,AAAA"
+            );
+        }
+        "data_without_base64" => {
+            let fetcher = new_fetcher(&[], 50.0, TEN_MINUTES);
+            let error = fetcher.convert("data:image/png,raw").await.unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                "Error: Unable to fetch image from URL. The proxy could not resolve this host or its URL policy rejected it; an admin can check the proxy log and `user_url_allowed_hosts` in litellm_settings. url=data:image/png,raw"
             );
         }
         "zero_limit" => {

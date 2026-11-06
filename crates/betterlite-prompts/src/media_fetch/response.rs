@@ -115,11 +115,8 @@ pub async fn read_limited_body(
         });
     }
     let step = f64::from(READ_CHUNK_BYTES);
-    let first_past = if limit_bytes <= 0.0_f64 {
-        step
-    } else {
-        limit_bytes.div(step).floor().mul_add(step, step)
-    };
+    // The first 8192-byte chunk past the limit; a limit of zero or less makes that the first chunk read
+    let first_past = limit_bytes.div(step).floor().mul_add(step, step).max(step);
     let mut bytes = Vec::new();
     let mut received = 0.0_f64;
     while let Some(chunk) = body.next().await {
