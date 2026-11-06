@@ -93,3 +93,10 @@ path = "fuzz_targets/websocket_oracle.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "sdk_http_case"
+path = "fuzz_targets/sdk_http_case.rs"
+test = false
+doc = false
+bench = false

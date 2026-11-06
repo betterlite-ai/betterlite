@@ -1,0 +1,11 @@
+kind: helper
+name: streaming-pass-through
+call:
+  b3737:
+    streaming:
+      items:
+        - one
+        - {two: 2}
+        - null
+env: {}
+compare: {ignore: []}

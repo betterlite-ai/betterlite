@@ -1,0 +1,14 @@
+kind: helper
+name: reset_second_minute
+call:
+  duration:
+    calls:
+      - {function: reset, duration: "30s", now: "2024-01-01T00:00:10Z"}
+      - {function: reset, duration: "1s", now: "2024-01-01T00:00:05.500000Z"}
+      - {function: reset, duration: "60s", now: "2024-01-01T00:00:00Z"}
+      - {function: reset, duration: "15m", now: "2024-01-01T10:07:45Z"}
+      - {function: reset, duration: "60m", now: "2024-01-01T10:07:45Z"}
+      - {function: reset, duration: "5m", now: "2024-01-01T10:05:00Z"}
+      - {function: reset, duration: "90m", now: "2024-01-01T22:30:00Z"}
+env: {}
+compare: {ignore: []}
