@@ -21,7 +21,7 @@ pub struct SandboxError {
     source: Error,
 }
 
-// dotprompt's sandbox is private and mangles serde_json numbers, so this one converts variables itself.
+// dotprompt's sandbox module is private, so this renderer builds its own environment.
 pub fn render_sandboxed(
     template_id: &str,
     content: &str,
@@ -44,7 +44,7 @@ pub fn render_sandboxed(
         })
 }
 
-fn to_value(json: &Json) -> Value {
+pub(crate) fn to_value(json: &Json) -> Value {
     match json {
         Json::Null => Value::from(()),
         Json::Bool(flag) => Value::from(*flag),
