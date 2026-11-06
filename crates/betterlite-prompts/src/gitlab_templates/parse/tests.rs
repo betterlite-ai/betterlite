@@ -62,6 +62,10 @@ fn the_template_content_follows_the_frontmatter_split(
     "---\na: yes\nb: Yes\nc: YES\nd: on\ne: On\nf: ON\ng: no\nh: No\ni: NO\nj: off\nk: Off\nl: OFF\n---\nx",
     r#"{"a":true,"b":true,"c":true,"d":true,"e":true,"f":true,"g":false,"h":false,"i":false,"j":false,"k":false,"l":false}"#
 )]
+#[case::yaml12_true_false_spellings_are_booleans(
+    "---\na: true\nb: True\nc: TRUE\nd: false\ne: False\nf: FALSE\n---\nx",
+    r#"{"a":true,"b":true,"c":true,"d":false,"e":false,"f":false}"#
+)]
 #[case::other_bool_casings_stay_text(
     "---\na: tRuE\nb: yEs\nc: oN\nd: fAlSe\n---\nx",
     r#"{"a":"tRuE","b":"yEs","c":"oN","d":"fAlSe"}"#
