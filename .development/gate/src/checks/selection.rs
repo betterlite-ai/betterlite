@@ -51,7 +51,7 @@ pub(super) fn validate(
     Ok(())
 }
 
-pub(super) fn prerequisite(id: &str) -> bool {
+pub(crate) fn prerequisite(id: &str) -> bool {
     [
         "committed",
         "whitespace",
@@ -67,7 +67,19 @@ pub(super) fn prerequisite(id: &str) -> bool {
     .contains(&id)
 }
 
-pub(crate) fn preflight(development: &Development, task: &Task) -> Result<Selection, GateError> {
+// the dispatcher's final gate runs only these; every other check builds test binaries and runs in CI on the task's pull request
+pub(crate) fn lint(id: &str) -> bool {
+    match id {
+        "clippy" | "deny" | "shear" => true,
+        _ => prerequisite(id),
+    }
+}
+
+pub(crate) fn builtins_and(
+    development: &Development,
+    task: &Task,
+    keep: fn(&str) -> bool,
+) -> Result<Selection, GateError> {
     let only = development
         .catalog
         .base
@@ -77,7 +89,7 @@ pub(crate) fn preflight(development: &Development, task: &Task) -> Result<Select
         .chain(
             commands(development, task)?
                 .iter()
-                .filter(|check| prerequisite(&check.id))
+                .filter(|check| keep(&check.id))
                 .map(|check| check.id.clone()),
         )
         .collect();
