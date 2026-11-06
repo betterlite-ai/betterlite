@@ -33,3 +33,6 @@ deviations:
   - what: The gpt2 encoder map is parsed but not compared against the merge file, where tiktoken asserts the two agree before building the ranks.
     why: Both files are pinned by sha256, so a corrupted pair cannot pass the fetch and a working setup cannot reach the assertion.
     link: https://github.com/openai/tiktoken/blob/0.12.0/tiktoken/load.py#L137-L144
+  - what: The custom tokenizer cache holds 64 entries, where LiteLLM sizes _select_custom_tokenizer_helper's cache from DEFAULT_MAX_LRU_CACHE_SIZE, 64 unless the variable is set.
+    why: The variable is read in LiteLLM's constants at import time; this task's settings section reads the three variables its text names, and the default matches.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L493
