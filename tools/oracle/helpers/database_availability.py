@@ -285,10 +285,9 @@ def _evaluate(errors: list[BaseException], *, available: bool) -> Json:
         root = errors[0]
         links = list(_exception_chain(root))
         accepted = [
-            index
-            for index, link in enumerate(links)
-            if isinstance(link, Exception)
+            isinstance(link, Exception)
             and PrismaDBExceptionHandler.is_database_service_unavailable_error(link)
+            for link in links
         ]
         found = _found_index(root, links)
         message = PrismaDBExceptionHandler.database_unavailable_message(cast(Exception, root))

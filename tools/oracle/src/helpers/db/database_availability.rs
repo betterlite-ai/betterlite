@@ -158,7 +158,7 @@ fn into_failure(node: RawNode, asyncpg: RawAsyncpgSupport) -> Failure {
 #[derive(Serialize)]
 struct ScenarioOutput {
     links: usize,
-    accepted: Vec<usize>,
+    accepted: Vec<bool>,
     found: Option<usize>,
     permanent: bool,
     error: ErrorOutput,
@@ -204,22 +204,6 @@ fn allow_outcome(policy: &AllowRequestsOnOutage) -> (Option<bool>, bool) {
     }
 }
 
-fn outage_indices(chain: &Chain) -> Vec<usize> {
-    chain
-        .outages()
-        .into_iter()
-        .filter_map(|failure| index_of(chain, failure))
-        .collect()
-}
-
-// identity, not equality: a cycle walks the same failure twice
-fn index_of(chain: &Chain, failure: &Failure) -> Option<usize> {
-    chain
-        .failures
-        .iter()
-        .position(|candidate| ptr::eq(candidate, failure))
-}
-
 fn error_output(chain: &Chain) -> ErrorOutput {
     let projected = service_unavailable_error(chain);
     ErrorOutput {
@@ -246,12 +230,18 @@ fn run_scenario(scenario: &RawScenario) -> ScenarioOutput {
     let chain = scenario_chain(scenario);
     let policy = policy_of(&scenario.allow_requests);
     let (allowed, policy_error) = allow_outcome(&policy);
+    let links = chain.links();
+    let outages = chain.outages();
     ScenarioOutput {
-        links: chain.links().len(),
-        accepted: outage_indices(&chain),
+        links: links.len(),
+        // per walk link, so a cyclic chain reports each visit the way the Python chain does
+        accepted: links
+            .iter()
+            .map(|failure| outages.iter().any(|outage| ptr::eq(*outage, *failure)))
+            .collect(),
         found: chain
             .find_outage()
-            .and_then(|failure| index_of(&chain, failure)),
+            .and_then(|outage| links.iter().position(|link| ptr::eq(*link, outage))),
         permanent: chain
             .find_outage()
             .or_else(|| chain.failures.first())
