@@ -8,7 +8,6 @@ use chrono::{DateTime, Utc};
 use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Value, json};
-use tokio::runtime::Runtime;
 
 use crate::helpers::{Helper, HelperError, HelperResult};
 
@@ -100,29 +99,55 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::ResolveProject { scenarios } => projects(scenarios),
-            Input::Log { scenarios } => logs(scenarios),
+            Input::ResolveProject { scenarios } => collect(scenarios, Action::Project),
+            Input::Log { scenarios } => collect(scenarios, Action::Log),
         }
     }
 }
 
-fn projects(scenarios: &[Scenario]) -> HelperResult {
-    let runtime = runtime()?;
+#[derive(Clone, Copy)]
+enum Action {
+    Project,
+    Log,
+}
+
+fn collect(scenarios: &[Scenario], action: Action) -> HelperResult {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| helper("RuntimeError", &error.to_string()))?;
     let mut results = Vec::with_capacity(scenarios.len());
     for scenario in scenarios {
-        results.push(runtime.block_on(project_scenario(scenario))?);
+        results.push(runtime.block_on(run_scenario(scenario, action))?);
     }
     Ok(json!({"results": results}))
 }
 
-async fn project_scenario(scenario: &Scenario) -> Result<Value, Box<HelperError>> {
+async fn run_scenario(scenario: &Scenario, action: Action) -> Result<Value, Box<HelperError>> {
     let capture = Capture::new(&scenario.answers);
     let logger = BraintrustLogger::new(settings(scenario)?, capture.clone());
+    let path = callback_path(scenario.path)?;
+    match action {
+        Action::Project => {
+            let ids = resolve_project(scenario, &logger, path).await?;
+            Ok(json!({"requests": capture.requests(), "project_ids": ids}))
+        }
+        Action::Log => {
+            log_events(scenario, &logger, path).await?;
+            Ok(json!({"requests": capture.requests()}))
+        }
+    }
+}
+
+async fn resolve_project(
+    scenario: &Scenario,
+    logger: &BraintrustLogger<Capture>,
+    path: CallbackPath,
+) -> Result<Vec<Value>, Box<HelperError>> {
     let name = scenario
         .project_name
         .as_deref()
         .ok_or_else(|| helper("ValueError", "project_name must be a string"))?;
-    let path = callback_path(scenario.path)?;
     let mut ids = Vec::new();
     for _ in 0..scenario.calls {
         let id = logger
@@ -131,30 +156,22 @@ async fn project_scenario(scenario: &Scenario) -> Result<Value, Box<HelperError>
             .map_err(|error| helper("BraintrustError", &error.to_string()))?;
         ids.push(Value::String(id));
     }
-    Ok(json!({"requests": capture.requests(), "project_ids": ids}))
+    Ok(ids)
 }
 
-fn logs(scenarios: &[Scenario]) -> HelperResult {
-    let runtime = runtime()?;
-    let mut results = Vec::with_capacity(scenarios.len());
-    for scenario in scenarios {
-        results.push(runtime.block_on(log_scenario(scenario))?);
-    }
-    Ok(json!({"results": results}))
-}
-
-async fn log_scenario(scenario: &Scenario) -> Result<Value, Box<HelperError>> {
-    let capture = Capture::new(&scenario.answers);
-    let logger = BraintrustLogger::new(settings(scenario)?, capture.clone());
+async fn log_events(
+    scenario: &Scenario,
+    logger: &BraintrustLogger<Capture>,
+    path: CallbackPath,
+) -> Result<(), Box<HelperError>> {
     let event = event(scenario)?;
-    let path = callback_path(scenario.path)?;
     for _ in 0..scenario.calls {
         logger
             .log_success_event(&event, path)
             .await
             .map_err(|error| helper("BraintrustError", &error.to_string()))?;
     }
-    Ok(json!({"requests": capture.requests()}))
+    Ok(())
 }
 
 fn event(scenario: &Scenario) -> Result<SuccessEvent<'_>, Box<HelperError>> {
@@ -216,13 +233,6 @@ fn callback_path(path: Option<Path>) -> Result<CallbackPath, Box<HelperError>> {
         Some(Path::Async) => Ok(CallbackPath::Async),
         None => Err(helper("ValueError", "path must be sync or async")),
     }
-}
-
-fn runtime() -> Result<Runtime, Box<HelperError>> {
-    tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(|error| helper("RuntimeError", &error.to_string()))
 }
 
 fn parse_time(text: &str) -> Result<DateTime<Utc>, Box<HelperError>> {

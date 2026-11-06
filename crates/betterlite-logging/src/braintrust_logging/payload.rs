@@ -14,11 +14,8 @@ const DEFAULT_SPAN_NAME: &str = "Chat Completion";
 
 #[derive(Debug, Error)]
 pub enum PayloadError {
-    #[error("{field} must be {expected}")]
-    Field {
-        field: &'static str,
-        expected: &'static str,
-    },
+    #[error("{0} must be {1}")]
+    WrongType(&'static str, &'static str),
     #[error("litellm_params.metadata.{key} must be a string")]
     MetadataText { key: &'static str },
     #[error("response.usage.{name} must be an integer")]
@@ -132,10 +129,7 @@ pub(crate) const fn object<'json>(
     if let Json::Object(fields) = value {
         return Ok(fields);
     }
-    Err(PayloadError::Field {
-        field,
-        expected: "a JSON object",
-    })
+    Err(PayloadError::WrongType(field, "a JSON object"))
 }
 
 pub(crate) fn optional_object<'json>(

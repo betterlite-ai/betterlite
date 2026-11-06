@@ -109,10 +109,10 @@ fn finish_reason(
             let native = (kind == ChoiceKind::Model && mapped != reason).then(|| reason.clone());
             Ok((Json::Text(mapped.to_owned()), native))
         }
-        Some(_) => Err(PayloadError::Field {
-            field: "choices[].finish_reason",
-            expected: "a string or null",
-        }),
+        Some(_) => Err(PayloadError::WrongType(
+            "choices[].finish_reason",
+            "a string or null",
+        )),
     }
 }
 
@@ -124,10 +124,7 @@ fn index(value: Option<&Json>, kind: ChoiceKind) -> Result<Json, PayloadError> {
             Ok(Json::Number(number.clone()))
         }
         None | Some(Json::Null) => Ok(zero),
-        Some(_) => Err(PayloadError::Field {
-            field: "choices[].index",
-            expected: "an integer",
-        }),
+        Some(_) => Err(PayloadError::WrongType("choices[].index", "an integer")),
     }
 }
 
@@ -139,10 +136,10 @@ fn provider_fields(
         None | Some(Json::Null) => IndexMap::new(),
         Some(Json::Object(provider)) => provider.clone(),
         Some(_) => {
-            return Err(PayloadError::Field {
-                field: "choices[].provider_specific_fields",
-                expected: "a JSON object or null",
-            });
+            return Err(PayloadError::WrongType(
+                "choices[].provider_specific_fields",
+                "a JSON object or null",
+            ));
         }
     };
     if let Some(reason) = native {
@@ -160,10 +157,10 @@ fn message(value: Option<&Json>) -> Result<Json, PayloadError> {
         None | Some(Json::Null) => &empty,
         Some(Json::Object(fields)) => fields,
         Some(_) => {
-            return Err(PayloadError::Field {
-                field: "choices[].message",
-                expected: "a JSON object",
-            });
+            return Err(PayloadError::WrongType(
+                "choices[].message",
+                "a JSON object",
+            ));
         }
     };
     let mut message = IndexMap::from([
@@ -188,20 +185,20 @@ fn normalize_message(message: &mut IndexMap<String, Json>) -> Result<(), Payload
     if let Some(role) = message.get("role")
         && !matches!(role, Json::Text(_))
     {
-        return Err(PayloadError::Field {
-            field: "choices[].message.role",
-            expected: "a string or null",
-        });
+        return Err(PayloadError::WrongType(
+            "choices[].message.role",
+            "a string or null",
+        ));
     }
     let calls = match message.get("tool_calls") {
         Some(Json::List(calls)) if calls.is_empty() => Json::Null,
         Some(calls @ Json::List(_)) => calls.clone(),
         None | Some(Json::Null) => Json::Null,
         Some(_) => {
-            return Err(PayloadError::Field {
-                field: "choices[].message.tool_calls",
-                expected: "a JSON array or null",
-            });
+            return Err(PayloadError::WrongType(
+                "choices[].message.tool_calls",
+                "a JSON array or null",
+            ));
         }
     };
     message.insert("tool_calls".to_owned(), calls);
@@ -216,10 +213,7 @@ fn normalize_message(message: &mut IndexMap<String, Json>) -> Result<(), Payload
             Some(object @ Json::Object(_)) => object.clone(),
             None | Some(Json::Null) => Json::Null,
             Some(_) => {
-                return Err(PayloadError::Field {
-                    field,
-                    expected: "a JSON object or null",
-                });
+                return Err(PayloadError::WrongType(field, "a JSON object or null"));
             }
         };
         message.insert(key.to_owned(), value);

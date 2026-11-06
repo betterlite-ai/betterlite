@@ -89,10 +89,10 @@ pub(super) fn micros(moment: DateTime<Utc>) -> Result<i64, PayloadError> {
         .timestamp()
         .checked_mul(1_000_000)
         .and_then(|seconds| seconds.checked_add(i64::from(moment.timestamp_subsec_micros())))
-        .ok_or(PayloadError::Field {
-            field: "timestamp",
-            expected: "a representable instant",
-        })
+        .ok_or(PayloadError::WrongType(
+            "timestamp",
+            "a representable instant",
+        ))
 }
 
 pub(super) fn difference(
@@ -102,10 +102,7 @@ pub(super) fn difference(
 ) -> Result<Json, PayloadError> {
     let elapsed = Decimal::new(micros(later)?, 6)
         .checked_sub(Decimal::new(micros(earlier)?, 6))
-        .ok_or(PayloadError::Field {
-            field,
-            expected: "a representable duration",
-        })?;
+        .ok_or(PayloadError::WrongType(field, "a representable duration"))?;
     text(elapsed, field)
 }
 
@@ -119,8 +116,5 @@ pub(super) fn text(seconds: Decimal, field: &'static str) -> Result<Json, Payloa
     };
     serde_json::from_str::<Number>(&value)
         .map(Json::Number)
-        .map_err(|_source| PayloadError::Field {
-            field,
-            expected: "a JSON number",
-        })
+        .map_err(|_source| PayloadError::WrongType(field, "a JSON number"))
 }
