@@ -11,8 +11,8 @@ use crate::client::sessions::execute::{SESSION_CLEANUP_TIMEOUT, execute_session_
 use crate::client::sessions::stream::{MessageHandler, StreamFailure, StreamMessage};
 
 use super::fixture::{
-    Config, FakeRuntime, InitStep, Plan, Step, TestError, build_client, make_plan, manual_contexts,
-    protocol_error,
+    FakeRuntime, InitStep, Plan, Step, TestError, base_config, build_client, make_plan,
+    manual_contexts, protocol_error,
 };
 
 #[tokio::test]
@@ -20,7 +20,7 @@ async fn a_stream_failure_replaces_a_protocol_error() {
     let runtime = FakeRuntime::new(Plan::default());
     let mut client = build_client(
         runtime,
-        Config::default(),
+        base_config(),
         TaskTracker::new(),
         CancellationToken::new(),
     );
@@ -44,7 +44,7 @@ async fn a_stream_failure_does_not_replace_an_application_error() {
     let runtime = FakeRuntime::new(Plan::default());
     let mut client = build_client(
         runtime,
-        Config::default(),
+        base_config(),
         TaskTracker::new(),
         CancellationToken::new(),
     );
@@ -102,7 +102,7 @@ async fn session_cleanup_failure_keeps_the_operation_error() {
     let script = runtime.script.clone();
     let mut client = build_client(
         runtime,
-        Config::default(),
+        base_config(),
         TaskTracker::new(),
         CancellationToken::new(),
     );
@@ -121,7 +121,7 @@ async fn session_cleanup_after_success_is_bounded_to_five_seconds() {
     let runtime = FakeRuntime::new(plan);
     let mut client = build_client(
         runtime,
-        Config::default(),
+        base_config(),
         TaskTracker::new(),
         CancellationToken::new(),
     );
@@ -139,7 +139,7 @@ async fn transport_cleanup_is_bounded_to_five_seconds() {
     let runtime = FakeRuntime::new(plan);
     let mut client = build_client(
         runtime,
-        Config::default(),
+        base_config(),
         TaskTracker::new(),
         CancellationToken::new(),
     );
@@ -158,7 +158,7 @@ async fn transport_exit_runs_when_the_transport_never_entered() {
     let script = runtime.script.clone();
     let mut client = build_client(
         runtime,
-        Config::default(),
+        base_config(),
         TaskTracker::new(),
         CancellationToken::new(),
     );
@@ -194,7 +194,7 @@ async fn a_session_enter_failure_skips_the_session_exit() {
     let script = runtime.script.clone();
     let mut client = build_client(
         runtime,
-        Config::default(),
+        base_config(),
         TaskTracker::new(),
         CancellationToken::new(),
     );
@@ -230,7 +230,7 @@ async fn a_transport_failure_after_cancellation_becomes_the_root_cause() {
     let runtime = FakeRuntime::new(plan);
     let mut client = build_client(
         runtime,
-        Config::default(),
+        base_config(),
         TaskTracker::new(),
         CancellationToken::new(),
     );
@@ -264,7 +264,7 @@ async fn a_recorded_cleanup_error_is_not_the_root_cause() {
     let runtime = FakeRuntime::new(plan);
     let mut client = build_client(
         runtime,
-        Config::default(),
+        base_config(),
         TaskTracker::new(),
         CancellationToken::new(),
     );
@@ -282,7 +282,7 @@ async fn the_http_cleanup_scope_is_shielded_and_reset_after_execution() {
     let http_client = runtime.http_client.clone();
     let mut client = build_client(
         runtime,
-        Config::default(),
+        base_config(),
         TaskTracker::new(),
         CancellationToken::new(),
     );
@@ -312,7 +312,7 @@ async fn instructions_are_trimmed_and_stored() {
     let runtime = FakeRuntime::new(plan);
     let mut client = build_client(
         runtime,
-        Config::default(),
+        base_config(),
         TaskTracker::new(),
         CancellationToken::new(),
     );
@@ -332,7 +332,7 @@ async fn empty_instructions_become_none() {
     let runtime = FakeRuntime::new(plan);
     let mut client = build_client(
         runtime,
-        Config::default(),
+        base_config(),
         TaskTracker::new(),
         CancellationToken::new(),
     );
@@ -350,7 +350,7 @@ async fn caller_cancellation_during_the_operation_propagates() {
     let cancelled = CancellationToken::new();
     let mut client = build_client(
         runtime,
-        Config::default(),
+        base_config(),
         TaskTracker::new(),
         cancelled.clone(),
     );
@@ -377,7 +377,7 @@ async fn a_pre_cancelled_caller_never_opens_the_transport() {
     let script = runtime.script.clone();
     let cancelled = CancellationToken::new();
     cancelled.cancel();
-    let mut client = build_client(runtime, Config::default(), TaskTracker::new(), cancelled);
+    let mut client = build_client(runtime, base_config(), TaskTracker::new(), cancelled);
     let contexts = manual_contexts(&client.runtime, false);
     let outcome =
         execute_session_operation(&mut client, contexts, async |_session| Ok("done")).await;
@@ -394,7 +394,7 @@ async fn a_failed_initialize_skips_the_operation() {
     let script = runtime.script.clone();
     let mut client = build_client(
         runtime,
-        Config::default(),
+        base_config(),
         TaskTracker::new(),
         CancellationToken::new(),
     );

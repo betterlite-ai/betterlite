@@ -16,7 +16,7 @@ use crate::client::sessions::run::{HTTP_CLOSE_TIMEOUT, run_with_session};
 use crate::client::sessions::transport::{StdioConfig, TransportType};
 
 use super::fixture::{
-    Config, FakeRuntime, InitStep, Plan, Step, TestError, build_client, make_config, make_plan,
+    FakeRuntime, InitStep, Plan, Step, TestError, base_config, build_client, make_config, make_plan,
 };
 
 struct Counts {
@@ -47,7 +47,7 @@ async fn a_failed_session_logs_a_warning_by_default() {
     let runtime = FakeRuntime::new(plan);
     let mut client = build_client(
         runtime,
-        Config::default(),
+        base_config(),
         TaskTracker::new(),
         CancellationToken::new(),
     );
@@ -85,7 +85,7 @@ async fn quiet_on_error_logs_at_debug() {
     let runtime = FakeRuntime::new(plan);
     let mut client = build_client(
         runtime,
-        Config::default(),
+        base_config(),
         TaskTracker::new(),
         CancellationToken::new(),
     );
@@ -116,7 +116,7 @@ async fn an_sdk_read_timeout_is_normalized() {
     let runtime = FakeRuntime::new(Plan::default());
     let mut client = build_client(
         runtime,
-        Config::default(),
+        base_config(),
         TaskTracker::new(),
         CancellationToken::new(),
     );
@@ -141,7 +141,7 @@ async fn a_relayed_timeout_code_is_not_normalized() {
     let runtime = FakeRuntime::new(Plan::default());
     let mut client = build_client(
         runtime,
-        Config::default(),
+        base_config(),
         TaskTracker::new(),
         CancellationToken::new(),
     );
@@ -207,7 +207,7 @@ async fn stale_instructions_are_reset_and_replaced_by_the_session() {
     let script = runtime.script.clone();
     let mut client = build_client(
         runtime,
-        Config::default(),
+        base_config(),
         TaskTracker::new(),
         CancellationToken::new(),
     );
@@ -228,7 +228,7 @@ async fn a_failed_initialize_clears_stale_instructions() {
     let runtime = FakeRuntime::new(plan);
     let mut client = build_client(
         runtime,
-        Config::default(),
+        base_config(),
         TaskTracker::new(),
         CancellationToken::new(),
     );

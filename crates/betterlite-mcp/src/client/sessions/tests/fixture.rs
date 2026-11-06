@@ -156,6 +156,14 @@ impl FakeHttpClient {
             .unwrap_or_else(PoisonError::into_inner)
     }
 
+    fn mark_closed(&self) {
+        *self
+            .state
+            .closed
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = true;
+    }
+
     fn record_error(&self, error: Arc<TestError>) {
         self.state
             .errors
@@ -197,10 +205,86 @@ impl HttpClientHandle for FakeHttpClient {
     }
 }
 
+fn store<Value>(slot: &Mutex<Option<Value>>, value: Value) {
+    *slot.lock().unwrap_or_else(PoisonError::into_inner) = Some(value);
+}
+
 fn record_failure(http_client: Option<&FakeHttpClient>, error: &Arc<TestError>) {
     if let Some(client) = http_client {
         client.record_error(Arc::clone(error));
     }
+}
+
+async fn exit_future(
+    script: Script,
+    step: Step,
+    http_client: Option<FakeHttpClient>,
+    name: &'static str,
+) -> Result<(), ExitFailure<TestError>> {
+    script.record(name);
+    step_exit(step, http_client.as_ref(), name).await
+}
+
+async fn step_exit(
+    step: Step,
+    http_client: Option<&FakeHttpClient>,
+    label: &'static str,
+) -> Result<(), ExitFailure<TestError>> {
+    match step {
+        Step::Ok => Ok(()),
+        Step::Cancel => Err(ExitFailure::Cancelled),
+        Step::Timeout => {
+            sleep(Duration::from_secs(60)).await;
+            Ok(())
+        }
+        Step::Fail => Err(ExitFailure::Failure(Arc::new(TestError::Boom(label)))),
+        Step::RecordedFailure => {
+            let error = Arc::new(TestError::Boom("recorded cleanup error"));
+            record_failure(http_client, &error);
+            Err(ExitFailure::Group(vec![ExitFailure::Failure(error)]))
+        }
+    }
+}
+
+async fn enter_step(script: &Script, step: Step, name: &'static str) -> Result<(), TestError> {
+    script.record(name);
+    match step {
+        Step::Fail => Err(TestError::Boom("transport enter")),
+        Step::Cancel => pending::<Result<(), TestError>>().await,
+        Step::Ok | Step::Timeout | Step::RecordedFailure => Ok(()),
+    }
+}
+
+fn enter_session(
+    script: Script,
+    plan: Plan,
+    handler: MessageHandler,
+) -> Result<FakeSession, TestError> {
+    script.record("session.enter");
+    match plan.session_enter {
+        Step::Fail => Err(TestError::Boom("session enter")),
+        Step::Ok | Step::Cancel | Step::Timeout | Step::RecordedFailure => Ok(FakeSession {
+            script,
+            plan,
+            handler,
+        }),
+    }
+}
+
+fn init_call(
+    script: &Script,
+    plan: &Plan,
+    name: &'static str,
+    fail: InitStep,
+) -> Result<FakeInit, TestError> {
+    script.record(name);
+    if fail == InitStep::Fail {
+        return Err(TestError::Boom("initialize"));
+    }
+    Ok(FakeInit {
+        version: plan.server_version.clone(),
+        instructions: plan.instructions.clone(),
+    })
 }
 
 pub(crate) struct FakeTransport {
@@ -228,39 +312,11 @@ impl TransportContext for FakeTransport {
     fn enter(&mut self) -> impl Future<Output = Result<Self::Streams, Self::Error>> + Send {
         let script = self.script.clone();
         let step = self.enter;
-        async move {
-            script.record("transport.enter");
-            match step {
-                Step::Fail => Err(TestError::Boom("transport enter")),
-                Step::Cancel => pending::<Result<(), TestError>>().await,
-                Step::Ok | Step::Timeout | Step::RecordedFailure => Ok(()),
-            }
-        }
+        async move { enter_step(&script, step, "transport.enter").await }
     }
 
     fn exit(self) -> impl Future<Output = Result<(), ExitFailure<TestError>>> + Send + 'static {
-        let script = self.script.clone();
-        let step = self.exit;
-        let http_client = self.http_client;
-        async move {
-            script.record("transport.exit");
-            match step {
-                Step::Ok => Ok(()),
-                Step::Cancel => Err(ExitFailure::Cancelled),
-                Step::Timeout => {
-                    sleep(Duration::from_secs(60)).await;
-                    Ok(())
-                }
-                Step::Fail => Err(ExitFailure::Failure(Arc::new(TestError::Boom(
-                    "transport exit",
-                )))),
-                Step::RecordedFailure => {
-                    let error = Arc::new(TestError::Boom("recorded cleanup error"));
-                    record_failure(http_client.as_ref(), &error);
-                    Err(ExitFailure::Group(vec![ExitFailure::Failure(error)]))
-                }
-            }
-        }
+        exit_future(self.script, self.exit, self.http_client, "transport exit")
     }
 }
 
@@ -292,16 +348,7 @@ impl ClientSession for FakeSession {
     fn initialize(&mut self) -> impl Future<Output = Result<FakeInit, TestError>> + Send {
         let script = self.script.clone();
         let plan = self.plan.clone();
-        async move {
-            script.record("initialize");
-            match plan.initialize {
-                InitStep::Ok => Ok(FakeInit {
-                    version: plan.server_version,
-                    instructions: plan.instructions,
-                }),
-                InitStep::Fail => Err(TestError::Boom("initialize")),
-            }
-        }
+        async move { init_call(&script, &plan, "initialize", plan.initialize) }
     }
 
     fn send_initialize(
@@ -311,16 +358,12 @@ impl ClientSession for FakeSession {
         let script = self.script.clone();
         let plan = self.plan.clone();
         async move {
-            script.record("send_initialize");
             script
                 .requests
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
                 .push(request);
-            Ok(FakeInit {
-                version: plan.server_version,
-                instructions: plan.instructions,
-            })
+            init_call(&script, &plan, "send_initialize", InitStep::Ok)
         }
     }
 
@@ -351,39 +394,11 @@ impl SessionContext for FakeSessionContext {
         let script = self.script.clone();
         let plan = self.plan.clone();
         let handler = self.handler.clone();
-        async move {
-            script.record("session.enter");
-            match plan.session_enter {
-                Step::Fail => Err(TestError::Boom("session enter")),
-                Step::Ok | Step::Cancel | Step::Timeout | Step::RecordedFailure => {
-                    Ok(FakeSession {
-                        script,
-                        plan,
-                        handler,
-                    })
-                }
-            }
-        }
+        async move { enter_session(script, plan, handler) }
     }
 
     fn exit(self) -> impl Future<Output = Result<(), ExitFailure<TestError>>> + Send + 'static {
-        let script = self.script.clone();
-        let step = self.plan.session_exit;
-        async move {
-            script.record("session.exit");
-            match step {
-                Step::Ok => Ok(()),
-                Step::Cancel => Err(ExitFailure::Cancelled),
-                Step::Timeout => {
-                    sleep(Duration::from_secs(60)).await;
-                    Ok(())
-                }
-                Step::Fail => Err(ExitFailure::Failure(Arc::new(TestError::Boom(
-                    "session exit",
-                )))),
-                Step::RecordedFailure => Err(ExitFailure::Group(vec![ExitFailure::Cancelled])),
-            }
-        }
+        exit_future(self.script, self.plan.session_exit, None, "session exit")
     }
 }
 
@@ -455,21 +470,13 @@ impl McpRuntime for FakeRuntime {
 
     fn stdio_client(&self, parameters: StdioServerParameters) -> FakeTransport {
         self.script.record("stdio_client");
-        *self
-            .state
-            .stdio
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(parameters);
+        store(&self.state.stdio, parameters);
         FakeTransport::new(self.script.clone(), &self.plan, None)
     }
 
     fn sse_client(&self, request: SseRequest) -> FakeTransport {
         self.script.record("sse_client");
-        *self
-            .state
-            .sse
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(request);
+        store(&self.state.sse, request);
         FakeTransport::new(self.script.clone(), &self.plan, None)
     }
 
@@ -518,22 +525,8 @@ impl McpRuntime for FakeRuntime {
         self.script.record("http.close");
         let step = self.plan.http_close;
         async move {
-            *client
-                .state
-                .closed
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner) = true;
-            match step {
-                Step::Ok => Ok(()),
-                Step::Cancel => Err(ExitFailure::Cancelled),
-                Step::Timeout => {
-                    sleep(Duration::from_secs(60)).await;
-                    Ok(())
-                }
-                Step::Fail | Step::RecordedFailure => Err(ExitFailure::Failure(Arc::new(
-                    TestError::Boom("http close"),
-                ))),
-            }
+            client.mark_closed();
+            step_exit(step, None, "http close").await
         }
     }
 }
@@ -583,59 +576,69 @@ pub(crate) struct Config {
     pub(crate) tls: TlsPolicy,
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            server_url: "https://mcp.example.com/mcp".to_owned(),
-            transport_type: TransportType::Http,
-            stdio: None,
-            environment: BTreeMap::new(),
-            npm_cache_dir: "/tmp/npm-cache".to_owned(),
-            protocol_version: ProtocolVersion::Auto,
-            callbacks: BTreeSet::new(),
-            timeout: Duration::from_secs(60),
-            auth_type: McpAuthType::None,
-            auth_value: None,
-            auth_header_name: None,
-            extra_headers: BTreeMap::new(),
-            resolved_auth: None,
-            aws_auth: None,
-            tls: tls_policy(),
-        }
+pub(crate) fn base_config() -> Config {
+    Config {
+        server_url: "https://mcp.example.com/mcp".to_owned(),
+        transport_type: TransportType::Http,
+        stdio: None,
+        environment: BTreeMap::new(),
+        npm_cache_dir: "/tmp/npm-cache".to_owned(),
+        protocol_version: ProtocolVersion::Auto,
+        callbacks: BTreeSet::new(),
+        timeout: Duration::from_secs(60),
+        auth_type: McpAuthType::None,
+        auth_value: None,
+        auth_header_name: None,
+        extra_headers: BTreeMap::new(),
+        resolved_auth: None,
+        aws_auth: None,
+        tls: tls_policy(),
     }
 }
 
 pub(crate) fn settings(config: &Config) -> SessionSettings {
+    let client_version = CLIENT_VERSION.to_owned();
+    let callbacks = Callbacks {
+        kinds: config.callbacks.clone(),
+    };
+    let tls = config.tls.clone();
+    let protocol_version = config.protocol_version;
+    let environment = config.environment.clone();
+    let stdio = config.stdio.clone();
+    let npm_cache_dir = config.npm_cache_dir.clone();
+    let transport_type = config.transport_type;
     SessionSettings {
-        transport_type: config.transport_type,
-        stdio: config.stdio.clone(),
-        environment: config.environment.clone(),
-        npm_cache_dir: config.npm_cache_dir.clone(),
-        tls: config.tls.clone(),
-        protocol_version: config.protocol_version,
-        client_version: CLIENT_VERSION.to_owned(),
-        callbacks: Callbacks {
-            kinds: config.callbacks.clone(),
-        },
+        transport_type,
+        stdio,
+        environment,
+        npm_cache_dir,
+        tls,
+        protocol_version,
+        client_version,
+        callbacks,
     }
+}
+
+fn build<Value, Setter>(mut value: Value, set: Setter) -> Value
+where
+    Setter: FnOnce(&mut Value),
+{
+    set(&mut value);
+    value
 }
 
 pub(crate) fn make_plan<Setter>(set: Setter) -> Plan
 where
     Setter: FnOnce(&mut Plan),
 {
-    let mut plan = Plan::default();
-    set(&mut plan);
-    plan
+    build(Plan::default(), set)
 }
 
 pub(crate) fn make_config<Setter>(set: Setter) -> Config
 where
     Setter: FnOnce(&mut Config),
 {
-    let mut config = Config::default();
-    set(&mut config);
-    config
+    build(base_config(), set)
 }
 
 pub(crate) fn session(script: &Script, plan: Plan) -> FakeSession {

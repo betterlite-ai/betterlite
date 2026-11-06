@@ -2,7 +2,7 @@ use std::error::Error;
 use std::future::{Future, poll_fn};
 use std::ops::AsyncFnOnce;
 use std::pin::pin;
-use std::sync::{Arc, PoisonError};
+use std::sync::Arc;
 use std::task::Poll;
 use std::time::Duration;
 
@@ -15,10 +15,11 @@ use crate::client::cleanup::failure::{Failure, first_non_cancelled_cause};
 
 use super::client::SessionClient;
 use super::error::{ExitFailure, SessionError, to_failure};
-use super::negotiate::{InitializeOutcome as _, initialize_session};
 use super::runtime::{HttpClientHandle as _, McpRuntime, SessionContext};
-use super::stream::MessageHandler;
 use super::transport::{TransportContext as _, TransportContexts};
+
+mod session;
+use session::run_session_layer;
 
 pub const SESSION_CLEANUP_TIMEOUT: Duration = Duration::from_secs(5);
 
@@ -44,19 +45,10 @@ impl<Output, Source> Execution<Output, Source>
 where
     Source: Error + Send + Sync + 'static,
 {
-    const fn cancelled_early() -> Self {
+    const fn failed(error: SessionError<Source>) -> Self {
         Self {
-            outcome: Err(SessionError::Cancelled),
-            in_flight_cancelled: true,
-            shutdown: Shutdown::Clean,
-            session_deadline: None,
-        }
-    }
-
-    const fn failed_early(error: SessionError<Source>) -> Self {
-        Self {
+            in_flight_cancelled: matches!(&error, SessionError::Cancelled),
             outcome: Err(error),
-            in_flight_cancelled: false,
             shutdown: Shutdown::Clean,
             session_deadline: None,
         }
@@ -75,21 +67,6 @@ where
     fn record_shutdown(&mut self, shutdown: Shutdown) {
         if shutdown == Shutdown::Cancelled || self.shutdown == Shutdown::Clean {
             self.shutdown = shutdown;
-        }
-    }
-
-    // A transport failure after the caller cancelled wins only when it carries the real cause and not a recorded cleanup error
-    fn apply_transport_failure(&mut self, failure: &Failure<Source>, recorded: &[Arc<Source>]) {
-        if self.in_flight_cancelled {
-            let Some(cause) = first_non_cancelled_cause(failure, recorded) else {
-                return;
-            };
-            self.outcome = Err(SessionError::Runtime(cause));
-            self.in_flight_cancelled = false;
-            return;
-        }
-        if self.outcome.is_ok() && matches!(failure, Failure::Cancelled) {
-            self.record_shutdown(Shutdown::Cancelled);
         }
     }
 
@@ -116,6 +93,21 @@ where
                     self.outcome = Err(SessionError::CleanupTask(error));
                 }
             }
+        }
+    }
+
+    // A transport failure after the caller cancelled wins only when it carries the real cause and not a recorded cleanup error
+    fn apply_transport_failure(&mut self, failure: &Failure<Source>, recorded: &[Arc<Source>]) {
+        if self.in_flight_cancelled {
+            let Some(cause) = first_non_cancelled_cause(failure, recorded) else {
+                return;
+            };
+            self.outcome = Err(SessionError::Runtime(cause));
+            self.in_flight_cancelled = false;
+            return;
+        }
+        if self.outcome.is_ok() && matches!(failure, Failure::Cancelled) {
+            self.record_shutdown(Shutdown::Cancelled);
         }
     }
 }
@@ -154,28 +146,19 @@ where
     .await
 }
 
-async fn open_transport<Runtime>(
-    client: &SessionClient<Runtime>,
-    transport: &mut Runtime::Transport,
-) -> Option<Result<Runtime::Streams, SessionError<Runtime::Error>>>
+async fn prepare<Pending, Output, Source>(
+    pending: Pending,
+    cancelled: &CancellationToken,
+) -> Result<Output, SessionError<Source>>
 where
-    Runtime: McpRuntime,
+    Pending: Future<Output = Result<Output, Source>>,
+    Source: Error + Send + Sync + 'static,
 {
-    until_cancelled(transport.enter(), &client.caller_cancelled)
-        .await
-        .map(|result| result.map_err(|error| SessionError::Runtime(Arc::new(error))))
-}
-
-async fn open_session<Runtime>(
-    client: &SessionClient<Runtime>,
-    context: &mut Runtime::Session,
-) -> Option<Result<<Runtime::Session as SessionContext>::Session, SessionError<Runtime::Error>>>
-where
-    Runtime: McpRuntime,
-{
-    until_cancelled(context.enter(), &client.caller_cancelled)
-        .await
-        .map(|result| result.map_err(|error| SessionError::Runtime(Arc::new(error))))
+    match until_cancelled(pending, cancelled).await {
+        Some(Ok(output)) => Ok(output),
+        Some(Err(error)) => Err(SessionError::Runtime(Arc::new(error))),
+        None => Err(SessionError::Cancelled),
+    }
 }
 
 pub async fn execute_session_operation<Runtime, Output, Operation>(
@@ -199,123 +182,6 @@ where
     let exit = close_transport(client, transport, http_client.as_deref(), deadline).await;
     let recorded = http_client.map_or_else(Vec::new, |handle| handle.finish_cleanup());
     resolve_transport_exit(client, execution, exit, &recorded)
-}
-
-async fn run_session_layer<Runtime, Output, Operation>(
-    client: &mut SessionClient<Runtime>,
-    transport: &mut Runtime::Transport,
-    http_client: Option<&Runtime::HttpClient>,
-    operation: Operation,
-) -> Execution<Output, Runtime::Error>
-where
-    Runtime: McpRuntime,
-    Operation: AsyncFnOnce(
-        &mut <Runtime::Session as SessionContext>::Session,
-    ) -> Result<Output, SessionError<Runtime::Error>>,
-{
-    let streams = match open_transport(client, transport).await {
-        None => return Execution::cancelled_early(),
-        Some(Err(error)) => return Execution::failed_early(error),
-        Some(Ok(streams)) => streams,
-    };
-    let handler = MessageHandler::default();
-    let mut context = client
-        .runtime
-        .session_context(streams, client.session_options(handler.clone()));
-    let mut session = match open_session(client, &mut context).await {
-        None => return Execution::cancelled_early(),
-        Some(Err(error)) => return Execution::failed_early(error),
-        Some(Ok(session)) => session,
-    };
-    let outcome = run_operation(client, &mut session, &handler, operation).await;
-    drop(session);
-    close_session(client, context, outcome, http_client).await
-}
-
-async fn run_operation<Runtime, Output, Operation>(
-    client: &mut SessionClient<Runtime>,
-    session: &mut <Runtime::Session as SessionContext>::Session,
-    handler: &MessageHandler,
-    operation: Operation,
-) -> Result<Output, SessionError<Runtime::Error>>
-where
-    Runtime: McpRuntime,
-    Operation: AsyncFnOnce(
-        &mut <Runtime::Session as SessionContext>::Session,
-    ) -> Result<Output, SessionError<Runtime::Error>>,
-{
-    let cancellation = client.caller_cancelled.clone();
-    let result = until_cancelled(
-        initialize_and_operate(client, session, operation),
-        &cancellation,
-    )
-    .await
-    .unwrap_or_else(|| Err(SessionError::Cancelled));
-    match result {
-        Ok(output) => Ok(output),
-        Err(SessionError::Protocol(failure)) => {
-            let recorded = handler
-                .recorded
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .clone();
-            recorded.map_or_else(
-                || Err(SessionError::Protocol(failure)),
-                |stream| Err(SessionError::Stream(stream)),
-            )
-        }
-        Err(error) => Err(error),
-    }
-}
-
-async fn initialize_and_operate<Runtime, Output, Operation>(
-    client: &mut SessionClient<Runtime>,
-    session: &mut <Runtime::Session as SessionContext>::Session,
-    operation: Operation,
-) -> Result<Output, SessionError<Runtime::Error>>
-where
-    Runtime: McpRuntime,
-    Operation: AsyncFnOnce(
-        &mut <Runtime::Session as SessionContext>::Session,
-    ) -> Result<Output, SessionError<Runtime::Error>>,
-{
-    let result = initialize_session(session, &client.settings).await?;
-    client.last_initialize_instructions = result
-        .instructions()
-        .map(str::trim)
-        .filter(|text| !text.is_empty())
-        .map(str::to_owned);
-    operation(session).await
-}
-
-async fn close_session<Runtime, Output>(
-    client: &SessionClient<Runtime>,
-    context: Runtime::Session,
-    outcome: Result<Output, SessionError<Runtime::Error>>,
-    http_client: Option<&Runtime::HttpClient>,
-) -> Execution<Output, Runtime::Error>
-where
-    Runtime: McpRuntime,
-{
-    let deadline = cleanup_deadline();
-    if let Some(handle) = http_client {
-        handle.begin_cleanup(client.cleanup_scope(deadline));
-    }
-    let exit = run_bounded_cleanup(
-        &client.tracker,
-        &client.caller_cancelled,
-        deadline,
-        context.exit(),
-    )
-    .await;
-    let mut execution = Execution {
-        in_flight_cancelled: matches!(&outcome, Err(SessionError::Cancelled)),
-        outcome,
-        shutdown: Shutdown::Clean,
-        session_deadline: Some(deadline),
-    };
-    execution.record_exit(exit);
-    execution
 }
 
 async fn close_transport<Runtime>(

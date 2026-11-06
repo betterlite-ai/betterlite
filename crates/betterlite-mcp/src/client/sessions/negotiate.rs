@@ -135,6 +135,17 @@ pub trait ClientSession {
     fn send_initialized(&mut self) -> impl Future<Output = Result<(), Self::Error>> + Send;
 }
 
+fn rejected<Source>(message: &str) -> SessionError<Source>
+where
+    Source: Error + Send + Sync + 'static,
+{
+    SessionError::Protocol(McpFailure {
+        code: UNSUPPORTED_PROTOCOL_VERSION,
+        message: message.to_owned(),
+        context: None,
+    })
+}
+
 pub async fn initialize_session<Session>(
     session: &mut Session,
     settings: &SessionSettings,
@@ -142,43 +153,10 @@ pub async fn initialize_session<Session>(
 where
     Session: ClientSession,
 {
-    match settings.protocol_version {
-        ProtocolVersion::Auto => initialize_auto(session).await,
-        ProtocolVersion::Legacy(version) => initialize_explicit(session, settings, version).await,
-    }
-}
-
-async fn initialize_auto<Session>(
-    session: &mut Session,
-) -> Result<Session::InitializeResult, SessionError<Session::Error>>
-where
-    Session: ClientSession,
-{
-    let result = session
-        .initialize()
-        .await
-        .map_err(|error| SessionError::Runtime(Arc::new(error)))?;
-    if !LegacyVersion::ALL
-        .iter()
-        .any(|version| version.as_str() == result.protocol_version())
-    {
-        return Err(SessionError::Protocol(McpFailure {
-            code: UNSUPPORTED_PROTOCOL_VERSION,
-            message: "Upstream selected an unsupported MCP protocol version".to_owned(),
-            context: None,
-        }));
-    }
-    Ok(result)
-}
-
-async fn initialize_explicit<Session>(
-    session: &mut Session,
-    settings: &SessionSettings,
-    version: LegacyVersion,
-) -> Result<Session::InitializeResult, SessionError<Session::Error>>
-where
-    Session: ClientSession,
-{
+    let version = match settings.protocol_version {
+        ProtocolVersion::Auto => return auto_select(session).await,
+        ProtocolVersion::Legacy(version) => version,
+    };
     let request = InitializeRequest {
         protocol_version: version.as_str().to_owned(),
         client_info: Implementation {
@@ -192,11 +170,9 @@ where
         .await
         .map_err(|error| SessionError::Runtime(Arc::new(error)))?;
     if result.protocol_version() != version.as_str() {
-        return Err(SessionError::Protocol(McpFailure {
-            code: UNSUPPORTED_PROTOCOL_VERSION,
-            message: "Upstream did not accept the configured MCP protocol version".to_owned(),
-            context: None,
-        }));
+        return Err(rejected(
+            "Upstream did not accept the configured MCP protocol version",
+        ));
     }
     session.adopt(&result);
     session
@@ -204,4 +180,26 @@ where
         .await
         .map_err(|error| SessionError::Runtime(Arc::new(error)))?;
     Ok(result)
+}
+
+async fn auto_select<Session>(
+    session: &mut Session,
+) -> Result<Session::InitializeResult, SessionError<Session::Error>>
+where
+    Session: ClientSession,
+{
+    let result = session
+        .initialize()
+        .await
+        .map_err(|error| SessionError::Runtime(Arc::new(error)))?;
+    let supported = LegacyVersion::ALL
+        .iter()
+        .any(|version| version.as_str() == result.protocol_version());
+    if supported {
+        Ok(result)
+    } else {
+        Err(rejected(
+            "Upstream selected an unsupported MCP protocol version",
+        ))
+    }
 }

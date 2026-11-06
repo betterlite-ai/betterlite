@@ -6,6 +6,7 @@ use betterlite_config::tls::TlsPolicy;
 use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
+use tracing::debug;
 
 use crate::client::cleanup::http_client::CleanupScope;
 use crate::credentials;
@@ -55,31 +56,29 @@ impl<Runtime: McpRuntime> SessionClient<Runtime> {
         &self,
     ) -> Result<TransportContexts<Runtime>, SessionError<Runtime::Error>> {
         match self.settings.transport_type {
-            TransportType::Stdio => self.stdio_context(),
+            TransportType::Stdio => {
+                let config = self
+                    .settings
+                    .stdio
+                    .as_ref()
+                    .ok_or(SessionConfigError::MissingStdioConfig)?;
+                let parameters = StdioServerParameters {
+                    command: config.command.clone(),
+                    args: config.args.clone(),
+                    env: safe_stdio_env(
+                        config.env.as_ref(),
+                        &self.settings.environment,
+                        &self.settings.npm_cache_dir,
+                    ),
+                };
+                Ok(TransportContexts {
+                    transport: self.runtime.stdio_client(parameters),
+                    http_client: None,
+                })
+            }
             TransportType::Sse => Ok(self.sse_context()),
             TransportType::Http => self.http_context(),
         }
-    }
-
-    fn stdio_context(&self) -> Result<TransportContexts<Runtime>, SessionError<Runtime::Error>> {
-        let config = self
-            .settings
-            .stdio
-            .as_ref()
-            .ok_or(SessionConfigError::MissingStdioConfig)?;
-        let parameters = StdioServerParameters {
-            command: config.command.clone(),
-            args: config.args.clone(),
-            env: safe_stdio_env(
-                config.env.as_ref(),
-                &self.settings.environment,
-                &self.settings.npm_cache_dir,
-            ),
-        };
-        Ok(TransportContexts {
-            transport: self.runtime.stdio_client(parameters),
-            http_client: None,
-        })
     }
 
     fn sse_context(&self) -> TransportContexts<Runtime> {
@@ -97,6 +96,7 @@ impl<Runtime: McpRuntime> SessionClient<Runtime> {
     }
 
     fn http_context(&self) -> Result<TransportContexts<Runtime>, SessionError<Runtime::Error>> {
+        debug!("MCP client uses the streamable HTTP transport");
         let headers = self.auth.auth_headers();
         let config = self.create_http_client_config(&headers, self.auth.timeout, false);
         let client = Arc::new(

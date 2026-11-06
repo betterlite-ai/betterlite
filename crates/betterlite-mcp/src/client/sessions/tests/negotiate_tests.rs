@@ -6,7 +6,9 @@ use crate::client::sessions::negotiate::{
     initialize_session,
 };
 
-use super::fixture::{Config, InitStep, Script, legacy, make_config, make_plan, session, settings};
+use super::fixture::{
+    InitStep, Script, base_config, legacy, make_config, make_plan, session, settings,
+};
 
 fn capabilities(kinds: BTreeSet<Callback>) -> ClientCapabilities {
     Callbacks { kinds }.capabilities()
@@ -30,7 +32,7 @@ async fn auto_initialize_rejects_a_non_legacy_version() {
     let script = Script::default();
     let plan = make_plan(|value| value.server_version = "2026-07-28".to_owned());
     let mut session = session(&script, plan);
-    let config = Config::default();
+    let config = base_config();
     let error = initialize_session(&mut session, &settings(&config))
         .await
         .err()
@@ -135,7 +137,7 @@ async fn failed_initialize_reports_the_runtime_error() {
     let script = Script::default();
     let plan = make_plan(|value| value.initialize = InitStep::Fail);
     let mut session = session(&script, plan);
-    let error = initialize_session(&mut session, &settings(&Config::default()))
+    let error = initialize_session(&mut session, &settings(&base_config()))
         .await
         .err()
         .unwrap();
