@@ -15,17 +15,21 @@ pub mod transport;
 mod url;
 
 pub struct GitLabClient<T> {
-    project: String,
-    ref_name: String,
-    base_url: String,
-    headers: Vec<RequestHeader>,
-    transport: T,
+    pub project: String,
+    pub ref_name: String,
+    pub base_url: String,
+    pub auth_method: String,
+    pub headers: Vec<RequestHeader>,
+    pub transport: T,
 }
 
 impl<T: GitLabTransport> GitLabClient<T> {
     pub fn new(config: &GitLabConfig, transport: T) -> Result<Self, GitLabClientError> {
         let (project, access_token) = init::require_credentials(config)?;
-        let auth_method = config.auth_method.as_deref().unwrap_or("token");
+        let auth_method = config
+            .auth_method
+            .clone()
+            .unwrap_or_else(|| "token".to_owned());
         Ok(Self {
             project,
             ref_name: config.default_ref(),
@@ -33,7 +37,8 @@ impl<T: GitLabTransport> GitLabClient<T> {
                 .base_url
                 .clone()
                 .unwrap_or_else(|| DEFAULT_BASE_URL.to_owned()),
-            headers: auth::request_headers(auth_method, access_token),
+            headers: auth::request_headers(&auth_method, access_token),
+            auth_method,
             transport,
         })
     }

@@ -36,6 +36,13 @@ fn invalid_json_is_a_json_error() {
 }
 
 #[test]
+fn non_ascii_base64_is_an_error() {
+    let body = "{\"content\": \"YWJj\u{e9}\", \"encoding\": \"base64\"}";
+    let outcome = decode_file_payload(body.as_bytes());
+    assert!(matches!(outcome, Err(PayloadError::NonAsciiBase64)));
+}
+
+#[test]
 fn undecodable_base64_is_a_base64_error() {
     let outcome = decode_file_payload(br#"{"content": "A", "encoding": "base64"}"#);
     assert!(matches!(outcome, Err(PayloadError::Base64(_))));

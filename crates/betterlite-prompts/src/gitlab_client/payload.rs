@@ -16,6 +16,8 @@ pub enum PayloadError {
     Json(#[source] serde_json::Error),
     #[error("the base64 file content is invalid: {0}")]
     Base64(#[source] DecodeError),
+    #[error("the base64 file content must be ASCII")]
+    NonAsciiBase64,
 }
 
 #[derive(Deserialize)]
@@ -41,8 +43,12 @@ pub fn decode_file_payload(body: &[u8]) -> Result<Option<String>, PayloadError> 
     let Some(content) = payload.content else {
         return Ok(None);
     };
-    if content.is_empty() || payload.encoding.as_deref() != Some("base64") {
+    if payload.encoding.as_deref() != Some("base64") {
         return Ok(Some(content));
+    }
+    // Python's b64decode takes a str and rejects anything outside ASCII before dropping the rest.
+    if !content.is_ascii() {
+        return Err(PayloadError::NonAsciiBase64);
     }
     // Python's b64decode drops every character outside the alphabet before decoding.
     let alphabet_only: String = content

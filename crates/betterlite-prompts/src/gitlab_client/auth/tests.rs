@@ -82,6 +82,28 @@ async fn the_configured_method_picks_the_header_sent_with_each_request(
     assert_eq!(sent[0].headers.len(), 3);
 }
 
+#[rstest]
+#[case::default_is_token(r#"{"project": "g/r", "access_token": "t"}"#, "token")]
+#[case::null_is_token(
+    r#"{"project": "g/r", "access_token": "t", "auth_method": null}"#,
+    "token"
+)]
+#[case::explicit_oauth(
+    r#"{"project": "g/r", "access_token": "t", "auth_method": "oauth"}"#,
+    "oauth"
+)]
+#[case::unknown_method_is_kept(
+    r#"{"project": "g/r", "access_token": "t", "auth_method": "basic"}"#,
+    "basic"
+)]
+fn the_client_stores_the_auth_method_with_token_as_the_default(
+    #[case] json_text: &str,
+    #[case] expected: &str,
+) {
+    let client = GitLabClient::new(&config_from(json_text), FakeTransport::default()).unwrap();
+    assert_eq!(client.auth_method, expected);
+}
+
 #[test]
 fn set_ref_rejects_an_empty_ref_and_keeps_the_old_one() {
     let mut client = GitLabClient::new(
