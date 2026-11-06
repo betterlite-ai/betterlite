@@ -9,6 +9,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+betterlite-compression = { path = "../betterlite-compression" }
 betterlite-config = { path = "../betterlite-config" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 fancy-regex = "0.19.2"
