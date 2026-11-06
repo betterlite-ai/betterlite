@@ -157,10 +157,6 @@ fn capability_map() -> ParamMap {
         ),
         ("openai.gpt-5.5", endpoint_entry("/v1/chat/completions")),
         (
-            "us.openai.gpt-5.6-luna",
-            endpoint_entry("/v1/chat/completions"),
-        ),
-        (
             "openai.gpt-oss-20b-1:0",
             flag_entry(TOOLS_REASONING_FLAG, ParamValue::Bool(true)),
         ),
@@ -174,16 +170,19 @@ fn capability_map() -> ParamMap {
         ),
         ("openai.gpt-5.6-other", endpoint_entry("/v1/responses")),
         (
+            "openai.gpt-5.6-text-endpoints",
+            mapping(&[("supported_endpoints", text("/v1/chat/completions"))]),
+        ),
+        (
             "openai.gpt-5.6-string",
-            flag_entry(RESPONSE_FORMAT_FLAG, text("true")),
+            mapping(&[
+                (RESPONSE_FORMAT_FLAG, text("true")),
+                (TOOLS_REASONING_FLAG, text("true")),
+            ]),
         ),
         (
             "openai.gpt-5.6-number",
             flag_entry(TOOLS_REASONING_FLAG, number(1)),
-        ),
-        (
-            "openai.gpt-5.6-literal",
-            flag_entry(TOOLS_REASONING_FLAG, text("true")),
         ),
         ("openai.gpt-5.6-null", ParamValue::Null),
     ])
@@ -211,11 +210,11 @@ fn gpt_version_checks(route: &ModelRouteSelector<'_>) {
             ("openai.gpt-5.6", true),
             ("openai.gpt-5.5", false),
             ("openai.gpt-oss-20b-1:0", false),
-            ("us.openai.gpt-5.6-luna", true),
             ("bedrock/us-east-1/openai.gpt-5.6-sol", true),
             ("bedrock/us-east-1/openai.gpt-5.6-region", true),
             ("global.openai.gpt-5.6-other", false),
             ("bedrock/us-east-1/openai.gpt-4o", false),
+            ("openai.gpt-5.6-text-endpoints", false),
             ("openai.gpt-5.6-null", false),
         ],
         |model| chat_completions_is_default(route, model).unwrap(),
@@ -427,7 +426,7 @@ fn tools_with_reasoning() {
                 vec![false, false, false, false, false, false, false],
             ),
             (
-                "openai.gpt-5.6-literal",
+                "openai.gpt-5.6-string",
                 vec![false, false, false, true, true, true, true],
             ),
             (

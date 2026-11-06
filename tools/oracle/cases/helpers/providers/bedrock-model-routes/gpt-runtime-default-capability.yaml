@@ -17,6 +17,8 @@ call:
         supported_endpoints: ["/v1/chat/completions"]
       openai.gpt-5.6-other:
         supported_endpoints: ["/v1/responses"]
+      openai.gpt-5.6-text-endpoints:
+        supported_endpoints: "/v1/chat/completions"
       openai.gpt-5.6-string:
         supports_bedrock_runtime_chat_completions_response_format: "true"
       openai.gpt-5.6-number:
@@ -49,6 +51,7 @@ call:
           - bedrock/us-east-1/openai.gpt-5.6-sol
           - bedrock/us-east-1/openai.gpt-5.6-region
           - global.openai.gpt-5.6-other
+          - openai.gpt-5.6-text-endpoints
           - bedrock/us-east-1/openai.gpt-4o
           - openai.gpt-5.6-null
         malformed:
