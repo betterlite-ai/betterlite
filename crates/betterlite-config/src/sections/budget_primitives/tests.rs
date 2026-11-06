@@ -61,18 +61,34 @@ fn valid_fraction_and_one(
 }
 
 #[rstest]
-#[case::bool_true("true")]
-#[case::bool_false("false")]
-#[case::zero("0")]
-#[case::negative("-0.5")]
-#[case::above_one("2.5")]
-#[case::nan(".nan")]
-#[case::infinity(".inf")]
-#[case::negative_infinity("-.inf")]
-fn invalid_type_bool_and_nonfinite_disabled(#[case] value: &str) {
-    let loaded = settings(&setting_source(value), &[]);
+#[case::bool_true("true", &[])]
+#[case::bool_false("false", &[])]
+#[case::zero("0", &[])]
+#[case::negative("-0.5", &[])]
+#[case::above_one("2.5", &[])]
+#[case::overflowing_environment(
+    "os.environ/THROTTLE_PCT",
+    &[("THROTTLE_PCT", "1e999")]
+)]
+fn invalid_type_bool_and_nonfinite_disabled(
+    #[case] value: &str,
+    #[case] variables: &[(&str, &str)],
+) {
+    let loaded = settings(&setting_source(value), variables);
     assert_eq!(percentage(loaded.throttle_pct), None);
     assert!(!should_throttle(
+        &token(r#"{"metadata":{"throttle_on_budget_exceeded":true},"tpm_limit":10}"#),
+        loaded.throttle_pct
+    ));
+    assert_eq!(percentage(Some(f64::NAN)), None);
+    assert_eq!(percentage(Some(f64::NEG_INFINITY)), None);
+}
+
+#[test]
+fn enabled_fraction_still_throttles() {
+    let loaded = settings(&setting_source("0.5"), &[]);
+    assert_eq!(percentage(loaded.throttle_pct), Some(0.5_f64));
+    assert!(should_throttle(
         &token(r#"{"metadata":{"throttle_on_budget_exceeded":true},"tpm_limit":10}"#),
         loaded.throttle_pct
     ));
