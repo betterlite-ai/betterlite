@@ -192,6 +192,29 @@ async fn client_scans_each_text_for_the_orchestrator() {
 }
 
 #[tokio::test]
+async fn client_scans_in_one_request_for_the_detector_server() {
+    let (base, mut captured, mut server) = capturing_server(
+        "/api/v1/text/contents",
+        StatusCode::OK,
+        "[[],[]]".to_owned(),
+        4,
+    )
+    .await;
+    let client = IbmDetectorClient::new(config(true, &format!("{base}/api/v1/text/contents")))
+        .expect("client");
+    let per_text = client
+        .scan(&["one".to_owned(), "two".to_owned()])
+        .await
+        .expect("scan");
+    assert_eq!(per_text, vec![Vec::new(), Vec::new()]);
+    let request = captured.recv().await.expect("request");
+    let body: DetectorServerBody = serde_json::from_str(&request.body).expect("body");
+    assert_eq!(body.contents, ["one".to_owned(), "two".to_owned()]);
+    assert!(captured.try_recv().is_err());
+    server.shutdown().await;
+}
+
+#[tokio::test]
 async fn client_reports_an_error_status() {
     let (base, _captured, mut server) = capturing_server(
         "/api/v1/text/contents",

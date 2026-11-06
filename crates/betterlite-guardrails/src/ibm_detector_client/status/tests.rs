@@ -48,6 +48,10 @@ fn failed_call() -> IbmClientError {
     }
 }
 
+fn malformed_response() -> IbmClientError {
+    IbmClientError::ResponseJson(serde_json::from_str::<i32>("not json").expect_err("invalid json"))
+}
+
 #[test]
 fn detector_server_status_without_detections_is_success() {
     let config = config(None);
@@ -91,6 +95,15 @@ fn detector_server_status_of_a_failed_call_is_failed_to_respond() {
 }
 
 #[test]
+fn detector_server_status_of_a_malformed_response_is_failed_to_respond() {
+    let config = config(None);
+    assert_eq!(
+        detector_server_status(&config, &Err(malformed_response())),
+        GuardrailStatus::GuardrailFailedToRespond
+    );
+}
+
+#[test]
 fn orchestrator_status_without_detections_is_success() {
     let config = config(None);
     assert_eq!(
@@ -122,6 +135,15 @@ fn orchestrator_status_of_a_failed_call_is_failed_to_respond() {
     let config = config(None);
     assert_eq!(
         orchestrator_status(&config, &Err(failed_call())),
+        GuardrailStatus::GuardrailFailedToRespond
+    );
+}
+
+#[test]
+fn orchestrator_status_of_a_malformed_response_is_failed_to_respond() {
+    let config = config(None);
+    assert_eq!(
+        orchestrator_status(&config, &Err(malformed_response())),
         GuardrailStatus::GuardrailFailedToRespond
     );
 }
