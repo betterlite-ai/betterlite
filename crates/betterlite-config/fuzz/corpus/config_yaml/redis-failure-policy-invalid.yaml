@@ -1,0 +1,3 @@
+litellm_settings:
+  cache: true
+  cache_params: [
