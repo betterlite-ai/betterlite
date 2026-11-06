@@ -17,7 +17,7 @@ use url::Url;
 use super::{
     AgentState, CARD_PATH, Reply, buffered_message, card_json, create_a2a_client, environment,
     limited_client, message_frame, pooled_client, run_agent, send_message, send_request, settings,
-    start_agent, status_frame, team_of,
+    start_agent, status_frame, team_of, tls_policy, user_agent_of,
 };
 use crate::client::NativeA2aSdk;
 use crate::client::convert::{to_compat_stream_response, to_core_send_message_request};
@@ -600,4 +600,128 @@ async fn connect_phase_follows_timeout() {
     };
     assert!(started.elapsed() >= Duration::from_millis(1500));
     drop(listener);
+}
+
+#[tokio::test]
+async fn policy_user_agent_reaches_both_requests() {
+    let (listener, base) = start_agent().await;
+    let state = AgentState {
+        card: card_json(&base, true),
+        reply: Reply::Json(buffered_message("hi")),
+        seen: Arc::default(),
+    };
+    let pool = pooled_client();
+    let request = send_request("hello");
+    let mut settings = settings(&base, false, Duration::from_secs(5));
+    settings.tls = tls_policy("custom-ua/1");
+    let (outcome, seen) = run_agent(
+        listener,
+        state,
+        Box::pin(async move {
+            let client = create_a2a_client(&pool, settings, &environment(None))
+                .await
+                .unwrap();
+            send_message(&client, &request).await
+        }),
+    )
+    .await;
+    outcome.unwrap();
+    assert_eq!(
+        user_agent_of(&seen, CARD_PATH).as_deref(),
+        Some("custom-ua/1")
+    );
+    assert_eq!(user_agent_of(&seen, "/").as_deref(), Some("custom-ua/1"));
+}
+
+#[rstest]
+#[case::buffered(false)]
+#[case::streaming_fallback(true)]
+#[tokio::test]
+async fn body_cap_is_enforced(#[case] streaming: bool) {
+    let (listener, base) = start_agent().await;
+    let body = buffered_message("late");
+    let cap = body.len().saturating_sub(1);
+    let state = AgentState {
+        card: card_json(&base, true),
+        reply: Reply::Json(body),
+        seen: Arc::default(),
+    };
+    let pool = pooled_client();
+    let request = send_request("hello");
+    let (outcome, _seen) = run_agent(
+        listener,
+        state,
+        Box::pin(async move {
+            let mut client = create_a2a_client(
+                &pool,
+                settings(&base, streaming, Duration::from_secs(5)),
+                &environment(None),
+            )
+            .await
+            .unwrap();
+            client.http_client = limited_client(TransportLimits {
+                body_bytes: cap,
+                ..TransportLimits::DEFAULT
+            });
+            send_message(&client, &request).await
+        }),
+    )
+    .await;
+    assert!(matches!(
+        outcome,
+        Err(ClientError::Request {
+            source: TransportError::BodyTooLarge { .. },
+            ..
+        })
+    ));
+}
+
+#[rstest]
+#[case::buffered(false)]
+#[case::streaming_fallback(true)]
+#[tokio::test]
+async fn body_cap_allows_exact_size(#[case] streaming: bool) {
+    let (listener, base) = start_agent().await;
+    let body = buffered_message("late");
+    let cap = body.len();
+    let state = AgentState {
+        card: card_json(&base, true),
+        reply: Reply::Json(body),
+        seen: Arc::default(),
+    };
+    let pool = pooled_client();
+    let request = send_request("hello");
+    let (outcome, _seen) = run_agent(
+        listener,
+        state,
+        Box::pin(async move {
+            let mut client = create_a2a_client(
+                &pool,
+                settings(&base, streaming, Duration::from_secs(5)),
+                &environment(None),
+            )
+            .await
+            .unwrap();
+            client.http_client = limited_client(TransportLimits {
+                body_bytes: cap,
+                ..TransportLimits::DEFAULT
+            });
+            send_message(&client, &request).await
+        }),
+    )
+    .await;
+    outcome.unwrap();
+}
+
+#[tokio::test]
+async fn network_mock_never_reaches_the_agent() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}", listener.local_addr().unwrap());
+    let mut pool = pooled_client();
+    pool.network_mock = true;
+    let mut settings = settings(&base, false, Duration::from_secs(2));
+    settings.relative_card_path = Some("/".to_owned());
+    let _outcome = create_a2a_client(&pool, settings, &environment(None)).await;
+    let accepted = timeout(Duration::from_millis(200), listener.accept()).await;
+    assert!(matches!(accepted, Err(_elapsed)));
 }

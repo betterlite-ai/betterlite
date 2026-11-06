@@ -14,10 +14,11 @@ use axum::extract::State;
 use axum::http::HeaderMap as HttpHeaders;
 use axum::http::StatusCode;
 use axum::http::Uri;
-use axum::http::header::{ACCEPT, CACHE_CONTROL, CONTENT_TYPE, LOCATION};
+use axum::http::header::{ACCEPT, CACHE_CONTROL, CONTENT_TYPE, LOCATION, USER_AGENT};
 use axum::response::{IntoResponse as _, Response};
 use axum::routing::{get, post};
 use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::tls::{TlsPolicy, Verification};
 use betterlite_config::types::ProxyTrust;
 use betterlite_core::agents::json::AgentJson;
 use betterlite_core::agents::provider::a2a::JsonRpcId;
@@ -69,6 +70,7 @@ struct Seen {
     accept: Option<String>,
     cache_control: Option<String>,
     version: Option<String>,
+    user_agent: Option<String>,
     team: Option<String>,
     body: String,
 }
@@ -104,11 +106,16 @@ fn record(state: &AgentState, path: &str, headers: &HttpHeaders, body: String) {
         .get(A2A_VERSION_HEADER)
         .and_then(|value| value.to_str().ok())
         .map(str::to_owned);
+    let user_agent = headers
+        .get(USER_AGENT)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
     state.seen.lock().unwrap().push(Seen {
         path: path.to_owned(),
         accept,
         cache_control,
         version,
+        user_agent,
         team,
         body,
     });
@@ -215,10 +222,22 @@ fn card_json(endpoint: &str, streaming: bool) -> String {
     )
 }
 
+fn tls_policy(user_agent: &str) -> TlsPolicy {
+    TlsPolicy {
+        verification: Verification::Enabled,
+        ca_file: None,
+        certificate: None,
+        http2: false,
+        ecdh_curve: None,
+        user_agent: user_agent.to_owned(),
+    }
+}
+
 fn settings(base: &str, streaming: bool, timeout: Duration) -> A2AClientSettings {
     A2AClientSettings {
         base_url: base.to_owned(),
         timeout: Some(timeout),
+        tls: tls_policy("litellm/1.0"),
         extra_headers: BTreeMap::from([(TEAM_HEADER.to_owned(), SecretString::from("blue"))]),
         streaming,
         relative_card_path: None,
@@ -300,6 +319,12 @@ fn team_of(seen: &[Seen], path: &str) -> Option<String> {
     seen.iter()
         .find(|entry| entry.path == path)
         .and_then(|entry| entry.team.clone())
+}
+
+fn user_agent_of(seen: &[Seen], path: &str) -> Option<String> {
+    seen.iter()
+        .find(|entry| entry.path == path)
+        .and_then(|entry| entry.user_agent.clone())
 }
 
 fn card_name(card: &AgentCard) -> Option<&str> {

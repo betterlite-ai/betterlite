@@ -4,11 +4,13 @@ use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use betterlite_config::loader::EnvironmentLookup;
+use betterlite_config::tls::TlsPolicy;
 use betterlite_core::a2a::exception_mapping::{
     A2aSdk, CardUrls, ClientConfig, ClientStash, map_a2a_exception,
 };
 use betterlite_core::agents::json::AgentJson;
 use betterlite_http::proxy::{ProxiedClient, base_builder, limits::TransportLimits};
+use betterlite_http::tls::apply_policy;
 use secrecy::SecretString;
 use url::Url;
 
@@ -40,6 +42,7 @@ pub struct ClientCallContext {
 pub struct A2AClientSettings {
     pub base_url: String,
     pub timeout: Option<Duration>,
+    pub tls: TlsPolicy,
     pub extra_headers: BTreeMap<String, SecretString>,
     pub streaming: bool,
     pub relative_card_path: Option<String>,
@@ -78,7 +81,7 @@ pub async fn create_a2a_client(
     environment: &(dyn EnvironmentLookup + Sync),
 ) -> Result<A2AClient, A2AError> {
     let timeout = resolve_timeout(environment, settings.timeout)?;
-    let effective = effective_client(http, timeout);
+    let effective = effective_client(http, &settings.tls, timeout)?;
     let headers = transport::headers(Some(&settings.extra_headers), false)
         .map_err(|error| A2AError::from(&error))?;
     let resolver = CardResolver {
@@ -124,14 +127,15 @@ impl From<&ClientError> for A2AError {
     }
 }
 
-// httpx applies the configured timeout to connect and every read, so the client itself must carry those limits
+// httpx applies the configured timeout to connect and every read, and the pool's TLS policy carries user agent and ALPN
 #[rustfmt::skip]
-fn effective_client(pool: &ProxiedClient, timeout: Duration) -> ProxiedClient {
+fn effective_client(pool: &ProxiedClient, tls: &TlsPolicy, timeout: Duration) -> Result<ProxiedClient, A2AError> {
     let limits = TransportLimits { connect_timeout: timeout, read_timeout: timeout, ..pool.limits };
-    match ProxiedClient::build(base_builder(), &pool.policy, limits) {
-        Ok(mut client) => { client.network_mock = pool.network_mock; client }
-        Err(_failure) => ProxiedClient { limits, ..pool.clone() },
-    }
+    let builder = apply_policy(base_builder(), tls).map_err(|source| A2AError::Base { message: format!("the A2A TLS policy could not be applied: {source}"), model: None, debug_info: None, retries: RetryCounts::default() })?;
+    let mut client = ProxiedClient::build(builder, &pool.policy, limits).map_err(|source| A2AError::Base { message: format!("the A2A HTTP client could not be built: {source}"), model: None, debug_info: None, retries: RetryCounts::default() })?;
+    client.tracker = pool.tracker.clone();
+    client.network_mock = pool.network_mock;
+    Ok(client)
 }
 
 // LiteLLM's DEFAULT_A2A_AGENT_TIMEOUT is read from the environment when the caller gives no timeout

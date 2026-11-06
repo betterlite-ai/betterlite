@@ -15,8 +15,3 @@ deviations:
     why: >-
       The shared outbound client never follows redirects, so a provider credential cannot be replayed to another host; B1509 and B173 record the same difference. Tested by redirect_not_followed.
     link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L618'
-  - what: >-
-      The A2A HTTP client is rebuilt from the injected pool's proxy policy with the default TLS roots, so a pool-wide ssl_verify setting or custom CA does not apply to A2A requests. LiteLLM applies the ssl_verify setting when it creates its A2A httpx client.
-    why: >-
-      The configured timeout must replace the pool's connect and read limits on the client itself, and ProxiedClient exposes neither its TLS policy nor a way to set new limits on a built client, so the client is rebuilt from base_builder with the pool's proxy policy. Tested by connect_phase_follows_timeout.
-    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L331-L354'
