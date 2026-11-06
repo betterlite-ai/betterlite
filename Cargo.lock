@@ -1793,6 +1793,7 @@ dependencies = [
  "betterlite-http",
  "betterlite-models",
  "betterlite-prompts",
+ "fancy-regex",
  "futures-util",
  "hex",
  "http 1.5.0",
