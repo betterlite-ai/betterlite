@@ -231,6 +231,18 @@ use super::{FakeTransport, run};
     "{}",
     "true"
 )]
+#[case::is_valid_url_accepts_an_uppercase_ipvfuture(
+    "is_valid_url",
+    r#"["http://[V1.a]/"]"#,
+    "{}",
+    "true"
+)]
+#[case::is_valid_url_accepts_an_uppercase_ipvfuture_after_userinfo(
+    "is_valid_url",
+    r#"["http://[x]@V1.a/"]"#,
+    "{}",
+    "true"
+)]
 #[tokio::test]
 async fn primitives_management_valid(
     #[case] name: &str,

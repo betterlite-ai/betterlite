@@ -97,7 +97,7 @@ fn bracketed_netloc_valid(netloc: &str) -> bool {
 }
 
 fn bracketed_host_valid(hostname: &str) -> bool {
-    if hostname.starts_with('v') {
+    if hostname.starts_with(['v', 'V']) {
         return ipvfuture_valid(hostname);
     }
     let (address, scope) = hostname
@@ -108,9 +108,9 @@ fn bracketed_host_valid(hostname: &str) -> bool {
     scope && address.parse::<Ipv6Addr>().is_ok()
 }
 
-// urllib.parse's IPvFuture form: \Av[a-fA-F0-9]+\..+\Z.
+// urllib.parse's IPvFuture form: \A[vV][a-fA-F0-9]+\..+\Z.
 fn ipvfuture_valid(hostname: &str) -> bool {
-    let Some(future) = hostname.strip_prefix('v') else {
+    let Some(future) = hostname.strip_prefix(['v', 'V']) else {
         return false;
     };
     future.split_once('.').is_some_and(|(digits, tail)| {
