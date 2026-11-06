@@ -1,3 +1,5 @@
+use unicode_properties::{GeneralCategoryGroup, UnicodeGeneralCategory as _};
+
 use super::REDACTED_BY_LITELM;
 
 const QUOTED_KEYS: [&str; 3] = ["input", "messages", "prompt"];
@@ -79,7 +81,15 @@ fn assignment_end(text: &str, position: usize) -> Option<usize> {
     let previous = text
         .get(..position)
         .and_then(|head| head.chars().next_back());
-    if previous.is_some_and(|character| character.is_alphanumeric() || character == '_') {
+    // Python's \w is alphanumeric, and that is the Letter and Number groups, never a combining mark
+    let previous_is_word = previous.is_some_and(|character| {
+        character == '_'
+            || matches!(
+                character.general_category_group(),
+                GeneralCategoryGroup::Letter | GeneralCategoryGroup::Number
+            )
+    });
+    if previous_is_word {
         return None;
     }
     let separator = skip_spaces(text, position.checked_add(ASSIGN_KEY.len())?);

@@ -45,6 +45,24 @@ fn leaves_unquoted_scalars_intact_and_keeps_scanning() {
     redacts("my_input_value=1", "my_input_value=1");
 }
 
+// A combining mark, a symbol and a letter are the boundary shapes Python's \w distinguishes
+#[test]
+fn redacts_after_a_character_python_does_not_count_as_a_word_character() {
+    redacts(
+        "\u{93e}input_value={'a': 1}",
+        &format!("\u{93e}input_value={REDACTED}"),
+    );
+    redacts(
+        "\u{345}input_value={'a': 1}",
+        &format!("\u{345}input_value={REDACTED}"),
+    );
+    redacts(
+        "\u{24b6}input_value={'a': 1}",
+        &format!("\u{24b6}input_value={REDACTED}"),
+    );
+    redacts("\u{e9}input_value={'a': 1}", "\u{e9}input_value={'a': 1}");
+}
+
 #[test]
 fn honors_escaped_quotes_inside_the_redacted_value() {
     redacts(
