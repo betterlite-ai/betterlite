@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::fmt::Debug;
+
 use indexmap::{IndexMap, IndexSet};
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -32,6 +34,16 @@ use crate::model_routes::{
 #[case::reverse_tool_name_lookup(reverse_tool_name_lookup)]
 fn model_routes_cases(#[case] check: fn()) {
     check();
+}
+
+fn check_cases<T, F>(cases: &[(&str, T)], check: F)
+where
+    T: PartialEq + Debug,
+    F: Fn(&str) -> T,
+{
+    for (key, expected) in cases {
+        assert_eq!(&check(key), expected, "{key}");
+    }
 }
 
 fn text(value: &str) -> ParamValue {
@@ -82,35 +94,6 @@ fn selector<'catalog>(
     ModelRouteSelector::new(price_map, converse, owned).unwrap()
 }
 
-fn explicit_route_table(route: &ModelRouteSelector<'_>, fallback: &ParamMap) {
-    let table = [
-        ("invoke/anthropic.claude-3", BedrockRoute::Invoke),
-        ("bedrock/invoke/anthropic.claude-3", BedrockRoute::Invoke),
-        ("converse/invoke/x", BedrockRoute::Invoke),
-        (
-            "claude_platform/openai.gpt-5.6",
-            BedrockRoute::ClaudePlatform,
-        ),
-        ("converse_like/x", BedrockRoute::ConverseLike),
-        ("converse/x", BedrockRoute::Converse),
-        ("agent/mantle/x", BedrockRoute::Agent),
-        ("agentcore/x", BedrockRoute::Agentcore),
-        ("async_invoke/x", BedrockRoute::AsyncInvoke),
-        ("openai/gpt-5.6", BedrockRoute::Openai),
-        ("mantle/openai.gpt-5.5", BedrockRoute::Mantle),
-        ("bedrock/mantle/x", BedrockRoute::Mantle),
-        ("bedrock_mantle/openai.gpt-5.5", BedrockRoute::Converse),
-        ("xconverse/y", BedrockRoute::Invoke),
-    ];
-    for (model, expected) in table {
-        assert_eq!(
-            route.route_for_request(model, fallback, None).unwrap(),
-            expected,
-            "{model}"
-        );
-    }
-}
-
 fn explicit_route_prefixes() {
     let price_map = ParamMap::new();
     let converse = IndexSet::new();
@@ -119,7 +102,32 @@ fn explicit_route_prefixes() {
         ("serviceTier", text("default")),
         ("stop", ParamValue::List(Vec::new())),
     ]);
-    explicit_route_table(&route, &fallback);
+    check_cases(
+        &[
+            ("invoke/anthropic.claude-3", BedrockRoute::Invoke),
+            ("bedrock/invoke/anthropic.claude-3", BedrockRoute::Invoke),
+            ("converse/invoke/x", BedrockRoute::Invoke),
+            (
+                "claude_platform/openai.gpt-5.6",
+                BedrockRoute::ClaudePlatform,
+            ),
+            ("converse_like/x", BedrockRoute::ConverseLike),
+            ("converse/x", BedrockRoute::Converse),
+            ("agent/mantle/x", BedrockRoute::Agent),
+            ("agentcore/x", BedrockRoute::Agentcore),
+            ("async_invoke/x", BedrockRoute::AsyncInvoke),
+            ("openai/gpt-5.6", BedrockRoute::Openai),
+            ("mantle/openai.gpt-5.5", BedrockRoute::Mantle),
+            ("bedrock/mantle/x", BedrockRoute::Mantle),
+            ("bedrock_mantle/openai.gpt-5.5", BedrockRoute::Converse),
+            ("xconverse/y", BedrockRoute::Invoke),
+        ],
+        |model| route.route_for_request(model, &fallback, None).unwrap(),
+    );
+    chat_completions_prefix_cases(&route, &fallback);
+}
+
+fn chat_completions_prefix_cases(route: &ModelRouteSelector<'_>, fallback: &ParamMap) {
     assert_eq!(
         route
             .route_for_request("chat_completions/x", &ParamMap::new(), None)
@@ -128,14 +136,12 @@ fn explicit_route_prefixes() {
     );
     assert_eq!(
         route
-            .route_for_request("chat_completions/x", &fallback, None)
+            .route_for_request("chat_completions/x", fallback, None)
             .unwrap(),
         BedrockRoute::Converse
     );
     assert_eq!(
-        route
-            .route_for_request("invoke/x", &fallback, None)
-            .unwrap(),
+        route.route_for_request("invoke/x", fallback, None).unwrap(),
         BedrockRoute::Invoke
     );
 }
@@ -177,64 +183,47 @@ fn gpt_capability_map() -> ParamMap {
     ])
 }
 
-fn check_gpt_versions(route: &ModelRouteSelector<'_>) {
-    let versions = [
-        ("openai.gpt-5.6", Some((5, 6))),
-        ("us.openai.gpt-6.1-sol", Some((6, 1))),
-        ("openai.gpt-6-astra", Some((6, 0))),
-        ("openai.gpt-123", Some((123, 0))),
-        ("openai.gpt-1234", None),
-        ("openai.gpt-5.1234", Some((5, 0))),
-        ("openai.gpt-5.6.7", Some((5, 6))),
-        ("openai.gpt-0.5", Some((0, 5))),
-        ("openai.gpt-oss-20b-1:0", None),
-        ("xopenai.gpt-5.6", None),
-        ("x.openai.gpt-5.6", Some((5, 6))),
-    ];
-    for (model, expected) in versions {
-        assert_eq!(
-            openai_gpt_version(route, model).unwrap(),
-            expected,
-            "{model}"
-        );
-    }
+fn gpt_version_checks(route: &ModelRouteSelector<'_>) {
+    check_cases(
+        &[
+            ("openai.gpt-5.6", Some((5, 6))),
+            ("us.openai.gpt-6.1-sol", Some((6, 1))),
+            ("openai.gpt-6-astra", Some((6, 0))),
+            ("openai.gpt-123", Some((123, 0))),
+            ("openai.gpt-1234", None),
+            ("openai.gpt-5.1234", Some((5, 0))),
+            ("openai.gpt-5.6.7", Some((5, 6))),
+            ("openai.gpt-0.5", Some((0, 5))),
+            ("openai.gpt-oss-20b-1:0", None),
+            ("xopenai.gpt-5.6", None),
+            ("x.openai.gpt-5.6", Some((5, 6))),
+        ],
+        |model| openai_gpt_version(route, model).unwrap(),
+    );
+    check_cases(
+        &[
+            ("openai.gpt-5.6", true),
+            ("openai.gpt-5.5", false),
+            ("openai.gpt-oss-20b-1:0", false),
+            ("us.openai.gpt-5.6-luna", true),
+            ("bedrock/us-east-1/openai.gpt-5.6-sol", true),
+            ("bedrock/us-east-1/openai.gpt-5.6-region", true),
+            ("global.openai.gpt-5.6-other", false),
+            ("bedrock/us-east-1/openai.gpt-4o", false),
+            ("openai.gpt-5.6-null", false),
+        ],
+        |model| chat_completions_is_default(route, model).unwrap(),
+    );
 }
 
-fn check_gpt_defaults(route: &ModelRouteSelector<'_>) {
-    let defaults = [
-        ("openai.gpt-5.6", true),
-        ("openai.gpt-5.5", false),
-        ("openai.gpt-oss-20b-1:0", false),
-        ("us.openai.gpt-5.6-luna", true),
-        ("bedrock/us-east-1/openai.gpt-5.6-sol", true),
-        ("bedrock/us-east-1/openai.gpt-5.6-region", true),
-        ("global.openai.gpt-5.6-other", false),
-        ("bedrock/us-east-1/openai.gpt-4o", false),
-        ("openai.gpt-5.6-null", false),
-    ];
-    for (model, expected) in defaults {
-        assert_eq!(
-            chat_completions_is_default(route, model).unwrap(),
-            expected,
-            "{model}"
-        );
-    }
-}
-
-fn check_gpt_flags(route: &ModelRouteSelector<'_>) {
+fn gpt_flag_checks(route: &ModelRouteSelector<'_>) {
     assert!(price_map_flag(route, "openai.gpt-5.6-true", RESPONSE_FORMAT_FLAG).unwrap());
     assert!(!price_map_flag(route, "openai.gpt-5.6-string", RESPONSE_FORMAT_FLAG).unwrap());
     assert!(!price_map_flag(route, "openai.gpt-5.6-number", TOOLS_REASONING_FLAG).unwrap());
     assert!(price_map_flag(route, "openai.gpt-oss-20b-1:0", TOOLS_REASONING_FLAG).unwrap());
 }
 
-fn gpt_runtime_default_capability() {
-    let price_map = gpt_capability_map();
-    let converse = IndexSet::new();
-    let route = selector(&price_map, &converse, false);
-    check_gpt_versions(&route);
-    check_gpt_defaults(&route);
-    check_gpt_flags(&route);
+fn gpt_malformed_checks() {
     let malformed = params(&[
         ("openai.gpt-5.6-bad", text("not an object")),
         (
@@ -243,12 +232,22 @@ fn gpt_runtime_default_capability() {
         ),
         ("openai.gpt-5.6-dup", list(&[])),
     ]);
+    let converse = IndexSet::new();
     let broken = selector(&malformed, &converse, false);
     assert!(matches!(
         chat_completions_is_default(&broken, "openai.gpt-5.6-bad"),
         Err(RouteError::MalformedPriceEntry { .. })
     ));
     chat_completions_is_default(&broken, "bedrock/us-east-1/openai.gpt-5.6-dup").unwrap_err();
+}
+
+fn gpt_runtime_default_capability() {
+    let price_map = gpt_capability_map();
+    let converse = IndexSet::new();
+    let route = selector(&price_map, &converse, false);
+    gpt_version_checks(&route);
+    gpt_flag_checks(&route);
+    gpt_malformed_checks();
 }
 
 fn check_converse_only_key(route: &ModelRouteSelector<'_>, key: &str) {
@@ -331,8 +330,8 @@ fn response_format_map() -> ParamMap {
     ])
 }
 
-fn check_native_formats(route: &ModelRouteSelector<'_>) {
-    let native = [
+fn format_outcomes(route: &ModelRouteSelector<'_>, model: &str) -> Vec<bool> {
+    let formats = [
         None,
         Some(mapping(&[("type", text("text"))])),
         Some(mapping(&[
@@ -347,40 +346,34 @@ fn check_native_formats(route: &ModelRouteSelector<'_>) {
             ("type", text("json_schema")),
             ("json_schema", mapping(&[("name", text("x"))])),
         ])),
+        Some(mapping(&[("type", text("json_object"))])),
+        Some(mapping(&[("type", text("json_schema"))])),
+        Some(mapping(&[])),
+        Some(mapping(&[("type", number(5))])),
     ];
-    for format in &native {
-        assert!(
-            !format_needs_converse(route, "openai.gpt-5.6", format.as_ref()).unwrap(),
-            "{format:?}"
-        );
-    }
-}
-
-fn check_converse_formats(route: &ModelRouteSelector<'_>) {
-    let formats = [
-        mapping(&[("type", text("json_object"))]),
-        mapping(&[("type", text("json_schema"))]),
-        mapping(&[]),
-        mapping(&[("type", number(5))]),
-    ];
-    for format in &formats {
-        assert!(
-            format_needs_converse(route, "openai.gpt-5.6", Some(format)).unwrap(),
-            "{format:?}"
-        );
-        assert!(
-            format_needs_converse(route, "openai.gpt-oss-20b-1:0", Some(format)).unwrap(),
-            "{format:?}"
-        );
-    }
+    formats
+        .iter()
+        .map(|format| format_needs_converse(route, model, format.as_ref()).unwrap())
+        .collect()
 }
 
 fn response_format_needs_converse() {
     let price_map = response_format_map();
     let converse = IndexSet::new();
     let route = selector(&price_map, &converse, false);
-    check_native_formats(&route);
-    check_converse_formats(&route);
+    check_cases(
+        &[
+            (
+                "openai.gpt-5.6",
+                vec![false, false, false, false, false, true, true, true, true],
+            ),
+            (
+                "openai.gpt-oss-20b-1:0",
+                vec![false, false, false, true, true, true, true, true, true],
+            ),
+        ],
+        |model| format_outcomes(&route, model),
+    );
     assert!(!format_needs_converse(&route, "openai.gpt-oss-20b-1:0", None).unwrap());
     assert!(
         !format_needs_converse(&route, "openai.gpt-oss-20b-1:0", Some(&text("json schema")))
@@ -410,69 +403,86 @@ fn tools_map() -> ParamMap {
     ])
 }
 
-fn check_empty_tools(route: &ModelRouteSelector<'_>) {
-    let empty_tools = params(&[("tools", ParamValue::List(Vec::new()))]);
-    let empty_functions = params(&[("functions", ParamValue::List(Vec::new()))]);
-    assert!(!request_needs_converse(route, "openai.gpt-5.6", &empty_tools).unwrap());
-    assert!(!request_needs_converse(route, "openai.gpt-5.6", &empty_functions).unwrap());
-}
-
-fn check_tool_fallbacks(route: &ModelRouteSelector<'_>) {
-    let with_tools = params(&[("tools", list(&["tool"]))]);
-    let with_functions = params(&[("functions", list(&["function"]))]);
-    assert!(!request_needs_converse(route, "openai.gpt-oss-20b-1:0", &with_tools).unwrap());
-    assert!(!request_needs_converse(route, "openai.gpt-oss-20b-1:0", &with_functions).unwrap());
-    let off_effort = params(&[
-        ("tools", list(&["tool"])),
-        ("reasoning_effort", text("none")),
-    ]);
-    assert!(!request_needs_converse(route, "openai.gpt-5.6", &off_effort).unwrap());
-    for effort in [text("low"), text("high"), ParamValue::Null] {
-        let request = params(&[("tools", list(&["tool"])), ("reasoning_effort", effort)]);
-        assert!(request_needs_converse(route, "openai.gpt-5.6", &request).unwrap());
-    }
-    assert!(request_needs_converse(route, "openai.gpt-5.6", &with_tools).unwrap());
-    assert!(!request_needs_converse(route, "openai.gpt-5.6-literal", &off_effort).unwrap());
-    assert!(request_needs_converse(route, "openai.gpt-5.6-literal", &with_tools).unwrap());
-    assert!(request_needs_converse(route, "openai.gpt-5.6-number", &with_tools).unwrap());
-}
-
-fn check_wrong_types(route: &ModelRouteSelector<'_>) {
-    let wrong_tools = params(&[("tools", mapping(&[("tool", text("x"))]))]);
-    assert!(matches!(
-        request_needs_converse(route, "openai.gpt-5.6", &wrong_tools),
-        Err(RouteError::WrongType { field: "tools" })
-    ));
-    let wrong_effort = params(&[("tools", list(&["tool"])), ("reasoning_effort", number(2))]);
-    assert!(matches!(
-        request_needs_converse(route, "openai.gpt-5.6", &wrong_effort),
-        Err(RouteError::WrongType {
-            field: "reasoning_effort"
-        })
-    ));
+fn tool_outcomes(route: &ModelRouteSelector<'_>, model: &str) -> Vec<bool> {
+    let requests = [
+        params(&[("tools", ParamValue::List(Vec::new()))]),
+        params(&[("functions", ParamValue::List(Vec::new()))]),
+        params(&[
+            ("tools", list(&["tool"])),
+            ("reasoning_effort", text("none")),
+        ]),
+        params(&[("tools", list(&["tool"]))]),
+        params(&[("functions", list(&["function"]))]),
+        params(&[
+            ("tools", list(&["tool"])),
+            ("reasoning_effort", ParamValue::Null),
+        ]),
+        params(&[
+            ("tools", list(&["tool"])),
+            ("reasoning_effort", text("low")),
+        ]),
+    ];
+    requests
+        .iter()
+        .map(|request| request_needs_converse(route, model, request).unwrap())
+        .collect()
 }
 
 fn tools_with_reasoning() {
     let price_map = tools_map();
     let converse = IndexSet::new();
     let route = selector(&price_map, &converse, false);
-    check_empty_tools(&route);
-    check_tool_fallbacks(&route);
-    check_wrong_types(&route);
+    check_cases(
+        &[
+            (
+                "openai.gpt-5.6",
+                vec![false, false, false, true, true, true, true],
+            ),
+            (
+                "openai.gpt-oss-20b-1:0",
+                vec![false, false, false, false, false, false, false],
+            ),
+            (
+                "openai.gpt-5.6-literal",
+                vec![false, false, false, true, true, true, true],
+            ),
+            (
+                "openai.gpt-5.6-number",
+                vec![false, false, false, true, true, true, true],
+            ),
+        ],
+        |model| tool_outcomes(&route, model),
+    );
+    let wrong_tools = params(&[("tools", mapping(&[("tool", text("x"))]))]);
+    assert!(matches!(
+        request_needs_converse(&route, "openai.gpt-5.6", &wrong_tools),
+        Err(RouteError::WrongType { field: "tools" })
+    ));
+    let wrong_effort = params(&[("tools", list(&["tool"])), ("reasoning_effort", number(2))]);
+    assert!(matches!(
+        request_needs_converse(&route, "openai.gpt-5.6", &wrong_effort),
+        Err(RouteError::WrongType {
+            field: "reasoning_effort"
+        })
+    ));
 }
 
-fn additional_drop_before_route() {
-    let price_map = ParamMap::new();
-    let converse = IndexSet::new();
-    let route = selector(&price_map, &converse, false);
-    let request = params(&[
+fn drop_request() -> ParamMap {
+    params(&[
         ("stop", ParamValue::List(Vec::new())),
         ("model_id", text("profile-arn")),
         ("tools", list(&["tool"])),
         ("reasoning_effort", text("high")),
         ("temperature", number(0)),
         ("model", text("chat_completions/openai.gpt-4o")),
-    ]);
+    ])
+}
+
+fn additional_drop_before_route() {
+    let price_map = ParamMap::new();
+    let converse = IndexSet::new();
+    let route = selector(&price_map, &converse, false);
+    let request = drop_request();
     let original = request.clone();
     let model = "chat_completions/openai.gpt-4o";
     assert_eq!(
@@ -530,7 +540,7 @@ fn drop_list_edges(route: &ModelRouteSelector<'_>, model: &str, request: &ParamM
     );
 }
 
-fn catalog_route_table() -> [(&'static str, BedrockRoute); 8] {
+fn catalog_route_table() -> [(&'static str, BedrockRoute); 16] {
     [
         ("bedrock/amazon.nova-lite-v1:0", BedrockRoute::Converse),
         ("amazon.nova-lite-v1:0", BedrockRoute::Converse),
@@ -546,11 +556,6 @@ fn catalog_route_table() -> [(&'static str, BedrockRoute); 8] {
             "bedrock/us-east-1/openai.gpt-5.6-region",
             BedrockRoute::ChatCompletions,
         ),
-    ]
-}
-
-fn catalog_unknown_table() -> [(&'static str, BedrockRoute); 8] {
-    [
         (
             "anthropic.claude-3-haiku-20240307-v1:0",
             BedrockRoute::Converse,
@@ -568,12 +573,6 @@ fn catalog_unknown_table() -> [(&'static str, BedrockRoute); 8] {
     ]
 }
 
-fn check_routes(route: &ModelRouteSelector<'_>, table: &[(&str, BedrockRoute)]) {
-    for (model, expected) in table {
-        assert_eq!(route.route(model, None).unwrap(), *expected, "{model}");
-    }
-}
-
 fn catalog_and_unknown_route() {
     let price_map = params(&[
         ("openai.gpt-5.6-sol", endpoint_entry("/v1/chat/completions")),
@@ -588,67 +587,70 @@ fn catalog_and_unknown_route() {
         "qwen.qwen3-32b-v1:0",
     ]);
     let route = selector(&price_map, &converse, false);
-    check_routes(&route, &catalog_route_table());
-    check_routes(&route, &catalog_unknown_table());
+    check_cases(&catalog_route_table(), |model| {
+        route.route(model, None).unwrap()
+    });
 }
 
-fn without_prefix_cases() {
-    let stripped = [
-        ("converse/chat_completions/x", "x"),
-        ("chat_completions/converse/x", "x"),
-        ("converse/a/converse/b", "a/b"),
-        ("chat_completions/a/chat_completions/b", "a/b"),
-        ("plain", "plain"),
-        ("xconverse/y", "xy"),
-    ];
-    for (model, expected) in stripped {
-        assert_eq!(without_bedrock_route_prefix(model), expected, "{model}");
-    }
-}
-
-fn platform_model_cases() {
-    let platform = [
-        (
-            "bedrock/claude_platform/x/claude_platform/y",
-            "bedrock/x/claude_platform/y",
-        ),
-        ("claude_platform/x", "x"),
-        ("plain", "plain"),
-        ("xclaude_platform/y", "xy"),
-    ];
-    for (model, expected) in platform {
-        assert_eq!(get_claude_platform_model(model), expected, "{model}");
-    }
+fn model_rewrite_cases() {
+    check_cases(
+        &[
+            ("converse/chat_completions/x", "x".to_owned()),
+            ("chat_completions/converse/x", "x".to_owned()),
+            ("converse/a/converse/b", "a/b".to_owned()),
+            ("chat_completions/a/chat_completions/b", "a/b".to_owned()),
+            ("plain", "plain".to_owned()),
+            ("xconverse/y", "xy".to_owned()),
+        ],
+        without_bedrock_route_prefix,
+    );
+    check_cases(
+        &[
+            (
+                "bedrock/claude_platform/x/claude_platform/y",
+                "bedrock/x/claude_platform/y".to_owned(),
+            ),
+            ("claude_platform/x", "x".to_owned()),
+            ("plain", "plain".to_owned()),
+            ("xclaude_platform/y", "xy".to_owned()),
+        ],
+        get_claude_platform_model,
+    );
 }
 
 fn prefix_predicate_cases() {
-    let prefixes = [
-        (CONVERSE_PREFIX, "converse/x", true),
-        (CONVERSE_PREFIX, "bedrock/converse/x", true),
-        (CONVERSE_PREFIX, "a/b/converse/x", true),
-        (CONVERSE_PREFIX, "xconverse/x", false),
-        (CONVERSE_PREFIX, "converse_like/x", false),
-        (CLAUDE_PLATFORM_PREFIX, "converse/claude_platform/x", true),
-        (CLAUDE_PLATFORM_PREFIX, "xclaude_platform/x", false),
-        (MANTLE_PREFIX, "mantle/x", true),
-        (MANTLE_PREFIX, "x/mantle/y", true),
-        (MANTLE_PREFIX, "bedrock_mantle/x", false),
-        (CHAT_COMPLETIONS_PREFIX, "bedrock/chat_completions/x", true),
-        (CHAT_COMPLETIONS_PREFIX, "xchat_completions/x", false),
-    ];
-    for (prefix, model, expected) in prefixes {
-        assert_eq!(
-            has_route_prefix(model, prefix),
-            expected,
-            "{prefix} {model}"
-        );
-    }
-}
-
-fn route_prefix_helpers() {
-    without_prefix_cases();
-    platform_model_cases();
-    prefix_predicate_cases();
+    check_cases(
+        &[
+            ("converse/x", true),
+            ("bedrock/converse/x", true),
+            ("a/b/converse/x", true),
+            ("xconverse/x", false),
+            ("converse_like/x", false),
+        ],
+        |model| has_route_prefix(model, CONVERSE_PREFIX),
+    );
+    check_cases(
+        &[
+            ("converse/claude_platform/x", true),
+            ("xclaude_platform/x", false),
+        ],
+        |model| has_route_prefix(model, CLAUDE_PLATFORM_PREFIX),
+    );
+    check_cases(
+        &[
+            ("mantle/x", true),
+            ("x/mantle/y", true),
+            ("bedrock_mantle/x", false),
+        ],
+        |model| has_route_prefix(model, MANTLE_PREFIX),
+    );
+    check_cases(
+        &[
+            ("bedrock/chat_completions/x", true),
+            ("xchat_completions/x", false),
+        ],
+        |model| has_route_prefix(model, CHAT_COMPLETIONS_PREFIX),
+    );
 }
 
 fn workspace_keys() {
@@ -674,7 +676,8 @@ fn workspace_keys() {
 }
 
 fn route_helpers_and_workspace_keys() {
-    route_prefix_helpers();
+    model_rewrite_cases();
+    prefix_predicate_cases();
     workspace_keys();
 }
 
@@ -713,15 +716,14 @@ fn reverse_tool_name_lookup() {
         ("x".to_owned(), "y".to_owned()),
         ("same".to_owned(), "same".to_owned()),
     ]);
-    assert_eq!(
-        get_bedrock_tool_name(&mappings, "converted"),
-        "Original Name"
-    );
-    assert_eq!(get_bedrock_tool_name(&mappings, "missing"), "missing");
-    assert_eq!(get_bedrock_tool_name(&mappings, ""), "");
-    assert_eq!(get_bedrock_tool_name(&mappings, "same"), "same");
-    assert_eq!(
-        get_bedrock_tool_name(&mappings, "Original Name"),
-        "Original Name"
+    check_cases(
+        &[
+            ("converted", "Original Name".to_owned()),
+            ("missing", "missing".to_owned()),
+            ("", String::new()),
+            ("same", "same".to_owned()),
+            ("Original Name", "Original Name".to_owned()),
+        ],
+        |name| get_bedrock_tool_name(&mappings, name).to_owned(),
     );
 }

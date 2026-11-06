@@ -212,14 +212,18 @@ fn request_fallbacks(selector: &ModelRouteSelector<'_>, probes: &[RequestProbe])
 }
 
 fn response_formats(selector: &ModelRouteSelector<'_>, probes: &[ResponseProbe]) -> HelperResult {
-    let mut results = Vec::new();
-    for probe in probes {
-        let needed =
-            response_format_needs_converse(selector, &probe.model, probe.response_format.as_ref())
-                .map_err(|error| route_error(&error))?;
-        results.push(json!([probe.model, needed]));
-    }
-    Ok(Value::Array(results))
+    probes
+        .iter()
+        .map(|probe| {
+            let needed = response_format_needs_converse(
+                selector,
+                &probe.model,
+                probe.response_format.as_ref(),
+            )
+            .map_err(|error| route_error(&error))?;
+            Ok(json!([probe.model, needed]))
+        })
+        .collect::<Result<Value, Box<HelperError>>>()
 }
 
 fn tool_names(mappings: &IndexMap<String, String>, names: &[String]) -> Value {
