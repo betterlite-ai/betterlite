@@ -2,6 +2,7 @@
 
 use std::future::IntoFuture as _;
 use std::io;
+use std::time::Duration;
 
 use axum::Router;
 use axum::http::{HeaderMap, StatusCode, Uri};
@@ -15,11 +16,11 @@ use tokio::task::JoinSet;
 
 use super::{JevAnswer, JevSystemOneResponse, MAX_RESPONSE_BYTES, call_systemone};
 use crate::generic_guardrail_contracts::UnreachableFallback;
-use crate::typesafe::TypeSafeGuardrail;
 use crate::typesafe::fixtures::{guardrail, json, settings};
 use crate::typesafe::typesafe_failure_handling::TypeSafeError;
 use crate::typesafe::typesafe_instructions::question_instructions;
 use crate::typesafe::typesafe_state_building::{TypeSafeExchange, TypeSafeState};
+use crate::typesafe::{DEFAULT_JEV_TIMEOUT, TypeSafeGuardrail};
 
 fn state() -> TypeSafeState {
     let mut tool_exchanges = IndexMap::new();
@@ -295,6 +296,22 @@ async fn call_systemone_rejects_an_oversized_response() {
             message: "TypeSafe evaluation service returned an oversized response".to_owned()
         })
     );
+}
+
+#[tokio::test]
+async fn call_systemone_reads_a_body_at_the_size_limit() {
+    let body = " ".repeat(MAX_RESPONSE_BYTES);
+    assert_eq!(
+        call_against(StatusCode::OK, body, UnreachableFallback::FailClosed).await,
+        Err(TypeSafeError::Unavailable {
+            message: "TypeSafe evaluation service returned an unreadable response".to_owned()
+        })
+    );
+}
+
+#[test]
+fn the_jev_timeout_default_matches_litellm() {
+    assert_eq!(DEFAULT_JEV_TIMEOUT, Duration::from_secs(30));
 }
 
 #[tokio::test]
