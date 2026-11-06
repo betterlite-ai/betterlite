@@ -27,6 +27,16 @@ fn body(received: &Received) -> Json {
     serde_json::from_slice(&received.body).unwrap()
 }
 
+fn provider_response_json(received: &Received) -> Json {
+    let Json::Object(envelope) = body(received) else {
+        panic!("the envelope is not an object");
+    };
+    let Json::Object(response) = &envelope["providerResponse"] else {
+        panic!("providerResponse is not an object");
+    };
+    response["json"].clone()
+}
+
 #[tokio::test]
 async fn http_delivery_posts_json_with_a_bearer_token() {
     let (result, received) = deliver("gpt-4o", "sk-helicone", 200).await;
@@ -82,6 +92,29 @@ async fn http_delivery_sends_claude_models_to_the_anthropic_endpoint() {
 async fn http_delivery_sends_gemini_models_to_the_custom_endpoint() {
     let (_result, received) = deliver("gemini-pro", "k", 200).await;
     assert_eq!(received.request_line, "POST /custom/v1/log HTTP/1.1");
+}
+
+#[tokio::test]
+async fn http_delivery_sends_vertex_claude_responses_unchanged() {
+    let (base, server) = serve_once(200, "ok").await;
+    let logger = logger(&base, Some("k"));
+    let mut sent = event("claude-3");
+    sent.litellm_params.custom_llm_provider = "vertex_ai".to_owned();
+    let secret = SecretString::from("k");
+    let assembled = envelope::assemble(&logger.settings, &secret, &sent).unwrap();
+    let (result, received) = join!(
+        post(&logger.client, &secret, assembled, Duration::from_secs(5)),
+        server
+    );
+    result.unwrap();
+    assert_eq!(provider_response_json(&received), json(COMPLETION));
+}
+
+#[tokio::test]
+async fn http_delivery_sends_gemini_responses_unchanged() {
+    let (result, received) = deliver("gemini-pro", "k", 200).await;
+    assert_eq!(result.unwrap(), 200);
+    assert_eq!(provider_response_json(&received), json(COMPLETION));
 }
 
 #[tokio::test]
