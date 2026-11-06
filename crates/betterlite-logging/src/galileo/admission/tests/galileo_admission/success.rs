@@ -163,6 +163,51 @@ fn time_falls_back_to_callback_datetimes() {
 }
 
 #[test]
+fn partial_standard_logging_time_falls_back_to_the_callback_datetimes() {
+    let mut slo = standard_object();
+    slo.start_time = Some(Decimal::from(1_779_710_400_i64));
+    slo.end_time = None;
+    let delivery = delivery_with_batch(API_KEY_ENV, 10);
+    let call_kwargs = kwargs(Some(slo), Some(user_messages("hi")));
+    let response = chat_response("Hi");
+    let transport = ScriptedTransport::default();
+    let mut call = event(&call_kwargs, Some(&response));
+    call.start_time = Some(naive("2026-05-25T11:00:00"));
+    call.end_time = Some(naive("2026-05-25T11:00:01.5"));
+    call.local_offset = offset_minutes(120);
+
+    async_log_success_event(&delivery, &transport, &CountingIds::default(), &call);
+
+    let queued = records(&delivery);
+    assert_eq!(queued.len(), 1);
+    assert_eq!(
+        queued[0].get("created_at"),
+        Some(&text("2026-05-25T09:00:00Z"))
+    );
+    assert_eq!(queued[0].get("latency_ms"), Some(&number(1500)));
+}
+
+#[test]
+fn partial_standard_logging_time_without_datetimes_is_dropped() {
+    let mut slo = standard_object();
+    slo.start_time = Some(Decimal::from(1_779_710_400_i64));
+    slo.end_time = None;
+    let delivery = delivery_with_batch(API_KEY_ENV, 10);
+    let call_kwargs = kwargs(Some(slo), Some(user_messages("hi")));
+    let response = chat_response("Hi");
+    let transport = ScriptedTransport::default();
+
+    async_log_success_event(
+        &delivery,
+        &transport,
+        &CountingIds::default(),
+        &event(&call_kwargs, Some(&response)),
+    );
+
+    assert!(records(&delivery).is_empty());
+}
+
+#[test]
 fn fallback_without_datetimes_is_dropped() {
     let mut slo = standard_object();
     slo.start_time = None;
@@ -239,6 +284,55 @@ fn total_tokens_is_computed_from_components() {
     assert_eq!(queued.len(), 2);
     assert_eq!(queued[0].get("num_total_tokens"), Some(&number(3)));
     assert_eq!(queued[1].get("num_total_tokens"), Some(&number(3)));
+}
+
+#[test]
+fn total_tokens_is_summed_from_one_component() {
+    let mut slo = standard_object();
+    slo.prompt_tokens = None;
+    slo.completion_tokens = Some(4);
+    slo.total_tokens = Some(0);
+    let delivery = delivery_with_batch(API_KEY_ENV, 10);
+    let call_kwargs = kwargs(Some(slo), Some(user_messages("hi")));
+    let response = chat_response("Hi");
+    let transport = ScriptedTransport::default();
+
+    async_log_success_event(
+        &delivery,
+        &transport,
+        &CountingIds::default(),
+        &event(&call_kwargs, Some(&response)),
+    );
+
+    let queued = records(&delivery);
+    assert_eq!(queued[0].get("num_input_tokens"), Some(&number(0)));
+    assert_eq!(queued[0].get("num_output_tokens"), Some(&number(4)));
+    assert_eq!(queued[0].get("num_total_tokens"), Some(&number(4)));
+}
+
+#[test]
+fn latency_is_clamped_at_zero() {
+    let mut slo = standard_object();
+    slo.start_time = Some(Decimal::new(1_779_710_401_500, 3));
+    slo.end_time = Some(Decimal::from(1_779_710_400_i64));
+    let delivery = delivery_with_batch(API_KEY_ENV, 10);
+    let call_kwargs = kwargs(Some(slo), Some(user_messages("hi")));
+    let response = chat_response("Hi");
+    let transport = ScriptedTransport::default();
+
+    async_log_success_event(
+        &delivery,
+        &transport,
+        &CountingIds::default(),
+        &event(&call_kwargs, Some(&response)),
+    );
+
+    let queued = records(&delivery);
+    assert_eq!(queued[0].get("latency_ms"), Some(&number(0)));
+    assert_eq!(
+        queued[0].get("created_at"),
+        Some(&text("2026-05-25T12:00:01Z"))
+    );
 }
 
 #[test]
