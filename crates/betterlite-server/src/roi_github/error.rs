@@ -6,8 +6,6 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum SourceError {
     #[error("Could not reach GitHub. Check the API URL and network connection.")]
-    Unreachable,
-    #[error("Could not reach GitHub. Check the API URL and network connection.")]
     Transport(#[source] TransportError),
     #[error("Could not reach GitHub. Check the API URL and network connection.")]
     Url(#[source] url::ParseError),
