@@ -1,0 +1,10 @@
+kind: helper
+name: batch-error
+call:
+  openai_batches:
+    is_async: false
+    settings: {api_key: sk-fixture, api_base: null, timeout: null, max_retries: null, organization: null}
+    request: {retrieve: {batch_id: batch_1}}
+    answer: {value: {id: batch_1, object: batch, endpoint: /v1/embeddings, input_file_id: file-1, completion_window: 24h, status: failed, created_at: 1700000000, failed_at: 1700000200, errors: {object: list, data: [{code: invalid_json_line, line: 4, message: bad line, param: null}]}}}
+env: {}
+compare: {ignore: []}

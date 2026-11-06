@@ -1,0 +1,38 @@
+kind: helper
+name: bedrock-catalog-and-unknown-route
+call:
+  bedrock_model_routes:
+    price_map:
+      openai.gpt-5.6-sol:
+        supported_endpoints: ["/v1/chat/completions"]
+      openai.gpt-5.6-region:
+        supported_endpoints: ["/v1/chat/completions"]
+    converse_models:
+      - "amazon.nova-lite-v1:0"
+      - "anthropic.claude-3-haiku-20240307-v1:0"
+      - "qwen.qwen3-32b-v1:0"
+    request_metadata_fields: []
+    tool_names: {}
+    step:
+      routes:
+        models:
+          - "bedrock/amazon.nova-lite-v1:0"
+          - "amazon.nova-lite-v1:0"
+          - nova-2/custom
+          - nova/custom
+          - bedrock/nova/custom
+          - "arn:aws:bedrock:us-east-1:1:application-inference-profile/abc"
+          - openai.gpt-5.6-sol
+          - bedrock/us-east-1/openai.gpt-5.6-region
+          - "anthropic.claude-3-haiku-20240307-v1:0"
+          - "bedrock/us-east-1/anthropic.claude-3-haiku-20240307-v1:0"
+          - "qwen.qwen3-32b-v1:0"
+          - openai.gpt-4o
+          - global.openai.gpt-5.6-other
+          - xopenai.gpt-4o
+          - "meta.llama3-8b-instruct-v1:0"
+          - bedrock_mantle/openai.gpt-5.5
+        requests: []
+env: {}
+compare:
+  ignore: []
