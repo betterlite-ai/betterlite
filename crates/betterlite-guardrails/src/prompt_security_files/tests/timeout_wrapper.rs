@@ -7,7 +7,7 @@ use rstest::rstest;
 
 use super::shared::{DONE_ALLOW, UPLOADED, sanitizer, vendor, vendor_with};
 use crate::prompt_security_files::error::FileSanitizationError;
-use crate::prompt_security_files::wire::{Action, SanitizeResult};
+use crate::prompt_security_files::wire::{Action, Metadata, SanitizeResult};
 
 const SLOW: Duration = Duration::from_millis(400);
 const SHORT: Duration = Duration::from_millis(60);
@@ -34,6 +34,7 @@ async fn timeout_wrapper_fails_open_with_an_empty_allow(#[case] overall: bool) {
         SanitizeResult {
             action: Action::Allow,
             content: None,
+            metadata: Metadata::default(),
             violations: Vec::new(),
         }
     );

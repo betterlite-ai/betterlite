@@ -3,7 +3,7 @@ use std::time::Duration;
 use secrecy::{ExposeSecret as _, SecretString};
 use tokio::time::timeout;
 use transport::upload_and_poll;
-use wire::{Action, SanitizeResult};
+use wire::{Action, Metadata, SanitizeResult};
 
 use error::FileSanitizationError;
 
@@ -111,6 +111,7 @@ impl FileSanitizer {
         Ok(SanitizeResult {
             action: Action::Allow,
             content: None,
+            metadata: Metadata::default(),
             violations: Vec::new(),
         })
     }

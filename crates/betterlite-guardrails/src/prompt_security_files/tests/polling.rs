@@ -37,6 +37,20 @@ async fn polling_waits_the_poll_interval_before_each_attempt() {
 }
 
 #[tokio::test]
+async fn polling_keeps_the_vendor_metadata_on_the_result() {
+    let server = vendor(UPLOADED, &[done("modify", "clean")]).await;
+    let result = sanitizer(&server.base)
+        .sanitize_file_content(b"a", "image.png", None)
+        .await
+        .expect("done");
+    assert_eq!(result.metadata.action, Some(Action::Modify));
+    assert_eq!(
+        result.metadata.violations,
+        Some(vec!["secret".to_owned(), "pii".to_owned()])
+    );
+}
+
+#[tokio::test]
 async fn polling_defaults_to_allow_without_metadata() {
     let server = vendor(UPLOADED, &[r#"{"status":"done"}"#.to_owned()]).await;
     let result = sanitizer(&server.base)

@@ -16,7 +16,7 @@ pub enum Action {
     Unrecognized,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct Metadata {
     pub action: Option<Action>,
     pub violations: Option<Vec<String>>,
@@ -33,16 +33,20 @@ pub struct StatusResponse {
 pub struct SanitizeResult {
     pub action: Action,
     pub content: Option<String>,
+    pub metadata: Metadata,
     pub violations: Vec<String>,
 }
 
 impl From<StatusResponse> for SanitizeResult {
     fn from(polled: StatusResponse) -> Self {
         let metadata = polled.metadata.unwrap_or_default();
+        let action = metadata.action.unwrap_or(Action::Allow);
+        let violations = metadata.violations.clone().unwrap_or_default();
         Self {
-            action: metadata.action.unwrap_or(Action::Allow),
+            action,
             content: polled.content,
-            violations: metadata.violations.unwrap_or_default(),
+            metadata,
+            violations,
         }
     }
 }

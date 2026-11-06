@@ -5,12 +5,13 @@ use rstest::rstest;
 
 use super::shared::sanitizer;
 use crate::prompt_security_files::error::FileSanitizationError;
-use crate::prompt_security_files::wire::{Action, SanitizeResult};
+use crate::prompt_security_files::wire::{Action, Metadata, SanitizeResult};
 
 fn result(action: Action) -> SanitizeResult {
     SanitizeResult {
         action,
         content: None,
+        metadata: Metadata::default(),
         violations: vec!["secret".to_owned(), "pii".to_owned()],
     }
 }
