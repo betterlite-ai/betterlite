@@ -3,6 +3,9 @@ deviations:
   - what: A client built without an api_key is reported as missing, and OPENAI_API_KEY is not read. An empty api_key builds a client.
     why: The SDK constructor raises OpenAIError for a missing key after reading OPENAI_API_KEY, and for an empty key. betterlite takes credentials from config only, and the caller gets the same "client is not initialized" error LiteLLM's own None check raises.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L1683-L1711
+  - what: The files client doesn't read the SDK constructor's other env fallbacks. OPENAI_ORG_ID doesn't fill an absent organization, OPENAI_PROJECT_ID sends no OpenAI-Project header, OPENAI_BASE_URL doesn't replace an absent api_base (the default https://api.openai.com/v1 is used), and OPENAI_CUSTOM_HEADERS adds no headers. With OPENAI_ORG_ID or OPENAI_PROJECT_ID set, LiteLLM sends an OpenAI-Organization or OpenAI-Project header and betterlite sends none.
+    why: Same reason as OPENAI_API_KEY. betterlite builds the client from config only, so a process env var never changes which org, project, host or headers a request goes to. A deployment that needs them sets organization, api_base and extra headers in config.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L1683-L1711
   - what: max_retries is carried on the client but a failed request is never retried by the files API.
     why: Retries belong to the shared HTTP client (B173), so the SDK's retry loop is not repeated here. The SDK's default of 2 is still reported.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L1683-L1711

@@ -131,7 +131,8 @@ async fn read_stream(
     let exit = match opened.exit.get() {
         Some(StreamExit::Completed) => "completed",
         Some(StreamExit::Failed(_)) => "failed",
-        Some(StreamExit::Closed) | None => "closed",
+        Some(StreamExit::Closed) => "closed",
+        None => "unseen",
     };
     Ok(json!({
         "headers": fixture.watched(&opened.headers),
