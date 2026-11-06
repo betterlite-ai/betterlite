@@ -214,6 +214,17 @@ async fn failed_staging_preserves_originals_and_removes_temporaries() {
 }
 
 #[tokio::test]
+async fn a_failed_cleanup_keeps_the_staging_error() {
+    let directory = TempDir::new().expect("temp dir");
+    let target = directory.path().join("cache.json");
+    let error = private_files_with(Fault::WriteAndRemove)
+        .stage_private_json(&target, &value(r#"{"fresh": 1}"#))
+        .await
+        .expect_err("staging fails");
+    assert!(matches!(error, PrivateJsonError::Stage(..)));
+}
+
+#[tokio::test]
 async fn a_failed_commit_keeps_the_original_and_removes_the_staged_file() {
     let directory = TempDir::new().expect("temp dir");
     let target = directory.path().join("cache.json");
@@ -259,6 +270,15 @@ async fn discarding_a_staged_file_removes_it_and_ignores_a_missing_one() {
         .await
         .expect("a missing stage is already discarded");
     assert!(entries_of(directory.path()).is_empty());
+}
+
+#[tokio::test]
+async fn ensure_private_dir_refuses_a_path_with_no_final_name() {
+    let error = PrivateFiles::default()
+        .ensure_private_dir(Path::new(""))
+        .await
+        .expect_err("refuses an empty path");
+    assert!(matches!(error, PrivateJsonError::InvalidPath(_)));
 }
 
 #[rstest]

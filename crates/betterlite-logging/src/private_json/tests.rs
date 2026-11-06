@@ -47,6 +47,7 @@ fn entries_of(directory: &Path) -> Vec<String> {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Fault {
     Write,
+    WriteAndRemove,
     Replace,
 }
 
@@ -76,7 +77,7 @@ impl FileAccess for ScriptedFiles {
     }
 
     fn write_staged(&self, staged: &mut StagedTemp, bytes: &[u8]) -> io::Result<()> {
-        if self.fault == Fault::Write {
+        if matches!(self.fault, Fault::Write | Fault::WriteAndRemove) {
             return Err(io::Error::other("scripted write failure"));
         }
         LocalFiles.write_staged(staged, bytes)
@@ -90,6 +91,9 @@ impl FileAccess for ScriptedFiles {
     }
 
     fn remove(&self, path: &Path) -> io::Result<()> {
+        if self.fault == Fault::WriteAndRemove {
+            return Err(io::Error::other("scripted remove failure"));
+        }
         LocalFiles.remove(path)
     }
 
