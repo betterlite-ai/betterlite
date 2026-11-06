@@ -86,6 +86,7 @@ description: >-
   Sizing: 168 listed function/property lines plus the request/response and protocol/record declarations;
   allow 230 production, 320 behavior/Postgres tests, 0 helper adapters, 70 route/manifests/wiring,
   0 decoder/fuzz and 0 config lines, 620 changed lines within a 650-line gate.
+  B1100 registers routes/access_group_read.rs as a stub, so fill only crates/betterlite-server/src/routes/access_group_read.rs and leave routes.rs and state.rs as they are.
 
 
 scope:
@@ -93,10 +94,8 @@ scope:
     - crates/betterlite-server/src/access_group_read.rs
     - crates/betterlite-server/src/access_group_read/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/access_group_read.rs
+    - crates/betterlite-server/src/routes/access_group_read/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/access-group-read/**

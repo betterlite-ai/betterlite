@@ -18,21 +18,16 @@ description: 'Compose B309 plans with the B017 retry executor and B052/B071 acce
   references_provider_scoped_resource (L548-L567), creates_provider_scoped_resource (L570-L579), run_async_fallback
   (L582-L719), _check_non_standard_fallback_format (L778-L802), run_non_standard_fallback_format (L805-L806).
   Implement these behaviors through the typed Rust services above; synchronous facades and structural
-  accessors reuse the same primitive instead of separate ports.'
+  accessors reuse the same primitive instead of separate ports.
+  B016 registers RouteStage::FallbackAttempts as a stub, so replace only that stub and its not-built test in crates/betterlite-router/src/context/fallback_attempts.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.'
 scope:
   paths:
   - crates/betterlite-router/src/fallback_attempts.rs
   - crates/betterlite-router/src/fallback_attempts/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-router/src/context/fallback_attempts.rs
+  - crates/betterlite-router/src/context/fallback_attempts/**
   - crates/betterlite-server/src/routing/fallback_attempts.rs
   - crates/betterlite-server/src/routing/fallback_attempts/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/fallback_attempts.rs
   - tools/oracle/src/router_probes/fallback_attempts/**
   - tools/oracle/litellm/probes/fallback_attempts.py

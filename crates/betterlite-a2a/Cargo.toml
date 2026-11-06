@@ -10,15 +10,20 @@ workspace = true
 
 [dependencies]
 betterlite-core = { path = "../betterlite-core" }
+betterlite-http = { path = "../betterlite-http" }
 chrono = { workspace = true }
 futures-core = "0.3.34"
+http = "1.5.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.154"
 serde_with = { version = "3.24.0", default-features = false, features = ["macros"] }
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true
+url = "2.5.8"
 uuid = { workspace = true }
 
 [dev-dependencies]
+axum = { workspace = true }
+betterlite-config = { path = "../betterlite-config" }
 rstest = "=0.27.0"
-tokio.workspace = true
+tokio = { workspace = true }

@@ -114,15 +114,14 @@ description: >-
   HTTP registration consumes the complete B052 authentication middleware, so the unrelated-user fixtures
   exercise real virtual-key lookup and permission policy. This route is not assigned a management effects
   decorator unless its owned source function has one.
+  B1100 registers routes/jwt_mapping_api.rs as a stub, so fill only crates/betterlite-server/src/routes/jwt_mapping_api.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/jwt_mapping_api.rs
     - crates/betterlite-server/src/jwt_mapping_api/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/jwt_mapping_api.rs
+    - crates/betterlite-server/src/routes/jwt_mapping_api/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/jwt-mapping-api/**

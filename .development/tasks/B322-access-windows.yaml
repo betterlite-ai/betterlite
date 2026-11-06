@@ -16,21 +16,16 @@ description: 'Add typed team candidate filtering and model_info.access_windows, 
   above; synchronous facades and structural accessors reuse the same primitive instead of separate ports.
   Function coverage in litellm/router_utils/common_utils.py: _is_proxy_admin_request (L20-L28), get_request_team_id
   (L31-L40), filter_team_based_models (L143-L207). Implement these behaviors through the typed Rust services
-  above; synchronous facades and structural accessors reuse the same primitive instead of separate ports.'
+  above; synchronous facades and structural accessors reuse the same primitive instead of separate ports.
+  B016 registers RouteStage::AccessWindows as a stub, so replace only that stub and its not-built test in crates/betterlite-router/src/context/access_windows.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.'
 scope:
   paths:
   - crates/betterlite-router/src/access_windows.rs
   - crates/betterlite-router/src/access_windows/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-router/src/context/access_windows.rs
+  - crates/betterlite-router/src/context/access_windows/**
   - crates/betterlite-server/src/routing/access_windows.rs
   - crates/betterlite-server/src/routing/access_windows/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/access_windows.rs
   - tools/oracle/src/router_probes/access_windows/**
   - tools/oracle/litellm/probes/access_windows.py

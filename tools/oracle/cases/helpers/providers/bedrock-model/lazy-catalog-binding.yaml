@@ -1,0 +1,5 @@
+kind: helper
+name: lazy-catalog-binding
+call: {bedrock_model: {}}
+env: {}
+compare: {ignore: []}
