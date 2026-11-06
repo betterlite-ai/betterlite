@@ -30,6 +30,12 @@ test = false
 doc = false
 bench = false
 
+[[bin]]
+name = "route_pattern"
+path = "fuzz_targets/route_pattern.rs"
+test = false
+doc = false
+bench = false
 
 [[bin]]
 name = "agent_provider"

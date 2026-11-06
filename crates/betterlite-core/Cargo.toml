@@ -26,6 +26,7 @@ serde_path_to_error = "0.1.20"
 serde_with = { version = "3.24.0", default-features = false, features = ["macros"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
+tracing.workspace = true
 url = "2.5.8"
 uuid.workspace = true
 
@@ -35,4 +36,5 @@ workspace = true
 betterlite-context = { path = "../betterlite-context" }
 rstest = "=0.27.0"
 tokio = { workspace = true, features = ["test-util"] }
+tracing-subscriber.workspace = true
 uuid.workspace = true

@@ -1,0 +1,5 @@
+kind: helper
+name: galileo-delivery-header-redaction-bearer
+call: {"b3964": {"environment": {"GALILEO_API_KEY": "key-0123456789abcdef", "GALILEO_PROJECT_ID": "project-1"}, "replies": [], "actions": [{"do": "redact", "headers": {"authorization": "Bearer abcdefghijklmnop", "Galileo-API-Key": "short-key", "Content-Type": "application/json"}}]}}
+env: {}
+compare: {ignore: []}

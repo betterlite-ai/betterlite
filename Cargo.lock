@@ -980,6 +980,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
+ "strum",
  "thiserror",
  "tokio",
  "url",
@@ -1290,6 +1291,8 @@ dependencies = [
  "serde_with",
  "thiserror",
  "tokio",
+ "tracing",
+ "tracing-subscriber",
  "url",
  "uuid",
 ]
@@ -1426,10 +1429,14 @@ name = "betterlite-guardrails"
 version = "0.1.0"
 dependencies = [
  "axum",
+ "betterlite-compression",
  "betterlite-config",
+ "betterlite-http",
  "betterlite-prompts",
+ "betterlite-redact",
  "fancy-regex",
  "indexmap 2.14.2",
+ "lru",
  "regex",
  "reqwest",
  "rstest",
@@ -1446,6 +1453,7 @@ dependencies = [
  "ulid",
  "unicode-normalization",
  "url",
+ "uuid",
 ]
 
 [[package]]
@@ -1593,6 +1601,7 @@ dependencies = [
  "http 1.5.0",
  "indexmap 2.14.2",
  "insta",
+ "jiff",
  "parquet-format-safe",
  "parquet2",
  "pep440_rs",
@@ -1611,6 +1620,7 @@ dependencies = [
  "strum",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "unicode-properties",
@@ -1650,6 +1660,7 @@ dependencies = [
  "strum",
  "thiserror",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-subscriber",
  "url",
