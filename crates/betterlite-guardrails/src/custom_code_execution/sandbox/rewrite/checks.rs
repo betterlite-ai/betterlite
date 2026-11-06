@@ -1,5 +1,5 @@
 use super::super::error::CompileError;
-const RESERVED_NAMES: [&str; 2] = ["builtins", "breakpoint"];
+const RESERVED_NAMES: [&str; 4] = ["print", "printed", "builtins", "breakpoint"];
 const ALLOWED_METHODS: [&str; 8] = [
     "__init__",
     "__contains__",

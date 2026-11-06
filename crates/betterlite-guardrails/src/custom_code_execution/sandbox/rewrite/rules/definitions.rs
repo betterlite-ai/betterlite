@@ -51,8 +51,12 @@ fn parameters_rule(
 ) -> Result<(), CompileError> {
     let mut seen: Vec<String> = Vec::new();
     let mut defaulted = false;
+    let mut keyword_only = false;
     let mut cursor = node.walk();
-    for child in node.named_children(&mut cursor) {
+    for child in node.children(&mut cursor) {
+        if starts_keyword_only(child) {
+            keyword_only = true;
+        }
         let (found, has_default) = parameter(child, source);
         let Some(parameter_name) = found else {
             continue;
@@ -65,7 +69,7 @@ fn parameters_rule(
                 "duplicate parameter name",
             ));
         }
-        if defaulted && !has_default {
+        if defaulted && !has_default && !keyword_only {
             return Err(CompileError::syntax(
                 filename,
                 line,
@@ -77,13 +81,25 @@ fn parameters_rule(
     }
     Ok(())
 }
+fn starts_keyword_only(node: Node<'_>) -> bool {
+    match node.kind() {
+        "keyword_separator" | "list_splat_pattern" | "dictionary_splat_pattern" => true,
+        "typed_parameter" => node.named_child(0).is_some_and(|first| {
+            matches!(
+                first.kind(),
+                "list_splat_pattern" | "dictionary_splat_pattern"
+            )
+        }),
+        _ => false,
+    }
+}
 fn parameter<'source>(node: Node<'_>, source: &'source str) -> (Option<&'source str>, bool) {
     let field = match node.kind() {
         "identifier" => Some((node, false)),
         "default_parameter" | "typed_default_parameter" => {
             node.child_by_field_name("name").map(|name| (name, true))
         }
-        "typed_parameter" => node.child_by_field_name("name").map(|name| (name, false)),
+        "typed_parameter" => node.named_child(0).map(|name| (name, false)),
         "list_splat_pattern" | "dictionary_splat_pattern" => {
             node.named_child(0).map(|name| (name, false))
         }
@@ -103,7 +119,7 @@ fn arguments(node: Node<'_>, filename: &str, line: u32) -> Result<(), CompileErr
     for child in node.named_children(&mut cursor) {
         match child.kind() {
             "keyword_argument" => keyword_seen = true,
-            "list_splat" | "dictionary_splat" | "generator_expression" => {}
+            "comment" | "list_splat" | "dictionary_splat" | "generator_expression" => {}
             _ if keyword_seen => {
                 return Err(CompileError::syntax(
                     filename,

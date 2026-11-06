@@ -1,6 +1,6 @@
 use super::super::super::value::Value;
 use super::super::{InplaceError, InplaceOp};
-use super::{integer, unsupported};
+use super::{formatting, integer, unsupported};
 const MAX_REPEATED_ITEMS: usize = 0x0010_0000;
 fn repeated_length(length: usize, count: i64) -> Result<usize, InplaceError> {
     let times = usize::try_from(count).unwrap_or(0);
@@ -35,65 +35,37 @@ pub(crate) fn sequence(
         return merged(left, right);
     }
     if op == InplaceOp::Modulo {
-        return formatted(left, right);
+        return formatting::format(left, right);
     }
     None
 }
 fn merged(left: &Value, right: &Value) -> Option<Result<Value, InplaceError>> {
-    let (Value::Dict(first), Value::Dict(second)) = (left, right) else {
+    let Value::Dict(first) = left else {
+        return None;
+    };
+    if let Value::Dict(second) = right {
+        let mut merged = first.clone();
+        merged.extend(
+            second
+                .iter()
+                .map(|(key, value)| (key.clone(), value.clone())),
+        );
+        return Some(Ok(Value::Dict(merged)));
+    }
+    let (Value::List(items) | Value::Tuple(items)) = right else {
         return None;
     };
     let mut merged = first.clone();
-    merged.extend(
-        second
-            .iter()
-            .map(|(key, value)| (key.clone(), value.clone())),
-    );
+    for item in items {
+        let (Value::List(pair) | Value::Tuple(pair)) = item else {
+            return Some(Err(unsupported(InplaceOp::BitOr, left, right)));
+        };
+        let [Value::Str(key), value] = pair.as_slice() else {
+            return Some(Err(unsupported(InplaceOp::BitOr, left, right)));
+        };
+        merged.insert(key.clone(), value.clone());
+    }
     Some(Ok(Value::Dict(merged)))
-}
-fn formatted(left: &Value, right: &Value) -> Option<Result<Value, InplaceError>> {
-    let Value::Str(text) = left else {
-        return None;
-    };
-    Some(percent_format(text, right))
-}
-fn text_of(value: &Value) -> Option<String> {
-    match value {
-        Value::Str(text) => Some(text.clone()),
-        Value::Int(number) => Some(number.to_string()),
-        Value::Float(number) => Some(number.to_string()),
-        Value::Bool(flag) => Some(if *flag { "True" } else { "False" }.to_owned()),
-        Value::None | Value::Bytes(_) | Value::List(_) | Value::Tuple(_) | Value::Dict(_) => None,
-    }
-}
-fn percent_format(text: &str, value: &Value) -> Result<Value, InplaceError> {
-    let left = Value::Str(text.to_owned());
-    let mut out = String::new();
-    let mut converted = false;
-    let mut chars = text.chars();
-    while let Some(character) = chars.next() {
-        if character != '%' {
-            out.push(character);
-            continue;
-        }
-        match chars.next() {
-            Some('%') => {
-                out.push('%');
-                continue;
-            }
-            Some('s') if !converted => match text_of(value) {
-                Some(rendered) => out.push_str(&rendered),
-                None => return Err(unsupported(InplaceOp::Modulo, &left, value)),
-            },
-            Some('d' | 'i') if !converted => match integer(value) {
-                Some(number) => out.push_str(&number.to_string()),
-                None => return Err(unsupported(InplaceOp::Modulo, &left, value)),
-            },
-            Some(_) | None => return Err(unsupported(InplaceOp::Modulo, &left, value)),
-        }
-        converted = true;
-    }
-    Ok(Value::Str(out))
 }
 
 fn concatenate(left: &Value, right: &Value) -> Option<Result<Value, InplaceError>> {
@@ -102,51 +74,60 @@ fn concatenate(left: &Value, right: &Value) -> Option<Result<Value, InplaceError
         (Value::Bytes(first), Value::Bytes(second)) => Some(Ok(Value::Bytes(
             [first.as_slice(), second.as_slice()].concat(),
         ))),
-        (Value::List(first), Value::List(second)) => Some(Ok(Value::List(
-            [first.as_slice(), second.as_slice()].concat(),
-        ))),
         (Value::Tuple(first), Value::Tuple(second)) => Some(Ok(Value::Tuple(
             [first.as_slice(), second.as_slice()].concat(),
         ))),
-        (Value::List(items), Value::Tuple(extra)) => Some(Ok(Value::List(
-            [items.as_slice(), extra.as_slice()].concat(),
-        ))),
+        (Value::List(items), extra) => extended(items, extra).map(|values| Ok(Value::List(values))),
         _ => None,
     }
 }
+fn extended(items: &[Value], extra: &Value) -> Option<Vec<Value>> {
+    let mut values = items.to_vec();
+    match extra {
+        Value::List(second) | Value::Tuple(second) => values.extend(second.iter().cloned()),
+        Value::Str(text) => values.extend(
+            text.chars()
+                .map(|character| Value::Str(character.to_string())),
+        ),
+        Value::Bytes(text) => values.extend(text.iter().map(|byte| Value::Int(i64::from(*byte)))),
+        Value::Dict(map) => values.extend(map.keys().map(|key| Value::Str(key.clone()))),
+        Value::None | Value::Bool(_) | Value::Int(_) | Value::Float(_) => return None,
+    }
+    Some(values)
+}
 
 fn repetition(left: &Value, right: &Value) -> Option<Result<Value, InplaceError>> {
-    if let (Value::Str(text), Value::Int(count)) = (left, right) {
+    if let (Value::Str(text), Some(count)) = (left, integer(right)) {
         return Some(
-            repeated_length(text.len(), *count).map(|times| Value::Str(text.repeat(times))),
+            repeated_length(text.len(), count).map(|times| Value::Str(text.repeat(times))),
         );
     }
-    if let (Value::Int(count), Value::Str(text)) = (left, right) {
+    if let (Some(count), Value::Str(text)) = (integer(left), right) {
         return Some(
-            repeated_length(text.len(), *count).map(|times| Value::Str(text.repeat(times))),
+            repeated_length(text.len(), count).map(|times| Value::Str(text.repeat(times))),
         );
     }
-    if let (Value::Bytes(text), Value::Int(count)) = (left, right) {
+    if let (Value::Bytes(text), Some(count)) = (left, integer(right)) {
         return Some(
-            repeated_length(text.len(), *count).map(|times| Value::Bytes(text.repeat(times))),
+            repeated_length(text.len(), count).map(|times| Value::Bytes(text.repeat(times))),
         );
     }
-    if let (Value::Int(count), Value::Bytes(text)) = (left, right) {
+    if let (Some(count), Value::Bytes(text)) = (integer(left), right) {
         return Some(
-            repeated_length(text.len(), *count).map(|times| Value::Bytes(text.repeat(times))),
+            repeated_length(text.len(), count).map(|times| Value::Bytes(text.repeat(times))),
         );
     }
-    if let (Value::List(items), Value::Int(count)) = (left, right) {
-        return Some(repeated_items(items, *count).map(Value::List));
+    if let (Value::List(items), Some(count)) = (left, integer(right)) {
+        return Some(repeated_items(items, count).map(Value::List));
     }
-    if let (Value::Int(count), Value::List(items)) = (left, right) {
-        return Some(repeated_items(items, *count).map(Value::List));
+    if let (Some(count), Value::List(items)) = (integer(left), right) {
+        return Some(repeated_items(items, count).map(Value::List));
     }
-    if let (Value::Tuple(items), Value::Int(count)) = (left, right) {
-        return Some(repeated_items(items, *count).map(Value::Tuple));
+    if let (Value::Tuple(items), Some(count)) = (left, integer(right)) {
+        return Some(repeated_items(items, count).map(Value::Tuple));
     }
-    if let (Value::Int(count), Value::Tuple(items)) = (left, right) {
-        return Some(repeated_items(items, *count).map(Value::Tuple));
+    if let (Some(count), Value::Tuple(items)) = (integer(left), right) {
+        return Some(repeated_items(items, count).map(Value::Tuple));
     }
     None
 }

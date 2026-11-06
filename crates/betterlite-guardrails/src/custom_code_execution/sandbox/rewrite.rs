@@ -4,7 +4,7 @@ use tree_sitter::{Language, Node, Parser, Tree};
 mod checks;
 mod rules;
 use rules::definitions::definition_rules;
-use rules::{identifier_rules, statement_rules, syntax_rules};
+use rules::{identifier_rules, statement_rules};
 const MAX_DEPTH: usize = 200;
 const BUDGET_GUARD: &str = "_budget_ok_() and (";
 const ITER_GUARD: &str = "_getiter_((";
@@ -13,6 +13,8 @@ pub struct Scope {
     pub function_depth: usize,
     pub loop_depth: usize,
     pub is_async: bool,
+    pub async_generator: bool,
+    pub comprehension_depth: usize,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Function {
@@ -94,7 +96,6 @@ fn check_node(
     {
         rules::check_called(function, source, filename, line)?;
     }
-    syntax_rules(node, filename, line)?;
     identifier_rules(node, source, filename, line)?;
     definition_rules(node, source, filename, scope, analysis)?;
     if matches!(
@@ -114,27 +115,88 @@ fn forbidden(kind: &str) -> Option<&'static str> {
         "nonlocal_statement" => Some("nonlocal statements are not allowed in the sandbox"),
         "print_statement" => Some("Python 2 print statements are not allowed in the sandbox"),
         "exec_statement" => Some("Exec calls are not allowed."),
+        "type_alias_statement" => Some("TypeAlias statements are not allowed."),
+        "type_parameter" => Some("TypeVar statements are not allowed."),
         _ => None,
     }
 }
-fn scope_after(node: Node<'_>, scope: Scope) -> Scope {
-    if node.kind() == "function_definition" {
-        let mut cursor = node.walk();
-        return Scope {
-            function_depth: scope.function_depth.saturating_add(1),
-            loop_depth: 0,
-            is_async: node
-                .children(&mut cursor)
-                .any(|child| child.kind() == "async"),
-        };
-    }
-    if matches!(node.kind(), "for_statement" | "while_statement") {
-        return Scope {
+fn child_scope(node: Node<'_>, child: Node<'_>, scope: Scope) -> Scope {
+    match node.kind() {
+        "function_definition" | "lambda" => entering_function(node, scope),
+        "for_statement" | "while_statement" if child.kind() != "else_clause" => Scope {
             loop_depth: scope.loop_depth.saturating_add(1),
             ..scope
-        };
+        },
+        "list_comprehension"
+        | "set_comprehension"
+        | "dictionary_comprehension"
+        | "generator_expression" => Scope {
+            comprehension_depth: scope.comprehension_depth.saturating_add(1),
+            ..scope
+        },
+        "for_in_clause" if leftmost_iterable(node, child) => Scope {
+            comprehension_depth: scope.comprehension_depth.saturating_sub(1),
+            ..scope
+        },
+        _ => scope,
     }
-    scope
+}
+fn entering_function(node: Node<'_>, scope: Scope) -> Scope {
+    let mut cursor = node.walk();
+    let is_async = node.kind() == "function_definition"
+        && node
+            .children(&mut cursor)
+            .any(|child| child.kind() == "async");
+    let async_generator = is_async && node.child_by_field_name("body").is_some_and(has_yield);
+    Scope {
+        function_depth: scope.function_depth.saturating_add(1),
+        loop_depth: 0,
+        is_async,
+        async_generator,
+        comprehension_depth: 0,
+    }
+}
+fn has_yield(node: Node<'_>) -> bool {
+    let mut stack = vec![node];
+    while let Some(current) = stack.pop() {
+        if current.kind() == "yield" {
+            return true;
+        }
+        if matches!(
+            current.kind(),
+            "function_definition" | "lambda" | "class_definition"
+        ) {
+            continue;
+        }
+        let mut cursor = current.walk();
+        stack.extend(current.named_children(&mut cursor));
+    }
+    false
+}
+fn leftmost_iterable(node: Node<'_>, child: Node<'_>) -> bool {
+    if node
+        .child_by_field_name("right")
+        .is_none_or(|right| right.id() != child.id())
+    {
+        return false;
+    }
+    let Some(parent) = node.parent() else {
+        return false;
+    };
+    if !matches!(
+        parent.kind(),
+        "list_comprehension"
+            | "set_comprehension"
+            | "dictionary_comprehension"
+            | "generator_expression"
+    ) {
+        return false;
+    }
+    let mut cursor = parent.walk();
+    parent
+        .named_children(&mut cursor)
+        .find(|sibling| sibling.kind() == "for_in_clause")
+        .is_some_and(|first| first.id() == node.id())
 }
 fn loop_guard(node: Node<'_>, analysis: &mut Analysis) {
     if let Some(condition) = node.child_by_field_name("condition") {
@@ -183,7 +245,6 @@ fn walk(
         ));
     }
     check_node(node, source, filename, scope, analysis)?;
-    let child_scope = scope_after(node, scope);
     let mut cursor = node.walk();
     let children: Vec<Node<'_>> = node.named_children(&mut cursor).collect();
     for child in children {
@@ -191,7 +252,7 @@ fn walk(
             child,
             location,
             depth.saturating_add(1),
-            child_scope,
+            child_scope(node, child, scope),
             analysis,
         )?;
     }

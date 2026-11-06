@@ -111,6 +111,22 @@ fn divides_like_python() {
         Ok(Value::Float(0.666_666_666_666_666_6))
     );
     assert_eq!(
+        inplacevar(
+            InplaceOp::TrueDivide,
+            &Value::Int(1),
+            &Value::Int(30_000_000_000_000)
+        ),
+        Ok(Value::Float(3.333_333_333_333_333_4e-14))
+    );
+    assert_eq!(
+        inplacevar(
+            InplaceOp::TrueDivide,
+            &Value::Int(7),
+            &Value::Int(0x0020_0000_0000_0001)
+        ),
+        Ok(Value::Float(7.771_561_172_376_095e-16))
+    );
+    assert_eq!(
         inplacevar(InplaceOp::FloorDivide, &Value::Int(-7), &Value::Int(2)),
         Ok(Value::Int(-4))
     );
@@ -298,14 +314,14 @@ fn a_string_percent_formats_its_value() {
         ),
         Ok(Value::Str("5".to_owned()))
     );
-    assert_eq!(
+    assert!(matches!(
         inplacevar(
             InplaceOp::Modulo,
             &Value::Str("plain".to_owned()),
             &Value::Int(1)
         ),
-        Ok(Value::Str("plain".to_owned()))
-    );
+        Err(InplaceError::UnsupportedOperand { .. })
+    ));
     assert!(matches!(
         inplacevar(
             InplaceOp::Modulo,
@@ -317,9 +333,245 @@ fn a_string_percent_formats_its_value() {
 }
 
 #[test]
+fn a_string_percent_formats_tuple_and_mapping_arguments() {
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Modulo,
+            &Value::Str("%s %s".to_owned()),
+            &Value::Tuple(vec![Value::Str("a".to_owned()), Value::Str("b".to_owned())])
+        ),
+        Ok(Value::Str("a b".to_owned()))
+    );
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Modulo,
+            &Value::Str("%s".to_owned()),
+            &Value::Tuple(vec![Value::Str("a".to_owned())])
+        ),
+        Ok(Value::Str("a".to_owned()))
+    );
+    let mut mapping = IndexMap::new();
+    mapping.insert("a".to_owned(), Value::Int(1));
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Modulo,
+            &Value::Str("%(a)s".to_owned()),
+            &Value::Dict(mapping)
+        ),
+        Ok(Value::Str("1".to_owned()))
+    );
+}
+
+#[test]
+fn a_string_percent_formats_conversions_and_flags() {
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Modulo,
+            &Value::Str("%x".to_owned()),
+            &Value::Int(255)
+        ),
+        Ok(Value::Str("ff".to_owned()))
+    );
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Modulo,
+            &Value::Str("%5d".to_owned()),
+            &Value::Int(1)
+        ),
+        Ok(Value::Str("    1".to_owned()))
+    );
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Modulo,
+            &Value::Str("%r".to_owned()),
+            &Value::Str("a".to_owned())
+        ),
+        Ok(Value::Str("'a'".to_owned()))
+    );
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Modulo,
+            &Value::Str("%s".to_owned()),
+            &Value::None
+        ),
+        Ok(Value::Str("None".to_owned()))
+    );
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Modulo,
+            &Value::Str("%s".to_owned()),
+            &Value::List(vec![Value::Int(1)])
+        ),
+        Ok(Value::Str("[1]".to_owned()))
+    );
+}
+
+#[test]
+fn a_percent_format_rejects_leftover_and_float_arguments() {
+    assert!(matches!(
+        inplacevar(
+            InplaceOp::Modulo,
+            &Value::Str("%%".to_owned()),
+            &Value::Int(1)
+        ),
+        Err(InplaceError::UnsupportedOperand { .. })
+    ));
+    assert!(matches!(
+        inplacevar(
+            InplaceOp::Modulo,
+            &Value::Str("%s".to_owned()),
+            &Value::Float(1.0)
+        ),
+        Err(InplaceError::UnsupportedOperand { .. })
+    ));
+    assert!(matches!(
+        inplacevar(
+            InplaceOp::Modulo,
+            &Value::Str("%s".to_owned()),
+            &Value::Float(1e22)
+        ),
+        Err(InplaceError::UnsupportedOperand { .. })
+    ));
+}
+
+#[test]
+fn bytes_percent_formats_an_integer() {
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Modulo,
+            &Value::Bytes(b"%d".to_vec()),
+            &Value::Int(1)
+        ),
+        Ok(Value::Bytes(b"1".to_vec()))
+    );
+}
+
+#[test]
 fn a_negative_exponent_gives_a_float() {
     assert_eq!(
         inplacevar(InplaceOp::Power, &Value::Int(2), &Value::Int(-1)),
         Ok(Value::Float(0.5))
+    );
+    assert_eq!(
+        inplacevar(InplaceOp::Power, &Value::Int(2), &Value::Int(-50)),
+        Ok(Value::Float(8.881_784_197_001_252e-16))
+    );
+}
+
+#[test]
+fn a_power_beyond_u32_answers_the_small_bases() {
+    assert_eq!(
+        inplacevar(InplaceOp::Power, &Value::Int(1), &Value::Int(5_000_000_000)),
+        Ok(Value::Int(1))
+    );
+    assert_eq!(
+        inplacevar(InplaceOp::Power, &Value::Int(0), &Value::Int(5_000_000_000)),
+        Ok(Value::Int(0))
+    );
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Power,
+            &Value::Int(-1),
+            &Value::Int(5_000_000_000)
+        ),
+        Ok(Value::Int(1))
+    );
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Power,
+            &Value::Int(-1),
+            &Value::Int(5_000_000_001)
+        ),
+        Ok(Value::Int(-1))
+    );
+}
+
+#[test]
+fn a_list_extends_from_text_bytes_and_mapping_keys() {
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Add,
+            &Value::List(vec![Value::Int(1)]),
+            &Value::Str("ab".to_owned())
+        ),
+        Ok(Value::List(vec![
+            Value::Int(1),
+            Value::Str("a".to_owned()),
+            Value::Str("b".to_owned())
+        ]))
+    );
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Add,
+            &Value::List(vec![Value::Int(1)]),
+            &Value::Bytes(b"ab".to_vec())
+        ),
+        Ok(Value::List(vec![
+            Value::Int(1),
+            Value::Int(97),
+            Value::Int(98)
+        ]))
+    );
+    let mut mapping = IndexMap::new();
+    mapping.insert("a".to_owned(), Value::Int(2));
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Add,
+            &Value::List(vec![Value::Int(1)]),
+            &Value::Dict(mapping)
+        ),
+        Ok(Value::List(vec![Value::Int(1), Value::Str("a".to_owned())]))
+    );
+}
+
+#[test]
+fn a_boolean_count_repeats_by_one_or_zero() {
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Multiply,
+            &Value::Str("ab".to_owned()),
+            &Value::Bool(true)
+        ),
+        Ok(Value::Str("ab".to_owned()))
+    );
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Multiply,
+            &Value::List(vec![Value::Int(1)]),
+            &Value::Bool(true)
+        ),
+        Ok(Value::List(vec![Value::Int(1)]))
+    );
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Multiply,
+            &Value::Bool(true),
+            &Value::Str("ab".to_owned())
+        ),
+        Ok(Value::Str("ab".to_owned()))
+    );
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Multiply,
+            &Value::Tuple(vec![Value::Int(1)]),
+            &Value::Bool(false)
+        ),
+        Ok(Value::Tuple(Vec::new()))
+    );
+}
+
+#[test]
+fn a_dict_updates_from_pair_iterables() {
+    let mut first = IndexMap::new();
+    first.insert("b".to_owned(), Value::Int(1));
+    let pairs = Value::List(vec![Value::Tuple(vec![
+        Value::Str("a".to_owned()),
+        Value::Int(2),
+    ])]);
+    let mut merged = first.clone();
+    merged.insert("a".to_owned(), Value::Int(2));
+    assert_eq!(
+        inplacevar(InplaceOp::BitOr, &Value::Dict(first), &pairs),
+        Ok(Value::Dict(merged))
     );
 }

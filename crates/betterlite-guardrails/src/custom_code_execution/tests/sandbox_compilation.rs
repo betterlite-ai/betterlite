@@ -62,6 +62,46 @@ fn compiles_a_guardrail_program_and_returns_the_source() {
     "\u{FF45}\u{FF58}\u{FF45}\u{FF43}(\"1\")\n",
     "Exec calls are not allowed"
 )]
+#[case::typed_duplicate_parameter("def f(a: int, a: str):\n    pass\n", "duplicate parameter")]
+#[case::typed_default_before_plain("def f(a=1, b: int):\n    pass\n", "non-default parameter")]
+#[case::comprehension_trailing_comma("values = [x for x in a,]\n", "single iterable")]
+#[case::async_for_outside("async for x in y:\n    pass\n", "async code outside async function")]
+#[case::async_with_outside("async with a:\n    pass\n", "async code outside async function")]
+#[case::async_comprehension_outside(
+    "def f():\n    return [x async for x in y]\n",
+    "asynchronous comprehension outside"
+)]
+#[case::await_in_lambda(
+    "async def f():\n    return lambda: await y\n",
+    "await outside async function"
+)]
+#[case::yield_from_in_async(
+    "async def f():\n    yield from g()\n",
+    "yield from inside async function"
+)]
+#[case::return_in_async_generator(
+    "async def f():\n    yield 1\n    return 2\n",
+    "return with value in async generator"
+)]
+#[case::yield_in_comprehension(
+    "def f():\n    return [(yield x) for x in y]\n",
+    "yield inside a comprehension"
+)]
+#[case::break_in_loop_else(
+    "for x in y:\n    pass\nelse:\n    break\n",
+    "loop control outside loop"
+)]
+#[case::type_alias("type X = int\n", "TypeAlias statements are not allowed")]
+#[case::type_parameter("def f[T](x):\n    pass\n", "TypeVar statements are not allowed")]
+#[case::print_assignment("print = 1\n", "reserved name")]
+#[case::printed_assignment("printed = 1\n", "reserved name")]
+#[case::print_function("def print(x):\n    pass\n", "reserved name")]
+#[case::print_parameter("def f(print):\n    pass\n", "reserved name")]
+#[case::print_default_parameter("def f(print=1):\n    pass\n", "reserved name")]
+#[case::print_for_target("for print in x:\n    pass\n", "reserved name")]
+#[case::print_lambda_parameter("f = lambda print: 1\n", "reserved name")]
+#[case::print_with_target("with a as print:\n    pass\n", "reserved name")]
+#[case::print_except_target("try:\n    pass\nexcept E as print:\n    pass\n", "reserved name")]
 fn rejects_forbidden_constructs(#[case] source: &str, #[case] requirement: &str) {
     let error = compile_sandboxed(source, DEFAULT_FILENAME).unwrap_err();
     let (_, _, message) = failure(&error);
@@ -90,6 +130,77 @@ fn a_print_call_and_keyword_names_compile_as_in_litellm() {
     let program =
         compiled("def debug(x):\n    print(x)\n\ndef f():\n    return g(print=1, _x=2)\n");
     assert_eq!(program.functions.len(), 2);
+}
+
+#[test]
+fn print_and_printed_loads_compile_as_in_litellm() {
+    let program = compiled(
+        "def f():\n    return print\n\ndef g():\n    return printed\n\ndef h(a=print):\n    return a\n",
+    );
+    assert_eq!(program.functions.len(), 3);
+}
+
+#[rstest]
+#[case::vararg("def f(a=1, *args):\n    pass\n")]
+#[case::kwarg("def f(a=1, **kw):\n    pass\n")]
+#[case::bare_separator("def f(a=1, *, b):\n    pass\n")]
+#[case::keyword_defaults("def f(a, *, b=1, c):\n    pass\n")]
+#[case::typed_vararg("def f(a=1, *args: int, b):\n    pass\n")]
+#[case::helper("def h(x, y=None, **kw):\n    return x\n")]
+fn accepts_splat_and_keyword_only_parameters(#[case] source: &str) {
+    assert_eq!(compiled(source).functions.len(), 1);
+}
+
+#[rstest]
+#[case::same_line("def f():\n    return g(a=1,  # why\n        b=2)\n")]
+#[case::own_line(
+    "def f():\n    return block(\n        \"msg\",\n        detection_info={\"a\": 1},  # note\n    )\n"
+)]
+fn accepts_comments_after_keyword_arguments(#[case] source: &str) {
+    assert_eq!(compiled(source).functions.len(), 1);
+}
+
+#[rstest]
+#[case::after("x = [[a for a in b], c]\n")]
+#[case::before("x = [1, [a for a in b]]\n")]
+#[case::dict_item("x = [{k: v for k, v in b}, 1]\n")]
+#[case::set_item("x = [{a for a in b}, 1]\n")]
+fn accepts_comprehensions_as_list_items(#[case] source: &str) {
+    assert!(compiled(source).functions.is_empty());
+}
+
+#[rstest]
+#[case::binding("_ = 1\n")]
+#[case::unpacking("_, x = g()\n")]
+#[case::augmented("_ += 1\n")]
+#[case::attribute("_.x\n")]
+#[case::comment("x = 1  # __roles__")]
+fn accepts_underscore_names_and_trailing_comments(#[case] source: &str) {
+    assert!(compiled(source).functions.is_empty());
+}
+
+#[test]
+fn a_lambda_is_a_function_scope() {
+    assert!(compiled("x = lambda: (yield)\n").functions.is_empty());
+}
+
+#[test]
+fn a_comprehension_iterable_stays_in_the_enclosing_scope() {
+    assert_eq!(
+        compiled("def f():\n    return [x for x in (yield 1)]\n")
+            .functions
+            .len(),
+        1
+    );
+}
+
+#[test]
+fn async_forms_compile_inside_an_async_function() {
+    let program = compiled(
+        "async def f():\n    return [x async for x in y]\n\nasync def g():\n    async for x in y:\n        pass\n    async with a:\n        pass\n",
+    );
+    assert_eq!(program.functions.len(), 2);
+    assert_eq!(program.is_async("g"), Some(true));
 }
 
 #[test]
@@ -160,10 +271,15 @@ fn accepts_the_live_response_rejection_program() {
 
 #[test]
 fn deeply_nested_invalid_source_does_not_overflow_a_small_stack() {
-    let source = format!("{}1 +\n{}", "(".repeat(20_000), ")".repeat(20_000));
+    let arithmetic = format!("{}1 +\n{}", "(".repeat(20_000), ")".repeat(20_000));
+    let called = format!("{}x{}()", "(".repeat(20_000), ")".repeat(20_000));
     let worker = thread::Builder::new()
         .stack_size(256 * 1024)
-        .spawn(move || compile_sandboxed(&source, DEFAULT_FILENAME).is_err())
+        .spawn(move || {
+            let unclosed = compile_sandboxed(&arithmetic, DEFAULT_FILENAME).is_err();
+            let parenthesized = compile_sandboxed(&called, DEFAULT_FILENAME).is_err();
+            unclosed && parenthesized
+        })
         .unwrap();
     assert!(worker.join().unwrap());
 }
