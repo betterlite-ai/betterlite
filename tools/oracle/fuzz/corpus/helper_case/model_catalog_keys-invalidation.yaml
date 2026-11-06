@@ -1,0 +1,22 @@
+kind: helper
+name: model-catalog-keys-seed-invalidation
+call:
+  model_catalog_keys:
+    model_cost: [gpt-4o, Alpha]
+    steps:
+      - {op: generation}
+      - {op: index}
+      - {op: get_key, key: alpha}
+      - {op: add, key: Beta}
+      - {op: get_key, key: beta}
+      - {op: invalidate}
+      - {op: generation}
+      - {op: get_key, key: beta}
+      - {op: remove, key: Alpha}
+      - {op: add, key: ALPHA}
+      - {op: get_key, key: alpha}
+      - {op: invalidate}
+      - {op: generation}
+      - {op: get_key, key: alpha}
+env: {}
+compare: {ignore: []}

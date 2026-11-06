@@ -1,0 +1,5 @@
+kind: helper
+name: galileo-delivery-health-check-unhealthy-no-base-url
+call: {"b3964": {"environment": {"GALILEO_USERNAME": "user", "GALILEO_PASSWORD": "pass", "GALILEO_PROJECT_ID": "project-1"}, "replies": [], "actions": [{"do": "health_check"}]}}
+env: {}
+compare: {ignore: []}
