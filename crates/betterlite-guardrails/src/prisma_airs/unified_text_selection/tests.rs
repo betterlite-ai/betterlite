@@ -56,8 +56,9 @@ fn a_content_list_flattens_to_one_text_per_text_part() {
 #[test]
 fn disagreeing_walks_fall_back_to_scanning_everything() {
     let given = texts(&["x", "y"]);
-    let given_messages =
-        messages(r#"[{"role":"user","content":["x","y"]},{"role":"user","content":["y"]}]"#);
+    let given_messages = messages(
+        r#"[{"role":"user","content":[{"type":"text","text":"x"},{"type":"text","text":"y"}]},{"role":"user","content":[{"type":"text","text":"y"}]}]"#,
+    );
     assert_eq!(text_source_message_indices(&given, &given_messages), None);
 }
 

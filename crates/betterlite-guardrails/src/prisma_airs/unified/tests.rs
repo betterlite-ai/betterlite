@@ -139,6 +139,18 @@ async fn include_guardrail_metadata_never_reaches_the_scan() {
     assert!(!outcome.bodies[0].contains("include_guardrail_metadata"));
 }
 
+#[tokio::test]
+async fn a_non_text_metadata_value_is_not_forwarded() {
+    let mut data = request_data();
+    data.metadata = Some(BTreeMap::from([(
+        "profile_name".to_owned(),
+        GuardrailValue::SignedInteger(7),
+    )]));
+    let outcome = execute(Run::new(ALLOW), inputs(&["hi"]), data, None).await;
+    outcome.result.as_ref().expect("allowed");
+    assert!(outcome.bodies[0].contains(r#""profile_name":"config-profile""#));
+}
+
 #[test]
 fn replays_the_prisma_unified_corpus() {
     let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/prisma_unified");

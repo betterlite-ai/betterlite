@@ -204,6 +204,20 @@ async fn a_blocked_mcp_request_without_masking_is_a_400() {
 }
 
 #[tokio::test]
+async fn masked_json_past_the_recursion_limit_blocks() {
+    let masked = format!("{}{}", "[".repeat(200), "]".repeat(200));
+    let reply = format!(
+        r#"{{"action":"allow","prompt_masked_data":{{"data":{}}}}}"#,
+        serde_json::to_string(&masked).expect("encode")
+    );
+    let mut data = with_search();
+    data.mcp_arguments = Some(object(&[("q", text("secret"))]));
+    let outcome = execute(Run::new(&reply), inputs(&[]), data, None).await;
+    assert_eq!(outcome.result.as_ref().expect_err("blocked").status(), 400);
+    assert!(detail_json(&outcome).contains("not valid JSON"));
+}
+
+#[tokio::test]
 async fn a_response_direction_never_scans_mcp() {
     let mut run = Run {
         direction: Direction::Response,
