@@ -53,10 +53,11 @@ pub struct ModelCostKeys {
 #[must_use]
 pub fn strip_stable_vertex_version(model: &str) -> String {
     let body = model.strip_suffix('\n').unwrap_or(model);
-    let name = body
-        .trim_end_matches(DECIMAL_DIGIT)
+    let without_digits = body.trim_end_matches(DECIMAL_DIGIT);
+    // the hyphen only goes when at least one digit followed it
+    let name = without_digits
         .strip_suffix('-')
-        .filter(|stem| stem.len() < body.len().saturating_sub(1));
+        .filter(|_| without_digits.len() < body.len());
     name.map_or_else(
         || model.to_owned(),
         |stem| format!("{stem}{}", model.get(body.len()..).unwrap_or_default()),
