@@ -93,6 +93,9 @@ where
     Source: RemoteMediaFetcher + Sync,
 {
     let urls = remote_urls_to_inline(messages, should_inline);
+    if urls.is_empty() {
+        return Ok(messages.to_vec());
+    }
     let values = fetcher.convert_urls(&urls).await?;
     let data_urls = urls.into_iter().zip(values).collect();
     inline_messages(messages, &data_urls, should_inline)
