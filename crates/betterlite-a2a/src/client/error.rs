@@ -85,68 +85,24 @@ pub enum ClientError {
 }
 
 #[must_use]
+#[rustfmt::skip]
 pub fn exception_to_a2a(exception: A2AException) -> A2AError {
     match exception {
-        A2AException::LocalhostUrl(error) => A2AError::LocalhostUrl {
-            localhost_url: error.localhost_url,
-            base_url: error.base_url,
-            model: error.model.clone(),
-            original_error: Some(Box::new(A2AError::Base {
-                message: error.original_error,
-                model: error.model,
-                debug_info: None,
-                retries: RetryCounts::default(),
-            })),
-        },
-        A2AException::AgentCard { message, url, .. } => A2AError::AgentCard {
-            message,
-            url,
-            status_code: 404,
-        },
-        A2AException::Connection {
-            message,
-            url,
-            model,
-        } => A2AError::Connection {
-            message,
-            url,
-            model,
-            debug_info: None,
-            retries: RetryCounts::default(),
-        },
-        A2AException::Other { message, model } => A2AError::Base {
-            message,
-            model,
-            debug_info: None,
-            retries: RetryCounts::default(),
-        },
+        A2AException::LocalhostUrl(error) => A2AError::LocalhostUrl { localhost_url: error.localhost_url, base_url: error.base_url, model: error.model.clone(), original_error: Some(Box::new(A2AError::Base { message: error.original_error, model: error.model, debug_info: None, retries: RetryCounts::default() })) },
+        A2AException::AgentCard { message, url, .. } => A2AError::AgentCard { message, url, status_code: 404 },
+        A2AException::Connection { message, url, model } => A2AError::Connection { message, url, model, debug_info: None, retries: RetryCounts::default() },
+        A2AException::Other { message, model } => A2AError::Base { message, model, debug_info: None, retries: RetryCounts::default() },
     }
 }
 
 #[must_use]
+#[rustfmt::skip]
 pub fn transport_error(url: &str, timeout: Duration, source: TransportError) -> ClientError {
-    if matches!(
-        source,
-        TransportError::Deadline(_) | TransportError::ConnectTimeout(_)
-    ) {
-        return ClientError::Timeout {
-            url: url.to_owned(),
-            timeout,
-            source: Some(source),
-        };
+    if matches!(source, TransportError::Deadline(_) | TransportError::ConnectTimeout(_)) {
+        return ClientError::Timeout { url: url.to_owned(), timeout, source: Some(source) };
     }
-    let connection = matches!(
-        source,
-        TransportError::Connect(_) | TransportError::Request(_) | TransportError::Body(_)
-    );
-    if connection {
-        return ClientError::Connection {
-            url: url.to_owned(),
-            source,
-        };
+    if matches!(source, TransportError::Connect(_) | TransportError::Request(_) | TransportError::Body(_)) {
+        return ClientError::Connection { url: url.to_owned(), source };
     }
-    ClientError::Request {
-        url: url.to_owned(),
-        source,
-    }
+    ClientError::Request { url: url.to_owned(), source }
 }

@@ -136,32 +136,14 @@ fn effective_client(pool: &ProxiedClient, timeout: Duration) -> ProxiedClient {
 }
 
 // LiteLLM's DEFAULT_A2A_AGENT_TIMEOUT is read from the environment when the caller gives no timeout
-fn resolve_timeout(
-    environment: &(dyn EnvironmentLookup + Sync),
-    configured: Option<Duration>,
-) -> Result<Duration, A2AError> {
-    if let Some(timeout) = configured {
-        return Ok(timeout);
-    }
-    let Some(raw) = environment
-        .lookup(A2A_TIMEOUT_ENV)
-        .filter(|raw| !raw.is_empty())
-    else {
+#[rustfmt::skip]
+fn resolve_timeout(environment: &(dyn EnvironmentLookup + Sync), configured: Option<Duration>) -> Result<Duration, A2AError> {
+    if let Some(timeout) = configured { return Ok(timeout); }
+    let Some(raw) = environment.lookup(A2A_TIMEOUT_ENV).filter(|raw| !raw.is_empty()) else {
         return Ok(DEFAULT_A2A_AGENT_TIMEOUT);
     };
-    let seconds = raw
-        .parse::<f64>()
-        .ok()
-        .filter(|value| value.is_finite() && *value >= 0.0_f64);
-    let Some(timeout) = seconds.and_then(|value| Duration::try_from_secs_f64(value).ok()) else {
-        return Err(A2AError::Base {
-            message: format!("{A2A_TIMEOUT_ENV} {raw:?} is not a valid number of seconds"),
-            model: None,
-            debug_info: None,
-            retries: RetryCounts::default(),
-        });
-    };
-    Ok(timeout)
+    let parsed = raw.parse::<f64>().ok().filter(|value| value.is_finite() && *value >= 0.0_f64).and_then(|value| Duration::try_from_secs_f64(value).ok());
+    parsed.ok_or_else(|| A2AError::Base { message: format!("{A2A_TIMEOUT_ENV} {raw:?} is not a valid number of seconds"), model: None, debug_info: None, retries: RetryCounts::default() })
 }
 
 impl CardUrls for NativeA2aSdk {

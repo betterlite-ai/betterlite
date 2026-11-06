@@ -226,67 +226,31 @@ fn sse_events(
     .boxed()
 }
 
+#[rustfmt::skip]
 fn stream_event(payload: &[u8], url: &str) -> Result<CoreStreamEvent, ClientError> {
     let envelope: CoreStreamEnvelope = parse_rpc(payload, url)?;
-    if let Some(message) = envelope.message {
-        return Ok(CoreStreamEvent::Message(message));
-    }
-    if let Some(task) = envelope.task {
-        return Ok(CoreStreamEvent::Task(task));
-    }
-    if let Some(update) = envelope.status_update {
-        return Ok(CoreStreamEvent::StatusUpdate(update));
-    }
-    if let Some(update) = envelope.artifact_update {
-        return Ok(CoreStreamEvent::ArtifactUpdate(update));
-    }
-    Err(ClientError::Protocol {
-        url: url.to_owned(),
-    })
+    if let Some(message) = envelope.message { return Ok(CoreStreamEvent::Message(message)); }
+    if let Some(task) = envelope.task { return Ok(CoreStreamEvent::Task(task)); }
+    if let Some(update) = envelope.status_update { return Ok(CoreStreamEvent::StatusUpdate(update)); }
+    if let Some(update) = envelope.artifact_update { return Ok(CoreStreamEvent::ArtifactUpdate(update)); }
+    Err(ClientError::Protocol { url: url.to_owned() })
 }
 
-fn parse_rpc<T>(payload: &[u8], url: &str) -> Result<T, ClientError>
-where
-    T: DeserializeOwned,
-{
-    let response: JsonRpcResponse<T> =
-        serde_json::from_slice(payload).map_err(|source| ClientError::Decode {
-            url: url.to_owned(),
-            source,
-        })?;
+#[rustfmt::skip]
+fn parse_rpc<T>(payload: &[u8], url: &str) -> Result<T, ClientError> where T: DeserializeOwned {
+    let response: JsonRpcResponse<T> = serde_json::from_slice(payload).map_err(|source| ClientError::Decode { url: url.to_owned(), source })?;
     if let Some(error) = response.error {
-        return Err(ClientError::JsonRpc {
-            url: url.to_owned(),
-            code: error.code.unwrap_or_default(),
-            message: error.message.unwrap_or_default(),
-        });
+        return Err(ClientError::JsonRpc { url: url.to_owned(), code: error.code.unwrap_or_default(), message: error.message.unwrap_or_default() });
     }
-    response.result.ok_or_else(|| ClientError::Protocol {
-        url: url.to_owned(),
-    })
+    response.result.ok_or_else(|| ClientError::Protocol { url: url.to_owned() })
 }
 
+#[rustfmt::skip]
 fn read_error(url: &str, timeout: Duration, failure: HttpError) -> ClientError {
     match failure {
-        HttpError::Request(source) => ClientError::Connection {
-            url: url.to_owned(),
-            source: TransportError::Request(source),
-        },
-        HttpError::Timeout => ClientError::Timeout {
-            url: url.to_owned(),
-            timeout,
-            source: None,
-        },
-        HttpError::TooLarge { .. } => ClientError::EventTooLarge {
-            url: url.to_owned(),
-        },
-        other @ (HttpError::Required { .. }
-        | HttpError::DotSegment { .. }
-        | HttpError::UnsupportedProxyScheme { .. }
-        | HttpError::InvalidProxyUrl { .. }
-        | HttpError::Client(_)) => ClientError::Request {
-            url: url.to_owned(),
-            source: TransportError::Rejected(other),
-        },
+        HttpError::Request(source) => ClientError::Connection { url: url.to_owned(), source: TransportError::Request(source) },
+        HttpError::Timeout => ClientError::Timeout { url: url.to_owned(), timeout, source: None },
+        HttpError::TooLarge { .. } => ClientError::EventTooLarge { url: url.to_owned() },
+        other @ (HttpError::Required { .. } | HttpError::DotSegment { .. } | HttpError::UnsupportedProxyScheme { .. } | HttpError::InvalidProxyUrl { .. } | HttpError::Client(_)) => ClientError::Request { url: url.to_owned(), source: TransportError::Rejected(other) },
     }
 }
