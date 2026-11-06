@@ -15,7 +15,9 @@ use tracing_subscriber::layer::SubscriberExt as _;
 use tracing_subscriber::layer::{Context, Layer};
 
 use super::azure::router_model_in_endpoint;
-use super::bedrock::{EndpointError, extract_model, is_count_tokens_endpoint};
+use super::bedrock::{
+    ENDPOINT_ACTIONS, EndpointError, STREAMING_ACTIONS, extract_model, is_count_tokens_endpoint,
+};
 use super::managed::{
     DecodedCharacterId, DecodedVideoId, PartsOutcome, decode_character_id, decode_parts,
     decode_video_id,
@@ -200,6 +202,11 @@ fn bedrock_count_substrings() {
 #[case::count_underscore("count_tokens")]
 #[case::count_hyphen("count-tokens")]
 fn bedrock_each_action(#[case] action: &str) {
+    assert!(ENDPOINT_ACTIONS.contains(&action));
+    assert_eq!(
+        STREAMING_ACTIONS,
+        ["invoke-with-response-stream", "converse-stream"]
+    );
     let endpoint = format!("/model/m/{action}");
     assert_eq!(extract_model(&endpoint).unwrap(), "m");
 }
