@@ -1,4 +1,4 @@
-use crate::media::data_url::is_canonical_base64;
+use crate::media::data_url::{MAX_MEDIA_BYTES, is_canonical_base64};
 
 const DATA_URL_PREFIX: &str = "data:";
 
@@ -21,5 +21,5 @@ pub fn is_base64_encoded(text: &str) -> bool {
     let Some(payload) = rest.split(',').nth(1) else {
         return false;
     };
-    is_canonical_base64(payload)
+    is_canonical_base64(payload, MAX_MEDIA_BYTES)
 }

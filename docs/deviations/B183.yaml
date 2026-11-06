@@ -1,2 +1,10 @@
 task: B183
-deviations: []
+deviations:
+  - what: >-
+      is_base64_encoded returns false for a canonical base64 payload whose decoded length is above the
+      50 MiB media cap instead of decoding it and returning true.
+    why: >-
+      The bounded-inputs rule forbids a decoded allocation in proportion to untrusted text. The
+      classifier counts the decoded size from the payload text first and refuses to decode past the
+      same cap decode_data_url enforces; every payload within the cap answers exactly as LiteLLM does.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L8104-L8120

@@ -5,6 +5,8 @@ use crate::media::error::MediaError;
 
 const DATA_URL_PREFIX: &str = "data:";
 const BASE64_MARKER: &str = ";base64,";
+// Only two padding characters can belong to a payload; more is invalid and must not shrink the size count
+const TRAILING_PADDING: usize = 2;
 
 // The 50 MiB ceiling LiteLLM gives a downloaded image; an inline payload never needs more
 pub const MAX_MEDIA_BYTES: usize = 52_428_800;
@@ -50,6 +52,7 @@ fn decoded_length(payload: &str) -> usize {
         .iter()
         .rev()
         .take_while(|byte| **byte == b'=')
+        .take(TRAILING_PADDING)
         .count();
     payload
         .len()
@@ -58,62 +61,11 @@ fn decoded_length(payload: &str) -> usize {
         .saturating_sub(padding)
 }
 
-// Python's b64decode(validate=True) followed by a canonical re-encoding, without allocating the bytes
+// STANDARD rejects non-alphabet bytes, non-canonical padding and non-zero trailing bits, which is Python's validate=True decode plus a re-encoding comparison
 #[must_use]
-pub(crate) fn is_canonical_base64(payload: &str) -> bool {
-    let bytes = payload.as_bytes();
-    if !bytes.len().is_multiple_of(4) {
+pub(crate) fn is_canonical_base64(payload: &str, max_bytes: usize) -> bool {
+    if decoded_length(payload) > max_bytes {
         return false;
     }
-    let padding = bytes.iter().rev().take_while(|byte| **byte == b'=').count();
-    if padding > 2 {
-        return false;
-    }
-    let data_length = bytes.len().saturating_sub(padding);
-    if !bytes
-        .iter()
-        .take(data_length)
-        .all(|byte| base64_value(*byte).is_some())
-    {
-        return false;
-    }
-    match padding {
-        0 => true,
-        1 => trailing_bits_are_zero(bytes, data_length, 0b11),
-        2 => trailing_bits_are_zero(bytes, data_length, 0b1111),
-        _ => false,
-    }
-}
-
-fn trailing_bits_are_zero(bytes: &[u8], data_length: usize, mask: u8) -> bool {
-    let Some(index) = data_length.checked_sub(1) else {
-        return false;
-    };
-    let Some(byte) = bytes.get(index) else {
-        return false;
-    };
-    base64_value(*byte).is_some_and(|value| value & mask == 0)
-}
-
-const fn base64_value(byte: u8) -> Option<u8> {
-    if byte.is_ascii_uppercase() {
-        return byte.checked_sub(b'A');
-    }
-    if byte.is_ascii_lowercase() {
-        return match byte.checked_sub(b'a') {
-            Some(value) => Some(value.saturating_add(26)),
-            None => None,
-        };
-    }
-    if byte.is_ascii_digit() {
-        return match byte.checked_sub(b'0') {
-            Some(value) => Some(value.saturating_add(52)),
-            None => None,
-        };
-    }
-    match byte {
-        b'+' => Some(62),
-        b'/' => Some(63),
-        _ => None,
-    }
+    STANDARD.decode(payload).is_ok()
 }

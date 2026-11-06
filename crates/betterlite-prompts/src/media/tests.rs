@@ -10,7 +10,7 @@ use std::{fs, str};
 use rstest::rstest;
 
 use super::base64_string::{get_base64_str, is_base64_encoded};
-use super::data_url::{MAX_MEDIA_BYTES, decode_data_url};
+use super::data_url::{MAX_MEDIA_BYTES, decode_data_url, is_canonical_base64};
 use super::error::MediaError;
 use super::inline::{
     RemoteMediaFetcher, async_inline_remote_media, inline_remote_media, remote_urls_to_inline,
@@ -333,6 +333,11 @@ fn run_decode_ok(url: &str, limit: usize, expected: &[u8]) {
     limit: 4,
     expected: &[0, 0, 0, 0],
 })]
+#[case::decode_counts_at_most_two_padding_characters(Scenario::Decode {
+    url: "data:image/png;base64,AAAA========",
+    limit: 3,
+    failure: DecodeFailure::TooLarge,
+})]
 #[case::decode_rejects_invalid_base64(Scenario::Decode {
     url: "data:image/png;base64,!!!!",
     limit: 64,
@@ -369,7 +374,11 @@ fn media_base64_classification() {
     assert!(!is_base64_encoded("YWJj"));
     assert!(!is_base64_encoded("data:image/png;base64,!!!bad"));
     assert!(!is_base64_encoded("data:image/png;base64,YR=="));
+    assert!(!is_base64_encoded("data:image/png;base64,AAAA===="));
+    assert!(!is_base64_encoded("data:image/png;base64,AAAAAA="));
     assert!(is_base64_encoded("data:text/plain;base64,YQ=="));
+    assert!(!is_canonical_base64("AAAA", 2));
+    assert!(is_canonical_base64("AAAA", 3));
 }
 
 #[rstest]
