@@ -12,16 +12,6 @@ deviations:
   - what: The registry holds the ten safe builtins (len, str, int, float, bool, list, dict, True, False, None) as names only.
     why: The Starlark runtime that runs custom code provides these natively, so there is no Rust function to register.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/primitives.py#L840-L895
-  - what: >-
-      Regex primitives compile with fancy-regex instead of Python's re. Python's lookaround, backreferences
-      and named groups run, but without MULTILINE $ matches only at the very end of the text, where Python's $
-      also matches before one trailing newline, and \Z matches before trailing newlines where Python's \Z
-      matches only at the end. A pattern that passes fancy-regex's backtrack limit counts as no match, and a
-      replacement naming an unknown group returns the original text, where LiteLLM lets Python's IndexError
-      escape. The ASCII flag (256) is ignored, so \w, \d, \s, \b and case folding stay Unicode, and the
-      LOCALE flag (4), which Python rejects on a str pattern, is accepted.
-    why: >-
-      Python's re is not available in Rust; fancy-regex runs those constructs with bounded work, and a failing
-      match or template falls back the way re.error does instead of failing custom code. fancy-regex's ASCII
-      mode rejects \W, \D, \S and "." on str input, so the ASCII flag cannot map onto it.
+  - what: Regex primitives compile with fancy-regex instead of Python's re. Lookaround, backreferences and named groups run, but without MULTILINE $ matches only at the very end, \Z also matches before trailing newlines, the ASCII flag (256) stays Unicode, the LOCALE flag (4) that Python rejects on a str pattern is accepted, an unknown group name in a replacement returns the original text, and a backtrack-limit hit counts as no match. After an empty match regex_find_all and regex_replace move one character on, so a pattern that can also match non-empty at that position, such as a lazy quantifier or an empty-first alternation, yields only the empty match there.
+    why: Python's re is not available in Rust; fancy-regex runs those constructs with bounded work, and a failing match or template falls back the way re.error does instead of failing custom code. Its ASCII mode rejects \W, \D, \S and "." on str input, so the ASCII flag cannot map onto it, and the engine cannot ask for a non-empty match at one position.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/primitives.py#L113-L187

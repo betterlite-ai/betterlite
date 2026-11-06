@@ -18,6 +18,42 @@ use super::{FakeTransport, run};
 #[case::match_all_whole_text("regex_match_all", r#"["abc","abc"]"#, "{}", "true")]
 #[case::match_all_rejects_a_prefix("regex_match_all", r#"["abcd","abc"]"#, "{}", "false")]
 #[case::match_all_alternation_is_grouped("regex_match_all", r#"["b","a|b"]"#, "{}", "true")]
+#[case::match_all_verbose_trailing_comment(
+    "regex_match_all",
+    r#"["abc","abc # comment",64]"#,
+    "{}",
+    "true"
+)]
+#[case::replace_keeps_the_empty_match_after_a_match(
+    "regex_replace",
+    r#"["baac","a*","-"]"#,
+    "{}",
+    r#""-b--c-""#
+)]
+#[case::replace_keeps_empty_matches_between_characters(
+    "regex_replace",
+    r#"["abxd","x*","-"]"#,
+    "{}",
+    r#""-a-b--d-""#
+)]
+#[case::find_all_keeps_the_empty_match_after_a_match(
+    "regex_find_all",
+    r#"["baac","a*"]"#,
+    "{}",
+    r#"["","aa","",""]"#
+)]
+#[case::find_all_keeps_empty_matches_between_characters(
+    "regex_find_all",
+    r#"["abxd","x*"]"#,
+    "{}",
+    r#"["","","x","",""]"#
+)]
+#[case::find_all_advances_after_an_empty_match(
+    "regex_find_all",
+    r#"["aaa","a*?"]"#,
+    "{}",
+    r#"["","","",""]"#
+)]
 #[case::replace_every_hit("regex_replace", r##"["a1b22","\\d+","#"]"##, "{}", r#""a#b#""#)]
 #[case::replace_with_group_references(
     "regex_replace",

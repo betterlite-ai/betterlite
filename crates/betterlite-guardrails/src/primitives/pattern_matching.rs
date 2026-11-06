@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use fancy_regex::{Error, Regex, RegexBuilder};
+use fancy_regex::{Captures, Error, Regex, RegexBuilder};
 
 use error::PatternError;
 
@@ -44,10 +44,41 @@ where
 
 #[must_use]
 pub fn regex_match_all(text: &str, pattern: &str, flags: i64) -> bool {
+    let closing = if flags & VERBOSE != 0 { "\n" } else { "" };
     let outcome = compile(pattern, flags)
-        .and_then(|_| compile(&format!("\\A(?:{pattern})\\z"), flags))
+        .and_then(|_| compile(&format!("\\A(?:{pattern}{closing})\\z"), flags))
         .and_then(|regex| regex.is_match(text));
     or_warn(outcome, false, "regex_match_all")
+}
+
+// Python 3.7+ keeps an empty match where the previous match ended; fancy-regex's own iterator skips it.
+fn matches_including_empty<'text>(
+    regex: &Regex,
+    text: &'text str,
+) -> Result<Vec<Captures<'text, str>>, Error> {
+    let mut found = Vec::new();
+    let mut start = 0;
+    while start <= text.len() {
+        let Some(captured) = regex.captures_from_pos(text, start)? else {
+            break;
+        };
+        let span = captured.get(0);
+        let (begin, end) = span.map_or((start, start), |matched| (matched.start(), matched.end()));
+        found.push(captured);
+        if begin != end {
+            start = end;
+            continue;
+        }
+        if end == text.len() {
+            break;
+        }
+        let step = text
+            .get(end..)
+            .and_then(|rest| rest.chars().next())
+            .map_or(1, char::len_utf8);
+        start = end.saturating_add(step);
+    }
+    Ok(found)
 }
 
 pub fn replace_all(
@@ -60,11 +91,12 @@ pub fn replace_all(
     let pieces = parse(replacement, &regex).ok_or(PatternError::Template)?;
     let mut replaced = String::new();
     let mut copied_to = 0;
-    for captured in regex.captures_iter(text) {
-        let found = captured?;
-        let Some(whole) = found.get(0) else { continue };
+    for captured in matches_including_empty(&regex, text)? {
+        let Some(whole) = captured.get(0) else {
+            continue;
+        };
         replaced.push_str(text.get(copied_to..whole.start()).unwrap_or_default());
-        replaced.push_str(&expand(&pieces, &found));
+        replaced.push_str(&expand(&pieces, &captured));
         copied_to = whole.end();
     }
     replaced.push_str(text.get(copied_to..).unwrap_or_default());
@@ -75,8 +107,7 @@ pub fn find_all(text: &str, pattern: &str, flags: i64) -> Result<Vec<JsonValue>,
     let regex = compile(pattern, flags)?;
     let groups = regex.captures_len().saturating_sub(1);
     let mut found = Vec::new();
-    for captured in regex.captures_iter(text) {
-        let matched = captured?;
+    for matched in matches_including_empty(&regex, text)? {
         let group_text = |index: usize| {
             matched
                 .get(index)
