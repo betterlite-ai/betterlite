@@ -332,17 +332,26 @@ async fn batches_cases(#[case] scenario: Scenario) {
     }
 }
 
-#[rstest]
-fn replays_the_openai_batches_corpus(#[files("fuzz/corpus/openai_batches/*")] path: PathBuf) {
-    let bytes = fs::read(&path).unwrap();
-    let name = path.file_name().unwrap().to_str().unwrap();
-    let decoded = decode_batch_object(&bytes);
-    if name.starts_with("valid-") {
-        assert!(decoded.is_ok(), "{name}: {decoded:?}");
-    } else {
-        assert!(
-            matches!(decoded, Err(BatchDecodeError::Json { .. })),
-            "{name}: {decoded:?}"
-        );
-    }
+#[test]
+fn replays_the_openai_batches_corpus() {
+    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/openai_batches");
+    let mut paths = fs::read_dir(corpus)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .collect::<Vec<_>>();
+    paths.sort();
+    assert!(!paths.is_empty(), "no batch corpus seeds");
+    paths.into_iter().for_each(|path| {
+        let bytes = fs::read(&path).unwrap();
+        let name = path.file_name().unwrap().to_str().unwrap();
+        let decoded = decode_batch_object(&bytes);
+        if name.starts_with("valid-") {
+            assert!(decoded.is_ok(), "{name}: {decoded:?}");
+        } else {
+            assert!(
+                matches!(decoded, Err(BatchDecodeError::Json { .. })),
+                "{name}: {decoded:?}"
+            );
+        }
+    });
 }

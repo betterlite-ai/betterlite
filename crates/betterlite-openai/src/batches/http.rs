@@ -220,10 +220,14 @@ impl BatchesSdk for HttpBatchesClient {
     }
 
     async fn cancel(&self, request: &BatchQuery) -> Result<Vec<u8>, SdkError> {
-        let extra = request.extra_body.clone().unwrap_or_default();
-        let body = serde_json::to_vec(&extra).map_err(|source| SdkError::Encode { source })?;
-        self.on_batch(request, Method::POST, "/cancel", RequestBody::Json(body))
-            .await
+        // the SDK sends extra_body as the cancel body and no body at all without it
+        let body = match &request.extra_body {
+            Some(extra) => RequestBody::Json(
+                serde_json::to_vec(extra).map_err(|source| SdkError::Encode { source })?,
+            ),
+            None => RequestBody::Empty,
+        };
+        self.on_batch(request, Method::POST, "/cancel", body).await
     }
 
     async fn list(&self, after: Option<&str>, limit: Option<u32>) -> Result<BatchPage, SdkError> {

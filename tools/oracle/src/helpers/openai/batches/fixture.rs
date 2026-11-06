@@ -133,6 +133,9 @@ impl ClientConstructor for Constructor {
     type Client = Sdk;
 
     fn construct(&self, arguments: &SdkArguments, kind: ClientKind) -> Option<Sdk> {
+        if self.unbuildable {
+            return None;
+        }
         let built = Built {
             kind,
             kwargs: Kwargs {
@@ -144,7 +147,7 @@ impl ClientConstructor for Constructor {
             },
         };
         record(&self.built, serde_json::to_value(built).unwrap_or_default());
-        (!self.unbuildable).then(|| Sdk {
+        Some(Sdk {
             kind,
             calls: Arc::clone(&self.calls),
             answer: self.answer.clone(),
