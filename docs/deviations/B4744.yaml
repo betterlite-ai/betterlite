@@ -1,7 +1,7 @@
 task: B4744
 deviations:
-  - what: A stdio MCP server receives only the allowlisted standard variables, the Node and XDG caches, and the configured npm cache directory; everything else in the parent environment is dropped.
-    why: LiteLLM inherited the whole parent environment, so a stdio MCP server could read OPENAI_API_KEY and every other proxy secret. Betterlite protects the subprocess surface by allowlisting.
+  - what: A stdio MCP server receives the configured env when one is given, else the allowlisted standard variables, the Node and XDG caches and the configured npm cache directory; the SDK's six inherited variables (HOME, LOGNAME, PATH, SHELL, TERM, USER) are merged under that map. Every other parent variable is dropped.
+    why: LiteLLM inherited the whole parent environment, so a stdio MCP server could read OPENAI_API_KEY and every other proxy secret. Betterlite protects the subprocess surface by allowlisting while still passing the variables the SDK itself inherits.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L497-L541
   - what: The debug line for the streamable HTTP transport names the transport but not the request headers.
     why: LiteLLM logs every auth header at debug, which writes the MCP credential into the log. Betterlite reports the same event without the secret.

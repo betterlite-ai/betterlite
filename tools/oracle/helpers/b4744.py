@@ -177,6 +177,7 @@ class RecordingScope:
 
     def __init__(self, deadline: float = math.inf, *, shield: bool = False) -> None:
         self._scope = REAL_SCOPE(deadline=deadline, shield=shield)
+        self.last_span: float | None = None
         RecordingScope.created.append(self)
 
     def __enter__(self) -> Self:
@@ -205,6 +206,7 @@ class RecordingScope:
 
     @deadline.setter
     def deadline(self, value: float) -> None:
+        self.last_span = None if value == math.inf else value - anyio.current_time()
         self._scope.deadline = value
 
     @property
@@ -576,9 +578,11 @@ class FakeSessionContext:
         self.calls = calls
         self.observed = observed
         self.handler: Callable[[object], Awaitable[None]] | None = None
+        self.scope: RecordingScope | None = None
 
     async def __aenter__(self) -> FakeOperationSession:
         self.calls.append("session.enter")
+        self.scope = RecordingScope.created[0] if RecordingScope.created else None
         if self.plan.session_enter == "fail":
             raise FakeError("session enter")
         session = FakeOperationSession(self.plan, self.calls)
@@ -592,7 +596,8 @@ class FakeSessionContext:
         _trace: object,
     ) -> bool | None:
         self.calls.append("session.exit")
-        self.observed["session_bound"] = 5000
+        if self.scope is not None and self.scope.last_span is not None:
+            self.observed["session_bound"] = cleanup_bound(self.scope.last_span)
         if self.plan.session_exit == "fail":
             raise FakeError("session exit")
         if self.plan.session_exit == "cancel":
@@ -614,9 +619,11 @@ class FakeTransportContext:
         self.calls = calls
         self.observed = observed
         self.http = http
+        self.scope: RecordingScope | None = None
 
     async def __aenter__(self) -> Streams:
         self.calls.append("transport.enter")
+        self.scope = RecordingScope.created[0] if RecordingScope.created else None
         if self.scenario.plan.transport_enter == "fail":
             raise FakeError("transport enter")
         if self.scenario.plan.transport_enter == "cancel":
@@ -630,7 +637,8 @@ class FakeTransportContext:
         _trace: object,
     ) -> bool | None:
         self.calls.append("transport.exit")
-        self.observed["transport_bound"] = 5000
+        if self.scope is not None and self.scope.last_span is not None:
+            self.observed["transport_bound"] = cleanup_bound(self.scope.last_span)
         if self.scenario.plan.transport_exit == "fail":
             raise FakeError("transport exit")
         if self.scenario.plan.transport_exit == "cancel":
@@ -676,6 +684,10 @@ def stream_kind_of(error: BaseException) -> str | None:
         if isinstance(error, error_type):
             return name
     return None
+
+
+def cleanup_bound(span: float) -> int:
+    return max(0, round(span * 10)) * 100
 
 
 def outcome_of(error: BaseException, scopes: list["RecordingScope"]) -> str:
@@ -740,10 +752,10 @@ async def run_scenario(  # noqa: C901, PLR0915 - the plan drives every lifecycle
                 raise timeout_error(-32001, context=False)
 
     async def recording_cleanup(
-        pending: Callable[[], Awaitable[Result]], _deadline: float
+        pending: Callable[[], Awaitable[Result]], deadline: float
     ) -> Result:
         calls.append("http.close")
-        observed["http_bound"] = 1000
+        observed["http_bound"] = cleanup_bound(deadline - anyio.current_time())
         match scenario.plan.http_close:
             case "ok":
                 return await pending()

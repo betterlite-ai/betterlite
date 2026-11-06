@@ -21,7 +21,7 @@ use tracing_subscriber::layer::{Context, SubscriberExt as _};
 
 use crate::helpers::{HelperError, HelperResult};
 
-use super::super::fixtures::{FakeSession, Fixture, Script, TestError};
+use super::super::fixtures::{FakeSession, Fixture, Script, Step, TestError};
 use super::super::input::{ExecuteInput, Mode, Operation, Scenario, SettingsInput, StreamKind};
 use super::{invalid, make_client};
 
@@ -181,11 +181,12 @@ fn scenario_json(scenario: &Scenario, run: &Run) -> Value {
         .iter()
         .any(|call| call == "session.exit")
         .then_some(bound);
+    let expired = scenario.plan.session_exit == Step::Timeout;
     let transport_bound = run
         .calls
         .iter()
         .any(|call| call == "transport.exit")
-        .then_some(bound);
+        .then_some(if expired { 0_u64 } else { bound });
     let http_bound = (scenario.mode == Mode::Run && scenario.http)
         .then_some(u64::try_from(HTTP_CLOSE_TIMEOUT.as_millis()).unwrap_or(u64::MAX));
     json!({
