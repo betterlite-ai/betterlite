@@ -1,0 +1,21 @@
+kind: helper
+name: openai-moderation-texts
+call:
+  b3731:
+    apply:
+      settings: {api_key: test-key}
+      inputs: {texts: [first, second]}
+      request_data: {metadata: null}
+      answer:
+        status: 200
+        headers: {}
+        body:
+          id: modr-1
+          model: omni-moderation-latest
+          results:
+            - flagged: false
+              categories: {violence: false, hate: false}
+              category_scores: {violence: 0.01, hate: 0.002}
+              category_applied_input_types: {violence: [text], hate: [text]}
+env: {}
+compare: {ignore: []}
