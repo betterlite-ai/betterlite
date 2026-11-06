@@ -16,6 +16,7 @@ use serde::Deserialize;
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 use tokio::time::sleep;
+use tracing::subscriber::set_default;
 
 use super::{call_grounding, call_scan};
 use crate::xecguard_primitives::error::XecGuardError;
@@ -31,6 +32,23 @@ struct Captured {
     authorization: String,
     content_type: String,
     body: Vec<u8>,
+}
+
+#[derive(Clone, Default)]
+struct LogSink(Arc<Mutex<Vec<u8>>>);
+
+impl io::Write for LogSink {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .map_err(|_poisoned| io::Error::other("poisoned"))?
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
 }
 
 fn header(headers: &HeaderMap, name: &str) -> String {
@@ -222,6 +240,34 @@ async fn transport_scan_reports_an_unreachable_api_when_block_on_error() {
     let rendered = error.to_string();
     assert!(rendered.starts_with("XecGuard API unreachable (block_on_error=True): "));
     assert!(rendered.contains("500"));
+}
+
+#[tokio::test]
+async fn transport_logs_the_endpoint_and_api_errors() {
+    let (base, _captured, _server) =
+        serve(StatusCode::INTERNAL_SERVER_ERROR, "oops".to_owned()).await;
+    let sink = LogSink::default();
+    let writer = sink.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::DEBUG)
+        .with_writer(move || writer.clone())
+        .finish();
+    let guard = set_default(subscriber);
+    let result = call_scan(
+        &reqwest::Client::default(),
+        &settings(&base),
+        &[message("user", "hi")],
+        ScanType::Input,
+        false,
+    )
+    .await;
+    drop(guard);
+    let error = result.expect_err("api error");
+    assert!(error.to_string().contains("500"));
+    let text = String::from_utf8(sink.0.lock().expect("captured log").clone()).expect("utf8 log");
+    assert!(text.contains("XecGuard: POST"));
+    assert!(text.contains("payload_keys"));
+    assert!(text.contains("XecGuard API error"));
 }
 
 #[tokio::test]
