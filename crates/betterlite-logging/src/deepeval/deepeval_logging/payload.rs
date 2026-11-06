@@ -2,9 +2,7 @@ use betterlite_models::decisions::Json;
 use serde::Deserialize;
 
 use super::ids::UuidSource;
-use super::types::{
-    BaseApiSpan, Environment, SpanApiType, SpanTimes, SpanValue, TraceApi, TraceSpanApiStatus,
-};
+use super::types::{BaseApiSpan, SpanApiType, SpanTimes, SpanValue, TraceSpanApiStatus};
 
 mod tests;
 
@@ -14,7 +12,7 @@ pub struct CallbackKwargs {
     #[serde(default)]
     pub standard_logging_object: Option<StandardLoggingObject>,
     #[serde(default)]
-    pub input: Option<SpanValue>,
+    pub input: SpanField,
 }
 
 // The standard_logging_object fields _create_base_api_span reads; error_string is spelled that way in LiteLLM.
@@ -66,7 +64,17 @@ pub struct Choice {
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct Message {
     #[serde(default)]
-    pub content: Option<SpanValue>,
+    pub content: SpanField,
+}
+
+// A field LiteLLM reads with dict.get: an absent key takes the builder's default, a present null is used as given and exclude_none drops it.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
+#[serde(untagged)]
+pub enum SpanField {
+    Value(SpanValue),
+    Null,
+    #[default]
+    Absent,
 }
 
 #[must_use]
@@ -90,29 +98,11 @@ pub fn base_api_span(
             .unwrap_or_else(|| uuids.next_uuid()),
         start_time: times.start.to_owned(),
         end_time: times.end.to_owned(),
-        input: kwargs
-            .input
-            .clone()
-            .unwrap_or_else(|| SpanValue::Text("NO_INPUT".to_owned())),
+        input: span_input(&kwargs.input),
         output: span_output(standard, status),
         model: standard.and_then(|object| object.model.clone()),
         input_token_count,
         output_token_count,
-    }
-}
-
-#[must_use]
-pub fn trace_api(span: BaseApiSpan, times: SpanTimes<'_>, environment: Environment) -> TraceApi {
-    TraceApi {
-        uuid: span.trace_uuid.clone(),
-        base_spans: Vec::new(),
-        agent_spans: Vec::new(),
-        llm_spans: vec![span],
-        retriever_spans: Vec::new(),
-        tool_spans: Vec::new(),
-        start_time: times.start.to_owned(),
-        end_time: times.end.to_owned(),
-        environment,
     }
 }
 
@@ -123,17 +113,49 @@ const fn callback_name(status: TraceSpanApiStatus) -> &'static str {
     }
 }
 
-fn span_output(standard: Option<&StandardLoggingObject>, status: TraceSpanApiStatus) -> SpanValue {
+fn span_input(input: &SpanField) -> Option<SpanValue> {
+    match input {
+        SpanField::Absent => Some(SpanValue::Text("NO_INPUT".to_owned())),
+        SpanField::Null => None,
+        SpanField::Value(value) => Some(value.clone()),
+    }
+}
+
+fn span_output(
+    standard: Option<&StandardLoggingObject>,
+    status: TraceSpanApiStatus,
+) -> Option<SpanValue> {
     match status {
-        TraceSpanApiStatus::Success => {
-            success_output(standard).unwrap_or_else(|| SpanValue::Text("NO_OUTPUT".to_owned()))
-        }
-        TraceSpanApiStatus::Errored => SpanValue::Text(
+        TraceSpanApiStatus::Success => success_output(standard),
+        TraceSpanApiStatus::Errored => Some(SpanValue::Text(
             standard
                 .and_then(|object| object.error_string.clone())
                 .unwrap_or_default(),
-        ),
+        )),
     }
+}
+
+fn success_output(standard: Option<&StandardLoggingObject>) -> Option<SpanValue> {
+    match first_content(standard) {
+        SpanField::Absent => Some(SpanValue::Text("NO_OUTPUT".to_owned())),
+        SpanField::Null => None,
+        SpanField::Value(value) => Some(value),
+    }
+}
+
+fn first_content(standard: Option<&StandardLoggingObject>) -> SpanField {
+    let Some(response) = standard.and_then(|object| object.response.as_ref()) else {
+        return SpanField::Absent;
+    };
+    let ResponseBody::Object(fields) = response else {
+        return SpanField::Absent;
+    };
+    fields
+        .choices
+        .as_ref()
+        .and_then(|choices| choices.first())
+        .and_then(|choice| choice.message.as_ref())
+        .map_or(SpanField::Absent, |message| message.content.clone())
 }
 
 fn span_tokens(
@@ -157,19 +179,4 @@ const fn response_usage(response: &ResponseBody) -> Option<Usage> {
         ResponseBody::Object(fields) => fields.usage,
         ResponseBody::Text(_) | ResponseBody::List(_) => None,
     }
-}
-
-fn success_output(standard: Option<&StandardLoggingObject>) -> Option<SpanValue> {
-    let response = standard.and_then(|object| object.response.as_ref())?;
-    let ResponseBody::Object(fields) = response else {
-        return None;
-    };
-    fields
-        .choices
-        .as_ref()?
-        .first()?
-        .message
-        .as_ref()?
-        .content
-        .clone()
 }

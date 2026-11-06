@@ -26,12 +26,35 @@ fn span() -> BaseApiSpan {
         trace_uuid: "trace-id".to_owned(),
         start_time: "2024-05-01T10:00:00.120Z".to_owned(),
         end_time: "2024-05-01T10:00:01.500Z".to_owned(),
-        input: SpanValue::Text("hi".to_owned()),
-        output: SpanValue::List(vec![json(r#"{"text": "hello"}"#)]),
+        input: Some(SpanValue::Text("hi".to_owned())),
+        output: Some(SpanValue::List(vec![json(r#"{"text": "hello"}"#)])),
         model: None,
         input_token_count: None,
         output_token_count: None,
     }
+}
+
+#[test]
+fn base_span_leaves_a_null_input_and_output_out() {
+    let empty = BaseApiSpan {
+        uuid: "span-id".to_owned(),
+        name: "litellm_success_callback".to_owned(),
+        status: TraceSpanApiStatus::Success,
+        span_type: SpanApiType::Llm,
+        trace_uuid: "trace-id".to_owned(),
+        start_time: "2024-05-01T10:00:00.120Z".to_owned(),
+        end_time: "2024-05-01T10:00:01.500Z".to_owned(),
+        input: None,
+        output: None,
+        model: None,
+        input_token_count: None,
+        output_token_count: None,
+    };
+    let Json::Object(fields) = encoded(&empty) else {
+        panic!("the span is not an object");
+    };
+    assert!(!fields.contains_key("input"));
+    assert!(!fields.contains_key("output"));
 }
 
 #[test]
@@ -64,8 +87,8 @@ fn base_span_writes_the_model_and_token_counts_under_their_aliases() {
         trace_uuid: "trace-id".to_owned(),
         start_time: "2024-05-01T10:00:00.120Z".to_owned(),
         end_time: "2024-05-01T10:00:01.500Z".to_owned(),
-        input: SpanValue::Text("hi".to_owned()),
-        output: SpanValue::Text("hello".to_owned()),
+        input: Some(SpanValue::Text("hi".to_owned())),
+        output: Some(SpanValue::Text("hello".to_owned())),
         model: Some("gpt-4o".to_owned()),
         input_token_count: Some(3),
         output_token_count: Some(5),

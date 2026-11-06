@@ -1,8 +1,9 @@
 pub mod api;
+pub mod environment;
 pub mod ids;
 pub mod payload;
+pub mod timestamp;
 pub mod types;
-pub mod utils;
 
 mod test_support;
 mod tests;
@@ -14,10 +15,11 @@ use chrono::{DateTime, Utc};
 use secrecy::SecretString;
 
 use self::api::{Api, ApiError, HttpMethod};
+use self::environment::{EnvironmentError, validate_environment};
 use self::ids::UuidSource;
-use self::payload::{CallbackKwargs, base_api_span, trace_api};
+use self::payload::{CallbackKwargs, base_api_span};
+use self::timestamp::to_zod_compatible_iso;
 use self::types::{Environment, SpanTimes, TraceApi, TraceSpanApiStatus};
-use self::utils::{EnvironmentError, to_zod_compatible_iso, validate_environment};
 use crate::http_analytics_loggers::delivery::Delivery;
 
 // The litellm.integrations.deepeval.DeepEvalLogger callback surface, without the response object it never reads.
@@ -110,6 +112,16 @@ impl<D: Delivery, I: UuidSource> DeepEvalLogger<D, I> {
             end: &end,
         };
         let span = base_api_span(call.kwargs, times, status, &self.uuids);
-        trace_api(span, times, self.environment)
+        TraceApi {
+            uuid: span.trace_uuid.clone(),
+            base_spans: Vec::new(),
+            agent_spans: Vec::new(),
+            llm_spans: vec![span],
+            retriever_spans: Vec::new(),
+            tool_spans: Vec::new(),
+            start_time: start,
+            end_time: end,
+            environment: self.environment,
+        }
     }
 }

@@ -62,8 +62,10 @@ pub struct BaseApiSpan {
     pub start_time: String,
     #[serde(rename = "endTime")]
     pub end_time: String,
-    pub input: SpanValue,
-    pub output: SpanValue,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input: Option<SpanValue>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub output: Option<SpanValue>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     #[serde(rename = "inputTokenCount", skip_serializing_if = "Option::is_none")]

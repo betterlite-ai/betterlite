@@ -3,9 +3,9 @@ use std::collections::BTreeMap;
 use betterlite_models::decisions::Json;
 
 use super::super::api::ApiError;
+use super::super::environment::EnvironmentError;
 use super::super::payload::CallbackKwargs;
 use super::super::types::Environment;
-use super::super::utils::EnvironmentError;
 use super::super::{Call, DeepEvalError, DeepEvalLogger};
 use crate::deepeval::deepeval_logging::test_support::{
     Answer, CountingUuids, Recorded, Recording, RecordingError, at,
@@ -206,6 +206,33 @@ async fn missing_identifiers_fall_back_to_generated_uuids_shared_by_span_and_tra
     };
     assert_eq!(span["uuid"], json(r#""generated-0""#));
     assert_eq!(span["traceUuid"], json(r#""generated-1""#));
+}
+
+#[tokio::test]
+async fn a_tool_call_response_leaves_the_output_out() {
+    let (logger, delivery) = logger([Answer::status(200)]);
+    let kwargs = kwargs(
+        r#"{
+            "standard_logging_object": {
+                "id": "span-id",
+                "trace_id": "trace-id",
+                "response": {"choices": [{"message": {"role": "assistant", "content": null, "tool_calls": [{"id": "call-1"}]}}]}
+            }
+        }"#,
+    );
+    logger.log_success_event(call(&kwargs)).await.unwrap();
+    let requests = recorded(&delivery);
+    let Json::Object(fields) = &requests[0].body else {
+        panic!("the trace is not an object");
+    };
+    let Json::List(spans) = &fields["llmSpans"] else {
+        panic!("llmSpans is not a list");
+    };
+    let Json::Object(span) = &spans[0] else {
+        panic!("the span is not an object");
+    };
+    assert!(!span.contains_key("output"));
+    assert_eq!(span["input"], json(r#""NO_INPUT""#));
 }
 
 #[test]
