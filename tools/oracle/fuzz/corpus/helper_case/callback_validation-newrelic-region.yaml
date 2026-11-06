@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "callback-validation-newrelic-region-seed", "call": {"callback_validation": {"steps": [{"function": "newrelic_config_error", "callback_vars": {"dd_api_key": "k"}, "otel_v2": false}, {"function": "newrelic_config_error", "callback_vars": {"newrelic_api_key": "k"}, "otel_v2": false}]}}, "env": {}, "compare": {"ignore": []}}
