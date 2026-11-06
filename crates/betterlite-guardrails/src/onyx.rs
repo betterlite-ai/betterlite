@@ -19,21 +19,9 @@ use crate::generic_guardrail_contracts::GuardrailInputType;
 
 pub const DEFAULT_API_BASE: &str = "https://ai-guard.onyx.security";
 pub const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
-pub const ONYX_API_KEY_VARIABLE: &str = "ONYX_API_KEY";
-pub const ONYX_API_BASE_VARIABLE: &str = "ONYX_API_BASE";
-pub const ONYX_TIMEOUT_VARIABLE: &str = "ONYX_TIMEOUT";
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "snake_case")]
-pub enum EventHook {
-    PreCall,
-    DuringCall,
-    PostCall,
-}
-pub const SUPPORTED_EVENT_HOOKS: [EventHook; 3] = [
-    EventHook::PreCall,
-    EventHook::DuringCall,
-    EventHook::PostCall,
-];
+pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+pub const BLOCKED_STATUS: StatusCode = StatusCode::BAD_REQUEST;
+pub const SUPPORTED_EVENT_HOOKS: [&str; 3] = ["pre_call", "during_call", "post_call"];
 
 #[derive(Debug, Error)]
 pub enum OnyxGuardrailError {
@@ -47,10 +35,8 @@ pub enum OnyxGuardrailError {
     UnrepresentableTimeout { source: TryFromFloatSecsError },
     #[error("the Onyx Guard HTTP client could not be built")]
     Client { source: reqwest::Error },
-    #[error("the Onyx Guard request timed out")]
-    Timeout { source: reqwest::Error },
     #[error("the Onyx Guard server could not be reached")]
-    Request { source: reqwest::Error },
+    Transport { source: reqwest::Error },
     #[error("the Onyx Guard server returned status {status}")]
     HttpStatus { status: StatusCode },
     #[error("the Onyx Guard response is larger than {limit} bytes")]
@@ -59,17 +45,6 @@ pub enum OnyxGuardrailError {
     ResponseJson { source: serde_json::Error },
     #[error("Request blocked by Onyx Guard. Violations: {message}.")]
     Blocked { message: String },
-}
-impl OnyxGuardrailError {
-    // LiteLLM answers a block with HTTPException(400); every other failure is logged and passed through.
-    #[must_use]
-    pub const fn status_code(&self) -> StatusCode {
-        if matches!(self, Self::Blocked { .. }) {
-            StatusCode::BAD_REQUEST
-        } else {
-            StatusCode::INTERNAL_SERVER_ERROR
-        }
-    }
 }
 
 #[derive(Debug, Serialize)]
@@ -80,9 +55,7 @@ struct OnyxRequest<'input> {
 }
 #[derive(Debug, Deserialize)]
 struct OnyxVerdict {
-    #[serde(default)]
     allowed: Option<bool>,
-    #[serde(default)]
     violated_rules: Option<Vec<String>>,
 }
 
@@ -106,13 +79,13 @@ impl OnyxGuardrail {
         L: EnvironmentLookup,
     {
         let api_key = configured_key
-            .or_else(|| lookup.lookup(ONYX_API_KEY_VARIABLE).map(SecretString::from))
+            .or_else(|| lookup.lookup("ONYX_API_KEY").map(SecretString::from))
             .filter(|key| !key.expose_secret().is_empty())
             .ok_or(OnyxGuardrailError::MissingApiKey)?;
         let api_base = configured_base
             .or_else(|| {
                 lookup
-                    .lookup(ONYX_API_BASE_VARIABLE)
+                    .lookup("ONYX_API_BASE")
                     .filter(|base| !base.is_empty())
             })
             .unwrap_or_else(|| DEFAULT_API_BASE.to_owned());
@@ -122,10 +95,10 @@ impl OnyxGuardrail {
             None => environment_timeout(lookup)?,
         };
         let client = client_builder
-            .connect_timeout(Duration::from_secs(5))
+            .connect_timeout(CONNECT_TIMEOUT)
+            .read_timeout(timeout)
             .build()
             .map_err(|source| OnyxGuardrailError::Client { source })?;
-        tracing::info!(api_base = %api_base, "OnyxGuard initialized with server");
         Ok(Self {
             api_base,
             api_key,
@@ -144,7 +117,7 @@ impl OnyxGuardrail {
     ) -> Result<BTreeMap<String, GuardrailValue>, OnyxGuardrailError> {
         let conversation_id =
             litellm_call_id.map_or_else(|| (self.new_id)().to_string(), ToOwned::to_owned);
-        let payload = payload_for(request_data, input_type);
+        let payload = payload_for(request_data, input_type, &conversation_id);
         match self
             .validate_with_guard_server(&payload, input_type, &conversation_id)
             .await
@@ -163,6 +136,25 @@ impl OnyxGuardrail {
         }
     }
 
+    async fn post(
+        &self,
+        endpoint: &str,
+        request: &OnyxRequest<'_>,
+    ) -> Result<reqwest::Response, reqwest::Error> {
+        // httpx times connect at 5s and each other phase at the timeout; the deadline is their sum.
+        self.client
+            .post(endpoint)
+            .header(CONTENT_TYPE, "application/json")
+            .json(request)
+            .timeout(
+                self.timeout
+                    .saturating_mul(3)
+                    .saturating_add(CONNECT_TIMEOUT),
+            )
+            .send()
+            .await
+    }
+
     async fn validate_with_guard_server(
         &self,
         payload: &GuardrailValue,
@@ -179,15 +171,15 @@ impl OnyxGuardrail {
             input_type,
             conversation_id,
         };
-        let response = self
-            .client
-            .post(endpoint)
-            .header(CONTENT_TYPE, "application/json")
-            .json(&request)
-            .timeout(self.timeout)
-            .send()
-            .await
-            .map_err(request_error)?;
+        let response = match self.post(&endpoint, &request).await {
+            Ok(response) => response,
+            // LiteLLM retries a connection or remote-protocol failure once; a timeout is not retried.
+            Err(error) if !error.is_timeout() && (error.is_connect() || error.is_request()) => self
+                .post(&endpoint, &request)
+                .await
+                .map_err(request_error)?,
+            Err(error) => return Err(request_error(error)),
+        };
         let status = response.status();
         if !status.is_success() {
             return Err(OnyxGuardrailError::HttpStatus { status });
@@ -206,14 +198,15 @@ impl OnyxGuardrail {
         Err(OnyxGuardrailError::Blocked { message })
     }
 }
+
 fn environment_timeout<L>(lookup: &L) -> Result<Duration, OnyxGuardrailError>
 where
     L: EnvironmentLookup,
 {
-    let Some(text) = lookup.lookup(ONYX_TIMEOUT_VARIABLE) else {
+    let Some(text) = lookup.lookup("ONYX_TIMEOUT") else {
         return Ok(DEFAULT_TIMEOUT);
     };
-    let parsed = betterlite_env::number::<i64>(ONYX_TIMEOUT_VARIABLE, &text)
+    let parsed = betterlite_env::number::<i64>("ONYX_TIMEOUT", &text)
         .map_err(|source| OnyxGuardrailError::TimeoutNotInteger(source, text.clone()))?;
     let Some(parsed_seconds) = parsed else {
         return Ok(DEFAULT_TIMEOUT);
@@ -226,6 +219,7 @@ where
 fn payload_for(
     request_data: &BTreeMap<String, GuardrailValue>,
     input_type: GuardrailInputType,
+    conversation_id: &str,
 ) -> GuardrailValue {
     match input_type {
         GuardrailInputType::Request => request_data
@@ -234,6 +228,11 @@ fn payload_for(
             .cloned()
             .unwrap_or_else(|| GuardrailValue::Object(BTreeMap::new())),
         GuardrailInputType::Response if !model_response_accepts(request_data) => {
+            tracing::error!(
+                conversation_id,
+                input_type = ?input_type,
+                "Error in converting request_data to ModelResponse"
+            );
             GuardrailValue::Object(request_data.clone())
         }
         GuardrailInputType::Response => request_data
@@ -263,13 +262,11 @@ fn model_response_accepts(request_data: &BTreeMap<String, GuardrailValue>) -> bo
             )
         })
 }
+
 fn request_error(source: reqwest::Error) -> OnyxGuardrailError {
     // The endpoint path carries the API key, so the URL never reaches a log line through the error.
-    let stripped = source.without_url();
-    if stripped.is_timeout() {
-        OnyxGuardrailError::Timeout { source: stripped }
-    } else {
-        OnyxGuardrailError::Request { source: stripped }
+    OnyxGuardrailError::Transport {
+        source: source.without_url(),
     }
 }
 async fn read_capped_body(mut response: reqwest::Response) -> Result<Vec<u8>, OnyxGuardrailError> {
@@ -287,6 +284,7 @@ async fn read_capped_body(mut response: reqwest::Response) -> Result<Vec<u8>, On
 #[derive(Clone, Default, Deserialize, Serialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct OnyxGuardrailConfigModel {
+    pub optional_params: Option<BTreeMap<String, GuardrailValue>>,
     pub api_base: Option<String>,
     pub api_key: Option<String>,
     pub timeout: Option<f64>,

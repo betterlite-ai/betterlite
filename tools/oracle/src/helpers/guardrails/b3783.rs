@@ -3,7 +3,9 @@ use std::net::TcpListener;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
-use betterlite_guardrails::onyx::{OnyxGuardrail, OnyxGuardrailError, SUPPORTED_EVENT_HOOKS};
+use betterlite_guardrails::onyx::{
+    BLOCKED_STATUS, OnyxGuardrail, OnyxGuardrailError, SUPPORTED_EVENT_HOOKS,
+};
 use betterlite_http::proxy::base_builder;
 use secrecy::SecretString;
 use serde_json::json;
@@ -45,7 +47,7 @@ impl crate::helpers::Helper for Op {
 }
 
 type Prepared = (Option<MockProvider>, TcpListener, String);
-type Recorded = (Option<String>, Option<serde_json::Value>);
+type Recorded = (Option<String>, Option<serde_json::Value>, Option<String>);
 
 fn call(input: &OnyxCall) -> HelperResult {
     let (mock, silent, base) = start_mock(input.answer.as_ref())?;
@@ -61,13 +63,21 @@ fn call(input: &OnyxCall) -> HelperResult {
         input.litellm_call_id.as_deref(),
     ));
     drop(silent);
-    let (path, request) = finish(mock)?;
+    let (path, request, content_type) = finish(mock)?;
     match result {
         Ok(inputs) => Ok(json!({
             "supported_event_hooks": SUPPORTED_EVENT_HOOKS,
             "path": path,
             "request": request,
+            "content_type": content_type,
             "inputs": inputs,
+        })),
+        Err(OnyxGuardrailError::Blocked { .. }) => Ok(json!({
+            "blocked": true,
+            "status": BLOCKED_STATUS.as_u16(),
+            "path": path,
+            "request": request,
+            "content_type": content_type,
         })),
         Err(error) => Err(onyx_failure(&error)),
     }
@@ -97,8 +107,11 @@ fn finish(mock: Option<MockProvider>) -> Result<Recorded, Box<HelperError>> {
         .map_err(|error| failure("MockError", None, error.to_string()))?;
     let recorded = calls.unwrap_or_default().into_iter().next();
     let path = recorded.as_ref().map(|call| call.request.path.clone());
+    let content_type = recorded
+        .as_ref()
+        .and_then(|call| call.request.headers.get("content-type").cloned());
     let request = recorded.map(|call| call.request.body);
-    Ok((path, request))
+    Ok((path, request, content_type))
 }
 
 fn build_guardrail(input: &OnyxCall, base: &str) -> Result<OnyxGuardrail, Box<HelperError>> {
@@ -122,8 +135,7 @@ fn onyx_failure(error: &OnyxGuardrailError) -> Box<HelperError> {
         | OnyxGuardrailError::TimeoutNegative(..)
         | OnyxGuardrailError::UnrepresentableTimeout { .. } => "ValueError",
         OnyxGuardrailError::Client { .. }
-        | OnyxGuardrailError::Timeout { .. }
-        | OnyxGuardrailError::Request { .. }
+        | OnyxGuardrailError::Transport { .. }
         | OnyxGuardrailError::HttpStatus { .. }
         | OnyxGuardrailError::ResponseTooLarge { .. }
         | OnyxGuardrailError::ResponseJson { .. } => "OnyxGuardrailAPIError",

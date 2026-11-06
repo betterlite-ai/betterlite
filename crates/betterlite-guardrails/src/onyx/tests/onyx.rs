@@ -1,22 +1,25 @@
 use std::collections::BTreeMap;
+use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use axum::http::StatusCode;
 use betterlite_config::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity as _;
+use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::onyx::{
-    DEFAULT_API_BASE, DEFAULT_TIMEOUT, OnyxGuardrail, OnyxGuardrailConfigModel, OnyxGuardrailError,
-    SUPPORTED_EVENT_HOOKS,
+    BLOCKED_STATUS, DEFAULT_API_BASE, DEFAULT_TIMEOUT, OnyxGuardrail, OnyxGuardrailConfigModel,
+    OnyxGuardrailError, SUPPORTED_EVENT_HOOKS,
 };
 use betterlite_http::proxy::base_builder;
 use secrecy::ExposeSecret as _;
 use secrecy::SecretString;
 use tokio::runtime::Builder;
 use tracing::subscriber::with_default;
+use uuid::Uuid;
 
 use crate::support::{
-    CapturedLog, captured, captured_path, guardrail, guardrail_with_timeout, inputs, mock_onyx,
-    object, silent_onyx, value,
+    CapturedLog, captured, captured_content_type, captured_path, dropping_first_mock, guardrail,
+    guardrail_with_timeout, inputs, mock_onyx, object, silent_onyx, value,
 };
 
 fn lookup(entries: &[(&str, &str)]) -> BTreeMap<String, String> {
@@ -81,6 +84,20 @@ fn environment_rejects_a_missing_api_key() {
 }
 
 #[test]
+fn environment_rejects_an_empty_api_key() {
+    let environment = lookup(&[("ONYX_API_KEY", "")]);
+    let error = build(None, None, None, &environment).unwrap_err();
+    assert!(matches!(error, OnyxGuardrailError::MissingApiKey));
+}
+
+#[test]
+fn environment_treats_an_empty_api_base_as_unset() {
+    let environment = lookup(&[("ONYX_API_KEY", "env-key"), ("ONYX_API_BASE", "")]);
+    let guardrail = build(None, None, None, &environment).unwrap();
+    assert_eq!(guardrail.api_base, DEFAULT_API_BASE);
+}
+
+#[test]
 fn environment_treats_an_empty_timeout_as_unset() {
     let environment = lookup(&[("ONYX_API_KEY", "env-key"), ("ONYX_TIMEOUT", "")]);
     let guardrail = build(None, None, None, &environment).unwrap();
@@ -132,9 +149,23 @@ fn timeout_rejects_a_configured_value_that_is_not_a_duration() {
 #[test]
 fn config_model_defaults_every_field_to_none() {
     let model = OnyxGuardrailConfigModel::default();
+    assert!(model.optional_params.is_none());
     assert!(model.api_base.is_none());
     assert!(model.api_key.is_none());
     assert!(model.timeout.is_none());
+}
+
+#[test]
+fn config_model_accepts_null_and_object_optional_params() {
+    let null: OnyxGuardrailConfigModel =
+        serde_json::from_str(r#"{"optional_params": null}"#).unwrap();
+    assert!(null.optional_params.is_none());
+    let set: OnyxGuardrailConfigModel =
+        serde_json::from_str(r#"{"optional_params": {"verbose": true}}"#).unwrap();
+    assert_eq!(
+        set.optional_params.unwrap().get("verbose"),
+        Some(&GuardrailValue::Boolean(true))
+    );
 }
 
 #[test]
@@ -183,6 +214,10 @@ async fn request_payload_posts_the_proxy_server_request_to_the_keyed_endpoint() 
     assert_eq!(
         captured_path(&mock),
         "/guard/evaluate/v1/oracle-key/litellm"
+    );
+    assert_eq!(
+        captured_content_type(&mock),
+        Some(String::from("application/json"))
     );
     assert_eq!(
         captured.payload,
@@ -287,9 +322,18 @@ async fn conversation_id_uses_the_logging_call_id() {
 }
 
 #[tokio::test]
-async fn conversation_id_generates_a_uuid_without_a_logging_call_id() {
+async fn conversation_id_generates_a_version_4_uuid_without_a_logging_call_id() {
     let mock = mock_onyx(StatusCode::OK, String::from(r#"{"allowed": true}"#)).await;
-    guardrail(&mock.base)
+    let environment = lookup(&[("ONYX_API_KEY", "oracle-key")]);
+    let guardrail = OnyxGuardrail::new(
+        None,
+        Some(mock.base.clone()),
+        Some(5.0_f64),
+        &environment,
+        base_builder(),
+    )
+    .unwrap();
+    guardrail
         .apply_guardrail(
             inputs(r#"{"texts": ["hello"]}"#),
             &object("{}"),
@@ -298,10 +342,9 @@ async fn conversation_id_generates_a_uuid_without_a_logging_call_id() {
         )
         .await
         .unwrap();
-    assert_eq!(
-        captured(&mock).conversation_id,
-        "00000000-0000-0000-0000-000000000001"
-    );
+    let conversation_id = captured(&mock).conversation_id;
+    let parsed = Uuid::parse_str(&conversation_id).unwrap();
+    assert_eq!(parsed.get_version_num(), 4);
 }
 
 #[tokio::test]
@@ -356,7 +399,8 @@ async fn block_raises_a_400_with_the_violated_rules_message() {
         error.to_string(),
         "Request blocked by Onyx Guard. Violations: pii, jailbreak."
     );
-    assert_eq!(error.status_code(), StatusCode::BAD_REQUEST);
+    assert!(matches!(error, OnyxGuardrailError::Blocked { .. }));
+    assert_eq!(BLOCKED_STATUS, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
@@ -403,7 +447,7 @@ async fn block_with_null_violated_rules_blocks_with_unknown_violation() {
 async fn fail_open_returns_the_inputs_on_a_backend_status_error() {
     let mock = mock_onyx(
         StatusCode::INTERNAL_SERVER_ERROR,
-        String::from(r#"{"detail": "down"}"#),
+        String::from(r#"{"allowed": false, "violated_rules": ["pii"]}"#),
     )
     .await;
     let returned = guardrail(&mock.base)
@@ -435,7 +479,11 @@ async fn fail_open_returns_the_inputs_on_a_timeout() {
 
 #[tokio::test]
 async fn fail_open_returns_the_inputs_on_an_oversized_response() {
-    let mock = mock_onyx(StatusCode::OK, "a".repeat(1024 * 1024 + 1)).await;
+    let denial = format!(
+        r#"{{"allowed": false, "violated_rules": ["pii"], "pad": "{}"}}"#,
+        "a".repeat(1024 * 1024)
+    );
+    let mock = mock_onyx(StatusCode::OK, denial).await;
     let returned = guardrail(&mock.base)
         .apply_guardrail(
             inputs(r#"{"texts": ["hello"]}"#),
@@ -501,4 +549,59 @@ fn fail_open_logs_the_transport_error_without_the_api_key() {
     let output = String::from_utf8(captured_log.0.lock().unwrap().clone()).unwrap();
     assert!(output.contains("could not be reached"));
     assert!(!output.contains("oracle-key"));
+}
+
+#[tokio::test]
+async fn retries_once_when_the_first_connection_drops_and_blocks_the_second() {
+    let mock = dropping_first_mock(String::from(
+        r#"{"allowed": false, "violated_rules": ["pii"]}"#,
+    ))
+    .await;
+    let error = guardrail(&mock.base)
+        .apply_guardrail(
+            inputs(r#"{"texts": ["hello"]}"#),
+            &object("{}"),
+            GuardrailInputType::Request,
+            Some("call-1"),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Request blocked by Onyx Guard. Violations: pii."
+    );
+    assert_eq!(mock.accepted.load(Ordering::SeqCst), 2);
+}
+
+#[test]
+fn response_conversion_failure_logs_the_call_id_before_sending_the_request_data() {
+    let runtime = Builder::new_current_thread().enable_all().build().unwrap();
+    let mock = runtime.block_on(mock_onyx(
+        StatusCode::OK,
+        String::from(r#"{"allowed": true}"#),
+    ));
+    let guardrail = guardrail(&mock.base);
+    let captured_log = CapturedLog::default();
+    let writer = captured_log.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::ERROR)
+        .with_writer(move || writer.clone())
+        .finish();
+    let request_data = object(r#"{"id": 123, "response": {"some": "thing"}}"#);
+    with_default(subscriber, || {
+        runtime.block_on(guardrail.apply_guardrail(
+            inputs(r#"{"texts": ["done"]}"#),
+            &request_data,
+            GuardrailInputType::Response,
+            Some("call-7"),
+        ))
+    })
+    .unwrap();
+    assert_eq!(
+        captured(&mock).payload,
+        value(r#"{"id": 123, "response": {"some": "thing"}}"#)
+    );
+    let output = String::from_utf8(captured_log.0.lock().unwrap().clone()).unwrap();
+    assert!(output.contains("Error in converting request_data to ModelResponse"));
+    assert!(output.contains("call-7"));
 }

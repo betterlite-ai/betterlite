@@ -42,3 +42,34 @@ deviations:
       server that denied the request is a bug no working setup relies on. Rules that are
       absent still use the same "Unknown violation" text LiteLLM uses.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L86-L94
+  - what: >-
+      httpx gives connect a 5-second timeout and lets read, write and pool each use the phase
+      timeout. The HTTP client exposes connect, read and total timeouts only, so betterlite
+      sets the 5-second connect timeout and the phase timeout as the read timeout, and bounds
+      the whole request by the sum of the four phases (connect plus read, write and pool). A
+      stalled write or pool wait is held to that summed deadline instead of a per-phase
+      timeout.
+    why: >-
+      Summing the phases keeps a slow connect from eating the read budget, which would turn a
+      late denial into a fail-open, while still bounding a write or pool wait that the
+      transport cannot time on its own.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L51
+  - what: >-
+      OnyxGuardrailConfigModel has api_base, api_key and timeout but not the description text
+      LiteLLM publishes on each field, and no field for the base model's optional_params is
+      documented beyond taking a null or object map.
+    why: >-
+      betterlite config models keep no description metadata and comments-say-why bans doc
+      comments; the field names, the config model's defaults and the tested env-var fallbacks
+      carry the same information in code.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/onyx.py#L6-L20
+  - what: >-
+      The ModelResponse conversion check looks at the top-level id, created, model and
+      system_fingerprint only. A malformed choices entry or usage token type that makes
+      LiteLLM's ModelResponse raise is not detected, so on those inputs betterlite sends
+      request_data.response while LiteLLM sends request_data itself.
+    why: >-
+      Choices, Message and Usage conversion is the message/response type conversion the task
+      marks out of scope; mirroring pydantic's coercion rules would duplicate the model layer
+      inside the guardrail.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L116-L128
