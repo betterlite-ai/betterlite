@@ -82,11 +82,15 @@ fn configured_zone_and_clock_forwarded() {
 
 #[test]
 fn invalid_zone_silent_utc() {
-    let settings = settings("Not/AZone", "00:00");
-    assert_eq!(settings.timezone, "Not/AZone");
-    let reset =
-        compute_budget_reset_at("1d", &settings, moment("2024-01-01T10:00:00Z"), &DATABASE())
-            .unwrap();
+    let configured = settings("Not/AZone", "00:00");
+    assert_eq!(configured.timezone, "Not/AZone");
+    let reset = compute_budget_reset_at(
+        "1d",
+        &configured,
+        moment("2024-01-01T10:00:00Z"),
+        &DATABASE(),
+    )
+    .unwrap();
     assert_eq!(reset.instant, moment("2024-01-02T00:00:00Z"));
     assert_eq!(reset.civil.to_string(), "2024-01-02T00:00:00");
     let timezone = json!("Not/AZone");
