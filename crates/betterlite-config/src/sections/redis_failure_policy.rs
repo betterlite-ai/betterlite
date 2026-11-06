@@ -1,4 +1,3 @@
-use std::str::FromStr;
 use std::time::Duration;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
@@ -47,67 +46,33 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let defaults = Settings::default();
-        Ok(Settings {
-            enabled: flag(lookup, ENABLED, defaults.enabled)?,
-            failure_threshold: integer(lookup, FAILURE_THRESHOLD, defaults.failure_threshold)?,
-            recovery_timeout: whole_seconds(lookup, RECOVERY_TIMEOUT, defaults.recovery_timeout)?,
-            timeout_min_duration: seconds(
-                lookup,
-                TIMEOUT_MIN_DURATION,
-                defaults.timeout_min_duration,
-            )?,
-            timeout_log_interval: seconds(
-                lookup,
-                TIMEOUT_LOG_INTERVAL,
-                defaults.timeout_log_interval,
-            )?,
-        })
+        let mut settings = Settings::default();
+        if let Some(text) = lookup.lookup(ENABLED) {
+            settings.enabled = betterlite_env::flag(ENABLED, &text)?.unwrap_or(settings.enabled);
+        }
+        if let Some(text) = lookup.lookup(FAILURE_THRESHOLD) {
+            settings.failure_threshold = betterlite_env::number::<u32>(FAILURE_THRESHOLD, &text)?
+                .unwrap_or(settings.failure_threshold);
+        }
+        if let Some(text) = lookup.lookup(RECOVERY_TIMEOUT) {
+            let seconds = betterlite_env::number::<u64>(RECOVERY_TIMEOUT, &text)?
+                .unwrap_or(settings.recovery_timeout.as_secs());
+            settings.recovery_timeout = Duration::from_secs(seconds);
+        }
+        if let Some(text) = lookup.lookup(TIMEOUT_MIN_DURATION) {
+            settings.timeout_min_duration =
+                fractional_seconds(TIMEOUT_MIN_DURATION, &text, settings.timeout_min_duration)?;
+        }
+        if let Some(text) = lookup.lookup(TIMEOUT_LOG_INTERVAL) {
+            settings.timeout_log_interval =
+                fractional_seconds(TIMEOUT_LOG_INTERVAL, &text, settings.timeout_log_interval)?;
+        }
+        Ok(settings)
     }
 }
 
-fn flag<L>(lookup: &L, name: &str, default: bool) -> Result<bool, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let Some(text) = lookup.lookup(name) else {
-        return Ok(default);
-    };
-    Ok(betterlite_env::flag(name, &text)?.unwrap_or(default))
-}
-
-fn integer<L, T>(lookup: &L, name: &str, default: T) -> Result<T, ConfigError>
-where
-    L: EnvironmentLookup,
-    T: FromStr,
-{
-    let Some(text) = lookup.lookup(name) else {
-        return Ok(default);
-    };
-    Ok(betterlite_env::number::<T>(name, &text)?.unwrap_or(default))
-}
-
-fn whole_seconds<L>(lookup: &L, name: &str, default: Duration) -> Result<Duration, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let Some(text) = lookup.lookup(name) else {
-        return Ok(default);
-    };
-    let Some(seconds) = betterlite_env::number::<u64>(name, &text)? else {
-        return Ok(default);
-    };
-    Ok(Duration::from_secs(seconds))
-}
-
-fn seconds<L>(lookup: &L, name: &str, default: Duration) -> Result<Duration, ConfigError>
-where
-    L: EnvironmentLookup,
-{
-    let Some(text) = lookup.lookup(name) else {
-        return Ok(default);
-    };
-    let Some(value) = betterlite_env::number::<f64>(name, &text)? else {
+fn fractional_seconds(name: &str, text: &str, default: Duration) -> Result<Duration, ConfigError> {
+    let Some(value) = betterlite_env::number::<f64>(name, text)? else {
         return Ok(default);
     };
     Duration::try_from_secs_f64(value).map_err(|_source| ConfigError::Environment {

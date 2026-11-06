@@ -139,20 +139,17 @@ fn admit(
     policy: &mut RedisFailurePolicy,
     admissions: &mut BTreeMap<usize, Admission>,
 ) -> StepOutput {
-    match policy.admit(Duration::from_millis(now_millis), operation) {
+    let (admitted, error) = match policy.admit(Duration::from_millis(now_millis), operation) {
         Ok(admission) => {
             admissions.insert(index, admission);
-            StepOutput::Admit {
-                admitted: true,
-                error: None,
-                status: policy.status(),
-            }
+            (true, None)
         }
-        Err(error) => StepOutput::Admit {
-            admitted: false,
-            error: Some(error.to_string()),
-            status: policy.status(),
-        },
+        Err(error) => (false, Some(error.to_string())),
+    };
+    StepOutput::Admit {
+        admitted,
+        error,
+        status: policy.status(),
     }
 }
 

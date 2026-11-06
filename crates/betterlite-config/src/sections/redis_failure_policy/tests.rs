@@ -9,11 +9,15 @@ use crate::loader::{ConfigError, ConfigLoader};
 
 use super::Settings;
 
-fn settings(environment: &[(&str, &str)]) -> Settings {
-    let lookup = environment
+fn lookup(environment: &[(&str, &str)]) -> BTreeMap<String, String> {
+    environment
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-        .collect::<BTreeMap<String, String>>();
+        .collect()
+}
+
+fn settings(environment: &[(&str, &str)]) -> Settings {
+    let lookup = lookup(environment);
     ConfigLoader { lookup }
         .load("{}")
         .expect("the config should load")
@@ -22,13 +26,11 @@ fn settings(environment: &[(&str, &str)]) -> Settings {
 }
 
 fn error(environment: &[(&str, &str)]) -> ConfigError {
-    let lookup = environment
-        .iter()
-        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-        .collect::<BTreeMap<String, String>>();
-    ConfigLoader { lookup }
-        .load("{}")
-        .expect_err("the environment should be rejected")
+    ConfigLoader {
+        lookup: lookup(environment),
+    }
+    .load("{}")
+    .expect_err("the environment should be rejected")
 }
 
 #[test]
