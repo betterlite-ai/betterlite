@@ -45,6 +45,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "copilot_key"
+path = "fuzz_targets/copilot_key.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "device_reply"
 path = "fuzz_targets/device_reply.rs"
 test = false
@@ -131,6 +138,13 @@ bench = false
 [[bin]]
 name = "oauth_reply"
 path = "fuzz_targets/oauth_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "xai_callback"
+path = "fuzz_targets/xai_callback.rs"
 test = false
 doc = false
 bench = false
