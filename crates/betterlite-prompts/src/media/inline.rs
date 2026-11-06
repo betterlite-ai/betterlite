@@ -38,6 +38,7 @@ impl<R> RemoteMediaFetcher for Fetcher<R>
 where
     R: Resolve,
 {
+    // Self:: names the inherent fetcher methods, which win over these same-named trait methods
     fn convert_url(&self, url: &str) -> impl Future<Output = Result<String, ImageFetchError>> {
         Self::convert(self, url)
     }
