@@ -35,6 +35,10 @@ use super::{format, wrapper};
     r#"[{"function_declarations":[],"functionDeclarations":[{"name":"camel"}]}]"#,
     &[]
 )]
+#[case::explicit_empty_input_schema_shadows_parameters(
+    r#"[{"input_schema":{},"name":"empty_schema","parameters":{"type":"object","properties":{"a":{"type":"string"}}}}]"#,
+    &["type empty_schema = () => any;", ""]
+)]
 #[case::non_object_tools_are_skipped(
     r#"["text",42,null,[],{"type":"web_search"}]"#,
     &[]
