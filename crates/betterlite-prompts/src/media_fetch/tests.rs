@@ -13,6 +13,7 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::Verification;
 use betterlite_config::types::ProxyTrust;
+use betterlite_context::core_settings::CoreSettings;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::{ProxiedClient, base_builder};
@@ -30,6 +31,7 @@ use tokio::time::{sleep, timeout};
 
 use super::cache::ImageCache;
 use super::fetcher::Fetcher;
+use super::limits::{LimitsError, transport_limits};
 use super::response::{ImageResponse, ProcessError, process_image_response};
 
 const PNG: &[u8] = b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a\x00\x00\x00\x0dIHDR";
@@ -108,6 +110,7 @@ async fn reading(
 #[case::tiny_limit_prints_the_python_float("tiny_limit_prints_the_python_float")]
 #[case::body_error_after_the_block_past_the_limit("body_error_after_the_block_past_the_limit")]
 #[case::body_in_one_chunk("body_in_one_chunk")]
+#[case::negative_limit_empty_body("negative_limit_empty_body")]
 #[tokio::test]
 async fn response_reading_matches_litellm(#[case] scenario: &str) {
     let cache = new_cache();
@@ -327,6 +330,17 @@ async fn response_reading_matches_litellm(#[case] scenario: &str) {
                 "Error: Image size (0.51MB) exceeds maximum allowed size (0.5MB). url=https://example.com/image"
             );
         }
+        "negative_limit_empty_body" => {
+            let data_url = reading(
+                &cache,
+                image(200, &[("Content-Type", "image/png")], b""),
+                url,
+                -1.0,
+            )
+            .await
+            .unwrap();
+            assert_eq!(data_url, "data:image/png;base64,");
+        }
         other => panic!("unknown scenario {other}"),
     }
 }
@@ -338,6 +352,7 @@ enum Reply {
         body: Vec<u8>,
     },
     Delayed {
+        status: u16,
         body: Vec<u8>,
         delay: Duration,
     },
@@ -486,7 +501,11 @@ async fn write_reply(stream: &mut TcpStream, reply: Option<&Reply>) -> io::Resul
             content_type,
             body,
         }) => write_status(stream, *status, content_type.as_deref(), body).await,
-        Some(Reply::Delayed { body, delay }) => write_delayed(stream, body, *delay).await,
+        Some(Reply::Delayed {
+            status,
+            body,
+            delay,
+        }) => write_delayed(stream, *status, body, *delay).await,
         Some(Reply::Drip { interval }) => write_drip(stream, *interval).await,
         None => write_status(stream, 404, None, b"").await,
     }
@@ -510,9 +529,14 @@ async fn write_status(
     stream.write_all(body).await
 }
 
-async fn write_delayed(stream: &mut TcpStream, body: &[u8], delay: Duration) -> io::Result<()> {
+async fn write_delayed(
+    stream: &mut TcpStream,
+    status: u16,
+    body: &[u8],
+    delay: Duration,
+) -> io::Result<()> {
     sleep(delay).await;
-    write_status(stream, 200, None, body).await
+    write_status(stream, status, None, body).await
 }
 
 async fn write_drip(stream: &mut TcpStream, interval: Duration) -> io::Result<()> {
@@ -561,6 +585,7 @@ async fn closed_port() -> u16 {
 #[case::cache_hit("cache_hit")]
 #[case::connection_refused_three_tries("connection_refused")]
 #[case::status_error_not_retried("status_not_retried")]
+#[case::body_over_limit_is_not_retried("body_over_limit_not_retried")]
 #[case::ssrf_rejected_before_a_request("ssrf_rejected")]
 #[case::infinite_limit_retried("infinite_limit")]
 #[case::total_deadline("total_deadline")]
@@ -630,6 +655,24 @@ async fn url_conversion_matches_litellm(#[case] scenario: &str) {
             );
             assert_eq!(server.request_count(), 1);
         }
+        "body_over_limit_not_retried" => {
+            let reply = Reply::Status {
+                status: 200,
+                content_type: None,
+                body: vec![0xAB_u8; 600_000],
+            };
+            let server = Server::start(vec![("/image.png".to_owned(), reply)]).await;
+            let fetcher = new_fetcher(&["127.0.0.1"], 0.5, TEN_MINUTES);
+            let url = server.url("/image.png");
+            let error = fetcher.convert(&url).await.unwrap_err();
+            assert_eq!(
+                error.to_string(),
+                format!(
+                    "Error: Image size (0.51MB) exceeds maximum allowed size (0.5MB). url={url}"
+                )
+            );
+            assert_eq!(server.request_count(), 1);
+        }
         "ssrf_rejected" => {
             let server = Server::start(vec![("/image.png".to_owned(), Reply::ok(b"body"))]).await;
             let fetcher = new_fetcher(&[], 50.0, TEN_MINUTES);
@@ -686,6 +729,7 @@ async fn parallel_fetches_are_bounded(#[case] scenario: &str) {
             let routes = (0..40_u32)
                 .map(|index| {
                     let reply = Reply::Delayed {
+                        status: 200,
                         body: index.to_string().into_bytes(),
                         delay: Duration::from_millis(
                             u64::from(40_u32.saturating_sub(index))
@@ -712,17 +756,22 @@ async fn parallel_fetches_are_bounded(#[case] scenario: &str) {
                 .collect();
             let expected: Vec<String> = (0..40_u32).map(|index| index.to_string()).collect();
             assert_eq!(decoded, expected);
-            assert!(server.max_in_flight() <= 20);
-            assert!(server.max_in_flight() > 1);
+            assert_eq!(server.max_in_flight(), 20);
             assert_eq!(server.request_count(), 40);
         }
         "cancelled" => {
+            // the failing URL sits behind 3-second URLs, so in-order buffering would miss the 2-second bound
             let routes = (0..25_u32)
                 .map(|index| {
-                    let reply = if index == 0 {
-                        Reply::not_found()
+                    let reply = if index == 10 {
+                        Reply::Delayed {
+                            status: 404,
+                            body: Vec::new(),
+                            delay: Duration::from_millis(250),
+                        }
                     } else {
                         Reply::Delayed {
+                            status: 200,
                             body: index.to_string().into_bytes(),
                             delay: Duration::from_secs(3),
                         }
@@ -743,9 +792,99 @@ async fn parallel_fetches_are_bounded(#[case] scenario: &str) {
                 error.to_string(),
                 format!(
                     "Error: Unable to fetch image from URL. Status code: 404, url={}",
-                    urls[0]
+                    urls[10]
                 )
             );
+            sleep(Duration::from_millis(200)).await;
+            assert_eq!(server.request_count(), 20);
+        }
+        other => panic!("unknown scenario {other}"),
+    }
+}
+
+#[rstest]
+#[case::unset(None, 6000.0_f64, 6000.0_f64)]
+#[case::request_timeout_variable(None, 12.0_f64, 12.0_f64)]
+#[case::litellm_settings_wins(Some(4.0_f64), 12.0_f64, 4.0_f64)]
+fn fetch_timeout_follows_litellm(
+    #[case] litellm_request_timeout: Option<f64>,
+    #[case] request_timeout_seconds: f64,
+    #[case] expected_seconds: f64,
+) {
+    let core = CoreSettings {
+        request_timeout_seconds,
+        request_timeout_explicit: false,
+        litellm_request_timeout,
+        model_timeout_overrides: Vec::new(),
+    };
+    let limits = transport_limits(&core).unwrap();
+    let expected = Duration::try_from_secs_f64(expected_seconds).unwrap();
+    assert_eq!(limits.connect_timeout, expected);
+    assert_eq!(limits.read_timeout, expected);
+}
+
+#[test]
+fn a_negative_fetch_timeout_is_an_error() {
+    let core = CoreSettings {
+        request_timeout_seconds: -5.0_f64,
+        request_timeout_explicit: true,
+        litellm_request_timeout: None,
+        model_timeout_overrides: Vec::new(),
+    };
+    assert!(matches!(
+        transport_limits(&core),
+        Err(LimitsError::Invalid { .. })
+    ));
+}
+
+fn movable_cache() -> (Arc<Mutex<f64>>, ImageCache) {
+    let now = Arc::new(Mutex::new(0.0_f64));
+    let clock = Arc::clone(&now);
+    let cache = ImageCache::new(Arc::new(move || *clock.lock().unwrap())).unwrap();
+    (now, cache)
+}
+
+fn store_every(cache: &ImageCache, urls: &[String]) {
+    for url in urls {
+        cache.store(url, "data:image/png;base64,AAAA");
+    }
+}
+
+#[rstest]
+#[case::expiry_at_600_seconds("expiry")]
+#[case::capacity_keeps_ten("capacity")]
+#[case::item_just_under_one_mebibyte("item")]
+fn image_cache_limits_follow_litellm(#[case] scenario: &str) {
+    let (now, cache) = movable_cache();
+    match scenario {
+        "expiry" => {
+            let entry = "https://example.com/a.png";
+            cache.store(entry, "data:image/png;base64,AAAA");
+            *now.lock().unwrap() = 600.0_f64;
+            assert_eq!(
+                cache.get(entry),
+                Some("data:image/png;base64,AAAA".to_owned())
+            );
+            *now.lock().unwrap() = 600.5_f64;
+            assert_eq!(cache.get(entry), None);
+        }
+        "capacity" => {
+            let urls: Vec<String> = (0..11_u32)
+                .map(|index| format!("https://example.com/{index}.png"))
+                .collect();
+            store_every(&cache, &urls);
+            let kept = urls
+                .iter()
+                .filter(|entry| cache.get(entry.as_str()).is_some())
+                .count();
+            assert_eq!(kept, 10);
+            assert!(cache.get(&urls[10]).is_some());
+        }
+        "item" => {
+            let entry = "https://example.com/a.png";
+            let value = "A".repeat(0x000f_ffff);
+            cache.store(entry, &value);
+            assert_eq!(cache.get(entry), Some(value));
         }
         other => panic!("unknown scenario {other}"),
     }

@@ -6,13 +6,14 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::Verification;
 use betterlite_config::types::ProxyTrust;
+use betterlite_context::core_settings::CoreSettings;
 use betterlite_http::error::HttpError;
-use betterlite_http::proxy::limits::TransportLimits;
 use betterlite_http::proxy::{ProxiedClient, base_builder};
 use betterlite_http::user_url::fetch::UserUrlFetcher;
 use betterlite_http::user_url::validate::{SystemResolver, UrlValidator};
 use betterlite_prompts::media_fetch::cache::ImageCache;
 use betterlite_prompts::media_fetch::fetcher::Fetcher;
+use betterlite_prompts::media_fetch::limits::transport_limits;
 use betterlite_prompts::media_fetch::response::{
     BodyReadError, ImageResponse, ProcessError, process_image_response,
 };
@@ -149,7 +150,15 @@ fn convert(url: &str, runtime: &Runtime) -> HelperResult {
         ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new())
             .map_err(|error| invalid_input(error.to_string()))?,
     );
-    let client = ProxiedClient::build(base_builder(), &policy, TransportLimits::DEFAULT)
+    // LiteLLM's module-level client reads litellm.request_timeout, which the helper process leaves at 6000 seconds
+    let core = CoreSettings {
+        request_timeout_seconds: 6000.0,
+        request_timeout_explicit: false,
+        litellm_request_timeout: None,
+        model_timeout_overrides: Vec::new(),
+    };
+    let limits = transport_limits(&core).map_err(|error| invalid_input(error.to_string()))?;
+    let client = ProxiedClient::build(base_builder(), &policy, limits)
         .map_err(|error| invalid_input(error.to_string()))?;
     let validator = UrlValidator::new(SystemResolver, &[], &Verification::Enabled);
     let fetcher = Fetcher::new(

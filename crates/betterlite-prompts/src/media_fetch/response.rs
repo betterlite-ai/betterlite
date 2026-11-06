@@ -128,7 +128,8 @@ pub async fn read_limited_body(
         }
         bytes.extend_from_slice(&part);
     }
-    if received > limit_bytes {
+    // Only a chunk the loop emitted is checked, so an empty body never fails a limit of zero or less
+    if received > 0.0_f64 && received > limit_bytes {
         return Err(too_large(received, max_download_size_mb, url));
     }
     Ok(bytes)

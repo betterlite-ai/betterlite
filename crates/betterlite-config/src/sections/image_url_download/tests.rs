@@ -25,17 +25,24 @@ fn load(environment: &[(&str, &str)]) -> Result<Settings, ConfigError> {
 #[case::spaces("  0.5  ", Some(0.5_f64))]
 #[case::scientific("1e-05", Some(1e-5_f64))]
 #[case::empty_is_unset("   ", Some(50.0_f64))]
+#[case::infinity("inf", Some(f64::INFINITY))]
+#[case::negative_infinity("-inf", Some(f64::NEG_INFINITY))]
+#[case::nan("nan", Some(f64::NAN))]
 #[case::bad_value("fifty", None)]
 fn download_limit_follows_litellm(#[case] value: &str, #[case] expected: Option<f64>) {
     let loaded = load(&[("MAX_IMAGE_URL_DOWNLOAD_SIZE_MB", value)]);
     let Some(wanted) = expected else {
         let error = loaded.unwrap_err();
-        assert!(matches!(error, ConfigError::Environment { .. }));
+        assert!(matches!(error, ConfigError::InvalidFloat { .. }));
         assert!(error.to_string().contains("MAX_IMAGE_URL_DOWNLOAD_SIZE_MB"));
         return;
     };
     let settings = loaded.unwrap();
-    assert_eq!(settings.max_download_size_mb.to_bits(), wanted.to_bits());
+    if wanted.is_nan() {
+        assert!(settings.max_download_size_mb.is_nan());
+    } else {
+        assert_eq!(settings.max_download_size_mb.to_bits(), wanted.to_bits());
+    }
 }
 
 #[test]

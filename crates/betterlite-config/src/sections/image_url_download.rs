@@ -32,8 +32,16 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         let configured = lookup.lookup(VARIABLE).unwrap_or_default();
-        let max_download_size_mb =
-            betterlite_env::number(VARIABLE, &configured)?.unwrap_or(DEFAULT_LIMIT_MB);
+        // Python's float() reads decimal text, inf, infinity and nan; anything else fails the import
+        let max_download_size_mb = match configured.trim() {
+            "" => DEFAULT_LIMIT_MB,
+            text => text
+                .parse::<f64>()
+                .map_err(|source| ConfigError::InvalidFloat {
+                    path: VARIABLE.to_owned(),
+                    source,
+                })?,
+        };
         Ok(Settings {
             max_download_size_mb,
         })
