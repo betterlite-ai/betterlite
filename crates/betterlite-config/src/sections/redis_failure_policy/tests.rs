@@ -90,20 +90,31 @@ fn an_empty_value_keeps_the_default(#[case] name: &str) {
 }
 
 #[rstest]
-#[case::enabled("REDIS_CIRCUIT_BREAKER_ENABLED", "maybe")]
-#[case::threshold("REDIS_CIRCUIT_BREAKER_FAILURE_THRESHOLD", "five")]
-#[case::negative_threshold("REDIS_CIRCUIT_BREAKER_FAILURE_THRESHOLD", "-1")]
-#[case::recovery_timeout("REDIS_CIRCUIT_BREAKER_RECOVERY_TIMEOUT", "soon")]
-#[case::negative_recovery_timeout("REDIS_CIRCUIT_BREAKER_RECOVERY_TIMEOUT", "-1")]
-#[case::timeout_min_duration("REDIS_CIRCUIT_BREAKER_TIMEOUT_MIN_DURATION", "soon")]
-#[case::negative_timeout_min_duration("REDIS_CIRCUIT_BREAKER_TIMEOUT_MIN_DURATION", "-1.5")]
-#[case::timeout_log_interval("REDIS_TIMEOUT_LOG_INTERVAL", "soon")]
-fn a_malformed_value_is_an_environment_error(#[case] name: &str, #[case] value: &str) {
+#[case::enabled("REDIS_CIRCUIT_BREAKER_ENABLED", "maybe", true)]
+#[case::threshold("REDIS_CIRCUIT_BREAKER_FAILURE_THRESHOLD", "five", false)]
+#[case::negative_threshold("REDIS_CIRCUIT_BREAKER_FAILURE_THRESHOLD", "-1", false)]
+#[case::recovery_timeout("REDIS_CIRCUIT_BREAKER_RECOVERY_TIMEOUT", "soon", false)]
+#[case::negative_recovery_timeout("REDIS_CIRCUIT_BREAKER_RECOVERY_TIMEOUT", "-1", false)]
+#[case::timeout_min_duration("REDIS_CIRCUIT_BREAKER_TIMEOUT_MIN_DURATION", "soon", false)]
+#[case::negative_timeout_min_duration("REDIS_CIRCUIT_BREAKER_TIMEOUT_MIN_DURATION", "-1.5", false)]
+#[case::timeout_log_interval("REDIS_TIMEOUT_LOG_INTERVAL", "soon", false)]
+fn a_malformed_value_is_an_environment_error(
+    #[case] name: &str,
+    #[case] value: &str,
+    #[case] boolean: bool,
+) {
+    let expected = if boolean {
+        betterlite_env::EnvError::Bool {
+            name: name.to_owned(),
+        }
+    } else {
+        betterlite_env::EnvError::Number {
+            name: name.to_owned(),
+        }
+    };
     assert!(matches!(
         error(&[(name, value)]),
-        ConfigError::Environment { source }
-            if source == betterlite_env::EnvError::Number { name: name.to_owned() }
-                || source == betterlite_env::EnvError::Bool { name: name.to_owned() }
+        ConfigError::Environment { source } if source == expected
     ));
 }
 

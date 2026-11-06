@@ -81,6 +81,8 @@ fn opened_policy(configuration: Settings) -> RedisFailurePolicy {
     a_connectivity_failure_restarts_the_streak
 )]
 #[case::failures_while_open_warn_only_once(failures_while_open_warn_once)]
+#[case::a_success_while_open_is_ignored(a_success_while_open_is_ignored)]
+#[case::a_streak_below_the_threshold_never_opens(a_streak_below_the_threshold_never_opens)]
 #[case::a_disabled_policy_never_counts_or_opens(a_disabled_policy_never_counts)]
 #[case::a_success_resets_the_counts(a_success_resets_the_counts)]
 #[case::a_half_open_success_closes_and_reports_recovery(half_open_success_closes)]
@@ -161,6 +163,27 @@ fn failures_while_open_warn_once() {
     let again = fail(&mut policy, 5, FailureClass::Connection);
     assert_eq!(again, None, "an already open breaker warns once");
     assert_eq!(policy.status(), status(State::Open, 1, 2, 2, 0));
+}
+
+fn a_success_while_open_is_ignored() {
+    let mut policy = opened_policy(settings(1, true));
+    assert_eq!(policy.record_success(), None);
+    assert_eq!(
+        policy.status(),
+        status(State::Open, 1, 1, 1, 0),
+        "a success cannot close an open breaker"
+    );
+}
+
+fn a_streak_below_the_threshold_never_opens() {
+    let mut policy = RedisFailurePolicy::from(settings(3, true));
+    assert_eq!(timeout_fail(&mut policy, 0), None);
+    assert_eq!(
+        timeout_fail(&mut policy, 10_000),
+        None,
+        "the duration alone does not open the breaker"
+    );
+    assert_eq!(policy.status(), status(State::Closed, 0, 2, 0, 2));
 }
 
 fn a_disabled_policy_never_counts() {

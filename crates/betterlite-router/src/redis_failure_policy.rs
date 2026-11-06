@@ -21,18 +21,6 @@ pub struct Settings {
     pub timeout_log_interval: Duration,
 }
 
-impl Default for Settings {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            failure_threshold: 5,
-            recovery_timeout: Duration::from_secs(60),
-            timeout_min_duration: Duration::from_secs(5),
-            timeout_log_interval: Duration::from_secs(5),
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum State {
@@ -234,7 +222,7 @@ impl RedisFailurePolicy {
         })
     }
 
-    fn record_success(&mut self) -> Option<BreakerEvent> {
+    pub fn record_success(&mut self) -> Option<BreakerEvent> {
         if !self.settings.enabled || self.state == State::Open {
             return None;
         }
