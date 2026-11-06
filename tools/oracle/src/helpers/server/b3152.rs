@@ -32,6 +32,8 @@ pub(crate) struct Input {
     #[serde(default)]
     pub params: Vec<(String, String)>,
     #[serde(default)]
+    pub json_body: Option<Value>,
+    #[serde(default)]
     pub page: i64,
     #[serde(default)]
     pub limit: u32,
@@ -56,6 +58,16 @@ pub(crate) struct ProfileCall {
 
 fn default_api_url() -> String {
     "https://api.github.com".to_owned()
+}
+
+impl Input {
+    fn body_bytes(&self) -> Result<Option<Vec<u8>>, Box<HelperError>> {
+        self.json_body
+            .as_ref()
+            .map(serde_json::to_vec)
+            .transpose()
+            .map_err(|error| helper_error("ValueError", error.to_string()))
+    }
 }
 
 impl Helper for Op {
@@ -86,7 +98,16 @@ async fn run(input: &Input) -> HelperResult {
     let payload = match input.operation.as_str() {
         "init" => init(&github),
         "request" => request(&github, input).await?,
-        "fetch_page" => fetch_page(&github, input).await?,
+        "fetch_page" => {
+            fetch_page(
+                &github,
+                &input.path,
+                &input.params,
+                input.page,
+                input.error_message.as_deref(),
+            )
+            .await?
+        }
         "pages" => pages(&github, &input.path, &input.params, input.limit).await?,
         "repositories" => repositories(&github, input).await?,
         "test_repositories" => test_repositories(&github, input).await?,
@@ -129,21 +150,23 @@ fn init(github: &GitHub<Script>) -> Value {
 async fn request(github: &GitHub<Script>, input: &Input) -> HelperResult {
     let method = Method::from_bytes(input.method.as_bytes())
         .map_err(|error| helper_error("ValueError", error.to_string()))?;
-    let response = github_result(github.request(method, &input.path, &input.params, None)).await?;
+    let response = github
+        .request(method, &input.path, &input.params, input.body_bytes()?)
+        .await
+        .map_err(|error| helper_error("SourceError", error.to_string()))?;
     Ok(json!({"status": response.status}))
 }
 
-async fn fetch_page(github: &GitHub<Script>, input: &Input) -> HelperResult {
-    let message = input.error_message.as_deref().unwrap_or(PAGINATION_ERROR);
-    let (items, has_next) = pages::fetch_page::<RepositoryItem, _>(
-        github,
-        &input.path,
-        &input.params,
-        input.page,
-        message,
-    )
-    .await
-    .map_err(|error| helper_error("SourceError", error.to_string()))?;
+async fn fetch_page(
+    github: &GitHub<Script>,
+    path: &str,
+    params: &[(String, String)],
+    page: i64,
+    error_message: Option<&str>,
+) -> HelperResult {
+    let message = error_message.unwrap_or(PAGINATION_ERROR);
+    let fetch = pages::fetch_page::<RepositoryItem, _>(github, path, params, page, message);
+    let (items, has_next) = github_result(fetch).await?;
     Ok(json!({"items": items, "has_next": has_next}))
 }
 

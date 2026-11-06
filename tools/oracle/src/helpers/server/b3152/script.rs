@@ -1,10 +1,10 @@
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, PoisonError};
 
-use axum::http::header::{ACCEPT, AUTHORIZATION};
+use axum::http::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
 use axum::http::{HeaderMap, HeaderName, HeaderValue};
 use betterlite_http::proxy::UpstreamResponse;
-use betterlite_http::proxy::outbound::OutboundRequest;
+use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_server::roi_github::transport::Transport;
 use serde::Deserialize;
@@ -77,12 +77,27 @@ fn recorded(request: &OutboundRequest) -> Value {
             .and_then(|value| value.to_str().ok())
             .map(str::to_owned)
     };
+    let (content_type, body) = match &request.body {
+        RequestBody::Empty | RequestBody::Multipart { .. } => {
+            (header(CONTENT_TYPE.as_str()), Value::Null)
+        }
+        RequestBody::Json(data) => (
+            header(CONTENT_TYPE.as_str()).or_else(|| Some("application/json".to_owned())),
+            serde_json::from_slice(data).unwrap_or(Value::Null),
+        ),
+        RequestBody::Bytes { content_type, data } => (
+            header(CONTENT_TYPE.as_str()).or_else(|| content_type.to_str().ok().map(str::to_owned)),
+            String::from_utf8(data.clone()).map_or(Value::Null, Value::String),
+        ),
+    };
     json!({
         "method": request.method.as_str(),
         "url": request.url.to_string(),
         "query": request.query,
         "accept": header(ACCEPT.as_str()),
         "authorization": header(AUTHORIZATION.as_str()),
+        "content_type": content_type,
+        "body": body,
     })
 }
 

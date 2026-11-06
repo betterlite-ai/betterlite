@@ -1,9 +1,12 @@
 #![cfg(test)]
 
+use std::time::Duration;
+
 use rstest::rstest;
 
+use super::client::ACCEPT_GITHUB_JSON;
 use super::profile_email;
-use super::support::{Script, github, json_reply};
+use super::support::{Script, github, github_with_token, json_reply};
 
 #[rstest]
 #[case::a_public_email("{\"email\":\"User@Example.COM\"}", "user@example.com")]
@@ -34,4 +37,16 @@ async fn the_login_is_percent_encoded_into_the_profile_path() {
         script.seen()[0].url,
         "https://api.github.com/users/octo%20cat%2F..%2F"
     );
+}
+
+#[tokio::test]
+async fn the_profile_request_carries_the_deadline_the_accept_header_and_the_token() {
+    let script = Script::new(vec![json_reply(200, "{\"email\":\"dev@example.com\"}")]);
+    let github = github_with_token(script.clone(), "ghp_secret", "https://api.github.com");
+    let email = profile_email::profile_email(&github, "octocat", "").await;
+    assert_eq!(email, "dev@example.com");
+    let seen = script.seen();
+    assert_eq!(seen[0].deadline, Duration::from_secs(45));
+    assert_eq!(seen[0].accept.as_deref(), Some(ACCEPT_GITHUB_JSON));
+    assert_eq!(seen[0].authorization.as_deref(), Some("Bearer ghp_secret"));
 }

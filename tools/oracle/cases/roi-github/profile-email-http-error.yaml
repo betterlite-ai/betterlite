@@ -1,5 +1,5 @@
 kind: helper
 name: profile-email-http-error
-call: {"b3152": {"operation": "profile_email", "calls": [{"login": "octocat", "fallback": "fallback@example.com"}], "replies": [{"status": 404}]}}
+call: {"b3152": {"operation": "profile_email", "calls": [{"login": "octocat", "fallback": "fallback@example.com"}], "replies": [{"status": 404, "body": {"message": "Not Found"}}]}}
 env: {}
 compare: {ignore: []}

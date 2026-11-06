@@ -4,10 +4,10 @@ use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use axum::http::header::{ACCEPT, AUTHORIZATION};
+use axum::http::header::{ACCEPT, AUTHORIZATION, CONTENT_TYPE};
 use axum::http::{HeaderMap, HeaderName, HeaderValue};
 use betterlite_http::proxy::UpstreamResponse;
-use betterlite_http::proxy::outbound::OutboundRequest;
+use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_roi::settings::{DEFAULT_PROMPT, ROISettings};
 use indexmap::IndexMap;
@@ -31,6 +31,8 @@ pub(crate) struct Seen {
     pub query: Vec<(String, String)>,
     pub accept: Option<String>,
     pub authorization: Option<String>,
+    pub content_type: Option<String>,
+    pub body: Option<String>,
     pub deadline: Duration,
 }
 
@@ -85,12 +87,26 @@ fn recorded(request: &OutboundRequest) -> Seen {
             .and_then(|value| value.to_str().ok())
             .map(str::to_owned)
     };
+    let (body, content_type) = match &request.body {
+        RequestBody::Empty => (None, header(CONTENT_TYPE)),
+        RequestBody::Json(data) => (
+            Some(String::from_utf8(data.clone()).unwrap()),
+            header(CONTENT_TYPE).or_else(|| Some("application/json".to_owned())),
+        ),
+        RequestBody::Bytes { content_type, data } => (
+            Some(String::from_utf8(data.clone()).unwrap_or_default()),
+            header(CONTENT_TYPE).or_else(|| content_type.to_str().ok().map(str::to_owned)),
+        ),
+        RequestBody::Multipart { .. } => panic!("the GitHub client sends no multipart bodies"),
+    };
     Seen {
         method: request.method.to_string(),
         url: request.url.to_string(),
         query: request.query.clone(),
         accept: header(ACCEPT),
         authorization: header(AUTHORIZATION),
+        content_type,
+        body,
         deadline: request.deadline,
     }
 }

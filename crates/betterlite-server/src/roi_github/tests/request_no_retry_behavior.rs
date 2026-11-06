@@ -54,3 +54,24 @@ async fn an_unreachable_transport_reports_the_connection_message() {
     );
     assert_eq!(script.seen().len(), 1);
 }
+
+#[tokio::test]
+async fn a_json_body_reaches_the_transport_as_application_json() {
+    let script = Script::new(vec![json_reply(200, "{}")]);
+    let github = github(script.clone());
+    github
+        .request(
+            Method::POST,
+            "graphql",
+            &[],
+            Some(br#"{"query":"query { viewer { login } }"}"#.to_vec()),
+        )
+        .await
+        .unwrap();
+    let seen = script.seen();
+    assert_eq!(
+        seen[0].body.as_deref(),
+        Some(r#"{"query":"query { viewer { login } }"}"#)
+    );
+    assert_eq!(seen[0].content_type.as_deref(), Some("application/json"));
+}

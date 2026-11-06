@@ -1,5 +1,5 @@
 kind: helper
 name: init-redirects
-call: {"b3152": {"operation": "request", "method": "GET", "path": "repos/octo/repo", "replies": [{"status": 302, "headers": [["location", "https://elsewhere.example/next"]]}, {"status": 200, "body": []}]}}
+call: {"b3152": {"operation": "request", "method": "POST", "path": "repos/octo/repo", "json_body": {"query": "query($owner:String!) { repository(owner:$owner) { name } }"}, "replies": [{"status": 302, "headers": [["location", "https://elsewhere.example/next"]]}, {"status": 200, "body": []}]}}
 env: {}
 compare: {ignore: []}

@@ -22,6 +22,15 @@ class Script(httpx.AsyncBaseTransport):
 
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
         await request.aread()
+        content_type = cast(str | None, request.headers.get("content-type"))
+        raw = request.content
+        body: Json
+        if raw and content_type == "application/json":
+            body = cast(Json, json.loads(raw))
+        elif raw:
+            body = raw.decode()
+        else:
+            body = None
         self.log.append(
             {
                 "method": request.method,
@@ -29,6 +38,8 @@ class Script(httpx.AsyncBaseTransport):
                 "query": [list(pair) for pair in request.url.params.multi_items()],
                 "accept": request.headers.get("accept"),
                 "authorization": request.headers.get("authorization"),
+                "content_type": content_type,
+                "body": body,
             }
         )
         if not self.replies:
@@ -119,6 +130,7 @@ async def request(client: gh.GitHub, input_value: dict[str, Json]) -> dict[str, 
         method,
         client._url(path),  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
         params=params_of(input_value),
+        json_body=input_value.get("json_body"),
         headers=client._headers,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
     )
     return {"status": response.status_code}
