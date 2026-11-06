@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::Verification;
 use betterlite_config::types::ProxyTrust;
-use reqwest::header::{AUTHORIZATION, COOKIE, HeaderMap, HeaderValue};
+use reqwest::header::{AUTHORIZATION, COOKIE, HOST, HeaderMap, HeaderValue, LOCATION};
 use rstest::rstest;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
@@ -20,12 +20,12 @@ use tokio::task::JoinSet;
 use crate::proxy::limits::TransportLimits;
 use crate::proxy::{ProxiedClient, base_builder};
 use crate::user_url::address::is_blocked_text;
-use crate::user_url::error::UserUrlError;
+use crate::user_url::error::{InvalidUrl, UserUrlError};
 use crate::user_url::fetch::UserUrlFetcher;
 use crate::user_url::httpx_url::HttpxUrl;
 use crate::user_url::join::urljoin;
-use crate::user_url::redirect::redirect_url;
-use crate::user_url::split::urlparse;
+use crate::user_url::redirect::{location, redirect_headers, redirect_url};
+use crate::user_url::split::{Parsed, urlparse};
 use crate::user_url::validate::{Resolve, SystemResolver, UrlValidator};
 
 const HINT: &str = ". If this is a legitimate internal service, add the host to `user_url_allowed_hosts` in litellm_settings.";
@@ -99,6 +99,9 @@ impl Resolve for FakeResolver {
 #[case::ipvfuture_host_is_resolved_by_name("http://[v1.x]/", &[], Verification::Enabled, "ssrf: DNS resolution failed for 'v1.x': Name or service not known")]
 #[case::ipv4_in_brackets("http://[1.2.3.4]/", &[], Verification::Enabled, "value: An IPv4 address cannot be in brackets")]
 #[case::bracketed_non_address("http://[zzz]/", &[], Verification::Enabled, "value: 'zzz' does not appear to be an IPv4 or IPv6 address")]
+#[case::ipvfuture_without_hex_digits("http://[v.x]/", &[], Verification::Enabled, "value: IPvFuture address is invalid")]
+#[case::ipvfuture_with_empty_suffix("http://[v1.]/", &[], Verification::Enabled, "value: IPvFuture address is invalid")]
+#[case::netloc_nfkc_introduces_separators("http://a\u{2100}.test/x", &[], Verification::Enabled, "value: netloc 'a\u{2100}.test' contains invalid characters under NFKC normalization")]
 #[case::ipv6_https_allowlisted_without_port("https://[::1]:9/x", &["[::1]"], Verification::Disabled, "https://[::1]:9/x | [::1]:9")]
 #[case::whitespace_and_line_breaks_removed("  http://public.test/\t\nabc", &[], Verification::Enabled, "http://93.184.216.34/abc | public.test")]
 #[tokio::test]
@@ -213,6 +216,7 @@ async fn the_system_resolver_returns_literal_addresses() {
 #[case::v6_fe80_1_eth0("fe80::1%eth0", true)]
 #[case::v6_2001_4860_1_eth0("2001:4860::1%eth0", false)]
 #[case::v6_1_2("::1%", true)]
+#[case::v6_2001_4860_1_empty_zone("2001:4860::1%", true)]
 #[case::bad_empty("", true)]
 #[case::bad_abc("abc", true)]
 #[case::bad_1_2_3("1.2.3", true)]
@@ -309,12 +313,21 @@ fn blocked_addresses_follow_python_313(#[case] address: &str, #[case] blocked: b
     "http://a.test/%41%zz?x=%20%20y"
 )]
 #[case::backslash_and_brace("http://a.test/a", "/b\\c{d}|e", "http://a.test/b\\c%7Bd%7D|e")]
-fn redirect_urls_follow_httpx(
-    #[case] request: &str,
-    #[case] location: &str,
-    #[case] expected: &str,
-) {
-    let observed = match redirect_url(&HttpxUrl::parse(request).unwrap(), location) {
+#[case::three_digit_groups_are_a_host("http://a.test/a", "http://1.2.3/b", "http://1.2.3/b")]
+#[case::a_trailing_dot_group_is_a_host("http://a.test/a", "http://1.2.3./b", "http://1.2.3./b")]
+#[case::ftp_drops_its_default_port("http://a.test/a", "ftp://c.test:21/f", "ftp://c.test/f")]
+#[case::dot_segments_in_a_location("http://a.test/a", "/a/../b", "http://a.test/b")]
+#[case::dot_segments_above_the_root("http://a.test/a", "/../a", "http://a.test/a")]
+#[case::protocol_relative_double_slash("http://a.test/a", "//b.test//x", "http://b.test//x")]
+#[case::userinfo_only_authority("http://a.test/a", "//user@/a/../b", "http://user@/b")]
+#[case::port_only_authority("http://a.test/a", "//:80/a/../b", "http:/b")]
+#[case::scheme_only_location_normalizes(
+    "http://a.test/a",
+    "mailto:a/../b",
+    "error: For absolute URLs, path must be empty or begin with '/'"
+)]
+fn redirect_urls_follow_httpx(#[case] request: &str, #[case] target: &str, #[case] expected: &str) {
+    let observed = match redirect_url(&HttpxUrl::parse(request).unwrap(), target) {
         Ok(url) => url.href(),
         Err(error) => format!("error: {error}"),
     };
@@ -322,17 +335,180 @@ fn redirect_urls_follow_httpx(
 }
 
 #[rstest]
+#[case::three_digit_groups_are_a_host("http://1.2.3/b", "http://1.2.3/b")]
+#[case::a_trailing_dot_group_is_a_host("http://1.2.3./b", "http://1.2.3./b")]
+#[case::ftp_drops_its_default_port("ftp://c.test:21/f", "ftp://c.test/f")]
+#[case::dot_segments_dropped("http://a.test/a/../b", "http://a.test/b")]
+#[case::dot_segments_above_the_root_dropped("http://a.test/../a", "http://a.test/a")]
+#[case::protocol_relative_double_slash_kept("//b.test//x", "//b.test//x")]
+#[case::userinfo_alone_is_an_authority("//user@/a/../b", "//user@/b")]
+#[case::port_alone_is_an_authority("//:80/a/../b", "//:80/b")]
+#[case::scheme_only_url_normalizes_its_path("mailto:a/../b", "mailto:b")]
+fn httpx_urls_normalize_like_httpx(#[case] text: &str, #[case] expected: &str) {
+    let observed = match HttpxUrl::parse(text) {
+        Ok(url) => url.href(),
+        Err(error) => format!("error: {error}"),
+    };
+    assert_eq!(observed, expected);
+}
+
+#[test]
+fn urls_longer_than_the_httpx_limit_fail() {
+    let page = "x".repeat(0x0001_0000 - "http://a.test/".len());
+    HttpxUrl::parse(&format!("http://a.test/{page}")).unwrap();
+    assert_eq!(
+        HttpxUrl::parse(&format!("http://a.test/{page}x")),
+        Err(InvalidUrl::TooLong)
+    );
+}
+
+fn describe_parsed(parsed: &Parsed) -> String {
+    format!(
+        "{}|{}|{}|{}|{}|{}",
+        parsed.scheme, parsed.netloc, parsed.path, parsed.params, parsed.query, parsed.fragment
+    )
+}
+
+#[rstest]
+#[case::digit_only_scheme_is_no_scheme("1:2", "||1:2|||")]
+#[case::params_only_for_uses_params_schemes("custom:a;b", "custom||a;b|||")]
+#[case::http_splits_the_last_segment_params("http://a.test/a;b", "http|a.test|/a|b||")]
+#[case::nfkc_without_separators_is_kept("http://\u{fb01}.test/x", "http|\u{fb01}.test|/x|||")]
+#[case::netloc_without_scheme("//host/x", "|host|/x|||")]
+#[case::a_scheme_only_url_keeps_its_dot_segments("mailto:a/../b", "mailto||a/../b|||")]
+fn urlparse_matches_python_313(#[case] url: &str, #[case] expected: &str) {
+    let parsed = urlparse(url, "").unwrap();
+    assert_eq!(describe_parsed(&parsed), expected);
+}
+
+#[rstest]
+#[case::a_path_under_an_empty_netloc("http:/x", "http:///x")]
+#[case::a_scheme_with_an_empty_path("mailto:", "mailto:")]
+#[case::an_opaque_scheme_keeps_its_slash("mailto:/x", "mailto:/x")]
+#[case::four_slashes_stay_after_an_opaque_scheme("mailto:////x", "mailto:////x")]
+#[case::a_netloc_without_a_scheme("//host/x", "//host/x")]
+#[case::params_are_joined_back_to_the_path("http://a.test/a;b", "http://a.test/a;b")]
+#[case::an_opaque_scheme_keeps_its_params("custom:a;b", "custom:a;b")]
+fn urlunparse_matches_python_313(#[case] url: &str, #[case] expected: &str) {
+    assert_eq!(urlparse(url, "").unwrap().unparse(), expected);
+}
+
+#[test]
+fn urlparse_rejects_a_netloc_that_nfkc_turns_into_separators() {
+    let observed = urlparse("http://a\u{2100}.test/x", "")
+        .unwrap_err()
+        .to_string();
+    assert_eq!(
+        observed,
+        "netloc 'a\u{2100}.test' contains invalid characters under NFKC normalization"
+    );
+}
+
+#[rstest]
+#[case::a_relative_path_keeps_the_base_directory(
+    "http://a.test/a/b",
+    "a/b/c",
+    "http://a.test/a/a/b/c"
+)]
+#[case::a_base_without_a_host_keeps_the_leading_slash("http:/a/b", "c", "http:///a/c")]
+#[case::an_opaque_scheme_returns_the_reference("mailto:a", "mailto:x/../y", "mailto:x/../y")]
+fn urljoin_matches_python_313(#[case] base: &str, #[case] url: &str, #[case] expected: &str) {
+    assert_eq!(urljoin(base, url).unwrap(), expected);
+}
+
+fn describe_headers(headers: &HeaderMap) -> String {
+    format!(
+        "auth={} host={} cookie={} keep={}",
+        headers.contains_key(AUTHORIZATION),
+        headers.contains_key(HOST),
+        headers.contains_key(COOKIE),
+        headers.contains_key("x-keep"),
+    )
+}
+
+#[rstest]
+#[case::same_origin(
+    "http://a.test/a",
+    "http://a.test/b",
+    "auth=true host=true cookie=false keep=true"
+)]
+#[case::another_host(
+    "http://a.test/a",
+    "http://b.test/b",
+    "auth=false host=false cookie=false keep=true"
+)]
+#[case::an_https_upgrade_keeps_authorization(
+    "http://a.test/a",
+    "https://a.test/b",
+    "auth=true host=false cookie=false keep=true"
+)]
+#[case::an_https_downgrade_drops_authorization(
+    "https://a.test/a",
+    "http://a.test/b",
+    "auth=false host=false cookie=false keep=true"
+)]
+#[case::another_port_drops_authorization(
+    "http://a.test/a",
+    "http://a.test:8080/b",
+    "auth=false host=false cookie=false keep=true"
+)]
+fn redirect_headers_follow_httpx(#[case] from: &str, #[case] to: &str, #[case] expected: &str) {
+    let mut headers = HeaderMap::new();
+    headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer k"));
+    headers.insert(COOKIE, HeaderValue::from_static("s=1"));
+    headers.insert(HOST, HeaderValue::from_static("a.test"));
+    headers.insert("x-keep", HeaderValue::from_static("v"));
+    let next = redirect_headers(
+        &headers,
+        &HttpxUrl::parse(from).unwrap(),
+        &HttpxUrl::parse(to).unwrap(),
+    );
+    assert_eq!(describe_headers(&next), expected);
+}
+
+const INVALID_UTF8: &[u8] = b"\xff";
+
+#[rstest]
+#[case::valid_utf8(b"/na\xc3\xafve", None, "/na\u{ef}ve")]
+#[case::latin1(b"/na\xefve", None, "/na\u{ef}ve")]
+#[case::an_invalid_value_makes_every_value_latin1(
+    b"/na\xc3\xafve",
+    Some(INVALID_UTF8),
+    "/na\u{c3}\u{af}ve"
+)]
+fn location_headers_decode_like_httpx(
+    #[case] value: &[u8],
+    #[case] other: Option<&[u8]>,
+    #[case] expected: &str,
+) {
+    let mut headers = HeaderMap::new();
+    headers.insert(LOCATION, HeaderValue::from_bytes(value).unwrap());
+    if let Some(bytes) = other {
+        headers.insert("x-other", HeaderValue::from_bytes(bytes).unwrap());
+    }
+    assert_eq!(location(&headers).as_deref(), Some(expected));
+}
+
+#[test]
+fn repeated_location_headers_join_with_a_comma() {
+    let mut headers = HeaderMap::new();
+    headers.append(LOCATION, HeaderValue::from_static("/x"));
+    headers.append(LOCATION, HeaderValue::from_static("/y"));
+    assert_eq!(location(&headers).as_deref(), Some("/x, /y"));
+}
+
+#[rstest]
 fn replays_the_user_url_corpus(#[files("fuzz/corpus/user_url/*")] path: PathBuf) {
     let text = fs::read_to_string(path).unwrap();
-    let (base, location) = text.split_once('\n').unwrap_or((&text, ""));
+    let (base, target) = text.split_once('\n').unwrap_or((&text, ""));
     let _blocked = is_blocked_text(base);
     if let Ok(parsed) = urlparse(base, "") {
         let _host = (parsed.hostname(), parsed.port());
         let _unparsed = parsed.unparse();
     }
-    let _joined = urljoin(base, location);
+    let _joined = urljoin(base, target);
     if let Ok(request) = HttpxUrl::parse(base) {
-        let _redirect = redirect_url(&request, location);
+        let _redirect = redirect_url(&request, target);
     }
 }
 
@@ -583,6 +759,13 @@ async fn fetch_status(run: Run<'_>) -> (String, Vec<String>) {
     "200",
     &["/ @<app> auth cookie", "/two @<app> auth cookie"],
 )]
+#[case::a_utf8_location_is_quoted_before_the_next_hop(
+    "http://<app>/",
+    &["/ 302 Found|location: /na\u{ef}ve", "/na%C3%AFve 200 OK"],
+    &[],
+    "200",
+    &["/ @<app> auth cookie", "/na%C3%AFve @<app> auth cookie"],
+)]
 #[case::redirect_loop_stops_at_ten_requests(
     "http://<app>/",
     &["/ 302 Found|location: /"],
@@ -648,6 +831,13 @@ async fn redirect_hops_are_validated(
     &["/ 302 Found"],
     &[],
     "302",
+    &["/ @<first> auth cookie"],
+)]
+#[case::a_non_redirect_status_returns_even_with_a_location(
+    "http://<first>/",
+    &["/ 200 OK|location: /two", "/two 200 OK"],
+    &[],
+    "200",
     &["/ @<first> auth cookie"],
 )]
 #[case::an_invalid_location_names_the_header(

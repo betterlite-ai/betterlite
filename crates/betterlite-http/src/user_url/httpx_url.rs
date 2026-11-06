@@ -32,17 +32,13 @@ fn quote(text: &str, escaped: &str) -> String {
     let mut quoted = String::with_capacity(text.len());
     let mut rest = text;
     while let Some(letter) = rest.chars().next() {
-        let escape = rest.get(..3).filter(|piece| {
-            let mut chars = piece.chars();
-            chars.next() == Some('%') && chars.all(|digit| digit.is_ascii_hexdigit())
-        });
-        let width = if escape.is_some() {
-            3
-        } else {
-            letter.len_utf8()
-        };
+        let width = rest
+            .strip_prefix('%')
+            .and_then(|hex| hex.get(..2))
+            .filter(|hex| hex.chars().all(|digit| digit.is_ascii_hexdigit()))
+            .map_or_else(|| letter.len_utf8(), |_hex| 3);
         let (taken, tail) = rest.split_at_checked(width).unwrap_or((rest, ""));
-        if escape.is_some() || ((' '..='~').contains(&letter) && !escaped.contains(letter)) {
+        if (' '..='~').contains(&letter) && !escaped.contains(letter) {
             quoted.push_str(taken);
         } else {
             quoted.extend(taken.bytes().map(|byte| format!("%{byte:02X}")));
