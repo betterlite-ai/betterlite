@@ -1,6 +1,8 @@
 #![cfg(test)]
 
 use std::cell::Cell;
+use std::fs;
+use std::path::Path;
 use std::slice::from_ref;
 
 use betterlite_models::decisions::Json;
@@ -102,7 +104,10 @@ fn json_mode_filter() {
     json_mode_filter_mixed();
 }
 
+const JSON_MODE_LOG: &str = "Processing JSON tool call response for response_format";
+
 fn json_mode_filter_unchanged() {
+    let (logs, _guard) = capture();
     let real = tool_call(Some("real"), Some(r#"{"x": 1}"#), 0);
     let disabled = filter_json_mode_tools(false, from_ref(&real), Some("keep"));
     assert_eq!(disabled.tools, Some(vec![real.clone()]));
@@ -115,6 +120,7 @@ fn json_mode_filter_unchanged() {
     let unchanged = filter_json_mode_tools(true, from_ref(&real), Some("keep"));
     assert_eq!(unchanged.tools, Some(vec![real]));
     assert_eq!(unchanged.content.as_deref(), Some("keep"));
+    assert!(!logs.text().contains(JSON_MODE_LOG));
 }
 
 fn json_mode_filter_synthetic_only() {
@@ -125,10 +131,7 @@ fn json_mode_filter_synthetic_only() {
     )];
     let (logs, _guard) = capture();
     let replaced = filter_json_mode_tools(true, &synthetic, Some("old"));
-    assert!(
-        logs.text()
-            .contains("Processing JSON tool call response for response_format")
-    );
+    assert!(logs.text().contains(JSON_MODE_LOG));
     assert_eq!(replaced.tools, None);
     assert_eq!(replaced.content.as_deref(), Some(r#"{"a": 1}"#));
 
@@ -151,6 +154,7 @@ fn json_mode_filter_synthetic_only() {
 }
 
 fn json_mode_filter_mixed() {
+    let (logs, _guard) = capture();
     let real = tool_call(Some("real"), Some(r#"{"x": 1}"#), 0);
     let mixed = vec![
         real.clone(),
@@ -169,6 +173,7 @@ fn json_mode_filter_mixed() {
     );
     assert_eq!(mixed_missing.content.as_deref(), Some("keep"));
     assert_eq!(mixed_missing.tools, Some(vec![real]));
+    assert!(!logs.text().contains(JSON_MODE_LOG));
 }
 
 fn wrapped_properties() {
@@ -198,6 +203,21 @@ fn wrapped_properties() {
     assert_eq!(unwrap_bedrock_properties("{}"), "{}");
     assert_eq!(unwrap_bedrock_properties("42"), "42");
     assert_eq!(unwrap_bedrock_properties("null"), "null");
+    wrapped_properties_past_recursion_limit();
+}
+
+fn deep_content() -> String {
+    fs::read_to_string(
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("fuzz/corpus/bedrock_converse_content/rejected-past-recursion-limit.json"),
+    )
+    .unwrap()
+}
+
+// serde_json caps nesting at 128 levels, so this stays the original text instead of unwrapping.
+fn wrapped_properties_past_recursion_limit() {
+    let wrapped = format!("{{\"properties\": {}}}", deep_content());
+    assert_eq!(unwrap_bedrock_properties(&wrapped), wrapped);
 }
 
 const TRANSLATION_BLOCKS: &str = r#"[
@@ -356,6 +376,7 @@ fn content_function_recovery() {
     recovery_with_arguments();
     recovery_failures();
     recovery_without_match();
+    recovery_past_recursion_limit();
 }
 
 fn recovery_with_arguments() {
@@ -388,6 +409,32 @@ fn recovery_with_arguments() {
         parameters.tool_calls,
         Some(vec![recovered_call(r#"{"p": 1}"#)])
     );
+
+    let mut literal = message(Some(
+        r#"{"type": "function", "name": "alpha", "arguments": "{\"x\": 1}"}"#,
+    ));
+    let literal_finish = recover_tool_call(&mut literal, Some(&tools), Some("stop"), &identifier);
+    assert_eq!(literal_finish.as_deref(), Some("tool_calls"));
+    assert_eq!(literal.content, None);
+    assert_eq!(
+        literal.tool_calls,
+        Some(vec![recovered_call(r#"{"x": 1}"#)])
+    );
+}
+
+// serde_json caps nesting at 128 levels, so the content stays byte for byte as sent.
+fn recovery_past_recursion_limit() {
+    let content = format!(
+        "{{\"type\": \"function\", \"name\": \"alpha\", \"arguments\": {{\"deep\": {}}}}}",
+        deep_content()
+    );
+    let tools = function_tools();
+    let identifier = Uuid::nil;
+    let mut unchanged = message(Some(content.as_str()));
+    let finish = recover_tool_call(&mut unchanged, Some(&tools), Some("stop"), &identifier);
+    assert_eq!(finish.as_deref(), Some("stop"));
+    assert_eq!(unchanged.content.as_deref(), Some(content.as_str()));
+    assert_eq!(unchanged.tool_calls, None);
 }
 
 fn recovery_failures() {
