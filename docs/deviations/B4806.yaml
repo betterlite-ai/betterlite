@@ -1,0 +1,14 @@
+task: B4806
+deviations:
+  - what: Pydantic model detection uses Rust trait bounds (Serialize) instead of isinstance checks for model_dump and dict protocols, so any serializable params type is accepted.
+    why: Rust requires explicit trait bounds at compile time rather than runtime duck typing.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/pydantic_ai_agents/transformation.py#L83-L93
+  - what: The agent transport is a trait the caller supplies, and the poll pause goes through it. betterlite-a2a ships no HTTP client for this provider.
+    why: The gateway wiring that owns the HTTP client and the per-request timeout belongs to B4809, and an injected transport keeps the 0.5 second pauses testable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/pydantic_ai_agents/transformation.py#L200-L215
+  - what: PydanticAIHandler and PydanticAIProviderConfig each expose one generic handle method, and the delivery type (ProjectedMessage or ReplayedStream) picks the non-streaming or streaming path instead of two named methods. The provider does not implement BaseA2AProviderConfig, and streaming returns the simulated events with their delays instead of an async iterator.
+    why: BaseA2AProviderConfig returns the completion bridge's SendMessageResponse and StreamEvent types, which cannot carry the Pydantic AI task messages, the repository's one-line-function rules forbid two thin named wrappers over the shared path, and the caller paces the replay by sleeping for each event's delay.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/pydantic_ai_agents/config.py#L20-L57
+  - what: A chunk_size of zero or below is rejected when the streaming kwargs are read, before any request. LiteLLM passes it through to range(), so a negative chunk size emits no artifact-update events at all and zero raises only when the answer text is non-empty.
+    why: StreamPacing from B4805 holds a NonZeroUsize, and a chunk size that silently drops the answer text is not a setting a working agent relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/pydantic_ai_agents/transformation.py#L503-L508

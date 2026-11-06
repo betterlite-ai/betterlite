@@ -1,0 +1,8 @@
+kind: helper
+name: watsonx-config-extract-cp4d
+call:
+  b4807:
+    operation: config
+    litellm_params: {cp4d_host: "https://cp4d.example.com", instance_id: inst-1, wxo_agent_id: agent-1, api_key: key-1, username: alice, thread_id: thread-1}
+env: {}
+compare: {ignore: []}
