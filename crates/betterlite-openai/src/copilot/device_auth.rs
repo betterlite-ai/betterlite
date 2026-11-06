@@ -175,14 +175,14 @@ where
     O: OperatorOutput,
 {
     pub async fn get_access_token(&mut self) -> Result<SecretString, DeviceAuthError> {
-        if let Some(token) = self.read_cached_token() {
+        if let Some(token) = self.read_cached_token().await {
             return Ok(token);
         }
         for attempt in 1..=LOGIN_ATTEMPTS {
             tracing::debug!(attempt, "acquiring a Copilot access token");
             match self.login().await {
                 Ok(token) => {
-                    self.save_access_token(&token);
+                    self.save_access_token(&token).await;
                     return Ok(token);
                 }
                 Err(error) => {
@@ -193,8 +193,8 @@ where
         Err(DeviceAuthError::Exhausted)
     }
 
-    fn read_cached_token(&mut self) -> Option<SecretString> {
-        let Ok(bytes) = self.files.read(&self.access_token_path) else {
+    async fn read_cached_token(&mut self) -> Option<SecretString> {
+        let Ok(bytes) = self.files.read(&self.access_token_path).await else {
             tracing::warn!("no existing Copilot access token was found");
             return None;
         };
@@ -210,10 +210,11 @@ where
         }
     }
 
-    fn save_access_token(&mut self, token: &SecretString) {
+    async fn save_access_token(&mut self, token: &SecretString) {
         if self
             .files
             .write(&self.access_token_path, token.expose_secret().as_bytes())
+            .await
             .is_err()
         {
             tracing::error!("the Copilot access token could not be saved");

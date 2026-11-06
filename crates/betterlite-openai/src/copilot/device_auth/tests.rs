@@ -85,21 +85,30 @@ impl FileAccess for Files {
         Ok(())
     }
 
-    fn read(&mut self, _path: &Path) -> io::Result<Vec<u8>> {
+    fn read<'call>(
+        &'call mut self,
+        _path: &'call Path,
+    ) -> impl Future<Output = io::Result<Vec<u8>>> + Send + 'call {
         if self.fault == Fault::Read {
-            return Err(io::Error::from(io::ErrorKind::NotFound));
+            return ready(Err(io::Error::from(io::ErrorKind::NotFound)));
         }
-        self.content
-            .clone()
-            .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound))
+        ready(
+            self.content
+                .clone()
+                .ok_or_else(|| io::Error::from(io::ErrorKind::NotFound)),
+        )
     }
 
-    fn write(&mut self, _path: &Path, content: &[u8]) -> io::Result<()> {
+    fn write<'call>(
+        &'call mut self,
+        _path: &'call Path,
+        content: &'call [u8],
+    ) -> impl Future<Output = io::Result<()>> + Send + 'call {
         self.writes.push(content.to_vec());
         if self.fault == Fault::Write {
-            return Err(io::Error::other("scripted write failure"));
+            return ready(Err(io::Error::other("scripted write failure")));
         }
-        Ok(())
+        ready(Ok(()))
     }
 }
 
