@@ -40,3 +40,7 @@ axum.workspace = true
 rstest = "=0.27.0"
 temp-env = "0.3.6"
 tracing-subscriber.workspace = true
+
+[[test]]
+name = "vigil_guard"
+path = "src/vigil_guard/tests.rs"
