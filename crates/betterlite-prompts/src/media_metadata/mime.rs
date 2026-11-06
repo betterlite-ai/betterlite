@@ -54,7 +54,6 @@ const TYPES_MAP: &[(&str, &str)] = &[
     ("m1v", "video/mpeg"),
     ("m3u", "application/vnd.apple.mpegurl"),
     ("m3u8", "application/vnd.apple.mpegurl"),
-    ("m4a", "audio/mp4"), // from this host's /etc/mime.types, not pure Python's types_map
     ("man", "application/x-troff-man"),
     ("markdown", "text/markdown"),
     ("md", "text/markdown"),
@@ -109,7 +108,7 @@ const TYPES_MAP: &[(&str, &str)] = &[
     ("rgb", "image/x-rgb"),
     ("roff", "application/x-troff"),
     ("rst", "text/x-rst"),
-    ("rtf", "application/rtf"), // host's /etc/mime.types overrides pure Python's text/rtf
+    ("rtf", "text/rtf"),
     ("rtx", "text/richtext"),
     ("sgm", "text/x-sgml"),
     ("sgml", "text/x-sgml"),
@@ -153,8 +152,6 @@ const TYPES_MAP: &[(&str, &str)] = &[
     ("xpm", "image/x-xpixmap"),
     ("xsl", "application/xml"),
     ("xwd", "image/x-xwindowdump"),
-    ("yaml", "application/yaml"), // from this host's /etc/mime.types, not pure Python's types_map
-    ("yml", "application/yaml"),  // from this host's /etc/mime.types, not pure Python's types_map
     ("zip", "application/zip"),
 ];
 

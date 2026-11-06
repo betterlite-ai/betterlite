@@ -147,6 +147,16 @@ fn run(scenario: Scenario) {
     expected_filename: Some("report.pdf.gz"),
     expected_content_type: "application/pdf",
 })]
+#[case::rtf_uses_the_pure_python_mimetypes_value(Scenario::Metadata {
+    file_data: FileData::Tuple2 { filename: Some("notes.rtf".to_owned()), content: bytes(b"x") },
+    expected_filename: Some("notes.rtf"),
+    expected_content_type: "text/rtf",
+})]
+#[case::docx_has_no_pure_python_mapping_so_it_stays_octet_stream(Scenario::Metadata {
+    file_data: FileData::Tuple2 { filename: Some("report.docx".to_owned()), content: bytes(b"x") },
+    expected_filename: Some("report.docx"),
+    expected_content_type: "application/octet-stream",
+})]
 #[case::in_memory_file_uses_its_own_content_type(Scenario::Metadata {
     file_data: FileData::InMemoryFile {
         name: "batch.jsonl".to_owned(),
