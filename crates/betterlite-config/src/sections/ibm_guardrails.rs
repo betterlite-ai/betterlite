@@ -1,7 +1,9 @@
 use std::collections::BTreeMap;
+use std::time::{Duration, TryFromFloatSecsError};
 
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
+use serde::de::Error as DeserializeError;
 
 use super::Section;
 use super::guardrail_identity::config_models::GuardrailConfigModelIdentity;
@@ -35,7 +37,17 @@ struct Parameters {
     detector_id: Option<String>,
     is_detector_server: Option<bool>,
     verify_ssl: Option<bool>,
+    timeout: Option<RawTimeout>,
     optional_params: Option<OptionalParameters>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum RawTimeout {
+    Number(f64),
+    Text(String),
+    Boolean(bool),
+    Empty(()),
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -90,6 +102,7 @@ pub struct Configured {
     pub score_threshold: Option<f64>,
     pub block_on_detection: bool,
     pub ssl_verification: Verification,
+    pub timeout: Option<Duration>,
 }
 
 impl Section for Raw {
@@ -148,7 +161,45 @@ impl Entry {
             } else {
                 Verification::Disabled
             },
+            timeout: resolve_timeout(parameters.timeout, &format!("{prefix}.timeout"), lookup)?,
         })
+    }
+}
+
+fn resolve_timeout<L>(
+    raw: Option<RawTimeout>,
+    path: &str,
+    lookup: &L,
+) -> Result<Option<Duration>, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let seconds = match raw {
+        None | Some(RawTimeout::Empty(())) => return Ok(None),
+        Some(RawTimeout::Number(number)) => number,
+        Some(RawTimeout::Boolean(boolean)) => f64::from(u8::from(boolean)),
+        Some(RawTimeout::Text(text)) => {
+            let resolved = resolve_string(text, path, lookup)?;
+            if resolved.is_empty() {
+                return Ok(None);
+            }
+            resolved
+                .trim()
+                .parse::<f64>()
+                .map_err(|source| ConfigError::InvalidFloat {
+                    path: path.to_owned(),
+                    source,
+                })?
+        }
+    };
+    Duration::try_from_secs_f64(seconds)
+        .map(Some)
+        .map_err(|source| timeout_error(path, &source))
+}
+
+fn timeout_error(path: &str, source: &TryFromFloatSecsError) -> ConfigError {
+    ConfigError::Yaml {
+        source: <serde_saphyr::Error as DeserializeError>::custom(format!("{path}: {source}")),
     }
 }
 

@@ -21,6 +21,7 @@ fn configured() -> Configured {
         score_threshold: None,
         block_on_detection: true,
         ssl_verification: Verification::Enabled,
+        timeout: None,
     }
 }
 

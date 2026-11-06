@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::ibm_guardrails::Configured;
@@ -9,7 +10,7 @@ use rstest::rstest;
 use secrecy::ExposeSecret as _;
 
 use super::IbmDetectorConfig;
-use crate::ibm_detector_client::client::IbmDetectorClient;
+use crate::ibm_detector_client::client::{DEFAULT_TIMEOUT, IbmDetectorClient};
 
 const DETECTOR_SERVER: &str = "guardrails:
   - guardrail_name: ibm
@@ -67,6 +68,26 @@ fn config_appends_to_a_base_url_with_a_trailing_slash() {
         config.api_url,
         "https://detector.test//api/v1/text/contents"
     );
+}
+
+#[test]
+fn config_uses_the_configured_timeout() {
+    let source = DETECTOR_SERVER.replace(
+        "      detector_id: jailbreak\n",
+        "      detector_id: jailbreak\n      timeout: 5\n",
+    );
+    let config = config_from(&source, &[]);
+    assert_eq!(config.timeout, Some(Duration::from_secs(5)));
+    let client = IbmDetectorClient::new(config).expect("client");
+    assert_eq!(client.timeout, Duration::from_secs(5));
+}
+
+#[test]
+fn config_falls_back_to_the_default_timeout() {
+    let config = config_from(DETECTOR_SERVER, &[]);
+    assert_eq!(config.timeout, None);
+    let client = IbmDetectorClient::new(config).expect("client");
+    assert_eq!(client.timeout, DEFAULT_TIMEOUT);
 }
 
 #[test]

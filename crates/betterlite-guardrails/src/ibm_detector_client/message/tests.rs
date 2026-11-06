@@ -22,6 +22,7 @@ fn config(score_threshold: Option<f64>) -> IbmDetectorConfig {
         score_threshold,
         block_on_detection: true,
         ssl_verification: Verification::Enabled,
+        timeout: None,
     }
 }
 

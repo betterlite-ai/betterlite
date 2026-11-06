@@ -3,12 +3,12 @@ name: status-no-violations-success
 call:
   b3736:
     detect:
-      settings: {auth_token: test-token, detector_id: jailbreak-detector}
+      settings:
+        auth_token: test-token
+        detector_id: jailbreak-detector
+        is_detector_server: false
       environment: {}
-      contents: ["first message", "second message"]
-      answer:
-        status: 200
-        headers: {}
-        body: [[], []]
+      contents: [hello]
+      answer: {status: 200, headers: {}, body: {}}
 env: {}
 compare: {ignore: []}

@@ -22,6 +22,7 @@ fn config(score_threshold: Option<f64>) -> IbmDetectorConfig {
         score_threshold,
         block_on_detection: true,
         ssl_verification: Verification::Enabled,
+        timeout: None,
     }
 }
 
@@ -51,8 +52,8 @@ fn kept_scores(config: &IbmDetectorConfig, scores: &[f64]) -> Vec<f64> {
 fn threshold_absent_accepts_every_detection() {
     let config = config(None);
     assert_eq!(
-        kept_scores(&config, &[0.0_f64, 0.5_f64]),
-        [0.0_f64, 0.5_f64]
+        kept_scores(&config, &[-0.5_f64, 0.0_f64, 0.5_f64]),
+        [-0.5_f64, 0.0_f64, 0.5_f64]
     );
 }
 

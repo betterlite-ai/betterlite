@@ -51,6 +51,7 @@ impl TryFrom<Configured> for IbmDetectorConfig {
             score_threshold: settings.score_threshold,
             block_on_detection: settings.block_on_detection,
             ssl_verification: settings.ssl_verification,
+            timeout: settings.timeout,
         })
     }
 }

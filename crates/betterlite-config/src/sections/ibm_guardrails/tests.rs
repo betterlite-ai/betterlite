@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use rstest::rstest;
 use secrecy::ExposeSecret as _;
@@ -52,6 +53,7 @@ fn ibm_guardrails_section_applies_the_constructor_defaults() {
     assert!(entry.detector_params.is_empty());
     assert!(entry.extra_headers.is_empty());
     assert_eq!(entry.score_threshold, None);
+    assert_eq!(entry.timeout, None);
 }
 
 #[test]
@@ -68,6 +70,7 @@ fn ibm_guardrails_section_loads_every_key() {
       detector_id: jailbreak-detector
       is_detector_server: false
       verify_ssl: false
+      timeout: 5
       optional_params:
         detector_params: {threshold: 3, labels: [a, b]}
         extra_headers: {X-Tenant: acme}
@@ -83,6 +86,7 @@ fn ibm_guardrails_section_loads_every_key() {
     );
     assert_eq!(entry.base_url.as_deref(), Some("https://detector.test"));
     assert_eq!(entry.detector_id.as_deref(), Some("jailbreak-detector"));
+    assert_eq!(entry.timeout, Some(Duration::from_secs(5)));
     assert!(!entry.is_detector_server);
     assert_eq!(entry.ssl_verification, Verification::Disabled);
     assert!(!entry.block_on_detection);
@@ -178,6 +182,7 @@ fn ibm_guardrails_section_reads_null_as_the_default(#[case] line: &str, #[case] 
 fn ibm_guardrails_section_reads_null_optional_values_as_defaults() {
     let source = with_params(
         "      verify_ssl: null
+      timeout: null
       optional_params:
         detector_params: null
         extra_headers: null
@@ -192,6 +197,38 @@ fn ibm_guardrails_section_reads_null_optional_values_as_defaults() {
     assert!(entry.detector_params.is_empty());
     assert!(entry.extra_headers.is_empty());
     assert_eq!(entry.score_threshold, None);
+    assert_eq!(entry.timeout, None);
+}
+
+#[rstest]
+#[case::seconds("5", Some(Duration::from_secs(5)))]
+#[case::fraction("0.5", Some(Duration::from_millis(500)))]
+#[case::numeric_string("'2.5'", Some(Duration::from_millis(2500)))]
+#[case::null("null", None)]
+#[case::empty_string("''", None)]
+fn ibm_guardrails_section_reads_the_configured_timeout(
+    #[case] line: &str,
+    #[case] expected: Option<Duration>,
+) {
+    let source = with_params(&format!("      timeout: {line}\n"));
+    let guardrails = load(&source, &[]).unwrap();
+    assert_eq!(guardrails.first().unwrap().timeout, expected);
+}
+
+#[test]
+fn ibm_guardrails_section_reads_a_timeout_reference() {
+    let source = with_params("      timeout: os.environ/IBM_TIMEOUT\n");
+    let guardrails = load(&source, &[("IBM_TIMEOUT", "2.5")]).unwrap();
+    assert_eq!(
+        guardrails.first().unwrap().timeout,
+        Some(Duration::from_millis(2500))
+    );
+}
+
+#[test]
+fn ibm_guardrails_section_rejects_a_negative_timeout() {
+    let source = with_params("      timeout: -1\n");
+    load(&source, &[]).unwrap_err();
 }
 
 #[test]

@@ -39,10 +39,11 @@ impl IbmDetectorClient {
         };
         let builder = apply_policy(base_builder(), &policy)?;
         let http = builder.build().map_err(IbmClientError::Build)?;
+        let timeout = config.timeout.unwrap_or(DEFAULT_TIMEOUT);
         Ok(Self {
             config,
             http,
-            timeout: DEFAULT_TIMEOUT,
+            timeout,
         })
     }
 

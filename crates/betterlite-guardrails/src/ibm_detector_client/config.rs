@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use betterlite_config::tls::Verification;
 use secrecy::SecretString;
@@ -20,4 +21,5 @@ pub struct IbmDetectorConfig {
     pub score_threshold: Option<f64>,
     pub block_on_detection: bool,
     pub ssl_verification: Verification,
+    pub timeout: Option<Duration>,
 }
