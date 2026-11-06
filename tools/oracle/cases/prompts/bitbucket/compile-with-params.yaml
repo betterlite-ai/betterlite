@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "compile-with-params", "call": {"b4056": {"mode": "compile", "prompt_id": "greeting", "files": {"greeting": "---\nmodel: gpt-4\ntemperature: 0.2\nmax_tokens: 64\ntop_p: 0.9\nfrequency_penalty: 0.1\npresence_penalty:\n---\nUser: Hello"}}}, "env": {}, "compare": {"ignore": []}}
