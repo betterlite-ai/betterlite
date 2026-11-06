@@ -168,7 +168,11 @@ async fn an_included_usage_chunk_closes_the_mock_stream() {
     assert_eq!(frames[5], "data: [DONE]");
     let usage: UsageFrame =
         serde_json::from_str(frames[4].trim_start_matches("data: ")).expect("usage frame");
-    assert!(usage.choices.is_empty());
+    let choice = usage.choices.first().expect("choice");
+    assert_eq!(choice.index, 0);
+    assert_eq!(choice.delta.role, None);
+    assert_eq!(choice.delta.content, None);
+    assert_eq!(choice.finish_reason, None);
     assert_eq!(usage.usage.prompt, 10);
     assert_eq!(usage.usage.completion, 20);
     assert_eq!(usage.usage.total, 30);

@@ -92,7 +92,7 @@ impl ChatExecutor {
             return Err(ChatError::Streaming);
         }
         if let Some(plan) = self.mock_plan(deployment, request) {
-            return self.mocked_outcome(&plan, deployment);
+            return self.mocked_outcome(&plan, deployment, request);
         }
         let outbound = self.outbound(deployment, request, "application/json")?;
         let started = Instant::now();
@@ -136,6 +136,7 @@ impl ChatExecutor {
         &self,
         plan: &MockPlan<'_>,
         deployment: &ChatDeployment,
+        request: &ChatRequest,
     ) -> Result<ChatOutcome, ChatError> {
         let id = format!("chatcmpl-{}", (self.next_id)());
         let response = (self.mock_chat)(
@@ -147,7 +148,7 @@ impl ChatExecutor {
         )
         .map_err(mock_failure)?;
         Ok(ChatOutcome {
-            response,
+            response: response.for_client(request.model.as_deref()),
             upstream: UpstreamResponse {
                 status: 200,
                 headers: HeaderMap::new(),

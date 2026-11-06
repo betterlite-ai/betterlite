@@ -202,8 +202,8 @@ async fn mock_calls_behavior_tests_behavior() {
     let headers = response.headers().clone();
     let body = to_bytes(response.into_body(), 8192).await.unwrap();
     let answer: MockAnswer = serde_json::from_slice(&body).unwrap();
-    // mock_completion receives the model with its provider prefix stripped
-    assert_eq!(answer.model, "up");
+    // a body model restamps the answer, and the stripped deployment model is the fallback
+    assert_eq!(answer.model, "g");
     assert_eq!(
         answer
             .choices

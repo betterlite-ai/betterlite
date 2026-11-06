@@ -248,3 +248,28 @@ async fn a_mock_embedding_answers_with_the_stripped_model() {
     let reply: MockEmbeddingReply = serde_json::from_slice(&body).expect("reply");
     assert_eq!(reply.model, "text-embedding-3-small");
 }
+
+#[tokio::test]
+async fn a_mock_embedding_answers_with_the_body_model() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(
+        "model_list:\n  - {model_name: emb, litellm_params: {model: openai/text-embedding-3-small, api_base: 'http://127.0.0.1:1', mock_response: [0.1]}}\n",
+    )
+    .expect("config");
+    let executor =
+        chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).expect("executor");
+    let request = Request::post("/v1/embeddings")
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"model":"alias","input":"hello"}"#))
+        .expect("request");
+    let response = embedding_routes(Arc::new(executor))
+        .oneshot(request)
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 8192).await.expect("body");
+    let reply: MockEmbeddingReply = serde_json::from_slice(&body).expect("reply");
+    assert_eq!(reply.model, "alias");
+}

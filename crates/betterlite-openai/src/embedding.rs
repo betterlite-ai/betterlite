@@ -188,7 +188,7 @@ pub async fn send(
     );
     // LiteLLM mocks an embedding only when mock_response itself is set, unlike the chat path
     if let Some(response) = mock.and_then(|plan| plan.response) {
-        return mocked_embedding(executor, deployment, response);
+        return mocked_embedding(executor, deployment, request, response);
     }
     let (model, api_key) = servable(deployment)?;
     let post = post(deployment, request, model, api_key)?;
@@ -217,11 +217,12 @@ pub async fn send(
 fn mocked_embedding(
     executor: &ChatExecutor,
     deployment: &ChatDeployment,
+    request: &EmbeddingRequest,
     response: &MockResponse,
 ) -> Result<EmbeddingOutcome, EmbeddingError> {
     let answer = (executor.mock_embedding)(Some(response), mock_model(&deployment.litellm_model))?;
     Ok(EmbeddingOutcome {
-        response: answer,
+        response: answer.for_client(request.model.as_deref()),
         upstream: UpstreamResponse {
             status: 200,
             headers: HeaderMap::new(),
