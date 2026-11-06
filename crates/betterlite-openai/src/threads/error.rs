@@ -3,6 +3,8 @@ use http::header::InvalidHeaderValue;
 use thiserror::Error;
 use url::ParseError;
 
+use crate::assistants::error::AssistantsError;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReplyFault {
     Malformed,
@@ -46,4 +48,31 @@ pub enum ThreadsError {
         #[source]
         source: serde_json::Error,
     },
+}
+
+impl From<AssistantsError> for ThreadsError {
+    fn from(error: AssistantsError) -> Self {
+        match error {
+            AssistantsError::MissingApiKey => Self::MissingApiKey,
+            AssistantsError::BaseUrl { source } => Self::BaseUrl { source },
+            AssistantsError::Header { source } => Self::Header { source },
+            AssistantsError::EmptyAssistantId => Self::EmptyThreadId,
+            AssistantsError::DotSegment { segment } => Self::DotSegment { segment },
+            AssistantsError::Encode { source } => Self::Encode { source },
+            AssistantsError::Transport { source } => Self::Transport { source },
+            AssistantsError::Status { status, body } => Self::Status { status, body },
+            AssistantsError::Malformed { source } => Self::Reply {
+                fault: ReplyFault::Malformed,
+                source,
+            },
+            AssistantsError::Truncated { source } => Self::Reply {
+                fault: ReplyFault::Truncated,
+                source,
+            },
+            AssistantsError::Shape { source } => Self::Reply {
+                fault: ReplyFault::Shape,
+                source,
+            },
+        }
+    }
 }
