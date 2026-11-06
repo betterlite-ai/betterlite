@@ -22,41 +22,28 @@ struct RawRouter {
     #[serde(default)]
     disable_cooldowns: Option<bool>,
     #[serde(default)]
-    allowed_fails_policy: Option<RawPolicy>,
+    allowed_fails_policy: Option<AllowedFailsPolicy>,
 }
 
-#[derive(Debug, Default, Deserialize)]
-struct RawPolicy {
-    #[serde(rename = "ContentPolicyViolationErrorAllowedFails")]
-    content_policy_violation: Option<u32>,
-    #[serde(rename = "BadRequestErrorAllowedFails")]
-    bad_request: Option<u32>,
-    #[serde(rename = "AuthenticationErrorAllowedFails")]
-    authentication: Option<u32>,
-    #[serde(rename = "TimeoutErrorAllowedFails")]
-    timeout: Option<u32>,
-    #[serde(rename = "RateLimitErrorAllowedFails")]
-    rate_limit: Option<u32>,
-    #[serde(rename = "InternalServerErrorAllowedFails")]
-    internal_server: Option<u32>,
-    #[serde(rename = "ServiceUnavailableErrorAllowedFails")]
-    service_unavailable: Option<u32>,
-    #[serde(rename = "BadGatewayErrorAllowedFails")]
-    bad_gateway: Option<u32>,
-    #[serde(rename = "NotFoundErrorAllowedFails")]
-    not_found: Option<u32>,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
 pub struct AllowedFailsPolicy {
+    #[serde(default, rename = "ContentPolicyViolationErrorAllowedFails")]
     pub content_policy_violation: Option<u32>,
+    #[serde(default, rename = "BadRequestErrorAllowedFails")]
     pub bad_request: Option<u32>,
+    #[serde(default, rename = "AuthenticationErrorAllowedFails")]
     pub authentication: Option<u32>,
+    #[serde(default, rename = "TimeoutErrorAllowedFails")]
     pub timeout: Option<u32>,
+    #[serde(default, rename = "RateLimitErrorAllowedFails")]
     pub rate_limit: Option<u32>,
+    #[serde(default, rename = "InternalServerErrorAllowedFails")]
     pub internal_server: Option<u32>,
+    #[serde(default, rename = "ServiceUnavailableErrorAllowedFails")]
     pub service_unavailable: Option<u32>,
+    #[serde(default, rename = "BadGatewayErrorAllowedFails")]
     pub bad_gateway: Option<u32>,
+    #[serde(default, rename = "NotFoundErrorAllowedFails")]
     pub not_found: Option<u32>,
 }
 
@@ -101,29 +88,11 @@ impl Section for Raw {
             default_allowed_fails,
             cooldown_time: configured_cooldown.unwrap_or(default_cooldown),
             disable_cooldowns: self.router_settings.disable_cooldowns.unwrap_or(false),
-            allowed_fails_policy: self
-                .router_settings
-                .allowed_fails_policy
-                .as_ref()
-                .map(policy),
+            allowed_fails_policy: self.router_settings.allowed_fails_policy,
             failure_ratio_threshold,
             minimum_requests,
             single_deployment_traffic,
         })
-    }
-}
-
-const fn policy(raw: &RawPolicy) -> AllowedFailsPolicy {
-    AllowedFailsPolicy {
-        content_policy_violation: raw.content_policy_violation,
-        bad_request: raw.bad_request,
-        authentication: raw.authentication,
-        timeout: raw.timeout,
-        rate_limit: raw.rate_limit,
-        internal_server: raw.internal_server,
-        service_unavailable: raw.service_unavailable,
-        bad_gateway: raw.bad_gateway,
-        not_found: raw.not_found,
     }
 }
 
