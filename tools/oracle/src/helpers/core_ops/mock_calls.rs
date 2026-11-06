@@ -1,4 +1,4 @@
-use betterlite_config::sections::mock_response::failure::MockError;
+use betterlite_config::sections::mock_response::failure::{MockError, MockFailure};
 use betterlite_config::sections::mock_response::selection::{
     MockPermission, MockPlan, resolve_mock,
 };
@@ -7,8 +7,6 @@ use betterlite_core::mock::chat::{self, ChatAnswer};
 use betterlite_core::mock::embedding;
 use betterlite_core::mock::stream::{self, StreamSpec};
 use betterlite_core::mock::timeout::{self, TimeoutValue};
-use betterlite_openai::chat::response::ChatResponse;
-use betterlite_openai::stream::chunk::Chunk;
 use serde_json::Value;
 use thiserror::Error;
 
@@ -18,10 +16,14 @@ impl crate::helpers::Helper for Op {
     type Input = Input;
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
-        match outcome(input) {
-            Ok(value) => Ok(value),
-            Err(failure) => Err(Box::new(helper_error(&failure))),
-        }
+        let outcome = match input.mode {
+            Mode::Embedding => embedding_outcome(input),
+            Mode::Chat | Mode::Stream => chat_outcome(input),
+        };
+        Ok(match outcome {
+            Ok(value) => value,
+            Err(failure) => error_value(&failure),
+        })
     }
 }
 
@@ -33,11 +35,17 @@ enum Failure {
     Json(#[from] serde_json::Error),
 }
 
-fn outcome(input: &Input) -> Result<Value, Failure> {
-    match input.mode {
-        Mode::Embedding => embedding_outcome(input),
-        Mode::Chat | Mode::Stream => chat_outcome(input),
-    }
+// the error travels as data, because a raised exception reaches the oracle with only its status
+fn error_value(failure: &Failure) -> Value {
+    let facts = match failure {
+        Failure::Mock(error) => error.failure(),
+        Failure::Json(_) => MockFailure {
+            status: None,
+            error_type: None,
+            code: None,
+        },
+    };
+    serde_json::json!({"kind": "error", "status": facts.status, "type": facts.error_type, "param": null, "code": facts.code})
 }
 
 fn embedding_outcome(input: &Input) -> Result<Value, Failure> {
@@ -87,7 +95,7 @@ fn chat_outcome(input: &Input) -> Result<Value, Failure> {
     )?;
     Ok(serde_json::json!({
         "kind": "response",
-        "response": project_response(&response)?,
+        "response": project(&response, false)?,
     }))
 }
 
@@ -105,11 +113,11 @@ fn stream_outcome(
         created: input.clock,
     };
     let mut chunks: Vec<Value> = stream::chunks(&spec)
-        .map(|chunk| project_chunk(&chunk))
+        .map(|chunk| project(&chunk, true))
         .collect::<Result<_, _>>()?;
     if let Some(prompt_tokens) = plan.prompt_tokens {
         let chunk = stream::usage_chunk(&spec, prompt_tokens, UsageDefaults::default());
-        chunks.push(project_chunk(&chunk)?);
+        chunks.push(project(&chunk, true)?);
     }
     Ok(serde_json::json!({"kind": "stream", "chunks": chunks}))
 }
@@ -130,20 +138,17 @@ fn effective_mock(input: &Input) -> (Option<&MockResponse>, Option<&[MockToolCal
 }
 
 // betterlite models provider_specific_fields and serialize_always fields the Python dump omits
-fn project_response(response: &ChatResponse) -> Result<Value, serde_json::Error> {
-    let mut value = serde_json::to_value(response)?;
-    normalize(&mut value);
-    Ok(value)
-}
-
-fn project_chunk(chunk: &Chunk) -> Result<Value, serde_json::Error> {
-    let mut value = serde_json::to_value(chunk)?;
-    // LiteLLM's builder leaves model unset; the stream wrapper adds it when it serves the chunk
-    if let Some(object) = value.as_object_mut() {
+fn project<T>(value: &T, drop_model: bool) -> Result<Value, serde_json::Error>
+where
+    T: serde::Serialize,
+{
+    let mut projected = serde_json::to_value(value)?;
+    // LiteLLM's builder leaves model unset on chunks; the stream wrapper adds it when it serves them
+    if drop_model && let Some(object) = projected.as_object_mut() {
         object.remove("model");
     }
-    normalize(&mut value);
-    Ok(value)
+    normalize(&mut projected);
+    Ok(projected)
 }
 
 fn normalize(value: &mut Value) {
@@ -160,34 +165,6 @@ fn normalize(value: &mut Value) {
             }
         }
         Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
-    }
-}
-
-fn helper_error(source: &Failure) -> crate::helpers::HelperError {
-    let failure = match source {
-        Failure::Mock(error) => error.failure(),
-        Failure::Json(error) => {
-            return crate::helpers::HelperError {
-                class: String::from("ValueError"),
-                status: None,
-                error_type: Some(None),
-                param: Some(None),
-                code: Some(None),
-                message: error.to_string(),
-            };
-        }
-    };
-    crate::helpers::HelperError {
-        class: String::from("MockError"),
-        status: failure.status,
-        error_type: Some(failure.error_type.map(str::to_owned)),
-        param: Some(None),
-        code: Some(
-            failure
-                .code
-                .map(|code| crate::compare::helper::ErrorCode::Text(code.to_owned())),
-        ),
-        message: source.to_string(),
     }
 }
 

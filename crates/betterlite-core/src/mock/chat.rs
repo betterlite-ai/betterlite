@@ -49,17 +49,33 @@ pub fn response(
     created: u64,
 ) -> Result<ChatResponse, MockError> {
     match answer(plan.response)? {
-        ChatAnswer::Content(content) => Ok(ChatResponse {
-            id: id.to_owned(),
-            object: String::from("chat.completion"),
+        ChatAnswer::Content(content) => Ok(completion(
+            id.to_owned(),
             created,
-            model: model.to_owned(),
-            choices: content_choices(content, plan)?,
-            usage: usage_from(plan, usage),
-            system_fingerprint: None,
-            service_tier: None,
-        }),
+            model.to_owned(),
+            content_choices(content, plan)?,
+            usage_from(plan, usage),
+        )),
         ChatAnswer::Object(object) => Ok(object_response(object, model, id, created)),
+    }
+}
+
+fn completion(
+    id: String,
+    created: u64,
+    model: String,
+    choices: Vec<ChatChoice>,
+    usage: ChatUsage,
+) -> ChatResponse {
+    ChatResponse {
+        id,
+        object: String::from("chat.completion"),
+        created,
+        model,
+        choices,
+        usage,
+        system_fingerprint: None,
+        service_tier: None,
     }
 }
 
@@ -116,25 +132,31 @@ fn usage_from(plan: &MockPlan<'_>, defaults: UsageDefaults) -> ChatUsage {
 }
 
 fn object_response(object: &MockChatObject, model: &str, id: &str, created: u64) -> ChatResponse {
-    ChatResponse {
-        id: object.id.clone().unwrap_or_else(|| id.to_owned()),
-        object: String::from("chat.completion"),
-        created: object.created.unwrap_or(created),
-        model: object.model.clone().unwrap_or_else(|| model.to_owned()),
-        choices: object_choices(object),
-        usage: object
-            .usage
-            .as_ref()
-            .map_or_else(ChatUsage::default, |usage| ChatUsage {
-                prompt_tokens: usage.prompt_tokens,
-                completion_tokens: usage.completion_tokens,
-                total_tokens: usage.total_tokens,
-                prompt_tokens_details: None,
-                completion_tokens_details: None,
-            }),
-        system_fingerprint: object.system_fingerprint.clone(),
-        service_tier: object.service_tier.clone(),
-    }
+    let mut response = completion(
+        object.id.clone().unwrap_or_else(|| id.to_owned()),
+        object.created.unwrap_or(created),
+        object.model.clone().unwrap_or_else(|| model.to_owned()),
+        object_choices(object),
+        object_usage(object),
+    );
+    response
+        .system_fingerprint
+        .clone_from(&object.system_fingerprint);
+    response.service_tier.clone_from(&object.service_tier);
+    response
+}
+
+fn object_usage(object: &MockChatObject) -> ChatUsage {
+    object
+        .usage
+        .as_ref()
+        .map_or_else(ChatUsage::default, |usage| ChatUsage {
+            prompt_tokens: usage.prompt_tokens,
+            completion_tokens: usage.completion_tokens,
+            total_tokens: usage.total_tokens,
+            prompt_tokens_details: None,
+            completion_tokens_details: None,
+        })
 }
 
 fn object_choices(object: &MockChatObject) -> Vec<ChatChoice> {

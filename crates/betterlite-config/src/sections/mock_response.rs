@@ -24,24 +24,16 @@ pub enum MockResponse {
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct MockChatObject {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub created: Option<u64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub model: Option<String>,
     // LiteLLM rewrites object on every ModelResponse, so a given value is accepted and ignored
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub object: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub system_fingerprint: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub service_tier: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub choices: Option<Vec<MockChatChoice>>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub usage: Option<MockUsage>,
 }
 
@@ -64,13 +56,10 @@ impl Default for MockChatChoice {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct MockChatMessage {
-    #[serde(default = "default_role")]
     pub role: String,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<MockToolCall>>,
 }
 
@@ -91,24 +80,17 @@ pub struct MockFunctionCall {
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 pub struct MockUsage {
-    #[serde(default)]
     pub prompt_tokens: u64,
-    #[serde(default)]
     pub completion_tokens: u64,
-    #[serde(default)]
     pub total_tokens: u64,
-}
-
-fn default_role() -> String {
-    String::from("assistant")
 }
 
 impl Default for MockChatMessage {
     fn default() -> Self {
         Self {
-            role: default_role(),
+            role: String::from("assistant"),
             content: None,
             tool_calls: None,
         }

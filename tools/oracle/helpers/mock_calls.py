@@ -17,20 +17,19 @@ from starlette.requests import Request
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
 DEFAULT_CONTENT: Final = "This is a mock request"
-REQUEST_SCOPE: Final = {
-    "type": "http",
-    "method": "POST",
-    "path": "/v1/chat/completions",
-    "headers": [(b"content-type", b"application/json")],
-    "query_string": b"",
-    "server": ("127.0.0.1", 4000),
-    "client": ("127.0.0.1", 5000),
-    "scheme": "http",
-    "root_path": "",
+REQUEST_SCOPE: Final[dict[str, object]] = {
+    "type": "http", "method": "POST", "path": "/v1/chat/completions", "headers": [],
 }
 
 
 def run(input_value: dict[str, Json]) -> Json:
+    try:
+        return _outcome(input_value)
+    except Exception as error:  # noqa: BLE001 - a mock failure is compared as data, not raised
+        return _error_facts(error)
+
+
+def _outcome(input_value: dict[str, Json]) -> Json:
     mode = _string(input_value, "mode")
     if mode == "embedding":
         return _embedding_outcome(input_value)
@@ -39,6 +38,19 @@ def run(input_value: dict[str, Json]) -> Json:
     if mode == "chat":
         return _chat_outcome(input_value, stream=False)
     raise ValueError(f"unknown mock_calls mode: {mode}")
+
+
+def _error_facts(error: BaseException) -> Json:
+    carried = [
+        cast(object, getattr(error, name, None))
+        for name in ("status_code", "type", "param", "code")
+    ]
+    values = [
+        value if isinstance(value, (int, str)) and not isinstance(value, bool) else None
+        for value in carried
+    ]
+    status, error_type, param, code = values
+    return {"kind": "error", "status": status, "type": error_type, "param": param, "code": code}
 
 
 def _embedding_outcome(input_value: dict[str, Json]) -> Json:
@@ -54,19 +66,38 @@ def _embedding_outcome(input_value: dict[str, Json]) -> Json:
 def _chat_outcome(input_value: dict[str, Json], *, stream: bool) -> Json:
     model = _string(input_value, "model")
     response, tool_calls = _effective_mock(input_value)
-    mock_timeout = _optional_bool(input_value, "mock_timeout")
+    timeout_flag = input_value.get("mock_timeout")
+    if timeout_flag is not None and not isinstance(timeout_flag, bool):
+        raise ValueError("mock_timeout must be a boolean")
+    mock_timeout = timeout_flag
     if response is None and tool_calls is None and mock_timeout is not True:
         return {"kind": "no_mock"}
     n = _optional_int(input_value, "n")
     prompt_tokens = _optional_int(input_value, "prompt_tokens")
-    timeout = _optional_timeout(input_value)
-    mock_delay = _optional_float(input_value, "mock_delay")
+    timeout_value = input_value.get("timeout")
+    if timeout_value is None:
+        timeout = None
+    elif isinstance(timeout_value, bool) or not isinstance(timeout_value, (int, float, str)):
+        raise ValueError("timeout must be a number or a string")
+    elif isinstance(timeout_value, str):
+        timeout = timeout_value
+    else:
+        timeout = float(timeout_value)
+    delay_value = input_value.get("mock_delay")
+    if delay_value is None:
+        mock_delay = None
+    elif isinstance(delay_value, bool) or not isinstance(delay_value, (int, float)):
+        raise ValueError("mock_delay must be a number")
+    else:
+        mock_delay = float(delay_value)
     calls = cast(list[object] | None, tool_calls)
     response_value = cast(str | dict[str, object] | None, response)
-    clock = _integer(input_value, "clock")
+    clock_value = input_value.get("clock")
+    if not isinstance(clock_value, int) or isinstance(clock_value, bool):
+        raise ValueError("clock must be an integer")
     identifier = _string(input_value, "uuid")
     with (
-        mock.patch.object(time, "time", return_value=float(clock)),
+        mock.patch.object(time, "time", return_value=float(clock_value)),
         mock.patch.object(litellm_uuid, "uuid4", return_value=uuid.UUID(identifier)),
     ):
         if stream and not isinstance(response_value, dict):
@@ -188,13 +219,6 @@ def _string(input_value: dict[str, Json], name: str) -> str:
     return value
 
 
-def _integer(input_value: dict[str, Json], name: str) -> int:
-    value = input_value.get(name)
-    if not isinstance(value, int) or isinstance(value, bool):
-        raise ValueError(f"{name} must be an integer")
-    return value
-
-
 def _optional_int(input_value: dict[str, Json], name: str) -> int | None:
     value = input_value.get(name)
     if value is None:
@@ -202,34 +226,3 @@ def _optional_int(input_value: dict[str, Json], name: str) -> int | None:
     if not isinstance(value, int) or isinstance(value, bool):
         raise ValueError(f"{name} must be an integer")
     return value
-
-
-def _optional_float(input_value: dict[str, Json], name: str) -> float | None:
-    value = input_value.get(name)
-    if value is None:
-        return None
-    if isinstance(value, bool) or not isinstance(value, (int, float)):
-        raise ValueError(f"{name} must be a number")
-    return float(value)
-
-
-def _optional_bool(input_value: dict[str, Json], name: str) -> bool | None:
-    value = input_value.get(name)
-    if value is None:
-        return None
-    if not isinstance(value, bool):
-        raise ValueError(f"{name} must be a boolean")
-    return value
-
-
-def _optional_timeout(input_value: dict[str, Json]) -> float | str | None:
-    value = input_value.get("timeout")
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        raise ValueError("timeout must be a number or a string")
-    if isinstance(value, (int, float)):
-        return float(value)
-    if isinstance(value, str):
-        return value
-    raise ValueError("timeout must be a number or a string")
