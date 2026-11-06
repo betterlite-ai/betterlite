@@ -1,0 +1,23 @@
+kind: helper
+name: model-file-ids-vector-id
+call:
+  model_file_ids:
+    function: decode_vector_store_ids_in_tools
+    tools:
+      - type: file_search
+        vector_store_ids:
+          - vs_plain
+          - bGl0ZWxsbV9wcm94eTp2ZWN0b3Jfc3RvcmU7dW5pZmllZF9pZCxhYmMtMTIzO3RhcmdldF9tb2RlbF9uYW1lcyxncHQtNDtyZXNvdXJjZV9pZCx2c19hYmMxMjM7bW9kZWxfaWQsZGVwbG95bWVudC0x
+      - type: file_search
+        vector_store_ids: vs_not_a_list
+      - type: file_search
+      - type: code_interpreter
+        container:
+          type: auto
+          file_ids:
+            - file-plain
+      - type: function
+        name: lookup
+env: {}
+compare:
+  ignore: []

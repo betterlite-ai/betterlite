@@ -73,3 +73,10 @@ path = "fuzz_targets/media_metadata.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "model_file_ids"
+path = "fuzz_targets/model_file_ids.rs"
+test = false
+doc = false
+bench = false
