@@ -1,12 +1,13 @@
 use std::collections::BTreeMap;
 
+use secrecy::SecretString;
 use serde::Deserialize;
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct Input {
     pub(crate) operation: Operation,
-    pub(crate) api_key: Option<String>,
+    pub(crate) api_key: Option<SecretString>,
     pub(crate) api_base: Option<String>,
     pub(crate) template: Option<String>,
     pub(crate) timeout: Option<i64>,
@@ -42,7 +43,7 @@ pub(crate) struct ContainerFields {
     pub(crate) domain: Option<String>,
     pub(crate) envd_access_token: Option<String>,
     pub(crate) traffic_access_token: Option<String>,
-    pub(crate) api_key: Option<String>,
+    pub(crate) api_key: Option<SecretString>,
     pub(crate) api_base: Option<String>,
 }
 

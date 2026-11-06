@@ -120,9 +120,10 @@ fn validate_environment_uses_an_explicit_empty_key_as_given() {
         http: fake(200, ""),
         environment: environment(&[("E2B_API_KEY", "env-key")]),
     };
+    let empty = SecretString::from("");
     assert_eq!(
         sandbox
-            .validate_environment(Some(""))
+            .validate_environment(Some(&empty))
             .unwrap()
             .expose_secret(),
         ""
@@ -149,6 +150,7 @@ fn statuses_at_400_and_up_are_errors(#[case] status: u16, #[case] wanted: Option
 #[tokio::test]
 async fn create_posts_defaults_and_stores_the_access_tokens() {
     let body = r#"{"sandboxID":"sbx_1","domain":"custom.e2b.app","envdAccessToken":"envd-token","trafficAccessToken":"traffic-token"}"#;
+    let api_key = SecretString::from("e2b-key");
     let sandbox = E2bSandbox {
         http: fake(200, body),
         environment: Environment::new(),
@@ -158,7 +160,7 @@ async fn create_posts_defaults_and_stores_the_access_tokens() {
             template: None,
             timeout: None,
             allow_internet_access: None,
-            api_key: Some("e2b-key"),
+            api_key: Some(&api_key),
             api_base: None,
         })
         .await
@@ -223,6 +225,7 @@ fn assert_create_request(request: &SandboxRequest) {
 
 #[tokio::test]
 async fn create_uses_the_template_timeout_internet_choice_and_api_base() {
+    let api_key = SecretString::from("e2b-key");
     let sandbox = E2bSandbox {
         http: fake(200, r#"{"sandboxID":"sbx_2"}"#),
         environment: Environment::new(),
@@ -232,7 +235,7 @@ async fn create_uses_the_template_timeout_internet_choice_and_api_base() {
             template: Some("my-template"),
             timeout: Some(42),
             allow_internet_access: Some(false),
-            api_key: Some("e2b-key"),
+            api_key: Some(&api_key),
             api_base: Some("http://127.0.0.1:9"),
         })
         .await
@@ -248,6 +251,7 @@ async fn create_uses_the_template_timeout_internet_choice_and_api_base() {
 
 #[tokio::test]
 async fn create_sends_only_the_supported_options() {
+    let api_key = SecretString::from("e2b-key");
     let sandbox = E2bSandbox {
         http: fake(200, r#"{"sandboxID":"sbx_2"}"#),
         environment: Environment::new(),
@@ -257,7 +261,7 @@ async fn create_sends_only_the_supported_options() {
             template: None,
             timeout: None,
             allow_internet_access: None,
-            api_key: Some("e2b-key"),
+            api_key: Some(&api_key),
             api_base: None,
         })
         .await
@@ -273,6 +277,7 @@ async fn create_sends_only_the_supported_options() {
 #[tokio::test]
 async fn create_accepts_a_response_at_the_buffered_limit() {
     let body = "a".repeat(0x0100_0000);
+    let api_key = SecretString::from("e2b-key");
     let sandbox = E2bSandbox {
         http: fake(200, &body),
         environment: Environment::new(),
@@ -283,7 +288,7 @@ async fn create_accepts_a_response_at_the_buffered_limit() {
                 template: None,
                 timeout: None,
                 allow_internet_access: None,
-                api_key: Some("e2b-key"),
+                api_key: Some(&api_key),
                 api_base: None,
             })
             .await
@@ -295,6 +300,7 @@ async fn create_accepts_a_response_at_the_buffered_limit() {
 #[tokio::test]
 async fn create_rejects_a_response_body_past_the_buffered_limit() {
     let body = "a".repeat(0x0100_0001);
+    let api_key = SecretString::from("e2b-key");
     let sandbox = E2bSandbox {
         http: fake(200, &body),
         environment: Environment::new(),
@@ -305,7 +311,7 @@ async fn create_rejects_a_response_body_past_the_buffered_limit() {
                 template: None,
                 timeout: None,
                 allow_internet_access: None,
-                api_key: Some("e2b-key"),
+                api_key: Some(&api_key),
                 api_base: None,
             })
             .await
@@ -361,6 +367,7 @@ async fn create_stops_before_the_request_without_a_key() {
 
 #[tokio::test]
 async fn create_reports_an_error_status() {
+    let api_key = SecretString::from("e2b-key");
     let sandbox = E2bSandbox {
         http: fake(500, "the API is down"),
         environment: Environment::new(),
@@ -371,7 +378,7 @@ async fn create_reports_an_error_status() {
                 template: None,
                 timeout: None,
                 allow_internet_access: None,
-                api_key: Some("e2b-key"),
+                api_key: Some(&api_key),
                 api_base: None,
             })
             .await
@@ -382,6 +389,7 @@ async fn create_reports_an_error_status() {
 
 #[tokio::test]
 async fn create_reports_a_response_that_is_not_json() {
+    let api_key = SecretString::from("e2b-key");
     let sandbox = E2bSandbox {
         http: fake(200, "not json"),
         environment: Environment::new(),
@@ -392,7 +400,7 @@ async fn create_reports_a_response_that_is_not_json() {
                 template: None,
                 timeout: None,
                 allow_internet_access: None,
-                api_key: Some("e2b-key"),
+                api_key: Some(&api_key),
                 api_base: None,
             })
             .await
@@ -735,6 +743,7 @@ async fn delete_prefers_the_parameters_over_the_stored_credentials() {
             api_base: Some("https://stored.example".to_owned()),
         },
     };
+    let api_key = SecretString::from("param-key");
     let sandbox = E2bSandbox {
         http: fake(200, ""),
         environment: Environment::new(),
@@ -742,7 +751,7 @@ async fn delete_prefers_the_parameters_over_the_stored_credentials() {
     sandbox
         .adelete_sandbox(DeleteSandbox {
             container: SandboxRef::Handle(&container),
-            api_key: Some("param-key"),
+            api_key: Some(&api_key),
             api_base: Some("https://param.example"),
         })
         .await
@@ -760,6 +769,7 @@ async fn delete_prefers_the_parameters_over_the_stored_credentials() {
 
 #[tokio::test]
 async fn delete_accepts_a_bare_id_with_parameter_credentials() {
+    let api_key = SecretString::from("param-key");
     let sandbox = E2bSandbox {
         http: fake(200, ""),
         environment: Environment::new(),
@@ -768,7 +778,7 @@ async fn delete_accepts_a_bare_id_with_parameter_credentials() {
         sandbox
             .adelete_sandbox(DeleteSandbox {
                 container: SandboxRef::Id("sbx_9"),
-                api_key: Some("param-key"),
+                api_key: Some(&api_key),
                 api_base: Some("https://api.e2b.app"),
             })
             .await

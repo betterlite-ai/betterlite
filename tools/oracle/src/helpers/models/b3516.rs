@@ -104,7 +104,7 @@ fn create_request(input: &Input) -> CreateSandbox<'_> {
         template: input.template.as_deref(),
         timeout: input.timeout,
         allow_internet_access: input.allow_internet_access,
-        api_key: input.api_key.as_deref(),
+        api_key: input.api_key.as_ref(),
         api_base: input.api_base.as_deref(),
     }
 }
@@ -138,14 +138,14 @@ fn delete_output(sandbox: &Sandbox, input: &Input) -> Result<bool, Box<HelperErr
     match spec {
         ContainerInput::Id(id) => block_on(sandbox.adelete_sandbox(DeleteSandbox {
             container: SandboxRef::Id(id.as_str()),
-            api_key: input.api_key.as_deref(),
+            api_key: input.api_key.as_ref(),
             api_base: input.api_base.as_deref(),
         })),
         ContainerInput::Handle(fields) => {
             let container = handle_from_fields(fields);
             block_on(sandbox.adelete_sandbox(DeleteSandbox {
                 container: SandboxRef::Handle(&container),
-                api_key: input.api_key.as_deref(),
+                api_key: input.api_key.as_ref(),
                 api_base: input.api_base.as_deref(),
             }))
         }
@@ -179,7 +179,7 @@ fn handle_from_fields(fields: &ContainerFields) -> ContainerHandle {
                 .traffic_access_token
                 .as_deref()
                 .map(SecretString::from),
-            api_key: fields.api_key.as_deref().map(SecretString::from),
+            api_key: fields.api_key.clone(),
             api_base: fields.api_base.clone(),
         },
     }

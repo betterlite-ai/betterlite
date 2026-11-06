@@ -101,7 +101,7 @@ pub struct CreateSandbox<'request> {
     pub template: Option<&'request str>,
     pub timeout: Option<i64>,
     pub allow_internet_access: Option<bool>,
-    pub api_key: Option<&'request str>,
+    pub api_key: Option<&'request SecretString>,
     pub api_base: Option<&'request str>,
 }
 
@@ -119,7 +119,7 @@ pub enum SandboxRef<'request> {
 
 pub struct DeleteSandbox<'request> {
     pub container: SandboxRef<'request>,
-    pub api_key: Option<&'request str>,
+    pub api_key: Option<&'request SecretString>,
     pub api_base: Option<&'request str>,
 }
 

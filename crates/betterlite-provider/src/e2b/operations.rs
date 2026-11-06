@@ -56,7 +56,10 @@ where
     Http: SandboxHttp,
     Environment: EnvironmentLookup + Sync,
 {
-    pub fn validate_environment(&self, api_key: Option<&str>) -> Result<SecretString, E2bError> {
+    pub fn validate_environment(
+        &self,
+        api_key: Option<&SecretString>,
+    ) -> Result<SecretString, E2bError> {
         api_key.map_or_else(
             || {
                 self.environment
@@ -65,7 +68,7 @@ where
                     .map(SecretString::from)
                     .ok_or(E2bError::MissingApiKey)
             },
-            |key| Ok(SecretString::from(key)),
+            |key| Ok(key.clone()),
         )
     }
 
@@ -95,20 +98,35 @@ where
     }
 
     pub async fn adelete_sandbox(&self, request: DeleteSandbox<'_>) -> Result<bool, E2bError> {
-        let handle = as_handle(request.container);
-        let api_key = match (request.api_key, handle.hidden_params.api_key.clone()) {
-            (Some(api_key), _) => SecretString::from(api_key),
-            (None, Some(stored)) => stored,
-            (None, None) => self.validate_environment(None)?,
+        let minimal;
+        let handle = match request.container {
+            SandboxRef::Handle(handle) => handle,
+            SandboxRef::Id(id) => {
+                minimal = ContainerHandle {
+                    id: id.to_owned(),
+                    provider: "e2b".to_owned(),
+                    domain: Some(E2B_DEFAULT_DOMAIN.to_owned()),
+                    hidden_params: HiddenParams::default(),
+                };
+                &minimal
+            }
+        };
+        let environment_key;
+        let api_key: &SecretString = if let Some(api_key) = request.api_key {
+            api_key
+        } else if let Some(stored) = handle.hidden_params.api_key.as_ref() {
+            stored
+        } else {
+            environment_key = self.validate_environment(None)?;
+            &environment_key
         };
         let api_base = request
             .api_base
-            .map(str::to_owned)
-            .or_else(|| handle.hidden_params.api_base.clone())
-            .unwrap_or_else(|| E2B_API_BASE.to_owned());
+            .or(handle.hidden_params.api_base.as_deref())
+            .unwrap_or(E2B_API_BASE);
         let url = Url::parse(&format!("{api_base}/sandboxes/{}", handle.id))
             .map_err(|source| E2bError::Url { source })?;
-        let deletion = api_key_request(Method::DELETE, url, &api_key, Vec::new())?;
+        let deletion = api_key_request(Method::DELETE, url, api_key, Vec::new())?;
         let response = self.http.send(deletion).await?;
         if response.status == 404 {
             return Ok(false);
@@ -234,18 +252,6 @@ async fn collect_body(
         collected.extend_from_slice(&data);
     }
     Ok(collected)
-}
-
-fn as_handle(container: SandboxRef<'_>) -> ContainerHandle {
-    match container {
-        SandboxRef::Handle(handle) => handle.clone(),
-        SandboxRef::Id(id) => ContainerHandle {
-            id: id.to_owned(),
-            provider: "e2b".to_owned(),
-            domain: Some(E2B_DEFAULT_DOMAIN.to_owned()),
-            hidden_params: HiddenParams::default(),
-        },
-    }
 }
 
 fn output_error(error: SandboxOutputError<E2bError>) -> E2bError {

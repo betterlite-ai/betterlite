@@ -4,6 +4,7 @@ use std::sync::Arc;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
+use secrecy::SecretString;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tokio::task::JoinSet;
@@ -50,6 +51,7 @@ async fn create_goes_through_the_pooled_http_client() {
         "200 OK",
         r#"{"sandboxID":"sbx_7","envdAccessToken":"envd"}"#,
     ));
+    let api_key = SecretString::from("e2b-key");
     let sandbox = E2bSandbox {
         http: pooled_http(),
         environment: Environment::new(),
@@ -60,7 +62,7 @@ async fn create_goes_through_the_pooled_http_client() {
             template: None,
             timeout: None,
             allow_internet_access: None,
-            api_key: Some("e2b-key"),
+            api_key: Some(&api_key),
             api_base: Some(&api_base),
         })
         .await
@@ -78,6 +80,7 @@ async fn delete_returns_false_through_the_pooled_http_client() {
     let address = listener.local_addr().unwrap();
     let mut server = JoinSet::new();
     server.spawn(answer_once(listener, "404 Not Found", ""));
+    let api_key = SecretString::from("e2b-key");
     let sandbox = E2bSandbox {
         http: pooled_http(),
         environment: Environment::new(),
@@ -86,7 +89,7 @@ async fn delete_returns_false_through_the_pooled_http_client() {
     let deleted = sandbox
         .adelete_sandbox(DeleteSandbox {
             container: SandboxRef::Id("sbx_9"),
-            api_key: Some("e2b-key"),
+            api_key: Some(&api_key),
             api_base: Some(&api_base),
         })
         .await
@@ -102,6 +105,7 @@ async fn create_reports_a_server_error_through_the_pooled_http_client() {
     let address = listener.local_addr().unwrap();
     let mut server = JoinSet::new();
     server.spawn(answer_once(listener, "500 Internal Server Error", "{}"));
+    let api_key = SecretString::from("e2b-key");
     let sandbox = E2bSandbox {
         http: pooled_http(),
         environment: Environment::new(),
@@ -113,7 +117,7 @@ async fn create_reports_a_server_error_through_the_pooled_http_client() {
                 template: None,
                 timeout: None,
                 allow_internet_access: None,
-                api_key: Some("e2b-key"),
+                api_key: Some(&api_key),
                 api_base: Some(&api_base),
             })
             .await
