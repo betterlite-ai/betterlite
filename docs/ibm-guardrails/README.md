@@ -4,8 +4,8 @@ This integration sends prompt and response text to IBM's FMS Guardrails detector
 
 ## Features
 
-- Detector server API (`/api/v1/text/contents`), which scans all texts of one request in a single call
-- FMS Guardrails Orchestrator API (`/api/v2/text/detection/content`), which scans one text per call
+- Detector server API (`/api/v1/text/contents`). It scans all texts of one request in a single call.
+- FMS Guardrails Orchestrator API (`/api/v2/text/detection/content`). It scans one text per call.
 - Score thresholds that filter detections per detector
 - Blocking on detection, or observing violations without blocking
 - SSL verification control and extra request headers
@@ -105,7 +105,7 @@ An orchestrator answers with a flat list of detections that covers the single te
 - `during_call`: scans the input while the model call is in flight. The request is not modified, and a violation raises when `block_on_detection` is on.
 - `post_call`: scans the text of each response choice after the model call. A response without text, such as a tool-call-only response, skips the check without an error.
 
-Every hook that runs records its guardrail name in the request's `applied_guardrails` list, which the gateway exposes in request metadata. A hook that is not enabled for the current event does nothing and records nothing.
+Every hook that runs records its guardrail name in the request's `applied_guardrails` list, and the gateway exposes that list in request metadata. A hook that is not enabled for the current event does nothing and records nothing.
 
 ## Error handling
 

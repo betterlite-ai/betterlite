@@ -1,6 +1,6 @@
 guardrails:
 
-  # Example 1: a detector server, which scans every text of one request in a single call.
+  # Example 1: a detector server. It scans every text of one request in a single call.
   - guardrail_name: "ibm-jailbreak-detector"
     litellm_params:
       guardrail: ibm_guardrails
@@ -14,7 +14,7 @@ guardrails:
         score_threshold: 0.8
         block_on_detection: true
 
-  # Example 2: an FMS Guardrails Orchestrator, which scans one text per call.
+  # Example 2: an FMS Guardrails Orchestrator. It scans one text per call.
   - guardrail_name: "ibm-orchestrator-detector"
     litellm_params:
       guardrail: ibm_guardrails
