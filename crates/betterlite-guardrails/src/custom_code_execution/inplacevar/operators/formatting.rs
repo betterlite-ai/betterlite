@@ -1,5 +1,6 @@
 use super::super::super::value::Value;
 use super::super::{InplaceError, InplaceOp};
+use super::sequence::MAX_REPEATED_ITEMS;
 use super::{integer, unsupported};
 use indexmap::IndexMap;
 use std::str::from_utf8;
@@ -10,8 +11,11 @@ struct Spec {
 }
 pub(super) fn format(left: &Value, right: &Value) -> Option<Result<Value, InplaceError>> {
     match left {
-        Value::Str(text) => Some(render(text, left, right).map(Value::Str)),
-        Value::Bytes(template) => Some(render_bytes(template, left, right)),
+        Value::Str(text) => Some(render(text, left, right, false).map(Value::Str)),
+        Value::Bytes(template) => Some(from_utf8(template).map_or_else(
+            |_error| Err(unsupported(InplaceOp::Modulo, left, right)),
+            |text| render(text, left, right, true).map(|out| Value::Bytes(out.into_bytes())),
+        )),
         Value::None
         | Value::Bool(_)
         | Value::Int(_)
@@ -19,12 +23,6 @@ pub(super) fn format(left: &Value, right: &Value) -> Option<Result<Value, Inplac
         | Value::List(_)
         | Value::Tuple(_)
         | Value::Dict(_) => None,
-    }
-}
-fn render_bytes(template: &[u8], left: &Value, right: &Value) -> Result<Value, InplaceError> {
-    match from_utf8(template) {
-        Ok(text) => render(text, left, right).map(|rendered| Value::Bytes(rendered.into_bytes())),
-        Err(_error) => Err(unsupported(InplaceOp::Modulo, left, right)),
     }
 }
 struct Arguments<'source> {
@@ -83,7 +81,7 @@ impl<'source> Arguments<'source> {
         Ok(value)
     }
 }
-fn render(text: &str, left: &Value, right: &Value) -> Result<String, InplaceError> {
+fn render(text: &str, left: &Value, right: &Value, bytes: bool) -> Result<String, InplaceError> {
     let mut arguments = Arguments::new(right);
     let characters: Vec<char> = text.chars().collect();
     let mut output = String::new();
@@ -99,52 +97,73 @@ fn render(text: &str, left: &Value, right: &Value) -> Result<String, InplaceErro
             index = index.saturating_add(1);
             continue;
         }
-        let (spec, next) = parse_spec(&characters, index)
-            .ok_or_else(|| unsupported(InplaceOp::Modulo, left, right))?;
+        let (spec, next) = parse_spec(&characters, index, left, right)?;
         index = next;
         let value = arguments.take(&spec, left, right)?;
-        let rendered =
-            convert(&spec, value).ok_or_else(|| unsupported(InplaceOp::Modulo, left, right))?;
+        let rendered = convert(&spec, value, bytes)
+            .ok_or_else(|| unsupported(InplaceOp::Modulo, left, right))?;
         output.push_str(&rendered);
     }
-    let leftover = arguments.used < arguments.sequence.len() && arguments.mapping.is_none();
-    if leftover {
+    let lenient = matches!(right, Value::Dict(_) | Value::List(_) | Value::Bytes(_));
+    if arguments.used < arguments.sequence.len() && !lenient {
         return Err(unsupported(InplaceOp::Modulo, left, right));
     }
     Ok(output)
 }
-fn parse_spec(characters: &[char], mut index: usize) -> Option<(Spec, usize)> {
-    let mut key = None;
-    if characters.get(index) == Some(&'(') {
-        let start = index.saturating_add(1);
-        let length = characters
-            .get(start..)?
-            .iter()
-            .position(|character| *character == ')')?;
-        key = Some(
-            characters
-                .get(start..start.saturating_add(length))?
-                .iter()
-                .collect(),
-        );
-        index = start.saturating_add(length).saturating_add(1);
+fn parse_key(characters: &[char], index: usize) -> Option<(Option<String>, usize)> {
+    if characters.get(index) != Some(&'(') {
+        return Some((None, index));
     }
-    let start = index;
+    let start = index.saturating_add(1);
+    let length = characters
+        .get(start..)?
+        .iter()
+        .position(|character| *character == ')')?;
+    let end = start.saturating_add(length);
+    let key = characters.get(start..end)?.iter().collect();
+    Some((Some(key), end.saturating_add(1)))
+}
+fn parse_spec(
+    characters: &[char],
+    start: usize,
+    left: &Value,
+    right: &Value,
+) -> Result<(Spec, usize), InplaceError> {
+    let unsupported_template = || unsupported(InplaceOp::Modulo, left, right);
+    let (key, mut index) = parse_key(characters, start).ok_or_else(unsupported_template)?;
+    let digits_start = index;
     while characters.get(index).is_some_and(char::is_ascii_digit) {
         index = index.saturating_add(1);
     }
-    let digits: String = characters.get(start..index)?.iter().collect();
-    Some((
-        Spec {
-            key,
-            width: digits.parse().unwrap_or(0),
-            kind: *characters.get(index)?,
-        },
-        index.saturating_add(1),
-    ))
+    let digits: String = characters
+        .get(digits_start..index)
+        .unwrap_or_default()
+        .iter()
+        .collect();
+    if digits.starts_with('0') {
+        return Err(unsupported_template());
+    }
+    let width = if digits.is_empty() {
+        0
+    } else {
+        digits
+            .parse::<usize>()
+            .map_err(|_error| InplaceError::Overflow {
+                symbol: InplaceOp::Modulo.symbol(),
+            })?
+    };
+    if width > MAX_REPEATED_ITEMS {
+        return Err(InplaceError::RepetitionTooLong);
+    }
+    while matches!(characters.get(index), Some('h' | 'l' | 'L')) {
+        index = index.saturating_add(1);
+    }
+    let kind = *characters.get(index).ok_or_else(unsupported_template)?;
+    Ok((Spec { key, width, kind }, index.saturating_add(1)))
 }
-fn convert(spec: &Spec, value: &Value) -> Option<String> {
+fn convert(spec: &Spec, value: &Value, bytes: bool) -> Option<String> {
     let body = match spec.kind {
+        's' if bytes => return None,
         's' => display(value, false)?,
         'r' => display(value, true)?,
         'd' | 'i' => integer(value)?.to_string(),

@@ -1,7 +1,7 @@
 use super::super::super::value::Value;
 use super::super::{InplaceError, InplaceOp};
 use super::{formatting, integer, unsupported};
-const MAX_REPEATED_ITEMS: usize = 0x0010_0000;
+pub(super) const MAX_REPEATED_ITEMS: usize = 0x0010_0000;
 fn repeated_length(length: usize, count: i64) -> Result<usize, InplaceError> {
     let times = usize::try_from(count).unwrap_or(0);
     let total = length

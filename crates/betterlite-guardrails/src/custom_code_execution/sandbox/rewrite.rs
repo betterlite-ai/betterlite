@@ -116,13 +116,18 @@ fn forbidden(kind: &str) -> Option<&'static str> {
         "print_statement" => Some("Python 2 print statements are not allowed in the sandbox"),
         "exec_statement" => Some("Exec calls are not allowed."),
         "type_alias_statement" => Some("TypeAlias statements are not allowed."),
-        "type_parameter" => Some("TypeVar statements are not allowed."),
         _ => None,
     }
 }
 fn child_scope(node: Node<'_>, child: Node<'_>, scope: Scope) -> Scope {
     match node.kind() {
-        "function_definition" | "lambda" => entering_function(node, scope),
+        "function_definition" | "lambda"
+            if node
+                .child_by_field_name("body")
+                .is_some_and(|body| body.id() == child.id()) =>
+        {
+            entering_function(node, scope)
+        }
         "for_statement" | "while_statement" if child.kind() != "else_clause" => Scope {
             loop_depth: scope.loop_depth.saturating_add(1),
             ..scope

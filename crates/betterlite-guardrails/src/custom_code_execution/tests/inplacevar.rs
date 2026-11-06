@@ -575,3 +575,125 @@ fn a_dict_updates_from_pair_iterables() {
         Ok(Value::Dict(merged))
     );
 }
+
+#[rstest]
+#[case::huge("%9000000000000000000s")]
+#[case::usize_max("%18446744073709551615s")]
+#[case::gigabytes("%3000000000s")]
+fn a_format_width_past_the_cap_is_refused_before_allocating(#[case] template: &str) {
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Modulo,
+            &Value::Str(template.to_owned()),
+            &Value::Str("a".to_owned())
+        ),
+        Err(InplaceError::RepetitionTooLong)
+    );
+}
+
+#[test]
+fn a_format_width_too_big_for_usize_overflows() {
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Modulo,
+            &Value::Str("%99999999999999999999999d".to_owned()),
+            &Value::Int(1)
+        ),
+        Err(InplaceError::Overflow { symbol: "%=" })
+    );
+}
+
+#[rstest]
+#[case::zero_flag("%05d", Value::Int(1))]
+#[case::zero_flag_hex("%03x", Value::Int(1))]
+#[case::star_width("%*d", Value::Tuple(vec![Value::Int(1), Value::Int(2)]))]
+fn percent_flags_the_formatter_does_not_build_are_unsupported(
+    #[case] template: &str,
+    #[case] argument: Value,
+) {
+    assert!(matches!(
+        inplacevar(
+            InplaceOp::Modulo,
+            &Value::Str(template.to_owned()),
+            &argument
+        ),
+        Err(InplaceError::UnsupportedOperand { .. })
+    ));
+}
+
+#[rstest]
+#[case::percent_s(b"%s")]
+#[case::non_utf8(b"\xff%d")]
+fn bytes_percent_s_and_non_utf8_templates_are_unsupported(#[case] template: &[u8]) {
+    assert!(matches!(
+        inplacevar(
+            InplaceOp::Modulo,
+            &Value::Bytes(template.to_vec()),
+            &Value::Int(1)
+        ),
+        Err(InplaceError::UnsupportedOperand { .. })
+    ));
+}
+
+#[rstest]
+#[case::long("%ld")]
+#[case::short("%hd")]
+#[case::long_double("%Ld")]
+fn length_modifiers_are_skipped(#[case] template: &str) {
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Modulo,
+            &Value::Str(template.to_owned()),
+            &Value::Int(1)
+        ),
+        Ok(Value::Str("1".to_owned()))
+    );
+}
+
+#[rstest]
+#[case::list_with_text(Value::Str("plain".to_owned()), Value::List(vec![Value::Int(1)]))]
+#[case::bytes_with_text(Value::Str("plain".to_owned()), Value::Bytes(b"x".to_vec()))]
+#[case::list_with_bytes(Value::Bytes(b"plain".to_vec()), Value::List(vec![Value::Int(1)]))]
+fn a_list_or_bytes_operand_may_go_unused(#[case] template: Value, #[case] operand: Value) {
+    assert_eq!(
+        inplacevar(InplaceOp::Modulo, &template, &operand),
+        Ok(template)
+    );
+}
+
+#[test]
+fn a_true_division_rounds_to_nearest_even_and_keeps_the_sign_of_zero() {
+    assert_eq!(
+        inplacevar(
+            InplaceOp::TrueDivide,
+            &Value::Int(3_291_455_435_069_936_578),
+            &Value::Int(2_097_532_002_050_067_875)
+        ),
+        Ok(Value::Float(f64::from_bits(0x3ff9_1b75_9132_d8fb)))
+    );
+    assert_eq!(
+        inplacevar(
+            InplaceOp::TrueDivide,
+            &Value::Int(0x0020_0000_0000_0001),
+            &Value::Int(0x0020_0000_0000_0000)
+        ),
+        Ok(Value::Float(1.0))
+    );
+    let Ok(Value::Float(zero)) = inplacevar(InplaceOp::TrueDivide, &Value::Int(0), &Value::Int(-1))
+    else {
+        panic!("0 / -1 is a float");
+    };
+    assert!(zero == 0.0_f64 && zero.is_sign_negative());
+}
+
+#[test]
+fn a_negative_power_rounds_a_large_base_to_a_double_first() {
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Power,
+            &Value::Int(0x0020_0000_0000_0001),
+            &Value::Int(-1)
+        ),
+        Ok(Value::Float(1.110_223_024_625_156_5e-16))
+    );
+}

@@ -48,99 +48,68 @@ fn floor_and_modulo(op: InplaceOp, first: i64, second: i64) -> Result<(i64, i64)
     }
     Ok((quotient, remainder))
 }
-struct Digits {
-    text: String,
-    exponent: i64,
-    started: bool,
-}
-impl Digits {
-    fn push(
-        &mut self,
-        remainder: &mut u128,
-        divisor: u128,
-        symbol: &'static str,
-    ) -> Result<(), InplaceError> {
-        while *remainder != 0 && self.text.len() < 25 {
-            let value = next_digit(remainder, divisor, symbol)?;
-            if self.started {
-                self.text.push(char::from(b'0'.saturating_add(value)));
-                continue;
-            }
-            self.exponent = self.exponent.saturating_sub(1);
-            if value == 0 {
-                continue;
-            }
-            self.started = true;
-            self.text.push(char::from(b'0'.saturating_add(value)));
-        }
-        Ok(())
+fn double_bits(numerator: u128, denominator: u128) -> Option<u64> {
+    let scale = 56_i64
+        .checked_add(i64::from(denominator.ilog2()))?
+        .checked_sub(i64::from(numerator.ilog2()))?;
+    let (scaled, divisor) = if scale >= 0 {
+        (
+            numerator.checked_shl(u32::try_from(scale).ok()?)?,
+            denominator,
+        )
+    } else {
+        let shift = u32::try_from(scale.unsigned_abs()).ok()?;
+        (numerator, denominator.checked_shl(shift)?)
+    };
+    let quotient = scaled.checked_div(divisor)?;
+    let sticky = scaled.checked_rem(divisor)? != 0;
+    let drop = quotient.ilog2().checked_sub(52)?;
+    let kept = quotient.checked_shr(drop)?;
+    let tail = quotient.checked_sub(kept.checked_shl(drop)?)?;
+    let half = 1_u128.checked_shl(drop.checked_sub(1)?)?;
+    let round_up = tail > half || (tail == half && (sticky || kept & 1 == 1));
+    let mut mantissa = kept.checked_add(u128::from(round_up))?;
+    let mut exponent = i64::from(drop).checked_sub(scale)?;
+    if mantissa == 1_u128 << 53_u32 {
+        mantissa >>= 1_u32;
+        exponent = exponent.checked_add(1)?;
     }
-    fn value(&self, first: i64, second: i64, symbol: &'static str) -> Result<Value, InplaceError> {
-        if self.text.is_empty() {
-            return Ok(Value::Float(0.0));
-        }
-        let sign = if (first < 0) == (second < 0) { "" } else { "-" };
-        let (head, tail) = self.text.split_at(1);
-        let rendered = if tail.is_empty() {
-            format!("{sign}{head}e{}", self.exponent)
-        } else {
-            format!("{sign}{head}.{tail}e{}", self.exponent)
-        };
-        rendered
-            .parse::<f64>()
-            .map(Value::Float)
-            .map_err(|_error| InplaceError::Overflow { symbol })
-    }
+    let biased = u64::try_from(exponent.checked_add(1075)?).ok()?;
+    let fraction = u64::try_from(mantissa.checked_sub(1_u128 << 52_u32)?).ok()?;
+    Some(biased.checked_shl(52)? | fraction)
 }
 fn float_quotient(first: i64, second: i64) -> Result<Value, InplaceError> {
-    if second == 0 {
-        return Err(InplaceError::DivideByZero);
-    }
-    let symbol = InplaceOp::TrueDivide.symbol();
-    let divisor = u128::from(second.unsigned_abs());
-    let mut remainder = u128::from(first.unsigned_abs());
-    let integer = remainder
-        .checked_div(divisor)
-        .ok_or(InplaceError::DivideByZero)?;
-    remainder = remainder
-        .checked_rem(divisor)
-        .ok_or(InplaceError::DivideByZero)?;
-    let text = if integer == 0 {
-        String::new()
-    } else {
-        integer.to_string()
+    let sign = u64::from((first < 0) != (second < 0)) << 63_u32;
+    let magnitude = match (first.unsigned_abs(), second.unsigned_abs()) {
+        (_, 0) => return Err(InplaceError::DivideByZero),
+        (0, _) => Some(0),
+        (numerator, divisor) => double_bits(u128::from(numerator), u128::from(divisor)),
     };
-    let started = integer != 0;
-    let exponent = if started {
-        i64::try_from(text.len())
-            .unwrap_or(i64::MAX)
-            .saturating_sub(1)
-    } else {
-        0
-    };
-    let mut digits = Digits {
-        text,
-        exponent,
-        started,
-    };
-    digits.push(&mut remainder, divisor, symbol)?;
-    digits.value(first, second, symbol)
+    magnitude
+        .map(|bits| Value::Float(f64::from_bits(sign | bits)))
+        .ok_or(InplaceError::Overflow {
+            symbol: InplaceOp::TrueDivide.symbol(),
+        })
 }
-fn next_digit(
-    remainder: &mut u128,
-    divisor: u128,
-    symbol: &'static str,
-) -> Result<u8, InplaceError> {
-    *remainder = remainder
-        .checked_mul(10)
-        .ok_or(InplaceError::Overflow { symbol })?;
-    let digit = remainder
-        .checked_div(divisor)
-        .ok_or(InplaceError::DivideByZero)?;
-    *remainder = remainder
-        .checked_rem(divisor)
-        .ok_or(InplaceError::DivideByZero)?;
-    u8::try_from(digit).map_err(|_error| InplaceError::Overflow { symbol })
+fn nearest_double_integer(number: i64) -> Option<i64> {
+    let magnitude = number.unsigned_abs();
+    let Some(log) = magnitude.checked_ilog2().filter(|log| *log > 52) else {
+        return Some(number);
+    };
+    let drop = log.checked_sub(52)?;
+    let kept = magnitude.checked_shr(drop)?;
+    let tail = magnitude.checked_sub(kept.checked_shl(drop)?)?;
+    let half = 1_u64.checked_shl(drop.checked_sub(1)?)?;
+    let round_up = tail > half || (tail == half && kept & 1 == 1);
+    let rounded = kept
+        .checked_add(u64::from(round_up))?
+        .checked_mul(1_u64.checked_shl(drop)?)?;
+    let signed = i64::try_from(rounded).ok()?;
+    Some(if number < 0 {
+        signed.checked_neg()?
+    } else {
+        signed
+    })
 }
 fn power(op: InplaceOp, first: i64, second: i64) -> Result<Value, InplaceError> {
     if second >= 0 {
@@ -153,7 +122,8 @@ fn power(op: InplaceOp, first: i64, second: i64) -> Result<Value, InplaceError> 
     match u32::try_from(magnitude) {
         Ok(exponent) => {
             let symbol = op.symbol();
-            let denominator = first
+            let base = nearest_double_integer(first).ok_or(InplaceError::Overflow { symbol })?;
+            let denominator = base
                 .checked_pow(exponent)
                 .ok_or(InplaceError::Overflow { symbol })?;
             float_quotient(1, denominator)

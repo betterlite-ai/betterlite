@@ -102,6 +102,20 @@ fn compiles_a_guardrail_program_and_returns_the_source() {
 #[case::print_lambda_parameter("f = lambda print: 1\n", "reserved name")]
 #[case::print_with_target("with a as print:\n    pass\n", "reserved name")]
 #[case::print_except_target("try:\n    pass\nexcept E as print:\n    pass\n", "reserved name")]
+#[case::del_print("del print\n", "reserved name")]
+#[case::del_list_with_print("del x, print\n", "reserved name")]
+#[case::del_parenthesized_print("del (print)\n", "reserved name")]
+#[case::print_walrus("(print := 1)\n", "reserved name")]
+#[case::printed_walrus_in_if("if (printed := 1):\n    pass\n", "reserved name")]
+#[case::print_walrus_in_fstring("f\"{(print := 1)}\"\n", "reserved name")]
+#[case::print_in_with_tuple("with a as (print, b):\n    pass\n", "reserved name")]
+#[case::print_in_with_list("with a as [print]:\n    pass\n", "reserved name")]
+#[case::print_in_with_parentheses("with a as (print):\n    pass\n", "reserved name")]
+#[case::yield_in_default("def h(x=(yield)):\n    pass\n", "yield outside function")]
+#[case::yield_in_lambda_default("f = lambda x=(yield): x\n", "yield outside function")]
+#[case::yield_in_annotation("def f(x: (yield)):\n    pass\n", "yield outside function")]
+#[case::yield_in_return_annotation("def h() -> (yield):\n    pass\n", "yield outside function")]
+#[case::await_in_default("async def h(x=await y):\n    pass\n", "await outside async function")]
 fn rejects_forbidden_constructs(#[case] source: &str, #[case] requirement: &str) {
     let error = compile_sandboxed(source, DEFAULT_FILENAME).unwrap_err();
     let (_, _, message) = failure(&error);
@@ -123,6 +137,21 @@ fn rejects_inspect_attributes(#[case] source: &str) {
 fn reports_the_file_and_line_of_the_failure() {
     let error = compile_sandboxed("\n\ndef broken(:\n", "guard.py").unwrap_err();
     assert_eq!(failure(&error), ("guard.py", 3, "invalid syntax"));
+}
+
+#[rstest]
+#[case::list_annotation("def f(x: list[int]):\n    return x\n")]
+#[case::dict_return_annotation("def f() -> dict[str, int]:\n    return {}\n")]
+#[case::optional_default("def f(x: Optional[str] = None):\n    return x\n")]
+#[case::async_guardrail_signature(
+    "async def apply_guardrail(inputs: list[str]) -> dict[str, str]:\n    return {}\n"
+)]
+#[case::global_print("def f():\n    global print\n")]
+#[case::global_printed("def f():\n    global printed\n")]
+#[case::await_in_nested_default("async def g():\n    def h(x=await y):\n        pass\n")]
+#[case::await_in_lambda_default("async def g():\n    return lambda x=await y: x\n")]
+fn accepts_what_restricted_python_compiles(#[case] source: &str) {
+    assert!(!compiled(source).source.is_empty());
 }
 
 #[test]

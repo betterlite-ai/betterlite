@@ -98,6 +98,9 @@ fn syntax_kind_rules(node: Node<'_>, filename: &str, line: u32) -> Result<(), Co
         "assignment" if node.child_by_field_name("type").is_some() => {
             "annotated assignment is not allowed"
         }
+        "function_definition" if node.child_by_field_name("type_parameters").is_some() => {
+            "TypeVar statements are not allowed."
+        }
         "match_statement" => "match statements are not allowed",
         "except_clause" if contains_token(node, "*") => "except* is not allowed",
         _ => return Ok(()),
@@ -181,10 +184,34 @@ pub(super) fn identifier_rules(
     }
     check_name(&name, filename, line, NameKind::Variable)
 }
+fn in_target_list(node: Node<'_>) -> bool {
+    let mut current = node.parent();
+    while let Some(parent) = current {
+        match parent.kind() {
+            "as_pattern_target" | "delete_statement" => return true,
+            "parenthesized_expression"
+            | "expression_list"
+            | "tuple"
+            | "list"
+            | "pattern_list"
+            | "tuple_pattern"
+            | "list_pattern"
+            | "list_splat"
+            | "list_splat_pattern" => {
+                current = parent.parent();
+            }
+            _ => return false,
+        }
+    }
+    false
+}
 fn is_binding(node: Node<'_>) -> bool {
     let Some(parent) = node.parent() else {
         return false;
     };
+    if in_target_list(node) {
+        return true;
+    }
     match parent.kind() {
         "parameters"
         | "lambda_parameters"
@@ -193,24 +220,17 @@ fn is_binding(node: Node<'_>) -> bool {
         | "pattern_list"
         | "tuple_pattern"
         | "list_pattern"
-        | "as_pattern_target"
-        | "global_statement"
-        | "nonlocal_statement"
-        | "del_statement" => true,
+        | "nonlocal_statement" => true,
         "typed_parameter" => parent
             .named_child(0)
             .is_some_and(|first| first.id() == node.id()),
-        "default_parameter" | "typed_default_parameter" => parent
+        "default_parameter" | "typed_default_parameter" | "named_expression" => parent
             .child_by_field_name("name")
             .is_some_and(|name| name.id() == node.id()),
         "except_clause" => parent
             .child_by_field_name("alias")
             .is_some_and(|alias| alias.id() == node.id()),
-        "assignment"
-        | "augmented_assignment"
-        | "named_expression"
-        | "for_statement"
-        | "for_in_clause" => parent
+        "assignment" | "augmented_assignment" | "for_statement" | "for_in_clause" => parent
             .child_by_field_name("left")
             .is_some_and(|left| left.id() == node.id()),
         _ => false,
