@@ -18,58 +18,41 @@ fn beta_json(headers: &str) -> String {
 }
 
 pub(super) fn anthropic_beta_header_forms() {
-    assert_falsey_forms();
-    assert_list_forms();
-    assert_text_forms();
-}
-
-fn assert_falsey_forms() {
-    for headers in [
-        "{}",
-        r#"{"Anthropic-Beta": "a"}"#,
-        r#"{"anthropic-beta": null}"#,
-        r#"{"anthropic-beta": ""}"#,
-        r#"{"anthropic-beta": []}"#,
-        r#"{"anthropic-beta": 0}"#,
-        r#"{"anthropic-beta": false}"#,
-        r#"{"anthropic-beta": {}}"#,
-        r#"{"anthropic-beta": 5}"#,
-        r#"{"anthropic-beta": true}"#,
-        r#"{"anthropic-beta": {"a": 1}}"#,
-        r#"{"anthropic-beta": "[]"}"#,
-    ] {
-        assert_eq!(beta(headers), Vec::<BetaValue>::new(), "{headers}");
-    }
-}
-
-fn assert_list_forms() {
-    assert_eq!(
-        beta_json(r#"{"anthropic-beta": ["a", " a ", "", "a"]}"#),
-        r#"["a"," a ","","a"]"#
-    );
-    assert_eq!(
-        beta_json(r#"{"anthropic-beta": ["a", 1, null, true, ["x"], {"k": 1}]}"#),
-        r#"["a",1,null,true,["x"],{"k":1}]"#
-    );
-}
-
-fn assert_text_forms() {
-    let strings = [
-        ("a, b ,c", r#"["a","b","c"]"#),
-        (" ", r#"[""]"#),
-        ("a,,a", r#"["a","","a"]"#),
+    let cases = [
+        ("{}", "[]"),
+        (r#"{"Anthropic-Beta": "a"}"#, "[]"),
+        (r#"{"anthropic-beta": null}"#, "[]"),
+        (r#"{"anthropic-beta": ""}"#, "[]"),
+        (r#"{"anthropic-beta": []}"#, "[]"),
+        (r#"{"anthropic-beta": 0}"#, "[]"),
+        (r#"{"anthropic-beta": false}"#, "[]"),
+        (r#"{"anthropic-beta": {}}"#, "[]"),
+        (r#"{"anthropic-beta": 5}"#, "[]"),
+        (r#"{"anthropic-beta": true}"#, "[]"),
+        (r#"{"anthropic-beta": {"a": 1}}"#, "[]"),
+        (r#"{"anthropic-beta": "[]"}"#, "[]"),
         (
-            r#"[\"x\", \" y \", 5, null, true, false, [1], 1.5]"#,
+            r#"{"anthropic-beta": ["a", " a ", "", "a"]}"#,
+            r#"["a"," a ","","a"]"#,
+        ),
+        (
+            r#"{"anthropic-beta": ["a", 1, null, true, ["x"], {"k": 1}]}"#,
+            r#"["a",1,null,true,["x"],{"k":1}]"#,
+        ),
+        (r#"{"anthropic-beta": "a, b ,c"}"#, r#"["a","b","c"]"#),
+        (r#"{"anthropic-beta": " "}"#, r#"[""]"#),
+        (r#"{"anthropic-beta": "a,,a"}"#, r#"["a","","a"]"#),
+        (
+            r#"{"anthropic-beta": "[\"x\", \" y \", 5, null, true, false, [1], 1.5]"}"#,
             r#"["x","y","5","None","True","False","[1]","1.5"]"#,
         ),
-        ("[not json]", r#"["[not json]"]"#),
-        ("[a, b]", r#"["[a","b]"]"#),
-        (r#" [\"a\"] "#, r#"["a"]"#),
-        (r"\u001ca\u001c", r#"["a"]"#),
+        (r#"{"anthropic-beta": "[not json]"}"#, r#"["[not json]"]"#),
+        (r#"{"anthropic-beta": "[a, b]"}"#, r#"["[a","b]"]"#),
+        (r#"{"anthropic-beta": " [\"a\"] "}"#, r#"["a"]"#),
+        (r#"{"anthropic-beta": "\u001ca\u001c"}"#, r#"["a"]"#),
     ];
-    for (raw, expected) in strings {
-        let headers = format!(r#"{{"anthropic-beta": "{raw}"}}"#);
-        assert_eq!(beta_json(&headers), expected, "{raw:?}");
+    for (headers, expected) in cases {
+        assert_eq!(beta_json(headers), expected, "{headers}");
     }
 }
 
