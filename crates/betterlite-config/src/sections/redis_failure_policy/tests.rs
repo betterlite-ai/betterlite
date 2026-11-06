@@ -45,7 +45,7 @@ fn defaults_match_the_pinned_constants() {
 
 #[rstest]
 #[case::disabled("REDIS_CIRCUIT_BREAKER_ENABLED", "false")]
-#[case::enabled_spelled_as_a_number("REDIS_CIRCUIT_BREAKER_ENABLED", "1")]
+#[case::disabled_spelled_as_a_number("REDIS_CIRCUIT_BREAKER_ENABLED", "0")]
 #[case::threshold("REDIS_CIRCUIT_BREAKER_FAILURE_THRESHOLD", "9")]
 #[case::recovery_timeout("REDIS_CIRCUIT_BREAKER_RECOVERY_TIMEOUT", "30")]
 #[case::timeout_min_duration("REDIS_CIRCUIT_BREAKER_TIMEOUT_MIN_DURATION", "2.5")]
@@ -61,6 +61,15 @@ fn reads_each_environment_override(#[case] name: &str, #[case] value: &str) {
         settings.timeout_log_interval != defaults.timeout_log_interval,
     ];
     assert_eq!(fields.iter().filter(|differs| **differs).count(), 1);
+}
+
+#[rstest]
+#[case::one("1")]
+#[case::yes("yes")]
+#[case::on("on")]
+#[case::upper_case("TRUE")]
+fn a_spelling_of_true_leaves_the_policy_enabled(#[case] value: &str) {
+    assert!(settings(&[("REDIS_CIRCUIT_BREAKER_ENABLED", value)]).enabled);
 }
 
 #[test]

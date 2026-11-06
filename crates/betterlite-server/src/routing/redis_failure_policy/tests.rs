@@ -11,7 +11,7 @@ use tracing::Level;
 use tracing::subscriber::with_default;
 use tracing_subscriber::fmt;
 
-use super::{log_breaker_event, log_redis_failure, policy_settings};
+use super::{FailureLogLevel, log_breaker_event, log_redis_failure, policy_settings};
 
 struct Captured(Arc<Mutex<Vec<u8>>>);
 
@@ -88,7 +88,14 @@ fn a_recovered_breaker_logs_an_info_line() {
 
 #[test]
 fn a_throttled_timeout_line_logs_at_debug() {
-    let text = capture(|| log_redis_failure(LogDecision::Debug, "Redis get failed", "timeout"));
+    let text = capture(|| {
+        log_redis_failure(
+            LogDecision::Debug,
+            FailureLogLevel::Error,
+            "Redis get failed",
+            "timeout",
+        );
+    });
     assert!(text.contains("DEBUG"));
     assert!(text.contains("Redis get failed"));
     assert!(text.contains("error=timeout"));
@@ -99,6 +106,7 @@ fn an_admitted_line_logs_at_the_warning_level() {
     let text = capture(|| {
         log_redis_failure(
             LogDecision::Level { suppressed: 0 },
+            FailureLogLevel::Warning,
             "Redis get failed",
             "connection refused",
         );
@@ -109,10 +117,26 @@ fn an_admitted_line_logs_at_the_warning_level() {
 }
 
 #[test]
+fn an_admitted_line_logs_at_the_error_level() {
+    let text = capture(|| {
+        log_redis_failure(
+            LogDecision::Level { suppressed: 0 },
+            FailureLogLevel::Error,
+            "Redis set failed",
+            "connection refused",
+        );
+    });
+    assert!(text.contains("ERROR"));
+    assert!(text.contains("Redis set failed"));
+    assert!(!text.contains("more Redis timeouts"));
+}
+
+#[test]
 fn a_suppressed_timeout_count_is_named_in_the_warning() {
     let text = capture(|| {
         log_redis_failure(
             LogDecision::Level { suppressed: 2 },
+            FailureLogLevel::Warning,
             "Redis get failed",
             "timeout",
         );
@@ -120,5 +144,21 @@ fn a_suppressed_timeout_count_is_named_in_the_warning() {
     assert!(text.contains("WARN"));
     assert!(text.contains(
         "(2 more Redis timeouts since the previous Redis timeout line were logged at DEBUG)"
+    ));
+}
+
+#[test]
+fn a_suppressed_timeout_count_is_named_in_the_error_line() {
+    let text = capture(|| {
+        log_redis_failure(
+            LogDecision::Level { suppressed: 3 },
+            FailureLogLevel::Error,
+            "Redis set failed",
+            "timeout",
+        );
+    });
+    assert!(text.contains("ERROR"));
+    assert!(text.contains(
+        "(3 more Redis timeouts since the previous Redis timeout line were logged at DEBUG)"
     ));
 }

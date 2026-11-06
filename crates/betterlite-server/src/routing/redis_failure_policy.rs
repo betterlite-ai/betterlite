@@ -4,6 +4,13 @@ use betterlite_router::redis_failure_policy::{BreakerEvent, Settings};
 
 mod tests;
 
+// LiteLLM's call sites pass logging.ERROR or logging.WARNING, and nothing else
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum FailureLogLevel {
+    Warning,
+    Error,
+}
+
 #[must_use]
 pub const fn policy_settings(section: &config::Settings) -> Settings {
     Settings {
@@ -33,13 +40,24 @@ pub fn log_breaker_event(event: &BreakerEvent) {
     }
 }
 
-pub fn log_redis_failure(decision: LogDecision, message: &str, error: &str) {
-    match decision {
-        LogDecision::Debug => tracing::debug!(%error, "{message}"),
-        LogDecision::Level { suppressed: 0 } => tracing::warn!(%error, "{message}"),
-        LogDecision::Level { suppressed } => tracing::warn!(
-            %error,
+pub fn log_redis_failure(
+    decision: LogDecision,
+    level: FailureLogLevel,
+    message: &str,
+    error: &str,
+) {
+    let rendered = match decision {
+        LogDecision::Debug => {
+            tracing::debug!(%error, "{message}");
+            return;
+        }
+        LogDecision::Level { suppressed: 0 } => message.to_owned(),
+        LogDecision::Level { suppressed } => format!(
             "{message} ({suppressed} more Redis timeouts since the previous Redis timeout line were logged at DEBUG)"
         ),
+    };
+    match level {
+        FailureLogLevel::Warning => tracing::warn!(%error, "{rendered}"),
+        FailureLogLevel::Error => tracing::error!(%error, "{rendered}"),
     }
 }

@@ -48,7 +48,9 @@ probes:
         steps:
           - {kind: admit, now_millis: 0, operation: get_cache}
           - {kind: failure, now_millis: 1, outer: connection}
+          - {kind: admit, now_millis: 30002, operation: get_cache}
           - {kind: finish, admission: 0}
+          - {kind: finish, admission: 2}
   - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
     samples: []
     operation:
@@ -63,5 +65,21 @@ probes:
           - {kind: failure, now_millis: 0, outer: connection}
           - {kind: admit, now_millis: 1, operation: get_cache}
           - {kind: finish, admission: 1}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      redis_failure_policy:
+        settings:
+          enabled: true
+          failure_threshold: 3
+          recovery_timeout_seconds: 30
+          timeout_min_duration_millis: 5000
+          timeout_log_interval_millis: 1000
+        steps:
+          - {kind: failure, now_millis: 1000, outer: timeout}
+          - {kind: failure, now_millis: 2000, outer: timeout}
+          - {kind: failure, now_millis: 6000, outer: timeout}
+          - {kind: admit, now_millis: 36001, operation: get_cache}
+          - {kind: failure, now_millis: 36002, outer: connection}
 compare:
   ignore: []

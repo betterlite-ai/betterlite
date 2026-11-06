@@ -1,5 +1,9 @@
 #![cfg(test)]
 
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Mutex;
+use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
 use betterlite_redis::breaker_metrics::BreakerMetrics;
@@ -9,6 +13,7 @@ use rstest::rstest;
 
 use super::classify::{Failure, FailureClass, FailureKind, failure_kind, is_timeout_failure};
 use super::log::{LogDecision, TimeoutLogThrottle};
+use super::run::{RedisCallError, run_async};
 use super::{BreakerEvent, RedisFailurePolicy, Settings, State, Status};
 
 const RECOVERY_SECS: u64 = 30;
@@ -200,9 +205,20 @@ fn a_disabled_policy_never_counts() {
     ];
     assert_eq!(events, [None, None, None, None]);
     assert_eq!(policy.status(), status(State::Closed, 0, 0, 0, 0));
-    let _admission = policy
+    let mut admission = policy
         .admit(millis(4), "get")
         .expect("a disabled breaker admits");
+    let swallowed = policy.record_swallowed_failure(
+        &mut admission,
+        millis(5),
+        failure(FailureClass::Connection),
+    );
+    assert_eq!(swallowed, None);
+    assert_eq!(
+        policy.status(),
+        status(State::Closed, 0, 0, 0, 0),
+        "a swallowed failure on a disabled breaker is not counted"
+    );
 }
 
 fn a_success_resets_the_counts() {
@@ -345,6 +361,9 @@ fn metrics_record_states_failures_and_transitions() {
 #[case::throttle_one_millisecond_below_the_interval(throttle_one_millisecond_below_the_interval)]
 #[case::the_open_error_names_the_operation(the_open_error_names_the_operation)]
 #[case::a_stale_admission_records_no_success(a_stale_admission_records_no_success)]
+#[case::a_half_open_failure_reopens_without_the_hard_count(
+    a_half_open_failure_reopens_without_the_hard_count
+)]
 #[case::a_repeated_failure_while_open_pins_the_timer(a_repeated_failure_pins_the_timer)]
 #[case::a_cancelled_call_records_no_success(a_cancelled_call_records_no_success)]
 fn redis_failure_policy_boundaries(#[case] boundary: fn()) {
@@ -457,19 +476,40 @@ fn the_open_error_names_the_operation() {
 }
 
 fn a_stale_admission_records_no_success() {
-    let mut policy = policy(settings(3, true));
-    let admission = policy
+    let mut policy = policy(settings(1, true));
+    let stale = policy
         .admit(millis(0), "get")
         .expect("the breaker is closed");
     fail(&mut policy, 1, FailureClass::Connection);
-    fail(&mut policy, 2, FailureClass::Connection);
-    fail(&mut policy, 3, FailureClass::Connection);
-    assert_eq!(policy.finish(admission), None);
+    let probe = policy
+        .admit(millis(30_002), "get")
+        .expect("the designated probe is admitted");
+    assert_eq!(policy.status(), status(State::HalfOpen, 2, 1, 1, 0));
+    assert_eq!(policy.finish(stale), None);
     assert_eq!(
         policy.status(),
-        status(State::Open, 1, 3, 3, 0),
+        status(State::HalfOpen, 2, 1, 1, 0),
         "a call admitted before the breaker opened cannot close it"
     );
+    assert_eq!(policy.finish(probe), Some(BreakerEvent::Recovered));
+    assert_eq!(policy.status(), status(State::Closed, 3, 0, 0, 0));
+}
+
+fn a_half_open_failure_reopens_without_the_hard_count() {
+    let mut policy = policy(settings(3, true));
+    timeout_fail(&mut policy, 1_000);
+    timeout_fail(&mut policy, 2_000);
+    assert_eq!(timeout_fail(&mut policy, 6_000), Some(opened(3, 0)));
+    let _probe = policy
+        .admit(millis(36_001), "get")
+        .expect("the designated probe is admitted");
+    assert_eq!(policy.status(), status(State::HalfOpen, 2, 3, 0, 3));
+    assert_eq!(
+        fail(&mut policy, 36_002, FailureClass::Connection),
+        Some(opened(4, 1)),
+        "only the half-open state reopens here, since the hard count stays below the threshold"
+    );
+    assert_eq!(policy.status(), status(State::Open, 3, 4, 1, 0));
 }
 
 fn a_repeated_failure_pins_the_timer() {
@@ -485,13 +525,56 @@ fn a_repeated_failure_pins_the_timer() {
         .expect("the window has passed");
 }
 
+struct NoFailure;
+
+impl RedisCallError for NoFailure {
+    fn failure(&self) -> Option<Failure<'_>> {
+        None
+    }
+}
+
+struct PendingCall;
+
+impl Future for PendingCall {
+    type Output = Result<u32, NoFailure>;
+
+    fn poll(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<Self::Output> {
+        Poll::Pending
+    }
+}
+
+fn cancel_after_one_poll<F>(call: F)
+where
+    F: Future,
+{
+    let mut future = Box::pin(call);
+    let waker = Waker::noop();
+    let mut context = Context::from_waker(waker);
+    assert!(future.as_mut().poll(&mut context).is_pending());
+    // the future is dropped here, as a cancelled request would be
+}
+
 fn a_cancelled_call_records_no_success() {
-    let mut policy = policy(settings(3, true));
-    timeout_fail(&mut policy, 0);
-    let _admission = policy
-        .admit(millis(1), "get")
-        .expect("the breaker is closed");
-    assert_eq!(policy.status(), status(State::Closed, 0, 1, 0, 1));
+    let clock = || millis(10);
+    let policy = Mutex::new(RedisFailurePolicy::new(
+        settings(3, true),
+        BreakerMetrics::new(None),
+    ));
+    let opened = policy
+        .lock()
+        .expect("the policy lock is not poisoned")
+        .record_failure(millis(0), failure(FailureClass::Timeout));
+    assert_eq!(opened, None);
+    cancel_after_one_poll(run_async(&policy, &clock, "get", || PendingCall));
+    let observed = policy
+        .lock()
+        .expect("the policy lock is not poisoned")
+        .status();
+    assert_eq!(
+        observed,
+        status(State::Closed, 0, 1, 0, 1),
+        "a cancelled call records neither a success nor a failure"
+    );
 }
 
 #[rstest]

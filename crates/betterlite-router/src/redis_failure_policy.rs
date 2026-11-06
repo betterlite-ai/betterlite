@@ -1,6 +1,7 @@
 pub mod classify;
 pub mod error;
 pub mod log;
+pub mod run;
 mod tests;
 
 use std::time::Duration;
