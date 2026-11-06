@@ -122,6 +122,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "openai_fine_tuning"
+path = "fuzz_targets/openai_fine_tuning.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "vector_file_contracts"
 path = "fuzz_targets/vector_file_contracts.rs"
 test = false
