@@ -166,12 +166,16 @@ async fn dotprompt_returns_the_request_unchanged_for_an_unknown_prompt_id() {
 #[tokio::test]
 async fn dotprompt_renders_non_text_prompt_variables() {
     let manager = manager(
-        "User: count {{ count }} flag {{ flag }} name {{ profile.name }} second {{ items[1] }}",
+        concat!(
+            "User: count {{ count }} big {{ big }} flag {{ flag }} ",
+            "name {{ profile.name }} second {{ items[1] }}",
+        ),
         None,
     );
     let dynamic = json("{}");
-    let variables =
-        params(r#"{"count":3,"flag":true,"profile":{"name":"Ada"},"items":["one","two"]}"#);
+    let variables = params(
+        r#"{"count":3,"big":18446744073709551616,"flag":true,"profile":{"name":"Ada"},"items":["one","two"]}"#,
+    );
     let mut completion = request(Some("greeting"), "dotprompt/gpt-4", &dynamic);
     completion.prompt_variables = Some(&variables);
 
@@ -183,7 +187,10 @@ async fn dotprompt_renders_non_text_prompt_variables() {
     assert_eq!(
         outcome.messages,
         vec![
-            message("user", "count 3 flag True name Ada second two"),
+            message(
+                "user",
+                "count 3 big 18446744073709551616 flag True name Ada second two",
+            ),
             message("user", "client question"),
         ]
     );

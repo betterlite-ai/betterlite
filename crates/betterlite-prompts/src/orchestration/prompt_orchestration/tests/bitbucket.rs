@@ -19,8 +19,10 @@ use crate::orchestration::prompt_orchestration::PromptManagementBackend as _;
 use super::support::{ignoring_all, json, message, params, prompt_spec, request};
 
 const TEMPLATE: &str = "---\nmodel: gpt-4\ntemperature: 0.5\n---\nSystem: be brief\nUser: hello";
-const TEMPLATE_WITH_VARIABLES: &str =
-    "---\nmodel: gpt-4\n---\nSystem: be brief\nUser: hello {{ name }}";
+const TEMPLATE_WITH_VARIABLES: &str = concat!(
+    "---\nmodel: gpt-4\n---\nSystem: be brief\n",
+    "User: hello {{ name }} you have {{ count }} messages",
+);
 const TEMPLATE_WITHOUT_MODEL: &str = "---\ntemperature: 0.5\n---\nSystem: be brief\nUser: hello";
 
 fn config() -> BitBucketConfig {
@@ -107,7 +109,7 @@ async fn bitbucket_hooks_append_the_client_messages_to_the_parsed_template() {
 async fn bitbucket_hooks_render_the_prompt_variables() {
     let manager = bitbucket_manager(TEMPLATE_WITH_VARIABLES);
     let dynamic = json("{}");
-    let variables = params(r#"{"name":"Ann"}"#);
+    let variables = params(r#"{"name":"Ann","count":3}"#);
     let mut completion = request(Some("greeting"), "bitbucket/gpt-4", &dynamic);
     completion.prompt_variables = Some(&variables);
 
@@ -120,7 +122,7 @@ async fn bitbucket_hooks_render_the_prompt_variables() {
         outcome.messages,
         vec![
             message("system", "be brief"),
-            message("user", "hello Ann"),
+            message("user", "hello Ann you have 3 messages"),
             message("user", "client question"),
         ]
     );

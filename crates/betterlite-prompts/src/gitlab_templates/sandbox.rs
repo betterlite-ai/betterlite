@@ -48,12 +48,7 @@ pub(crate) fn to_value(json: &Json) -> Value {
     match json {
         Json::Null => Value::from(()),
         Json::Bool(flag) => Value::from(*flag),
-        Json::Number(number) => number
-            .as_i64()
-            .map(Value::from)
-            .or_else(|| number.as_u64().map(Value::from))
-            .or_else(|| number.as_f64().map(Value::from))
-            .unwrap_or_else(|| Value::from(number.to_string())),
+        Json::Number(number) => number_value(number),
         Json::Text(text) => Value::from(text.as_str()),
         Json::List(items) => items.iter().map(to_value).collect(),
         Json::Object(fields) => Value::from_pairs(
@@ -62,6 +57,29 @@ pub(crate) fn to_value(json: &Json) -> Value {
                 .map(|(name, value)| (name.clone(), to_value(value))),
         ),
     }
+}
+
+// Jinja renders the JSON number's exact digits, so integers past u64 stay integers or text, never f64.
+fn number_value(number: &serde_json::Number) -> Value {
+    if let Some(value) = number.as_i64() {
+        return Value::from(value);
+    }
+    if let Some(value) = number.as_u64() {
+        return Value::from(value);
+    }
+    let text = number.to_string();
+    if number.is_f64() {
+        return number
+            .as_f64()
+            .map_or_else(|| Value::from(text), Value::from);
+    }
+    if let Ok(value) = text.parse::<i128>() {
+        return Value::from(value);
+    }
+    if let Ok(value) = text.parse::<u128>() {
+        return Value::from(value);
+    }
+    Value::from(text)
 }
 
 fn format_value(
