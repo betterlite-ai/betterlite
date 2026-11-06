@@ -9,5 +9,8 @@ call:
       - {function: update_metadata_field, updated_kv: {tags: {}}, field_name: tags}
       - {function: update_metadata_field, updated_kv: {tags: 0}, field_name: tags}
       - {function: update_metadata_field, updated_kv: {tags: ""}, field_name: tags}
+      - {function: set_object_metadata_field, metadata: null, field_name: tags, value: null}
+      - {function: set_object_metadata_field, metadata: {tags: [old], other: 1}, field_name: tags, value: []}
+      - {function: set_object_metadata_field, field_name: guardrails, value: false}
 env: {}
 compare: {ignore: []}
