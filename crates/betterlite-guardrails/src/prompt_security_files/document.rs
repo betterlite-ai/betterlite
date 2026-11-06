@@ -11,10 +11,12 @@ use super::wire::Action;
 
 type Item = BTreeMap<String, GuardrailValue>;
 
+const DEFAULT_MIME_TYPE: &str = "application/pdf";
+
 struct DocumentFields {
     url: String,
     data: String,
-    mime_type: Option<String>,
+    mime_type: String,
 }
 
 enum Replacement {
@@ -37,7 +39,8 @@ fn document_fields(fields: &Item) -> Result<DocumentFields, FileSanitizationErro
     Ok(DocumentFields {
         url: string_field(fields, "url")?.unwrap_or_default(),
         data: string_field(fields, "data")?.unwrap_or_default(),
-        mime_type: string_field(fields, "mime_type")?,
+        mime_type: string_field(fields, "mime_type")?
+            .unwrap_or_else(|| DEFAULT_MIME_TYPE.to_owned()),
     })
 }
 
@@ -98,7 +101,7 @@ fn read_fields(item: &Item, nested: Option<&str>) -> Result<DocumentFields, File
     Ok(DocumentFields {
         url,
         data: String::new(),
-        mime_type: None,
+        mime_type: DEFAULT_MIME_TYPE.to_owned(),
     })
 }
 
@@ -132,8 +135,7 @@ async fn sanitize_document(
         let data_url = DataUrl::parse(&fields.url)?;
         (data_url.header, data_url.bytes, data_url.mime_type)
     } else {
-        let mime_type = fields.mime_type.as_deref().unwrap_or("application/pdf");
-        ("", decode_base64(&fields.data)?, mime_type)
+        ("", decode_base64(&fields.data)?, fields.mime_type.as_str())
     };
     let filename = document_filename(mime_type);
     tracing::info!(filename, "Sanitizing document");

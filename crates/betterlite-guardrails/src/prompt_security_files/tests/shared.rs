@@ -9,6 +9,7 @@ use std::time::Duration;
 use axum::Router;
 use axum::body::Bytes;
 use axum::extract::State;
+use axum::http::header::{HeaderName, HeaderValue};
 use axum::http::{HeaderMap, Method, StatusCode, Uri};
 use axum::routing::any;
 use base64::Engine as _;
@@ -163,6 +164,18 @@ pub(super) fn sanitizer(base: &str) -> FileSanitizer {
 
 pub(super) fn text(value: &str) -> GuardrailValue {
     GuardrailValue::Text(value.to_owned())
+}
+
+pub(super) fn header_map(entries: &[(&str, &str)]) -> HeaderMap {
+    entries
+        .iter()
+        .map(|(name, value)| {
+            (
+                HeaderName::from_bytes(name.as_bytes()).expect("header name"),
+                HeaderValue::from_str(value).expect("header value"),
+            )
+        })
+        .collect()
 }
 
 pub(super) fn object(entries: &[(&str, GuardrailValue)]) -> BTreeMap<String, GuardrailValue> {

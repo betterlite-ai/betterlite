@@ -1,11 +1,9 @@
 #![cfg(test)]
 
-use std::collections::BTreeMap;
-
 use tracing::Level;
 use tracing::subscriber::with_default;
 
-use super::shared::Capture;
+use super::shared::{Capture, header_map};
 use crate::prompt_security_files::log::log_api_request;
 
 #[test]
@@ -16,9 +14,9 @@ fn log_request_records_method_url_payload_and_redacted_headers() {
         .with_max_level(Level::DEBUG)
         .with_ansi(false)
         .finish();
-    let headers = BTreeMap::from([
-        ("APP-ID".to_owned(), "secret-app-id".to_owned()),
-        ("X-LiteLLM-Key-Alias".to_owned(), "alias".to_owned()),
+    let headers = header_map(&[
+        ("APP-ID", "secret-app-id"),
+        ("X-LiteLLM-Key-Alias", "alias"),
     ]);
     with_default(subscriber, || {
         log_api_request(
@@ -46,7 +44,7 @@ fn log_request_is_silent_above_debug_level() {
         .with_max_level(Level::INFO)
         .finish();
     with_default(subscriber, || {
-        log_api_request("GET", "https://vendor.test", &BTreeMap::new(), "");
+        log_api_request("GET", "https://vendor.test", &header_map(&[]), "");
     });
     assert_eq!(capture.text(), "");
 }

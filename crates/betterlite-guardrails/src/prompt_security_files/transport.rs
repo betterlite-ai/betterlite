@@ -1,7 +1,6 @@
-use std::collections::BTreeMap;
-
+use reqwest::Response;
+use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::multipart::{Form, Part};
-use reqwest::{RequestBuilder, Response};
 use secrecy::ExposeSecret as _;
 use serde::de::DeserializeOwned;
 use tokio::time::sleep;
@@ -12,25 +11,24 @@ use super::log::{log_api_request, log_api_response};
 use super::wire::{SanitizeResult, StatusResponse, UploadResponse};
 
 const QUEUED_STATUSES: [&str; 2] = ["created", "in progress"];
+const API_KEY_HEADER: &str = "app-id";
+const KEY_ALIAS_HEADER: &str = "x-litellm-key-alias";
 
-fn request_headers(
+pub(super) fn request_headers(
     sanitizer: &FileSanitizer,
     user_api_key_alias: Option<&str>,
-) -> BTreeMap<String, String> {
-    let mut headers = BTreeMap::from([(
-        "APP-ID".to_owned(),
-        sanitizer.settings.api_key.expose_secret().to_owned(),
-    )]);
+) -> Result<HeaderMap, FileSanitizationError> {
+    let mut headers = HeaderMap::new();
+    let mut api_key = HeaderValue::from_str(sanitizer.settings.api_key.expose_secret())
+        .map_err(|source| FileSanitizationError::ApiKeyHeader { source })?;
+    api_key.set_sensitive(true);
+    headers.insert(HeaderName::from_static(API_KEY_HEADER), api_key);
     if let Some(alias) = user_api_key_alias.filter(|alias| !alias.is_empty()) {
-        headers.insert("X-LiteLLM-Key-Alias".to_owned(), alias.to_owned());
+        let value = HeaderValue::from_str(alias)
+            .map_err(|source| FileSanitizationError::AliasHeader { source })?;
+        headers.insert(HeaderName::from_static(KEY_ALIAS_HEADER), value);
     }
-    headers
-}
-
-fn with_headers(request: RequestBuilder, headers: &BTreeMap<String, String>) -> RequestBuilder {
-    headers.iter().fold(request, |builder, (name, value)| {
-        builder.header(name, value)
-    })
+    Ok(headers)
 }
 
 pub(super) async fn upload_and_poll(
@@ -40,7 +38,7 @@ pub(super) async fn upload_and_poll(
     user_api_key_alias: Option<&str>,
 ) -> Result<SanitizeResult, FileSanitizationError> {
     let url = format!("{}/api/sanitizeFile", sanitizer.settings.api_base);
-    let headers = request_headers(sanitizer, user_api_key_alias);
+    let headers = request_headers(sanitizer, user_api_key_alias)?;
     log_api_request("POST", &url, &headers, &format!("file upload: {filename}"));
 
     let mime = mime_guess::from_path(filename).first_or_octet_stream();
@@ -48,7 +46,10 @@ pub(super) async fn upload_and_poll(
         .file_name(filename.to_owned())
         .mime_str(mime.as_ref())
         .map_err(|source| FileSanitizationError::UploadMime { source })?;
-    let upload = with_headers(sanitizer.client.post(&url), &headers)
+    let upload = sanitizer
+        .client
+        .post(&url)
+        .headers(headers.clone())
         .multipart(Form::new().part("file", part))
         .timeout(sanitizer.settings.request_timeout);
     let response = upload.send().await.map_err(request_error)?;
@@ -68,7 +69,7 @@ pub(super) async fn upload_and_poll(
 async fn poll(
     sanitizer: &FileSanitizer,
     url: &str,
-    headers: &BTreeMap<String, String>,
+    headers: &HeaderMap,
     job_id: &str,
 ) -> Result<SanitizeResult, FileSanitizationError> {
     let attempts = sanitizer.settings.max_poll_attempts;
@@ -105,11 +106,14 @@ async fn poll(
 async fn poll_once(
     sanitizer: &FileSanitizer,
     url: &str,
-    headers: &BTreeMap<String, String>,
+    headers: &HeaderMap,
     job_id: &str,
 ) -> Result<StatusResponse, FileSanitizationError> {
     log_api_request("GET", url, headers, &format!("jobId={job_id}"));
-    let request = with_headers(sanitizer.client.get(url), headers)
+    let request = sanitizer
+        .client
+        .get(url)
+        .headers(headers.clone())
         .query(&[("jobId", job_id)])
         .timeout(sanitizer.settings.request_timeout);
     let response = request.send().await.map_err(request_error)?;

@@ -1,4 +1,5 @@
 use reqwest::StatusCode;
+use reqwest::header::InvalidHeaderValue;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -40,6 +41,10 @@ pub enum FileSanitizationError {
     ResponseJson { source: serde_json::Error },
     #[error("the upload content type is not valid")]
     UploadMime { source: reqwest::Error },
+    #[error("the Prompt Security api key is not a valid header value")]
+    ApiKeyHeader { source: InvalidHeaderValue },
+    #[error("the user api key alias is not a valid header value")]
+    AliasHeader { source: InvalidHeaderValue },
 }
 
 impl FileSanitizationError {
@@ -60,7 +65,9 @@ impl FileSanitizationError {
             | Self::HttpStatus { .. }
             | Self::ResponseTooLarge { .. }
             | Self::ResponseJson { .. }
-            | Self::UploadMime { .. } => StatusCode::INTERNAL_SERVER_ERROR,
+            | Self::UploadMime { .. }
+            | Self::ApiKeyHeader { .. }
+            | Self::AliasHeader { .. } => StatusCode::INTERNAL_SERVER_ERROR,
         }
     }
 
