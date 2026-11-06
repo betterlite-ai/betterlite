@@ -78,7 +78,11 @@ def _query(step: Step, config: FireworksAIConfig) -> object:
         return config._get_model_cost_capability(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
             model=model, capability=step.get("capability", "")
         )
-    return cast(Json, json.loads(json.dumps(config.get_provider_info(model))))
+    if op == "generation":
+        return get_model_cost_mutation_generation()
+    if op == "provider_info":
+        return cast(Json, json.loads(json.dumps(config.get_provider_info(model))))
+    raise ValueError(f"unknown fireworks catalog metadata op {op}")
 
 
 def _apply(
