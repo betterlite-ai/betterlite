@@ -2213,9 +2213,11 @@ dependencies = [
 name = "betterlite-router"
 version = "0.1.0"
 dependencies = [
+ "betterlite-error",
  "indexmap 2.14.2",
  "rand 0.10.3",
  "rstest",
+ "rust_decimal",
  "serde",
  "serde_json",
  "thiserror",

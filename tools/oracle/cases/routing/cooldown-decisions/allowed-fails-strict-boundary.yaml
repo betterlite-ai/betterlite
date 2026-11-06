@@ -1,0 +1,89 @@
+kind: probe
+name: cooldown-allowed-fails-strict-boundary
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_decisions:
+        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        deployment: {id: dep-1, model_group_size: 2, has_alternatives: false, provider_default: false}
+        failure: {class: rate_limit, status: 429, advisor_orchestration: false, background_response_cost_poll: false}
+        minute: {successes: 0, failures: 0}
+        allowed_fails_before: 2
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_decisions:
+        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        deployment: {id: dep-1, model_group_size: 2, has_alternatives: false, provider_default: false}
+        failure: {class: rate_limit, status: 429, advisor_orchestration: false, background_response_cost_poll: false}
+        minute: {successes: 0, failures: 0}
+        allowed_fails_before: 3
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_decisions:
+        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        deployment: {id: dep-1, model_group_size: 2, has_alternatives: false, provider_default: false}
+        failure: {class: rate_limit, status: 429, advisor_orchestration: false, background_response_cost_poll: false}
+        minute: {successes: 0, failures: 0}
+        allowed_fails_before: 0
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_decisions:
+        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        deployment:
+          id: dep-1
+          model_group_size: 2
+          has_alternatives: false
+          provider_default: false
+          allowed_fails: 1
+        failure: {class: rate_limit, status: 429, advisor_orchestration: false, background_response_cost_poll: false}
+        minute: {successes: 0, failures: 0}
+        allowed_fails_before: 1
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_decisions:
+        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        deployment:
+          id: dep-1
+          model_group_size: 1
+          has_alternatives: false
+          provider_default: false
+          allowed_fails: 1
+        failure: {class: rate_limit, status: 429, advisor_orchestration: false, background_response_cost_poll: false}
+        minute: {successes: 0, failures: 0}
+        allowed_fails_before: 1
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_decisions:
+        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 5.0, disable_cooldowns: false}
+        deployment:
+          id: dep-1
+          model_group_size: 2
+          has_alternatives: false
+          provider_default: false
+          allowed_fails_policy:
+            ContentPolicyViolationErrorAllowedFails: 0
+        failure: {class: content_policy_violation, status: 400, advisor_orchestration: false, background_response_cost_poll: false}
+        minute: {successes: 0, failures: 0}
+        allowed_fails_before: 0
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      cooldown_decisions:
+        router: {allowed_fails: 3, default_allowed_fails: 3, cooldown_time: 2.5, disable_cooldowns: false}
+        deployment:
+          id: dep-1
+          model_group_size: 2
+          has_alternatives: false
+          provider_default: false
+          allowed_fails_policy:
+            RateLimitErrorAllowedFails: 0
+          cooldown_time: 1.5
+        failure: {class: rate_limit, status: 429, advisor_orchestration: false, background_response_cost_poll: false}
+        minute: {successes: 0, failures: 0}
+        allowed_fails_before: 0
