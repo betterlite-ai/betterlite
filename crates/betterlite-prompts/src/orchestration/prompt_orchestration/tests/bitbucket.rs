@@ -16,9 +16,12 @@ use crate::bitbucket_prompt_manager::BitBucketTemplateManager;
 use crate::bitbucket_prompt_manager::parse::{YamlParser, parse_prompt_file};
 use crate::orchestration::prompt_orchestration::PromptManagementBackend as _;
 
-use super::support::{ignoring_all, json, message, prompt_spec, request};
+use super::support::{ignoring_all, json, message, params, prompt_spec, request};
 
 const TEMPLATE: &str = "---\nmodel: gpt-4\ntemperature: 0.5\n---\nSystem: be brief\nUser: hello";
+const TEMPLATE_WITH_VARIABLES: &str =
+    "---\nmodel: gpt-4\n---\nSystem: be brief\nUser: hello {{ name }}";
+const TEMPLATE_WITHOUT_MODEL: &str = "---\ntemperature: 0.5\n---\nSystem: be brief\nUser: hello";
 
 fn config() -> BitBucketConfig {
     BitBucketConfig {
@@ -92,6 +95,50 @@ async fn bitbucket_hooks_append_the_client_messages_to_the_parsed_template() {
     assert_eq!(asynchronous_outcome.model, "gpt-4");
     assert_eq!(
         asynchronous_outcome.messages,
+        vec![
+            message("system", "be brief"),
+            message("user", "hello"),
+            message("user", "client question"),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn bitbucket_hooks_render_the_prompt_variables() {
+    let manager = bitbucket_manager(TEMPLATE_WITH_VARIABLES);
+    let dynamic = json("{}");
+    let variables = params(r#"{"name":"Ann"}"#);
+    let mut completion = request(Some("greeting"), "bitbucket/gpt-4", &dynamic);
+    completion.prompt_variables = Some(&variables);
+
+    let outcome = manager
+        .get_chat_completion_prompt(completion)
+        .await
+        .expect("completion prompt");
+
+    assert_eq!(
+        outcome.messages,
+        vec![
+            message("system", "be brief"),
+            message("user", "hello Ann"),
+            message("user", "client question"),
+        ]
+    );
+}
+
+#[tokio::test]
+async fn bitbucket_hooks_strip_the_integration_prefix_when_the_template_has_no_model() {
+    let manager = bitbucket_manager(TEMPLATE_WITHOUT_MODEL);
+    let dynamic = json("{}");
+
+    let outcome = manager
+        .get_chat_completion_prompt(request(Some("greeting"), "bitbucket/gpt-4", &dynamic))
+        .await
+        .expect("completion prompt");
+
+    assert_eq!(outcome.model, "gpt-4");
+    assert_eq!(
+        outcome.messages,
         vec![
             message("system", "be brief"),
             message("user", "hello"),

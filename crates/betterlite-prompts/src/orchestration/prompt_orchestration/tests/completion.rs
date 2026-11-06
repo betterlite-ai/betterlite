@@ -192,6 +192,42 @@ async fn the_async_hook_passes_the_prompt_spec_to_the_helper() {
 }
 
 #[tokio::test]
+async fn the_sync_hook_forwards_the_prompt_label_and_version() {
+    let backend = FakeBackend::ready(compiled_client());
+    let dynamic = json("{}");
+    let mut completion = request(Some("greeting"), "dotprompt/gpt-4", &dynamic);
+    completion.prompt_label = Some("production");
+    completion.prompt_version = Some(2);
+
+    backend
+        .get_chat_completion_prompt(completion)
+        .await
+        .expect("completion prompt");
+
+    let calls = backend.compile_calls();
+    assert_eq!(calls[0].label.as_deref(), Some("production"));
+    assert_eq!(calls[0].version, Some(2));
+}
+
+#[tokio::test]
+async fn the_async_hook_forwards_the_prompt_label_and_version() {
+    let backend = FakeBackend::ready(compiled_client());
+    let dynamic = json("{}");
+    let mut completion = request(Some("greeting"), "dotprompt/gpt-4", &dynamic);
+    completion.prompt_label = Some("production");
+    completion.prompt_version = Some(2);
+
+    backend
+        .async_completion_prompt(completion)
+        .await
+        .expect("completion prompt");
+
+    let calls = backend.compile_calls();
+    assert_eq!(calls[0].label.as_deref(), Some("production"));
+    assert_eq!(calls[0].version, Some(2));
+}
+
+#[tokio::test]
 async fn the_async_hook_applies_the_same_post_processing() {
     let backend = FakeBackend::ready(compiled_client());
     let dynamic = json("{}");

@@ -4,6 +4,7 @@ use std::io;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use betterlite_models::decisions::Json;
 use betterlite_models::generic_prompt_api::manager::{GenericPromptManager, GenericPromptSettings};
 use betterlite_models::generic_prompt_api::request::{
     PromptApiRequest, PromptApiResponse, PromptApiTransport,
@@ -71,13 +72,20 @@ impl PromptApiTransport for FakePromptApi {
 }
 
 fn generic_manager(transport: FakePromptApi) -> GenericPromptManager<FakePromptApi> {
+    generic_manager_with_params(transport, IndexMap::new())
+}
+
+fn generic_manager_with_params(
+    transport: FakePromptApi,
+    provider_specific_query_params: IndexMap<String, Json>,
+) -> GenericPromptManager<FakePromptApi> {
     GenericPromptManager::new(
         GenericPromptSettings {
             api_base: "http://prompts.test".to_owned(),
             api_key: None,
             timeout: Duration::from_secs(30),
             prompt_id: None,
-            provider_specific_query_params: IndexMap::new(),
+            provider_specific_query_params,
             ignore_flags: PromptIgnoreFlags::default(),
         },
         transport,
@@ -85,10 +93,18 @@ fn generic_manager(transport: FakePromptApi) -> GenericPromptManager<FakePromptA
 }
 
 fn spec_with_query_params() -> PromptSpec {
-    serde_json::from_str(
-        r#"{"prompt_id":"greeting","litellm_params":{"prompt_integration":"generic_prompt","provider_specific_query_params":{"region":"eu"}}}"#,
-    )
+    spec_with_query_region("eu")
+}
+
+fn spec_with_query_region(region: &str) -> PromptSpec {
+    serde_json::from_str(&format!(
+        r#"{{"prompt_id":"greeting","litellm_params":{{"prompt_integration":"generic_prompt","provider_specific_query_params":{{"region":"{region}"}}}}}}"#
+    ))
     .expect("prompt spec")
+}
+
+fn settings_params(region: &str) -> IndexMap<String, Json> {
+    serde_json::from_str(&format!(r#"{{"region":"{region}"}}"#)).expect("settings params")
 }
 
 #[tokio::test]
@@ -222,5 +238,66 @@ async fn generic_sync_hook_forwards_the_callers_ignore_flags() {
     assert_eq!(
         outcome.non_default_params.get("temperature"),
         Some(&json("0.2"))
+    );
+}
+
+#[tokio::test]
+async fn generic_sync_hook_fetches_with_the_managers_own_query_params() {
+    let transport = FakePromptApi::replying(BODY);
+    let manager = generic_manager_with_params(transport.clone(), settings_params("eu"));
+    let dynamic = json("{}");
+    let spec = spec_with_query_region("us");
+    let mut completion = request(Some("greeting"), "generic_prompt/gpt-4", &dynamic);
+    completion.prompt_spec = Some(&spec);
+
+    manager
+        .get_chat_completion_prompt(completion)
+        .await
+        .expect("completion prompt");
+
+    let calls = transport.calls();
+    assert_eq!(calls.len(), 1);
+    assert!(
+        calls[0]
+            .query
+            .iter()
+            .any(|(key, value)| key == "region" && value == "eu")
+    );
+    assert!(
+        !calls[0]
+            .query
+            .iter()
+            .any(|(key, value)| key == "region" && value == "us")
+    );
+}
+
+#[tokio::test]
+async fn generic_async_hook_fetches_without_a_prompt_id_when_the_spec_has_query_params() {
+    let transport = FakePromptApi::replying(BODY);
+    let manager = generic_manager(transport.clone());
+    let dynamic = json("{}");
+    let spec = spec_with_query_params();
+    let mut completion = request(None, "generic_prompt/gpt-4", &dynamic);
+    completion.prompt_spec = Some(&spec);
+
+    let outcome = manager
+        .async_completion_prompt(completion)
+        .await
+        .expect("completion prompt");
+
+    assert_eq!(outcome.model, "gpt-4o");
+    let calls = transport.calls();
+    assert_eq!(calls.len(), 1);
+    assert!(
+        calls[0]
+            .query
+            .iter()
+            .any(|(key, value)| key == "region" && value == "eu")
+    );
+    assert!(
+        calls[0]
+            .query
+            .iter()
+            .any(|(key, value)| key == "prompt_id" && value.is_empty())
     );
 }

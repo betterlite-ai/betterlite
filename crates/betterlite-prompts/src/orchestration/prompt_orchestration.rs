@@ -250,7 +250,7 @@ where
     )
 }
 
-fn complete_compiled_prompt<BackendError>(
+pub(super) fn complete_compiled_prompt<BackendError>(
     prompt_id: &str,
     compiled: Result<PromptManagementClient, BackendError>,
     client_messages: Vec<AllMessageValues>,

@@ -1,9 +1,11 @@
+use betterlite_models::prompt_contracts::PromptIgnoreFlags;
+
 use crate::orchestration::prompt_orchestration::{
     AsyncCompilePromptCall, CompilePromptCall, PromptManagementBackend as _,
     PromptOrchestrationError,
 };
 
-use super::support::{FakeBackend, client_messages, compiled_client, json, message};
+use super::support::{FakeBackend, client_messages, compiled_client, json, message, prompt_spec};
 
 #[tokio::test]
 async fn compile_prompt_calls_the_helper_and_appends_the_client_messages_after_the_template() {
@@ -68,6 +70,35 @@ async fn async_compile_prompt_populates_completed_messages_the_same_way() {
         ])
     );
     assert!(backend.compile_calls()[0].id.is_some());
+}
+
+#[tokio::test]
+async fn compile_prompt_forwards_the_label_version_and_prompt_spec() {
+    let backend = FakeBackend::ready(compiled_client());
+    let dynamic = json("{}");
+    let spec = prompt_spec(PromptIgnoreFlags::default());
+
+    backend
+        .compile_prompt(CompilePromptCall {
+            prompt_id: "greeting",
+            client_messages: client_messages(),
+            prompt_variables: None,
+            dynamic_callback_params: &dynamic,
+            prompt_spec: Some(&spec),
+            prompt_label: Some("production"),
+            prompt_version: Some(3),
+        })
+        .await
+        .expect("compiled prompt");
+
+    let calls = backend.compile_calls();
+    assert_eq!(calls[0].label.as_deref(), Some("production"));
+    assert_eq!(calls[0].version, Some(3));
+    let passed_id = calls[0]
+        .spec
+        .as_ref()
+        .map(|recorded| recorded.prompt_id.clone());
+    assert_eq!(passed_id, Some("greeting".to_owned()));
 }
 
 #[tokio::test]

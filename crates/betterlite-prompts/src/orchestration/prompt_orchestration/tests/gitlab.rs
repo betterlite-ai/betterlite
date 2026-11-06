@@ -11,6 +11,7 @@ use super::support::{ignoring_all, json, message, prompt_spec, request};
 
 const CONFIG: &str = r#"{"project": "g/r", "access_token": "t", "prompts_path": "prompts"}"#;
 const TEMPLATE: &str = "---\nmodel: gpt-4o\ntemperature: 0.5\n---\nSystem: be brief\nUser: hello";
+const TEMPLATE_WITHOUT_MODEL: &str = "---\ntemperature: 0.5\n---\nUser: hello";
 
 async fn gitlab_manager(
     responses: Vec<Result<GitLabResponse, io::Error>>,
@@ -43,6 +44,23 @@ async fn gitlab_hooks_append_the_client_messages_to_the_parsed_template() {
     assert_eq!(
         outcome.non_default_params.get("temperature"),
         Some(&json("0.5"))
+    );
+}
+
+#[tokio::test]
+async fn gitlab_hooks_strip_the_integration_prefix_when_the_template_has_no_model() {
+    let manager = gitlab_manager(vec![answer!(200, TEMPLATE_WITHOUT_MODEL)]).await;
+    let dynamic = json("{}");
+
+    let outcome = manager
+        .get_chat_completion_prompt(request(Some("chat/hi"), "gitlab/gpt-4", &dynamic))
+        .await
+        .expect("completion prompt");
+
+    assert_eq!(outcome.model, "gpt-4");
+    assert_eq!(
+        outcome.messages,
+        vec![message("user", "hello"), message("user", "client question"),]
     );
 }
 
