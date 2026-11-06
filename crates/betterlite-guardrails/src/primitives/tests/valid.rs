@@ -24,6 +24,12 @@ use super::{FakeTransport, run};
     "{}",
     "true"
 )]
+#[case::match_all_inline_verbose_trailing_comment(
+    "regex_match_all",
+    r#"["abc","(?x)abc # c"]"#,
+    "{}",
+    "true"
+)]
 #[case::replace_keeps_the_empty_match_after_a_match(
     "regex_replace",
     r#"["baac","a*","-"]"#,
@@ -128,6 +134,30 @@ use super::{FakeTransport, run};
     "{}",
     "false"
 )]
+#[case::schema_integer_accepts_a_whole_float(
+    "json_schema_valid",
+    r#"[{"n":2.0},{"properties":{"n":{"type":"integer"}}}]"#,
+    "{}",
+    "true"
+)]
+#[case::schema_integer_accepts_an_integer_past_u64(
+    "json_schema_valid",
+    r#"[{"n":18446744073709551616},{"properties":{"n":{"type":"integer"}}}]"#,
+    "{}",
+    "true"
+)]
+#[case::schema_type_array_accepts_null(
+    "json_schema_valid",
+    r#"[null,{"type":["string","null"]}]"#,
+    "{}",
+    "true"
+)]
+#[case::schema_unknown_type_is_invalid(
+    "json_schema_valid",
+    r#"[{"n":1},{"properties":{"n":{"type":"int"}}}]"#,
+    "{}",
+    "false"
+)]
 #[case::extract_urls_finds_both_schemes(
     "extract_urls",
     r#"["see https://a.com/x and http://b.org."]"#,
@@ -157,6 +187,25 @@ use super::{FakeTransport, run};
     r#"["go to http://a[b now"]"#,
     "{}",
     "false"
+)]
+#[case::is_valid_url_rejects_text_before_a_bracket(
+    "is_valid_url",
+    r#"["http://a[::1]/x"]"#,
+    "{}",
+    "false"
+)]
+#[case::is_valid_url_rejects_text_after_a_bracket(
+    "is_valid_url",
+    r#"["http://[::1]x/"]"#,
+    "{}",
+    "false"
+)]
+#[case::is_valid_url_rejects_a_bad_ipvfuture("is_valid_url", r#"["http://[vzz]/"]"#, "{}", "false")]
+#[case::is_valid_url_accepts_an_ipv6_scope(
+    "is_valid_url",
+    r#"["http://[fe80::1%25eth0]/"]"#,
+    "{}",
+    "true"
 )]
 #[tokio::test]
 async fn primitives_management_valid(

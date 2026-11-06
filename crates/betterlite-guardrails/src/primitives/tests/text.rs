@@ -11,6 +11,7 @@ use super::{FakeTransport, run};
 #[case::contains_all_one_missing("contains_all", r#"["hello world",["hello","missing"]]"#, "false")]
 #[case::contains_all_empty_list("contains_all", r#"["hello world",[]]"#, "true")]
 #[case::word_count_splits_on_whitespace("word_count", r#"["  hello   big world \n"]"#, "3")]
+#[case::word_count_splits_on_python_whitespace("word_count", r#"["a\u001fb c"]"#, "3")]
 #[case::word_count_of_empty_text("word_count", r#"[""]"#, "0")]
 #[case::char_count_counts_characters("char_count", "[\"h\u{e9}llo\"]", "5")]
 #[case::char_count_of_empty_text("char_count", r#"[""]"#, "0")]
@@ -18,6 +19,7 @@ use super::{FakeTransport, run};
 #[case::upper("upper", r#"["HeLLo"]"#, r#""HELLO""#)]
 #[case::upper_expands_sharp_s("upper", "[\"stra\u{df}e\"]", r#""STRASSE""#)]
 #[case::trim_both_ends("trim", r#"["  x y \n"]"#, r#""x y""#)]
+#[case::trim_strips_python_whitespace("trim", r#"["\u001cx\u001f"]"#, r#""x""#)]
 #[tokio::test]
 async fn primitives_text_utilities(
     #[case] name: &str,

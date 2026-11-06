@@ -5,10 +5,29 @@ use super::json_value::JsonValue;
 
 const MAX_DEPTH: usize = 50;
 
+#[derive(Deserialize, Eq, PartialEq)]
+#[serde(rename_all = "lowercase")]
+enum SchemaType {
+    Array,
+    Boolean,
+    Integer,
+    Null,
+    Number,
+    Object,
+    String,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum TypeSpec {
+    One(SchemaType),
+    Many(Vec<SchemaType>),
+}
+
 #[derive(Deserialize)]
 struct SchemaNode {
     #[serde(rename = "type", default)]
-    kind: String,
+    kind: Option<TypeSpec>,
     #[serde(default)]
     required: Vec<String>,
     #[serde(default)]
@@ -53,7 +72,7 @@ pub fn json_schema_valid(object: &JsonValue, schema: &JsonValue) -> bool {
 fn conforms(object: &JsonValue, root: &SchemaNode) -> bool {
     let mut pending = vec![(object, root, 0_usize)];
     while let Some((value, node, depth)) = pending.pop() {
-        if depth > MAX_DEPTH || !has_type(&node.kind, value) {
+        if depth > MAX_DEPTH || !has_type(node.kind.as_ref(), value) {
             return false;
         }
         let JsonValue::Object(fields) = value else {
@@ -71,17 +90,37 @@ fn conforms(object: &JsonValue, root: &SchemaNode) -> bool {
     true
 }
 
-fn has_type(kind: &str, value: &JsonValue) -> bool {
+fn has_type(kind: Option<&TypeSpec>, value: &JsonValue) -> bool {
     match kind {
-        "object" => matches!(value, JsonValue::Object(_)),
-        "array" => matches!(value, JsonValue::Array(_)),
-        "string" => matches!(value, JsonValue::String(_)),
-        "number" => matches!(value, JsonValue::Number(_)),
-        "integer" => {
-            matches!(value, JsonValue::Number(number) if number.is_i64() || number.is_u64())
+        None => true,
+        Some(TypeSpec::One(name)) => type_matches(name, value),
+        Some(TypeSpec::Many(names)) => {
+            let unique = names
+                .iter()
+                .enumerate()
+                .all(|(index, name)| !names.iter().take(index).any(|other| other == name));
+            unique && names.iter().any(|name| type_matches(name, value))
         }
-        "boolean" => matches!(value, JsonValue::Bool(_)),
-        "null" => matches!(value, JsonValue::Null),
-        _ => true,
+    }
+}
+
+fn type_matches(kind: &SchemaType, value: &JsonValue) -> bool {
+    match value {
+        JsonValue::Object(_) => matches!(kind, SchemaType::Object),
+        JsonValue::Array(_) => matches!(kind, SchemaType::Array),
+        JsonValue::String(_) => matches!(kind, SchemaType::String),
+        JsonValue::Bool(_) => matches!(kind, SchemaType::Boolean),
+        JsonValue::Null => matches!(kind, SchemaType::Null),
+        JsonValue::Number(number) => match kind {
+            SchemaType::Number => true,
+            SchemaType::Integer => number
+                .as_f64()
+                .is_some_and(|float| float.fract() == 0.0_f64),
+            SchemaType::Array
+            | SchemaType::Boolean
+            | SchemaType::Null
+            | SchemaType::Object
+            | SchemaType::String => false,
+        },
     }
 }

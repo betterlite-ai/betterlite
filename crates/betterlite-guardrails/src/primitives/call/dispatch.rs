@@ -120,9 +120,9 @@ dispatch!(substring(SubstringPrimitive) -> PrimitiveOutput {
 });
 
 dispatch!(text(TextPrimitive) -> PrimitiveOutput {
-    TextPrimitive::WordCount, TextArguments, |args| PrimitiveOutput::Count(args.text.split_whitespace().count());
+    TextPrimitive::WordCount, TextArguments, |args| PrimitiveOutput::Count(args.text.split(|character: char| character.is_whitespace() || ('\x1c'..='\x1f').contains(&character)).filter(|part| !part.is_empty()).count());
     TextPrimitive::CharCount, TextArguments, |args| PrimitiveOutput::Count(args.text.chars().count());
     TextPrimitive::Lower, TextArguments, |args| PrimitiveOutput::Text(args.text.to_lowercase());
     TextPrimitive::Upper, TextArguments, |args| PrimitiveOutput::Text(args.text.to_uppercase());
-    TextPrimitive::Trim, TextArguments, |args| PrimitiveOutput::Text(args.text.trim().to_owned());
+    TextPrimitive::Trim, TextArguments, |args| PrimitiveOutput::Text(args.text.trim_matches(|character: char| character.is_whitespace() || ('\x1c'..='\x1f').contains(&character)).to_owned());
 });

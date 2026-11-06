@@ -64,19 +64,39 @@ fn split_url(url: &str) -> Option<(String, String)> {
     let netloc = rest.strip_prefix("//").map_or("", |authority| {
         authority.split(['/', '?', '#']).next().unwrap_or_default()
     });
-    let has_open = netloc.contains('[');
-    let has_close = netloc.contains(']');
-    if has_open != has_close {
-        return None;
-    }
-    let bracketed = netloc
-        .split_once('[')
-        .and_then(|(_, inside)| inside.split_once(']'))
-        .map(|(host, _)| host);
-    if bracketed.is_some_and(|host| !host.starts_with('v') && host.parse::<Ipv6Addr>().is_err()) {
+    if !bracketed_netloc_valid(netloc) {
         return None;
     }
     Some((scheme, netloc.to_owned()))
+}
+
+// Mirrors urllib.parse._check_bracketed_netloc, whose ValueError becomes None here.
+fn bracketed_netloc_valid(netloc: &str) -> bool {
+    let host = netloc.rsplit_once('@').map_or(netloc, |(_, host)| host);
+    let Some((before, rest)) = host.split_once('[') else {
+        return !host.contains(']');
+    };
+    let Some((inside, after)) = rest.split_once(']') else {
+        return false;
+    };
+    if !before.is_empty() || !(after.is_empty() || after.starts_with(':')) {
+        return false;
+    }
+    let Some(future) = inside.strip_prefix('v') else {
+        let (address, scope) = inside
+            .split_once('%')
+            .map_or((inside, true), |(address, scope)| {
+                (address, !scope.is_empty() && !scope.contains('%'))
+            });
+        return scope && address.parse::<Ipv6Addr>().is_ok();
+    };
+    future.split_once('.').is_some_and(|(digits, tail)| {
+        !digits.is_empty()
+            && digits
+                .chars()
+                .all(|character| character.is_ascii_hexdigit())
+            && !tail.is_empty()
+    })
 }
 
 fn is_scheme(candidate: &str) -> bool {

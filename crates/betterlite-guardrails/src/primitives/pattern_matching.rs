@@ -44,9 +44,11 @@ where
 
 #[must_use]
 pub fn regex_match_all(text: &str, pattern: &str, flags: i64) -> bool {
-    let closing = if flags & VERBOSE != 0 { "\n" } else { "" };
     let outcome = compile(pattern, flags)
-        .and_then(|_| compile(&format!("\\A(?:{pattern}{closing})\\z"), flags))
+        .and_then(|_| {
+            compile(&format!("\\A(?:{pattern})\\z"), flags)
+                .or_else(|_| compile(&format!("\\A(?:{pattern}\n)\\z"), flags))
+        })
         .and_then(|regex| regex.is_match(text));
     or_warn(outcome, false, "regex_match_all")
 }
