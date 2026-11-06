@@ -151,11 +151,11 @@ fn mock_frames(
         system_fingerprint: None,
         service_tier: None,
     })?);
-    let include_usage = request
+    let with_usage = request
         .stream_options
         .as_ref()
         .is_some_and(|options| options.include_usage);
-    if include_usage || prompt_tokens.is_some() {
+    if with_usage || prompt_tokens.is_some() {
         let count = prompt_tokens.unwrap_or(usage.prompt_tokens);
         frames.push(sse_frame(&usage_chunk(spec, count, usage))?);
     }
