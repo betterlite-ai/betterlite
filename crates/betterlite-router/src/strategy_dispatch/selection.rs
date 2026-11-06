@@ -2,7 +2,7 @@ use rand::Rng;
 
 use crate::simple_shuffle::{Candidate, pick};
 use crate::strategy_dispatch::error::StrategyDispatchError;
-use crate::strategy_dispatch::groups::RoutingGroups;
+use crate::strategy_dispatch::groups::RoutingScope;
 use crate::strategy_dispatch::override_resolution::resolve;
 use crate::strategy_dispatch::selector::SelectorId;
 use crate::strategy_dispatch::service::StrategyDispatch;
@@ -45,14 +45,14 @@ pub struct ReadPrefetchPlan<'deployments, Deployment> {
 pub fn select<R>(
     dispatch: &mut StrategyDispatch,
     request: &mut RoutingRequest<'_>,
-    groups: &RoutingGroups,
+    scope: &RoutingScope<'_>,
     candidates: &[Candidate],
     random: &mut R,
 ) -> Result<SelectionOutcome, StrategyDispatchError>
 where
     R: Rng,
 {
-    let resolution = resolve(dispatch, request, groups);
+    let resolution = resolve(dispatch, request, scope);
     let selection = match resolution.strategy {
         RoutingStrategy::SimpleShuffle => Selection::SimpleShuffle {
             index: pick(candidates, random)?,
@@ -81,10 +81,10 @@ where
 pub fn read_prefetch_plan<'deployments, Deployment>(
     dispatch: &mut StrategyDispatch,
     request: &mut RoutingRequest<'_>,
-    groups: &RoutingGroups,
+    scope: &RoutingScope<'_>,
     deployments: &'deployments [Deployment],
 ) -> Option<ReadPrefetchPlan<'deployments, Deployment>> {
-    let resolution = resolve(dispatch, request, groups);
+    let resolution = resolve(dispatch, request, scope);
     if deployments.is_empty() {
         return None;
     }

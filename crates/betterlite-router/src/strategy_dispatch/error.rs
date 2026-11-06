@@ -14,6 +14,10 @@ pub enum StrategyDispatchError {
         expected: &'static str,
         supplied: &'static str,
     },
+    #[error(
+        "latency routing argument ttft_percentile must be greater than 0 and at most 1, got {value}"
+    )]
+    InvalidTtftPercentile { value: f64 },
     #[error("selector {id:?} is not known to this router")]
     UnknownSelector { id: SelectorId },
     #[error("routing group '{group}' is declared more than once")]

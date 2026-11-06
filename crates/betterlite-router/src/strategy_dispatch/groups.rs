@@ -24,6 +24,12 @@ pub struct RoutingGroups {
     model_to_group: BTreeMap<String, String>,
 }
 
+// the routing groups plus the model names that shadow a same-named group
+pub struct RoutingScope<'catalog> {
+    pub groups: &'catalog RoutingGroups,
+    pub shadowing: &'catalog BTreeSet<String>,
+}
+
 impl RoutingGroups {
     pub fn new(routes: Vec<RoutingGroupRoute>) -> Result<Self, StrategyDispatchError> {
         let mut groups = Self::default();
@@ -38,8 +44,11 @@ impl RoutingGroups {
     }
 
     #[must_use]
-    pub fn route(&self, model: &str) -> Option<&RoutingGroupRoute> {
-        if let Some(route) = self.routes.get(model) {
+    pub fn route(&self, model: &str, shadowing: &BTreeSet<String>) -> Option<&RoutingGroupRoute> {
+        // a real deployment or model alias wins over a same-named group, while group membership still applies
+        if !shadowing.contains(model)
+            && let Some(route) = self.routes.get(model)
+        {
             return Some(route);
         }
         let group = self.model_to_group.get(model)?;

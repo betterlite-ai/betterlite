@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use crate::strategy_dispatch::args::SelectorArgs;
-use crate::strategy_dispatch::groups::{GroupStrategy, RoutingGroups};
+use crate::strategy_dispatch::groups::{GroupStrategy, RoutingGroups, RoutingScope};
 use crate::strategy_dispatch::selector::SelectorId;
 use crate::strategy_dispatch::service::StrategyDispatch;
 use crate::strategy_dispatch::strategy::{RoutingStrategy, VALID_ROUTING_STRATEGIES};
@@ -104,7 +104,7 @@ pub fn bind_override_selector(
 pub fn resolve(
     dispatch: &mut StrategyDispatch,
     request: &mut RoutingRequest<'_>,
-    groups: &RoutingGroups,
+    scope: &RoutingScope<'_>,
 ) -> Resolution {
     if let OverrideDecision::Honored(strategy) = request_override(request.strategy) {
         let overridden = override_selector(dispatch, strategy);
@@ -112,7 +112,7 @@ pub fn resolve(
             dispatch,
             strategy,
             overridden.selector,
-            groups,
+            scope.groups,
             request.bindings.as_deref_mut(),
         );
         return Resolution {
@@ -122,7 +122,7 @@ pub fn resolve(
             bound,
         };
     }
-    if let Some(route) = groups.route(request.resolved_model) {
+    if let Some(route) = scope.groups.route(request.resolved_model, scope.shadowing) {
         let (strategy, selector) = match route.strategy {
             GroupStrategy::Priority => (RoutingStrategy::SimpleShuffle, None),
             GroupStrategy::Routing(strategy) => (strategy, route.selector),

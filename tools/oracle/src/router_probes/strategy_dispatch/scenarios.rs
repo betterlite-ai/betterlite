@@ -1,5 +1,7 @@
+use std::collections::BTreeSet;
+
 use betterlite_router::simple_shuffle::Candidate;
-use betterlite_router::strategy_dispatch::groups::RoutingGroups;
+use betterlite_router::strategy_dispatch::groups::{RoutingGroups, RoutingScope};
 use betterlite_router::strategy_dispatch::override_resolution::{
     bind_override_selector, override_selector, request_override,
 };
@@ -175,6 +177,12 @@ pub(super) fn dispatch_output(
         .ok_or_else(|| OperationError::InvalidRequest {
             message: "dispatch needs the model group to route".to_owned(),
         })?;
+    let groups = RoutingGroups::default();
+    let shadowing = BTreeSet::new();
+    let scope = RoutingScope {
+        groups: &groups,
+        shadowing: &shadowing,
+    };
     let mut request = RoutingRequest {
         resolved_model: model,
         strategy: StrategyOverride::Absent,
@@ -183,7 +191,7 @@ pub(super) fn dispatch_output(
     let outcome = select(
         dispatch,
         &mut request,
-        &RoutingGroups::default(),
+        &scope,
         &candidates(&input.deployments),
         random,
     )

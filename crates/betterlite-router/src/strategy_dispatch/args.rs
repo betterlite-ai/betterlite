@@ -55,15 +55,26 @@ impl SelectorArgs {
                     }),
                 }
             }
-            RoutingStrategy::LatencyBasedRouting => match supplied {
-                None => Ok(Self::Latency(LatencyArgs::default())),
-                Some(arguments @ Self::Latency(_)) => Ok(arguments),
-                Some(arguments) => Err(StrategyDispatchError::ArgsMismatch {
-                    strategy,
-                    expected: "latency-based arguments",
-                    supplied: arguments.kind_name(),
-                }),
-            },
+            RoutingStrategy::LatencyBasedRouting => {
+                let arguments = match supplied {
+                    None => Self::Latency(LatencyArgs::default()),
+                    Some(arguments @ Self::Latency(_)) => arguments,
+                    Some(arguments) => {
+                        return Err(StrategyDispatchError::ArgsMismatch {
+                            strategy,
+                            expected: "latency-based arguments",
+                            supplied: arguments.kind_name(),
+                        });
+                    }
+                };
+                if let Self::Latency(latency) = arguments
+                    && let Some(percentile) = latency.ttft_percentile
+                    && !(percentile > 0.0 && percentile <= 1.0)
+                {
+                    return Err(StrategyDispatchError::InvalidTtftPercentile { value: percentile });
+                }
+                Ok(arguments)
+            }
             RoutingStrategy::SimpleShuffle
             | RoutingStrategy::Lar1
             | RoutingStrategy::LeastBusy
