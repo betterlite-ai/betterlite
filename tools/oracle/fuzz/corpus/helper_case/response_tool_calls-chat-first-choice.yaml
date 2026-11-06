@@ -1,0 +1,32 @@
+kind: helper
+name: chat-first-choice
+call:
+  response_tool_calls:
+    function: get_tool_calls
+    include_all_choices: false
+    response:
+      choices:
+        - message:
+            role: assistant
+            tool_calls:
+              - id: call_a
+                type: function
+                function:
+                  name: get_weather
+                  arguments: '{"city":"Paris"}'
+              - id: call_b
+                type: function
+                function:
+                  name: get_time
+                  arguments: '{"tz":"UTC"}'
+        - message:
+            role: assistant
+            tool_calls:
+              - id: call_c
+                type: function
+                function:
+                  name: other
+                  arguments: '{}'
+env: {}
+compare:
+  ignore: []

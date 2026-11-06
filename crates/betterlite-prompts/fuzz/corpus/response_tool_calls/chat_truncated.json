@@ -1,0 +1,1 @@
+{"choices":[{"message":{"tool_calls":[{"id":"call_a","function":{"name":"run","arguments":"{\"path\":\"/tmp\",\"flags\":[\"a\",\"b"}}]}}]}

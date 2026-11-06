@@ -1,0 +1,17 @@
+kind: helper
+name: raw-model-escaped-and-split-by-marker
+call:
+  spend_sanitize:
+    operation: scrub_raw_model
+    raw_model: "a'b\\cé"
+    information:
+      $py: mapping
+      id: 1
+      entries:
+        error_message: |-
+          request for a'b\c... (litellm_truncated skipped 12 chars. Truncation is a DB storage safeguard. Full, untruncated data is logged to logging callbacks (OTEL, Datadog, etc.). To increase the truncation limit, set `MAX_STRING_LENGTH_PROMPT_IN_DB` in your env.) ...é-tail and a'b\cé
+        traceback: a'b\cé
+        error_class: a'b\cé
+        error_code: 400
+env: {}
+compare: {ignore: []}

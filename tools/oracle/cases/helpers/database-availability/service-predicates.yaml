@@ -1,0 +1,49 @@
+kind: helper
+name: database-availability-service-predicates
+call:
+  database_availability:
+    scenarios:
+      - chain:
+          - {kind: os, message: connection refused}
+      - chain:
+          - {kind: async_timeout, message: database read timed out}
+      - chain:
+          - {kind: asyncpg, fault: postgres_connection, message: connection failed}
+        asyncpg: available
+      - chain:
+          - {kind: asyncpg, fault: interface, message: connection failed}
+        asyncpg: available
+      - chain:
+          - {kind: asyncpg, fault: postgres_connection, message: connection failed}
+        asyncpg: unavailable
+      - chain:
+          - {kind: asyncpg, fault: postgres_connection, message: CACHED PLAN MUST NOT CHANGE RESULT TYPE}
+        asyncpg: unavailable
+      - chain:
+          - {kind: database, error_type: data, message: Cached Plan Must Not Change Result Type}
+      - chain:
+          - {kind: database, error_type: other, message: engine crashed, traceback_modules: [prisma.engine.errors]}
+      - chain:
+          - {kind: database, error_type: unique_violation, message: duplicate key}
+      - chain:
+          - {kind: database, error_type: prisma, message: permission denied}
+      - chain:
+          - {kind: base_exception, message: cached plan must not change result type, cause: 1}
+          - {kind: database, error_type: connect, message: connection refused}
+      - chain:
+          - {kind: other, message: CACHED PLAN MUST NOT CHANGE RESULT TYPE}
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/0/error/message, why: betterlite writes its own message}
+    - {pointer: /value/1/error/message, why: betterlite writes its own message}
+    - {pointer: /value/2/error/message, why: betterlite writes its own message}
+    - {pointer: /value/3/error/message, why: betterlite writes its own message}
+    - {pointer: /value/4/error/message, why: betterlite writes its own message}
+    - {pointer: /value/5/error/message, why: betterlite writes its own message}
+    - {pointer: /value/6/error/message, why: betterlite writes its own message}
+    - {pointer: /value/7/error/message, why: betterlite writes its own message}
+    - {pointer: /value/8/error/message, why: betterlite writes its own message}
+    - {pointer: /value/9/error/message, why: betterlite writes its own message}
+    - {pointer: /value/10/error/message, why: betterlite writes its own message}
+    - {pointer: /value/11/error/message, why: betterlite writes its own message}

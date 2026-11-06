@@ -1,0 +1,14 @@
+kind: helper
+name: metadata-pop-before-malformed-target
+call:
+  management_guards:
+    calls:
+      - {function: update_metadata_field, updated_kv: {tags: [new], metadata: bad}, field_name: tags}
+      - {function: update_metadata_fields, updated_kv: {tags: [new], enable_prompt_caching: true, metadata: bad}}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/0/detail
+      why: betterlite writes its own message
+    - pointer: /value/1/detail
+      why: betterlite writes its own message
