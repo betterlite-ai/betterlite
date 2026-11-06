@@ -9,12 +9,8 @@ fuzz_target!(|bytes: &[u8]| {
     let mut accumulator = LineAccumulator::default();
     let mut lines = Vec::new();
     for chunk in bytes.chunks(3) {
-        if let Ok(mut complete) = accumulator.push(chunk) {
-            lines.append(&mut complete);
-        }
+        lines.extend(accumulator.push(chunk).unwrap_or_default());
     }
-    if let Some(line) = accumulator.finish() {
-        lines.push(line);
-    }
+    lines.extend(accumulator.finish());
     let _text = accumulate_text(&lines);
 });

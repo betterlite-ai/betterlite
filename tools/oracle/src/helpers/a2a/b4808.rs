@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::num::NonZeroUsize;
 use std::sync::PoisonError;
 
@@ -12,7 +12,7 @@ use betterlite_core::agents::json::AgentJson;
 use serde::Deserialize;
 
 use crate::helpers::{Helper, HelperResult};
-use report::{CallError, Outcome, Output, PacedEvent, helper_error, kind, normalize};
+use report::{CallError, Outcome, Output, PacedEvent, helper_error, kind};
 use script::{Clock, Script, Source};
 
 mod report;
@@ -32,6 +32,7 @@ enum Mode {
 #[serde(rename_all = "snake_case")]
 enum Fail {
     Transport,
+    Timeout,
     Read,
     TooLarge,
 }
@@ -136,9 +137,6 @@ impl Helper for Op {
                 .into_inner()
                 .unwrap_or_else(PoisonError::into_inner),
         };
-        let mut value = serde_json::to_value(output)
-            .map_err(|error| helper_error("SerializationError", error))?;
-        normalize(&mut value, &mut HashMap::new());
-        Ok(value)
+        serde_json::to_value(output).map_err(|error| helper_error("SerializationError", error))
     }
 }

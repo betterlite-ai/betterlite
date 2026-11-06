@@ -22,6 +22,13 @@ pub struct RunRequest<'request> {
 }
 
 #[derive(Debug)]
+pub enum RunFailure<E> {
+    Transport(E),
+    // LiteLLM raises its own Timeout for a request that never got headers, outside every TransportError handler
+    Timeout,
+}
+
+#[derive(Debug)]
 pub struct RunResponse {
     pub status: u16,
     pub body: Vec<u8>,
@@ -47,17 +54,17 @@ pub trait RunTransport: Send + Sync {
     fn post(
         &self,
         request: &RunRequest<'_>,
-    ) -> impl Future<Output = Result<RunResponse, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<RunResponse, RunFailure<Self::Error>>> + Send;
 
     fn get(
         &self,
         request: &RunRequest<'_>,
-    ) -> impl Future<Output = Result<RunResponse, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<RunResponse, RunFailure<Self::Error>>> + Send;
 
     fn post_stream(
         &self,
         request: &RunRequest<'_>,
-    ) -> impl Future<Output = Result<StreamResponse<Self::Error>, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<StreamResponse<Self::Error>, RunFailure<Self::Error>>> + Send;
 
     fn pause(&self, duration: Duration) -> impl Future<Output = ()> + Send;
 }

@@ -36,6 +36,7 @@ fn watsonx_run_cases(#[case] name: &str) {
 #[case::stream_fallback_not_triggered_on_status_error(
     "stream-fallback-not-triggered-on-status-error"
 )]
+#[case::stream_timeout("stream-timeout")]
 fn watsonx_stream_cases(#[case] name: &str) {
     run(name);
 }

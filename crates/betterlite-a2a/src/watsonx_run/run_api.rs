@@ -4,7 +4,7 @@ use serde::Serialize;
 use thiserror::Error;
 
 use super::event::RunEvent;
-use super::transport::{RunRequest, RunTransport};
+use super::transport::{RunFailure, RunRequest, RunTransport};
 
 mod tests;
 
@@ -47,6 +47,18 @@ where
     Decode(#[source] serde_json::Error),
     #[error("the watsonx Orchestrate run answer passed {max} bytes")]
     TooLarge { max: usize },
+    #[error("the watsonx Orchestrate request timed out")]
+    Timeout,
+}
+
+pub fn api_error<E>(failure: RunFailure<E>) -> ApiError<E>
+where
+    E: Error + 'static,
+{
+    match failure {
+        RunFailure::Transport(error) => ApiError::Transport(error),
+        RunFailure::Timeout => ApiError::Timeout,
+    }
 }
 
 pub async fn call_run<T>(
@@ -61,7 +73,7 @@ where
         Method::Post => transport.post(request).await,
         Method::Get => transport.get(request).await,
     }
-    .map_err(ApiError::Transport)?;
+    .map_err(api_error)?;
     if !(200..300).contains(&response.status) {
         return Err(ApiError::Status {
             status: response.status,

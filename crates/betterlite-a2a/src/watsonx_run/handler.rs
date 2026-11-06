@@ -25,7 +25,7 @@ use crate::watsonx_transform::response::build_a2a_message_response;
 use super::accumulator::{LineAccumulator, SseError, accumulate_text};
 use super::event::RunEvent;
 use super::poll::{PollError, poll_run};
-use super::run_api::{ApiError, Method, RunBody, RunContent, RunMessage, call_run};
+use super::run_api::{ApiError, Method, RunBody, RunContent, RunMessage, api_error, call_run};
 use super::transport::{RunLimits, RunRequest, RunTransport, StreamBody};
 
 mod tests;
@@ -191,7 +191,7 @@ where
             .transport
             .post_stream(&request)
             .await
-            .map_err(ApiError::Transport)?;
+            .map_err(api_error)?;
         if !(200..300).contains(&response.status) {
             return Err(RunError::Api(ApiError::Status {
                 status: response.status,

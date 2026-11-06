@@ -8,7 +8,7 @@ use betterlite_a2a::watsonx_credentials::bearer::{
     TokenClock, TokenHttpResponse, TokenRequest, TokenTransport,
 };
 use betterlite_a2a::watsonx_run::transport::{
-    RunRequest, RunResponse, RunTransport, StreamBody, StreamResponse,
+    RunFailure, RunRequest, RunResponse, RunTransport, StreamBody, StreamResponse,
 };
 use betterlite_core::agents::json::AgentJson;
 use chrono::{DateTime, Utc};
@@ -66,11 +66,15 @@ impl Script {
         steps.pop_front().ok_or(ScriptError::Exhausted)
     }
 
-    fn reply(&self, method: &'static str, request: &RunRequest<'_>) -> Result<Step, ScriptError> {
-        let body = match request.body {
-            Some(body) => serde_json::to_value(body).map_err(ScriptError::Record)?,
-            None => AgentJson::Null,
-        };
+    fn reply(
+        &self,
+        method: &'static str,
+        request: &RunRequest<'_>,
+    ) -> Result<Step, RunFailure<ScriptError>> {
+        let recorded = request
+            .body
+            .map_or(Ok(AgentJson::Null), serde_json::to_value)
+            .map_err(|source| RunFailure::Transport(ScriptError::Record(source)))?;
         self.requests
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -78,23 +82,25 @@ impl Script {
                 method,
                 url: request.url.to_owned(),
                 headers: request.headers.clone(),
-                body,
+                body: recorded,
                 timeout: request.limits.timeout.as_secs_f64(),
             });
-        let step = self.next()?;
-        if matches!(step.fail, Some(Fail::Transport)) {
-            return Err(ScriptError::Transport);
+        let step = self.next().map_err(RunFailure::Transport)?;
+        match step.fail {
+            Some(Fail::Transport) => Err(RunFailure::Transport(ScriptError::Transport)),
+            Some(Fail::Timeout) => Err(RunFailure::Timeout),
+            _ => Ok(step),
         }
-        Ok(step)
     }
 
     fn answer_json(
         &self,
         method: &'static str,
         request: &RunRequest<'_>,
-    ) -> Result<RunResponse, ScriptError> {
+    ) -> Result<RunResponse, RunFailure<ScriptError>> {
         let step = self.reply(method, request)?;
-        let body = serde_json::to_vec(&step.body).map_err(ScriptError::Record)?;
+        let body = serde_json::to_vec(&step.body)
+            .map_err(|source| RunFailure::Transport(ScriptError::Record(source)))?;
         Ok(RunResponse {
             status: step.status,
             body,
@@ -104,18 +110,24 @@ impl Script {
     fn answer_stream(
         &self,
         request: &RunRequest<'_>,
-    ) -> Result<StreamResponse<ScriptError>, ScriptError> {
+    ) -> Result<StreamResponse<ScriptError>, RunFailure<ScriptError>> {
         let step = self.reply("POST", request)?;
+        let status = step.status;
+        let content_type = step.content_type.clone().unwrap_or_default();
         let body = match step.fail {
             Some(Fail::Read) => StreamBody::ReadFailed(ScriptError::Read),
             Some(Fail::TooLarge) => StreamBody::TooLarge {
                 max: request.limits.max_response_bytes,
             },
-            _ => StreamBody::Chunks(chunks_of(&step).map_err(ScriptError::Record)?),
+            _ => {
+                let chunks = chunks_of(&step)
+                    .map_err(|source| RunFailure::Transport(ScriptError::Record(source)))?;
+                StreamBody::Chunks(chunks)
+            }
         };
         Ok(StreamResponse {
-            status: step.status,
-            content_type: step.content_type.unwrap_or_default(),
+            status,
+            content_type,
             body,
         })
     }
@@ -163,21 +175,22 @@ impl RunTransport for &Script {
     fn post(
         &self,
         request: &RunRequest<'_>,
-    ) -> impl Future<Output = Result<RunResponse, ScriptError>> + Send {
+    ) -> impl Future<Output = Result<RunResponse, RunFailure<ScriptError>>> + Send {
         ready(self.answer_json("POST", request))
     }
 
     fn get(
         &self,
         request: &RunRequest<'_>,
-    ) -> impl Future<Output = Result<RunResponse, ScriptError>> + Send {
+    ) -> impl Future<Output = Result<RunResponse, RunFailure<ScriptError>>> + Send {
         ready(self.answer_json("GET", request))
     }
 
     fn post_stream(
         &self,
         request: &RunRequest<'_>,
-    ) -> impl Future<Output = Result<StreamResponse<ScriptError>, ScriptError>> + Send {
+    ) -> impl Future<Output = Result<StreamResponse<ScriptError>, RunFailure<ScriptError>>> + Send
+    {
         ready(self.answer_stream(request))
     }
 

@@ -20,7 +20,7 @@ use crate::watsonx_credentials::params::WxoLitellmParams;
 use crate::watsonx_credentials::token_cache::BoundedTokenCache;
 use crate::watsonx_run::handler::RunHandler;
 use crate::watsonx_run::transport::{
-    MAX_RESPONSE_BYTES, RunLimits, RunRequest, RunResponse, RunTransport, StreamBody,
+    MAX_RESPONSE_BYTES, RunFailure, RunLimits, RunRequest, RunResponse, RunTransport, StreamBody,
     StreamResponse,
 };
 use crate::watsonx_transform::extract::WxoSendParams;
@@ -28,6 +28,7 @@ use crate::watsonx_transform::extract::WxoSendParams;
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Fail {
     Transport,
+    Timeout,
     Read,
     TooLarge,
 }
@@ -151,11 +152,15 @@ impl Script {
         replies.pop_front().ok_or(ScriptError::Exhausted)
     }
 
-    fn reply(&self, method: &'static str, request: &RunRequest<'_>) -> Result<Reply, ScriptError> {
-        let body = match request.body {
-            Some(body) => serde_json::to_value(body).map_err(ScriptError::Record)?,
-            None => AgentJson::Null,
-        };
+    fn reply(
+        &self,
+        method: &'static str,
+        request: &RunRequest<'_>,
+    ) -> Result<Reply, RunFailure<ScriptError>> {
+        let recorded = request
+            .body
+            .map_or(Ok(AgentJson::Null), serde_json::to_value)
+            .map_err(|source| RunFailure::Transport(ScriptError::Record(source)))?;
         self.requests
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -163,23 +168,25 @@ impl Script {
                 method,
                 url: request.url.to_owned(),
                 headers: request.headers.clone(),
-                body,
+                body: recorded,
                 timeout: request.limits.timeout,
             });
-        let reply = self.next()?;
-        if matches!(reply.fail, Some(Fail::Transport)) {
-            return Err(ScriptError::Transport);
+        let reply = self.next().map_err(RunFailure::Transport)?;
+        match reply.fail {
+            Some(Fail::Transport) => Err(RunFailure::Transport(ScriptError::Transport)),
+            Some(Fail::Timeout) => Err(RunFailure::Timeout),
+            _ => Ok(reply),
         }
-        Ok(reply)
     }
 
     fn answer_json(
         &self,
         method: &'static str,
         request: &RunRequest<'_>,
-    ) -> Result<RunResponse, ScriptError> {
+    ) -> Result<RunResponse, RunFailure<ScriptError>> {
         let reply = self.reply(method, request)?;
-        let body = serde_json::to_vec(&reply.body).map_err(ScriptError::Record)?;
+        let body = serde_json::to_vec(&reply.body)
+            .map_err(|source| RunFailure::Transport(ScriptError::Record(source)))?;
         Ok(RunResponse {
             status: reply.status,
             body,
@@ -189,18 +196,24 @@ impl Script {
     fn answer_stream(
         &self,
         request: &RunRequest<'_>,
-    ) -> Result<StreamResponse<ScriptError>, ScriptError> {
+    ) -> Result<StreamResponse<ScriptError>, RunFailure<ScriptError>> {
         let reply = self.reply("POST", request)?;
+        let status = reply.status;
+        let content_type = reply.content_type.clone().unwrap_or_default();
         let body = match reply.fail {
             Some(Fail::Read) => StreamBody::ReadFailed(ScriptError::Read),
             Some(Fail::TooLarge) => StreamBody::TooLarge {
                 max: request.limits.max_response_bytes,
             },
-            _ => StreamBody::Chunks(chunks_of(&reply).map_err(ScriptError::Record)?),
+            _ => {
+                let chunks = chunks_of(&reply)
+                    .map_err(|source| RunFailure::Transport(ScriptError::Record(source)))?;
+                StreamBody::Chunks(chunks)
+            }
         };
         Ok(StreamResponse {
-            status: reply.status,
-            content_type: reply.content_type.unwrap_or_default(),
+            status,
+            content_type,
             body,
         })
     }
@@ -251,21 +264,22 @@ impl RunTransport for &Script {
     fn post(
         &self,
         request: &RunRequest<'_>,
-    ) -> impl Future<Output = Result<RunResponse, ScriptError>> + Send {
+    ) -> impl Future<Output = Result<RunResponse, RunFailure<ScriptError>>> + Send {
         ready(self.answer_json("POST", request))
     }
 
     fn get(
         &self,
         request: &RunRequest<'_>,
-    ) -> impl Future<Output = Result<RunResponse, ScriptError>> + Send {
+    ) -> impl Future<Output = Result<RunResponse, RunFailure<ScriptError>>> + Send {
         ready(self.answer_json("GET", request))
     }
 
     fn post_stream(
         &self,
         request: &RunRequest<'_>,
-    ) -> impl Future<Output = Result<StreamResponse<ScriptError>, ScriptError>> + Send {
+    ) -> impl Future<Output = Result<StreamResponse<ScriptError>, RunFailure<ScriptError>>> + Send
+    {
         ready(self.answer_stream(request))
     }
 

@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::fmt::Display;
 
 use betterlite_a2a::completion_bridge::events::Event;
@@ -51,6 +50,9 @@ const fn run_kind(error: &RunError<ScriptError, ScriptError>) -> &'static str {
         RunError::Credentials(CredentialsError::Transport(_))
         | RunError::Api(ApiError::Transport(_))
         | RunError::Poll(PollError::Api(ApiError::Transport(_))) => "transport",
+        RunError::Api(ApiError::Timeout) | RunError::Poll(PollError::Api(ApiError::Timeout)) => {
+            "request_timeout"
+        }
         RunError::Credentials(CredentialsError::Status { .. })
         | RunError::Api(ApiError::Status { .. })
         | RunError::Poll(PollError::Api(ApiError::Status { .. })) => "status",
@@ -88,27 +90,4 @@ where
         code: None,
         message: message.to_string(),
     })
-}
-
-pub(super) fn normalize(value: &mut AgentJson, seen: &mut HashMap<String, String>) {
-    match value {
-        AgentJson::String(text) => {
-            if text.len() == 36 && text.starts_with("00000000-0000-0000-0000-") {
-                let next = format!("uuid-{}", seen.len());
-                let replacement = seen.entry(text.clone()).or_insert(next);
-                text.clone_from(replacement);
-            }
-        }
-        AgentJson::Array(items) => {
-            for item in items {
-                normalize(item, seen);
-            }
-        }
-        AgentJson::Object(fields) => {
-            for field in fields.values_mut() {
-                normalize(field, seen);
-            }
-        }
-        AgentJson::Null | AgentJson::Bool(_) | AgentJson::Number(_) => {}
-    }
 }

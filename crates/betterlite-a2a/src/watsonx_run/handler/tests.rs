@@ -452,6 +452,24 @@ async fn handler_reports_a_stream_the_transport_could_not_carry() {
 }
 
 #[tokio::test]
+async fn fallback_does_not_submit_when_the_stream_post_times_out() {
+    let script = Script::new(vec![token_reply(), Reply::failing(Fail::Timeout)]);
+    let error: RunError<ScriptError, ScriptError> = run_handler(&script)
+        .handle_streaming(
+            "req-1",
+            &send_params(),
+            &litellm_params(),
+            StreamPacing::default(),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(error, RunError::Api(ApiError::Timeout)));
+    let recorded = script.recorded();
+    assert_eq!(recorded.len(), 1);
+    assert_eq!(recorded[0].url, STREAM);
+}
+
+#[tokio::test]
 async fn handler_reports_a_stream_success_without_text_as_an_empty_answer() {
     let script = Script::new(vec![
         token_reply(),

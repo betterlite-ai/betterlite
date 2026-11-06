@@ -1,6 +1,6 @@
 task: B4808
 deviations:
-  - what: 'The runs API is reached through an injected RunTransport trait, and betterlite-a2a ships no HTTP client for this provider; the handler passes the 90 second non-streaming and 120 second streaming timeouts on every request.'
+  - what: 'The runs API is reached through an injected RunTransport trait, and betterlite-a2a ships no HTTP client for this provider; the handler passes the 90 second non-streaming and 120 second streaming timeouts on every request, and the transport reports a request that never got headers as its own Timeout outcome, which the streaming handler returns instead of falling back.'
     why: 'The gateway wiring that owns the HTTP client and the connection pool belongs to B173, and an injected transport makes the poll pauses, the request bodies and the fallback boundary testable.'
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/providers/watsonx_orchestrate/handler.py#L283-L290
   - what: 'The provider config is a WatsonxRunConfig struct with one handle method that takes the reply shape (message or stream) instead of an implementation of BaseA2AProviderConfig with two methods. Streaming returns the WXO stream steps with the delay after each event rather than an async iterator.'

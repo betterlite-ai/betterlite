@@ -1,7 +1,6 @@
 import asyncio
 import copy
 import json
-import re
 import sys
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from http import HTTPStatus
@@ -14,11 +13,11 @@ from uuid import UUID
 
 import httpx
 import litellm
+from litellm.exceptions import Timeout as LitellmTimeout
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
 _PACKAGE = "litellm.a2a_protocol.providers.watsonx_orchestrate"
-_COUNTER_ID = re.compile(r"^00000000-0000-0000-0000-[0-9a-f]{12}$")
 _PROVIDER_DIR = Path(litellm.__file__).parent / "a2a_protocol" / "providers" / "watsonx_orchestrate"
 _PROVIDERS_DIR = _PROVIDER_DIR.parent
 
@@ -133,6 +132,8 @@ class ScriptedClient:
             self._script.pop(0)
         if step.get("fail") == "transport":
             raise httpx.ConnectError("the scripted transport failed")
+        if step.get("fail") == "timeout":
+            raise LitellmTimeout("timed out", "default-model-name", "litellm-httpx-handler")
         return FakeResponse(step, url)
 
 
@@ -161,6 +162,7 @@ async def call_provider(input_value: Mapping[str, Json], recorder: SleepRecorder
 
 
 _EXCEPTION_KINDS: tuple[tuple[type[BaseException], str], ...] = (
+    (LitellmTimeout, "request_timeout"),
     (httpx.ReadError, "read"),
     (httpx.TransportError, "transport"),
     (httpx.HTTPStatusError, "status"),
@@ -191,18 +193,6 @@ def classify(error: Exception) -> str:
     return "other"
 
 
-def normalize(value: Json, seen: dict[str, str]) -> Json:
-    if isinstance(value, str):
-        if _COUNTER_ID.match(value):
-            return seen.setdefault(value, f"uuid-{len(seen)}")
-        return value
-    if isinstance(value, list):
-        return [normalize(item, seen) for item in value]
-    if isinstance(value, dict):
-        return {key: normalize(value[key], seen) for key in sorted(value)}
-    return value
-
-
 def run(input_value: dict[str, Json]) -> Json:
     script = cast(list[Json], copy.deepcopy(input_value.get("steps", [])))
     clients: list[ScriptedClient] = []
@@ -228,4 +218,4 @@ def run(input_value: dict[str, Json]) -> Json:
         "requests": cast(Json, requests),
         "sleeps": cast(Json, recorder.sleeps),
     }
-    return normalize(result, {})
+    return result
