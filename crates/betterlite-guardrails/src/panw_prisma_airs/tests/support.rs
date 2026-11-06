@@ -10,6 +10,7 @@ use axum::routing::{get, post};
 use betterlite_config::sections::panw_prisma_airs::{
     Configured, ContentMaskSettings, FallbackAction, MaskingSettings,
 };
+use betterlite_config::tls::{TlsPolicy, Verification};
 use secrecy::SecretString;
 use tokio::net::TcpListener;
 use tokio::sync::Mutex;
@@ -49,8 +50,30 @@ fn twelve_seconds_in() -> SystemTime {
         .expect("time in range")
 }
 
+pub(super) fn tls() -> TlsPolicy {
+    TlsPolicy {
+        verification: Verification::Enabled,
+        ca_file: None,
+        certificate: None,
+        http2: false,
+        ecdh_curve: None,
+        user_agent: "betterlite-tests".to_owned(),
+    }
+}
+
+pub(super) fn tls_with_ca(ca_file: &str) -> TlsPolicy {
+    TlsPolicy {
+        verification: Verification::CaFile(ca_file.to_owned()),
+        ca_file: Some(ca_file.to_owned()),
+        certificate: None,
+        http2: false,
+        ecdh_curve: None,
+        user_agent: "betterlite-tests".to_owned(),
+    }
+}
+
 pub(super) fn guardrail(settings: Configured) -> PanwPrismaAirs {
-    let mut built = PanwPrismaAirs::new(settings).expect("client builds");
+    let mut built = PanwPrismaAirs::new(settings, &tls()).expect("client builds");
     built.now = twelve_seconds_in;
     built
 }
@@ -63,6 +86,7 @@ pub(super) fn metadata() -> ScanMetadata {
 pub(super) struct Captured {
     pub(super) token: Option<String>,
     pub(super) content_type: Option<String>,
+    pub(super) accept: Option<String>,
     pub(super) body: String,
 }
 
@@ -129,6 +153,7 @@ async fn scan(
     reply.captured.lock().await.push(Captured {
         token: text("x-pan-token"),
         content_type: text(header::CONTENT_TYPE.as_str()),
+        accept: text(header::ACCEPT.as_str()),
         body,
     });
     sleep(reply.delay).await;

@@ -1,13 +1,25 @@
 use std::fs::{read, read_dir};
+use std::io::Error as IoError;
 use std::path::Path;
+use std::str;
+use std::sync::Arc;
 use std::time::Duration;
 
 use axum::http::StatusCode;
 use rstest::rstest;
+use rustls::ServerConfig;
+use rustls::crypto::aws_lc_rs;
+use rustls::pki_types::pem::PemObject as _;
+use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use secrecy::SecretString;
 use serde_json::value::RawValue;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::time::timeout;
+use tokio_rustls::TlsAcceptor;
+use tokio_rustls::server::TlsStream;
 
-use super::support::{guardrail, metadata, serve, serve_after, settings};
+use super::support::{guardrail, metadata, serve, serve_after, settings, tls, tls_with_ca};
 use crate::panw_prisma_airs::audit::Direction;
 use crate::panw_prisma_airs::construct::{ConstructError, PanwPrismaAirs};
 use crate::panw_prisma_airs::metadata::ScanMetadata;
@@ -17,6 +29,11 @@ use crate::panw_prisma_airs::tool_scan::ToolCall;
 use crate::panw_prisma_airs::verdict::{Action, Failure, ScanVerdict};
 
 const ALLOW: &[u8] = br#"{"action":"allow","category":"benign","scan_id":"scan-1"}"#;
+const TLS_SERVER_CERT: &[u8] =
+    include_bytes!("../../../../../tools/postgres-fixture/fixtures/tls/server.pem");
+const TLS_SERVER_KEY: &[u8] =
+    include_bytes!("../../../../../tools/postgres-fixture/fixtures/tls/server.key");
+const MAX_REQUEST_BYTES: usize = 8192;
 
 fn request<'req>(content: &'req str, metadata: Option<&'req ScanMetadata>) -> ScanRequest<'req> {
     ScanRequest {
@@ -176,6 +193,7 @@ async fn scan_posts_json_with_the_api_token_and_parses_the_verdict() {
         captured[0].content_type.as_deref(),
         Some("application/json")
     );
+    assert_eq!(captured[0].accept.as_deref(), Some("application/json"));
     assert!(
         captured[0]
             .body
@@ -228,7 +246,7 @@ fn construct_rejects_an_empty_api_key() {
     let mut settings = settings("http://unused.test");
     settings.api_key = SecretString::from(String::new());
     assert!(matches!(
-        PanwPrismaAirs::new(settings),
+        PanwPrismaAirs::new(settings, &tls()),
         Err(ConstructError::MissingApiKey)
     ));
 }
@@ -238,9 +256,120 @@ fn construct_rejects_an_api_key_that_is_not_a_header_value() {
     let mut settings = settings("http://unused.test");
     settings.api_key = SecretString::from("bad\nkey".to_owned());
     assert!(matches!(
-        PanwPrismaAirs::new(settings),
+        PanwPrismaAirs::new(settings, &tls()),
         Err(ConstructError::InvalidApiKey { .. })
     ));
+}
+
+fn scan_tls_ca_file() -> String {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../../tools/postgres-fixture/fixtures/tls/ca.pem")
+        .to_str()
+        .expect("the CA path is UTF-8")
+        .to_owned()
+}
+
+fn scan_tls_server_config() -> Result<ServerConfig, IoError> {
+    let certificates = CertificateDer::pem_slice_iter(TLS_SERVER_CERT)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(IoError::other)?;
+    let private_key = PrivateKeyDer::from_pem_slice(TLS_SERVER_KEY).map_err(IoError::other)?;
+    ServerConfig::builder_with_provider(Arc::new(aws_lc_rs::default_provider()))
+        .with_safe_default_protocol_versions()
+        .map_err(IoError::other)?
+        .with_no_client_auth()
+        .with_single_cert(certificates, private_key)
+        .map_err(IoError::other)
+}
+
+// Remaining body bytes must be read before the socket closes, or the kernel answers the client with a reset.
+async fn read_scan_request(stream: &mut TlsStream<TcpStream>) -> Result<(), IoError> {
+    let mut headers = Vec::new();
+    while !headers.ends_with(b"\r\n\r\n") && headers.len() < MAX_REQUEST_BYTES {
+        let mut byte = [0_u8; 1];
+        stream.read_exact(&mut byte).await?;
+        headers.push(byte[0]);
+    }
+    let mut remaining = content_length(&headers);
+    while remaining > 0 {
+        let mut buffer = [0_u8; 1024];
+        let read = stream.read(&mut buffer).await?;
+        if read == 0 {
+            break;
+        }
+        remaining = remaining.saturating_sub(read);
+    }
+    Ok(())
+}
+
+fn content_length(headers: &[u8]) -> usize {
+    let Ok(text) = str::from_utf8(headers) else {
+        return 0;
+    };
+    for line in text.lines() {
+        let Some((name, value)) = line.split_once(':') else {
+            continue;
+        };
+        if name.eq_ignore_ascii_case("content-length") {
+            return value.trim().parse().unwrap_or(0);
+        }
+    }
+    0
+}
+
+async fn serve_scan_over_tls(listener: &TcpListener) -> Result<(), IoError> {
+    let (tcp, _) = listener.accept().await?;
+    let config = Arc::new(scan_tls_server_config()?);
+    let mut stream = TlsAcceptor::from(config)
+        .accept(tcp)
+        .await
+        .map_err(IoError::other)?;
+    read_scan_request(&mut stream).await?;
+    let response = format!(
+        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        ALLOW.len(),
+        str::from_utf8(ALLOW).expect("the allow body is UTF-8")
+    );
+    stream.write_all(response.as_bytes()).await?;
+    stream.flush().await
+}
+
+#[tokio::test]
+async fn a_configured_ca_bundle_reaches_the_scan_client() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let port = listener.local_addr().expect("address").port();
+    let settings = settings(&format!("https://localhost:{port}"));
+    let guardrail =
+        PanwPrismaAirs::new(settings, &tls_with_ca(&scan_tls_ca_file())).expect("client builds");
+    let (verdict, served) = timeout(Duration::from_secs(10), async {
+        tokio::join!(
+            call_panw_api(&guardrail, request("hello", None)),
+            serve_scan_over_tls(&listener)
+        )
+    })
+    .await
+    .expect("the scan finishes");
+    assert_eq!(verdict.action, Action::Allow);
+    served.expect("server");
+}
+
+#[tokio::test]
+async fn an_scan_endpoint_outside_the_trusted_cas_is_a_transient_network_error() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let port = listener.local_addr().expect("address").port();
+    let settings = settings(&format!("https://localhost:{port}"));
+    let guardrail = PanwPrismaAirs::new(settings, &tls()).expect("client builds");
+    let (verdict, served) = timeout(Duration::from_secs(10), async {
+        tokio::join!(
+            call_panw_api(&guardrail, request("hello", None)),
+            serve_scan_over_tls(&listener)
+        )
+    })
+    .await
+    .expect("the scan finishes");
+    assert_eq!(verdict.category.as_deref(), Some("network_error"));
+    assert_eq!(verdict.failure, Some(Failure::Transient));
+    assert!(served.is_err(), "the handshake must fail");
 }
 
 #[test]

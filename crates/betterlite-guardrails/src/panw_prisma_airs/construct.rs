@@ -1,7 +1,9 @@
 use std::time::SystemTime;
 
 use betterlite_config::sections::panw_prisma_airs::{Configured, FallbackAction};
-use reqwest::ClientBuilder;
+use betterlite_config::tls::TlsPolicy;
+use betterlite_http::proxy::base_builder;
+use betterlite_http::tls::{TlsError, apply_policy};
 use reqwest::header::{
     ACCEPT, CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue, InvalidHeaderValue,
 };
@@ -20,6 +22,11 @@ pub enum ConstructError {
         #[source]
         source: InvalidHeaderValue,
     },
+    #[error("could not apply the TLS policy to the PANW Prisma AIRS HTTP client: {source}")]
+    Tls {
+        #[source]
+        source: TlsError,
+    },
     #[error("could not build the PANW Prisma AIRS HTTP client: {source}")]
     Client {
         #[source]
@@ -37,8 +44,8 @@ pub struct PanwPrismaAirs {
 }
 
 impl PanwPrismaAirs {
-    // Scan calls go out with follow_redirects=False, which reqwest only offers per client (docs/deviations/B3786.yaml).
-    pub fn new(settings: Configured) -> Result<Self, ConstructError> {
+    // Scan calls go out with follow_redirects=False, which reqwest only offers per client, and with the resolved ssl_verify, SSL_CERT_FILE, SSL_CERTIFICATE and LITELLM_USER_AGENT policy (docs/deviations/B3786.yaml).
+    pub fn new(settings: Configured, tls: &TlsPolicy) -> Result<Self, ConstructError> {
         if settings.api_key.expose_secret().is_empty() {
             return Err(ConstructError::MissingApiKey);
         }
@@ -55,7 +62,9 @@ impl PanwPrismaAirs {
             );
         }
         let headers = auth_headers(&settings)?;
-        let client = ClientBuilder::new()
+        let builder =
+            apply_policy(base_builder(), tls).map_err(|source| ConstructError::Tls { source })?;
+        let client = builder
             .redirect(Policy::none())
             .build()
             .map_err(|source| ConstructError::Client { source })?;
