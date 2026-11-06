@@ -1,0 +1,8 @@
+kind: helper
+name: watsonx-text-extract-a2a-params-no-text
+call:
+  b4807:
+    operation: params_text
+    params: {message: {parts: [{kind: file, text: skipped}, {kind: data}, {kind: text}]}}
+env: {}
+compare: {ignore: []}
