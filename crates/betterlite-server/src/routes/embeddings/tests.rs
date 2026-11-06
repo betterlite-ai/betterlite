@@ -9,6 +9,10 @@ use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use std::collections::BTreeMap;
 use std::sync::Arc;
+use std::time::Duration;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::net::TcpListener;
+use tokio::time::timeout;
 use tower::ServiceExt as _;
 
 use super::{EmbeddingError, embedding_routes, failure};
@@ -24,6 +28,7 @@ struct ErrorFields {
     #[serde(rename = "type")]
     error_type: String,
     param: Option<String>,
+    code: String,
 }
 
 #[test]
@@ -128,4 +133,199 @@ async fn embedding_error_classification(
     let envelope: ErrorEnvelope = serde_json::from_slice(&body).expect("JSON");
     assert_eq!(envelope.error.error_type, expected_type);
     assert_eq!(envelope.error.param.as_deref(), expected_param);
+}
+
+#[derive(serde::Deserialize)]
+struct MockEmbeddingReply {
+    model: String,
+    object: String,
+    data: Vec<MockEmbeddingData>,
+    usage: MockEmbeddingUsage,
+}
+
+#[derive(serde::Deserialize)]
+struct MockEmbeddingData {
+    object: String,
+    embedding: Vec<f64>,
+    index: u32,
+}
+
+#[derive(serde::Deserialize)]
+struct MockEmbeddingUsage {
+    #[serde(rename = "prompt_tokens")]
+    prompt: u64,
+    #[serde(rename = "completion_tokens")]
+    completion: u64,
+    #[serde(rename = "total_tokens")]
+    total: u64,
+}
+
+#[tokio::test]
+async fn mock_calls_behavior_tests_behavior() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(
+        "model_list:\n  - {model_name: embed, litellm_params: {model: openai/embed, api_base: 'http://127.0.0.1:1', timeout: 0.1, mock_response: [0.1, 0.2]}}\n",
+    )
+    .expect("config");
+    let executor =
+        chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).expect("executor");
+    let request = Request::post("/v1/embeddings")
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"model":"embed","input":"hello"}"#))
+        .expect("request");
+    let response = embedding_routes(Arc::new(executor))
+        .oneshot(request)
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 8192).await.expect("body");
+    let reply: MockEmbeddingReply = serde_json::from_slice(&body).expect("reply");
+    assert_eq!(reply.model, "embed");
+    assert_eq!(reply.object, "list");
+    let record = reply.data.first().expect("embedding");
+    assert_eq!(record.object, "embedding");
+    assert_eq!(record.embedding, vec![0.1_f64, 0.2_f64]);
+    assert_eq!(record.index, 0);
+    assert_eq!(reply.usage.prompt, 10);
+    assert_eq!(reply.usage.completion, 0);
+    assert_eq!(reply.usage.total, 0);
+}
+
+#[rstest::rstest]
+#[case::mock_deployment(true)]
+#[case::plain_deployment(false)]
+#[tokio::test]
+async fn a_mock_testing_param_is_rejected_on_embeddings(#[case] mocked: bool) {
+    let source = [
+        "model_list:\n  - {model_name: embed, litellm_params: {model: openai/embed, api_base: 'http://127.0.0.1:1', api_key: k",
+        if mocked { ", mock_response: [0.1]" } else { "" },
+        "}}\n",
+    ]
+    .concat();
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(&source)
+    .expect("config");
+    let executor =
+        chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).expect("executor");
+    let request = Request::post("/v1/embeddings")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"model":"embed","input":"hello","mock_timeout":true}"#,
+        ))
+        .expect("request");
+    let response = embedding_routes(Arc::new(executor))
+        .oneshot(request)
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = to_bytes(response.into_body(), 8192).await.expect("body");
+    let envelope: ErrorEnvelope = serde_json::from_slice(&body).expect("error JSON");
+    assert_eq!(envelope.error.error_type, "invalid_request_error");
+    assert_eq!(envelope.error.code, "400");
+}
+
+#[tokio::test]
+async fn a_mock_embedding_answers_with_the_stripped_model() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(
+        "model_list:\n  - {model_name: emb, litellm_params: {model: openai/text-embedding-3-small, api_base: 'http://127.0.0.1:1', mock_response: [0.1]}}\n",
+    )
+    .expect("config");
+    let executor =
+        chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).expect("executor");
+    let request = Request::post("/openai/deployments/emb/embeddings")
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"input":"hello"}"#))
+        .expect("request");
+    let response = embedding_routes(Arc::new(executor))
+        .oneshot(request)
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 8192).await.expect("body");
+    let reply: MockEmbeddingReply = serde_json::from_slice(&body).expect("reply");
+    assert_eq!(reply.model, "text-embedding-3-small");
+}
+
+#[tokio::test]
+async fn a_mock_embedding_answers_with_the_body_model() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(
+        "model_list:\n  - {model_name: emb, litellm_params: {model: openai/text-embedding-3-small, api_base: 'http://127.0.0.1:1', mock_response: [0.1]}}\n",
+    )
+    .expect("config");
+    let executor =
+        chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).expect("executor");
+    let request = Request::post("/openai/deployments/emb/embeddings")
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"model":"alias","input":"hello"}"#))
+        .expect("request");
+    let response = embedding_routes(Arc::new(executor))
+        .oneshot(request)
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 8192).await.expect("body");
+    let reply: MockEmbeddingReply = serde_json::from_slice(&body).expect("reply");
+    assert_eq!(reply.model, "alias");
+}
+
+const EMBEDDING_ANSWER: &str = r#"{"object":"list","data":[{"object":"embedding","embedding":[0.1],"index":0}],"model":"embed","usage":{"prompt_tokens":1,"total_tokens":1}}"#;
+
+async fn provider(listener: TcpListener) -> String {
+    let Ok(Ok((mut stream, _))) = timeout(Duration::from_secs(1), listener.accept()).await else {
+        return String::new();
+    };
+    let mut received = Vec::new();
+    while !received.ends_with(b"\r\n\r\n") {
+        received.push(stream.read_u8().await.unwrap());
+    }
+    let mut body = vec![0_u8; 4096];
+    let read = stream.read(&mut body).await.unwrap();
+    body.truncate(read);
+    received.extend(body);
+    let head = format!(
+        "HTTP/1.1 200 X\r\ncontent-length: {}\r\n\r\n",
+        EMBEDDING_ANSWER.len()
+    );
+    let _written = stream
+        .write_all(format!("{head}{EMBEDDING_ANSWER}").as_bytes())
+        .await;
+    String::from_utf8(received).unwrap()
+}
+
+#[tokio::test]
+async fn a_stripped_client_mock_field_never_reaches_the_embedding_provider() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}/v1", listener.local_addr().unwrap());
+    let source = format!(
+        "model_list:\n  - {{model_name: embed, litellm_params: {{model: openai/embed, api_base: '{base}', api_key: k}}}}\n"
+    );
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(&source)
+    .expect("config");
+    let executor =
+        chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).expect("executor");
+    let request = Request::post("/v1/embeddings")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"model":"embed","input":"hello","mock_response":{"choices":[{"logprobs":null}]},"mock_tool_calls":[{"function":{"arguments":"{}"}}]}"#,
+        ))
+        .expect("request");
+    let call = embedding_routes(Arc::new(executor)).oneshot(request);
+    let (sent, answered) = tokio::join!(provider(listener), call);
+    let response = answered.expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(!sent.contains("mock_response"), "{sent}");
+    assert!(!sent.contains("mock_tool_calls"), "{sent}");
 }

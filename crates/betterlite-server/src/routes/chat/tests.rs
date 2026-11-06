@@ -13,6 +13,8 @@ use crate::server::chat_setup::chat_executor;
 use axum::body::{Body, to_bytes};
 use axum::http::{HeaderMap, Request};
 use betterlite_config::loader::ConfigLoader;
+use betterlite_openai::chat::ChatRequest;
+use betterlite_openai::chat::execution::ChatError;
 use rand::SeedableRng as _;
 use rand::rngs::StdRng;
 use rstest::rstest;
@@ -128,6 +130,333 @@ async fn exchange(
 
 fn header<'map>(headers: &'map HeaderMap, name: &str) -> Option<&'map str> {
     headers.get(name).map(|value| value.to_str().unwrap())
+}
+
+#[derive(Deserialize)]
+struct MockAnswer {
+    model: String,
+    choices: Vec<MockChoice>,
+    usage: MockUsage,
+}
+
+#[derive(Deserialize)]
+struct MockChoice {
+    message: MockMessage,
+}
+
+#[derive(Deserialize)]
+struct MockMessage {
+    content: Option<String>,
+    #[serde(default)]
+    tool_calls: Option<Vec<MockToolCallReply>>,
+}
+
+#[derive(Deserialize)]
+struct MockToolCallReply {
+    id: String,
+    #[serde(rename = "type")]
+    kind: String,
+    function: MockFunctionReply,
+}
+
+#[derive(Deserialize)]
+struct MockFunctionReply {
+    name: String,
+    arguments: String,
+}
+
+#[derive(Deserialize)]
+struct MockUsage {
+    #[serde(rename = "prompt_tokens")]
+    prompt: u64,
+    #[serde(rename = "completion_tokens")]
+    completion: u64,
+    #[serde(rename = "total_tokens")]
+    total: u64,
+}
+
+#[tokio::test]
+async fn mock_calls_behavior_tests_behavior() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let base = format!("http://{}/v1", listener.local_addr().unwrap());
+    let source = format!(
+        "model_list:\n  - {{model_name: g, litellm_params: {{model: openai/up, api_base: '{base}', api_key: k, mock_response: hello, timeout: 0.1}}}}\n"
+    );
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(&source)
+    .unwrap();
+    let executor = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(3)).unwrap();
+    let request = Request::post("/v1/chat/completions")
+        .header("content-type", "application/json")
+        .header("x-litellm-call-id", "mock-call")
+        .body(Body::from(r#"{"model":"g","messages":[]}"#))
+        .unwrap();
+    let response = chat_routes_with_call_id(Arc::new(executor), false)
+        .unwrap()
+        .oneshot(request)
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    let headers = response.headers().clone();
+    let body = to_bytes(response.into_body(), 8192).await.unwrap();
+    let answer: MockAnswer = serde_json::from_slice(&body).unwrap();
+    // a body model restamps the answer, and the stripped deployment model is the fallback
+    assert_eq!(answer.model, "g");
+    assert_eq!(
+        answer
+            .choices
+            .first()
+            .and_then(|choice| choice.message.content.as_deref()),
+        Some("hello")
+    );
+    assert_eq!(answer.usage.prompt, 10);
+    assert_eq!(answer.usage.completion, 20);
+    assert_eq!(answer.usage.total, 30);
+    assert_eq!(header(&headers, "x-litellm-call-id"), Some("mock-call"));
+    assert_eq!(header(&headers, "x-litellm-model-group"), Some("g"));
+}
+
+async fn mock_reply(source: &str, path: &str, body: &str) -> (StatusCode, Vec<u8>, HeaderMap) {
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(source)
+    .unwrap();
+    let executor = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(3)).unwrap();
+    let request = Request::post(path)
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_owned()))
+        .unwrap();
+    let response = chat_routes_with_call_id(Arc::new(executor), false)
+        .unwrap()
+        .oneshot(request)
+        .await
+        .unwrap();
+    let status = response.status();
+    let headers = response.headers().clone();
+    let collected = to_bytes(response.into_body(), 1 << 20).await.unwrap();
+    (status, collected.to_vec(), headers)
+}
+
+fn sentinel_source(sentinel: &str) -> String {
+    [
+        "model_list:\n  - {model_name: g, litellm_params: {model: openai/up, api_base: 'http://127.0.0.1:1', api_key: k, mock_response: '",
+        sentinel,
+        "', timeout: 0.1}}\n",
+    ]
+    .concat()
+}
+
+#[rstest]
+#[case::rate_limit("litellm.RateLimitError", 429, "throttling_error", "429")]
+#[case::context_window(
+    "litellm.ContextWindowExceededError",
+    400,
+    "invalid_request_error",
+    "400"
+)]
+#[case::internal_server("litellm.InternalServerError", 500, "internal_server_error", "500")]
+#[case::content_filter(
+    "Exception: content_filter_policy: blocked",
+    400,
+    "invalid_request_error",
+    "400"
+)]
+#[case::streaming_error("Exception: mock_streaming_error", 529, "internal_server_error", "529")]
+#[tokio::test]
+async fn mock_sentinel_tests_behavior(
+    #[case] sentinel: &str,
+    #[case] status: u16,
+    #[case] error_type: &str,
+    #[case] code: &str,
+) {
+    let (observed, body, _headers) = mock_reply(
+        &sentinel_source(sentinel),
+        "/v1/chat/completions",
+        r#"{"model":"g","messages":[]}"#,
+    )
+    .await;
+    assert_eq!(observed.as_u16(), status);
+    let reply: ErrorReply = serde_json::from_slice(&body).unwrap();
+    assert_eq!(reply.error.error_type, error_type);
+    assert_eq!(reply.error.code, code);
+}
+
+#[rstest]
+#[case::buffered(r#"{"model":"g","messages":[],"n":129}"#)]
+#[case::streamed(r#"{"model":"g","messages":[],"stream":true,"n":129}"#)]
+#[tokio::test]
+async fn a_mock_choice_count_above_the_cap_is_rejected(#[case] body: &str) {
+    let source = "model_list:\n  - {model_name: g, litellm_params: {model: openai/up, api_base: 'http://127.0.0.1:1', api_key: k, mock_response: hello}}\n";
+    let (status, bytes, _headers) = mock_reply(source, "/v1/chat/completions", body).await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    let reply: ErrorReply = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(reply.error.error_type, "invalid_request_error");
+    assert_eq!(reply.error.code, "400");
+}
+
+#[tokio::test]
+async fn a_mock_answers_with_the_stripped_deployment_model() {
+    let source = "model_list:\n  - {model_name: text, litellm_params: {model: openai/gpt-4o, api_base: 'http://127.0.0.1:1', api_key: k, mock_response: hi}}\n";
+    let (status, bytes, _headers) = mock_reply(
+        source,
+        "/openai/deployments/text/chat/completions",
+        r#"{"messages":[]}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let answer: MockAnswer = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(answer.model, "gpt-4o");
+}
+
+#[tokio::test]
+async fn a_mock_tool_call_fills_litellm_defaults() {
+    let source = "model_list:\n  - model_name: g\n    litellm_params:\n      model: openai/up\n      api_base: 'http://127.0.0.1:1'\n      api_key: k\n      mock_response:\n        choices:\n          - message:\n              tool_calls:\n                - function: {name: lookup, arguments: '{\"a\": 1}'}\n";
+    let (status, bytes, _headers) = mock_reply(
+        source,
+        "/v1/chat/completions",
+        r#"{"model":"g","messages":[]}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let answer: MockAnswer = serde_json::from_slice(&bytes).unwrap();
+    let call = answer.choices[0]
+        .message
+        .tool_calls
+        .as_ref()
+        .and_then(|calls| calls.first())
+        .expect("tool call");
+    assert_eq!(call.kind, "function");
+    assert_eq!(call.function.name, "lookup");
+    assert_eq!(call.function.arguments, r#"{"a": 1}"#);
+    uuid::Uuid::parse_str(&call.id).expect("generated id");
+}
+
+#[tokio::test]
+async fn a_pinned_model_id_stays_as_declared() {
+    let source = "model_list:\n  - {model_name: g, litellm_params: {model: openai/up, api_base: 'http://127.0.0.1:1', api_key: k, mock_response: hello}, model_info: {id: my-fixed-id}}\n";
+    let (status, _bytes, headers) = mock_reply(
+        source,
+        "/v1/chat/completions",
+        r#"{"model":"g","messages":[]}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(header(&headers, "x-litellm-model-id"), Some("my-fixed-id"));
+}
+
+#[tokio::test]
+async fn a_generated_model_id_hashes_the_mock_response() {
+    let source = "model_list:\n  - {model_name: text, litellm_params: {model: openai/gpt-4o, api_base: 'http://127.0.0.1:1', api_key: k, mock_response: 'hello world'}}\n";
+    let (status, _bytes, headers) = mock_reply(
+        source,
+        "/v1/chat/completions",
+        r#"{"model":"text","messages":[]}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        header(&headers, "x-litellm-model-id"),
+        Some("51b4bb57c0b10832fe43c4dcfb0e49425af84e287cde4b72b07164cfd11a705a")
+    );
+}
+
+#[tokio::test]
+async fn a_reordered_mock_response_key_still_hashes_last() {
+    let source = "model_list:\n  - {model_name: text, litellm_params: {model: openai/gpt-4o, mock_response: 'hello world', api_base: 'http://127.0.0.1:1', api_key: k}}\n";
+    let (status, _bytes, headers) = mock_reply(
+        source,
+        "/v1/chat/completions",
+        r#"{"model":"text","messages":[]}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        header(&headers, "x-litellm-model-id"),
+        Some("51b4bb57c0b10832fe43c4dcfb0e49425af84e287cde4b72b07164cfd11a705a")
+    );
+}
+
+#[tokio::test]
+async fn an_object_mock_response_is_hashed_from_the_typed_record() {
+    let source = "model_list:\n  - model_name: text\n    litellm_params:\n      model: openai/gpt-4o\n      api_base: 'http://127.0.0.1:1'\n      api_key: k\n      mock_response:\n        choices:\n          - message: {content: hi}\n";
+    let (status, _bytes, headers) = mock_reply(
+        source,
+        "/v1/chat/completions",
+        r#"{"model":"text","messages":[]}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        header(&headers, "x-litellm-model-id"),
+        Some("e00cf7425cc254d0a79e69daae7d10ceebb80b9991130b45021bb2453dd4d273")
+    );
+}
+
+#[rstest]
+#[case::shorthand(
+    r#"{"model":"g","messages":[],"mock_tool_calls":[{"function":{"arguments":"{}"}}]}"#
+)]
+#[case::indexed(r#"{"model":"g","messages":[],"mock_tool_calls":[{"index":0,"function":{"name":"f","arguments":"{}"}}]}"#)]
+#[case::object(r#"{"model":"g","messages":[],"mock_tool_calls":{"a":1}}"#)]
+#[case::no_choice_fields(
+    r#"{"model":"g","messages":[],"mock_response":{"choices":[{"logprobs":null}]}}"#
+)]
+#[case::object_arguments(r#"{"model":"g","messages":[],"mock_response":{"choices":[{"message":{"tool_calls":[{"function":{"name":"f","arguments":{"a":1}}}]}}]}}"#)]
+#[tokio::test]
+async fn a_stripped_client_mock_field_never_reaches_the_provider(#[case] request: &str) {
+    let answered = exchange(
+        "/v1/chat/completions",
+        request,
+        "denied-mock",
+        (200, ANSWER),
+        (NO_DELAY, "30"),
+    )
+    .await;
+    assert_eq!(answered.status, 200);
+    assert!(
+        !answered.sent.contains("mock_response"),
+        "{}",
+        answered.sent
+    );
+    assert!(
+        !answered.sent.contains("mock_tool_calls"),
+        "{}",
+        answered.sent
+    );
+}
+
+#[tokio::test]
+async fn a_mock_is_keyed_by_its_own_deployment() {
+    let source = "model_list:\n  - {model_name: g, litellm_params: {model: openai/up, api_base: 'http://127.0.0.1:1', api_key: k, mock_response: answer-a}}\n  - {model_name: g, litellm_params: {model: openai/up, api_base: 'http://127.0.0.1:1', api_key: k, mock_response: answer-b}}\n  - {model_name: g, litellm_params: {model: openai/up, api_base: 'http://127.0.0.1:1', api_key: k}}\n";
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(source)
+    .unwrap();
+    let executor = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(3)).unwrap();
+    let first = &executor.deployments[0];
+    let second = &executor.deployments[1];
+    let plain = &executor.deployments[2];
+    assert_ne!(first.model_id, second.model_id);
+    assert_ne!(first.model_id, plain.model_id);
+    let request = ChatRequest::parse(br#"{"model":"g","messages":[]}"#).unwrap();
+    let first_answer = executor.send(first, &request).await.unwrap();
+    assert_eq!(
+        first_answer.response.choices[0].message.content.as_deref(),
+        Some("answer-a")
+    );
+    let second_answer = executor.send(second, &request).await.unwrap();
+    assert_eq!(
+        second_answer.response.choices[0].message.content.as_deref(),
+        Some("answer-b")
+    );
+    assert!(matches!(
+        executor.send(plain, &request).await,
+        Err(ChatError::Http { .. })
+    ));
 }
 
 #[rstest]
@@ -484,7 +813,7 @@ async fn normalization_gateway(enabled: bool) -> (ProxiedClient, String, JoinSet
 #[case::syntax_error(true, "syntax-id", "!", (400, false))]
 #[case::empty_body(true, "empty-id", "", (400, true))]
 #[case::schema_error(true, "schema-id", r#"{"model":"g"}"#, (400, true))]
-#[case::unsupported_parameter(true, "unsupported-id", r#"{"model":"g","messages":[],"mock_response":"blocked"}"#, (400, true))]
+#[case::unsupported_parameter(true, "unsupported-id", r#"{"model":"g","messages":[],"mock_timeout":true}"#, (400, true))]
 #[case::unknown_model(
     true,
     "router-id",

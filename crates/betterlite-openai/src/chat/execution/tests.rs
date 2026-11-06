@@ -1,11 +1,15 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::io;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::sections::mock_response::failure::MockError;
+use betterlite_config::sections::mock_response::selection::{MockPermission, MockPlan};
+use betterlite_config::sections::mock_response::{MockResponse, UsageDefaults};
 use betterlite_config::types::ProxyTrust;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::limits::TransportLimits;
@@ -18,15 +22,72 @@ use tokio::net::TcpListener;
 use tokio::sync::Notify;
 use tokio::task::JoinSet;
 use tokio::time::sleep;
+use tracing::subscriber::set_default;
+use uuid::Uuid;
 
 use super::ChatExecutor;
-use crate::chat::ChatRequest;
 use crate::chat::deployment::{ChatDeployment, OpenAiDefaults};
+use crate::chat::response::{ChatResponse, ChatUsage};
+use crate::chat::{ChatRequest, MockSettings};
+use crate::embedding::EmbeddingResponse;
 use crate::openai_base_config::CatalogCapabilities;
 
 const ANSWER: &str = r#"{"id":"c1","object":"chat.completion","created":7,"model":"upstream","choices":[{"index":0,"message":{"role":"assistant","content":null,"refusal":"no"},"finish_reason":"stop"}]}"#;
 
-fn executor(entries: &str, seed: u64) -> ChatExecutor {
+// the stub reports the injected id and the effective mock content through the response id
+fn echo_mock(
+    plan: &MockPlan<'_>,
+    _usage: UsageDefaults,
+    model: &str,
+    id: &str,
+    created: u64,
+) -> Result<ChatResponse, MockError> {
+    let Some(MockResponse::Text(content)) = plan.response else {
+        return Err(MockError::WrongType {
+            field: "mock_response",
+        });
+    };
+    let failure = match content.as_str() {
+        "timeout" => Some(MockError::Timeout),
+        "rate-limit" => Some(MockError::RateLimit),
+        _ => None,
+    };
+    if let Some(error) = failure {
+        return Err(error);
+    }
+    Ok(ChatResponse {
+        id: format!("{id}={content}"),
+        object: String::from("chat.completion"),
+        created,
+        model: model.to_owned(),
+        choices: Vec::new(),
+        usage: ChatUsage::default(),
+        system_fingerprint: None,
+        service_tier: None,
+    })
+}
+
+fn unused_embedding(
+    _response: Option<&MockResponse>,
+    _model: &str,
+) -> Result<EmbeddingResponse, MockError> {
+    Err(MockError::EmbeddingFailure)
+}
+
+fn fixed_clock() -> u64 {
+    1_700_000_000
+}
+
+fn fixed_id() -> Uuid {
+    Uuid::from_u128(7)
+}
+
+fn executor(
+    entries: &str,
+    seed: u64,
+    operator_mock: Option<MockResponse>,
+    permission: MockPermission,
+) -> ChatExecutor {
     let loader = ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
     };
@@ -37,11 +98,17 @@ fn executor(entries: &str, seed: u64) -> ChatExecutor {
         api_keys: Vec::new(),
         organization: Some("org-7".to_owned()),
     };
-    let deployments = config
+    let deployments: Vec<ChatDeployment> = config
         .model_list
         .iter()
         .map(|deployment| ChatDeployment::resolve(deployment, &defaults).unwrap())
         .collect();
+    let responses = operator_mock.map_or_else(BTreeMap::new, |response| {
+        deployments
+            .iter()
+            .map(|deployment| (deployment.model_id.clone(), response.clone()))
+            .collect()
+    });
     let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
     ChatExecutor {
         client: ProxiedClient::outbound(&policy).unwrap(),
@@ -51,6 +118,15 @@ fn executor(entries: &str, seed: u64) -> ChatExecutor {
             text_models: BTreeSet::new(),
         },
         random: Mutex::new(StdRng::seed_from_u64(seed)),
+        clock: fixed_clock,
+        next_id: fixed_id,
+        mock: MockSettings {
+            responses,
+            usage: UsageDefaults::default(),
+            permission,
+        },
+        mock_chat: echo_mock,
+        mock_embedding: unused_embedding,
     }
 }
 
@@ -88,7 +164,7 @@ async fn sends_the_mapped_body_and_answers_with_the_requested_model() {
     let entries = format!(
         "[{{model_name: g, litellm_params: {{model: openai/up, api_base: '{base}', api_key: k}}}}]"
     );
-    let chat = executor(&entries, 1);
+    let chat = executor(&entries, 1, None, MockPermission::default());
     let body = br#"{"model":"g","stream":false,"temperature":1,"user":"u","vendor_flag":{"a":1},"messages":[{"role":"assistant","content":null,"tool_calls":[{"id":"t","type":"function","function":{"name":"f","arguments":"{}"}}]}]}"#;
     let request = ChatRequest::parse(body).unwrap();
     let deployment = chat.deployments.first().unwrap();
@@ -135,7 +211,7 @@ async fn reports_what_went_wrong_upstream(
     let entries = format!(
         "[{{model_name: g, litellm_params: {{model: openai/up, api_base: '{base}', api_key: k, timeout: 0.3}}}}]"
     );
-    let chat = executor(&entries, 1);
+    let chat = executor(&entries, 1, None, MockPermission::default());
     let request = ChatRequest::parse(br#"{"messages":[]}"#).unwrap();
     let deployment = chat.deployments.first().unwrap();
     let (_sent, answered) = tokio::join!(
@@ -168,7 +244,12 @@ async fn refuses_calls_it_cannot_make(
     #[case] body: &str,
     #[case] message: &str,
 ) {
-    let chat = executor(&format!("[{{model_name: g, litellm_params: {params}}}]"), 1);
+    let chat = executor(
+        &format!("[{{model_name: g, litellm_params: {params}}}]"),
+        1,
+        None,
+        MockPermission::default(),
+    );
     let request = ChatRequest::parse(body.as_bytes()).unwrap();
     let error = chat
         .send(chat.deployments.first().unwrap(), &request)
@@ -190,7 +271,7 @@ async fn refuses_calls_it_cannot_make(
 )]
 #[case::buffered(r#"{"messages":[]}"#, None)]
 fn stream_options_preserve_caller(#[case] input: &str, #[case] usage: Option<bool>) {
-    let chat = executor("[]", 1);
+    let chat = executor("[]", 1, None, MockPermission::default());
     let request = ChatRequest::parse(input.as_bytes()).unwrap();
     let body = chat.body(&request, "up").unwrap();
     assert_eq!(
@@ -213,7 +294,7 @@ async fn stream_distinguishes_status(#[case] status: u16) {
     let entries = format!(
         "[{{model_name: g, litellm_params: {{model: openai/up, api_base: '{base}', api_key: k}}}}]"
     );
-    let chat = executor(&entries, 1);
+    let chat = executor(&entries, 1, None, MockPermission::default());
     let request = ChatRequest::parse(br#"{"model":"g","messages":[],"stream":true}"#).unwrap();
     let body = r#"{"error":{"type":"requests","param":"p"}}"#;
     let (sent, result) = tokio::join!(
@@ -300,7 +381,7 @@ async fn http_pool_chat_regression_behavior(
     let entries = format!(
         "[{{model_name: g, litellm_params: {{model: openai/up, api_base: '{base}', api_key: k, timeout: 0.3}}}}]"
     );
-    let mut chat = executor(&entries, 1);
+    let mut chat = executor(&entries, 1, None, MockPermission::default());
     if own_client {
         let model_id = chat.deployments.first().unwrap().model_id.clone();
         let sibling = ProxiedClient {
@@ -333,4 +414,167 @@ async fn http_pool_chat_regression_behavior(
         answered.map_or_else(|error| error.to_string(), |_outcome| "ok".to_owned())
     };
     assert!(observed.contains(expected), "{observed}");
+}
+
+const UPSTREAM_ANSWER: &str = r#"{"id":"c1","object":"chat.completion","created":7,"model":"upstream","choices":[{"index":0,"message":{"role":"assistant","content":"upstream"},"finish_reason":"stop"}]}"#;
+
+#[derive(Clone, Copy)]
+enum Expected {
+    Content(&'static str),
+    Failure(u16, &'static str),
+    Upstream,
+}
+
+fn allowed() -> MockPermission {
+    MockPermission {
+        allow_client_mock_response: true,
+    }
+}
+
+#[rstest]
+#[case::operator_mock_answers_without_a_provider(
+    Some("operator"),
+    None,
+    MockPermission::default(),
+    Expected::Content("operator")
+)]
+#[case::an_allowed_client_mock_answers(
+    None,
+    Some("client"),
+    allowed(),
+    Expected::Content("client")
+)]
+#[case::an_allowed_client_mock_beats_the_operator_one(
+    Some("operator"),
+    Some("client"),
+    allowed(),
+    Expected::Content("client")
+)]
+#[case::a_denied_client_mock_is_stripped(
+    None,
+    Some("client"),
+    MockPermission::default(),
+    Expected::Upstream
+)]
+#[case::the_rate_limit_sentinel_keeps_litellm_status(
+    Some("rate-limit"),
+    None,
+    MockPermission::default(),
+    Expected::Failure(429, "throttling_error")
+)]
+#[case::the_timeout_sentinel_keeps_litellm_status(
+    Some("timeout"),
+    None,
+    MockPermission::default(),
+    Expected::Failure(408, "invalid_request_error")
+)]
+#[tokio::test]
+async fn mock_calls_behavior_tests_behavior(
+    #[case] operator: Option<&'static str>,
+    #[case] client: Option<&'static str>,
+    #[case] permission: MockPermission,
+    #[case] expected: Expected,
+) {
+    let (listener, base) = listen().await;
+    let entries = format!(
+        "[{{model_name: g, litellm_params: {{model: openai/up, api_base: '{base}', api_key: k, timeout: 0.1}}}}]"
+    );
+    let operator_mock = operator.map(|text| MockResponse::Text(text.to_owned()));
+    let chat = executor(&entries, 1, operator_mock, permission);
+    let request_body = client.map_or_else(
+        || String::from(r#"{"model":"g","messages":[]}"#),
+        |text| format!(r#"{{"model":"g","messages":[],"mock_response":"{text}"}}"#),
+    );
+    let request = ChatRequest::parse(request_body.as_bytes()).unwrap();
+    let deployment = chat.deployments.first().unwrap();
+    match expected {
+        Expected::Content(text) => {
+            let outcome = chat.send(deployment, &request).await.unwrap();
+            let expected_id = format!("chatcmpl-{}={text}", fixed_id());
+            assert_eq!(outcome.response.id, expected_id);
+            assert_eq!(outcome.response.created, fixed_clock());
+            assert_eq!(outcome.upstream.status, 200);
+        }
+        Expected::Failure(status, error_type) => {
+            let error = chat.send(deployment, &request).await.err().unwrap();
+            let failure = error.failure();
+            assert_eq!(failure.status, status);
+            assert_eq!(failure.error_type, error_type);
+        }
+        Expected::Upstream => {
+            let (sent, answered) = tokio::join!(
+                provider(listener, 200, UPSTREAM_ANSWER, Duration::ZERO),
+                chat.send(deployment, &request)
+            );
+            drop(answered.unwrap());
+            assert!(!sent.contains("mock_response"), "{sent}");
+            assert!(!sent.contains("mock_tool_calls"), "{sent}");
+        }
+    }
+}
+
+#[tokio::test]
+async fn a_denied_client_tool_call_is_stripped_before_its_shape_is_used() {
+    let (listener, base) = listen().await;
+    let entries = format!(
+        "[{{model_name: g, litellm_params: {{model: openai/up, api_base: '{base}', api_key: k}}}}]"
+    );
+    let chat = executor(&entries, 1, None, MockPermission::default());
+    let request = ChatRequest::parse(
+        br#"{"model":"g","messages":[],"mock_tool_calls":[{"function":{"name":"f","arguments":{"a":1}}}]}"#,
+    )
+    .unwrap();
+    let deployment = chat.deployments.first().unwrap();
+    let (sent, answered) = tokio::join!(
+        provider(listener, 200, UPSTREAM_ANSWER, Duration::ZERO),
+        chat.send(deployment, &request)
+    );
+    drop(answered.unwrap());
+    assert!(!sent.contains("mock_tool_calls"), "{sent}");
+}
+
+#[derive(Clone, Default)]
+struct Captured(Arc<Mutex<Vec<u8>>>);
+
+impl Captured {
+    fn text(&self) -> String {
+        String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
+    }
+}
+
+impl io::Write for Captured {
+    fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
+        self.0
+            .lock()
+            .map_err(|error| io::Error::other(error.to_string()))?
+            .extend_from_slice(buf);
+        Ok(buf.len())
+    }
+
+    fn flush(&mut self) -> io::Result<()> {
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn a_stripped_client_mock_warns_with_the_field_name() {
+    let entries = "[{model_name: g, litellm_params: {model: openai/up, api_base: 'http://127.0.0.1:1', api_key: k, timeout: 0.1}}]";
+    let chat = executor(entries, 1, None, MockPermission::default());
+    let request = ChatRequest::parse(
+        br#"{"model":"g","messages":[],"mock_response":"client","mock_tool_calls":[]}"#,
+    )
+    .unwrap();
+    let captured = Captured::default();
+    let writer = captured.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(move || writer.clone())
+        .with_max_level(tracing::Level::WARN)
+        .with_ansi(false)
+        .finish();
+    let guard = set_default(subscriber);
+    drop(chat.send(chat.deployments.first().unwrap(), &request).await);
+    drop(guard);
+    let warnings = captured.text();
+    assert!(warnings.contains("mock_response"), "{warnings}");
+    assert!(warnings.contains("mock_tool_calls"), "{warnings}");
 }

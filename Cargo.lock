@@ -2374,6 +2374,7 @@ dependencies = [
  "betterlite-auth",
  "betterlite-billing",
  "betterlite-config",
+ "betterlite-core",
  "betterlite-db",
  "betterlite-env",
  "betterlite-error",
