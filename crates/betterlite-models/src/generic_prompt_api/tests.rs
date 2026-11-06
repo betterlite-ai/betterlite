@@ -142,6 +142,30 @@ async fn async_fetch_calls_the_prompt_management_endpoint_with_the_prompt_id() {
     );
 }
 
+#[tokio::test]
+async fn configured_timeout_is_applied_to_the_prompt_api_request() {
+    let params = spec(r#"{"prompt_integration":"g","api_base":"https://x","timeout":45}"#);
+    let (template, requests) = template_manager();
+    let manager =
+        prompt_initializer(&params.litellm_params, &params, template.api.transport).unwrap();
+    manager
+        .api
+        .fetch_prompt_from_api(Some("welcome"), None)
+        .unwrap();
+    manager
+        .api
+        .async_fetch_prompt_from_api(Some("welcome"), None)
+        .await
+        .unwrap();
+    let timeouts: Vec<u64> = {
+        let sent = requests.lock().unwrap();
+        sent.iter()
+            .map(|request| request.timeout.as_secs())
+            .collect()
+    };
+    assert_eq!(timeouts, vec![45, 45]);
+}
+
 #[test]
 fn sync_fetch_takes_extra_query_params_from_the_manager_settings() {
     let mut configured = settings(None);
@@ -522,7 +546,6 @@ fn initializer_builds_a_manager_from_the_prompt_params() {
     r#"{"prompt_integration":"g","api_base":"https://x","timeout":null}"#,
     30
 )]
-#[case::zero(r#"{"prompt_integration":"g","api_base":"https://x","timeout":0}"#, 0)]
 fn initializer_defaults_the_timeout_to_thirty_seconds(
     #[case] params_json: &str,
     #[case] seconds: u64,
@@ -545,6 +568,10 @@ fn initializer_defaults_the_timeout_to_thirty_seconds(
 )]
 #[case::text_timeout(
     r#"{"prompt_integration":"g","api_base":"https://x","timeout":"30"}"#,
+    GenericPromptInitializerError::TimeoutType
+)]
+#[case::zero_timeout(
+    r#"{"prompt_integration":"g","api_base":"https://x","timeout":0}"#,
     GenericPromptInitializerError::TimeoutType
 )]
 #[case::negative_timeout(

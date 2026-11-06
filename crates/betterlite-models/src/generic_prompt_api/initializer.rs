@@ -14,7 +14,7 @@ pub const DEFAULT_TIMEOUT_SECONDS: u64 = 30;
 pub enum GenericPromptInitializerError {
     #[error("api_base is required in generic_prompt_config")]
     MissingApiBase,
-    #[error("litellm_params.timeout must be a whole number of seconds")]
+    #[error("litellm_params.timeout must be a positive whole number of seconds")]
     TimeoutType,
 }
 
@@ -40,9 +40,10 @@ where
         .ok_or(GenericPromptInitializerError::MissingApiBase)?;
     let timeout_seconds = match litellm_params.extra.get("timeout") {
         None | Some(Json::Null) => DEFAULT_TIMEOUT_SECONDS,
-        Some(Json::Number(number)) => number
-            .as_u64()
-            .ok_or(GenericPromptInitializerError::TimeoutType)?,
+        Some(Json::Number(number)) => match number.as_u64() {
+            None | Some(0) => return Err(GenericPromptInitializerError::TimeoutType),
+            Some(seconds) => seconds,
+        },
         Some(_) => return Err(GenericPromptInitializerError::TimeoutType),
     };
     let settings = GenericPromptSettings {

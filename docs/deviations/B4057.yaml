@@ -6,8 +6,11 @@ deviations:
   - what: Fetch and compile failures return typed errors (transport, status, parse, variables) that name the prompt id, instead of a ValueError wrapping a string.
     why: Rust callers match on the cause; the prompt id and the underlying error are kept in the message and as the source.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_prompt_management/generic_prompt_manager.py#L253-L307
-  - what: A timeout in litellm_params that is not a whole number of seconds is rejected by prompt_initializer with a typed error.
-    why: The declared field is an integer number of seconds; Python would pass any value to httpx and fail at request time.
+  - what: The configured timeout (litellm_params.timeout, 30 seconds when it is absent or null) is applied to every prompt API request. LiteLLM stores self.timeout and never sends it; both fetches call http_client.get without a timeout argument (L118-L124 and L148-L156), so the shared httpx client's timeout applies, 600 seconds (COMPLETION_HTTP_FALLBACK_SECONDS) or litellm.request_timeout when that is set.
+    why: Every outbound call needs a bound of its own, and the config value is what an operator sets to bound the fetch. A prompt API slower than the configured timeout fails here where LiteLLM's shared client would have waited.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_prompt_management/generic_prompt_manager.py#L118-L156
+  - what: A litellm_params.timeout that is not a positive whole number of seconds is rejected by prompt_initializer with a typed error; 0 is rejected too, since a zero-second timeout would fail every fetch.
+    why: The declared field is an integer number of seconds and betterlite applies it to each request, so a value it cannot turn into a usable Duration, or one that leaves no time at all, is a load error that names the field. LiteLLM passes any extra value through to GenericPromptManager and stores it without applying it, so any integer is accepted there.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/generic_prompt_management/__init__.py#L34-L66
   - what: A query parameter whose value is an object or a nested list is rejected before the request with an error naming the key.
     why: httpx cannot encode such a value and fails; betterlite fails earlier and says which key.
