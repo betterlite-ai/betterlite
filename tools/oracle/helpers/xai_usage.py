@@ -13,11 +13,16 @@ from litellm.types.utils import CompletionTokensDetailsWrapper, ModelInfo, Usage
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
 
+class UnexpectedPricingCallError(Exception):
+    pass
+
+
 class CountPricing:
     def __call__(
         self, *, model: str, usage: Usage, custom_llm_provider: str
     ) -> tuple[float, float]:
-        assert (model, custom_llm_provider) == ("oracle-model", "xai")  # noqa: S101
+        if (model, custom_llm_provider) != ("oracle-model", "xai"):
+            raise UnexpectedPricingCallError(model, custom_llm_provider)
         return float(usage.prompt_tokens), float(usage.completion_tokens)
 
 

@@ -17,7 +17,7 @@ use error::XaiUsageError;
 
 const USD_TICKS_PER_DOLLAR: u64 = 10_000_000_000;
 
-// xAI usage as the chat transformation sees it: the token counts plus the extras xAI adds
+// cost_in_usd_ticks stays untyped because a JSON boolean must be told apart from an integer, which Decimal cannot show
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct XaiUsage {
     pub tokens: CostUsage,

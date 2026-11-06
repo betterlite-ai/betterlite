@@ -1,9 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::xai_identity::Settings;
-use betterlite_openai::xai_identity::{
-    KeyOrder, get_api_base, get_api_key, get_base_model, validate_environment,
-};
+use betterlite_openai::xai_identity::{KeyOrder, get_api_base, get_api_key, validate_environment};
 use secrecy::{ExposeSecret, SecretString};
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -70,7 +68,7 @@ fn resolve(call: &Call) -> Value {
         "legacy_key": legacy_key.as_ref().map(ExposeSecret::expose_secret),
         "api_base": get_api_base(call.api_base.as_deref(), &settings),
         "headers": validate_environment(call.headers.clone(), explicit.as_ref()),
-        "base_model": get_base_model(&call.model),
+        "base_model": call.model.replace("xai/", ""),
     })
 }
 

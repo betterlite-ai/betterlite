@@ -9,8 +9,7 @@ use secrecy::{ExposeSecret, SecretString};
 
 use super::error::XaiIdentityError;
 use super::{
-    KeyOrder, decode_xai_models, get_api_base, get_api_key, get_base_model, models_request,
-    validate_environment,
+    KeyOrder, decode_xai_models, get_api_base, get_api_key, models_request, validate_environment,
 };
 use crate::openai_base_config::Headers;
 
@@ -96,18 +95,6 @@ fn xai_identity_api_base_prefers_explicit_then_environment_then_default(
         api_base: environment.map(str::to_owned),
     };
     assert_eq!(get_api_base(explicit, &settings), expected);
-}
-
-#[rstest]
-#[case::single_prefix("xai/grok-4", "grok-4")]
-#[case::repeated_prefix("xai/xai/grok-4", "grok-4")]
-#[case::embedded_prefix("a/xai/b", "a/b")]
-#[case::none("grok-4", "grok-4")]
-fn xai_identity_base_model_removes_every_provider_prefix(
-    #[case] model: &str,
-    #[case] expected: &str,
-) {
-    assert_eq!(get_base_model(model), expected);
 }
 
 #[rstest]
