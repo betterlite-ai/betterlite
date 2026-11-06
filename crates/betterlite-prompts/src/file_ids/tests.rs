@@ -20,7 +20,10 @@ const DEPLOYMENT: &str = "deployment-1";
 const FILE_UNIFIED: &str = "bGl0ZWxsbV9wcm94eTpmaWxlLmFiYzEyMzt1bmlmaWVkX2lkLGFiYy0xMjM7dGFyZ2V0X21vZGVsX25hbWVzLGdwdC00O2xsbV9vdXRwdXRfZmlsZV9pZCxmaWxlLXh5ejtsbG1fb3V0cHV0X2ZpbGVfbW9kZWxfaWQsZGVwbG95bWVudC0x";
 const FILE_UNIFIED_NO_OUTPUT: &str = "bGl0ZWxsbV9wcm94eTpmaWxlLmFiYzEyMzt1bmlmaWVkX2lkLGFiYy0xMjM";
 const FILE_EMBEDDED: &str = "file-bGl0ZWxsbTpmaWxlLWFiYzEyMzttb2RlbCxncHQtNG8tbGl0ZWxsbQ";
+const FILE_UNIFIED_EMPTY_OUTPUT: &str = "bGl0ZWxsbV9wcm94eTpmaWxlLng7dW5pZmllZF9pZCx1O2xsbV9vdXRwdXRfZmlsZV9pZCw7bGxtX291dHB1dF9maWxlX21vZGVsX2lkLGQ";
 const VECTOR_UNIFIED: &str = "bGl0ZWxsbV9wcm94eTp2ZWN0b3Jfc3RvcmU7dW5pZmllZF9pZCxhYmMtMTIzO3RhcmdldF9tb2RlbF9uYW1lcyxncHQtNDtyZXNvdXJjZV9pZCx2c19hYmMxMjM7bW9kZWxfaWQsZGVwbG95bWVudC0x";
+const VECTOR_UNIFIED_NO_RESOURCE: &str =
+    "bGl0ZWxsbV9wcm94eTp2ZWN0b3Jfc3RvcmU7dW5pZmllZF9pZCxuby1yZXNvdXJjZQ";
 
 fn json(text: &str) -> Json {
     serde_json::from_str(text).expect("test json decodes")

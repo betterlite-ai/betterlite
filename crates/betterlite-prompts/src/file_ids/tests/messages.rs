@@ -35,6 +35,34 @@ fn file_message(file_id: &str, existing_format: Option<&str>) -> Message {
     Some(("file-mapped", DEPLOYMENT, "provider-file-9")),
     ("provider-file-9", Some("application/pdf"))
 )]
+#[case::existing_format_wins_over_the_derived_one(
+    FILE_UNIFIED,
+    Some("application/pdf"),
+    None,
+    None,
+    ("file-xyz", Some("application/pdf"))
+)]
+#[case::empty_derived_format_is_not_written(
+    "litellm_proxy:;unified_id,abc",
+    None,
+    None,
+    None,
+    ("litellm_proxy:;unified_id,abc", None)
+)]
+#[case::empty_mapping_value_falls_back_to_the_id(
+    "file-mapped",
+    None,
+    Some(DEPLOYMENT),
+    Some(("file-mapped", DEPLOYMENT, "")),
+    ("file-mapped", None)
+)]
+#[case::empty_output_file_id_falls_back_to_the_id(
+    FILE_UNIFIED_EMPTY_OUTPUT,
+    None,
+    None,
+    None,
+    (FILE_UNIFIED_EMPTY_OUTPUT, Some("file.x"))
+)]
 #[case::unmapped_id_is_preserved(
     "file-plain",
     None,

@@ -2,6 +2,7 @@ use crate::file_ids::managed_id::get_format_from_file_id;
 use rstest::rstest;
 
 const ENCODED_FORMAT_ID: &str = "bGl0ZWxsbV9wcm94eTpmaWxlL3BkZjt1bmlmaWVkX2lkLGFiYw";
+const STANDARD_ALPHABET_ID: &str = "bGl0ZWxsbV9wcm94eTpmaWxl8J+YgDt1bmlmaWVkX2lkLHU";
 
 #[rstest]
 #[case::absent_id(None, None)]
@@ -9,6 +10,7 @@ const ENCODED_FORMAT_ID: &str = "bGl0ZWxsbV9wcm94eTpmaWxlL3BkZjt1bmlmaWVkX2lkLGF
 #[case::plain_provider_id(Some("file-abc123"), None)]
 #[case::raw_unified_id(Some("litellm_proxy:file/pdf;unified_id,abc"), Some("file/pdf"))]
 #[case::encoded_unified_id(Some(ENCODED_FORMAT_ID), Some("file/pdf"))]
+#[case::standard_base64_id(Some(STANDARD_ALPHABET_ID), Some("file\u{1F600}"))]
 #[case::empty_embedded_format(Some("litellm_proxy:;unified_id,abc"), Some(""))]
 #[case::unified_id_without_the_unified_field(Some("litellm_proxy:file/pdf;other,abc"), None)]
 #[case::format_carrying_a_newline_is_no_match(Some("litellm_proxy:file\npdf;unified_id,abc"), None)]

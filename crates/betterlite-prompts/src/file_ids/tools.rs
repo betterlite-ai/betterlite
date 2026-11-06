@@ -65,9 +65,6 @@ pub fn update_tools_with_file_ids(
     let Some(model) = model_id else {
         return Some(updated);
     };
-    if mapping.entries.is_empty() {
-        return Some(updated);
-    }
     for tool in &mut updated {
         if tool.kind.as_deref() == Some("code_interpreter") {
             map_container_file_ids(tool, model, mapping);
