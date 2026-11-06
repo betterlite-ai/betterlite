@@ -19,7 +19,16 @@ call:
               environment: prod
               prompt_slug: welcome
               customer_id: cust-1
+              customer_user_id: user-1
+              session_id: session-1
+              external_reference_id: ext-1
+              context: {page: 1}
+              expected_response: expected
+              user_query: query
               tags: [a]
+              user_feedback: good
+              model_options: {temperature: 0.2}
+              custom_attributes: {tier: gold}
               unknown_key: dropped
         response:
           id: chatcmpl-1

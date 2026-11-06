@@ -1,6 +1,6 @@
 use crate::http_analytics_loggers::promptlayer::{PromptLayerLogger, PromptLayerSettings};
 use crate::http_analytics_loggers::tests::support::{
-    COMPLETION, Capture, environment, event, field, json, object,
+    Answer, COMPLETION, Capture, environment, event, field, json, object,
 };
 
 const START: &str = "2026-01-02T03:00:00Z";
@@ -44,4 +44,20 @@ async fn promptlayer_posts_the_track_request_envelope() {
     assert_eq!(field(body, "request_end_time"), &json("1767322801"));
     assert_eq!(field(body, "api_key"), &json(r#""pl-key""#));
     assert!(!object(body).contains_key("metadata"));
+}
+
+#[tokio::test]
+async fn promptlayer_posts_a_null_api_key_without_the_variable() {
+    let capture = Capture::with_answers([Answer::Ok(json(r#"{"success":true}"#))]);
+    let logger = PromptLayerLogger {
+        delivery: capture.clone(),
+        settings: PromptLayerSettings::from_environment(&environment(&[])),
+    };
+    let response = json(COMPLETION);
+    logger
+        .log_event(&event(&json(KWARGS), Some(&response), START, END))
+        .await;
+    let requests = capture.requests();
+    assert_eq!(requests.len(), 1);
+    assert_eq!(field(&requests[0].body, "api_key"), &json("null"));
 }
