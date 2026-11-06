@@ -3,11 +3,13 @@
 use reqwest::StatusCode;
 
 use super::shared::{
-    DONE_ALLOW, UPLOADED, body_text, data_url, done, sanitizer, vendor, vendor_with,
+    Capture, DONE_ALLOW, UPLOADED, body_text, data_url, done, sanitizer, vendor, vendor_with,
 };
 use crate::prompt_security_files::error::FileSanitizationError;
 use crate::prompt_security_files::messages::process_standalone_images;
 use std::time::Duration;
+use tracing::Level;
+use tracing::subscriber::set_default;
 
 #[tokio::test]
 async fn standalone_images_upload_decoded_bytes_named_after_the_mime_type() {
@@ -56,10 +58,18 @@ async fn standalone_images_log_and_skip_a_bad_payload() {
         "data:image/png;base64,!!!".to_owned(),
         "data:image/png".to_owned(),
     ];
+    let capture = Capture::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_writer(capture.clone())
+        .with_max_level(Level::ERROR)
+        .with_ansi(false)
+        .finish();
+    let _guard = set_default(subscriber);
     process_standalone_images(&sanitizer(&server.base), &images, None)
         .await
         .expect("swallowed");
     assert!(server.requests("POST").is_empty());
+    assert!(capture.text().contains("Error processing image"));
 }
 
 #[tokio::test]
