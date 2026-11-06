@@ -1,0 +1,8 @@
+kind: helper
+name: openai-moderation-init
+call:
+  b3731:
+    construct:
+      environment: {OPENAI_API_KEY: env-key}
+env: {}
+compare: {ignore: []}

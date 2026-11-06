@@ -1,0 +1,53 @@
+# athina post to /api/v1/log/inference with the athina-api-key header on any status
+kind: helper
+name: athina-post-endpoint
+call:
+  b3961:
+    function: log
+    scenarios:
+      - logger: athina
+        environment: {ATHINA_API_KEY: athina-key-1}
+        kwargs: {model: gpt-4o, messages: [{role: user, content: Hello}], litellm_params: {metadata: {}}}
+        response:
+          id: chatcmpl-1
+          created: 1700000000
+          model: gpt-4o
+          object: chat.completion
+          system_fingerprint: null
+          choices:
+            - finish_reason: stop
+              index: 0
+              message: {content: hi, role: assistant, tool_calls: null, function_call: null}
+          usage:
+            completion_tokens: 2
+            prompt_tokens: 3
+            total_tokens: 5
+            completion_tokens_details: null
+            prompt_tokens_details: null
+        start_time: "2026-01-02T03:00:00Z"
+        end_time: "2026-01-02T03:00:01Z"
+        answers: [{status: 200, body: {ok: true}}]
+      - logger: athina
+        environment: {ATHINA_API_KEY: athina-key-1}
+        kwargs: {model: gpt-4o, messages: [{role: user, content: Hello}], litellm_params: {metadata: {}}}
+        response:
+          id: chatcmpl-1
+          created: 1700000000
+          model: gpt-4o
+          object: chat.completion
+          system_fingerprint: null
+          choices:
+            - finish_reason: stop
+              index: 0
+              message: {content: hi, role: assistant, tool_calls: null, function_call: null}
+          usage:
+            completion_tokens: 2
+            prompt_tokens: 3
+            total_tokens: 5
+            completion_tokens_details: null
+            prompt_tokens_details: null
+        start_time: "2026-01-02T03:00:00Z"
+        end_time: "2026-01-02T03:00:01Z"
+        answers: [{status: 500, body: {error: down}}]
+env: {}
+compare: {ignore: []}

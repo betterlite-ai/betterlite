@@ -1,0 +1,12 @@
+kind: helper
+name: bedrock-converse-content-reverse-tool-names-seed
+call:
+  bedrock_converse_content:
+    reverse_tool_names:
+      tools:
+        - toolSpec: {name: alpha}
+        - function: {name: beta}
+        - toolSpec: {name: ""}
+        - toolSpec: null
+env: {}
+compare: {ignore: []}

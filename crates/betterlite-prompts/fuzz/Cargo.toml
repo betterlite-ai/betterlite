@@ -73,3 +73,24 @@ path = "fuzz_targets/media_metadata.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "bitbucket_file_bytes"
+path = "fuzz_targets/bitbucket_file_bytes.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "bitbucket_prompt_file"
+path = "fuzz_targets/bitbucket_prompt_file.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "model_file_ids"
+path = "fuzz_targets/model_file_ids.rs"
+test = false
+doc = false
+bench = false

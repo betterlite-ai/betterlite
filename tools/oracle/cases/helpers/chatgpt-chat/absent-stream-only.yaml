@@ -1,0 +1,18 @@
+kind: helper
+name: absent_stream_only
+call:
+  chatgpt_chat:
+    environment: {}
+    platform: {system: "Linux", release: "6.1.0-oracle", machine: "x86_64"}
+    record: null
+    now: 1000
+    step:
+      params:
+        model: "gpt-4o"
+        chat_models: ["gpt-4o"]
+        requests:
+          - {}
+          - {stream: true}
+          - {stream: null}
+env: {}
+compare: {ignore: []}
