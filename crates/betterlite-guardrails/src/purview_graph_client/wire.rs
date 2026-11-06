@@ -1,5 +1,6 @@
 use betterlite_prompts::arguments::json::Object;
 use serde::{Deserialize, Serialize};
+use serde_with::{DefaultOnNull, serde_as};
 
 const DEFAULT_TOKEN_LIFETIME_SECONDS: u64 = 3599;
 
@@ -89,20 +90,29 @@ pub struct IntegratedAppMetadata<'req> {
     pub version: &'static str,
 }
 
+#[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProcessContentResponse {
-    pub policy_actions: Option<Vec<PolicyAction>>,
+    #[serde(default)]
+    #[serde_as(as = "DefaultOnNull")]
+    pub policy_actions: Vec<PolicyAction>,
     pub protection_scope_state: Option<ProtectionScopeState>,
 }
 
+#[serde_as]
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PolicyAction {
-    #[serde(rename = "@odata.type")]
-    pub odata_type: Option<String>,
-    pub action: Option<String>,
-    pub restriction_action: Option<String>,
+    #[serde(default, rename = "@odata.type")]
+    #[serde_as(as = "DefaultOnNull")]
+    pub odata_type: String,
+    #[serde(default)]
+    #[serde_as(as = "DefaultOnNull")]
+    pub action: String,
+    #[serde(default)]
+    #[serde_as(as = "DefaultOnNull")]
+    pub restriction_action: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]

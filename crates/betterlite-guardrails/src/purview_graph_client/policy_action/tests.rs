@@ -37,6 +37,10 @@ use crate::purview_graph_client::wire::ProcessContentResponse;
     r#"{"policyActions": [{"action": "restrictAccess", "restrictionAction": "Block"}]}"#,
     false
 )]
+#[case::null_fields_count_as_empty(
+    r#"{"policyActions": [{"@odata.type": null, "action": null, "restrictionAction": null}, {"action": "restrictAccess", "restrictionAction": "block"}]}"#,
+    true
+)]
 #[case::unrelated_fields_are_ignored(
     r#"{"id": "x", "policyActions": [{"action": "restrictAccess", "restrictionAction": "block", "extra": 1}]}"#,
     true
