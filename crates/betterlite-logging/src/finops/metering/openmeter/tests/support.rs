@@ -30,12 +30,7 @@ pub(super) fn settings_with(overrides: &[(&str, &str)]) -> OpenMeterSettings {
 }
 
 pub(super) fn logger(sender: FakeSender) -> OpenMeterLogger<FakeSender, FixedClock> {
-    let settings = OpenMeterSettings::from_environment(&environment_with(&[])).unwrap();
-    OpenMeterLogger {
-        settings,
-        sender,
-        clock: FixedClock,
-    }
+    logger_with(sender, &[])
 }
 
 pub(super) fn logger_with(

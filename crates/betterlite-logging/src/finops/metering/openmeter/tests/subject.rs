@@ -21,36 +21,25 @@ fn subject_falls_back_to_the_key_bound_user() {
 }
 
 #[rstest]
-#[case::lowercase("false")]
-#[case::uppercase("FALSE")]
-#[case::mixed_case("False")]
-#[case::no("no")]
-#[case::zero("0")]
-#[case::off("off")]
-fn subject_uses_the_key_bound_user_when_trust_is_disabled(#[case] value: &'static str) {
+#[case::lowercase("false", "key-user-1")]
+#[case::uppercase("FALSE", "key-user-1")]
+#[case::mixed_case("False", "key-user-1")]
+#[case::no("no", "key-user-1")]
+#[case::zero("0", "key-user-1")]
+#[case::off("off", "key-user-1")]
+#[case::true_value("true", "end-user-1")]
+#[case::true_uppercase("TRUE", "end-user-1")]
+#[case::yes("yes", "end-user-1")]
+#[case::one("1", "end-user-1")]
+#[case::on("on", "end-user-1")]
+fn subject_follows_the_trust_flag(#[case] value: &'static str, #[case] expected: &'static str) {
     let payload = build(
         &settings_with(&[("OPENMETER_TRUST_REQUEST_USER", value)]),
         &FixedClock,
         &event(),
     )
     .unwrap();
-    assert_eq!(payload.subject, "key-user-1");
-}
-
-#[rstest]
-#[case::true_value("true")]
-#[case::uppercase("TRUE")]
-#[case::yes("yes")]
-#[case::one("1")]
-#[case::on("on")]
-fn subject_keeps_trust_for_the_true_values(#[case] value: &'static str) {
-    let payload = build(
-        &settings_with(&[("OPENMETER_TRUST_REQUEST_USER", value)]),
-        &FixedClock,
-        &event(),
-    )
-    .unwrap();
-    assert_eq!(payload.subject, "end-user-1");
+    assert_eq!(payload.subject, expected);
 }
 
 #[test]

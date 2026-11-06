@@ -32,8 +32,7 @@ pub(super) fn settings_with(overrides: &[(&str, &str)]) -> LagoSettings {
 }
 
 pub(super) fn logger(sender: FakeSender) -> LagoLogger<FakeSender> {
-    let settings = LagoSettings::from_environment(&environment_with(&[])).unwrap();
-    LagoLogger { settings, sender }
+    logger_with(sender, &[])
 }
 
 pub(super) fn logger_with(
