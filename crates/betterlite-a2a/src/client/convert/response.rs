@@ -21,7 +21,11 @@ pub fn to_compat_task(task: &CoreTask) -> Task {
 #[must_use]
 pub fn compat_status_of(status: Option<&CoreTaskStatus>) -> TaskStatus {
     let Some(present) = status else {
-        return unknown_status();
+        return TaskStatus {
+            state: TaskState::Unknown,
+            message: None,
+            timestamp: None,
+        };
     };
     to_compat_status(present)
 }
@@ -39,14 +43,6 @@ pub fn to_compat_status(status: &CoreTaskStatus) -> TaskStatus {
         state: compat_state(status.state),
         message: status.message.as_ref().map(to_compat_message),
         timestamp: status.timestamp.clone().filter(|value| !value.is_empty()),
-    }
-}
-
-const fn unknown_status() -> TaskStatus {
-    TaskStatus {
-        state: TaskState::Unknown,
-        message: None,
-        timestamp: None,
     }
 }
 
