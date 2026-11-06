@@ -254,6 +254,15 @@ fn exporter_registered_factory_overrides_a_builtin_kind() {
 }
 
 #[test]
+fn exporter_empty_kind_folds_to_console_before_the_factory_lookup() {
+    let in_memory: ExporterFactory =
+        Arc::new(|_spec| Ok(SpanSink::InMemory(InMemorySpanExporter::default())));
+    let (factories, _recorder) = factories_with(vec![("console", in_memory)]);
+    let sink = factories.exporter_from_spec(&spec("")).expect("sink");
+    assert_eq!(span_label(&sink), "in_memory");
+}
+
+#[test]
 fn exporter_registered_factory_error_is_returned() {
     let failing: ExporterFactory =
         Arc::new(|spec| Err(ExporterError::UnknownKind(spec.kind.clone())));

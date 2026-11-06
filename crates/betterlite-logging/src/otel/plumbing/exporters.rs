@@ -69,6 +69,14 @@ fn classify(kind: &str) -> Kind {
     }
 }
 
+// LiteLLM folds an empty kind into "console" before consulting a registered factory.
+fn resolved_kind(kind: &str) -> String {
+    match kind.to_lowercase().as_str() {
+        "" => "console".to_owned(),
+        lowered => lowered.to_owned(),
+    }
+}
+
 // An empty endpoint is unset, as the SDK's own endpoint handling treats it.
 fn configured_endpoint(endpoint: Option<&str>) -> Option<&str> {
     match endpoint {
@@ -162,12 +170,12 @@ impl ExporterFactories {
     }
 
     pub fn exporter_from_spec(&self, spec: &ExporterSpec) -> ExportResult<SpanSink> {
-        let lowered = spec.kind.to_lowercase();
-        if let Some(factory) = self.factories.get(&lowered) {
+        let resolved = resolved_kind(&spec.kind);
+        if let Some(factory) = self.factories.get(&resolved) {
             return factory(spec);
         }
         let headers = spec.headers.as_deref();
-        match classify(&lowered) {
+        match classify(&resolved) {
             Kind::Console => Ok(SpanSink::Console(
                 opentelemetry_stdout::SpanExporter::default(),
             )),
