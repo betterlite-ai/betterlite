@@ -297,30 +297,15 @@ fn case_api_connection() -> CooldownDecision {
     run(&router, Some(&deployment), &failure, minute(0, 0), 0)
 }
 
-fn case_deployment_cooldown_time() -> CooldownDecision {
+fn case_cooldown_time(
+    model_info: Option<Seconds>,
+    litellm_params: Option<Seconds>,
+) -> CooldownDecision {
     let router = policy();
     let mut deployment = deployment();
     deployment.allowed_fails_policy = Some(policy_with(PolicyEntry::ContentPolicyViolation, 1));
-    deployment.model_info_cooldown_time = Some(Seconds(2.5));
-    let failure = failure(FailureClass::ContentPolicyViolation, ErrorStatus::Code(400));
-    run(&router, Some(&deployment), &failure, minute(0, 0), 1)
-}
-
-fn case_litellm_params_cooldown_time() -> CooldownDecision {
-    let router = policy();
-    let mut deployment = deployment();
-    deployment.allowed_fails_policy = Some(policy_with(PolicyEntry::ContentPolicyViolation, 1));
-    deployment.litellm_params_cooldown_time = Some(Seconds(1.25));
-    let failure = failure(FailureClass::ContentPolicyViolation, ErrorStatus::Code(400));
-    run(&router, Some(&deployment), &failure, minute(0, 0), 1)
-}
-
-fn case_model_info_cooldown_time_wins() -> CooldownDecision {
-    let router = policy();
-    let mut deployment = deployment();
-    deployment.allowed_fails_policy = Some(policy_with(PolicyEntry::ContentPolicyViolation, 1));
-    deployment.model_info_cooldown_time = Some(Seconds(2.5));
-    deployment.litellm_params_cooldown_time = Some(Seconds(1.25));
+    deployment.model_info_cooldown_time = model_info;
+    deployment.litellm_params_cooldown_time = litellm_params;
     let failure = failure(FailureClass::ContentPolicyViolation, ErrorStatus::Code(400));
     run(&router, Some(&deployment), &failure, minute(0, 0), 1)
 }
@@ -448,7 +433,7 @@ fn case_policy_beats_generic_on_single_group() -> CooldownDecision {
 #[case::provider_default_deployment(case_provider_default_deployment(), false, None, None)]
 #[case::api_connection(case_api_connection(), false, None, None)]
 #[case::deployment_cooldown_time(
-    case_deployment_cooldown_time(),
+    case_cooldown_time(Some(Seconds(2.5)), None),
     true,
     Some("deployment:dep-1:allowed_fails:ContentPolicyViolationError"),
     Some(2)
@@ -509,9 +494,15 @@ fn cooldown_decisions_behaviors(
 }
 
 #[rstest]
-#[case::deployment_cooldown_time_overrides_router(case_deployment_cooldown_time(), Seconds(2.5))]
-#[case::litellm_params_cooldown_time(case_litellm_params_cooldown_time(), Seconds(1.25))]
-#[case::model_info_cooldown_time_wins(case_model_info_cooldown_time_wins(), Seconds(2.5))]
+#[case::deployment_cooldown_time_overrides_router(
+    case_cooldown_time(Some(Seconds(2.5)), None),
+    Seconds(2.5)
+)]
+#[case::litellm_params_cooldown_time(case_cooldown_time(None, Some(Seconds(1.25))), Seconds(1.25))]
+#[case::model_info_cooldown_time_wins(
+    case_cooldown_time(Some(Seconds(2.5)), Some(Seconds(1.25))),
+    Seconds(2.5)
+)]
 #[case::default_router_cooldown_time(case_router_policy_applies(), Seconds(5.0))]
 #[case::zero_cooldown_time_kept(case_zero_cooldown_time(), Seconds(0.0))]
 fn cooldown_decisions_counter_ttl(#[case] decision: CooldownDecision, #[case] expected: Seconds) {
