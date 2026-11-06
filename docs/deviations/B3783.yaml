@@ -1,0 +1,44 @@
+task: B3783
+deviations:
+  - what: >-
+      A configured or environment timeout that a Duration cannot represent (negative, NaN,
+      infinite or too large) is rejected while the guardrail is built. LiteLLM passes the
+      value into httpx.Timeout and every evaluation then fails and is returned unchanged.
+    why: >-
+      betterlite's timeout is a std Duration, which cannot hold a negative or non-finite
+      duration; the invalid configuration is reported where it enters instead of turning
+      every evaluation into a silent fail-open.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L43-L48
+  - what: >-
+      The Onyx Guard response body is read up to 1 MiB; a larger reply is treated as a
+      backend error and fails open. LiteLLM parses a reply of any size.
+    why: >-
+      Every outbound call in betterlite has a bounded read, so a misbehaving guard server
+      cannot make the gateway allocate without limit.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L66-L68
+  - what: >-
+      A transport error is stripped of its URL before it is logged. LiteLLM logs the httpx
+      error, whose message contains the full request URL.
+    why: >-
+      The Onyx endpoint carries the API key in its path, so keeping the URL would write the
+      key into the error log that the fail-open path emits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L57-L64
+  - what: >-
+      A denial whose violated_rules is null blocks with the "Unknown violation" message and
+      status 400. LiteLLM's ", ".join(result["violated_rules"]) raises TypeError and the
+      outer handler returns the inputs, so the denial turns into an allow.
+    why: >-
+      A null list is outside the response type LiteLLM declares, and a fail-open on a
+      server that denied the request is a bug no working setup relies on. Rules that are
+      absent still use the same "Unknown violation" text LiteLLM uses.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L83-L92
+  - what: >-
+      The response payload conversion validates the ModelResponse top-level fields id,
+      created, model and system_fingerprint, and falls back to the whole request_data when
+      one of them has the wrong type. A malformed choices list is not validated, so for it
+      betterlite still sends request_data["response"] where LiteLLM's ModelResponse
+      construction raises and falls back.
+    why: >-
+      The nested choices conversion is the message/response conversion the task leaves out
+      of scope; the top-level fields cover every shape of a well-formed post-call request.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L98-L114
