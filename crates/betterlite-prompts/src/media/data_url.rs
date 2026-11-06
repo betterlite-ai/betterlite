@@ -17,13 +17,6 @@ pub struct DataUrl<'text> {
     pub data: &'text str,
 }
 
-#[must_use]
-pub fn parse_data_url(text: &str) -> Option<DataUrl<'_>> {
-    let body = text.strip_prefix(DATA_URL_PREFIX)?;
-    let (media_type, data) = body.split_once(BASE64_MARKER)?;
-    Some(DataUrl { media_type, data })
-}
-
 // LiteLLM strips the prefix when it is there and splits anyway, so a bare payload also parses
 #[must_use]
 pub fn split_base64_marker(text: &str) -> Option<DataUrl<'_>> {

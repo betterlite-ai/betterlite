@@ -507,6 +507,14 @@ fn run_decode_ok(url: &str, limit: usize, expected: &[u8]) {
     expected: r#"[{"role":"user","content":[{"type":"image_url","image_url":{"url":"data:image/png;base64,c2hhcmVk"}},{"type":"document","source":{"type":"url","url":"https://a.example/shared.png"}}]}]"#,
     urls: &["https://a.example/shared.png"],
 }))]
+#[case::leaves_non_url_sources_and_non_media_blocks_untouched(Scenario::Inline(InlineCase {
+    filter: INLINE_EVERY_REMOTE_URL,
+    concurrent: false,
+    messages: r#"[{"role":"user","content":[{"type":"document","source":{"type":"base64","url":"https://a.example/not-a-url-source.pdf","data":"cGRm"}},{"type":"file","source":{"type":"url","url":"https://a.example/not-a-file-part.txt"}},{"type":"text","source":{"type":"url","url":"https://a.example/not-media.txt"}}]}]"#,
+    data_urls: &[],
+    expected: r#"[{"role":"user","content":[{"type":"document","source":{"type":"base64","url":"https://a.example/not-a-url-source.pdf","data":"cGRm"}},{"type":"file","source":{"type":"url","url":"https://a.example/not-a-file-part.txt"}},{"type":"text","source":{"type":"url","url":"https://a.example/not-media.txt"}}]}]"#,
+    urls: &[],
+}))]
 #[case::leaves_non_remote_and_unsupported_parts_untouched(Scenario::Inline(InlineCase {
     filter: INLINE_EVERY_REMOTE_URL,
     concurrent: false,
