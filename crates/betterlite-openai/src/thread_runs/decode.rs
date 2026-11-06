@@ -27,11 +27,11 @@ pub fn decode_run_event(bytes: &[u8]) -> Result<FrameOutcome, ThreadRunsError> {
         return Ok(FrameOutcome::Skip);
     }
     let value = serde_json::from_slice::<Value>(&frame.1).map_err(classify)?;
-    let named = frame
+    if let Some(name) = frame
         .0
         .as_deref()
-        .filter(|name| name.starts_with("thread."));
-    if let Some(name) = named {
+        .filter(|name| name.starts_with("thread."))
+    {
         return Ok(FrameOutcome::Event(Box::new(typed_event(name, value)?)));
     }
     if let Some(error) = provider_error(&value) {
@@ -52,16 +52,15 @@ const STEP_KEYS: &str = "id assistant_id cancelled_at completed_at created_at ex
 // The SDK builds event models leniently, so a declared key the provider left out is null in its dump.
 fn typed_event(name: &str, mut value: Value) -> Result<RunEvent, ThreadRunsError> {
     if RUN_EVENTS.split(' ').any(|known| known == name) {
-        let run = reply_value(value)?;
-        let data = serde_json::to_value(run).map_err(classify)?;
         return Ok(RunEvent::Named {
             event: name.to_owned(),
-            data,
+            data: serde_json::to_value(reply_value(value)?).map_err(classify)?,
             extra: BTreeMap::new(),
         });
     }
     if name == "thread.created" {
         add_keys(&mut value, "id created_at metadata object tool_resources");
+        fill_object(&mut value, "tool_resources", "code_interpreter file_search");
         let extra = BTreeMap::from([(String::from("enabled"), Value::Null)]);
         return Ok(RunEvent::Named {
             event: name.to_owned(),
@@ -96,6 +95,9 @@ fn fill_event(name: &str, value: &mut Value) {
         }
         _ if name.starts_with("thread.message.") => {
             add_keys(value, MESSAGE_KEYS);
+            if let Some(content) = value.get_mut("content") {
+                fill_parts(content);
+            }
             if let Some(Value::Array(items)) = value.get_mut("attachments") {
                 for item in items {
                     add_keys(item, "file_id tools");
@@ -116,9 +118,9 @@ fn fill_parts(content: &mut Value) {
         return;
     };
     for part in parts {
-        if let Some(Value::Object(text)) = part.get_mut("text") {
-            insert_keys(text, "annotations");
-        }
+        fill_object(part, "text", "annotations value");
+        fill_object(part, "image_file", "file_id detail");
+        fill_object(part, "image_url", "url detail");
     }
 }
 fn fill_calls(details: &mut Value, delta: bool) {
@@ -129,22 +131,20 @@ fn fill_calls(details: &mut Value, delta: bool) {
         return;
     };
     for call in calls {
-        if delta {
-            add_keys(call, "id");
-        }
+        add_keys(call, "id");
         match call.get("type").and_then(Value::as_str) {
-            Some("code_interpreter") => {
-                if let Some(Value::Object(inner)) = call.get_mut("code_interpreter") {
-                    insert_keys(inner, "input outputs");
-                }
-            }
+            Some("function") => fill_object(call, "function", "name arguments output"),
+            Some("code_interpreter") => fill_object(call, "code_interpreter", "input outputs"),
             Some("file_search") if !delta => {
-                if let Some(Value::Object(inner)) = call.get_mut("file_search") {
-                    insert_keys(inner, "ranking_options results");
-                }
+                fill_object(call, "file_search", "ranking_options results");
             }
             _ => {}
         }
+    }
+}
+fn fill_object(value: &mut Value, key: &str, keys: &str) {
+    if let Some(Value::Object(inner)) = value.get_mut(key) {
+        insert_keys(inner, keys);
     }
 }
 fn add_keys(target: &mut Value, keys: &str) {
@@ -159,24 +159,25 @@ pub(crate) fn insert_keys(object: &mut Map<String, Value>, keys: &str) {
     }
 }
 fn provider_error(value: &Value) -> Option<ThreadRunsError> {
-    let Value::Object(fields) = value else {
+    let error = value.get("error")?;
+    if matches!(error, Value::Null | Value::Bool(false)) {
         return None;
-    };
-    match fields.get("error") {
-        None | Some(Value::Null | Value::Bool(false)) => None,
-        Some(error) => Some(ThreadRunsError::ProviderError {
-            body: serde_json::to_vec(error).unwrap_or_default(),
-        }),
     }
+    Some(ThreadRunsError::ProviderError {
+        body: serde_json::to_vec(error).unwrap_or_default(),
+    })
 }
-fn lines(body: &[u8]) -> Vec<&[u8]> {
+fn lines(body: &[u8]) -> impl Iterator<Item = &[u8]> {
     body.split(|byte| matches!(*byte, b'\r' | b'\n'))
         .filter(|line| !line.is_empty())
-        .collect()
 }
 type Frame = (Option<String>, Vec<u8>, bool);
+// Every data line and every usable event, id or retry field counts; a later field never clears data.
 fn event_and_data(frame: &[u8]) -> Frame {
-    let mut parsed: Frame = (None, Vec::new(), false);
+    let mut event = None;
+    let mut data: Vec<u8> = Vec::new();
+    let mut seen = false;
+    let mut usable = false;
     for line in lines(frame) {
         let at = line.iter().position(|byte| *byte == b':');
         let (name, rest) = at.map_or((line, &[][..]), |position| {
@@ -186,27 +187,25 @@ fn event_and_data(frame: &[u8]) -> Frame {
         match name {
             b"event" => {
                 let field = rest.trim_ascii();
-                parsed.0 = str::from_utf8(field).ok().map(str::to_owned);
-                parsed.2 = !field.is_empty();
+                event = str::from_utf8(field).ok().map(str::to_owned);
+                usable |= !field.is_empty();
             }
             b"data" => {
-                if !parsed.1.is_empty() {
-                    parsed.1.push(b'\n');
+                if seen {
+                    data.push(b'\n');
                 }
-                parsed
-                    .1
-                    .extend_from_slice(rest.strip_prefix(b" ").unwrap_or(rest));
-                parsed.2 = true;
+                data.extend_from_slice(rest.strip_prefix(b" ").unwrap_or(rest));
+                seen = true;
             }
-            b"id" => parsed.2 = !rest.trim_ascii().is_empty() && !rest.contains(&0),
+            b"id" => usable |= !rest.trim_ascii().is_empty() && !rest.contains(&0),
             b"retry" => {
-                parsed.2 =
-                    str::from_utf8(rest.trim_ascii()).is_ok_and(|text| text.parse::<u64>().is_ok());
+                usable |=
+                    str::from_utf8(rest.trim_ascii()).is_ok_and(|text| text.parse::<i64>().is_ok());
             }
             _ => {}
         }
     }
-    parsed
+    (event, data, seen || usable)
 }
 // Frames end at a blank line, so a tail the provider cut off before one is never dispatched.
 #[derive(Debug, Default)]

@@ -277,5 +277,64 @@ call:
                 data: [DONE]
 
 
+        - arun_thread: false
+          stream: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - status: 200
+              headers: {content-type: text/event-stream}
+              body: |
+                data: {"a":1}
+                retry: soon
+
+                retry: soon
+                data: {"a":2}
+
+                data: {"a":3}
+                id:
+
+                data: {"a":4}
+                event:
+
+                data: [DONE]
+
+
+        - arun_thread: false
+          stream: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - status: 200
+              headers: {content-type: text/event-stream}
+              body: |
+                event: thread.run.step.created
+                data: {"id":"step_1","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"tool_calls","status":"in_progress","step_details":{"type":"tool_calls","tool_calls":[]}}
+
+                event: thread.run.step.delta
+                data: {"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"tool_calls","tool_calls":[{"index":0,"type":"function","function":{"arguments":"{"}}]}}}
+
+                event: thread.run.step.completed
+                data: {"id":"step_1","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"tool_calls","status":"completed","step_details":{"type":"tool_calls","tool_calls":[{"index":0,"type":"function","id":"call_1","function":{"name":"f","arguments":"{}"}}]}}
+
+                event: thread.message.created
+                data: {"id":"msg_1","object":"thread.message","created_at":1700000000,"thread_id":"thread_a","role":"assistant","status":"in_progress","content":[]}
+
+                event: thread.message.delta
+                data: {"id":"msg_1","object":"thread.message.delta","delta":{"content":[{"index":0,"type":"text","text":{"annotations":[]}}]}}
+
+                event: thread.message.delta
+                data: {"id":"msg_1","object":"thread.message.delta","delta":{"content":[{"index":0,"type":"image_file","image_file":{"file_id":"file_1"}}]}}
+
+                event: thread.message.delta
+                data: {"id":"msg_1","object":"thread.message.delta","delta":{"content":[{"index":0,"type":"image_url","image_url":{"url":"https://example.test/x.png"}}]}}
+
+                event: thread.message.completed
+                data: {"id":"msg_1","object":"thread.message","created_at":1700000000,"thread_id":"thread_a","role":"assistant","status":"completed","content":[{"index":0,"type":"image_file","image_file":{"file_id":"file_1"}}]}
+
+                event: thread.created
+                data: {"id":"thread_a","object":"thread","created_at":1700000000,"metadata":{},"tool_resources":{"code_interpreter":{"file_ids":[]}}}
+
+                data: [DONE]
+
+
 env: {}
 compare: {ignore: []}

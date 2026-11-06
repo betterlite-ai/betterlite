@@ -34,18 +34,18 @@ const STEP_DELTA: &str = r#"{"id":"step_1","object":"thread.run.step.delta","del
 const FUTURE: &str = r#"{"thing":true}"#;
 
 #[derive(Clone, Copy)]
-enum Facade {
+pub(super) enum Facade {
     SyncRun,
     AsyncRun,
     SyncStream,
     AsyncStream,
 }
 
-fn request() -> RunRequest {
+pub(super) fn request() -> RunRequest {
     serde_json::from_str(REQUEST).unwrap()
 }
 
-fn call(facade: Facade) -> RunCall<Recorder> {
+pub(super) fn call(facade: Facade) -> RunCall<Recorder> {
     let dispatch = match facade {
         Facade::SyncRun => RunDispatch {
             arun_thread: false,
@@ -83,7 +83,7 @@ fn stream_wire() -> Seen {
     seen
 }
 
-fn frame(event: &str, data: &str) -> String {
+pub(super) fn frame(event: &str, data: &str) -> String {
     format!("event: {event}\ndata: {data}\n\n")
 }
 
@@ -136,7 +136,10 @@ fn assert_unchanged(reply: &RunReply, fixture: &str) {
     ] {
         assert_eq!(output.get(key), expected.get(key), "{key}");
     }
-    assert_eq!(output.get("completed_at"), expected.get("completed_at"));
+    assert_eq!(
+        output.get("completed_at"),
+        Some(expected.get("completed_at").unwrap_or(&Value::Null))
+    );
     assert_eq!(output.get("cancelled_at"), Some(&Value::Null));
     assert_eq!(output.get("expires_at"), Some(&Value::Null));
 }
@@ -452,7 +455,7 @@ async fn stream_tail_edges() {
 }
 
 // Every streaming case goes through one production entry and the same request.
-async fn stream_result(body: &str) -> Result<Vec<RunEvent>, ThreadRunsError> {
+pub(super) async fn stream_result(body: &str) -> Result<Vec<RunEvent>, ThreadRunsError> {
     let (api, transport) = harness();
     transport.queue(200, &[("content-type", "text/event-stream")], body);
     let outcome = api
@@ -621,58 +624,6 @@ async fn stream_timeout_bounds_each_read() {
             assert_eq!(result.unwrap().len(), 2);
         }
     }
-}
-
-// The frame buffer is capped, so one oversized frame fails while a long stream of small ones completes.
-async fn stream_cap_is_bounded() {
-    long_stream_completes().await;
-    oversized_frame_fails().await;
-}
-
-async fn long_stream_completes() {
-    let (api, transport) = harness();
-    let long = format!(
-        "{}{}data: [DONE]\n\n",
-        frame("thread.run.created", QUEUED),
-        frame("thread.run.completed", COMPLETED)
-    );
-    transport.stream_chunks(parts_chunks(vec![Ok(long.into_bytes())]));
-    let outcome = api
-        .run_thread(call(Facade::SyncStream), &request())
-        .await
-        .unwrap();
-    let RunInvocation::Streaming(stream) = outcome else {
-        panic!("expected a stream manager");
-    };
-    let mut events = stream.events().await.unwrap();
-    assert_eq!(
-        events.next().await.expect("an event").unwrap().name(),
-        "thread.run.created"
-    );
-    assert_eq!(
-        events.next().await.expect("an event").unwrap().name(),
-        "thread.run.completed"
-    );
-    assert!(events.next().await.is_none());
-}
-
-async fn oversized_frame_fails() {
-    let (api, transport) = harness();
-    let oversized = format!("data: {}\n\n", "x".repeat(0x0010_0000));
-    transport.stream_chunks(parts_chunks(vec![Ok(oversized.into_bytes())]));
-    let outcome = api
-        .run_thread(call(Facade::SyncStream), &request())
-        .await
-        .unwrap();
-    let RunInvocation::Streaming(stream) = outcome else {
-        panic!("expected a stream manager");
-    };
-    let mut events = stream.events().await.unwrap();
-    let failure = events.next().await.expect("a failure").err().unwrap();
-    assert!(
-        matches!(failure, ThreadRunsError::StreamTooLarge),
-        "{failure}"
-    );
 }
 
 // A data-only frame carrying an event and data pair decodes to that event, as the SDK builds it.
@@ -964,10 +915,12 @@ async fn thread_runs_cases(#[case] scenario: Scenario) {
             stream_without_handler_sees_events().await;
             stream_timeout_calls_the_handler().await;
             stream_timeout_bounds_each_read().await;
-            stream_cap_is_bounded().await;
+            super::caps::stream_cap_is_bounded().await;
             stream_embedded_event_decodes().await;
             stream_empty_payload_fields().await;
             stream_unusable_fields_are_skipped().await;
+            super::fields::stream_unusable_fields_after_data_keep_the_event().await;
+            super::fields::stream_nested_records_match_the_sdk_dump().await;
             stream_step_and_message_records().await;
         }
         Scenario::InstructionsToolsOverrides => instructions_tools_overrides().await,
