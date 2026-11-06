@@ -3,12 +3,14 @@
 use rstest::rstest;
 use rust_decimal::Decimal;
 
-use super::support::{API_KEY, CloudEventBody, logger, logger_with};
+use super::support::{API_KEY, CloudEventBody, http_logger, logger, logger_with};
 use crate::finops::metering::openmeter::error::OpenMeterError;
-use crate::finops::metering::support::{FakeSender, MODEL, Unreachable, event};
+use crate::finops::metering::support::{
+    FakeSender, MODEL, Unreachable, assert_metering_request, event, serve_once,
+};
 
 #[tokio::test]
-async fn post_sends_to_the_configured_endpoint_with_bearer_auth() {
+async fn post_sends_to_the_configured_endpoint_with_the_configured_key() {
     let sender = FakeSender::default();
     logger(sender.clone())
         .log_success_event(&event())
@@ -17,7 +19,33 @@ async fn post_sends_to_the_configured_endpoint_with_bearer_auth() {
     let posted = sender.only_post();
     assert_eq!(posted.url, "https://openmeter.test/api/v1/events");
     assert_eq!(posted.content_type, "application/cloudevents+json");
-    assert_eq!(posted.authorization, format!("Bearer {API_KEY}"));
+    assert_eq!(posted.api_key, API_KEY);
+}
+
+#[tokio::test]
+async fn post_sends_the_bearer_header_and_cloudevent_through_the_http_sender() {
+    let (base, served) = serve_once(200, "{}").await;
+    let logger = http_logger(&base);
+    let call = event();
+    let (result, received) = tokio::join!(logger.log_success_event(&call), served);
+    result.unwrap();
+    let content_type = "application/cloudevents+json";
+    let body: CloudEventBody =
+        serde_json::from_slice(&assert_metering_request(&received, content_type, API_KEY)).unwrap();
+    assert_eq!(body.source, "litellm-proxy");
+    assert_eq!(body.subject, "end-user-1");
+}
+
+#[tokio::test]
+async fn post_wraps_a_non_2xx_status_through_the_http_sender() {
+    let (base, served) = serve_once(422, "unknown meter").await;
+    let logger = http_logger(&base);
+    let call = event();
+    let (result, _received) = tokio::join!(logger.log_success_event(&call), served);
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "OpenMeter logging error: unknown meter"
+    );
 }
 
 #[rstest]

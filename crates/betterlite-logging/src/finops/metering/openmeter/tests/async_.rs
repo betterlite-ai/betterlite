@@ -13,7 +13,7 @@ async fn async_log_success_event_sends_the_same_payload_and_auth_as_the_sync_pat
     let posts = sender.posts();
     assert_eq!(posts.len(), 2);
     assert_eq!(posts[0].url, posts[1].url);
-    assert_eq!(posts[0].authorization, posts[1].authorization);
+    assert_eq!(posts[0].api_key, posts[1].api_key);
     assert_eq!(posts[0].content_type, posts[1].content_type);
     let sync_body: CloudEventBody = posts[0].parse();
     let async_body: CloudEventBody = posts[1].parse();

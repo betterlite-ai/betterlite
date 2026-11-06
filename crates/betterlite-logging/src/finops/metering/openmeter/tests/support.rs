@@ -1,13 +1,15 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
 use crate::finops::metering::openmeter::OpenMeterLogger;
 use crate::finops::metering::openmeter::settings::OpenMeterSettings;
-use crate::finops::metering::support::{FakeSender, FixedClock, variables};
+use crate::finops::metering::support::{FakeSender, FixedClock, metering_sender, variables};
+use crate::finops::metering::transport::HttpMeteringSender;
 
 pub(super) const API_KEY: &str = "openmeter-key-1234";
 pub(super) const ENDPOINT: &str = "https://openmeter.test";
@@ -41,6 +43,14 @@ pub(super) fn logger_with(
     OpenMeterLogger {
         settings,
         sender,
+        clock: FixedClock,
+    }
+}
+
+pub(super) fn http_logger(base_url: &str) -> OpenMeterLogger<HttpMeteringSender, FixedClock> {
+    OpenMeterLogger {
+        settings: settings_with(&[("OPENMETER_API_ENDPOINT", base_url)]),
+        sender: metering_sender(Duration::from_secs(5)),
         clock: FixedClock,
     }
 }

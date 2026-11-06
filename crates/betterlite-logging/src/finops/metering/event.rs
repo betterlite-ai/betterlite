@@ -7,7 +7,6 @@ pub struct UsageTokens {
     pub total_tokens: i64,
 }
 
-// The callback kwargs both adapters read: the response usage and the proxy's attribution fields.
 #[derive(Clone, Copy, Debug)]
 pub struct MeteringEvent<'event> {
     pub model: Option<&'event str>,

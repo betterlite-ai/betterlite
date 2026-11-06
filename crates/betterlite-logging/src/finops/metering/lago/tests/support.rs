@@ -1,13 +1,15 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::time::Duration;
 
 use rust_decimal::Decimal;
 use serde::Deserialize;
 
 use crate::finops::metering::lago::LagoLogger;
 use crate::finops::metering::lago::settings::LagoSettings;
-use crate::finops::metering::support::{FakeSender, variables};
+use crate::finops::metering::support::{FakeSender, metering_sender, variables};
+use crate::finops::metering::transport::HttpMeteringSender;
 
 pub(super) const API_KEY: &str = "lago-key-1234";
 pub(super) const EVENT_CODE: &str = "litellm-event";
@@ -41,6 +43,13 @@ pub(super) fn logger_with(
 ) -> LagoLogger<FakeSender> {
     let settings = LagoSettings::from_environment(&environment_with(overrides)).unwrap();
     LagoLogger { settings, sender }
+}
+
+pub(super) fn http_logger(base_url: &str) -> LagoLogger<HttpMeteringSender> {
+    LagoLogger {
+        settings: settings_with(&[("LAGO_API_BASE", base_url)]),
+        sender: metering_sender(Duration::from_secs(5)),
+    }
 }
 
 #[derive(Debug, Deserialize)]

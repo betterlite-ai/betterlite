@@ -18,7 +18,8 @@ use url::Url;
 
 pub const EVENT_PATH: &str = "/api/v1/events";
 pub const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
-pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
+// LiteLLM falls back to COMPLETION_HTTP_FALLBACK_SECONDS when litellm_settings.request_timeout is unset
+pub const DEFAULT_REQUEST_TIMEOUT: Duration = Duration::from_secs(600);
 const RESPONSE_BODY_BYTES: usize = 1024 * 1024;
 const RESPONSE_HEADER_BYTES: usize = 0x0001_0000;
 
@@ -71,16 +72,16 @@ pub enum HttpSenderError {
 }
 
 impl HttpMeteringSender {
-    pub fn new(policy: &Arc<ProxyPolicy>) -> Result<Self, HttpError> {
+    pub fn new(policy: &Arc<ProxyPolicy>, timeout: Duration) -> Result<Self, HttpError> {
         let limits = TransportLimits {
             connect_timeout: CONNECT_TIMEOUT,
-            read_timeout: REQUEST_TIMEOUT,
+            read_timeout: timeout,
             body_bytes: RESPONSE_BODY_BYTES,
             header_bytes: RESPONSE_HEADER_BYTES,
         };
         Ok(Self {
             client: ProxiedClient::build(base_builder(), policy, limits)?,
-            deadline: REQUEST_TIMEOUT,
+            deadline: timeout,
         })
     }
 }
