@@ -1,0 +1,62 @@
+kind: helper
+name: bedrock-gpt-runtime-default-capability
+call:
+  bedrock_model_routes:
+    price_map:
+      openai.gpt-5.6:
+        supported_endpoints: ["/v1/chat/completions"]
+      openai.gpt-5.5:
+        supported_endpoints: ["/v1/chat/completions"]
+      us.openai.gpt-5.6-luna:
+        supported_endpoints: ["/v1/chat/completions"]
+      "openai.gpt-oss-20b-1:0":
+        supports_bedrock_runtime_chat_completions_tools_with_reasoning: true
+      us-east-1/openai.gpt-5.6-sol:
+        supported_endpoints: ["/v1/chat/completions"]
+      openai.gpt-5.6-region:
+        supported_endpoints: ["/v1/chat/completions"]
+      openai.gpt-5.6-other:
+        supported_endpoints: ["/v1/responses"]
+      openai.gpt-5.6-string:
+        supports_bedrock_runtime_chat_completions_response_format: "true"
+      openai.gpt-5.6-number:
+        supports_bedrock_runtime_chat_completions_tools_with_reasoning: 1
+      openai.gpt-5.6-true:
+        supports_bedrock_runtime_chat_completions_response_format: true
+      openai.gpt-5.6-null: null
+      openai.gpt-5.6-bad: not-an-object
+      bedrock/us-east-1/openai.gpt-5.6-dup:
+        supported_endpoints: ["/v1/chat/completions"]
+      openai.gpt-5.6-dup: []
+    converse_models: []
+    request_metadata_fields: []
+    tool_names: {}
+    step:
+      capabilities:
+        models:
+          - openai.gpt-5.6
+          - us.openai.gpt-6.1-sol
+          - openai.gpt-6-astra
+          - openai.gpt-123
+          - openai.gpt-1234
+          - openai.gpt-5.1234
+          - openai.gpt-5.6.7
+          - openai.gpt-0.5
+          - "openai.gpt-oss-20b-1:0"
+          - xopenai.gpt-5.6
+          - x.openai.gpt-5.6
+          - openai.gpt-5.6-string
+          - openai.gpt-5.6-number
+          - openai.gpt-5.6-true
+          - us.openai.gpt-5.6-luna
+          - bedrock/us-east-1/openai.gpt-5.6-sol
+          - bedrock/us-east-1/openai.gpt-5.6-region
+          - global.openai.gpt-5.6-other
+          - bedrock/us-east-1/openai.gpt-4o
+          - openai.gpt-5.6-null
+        malformed:
+          - openai.gpt-5.6-bad
+          - bedrock/us-east-1/openai.gpt-5.6-dup
+env: {}
+compare:
+  ignore: []
