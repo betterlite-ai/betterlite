@@ -6,6 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+async-trait = "0.1.92"
 aws-credential-types = "1.3.1"
 aws-smithy-async = "=1.3.1"
 aws-smithy-runtime-api = { version = "=1.19.2", features = ["client"] }
@@ -39,6 +40,8 @@ betterlite-openapi = { path = "../../crates/betterlite-openapi" }
 betterlite-paths = { path = "../../crates/betterlite-paths" }
 betterlite-postgres-fixture = { path = "../postgres-fixture" }
 betterlite-prompts = { path = "../../crates/betterlite-prompts" }
+betterlite-provider = { path = "../../crates/betterlite-provider" }
+betterlite-proxy = { path = "../../crates/betterlite-proxy" }
 betterlite-rate-limit = { path = "../../crates/betterlite-rate-limit" }
 betterlite-redact = { path = "../../crates/betterlite-redact" }
 betterlite-redis = { path = "../../crates/betterlite-redis" }
@@ -49,11 +52,13 @@ betterlite-secrets = { path = "../../crates/betterlite-secrets" }
 betterlite-server = { path = "../../crates/betterlite-server" }
 betterlite-streaming = { path = "../../crates/betterlite-streaming" }
 betterlite-websearch = { path = "../../crates/betterlite-websearch" }
+bytes = "1.12.1"
 chrono.workspace = true
 clap = { version = "4.6.7", features = ["derive", "env"] }
 cookie_store = "0.22.0"
 futures-util = { version = "0.3.34", default-features = false }
 hex = "0.4.3"
+http = "1.5.0"
 indexmap = { version = "2.14.2", features = ["serde"] }
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 percent-encoding.workspace = true

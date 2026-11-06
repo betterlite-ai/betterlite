@@ -1061,8 +1061,19 @@ dependencies = [
  "betterlite-error",
  "indexmap 2.14.2",
  "rstest",
+ "secrecy",
  "serde",
  "serde_json",
+ "serde_path_to_error",
+ "thiserror",
+]
+
+[[package]]
+name = "betterlite-azure-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-azure",
+ "libfuzzer-sys",
 ]
 
 [[package]]
@@ -1073,15 +1084,19 @@ dependencies = [
  "aws-credential-types",
  "aws-sdk-sts",
  "aws-smithy-async",
+ "aws-smithy-eventstream",
  "aws-smithy-runtime-api",
  "aws-smithy-types",
  "aws-types",
+ "base64 0.23.1",
  "betterlite-config",
  "betterlite-context",
  "betterlite-env",
  "betterlite-openai",
  "betterlite-redact",
+ "bytes",
  "chrono",
+ "crc32fast",
  "encoding_rs",
  "futures-util",
  "hex",
@@ -1104,6 +1119,7 @@ name = "betterlite-bedrock-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-bedrock",
+ "bytes",
  "libfuzzer-sys",
 ]
 
@@ -1515,6 +1531,14 @@ name = "betterlite-http"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "aws-config",
+ "aws-credential-types",
+ "aws-sdk-sts",
+ "aws-sigv4",
+ "aws-smithy-async",
+ "aws-smithy-runtime-api",
+ "aws-smithy-types",
+ "aws-types",
  "base64 0.23.1",
  "betterlite-config",
  "bytes",
@@ -1523,6 +1547,7 @@ dependencies = [
  "h2",
  "hex",
  "http 1.5.0",
+ "libc",
  "opentelemetry-http",
  "percent-encoding",
  "rcgen",
@@ -1543,6 +1568,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "url",
  "uuid",
  "webpki-roots",
  "zip",
@@ -1693,6 +1719,7 @@ version = "0.1.0"
 dependencies = [
  "chrono",
  "fancy-regex",
+ "futures-util",
  "indexmap 2.14.2",
  "jiff",
  "rstest",
@@ -1789,6 +1816,7 @@ dependencies = [
 name = "betterlite-oracle"
 version = "0.1.0"
 dependencies = [
+ "async-trait",
  "aws-credential-types",
  "aws-smithy-async",
  "aws-smithy-runtime-api",
@@ -1822,6 +1850,8 @@ dependencies = [
  "betterlite-paths",
  "betterlite-postgres-fixture",
  "betterlite-prompts",
+ "betterlite-provider",
+ "betterlite-proxy",
  "betterlite-rate-limit",
  "betterlite-redact",
  "betterlite-redis",
@@ -1832,11 +1862,13 @@ dependencies = [
  "betterlite-server",
  "betterlite-streaming",
  "betterlite-websearch",
+ "bytes",
  "chrono",
  "clap",
  "cookie_store",
  "futures-util",
  "hex",
+ "http 1.5.0",
  "indexmap 2.14.2",
  "jiff",
  "percent-encoding",
@@ -1952,6 +1984,7 @@ dependencies = [
 name = "betterlite-prompts"
 version = "0.1.0"
 dependencies = [
+ "base64 0.23.1",
  "betterlite-logging",
  "betterlite-models",
  "chrono",
@@ -1959,7 +1992,9 @@ dependencies = [
  "indexmap 2.14.2",
  "minijinja",
  "minijinja-contrib",
+ "percent-encoding",
  "rstest",
+ "secrecy",
  "serde",
  "serde-saphyr",
  "serde_json",
@@ -1984,10 +2019,51 @@ dependencies = [
 [[package]]
 name = "betterlite-provider"
 version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "betterlite-config",
+ "betterlite-http",
+ "betterlite-models",
+ "futures-util",
+ "http 1.5.0",
+ "rstest",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "url",
+]
+
+[[package]]
+name = "betterlite-provider-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-provider",
+ "libfuzzer-sys",
+]
 
 [[package]]
 name = "betterlite-proxy"
 version = "0.1.0"
+dependencies = [
+ "base64 0.23.1",
+ "betterlite-config",
+ "betterlite-context",
+ "betterlite-http",
+ "hex",
+ "http 1.5.0",
+ "rstest",
+ "rust_decimal",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "sha2 0.11.1",
+ "thiserror",
+ "tokio",
+ "tracing",
+ "url",
+]
 
 [[package]]
 name = "betterlite-rag"
@@ -2088,9 +2164,11 @@ name = "betterlite-router"
 version = "0.1.0"
 dependencies = [
  "indexmap 2.14.2",
+ "rand 0.10.3",
  "rstest",
  "serde",
  "serde_json",
+ "thiserror",
  "unicode-general-category",
 ]
 
@@ -2140,6 +2218,7 @@ dependencies = [
  "betterlite-env",
  "http 1.5.0",
  "num-traits",
+ "percent-encoding",
  "regex",
  "rstest",
  "secrecy",
@@ -2208,6 +2287,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "axum",
+ "base64 0.23.1",
  "betterlite-auth",
  "betterlite-billing",
  "betterlite-config",
@@ -2221,6 +2301,7 @@ dependencies = [
  "betterlite-postgres-fixture",
  "betterlite-redact",
  "betterlite-roi",
+ "betterlite-router",
  "betterlite-semantic",
  "caseless",
  "chrono",
@@ -2230,8 +2311,10 @@ dependencies = [
  "encoding_rs",
  "form_urlencoded",
  "futures-util",
+ "getrandom 0.4.3",
  "hex",
  "hyper-util",
+ "icu_properties",
  "indexmap 2.14.2",
  "multipart-rs",
  "percent-encoding",
@@ -2241,10 +2324,12 @@ dependencies = [
  "rstest",
  "rust_decimal",
  "rustls",
+ "scrypt",
  "secrecy",
  "serde",
  "serde_json",
  "serde_with",
+ "sha1",
  "sha2 0.11.1",
  "signal-hook",
  "soft-canonicalize",

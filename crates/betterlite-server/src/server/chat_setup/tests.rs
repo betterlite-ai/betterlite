@@ -80,7 +80,7 @@ async fn http_pool_tests_behavior(#[case] verify: &str, #[case] expected: &str) 
         .unwrap();
     let acceptor = TlsAcceptor::from(Arc::new(origin));
     let request = ChatRequest::parse(br#"{"messages":[]}"#).unwrap();
-    let deployment = chat.pick("g").unwrap();
+    let deployment = chat.deployments.first().unwrap();
     let (_served, answered) = tokio::join!(
         serve_tls(&listener, &acceptor),
         chat.send(deployment, &request)
@@ -103,7 +103,10 @@ async fn a_mocked_network_answers_without_opening_a_connection() {
     .unwrap();
     let chat = chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).unwrap();
     let request = ChatRequest::parse(br#"{"messages":[]}"#).unwrap();
-    let answered = chat.send(chat.pick("g").unwrap(), &request).await.unwrap();
+    let answered = chat
+        .send(chat.deployments.first().unwrap(), &request)
+        .await
+        .unwrap();
     assert!(answered.response.id.starts_with("chatcmpl-mock-"));
     let connected = timeout(Duration::from_millis(200), listener.accept()).await;
     connected.unwrap_err();

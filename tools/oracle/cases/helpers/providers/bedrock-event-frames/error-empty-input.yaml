@@ -1,0 +1,5 @@
+kind: helper
+name: error-empty-input
+call: {"bedrock_event_frames": {"operation": "stream", "params": {"chunks": [], "response_headers": null, "shape_loaded": true}}}
+env: {}
+compare: {ignore: []}
