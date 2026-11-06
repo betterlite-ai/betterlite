@@ -13,8 +13,17 @@ cargo-fuzz = true
 
 [dependencies]
 betterlite-core = { path = ".." }
+chrono = { version = "0.4.45", default-features = false }
+jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 libfuzzer-sys = "0.4.9"
 serde_json = { version = "1.0.154", features = ["arbitrary_precision"] }
+
+[[bin]]
+name = "duration_spec"
+path = "fuzz_targets/duration_spec.rs"
+test = false
+doc = false
+bench = false
 
 [[bin]]
 name = "pdf_extraction"

@@ -1,0 +1,10 @@
+kind: helper
+name: openai-files-sdk-client-wrong-async
+call:
+  openai_files:
+    action: retrieve_file
+    client: {api_key: sk-files, api_base: 'https://files.test/v1', supplied: sync, is_async: true}
+    request:
+      file_id: file-x
+env: {}
+compare: {ignore: []}
