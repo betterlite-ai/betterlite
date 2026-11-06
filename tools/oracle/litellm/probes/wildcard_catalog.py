@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from typing import Annotated, Literal, cast
 
+import litellm
 from litellm.router_utils.pattern_match_deployments import PatternMatchRouter
 from pydantic import Field
 from typing_extensions import override
@@ -93,6 +94,8 @@ class WildcardCatalog(Operation):
 
     @override
     def run(self) -> Output:
+        # an unmapped model name makes get_llm_provider print the provider list to stdout, where the reply goes
+        litellm.suppress_debug_info = True
         router = PatternMatchRouter()
         add_pattern = cast("AddPattern", router.add_pattern)
         remove_deployment = cast("Callable[[str], None]", router.remove_deployment)

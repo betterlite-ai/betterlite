@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from typing import TypeAlias, cast
 
+import litellm
 from litellm.router_utils.pattern_match_deployments import PatternMatchRouter
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
@@ -74,6 +75,8 @@ def run(input_value: dict[str, Json]) -> Json:
     steps = input_value.get("steps")
     if not isinstance(steps, list):
         raise TypeError("steps must be a list")
+    # an unmapped model name makes get_llm_provider print to stdout, where the answer goes
+    litellm.suppress_debug_info = True
     router = PatternMatchRouter()
     add_pattern = cast("AddPattern", router.add_pattern)
     remove_deployment = cast("Callable[[str], None]", router.remove_deployment)
