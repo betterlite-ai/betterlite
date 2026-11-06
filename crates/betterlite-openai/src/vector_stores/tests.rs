@@ -16,7 +16,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::{Map, Value};
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 const BASE: &str = "https://h.example/v1/vector_stores";
 
@@ -385,20 +385,31 @@ fn openai_vector_stores_secret_safe_failure() {
     assert!(!shown.contains("sk-fixture"));
 }
 
-#[rstest]
-fn replays_the_openai_vector_stores_corpus(
-    #[files("fuzz/corpus/openai_vector_stores/*")] path: PathBuf,
-) {
-    let bytes = fs::read(&path).expect("corpus file");
-    let (tag, body) = bytes.split_first().expect("kind byte");
-    let kind = ReplyKind::from_tag(*tag).expect("kind tag");
-    let name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .expect("name");
-    assert_eq!(
-        decode_vector_reply(kind, body).is_ok(),
-        name.starts_with("ok-"),
-        "{name}"
-    );
+#[test]
+fn replays_the_openai_vector_stores_corpus() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/openai_vector_stores");
+    let paths: Vec<PathBuf> = fs::read_dir(&corpus)
+        .expect("corpus folder")
+        .map(|entry| entry.expect("corpus entry").path())
+        .collect();
+    assert!(!paths.is_empty());
+    let wrong: Vec<&str> = paths
+        .iter()
+        .filter(|path| {
+            let bytes = fs::read(path).expect("corpus file");
+            let (&tag, body) = bytes.split_first().expect("kind byte");
+            let kind = ReplyKind::from_tag(tag).expect("kind tag");
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .expect("name");
+            decode_vector_reply(kind, body).is_ok() != name.starts_with("ok-")
+        })
+        .map(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("?")
+        })
+        .collect();
+    assert!(wrong.is_empty(), "{wrong:?}");
 }
