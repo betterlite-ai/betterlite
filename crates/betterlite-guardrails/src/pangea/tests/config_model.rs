@@ -2,18 +2,23 @@
 
 use betterlite_config::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity as _;
 
-use crate::pangea::PangeaGuardrailConfigModel;
+use crate::pangea::{PangeaGuardrailConfigModel, PangeaOptionalParams};
 
 #[test]
-fn config_model_deserializes_api_key_api_base_and_recipes() {
+fn config_model_deserializes_api_key_api_base_and_optional_recipes() {
     let model: PangeaGuardrailConfigModel = serde_json::from_str(
-        r#"{"api_key":"key","api_base":"https://pangea.test","pangea_input_recipe":"in","pangea_output_recipe":"out"}"#,
+        r#"{"api_key":"key","api_base":"https://pangea.test","optional_params":{"pangea_input_recipe":"in","pangea_output_recipe":"out"}}"#,
     )
     .unwrap();
     assert_eq!(model.api_key.as_deref(), Some("key"));
     assert_eq!(model.api_base.as_deref(), Some("https://pangea.test"));
-    assert_eq!(model.pangea_input_recipe.as_deref(), Some("in"));
-    assert_eq!(model.pangea_output_recipe.as_deref(), Some("out"));
+    assert_eq!(
+        model.optional_params,
+        Some(PangeaOptionalParams {
+            pangea_input_recipe: Some("in".to_owned()),
+            pangea_output_recipe: Some("out".to_owned()),
+        })
+    );
 }
 
 #[test]
@@ -21,8 +26,20 @@ fn config_model_defaults_every_field_to_none() {
     let model: PangeaGuardrailConfigModel = serde_json::from_str("{}").unwrap();
     assert_eq!(model.api_key, None);
     assert_eq!(model.api_base, None);
-    assert_eq!(model.pangea_input_recipe, None);
-    assert_eq!(model.pangea_output_recipe, None);
+    assert_eq!(model.optional_params, None);
+}
+
+#[test]
+fn config_model_accepts_optional_params_without_recipes() {
+    let model: PangeaGuardrailConfigModel =
+        serde_json::from_str(r#"{"optional_params":{"pangea_input_recipe":"in"}}"#).unwrap();
+    assert_eq!(
+        model.optional_params,
+        Some(PangeaOptionalParams {
+            pangea_input_recipe: Some("in".to_owned()),
+            pangea_output_recipe: None,
+        })
+    );
 }
 
 #[test]

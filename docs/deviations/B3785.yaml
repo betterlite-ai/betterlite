@@ -1,0 +1,16 @@
+task: B3785
+deviations:
+  - what: >-
+      A Pangea answer larger than 1 MiB is refused with PangeaGuardrailError::ResponseTooLarge
+      instead of being read in full.
+    why: >-
+      LiteLLM reads the whole response body into memory with no limit; betterlite caps every
+      outbound answer (rule bounded-inputs).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pangea/pangea.py#L134-L139
+  - what: >-
+      The guardrail does not apply litellm_params.timeout per request. The Pangea call uses the
+      timeout of the reqwest client passed in when the guardrail is built.
+    why: >-
+      LiteLLM sets self.timeout in CustomGuardrail.__init__ and passes it to every post; that base
+      class and the shared async handler are owned by U1/B173, which supply the configured client.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/pangea/pangea.py#L134-L135

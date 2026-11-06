@@ -7,17 +7,17 @@ use std::time::Duration;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_http::proxy::base_builder;
 use reqwest::StatusCode;
-use secrecy::SecretString;
 
 pub(crate) mod support;
 
 use crate::pangea::tests::support::{
-    GUARDRAIL_NAME, Recorder, data_with_messages, guardrail, params, payload, serve, serve_hanging,
+    GUARDRAIL_NAME, Recorder, config, data_with_messages, guardrail, payload, serve, serve_hanging,
     user,
 };
 use crate::pangea::{
-    CallbackRegistry, GuardrailResponse, PangeaGuardrail, PangeaGuardrailError,
-    PangeaGuardrailParams, RequestData, SUPPORTED_EVENT_HOOKS, initialize_guardrail,
+    CallbackRegistry, GuardrailResponse, PangeaGuardrail, PangeaGuardrailConfigModel,
+    PangeaGuardrailError, PangeaOptionalParams, RequestData, SUPPORTED_EVENT_HOOKS,
+    initialize_guardrail,
 };
 
 const ALLOWED: &str = r#"{"result":{"blocked":false,"transformed":false}}"#;
@@ -344,8 +344,14 @@ impl CallbackRegistry for Registry {
 fn initialize_guardrail_registers_the_callback_it_returns() {
     let lookup = BTreeMap::from([("PANGEA_API_KEY".to_owned(), "env-key".to_owned())]);
     let mut registry = Registry::default();
-    let guardrail =
-        initialize_guardrail(params(), &lookup, reqwest::Client::default(), &mut registry).unwrap();
+    let guardrail = initialize_guardrail(
+        Some(GUARDRAIL_NAME.to_owned()),
+        config(),
+        &lookup,
+        reqwest::Client::default(),
+        &mut registry,
+    )
+    .unwrap();
     assert_eq!(guardrail.guardrail_name, GUARDRAIL_NAME);
     assert_eq!(registry.names, [GUARDRAIL_NAME]);
 }
@@ -354,10 +360,9 @@ fn initialize_guardrail_registers_the_callback_it_returns() {
 fn initialize_guardrail_requires_a_guardrail_name() {
     let lookup = BTreeMap::from([("PANGEA_API_KEY".to_owned(), "env-key".to_owned())]);
     let mut registry = Registry::default();
-    let mut without_name = params();
-    without_name.guardrail_name = None;
     let error = initialize_guardrail(
-        without_name,
+        None,
+        config(),
         &lookup,
         reqwest::Client::default(),
         &mut registry,
@@ -370,15 +375,21 @@ fn initialize_guardrail_requires_a_guardrail_name() {
 
 #[test]
 fn guardrail_fields_are_built_from_the_parameters() {
-    let params = PangeaGuardrailParams {
-        guardrail_name: Some(GUARDRAIL_NAME.to_owned()),
-        api_key: Some(SecretString::from("config-key".to_owned())),
+    let config = PangeaGuardrailConfigModel {
+        api_key: Some("config-key".to_owned()),
         api_base: Some("https://pangea.test".to_owned()),
-        pangea_input_recipe: Some("in".to_owned()),
-        pangea_output_recipe: Some("out".to_owned()),
+        optional_params: Some(PangeaOptionalParams {
+            pangea_input_recipe: Some("in".to_owned()),
+            pangea_output_recipe: Some("out".to_owned()),
+        }),
     };
-    let instance =
-        PangeaGuardrail::new(params, &BTreeMap::new(), reqwest::Client::default()).unwrap();
+    let instance = PangeaGuardrail::new(
+        Some(GUARDRAIL_NAME.to_owned()),
+        config,
+        &BTreeMap::new(),
+        reqwest::Client::default(),
+    )
+    .unwrap();
     assert_eq!(instance.input_recipe.as_deref(), Some("in"));
     assert_eq!(instance.output_recipe.as_deref(), Some("out"));
     assert_eq!(instance.api_base, "https://pangea.test");

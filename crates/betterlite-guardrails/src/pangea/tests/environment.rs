@@ -2,20 +2,29 @@
 
 use std::collections::BTreeMap;
 
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::ExposeSecret as _;
 
-use crate::pangea::tests::support::params;
-use crate::pangea::{DEFAULT_API_BASE, PangeaGuardrail, PangeaGuardrailError};
+use crate::pangea::tests::support::GUARDRAIL_NAME;
+use crate::pangea::{
+    DEFAULT_API_BASE, PangeaGuardrail, PangeaGuardrailConfigModel, PangeaGuardrailError,
+};
 
 fn resolve(
     lookup: &BTreeMap<String, String>,
     api_key: Option<&str>,
     api_base: Option<&str>,
 ) -> Result<PangeaGuardrail, PangeaGuardrailError> {
-    let mut resolved = params();
-    resolved.api_key = api_key.map(|key| SecretString::from(key.to_owned()));
-    resolved.api_base = api_base.map(str::to_owned);
-    PangeaGuardrail::new(resolved, lookup, reqwest::Client::default())
+    let config = PangeaGuardrailConfigModel {
+        api_key: api_key.map(str::to_owned),
+        api_base: api_base.map(str::to_owned),
+        optional_params: None,
+    };
+    PangeaGuardrail::new(
+        Some(GUARDRAIL_NAME.to_owned()),
+        config,
+        lookup,
+        reqwest::Client::default(),
+    )
 }
 
 #[test]
@@ -48,8 +57,7 @@ fn environment_reads_the_api_base_from_pangea_api_base() {
 
 #[test]
 fn environment_defaults_the_api_base_to_the_pangea_guard_host() {
-    let lookup = BTreeMap::new();
-    let guardrail = resolve(&lookup, Some("key"), None).expect("the guardrail resolves");
+    let guardrail = resolve(&BTreeMap::new(), Some("key"), None).expect("the guardrail resolves");
     assert_eq!(guardrail.api_base, DEFAULT_API_BASE);
 }
 
