@@ -1,0 +1,18 @@
+kind: helper
+name: guardrail-existing-exact-true
+call:
+  management_guards:
+    calls:
+      - {function: check_guardrail_opt_out, user_role: internal_user, disable_global_guardrails: true, existing_metadata: {disable_global_guardrails: true}}
+      - {function: check_guardrail_opt_out, user_role: internal_user, disable_global_guardrails: true, existing_metadata: {disable_global_guardrails: 1}}
+      - {function: check_guardrail_opt_out, user_role: internal_user, disable_global_guardrails: true, existing_metadata: {disable_global_guardrails: "true"}}
+      - {function: check_guardrail_opt_out, user_role: internal_user, disable_global_guardrails: true, existing_metadata: {}}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/1/detail
+      why: betterlite writes its own message
+    - pointer: /value/2/detail
+      why: betterlite writes its own message
+    - pointer: /value/3/detail
+      why: betterlite writes its own message
