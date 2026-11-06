@@ -1,0 +1,8 @@
+not json
+[]
+0
+null
+"a string"
+{"type":"unknown","text":"ignored"}
+{"type":"stdout","text":"kept"}
+{"type":

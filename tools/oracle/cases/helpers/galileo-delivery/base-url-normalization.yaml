@@ -1,0 +1,5 @@
+kind: helper
+name: galileo-delivery-base-url-normalization
+call: {"b3964": {"environment": {"GALILEO_API_KEY": "key-0123456789abcdef", "GALILEO_PROJECT_ID": "project-1", "GALILEO_BASE_URL": "https://galileo.example///"}, "replies": [], "actions": [{"do": "push", "label": "a"}, {"do": "ingest_url"}]}}
+env: {}
+compare: {ignore: []}

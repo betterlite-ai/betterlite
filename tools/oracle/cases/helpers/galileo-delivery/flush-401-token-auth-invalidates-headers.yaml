@@ -1,0 +1,5 @@
+kind: helper
+name: galileo-delivery-flush-401-token-auth-invalidates-headers
+call: {"b3964": {"environment": {"GALILEO_USERNAME": "user", "GALILEO_PASSWORD": "pass", "GALILEO_PROJECT_ID": "project-1", "GALILEO_BASE_URL": "https://galileo.example/"}, "replies": [{"status": 200, "body": "{\"access_token\": \"tok-0123456789abcdef\"}"}, {"status": 401, "body": "{\"detail\": \"status 401\"}"}, {"status": 200, "body": "{\"access_token\": \"tok-0123456789abcdef\"}"}, {"status": 200, "body": "{}"}], "actions": [{"do": "push", "label": "a"}, {"do": "flush"}, {"do": "flush"}]}}
+env: {}
+compare: {ignore: []}
