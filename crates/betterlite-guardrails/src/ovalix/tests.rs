@@ -16,6 +16,8 @@ use tokio::net::TcpListener;
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 
+use crate::primitives::json_value::JsonValue;
+
 use super::checkpoint::{CheckpointError, CheckpointRequest, DataType};
 use super::environment::Settings;
 use super::error::OvalixError;
@@ -159,7 +161,7 @@ fn email_request_data() -> RequestData {
     RequestData {
         metadata: Some(BTreeMap::from([(
             "user_api_key_user_email".to_owned(),
-            Some("user@example.com".to_owned()),
+            JsonValue::String("user@example.com".to_owned()),
         )])),
         litellm_metadata: None,
     }

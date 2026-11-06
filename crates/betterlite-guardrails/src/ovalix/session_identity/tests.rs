@@ -4,12 +4,17 @@ use std::collections::BTreeMap;
 
 use chrono::NaiveDate;
 
+use crate::primitives::json_value::JsonValue;
+
 use super::{RequestData, actor, session_id, tracker_actor_id};
 
-fn values(entries: &[(&str, Option<&str>)]) -> BTreeMap<String, Option<String>> {
+fn values(entries: &[(&str, Option<&str>)]) -> BTreeMap<String, JsonValue> {
     entries
         .iter()
-        .map(|(name, value)| ((*name).to_owned(), value.map(str::to_owned)))
+        .map(|(name, value)| {
+            let encoded = value.map_or(JsonValue::Null, |text| JsonValue::String(text.to_owned()));
+            ((*name).to_owned(), encoded)
+        })
         .collect()
 }
 
@@ -61,6 +66,16 @@ fn the_actor_prefers_a_populated_metadata_map() {
         litellm_metadata: Some(values(&[("user_api_key_user_id", Some("litellm-user"))])),
     };
     assert_eq!(actor(&data), "metadata-user");
+}
+
+#[test]
+fn the_actor_reads_identity_from_mixed_metadata_values() {
+    let data: RequestData = serde_json::from_str(
+        r#"{"metadata":{"user_api_key_user_email":"user@example.com","tags":["x"],"user_api_key_spend":0.5,"headers":{"a":"b"}}}"#,
+    )
+    .expect("request data");
+    assert_eq!(actor(&data), "user@example.com");
+    assert_eq!(tracker_actor_id(&data), "b4c9a289");
 }
 
 #[test]

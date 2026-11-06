@@ -4,6 +4,8 @@ use chrono::{NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest as _, Sha256};
 
+use crate::primitives::json_value::JsonValue;
+
 pub trait Clock: Send + Sync {
     fn today(&self) -> NaiveDate;
 }
@@ -16,11 +18,22 @@ impl Clock for SystemClock {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct RequestData {
-    pub metadata: Option<BTreeMap<String, Option<String>>>,
-    pub litellm_metadata: Option<BTreeMap<String, Option<String>>>,
+    pub metadata: Option<BTreeMap<String, JsonValue>>,
+    pub litellm_metadata: Option<BTreeMap<String, JsonValue>>,
+}
+
+// only a string value names an actor; LiteLLM reads the dict the same way and skips anything else
+fn text_value<'values>(
+    values: &'values BTreeMap<String, JsonValue>,
+    key: &str,
+) -> Option<&'values str> {
+    match values.get(key) {
+        Some(JsonValue::String(text)) if !text.is_empty() => Some(text),
+        _ => None,
+    }
 }
 
 // LiteLLM's `metadata or litellm_metadata` skips an empty dict, so a populated litellm_metadata still wins
@@ -34,16 +47,8 @@ pub fn actor(data: &RequestData) -> &str {
     metadata
         .or(litellm_metadata)
         .and_then(|values| {
-            values
-                .get("user_api_key_user_email")
-                .and_then(|value| value.as_deref())
-                .filter(|value| !value.is_empty())
-                .or_else(|| {
-                    values
-                        .get("user_api_key_user_id")
-                        .and_then(|value| value.as_deref())
-                        .filter(|value| !value.is_empty())
-                })
+            text_value(values, "user_api_key_user_email")
+                .or_else(|| text_value(values, "user_api_key_user_id"))
         })
         .unwrap_or("unknown")
 }
