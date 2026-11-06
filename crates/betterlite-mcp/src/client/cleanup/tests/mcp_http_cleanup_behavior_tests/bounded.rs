@@ -101,6 +101,23 @@ async fn cancellation_during_the_wait_does_not_abandon_the_cleanup() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_panicking_cleanup_is_returned_as_a_task_error() {
+    let tracker = TaskTracker::new();
+    let completed = false;
+    let result = run_bounded_cleanup(
+        &tracker,
+        &CancellationToken::new(),
+        deadline_in(5),
+        async move {
+            assert!(completed, "the cleanup panicked");
+            Ok::<(), FakeError>(())
+        },
+    )
+    .await;
+    assert!(matches!(result, Err(CleanupError::Task(_))));
+}
+
+#[tokio::test(start_paused = true)]
 async fn dropping_the_caller_leaves_the_cleanup_running_in_the_tracker() {
     let tracker = TaskTracker::new();
     let finished = Arc::new(AtomicBool::new(false));
