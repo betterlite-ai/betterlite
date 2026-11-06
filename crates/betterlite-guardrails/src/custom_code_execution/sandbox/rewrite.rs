@@ -6,7 +6,7 @@ use super::error::CompileError;
 
 mod checks;
 
-use checks::{check_attribute_node, check_call_node, check_identifier, check_name};
+use checks::{NameKind, check_call, check_name};
 
 const MAX_DEPTH: usize = 200;
 const BUDGET_GUARD: &str = "_budget_ok_() and ";
@@ -79,38 +79,98 @@ fn check_node(
     line: u32,
     analysis: &mut Analysis,
 ) -> Result<(), CompileError> {
-    let kind = node.kind();
-    match kind {
-        "class_definition" => {
-            return Err(CompileError::new(
-                filename,
-                line,
-                "class definitions are not allowed in the sandbox".to_owned(),
-            ));
-        }
-        "import_statement" | "import_from_statement" => {
-            return Err(CompileError::new(
-                filename,
-                line,
-                "import statements are not allowed in the sandbox".to_owned(),
-            ));
-        }
-        "nonlocal_statement" => {
-            return Err(CompileError::new(
-                filename,
-                line,
-                "nonlocal statements are not allowed in the sandbox".to_owned(),
-            ));
-        }
-        "function_definition" => record_function(node, source, filename, line, analysis)?,
-        "while_statement" => budget_guard(node, analysis),
-        "for_statement" | "for_in_clause" => iter_guard(node, analysis),
-        "attribute" => check_attribute_node(node, source, filename, line)?,
-        "call" => check_call_node(node, source, filename, line)?,
-        "identifier" => check_identifier(node, source, filename, line)?,
-        _ => {}
+    if let Some(reason) = forbidden(node.kind()) {
+        return Err(CompileError::new(filename, line, reason.to_owned()));
     }
-    Ok(())
+    if node.kind() == "function_definition" {
+        record_function(node, source, filename, line, analysis)?;
+    }
+    if matches!(
+        node.kind(),
+        "while_statement" | "for_statement" | "for_in_clause"
+    ) {
+        loop_guard(node, analysis);
+    }
+    check_details(node, source, filename, line)
+}
+
+fn forbidden(kind: &str) -> Option<&'static str> {
+    match kind {
+        "class_definition" => Some("class definitions are not allowed in the sandbox"),
+        "import_statement" | "import_from_statement" => {
+            Some("import statements are not allowed in the sandbox")
+        }
+        "nonlocal_statement" => Some("nonlocal statements are not allowed in the sandbox"),
+        _ => None,
+    }
+}
+
+fn check_details(
+    node: Node<'_>,
+    source: &str,
+    filename: &str,
+    line: u32,
+) -> Result<(), CompileError> {
+    match node.kind() {
+        "attribute" => {
+            let field = node.child_by_field_name("attribute");
+            field.map_or(Ok(()), |attribute| {
+                check_name(
+                    source.get(attribute.byte_range()).unwrap_or_default(),
+                    filename,
+                    line,
+                    NameKind::Attribute,
+                )
+            })
+        }
+        "call" => {
+            let field = node
+                .child_by_field_name("function")
+                .filter(|function| function.kind() == "identifier");
+            field.map_or(Ok(()), |function| {
+                check_call(
+                    source.get(function.byte_range()).unwrap_or_default(),
+                    filename,
+                    line,
+                )
+            })
+        }
+        "identifier" => {
+            let attribute = node
+                .parent()
+                .is_some_and(|parent| parent.kind() == "attribute");
+            if attribute {
+                return Ok(());
+            }
+            check_name(
+                source.get(node.byte_range()).unwrap_or_default(),
+                filename,
+                line,
+                NameKind::Variable,
+            )
+        }
+        _ => Ok(()),
+    }
+}
+
+// A while test is prefixed with `_budget_ok_()` and a for iterable wrapped in `_getiter_`, so a loop stops at the deadline.
+fn loop_guard(node: Node<'_>, analysis: &mut Analysis) {
+    if let Some(condition) = node.child_by_field_name("condition") {
+        analysis.edits.push(Edit {
+            position: condition.start_byte(),
+            text: BUDGET_GUARD.to_owned(),
+        });
+    }
+    if let Some(iterable) = node.child_by_field_name("right") {
+        analysis.edits.push(Edit {
+            position: iterable.start_byte(),
+            text: format!("{ITER_GUARD}("),
+        });
+        analysis.edits.push(Edit {
+            position: iterable.end_byte(),
+            text: ")".to_owned(),
+        });
+    }
 }
 
 fn walk(
@@ -147,48 +207,28 @@ fn record_function(
     let name = node.child_by_field_name("name").map_or("", |field| {
         source.get(field.byte_range()).unwrap_or_default()
     });
-    check_name(name, filename, line)?;
-    if node
-        .parent()
-        .is_some_and(|parent| parent.kind() == "module")
-    {
-        analysis.functions.push(Function {
-            name: name.to_owned(),
-            is_async: has_async(node),
-        });
+    check_name(name, filename, line, NameKind::Variable)?;
+    if let Some(function) = module_function(node, name) {
+        analysis.functions.push(function);
     }
     Ok(())
+}
+
+// Only a definition at module level is callable from outside; a nested one belongs to its enclosing body.
+fn module_function(node: Node<'_>, name: &str) -> Option<Function> {
+    if node.parent().is_none_or(|parent| parent.kind() != "module") {
+        return None;
+    }
+    Some(Function {
+        name: name.to_owned(),
+        is_async: has_async(node),
+    })
 }
 
 fn has_async(node: Node<'_>) -> bool {
     let mut cursor = node.walk();
     node.children(&mut cursor)
         .any(|child| child.kind() == "async")
-}
-
-// `while test:` becomes `while _budget_ok_() and test:`, so a loop that never yields still stops at the deadline.
-fn budget_guard(node: Node<'_>, analysis: &mut Analysis) {
-    if let Some(condition) = node.child_by_field_name("condition") {
-        analysis.edits.push(Edit {
-            position: condition.start_byte(),
-            text: BUDGET_GUARD.to_owned(),
-        });
-    }
-}
-
-// Every for loop and comprehension takes its items through `_getiter_`, which is bound to budgeted_iter.
-fn iter_guard(node: Node<'_>, analysis: &mut Analysis) {
-    let Some(iterable) = node.child_by_field_name("right") else {
-        return;
-    };
-    analysis.edits.push(Edit {
-        position: iterable.start_byte(),
-        text: format!("{ITER_GUARD}("),
-    });
-    analysis.edits.push(Edit {
-        position: iterable.end_byte(),
-        text: ")".to_owned(),
-    });
 }
 
 // Applies the insertions from the end of the source backwards, so an earlier position stays valid.

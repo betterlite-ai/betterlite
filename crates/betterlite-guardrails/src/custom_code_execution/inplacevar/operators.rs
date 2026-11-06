@@ -6,6 +6,7 @@ use super::{InplaceError, InplaceOp};
 
 const MAX_REPEATED_ITEMS: usize = 0x0010_0000;
 
+#[must_use]
 pub(super) const fn unsupported(op: InplaceOp, left: &Value, right: &Value) -> InplaceError {
     InplaceError::UnsupportedOperand {
         symbol: op.symbol(),
@@ -14,15 +15,15 @@ pub(super) const fn unsupported(op: InplaceOp, left: &Value, right: &Value) -> I
     }
 }
 
-const fn integer(op: InplaceOp, value: &Value) -> Result<i64, InplaceError> {
-    if let Value::Int(number) = value {
-        return Ok(*number);
+const fn integer_pair(
+    op: InplaceOp,
+    left: &Value,
+    right: &Value,
+) -> Result<(i64, i64), InplaceError> {
+    match (left, right) {
+        (Value::Int(first), Value::Int(second)) => Ok((*first, *second)),
+        _ => Err(unsupported(op, left, right)),
     }
-    Err(InplaceError::UnsupportedOperand {
-        symbol: op.symbol(),
-        left: value.type_name(),
-        right: "int",
-    })
 }
 
 fn int_result(op: InplaceOp, value: Option<i64>) -> Result<Value, InplaceError> {
@@ -32,36 +33,103 @@ fn int_result(op: InplaceOp, value: Option<i64>) -> Result<Value, InplaceError> 
         .ok_or(InplaceError::Overflow { symbol })
 }
 
-pub(super) fn add(left: &Value, right: &Value) -> Result<Value, InplaceError> {
-    if let (Value::Int(first), Value::Int(second)) = (left, right) {
-        return int_result(InplaceOp::Add, first.checked_add(*second));
+// Python rounds floor division towards negative infinity and gives the remainder the divisor's sign.
+fn floor_and_modulo(op: InplaceOp, first: i64, second: i64) -> Result<(i64, i64), InplaceError> {
+    if second == 0 {
+        return Err(InplaceError::DivideByZero);
     }
-    if let (Value::Str(first), Value::Str(second)) = (left, right) {
-        return Ok(Value::Str(format!("{first}{second}")));
+    let symbol = op.symbol();
+    let quotient = first
+        .checked_div(second)
+        .ok_or(InplaceError::Overflow { symbol })?;
+    let remainder = first
+        .checked_rem(second)
+        .ok_or(InplaceError::Overflow { symbol })?;
+    if remainder != 0 && ((remainder < 0) != (second < 0)) {
+        let rounded = quotient
+            .checked_sub(1)
+            .ok_or(InplaceError::Overflow { symbol })?;
+        let normalized = remainder
+            .checked_add(second)
+            .ok_or(InplaceError::Overflow { symbol })?;
+        return Ok((rounded, normalized));
     }
-    if let (Value::Bytes(first), Value::Bytes(second)) = (left, right) {
-        let mut joined = first.clone();
-        joined.extend_from_slice(second);
-        return Ok(Value::Bytes(joined));
-    }
-    if let (Value::List(first), Value::List(second)) = (left, right) {
-        let mut joined = first.clone();
-        joined.extend(second.iter().cloned());
-        return Ok(Value::List(joined));
-    }
-    if let (Value::Tuple(first), Value::Tuple(second)) = (left, right) {
-        let mut joined = first.clone();
-        joined.extend(second.iter().cloned());
-        return Ok(Value::Tuple(joined));
-    }
-    Err(unsupported(InplaceOp::Add, left, right))
+    Ok((quotient, remainder))
 }
 
-pub(super) fn subtract(left: &Value, right: &Value) -> Result<Value, InplaceError> {
-    if let (Value::Int(first), Value::Int(second)) = (left, right) {
-        return int_result(InplaceOp::Subtract, first.checked_sub(*second));
+fn float_quotient(first: i64, second: i64) -> Result<Value, InplaceError> {
+    if second == 0 {
+        return Err(InplaceError::DivideByZero);
     }
-    Err(unsupported(InplaceOp::Subtract, left, right))
+    let symbol = InplaceOp::TrueDivide.symbol();
+    Decimal::from(first)
+        .checked_div(Decimal::from(second))
+        .and_then(|value| value.to_f64())
+        .map(Value::Float)
+        .ok_or(InplaceError::Overflow { symbol })
+}
+
+type IntOperation = fn(i64, i64) -> Option<i64>;
+
+const ARITHMETIC: [(InplaceOp, IntOperation); 3] = [
+    (InplaceOp::Add, i64::checked_add),
+    (InplaceOp::Subtract, i64::checked_sub),
+    (InplaceOp::Multiply, i64::checked_mul),
+];
+
+pub(super) fn numeric(op: InplaceOp, left: &Value, right: &Value) -> Result<Value, InplaceError> {
+    let (first, second) = integer_pair(op, left, right)?;
+    if let Some((_, operation)) = ARITHMETIC.iter().find(|(candidate, _)| *candidate == op) {
+        return int_result(op, operation(first, second));
+    }
+    if op == InplaceOp::FloorDivide {
+        let (quotient, _remainder) = floor_and_modulo(op, first, second)?;
+        return Ok(Value::Int(quotient));
+    }
+    if op == InplaceOp::Modulo {
+        let (_quotient, remainder) = floor_and_modulo(op, first, second)?;
+        return Ok(Value::Int(remainder));
+    }
+    if op == InplaceOp::Power {
+        let exponent = u32::try_from(second).map_err(|_error| unsupported(op, left, right))?;
+        return int_result(op, first.checked_pow(exponent));
+    }
+    if op == InplaceOp::TrueDivide {
+        return float_quotient(first, second);
+    }
+    bitwise(op, left, right)
+}
+
+fn bitwise(op: InplaceOp, left: &Value, right: &Value) -> Result<Value, InplaceError> {
+    let (first, second) = integer_pair(op, left, right)?;
+    let bits = match op {
+        InplaceOp::BitAnd => first & second,
+        InplaceOp::BitOr => first | second,
+        InplaceOp::BitXor => first ^ second,
+        InplaceOp::ShiftLeft => return shifted_value(op, first, second, i64::checked_shl),
+        InplaceOp::ShiftRight => return shifted_value(op, first, second, i64::checked_shr),
+        other @ (InplaceOp::Add
+        | InplaceOp::Subtract
+        | InplaceOp::Multiply
+        | InplaceOp::TrueDivide
+        | InplaceOp::FloorDivide
+        | InplaceOp::Modulo
+        | InplaceOp::Power
+        | InplaceOp::MatrixMultiply) => return Err(unsupported(other, left, right)),
+    };
+    Ok(Value::Int(bits))
+}
+
+fn shifted_value(
+    op: InplaceOp,
+    first: i64,
+    second: i64,
+    shift: fn(i64, u32) -> Option<i64>,
+) -> Result<Value, InplaceError> {
+    let symbol = op.symbol();
+    let amount = u32::try_from(second).map_err(|_error| InplaceError::Overflow { symbol })?;
+    let value = shift(first, amount).ok_or(InplaceError::Overflow { symbol })?;
+    Ok(Value::Int(value))
 }
 
 fn repeated_items(items: &[Value], count: i64) -> Result<Vec<Value>, InplaceError> {
@@ -92,115 +160,49 @@ fn repeated_text(text: &str, count: i64) -> Result<Value, InplaceError> {
     Ok(Value::Str(text.repeat(times)))
 }
 
-pub(super) fn multiply(left: &Value, right: &Value) -> Result<Value, InplaceError> {
-    if let (Value::Int(first), Value::Int(second)) = (left, right) {
-        return int_result(InplaceOp::Multiply, first.checked_mul(*second));
-    }
-    if let (Value::Str(text), Value::Int(count)) | (Value::Int(count), Value::Str(text)) =
-        (left, right)
-    {
-        return repeated_text(text, *count);
-    }
-    if let (Value::List(items), Value::Int(count)) | (Value::Int(count), Value::List(items)) =
-        (left, right)
-    {
-        return Ok(Value::List(repeated_items(items, *count)?));
-    }
-    Err(unsupported(InplaceOp::Multiply, left, right))
-}
-
-pub(super) fn floor_divide(left: &Value, right: &Value) -> Result<Value, InplaceError> {
-    if let (Value::Int(first), Value::Int(second)) = (left, right) {
-        if *second == 0 {
-            return Err(InplaceError::DivideByZero);
+fn sequence(op: InplaceOp, left: &Value, right: &Value) -> Option<Result<Value, InplaceError>> {
+    if op == InplaceOp::Add {
+        if let (Value::Str(first), Value::Str(second)) = (left, right) {
+            return Some(Ok(Value::Str(format!("{first}{second}"))));
         }
-        let symbol = InplaceOp::FloorDivide.symbol();
-        let quotient = first
-            .checked_div(*second)
-            .ok_or(InplaceError::Overflow { symbol })?;
-        let remainder = first
-            .checked_rem(*second)
-            .ok_or(InplaceError::Overflow { symbol })?;
-        if remainder != 0 && ((remainder < 0) != (*second < 0)) {
-            let rounded = quotient
-                .checked_sub(1)
-                .ok_or(InplaceError::Overflow { symbol })?;
-            return Ok(Value::Int(rounded));
+        if let (Value::Bytes(first), Value::Bytes(second)) = (left, right) {
+            let mut joined = first.clone();
+            joined.extend_from_slice(second);
+            return Some(Ok(Value::Bytes(joined)));
         }
-        return Ok(Value::Int(quotient));
-    }
-    Err(unsupported(InplaceOp::FloorDivide, left, right))
-}
-
-pub(super) fn modulo(left: &Value, right: &Value) -> Result<Value, InplaceError> {
-    if let (Value::Int(first), Value::Int(second)) = (left, right) {
-        if *second == 0 {
-            return Err(InplaceError::DivideByZero);
+        if let (Value::List(first), Value::List(second)) = (left, right) {
+            let mut joined = first.clone();
+            joined.extend(second.iter().cloned());
+            return Some(Ok(Value::List(joined)));
         }
-        let symbol = InplaceOp::Modulo.symbol();
-        let remainder = first
-            .checked_rem(*second)
-            .ok_or(InplaceError::Overflow { symbol })?;
-        if remainder != 0 && ((remainder < 0) != (*second < 0)) {
-            let normalized = remainder
-                .checked_add(*second)
-                .ok_or(InplaceError::Overflow { symbol })?;
-            return Ok(Value::Int(normalized));
+        if let (Value::Tuple(first), Value::Tuple(second)) = (left, right) {
+            let mut joined = first.clone();
+            joined.extend(second.iter().cloned());
+            return Some(Ok(Value::Tuple(joined)));
         }
-        return Ok(Value::Int(remainder));
     }
-    Err(unsupported(InplaceOp::Modulo, left, right))
-}
-
-pub(super) fn true_divide(left: &Value, right: &Value) -> Result<Value, InplaceError> {
-    if let (Value::Int(first), Value::Int(second)) = (left, right) {
-        if *second == 0 {
-            return Err(InplaceError::DivideByZero);
+    if op == InplaceOp::Multiply {
+        if let (Value::Str(text), Value::Int(count)) | (Value::Int(count), Value::Str(text)) =
+            (left, right)
+        {
+            return Some(repeated_text(text, *count));
         }
-        let quotient = Decimal::from(*first)
-            .checked_div(Decimal::from(*second))
-            .and_then(|value| value.to_f64())
-            .map(Value::Float)
-            .ok_or(InplaceError::Overflow {
-                symbol: InplaceOp::TrueDivide.symbol(),
-            })?;
-        return Ok(quotient);
+        if let (Value::List(items), Value::Int(count)) | (Value::Int(count), Value::List(items)) =
+            (left, right)
+        {
+            return Some(repeated_items(items, *count).map(Value::List));
+        }
     }
-    Err(unsupported(InplaceOp::TrueDivide, left, right))
+    None
 }
 
-pub(super) fn power(left: &Value, right: &Value) -> Result<Value, InplaceError> {
-    if let (Value::Int(first), Value::Int(second)) = (left, right) {
-        let exponent =
-            u32::try_from(*second).map_err(|_error| unsupported(InplaceOp::Power, left, right))?;
-        return int_result(InplaceOp::Power, first.checked_pow(exponent));
+pub(super) fn sequence_or_numeric(
+    op: InplaceOp,
+    left: &Value,
+    right: &Value,
+) -> Result<Value, InplaceError> {
+    if let Some(outcome) = sequence(op, left, right) {
+        return outcome;
     }
-    Err(unsupported(InplaceOp::Power, left, right))
+    numeric(op, left, right)
 }
-
-pub(super) fn bits(op: InplaceOp, left: &Value, right: &Value) -> Result<Value, InplaceError> {
-    let first = integer(op, left)?;
-    let second = integer(op, right)?;
-    let result = match op {
-        InplaceOp::BitAnd => Some(first & second),
-        InplaceOp::BitOr => Some(first | second),
-        InplaceOp::BitXor => Some(first ^ second),
-        InplaceOp::ShiftLeft => u32::try_from(second)
-            .ok()
-            .and_then(|shift| first.checked_shl(shift)),
-        InplaceOp::ShiftRight => u32::try_from(second)
-            .ok()
-            .and_then(|shift| first.checked_shr(shift)),
-        InplaceOp::Add
-        | InplaceOp::Subtract
-        | InplaceOp::Multiply
-        | InplaceOp::TrueDivide
-        | InplaceOp::FloorDivide
-        | InplaceOp::Modulo
-        | InplaceOp::Power
-        | InplaceOp::MatrixMultiply => None,
-    };
-    int_result(op, result)
-}
-
-// `x += y` compiles to `x = _inplacevar_("+=", x, y)`, so this is the function that call resolves to.

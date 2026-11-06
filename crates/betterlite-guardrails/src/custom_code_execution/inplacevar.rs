@@ -87,25 +87,22 @@ impl InplaceOp {
 
 mod operators;
 
-use operators::{
-    add, bits, floor_divide, modulo, multiply, power, subtract, true_divide, unsupported,
-};
+use operators::{numeric, sequence_or_numeric};
 
 // `x += y` compiles to `x = _inplacevar_("+=", x, y)`, so this is the function that call resolves to.
 pub fn inplacevar(op: InplaceOp, left: &Value, right: &Value) -> Result<Value, InplaceError> {
     match op {
-        InplaceOp::Add => add(left, right),
-        InplaceOp::Subtract => subtract(left, right),
-        InplaceOp::Multiply => multiply(left, right),
-        InplaceOp::TrueDivide => true_divide(left, right),
-        InplaceOp::FloorDivide => floor_divide(left, right),
-        InplaceOp::Modulo => modulo(left, right),
-        InplaceOp::Power => power(left, right),
-        InplaceOp::MatrixMultiply => Err(unsupported(op, left, right)),
-        InplaceOp::BitAnd
+        InplaceOp::Add | InplaceOp::Multiply => sequence_or_numeric(op, left, right),
+        other @ (InplaceOp::Subtract
+        | InplaceOp::TrueDivide
+        | InplaceOp::FloorDivide
+        | InplaceOp::Modulo
+        | InplaceOp::Power
+        | InplaceOp::MatrixMultiply
+        | InplaceOp::BitAnd
         | InplaceOp::BitOr
         | InplaceOp::BitXor
         | InplaceOp::ShiftLeft
-        | InplaceOp::ShiftRight => bits(op, left, right),
+        | InplaceOp::ShiftRight) => numeric(other, left, right),
     }
 }

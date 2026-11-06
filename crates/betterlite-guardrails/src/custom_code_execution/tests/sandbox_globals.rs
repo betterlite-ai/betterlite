@@ -18,7 +18,14 @@ use crate::primitives::registry::{ActionPrimitive, Primitive, TextPrimitive};
 fn exposes_every_restricted_guard(#[case] name: &str, #[case] expected: Guard) {
     let globals = build_sandbox_globals();
     assert_eq!(globals.entries.get(name), Some(&Global::Guard(expected)));
-    assert_eq!(globals.guards().count(), 7);
+    assert_eq!(
+        globals
+            .entries
+            .values()
+            .filter(|global| matches!(global, Global::Guard(_)))
+            .count(),
+        7
+    );
 }
 
 #[test]
@@ -40,7 +47,14 @@ fn exposes_the_primitive_registry() {
         globals.entries.get("lower"),
         Some(&Global::Primitive(Primitive::Text(TextPrimitive::Lower)))
     );
-    assert_eq!(globals.primitives().count(), 29);
+    assert_eq!(
+        globals
+            .entries
+            .values()
+            .filter(|global| matches!(global, Global::Primitive(_)))
+            .count(),
+        29
+    );
     assert_eq!(globals.entries.get("__builtins__"), Some(&Global::Builtins));
 }
 

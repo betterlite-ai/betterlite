@@ -82,26 +82,6 @@ pub struct SandboxGlobals {
     pub builtins: IndexMap<&'static str, BuiltinKind>,
 }
 
-impl SandboxGlobals {
-    pub fn guards(&self) -> impl Iterator<Item = (&'static str, Guard)> + '_ {
-        self.entries
-            .iter()
-            .filter_map(|(name, global)| match global {
-                Global::Guard(guard) => Some((*name, *guard)),
-                Global::Primitive(_) | Global::Builtin(_) | Global::Builtins => None,
-            })
-    }
-
-    pub fn primitives(&self) -> impl Iterator<Item = (&'static str, Primitive)> + '_ {
-        self.entries
-            .iter()
-            .filter_map(|(name, global)| match global {
-                Global::Primitive(primitive) => Some((*name, *primitive)),
-                Global::Builtin(_) | Global::Guard(_) | Global::Builtins => None,
-            })
-    }
-}
-
 // The execution globals: the primitives registry, the RestrictedPython guards, and the safe builtins namespace.
 #[must_use]
 pub fn build_sandbox_globals() -> SandboxGlobals {
