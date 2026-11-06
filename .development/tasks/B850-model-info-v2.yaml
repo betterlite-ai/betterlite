@@ -54,15 +54,14 @@ description: >-
 
   The handler has 144 nonblank noncomment lines excluding its docstring. Budget 180 production,
   330 integration tests and 65 route wiring lines, 575 within 650; B849 owns the string decoder.
+  B1100 registers routes/model_info_v2.rs as a stub, so fill only crates/betterlite-server/src/routes/model_info_v2.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/model_info_v2.rs
     - crates/betterlite-server/src/model_info_v2/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/model_info_v2.rs
+    - crates/betterlite-server/src/routes/model_info_v2/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/model-info-v2/**

@@ -15,21 +15,14 @@ description: 'Implement the reusable additive-increase/multiplicative-decrease c
   (L25-L33), AdaptiveConcurrencyLimiter.limit (L36-L37), AdaptiveConcurrencyLimiter.__aenter__ (L39-L55),
   AdaptiveConcurrencyLimiter._grant (L57-L63), AdaptiveConcurrencyLimiter.__aexit__ (L65-L67), AdaptiveConcurrencyLimiter.record
   (L69-L78). Implement these behaviors through the typed Rust services above; synchronous facades and
-  structural accessors reuse the same primitive instead of separate ports.'
+  structural accessors reuse the same primitive instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B115, B3993 and B3994 call this service.'
 scope:
   paths:
   - crates/betterlite-router/src/adaptive_concurrency.rs
   - crates/betterlite-router/src/adaptive_concurrency/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/adaptive_concurrency.rs
   - crates/betterlite-server/src/routing/adaptive_concurrency/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/adaptive_concurrency.rs
   - tools/oracle/src/router_probes/adaptive_concurrency/**
   - tools/oracle/litellm/probes/adaptive_concurrency.py

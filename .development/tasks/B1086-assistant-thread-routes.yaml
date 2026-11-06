@@ -17,12 +17,13 @@ description: >-
   functions live wholly in B1056/B1057 and are not owned here. Budget 205 routes, 185 behavioral tests,
   225 HTTP fixtures, 40 hook fixtures and 25 corpus seeds, 680 lines. Exercise actual provider HTTP through
   the booted proxies with a fixed test master key and assistant_settings; no helper case invokes a handler.
+  B1100 registers routes/assistant_thread.rs as a stub, so fill only crates/betterlite-server/src/routes/assistant_thread.rs and leave routes.rs as it is.
 scope:
   paths:
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
+  - crates/betterlite-server/src/routes/assistant_thread.rs
+  - crates/betterlite-server/src/routes/assistant_thread/**
   - crates/betterlite-server/src/api/assistant_thread_routes.rs
   - crates/betterlite-server/src/api/assistant_thread_routes/**
   - crates/betterlite-server/fuzz/corpus/assistant_body/message-*

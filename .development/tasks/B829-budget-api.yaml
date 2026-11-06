@@ -57,15 +57,14 @@ description: >-
 
   The functions contain 192 executable/declaration lines excluding blanks, comments and docstrings.
   Estimate 205 production, 285 tests and 65 route/fixture wiring lines, 555 within a 600-line budget.
+  B1100 registers routes/budget_api.rs as a stub, so fill only crates/betterlite-server/src/routes/budget_api.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/budget_api.rs
     - crates/betterlite-server/src/budget_api/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/budget_api.rs
+    - crates/betterlite-server/src/routes/budget_api/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/budget-api/**

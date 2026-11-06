@@ -71,15 +71,14 @@ description: >-
   membership_lookup_error exercise the defensive branches against the real repository boundary.
   The owned functions contain 293 nonblank noncomment lines excluding docstrings; allow 300 production,
   340 tests and 80 wiring lines, 720 total within 750. No owned code checks premium_user or stores secrets.
+  B1100 registers routes/organization_members.rs as a stub, so fill only crates/betterlite-server/src/routes/organization_members.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
     - crates/betterlite-server/src/organization_members.rs
     - crates/betterlite-server/src/organization_members/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/routes.rs
-    - crates/betterlite-server/src/routes/**
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/routes/organization_members.rs
+    - crates/betterlite-server/src/routes/organization_members/**
     - crates/betterlite-server/src/app.rs
     - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/organization-members/**
