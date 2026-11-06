@@ -74,7 +74,7 @@ impl Mode {
 #[serde(default, deny_unknown_fields)]
 struct Settings {
     tracker_api_base: Option<String>,
-    tracker_api_key: Option<String>,
+    tracker_api_key: Option<SecretString>,
     application_id: Option<String>,
     pre_checkpoint_id: Option<String>,
     post_checkpoint_id: Option<String>,
@@ -165,11 +165,7 @@ fn prepare(call: &Call) -> Result<Prepared, Box<HelperError>> {
     let params = Params {
         guardrail_name: Some("ovalix".to_owned()),
         tracker_api_base: call.settings.tracker_api_base.clone(),
-        tracker_api_key: call
-            .settings
-            .tracker_api_key
-            .clone()
-            .map(SecretString::from),
+        tracker_api_key: call.settings.tracker_api_key.clone(),
         application_id: call.settings.application_id.clone(),
         pre_checkpoint_id: call.settings.pre_checkpoint_id.clone(),
         post_checkpoint_id: call.settings.post_checkpoint_id.clone(),
