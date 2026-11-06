@@ -1,0 +1,11 @@
+task: B1512
+deviations:
+  - what: The access-token file is created and rewritten with owner-only mode 0600 before the token is written.
+    why: LiteLLM's ordinary file creation can expose a GitHub access token to other local users; restricting the opened file keeps truncate-first writes while preventing a token from landing with permissive access bits.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/github_copilot/authenticator.py#L65-L66
+  - what: A cached access-token file above 1 MiB, or one that is not UTF-8, warns and starts the login instead of being read whole or raising.
+    why: Local credentials sit outside any input the provider controls, and an unreadable or non-UTF-8 token file is corrupt rather than a token; LiteLLM copies it all into memory and crashes on invalid text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/github_copilot/authenticator.py#L52-L58
+  - what: Diagnostics name the failure without logging the provider reply body or the caught exception text.
+    why: A poll reply can echo provider-side material and an exception string can carry it too; fixed messages keep the retry and wait behavior visible without leaking credentials through B187's log path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/github_copilot/authenticator.py#L305-L307

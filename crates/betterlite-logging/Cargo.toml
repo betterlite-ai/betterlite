@@ -6,6 +6,7 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+async-trait = "0.1.92"
 betterlite-config = { path = "../betterlite-config" }
 betterlite-env = { path = "../betterlite-env" }
 betterlite-http = { path = "../betterlite-http" }
@@ -21,6 +22,11 @@ indexmap = { version = "2.14.2", features = ["serde"] }
 jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 minijinja = { version = "3.0.4", features = ["builtins", "fuel", "preserve_order", "serde"] }
 minijinja-contrib = { version = "3.0.4", default-features = false, features = ["pycompat"] }
+opentelemetry = { version = "0.33.1", default-features = false, features = ["logs", "metrics", "trace"] }
+opentelemetry-http = { version = "0.33.1", default-features = false }
+opentelemetry-otlp = { version = "0.33.1", default-features = false, features = ["grpc-tonic", "http-json", "http-proto", "logs", "metrics", "trace"] }
+opentelemetry-stdout = { version = "0.33.1", default-features = false, features = ["logs", "metrics", "trace"] }
+opentelemetry_sdk = { version = "0.33.1", default-features = false, features = ["logs", "metrics", "testing", "trace"] }
 parquet-format-safe = "0.2.4"
 parquet2 = { version = "0.17.2", default-features = false, features = ["snappy"] }
 pep440_rs = "0.7.3"
@@ -39,6 +45,7 @@ strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
 tokio-util = { version = "0.7.20", features = ["rt"] }
+tonic = { version = "0.14.9", default-features = false }
 tracing.workspace = true
 unicode-properties = { version = "0.1.4", default-features = false, features = ["general-category"] }
 url = "2.5.8"
@@ -47,10 +54,12 @@ uuid.workspace = true
 [dev-dependencies]
 betterlite-openai = { path = "../betterlite-openai" }
 betterlite-privacy-openai = { path = "src/logging_privacy/openai" }
+h2 = "0.4.20"
 insta = { version = "1.49.0", default-features = false, features = ["yaml"] }
 rstest = "=0.27.0"
 serde-saphyr.workspace = true
 serde_json = { version = "1.0.154", features = ["arbitrary_precision", "raw_value"] }
+temp-env = "0.3.6"
 tokio = { workspace = true, features = ["test-util", "time"] }
 tracing-subscriber.workspace = true
 
