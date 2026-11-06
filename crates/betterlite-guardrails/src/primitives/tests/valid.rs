@@ -14,6 +14,7 @@ use super::{FakeTransport, run};
     "{}",
     "true"
 )]
+#[case::match_ascii_flag_is_ignored("regex_match", r#"["\u00e9","\\w",256]"#, "{}", "true")]
 #[case::match_all_whole_text("regex_match_all", r#"["abc","abc"]"#, "{}", "true")]
 #[case::match_all_rejects_a_prefix("regex_match_all", r#"["abcd","abc"]"#, "{}", "false")]
 #[case::match_all_alternation_is_grouped("regex_match_all", r#"["b","a|b"]"#, "{}", "true")]

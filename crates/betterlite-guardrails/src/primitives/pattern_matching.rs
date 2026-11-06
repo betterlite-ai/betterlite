@@ -14,6 +14,7 @@ const MULTILINE: i64 = 8;
 const DOT_ALL: i64 = 16;
 const VERBOSE: i64 = 64;
 
+// Python's ASCII flag (256) stays out because fancy-regex's ASCII mode rejects \W, \D, \S and "." on str input.
 pub fn compile(pattern: &str, flags: i64) -> Result<Regex, Error> {
     RegexBuilder::new(pattern)
         .case_insensitive(flags & IGNORE_CASE != 0)
