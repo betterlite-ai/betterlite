@@ -42,6 +42,17 @@ fn common_logic_reads_the_event_type_from_the_environment() {
 }
 
 #[test]
+fn common_logic_keeps_null_model_and_cost_when_the_callback_has_none() {
+    let mut call = event();
+    call.model = None;
+    call.response_cost = None;
+    let payload = build(&settings_with(&[]), &FixedClock, &call).unwrap();
+    let body = serde_json::to_string(&payload).unwrap();
+    assert!(body.contains(r#""model":null"#), "{body}");
+    assert!(body.contains(r#""cost":null"#), "{body}");
+}
+
+#[test]
 fn common_logic_omits_usage_when_the_response_has_none() {
     let mut call = event();
     call.usage = None;

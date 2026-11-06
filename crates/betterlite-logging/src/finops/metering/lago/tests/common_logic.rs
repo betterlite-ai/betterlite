@@ -48,6 +48,17 @@ fn common_logic_omits_usage_when_the_response_has_none() {
     assert!(!body.contains("total_tokens"), "{body}");
 }
 
+#[test]
+fn common_logic_keeps_null_model_and_cost_when_the_callback_has_none() {
+    let mut call = event();
+    call.model = None;
+    call.response_cost = None;
+    let payload = build(&settings_with(&[]), &call).unwrap();
+    let body = serde_json::to_string(&payload).unwrap();
+    assert!(body.contains(r#""model":null"#), "{body}");
+    assert!(body.contains(r#""response_cost":null"#), "{body}");
+}
+
 #[rstest]
 #[case::end_user_id("end_user_id", "end-user-1")]
 #[case::team_id("team_id", "team-1")]

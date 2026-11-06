@@ -37,7 +37,9 @@ async fn async_log_success_event_logs_the_accepted_event() {
         .async_log_success_event(&event())
         .await
         .unwrap();
-    assert!(captured.text().contains("lago accepted the event"));
+    let logs = captured.text();
+    assert!(logs.contains("ENTERS LAGO CALLBACK"), "{logs}");
+    assert!(logs.contains("lago accepted the event"), "{logs}");
 }
 
 #[tokio::test]

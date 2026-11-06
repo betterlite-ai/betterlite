@@ -60,6 +60,16 @@ async fn post_sends_the_lago_event_json() {
 }
 
 #[tokio::test]
+async fn post_logs_the_built_event_at_debug() {
+    let (captured, _guard) = capture_debug();
+    let sender = FakeSender::default();
+    logger(sender).log_success_event(&event()).await.unwrap();
+    let logs = captured.text();
+    assert!(logs.contains("Logged Lago Object"), "{logs}");
+    assert!(logs.contains(EVENT_CODE), "{logs}");
+}
+
+#[tokio::test]
 async fn post_logs_the_rejected_response_body_and_returns_the_status() {
     let sender = FakeSender::answering(422, "subscription is unknown");
     let (captured, _guard) = capture_debug();

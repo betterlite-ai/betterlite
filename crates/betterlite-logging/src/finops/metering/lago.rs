@@ -47,6 +47,7 @@ impl<Sender: MeteringSender> LagoLogger<Sender> {
         &self,
         event: &MeteringEvent<'_>,
     ) -> Result<(), LagoError<Sender::Error>> {
+        tracing::debug!("ENTERS LAGO CALLBACK");
         let response = self.deliver(event).await?;
         tracing::debug!(body = %response.body, "Logged Lago Object");
         Ok(())
@@ -57,6 +58,7 @@ impl<Sender: MeteringSender> LagoLogger<Sender> {
         event: &MeteringEvent<'_>,
     ) -> Result<MeteringResponse, LagoError<Sender::Error>> {
         let payload = payload::build(&self.settings, event)?;
+        tracing::debug!(?payload, "Logged Lago Object");
         let body = serde_json::to_vec(&payload)?;
         let url = Url::parse(&events_url(&self.settings.api_base)).map_err(LagoError::Url)?;
         let response = self
