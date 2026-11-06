@@ -1,0 +1,15 @@
+kind: helper
+name: time_of_day
+call:
+  duration:
+    calls:
+      - {function: reset, duration: "1d", now: "2024-01-01T03:00:00Z", reset_time_of_day: "06:00:00"}
+      - {function: reset, duration: "1d", now: "2024-01-01T10:00:00Z", reset_time_of_day: "06:00:00"}
+      - {function: reset, duration: "2d", now: "2024-01-01T10:00:00Z", reset_time_of_day: "06:00:00"}
+      - {function: reset, duration: "7d", now: "2024-01-01T03:00:00Z", reset_time_of_day: "06:00:00"}
+      - {function: reset, duration: "7d", now: "2024-01-07T10:00:00Z", reset_time_of_day: "06:00:00"}
+      - {function: reset, duration: "1mo", now: "2024-01-15T10:00:00Z", reset_time_of_day: "06:00:00"}
+      - {function: reset, duration: "1d", now: "2024-01-01T03:00:00Z", reset_time_of_day: "00:00:00.500000"}
+      - {function: reset, duration: "1h", now: "2024-01-01T03:00:00Z", reset_time_of_day: "06:00:00"}
+env: {}
+compare: {ignore: []}
