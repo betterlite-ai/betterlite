@@ -1,0 +1,7 @@
+kind: helper
+name: pending_then_authorized
+call:
+  chatgpt_login: {"record": null, "replacement": null, "now": 1000, "replies": [{"status": 200, "body": "{\"device_auth_id\": \"dev-id\", \"usercode\": \"WXYZ-9999\", \"interval\": 7}"}, {"status": 403, "body": ""}, {"status": 404, "body": ""}, {"status": 200, "body": "{\"authorization_code\": \"code\", \"code_challenge\": \"\"}"}, {"status": 202, "body": ""}, {"status": 200, "body": "{\"authorization_code\": \"code\", \"code_challenge\": \"challenge\", \"code_verifier\": \"verifier\"}"}, {"status": 200, "body": "{\"access_token\": \"h.eyJleHAiOiA0MDAwMDAwMDAwLCAiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjogeyJjaGF0Z3B0X2FjY291bnRfaWQiOiAiYWNjdCJ9fQ.s\", \"refresh_token\": \"new\", \"id_token\": \"h.eyJleHAiOiA0MDAwMDAwMDAwLCAiaHR0cHM6Ly9hcGkub3BlbmFpLmNvbS9hdXRoIjogeyJjaGF0Z3B0X2FjY291bnRfaWQiOiAiYWNjdCJ9fQ.s\"}"}], "repeat": null}
+env: {}
+compare:
+  ignore: []

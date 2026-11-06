@@ -1,0 +1,1 @@
+{"data":{"invocation_parameters":{"openai":{"temperature":"hot","max_tokens":1.5}},"template":{"messages":[{"role":"user","content":"plain"}]}}}
