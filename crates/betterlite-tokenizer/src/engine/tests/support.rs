@@ -19,7 +19,9 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 
 use crate::engine::Engine;
 use crate::engine::error::EngineError;
-use crate::engine::limits::{BlockingCounter, BuildJob, CountJob};
+use crate::engine::limits::{
+    BlockingCounter, BuildJob, ConvertJob, CountJob, CountingService, EncodeLimits,
+};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 use tokio::time::Instant;
@@ -267,6 +269,15 @@ impl BlockingCounter for InlineCounter {
     async fn build(&self, job: BuildJob) -> Result<Engine, EngineError> {
         job()
     }
+
+    async fn convert(&self, job: ConvertJob) -> Result<Vec<u8>, EngineError> {
+        job()
+    }
+}
+
+pub(crate) fn counter() -> Arc<CountingService> {
+    let facility: Arc<dyn BlockingCounter> = Arc::new(InlineCounter);
+    Arc::new(CountingService::new(4, facility, EncodeLimits::default()))
 }
 
 pub(crate) fn system_clock() -> Arc<Clock> {

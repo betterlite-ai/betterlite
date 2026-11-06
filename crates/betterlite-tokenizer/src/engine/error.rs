@@ -1,3 +1,4 @@
+use crate::engine::fetch::gpt2::Gpt2Error;
 use kitoken::convert::ConversionError;
 use kitoken::{DecodeError, EncodeError, InitializationError, RegexError};
 use thiserror::Error;
@@ -19,6 +20,12 @@ pub enum EngineError {
     HuggingFaceEncode(#[source] tokenizers::Error),
     #[error("the token ids could not be decoded")]
     HuggingFaceDecode(#[source] tokenizers::Error),
+    #[error("the gpt2 vocabulary could not be converted")]
+    Gpt2(#[from] Gpt2Error),
+    #[error("the text has {bytes} bytes, over the {limit} byte input limit")]
+    InputTooLarge { bytes: usize, limit: usize },
+    #[error("the text encodes to {ids} ids, over the {limit} id output limit")]
+    OutputTooLarge { ids: usize, limit: usize },
     #[error("the token counting pool is closed")]
     PoolClosed,
 }

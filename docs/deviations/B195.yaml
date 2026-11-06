@@ -1,7 +1,7 @@
 task: B195
 deviations:
-  - what: When CUSTOM_TIKTOKEN_CACHE_DIR is unset, a fetched r50k_base or gpt2 file stays in memory for the life of the process, where tiktoken writes it into the tokenizers folder inside LiteLLM's installed package.
-    why: betterlite's bundled assets are compiled into the binary, so there is no package folder to write into. The fetch, the URL and the hash check are the same; only the copy on disk is missing.
+  - what: A fetched r50k_base or gpt2 vocabulary is converted on the blocking facility and the converted bytes stay in memory for the life of the process, where tiktoken writes the file into the tokenizers folder inside LiteLLM's installed package and rereads it.
+    why: betterlite's assets are compiled into the binary, so there is no package folder to write into; with CUSTOM_TIKTOKEN_CACHE_DIR set the raw file is also on disk under the sha1 of its URL. The fetch, the URL and the hash check are the same.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/default_encoding.py#L20-L30
   - what: HF_HUB_DISABLE_XET, HF_HUB_DISABLE_SYMLINKS and HF_HUB_DISABLE_SYMLINKS_WARNING are not read. Files the Hub serves through Xet download through hf-xet even when the first is set, and the cache always links snapshot files to blobs.
     why: hf-hub always uses hf-xet when the HEAD answer carries X-Xet-Hash and has no switch for either; the bytes and the cache path are the same, and betterlite ships for Linux and macOS where symlinks work.
@@ -15,3 +15,6 @@ deviations:
   - what: The gpt2 encoder map is parsed but not compared against the merge file, where tiktoken asserts the two agree before building the ranks, and the custom tokenizer cache holds 64 entries where LiteLLM sizes it from DEFAULT_MAX_LRU_CACHE_SIZE.
     why: Both gpt2 files are pinned by sha256, so a corrupted pair cannot pass the fetch and a working setup cannot reach the assertion; the cache variable is read in LiteLLM's constants at import and the default matches.
     link: https://github.com/openai/tiktoken/blob/0.12.0/tiktoken/load.py#L137-L144
+  - what: Counting rejects text over EncodeLimits.input_bytes with InputTooLarge and encoded id lists over EncodeLimits.output_ids with OutputTooLarge, where LiteLLM has no hard cap and extrapolates long counts above TOKEN_COUNTER_MAX_EXACT_CHARS.
+    why: The input bound is checked before the permit and the copy so a huge text cannot queue; B196 samples above its own threshold and passes the limit in, so counts LiteLLM can make still succeed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L584-L605

@@ -147,7 +147,7 @@ impl Selector {
         let engine = match kind {
             Kind::OpenAi => self.build_tiktoken(Encoding::Cl100kBase).await?,
             Kind::Anthropic => {
-                let bytes = assets::joined(assets::ANTHROPIC_PARTS);
+                let bytes = assets::ANTHROPIC.to_vec();
                 self.build_huggingface(bytes).await?
             }
             Kind::Cohere => self.download_kind(COHERE_REPO).await?,

@@ -8,10 +8,9 @@ use secrecy::SecretString;
 use crate::engine::Engine;
 use crate::engine::fetch::TiktokenFetcher;
 use crate::engine::hub::{HubDownloader, HubError};
-use crate::engine::limits::CountingService;
 use crate::engine::selection::{CustomTokenizer, Kind, SelectionError, Selector, TokenizerType};
 use crate::engine::tests::support::{
-    InlineCounter, Reply, Request, Server, client, hub_settings, resolver, system_clock,
+    Reply, Request, Server, client, counter, hub_settings, resolver, system_clock,
 };
 
 const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
@@ -49,10 +48,9 @@ fn selector(settings: &HubSettings, disable: bool) -> Selector {
         resolver(settings),
         system_clock(),
     ));
-    let fetcher = Arc::new(TiktokenFetcher::new(client(), None));
+    let fetcher = Arc::new(TiktokenFetcher::new(client(), None, counter()));
     let catalog = Arc::new(ModelCatalog::parse(CATALOG.as_bytes(), UnknownFields::Reject).unwrap());
-    let counter = Arc::new(CountingService::new(4, Arc::new(InlineCounter)));
-    Selector::new(fetcher, hub, catalog, counter, disable)
+    Selector::new(fetcher, hub, catalog, counter(), disable)
 }
 
 #[rstest]

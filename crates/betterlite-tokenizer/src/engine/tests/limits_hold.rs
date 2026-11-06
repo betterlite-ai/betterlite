@@ -12,7 +12,9 @@ use tokio::time::{sleep, timeout};
 use crate::engine::Engine;
 use crate::engine::assets;
 use crate::engine::error::EngineError;
-use crate::engine::limits::{BlockingCounter, BuildJob, CountJob, CountingService};
+use crate::engine::limits::{
+    BlockingCounter, BuildJob, ConvertJob, CountJob, CountingService, EncodeLimits,
+};
 use crate::engine::tiktoken::{Encoding, TiktokenEngine};
 
 struct Recorder {
@@ -48,6 +50,10 @@ impl BlockingCounter for Recorder {
     async fn build(&self, job: BuildJob) -> Result<Engine, EngineError> {
         job()
     }
+
+    async fn convert(&self, job: ConvertJob) -> Result<Vec<u8>, EngineError> {
+        job()
+    }
 }
 
 struct GatedCounter {
@@ -66,6 +72,10 @@ impl BlockingCounter for GatedCounter {
     }
 
     async fn build(&self, job: BuildJob) -> Result<Engine, EngineError> {
+        job()
+    }
+
+    async fn convert(&self, job: ConvertJob) -> Result<Vec<u8>, EngineError> {
         job()
     }
 }
@@ -98,7 +108,11 @@ fn spawn_counts(
 async fn the_limiter_caps_concurrency(#[case] max_concurrent: usize) {
     let recorder = Recorder::new();
     let facility: Arc<dyn BlockingCounter> = Arc::<Recorder>::clone(&recorder);
-    let service = Arc::new(CountingService::new(max_concurrent, facility));
+    let service = Arc::new(CountingService::new(
+        max_concurrent,
+        facility,
+        EncodeLimits::default(),
+    ));
     let engine = cl100k();
     let mut tasks = spawn_counts(&service, &engine, &["hello world"; 6]);
     while let Some(result) = tasks.join_next().await {
@@ -113,7 +127,7 @@ async fn the_limiter_caps_concurrency(#[case] max_concurrent: usize) {
 async fn the_input_queue_admits_every_caller() {
     let recorder = Recorder::new();
     let facility: Arc<dyn BlockingCounter> = Arc::<Recorder>::clone(&recorder);
-    let service = Arc::new(CountingService::new(2, facility));
+    let service = Arc::new(CountingService::new(2, facility, EncodeLimits::default()));
     let engine = cl100k();
     let mut tasks = spawn_counts(&service, &engine, &["a"; 8]);
     while let Some(result) = tasks.join_next().await {
@@ -126,7 +140,7 @@ async fn the_input_queue_admits_every_caller() {
 #[tokio::test]
 async fn every_caller_receives_its_own_output() {
     let recorder = Recorder::new();
-    let service = Arc::new(CountingService::new(2, recorder));
+    let service = Arc::new(CountingService::new(2, recorder, EncodeLimits::default()));
     let engine = cl100k();
     let mut tasks = spawn_counts(&service, &engine, &["hello", "hello world", "", "a   b"]);
     let mut results = Vec::new();
@@ -145,7 +159,7 @@ async fn a_cancelled_count_releases_its_permit() {
         open: AtomicBool::new(false),
     });
     let facility: Arc<dyn BlockingCounter> = Arc::<GatedCounter>::clone(&counter);
-    let service = Arc::new(CountingService::new(1, facility));
+    let service = Arc::new(CountingService::new(1, facility, EncodeLimits::default()));
     let engine = cl100k();
     let mut tasks = JoinSet::new();
     let first = Arc::clone(&service);
@@ -161,4 +175,39 @@ async fn a_cancelled_count_releases_its_permit() {
     )
     .await;
     assert_eq!(outcome.unwrap().unwrap(), 2);
+}
+#[tokio::test]
+async fn the_input_cap_rejects_long_text_before_admitting_it() {
+    let recorder = Recorder::new();
+    let facility: Arc<dyn BlockingCounter> = Arc::<Recorder>::clone(&recorder);
+    let limits = EncodeLimits {
+        input_bytes: 4,
+        output_ids: 100,
+    };
+    let service = Arc::new(CountingService::new(1, facility, limits));
+    let engine = cl100k();
+    assert!(matches!(
+        service.count(&engine, "hello world").await,
+        Err(EngineError::InputTooLarge {
+            bytes: 11,
+            limit: 4
+        })
+    ));
+    assert_eq!(recorder.started.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn the_output_cap_rejects_long_id_lists() {
+    let recorder = Recorder::new();
+    let facility: Arc<dyn BlockingCounter> = Arc::<Recorder>::clone(&recorder);
+    let limits = EncodeLimits {
+        input_bytes: 100,
+        output_ids: 1,
+    };
+    let service = Arc::new(CountingService::new(1, facility, limits));
+    let engine = cl100k();
+    assert!(matches!(
+        service.count(&engine, "hello world").await,
+        Err(EngineError::OutputTooLarge { ids: 2, limit: 1 })
+    ));
 }

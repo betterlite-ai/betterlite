@@ -56,7 +56,7 @@ fn build(input: &Input) -> Result<Engine, Failure> {
         EngineName::P50kBase => tiktoken(Encoding::P50kBase),
         EngineName::P50kEdit => tiktoken(Encoding::P50kEdit),
         EngineName::O200kHarmony => tiktoken(Encoding::O200kHarmony),
-        EngineName::Anthropic => huggingface(&assets::joined(assets::ANTHROPIC_PARTS)),
+        EngineName::Anthropic => huggingface(assets::ANTHROPIC),
         EngineName::Custom => input.tokenizer_json.as_deref().map_or_else(
             || Err(failure("tokenizer_json is required".to_owned())),
             |document| huggingface(document.as_bytes()),
