@@ -91,10 +91,22 @@ impl Selector {
         model: &str,
         custom: Option<&CustomTokenizer>,
     ) -> Result<SelectTokenizerResponse, SelectionError> {
-        match custom {
-            Some(tokenizer) => self.select_custom(tokenizer).await,
-            None => self.select_default(model).await,
+        if let Some(tokenizer) = custom {
+            return self.select_custom(tokenizer).await;
         }
+        if !self.disable_hf_tokenizer_download
+            && let Some(kind) = self.kind(model)
+        {
+            match self.load_kind(kind).await {
+                Ok(engine) => {
+                    let response =
+                        SelectTokenizerResponse::from((engine, TokenizerType::HuggingFace));
+                    return Ok(response);
+                }
+                Err(error) => tracing::debug!("Error selecting tokenizer: {error}"),
+            }
+        }
+        self.default_encoding().await
     }
     async fn select_custom(
         &self,
@@ -136,21 +148,6 @@ impl Selector {
         }
         let response = SelectTokenizerResponse::from((engine, TokenizerType::HuggingFace));
         Ok(response)
-    }
-    async fn select_default(&self, model: &str) -> Result<SelectTokenizerResponse, SelectionError> {
-        if !self.disable_hf_tokenizer_download
-            && let Some(kind) = self.kind(model)
-        {
-            match self.load_kind(kind).await {
-                Ok(engine) => {
-                    let response =
-                        SelectTokenizerResponse::from((engine, TokenizerType::HuggingFace));
-                    return Ok(response);
-                }
-                Err(error) => tracing::debug!("Error selecting tokenizer: {error}"),
-            }
-        }
-        self.default_encoding().await
     }
     pub async fn default_encoding(&self) -> Result<SelectTokenizerResponse, SelectionError> {
         Ok(SelectTokenizerResponse {
