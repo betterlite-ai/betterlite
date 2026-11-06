@@ -50,13 +50,12 @@ fn decode_lenient(body: &[u8]) -> Option<Vec<u8>> {
         }
     }
     // a final quad of two sextets needs two pads and one of three needs one; a single sextet cannot exist
-    let required_pads = match quad_position {
-        0 => 0,
-        2 => 2,
-        3 => 1,
-        _ => return None,
-    };
-    (trailing_pads >= required_pads).then_some(decoded)
+    match quad_position {
+        0 => Some(decoded),
+        2 if trailing_pads >= 2 => Some(decoded),
+        3 if trailing_pads >= 1 => Some(decoded),
+        _ => None,
+    }
 }
 
 // httpx would decode a body that is not UTF-8 with replacement characters; betterlite refuses it
