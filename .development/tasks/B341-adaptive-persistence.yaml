@@ -30,7 +30,7 @@ description: 'Implement B051 repository adapters for LiteLLM_AdaptiveRouterState
   only on its explicitly named score/probability pointer. Selection, tie order, counts, statuses, money
   and provider requests remain exact. Six-decimal wire signals are compared after the source rounding,
   without widening tolerance.
-  B016 registers the AdaptivePersistence server state entry as a stub, so replace only that stub and its not-built test in crates/betterlite-server/src/state/adaptive_persistence.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.'
+  B1100 registers state/adaptive_persistence.rs as a stub slot, so fill only crates/betterlite-server/src/state/adaptive_persistence.rs and leave strategy.rs, context.rs, routes.rs and state.rs as they are.'
 scope:
   paths:
   - crates/betterlite-router/src/adaptive_persistence.rs

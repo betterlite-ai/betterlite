@@ -66,6 +66,7 @@ description: >-
   B855 (Authenticated request admission and budget handoff), B1139 (Stateful HTTP oracle scenarios). These are callable/type/config
   owners, not provider-family umbrellas; the external B500-B859 ids retain ownership on the provider and keys/data
   branches.
+  B1100 registers state/request_setup.rs as a stub slot, so fill only crates/betterlite-server/src/state/request_setup.rs, install the stage in crates/betterlite-server/src/routes/chat.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
   - crates/betterlite-server/Cargo.toml
@@ -73,10 +74,10 @@ scope:
   - crates/betterlite-server/src/api/request_setup/**
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/routes/chat.rs
+  - crates/betterlite-server/src/routes/chat/**
+  - crates/betterlite-server/src/state/request_setup.rs
+  - crates/betterlite-server/src/state/request_setup/**
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/request_setup.rs
   - crates/betterlite-core/src/api/request_setup/**

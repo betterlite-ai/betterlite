@@ -71,6 +71,7 @@ description: >-
   /cursor/v1/models and POST /cursor/chat/completions once each. Test pure
   transformations in native behavior tests, and test every route and provider
   call through the booted HTTP oracle with a mock provider.
+  B1100 registers routes/cursor_responses_compat.rs as a stub, so fill only crates/betterlite-server/src/routes/cursor_responses_compat.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
   - crates/betterlite-server/Cargo.toml
@@ -78,10 +79,8 @@ scope:
   - crates/betterlite-server/src/api/cursor_responses_compat/**
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/routes/cursor_responses_compat.rs
+  - crates/betterlite-server/src/routes/cursor_responses_compat/**
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/cursor_responses_compat.rs
   - crates/betterlite-core/src/api/cursor_responses_compat/**

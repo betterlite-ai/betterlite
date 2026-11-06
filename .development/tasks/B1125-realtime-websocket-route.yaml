@@ -47,6 +47,7 @@ description: >-
   inject pending/failing release services and cancellation; do not compare scheduler timing between runtimes.
   Counted ownership is 166 nonblank/non-comment source lines including the decorator and scope template. Allow 190 implementation,
   180 behavior tests,200 transcript fixtures and 40 wiring lines,610 total under a 650-line cap.
+  B1100 registers routes/realtime_websocket.rs as a stub, so fill only crates/betterlite-server/src/routes/realtime_websocket.rs and leave routes.rs and state.rs as they are.
 scope:
   paths:
   - crates/betterlite-server/Cargo.toml
@@ -54,10 +55,8 @@ scope:
   - crates/betterlite-server/src/api/realtime_websocket_route/**
   - crates/betterlite-server/src/api.rs
   - crates/betterlite-server/src/api/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
+  - crates/betterlite-server/src/routes/realtime_websocket.rs
+  - crates/betterlite-server/src/routes/realtime_websocket/**
   - crates/betterlite-core/Cargo.toml
   - crates/betterlite-core/src/api/realtime_websocket_route.rs
   - crates/betterlite-core/src/api/realtime_websocket_route/**
