@@ -23,6 +23,14 @@ call:
                 function:
                   name: run
                   arguments: redacted-by-litellm
+              - id: call_concat__concat_1
+                function:
+                  name: run
+                  arguments: '{}'
+              - id: call_concat__concat_2
+                function:
+                  name: run
+                  arguments: '{}'
 env: {}
 compare:
   ignore: []

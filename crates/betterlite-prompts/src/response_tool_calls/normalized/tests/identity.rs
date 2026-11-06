@@ -46,6 +46,19 @@ use rstest::rstest;
         {"id":"dup__concat_2","name":"tool","arguments":{"a":2}}
     ]"#
 )]
+#[case::suffix_search_passes_every_owned_id(
+    r#"{"choices":[{"message":{"tool_calls":[
+        {"id":"call","function":{"name":"tool","arguments":"{\"a\":1}{\"a\":2}"}},
+        {"id":"call__concat_1","function":{"name":"tool","arguments":"{}"}},
+        {"id":"call__concat_2","function":{"name":"tool","arguments":"{}"}}
+    ]}}]}"#,
+    r#"[
+        {"id":"call","name":"tool","arguments":{"a":1}},
+        {"id":"call__concat_3","name":"tool","arguments":{"a":2}},
+        {"id":"call__concat_1","name":"tool","arguments":{}},
+        {"id":"call__concat_2","name":"tool","arguments":{}}
+    ]"#
+)]
 #[case::sanitized_ids_keep_their_generators_apart(
     r#"{"choices":[{"message":{"tool_calls":[
         {"id":"a_b","function":{"name":"tool","arguments":"{\"a\":1}{\"a\":2}"}},
