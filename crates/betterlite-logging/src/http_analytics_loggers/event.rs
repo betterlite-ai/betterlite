@@ -2,8 +2,6 @@ use betterlite_models::decisions::Json;
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 
-use crate::python_json;
-
 mod tests;
 
 #[derive(Debug)]
@@ -73,15 +71,4 @@ pub fn usage_token(response: &Json, name: &'static str) -> Json {
         return Json::Null;
     };
     usage.get(name).cloned().unwrap_or(Json::Null)
-}
-
-// Python's str keeps numbers unchanged and writes everything else as JSON, which is what a tag value is
-#[must_use]
-pub fn tag_text(value: &Json) -> String {
-    match value {
-        Json::Text(text) => text.clone(),
-        null @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
-            python_json::dumps(null)
-        }
-    }
 }

@@ -1,4 +1,5 @@
 use std::error::Error as StdError;
+use std::fmt;
 use std::future::Future;
 use std::time::Duration;
 
@@ -12,12 +13,23 @@ use url::Url;
 // LiteLLM's module level client falls back to 600 seconds, so an analytics POST waits no longer than that
 pub const DELIVERY_DEADLINE: Duration = Duration::from_secs(600);
 
-#[derive(Debug)]
 pub struct PostRequest {
     pub url: Url,
     pub headers: HeaderMap,
     pub body: Vec<u8>,
     pub deadline: Duration,
+}
+
+impl fmt::Debug for PostRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // a PromptLayer body carries its api key in a JSON field, so Debug never prints body bytes
+        f.debug_struct("PostRequest")
+            .field("url", &self.url)
+            .field("headers", &self.headers)
+            .field("body", &format_args!("[{} bytes]", self.body.len()))
+            .field("deadline", &self.deadline)
+            .finish()
+    }
 }
 
 #[derive(Debug)]

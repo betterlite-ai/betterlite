@@ -6,7 +6,7 @@ use betterlite_models::decisions::Json;
 use http::header::{CONTENT_TYPE, HeaderMap, HeaderValue};
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::Number;
+use serde::Serialize;
 use url::Url;
 
 use super::delivery::{DELIVERY_DEADLINE, Delivery, DeliveryError, PostRequest, PostResponse};
@@ -51,16 +51,17 @@ impl<D: Delivery> PromptLayerLogger<D> {
     async fn deliver(&self, event: &Event<'_>) -> Result<(), PromptLayerFailure<D::Error>> {
         let kwargs = event::kwargs_object(event.kwargs)?;
         let tracked = self.track_request(kwargs, event)?;
-        let sent = self.post(TRACK_REQUEST_URL, tracked.body).await?;
+        let sent = self.post(TRACK_REQUEST_URL, &tracked.request).await?;
         let response = Self::confirm(&sent)?;
         if let Some(request_id) = response.get("request_id")
             && !tracked.metadata.is_empty()
         {
-            let mut trace = IndexMap::new();
-            trace.insert("request_id".to_owned(), request_id.clone());
-            trace.insert("api_key".to_owned(), self.api_key());
-            trace.insert("metadata".to_owned(), Json::Object(tracked.metadata));
-            self.post(TRACK_METADATA_URL, trace).await?;
+            let trace = TrackMetadata {
+                request_id: request_id.clone(),
+                api_key: self.api_key(),
+                metadata: tracked.metadata,
+            };
+            self.post(TRACK_METADATA_URL, &trace).await?;
         }
         Ok(())
     }
@@ -69,9 +70,9 @@ impl<D: Delivery> PromptLayerLogger<D> {
         &self,
         kwargs: &IndexMap<String, Json>,
         event: &Event<'_>,
-    ) -> Result<TrackRequest, PromptLayerFailure<D::Error>> {
+    ) -> Result<PreparedTrackRequest, PromptLayerFailure<D::Error>> {
         let fields = call_fields(kwargs)?;
-        let Some(Json::Object(response)) = event.response else {
+        let Some(response @ Json::Object(_)) = event.response else {
             return Err(PromptLayerFailure::Payload(PayloadError::Response));
         };
         let mut new_kwargs = IndexMap::new();
@@ -84,39 +85,43 @@ impl<D: Delivery> PromptLayerLogger<D> {
                 .map(|(name, value)| (name.clone(), value.clone())),
         );
         let (tags, metadata) = split_metadata(fields.stored);
-        let mut body = IndexMap::new();
-        body.insert(
-            "function_name".to_owned(),
-            Json::Text(FUNCTION_NAME.to_owned()),
-        );
-        body.insert("kwargs".to_owned(), Json::Object(new_kwargs));
-        body.insert("tags".to_owned(), tags);
-        body.insert(
-            "request_response".to_owned(),
-            Json::Object(response.clone()),
-        );
-        body.insert(
-            "request_start_time".to_owned(),
-            Json::Number(Number::from(event.start_time.timestamp())),
-        );
-        body.insert(
-            "request_end_time".to_owned(),
-            Json::Number(Number::from(event.end_time.timestamp())),
-        );
-        body.insert("api_key".to_owned(), self.api_key());
-        Ok(TrackRequest { body, metadata })
+        Ok(PreparedTrackRequest {
+            request: TrackRequest {
+                function_name: FUNCTION_NAME,
+                kwargs: new_kwargs,
+                tags,
+                request_response: response.clone(),
+                request_start_time: event.start_time.timestamp(),
+                request_end_time: event.end_time.timestamp(),
+                api_key: self.api_key(),
+            },
+            metadata,
+        })
     }
 
-    async fn post(
+    async fn post<Body>(
         &self,
         target: &'static str,
-        body: IndexMap<String, Json>,
-    ) -> Result<PostResponse, PromptLayerFailure<D::Error>> {
-        let encoded = serde_json::to_vec(&Json::Object(body)).map_err(DeliveryError::Encode)?;
-        let request = Self::request(target, encoded)?;
+        body: &Body,
+    ) -> Result<PostResponse, PromptLayerFailure<D::Error>>
+    where
+        Body: Serialize + Sync,
+    {
+        let encoded = serde_json::to_vec(body).map_err(DeliveryError::Encode)?;
+        let url = Url::parse(target).map_err(|source| DeliveryError::Url {
+            name: "PromptLayer",
+            source,
+        })?;
+        let mut headers = HeaderMap::new();
+        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
         let sent = self
             .delivery
-            .post(request)
+            .post(PostRequest {
+                url,
+                headers,
+                body: encoded,
+                deadline: DELIVERY_DEADLINE,
+            })
             .await
             .map_err(DeliveryError::Transport)?;
         if !(200..300).contains(&sent.status) {
@@ -127,24 +132,6 @@ impl<D: Delivery> PromptLayerLogger<D> {
         let text = str::from_utf8(&sent.body).unwrap_or_default();
         tracing::debug!(status = sent.status, text, "PromptLayer logger succeeded");
         Ok(sent)
-    }
-
-    fn request(
-        target: &'static str,
-        body: Vec<u8>,
-    ) -> Result<PostRequest, DeliveryError<D::Error>> {
-        let url = Url::parse(target).map_err(|source| DeliveryError::Url {
-            name: "PromptLayer",
-            source,
-        })?;
-        let mut headers = HeaderMap::new();
-        headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-        Ok(PostRequest {
-            url,
-            headers,
-            body,
-            deadline: DELIVERY_DEADLINE,
-        })
     }
 
     fn api_key(&self) -> Json {
@@ -172,8 +159,26 @@ impl<D: Delivery> PromptLayerLogger<D> {
     }
 }
 
+#[derive(Serialize)]
 struct TrackRequest {
-    body: IndexMap<String, Json>,
+    function_name: &'static str,
+    kwargs: IndexMap<String, Json>,
+    tags: Json,
+    request_response: Json,
+    request_start_time: i64,
+    request_end_time: i64,
+    api_key: Json,
+}
+
+#[derive(Serialize)]
+struct TrackMetadata {
+    request_id: Json,
+    api_key: Json,
+    metadata: IndexMap<String, Json>,
+}
+
+struct PreparedTrackRequest {
+    request: TrackRequest,
     metadata: IndexMap<String, Json>,
 }
 

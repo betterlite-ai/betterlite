@@ -63,3 +63,30 @@ async fn greenscale_ignores_metadata_without_the_greenscale_prefix() {
     assert_eq!(field(body, "tags"), &json("[]"));
     assert!(!object(body).contains_key("other"));
 }
+
+#[tokio::test]
+async fn greenscale_renders_other_tag_value_types_as_json_text() {
+    let capture = Capture::default();
+    let clock = FixedClock {
+        now: time("2026-01-02T03:04:05Z"),
+    };
+    let logger = GreenscaleLogger {
+        delivery: capture.clone(),
+        clock,
+        settings: GreenscaleSettings::from_environment(&environment(ENVIRONMENT)),
+    };
+    let response = json(COMPLETION);
+    let kwargs = json(
+        r#"{"model":"gpt-4o","litellm_params":{"metadata":{"greenscale_attempt":2,"greenscale_flag":true,"greenscale_none":null,"greenscale_list":["a",1]}}}"#,
+    );
+    logger
+        .log_event(&event(&kwargs, Some(&response), START, END))
+        .await;
+    let requests = capture.requests();
+    assert_eq!(
+        field(&requests[0].body, "tags"),
+        &json(
+            r#"[{"key":"attempt","value":"2"},{"key":"flag","value":"true"},{"key":"none","value":"null"},{"key":"list","value":"[\"a\", 1]"}]"#
+        )
+    );
+}

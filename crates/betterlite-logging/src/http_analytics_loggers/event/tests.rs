@@ -2,17 +2,7 @@
 
 use crate::http_analytics_loggers::tests::support::json;
 
-use super::{response_dump, tag_text, usage_token};
-
-#[rstest::rstest]
-#[case::text(r#""hello""#, "hello")]
-#[case::number("2", "2")]
-#[case::boolean("true", "true")]
-#[case::null("null", "null")]
-#[case::list(r#"["a", 1]"#, r#"["a", 1]"#)]
-fn renders_tag_values_as_python_strings(#[case] source: &str, #[case] expected: &str) {
-    assert_eq!(tag_text(&json(source)), expected);
-}
+use super::{response_dump, usage_token};
 
 #[rstest::rstest]
 #[case::usage(r#"{"usage":{"prompt_tokens":3}}"#, "prompt_tokens", "3")]

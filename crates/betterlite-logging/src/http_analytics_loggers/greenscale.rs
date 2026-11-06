@@ -6,12 +6,13 @@ use betterlite_models::decisions::Json;
 use http::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::Number;
+use serde::Serialize;
 use url::Url;
 
 use super::clock::WallClock;
 use super::delivery::{DELIVERY_DEADLINE, Delivery, DeliveryError, PostRequest};
 use super::event::{self, Event, PayloadError};
+use crate::python_json;
 
 mod tests;
 
@@ -87,12 +88,13 @@ impl<D: Delivery, C: WallClock> GreenscaleLogger<D, C> {
             name: "GREENSCALE_ENDPOINT",
             source,
         })?;
-        let value = HeaderValue::try_from(api_key.expose_secret()).map_err(|source| {
+        let mut value = HeaderValue::try_from(api_key.expose_secret()).map_err(|source| {
             DeliveryError::Header {
                 name: "api-key",
                 source,
             }
         })?;
+        value.set_sensitive(true);
         let mut headers = HeaderMap::new();
         headers.insert(HeaderName::from_static("api-key"), value);
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
@@ -104,75 +106,83 @@ impl<D: Delivery, C: WallClock> GreenscaleLogger<D, C> {
         })
     }
 
-    fn payload(
+    fn payload<'call>(
         &self,
-        kwargs: &IndexMap<String, Json>,
+        kwargs: &'call IndexMap<String, Json>,
         response: &Json,
         event: &Event<'_>,
-    ) -> Result<Json, PayloadError> {
-        let mut data = IndexMap::new();
-        data.insert(
-            "modelId".to_owned(),
-            kwargs.get("model").cloned().unwrap_or(Json::Null),
-        );
-        data.insert(
-            "inputTokenCount".to_owned(),
-            event::usage_token(response, "prompt_tokens"),
-        );
-        data.insert(
-            "outputTokenCount".to_owned(),
-            event::usage_token(response, "completion_tokens"),
-        );
-        data.insert(
-            "timestamp".to_owned(),
-            Json::Text(self.clock.now_utc().format(TIMESTAMP_FORMAT).to_string()),
-        );
-        data.insert(
-            "invocationLatency".to_owned(),
-            Json::Number(Number::from(
-                event
-                    .end_time
-                    .signed_duration_since(event.start_time)
-                    .num_milliseconds(),
-            )),
-        );
-        let tags = event::metadata(kwargs)?
-            .map_or_else(Vec::new, |metadata| metadata_fields(metadata, &mut data));
-        data.insert("tags".to_owned(), Json::List(tags));
-        Ok(Json::Object(data))
+    ) -> Result<GreenscalePayload<'call>, PayloadError> {
+        let (project, application, tags) =
+            event::metadata(kwargs)?.map_or_else(|| (None, None, Vec::new()), metadata_fields);
+        Ok(GreenscalePayload {
+            model_id: kwargs.get("model").cloned().unwrap_or(Json::Null),
+            input_token_count: event::usage_token(response, "prompt_tokens"),
+            output_token_count: event::usage_token(response, "completion_tokens"),
+            timestamp: self.clock.now_utc().format(TIMESTAMP_FORMAT).to_string(),
+            invocation_latency: event
+                .end_time
+                .signed_duration_since(event.start_time)
+                .num_milliseconds(),
+            project,
+            application,
+            tags,
+        })
     }
 }
 
-fn metadata_fields(
-    metadata: &IndexMap<String, Json>,
-    data: &mut IndexMap<String, Json>,
-) -> Vec<Json> {
+#[derive(Serialize)]
+struct GreenscalePayload<'call> {
+    #[serde(rename = "modelId")]
+    model_id: Json,
+    #[serde(rename = "inputTokenCount")]
+    input_token_count: Json,
+    #[serde(rename = "outputTokenCount")]
+    output_token_count: Json,
+    timestamp: String,
+    #[serde(rename = "invocationLatency")]
+    invocation_latency: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    project: Option<&'call Json>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    application: Option<&'call Json>,
+    tags: Vec<Tag>,
+}
+
+#[derive(Serialize)]
+struct Tag {
+    key: String,
+    value: String,
+}
+
+fn metadata_fields(metadata: &IndexMap<String, Json>) -> (Option<&Json>, Option<&Json>, Vec<Tag>) {
+    let mut project = None;
+    let mut application = None;
     let mut tags = Vec::new();
     for (name, value) in metadata {
         if !name.starts_with("greenscale") {
             continue;
         }
         match name.as_str() {
-            "greenscale_project" => {
-                data.insert("project".to_owned(), value.clone());
-            }
-            "greenscale_application" => {
-                data.insert("application".to_owned(), value.clone());
-            }
-            _ => tags.push(tag(name, value)),
+            "greenscale_project" => project = Some(value),
+            "greenscale_application" => application = Some(value),
+            _ => tags.push(Tag {
+                key: name.replace("greenscale_", ""),
+                value: tag_value(value),
+            }),
         }
     }
-    tags
+    (project, application, tags)
 }
 
-fn tag(name: &str, value: &Json) -> Json {
-    let mut tag = IndexMap::new();
-    tag.insert(
-        "key".to_owned(),
-        Json::Text(name.replace("greenscale_", "")),
-    );
-    tag.insert("value".to_owned(), Json::Text(event::tag_text(value)));
-    Json::Object(tag)
+// Python's str keeps numbers unchanged and writes everything else as JSON
+fn tag_value(value: &Json) -> String {
+    match value {
+        Json::Text(text) => text.clone(),
+        other
+        @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_)) => {
+            python_json::dumps(other)
+        }
+    }
 }
 
 #[derive(Debug, thiserror::Error)]

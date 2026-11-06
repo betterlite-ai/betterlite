@@ -7,7 +7,7 @@ use chrono::{DateTime, Utc};
 use http::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue};
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde_json::Number;
+use serde::Serialize;
 use url::Url;
 
 use super::delivery::{DELIVERY_DEADLINE, Delivery, DeliveryError, PostRequest};
@@ -103,12 +103,13 @@ impl<D: Delivery> AthinaLogger<D> {
             name: "ATHINA_BASE_URL",
             source,
         })?;
-        let value = HeaderValue::try_from(api_key.expose_secret()).map_err(|source| {
+        let mut value = HeaderValue::try_from(api_key.expose_secret()).map_err(|source| {
             DeliveryError::Header {
                 name: "athina-api-key",
                 source,
             }
         })?;
+        value.set_sensitive(true);
         let mut headers = HeaderMap::new();
         headers.insert(HeaderName::from_static("athina-api-key"), value);
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
@@ -122,75 +123,112 @@ impl<D: Delivery> AthinaLogger<D> {
 }
 
 fn selected_response(kwargs: &IndexMap<String, Json>, event: &Event<'_>) -> Option<Json> {
-    if matches!(kwargs.get("stream"), Some(Json::Bool(true))) {
-        kwargs
-            .get("complete_streaming_response")
-            .map(|buffered| event::response_dump(Some(buffered)))
+    let streaming = matches!(kwargs.get("stream"), Some(Json::Bool(true)));
+    let response = if streaming {
+        kwargs.get("complete_streaming_response")
     } else {
-        Some(event::response_dump(event.response))
+        event.response
+    };
+    response.map(|value| event::response_dump(Some(value)))
+}
+
+#[derive(Serialize)]
+struct AthinaPayload<'call> {
+    language_model_id: Json,
+    request: &'call IndexMap<String, Json>,
+    response: &'call Json,
+    prompt_tokens: Json,
+    completion_tokens: Json,
+    total_tokens: Json,
+    response_time: i64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prompt: Option<&'call Json>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tools: Option<&'call Json>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    functions: Option<&'call Json>,
+    #[serde(flatten)]
+    additional: AthinaAdditional<'call>,
+}
+
+#[derive(Serialize)]
+struct AthinaAdditional<'call> {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    environment: Option<&'call Json>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    prompt_slug: Option<&'call Json>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    customer_id: Option<&'call Json>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    customer_user_id: Option<&'call Json>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    session_id: Option<&'call Json>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    external_reference_id: Option<&'call Json>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    context: Option<&'call Json>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    expected_response: Option<&'call Json>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    user_query: Option<&'call Json>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tags: Option<&'call Json>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    user_feedback: Option<&'call Json>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    model_options: Option<&'call Json>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    custom_attributes: Option<&'call Json>,
+}
+
+fn optional_fields(kwargs: &IndexMap<String, Json>) -> (Option<&Json>, Option<&Json>) {
+    match kwargs.get("optional_params") {
+        Some(Json::Object(optional)) => (optional.get("tools"), optional.get("functions")),
+        _ => (None, None),
     }
 }
 
-fn payload(
+fn additional_fields(
     kwargs: &IndexMap<String, Json>,
-    response: &Json,
+) -> Result<AthinaAdditional<'_>, PayloadError> {
+    let metadata = event::metadata(kwargs)?;
+    Ok(AthinaAdditional {
+        environment: metadata.and_then(|fields| fields.get("environment")),
+        prompt_slug: metadata.and_then(|fields| fields.get("prompt_slug")),
+        customer_id: metadata.and_then(|fields| fields.get("customer_id")),
+        customer_user_id: metadata.and_then(|fields| fields.get("customer_user_id")),
+        session_id: metadata.and_then(|fields| fields.get("session_id")),
+        external_reference_id: metadata.and_then(|fields| fields.get("external_reference_id")),
+        context: metadata.and_then(|fields| fields.get("context")),
+        expected_response: metadata.and_then(|fields| fields.get("expected_response")),
+        user_query: metadata.and_then(|fields| fields.get("user_query")),
+        tags: metadata.and_then(|fields| fields.get("tags")),
+        user_feedback: metadata.and_then(|fields| fields.get("user_feedback")),
+        model_options: metadata.and_then(|fields| fields.get("model_options")),
+        custom_attributes: metadata.and_then(|fields| fields.get("custom_attributes")),
+    })
+}
+
+fn payload<'call>(
+    kwargs: &'call IndexMap<String, Json>,
+    response: &'call Json,
     start: &DateTime<Utc>,
     end: &DateTime<Utc>,
-) -> Result<Json, PayloadError> {
-    let mut data = IndexMap::new();
-    data.insert(
-        "language_model_id".to_owned(),
-        kwargs.get("model").cloned().unwrap_or(Json::Null),
-    );
-    data.insert("request".to_owned(), Json::Object(kwargs.clone()));
-    data.insert("response".to_owned(), response.clone());
-    insert_usage(&mut data, response);
-    data.insert(
-        "response_time".to_owned(),
-        Json::Number(Number::from(
-            end.signed_duration_since(*start).num_milliseconds(),
-        )),
-    );
-    if let Some(messages) = kwargs.get("messages") {
-        data.insert("prompt".to_owned(), messages.clone());
-    }
-    insert_optional_params(&mut data, kwargs);
-    insert_additional_metadata(&mut data, kwargs)?;
-    Ok(Json::Object(data))
-}
-
-fn insert_usage(data: &mut IndexMap<String, Json>, response: &Json) {
-    for name in ["prompt_tokens", "completion_tokens", "total_tokens"] {
-        data.insert(name.to_owned(), event::usage_token(response, name));
-    }
-}
-
-fn insert_optional_params(data: &mut IndexMap<String, Json>, kwargs: &IndexMap<String, Json>) {
-    if let Some(Json::Object(optional)) = kwargs.get("optional_params") {
-        for name in ["tools", "functions"] {
-            if let Some(value) = optional.get(name) {
-                data.insert(name.to_owned(), value.clone());
-            }
-        }
-    }
-}
-
-fn insert_additional_metadata(
-    data: &mut IndexMap<String, Json>,
-    kwargs: &IndexMap<String, Json>,
-) -> Result<(), PayloadError> {
-    let Some(metadata) = event::metadata(kwargs)? else {
-        return Ok(());
-    };
-    if metadata.is_empty() {
-        return Ok(());
-    }
-    for name in ADDITIONAL_KEYS {
-        if let Some(value) = metadata.get(name) {
-            data.insert(name.to_owned(), value.clone());
-        }
-    }
-    Ok(())
+) -> Result<AthinaPayload<'call>, PayloadError> {
+    let (tools, functions) = optional_fields(kwargs);
+    Ok(AthinaPayload {
+        language_model_id: kwargs.get("model").cloned().unwrap_or(Json::Null),
+        request: kwargs,
+        response,
+        prompt_tokens: event::usage_token(response, "prompt_tokens"),
+        completion_tokens: event::usage_token(response, "completion_tokens"),
+        total_tokens: event::usage_token(response, "total_tokens"),
+        response_time: end.signed_duration_since(*start).num_milliseconds(),
+        prompt: kwargs.get("messages"),
+        tools,
+        functions,
+        additional: additional_fields(kwargs)?,
+    })
 }
 
 #[derive(Debug, thiserror::Error)]
