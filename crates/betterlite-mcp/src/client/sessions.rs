@@ -6,6 +6,7 @@ pub mod factory;
 pub mod negotiate;
 pub mod run;
 pub mod runtime;
+pub mod stdio;
 pub mod stream;
 pub mod transport;
 
