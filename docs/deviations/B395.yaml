@@ -1,0 +1,15 @@
+task: B395
+deviations:
+  - what: >-
+      After routing_strategy_args change, betterlite registers the rebuilt strategy selector before retiring
+      the previous one, so the rebuilt selector stays subscribed to the router's callback events. LiteLLM
+      builds the rebuilt selector while the previous selector of the same class is still registered, its
+      callback manager skips the duplicate class, and the following unregistration leaves no selector
+      subscribed.
+    why: >-
+      A setup that updates routing_strategy_args at runtime relies on its usage or latency selector keeping
+      its counters current. Under LiteLLM the rebuilt selector receives no success or failure events, so
+      usage-based routing keeps choosing from stale numbers. Betterlite's selector registry keeps one entry
+      per selector identity, so a rebuilt selector and a routing-group selector of the same strategy both
+      stay subscribed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1429-L1443

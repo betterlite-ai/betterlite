@@ -1,0 +1,45 @@
+kind: probe
+name: retired-selector
+probes:
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      strategy_dispatch:
+        function: reinit
+        strategy: usage-based-routing-v2
+        next_strategy: usage-based-routing-v2
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      strategy_dispatch:
+        function: reinit
+        strategy: usage-based-routing-v2
+        next_strategy: least-busy
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      strategy_dispatch:
+        function: reinit
+        strategy: least-busy
+        next_strategy: simple-shuffle
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      strategy_dispatch:
+        function: reinit
+        strategy: simple-shuffle
+        next_strategy: usage-based-routing-v2
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      strategy_dispatch:
+        function: reinit
+        strategy: cost-based-routing
+        next_strategy: cost-based-routing
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      strategy_dispatch:
+        function: reinit
+        strategy: latency-based-routing
+        next_strategy: lar1
