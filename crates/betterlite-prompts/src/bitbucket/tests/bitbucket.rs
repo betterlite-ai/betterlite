@@ -1,0 +1,3 @@
+mod bitbucket_compiler_parse_tests;
+mod bitbucket_global_config_tests;
+mod bitbucket_initializer_registry_tests;

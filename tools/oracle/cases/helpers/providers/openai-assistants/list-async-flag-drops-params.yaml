@@ -1,0 +1,5 @@
+kind: helper
+name: openai-assistants-list-async-flag-drops-params
+call: {openai_assistants: {list_assistants: {options: {api_key: sk-test, api_base: 'https://example.test/v1'}, params: {order: asc, limit: 5, before: b1, after: a1}, flag: true}}}
+env: {}
+compare: {ignore: []}

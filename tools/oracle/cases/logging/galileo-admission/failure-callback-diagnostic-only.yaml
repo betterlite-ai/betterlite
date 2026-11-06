@@ -1,0 +1,5 @@
+kind: helper
+name: galileo-admission-failure-callback-diagnostic-only
+call: {"b3965":{"environment":{"GALILEO_API_KEY":"key-0123456789abcdef","GALILEO_PROJECT_ID":"project-1"},"batch_size":10,"actions":[{"do":"failure","kwargs":{"call_type":"acompletion"}}]}}
+env: {}
+compare: {ignore: []}

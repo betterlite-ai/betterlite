@@ -1,0 +1,10 @@
+kind: helper
+name: xai-usage-medium-low-high-rate
+call:
+  xai_usage:
+    action: search
+    usage: {prompt_tokens: 1, completion_tokens: 1, total_tokens: 2}
+    details: {web_search_calls: 2}
+    search_costs: {search_context_size_low: 0.02, search_context_size_high: 0.03}
+env: {}
+compare: {ignore: []}

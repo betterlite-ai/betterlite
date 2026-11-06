@@ -1,0 +1,19 @@
+kind: helper
+name: third_attempt_key
+call:
+  copilot_key:
+    action: get_api_key
+    now: 1700000000
+    api_key_file: null
+    access_token_file: access-token
+    api_replies:
+      - status: 500
+        body: {"message": "busy"}
+      - status: 200
+        body: {"expires_at": 1800000000}
+      - status: 200
+        body: {"token": "third", "expires_at": 1800000000}
+    fail_write: false
+env: {}
+compare:
+  ignore: []

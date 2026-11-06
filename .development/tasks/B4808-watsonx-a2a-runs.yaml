@@ -127,7 +127,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-a2a --no-tests=fail -E 'test(/^watsonx_run::.*(handler|config)/)'
   - id: watsonx-oracle-cases
     why: oracle cases fail or do not exist
-    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/watsonx-orchestrate)" && cargo nextest run --locked --no-tests=fail --package betterlite-oracle -E 'test(watsonx_run|watsonx_stream)'
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/watsonx-orchestrate)" && cargo nextest run --locked --no-tests=fail --package betterlite-oracle -E 'test(/watsonx_run|watsonx_stream/)'
 oracle_cases:
 - tools/oracle/cases/watsonx-orchestrate/run-submit-non-streaming.yaml
 - tools/oracle/cases/watsonx-orchestrate/run-poll-success.yaml

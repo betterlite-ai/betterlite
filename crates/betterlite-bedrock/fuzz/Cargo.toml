@@ -29,3 +29,10 @@ path = "fuzz_targets/bedrock_event_frames.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "bedrock_converse_content"
+path = "fuzz_targets/bedrock_converse_content.rs"
+test = false
+doc = false
+bench = false

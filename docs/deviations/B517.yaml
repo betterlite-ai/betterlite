@@ -1,0 +1,11 @@
+task: B517
+deviations:
+  - what: The built-in HTTP client accepts max_retries but never retries a request.
+    why: Outbound calls go through the shared pooled client, which does not retry. The value still reaches the injected client constructor, so a constructor can apply it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L2038-L2090
+  - what: With no API key configured, or an empty one, betterlite reports the not-initialized ValueError, where LiteLLM's OpenAI constructor raises OpenAIError before that check.
+    why: A client that cannot be built counts as a missing client, the path the sdk_client_missing case fixes; the message still names api_key and OPENAI_API_KEY.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L2041-L2069
+  - what: A per-phase httpx.Timeout is refused with an SdkError that names the phases it sets.
+    why: Batch calls go through the shared pooled transport, which applies one total deadline plus the pool's own connect and read limits, so connect, read, write and pool values cannot be enforced per call and must not be dropped.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/openai.py#L2041-L2069

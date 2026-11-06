@@ -2,7 +2,7 @@ id: B557
 milestone: M3 providers
 title: Foundry native Responses and Decisions
 status: todo
-depends_on: [B549, B506, B507, B508, B509, B171, B544, B099]
+depends_on: [B549, B506, B507, B508, B509, B171, B544, B3515]
 file: tasks/B557-foundry-responses.yaml
 covers:
   - "litellm/llms/azure_ai/responses/transformation.py"
