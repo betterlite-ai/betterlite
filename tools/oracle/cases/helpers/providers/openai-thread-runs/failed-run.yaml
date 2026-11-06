@@ -1,0 +1,21 @@
+kind: helper
+name: openai-thread-runs-failed-run
+call:
+  openai_thread_runs:
+    failed_run:
+      options: {api_key: sk-test, api_base: 'https://example.test/v1', organization: org-test}
+      rounds:
+        - arun_thread: false
+          stream: false
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - {status: 200, headers: {content-type: application/json}, body: '{"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","thread_id":"thread_a","status":"queued","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}'}
+            - {status: 200, headers: {content-type: application/json, openai-poll-after-ms: '0'}, body: '{"id":"run_1","object":"thread.run","created_at":1700000000,"failed_at":1700000005,"assistant_id":"asst_1","thread_id":"thread_a","status":"failed","instructions":"base","last_error":{"code":"server_error","message":"boom"},"model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}'}
+        - arun_thread: true
+          stream: false
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - {status: 200, headers: {content-type: application/json}, body: '{"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","thread_id":"thread_a","status":"queued","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}'}
+            - {status: 200, headers: {content-type: application/json, openai-poll-after-ms: '0'}, body: '{"id":"run_1","object":"thread.run","created_at":1700000000,"failed_at":1700000005,"assistant_id":"asst_1","thread_id":"thread_a","status":"failed","instructions":"base","last_error":{"code":"server_error","message":"boom"},"model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}'}
+env: {}
+compare: {ignore: []}

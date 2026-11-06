@@ -1,0 +1,105 @@
+kind: helper
+name: openai-thread-runs-run-dispatch
+call:
+  openai_thread_runs:
+    run_dispatch:
+      options: {api_key: sk-test, api_base: 'https://example.test/v1', organization: org-test}
+      rounds:
+        - arun_thread: true
+          stream: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - status: 200
+              headers: {content-type: text/event-stream}
+              body: |
+                event: thread.run.created
+                data: {"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","thread_id":"thread_a","status":"queued","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}
+                
+                event: thread.run.in_progress
+                data: {"id":"run_1","object":"thread.run","created_at":1700000000,"started_at":1700000001,"assistant_id":"asst_1","thread_id":"thread_a","status":"in_progress","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}
+                
+                event: thread.run.completed
+                data: {"id":"run_1","object":"thread.run","created_at":1700000000,"completed_at":1700000005,"assistant_id":"asst_1","thread_id":"thread_a","status":"completed","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"metadata":{"tag":"x"},"response_format":"auto","tool_choice":"auto","tools":[{"type":"code_interpreter"}],"truncation_strategy":{"type":"auto"},"usage":{"completion_tokens":10,"prompt_tokens":5,"total_tokens":15},"temperature":0.5,"top_p":0.25}
+                
+                data: [DONE]
+                
+        - arun_thread: true
+          stream: false
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - {status: 200, headers: {content-type: application/json}, body: '{"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","thread_id":"thread_a","status":"queued","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}'}
+            - {status: 200, headers: {content-type: application/json, openai-poll-after-ms: '0'}, body: '{"id":"run_1","object":"thread.run","created_at":1700000000,"completed_at":1700000005,"assistant_id":"asst_1","thread_id":"thread_a","status":"completed","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"metadata":{"tag":"x"},"response_format":"auto","tool_choice":"auto","tools":[{"type":"code_interpreter"}],"truncation_strategy":{"type":"auto"},"usage":{"completion_tokens":10,"prompt_tokens":5,"total_tokens":15},"temperature":0.5,"top_p":0.25}'}
+        - arun_thread: false
+          stream: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - status: 200
+              headers: {content-type: text/event-stream}
+              body: |
+                event: thread.run.created
+                data: {"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","thread_id":"thread_a","status":"queued","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}
+                
+                event: thread.run.in_progress
+                data: {"id":"run_1","object":"thread.run","created_at":1700000000,"started_at":1700000001,"assistant_id":"asst_1","thread_id":"thread_a","status":"in_progress","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}
+                
+                event: thread.run.completed
+                data: {"id":"run_1","object":"thread.run","created_at":1700000000,"completed_at":1700000005,"assistant_id":"asst_1","thread_id":"thread_a","status":"completed","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"metadata":{"tag":"x"},"response_format":"auto","tool_choice":"auto","tools":[{"type":"code_interpreter"}],"truncation_strategy":{"type":"auto"},"usage":{"completion_tokens":10,"prompt_tokens":5,"total_tokens":15},"temperature":0.5,"top_p":0.25}
+                
+                data: [DONE]
+                
+        - arun_thread: null
+          stream: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - status: 200
+              headers: {content-type: text/event-stream}
+              body: |
+                event: thread.run.created
+                data: {"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","thread_id":"thread_a","status":"queued","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}
+                
+                event: thread.run.in_progress
+                data: {"id":"run_1","object":"thread.run","created_at":1700000000,"started_at":1700000001,"assistant_id":"asst_1","thread_id":"thread_a","status":"in_progress","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}
+                
+                event: thread.run.completed
+                data: {"id":"run_1","object":"thread.run","created_at":1700000000,"completed_at":1700000005,"assistant_id":"asst_1","thread_id":"thread_a","status":"completed","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"metadata":{"tag":"x"},"response_format":"auto","tool_choice":"auto","tools":[{"type":"code_interpreter"}],"truncation_strategy":{"type":"auto"},"usage":{"completion_tokens":10,"prompt_tokens":5,"total_tokens":15},"temperature":0.5,"top_p":0.25}
+                
+                data: [DONE]
+                
+        - arun_thread: 1
+          stream: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - status: 200
+              headers: {content-type: text/event-stream}
+              body: |
+                event: thread.run.created
+                data: {"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","thread_id":"thread_a","status":"queued","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}
+                
+                event: thread.run.in_progress
+                data: {"id":"run_1","object":"thread.run","created_at":1700000000,"started_at":1700000001,"assistant_id":"asst_1","thread_id":"thread_a","status":"in_progress","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}
+                
+                event: thread.run.completed
+                data: {"id":"run_1","object":"thread.run","created_at":1700000000,"completed_at":1700000005,"assistant_id":"asst_1","thread_id":"thread_a","status":"completed","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"metadata":{"tag":"x"},"response_format":"auto","tool_choice":"auto","tools":[{"type":"code_interpreter"}],"truncation_strategy":{"type":"auto"},"usage":{"completion_tokens":10,"prompt_tokens":5,"total_tokens":15},"temperature":0.5,"top_p":0.25}
+                
+                data: [DONE]
+                
+        - arun_thread: "true"
+          stream: false
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - {status: 200, headers: {content-type: application/json}, body: '{"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","thread_id":"thread_a","status":"queued","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}'}
+            - {status: 200, headers: {content-type: application/json, openai-poll-after-ms: '0'}, body: '{"id":"run_1","object":"thread.run","created_at":1700000000,"completed_at":1700000005,"assistant_id":"asst_1","thread_id":"thread_a","status":"completed","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"metadata":{"tag":"x"},"response_format":"auto","tool_choice":"auto","tools":[{"type":"code_interpreter"}],"truncation_strategy":{"type":"auto"},"usage":{"completion_tokens":10,"prompt_tokens":5,"total_tokens":15},"temperature":0.5,"top_p":0.25}'}
+        - arun_thread: true
+          stream: 1
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - {status: 200, headers: {content-type: application/json}, body: '{"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","thread_id":"thread_a","status":"queued","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}'}
+            - {status: 200, headers: {content-type: application/json, openai-poll-after-ms: '0'}, body: '{"id":"run_1","object":"thread.run","created_at":1700000000,"completed_at":1700000005,"assistant_id":"asst_1","thread_id":"thread_a","status":"completed","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"metadata":{"tag":"x"},"response_format":"auto","tool_choice":"auto","tools":[{"type":"code_interpreter"}],"truncation_strategy":{"type":"auto"},"usage":{"completion_tokens":10,"prompt_tokens":5,"total_tokens":15},"temperature":0.5,"top_p":0.25}'}
+        - arun_thread: true
+          stream: "true"
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - {status: 200, headers: {content-type: application/json}, body: '{"id":"run_1","object":"thread.run","created_at":1700000000,"assistant_id":"asst_1","thread_id":"thread_a","status":"queued","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"tools":[{"type":"code_interpreter"}]}'}
+            - {status: 200, headers: {content-type: application/json, openai-poll-after-ms: '0'}, body: '{"id":"run_1","object":"thread.run","created_at":1700000000,"completed_at":1700000005,"assistant_id":"asst_1","thread_id":"thread_a","status":"completed","instructions":"base","model":"gpt-4o-mini","parallel_tool_calls":true,"metadata":{"tag":"x"},"response_format":"auto","tool_choice":"auto","tools":[{"type":"code_interpreter"}],"truncation_strategy":{"type":"auto"},"usage":{"completion_tokens":10,"prompt_tokens":5,"total_tokens":15},"temperature":0.5,"top_p":0.25}'}
+env: {}
+compare: {ignore: []}
