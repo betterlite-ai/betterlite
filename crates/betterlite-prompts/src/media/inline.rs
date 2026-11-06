@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::future::Future;
 
 use betterlite_http::user_url::validate::Resolve;
@@ -6,6 +6,7 @@ use betterlite_http::user_url::validate::Resolve;
 use crate::arguments::json::{Json, Object};
 use crate::media::data_url::split_base64_marker;
 use crate::media::error::MediaError;
+use crate::media::limits::{MAX_REMOTE_URLS, check_messages};
 use crate::media::parts::{PartShape, RemoteMedia, parse_remote_part};
 use crate::media_fetch::error::ImageFetchError;
 use crate::media_fetch::fetcher::Fetcher;
@@ -22,7 +23,7 @@ const URL: &str = "url";
 const BASE64_TYPE: &str = "base64";
 const PDF_MEDIA_TYPE: &str = "application/pdf";
 
-pub type MediaPredicate = dyn Fn(&RemoteMedia) -> bool + Send + Sync;
+pub type MediaPredicate<'call> = dyn Fn(&RemoteMedia) -> bool + Send + Sync + 'call;
 
 // The seam B5083's Fetcher fills; tests and the oracle helper answer from a supplied URL mapping
 pub trait RemoteMediaFetcher {
@@ -51,33 +52,43 @@ where
     }
 }
 
-#[must_use]
-pub fn remote_urls_to_inline(messages: &[Message], should_inline: &MediaPredicate) -> Vec<String> {
+pub fn remote_urls_to_inline(
+    messages: &[Message],
+    should_inline: &MediaPredicate<'_>,
+) -> Result<Vec<String>, MediaError> {
+    check_messages(messages)?;
     let mut urls = Vec::new();
+    let mut seen = HashSet::new();
     for message in messages {
         for part in content_parts(message) {
             let Some(remote) = parse_remote_part(part) else {
                 continue;
             };
-            if should_inline(&remote.media) && !urls.contains(&remote.media.url) {
-                urls.push(remote.media.url.clone());
+            if !should_inline(&remote.media) || !seen.insert(remote.media.url.clone()) {
+                continue;
             }
+            if urls.len() == MAX_REMOTE_URLS {
+                return Err(MediaError::TooManyRemoteUrls {
+                    limit: MAX_REMOTE_URLS,
+                });
+            }
+            urls.push(remote.media.url);
         }
     }
-    urls
+    Ok(urls)
 }
 
 // One convert at a time, in first-seen URL order, the way LiteLLM builds its dict at L321
 pub async fn inline_remote_media<Source>(
     messages: &[Message],
-    should_inline: &MediaPredicate,
+    should_inline: &MediaPredicate<'_>,
     fetcher: &Source,
 ) -> Result<Vec<Message>, MediaError>
 where
     Source: RemoteMediaFetcher + Sync,
 {
     let mut data_urls = BTreeMap::new();
-    for url in remote_urls_to_inline(messages, should_inline) {
+    for url in remote_urls_to_inline(messages, should_inline)? {
         let data_url = fetcher.convert_url(&url).await?;
         data_urls.insert(url, data_url);
     }
@@ -87,13 +98,13 @@ where
 // B5083's fetch_all runs every URL with at most 20 in flight and answers them in input order
 pub async fn async_inline_remote_media<Source>(
     messages: &[Message],
-    should_inline: &MediaPredicate,
+    should_inline: &MediaPredicate<'_>,
     fetcher: &Source,
 ) -> Result<Vec<Message>, MediaError>
 where
     Source: RemoteMediaFetcher + Sync,
 {
-    let urls = remote_urls_to_inline(messages, should_inline);
+    let urls = remote_urls_to_inline(messages, should_inline)?;
     if urls.is_empty() {
         return Ok(messages.to_vec());
     }
@@ -105,7 +116,7 @@ where
 pub(crate) fn inline_messages(
     messages: &[Message],
     data_urls: &BTreeMap<String, String>,
-    should_inline: &MediaPredicate,
+    should_inline: &MediaPredicate<'_>,
 ) -> Result<Vec<Message>, MediaError> {
     let mut inlined = Vec::with_capacity(messages.len());
     for message in messages {
@@ -117,7 +128,7 @@ pub(crate) fn inline_messages(
 fn inline_message(
     message: &Message,
     data_urls: &BTreeMap<String, String>,
-    should_inline: &MediaPredicate,
+    should_inline: &MediaPredicate<'_>,
 ) -> Result<Message, MediaError> {
     let Some(Content::Parts(parts)) = &message.content else {
         return Ok(message.clone());
@@ -137,7 +148,7 @@ fn inline_message(
 fn inline_part(
     part: &ContentPart,
     data_urls: &BTreeMap<String, String>,
-    should_inline: &MediaPredicate,
+    should_inline: &MediaPredicate<'_>,
 ) -> Result<ContentPart, MediaError> {
     let Some(remote) = parse_remote_part(part) else {
         return Ok(part.clone());

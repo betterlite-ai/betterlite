@@ -21,10 +21,20 @@ call:
             file:
               file_id: "https://files.example.com/notes.txt"
               filename: notes.txt
+          - type: document
+            source:
+              type: url
+              url: "https://files.example.com/SCAN.PDF"
+          - type: file
+            file:
+              file_id: "https://files.example.com/REPORT.PDF"
+              filename: REPORT.PDF
     data_urls:
       "https://files.example.com/report.pdf": "data:application/pdf;base64,cGRm"
       "https://files.example.com/photo.png": "data:image/png;base64,cGhvdG8="
       "https://files.example.com/notes.txt": "data:text/plain;base64,bm90ZXM="
+      "https://files.example.com/SCAN.PDF": "data:image/png;base64,c2Nhbg=="
+      "https://files.example.com/REPORT.PDF": "data:image/png;base64,cGRm"
 env: {}
 compare:
   ignore: []

@@ -116,7 +116,10 @@ fn media_error(error: &MediaError) -> Box<HelperError> {
         MediaError::MissingDataPrefix
         | MediaError::MissingBase64Marker
         | MediaError::TooLarge { .. }
-        | MediaError::InvalidBase64(_) => ("ValueError", None),
+        | MediaError::InvalidBase64(_)
+        | MediaError::TooManyMessages { .. }
+        | MediaError::TooManyMessageParts { .. }
+        | MediaError::TooManyRemoteUrls { .. } => ("ValueError", None),
     };
     Box::new(HelperError {
         class: class.to_owned(),
@@ -178,7 +181,8 @@ fn inline(
     let runtime = runtime()?;
     let should_inline = predicate(selection);
     let source = MapSource { data_urls };
-    let urls = remote_urls_to_inline(messages, &should_inline);
+    let urls =
+        remote_urls_to_inline(messages, &should_inline).map_err(|error| media_error(&error))?;
     let inlined = match mode {
         Mode::Sequential => {
             runtime.block_on(inline_remote_media(messages, &should_inline, &source))

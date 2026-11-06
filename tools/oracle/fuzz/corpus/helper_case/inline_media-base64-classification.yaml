@@ -10,6 +10,10 @@ call:
       - "data:image/png;base64,!!!bad"
       - "data:image/png;base64,YR=="
       - "data:text/plain;base64,YQ=="
+      - "data:text/plain;base64,YWJj,ignored"
+      - "data:text/plain,YQ=="
+      - "data:image/png;base64"
+      - "DATA:image/png;base64,YWJj"
 env: {}
 compare:
   ignore: []

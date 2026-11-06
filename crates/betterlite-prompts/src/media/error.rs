@@ -12,6 +12,12 @@ pub enum MediaError {
     MissingBase64Marker,
     #[error("the data URL decodes to more than the {limit} bytes this call allows")]
     TooLarge { limit: usize },
+    #[error("messages exceeds the maximum of {limit}")]
+    TooManyMessages { limit: usize },
+    #[error("a message content list exceeds the maximum of {limit} parts")]
+    TooManyMessageParts { limit: usize },
+    #[error("the request names more than {limit} distinct remote media URLs")]
+    TooManyRemoteUrls { limit: usize },
     #[error("the base64 payload is invalid: {0}")]
     InvalidBase64(#[from] DecodeError),
     #[error(transparent)]

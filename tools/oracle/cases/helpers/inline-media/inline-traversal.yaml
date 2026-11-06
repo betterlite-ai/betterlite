@@ -24,7 +24,7 @@ call:
           - type: document
             source:
               type: url
-              url: "https://a.example/doc.pdf"
+              url: "https://a.example/1.png"
       - role: user
         content:
           - type: image_url
