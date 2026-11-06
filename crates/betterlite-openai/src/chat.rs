@@ -150,6 +150,7 @@ where
     T: DeserializeOwned,
 {
     value
+        .filter(|raw| !raw.is_null())
         .map(|raw| {
             let mut owned = raw.clone();
             encode_arguments(&mut owned);
@@ -162,17 +163,16 @@ fn encode_arguments(value: &mut Value) {
     match value {
         Value::Object(object) => {
             if let Some(Value::Object(function)) = object.get_mut("function") {
-                let encoded = function
+                let given = function
                     .remove("arguments")
-                    .or_else(|| function.remove("parameters").filter(Value::is_object))
-                    .map(|given| {
-                        given
-                            .as_str()
-                            .map_or_else(|| given.to_string(), ToOwned::to_owned)
-                    });
-                if let Some(text) = encoded {
-                    function.insert(String::from("arguments"), Value::String(text));
-                }
+                    .filter(|given| !given.is_null())
+                    .or_else(|| function.remove("parameters").filter(Value::is_object));
+                let text = given.map_or_else(String::new, |raw| {
+                    raw.as_str()
+                        .map_or_else(|| raw.to_string(), ToOwned::to_owned)
+                });
+                function.retain(|key, _| key.as_str() == "name");
+                function.insert(String::from("arguments"), Value::String(text));
             }
             if object.contains_key("function") {
                 object.retain(|key, _| matches!(key.as_str(), "id" | "type" | "function"));

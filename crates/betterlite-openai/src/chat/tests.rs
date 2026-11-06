@@ -102,6 +102,48 @@ fn encodes_object_arguments_as_json_text() {
     assert_eq!(call.function.arguments.as_deref(), Some(r#"{"a":1}"#));
 }
 #[test]
+fn a_null_client_mock_field_reads_as_absent() {
+    let body = br#"{"model":"m","messages":[],"mock_response":null,"mock_tool_calls":null}"#;
+    let request = ChatRequest::parse(body).unwrap();
+    let (response, calls) = client_mock(&request.passthrough, allowed()).expect("null fields");
+    assert_eq!(response, None);
+    assert_eq!(calls, None);
+}
+
+#[rstest]
+#[case::null_arguments(r#"{"function":{"name":"f","arguments":null}}"#, "")]
+#[case::null_arguments_with_parameters(
+    r#"{"function":{"name":"f","arguments":null,"parameters":{"a":1}}}"#,
+    r#"{"a":1}"#
+)]
+#[case::arguments_win_over_parameters(
+    r#"{"function":{"name":"f","arguments":"{}","parameters":{"a":1}}}"#,
+    "{}"
+)]
+#[case::extra_function_keys_are_ignored(
+    r#"{"function":{"name":"f","arguments":"{}","description":"d"}}"#,
+    "{}"
+)]
+fn function_arguments_follow_litellm(#[case] call: &str, #[case] arguments: &str) {
+    let body = format!(r#"{{"model":"m","messages":[],"mock_tool_calls":[{call}]}}"#);
+    let request = ChatRequest::parse(body.as_bytes()).unwrap();
+    let (_, calls) = client_mock(&request.passthrough, allowed()).expect("tool calls");
+    let decoded = &calls.expect("tool calls")[0];
+    assert_eq!(decoded.function.arguments.as_deref(), Some(arguments));
+}
+
+#[test]
+fn a_client_tool_call_index_is_ignored() {
+    let body = br#"{"model":"m","messages":[],"mock_tool_calls":[{"index":2,"function":{"name":"f","arguments":"{}"}}]}"#;
+    let request = ChatRequest::parse(body).unwrap();
+    let (_, calls) = client_mock(&request.passthrough, allowed()).expect("tool calls");
+    assert_eq!(
+        calls.expect("tool calls")[0].function.arguments.as_deref(),
+        Some("{}")
+    );
+}
+
+#[test]
 fn a_client_tool_call_without_a_name_is_a_body_error() {
     let body =
         br#"{"model":"m","messages":[],"mock_tool_calls":[{"function":{"arguments":"{}"}}]}"#;
