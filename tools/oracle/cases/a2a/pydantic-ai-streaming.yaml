@@ -1,0 +1,5 @@
+kind: helper
+name: pydantic-ai-streaming
+call: {b4806: {mode: streaming, request_id: req-6, api_base: "http://agent.test/", params: {message: {role: user, messageId: q1, parts: [{kind: text, text: question}]}}, kwargs: {chunk_size: 4, delay_ms: 3, agent_extra_headers: {X-Trace: trace-2}}, responses: [{body: {result: {id: task-1, status: {state: submitted}}}}, {body: {result: {id: task-1, contextId: ctx-1, status: {state: completed}, history: [{role: user, messageId: q1, parts: [{kind: text, text: question}]}, {role: agent, messageId: a1, parts: [{kind: text, text: abcdefghij}]}]}}}]}}
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,5 @@
+kind: helper
+name: encoded-ids-query
+call: {"openai_vector_stores": {"search_request": {"vector_store_id": "vs a/b?", "query": "hello", "params": {}, "api_base": "https://api.example.test/v1/vector_stores?api-version=2024"}}}
+env: {}
+compare: {ignore: []}

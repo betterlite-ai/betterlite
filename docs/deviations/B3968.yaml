@@ -1,0 +1,59 @@
+task: B3968
+deviations:
+  - what: >-
+      Cached prompts are keyed by the Humanloop prompt ID alone and compiled in place, so every caller
+      that shares a prompt manager sees the first compilation of a cached template.
+    why: >-
+      The pinned source keys DualCache by prompt ID only and rewrites template["content"] on the cached
+      dict; a credential-scoped key or a copy per compile would change behavior beyond the pin.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/humanloop.py#L35-L110
+  - what: >-
+      The prompt ID is percent-encoded as a single path segment in the /v5/prompts/{id} URL.
+    why: >-
+      LiteLLM interpolates the raw ID, so a slash, a query marker or .. in a request-supplied ID moves
+      the request off the configured endpoint; encoding keeps it on that endpoint.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/humanloop.py#L66-L74
+  - what: >-
+      A template placeholder with a conversion (!r), a format spec (:...), attribute access or index
+      access is rejected with an error that names the field.
+    why: >-
+      Python's str.format mini-language is runtime text handling that docs/compatibility.md excludes;
+      betterlite builds the {{variable}} substitution the integration is for and refuses the rest
+      instead of porting str.format.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/humanloop.py#L56-L57
+  - what: >-
+      A prompt variable whose value is a JSON array or object is rejected with an error that names it
+      instead of being rendered with Python's str() text.
+    why: >-
+      Rendering those needs Python repr text that docs/compatibility.md excludes; strings, numbers,
+      booleans and null are rendered as JSON text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/humanloop.py#L57
+  - what: >-
+      A template message that is not a JSON object is a typed error that names its index instead of an
+      AttributeError from dict.get.
+    why: >-
+      The AttributeError is an unhandled failure on a response the integration cannot use; a
+      well-formed response has object messages and is unaffected.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/humanloop.py#L53-L55
+  - what: >-
+      A response that is not a JSON object, has no template or model field, or has a non-string model,
+      is a typed error that names the problem instead of an unhandled JSONDecodeError, KeyError or
+      later type failure.
+    why: >-
+      Those unhandled failures surface as a 500 on a response the integration cannot use; the typed
+      error keeps the failure a client can act on and changes nothing for a well-formed response.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/humanloop.py#L81-L89
+  - what: >-
+      A negative HUMANLOOP_PROMPT_CACHE_TTL_SECONDS is a settings error instead of a cache entry that
+      expires immediately.
+    why: >-
+      The variable is parsed as an unsigned number; a negative TTL turns caching off in LiteLLM and no
+      working setup relies on it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1540
+  - what: >-
+      A prompt response body larger than 1 MiB is a transport error instead of being read whole.
+    why: >-
+      LiteLLM's httpx client reads any body size; rule bounded-inputs requires a cap, and 1 MiB is the
+      per-item size the source's own in-memory cache is built around. A prompt beyond that is not a
+      working configuration.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/humanloop.py#L68-L74
