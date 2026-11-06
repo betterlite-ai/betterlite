@@ -1,6 +1,15 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+
+use betterlite_error::error::details::{
+    ApiDetails, BudgetExceededDetails, GuardrailDetails, MidStreamFallbackDetails, MidStreamStatus,
+    RateLimitDetails, ResponseDetails, SchemaValidationDetails, TimeoutDetails, TimeoutStatus,
+};
+use betterlite_error::error::{ErrorClass, ErrorContext};
+use betterlite_error::rate_limit::RateLimitCategory;
 use rstest::rstest;
+use rust_decimal::Decimal;
 
 use super::decision::{
     AllowedFailsCounter, CooldownDecision, CooldownRequest, DeploymentFacts, MinuteSamples, decide,
@@ -72,6 +81,7 @@ fn failure(class: FailureClass, status: ErrorStatus) -> FailureFacts {
         status,
         advisor_orchestration: false,
         background_response_cost_poll: false,
+        wrapped_exception: None,
         caller_timeout: None,
     }
 }
@@ -109,6 +119,7 @@ fn run(
         failure,
         minute,
         allowed_fails_before,
+        local_fails: None,
         time_to_cooldown: None,
     })
 }
@@ -125,6 +136,7 @@ fn decide_with_time(
         failure,
         minute: minute(0, 0),
         allowed_fails_before: 0,
+        local_fails: None,
         time_to_cooldown,
     })
 }
@@ -359,6 +371,33 @@ fn case_unknown_deployment() -> CooldownDecision {
     run(&router, None, &failure, minute(0, 0), 0)
 }
 
+fn case_mid_stream_plain() -> CooldownDecision {
+    let router = policy();
+    let deployment = deployment();
+    let failure = failure(FailureClass::MidStreamFallback, ErrorStatus::Code(503));
+    run(&router, Some(&deployment), &failure, minute(0, 5), 0)
+}
+
+fn case_mid_stream_wrapped_connection() -> CooldownDecision {
+    let router = policy();
+    let deployment = deployment();
+    let mut failure = failure(FailureClass::MidStreamFallback, ErrorStatus::Code(503));
+    failure.wrapped_exception = Some(FailureClass::ApiConnection);
+    run(&router, Some(&deployment), &failure, minute(0, 5), 0)
+}
+
+fn case_timeout_status_not_408() -> CooldownDecision {
+    let router = policy();
+    let deployment = deployment();
+    let mut failure = failure(FailureClass::InternalServer, ErrorStatus::Code(500));
+    failure.caller_timeout = Some(TimeoutFacts {
+        client_side_timeout: true,
+        timeout_seconds: Some(Seconds(5.0)),
+        elapsed_seconds: Some(Seconds(5.2)),
+    });
+    run(&router, Some(&deployment), &failure, minute(0, 5), 0)
+}
+
 fn case_bad_request_policy() -> CooldownDecision {
     let router = policy();
     let mut deployment = deployment();
@@ -482,6 +521,9 @@ fn case_policy_beats_generic_on_single_group() -> CooldownDecision {
     Some("deployment:dep-1:allowed_fails:RateLimitError"),
     Some(1)
 )]
+#[case::mid_stream_plain(case_mid_stream_plain(), true, None, None)]
+#[case::mid_stream_wrapped_connection(case_mid_stream_wrapped_connection(), false, None, None)]
+#[case::caller_timeout_with_another_status(case_timeout_status_not_408(), true, None, None)]
 fn cooldown_decisions_behaviors(
     #[case] decision: CooldownDecision,
     #[case] cooldown: bool,
@@ -602,9 +644,14 @@ fn time_decision(time_to_cooldown: Seconds) -> CooldownDecision {
     true,
     None
 )]
-#[case::text_padded_server_error(
-    traffic_status_decision(ErrorStatus::Text(" 500 ".to_owned()), 0, 0),
+#[case::text_padded_bad_request(
+    traffic_status_decision(ErrorStatus::Text(" 400 ".to_owned()), 0, 0),
     false,
+    None
+)]
+#[case::text_padded_rate_limit(
+    traffic_status_decision(ErrorStatus::Text(" 429 ".to_owned()), 0, 0),
+    true,
     None
 )]
 #[case::counter_below_threshold(counter_decision(2), false, Some(3))]
@@ -792,4 +839,175 @@ fn cooldown_decisions_zero_traffic_threshold_needs_a_failure() {
     let failure = failure(FailureClass::InternalServer, ErrorStatus::Code(500));
     let decision = run(&router, Some(&deployment), &failure, minute(0, 0), 0);
     assert!(!decision.cooldown);
+}
+
+fn error_context() -> ErrorContext {
+    ErrorContext {
+        message: "probe".to_owned(),
+        model: None,
+        provider: None,
+        max_retries: None,
+        num_retries: None,
+        body_type: None,
+        body_param: None,
+        body_code: None,
+    }
+}
+
+fn response<const DEFAULT: u16>() -> Box<ResponseDetails<DEFAULT>> {
+    Box::new(ResponseDetails::from(error_context()))
+}
+
+#[rstest]
+#[case::authentication(ErrorClass::Authentication(response()), FailureClass::Authentication)]
+#[case::not_found(ErrorClass::NotFound(response()), FailureClass::NotFound)]
+#[case::permission_denied(
+    ErrorClass::PermissionDenied(response()),
+    FailureClass::PermissionDenied
+)]
+#[case::bad_request(ErrorClass::BadRequest(response()), FailureClass::BadRequest)]
+#[case::unprocessable_entity(
+    ErrorClass::UnprocessableEntity(response()),
+    FailureClass::UnprocessableEntity
+)]
+#[case::timeout(
+    ErrorClass::Timeout(Box::new(TimeoutDetails {
+        context: error_context(),
+        original_status: TimeoutStatus::default(),
+    })),
+    FailureClass::Timeout
+)]
+#[case::rate_limit(
+    ErrorClass::RateLimit(Box::new(RateLimitDetails {
+        context: error_context(),
+        category: RateLimitCategory::VendorRateLimit,
+        dimension: None,
+        headers: BTreeMap::new(),
+    })),
+    FailureClass::RateLimit
+)]
+#[case::budget_exceeded(
+    ErrorClass::BudgetExceeded(Box::new(BudgetExceededDetails {
+        current_cost: Decimal::ZERO,
+        max_budget: Decimal::ONE,
+        message: None,
+        provider: String::new(),
+        entity_type: None,
+        entity_id: None,
+        status_code: 422,
+    })),
+    FailureClass::BudgetExceeded
+)]
+#[case::context_window_exceeded(
+    ErrorClass::ContextWindowExceeded(response()),
+    FailureClass::ContextWindowExceeded
+)]
+#[case::content_policy_violation(
+    ErrorClass::ContentPolicyViolation(response()),
+    FailureClass::ContentPolicyViolation
+)]
+#[case::service_unavailable(
+    ErrorClass::ServiceUnavailable(Box::new(error_context())),
+    FailureClass::ServiceUnavailable
+)]
+#[case::bad_gateway(
+    ErrorClass::BadGateway(Box::new(error_context())),
+    FailureClass::BadGateway
+)]
+#[case::internal_server(
+    ErrorClass::InternalServer(Box::new(error_context())),
+    FailureClass::InternalServer
+)]
+#[case::api(
+    ErrorClass::Api(Box::new(ApiDetails {
+        context: error_context(),
+        status: 500,
+    })),
+    FailureClass::Api
+)]
+#[case::api_connection(
+    ErrorClass::ApiConnection(Box::new(error_context())),
+    FailureClass::ApiConnection
+)]
+#[case::api_response_validation(
+    ErrorClass::ApiResponseValidation(Box::new(error_context())),
+    FailureClass::ApiResponseValidation
+)]
+#[case::json_schema_validation(
+    ErrorClass::JsonSchemaValidation(Box::new(SchemaValidationDetails {
+        model: "model".to_owned(),
+        provider: "provider".to_owned(),
+        raw_response: String::new(),
+        schema: String::new(),
+    })),
+    FailureClass::JsonSchemaValidation
+)]
+#[case::unsupported_params(
+    ErrorClass::UnsupportedParams(Box::new(error_context())),
+    FailureClass::UnsupportedParams
+)]
+#[case::guardrail_raised(
+    ErrorClass::GuardrailRaised(Box::new(GuardrailDetails {
+        guardrail_name: None,
+        message: "probe".to_owned(),
+        status_code: 403,
+        blocked_content: true,
+    })),
+    FailureClass::GuardrailRaised
+)]
+#[case::mid_stream_fallback(
+    ErrorClass::MidStreamFallback(Box::new(MidStreamFallbackDetails {
+        context: error_context(),
+        original_status: MidStreamStatus::default(),
+        generated_content: String::new(),
+        is_pre_first_chunk: false,
+    })),
+    FailureClass::MidStreamFallback
+)]
+#[case::unclassified(
+    ErrorClass::Unclassified(Box::new(error_context())),
+    FailureClass::Unclassified
+)]
+fn cooldown_decisions_error_class_mapping(
+    #[case] class: ErrorClass,
+    #[case] expected: FailureClass,
+) {
+    assert_eq!(FailureClass::from(&class), expected);
+}
+
+fn local_counter_decision(
+    allowed_fails: u32,
+    allowed_fails_before: u64,
+    local_fails: u64,
+) -> CooldownDecision {
+    let mut router = policy();
+    router.allowed_fails = allowed_fails;
+    router.default_allowed_fails = 0;
+    let deployment = deployment();
+    let failure = failure(FailureClass::RateLimit, ErrorStatus::Code(429));
+    decide(&CooldownRequest {
+        policy: &router,
+        deployment: Some(&deployment),
+        failure: &failure,
+        minute: minute(0, 0),
+        allowed_fails_before,
+        local_fails: Some(local_fails),
+        time_to_cooldown: None,
+    })
+}
+
+#[rstest]
+#[case::local_at_threshold(1, 10, 1, false, 1)]
+#[case::local_above_threshold(1, 0, 2, true, 2)]
+#[case::local_zero(0, 5, 0, false, 0)]
+fn cooldown_decisions_local_count_fallbacks(
+    #[case] allowed_fails: u32,
+    #[case] allowed_fails_before: u64,
+    #[case] local_fails: u64,
+    #[case] cooldown: bool,
+    #[case] fails: u64,
+) {
+    let decision = local_counter_decision(allowed_fails, allowed_fails_before, local_fails);
+    assert_eq!(decision.cooldown, cooldown);
+    assert_eq!(counter_fails(&decision), Some(fails));
 }

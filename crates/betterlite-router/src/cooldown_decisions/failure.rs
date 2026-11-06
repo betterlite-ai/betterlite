@@ -123,6 +123,9 @@ pub struct FailureFacts {
     pub status: ErrorStatus,
     pub advisor_orchestration: bool,
     pub background_response_cost_poll: bool,
+    // the original exception's family when this failure wraps one, which LiteLLM sees through str(exception)
+    #[serde(default)]
+    pub wrapped_exception: Option<FailureClass>,
     #[serde(default)]
     pub caller_timeout: Option<TimeoutFacts>,
 }

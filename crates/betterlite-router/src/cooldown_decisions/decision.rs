@@ -63,7 +63,10 @@ pub struct CooldownRequest<'facts> {
     pub deployment: Option<&'facts DeploymentFacts>,
     pub failure: &'facts FailureFacts,
     pub minute: MinuteSamples,
+    // the shared counter's count before this failure; ignored when local_fails carries the worker's own count
     pub allowed_fails_before: u64,
+    // set when the shared counter could not be incremented: the worker's local count already includes this failure
+    pub local_fails: Option<u64>,
     pub time_to_cooldown: Option<Seconds>,
 }
 
@@ -88,13 +91,7 @@ pub fn decide(request: &CooldownRequest<'_>) -> CooldownDecision {
     ) {
         return CooldownDecision::NONE;
     }
-    should_cooldown(
-        request.policy,
-        deployment,
-        failure,
-        request.minute,
-        request.allowed_fails_before,
-    )
+    should_cooldown(request, deployment)
 }
 
 fn should_run_cooldown(
@@ -116,8 +113,10 @@ fn should_run_cooldown(
 }
 
 fn is_cooldown_required(failure: &FailureFacts) -> bool {
-    // LiteLLM skips the cooldown when "APIConnectionError" appears in str(exception); the typed family is the same case
-    if failure.class == FailureClass::ApiConnection {
+    // LiteLLM matches "APIConnectionError" in str(exception), which the typed family or a wrapper's original type shows
+    if failure.class == FailureClass::ApiConnection
+        || failure.wrapped_exception == Some(FailureClass::ApiConnection)
+    {
         return false;
     }
     match &failure.status {
@@ -147,19 +146,21 @@ fn has_explicit_policy(deployment: &DeploymentFacts, class: FailureClass) -> boo
 }
 
 fn should_cooldown(
-    policy: &CooldownPolicy,
+    request: &CooldownRequest<'_>,
     deployment: &DeploymentFacts,
-    failure: &FailureFacts,
-    minute: MinuteSamples,
-    allowed_fails_before: u64,
 ) -> CooldownDecision {
+    let policy = request.policy;
+    let failure = request.failure;
+    let fails = request
+        .local_fails
+        .unwrap_or_else(|| request.allowed_fails_before.saturating_add(1));
     let single = deployment.model_group_size == 1 && !deployment.has_alternatives;
     if deployment.allowed_fails_policy.is_some() || deployment.allowed_fails.is_some() {
-        return deployment_decision(policy, deployment, failure, single, allowed_fails_before);
+        return deployment_decision(request, deployment, single, fails);
     }
     if policy.allowed_fails_policy.is_none() && policy.allowed_fails == policy.default_allowed_fails
     {
-        return failure_ratio_decision(policy, failure, minute, single);
+        return failure_ratio_decision(policy, failure, request.minute, single);
     }
     let router_allowed = policy
         .allowed_fails_policy
@@ -168,22 +169,17 @@ fn should_cooldown(
             allowed_fails_policy.resolve(PolicyOrder::Router, failure.class)
         });
     let allowed = router_allowed.unwrap_or(policy.allowed_fails);
-    count_fails(
-        deployment,
-        allowed,
-        policy.cooldown_time,
-        None,
-        allowed_fails_before,
-    )
+    count_fails(deployment, allowed, policy.cooldown_time, None, fails)
 }
 
 fn deployment_decision(
-    policy: &CooldownPolicy,
+    request: &CooldownRequest<'_>,
     deployment: &DeploymentFacts,
-    failure: &FailureFacts,
     single: bool,
-    allowed_fails_before: u64,
+    fails: u64,
 ) -> CooldownDecision {
+    let policy = request.policy;
+    let failure = request.failure;
     let from_policy = deployment
         .allowed_fails_policy
         .as_ref()
@@ -216,7 +212,7 @@ fn deployment_decision(
         .model_info_cooldown_time
         .or(deployment.litellm_params_cooldown_time);
     let ttl = deployment_ttl.unwrap_or(policy.cooldown_time);
-    count_fails(deployment, allowed, ttl, suffix, allowed_fails_before)
+    count_fails(deployment, allowed, ttl, suffix, fails)
 }
 
 fn count_fails(
@@ -224,13 +220,12 @@ fn count_fails(
     allowed: u32,
     ttl: Seconds,
     cache_suffix: Option<&str>,
-    allowed_fails_before: u64,
+    fails: u64,
 ) -> CooldownDecision {
     let key = cache_suffix.map_or_else(
         || format!("deployment:{}:allowed_fails", deployment.id),
         |suffix| format!("deployment:{}:allowed_fails:{suffix}", deployment.id),
     );
-    let fails = allowed_fails_before.saturating_add(1);
     CooldownDecision {
         cooldown: fails > u64::from(allowed),
         counter: Some(AllowedFailsCounter {
