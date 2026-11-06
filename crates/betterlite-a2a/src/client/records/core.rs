@@ -5,7 +5,7 @@ use super::MessageCommon;
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")] #[rustfmt::skip]
-pub struct CoreSendMessageRequest { pub message: CoreMessage, #[serde(default, skip_serializing_if = "Option::is_none")] pub configuration: Option<CoreSendMessageConfiguration>, #[serde(default, skip_serializing_if = "Option::is_none")] pub metadata: Option<AgentJson> }
+pub struct CoreSendMessageRequest { pub message: CoreMessage, #[serde(default, skip_serializing_if = "Option::is_none")] pub configuration: Option<CoreSendMessageConfiguration>, #[serde(default, skip_serializing_if = "Option::is_none")] pub metadata: Option<AgentJson>, #[serde(default, skip_serializing_if = "Option::is_none")] pub tenant: Option<String> }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")] #[rustfmt::skip]
@@ -21,7 +21,7 @@ pub struct CoreAuthenticationInfo { #[serde(default, skip_serializing_if = "Opti
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[rustfmt::skip]
-pub struct CoreMessage { #[serde(default)] pub role: CoreRole, pub parts: Vec<CorePart>, #[serde(flatten)] pub common: MessageCommon }
+pub struct CoreMessage { #[serde(default)] pub role: CoreRole, #[serde(default)] pub parts: Vec<CorePart>, #[serde(flatten)] pub common: MessageCommon }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[rustfmt::skip]

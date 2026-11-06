@@ -11,49 +11,51 @@ use crate::errors::retries::RetryCounts;
 
 #[derive(Debug, Error)]
 pub enum ClientError {
-    #[error("the connection to the agent at {url} failed")]
+    #[error("the connection to the agent failed")]
     Connection {
         url: String,
         #[source]
         source: TransportError,
     },
-    #[error("the agent at {url} did not answer within {timeout:?}")]
+    #[error("the agent did not answer within {timeout:?}")]
     Timeout {
         url: String,
         timeout: Duration,
         #[source]
         source: Option<TransportError>,
     },
-    #[error("the request to the agent at {url} could not be sent")]
+    #[error("the request to the agent could not be sent")]
     Request {
         url: String,
         #[source]
         source: TransportError,
     },
-    #[error("the agent at {url} answered HTTP {status}")]
+    #[error("the agent answered HTTP {status}")]
     Status { url: String, status: u16 },
-    #[error("the agent at {url} returned JSON-RPC error {code}: {message}")]
+    #[error("the agent returned JSON-RPC error {code}: {message}")]
     JsonRpc {
         url: String,
         code: i64,
         message: String,
     },
-    #[error("the answer from the agent at {url} could not be read")]
+    #[error("the answer from the agent could not be read")]
     Decode {
         url: String,
         #[source]
         source: serde_json::Error,
     },
-    #[error("the request for the agent at {url} could not be built")]
+    #[error("the request for the agent could not be built")]
     Encode {
         url: String,
         #[source]
         source: serde_json::Error,
     },
-    #[error("the answer from the agent at {url} is not a JSON-RPC A2A response")]
+    #[error("the answer from the agent is not a JSON-RPC A2A response")]
     Protocol { url: String },
-    #[error("the event stream from the agent at {url} is larger than the buffer allows")]
+    #[error("the event stream from the agent is larger than the buffer allows")]
     EventTooLarge { url: String },
+    #[error("the SSE stream reported an error: {message}")]
+    SseError { message: String },
     #[error("{message}")]
     Final { message: &'static str },
     #[error("an extra A2A request header name is not valid")]
@@ -78,6 +80,8 @@ pub enum ClientError {
     },
     #[error("the agent card has no endpoint URL")]
     MissingEndpoint,
+    #[error("no compatible transports found.")]
+    NoTransports,
 }
 
 #[must_use]
@@ -120,20 +124,20 @@ pub fn exception_to_a2a(exception: A2AException) -> A2AError {
 }
 
 #[must_use]
-pub fn transport_error(url: &str, deadline: Duration, source: TransportError) -> ClientError {
-    if matches!(source, TransportError::Deadline(_)) {
+pub fn transport_error(url: &str, timeout: Duration, source: TransportError) -> ClientError {
+    if matches!(
+        source,
+        TransportError::Deadline(_) | TransportError::ConnectTimeout(_)
+    ) {
         return ClientError::Timeout {
             url: url.to_owned(),
-            timeout: deadline,
+            timeout,
             source: Some(source),
         };
     }
     let connection = matches!(
         source,
-        TransportError::Connect(_)
-            | TransportError::ConnectTimeout(_)
-            | TransportError::Request(_)
-            | TransportError::Body(_)
+        TransportError::Connect(_) | TransportError::Request(_) | TransportError::Body(_)
     );
     if connection {
         return ClientError::Connection {

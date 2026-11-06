@@ -14,7 +14,8 @@ async fn open(
     client: &A2AClient,
     request: &SendMessageRequest,
 ) -> Result<EventStream, ClientError> {
-    let core = to_core_send_message_request(request.clone())?;
+    let mut core = to_core_send_message_request(request.clone())?;
+    core.tenant.clone_from(&client.tenant);
     let request_id = {
         let mut ids = client
             .request_ids

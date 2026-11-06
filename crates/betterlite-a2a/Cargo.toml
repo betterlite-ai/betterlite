@@ -11,6 +11,7 @@ workspace = true
 [dependencies]
 async-stream = "0.3.6"
 base64 = "0.22.1"
+betterlite-config = { path = "../betterlite-config" }
 betterlite-core = { path = "../betterlite-core" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-openai = { path = "../betterlite-openai" }
@@ -33,6 +34,5 @@ uuid = { workspace = true }
 
 [dev-dependencies]
 axum = { workspace = true }
-betterlite-config = { path = "../betterlite-config" }
 rstest = "=0.27.0"
 tokio = { workspace = true }

@@ -32,6 +32,7 @@ pub fn to_core_send_message_request(
             .configuration
             .map(request::to_core_configuration),
         metadata: request.params.metadata,
+        tenant: None,
     })
 }
 
@@ -60,8 +61,8 @@ pub fn to_compat_stream_response(
         CoreStreamEvent::ArtifactUpdate(update) => {
             StreamResult::ArtifactUpdate(TaskArtifactUpdate {
                 kind: ArtifactUpdateKind::ArtifactUpdate,
-                append: update.append,
-                last_chunk: update.last_chunk,
+                append: Some(update.append.unwrap_or(false)),
+                last_chunk: Some(update.last_chunk.unwrap_or(false)),
                 metadata: update.metadata,
                 task_id: update.task_id,
                 context_id: update.context_id.unwrap_or_default(),

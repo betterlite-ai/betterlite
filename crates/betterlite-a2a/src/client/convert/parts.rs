@@ -53,9 +53,13 @@ fn stripped_metadata(metadata: Option<AgentJson>) -> Option<AgentJson> {
 fn file_to_core(part: FilePart) -> Result<CorePart, ConvertError> {
     match part.file {
         FileContent::Bytes(file) => {
-            let decoded = STANDARD
-                .decode(&file.bytes)
-                .map_err(ConvertError::FileBytes)?;
+            // base64.b64decode without validation ignores every character outside the alphabet, such as line wraps
+            let encoded: Vec<u8> = file
+                .bytes
+                .bytes()
+                .filter(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'+' | b'/' | b'='))
+                .collect();
+            let decoded = STANDARD.decode(&encoded).map_err(ConvertError::FileBytes)?;
             Ok(CorePart::Raw(CoreRawPart {
                 raw: STANDARD.encode(decoded),
                 media_type: file.mime_type.filter(|value| !value.is_empty()),

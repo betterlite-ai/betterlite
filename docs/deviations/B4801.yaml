@@ -1,5 +1,17 @@
 task: B4801
 deviations:
-  - what: 'The A2A client is a native JSON-RPC client over the injected HTTP pool, and its compat-v0.3 to core record conversions are native too, where LiteLLM calls the Python a2a-sdk 1.1.0 client and its conversions module.'
-    why: 'No Rust crate provides the a2a-sdk surface, so the client and the conversions it delegates are built here. The observable client behavior stays as LiteLLM drives it: the v1.0 core JSON-RPC transport, the final-event selection, the two-attempt localhost retry and the streaming response boundary.'
+  - what: >-
+      The A2A client is a native JSON-RPC client over the injected HTTP pool, and its compat-v0.3 to core record conversions are native too, where LiteLLM calls the Python a2a-sdk 1.1.0 client and its conversions module.
+    why: >-
+      No Rust crate provides the a2a-sdk surface, so the client and the conversions it delegates are built here. The observable behavior follows LiteLLM except for the transport gaps listed below.
     link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L767-L845'
+  - what: >-
+      An interface whose protocolVersion is legacy (0.3 and above, below 1.0), including a url-only card that a2a-sdk derives as 0.3, is contacted with the core v1.0 transport: SendMessage, ROLE_* roles, core parts and A2A-Version 1.0. LiteLLM's client factory routes that interface to CompatJsonRpcTransport and sends message/send with kind parts and A2A-Version 0.3.
+    why: >-
+      The native client implements the core v1.0 transport, not the v0.3 compat transport. Such an agent answers method-not-found or a decode error where LiteLLM succeeds. Interface selection, tenant and endpoint still follow the factory.
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/a2a_protocol/main.py#L767-L845'
+  - what: >-
+      A redirect answer from the agent is not followed and surfaces as its HTTP status. LiteLLM's httpx client follows redirects by default.
+    why: >-
+      The shared outbound client never follows redirects, so a provider credential cannot be replayed to another host; B1509 and B173 record the same difference. Tested by redirect_not_followed.
+    link: 'https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L618'

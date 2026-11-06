@@ -2,16 +2,18 @@
 
 use std::collections::BTreeMap;
 use std::future::{Future, IntoFuture as _};
+use std::io;
 use std::net::TcpListener as StdTcpListener;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use axum::Router;
-use axum::body::Bytes;
+use axum::body::{Body, Bytes};
 use axum::extract::State;
 use axum::http::HeaderMap as HttpHeaders;
-use axum::http::header::{ACCEPT, CACHE_CONTROL, CONTENT_TYPE};
+use axum::http::StatusCode;
+use axum::http::header::{ACCEPT, CACHE_CONTROL, CONTENT_TYPE, LOCATION};
 use axum::response::{IntoResponse as _, Response};
 use axum::routing::{get, post};
 use betterlite_config::proxy::ProxyPolicy;
@@ -28,6 +30,7 @@ use tokio::time::sleep;
 
 use super::convert::{to_compat_stream_response, to_core_send_message_request};
 use super::error::ClientError;
+use super::records::A2A_VERSION_HEADER;
 use super::records::compat::SendMessageRequest;
 use super::records::core::{
     CoreArtifact, CoreArtifactUpdate, CorePart, CoreStatusUpdate, CoreStreamEvent, CoreTask,
@@ -37,11 +40,13 @@ use super::records::response::{SendMessageResponse, StreamResult};
 use super::retry::{SendError, SendTarget, execute_send_with_retry, execute_stream_with_retry};
 use super::send::send_message;
 use super::{
-    A2AClient, A2AClientSettings, DEFAULT_A2A_AGENT_TIMEOUT, RequestIds, agent_card_path,
-    create_a2a_client,
+    A2A_TIMEOUT_ENV, A2AClient, A2AClientSettings, DEFAULT_A2A_AGENT_TIMEOUT, RequestIds,
+    agent_card_path, create_a2a_client,
 };
 use crate::agent_card::{AgentCard, WireValue};
 use crate::card_resolver::card_url::get_agent_card_url;
+
+mod parity;
 
 const CARD_PATH: &str = "/.well-known/agent-card.json";
 const TEAM_HEADER: &str = "x-team";
@@ -50,7 +55,9 @@ const TEAM_HEADER: &str = "x-team";
 enum Reply {
     Json(String),
     Sse(Vec<String>),
+    SseGaps(Vec<(u64, String)>),
     Slow(Duration, String),
+    Redirect(String),
 }
 
 #[derive(Clone)]
@@ -58,6 +65,7 @@ struct Seen {
     path: String,
     accept: Option<String>,
     cache_control: Option<String>,
+    version: Option<String>,
     team: Option<String>,
     body: String,
 }
@@ -89,10 +97,15 @@ fn record(state: &AgentState, path: &str, headers: &HttpHeaders, body: String) {
         .get(CACHE_CONTROL)
         .and_then(|value| value.to_str().ok())
         .map(str::to_owned);
+    let version = headers
+        .get(A2A_VERSION_HEADER)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_owned);
     state.seen.lock().unwrap().push(Seen {
         path: path.to_owned(),
         accept,
         cache_control,
+        version,
         team,
         body,
     });
@@ -119,9 +132,25 @@ async fn message(
         Reply::Sse(frames) => {
             ([(CONTENT_TYPE, "text/event-stream")], frames.concat()).into_response()
         }
+        Reply::SseGaps(frames) => {
+            let stream = async_stream::stream! {
+                for (delay, frame) in frames {
+                    sleep(Duration::from_millis(delay)).await;
+                    yield Ok::<_, io::Error>(Bytes::from(frame));
+                }
+            };
+            (
+                [(CONTENT_TYPE, "text/event-stream")],
+                Body::from_stream(stream),
+            )
+                .into_response()
+        }
         Reply::Slow(delay, reply) => {
             sleep(delay).await;
             ([(CONTENT_TYPE, "application/json")], reply).into_response()
+        }
+        Reply::Redirect(location) => {
+            (StatusCode::TEMPORARY_REDIRECT, [(LOCATION, location)]).into_response()
         }
     }
 }
@@ -177,11 +206,25 @@ fn card_json(endpoint: &str, streaming: bool) -> String {
 fn settings(base: &str, streaming: bool, timeout: Duration) -> A2AClientSettings {
     A2AClientSettings {
         base_url: base.to_owned(),
-        timeout,
+        timeout: Some(timeout),
         extra_headers: BTreeMap::from([(TEAM_HEADER.to_owned(), SecretString::from("blue"))]),
         streaming,
         relative_card_path: None,
     }
+}
+
+fn environment(value: Option<&str>) -> BTreeMap<String, String> {
+    value
+        .map(|text| BTreeMap::from([(A2A_TIMEOUT_ENV.to_owned(), text.to_owned())]))
+        .unwrap_or_default()
+}
+
+fn env_seconds(text: &str) -> Option<Duration> {
+    let seconds = text.parse::<f64>().ok()?;
+    if !seconds.is_finite() || seconds < 0.0_f64 {
+        return None;
+    }
+    Duration::try_from_secs_f64(seconds).ok()
 }
 
 fn send_request(text: &str) -> SendMessageRequest {
@@ -225,7 +268,7 @@ fn status_frame() -> String {
 }
 
 #[derive(Default)]
-struct CountingIds(AtomicU32);
+struct CountingIds(Arc<AtomicU32>);
 
 impl RequestIds for CountingIds {
     fn next_request_id(&mut self) -> String {
@@ -288,7 +331,7 @@ async fn a2a_client_creation(#[case] with_headers: bool) {
         settings.extra_headers = BTreeMap::new();
     }
     let (created, seen) = run_agent(listener, state, async move {
-        create_a2a_client(&pool, settings).await
+        create_a2a_client(&pool, settings, &environment(None)).await
     })
     .await;
     let client = created.unwrap();
@@ -340,6 +383,8 @@ async fn a2a_client_creation(#[case] with_headers: bool) {
 #[case::streaming_empty_events(true, "empty-stream")]
 #[case::streaming_status_last(true, "status")]
 #[case::streaming_buffered_fallback(true, "streamed-json")]
+#[case::streaming_stops_after_message(true, "message-then-status")]
+#[case::streaming_error_event(true, "error-event")]
 #[tokio::test]
 async fn native_send_behavior(#[case] streaming: bool, #[case] scenario: &str) {
     let (listener, base) = start_agent().await;
@@ -350,6 +395,8 @@ async fn native_send_behavior(#[case] streaming: bool, #[case] scenario: &str) {
         )),
         "empty-stream" => Reply::Sse(Vec::new()),
         "status" => Reply::Sse(vec![status_frame()]),
+        "message-then-status" => Reply::Sse(vec![message_frame("first"), status_frame()]),
+        "error-event" => Reply::Sse(vec![String::from("event: error\ndata: boom\n\n")]),
         _ => Reply::Json(buffered_message("hello")),
     };
     let state = AgentState {
@@ -364,17 +411,20 @@ async fn native_send_behavior(#[case] streaming: bool, #[case] scenario: &str) {
         send_request("hello")
     };
     let (outcome, seen) = run_agent(listener, state, async move {
-        let mut client =
-            create_a2a_client(&pool, settings(&base, streaming, Duration::from_secs(5)))
-                .await
-                .unwrap();
+        let mut client = create_a2a_client(
+            &pool,
+            settings(&base, streaming, Duration::from_secs(5)),
+            &environment(None),
+        )
+        .await
+        .unwrap();
         client.request_ids = Arc::new(Mutex::new(Box::new(CountingIds::default())));
         send_message(&client, &request).await
     })
     .await;
     match scenario {
         "task" => assert_eq!(kind_of(&outcome.unwrap()), Some("task")),
-        "message" | "configured" | "streamed-json" => {
+        "message" | "configured" | "streamed-json" | "message-then-status" => {
             assert_eq!(kind_of(&outcome.unwrap()), Some("message"));
         }
         "empty" | "empty-stream" => assert!(matches!(
@@ -385,11 +435,16 @@ async fn native_send_behavior(#[case] streaming: bool, #[case] scenario: &str) {
             outcome,
             Err(ClientError::Final { message }) if message.contains("final event")
         )),
+        "error-event" => assert!(matches!(
+            outcome,
+            Err(ClientError::SseError { message }) if message.contains("boom")
+        )),
         other => panic!("unknown scenario {other}"),
     }
     assert_eq!(team_of(&seen, "/").as_deref(), Some("blue"));
+    let posted = seen.iter().find(|entry| entry.path == "/").unwrap();
+    assert_eq!(posted.version.as_deref(), Some("1.0"));
     if streaming {
-        let posted = seen.iter().find(|entry| entry.path == "/").unwrap();
         assert_eq!(posted.accept.as_deref(), Some("text/event-stream"));
         assert_eq!(posted.cache_control.as_deref(), Some("no-store"));
     }
@@ -401,7 +456,10 @@ async fn native_send_behavior(#[case] streaming: bool, #[case] scenario: &str) {
     };
     assert!(body.contains(&format!("\"method\":\"{method}\"")));
     assert!(body.contains("\"id\":\"test-1\""));
-    if matches!(scenario, "message" | "configured" | "streamed-json") {
+    if matches!(
+        scenario,
+        "message" | "configured" | "streamed-json" | "message-then-status"
+    ) {
         assert!(body.contains("\"messageId\":\"m-1\""));
         assert!(body.contains("\"role\":\"ROLE_USER\""));
         assert!(body.contains("\"text\":\"hello\""));
@@ -430,6 +488,7 @@ async fn native_send_behavior(#[case] streaming: bool, #[case] scenario: &str) {
             let client = create_a2a_client(
                 &empty_pool,
                 settings(&empty_base, true, Duration::from_secs(5)),
+                &environment(None),
             )
             .await
             .unwrap();
@@ -452,6 +511,7 @@ enum RetryOutcome {
 #[case::send_retries_localhost_url("send-retry")]
 #[case::send_stops_after_two_attempts("send-give-up")]
 #[case::stream_retries_before_first_chunk("stream-retry")]
+#[case::stream_stops_after_two_attempts("stream-give-up")]
 #[case::stream_propagates_after_first_chunk("stream-propagate")]
 #[tokio::test]
 async fn native_send_retry(#[case] scenario: &str) {
@@ -480,20 +540,26 @@ async fn native_send_retry(#[case] scenario: &str) {
         seen: Arc::default(),
     };
     let pool = pooled_client();
-    let api_base = if scenario == "send-give-up" {
+    let api_base = if scenario.ends_with("give-up") {
         other
     } else {
         base.clone()
     };
     let request = send_request("hello");
+    let attempts = Arc::new(AtomicU32::new(0));
+    let counter = Arc::clone(&attempts);
     let (outcome, seen) = run_agent(
         listener,
         state,
         Box::pin(async move {
-            let client =
-                create_a2a_client(&pool, settings(&base, streaming, Duration::from_secs(5)))
-                    .await
-                    .unwrap();
+            let mut client = create_a2a_client(
+                &pool,
+                settings(&base, streaming, Duration::from_secs(5)),
+                &environment(None),
+            )
+            .await
+            .unwrap();
+            client.request_ids = Arc::new(Mutex::new(Box::new(CountingIds(counter))));
             if streaming {
                 let target = target_for(&client, Some(api_base));
                 RetryOutcome::Stream(
@@ -527,6 +593,10 @@ async fn native_send_retry(#[case] scenario: &str) {
                 assert!(chunks.first().unwrap().is_ok());
                 assert!(matches!(&chunks[1], Err(SendError::Client(_))));
                 assert_eq!(seen.len(), 2);
+            } else if scenario == "stream-give-up" {
+                assert_eq!(chunks.len(), 1);
+                assert!(matches!(&chunks[0], Err(SendError::NoResponse)));
+                assert_eq!(seen.len(), 1);
             } else {
                 assert_eq!(chunks.len(), 1);
                 assert!(chunks.first().unwrap().is_ok());
@@ -535,21 +605,21 @@ async fn native_send_retry(#[case] scenario: &str) {
             }
         }
     }
+    let expected_attempts = if scenario == "stream-propagate" { 1 } else { 2 };
+    assert_eq!(attempts.load(Ordering::SeqCst), expected_attempts);
 }
 
 #[rstest]
-#[case::default_timeout(0)]
-#[case::configured_timeout(50)]
+#[case::default_timeout(None, None)]
+#[case::environment_timeout(Some("0.05"), None)]
+#[case::configured_timeout(None, Some(50))]
 #[tokio::test]
-async fn client_timeout(#[case] timeout_ms: u64) {
+async fn client_timeout(#[case] env_value: Option<&str>, #[case] configured_ms: Option<u64>) {
     assert_eq!(
         DEFAULT_A2A_AGENT_TIMEOUT.as_secs(),
         6000,
         "the A2A default timeout is 6000 seconds"
     );
-    if timeout_ms == 0 {
-        return;
-    }
     let (listener, base) = start_agent().await;
     let state = AgentState {
         card: card_json(&base, true),
@@ -558,21 +628,34 @@ async fn client_timeout(#[case] timeout_ms: u64) {
     };
     let pool = pooled_client();
     let request = send_request("hello");
+    let configured = configured_ms.map(Duration::from_millis);
+    let expected = configured
+        .or_else(|| env_value.and_then(env_seconds))
+        .unwrap_or(DEFAULT_A2A_AGENT_TIMEOUT);
     let (outcome, _seen) = run_agent(
         listener,
         state,
         Box::pin(async move {
-            let client = create_a2a_client(
-                &pool,
-                settings(&base, false, Duration::from_millis(timeout_ms)),
+            let mut settings = settings(&base, false, Duration::from_secs(5));
+            settings.timeout = configured;
+            let client = create_a2a_client(&pool, settings, &environment(env_value))
+                .await
+                .unwrap();
+            let sent = send_message(&client, &request).await;
+            (
+                client.timeout,
+                client.http_client.limits.connect_timeout,
+                sent,
             )
-            .await
-            .unwrap();
-            send_message(&client, &request).await
         }),
     )
     .await;
-    assert!(matches!(outcome, Err(ClientError::Timeout { .. })));
+    let (client_timeout, connect_timeout, sent) = outcome;
+    assert_eq!(client_timeout, expected);
+    assert_eq!(connect_timeout, expected);
+    if env_value.is_some() || configured_ms.is_some() {
+        assert!(matches!(sent, Err(ClientError::Timeout { .. })));
+    }
 }
 
 #[test]

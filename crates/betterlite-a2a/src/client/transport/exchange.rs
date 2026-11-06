@@ -1,10 +1,11 @@
+use std::mem;
+use std::str;
 use std::time::Duration;
 
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
-use betterlite_openai::stream::SseParser;
 use futures_util::StreamExt as _;
 use futures_util::stream::{BoxStream, iter};
 use http::header::CONTENT_TYPE;
@@ -14,6 +15,10 @@ use serde::de::DeserializeOwned;
 use super::EventStream;
 use crate::client::error::{ClientError, transport_error};
 use crate::client::records::core::{CoreSendResponse, CoreStreamEnvelope, CoreStreamEvent};
+
+const MAX_EVENT_BYTES: usize = 0x0010_0000;
+
+type SseFrame = (Option<String>, Vec<u8>);
 
 #[derive(Deserialize)]
 struct JsonRpcResponse<T> {
@@ -33,9 +38,9 @@ struct JsonRpcError {
 pub(super) async fn buffered_event(
     http: ProxiedClient,
     request: OutboundRequest,
-    deadline: Duration,
+    timeout: Duration,
 ) -> Result<EventStream, ClientError> {
-    buffered_result(http, request, deadline)
+    buffered_result(http, request, timeout)
         .await
         .map(|result| iter(send_event(result).map(Ok)).boxed())
 }
@@ -43,13 +48,13 @@ pub(super) async fn buffered_event(
 async fn buffered_result(
     http: ProxiedClient,
     request: OutboundRequest,
-    deadline: Duration,
+    timeout: Duration,
 ) -> Result<CoreSendResponse, ClientError> {
     let url_text = request.url.to_string();
     let response = http
         .send_buffered(request)
         .await
-        .map_err(|source| transport_error(&url_text, deadline, source))?;
+        .map_err(|source| transport_error(&url_text, timeout, source))?;
     check_status(response.status, &url_text)?;
     parse_rpc(&response.body, &url_text)
 }
@@ -64,13 +69,13 @@ fn send_event(response: CoreSendResponse) -> Option<CoreStreamEvent> {
 pub(super) async fn streaming_events(
     http: ProxiedClient,
     request: OutboundRequest,
-    deadline: Duration,
+    timeout: Duration,
 ) -> Result<EventStream, ClientError> {
     let url_text = request.url.to_string();
     let response = http
         .send(request)
         .await
-        .map_err(|source| transport_error(&url_text, deadline, source))?;
+        .map_err(|source| transport_error(&url_text, timeout, source))?;
     check_status(response.response.status().as_u16(), &url_text)?;
     let content_type = response
         .response
@@ -80,12 +85,12 @@ pub(super) async fn streaming_events(
         .unwrap_or_default()
         .to_owned();
     if content_type.contains("text/event-stream") {
-        return Ok(sse_events(response.body_stream(), url_text, deadline));
+        return Ok(sse_events(response.body_stream(), url_text, timeout));
     }
     let buffered = response
         .buffered(http.limits.body_bytes)
         .await
-        .map_err(|source| transport_error(&url_text, deadline, source))?;
+        .map_err(|source| transport_error(&url_text, timeout, source))?;
     Ok(iter(Some(stream_event(&buffered.body, &url_text))).boxed())
 }
 
@@ -99,27 +104,110 @@ fn check_status(status: u16, url: &str) -> Result<(), ClientError> {
     })
 }
 
+#[derive(Default)]
+struct EventFrames {
+    buffer: Vec<u8>,
+}
+
+impl EventFrames {
+    fn push(&mut self, bytes: &[u8], url: &str) -> Result<Vec<SseFrame>, ClientError> {
+        if self.buffer.len().saturating_add(bytes.len()) > MAX_EVENT_BYTES {
+            return Err(ClientError::EventTooLarge {
+                url: url.to_owned(),
+            });
+        }
+        self.buffer.extend_from_slice(bytes);
+        let mut frames = Vec::new();
+        while let Some(end) = blank_line(&self.buffer) {
+            let frame: Vec<u8> = self.buffer.drain(..end).collect();
+            if let Some(parts) = frame_parts(&frame) {
+                frames.push(parts);
+            }
+        }
+        Ok(frames)
+    }
+
+    fn finish(&mut self) -> Option<SseFrame> {
+        if self.buffer.is_empty() {
+            return None;
+        }
+        let frame = mem::take(&mut self.buffer);
+        frame_parts(&frame)
+    }
+}
+
+fn blank_line(buffer: &[u8]) -> Option<usize> {
+    let lf = buffer
+        .windows(2)
+        .position(|pair| pair == b"\n\n")
+        .and_then(|at| at.checked_add(2));
+    let crlf = buffer
+        .windows(4)
+        .position(|pair| pair == b"\r\n\r\n")
+        .and_then(|at| at.checked_add(4));
+    [lf, crlf].into_iter().flatten().min()
+}
+
+fn frame_parts(frame: &[u8]) -> Option<SseFrame> {
+    let mut event = None;
+    let mut data = Vec::new();
+    for line in frame.split(|byte| *byte == b'\n') {
+        let trimmed = line.strip_suffix(b"\r").unwrap_or(line);
+        if let Some(name) = trimmed.strip_prefix(b"event:") {
+            event = str::from_utf8(name)
+                .ok()
+                .map(|value| value.trim().to_owned());
+            continue;
+        }
+        let Some(value) = trimmed.strip_prefix(b"data:") else {
+            continue;
+        };
+        if !data.is_empty() {
+            data.push(b'\n');
+        }
+        data.extend_from_slice(value.strip_prefix(b" ").unwrap_or(value));
+    }
+    (!data.is_empty()).then_some((event, data))
+}
+
+fn frame_event(frame: SseFrame, url: &str) -> Result<CoreStreamEvent, ClientError> {
+    let (event, payload) = frame;
+    if event.as_deref() == Some("error") {
+        return Err(ClientError::SseError {
+            message: String::from_utf8(payload).unwrap_or_default(),
+        });
+    }
+    stream_event(&payload, url)
+}
+
 fn sse_events(
     mut body: BoxStream<'static, Result<Vec<u8>, HttpError>>,
     url: String,
-    deadline: Duration,
+    timeout: Duration,
 ) -> EventStream {
     async_stream::stream! {
-        let mut parser = SseParser::default();
+        let mut parser = EventFrames::default();
         while let Some(chunk) = body.next().await {
             let bytes = match chunk {
                 Ok(bytes) => bytes,
                 Err(source) => {
-                    yield Err(read_error(&url, deadline, source));
+                    yield Err(read_error(&url, timeout, source));
                     return;
                 }
             };
-            let Ok(payloads) = parser.push(&bytes) else {
-                yield Err(ClientError::EventTooLarge { url: url.clone() });
-                return;
+            let frames = match parser.push(&bytes, &url) {
+                Ok(frames) => frames,
+                Err(error) => {
+                    yield Err(error);
+                    return;
+                }
             };
-            for payload in payloads {
-                match stream_event(&payload, &url) {
+            for frame in frames {
+                match frame_event(frame, &url) {
+                    Ok(event @ CoreStreamEvent::Message(_)) => {
+                        yield Ok(event);
+                        return;
+                    }
                     Ok(event) => yield Ok(event),
                     Err(error) => {
                         yield Err(error);
@@ -128,13 +216,10 @@ fn sse_events(
                 }
             }
         }
-        for payload in parser.finish() {
-            match stream_event(&payload, &url) {
+        if let Some(frame) = parser.finish() {
+            match frame_event(frame, &url) {
                 Ok(event) => yield Ok(event),
-                Err(error) => {
-                    yield Err(error);
-                    return;
-                }
+                Err(error) => yield Err(error),
             }
         }
     }
@@ -181,7 +266,7 @@ where
     })
 }
 
-fn read_error(url: &str, deadline: Duration, failure: HttpError) -> ClientError {
+fn read_error(url: &str, timeout: Duration, failure: HttpError) -> ClientError {
     match failure {
         HttpError::Request(source) => ClientError::Connection {
             url: url.to_owned(),
@@ -189,7 +274,7 @@ fn read_error(url: &str, deadline: Duration, failure: HttpError) -> ClientError 
         },
         HttpError::Timeout => ClientError::Timeout {
             url: url.to_owned(),
-            timeout: deadline,
+            timeout,
             source: None,
         },
         HttpError::TooLarge { .. } => ClientError::EventTooLarge {
