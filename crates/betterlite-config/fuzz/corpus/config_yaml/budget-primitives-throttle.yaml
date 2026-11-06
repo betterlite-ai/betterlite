@@ -1,0 +1,2 @@
+litellm_settings:
+  budget_exceeded_throttle_percentage: 0.25
