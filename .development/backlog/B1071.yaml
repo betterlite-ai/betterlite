@@ -1,7 +1,7 @@
 id: B1071
 milestone: M5 api families
 title: Vector file contracts
-status: todo
+status: done
 depends_on: [B171, B204]
 file: tasks/B1071-vector-file-contracts.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/vector_store_files/utils.py"
 parent: B090
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 779

@@ -2033,6 +2033,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-http",
  "betterlite-models",
+ "betterlite-openai",
  "futures-util",
  "http 1.5.0",
  "rstest",
