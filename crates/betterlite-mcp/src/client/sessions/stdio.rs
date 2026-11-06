@@ -5,16 +5,18 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use rustix::io::Errno;
-use rustix::process::{Pid, Signal, kill_process_group};
+use rustix::process::{Pid, Signal, kill_process_group, test_kill_process_group};
 use tokio::process as tokio_process;
-use tokio::time::timeout;
+use tokio::time::{Instant, sleep, timeout};
 use tokio_process::{Child, ChildStdin, ChildStdout};
+use tracing::warn;
 
 use super::error::ExitFailure;
 use super::transport::{StdioServerParameters, TransportContext};
 
 pub const PROCESS_TERMINATION_TIMEOUT: Duration = Duration::from_secs(2);
 pub const FORCE_KILL_TIMEOUT: Duration = Duration::from_secs(2);
+const GROUP_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 pub struct StdioStreams {
     pub pid: u32,
@@ -82,24 +84,85 @@ impl StdioServer {
             return Ok(());
         };
         let leader = child.id();
-        if timeout(PROCESS_TERMINATION_TIMEOUT, child.wait())
+        let leader_reaped = timeout(PROCESS_TERMINATION_TIMEOUT, child.wait())
             .await
-            .is_err()
-        {
-            kill_group(leader, Signal::TERM)?;
-            if timeout(FORCE_KILL_TIMEOUT, child.wait()).await.is_err() {
-                kill_group(leader, Signal::KILL)?;
-                child.wait().await.map_err(ExitFailure::from)?;
-            }
-        }
-        Ok(())
+            .is_ok();
+        terminate_group(leader, &mut child, leader_reaped).await
     }
+}
+
+// A SIGTERM to the group gets the server and its children a window to flush before SIGKILL
+async fn terminate_group(
+    leader: Option<u32>,
+    child: &mut Child,
+    mut leader_reaped: bool,
+) -> Result<(), ExitFailure<io::Error>> {
+    if signal_group(leader, Signal::TERM)? == GroupState::Gone {
+        return Ok(());
+    }
+    let deadline = Instant::now()
+        .checked_add(FORCE_KILL_TIMEOUT)
+        .unwrap_or_else(Instant::now);
+    while Instant::now() < deadline {
+        if !leader_reaped {
+            leader_reaped = child.try_wait().map_err(ExitFailure::from)?.is_some();
+        }
+        if !group_exists(leader) {
+            return Ok(());
+        }
+        sleep(GROUP_POLL_INTERVAL).await;
+    }
+    signal_group_ignoring(leader, Signal::KILL);
+    if !leader_reaped {
+        child.wait().await.map_err(ExitFailure::from)?;
+    }
+    Ok(())
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GroupState {
+    Signalled,
+    Gone,
+}
+
+fn signal_group(pid: Option<u32>, signal: Signal) -> Result<GroupState, ExitFailure<io::Error>> {
+    let Some(leader) = to_pid(pid) else {
+        return Ok(GroupState::Gone);
+    };
+    match kill_process_group(leader, signal) {
+        Ok(()) => Ok(GroupState::Signalled),
+        Err(Errno::SRCH) => Ok(GroupState::Gone),
+        Err(Errno::PERM) => {
+            warn!("the stdio server process group rejects {signal:?}; keeping the escalation");
+            Ok(GroupState::Signalled)
+        }
+        Err(error) => Err(ExitFailure::Failure(Arc::new(io::Error::from(error)))),
+    }
+}
+
+fn signal_group_ignoring(pid: Option<u32>, signal: Signal) {
+    if let Some(leader) = to_pid(pid) {
+        let _ignored = kill_process_group(leader, signal);
+    }
+}
+
+// A zombie leader keeps the group visible to signal 0, so the leader is reaped during the wait
+fn group_exists(pid: Option<u32>) -> bool {
+    let Some(leader) = to_pid(pid) else {
+        return false;
+    };
+    test_kill_process_group(leader) != Err(Errno::SRCH)
+}
+
+fn to_pid(pid: Option<u32>) -> Option<Pid> {
+    pid.and_then(|raw| i32::try_from(raw).ok())
+        .and_then(Pid::from_raw)
 }
 
 impl Drop for StdioServer {
     fn drop(&mut self) {
         if let Some(child) = self.child.as_ref() {
-            drop(kill_group(child.id(), Signal::KILL));
+            signal_group_ignoring(child.id(), Signal::KILL);
         }
     }
 }
@@ -132,17 +195,4 @@ fn unsupported(name: &'static str) -> io::Error {
         io::ErrorKind::Unsupported,
         format!("the stdio runtime has no {name} transport"),
     )
-}
-
-fn kill_group(pid: Option<u32>, signal: Signal) -> Result<(), ExitFailure<io::Error>> {
-    let Some(leader) = pid
-        .and_then(|raw| i32::try_from(raw).ok())
-        .and_then(Pid::from_raw)
-    else {
-        return Ok(());
-    };
-    match kill_process_group(leader, signal) {
-        Ok(()) | Err(Errno::SRCH) => Ok(()),
-        Err(error) => Err(ExitFailure::Failure(Arc::new(io::Error::from(error)))),
-    }
 }

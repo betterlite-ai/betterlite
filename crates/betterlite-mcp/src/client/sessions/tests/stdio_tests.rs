@@ -102,6 +102,68 @@ fn process_exists(pid: u32) -> bool {
     Path::new(&format!("/proc/{pid}")).exists()
 }
 
+fn process_running(pid: u32) -> bool {
+    let Ok(status) = fs::read_to_string(format!("/proc/{pid}/status")) else {
+        return false;
+    };
+    status
+        .lines()
+        .find_map(|line| line.strip_prefix("State:"))
+        .is_some_and(|state| !state.trim_start().starts_with('Z'))
+}
+
+#[tokio::test]
+async fn a_stdio_server_child_that_ignores_term_is_killed_after_the_leader_exits() {
+    let owner = process::id();
+    let pid_file = env::temp_dir().join(format!("betterlite-b4744-child-{owner}.pid"));
+    drop(fs::remove_file(&pid_file));
+    let pid_path = pid_file.display().to_string();
+    let script = format!(
+        "/bin/sh -c 'trap \"\" TERM; while :; do /bin/sleep 0.1; done' & echo $! > {pid_path}; trap 'exit 0' TERM; wait"
+    );
+    let runtime = StdioRuntime {
+        factory: Arc::new(TestFactory::default()),
+    };
+    let mut transport = runtime.stdio_client(parameters(
+        "/bin/sh",
+        vec!["-c".to_owned(), script],
+        BTreeMap::new(),
+    ));
+    let streams = transport.enter().await.unwrap();
+    let leader = streams.pid;
+    drop(streams);
+    sleep(Duration::from_millis(300)).await;
+    let child = fs::read_to_string(&pid_file).expect("the child wrote its pid");
+    let child_pid = child.trim().parse::<u32>().expect("the pid is a number");
+    assert!(process_running(child_pid));
+    transport.exit().await.unwrap();
+    sleep(Duration::from_millis(300)).await;
+    assert!(!process_exists(leader));
+    assert!(
+        !process_running(child_pid),
+        "the descendant survived the owner"
+    );
+    drop(fs::remove_file(&pid_file));
+}
+
+#[tokio::test]
+async fn a_stdio_server_that_ignores_term_is_killed_after_the_force_window() {
+    let runtime = StdioRuntime {
+        factory: Arc::new(TestFactory::default()),
+    };
+    let script = "trap '' TERM; while :; do /bin/sleep 0.1; done";
+    let mut transport = runtime.stdio_client(parameters(
+        "/bin/sh",
+        vec!["-c".to_owned(), script.to_owned()],
+        BTreeMap::new(),
+    ));
+    let streams = transport.enter().await.unwrap();
+    let pid = streams.pid;
+    drop(streams);
+    transport.exit().await.unwrap();
+    assert!(!process_exists(pid));
+}
+
 #[tokio::test]
 async fn the_stdio_server_dies_when_its_owner_exits() {
     let runtime = StdioRuntime {
