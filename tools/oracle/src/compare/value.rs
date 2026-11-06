@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use serde_json::Value;
 
-pub(super) fn remove_pointer(value: &mut Value, pointer: &str) {
+pub(crate) fn remove_pointer(value: &mut Value, pointer: &str) {
     if pointer.is_empty() {
         *value = Value::Null;
         return;
@@ -19,7 +19,7 @@ pub(super) fn remove_pointer(value: &mut Value, pointer: &str) {
     }
 }
 
-pub(super) fn first_difference(left: &Value, right: &Value, pointer: &str) -> Option<String> {
+pub(crate) fn first_difference(left: &Value, right: &Value, pointer: &str) -> Option<String> {
     if left == right {
         return None;
     }
