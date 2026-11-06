@@ -16,11 +16,11 @@ pub(super) enum FixtureError {
     Contract(#[from] VectorStoreContractError),
 }
 
-pub(super) struct MinimalConfig;
+pub(super) struct Fixture {
+    pub(super) record: bool,
+}
 
-pub(super) struct RecordingConfig;
-
-impl VectorStoreConfig for MinimalConfig {
+impl VectorStoreConfig for Fixture {
     type Error = FixtureError;
 
     fn auth_credentials(&self, _litellm_params: &Params) -> AuthCredentials {
@@ -29,6 +29,26 @@ impl VectorStoreConfig for MinimalConfig {
 
     fn endpoints_by_type(&self) -> EndpointsByType {
         EndpointsByType::default()
+    }
+
+    fn map_params(
+        &self,
+        non_default_params: &Params,
+        mut optional_params: Params,
+        drop_params: bool,
+    ) -> Params {
+        if !self.record {
+            return optional_params;
+        }
+        let observed = Params::from([
+            ("non_default_params".to_owned(), object(non_default_params)),
+            ("drop_params".to_owned(), Json::Bool(drop_params)),
+        ]);
+        optional_params.insert(
+            "observed".to_owned(),
+            Json::Object(observed.into_iter().collect()),
+        );
+        optional_params
     }
 
     fn transform_search_request(
@@ -77,9 +97,7 @@ impl VectorStoreConfig for MinimalConfig {
         _response: &VectorStoreResponse,
         _logging: &mut VectorStoreLogging,
     ) -> Result<VectorStoreSearchResponse, Self::Error> {
-        Err(FixtureError::Contract(
-            VectorStoreContractError::ApiBaseRequired,
-        ))
+        Ok(VectorStoreSearchResponse::default())
     }
 
     fn transform_create_request(
@@ -87,85 +105,14 @@ impl VectorStoreConfig for MinimalConfig {
         _optional_params: &Params,
         _api_base: &str,
     ) -> Result<PreparedRequest, Self::Error> {
-        Err(FixtureError::Contract(
-            VectorStoreContractError::ApiBaseRequired,
-        ))
+        Ok((String::new(), Params::new()))
     }
 
     fn transform_create_response(
         &self,
         _response: &VectorStoreResponse,
     ) -> Result<VectorStoreCreateResponse, Self::Error> {
-        Err(FixtureError::Contract(
-            VectorStoreContractError::ApiBaseRequired,
-        ))
-    }
-}
-
-impl VectorStoreConfig for RecordingConfig {
-    type Error = FixtureError;
-
-    fn auth_credentials(&self, _litellm_params: &Params) -> AuthCredentials {
-        AuthCredentials::default()
-    }
-
-    fn endpoints_by_type(&self) -> EndpointsByType {
-        EndpointsByType::default()
-    }
-
-    fn map_params(
-        &self,
-        non_default_params: &Params,
-        mut optional_params: Params,
-        drop_params: bool,
-    ) -> Params {
-        let observed = Params::from([
-            ("non_default_params".to_owned(), object(non_default_params)),
-            ("drop_params".to_owned(), Json::Bool(drop_params)),
-        ]);
-        optional_params.insert(
-            "observed".to_owned(),
-            Json::Object(observed.into_iter().collect()),
-        );
-        optional_params
-    }
-
-    fn transform_search_request(
-        &self,
-        _request: SearchRequest<'_>,
-    ) -> Result<PreparedRequest, Self::Error> {
-        Err(FixtureError::Contract(
-            VectorStoreContractError::ApiBaseRequired,
-        ))
-    }
-
-    fn transform_search_response(
-        &self,
-        _response: &VectorStoreResponse,
-        _logging: &mut VectorStoreLogging,
-    ) -> Result<VectorStoreSearchResponse, Self::Error> {
-        Err(FixtureError::Contract(
-            VectorStoreContractError::ApiBaseRequired,
-        ))
-    }
-
-    fn transform_create_request(
-        &self,
-        _optional_params: &Params,
-        _api_base: &str,
-    ) -> Result<PreparedRequest, Self::Error> {
-        Err(FixtureError::Contract(
-            VectorStoreContractError::ApiBaseRequired,
-        ))
-    }
-
-    fn transform_create_response(
-        &self,
-        _response: &VectorStoreResponse,
-    ) -> Result<VectorStoreCreateResponse, Self::Error> {
-        Err(FixtureError::Contract(
-            VectorStoreContractError::ApiBaseRequired,
-        ))
+        Ok(VectorStoreCreateResponse::default())
     }
 }
 

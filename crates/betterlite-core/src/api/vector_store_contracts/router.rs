@@ -25,24 +25,21 @@ pub trait VectorStoreRouter: Send + Sync {
         configuration: Params,
     ) -> Result<EmbeddingResponse, BaseLlmException>;
 
+    // one async execution serves both LiteLLM entry points unless a router makes them differ
     async fn aembedding(
         &self,
         model: &str,
         input: &[String],
         configuration: Params,
-    ) -> Result<EmbeddingResponse, BaseLlmException>;
+    ) -> Result<EmbeddingResponse, BaseLlmException> {
+        self.embedding(model, input, configuration).await
+    }
 }
 
 pub struct RouterEmbeddingExecutor<R> {
     pub router: R,
     pub metadata: Params,
     pub direct: DirectEmbeddingExecutor,
-}
-
-#[derive(Debug, Clone, Copy)]
-enum Route {
-    Embed,
-    Aembed,
 }
 
 impl<R: VectorStoreRouter> RouterEmbeddingExecutor<R> {
@@ -94,28 +91,6 @@ impl<R: VectorStoreRouter> RouterEmbeddingExecutor<R> {
             .iter()
             .any(|deployment| deployment.litellm_params.model.as_deref() == Some(model))
     }
-
-    async fn run(
-        &self,
-        route: Route,
-        model: &str,
-        query: &str,
-        configuration: &Params,
-    ) -> Result<EmbeddingResponse, VectorStoreEmbeddingError> {
-        let kwargs = self.embedding_kwargs(configuration);
-        let input = [query.to_owned()];
-        if self.router_serves(model) {
-            let served = match route {
-                Route::Embed => self.router.embedding(model, &input, kwargs).await,
-                Route::Aembed => self.router.aembedding(model, &input, kwargs).await,
-            };
-            return served.map_err(|source| VectorStoreEmbeddingError::Router { source });
-        }
-        match route {
-            Route::Embed => self.direct.embed(model, query, &kwargs).await,
-            Route::Aembed => self.direct.aembed(model, query, &kwargs).await,
-        }
-    }
 }
 
 #[async_trait]
@@ -126,15 +101,15 @@ impl<R: VectorStoreRouter> VectorStoreEmbeddingExecutor for RouterEmbeddingExecu
         query: &str,
         configuration: &Params,
     ) -> Result<EmbeddingResponse, VectorStoreEmbeddingError> {
-        self.run(Route::Embed, model, query, configuration).await
-    }
-
-    async fn aembed(
-        &self,
-        model: &str,
-        query: &str,
-        configuration: &Params,
-    ) -> Result<EmbeddingResponse, VectorStoreEmbeddingError> {
-        self.run(Route::Aembed, model, query, configuration).await
+        let kwargs = self.embedding_kwargs(configuration);
+        let input = [query.to_owned()];
+        if self.router_serves(model) {
+            return self
+                .router
+                .embedding(model, &input, kwargs)
+                .await
+                .map_err(|source| VectorStoreEmbeddingError::Router { source });
+        }
+        self.direct.embed(model, query, &kwargs).await
     }
 }

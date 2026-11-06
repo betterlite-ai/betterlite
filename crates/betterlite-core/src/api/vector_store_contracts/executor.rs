@@ -29,15 +29,6 @@ impl VectorStoreEmbeddingExecutor for DirectEmbeddingExecutor {
     ) -> Result<EmbeddingResponse, VectorStoreEmbeddingError> {
         self.send(model, query, configuration).await
     }
-
-    async fn aembed(
-        &self,
-        model: &str,
-        query: &str,
-        configuration: &Params,
-    ) -> Result<EmbeddingResponse, VectorStoreEmbeddingError> {
-        self.send(model, query, configuration).await
-    }
 }
 
 impl DirectEmbeddingExecutor {

@@ -164,10 +164,13 @@ pub trait VectorStoreEmbeddingExecutor: Send + Sync {
         configuration: &Params,
     ) -> Result<EmbeddingResponse, VectorStoreEmbeddingError>;
 
+    // betterlite has one async execution, so LiteLLM's aembed is the same call
     async fn aembed(
         &self,
         model: &str,
         query: &str,
         configuration: &Params,
-    ) -> Result<EmbeddingResponse, VectorStoreEmbeddingError>;
+    ) -> Result<EmbeddingResponse, VectorStoreEmbeddingError> {
+        self.embed(model, query, configuration).await
+    }
 }

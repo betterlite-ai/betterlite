@@ -16,7 +16,7 @@ use secrecy::SecretString;
 use serde::Deserialize;
 use serde_json::{Number, Value, json};
 
-use fixtures::{MinimalConfig, RecordingConfig};
+use fixtures::Fixture;
 
 mod fixtures;
 
@@ -112,8 +112,8 @@ fn optional_filters(create: &[Params], search: &[Params]) -> Value {
         .iter()
         .map(|params| {
             json!({
-                "default": requested_search_params(params, &MinimalConfig),
-                "mapped": requested_search_params(params, &RecordingConfig),
+                "default": requested_search_params(params, &Fixture { record: false }),
+                "mapped": requested_search_params(params, &Fixture { record: true }),
             })
         })
         .collect();
@@ -170,8 +170,9 @@ fn slot_value(slot: Option<&Slot>, field: &'static str) -> Option<SlotValue> {
 }
 
 fn defaults_report(input: &DefaultsInput) -> crate::helpers::HelperResult {
+    let fixture = Fixture { record: false };
     let api_key = input.api_key.as_deref().map(SecretString::from);
-    let (signed_headers, signed_body) = MinimalConfig.sign_request(SignRequest {
+    let (signed_headers, signed_body) = fixture.sign_request(SignRequest {
         headers: &input.headers,
         optional_params: &input.optional_params,
         request_data: &input.request_data,
@@ -183,19 +184,19 @@ fn defaults_report(input: &DefaultsInput) -> crate::helpers::HelperResult {
         .iter()
         .map(|api_base| complete_url(api_base.as_deref()))
         .collect();
-    let raised: BaseLlmException = MinimalConfig.error_class(
+    let raised: BaseLlmException = fixture.error_class(
         &input.error.message,
         input.error.status_code,
         input.error.headers.clone(),
     );
     let response = VectorStoreSearchResponse::default();
-    let (prompt, completion) = MinimalConfig.calculate_vector_store_cost(&response);
+    let (prompt, completion) = fixture.calculate_vector_store_cost(&response);
     let sync = forward(&input.forward, false)?;
     let asynchronous = forward(&input.forward, true)?;
     Ok(json!({
-        "supported": MinimalConfig.supported_params("openai/text-embedding-3-small"),
-        "mapped": MinimalConfig.map_params(&input.non_default_params, input.optional_params.clone(), false),
-        "environment": MinimalConfig.validate_environment(&input.headers, None),
+        "supported": fixture.supported_params("openai/text-embedding-3-small"),
+        "mapped": fixture.map_params(&input.non_default_params, input.optional_params.clone(), false),
+        "environment": fixture.validate_environment(&input.headers, None),
         "urls": urls,
         "signed_headers": signed_headers,
         "signed_body": signed_body,
@@ -211,7 +212,7 @@ fn defaults_report(input: &DefaultsInput) -> crate::helpers::HelperResult {
 }
 
 fn complete_url(api_base: Option<&str>) -> Value {
-    match MinimalConfig.complete_url(api_base, &Params::new()) {
+    match (Fixture { record: false }).complete_url(api_base, &Params::new()) {
         Ok(url) => Value::String(url),
         Err(error) => json!({"error": {"class": "ValueError", "message": error.to_string()}}),
     }
@@ -242,10 +243,10 @@ fn forward(input: &ForwardInput, asynchronous: bool) -> crate::helpers::HelperRe
             .build()
             .map_err(|error| fixture_error(error.to_string()))?;
         runtime
-            .block_on(MinimalConfig.transform_search_request_async(request))
+            .block_on(Fixture { record: false }.transform_search_request_async(request))
             .map_err(|error| fixture_error(error.to_string()))?
     } else {
-        MinimalConfig
+        Fixture { record: false }
             .transform_search_request(request)
             .map_err(|error| fixture_error(error.to_string()))?
     };

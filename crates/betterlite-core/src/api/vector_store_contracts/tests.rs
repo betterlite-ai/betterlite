@@ -435,7 +435,6 @@ struct RouterCall {
     model: String,
     input: Vec<String>,
     configuration: Params,
-    asynchronous: bool,
 }
 
 #[derive(Debug, Default)]
@@ -477,6 +476,15 @@ impl FakeRouter {
     fn teams(&self) -> Vec<Option<String>> {
         self.teams.lock().expect("teams").clone()
     }
+
+    fn record(&self, model: &str, input: &[String], configuration: Params) -> EmbeddingResponse {
+        self.calls.lock().expect("calls").push(RouterCall {
+            model: model.to_owned(),
+            input: input.to_vec(),
+            configuration,
+        });
+        answer()
+    }
 }
 
 fn answer() -> EmbeddingResponse {
@@ -503,28 +511,7 @@ impl VectorStoreRouter for FakeRouter {
         input: &[String],
         configuration: Params,
     ) -> Result<EmbeddingResponse, BaseLlmException> {
-        self.calls.lock().expect("calls").push(RouterCall {
-            model: model.to_owned(),
-            input: input.to_vec(),
-            configuration,
-            asynchronous: false,
-        });
-        Ok(answer())
-    }
-
-    async fn aembedding(
-        &self,
-        model: &str,
-        input: &[String],
-        configuration: Params,
-    ) -> Result<EmbeddingResponse, BaseLlmException> {
-        self.calls.lock().expect("calls").push(RouterCall {
-            model: model.to_owned(),
-            input: input.to_vec(),
-            configuration,
-            asynchronous: true,
-        });
-        Ok(answer())
+        Ok(self.record(model, input, configuration))
     }
 }
 
@@ -556,7 +543,6 @@ async fn router_is_selected_when_a_model_resolves() {
             configuration: params(
                 r#"{"dimensions": 2, "metadata": {"keep": "yes", "team": "new", "user_api_key_team_id": "t"}}"#
             ),
-            asynchronous: false,
         }]
     );
     assert_eq!(executor.router.teams(), vec![Some(String::from("t"))]);
@@ -578,7 +564,10 @@ async fn router_is_selected_when_a_deployment_serves_the_model() {
     assert_eq!(response.object, "list");
     let calls = executor.router.calls();
     assert_eq!(calls.len(), 1);
-    assert!(calls.first().is_some_and(|call| call.asynchronous));
+    assert_eq!(
+        calls.first().map(|call| call.model.as_str()),
+        Some("openai/text-embedding-3-small")
+    );
 }
 
 #[tokio::test]
