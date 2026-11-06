@@ -143,3 +143,17 @@ fn reads_the_failure_threshold_environment() {
 fn rejects_invalid_cooldown_settings(#[case] source: &str, #[case] variables: &[(&str, &str)]) {
     settings(source, variables).unwrap_err();
 }
+
+#[rstest]
+#[case::allowed_fails(
+    "router_settings:\n  allowed_fails: true",
+    "router_settings.allowed_fails"
+)]
+#[case::cooldown_time(
+    "router_settings:\n  cooldown_time: true",
+    "router_settings.cooldown_time"
+)]
+fn names_the_router_setting_path(#[case] source: &str, #[case] path: &str) {
+    let error = settings(source, &[]).unwrap_err();
+    assert!(error.contains(path), "{error}");
+}

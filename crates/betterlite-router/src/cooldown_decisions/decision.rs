@@ -5,9 +5,7 @@ use crate::cooldown_decisions::failure::{
     ErrorStatus, FailureClass, FailureFacts, Seconds, exception_class_name,
     is_background_cost_poll_404, is_caller_timeout_408,
 };
-use crate::cooldown_decisions::policy::{
-    AllowedFailsPolicy, CooldownPolicy, FailureThresholds, PolicyOrder,
-};
+use crate::cooldown_decisions::policy::{AllowedFailsPolicy, CooldownPolicy, PolicyOrder};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -254,9 +252,10 @@ fn failure_ratio_decision(
     {
         return CooldownDecision::COOLDOWN;
     }
+    let ratio = Decimal::from(minute.failures).checked_div(Decimal::from(total));
     if total >= policy.thresholds.minimum_requests
         && !single
-        && exceeds_ratio(minute, total, &policy.thresholds)
+        && ratio.is_some_and(|value| value > policy.thresholds.ratio)
     {
         return CooldownDecision::COOLDOWN;
     }
@@ -266,15 +265,7 @@ fn failure_ratio_decision(
     CooldownDecision::COOLDOWN
 }
 
-fn exceeds_ratio(minute: MinuteSamples, total: u64, thresholds: &FailureThresholds) -> bool {
-    if total == 0 {
-        return Decimal::ZERO > thresholds.ratio;
-    }
-    let ratio = Decimal::from(minute.failures).checked_div(Decimal::from(total));
-    ratio.is_some_and(|value| value > thresholds.ratio)
-}
-
-const fn should_retry(code: i64) -> bool {
+pub(super) const fn should_retry(code: i64) -> bool {
     if code == 408 || code == 409 || code == 429 {
         return true;
     }

@@ -8,15 +8,20 @@ use super::decision::{
 use super::failure::{ErrorStatus, FailureClass, FailureFacts, Seconds, TimeoutFacts};
 use super::policy::{AllowedFailsPolicy, CooldownPolicy, FailureThresholds};
 
+#[derive(Debug, Clone, Copy)]
 enum PolicyEntry {
     ContentPolicyViolation,
     BadRequest,
+    Authentication,
+    Timeout,
     RateLimit,
+    InternalServer,
     ServiceUnavailable,
     BadGateway,
+    NotFound,
 }
 
-fn policy_with(entry: &PolicyEntry, value: u32) -> AllowedFailsPolicy {
+fn policy_with(entry: PolicyEntry, value: u32) -> AllowedFailsPolicy {
     let mut policy = AllowedFailsPolicy::default();
     match entry {
         PolicyEntry::ContentPolicyViolation => {
@@ -25,14 +30,26 @@ fn policy_with(entry: &PolicyEntry, value: u32) -> AllowedFailsPolicy {
         PolicyEntry::BadRequest => {
             policy.bad_request_error = Some(value);
         }
+        PolicyEntry::Authentication => {
+            policy.authentication_error = Some(value);
+        }
+        PolicyEntry::Timeout => {
+            policy.timeout_error = Some(value);
+        }
         PolicyEntry::RateLimit => {
             policy.rate_limit_error = Some(value);
+        }
+        PolicyEntry::InternalServer => {
+            policy.internal_server_error = Some(value);
         }
         PolicyEntry::ServiceUnavailable => {
             policy.service_unavailable_error = Some(value);
         }
         PolicyEntry::BadGateway => {
             policy.bad_gateway_error = Some(value);
+        }
+        PolicyEntry::NotFound => {
+            policy.not_found_error = Some(value);
         }
     }
     policy
@@ -128,18 +145,18 @@ fn counter_ttl(decision: &CooldownDecision) -> Option<Seconds> {
 
 fn case_deployment_policy_wins() -> CooldownDecision {
     let mut router = policy();
-    router.allowed_fails_policy = Some(policy_with(&PolicyEntry::BadRequest, 100));
+    router.allowed_fails_policy = Some(policy_with(PolicyEntry::BadRequest, 100));
     let mut deployment = deployment();
-    deployment.allowed_fails_policy = Some(policy_with(&PolicyEntry::ContentPolicyViolation, 1));
+    deployment.allowed_fails_policy = Some(policy_with(PolicyEntry::ContentPolicyViolation, 1));
     let failure = failure(FailureClass::ContentPolicyViolation, ErrorStatus::Code(400));
     run(&router, Some(&deployment), &failure, minute(0, 0), 1)
 }
 
 fn case_deployment_policy_miss_falls_back_to_router() -> CooldownDecision {
     let mut router = policy();
-    router.allowed_fails_policy = Some(policy_with(&PolicyEntry::RateLimit, 2));
+    router.allowed_fails_policy = Some(policy_with(PolicyEntry::RateLimit, 2));
     let mut deployment = deployment();
-    deployment.allowed_fails_policy = Some(policy_with(&PolicyEntry::BadGateway, 9));
+    deployment.allowed_fails_policy = Some(policy_with(PolicyEntry::BadGateway, 9));
     let failure = failure(FailureClass::RateLimit, ErrorStatus::Code(429));
     run(&router, Some(&deployment), &failure, minute(0, 0), 2)
 }
@@ -147,7 +164,7 @@ fn case_deployment_policy_miss_falls_back_to_router() -> CooldownDecision {
 fn case_router_policy_applies() -> CooldownDecision {
     let mut router = policy();
     router.allowed_fails = 10;
-    router.allowed_fails_policy = Some(policy_with(&PolicyEntry::RateLimit, 2));
+    router.allowed_fails_policy = Some(policy_with(PolicyEntry::RateLimit, 2));
     let deployment = deployment();
     let failure = failure(FailureClass::RateLimit, ErrorStatus::Code(500));
     run(&router, Some(&deployment), &failure, minute(0, 0), 2)
@@ -282,7 +299,7 @@ fn case_api_connection() -> CooldownDecision {
 fn case_deployment_cooldown_time() -> CooldownDecision {
     let router = policy();
     let mut deployment = deployment();
-    deployment.allowed_fails_policy = Some(policy_with(&PolicyEntry::ContentPolicyViolation, 1));
+    deployment.allowed_fails_policy = Some(policy_with(PolicyEntry::ContentPolicyViolation, 1));
     deployment.cooldown_time = Some(Seconds(2.5));
     let failure = failure(FailureClass::ContentPolicyViolation, ErrorStatus::Code(400));
     run(&router, Some(&deployment), &failure, minute(0, 0), 1)
@@ -293,7 +310,7 @@ fn case_zero_cooldown_time() -> CooldownDecision {
     router.cooldown_time = Seconds(0.0);
     router.allowed_fails = 0;
     router.default_allowed_fails = 0;
-    router.allowed_fails_policy = Some(policy_with(&PolicyEntry::RateLimit, 0));
+    router.allowed_fails_policy = Some(policy_with(PolicyEntry::RateLimit, 0));
     let deployment = deployment();
     let failure = failure(FailureClass::RateLimit, ErrorStatus::Code(500));
     run(&router, Some(&deployment), &failure, minute(0, 0), 0)
@@ -301,7 +318,7 @@ fn case_zero_cooldown_time() -> CooldownDecision {
 
 fn case_router_policy_does_not_override_400() -> CooldownDecision {
     let mut router = policy();
-    router.allowed_fails_policy = Some(policy_with(&PolicyEntry::BadRequest, 0));
+    router.allowed_fails_policy = Some(policy_with(PolicyEntry::BadRequest, 0));
     let deployment = deployment();
     let failure = failure(FailureClass::BadRequest, ErrorStatus::Code(400));
     run(&router, Some(&deployment), &failure, minute(0, 0), 0)
@@ -310,7 +327,7 @@ fn case_router_policy_does_not_override_400() -> CooldownDecision {
 fn case_content_policy_falls_through_to_bad_request() -> CooldownDecision {
     let router = policy();
     let mut deployment = deployment();
-    deployment.allowed_fails_policy = Some(policy_with(&PolicyEntry::BadRequest, 0));
+    deployment.allowed_fails_policy = Some(policy_with(PolicyEntry::BadRequest, 0));
     let failure = failure(FailureClass::ContentPolicyViolation, ErrorStatus::Code(400));
     run(&router, Some(&deployment), &failure, minute(0, 0), 0)
 }
@@ -318,7 +335,7 @@ fn case_content_policy_falls_through_to_bad_request() -> CooldownDecision {
 fn case_mid_stream_matches_service_unavailable() -> CooldownDecision {
     let router = policy();
     let mut deployment = deployment();
-    deployment.allowed_fails_policy = Some(policy_with(&PolicyEntry::ServiceUnavailable, 0));
+    deployment.allowed_fails_policy = Some(policy_with(PolicyEntry::ServiceUnavailable, 0));
     let failure = failure(FailureClass::MidStreamFallback, ErrorStatus::Code(503));
     run(&router, Some(&deployment), &failure, minute(0, 0), 0)
 }
@@ -326,7 +343,7 @@ fn case_mid_stream_matches_service_unavailable() -> CooldownDecision {
 fn case_context_window_matches_bad_request() -> CooldownDecision {
     let router = policy();
     let mut deployment = deployment();
-    deployment.allowed_fails_policy = Some(policy_with(&PolicyEntry::BadRequest, 0));
+    deployment.allowed_fails_policy = Some(policy_with(PolicyEntry::BadRequest, 0));
     let failure = failure(FailureClass::ContextWindowExceeded, ErrorStatus::Code(400));
     run(&router, Some(&deployment), &failure, minute(0, 0), 0)
 }
@@ -335,6 +352,40 @@ fn case_unknown_deployment() -> CooldownDecision {
     let router = policy();
     let failure = failure(FailureClass::RateLimit, ErrorStatus::Code(429));
     run(&router, None, &failure, minute(0, 0), 0)
+}
+
+fn case_high_traffic_with_successes_stays_up() -> CooldownDecision {
+    let router = policy();
+    let deployment = deployment();
+    let failure = failure(FailureClass::InternalServer, ErrorStatus::Code(500));
+    run(&router, Some(&deployment), &failure, minute(600, 400), 0)
+}
+
+fn case_bad_request_policy() -> CooldownDecision {
+    let router = policy();
+    let mut deployment = deployment();
+    deployment.allowed_fails_policy = Some(policy_with(PolicyEntry::BadRequest, 0));
+    let failure = failure(FailureClass::BadRequest, ErrorStatus::Code(400));
+    run(&router, Some(&deployment), &failure, minute(0, 0), 0)
+}
+
+fn case_single_group_with_alternatives() -> CooldownDecision {
+    let router = policy();
+    let mut deployment = deployment();
+    deployment.model_group_size = 1;
+    deployment.has_alternatives = true;
+    let failure = failure(FailureClass::RateLimit, ErrorStatus::Code(429));
+    run(&router, Some(&deployment), &failure, minute(0, 0), 0)
+}
+
+fn case_policy_beats_generic_on_single_group() -> CooldownDecision {
+    let router = policy();
+    let mut deployment = deployment();
+    deployment.model_group_size = 1;
+    deployment.allowed_fails = Some(5);
+    deployment.allowed_fails_policy = Some(policy_with(PolicyEntry::RateLimit, 0));
+    let failure = failure(FailureClass::RateLimit, ErrorStatus::Code(429));
+    run(&router, Some(&deployment), &failure, minute(0, 0), 0)
 }
 
 #[rstest]
@@ -420,6 +471,20 @@ fn case_unknown_deployment() -> CooldownDecision {
     Some(1)
 )]
 #[case::unknown_deployment(case_unknown_deployment(), false, None, None)]
+#[case::high_traffic_with_successes(case_high_traffic_with_successes_stays_up(), false, None, None)]
+#[case::bad_request_policy(
+    case_bad_request_policy(),
+    true,
+    Some("deployment:dep-1:allowed_fails:BadRequestError"),
+    Some(1)
+)]
+#[case::single_group_with_alternatives(case_single_group_with_alternatives(), true, None, None)]
+#[case::policy_beats_generic_on_single_group(
+    case_policy_beats_generic_on_single_group(),
+    true,
+    Some("deployment:dep-1:allowed_fails:RateLimitError"),
+    Some(1)
+)]
 fn cooldown_decisions_behaviors(
     #[case] decision: CooldownDecision,
     #[case] cooldown: bool,
@@ -558,4 +623,150 @@ fn cooldown_decisions_counter_uses_the_deployment_class_name() {
             fails: 2,
         })
     );
+}
+
+#[rstest]
+#[case::content_policy_violation(
+    PolicyEntry::ContentPolicyViolation,
+    FailureClass::ContentPolicyViolation,
+    ErrorStatus::Code(400),
+    "ContentPolicyViolationError"
+)]
+#[case::bad_request(
+    PolicyEntry::BadRequest,
+    FailureClass::BadRequest,
+    ErrorStatus::Code(400),
+    "BadRequestError"
+)]
+#[case::authentication(
+    PolicyEntry::Authentication,
+    FailureClass::Authentication,
+    ErrorStatus::Code(401),
+    "AuthenticationError"
+)]
+#[case::timeout(
+    PolicyEntry::Timeout,
+    FailureClass::Timeout,
+    ErrorStatus::Code(408),
+    "Timeout"
+)]
+#[case::rate_limit(
+    PolicyEntry::RateLimit,
+    FailureClass::RateLimit,
+    ErrorStatus::Code(429),
+    "RateLimitError"
+)]
+#[case::internal_server(
+    PolicyEntry::InternalServer,
+    FailureClass::InternalServer,
+    ErrorStatus::Code(500),
+    "InternalServerError"
+)]
+#[case::service_unavailable(
+    PolicyEntry::ServiceUnavailable,
+    FailureClass::ServiceUnavailable,
+    ErrorStatus::Code(503),
+    "ServiceUnavailableError"
+)]
+#[case::bad_gateway(
+    PolicyEntry::BadGateway,
+    FailureClass::BadGateway,
+    ErrorStatus::Code(502),
+    "BadGatewayError"
+)]
+#[case::not_found(
+    PolicyEntry::NotFound,
+    FailureClass::NotFound,
+    ErrorStatus::Code(404),
+    "NotFoundError"
+)]
+fn cooldown_decisions_policy_fields(
+    #[case] entry: PolicyEntry,
+    #[case] class: FailureClass,
+    #[case] status: ErrorStatus,
+    #[case] class_name: &str,
+) {
+    let router = policy();
+    let mut deployment = deployment();
+    deployment.allowed_fails_policy = Some(policy_with(entry, 0));
+    let failure = failure(class, status);
+    let decision = run(&router, Some(&deployment), &failure, minute(0, 0), 0);
+    assert!(decision.cooldown);
+    assert_eq!(
+        counter_key(&decision),
+        Some(format!("deployment:dep-1:allowed_fails:{class_name}").as_str())
+    );
+}
+
+#[rstest]
+#[case::authentication(FailureClass::Authentication, "AuthenticationError")]
+#[case::not_found(FailureClass::NotFound, "NotFoundError")]
+#[case::permission_denied(FailureClass::PermissionDenied, "PermissionDeniedError")]
+#[case::bad_request(FailureClass::BadRequest, "BadRequestError")]
+#[case::unprocessable_entity(FailureClass::UnprocessableEntity, "UnprocessableEntityError")]
+#[case::timeout(FailureClass::Timeout, "Timeout")]
+#[case::rate_limit(FailureClass::RateLimit, "RateLimitError")]
+#[case::budget_exceeded(FailureClass::BudgetExceeded, "BudgetExceededError")]
+#[case::context_window_exceeded(FailureClass::ContextWindowExceeded, "ContextWindowExceededError")]
+#[case::content_policy_violation(
+    FailureClass::ContentPolicyViolation,
+    "ContentPolicyViolationError"
+)]
+#[case::service_unavailable(FailureClass::ServiceUnavailable, "ServiceUnavailableError")]
+#[case::bad_gateway(FailureClass::BadGateway, "BadGatewayError")]
+#[case::internal_server(FailureClass::InternalServer, "InternalServerError")]
+#[case::api(FailureClass::Api, "APIError")]
+#[case::api_connection(FailureClass::ApiConnection, "APIConnectionError")]
+#[case::api_response_validation(FailureClass::ApiResponseValidation, "APIResponseValidationError")]
+#[case::json_schema_validation(FailureClass::JsonSchemaValidation, "JSONSchemaValidationError")]
+#[case::unsupported_params(FailureClass::UnsupportedParams, "UnsupportedParamsError")]
+#[case::guardrail_raised(FailureClass::GuardrailRaised, "GuardrailRaisedException")]
+#[case::mid_stream_fallback(FailureClass::MidStreamFallback, "MidStreamFallbackError")]
+#[case::unclassified(FailureClass::Unclassified, "Exception")]
+fn cooldown_decisions_exception_class_names(#[case] class: FailureClass, #[case] class_name: &str) {
+    assert_eq!(super::failure::exception_class_name(class), class_name);
+}
+
+#[rstest]
+#[case::below_400(399, false)]
+#[case::client_error(400, false)]
+#[case::not_found(404, false)]
+#[case::request_timeout(408, true)]
+#[case::conflict(409, true)]
+#[case::rate_limit(429, true)]
+#[case::internal_error(500, true)]
+#[case::top_server_error(599, true)]
+fn cooldown_decisions_retry_boundaries(#[case] code: i64, #[case] retry: bool) {
+    assert_eq!(super::decision::should_retry(code), retry);
+}
+
+#[test]
+fn cooldown_decisions_empty_status_with_traffic_stays_up() {
+    let router = policy();
+    let deployment = deployment();
+    let failure = failure(FailureClass::BadRequest, ErrorStatus::Text(String::new()));
+    let decision = run(&router, Some(&deployment), &failure, minute(0, 5), 0);
+    assert!(!decision.cooldown);
+}
+
+#[test]
+fn cooldown_decisions_unparsable_status_with_traffic_cools_down() {
+    let router = policy();
+    let deployment = deployment();
+    let failure = failure(
+        FailureClass::BadRequest,
+        ErrorStatus::Text("abc".to_owned()),
+    );
+    let decision = run(&router, Some(&deployment), &failure, minute(0, 5), 0);
+    assert!(decision.cooldown);
+}
+
+#[test]
+fn cooldown_decisions_zero_traffic_threshold_needs_a_failure() {
+    let mut router = policy();
+    router.thresholds.single_deployment_traffic = 0;
+    let deployment = deployment();
+    let failure = failure(FailureClass::InternalServer, ErrorStatus::Code(500));
+    let decision = run(&router, Some(&deployment), &failure, minute(0, 0), 0);
+    assert!(!decision.cooldown);
 }
