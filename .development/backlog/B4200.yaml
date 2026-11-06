@@ -1,7 +1,7 @@
 id: B4200
 milestone: M8 platform
 title: Resolve deployment and per-request root paths
-status: todo
+status: done
 depends_on: [B001, B002, B003]
 file: tasks/B4200-request-root-paths.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/proxy/utils.py"
 parent: B122
 split_from: B122
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 758
