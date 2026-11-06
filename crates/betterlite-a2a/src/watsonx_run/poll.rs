@@ -30,69 +30,48 @@ where
     NonSuccess { status: String },
 }
 
-async fn poll_once<T>(
-    transport: &T,
-    url: &str,
-    headers: &BTreeMap<String, String>,
-    timeout: Duration,
-) -> Result<RunEvent, PollError<T::Error>>
-where
-    T: RunTransport,
-{
-    transport.pause(POLL_INTERVAL).await;
-    let request = RunRequest {
-        url,
-        headers,
-        body: None,
-        timeout,
-    };
-    Ok(call_run(transport, &request, Method::Get).await?)
+#[must_use]
+pub fn run_id(event: &RunEvent) -> Option<&str> {
+    [event.run_id.as_deref(), event.id.as_deref()]
+        .into_iter()
+        .flatten()
+        .find(|id| !id.is_empty())
 }
 
 pub async fn poll_run<T>(
     transport: &T,
     base_url: &str,
-    run_id: &str,
+    started: RunEvent,
     headers: &BTreeMap<String, String>,
     timeout: Duration,
 ) -> Result<RunEvent, PollError<T::Error>>
 where
     T: RunTransport,
 {
-    let url = format!("{base_url}/v1/orchestrate/runs/{run_id}");
-    for _ in 0..MAX_POLL_ATTEMPTS {
-        let event = poll_once(transport, &url, headers, timeout).await?;
-        if RunState::parse(event.status.as_deref().unwrap_or_default()).is_some() {
-            return Ok(event);
+    let mut run = started;
+    if RunState::parse(run.status.as_deref().unwrap_or_default()).is_none() {
+        let id = run_id(&run).ok_or(PollError::NoRunId)?.to_owned();
+        let url = format!("{base_url}/v1/orchestrate/runs/{id}");
+        let mut polled = None;
+        for _ in 0..MAX_POLL_ATTEMPTS {
+            transport.pause(POLL_INTERVAL).await;
+            let request = RunRequest {
+                url: &url,
+                headers,
+                body: None,
+                timeout,
+            };
+            let event = call_run(transport, &request, Method::Get).await?;
+            if RunState::parse(event.status.as_deref().unwrap_or_default()).is_some() {
+                polled = Some(event);
+                break;
+            }
         }
+        run = polled.ok_or_else(|| PollError::PollTimeout {
+            run_id: id,
+            seconds: MAX_POLL_ATTEMPTS.saturating_mul(POLL_INTERVAL.as_secs()),
+        })?;
     }
-    Err(PollError::PollTimeout {
-        run_id: run_id.to_owned(),
-        seconds: MAX_POLL_ATTEMPTS.saturating_mul(POLL_INTERVAL.as_secs()),
-    })
-}
-
-pub async fn successful_run<T>(
-    transport: &T,
-    event: RunEvent,
-    base_url: &str,
-    headers: &BTreeMap<String, String>,
-    timeout: Duration,
-) -> Result<RunEvent, PollError<T::Error>>
-where
-    T: RunTransport,
-{
-    let run = if RunState::parse(event.status.as_deref().unwrap_or_default()).is_some() {
-        event
-    } else {
-        let run_id = [event.run_id.as_deref(), event.id.as_deref()]
-            .into_iter()
-            .flatten()
-            .find(|id| !id.is_empty())
-            .ok_or(PollError::NoRunId)?
-            .to_owned();
-        poll_run(transport, base_url, &run_id, headers, timeout).await?
-    };
     match RunState::parse(run.status.as_deref().unwrap_or_default()) {
         Some(RunState::Completed | RunState::Succeeded) => Ok(run),
         _ => Err(PollError::NonSuccess {

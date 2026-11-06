@@ -4,7 +4,7 @@ use std::sync::PoisonError;
 
 use betterlite_a2a::watsonx_credentials::bearer::BearerTokens;
 use betterlite_a2a::watsonx_credentials::token_cache::BoundedTokenCache;
-use betterlite_a2a::watsonx_run::config::{ConfigCall, WatsonxRunConfig};
+use betterlite_a2a::watsonx_run::config::{Answer, ConfigCall, Reply, WatsonxRunConfig};
 use betterlite_a2a::watsonx_run::handler::RunHandler;
 use betterlite_a2a::watsonx_transform::extract::WxoSendParams;
 use betterlite_core::agents::json::AgentJson;
@@ -79,19 +79,23 @@ async fn call(
         params: &input.params,
         kwargs: &input.kwargs,
     };
-    if input.mode == Mode::NonStreaming {
-        let event = config.handle_non_streaming(&request).await?;
-        return Ok(serde_json::to_value(event)?);
+    let reply = match input.mode {
+        Mode::NonStreaming => Reply::Message,
+        Mode::Streaming => Reply::Stream,
+    };
+    match config.handle(&request, reply).await? {
+        Answer::Message(event) => Ok(serde_json::to_value(event)?),
+        Answer::Stream(steps) => {
+            let paced = steps
+                .iter()
+                .map(|step| PacedEvent {
+                    event: &step.event,
+                    delay_ms: u64::try_from(step.delay_after.as_millis()).unwrap_or(u64::MAX),
+                })
+                .collect::<Vec<_>>();
+            Ok(serde_json::to_value(paced)?)
+        }
     }
-    let steps = config.handle_streaming(&request).await?;
-    let paced = steps
-        .iter()
-        .map(|step| PacedEvent {
-            event: &step.event,
-            delay_ms: u64::try_from(step.delay_after.as_millis()).unwrap_or(u64::MAX),
-        })
-        .collect::<Vec<_>>();
-    Ok(serde_json::to_value(paced)?)
 }
 
 impl Helper for Op {

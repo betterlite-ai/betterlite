@@ -4,11 +4,12 @@ use std::collections::BTreeMap;
 
 use betterlite_core::agents::json::AgentJson;
 
-use super::{ConfigCall, ConfigError, WatsonxRunConfig};
+use super::{Answer, ConfigCall, ConfigError, Reply, WatsonxRunConfig};
 use crate::watsonx_credentials::token_cache::BoundedTokenCache;
 use crate::watsonx_run::handler::RunError;
 use crate::watsonx_run::tests::{
-    Clock, Reply, Script, ScriptError, Source, kwargs, run_handler, send_params, token_reply,
+    Clock, Reply as ScriptReply, Script, ScriptError, Source, kwargs, run_handler, send_params,
+    token_reply,
 };
 use crate::watsonx_transform::extract::WxoSendParams;
 use crate::watsonx_transform::fake_streaming::WxoStreamResult;
@@ -34,16 +35,19 @@ fn config(script: &Script) -> WatsonxRunConfig<&Script, &Script, Clock, BoundedT
 async fn config_extracts_litellm_params_and_returns_the_a2a_message() {
     let script = Script::new(vec![
         token_reply(),
-        Reply::json(
+        ScriptReply::json(
             r#"{"run_id": "run-1", "status": "completed", "last_message": {"content": [{"text": "hi"}]}}"#,
         ),
     ]);
     let params = send_params();
     let kwargs = kwargs();
-    let response = config(&script)
-        .handle_non_streaming(&call(&params, &kwargs))
+    let Answer::Message(response) = config(&script)
+        .handle(&call(&params, &kwargs), Reply::Message)
         .await
-        .unwrap();
+        .unwrap()
+    else {
+        panic!("expected a message answer");
+    };
     assert_eq!(
         serde_json::to_string(&response).unwrap(),
         concat!(
@@ -58,17 +62,20 @@ async fn config_extracts_litellm_params_and_returns_the_a2a_message() {
 async fn config_streams_the_fake_events() {
     let script = Script::new(vec![
         token_reply(),
-        Reply::sse(&[
+        ScriptReply::sse(&[
             "data: {\"last_message\": {\"content\": [{\"text\": \"hi\"}]}}",
             "data: [DONE]",
         ]),
     ]);
     let params = send_params();
     let kwargs = kwargs();
-    let steps = config(&script)
-        .handle_streaming(&call(&params, &kwargs))
+    let Answer::Stream(steps) = config(&script)
+        .handle(&call(&params, &kwargs), Reply::Stream)
         .await
-        .unwrap();
+        .unwrap()
+    else {
+        panic!("expected a stream answer");
+    };
     assert_eq!(steps.len(), 4);
     let WxoStreamResult::Artifact(artifact) = &steps[2].event.result else {
         panic!("expected an artifact");
@@ -82,7 +89,7 @@ async fn config_fails_when_litellm_params_is_missing() {
     let params = send_params();
     let kwargs = BTreeMap::new();
     let error: ConfigError<ScriptError, ScriptError> = config(&script)
-        .handle_non_streaming(&call(&params, &kwargs))
+        .handle(&call(&params, &kwargs), Reply::Message)
         .await
         .unwrap_err();
     assert!(matches!(error, ConfigError::MissingLitellmParams));
@@ -97,7 +104,7 @@ async fn config_fails_when_litellm_params_is_not_a_mapping() {
         serde_json::from_str::<AgentJson>("5").unwrap(),
     )]);
     let error = config(&script)
-        .handle_streaming(&call(&params, &kwargs))
+        .handle(&call(&params, &kwargs), Reply::Stream)
         .await
         .unwrap_err();
     assert!(matches!(error, ConfigError::LitellmParams(_)));
@@ -112,7 +119,7 @@ async fn config_fails_when_a_required_param_is_missing() {
         serde_json::from_str::<AgentJson>("{}").unwrap(),
     )]);
     let error = config(&script)
-        .handle_non_streaming(&call(&params, &kwargs))
+        .handle(&call(&params, &kwargs), Reply::Message)
         .await
         .unwrap_err();
     assert!(matches!(error, ConfigError::Run(RunError::Params(_))));
@@ -122,7 +129,7 @@ async fn config_fails_when_a_required_param_is_missing() {
 async fn config_ignores_the_other_kwargs() {
     let script = Script::new(vec![
         token_reply(),
-        Reply::json(
+        ScriptReply::json(
             r#"{"run_id": "run-1", "status": "completed", "last_message": {"content": [{"text": "hi"}]}}"#,
         ),
     ]);
@@ -130,7 +137,7 @@ async fn config_ignores_the_other_kwargs() {
     let mut kwargs = kwargs();
     kwargs.insert("trace_id".to_owned(), AgentJson::String("t-1".to_owned()));
     config(&script)
-        .handle_non_streaming(&call(&params, &kwargs))
+        .handle(&call(&params, &kwargs), Reply::Message)
         .await
         .unwrap();
     assert_eq!(script.recorded().len(), 1);

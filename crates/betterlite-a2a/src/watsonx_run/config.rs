@@ -40,6 +40,18 @@ pub struct ConfigCall<'call> {
     pub kwargs: &'call BTreeMap<String, AgentJson>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum Reply {
+    Message,
+    Stream,
+}
+
+#[derive(Debug)]
+pub enum Answer {
+    Message(Event<ResponseMessage>),
+    Stream(Vec<WxoStreamStep>),
+}
+
 pub struct WatsonxRunConfig<T, K, C, S, U> {
     pub handler: RunHandler<T, K, C, S, U>,
 }
@@ -52,31 +64,30 @@ where
     S: TokenStore,
     U: EventSource + Send + Sync,
 {
-    pub async fn handle_non_streaming(
+    pub async fn handle(
         &mut self,
         call: &ConfigCall<'_>,
-    ) -> Result<Event<ResponseMessage>, ConfigError<T::Error, K::Error>> {
+        reply: Reply,
+    ) -> Result<Answer, ConfigError<T::Error, K::Error>> {
         let params = litellm_params(call.kwargs)?;
-        Ok(self
-            .handler
-            .handle_non_streaming(call.request_id, call.params, &params)
-            .await?)
-    }
-
-    pub async fn handle_streaming(
-        &mut self,
-        call: &ConfigCall<'_>,
-    ) -> Result<Vec<WxoStreamStep>, ConfigError<T::Error, K::Error>> {
-        let params = litellm_params(call.kwargs)?;
-        Ok(self
-            .handler
-            .handle_streaming(
-                call.request_id,
-                call.params,
-                &params,
-                StreamPacing::default(),
-            )
-            .await?)
+        let answer = match reply {
+            Reply::Message => Answer::Message(
+                self.handler
+                    .handle_non_streaming(call.request_id, call.params, &params)
+                    .await?,
+            ),
+            Reply::Stream => Answer::Stream(
+                self.handler
+                    .handle_streaming(
+                        call.request_id,
+                        call.params,
+                        &params,
+                        StreamPacing::default(),
+                    )
+                    .await?,
+            ),
+        };
+        Ok(answer)
     }
 }
 

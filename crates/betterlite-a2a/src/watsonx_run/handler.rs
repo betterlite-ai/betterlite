@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::error::Error;
 use std::time::Duration;
 
-use secrecy::ExposeSecret as _;
+use secrecy::{ExposeSecret as _, SecretString};
 use thiserror::Error;
 
 use crate::completion_bridge::EventSource;
@@ -12,7 +12,9 @@ use crate::pydantic_ai_transformation::transform::ResponseMessage;
 use crate::watsonx_credentials::bearer::{
     BearerTokens, CredentialsError, TokenClock, TokenTransport,
 };
-use crate::watsonx_credentials::params::{MissingParam, WxoLitellmParams, extract_litellm_params};
+use crate::watsonx_credentials::params::{
+    MissingParam, WxoLitellmParams, WxoRequestParams, extract_litellm_params,
+};
 use crate::watsonx_credentials::token_cache::TokenStore;
 use crate::watsonx_transform::extract::{
     WxoSendParams, extract_text_from_a2a_params, extract_text_from_wxo_result,
@@ -22,7 +24,7 @@ use crate::watsonx_transform::response::build_a2a_message_response;
 
 use super::accumulator::{LineAccumulator, SseError, accumulate_text};
 use super::event::RunEvent;
-use super::poll::{PollError, successful_run};
+use super::poll::{PollError, poll_run};
 use super::run_api::{ApiError, Method, RunBody, RunContent, RunMessage, call_run};
 use super::transport::{RunRequest, RunTransport, StreamBody};
 
@@ -90,10 +92,10 @@ where
             timeout: NON_STREAMING_TIMEOUT,
         };
         let started = call_run(&self.transport, &request, Method::Post).await?;
-        let run = successful_run(
+        let run = poll_run(
             &self.transport,
-            started,
             &prepared.base_url,
+            started,
             &prepared.headers,
             NON_STREAMING_TIMEOUT,
         )
@@ -117,7 +119,8 @@ where
         let text = match self.open_stream(&prepared).await {
             Ok(text) => text,
             Err(RunError::Api(ApiError::Transport(_))) => {
-                self.fallback_text(request_id, params, raw).await?
+                let response = self.handle_non_streaming(request_id, params, raw).await?;
+                response_text(&response)
             }
             Err(error) => return Err(error),
         };
@@ -141,35 +144,7 @@ where
             .bearer_token(&wxo)
             .await
             .map_err(RunError::Credentials)?;
-        let base = format!(
-            "{}/orchestrate/cpd/instances/{}",
-            wxo.cp4d_host.trim_end_matches('/'),
-            wxo.instance_id
-        );
-        Ok(Prepared {
-            runs_url: format!("{base}/v1/orchestrate/runs"),
-            stream_url: format!("{base}/v1/orchestrate/runs/stream"),
-            base_url: base,
-            headers: BTreeMap::from([
-                (
-                    "Authorization".to_owned(),
-                    format!("Bearer {}", token.expose_secret()),
-                ),
-                ("Content-Type".to_owned(), "application/json".to_owned()),
-                ("Accept".to_owned(), accept.to_owned()),
-            ]),
-            body: RunBody {
-                agent_id: wxo.wxo_agent_id,
-                message: RunMessage {
-                    role: "user",
-                    content: vec![RunContent {
-                        response_type: "text",
-                        text: extract_text_from_a2a_params(params),
-                    }],
-                },
-                thread_id: wxo.thread_id,
-            },
-        })
+        Ok(planned(&wxo, params, &token, accept))
     }
 
     async fn open_stream(
@@ -205,35 +180,67 @@ where
         }
         let event =
             serde_json::from_slice::<RunEvent>(&chunks.concat()).map_err(ApiError::Decode)?;
-        let run = successful_run(
+        let run = poll_run(
             &self.transport,
-            event,
             &prepared.base_url,
+            event,
             &prepared.headers,
             STREAMING_TIMEOUT,
         )
         .await?;
         Ok(extract_text_from_wxo_result(&run.run))
     }
+}
 
-    async fn fallback_text(
-        &mut self,
-        request_id: &str,
-        params: &WxoSendParams,
-        raw: &WxoLitellmParams,
-    ) -> Result<String, RunError<T::Error, K::Error>> {
-        let response = self.handle_non_streaming(request_id, params, raw).await?;
-        let text = response
-            .result
-            .parts
-            .iter()
-            .find(|part| {
-                part.kind.as_deref() == Some("text")
-                    && part.text.as_deref().is_some_and(|text| !text.is_empty())
-            })
-            .and_then(|part| part.text.clone());
-        Ok(text.unwrap_or_default())
+fn planned(
+    wxo: &WxoRequestParams,
+    params: &WxoSendParams,
+    token: &SecretString,
+    accept: &str,
+) -> Prepared {
+    let base = format!(
+        "{}/orchestrate/cpd/instances/{}",
+        wxo.cp4d_host.trim_end_matches('/'),
+        wxo.instance_id
+    );
+    let body = RunBody {
+        agent_id: wxo.wxo_agent_id.clone(),
+        message: RunMessage {
+            role: "user",
+            content: vec![RunContent {
+                response_type: "text",
+                text: extract_text_from_a2a_params(params),
+            }],
+        },
+        thread_id: wxo.thread_id.clone(),
+    };
+    Prepared {
+        runs_url: format!("{base}/v1/orchestrate/runs"),
+        stream_url: format!("{base}/v1/orchestrate/runs/stream"),
+        base_url: base,
+        headers: BTreeMap::from([
+            (
+                "Authorization".to_owned(),
+                format!("Bearer {}", token.expose_secret()),
+            ),
+            ("Content-Type".to_owned(), "application/json".to_owned()),
+            ("Accept".to_owned(), accept.to_owned()),
+        ]),
+        body,
     }
+}
+
+fn response_text(response: &Event<ResponseMessage>) -> String {
+    for part in &response.result.parts {
+        if part.kind.as_deref() != Some("text") {
+            continue;
+        }
+        let Some(text) = part.text.as_deref().filter(|text| !text.is_empty()) else {
+            continue;
+        };
+        return text.to_owned();
+    }
+    String::new()
 }
 
 fn sse_text(chunks: &[Vec<u8>]) -> Result<String, SseError> {
