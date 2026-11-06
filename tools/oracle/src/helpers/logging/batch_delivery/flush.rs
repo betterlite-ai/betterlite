@@ -1,5 +1,6 @@
 use std::collections::VecDeque;
 use std::future::Future;
+use std::sync::atomic::AtomicUsize;
 use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
@@ -75,6 +76,7 @@ impl BatchDelivery<String> for ScriptedDelivery {
     fn deliver(
         &self,
         batch: &[String],
+        _settled: &AtomicUsize,
     ) -> impl Future<Output = Result<Vec<String>, BatchCancelled<String>>> + Send {
         let reply = self
             .script

@@ -1,9 +1,10 @@
 use std::collections::VecDeque;
 use std::future::Future;
+use std::sync::atomic::AtomicUsize;
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_logging::batch::delivery::{
-    BatchTransport, DeliverySettings, SendFailure, send_batch_with_413_split,
+    BatchResponse, BatchTransport, DeliverySettings, SendFailure, send_batch_with_413_split,
 };
 use betterlite_logging::batch::retry::RequeuePolicy;
 use serde::Deserialize;
@@ -42,17 +43,25 @@ impl Policy {
     }
 }
 
-#[derive(Deserialize, Clone, Copy, PartialEq, Eq)]
+#[derive(Deserialize, Clone, PartialEq, Eq)]
 #[serde(tag = "outcome", rename_all = "snake_case")]
 enum ScriptStep {
-    Response { status: u16 },
-    StatusError { status: u16 },
+    Response {
+        status: u16,
+        #[serde(default)]
+        detail: String,
+    },
+    StatusError {
+        status: u16,
+        #[serde(default)]
+        detail: String,
+    },
     Error,
     Cancel,
 }
 
 impl ScriptStep {
-    const fn outcome(self) -> &'static str {
+    const fn outcome(&self) -> &'static str {
         match self {
             Self::Response { .. } => "response",
             Self::StatusError { .. } => "status_error",
@@ -61,17 +70,24 @@ impl ScriptStep {
         }
     }
 
-    const fn status(self) -> Option<u16> {
+    const fn status(&self) -> Option<u16> {
         match self {
-            Self::Response { status } | Self::StatusError { status } => Some(status),
+            Self::Response { status, .. } | Self::StatusError { status, .. } => Some(*status),
             Self::Error | Self::Cancel => None,
         }
     }
 
-    const fn answer(self) -> Result<u16, SendFailure<ScriptedFailure>> {
+    fn is_success(&self, success_status_codes: &[u16]) -> bool {
         match self {
-            Self::Response { status } => Ok(status),
-            Self::StatusError { status } => Err(SendFailure::Status { status }),
+            Self::Response { status, .. } => success_status_codes.contains(status),
+            Self::StatusError { .. } | Self::Error | Self::Cancel => false,
+        }
+    }
+
+    fn answer(self) -> Result<BatchResponse, SendFailure<ScriptedFailure>> {
+        match self {
+            Self::Response { status, detail } => Ok(BatchResponse { status, detail }),
+            Self::StatusError { status, detail } => Err(SendFailure::Status { status, detail }),
             Self::Error => Err(SendFailure::Other(ScriptedFailure)),
             Self::Cancel => Err(SendFailure::Cancelled),
         }
@@ -105,7 +121,7 @@ impl BatchTransport<String> for ScriptedTransport {
     fn send(
         &self,
         batch: &[String],
-    ) -> impl Future<Output = Result<u16, SendFailure<Self::SendError>>> + Send {
+    ) -> impl Future<Output = Result<BatchResponse, SendFailure<Self::SendError>>> + Send {
         let step = self
             .script
             .lock()
@@ -113,8 +129,7 @@ impl BatchTransport<String> for ScriptedTransport {
             .pop_front()
             .unwrap_or(ScriptStep::Error);
         let events = batch.to_vec();
-        if matches!(step, ScriptStep::Response { status } if self.success_status_codes.contains(&status))
-        {
+        if step.is_success(&self.success_status_codes) {
             self.delivered
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner)
@@ -165,7 +180,7 @@ fn attempt_values(transport: &ScriptedTransport) -> Vec<Value> {
 
 pub(super) async fn send_outcome(scenario: &SendScenario) -> Value {
     let transport = ScriptedTransport {
-        script: Mutex::new(scenario.script.iter().copied().collect()),
+        script: Mutex::new(scenario.script.iter().cloned().collect()),
         attempts: Mutex::new(Vec::new()),
         delivered: Mutex::new(Vec::new()),
         success_status_codes: scenario.success_status_codes.clone(),
@@ -177,10 +192,10 @@ pub(super) async fn send_outcome(scenario: &SendScenario) -> Value {
         success_status_codes: &scenario.success_status_codes,
         policy: scenario.policy.requeue(),
         integration_name: "BatchDelivery",
-        detail: "scripted transport",
         drop_error_message: "batch delivery dropped a single event the destination rejected as too large",
     };
-    let result = send_batch_with_413_split(&transport, &scenario.events, settings).await;
+    let settled = AtomicUsize::new(0);
+    let result = send_batch_with_413_split(&transport, &scenario.events, settings, &settled).await;
     let (undelivered, cancelled) = match result {
         Ok(undelivered) => (undelivered, false),
         Err(error) => (error.undelivered, true),

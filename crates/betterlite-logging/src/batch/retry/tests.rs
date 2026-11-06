@@ -43,6 +43,21 @@ impl<'writer> MakeWriter<'writer> for Buffer {
     }
 }
 
+fn captured<T, F>(action: F) -> (T, String)
+where
+    F: FnOnce() -> T,
+{
+    let buffer = Buffer::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_max_level(Level::DEBUG)
+        .with_writer(buffer.clone())
+        .finish();
+    let value = with_default(subscriber, action);
+    (value, buffer.contents())
+}
+
 #[rstest]
 #[case::informational(100, true)]
 #[case::success(200, true)]
@@ -55,37 +70,51 @@ impl<'writer> MakeWriter<'writer> for Buffer {
 #[case::server_error(500, true)]
 #[case::server_error_tail(599, true)]
 fn batch_delivery_behavior_tests_behavior(#[case] status: u16, #[case] retryable: bool) {
-    let buffer = Buffer::default();
-    let subscriber = tracing_subscriber::fmt()
-        .with_ansi(false)
-        .without_time()
-        .with_max_level(Level::DEBUG)
-        .with_writer(buffer.clone())
-        .finish();
-    let (undelivered, requeued, retained, logs) = with_default(subscriber, || {
-        let undelivered =
-            undelivered_after_http_error(&EVENTS, status, "BatchDelivery", "classification");
-        let requeued =
-            RequeuePolicy::RequeueAll.retained(&EVENTS, status, "BatchDelivery", "classification");
-        let retained =
-            RequeuePolicy::Undelivered.retained(&EVENTS, status, "BatchDelivery", "classification");
-        (undelivered, requeued, retained, buffer.contents())
+    let (undelivered, logs) = captured(|| {
+        undelivered_after_http_error(&EVENTS, status, "BatchDelivery", "classification")
+    });
+    let (requeued, requeue_logs) = captured(|| {
+        RequeuePolicy::RequeueAll.retained(&EVENTS, status, "BatchDelivery", "classification")
     });
     assert_eq!(is_retryable_status(status), retryable);
-    assert_eq!(retained, undelivered);
     assert_eq!(requeued, EVENTS);
+    assert_eq!(
+        RequeuePolicy::Undelivered.retained(&EVENTS, status, "BatchDelivery", "classification"),
+        undelivered
+    );
     assert!(logs.contains("BatchDelivery"), "missing the name in {logs}");
     assert!(
-        logs.contains("will be retried"),
-        "missing the retry log in {logs}"
+        logs.contains(&format!("status={status}")),
+        "missing the status in {logs}"
+    );
+    assert!(logs.contains("records=3"), "missing the count in {logs}");
+    assert!(
+        logs.contains("detail=classification"),
+        "missing the detail in {logs}"
+    );
+    assert!(
+        requeue_logs.contains("will be retried"),
+        "missing the requeue log in {requeue_logs}"
     );
     if retryable {
+        assert!(
+            logs.contains("will be retried"),
+            "missing the retry log in {logs}"
+        );
+        assert!(
+            !logs.contains("are dropped"),
+            "unexpected drop log in {logs}"
+        );
         assert_eq!(undelivered, EVENTS);
     } else {
-        assert!(undelivered.is_empty());
         assert!(
             logs.contains("are dropped"),
             "missing the drop log in {logs}"
         );
+        assert!(
+            !logs.contains("will be retried"),
+            "unexpected retry log in {logs}"
+        );
+        assert!(undelivered.is_empty());
     }
 }

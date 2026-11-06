@@ -1,4 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
@@ -102,6 +103,7 @@ impl<E> Clone for BatchQueue<E> {
 struct InFlight<'queue, E> {
     queue: &'queue BatchQueue<E>,
     batch: Option<Vec<E>>,
+    settled: &'queue AtomicUsize,
 }
 
 impl<E> Drop for InFlight<'_, E> {
@@ -109,13 +111,20 @@ impl<E> Drop for InFlight<'_, E> {
         let Some(batch) = self.batch.take() else {
             return;
         };
-        let records = batch.len();
-        let (_, dropped_oldest) = self.queue.requeue(batch);
+        // The settled records are the prefix the destination accepted or dropped before the abort
+        let settled = self.settled.load(Ordering::SeqCst).min(batch.len());
+        let unconfirmed: Vec<E> = batch.into_iter().skip(settled).collect();
+        let records = unconfirmed.len();
+        if records == 0 {
+            return;
+        }
+        let (_, dropped_oldest) = self.queue.requeue(unconfirmed);
         self.queue.warn_overflow(dropped_oldest);
         tracing::warn!(
             records,
+            settled,
             dropped = dropped_oldest,
-            "a batch flush was dropped before it finished; its records are back in the queue"
+            "a batch flush was dropped before it finished; its unconfirmed records are back in the queue"
         );
     }
 }
@@ -173,12 +182,14 @@ impl<E> BatchQueue<E> {
         if batch_len == 0 {
             return EMPTY_FLUSH;
         }
+        let settled = AtomicUsize::new(0);
         let mut in_flight = InFlight {
             queue: self,
             batch: Some(batch),
+            settled: &settled,
         };
         let sent = in_flight.batch.as_deref().unwrap_or_default();
-        let outcome = delivery.deliver(sent).await;
+        let outcome = delivery.deliver(sent, &settled).await;
         let cancelled = outcome.is_err();
         let undelivered = match outcome {
             Ok(undelivered) | Err(BatchCancelled { undelivered }) => undelivered,

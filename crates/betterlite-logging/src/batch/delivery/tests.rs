@@ -3,6 +3,7 @@
 use std::collections::VecDeque;
 use std::future::Future;
 use std::io::{Result as IoResult, Write};
+use std::sync::atomic::AtomicUsize;
 use std::sync::{Arc, Mutex, PoisonError};
 
 use rstest::rstest;
@@ -11,17 +12,53 @@ use tracing::subscriber::set_default;
 use tracing_subscriber::fmt::MakeWriter;
 
 use super::{
-    BatchCancelled, BatchTransport, DeliverySettings, SendFailure, send_batch_with_413_split,
+    BatchCancelled, BatchResponse, BatchTransport, DeliverySettings, SendFailure,
+    send_batch_with_413_split,
 };
 use crate::batch::retry::RequeuePolicy;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Step {
-    Response(u16),
-    StatusError(u16),
+    Response { status: u16, detail: &'static str },
+    StatusError { status: u16, detail: &'static str },
     Failed,
     Cancel,
 }
+
+const OK: Step = Step::Response {
+    status: 200,
+    detail: "the scripted provider answered",
+};
+const ACCEPTED: Step = Step::Response {
+    status: 202,
+    detail: "the scripted provider accepted the batch",
+};
+const BAD_REQUEST: Step = Step::Response {
+    status: 400,
+    detail: "the scripted provider rejected the request",
+};
+const TOO_LARGE: Step = Step::Response {
+    status: 413,
+    detail: "the scripted provider rejected the payload",
+};
+const SERVER_ERROR: Step = Step::Response {
+    status: 500,
+    detail: "the scripted provider failed",
+};
+const RAISED_TOO_LARGE: Step = Step::StatusError {
+    status: 413,
+    detail: "the scripted provider rejected the payload",
+};
+const RAISED_TOO_MANY: Step = Step::StatusError {
+    status: 429,
+    detail: "the scripted provider asked for a slower retry",
+};
+const PROVIDER_DETAIL: Step = Step::Response {
+    status: 400,
+    detail: "quota exhausted for this key",
+};
+const UNREACHABLE: Step = Step::Failed;
+const CANCELLED: Step = Step::Cancel;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Policy {
@@ -105,11 +142,13 @@ impl BatchTransport<String> for ScriptedTransport {
     fn send(
         &self,
         batch: &[String],
-    ) -> impl Future<Output = Result<u16, SendFailure<Self::SendError>>> + Send {
+    ) -> impl Future<Output = Result<BatchResponse, SendFailure<Self::SendError>>> + Send {
         let step = self.script.lock().unwrap().pop_front().unwrap();
         let events = batch.to_vec();
-        let success =
-            matches!(step, Step::Response(status) if self.success_status_codes.contains(&status));
+        let success = matches!(
+            step,
+            Step::Response { status, .. } if self.success_status_codes.contains(&status)
+        );
         if success {
             self.delivered
                 .lock()
@@ -119,10 +158,16 @@ impl BatchTransport<String> for ScriptedTransport {
         self.attempts.lock().unwrap().push(Attempt { events });
         async move {
             match step {
-                Step::Response(status) => Ok(status),
-                Step::StatusError(status) => Err(SendFailure::Status { status }),
-                Step::Failed => Err(SendFailure::Other(ScriptedFailure)),
-                Step::Cancel => Err(SendFailure::Cancelled),
+                Step::Response { status, detail } => Ok(BatchResponse {
+                    status,
+                    detail: detail.to_owned(),
+                }),
+                Step::StatusError { status, detail } => Err(SendFailure::Status {
+                    status,
+                    detail: detail.to_owned(),
+                }),
+                UNREACHABLE => Err(SendFailure::Other(ScriptedFailure)),
+                CANCELLED => Err(SendFailure::Cancelled),
             }
         }
     }
@@ -167,10 +212,10 @@ async fn drive(
         success_status_codes: case.success_status_codes,
         policy,
         integration_name: "BatchDelivery",
-        detail: "scripted transport",
         drop_error_message: "batch delivery dropped a single event the destination rejected as too large",
     };
-    let result = send_batch_with_413_split(&transport, &events, settings).await;
+    let settled = AtomicUsize::new(0);
+    let result = send_batch_with_413_split(&transport, &events, settings, &settled).await;
     (result, transport)
 }
 
@@ -187,7 +232,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         max_events_per_request: None,
         oversized: &[],
         unserializable: &[],
-        script: &[Step::Response(413), Step::Response(200), Step::Response(500)],
+        script: &[TOO_LARGE, OK, SERVER_ERROR],
     },
     Expectation {
         attempts: &[&["e0", "e1", "e2", "e3"], &["e0", "e1"], &["e2", "e3"]],
@@ -205,7 +250,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         max_events_per_request: None,
         oversized: &[],
         unserializable: &[],
-        script: &[Step::StatusError(413), Step::Response(200), Step::Response(200)],
+        script: &[RAISED_TOO_LARGE, OK, OK],
     },
     Expectation {
         attempts: &[&["e0", "e1"], &["e0"], &["e1"]],
@@ -223,7 +268,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         max_events_per_request: None,
         oversized: &[],
         unserializable: &[],
-        script: &[Step::Response(413)],
+        script: &[TOO_LARGE],
     },
     Expectation {
         attempts: &[&["e0"]],
@@ -241,7 +286,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         max_events_per_request: None,
         oversized: &["e0"],
         unserializable: &[],
-        script: &[Step::Response(413)],
+        script: &[TOO_LARGE],
     },
     Expectation {
         attempts: &[&["e0"]],
@@ -259,7 +304,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         max_events_per_request: None,
         oversized: &["e2"],
         unserializable: &[],
-        script: &[Step::Response(200), Step::Response(200), Step::Response(200)],
+        script: &[OK, OK, OK],
     },
     Expectation {
         attempts: &[&["e0", "e1"], &["e2"], &["e3"]],
@@ -277,7 +322,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         max_events_per_request: Some(2),
         oversized: &[],
         unserializable: &[],
-        script: &[Step::Response(200), Step::Response(200)],
+        script: &[OK, OK],
     },
     Expectation {
         attempts: &[&["e0"], &["e1", "e2"]],
@@ -295,14 +340,14 @@ fn owned(events: &[&str]) -> Vec<String> {
         max_events_per_request: None,
         oversized: &[],
         unserializable: &["e2"],
-        script: &[Step::Response(200), Step::Response(200)],
+        script: &[OK, OK],
     },
     Expectation {
         attempts: &[&["e0", "e1"], &["e3"]],
         delivered: &["e0", "e1", "e3"],
         undelivered: &[],
         cancelled: false,
-        logs: &["cannot measure"],
+        logs: &["cannot be serialized"],
     }
 )]
 #[case::unserializable_single_record_is_dropped(
@@ -320,7 +365,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &[],
         undelivered: &[],
         cancelled: false,
-        logs: &["cannot measure", "cannot be serialized"],
+        logs: &["cannot be serialized"],
     }
 )]
 #[case::failed_left_half_skips_the_right_half(
@@ -331,7 +376,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         max_events_per_request: None,
         oversized: &[],
         unserializable: &[],
-        script: &[Step::Response(413), Step::Response(500)],
+        script: &[TOO_LARGE, SERVER_ERROR],
     },
     Expectation {
         attempts: &[&["e0", "e1", "e2", "e3"], &["e0", "e1"]],
@@ -349,7 +394,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         max_events_per_request: None,
         oversized: &[],
         unserializable: &[],
-        script: &[Step::Response(400)],
+        script: &[BAD_REQUEST],
     },
     Expectation {
         attempts: &[&["e0", "e1"]],
@@ -357,6 +402,24 @@ fn owned(events: &[&str]) -> Vec<String> {
         undelivered: &[],
         cancelled: false,
         logs: &["a retry cannot clear"],
+    }
+)]
+#[case::provider_detail_reaches_the_log(
+    SendCase {
+        events: &["e0"],
+        success_status_codes: &[200],
+        policy: Policy::Undelivered,
+        max_events_per_request: None,
+        oversized: &[],
+        unserializable: &[],
+        script: &[PROVIDER_DETAIL],
+    },
+    Expectation {
+        attempts: &[&["e0"]],
+        delivered: &[],
+        undelivered: &[],
+        cancelled: false,
+        logs: &["a retry cannot clear", "quota exhausted for this key"],
     }
 )]
 #[case::requeue_policy_keeps_a_non_retryable_batch(
@@ -367,7 +430,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         max_events_per_request: None,
         oversized: &[],
         unserializable: &[],
-        script: &[Step::Response(400)],
+        script: &[BAD_REQUEST],
     },
     Expectation {
         attempts: &[&["e0", "e1"]],
@@ -385,7 +448,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         max_events_per_request: None,
         oversized: &[],
         unserializable: &[],
-        script: &[Step::StatusError(429)],
+        script: &[RAISED_TOO_MANY],
     },
     Expectation {
         attempts: &[&["e0", "e1"]],
@@ -403,7 +466,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         max_events_per_request: None,
         oversized: &[],
         unserializable: &[],
-        script: &[Step::Failed],
+        script: &[UNREACHABLE],
     },
     Expectation {
         attempts: &[&["e0", "e1"]],
@@ -422,10 +485,10 @@ fn owned(events: &[&str]) -> Vec<String> {
         oversized: &[],
         unserializable: &[],
         script: &[
-            Step::Response(413),
-            Step::Response(413),
-            Step::Response(200),
-            Step::Cancel,
+            TOO_LARGE,
+            TOO_LARGE,
+            OK,
+            CANCELLED,
         ],
     },
     Expectation {
@@ -462,7 +525,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         max_events_per_request: None,
         oversized: &[],
         unserializable: &[],
-        script: &[Step::Response(202)],
+        script: &[ACCEPTED],
     },
     Expectation {
         attempts: &[&["e0", "e1"]],
@@ -480,7 +543,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         max_events_per_request: None,
         oversized: &[],
         unserializable: &[],
-        script: &[Step::Response(413), Step::Response(200), Step::Response(200)],
+        script: &[TOO_LARGE, OK, OK],
     },
     Expectation {
         attempts: &[&["e0", "e1", "e2", "e3", "e4"], &["e0", "e1"], &["e2", "e3", "e4"]],

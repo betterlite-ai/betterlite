@@ -1,10 +1,9 @@
 #![cfg(test)]
 
-use std::collections::VecDeque;
 use std::future::{Future, pending};
 use std::io::{Result as IoResult, Write};
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::task::{Context, Waker};
 use std::time::Duration;
@@ -23,7 +22,6 @@ use crate::batch::delivery::{BatchCancelled, BatchDelivery};
 enum Reply {
     Delivered,
     Failed,
-    Pending,
     Partial { kept: usize },
     Cancelled { kept: usize },
 }
@@ -37,6 +35,7 @@ enum FlushStep {
     },
     Abort {
         arrivals: &'static [&'static str],
+        settled: usize,
     },
     Overlap {
         second_events: &'static [&'static str],
@@ -69,68 +68,62 @@ struct Expectation {
     warns: bool,
 }
 
-struct ScriptedDelivery {
-    replies: Mutex<VecDeque<Reply>>,
+#[derive(Clone)]
+enum Gate {
+    Scripted(Reply),
+    Held(Arc<AtomicBool>, Arc<Notify>),
+    Pending,
+}
+
+struct TestDelivery {
+    gate: Gate,
+    settled_prefix: usize,
     attempts: Mutex<Vec<Vec<String>>>,
     delivered: Mutex<Vec<String>>,
     queue: BatchQueue<String>,
     arrivals: Vec<String>,
 }
 
-impl BatchDelivery<String> for ScriptedDelivery {
+impl BatchDelivery<String> for TestDelivery {
     fn deliver(
         &self,
         batch: &[String],
+        settled: &AtomicUsize,
     ) -> impl Future<Output = Result<Vec<String>, BatchCancelled<String>>> + Send {
-        let reply = self.replies.lock().unwrap().pop_front().unwrap();
-        let accepted = match reply {
-            Reply::Delivered => batch.len(),
-            Reply::Failed | Reply::Pending => 0,
-            Reply::Partial { kept } | Reply::Cancelled { kept } => kept.min(batch.len()),
+        let accepted = match &self.gate {
+            Gate::Scripted(Reply::Delivered) => batch.len(),
+            Gate::Scripted(Reply::Partial { kept } | Reply::Cancelled { kept }) => {
+                (*kept).min(batch.len())
+            }
+            Gate::Scripted(Reply::Failed) | Gate::Held(..) | Gate::Pending => 0,
         };
         self.delivered
             .lock()
             .unwrap()
             .extend(batch.iter().take(accepted).cloned());
         self.attempts.lock().unwrap().push(batch.to_vec());
+        settled.fetch_add(self.settled_prefix.min(batch.len()), Ordering::SeqCst);
         for event in &self.arrivals {
             let _enqueued = self.queue.enqueue(event.clone());
         }
+        let gate = self.gate.clone();
         let mut remaining = batch.to_vec();
         async move {
-            match reply {
-                Reply::Delivered => Ok(Vec::new()),
-                Reply::Failed => Ok(remaining),
-                Reply::Pending => pending().await,
-                Reply::Partial { kept } => Ok(remaining.split_off(kept)),
-                Reply::Cancelled { kept } => {
+            match gate {
+                Gate::Scripted(Reply::Delivered) => Ok(Vec::new()),
+                Gate::Scripted(Reply::Failed) => Ok(remaining),
+                Gate::Scripted(Reply::Partial { kept }) => Ok(remaining.split_off(kept)),
+                Gate::Scripted(Reply::Cancelled { kept }) => {
                     let undelivered = remaining.split_off(kept);
                     Err(BatchCancelled { undelivered })
                 }
+                Gate::Held(entered, release) => {
+                    entered.store(true, Ordering::SeqCst);
+                    release.notified().await;
+                    Ok(remaining)
+                }
+                Gate::Pending => pending().await,
             }
-        }
-    }
-}
-
-struct GatedDelivery {
-    entered: Arc<AtomicBool>,
-    release: Arc<Notify>,
-    attempts: Mutex<Vec<Vec<String>>>,
-}
-
-impl BatchDelivery<String> for GatedDelivery {
-    fn deliver(
-        &self,
-        batch: &[String],
-    ) -> impl Future<Output = Result<Vec<String>, BatchCancelled<String>>> + Send {
-        self.attempts.lock().unwrap().push(batch.to_vec());
-        let entered = Arc::clone(&self.entered);
-        let release = Arc::clone(&self.release);
-        let remaining = batch.to_vec();
-        async move {
-            entered.store(true, Ordering::SeqCst);
-            release.notified().await;
-            Ok(remaining)
         }
     }
 }
@@ -174,9 +167,10 @@ struct Outcome {
     delivered: Vec<String>,
 }
 
-fn scripted(queue: &BatchQueue<String>, reply: Reply, arrivals: &[&str]) -> ScriptedDelivery {
-    ScriptedDelivery {
-        replies: Mutex::new(VecDeque::from([reply])),
+fn scripted(queue: &BatchQueue<String>, reply: Reply, arrivals: &[&str]) -> TestDelivery {
+    TestDelivery {
+        gate: Gate::Scripted(reply),
+        settled_prefix: 0,
         attempts: Mutex::new(Vec::new()),
         delivered: Mutex::new(Vec::new()),
         queue: queue.clone(),
@@ -225,8 +219,10 @@ async fn drive(case: &FlushCase) -> Outcome {
                 outcome.attempts.push(sent);
                 outcome.delivered.extend(delivered);
             }
-            FlushStep::Abort { arrivals } => {
-                outcome.attempts.push(abort_flush(&queue, arrivals).await);
+            FlushStep::Abort { arrivals, settled } => {
+                outcome
+                    .attempts
+                    .push(abort_flush(&queue, arrivals, *settled).await);
             }
             FlushStep::Overlap { second_events } => {
                 let finished = overlap_flushes(&queue, second_events, &mut outcome.enqueued).await;
@@ -240,8 +236,15 @@ async fn drive(case: &FlushCase) -> Outcome {
     outcome
 }
 
-async fn abort_flush(queue: &BatchQueue<String>, arrivals: &[&str]) -> Vec<String> {
-    let delivery = scripted(queue, Reply::Pending, arrivals);
+async fn abort_flush(queue: &BatchQueue<String>, arrivals: &[&str], settled: usize) -> Vec<String> {
+    let delivery = TestDelivery {
+        gate: Gate::Pending,
+        settled_prefix: settled,
+        attempts: Mutex::new(Vec::new()),
+        delivered: Mutex::new(Vec::new()),
+        queue: queue.clone(),
+        arrivals: owned(arrivals),
+    };
     let waiting = timeout(Duration::from_millis(20), queue.flush(&delivery)).await;
     assert!(
         waiting.is_err(),
@@ -280,10 +283,13 @@ async fn overlap_flushes(
 ) -> Finished {
     let entered = Arc::new(AtomicBool::new(false));
     let release = Arc::new(Notify::new());
-    let gated = GatedDelivery {
-        entered: Arc::clone(&entered),
-        release: Arc::clone(&release),
+    let gated = TestDelivery {
+        gate: Gate::Held(Arc::clone(&entered), Arc::clone(&release)),
+        settled_prefix: 0,
         attempts: Mutex::new(Vec::new()),
+        delivered: Mutex::new(Vec::new()),
+        queue: queue.clone(),
+        arrivals: Vec::new(),
     };
     let first = queue.flush(&gated);
     tokio::pin!(first);
@@ -327,6 +333,7 @@ const fn queued(depth: usize, dropped_oldest: usize) -> Enqueued {
 }
 
 const ENQUEUED_TWO: &[Enqueued] = &[queued(1, 0), queued(2, 0)];
+const ENQUEUED_FOUR: &[Enqueued] = &[queued(1, 0), queued(2, 0), queued(3, 0), queued(4, 0)];
 const ENQUEUED_THREE: &[Enqueued] = &[queued(1, 0), queued(2, 0), queued(3, 0)];
 const ENQUEUED_OVERFLOW: &[Enqueued] = &[queued(1, 0), queued(2, 0), queued(3, 0), queued(3, 1)];
 const ENQUEUED_AFTER_DRAIN: &[Enqueued] = &[queued(1, 0), queued(2, 0), queued(1, 0)];
@@ -444,14 +451,32 @@ const SMALL: BatchSettings = BatchSettings {
         preserve: false,
         steps: &[
             FlushStep::Enqueue(&["a", "b"]),
-            FlushStep::Abort { arrivals: &["c"] },
+            FlushStep::Abort { arrivals: &["c"], settled: 0 },
         ],
     },
     Expectation {
         sent: &[&["a", "b"]],
         delivered: &[],
         queue: &["a", "b", "c"],
-        enqueued: ENQUEUED_AFTER_DRAIN,
+        enqueued: ENQUEUED_TWO,
+        reports: &[],
+        warns: false,
+    }
+)]
+#[case::aborted_flush_restores_only_the_unconfirmed_remainder(
+    FlushCase {
+        settings: DEFAULT,
+        preserve: false,
+        steps: &[
+            FlushStep::Enqueue(&["a", "b", "c", "d"]),
+            FlushStep::Abort { arrivals: &[], settled: 2 },
+        ],
+    },
+    Expectation {
+        sent: &[&["a", "b", "c", "d"]],
+        delivered: &[],
+        queue: &["c", "d"],
+        enqueued: ENQUEUED_FOUR,
         reports: &[],
         warns: false,
     }
