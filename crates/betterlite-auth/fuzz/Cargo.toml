@@ -21,3 +21,10 @@ path = "fuzz_targets/budget_window.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "resource_hint"
+path = "fuzz_targets/resource_hint.rs"
+test = false
+doc = false
+bench = false
