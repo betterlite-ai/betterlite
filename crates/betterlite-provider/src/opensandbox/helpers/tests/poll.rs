@@ -309,7 +309,9 @@ fn wait_for_execd_endpoint_retries_a_404() {
 #[case::absent("{}")]
 #[case::null(r#"{"endpoint":null}"#)]
 #[case::empty(r#"{"endpoint":""}"#)]
-fn wait_for_execd_endpoint_retries_a_missing_endpoint(#[case] body: &str) {
+#[case::syntax_error("not json")]
+#[case::empty_body("")]
+fn wait_for_execd_endpoint_retries_an_unusable_first_answer(#[case] body: &str) {
     let sandbox = sandbox(
         FakeHttp::new(&[(200, body), (200, ENDPOINT_BODY)]),
         environment(&[]),
@@ -325,8 +327,31 @@ fn wait_for_execd_endpoint_retries_a_missing_endpoint(#[case] body: &str) {
         ready_timeout: Duration::from_secs(30),
         poll_interval: Duration::from_millis(200),
     };
-    block_on(sandbox.wait_for_execd_endpoint(request, None)).unwrap();
+    let endpoint = block_on(sandbox.wait_for_execd_endpoint(request, None)).unwrap();
+    assert_eq!(endpoint.url, "10.0.0.5:44772");
     assert_eq!(sandbox.http.requests().len(), 2);
+}
+
+#[test]
+fn wait_for_execd_endpoint_does_not_retry_a_non_object_document() {
+    let sandbox = sandbox(
+        FakeHttp::new(&[(200, "[]"), (200, ENDPOINT_BODY)]),
+        environment(&[]),
+    );
+    let headers = headers();
+    let request = WaitForEndpoint {
+        endpoint: GetEndpoint {
+            sandbox_id: "sbx_1",
+            api_base: "http://sandbox.example",
+            headers: &headers,
+            use_server_proxy: false,
+        },
+        ready_timeout: Duration::from_secs(30),
+        poll_interval: Duration::from_millis(200),
+    };
+    let error = block_on(sandbox.wait_for_execd_endpoint(request, None)).unwrap_err();
+    assert!(matches!(error, OpenSandboxError::Decode { .. }));
+    assert_eq!(sandbox.http.requests().len(), 1);
 }
 
 #[test]

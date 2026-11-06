@@ -152,7 +152,7 @@ fn normalize_result_copies_non_result_fields_when_results_is_not_an_object() {
 fn normalize_error_reads_a_nested_error() {
     let parsed =
         message(r#"{"type":"error","error":{"ename":"E","evalue":"V","traceback":["t"]}}"#);
-    let error = normalize_error(&parsed).unwrap();
+    let error = normalize_error(&parsed);
     assert_eq!(raw_text(error.name.as_ref().unwrap()), "\"E\"");
     assert_eq!(raw_text(error.value.as_ref().unwrap()), "\"V\"");
     assert_eq!(raw_text(error.traceback.as_ref().unwrap()), "[\"t\"]");
@@ -161,7 +161,7 @@ fn normalize_error_reads_a_nested_error() {
 #[test]
 fn normalize_error_falls_back_to_alternate_nested_keys() {
     let parsed = message(r#"{"type":"error","error":{"name":"E","value":"V"}}"#);
-    let error = normalize_error(&parsed).unwrap();
+    let error = normalize_error(&parsed);
     assert_eq!(raw_text(error.name.as_ref().unwrap()), "\"E\"");
     assert_eq!(raw_text(error.value.as_ref().unwrap()), "\"V\"");
     assert_eq!(raw_text(error.traceback.as_ref().unwrap()), "[]");
@@ -170,7 +170,7 @@ fn normalize_error_falls_back_to_alternate_nested_keys() {
 #[test]
 fn normalize_error_skips_nested_null_fields() {
     let parsed = message(r#"{"type":"error","error":{"ename":null,"name":"E","evalue":null}}"#);
-    let error = normalize_error(&parsed).unwrap();
+    let error = normalize_error(&parsed);
     assert_eq!(raw_text(error.name.as_ref().unwrap()), "\"E\"");
     assert_eq!(raw_text(error.value.as_ref().unwrap()), "\"\"");
 }
@@ -178,7 +178,7 @@ fn normalize_error_skips_nested_null_fields() {
 #[test]
 fn normalize_error_reads_top_level_fields_when_the_error_is_not_nested() {
     let parsed = message(r#"{"type":"error","name":"E","text":"T"}"#);
-    let error = normalize_error(&parsed).unwrap();
+    let error = normalize_error(&parsed);
     assert_eq!(raw_text(error.name.as_ref().unwrap()), "\"E\"");
     assert_eq!(raw_text(error.value.as_ref().unwrap()), "\"T\"");
     assert_eq!(raw_text(error.traceback.as_ref().unwrap()), "[]");
@@ -187,7 +187,7 @@ fn normalize_error_reads_top_level_fields_when_the_error_is_not_nested() {
 #[test]
 fn normalize_error_defaults_every_field_when_the_message_is_bare() {
     let parsed = message(r#"{"type":"error"}"#);
-    let error = normalize_error(&parsed).unwrap();
+    let error = normalize_error(&parsed);
     assert_eq!(raw_text(error.name.as_ref().unwrap()), "\"\"");
     assert_eq!(raw_text(error.value.as_ref().unwrap()), "\"\"");
     assert_eq!(raw_text(error.traceback.as_ref().unwrap()), "[]");

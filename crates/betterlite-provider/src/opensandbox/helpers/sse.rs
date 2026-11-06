@@ -45,7 +45,9 @@ pub fn parse_lines(lines: &[String]) -> CodeExecutionResult {
             Some("stdout") => result.stdout.push_str(&text_of(message)),
             Some("stderr") => result.stderr.push_str(&text_of(message)),
             Some("result") => result.results.push(normalize_result(message)),
-            Some("error") if result.error.is_none() => result.error = normalize_error(message),
+            Some("error") if result.error.is_none() => {
+                result.error = Some(normalize_error(message));
+            }
             Some("execution_count") if result.execution_count.is_none() => {
                 result.execution_count = message.get("execution_count").and_then(|raw| as_int(raw));
             }
@@ -73,7 +75,7 @@ pub fn normalize_result(message: &Message) -> Message {
 }
 
 #[must_use]
-pub fn normalize_error(message: &Message) -> Option<ExecutionError> {
+pub fn normalize_error(message: &Message) -> ExecutionError {
     let nested = message
         .get("error")
         .and_then(|raw| serde_json::from_str::<Message>(raw.get()).ok());
@@ -82,14 +84,19 @@ pub fn normalize_error(message: &Message) -> Option<ExecutionError> {
         .map_or((message, &["name"], &["value", "text"]), |error| {
             (error, &["ename", "name"], &["evalue", "value"])
         });
-    Some(ExecutionError {
-        name: Some(first_raw(source, name_keys).or_else(|| to_raw_value("").ok())?),
-        value: Some(first_raw(source, value_keys).or_else(|| to_raw_value("").ok())?),
-        traceback: Some(
-            first_raw(source, &["traceback"])
-                .or_else(|| to_raw_value(&Vec::<String>::new()).ok())?,
-        ),
-    })
+    ExecutionError {
+        name: Some(first_raw(source, name_keys).unwrap_or_else(|| default_raw("\"\""))),
+        value: Some(first_raw(source, value_keys).unwrap_or_else(|| default_raw("\"\""))),
+        traceback: Some(first_raw(source, &["traceback"]).unwrap_or_else(|| default_raw("[]"))),
+    }
+}
+
+// serializing a JSON literal cannot fail, so the null default is unreachable
+fn default_raw(json: &str) -> Box<RawValue> {
+    if let Ok(raw) = to_raw_value(json) {
+        return raw;
+    }
+    Box::default()
 }
 
 #[must_use]

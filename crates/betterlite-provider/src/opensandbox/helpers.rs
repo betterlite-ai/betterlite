@@ -51,7 +51,7 @@ pub enum OpenSandboxError {
         sandbox_id: String,
         timeout: Duration,
         #[source]
-        last: Option<Box<Self>>,
+        last: Box<Self>,
     },
     #[error("OpenSandbox did not return an execd endpoint for {sandbox_id}")]
     MissingEndpoint { sandbox_id: String },
