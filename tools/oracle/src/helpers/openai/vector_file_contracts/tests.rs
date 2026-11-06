@@ -21,7 +21,7 @@ fn unknown_record_kind_is_not_an_input() {
 fn invalid_record_values_are_validation_errors() {
     let error = Op::run(&input(json!({
         "operation": "attachment_record_fields",
-        "records": [{"kind": "file_object", "value": {"status": "queued"}}],
+        "records": [{"kind": "file_object", "value": "queued"}],
     })))
     .unwrap_err();
     assert_eq!(error.class, "ValidationError");

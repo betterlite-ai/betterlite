@@ -1,0 +1,16 @@
+kind: helper
+name: openai-files-upload-guessed-type
+call:
+  openai_files:
+    action: create_file
+    client: {api_key: sk-files, api_base: 'https://files.test/v1', supplied: null, is_async: true}
+    request:
+      purpose: assistants
+      filename: a.txt
+      data: "hello\n"
+    reply:
+      status: 200
+      headers: [[content-type, application/json]]
+      json: {id: file-txt, object: file, bytes: 6, created_at: 1700000004, filename: a.txt, purpose: assistants, status: uploaded}
+env: {}
+compare: {ignore: []}
