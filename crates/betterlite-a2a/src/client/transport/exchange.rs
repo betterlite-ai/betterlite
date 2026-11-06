@@ -1,28 +1,23 @@
 use std::time::Duration;
 
-use betterlite_core::agents::json::AgentJson;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::ProxiedClient;
-use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
+use betterlite_http::proxy::outbound::OutboundRequest;
 use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_openai::stream::SseParser;
 use futures_util::StreamExt as _;
 use futures_util::stream::{BoxStream, iter};
-use http::Method;
-use http::header::{CONTENT_TYPE, HeaderMap};
+use http::header::CONTENT_TYPE;
 use serde::Deserialize;
-use url::Url;
+use serde::de::DeserializeOwned;
 
 use super::EventStream;
 use crate::client::error::{ClientError, transport_error};
-use crate::client::records::core::CoreStreamEvent;
-
-type EventBuilder = fn(AgentJson) -> CoreStreamEvent;
+use crate::client::records::core::{CoreSendResponse, CoreStreamEnvelope, CoreStreamEvent};
 
 #[derive(Deserialize)]
-struct JsonRpcResponse {
-    #[serde(default)]
-    result: Option<AgentJson>,
+struct JsonRpcResponse<T> {
+    result: Option<T>,
     #[serde(default)]
     error: Option<JsonRpcError>,
 }
@@ -35,42 +30,22 @@ struct JsonRpcError {
     message: Option<String>,
 }
 
-const fn outbound(
-    url: Url,
-    headers: HeaderMap,
-    body: Vec<u8>,
-    deadline: Duration,
-) -> OutboundRequest {
-    OutboundRequest {
-        method: Method::POST,
-        url,
-        query: Vec::new(),
-        headers,
-        body: RequestBody::Json(body),
-        deadline,
-    }
-}
-
 pub(super) async fn buffered_event(
     http: ProxiedClient,
-    url: Url,
-    headers: HeaderMap,
-    request_body: Vec<u8>,
+    request: OutboundRequest,
     deadline: Duration,
 ) -> Result<EventStream, ClientError> {
-    buffered_result(http, url, headers, request_body, deadline)
+    buffered_result(http, request, deadline)
         .await
-        .map(|result| iter(send_event(&result).map(Ok)).boxed())
+        .map(|result| iter(send_event(result).map(Ok)).boxed())
 }
+
 async fn buffered_result(
     http: ProxiedClient,
-    url: Url,
-    headers: HeaderMap,
-    request_body: Vec<u8>,
+    request: OutboundRequest,
     deadline: Duration,
-) -> Result<AgentJson, ClientError> {
-    let url_text = url.to_string();
-    let request = outbound(url, headers, request_body, deadline);
+) -> Result<CoreSendResponse, ClientError> {
+    let url_text = request.url.to_string();
     let response = http
         .send_buffered(request)
         .await
@@ -78,30 +53,20 @@ async fn buffered_result(
     check_status(response.status, &url_text)?;
     parse_rpc(&response.body, &url_text)
 }
-fn check_status(status: u16, url: &str) -> Result<(), ClientError> {
-    if (200..300).contains(&status) {
-        return Ok(());
+
+fn send_event(response: CoreSendResponse) -> Option<CoreStreamEvent> {
+    if let Some(task) = response.task {
+        return Some(CoreStreamEvent::Task(task));
     }
-    Err(ClientError::Status {
-        url: url.to_owned(),
-        status,
-    })
+    response.message.map(CoreStreamEvent::Message)
 }
-fn send_event(result: &AgentJson) -> Option<CoreStreamEvent> {
-    if let Some(task) = result.get("task") {
-        return Some(CoreStreamEvent::Task(task.clone()));
-    }
-    result.get("message").cloned().map(CoreStreamEvent::Message)
-}
+
 pub(super) async fn streaming_events(
     http: ProxiedClient,
-    url: Url,
-    headers: HeaderMap,
-    request_body: Vec<u8>,
+    request: OutboundRequest,
     deadline: Duration,
 ) -> Result<EventStream, ClientError> {
-    let url_text = url.to_string();
-    let request = outbound(url, headers, request_body, deadline);
+    let url_text = request.url.to_string();
     let response = http
         .send(request)
         .await
@@ -114,15 +79,24 @@ pub(super) async fn streaming_events(
         .and_then(|value| value.to_str().ok())
         .unwrap_or_default()
         .to_owned();
-    if !content_type.contains("text/event-stream") {
-        let buffered = response
-            .buffered(http.limits.body_bytes)
-            .await
-            .map_err(|source| transport_error(&url_text, deadline, source))?;
-        let event = stream_event(&buffered.body, &url_text)?;
-        return Ok(iter(Some(Ok(event))).boxed());
+    if content_type.contains("text/event-stream") {
+        return Ok(sse_events(response.body_stream(), url_text, deadline));
     }
-    Ok(sse_events(response.body_stream(), url_text, deadline))
+    let buffered = response
+        .buffered(http.limits.body_bytes)
+        .await
+        .map_err(|source| transport_error(&url_text, deadline, source))?;
+    Ok(iter(Some(stream_event(&buffered.body, &url_text))).boxed())
+}
+
+fn check_status(status: u16, url: &str) -> Result<(), ClientError> {
+    if (200..300).contains(&status) {
+        return Ok(());
+    }
+    Err(ClientError::Status {
+        url: url.to_owned(),
+        status,
+    })
 }
 
 fn sse_events(
@@ -166,26 +140,31 @@ fn sse_events(
     }
     .boxed()
 }
+
 fn stream_event(payload: &[u8], url: &str) -> Result<CoreStreamEvent, ClientError> {
-    let result = parse_rpc(payload, url)?;
-    let events: [(&str, EventBuilder); 4] = [
-        ("message", CoreStreamEvent::Message),
-        ("task", CoreStreamEvent::Task),
-        ("statusUpdate", CoreStreamEvent::StatusUpdate),
-        ("artifactUpdate", CoreStreamEvent::ArtifactUpdate),
-    ];
-    for (key, build) in events {
-        if let Some(found) = result.get(key) {
-            return Ok(build(found.clone()));
-        }
+    let envelope: CoreStreamEnvelope = parse_rpc(payload, url)?;
+    if let Some(message) = envelope.message {
+        return Ok(CoreStreamEvent::Message(message));
+    }
+    if let Some(task) = envelope.task {
+        return Ok(CoreStreamEvent::Task(task));
+    }
+    if let Some(update) = envelope.status_update {
+        return Ok(CoreStreamEvent::StatusUpdate(update));
+    }
+    if let Some(update) = envelope.artifact_update {
+        return Ok(CoreStreamEvent::ArtifactUpdate(update));
     }
     Err(ClientError::Protocol {
         url: url.to_owned(),
     })
 }
 
-fn parse_rpc(payload: &[u8], url: &str) -> Result<AgentJson, ClientError> {
-    let response: JsonRpcResponse =
+fn parse_rpc<T>(payload: &[u8], url: &str) -> Result<T, ClientError>
+where
+    T: DeserializeOwned,
+{
+    let response: JsonRpcResponse<T> =
         serde_json::from_slice(payload).map_err(|source| ClientError::Decode {
             url: url.to_owned(),
             source,

@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 use std::future::{Future, ready};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use betterlite_core::a2a::exception_mapping::{
@@ -7,6 +8,7 @@ use betterlite_core::a2a::exception_mapping::{
 };
 use betterlite_core::agents::json::AgentJson;
 use betterlite_http::proxy::{ProxiedClient, limits::TransportLimits};
+use secrecy::SecretString;
 use url::Url;
 
 use crate::agent_card::AgentCard;
@@ -27,16 +29,16 @@ pub mod transport;
 
 pub const DEFAULT_A2A_AGENT_TIMEOUT: Duration = Duration::from_mins(100);
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default)]
 pub struct ClientCallContext {
-    pub service_parameters: Option<BTreeMap<String, String>>,
+    pub service_parameters: Option<BTreeMap<String, SecretString>>,
 }
 
 #[derive(Clone, Debug)]
 pub struct A2AClientSettings {
     pub base_url: String,
     pub timeout: Duration,
-    pub extra_headers: BTreeMap<String, String>,
+    pub extra_headers: BTreeMap<String, SecretString>,
     pub streaming: bool,
     pub relative_card_path: Option<String>,
 }
@@ -47,6 +49,20 @@ pub struct A2AClient {
     pub agent_card: AgentCard,
     pub streaming: bool,
     pub endpoint: Url,
+    pub request_ids: Arc<Mutex<Box<dyn RequestIds>>>,
+}
+
+pub trait RequestIds: Send {
+    fn next_request_id(&mut self) -> String;
+}
+
+#[derive(Debug, Default)]
+pub struct UuidRequestIds;
+
+impl RequestIds for UuidRequestIds {
+    fn next_request_id(&mut self) -> String {
+        uuid::Uuid::new_v4().to_string()
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -159,6 +175,7 @@ impl A2aSdk for NativeA2aSdk {
             agent_card: card.clone(),
             streaming: config.streaming,
             endpoint: parsed,
+            request_ids: Arc::new(Mutex::new(Box::new(UuidRequestIds))),
         });
         ready(client)
     }

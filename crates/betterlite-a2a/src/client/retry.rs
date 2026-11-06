@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use betterlite_core::a2a::exception_mapping::{
     A2AException, RecoveryError, handle_a2a_localhost_retry, map_a2a_exception,
 };
@@ -8,8 +10,8 @@ use thiserror::Error;
 use crate::agent_card::AgentCard;
 use crate::card_resolver::card_url::get_agent_card_url;
 use crate::client::error::{ClientError, exception_to_a2a};
-use crate::client::records::SendMessageResponse;
 use crate::client::records::compat::SendMessageRequest;
+use crate::client::records::response::SendMessageResponse;
 use crate::client::send::{send_message, stream_messages};
 use crate::client::{A2AClient, NativeA2aSdk};
 use crate::errors::A2AError;
@@ -49,7 +51,7 @@ async fn recover(
     let A2AException::LocalhostUrl(localhost) = mapped else {
         return Err(SendError::A2A(Box::new(exception_to_a2a(mapped))));
     };
-    let rebuilt = handle_a2a_localhost_retry(
+    let mut rebuilt = handle_a2a_localhost_retry(
         &NativeA2aSdk,
         &localhost,
         target.agent_card.as_mut(),
@@ -58,6 +60,7 @@ async fn recover(
     )
     .await
     .map_err(|source| SendError::Recovery(Box::new(source)))?;
+    rebuilt.request_ids = Arc::clone(&client.request_ids);
     target.card_url = target
         .agent_card
         .as_ref()

@@ -1,60 +1,208 @@
 use betterlite_core::agents::json::AgentJson;
 use betterlite_core::agents::provider::a2a::JsonRpcId;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use super::MessageCommon;
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct SendMessageRequest {
     pub id: JsonRpcId,
     pub params: MessageSendParams,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessageSendParams {
     pub message: Message,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub configuration: Option<MessageSendConfiguration>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata: Option<AgentJson>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MessageSendConfiguration {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub accepted_output_modes: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub blocking: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub history_length: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub push_notification_config: Option<PushNotificationConfig>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PushNotificationConfig {
     pub url: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub authentication: Option<AuthenticationInfo>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AuthenticationInfo {
     #[serde(default)]
     pub schemes: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub credentials: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct Message {
     pub role: Role,
-    pub parts: Vec<AgentJson>,
+    pub parts: Vec<Part>,
     #[serde(flatten)]
     pub common: MessageCommon,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Role {
     Agent,
     User,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum Part {
+    Text(TextPart),
+    Data(DataPart),
+    File(FilePart),
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TextPart {
+    pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<AgentJson>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DataPart {
+    pub data: AgentJson,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<AgentJson>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FilePart {
+    pub file: FileContent,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<AgentJson>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum FileContent {
+    Bytes(FileWithBytes),
+    Uri(FileWithUri),
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileWithBytes {
+    pub bytes: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FileWithUri {
+    pub uri: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mime_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Task {
+    pub id: String,
+    pub context_id: String,
+    pub status: TaskStatus,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub history: Option<Vec<Message>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub artifacts: Option<Vec<Artifact>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<AgentJson>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskStatus {
+    pub state: TaskState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message: Option<Message>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timestamp: Option<String>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum TaskState {
+    Submitted,
+    Working,
+    InputRequired,
+    Completed,
+    Canceled,
+    Failed,
+    Rejected,
+    AuthRequired,
+    Unknown,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Artifact {
+    pub artifact_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    pub parts: Vec<Part>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<AgentJson>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub extensions: Option<Vec<String>>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskStatusUpdate {
+    pub task_id: String,
+    pub context_id: String,
+    pub status: TaskStatus,
+    #[serde(rename = "final")]
+    pub is_final: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<AgentJson>,
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TaskArtifactUpdate {
+    pub task_id: String,
+    pub context_id: String,
+    pub artifact: Artifact,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub append: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_chunk: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<AgentJson>,
 }

@@ -1,151 +1,89 @@
-use betterlite_core::agents::json::AgentJson;
-
 use crate::client::convert::ConvertError;
-use crate::client::convert::parts::parts_to_compat;
-use crate::client::convert::to_compat_message;
-use crate::client::convert::{copy_fields, named, push_optional};
+use crate::client::convert::messages::to_compat_message;
+use crate::client::convert::parts::to_compat_part;
+use crate::client::records::compat::{Artifact, Task, TaskState, TaskStatus};
+use crate::client::records::core::{CoreArtifact, CoreTask, CoreTaskState, CoreTaskStatus};
 
-pub fn task_to_compat(task: &AgentJson) -> Result<AgentJson, ConvertError> {
-    let mut fields = task_fields(task)?;
-    copy_fields(task, &mut fields, &["metadata"]);
-    fields.extend(task_lists(task)?);
-    Ok(AgentJson::Object(fields.into_iter().collect()))
+pub fn to_compat_task(task: &CoreTask) -> Result<Task, ConvertError> {
+    let status = compat_status_of(task.status.as_ref())?;
+    let history = convert_list(&task.history, to_compat_message)?;
+    let artifacts = convert_list(&task.artifacts, to_compat_artifact)?;
+    Ok(Task {
+        status,
+        history,
+        artifacts,
+        metadata: task.metadata.clone(),
+        id: task.id.clone(),
+        context_id: task.context_id.clone().unwrap_or_default(),
+    })
 }
 
-fn task_fields(task: &AgentJson) -> Result<Vec<(String, AgentJson)>, ConvertError> {
-    Ok(named(vec![
-        ("kind", AgentJson::String("task".to_owned())),
-        ("id", task.get("id").cloned().unwrap_or_default()),
-        (
-            "contextId",
-            task.get("contextId").cloned().unwrap_or_default(),
-        ),
-        ("status", status_to_compat(task.get("status"))?),
-    ]))
-}
-
-fn task_lists(task: &AgentJson) -> Result<Vec<(String, AgentJson)>, ConvertError> {
-    let mut fields = Vec::new();
-    let history = array_to_compat(task.get("history"), to_compat_message)?;
-    push_optional(&mut fields, "history", history);
-    let artifacts = array_to_compat(task.get("artifacts"), artifact_to_compat)?;
-    push_optional(&mut fields, "artifacts", artifacts);
-    Ok(fields)
-}
-
-pub fn status_update_to_compat(update: &AgentJson) -> Result<AgentJson, ConvertError> {
-    let mut fields = event_fields("status-update", update);
-    fields.extend(status_fields(update)?);
-    copy_fields(update, &mut fields, &["metadata"]);
-    Ok(AgentJson::Object(fields.into_iter().collect()))
-}
-
-pub fn artifact_update_to_compat(update: &AgentJson) -> Result<AgentJson, ConvertError> {
-    let mut fields = event_fields("artifact-update", update);
-    let artifact = artifact_to_compat(&update.get("artifact").cloned().unwrap_or_default())?;
-    fields.push(("artifact".to_owned(), artifact));
-    copy_fields(update, &mut fields, &["append", "lastChunk", "metadata"]);
-    Ok(AgentJson::Object(fields.into_iter().collect()))
-}
-
-fn event_fields(name: &str, update: &AgentJson) -> Vec<(String, AgentJson)> {
-    named(vec![
-        ("kind", AgentJson::String(name.to_owned())),
-        ("taskId", update.get("taskId").cloned().unwrap_or_default()),
-        (
-            "contextId",
-            update.get("contextId").cloned().unwrap_or_default(),
-        ),
-    ])
-}
-
-fn status_fields(update: &AgentJson) -> Result<Vec<(String, AgentJson)>, ConvertError> {
-    Ok(named(vec![
-        ("status", status_to_compat(update.get("status"))?),
-        ("final", AgentJson::Bool(is_final(core_state(update)))),
-    ]))
-}
-
-fn core_state(update: &AgentJson) -> Option<&str> {
-    update
-        .get("status")
-        .and_then(|status| status.get("state"))
-        .and_then(AgentJson::as_str)
-}
-
-fn is_final(state: Option<&str>) -> bool {
-    matches!(
-        state,
-        Some(
-            "TASK_STATE_COMPLETED"
-                | "TASK_STATE_CANCELED"
-                | "TASK_STATE_FAILED"
-                | "TASK_STATE_REJECTED"
-        )
-    )
-}
-
-fn status_to_compat(status: Option<&AgentJson>) -> Result<AgentJson, ConvertError> {
+pub fn compat_status_of(status: Option<&CoreTaskStatus>) -> Result<TaskStatus, ConvertError> {
     let Some(present) = status else {
         return Ok(unknown_status());
     };
-    let mut fields = named(vec![(
-        "state",
-        compat_state(present.get("state").and_then(AgentJson::as_str)),
-    )]);
-    copy_fields(present, &mut fields, &["timestamp"]);
-    let message = present.get("message").map(to_compat_message).transpose()?;
-    push_optional(&mut fields, "message", message);
-    Ok(AgentJson::Object(fields.into_iter().collect()))
+    to_compat_status(present)
 }
 
-fn unknown_status() -> AgentJson {
-    AgentJson::Object(
-        named(vec![("state", AgentJson::String("unknown".to_owned()))])
-            .into_iter()
-            .collect(),
+#[must_use]
+pub const fn is_final(status: &TaskStatus) -> bool {
+    matches!(
+        status.state,
+        TaskState::Completed | TaskState::Canceled | TaskState::Failed | TaskState::Rejected
     )
 }
 
-fn compat_state(state: Option<&str>) -> AgentJson {
-    let Some(name) = state else {
-        return AgentJson::String("unknown".to_owned());
-    };
-    let lowered = name.strip_prefix("TASK_STATE_").unwrap_or_default();
-    let compat = lowered.to_lowercase().replace('_', "-");
-    let known = matches!(
-        compat.as_str(),
-        "submitted"
-            | "working"
-            | "completed"
-            | "failed"
-            | "canceled"
-            | "input-required"
-            | "rejected"
-            | "auth-required"
-    );
-    AgentJson::String(if known { compat } else { "unknown".to_owned() })
+pub fn to_compat_status(status: &CoreTaskStatus) -> Result<TaskStatus, ConvertError> {
+    Ok(TaskStatus {
+        state: compat_state(status.state),
+        message: status.message.as_ref().map(to_compat_message).transpose()?,
+        timestamp: status.timestamp.clone().filter(|value| !value.is_empty()),
+    })
 }
 
-fn artifact_to_compat(artifact: &AgentJson) -> Result<AgentJson, ConvertError> {
-    let id = artifact.get("artifactId").cloned().unwrap_or_default();
-    let parts = parts_to_compat(artifact.get("parts"))?;
-    let mut fields = named(vec![("artifactId", id), ("parts", parts)]);
-    copy_fields(
-        artifact,
-        &mut fields,
-        &["name", "description", "metadata", "extensions"],
-    );
-    Ok(AgentJson::Object(fields.into_iter().collect()))
+const fn unknown_status() -> TaskStatus {
+    TaskStatus {
+        state: TaskState::Unknown,
+        message: None,
+        timestamp: None,
+    }
 }
 
-fn array_to_compat(
-    values: Option<&AgentJson>,
-    convert: fn(&AgentJson) -> Result<AgentJson, ConvertError>,
-) -> Result<Option<AgentJson>, ConvertError> {
-    let Some(AgentJson::Array(items)) = values else {
+const fn compat_state(state: CoreTaskState) -> TaskState {
+    match state {
+        CoreTaskState::Unspecified => TaskState::Unknown,
+        CoreTaskState::Submitted => TaskState::Submitted,
+        CoreTaskState::Working => TaskState::Working,
+        CoreTaskState::Completed => TaskState::Completed,
+        CoreTaskState::Failed => TaskState::Failed,
+        CoreTaskState::Canceled => TaskState::Canceled,
+        CoreTaskState::InputRequired => TaskState::InputRequired,
+        CoreTaskState::Rejected => TaskState::Rejected,
+        CoreTaskState::AuthRequired => TaskState::AuthRequired,
+    }
+}
+
+pub fn to_compat_artifact(artifact: &CoreArtifact) -> Result<Artifact, ConvertError> {
+    Ok(Artifact {
+        parts: artifact.parts.iter().map(to_compat_part).collect(),
+        metadata: artifact.metadata.clone(),
+        extensions: (!artifact.extensions.is_empty()).then(|| artifact.extensions.clone()),
+        artifact_id: artifact.artifact_id.clone(),
+        name: artifact.name.clone().filter(|value| !value.is_empty()),
+        description: artifact
+            .description
+            .clone()
+            .filter(|value| !value.is_empty()),
+    })
+}
+
+fn convert_list<T, U, F>(items: &[T], convert: F) -> Result<Option<Vec<U>>, ConvertError>
+where
+    F: Fn(&T) -> Result<U, ConvertError>,
+{
+    if items.is_empty() {
         return Ok(None);
-    };
+    }
     let converted = items.iter().map(convert).collect::<Result<Vec<_>, _>>()?;
-    Ok(Some(AgentJson::Array(converted)))
+    Ok(Some(converted))
 }

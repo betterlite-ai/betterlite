@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::future::{Future, IntoFuture as _};
 use std::net::TcpListener as StdTcpListener;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -20,19 +21,21 @@ use betterlite_core::agents::provider::a2a::JsonRpcId;
 use betterlite_http::proxy::ProxiedClient;
 use futures_util::StreamExt as _;
 use rstest::rstest;
+use secrecy::{ExposeSecret, SecretString};
 use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tokio::time::sleep;
 
 use super::convert::to_compat_stream_response;
 use super::error::ClientError;
-use super::records::SendMessageResponse;
 use super::records::compat::SendMessageRequest;
 use super::records::core::CoreStreamEvent;
+use super::records::response::{SendMessageResponse, StreamResult};
 use super::retry::{SendError, SendTarget, execute_send_with_retry, execute_stream_with_retry};
 use super::send::send_message;
 use super::{
-    A2AClient, A2AClientSettings, DEFAULT_A2A_AGENT_TIMEOUT, agent_card_path, create_a2a_client,
+    A2AClient, A2AClientSettings, DEFAULT_A2A_AGENT_TIMEOUT, RequestIds, agent_card_path,
+    create_a2a_client,
 };
 use crate::agent_card::{AgentCard, WireValue};
 use crate::card_resolver::card_url::get_agent_card_url;
@@ -160,7 +163,7 @@ fn settings(base: &str, streaming: bool, timeout: Duration) -> A2AClientSettings
     A2AClientSettings {
         base_url: base.to_owned(),
         timeout,
-        extra_headers: BTreeMap::from([(TEAM_HEADER.to_owned(), "blue".to_owned())]),
+        extra_headers: BTreeMap::from([(TEAM_HEADER.to_owned(), SecretString::from("blue"))]),
         streaming,
         relative_card_path: None,
     }
@@ -206,11 +209,21 @@ fn status_frame() -> String {
     )
 }
 
+#[derive(Default)]
+struct CountingIds(AtomicU32);
+
+impl RequestIds for CountingIds {
+    fn next_request_id(&mut self) -> String {
+        let next = self.0.fetch_add(1, Ordering::SeqCst).wrapping_add(1);
+        format!("test-{next}")
+    }
+}
+
 fn kind_of(response: &SendMessageResponse) -> Option<&'static str> {
-    match response.result.get("kind").and_then(AgentJson::as_str) {
-        Some("message") => Some("message"),
-        Some("task") => Some("task"),
-        Some(_) | None => None,
+    match &response.result {
+        StreamResult::Message(_) => Some("message"),
+        StreamResult::Task(_) => Some("task"),
+        StreamResult::StatusUpdate(_) | StreamResult::ArtifactUpdate(_) => None,
     }
 }
 
@@ -278,7 +291,7 @@ async fn a2a_client_creation(#[case] with_headers: bool) {
                 .service_parameters
                 .unwrap()
                 .get(TEAM_HEADER)
-                .map(String::as_str),
+                .map(ExposeSecret::expose_secret),
             Some("blue")
         );
         assert_eq!(team_of(&seen, CARD_PATH).as_deref(), Some("blue"));
@@ -335,9 +348,11 @@ async fn native_send_behavior(#[case] streaming: bool, #[case] scenario: &str) {
         send_request("hello")
     };
     let (outcome, seen) = run_agent(listener, state, async move {
-        let client = create_a2a_client(&pool, settings(&base, streaming, Duration::from_secs(5)))
-            .await
-            .unwrap();
+        let mut client =
+            create_a2a_client(&pool, settings(&base, streaming, Duration::from_secs(5)))
+                .await
+                .unwrap();
+        client.request_ids = Arc::new(Mutex::new(Box::new(CountingIds::default())));
         send_message(&client, &request).await
     })
     .await;
@@ -362,6 +377,7 @@ async fn native_send_behavior(#[case] streaming: bool, #[case] scenario: &str) {
         "SendMessage"
     };
     assert!(body.contains(&format!("\"method\":\"{method}\"")));
+    assert!(body.contains("\"id\":\"test-1\""));
     if matches!(scenario, "message" | "configured") {
         assert!(body.contains("\"messageId\":\"m-1\""));
         assert!(body.contains("\"role\":\"ROLE_USER\""));

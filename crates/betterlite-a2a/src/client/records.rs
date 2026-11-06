@@ -1,9 +1,16 @@
 pub mod compat;
 pub mod core;
+pub mod response;
 
 use betterlite_core::agents::json::AgentJson;
-use betterlite_core::agents::provider::a2a::JsonRpcId;
 use serde::{Deserialize, Serialize};
+
+pub const AGENT_CARD_PATH_PARAM: &str = "agent_card_path";
+pub const JSONRPC_VERSION: &str = "2.0";
+pub const A2A_VERSION_HEADER: &str = "a2a-version";
+pub const A2A_VERSION_1_0: &str = "1.0";
+pub const SEND_MESSAGE_METHOD: &str = "SendMessage";
+pub const SEND_STREAMING_MESSAGE_METHOD: &str = "SendStreamingMessage";
 
 // Both protocol versions carry these message fields under the same names, so they pass through unchanged
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -20,11 +27,4 @@ pub struct MessageCommon {
     pub metadata: Option<AgentJson>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extensions: Option<Vec<String>>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct SendMessageResponse {
-    pub jsonrpc: String,
-    pub id: JsonRpcId,
-    pub result: AgentJson,
 }

@@ -1,13 +1,20 @@
 use std::collections::BTreeMap;
 
+use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use futures_util::stream::BoxStream;
+use http::Method;
 use http::header::{ACCEPT, CACHE_CONTROL, HeaderMap, HeaderName, HeaderValue};
+use secrecy::{ExposeSecret as _, SecretString};
 use serde::Serialize;
 
 use crate::agent_card::{AgentCard, WireValue};
 use crate::client::A2AClient;
 use crate::client::error::ClientError;
 use crate::client::records::core::{CoreSendMessageRequest, CoreStreamEvent};
+use crate::client::records::{
+    A2A_VERSION_1_0, A2A_VERSION_HEADER, JSONRPC_VERSION, SEND_MESSAGE_METHOD,
+    SEND_STREAMING_MESSAGE_METHOD,
+};
 
 mod exchange;
 
@@ -30,12 +37,12 @@ impl A2AClient {
         let url_text = self.endpoint.to_string();
         let streaming = self.streaming && declares_streaming(&self.agent_card);
         let method = if streaming {
-            "SendStreamingMessage"
+            SEND_STREAMING_MESSAGE_METHOD
         } else {
-            "SendMessage"
+            SEND_MESSAGE_METHOD
         };
         let body = serde_json::to_vec(&JsonRpcEnvelope {
-            jsonrpc: "2.0",
+            jsonrpc: JSONRPC_VERSION,
             id: request_id,
             method,
             params: request,
@@ -51,17 +58,24 @@ impl A2AClient {
         let headers = headers(parameters, streaming)?;
         let deadline = self.http_client.limits.read_timeout;
         let http = self.http_client.clone();
-        let url = self.endpoint.clone();
+        let outbound = OutboundRequest {
+            method: Method::POST,
+            url: self.endpoint.clone(),
+            query: Vec::new(),
+            headers,
+            body: RequestBody::Json(body),
+            deadline,
+        };
         if streaming {
-            exchange::streaming_events(http, url, headers, body, deadline).await
+            exchange::streaming_events(http, outbound, deadline).await
         } else {
-            exchange::buffered_event(http, url, headers, body, deadline).await
+            exchange::buffered_event(http, outbound, deadline).await
         }
     }
 }
 
 pub(crate) fn headers(
-    parameters: Option<&BTreeMap<String, String>>,
+    parameters: Option<&BTreeMap<String, SecretString>>,
     streaming: bool,
 ) -> Result<HeaderMap, ClientError> {
     let mut headers = HeaderMap::new();
@@ -72,17 +86,17 @@ pub(crate) fn headers(
                 source,
             }
         })?;
-        let header_value = HeaderValue::try_from(value.as_str()).map_err(|source| {
+        let header_value = HeaderValue::try_from(value.expose_secret()).map_err(|source| {
             ClientError::InvalidHeaderValue {
                 name: name.clone(),
                 source,
             }
         })?;
-        headers.insert(header_name, header_value);
+        headers.append(header_name, header_value);
     }
     headers
-        .entry(HeaderName::from_static("a2a-version"))
-        .or_insert(HeaderValue::from_static("1.0"));
+        .entry(HeaderName::from_static(A2A_VERSION_HEADER))
+        .or_insert(HeaderValue::from_static(A2A_VERSION_1_0));
     if streaming {
         headers
             .entry(ACCEPT)
