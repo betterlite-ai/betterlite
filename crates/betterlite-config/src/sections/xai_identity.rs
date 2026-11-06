@@ -1,4 +1,3 @@
-#[path = "xai_identity/tests.rs"]
 mod tests;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
@@ -31,10 +30,7 @@ pub struct Settings {
 impl Section for Raw {
     type Settings = Settings;
 
-    fn convert<L>(self, lookup: &L) -> Result<Self::Settings, ConfigError>
-    where
-        L: EnvironmentLookup,
-    {
+    fn convert<L: EnvironmentLookup>(self, lookup: &L) -> Result<Self::Settings, ConfigError> {
         let module = self.litellm_settings;
         Ok(Settings {
             xai_key: resolve_secret(module.xai_key, "litellm_settings.xai_key", lookup)?,

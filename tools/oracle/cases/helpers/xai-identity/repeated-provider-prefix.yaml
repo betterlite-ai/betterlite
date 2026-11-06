@@ -1,0 +1,47 @@
+kind: helper
+name: xai-identity-repeated-provider-prefix
+call:
+  xai_identity:
+    calls:
+      - {model: "xai/grok-4", api_key: null}
+      - {model: "xai/xai/grok-4", api_key: null}
+      - {model: "a/xai/b", api_key: null}
+      - {model: "grok-4", api_key: null}
+      - model: grok-4
+        api_key: key
+        reply: {status: 200, body: '{"object":"list","data":[{"id":"grok-4"},{"id":"xai/grok-3","owned_by":"xai"}]}'}
+      - model: grok-4
+        api_key: key
+        api_base: "https://proxy.example/v1"
+        reply: {status: 200, body: '{"data":[]}'}
+      - model: grok-4
+        api_key: key
+        api_base: "https://proxy.example/"
+        reply: {status: 200, body: '{"data":[{"id":"grok-4"}]}'}
+      - model: grok-4
+        api_key: null
+        xai_key: module
+        generic_key: generic
+        env: {XAI_API_BASE: "https://env.example", XAI_API_KEY: environment}
+        reply: {status: 200, body: '{"data":[{"id":"grok-4"}]}'}
+      - model: grok-4
+        api_key: null
+        generic_key: generic
+        reply: {status: 200, body: '{"data":[{"id":"grok-4"}]}'}
+      - model: grok-4
+        api_key: key
+        reply: {status: 503, body: "overloaded"}
+      - model: grok-4
+        api_key: key
+        reply: {status: 200, body: '{"data":[{"name":"grok-4"}]}'}
+      - model: grok-4
+        api_key: key
+        reply: {status: 200, body: '{"data":[{"id":4}]}'}
+      - model: grok-4
+        api_key: key
+        reply: {status: 200, body: '{"models":[]}'}
+      - model: grok-4
+        api_key: key
+        reply: {status: 200, body: "<html>"}
+env: {}
+compare: {ignore: []}

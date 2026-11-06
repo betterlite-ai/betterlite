@@ -9,7 +9,8 @@ use secrecy::{ExposeSecret, SecretString};
 
 use super::error::XaiIdentityError;
 use super::{
-    KeyOrder, decode_xai_models, get_api_base, get_api_key, models_request, validate_environment,
+    KeyOrder, decode_xai_models, get_api_base, get_api_key, get_base_model, models_request,
+    validate_environment,
 };
 use crate::openai_base_config::Headers;
 
@@ -34,33 +35,30 @@ fn headers(pairs: &[(&str, &str)]) -> Headers {
 }
 
 #[rstest]
-#[case::explicit_wins(Some("explicit"), KeyOrder::Chat, Some("explicit"))]
+#[case::explicit_wins(Some("explicit"), Some("module"), KeyOrder::Chat, Some("explicit"))]
 #[case::explicit_wins_legacy(
     Some("explicit"),
+    Some("module"),
     KeyOrder::GenericBeforeEnvironment,
     Some("explicit")
 )]
-#[case::module_key_before_environment(None, KeyOrder::Chat, Some("module"))]
-#[case::module_key_before_generic(None, KeyOrder::GenericBeforeEnvironment, Some("module"))]
-fn xai_identity_key_precedence_prefers_explicit_then_xai_key(
+#[case::module_key_before_environment(None, Some("module"), KeyOrder::Chat, Some("module"))]
+#[case::module_key_before_generic(
+    None,
+    Some("module"),
+    KeyOrder::GenericBeforeEnvironment,
+    Some("module")
+)]
+#[case::chat_skips_generic(None, None, KeyOrder::Chat, Some("environment"))]
+#[case::legacy_inserts_generic(None, None, KeyOrder::GenericBeforeEnvironment, Some("generic"))]
+fn xai_identity_key_precedence_orders_every_source(
     #[case] explicit: Option<&str>,
+    #[case] xai: Option<&str>,
     #[case] order: KeyOrder,
     #[case] expected: Option<&str>,
 ) {
-    let settings = settings(Some("module"), Some("generic"), Some("environment"));
+    let settings = settings(xai, Some("generic"), Some("environment"));
     let found = get_api_key(explicit.map(secret).as_ref(), order, &settings);
-    assert_eq!(found.as_ref().map(ExposeSecret::expose_secret), expected);
-}
-
-#[rstest]
-#[case::chat_skips_generic(KeyOrder::Chat, Some("environment"))]
-#[case::legacy_inserts_generic(KeyOrder::GenericBeforeEnvironment, Some("generic"))]
-fn xai_identity_key_precedence_places_generic_key_by_mode(
-    #[case] order: KeyOrder,
-    #[case] expected: Option<&str>,
-) {
-    let settings = settings(None, Some("generic"), Some("environment"));
-    let found = get_api_key(None, order, &settings);
     assert_eq!(found.as_ref().map(ExposeSecret::expose_secret), expected);
 }
 
@@ -98,6 +96,18 @@ fn xai_identity_api_base_prefers_explicit_then_environment_then_default(
         api_base: environment.map(str::to_owned),
     };
     assert_eq!(get_api_base(explicit, &settings), expected);
+}
+
+#[rstest]
+#[case::single_prefix("xai/grok-4", "grok-4")]
+#[case::repeated_prefix("xai/xai/grok-4", "grok-4")]
+#[case::embedded_prefix("a/xai/b", "a/b")]
+#[case::none("grok-4", "grok-4")]
+fn xai_identity_base_model_removes_every_provider_prefix(
+    #[case] model: &str,
+    #[case] expected: &str,
+) {
+    assert_eq!(get_base_model(model), expected);
 }
 
 #[rstest]

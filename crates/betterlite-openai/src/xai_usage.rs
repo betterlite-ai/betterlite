@@ -16,10 +16,8 @@ use serde_json::Value;
 use error::XaiUsageError;
 
 const USD_TICKS_PER_DOLLAR: u64 = 10_000_000_000;
-// https://docs.x.ai/developers/pricing#tools-pricing: five dollars per thousand calls
-const DEFAULT_SEARCH_RATE: (i64, u32) = (5, 3);
 
-// xAI usage as the chat transformation sees it: the token counts plus the extras xAI adds to Usage
+// xAI usage as the chat transformation sees it: the token counts plus the extras xAI adds
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct XaiUsage {
     pub tokens: CostUsage,
@@ -39,8 +37,8 @@ pub trait GenericTokenPricing {
 
 // a JSON integer that is not a boolean and not negative, in ticks of a ten-billionth of a dollar
 #[must_use]
-pub fn xai_reported_cost_in_usd(cost_in_usd_ticks: &Value) -> Option<Decimal> {
-    let Value::Number(number) = cost_in_usd_ticks else {
+pub fn xai_reported_cost_in_usd(ticks: &Value) -> Option<Decimal> {
+    let Value::Number(number) = ticks else {
         return None;
     };
     let lexeme = number.to_string();
@@ -52,7 +50,7 @@ pub fn xai_reported_cost_in_usd(cost_in_usd_ticks: &Value) -> Option<Decimal> {
     if ticks < Decimal::ZERO {
         return None;
     }
-    ticks.abs().checked_div(Decimal::from(USD_TICKS_PER_DOLLAR))
+    ticks.checked_div(Decimal::from(USD_TICKS_PER_DOLLAR))
 }
 
 pub fn cost_per_token<P>(
@@ -63,23 +61,23 @@ pub fn cost_per_token<P>(
 where
     P: GenericTokenPricing,
 {
-    if let Some(reported_cost) = usage.cost.filter(|cost| *cost >= Decimal::ZERO) {
-        return Ok((Decimal::ZERO, reported_cost));
+    if let Some(reported) = usage.cost.filter(|cost| *cost >= Decimal::ZERO) {
+        return Ok((Decimal::ZERO, reported));
     }
     let tokens = &usage.tokens;
-    let expected_total = tokens
+    let mut adjusted = tokens.clone();
+    let expected = tokens
         .prompt_tokens
         .checked_add(tokens.completion_tokens)
         .ok_or(XaiUsageError::Overflow)?;
-    let mut adjusted = tokens.clone();
-    if tokens.total_tokens != expected_total {
-        let reasoning_tokens = tokens
+    if tokens.total_tokens != expected {
+        let reasoning = tokens
             .completion_details
             .and_then(|details| details.reasoning_tokens)
             .unwrap_or(0);
         adjusted.completion_tokens = tokens
             .completion_tokens
-            .checked_add(reasoning_tokens)
+            .checked_add(reasoning)
             .ok_or(XaiUsageError::Overflow)?;
     }
     adjusted.completion_details = None;
@@ -107,15 +105,14 @@ pub fn attach_tool_details(usage: &mut XaiUsage, details: Option<BTreeMap<String
     let Some(attached) = details else {
         return;
     };
-    let converted = web_search_calls(&attached);
-    usage.server_side_tool_usage_details = Some(attached);
-    if let Some(count) = converted.filter(|count| *count > 0) {
+    if let Some(count) = web_search_calls(&attached).filter(|count| *count > 0) {
         usage
             .tokens
             .prompt_details
             .get_or_insert_default()
             .web_search_requests = Some(count);
     }
+    usage.server_side_tool_usage_details = Some(attached);
 }
 
 pub fn cost_per_web_search_request(
@@ -131,21 +128,20 @@ pub fn cost_per_web_search_request(
     let Some(calls) = web_search_calls(details).filter(|calls| *calls > 0) else {
         return Ok(Decimal::ZERO);
     };
-    let rate = search_context
+    // xAI lists web search at five dollars per thousand calls; medium, low, high is LiteLLM's order
+    let fallback = Decimal::new(5, 3);
+    let configured = search_context.map_or([None; 3], |pricing| {
+        [
+            pricing.search_context_size_medium,
+            pricing.search_context_size_low,
+            pricing.search_context_size_high,
+        ]
+    });
+    let rate = configured
         .into_iter()
-        .flat_map(|pricing| {
-            [
-                pricing.search_context_size_medium,
-                pricing.search_context_size_low,
-                pricing.search_context_size_high,
-            ]
-        })
         .flatten()
         .find(|rate| *rate > Decimal::ZERO)
-        .unwrap_or_else(|| {
-            let (mantissa, scale) = DEFAULT_SEARCH_RATE;
-            Decimal::new(mantissa, scale)
-        });
+        .unwrap_or(fallback);
     rate.checked_mul(Decimal::from(calls))
         .ok_or(XaiUsageError::Overflow)
 }

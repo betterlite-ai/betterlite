@@ -60,6 +60,12 @@ pub fn get_api_base(api_base: Option<&str>, settings: &Settings) -> String {
 }
 
 #[must_use]
+pub fn get_base_model(model: &str) -> String {
+    const XAI_PROVIDER_PREFIX: &str = "xai/";
+    model.replace(XAI_PROVIDER_PREFIX, "")
+}
+
+#[must_use]
 pub fn validate_environment(mut headers: Headers, api_key: Option<&SecretString>) -> Headers {
     if let Some(key) = api_key {
         headers.insert(
