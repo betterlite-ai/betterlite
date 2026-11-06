@@ -1,7 +1,7 @@
 id: B4800
 milestone: M9 agents and mcp
 title: A2A card resolution and protocol errors
-status: todo
+status: done
 depends_on: [B173]
 file: tasks/B4800-a2a-card-resolution.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/a2a_protocol/exceptions.py"
 parent: B142
 split_from: B142
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 718

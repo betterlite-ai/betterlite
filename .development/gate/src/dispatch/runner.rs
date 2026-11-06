@@ -2,7 +2,7 @@ mod tests;
 
 use std::fs::{self, File};
 use std::io::Write as _;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Stdio};
 use std::time::Instant;
 
@@ -159,6 +159,7 @@ fn spawn(
         .args(arguments)
         .current_dir(invocation.worktree)
         .env("GATE_DISPATCHED", "1")
+        .envs(run_env(runner, invocation)?)
         .stdin(Stdio::piped())
         .stdout(stdout)
         .stderr(log)
@@ -167,6 +168,53 @@ fn spawn(
             program: runner.program.clone(),
             source,
         })
+}
+
+fn run_env(
+    runner: &Runner,
+    invocation: &Invocation<'_>,
+) -> Result<Vec<(String, String)>, GateError> {
+    let Some(file) = &runner.env_file else {
+        return Ok(Vec::new());
+    };
+    let home_text = invocation
+        .home
+        .to_str()
+        .ok_or_else(|| GateError::Dispatch {
+            task: String::new(),
+            reason: format!("the path {} is not UTF-8", invocation.home.display()),
+        })?;
+    let path = PathBuf::from(file.replace("{home}", home_text));
+    let text = fs::read_to_string(&path).map_err(|source| GateError::Read {
+        path: path.clone(),
+        source,
+    })?;
+    env_pairs(&text, &path)
+}
+
+pub(crate) fn env_pairs(text: &str, path: &Path) -> Result<Vec<(String, String)>, GateError> {
+    let mut pairs = Vec::new();
+    for (index, raw) in text.lines().enumerate() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        // the message names the line only, so a key never reaches a log
+        let (name, value) = line.split_once('=').ok_or_else(|| GateError::Dispatch {
+            task: String::new(),
+            reason: format!(
+                "line {} of {} is not NAME=VALUE",
+                index.saturating_add(1),
+                path.display()
+            ),
+        })?;
+        let bare = value
+            .strip_prefix('\'')
+            .and_then(|inner| inner.strip_suffix('\''))
+            .unwrap_or(value);
+        pairs.push((name.to_owned(), bare.to_owned()));
+    }
+    Ok(pairs)
 }
 
 pub(crate) fn run(

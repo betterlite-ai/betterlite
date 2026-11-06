@@ -13,15 +13,11 @@ description: 'Implement ShadowResultsRepository and grouped attempt/funnel aggre
   (L1383-L1386), _LegRow._as_aware_utc (L1390-L1396), _leg_attempt_counts (L1402-L1414), _group_response
   (L1417-L1448), _target_labels (L1454-L1470), _target_ids_of (L1473-L1483), _with_target_labels (L1486-L1522),
   _shadow_eval_results (L1525-L1577). Implement these behaviors through the typed Rust services above;
-  synchronous facades and structural accessors reuse the same primitive instead of separate ports.'
+  synchronous facades and structural accessors reuse the same primitive instead of separate ports. This task adds no route or server state, so leave routes.rs and state.rs to B1100.'
 scope:
   paths:
   - crates/betterlite-server/src/shadow_result_aggregation.rs
   - crates/betterlite-server/src/shadow_result_aggregation/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/shadow_result_aggregation.rs
   - crates/betterlite-server/src/routing/shadow_result_aggregation/**
   - tools/oracle/src/router_probes/shadow_result_aggregation.rs
