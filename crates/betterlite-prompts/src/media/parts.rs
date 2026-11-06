@@ -75,11 +75,10 @@ fn parse_remote_file(part: &ContentPart) -> Option<RemotePart<'_>> {
 }
 
 fn parse_remote_source(part: &ContentPart) -> Option<RemotePart<'_>> {
-    if !matches!(part.kind.as_str(), "document" | "image") {
-        return None;
-    }
     let source = part.fields.get(SOURCE).and_then(Json::as_object)?;
-    if source.get(TYPE).and_then(Json::as_str) != Some(URL_TYPE) {
+    let is_media_block = matches!(part.kind.as_str(), "document" | "image");
+    let is_url_source = source.get(TYPE).and_then(Json::as_str) == Some(URL_TYPE);
+    if !is_media_block || !is_url_source {
         return None;
     }
     let url = remote_url(source.get(URL))?;

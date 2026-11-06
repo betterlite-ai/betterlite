@@ -75,14 +75,10 @@ pub async fn inline_remote_media<Source>(
 where
     Source: RemoteMediaFetcher + Sync,
 {
-    let urls = remote_urls_to_inline(messages, should_inline);
-    if urls.is_empty() {
-        return Ok(messages.to_vec());
-    }
     let mut data_urls = BTreeMap::new();
-    for url in &urls {
-        let data_url = fetcher.convert_url(url).await?;
-        data_urls.insert(url.clone(), data_url);
+    for url in remote_urls_to_inline(messages, should_inline) {
+        let data_url = fetcher.convert_url(&url).await?;
+        data_urls.insert(url, data_url);
     }
     inline_messages(messages, &data_urls, should_inline)
 }
@@ -97,11 +93,8 @@ where
     Source: RemoteMediaFetcher + Sync,
 {
     let urls = remote_urls_to_inline(messages, should_inline);
-    if urls.is_empty() {
-        return Ok(messages.to_vec());
-    }
-    let data_url_values = fetcher.convert_urls(&urls).await?;
-    let data_urls = urls.iter().cloned().zip(data_url_values).collect();
+    let values = fetcher.convert_urls(&urls).await?;
+    let data_urls = urls.into_iter().zip(values).collect();
     inline_messages(messages, &data_urls, should_inline)
 }
 
