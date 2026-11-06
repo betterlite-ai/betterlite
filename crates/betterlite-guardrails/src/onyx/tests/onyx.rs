@@ -7,8 +7,7 @@ use betterlite_config::sections::guardrail_identity::config_models::GuardrailCon
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_guardrails::onyx::{
-    BLOCKED_STATUS, OnyxGuardrail, OnyxGuardrailConfigModel, OnyxGuardrailError,
-    SUPPORTED_EVENT_HOOKS,
+    OnyxGuardrail, OnyxGuardrailConfigModel, OnyxGuardrailError, SUPPORTED_EVENT_HOOKS,
 };
 use betterlite_http::proxy::base_builder;
 use secrecy::ExposeSecret as _;
@@ -391,7 +390,6 @@ async fn block_raises_a_400_with_the_violated_rules_message() {
         "Request blocked by Onyx Guard. Violations: pii, jailbreak."
     );
     assert!(matches!(error, OnyxGuardrailError::Blocked { .. }));
-    assert_eq!(BLOCKED_STATUS, StatusCode::BAD_REQUEST);
 }
 
 #[tokio::test]
@@ -562,6 +560,63 @@ async fn retries_once_when_the_first_response_body_is_incomplete() {
         error.to_string(),
         "Request blocked by Onyx Guard. Violations: pii."
     );
+    assert_eq!(mock.accepted.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn retries_a_truncated_chunked_body() {
+    let mock = scripted_mock(Script::TruncatedChunkedThenDeny {
+        reply: String::from(r#"{"allowed": false, "violated_rules": ["pii"]}"#),
+    })
+    .await;
+    let error = guardrail(&mock.base)
+        .apply_guardrail(
+            inputs(r#"{"texts": ["hello"]}"#),
+            &object("{}"),
+            GuardrailInputType::Request,
+            Some("call-1"),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(error, OnyxGuardrailError::Blocked { .. }));
+    assert_eq!(mock.accepted.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn retries_an_illegal_chunk_header() {
+    let mock = scripted_mock(Script::IllegalChunkThenDeny {
+        reply: String::from(r#"{"allowed": false, "violated_rules": ["pii"]}"#),
+    })
+    .await;
+    let error = guardrail(&mock.base)
+        .apply_guardrail(
+            inputs(r#"{"texts": ["hello"]}"#),
+            &object("{}"),
+            GuardrailInputType::Request,
+            Some("call-1"),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(error, OnyxGuardrailError::Blocked { .. }));
+    assert_eq!(mock.accepted.load(Ordering::SeqCst), 2);
+}
+
+#[tokio::test]
+async fn retries_a_truncated_server_error_body() {
+    let mock = scripted_mock(Script::TruncatedServerErrorThenDeny {
+        reply: String::from(r#"{"allowed": false, "violated_rules": ["pii"]}"#),
+    })
+    .await;
+    let error = guardrail(&mock.base)
+        .apply_guardrail(
+            inputs(r#"{"texts": ["hello"]}"#),
+            &object("{}"),
+            GuardrailInputType::Request,
+            Some("call-1"),
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(error, OnyxGuardrailError::Blocked { .. }));
     assert_eq!(mock.accepted.load(Ordering::SeqCst), 2);
 }
 

@@ -3,9 +3,7 @@ use std::net::TcpListener;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailInputType;
-use betterlite_guardrails::onyx::{
-    BLOCKED_STATUS, OnyxGuardrail, OnyxGuardrailError, SUPPORTED_EVENT_HOOKS,
-};
+use betterlite_guardrails::onyx::{OnyxGuardrail, OnyxGuardrailError, SUPPORTED_EVENT_HOOKS};
 use betterlite_http::proxy::base_builder;
 use secrecy::SecretString;
 use serde_json::json;
@@ -74,7 +72,7 @@ fn call(input: &OnyxCall) -> HelperResult {
         })),
         Err(OnyxGuardrailError::Blocked { .. }) => Ok(json!({
             "blocked": true,
-            "status": BLOCKED_STATUS.as_u16(),
+            "status": 400,
             "path": path,
             "request": request,
             "content_type": content_type,

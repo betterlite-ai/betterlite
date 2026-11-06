@@ -120,6 +120,15 @@ pub(crate) enum Script {
     IncompleteThenDeny {
         reply: String,
     },
+    TruncatedChunkedThenDeny {
+        reply: String,
+    },
+    IllegalChunkThenDeny {
+        reply: String,
+    },
+    TruncatedServerErrorThenDeny {
+        reply: String,
+    },
     ResetThenDeny {
         reply: String,
     },
@@ -160,6 +169,21 @@ async fn run_script(
         Script::IncompleteThenDeny { reply } => {
             misbehave_then_deny(&listener, &accepted, &reply, FirstFailure::Incomplete).await
         }
+        Script::TruncatedChunkedThenDeny { reply } => {
+            misbehave_then_deny(&listener, &accepted, &reply, FirstFailure::TruncatedChunked).await
+        }
+        Script::IllegalChunkThenDeny { reply } => {
+            misbehave_then_deny(&listener, &accepted, &reply, FirstFailure::IllegalChunk).await
+        }
+        Script::TruncatedServerErrorThenDeny { reply } => {
+            misbehave_then_deny(
+                &listener,
+                &accepted,
+                &reply,
+                FirstFailure::TruncatedServerError,
+            )
+            .await
+        }
         Script::ResetThenDeny { reply } => {
             misbehave_then_deny(&listener, &accepted, &reply, FirstFailure::Reset).await
         }
@@ -186,7 +210,7 @@ async fn split_reply(
 ) -> io::Result<()> {
     let mut stream = accept_one(listener, accepted).await?;
     sleep(head).await;
-    write_head(&mut stream, reply.len()).await?;
+    write_head(&mut stream, 200, reply.len()).await?;
     sleep(tail).await;
     stream.write_all(reply.as_bytes()).await?;
     stream.shutdown().await
@@ -194,6 +218,9 @@ async fn split_reply(
 
 enum FirstFailure {
     Incomplete,
+    TruncatedChunked,
+    IllegalChunk,
+    TruncatedServerError,
     Reset,
 }
 
@@ -204,24 +231,52 @@ async fn misbehave_then_deny(
     first: FirstFailure,
 ) -> io::Result<()> {
     match first {
-        FirstFailure::Incomplete => {
-            let mut stream = accept_one(listener, accepted).await?;
-            write_head(&mut stream, 100).await?;
-            stream.write_all(b"{\"all").await?;
-            stream.shutdown().await?;
-            drop(stream);
-        }
-        FirstFailure::Reset => {
-            let (mut stream, _) = listener.accept().await?;
-            accepted.fetch_add(1, Ordering::SeqCst);
-            let mut byte = [0_u8; 1];
-            let _read = stream.read(&mut byte).await;
-            // unread request bytes at close make the kernel send a reset instead of a fin
-            sleep(Duration::from_millis(20)).await;
-        }
+        FirstFailure::Incomplete => incomplete_body(listener, accepted).await?,
+        FirstFailure::TruncatedChunked => truncated_chunked_body(listener, accepted).await?,
+        FirstFailure::IllegalChunk => illegal_chunk_header(listener, accepted).await?,
+        FirstFailure::TruncatedServerError => truncated_server_error(listener, accepted).await?,
+        FirstFailure::Reset => reset_connection(listener, accepted).await?,
     }
     let mut second = accept_one(listener, accepted).await?;
     write_response(&mut second, reply).await
+}
+
+async fn incomplete_body(listener: &TcpListener, accepted: &AtomicUsize) -> io::Result<()> {
+    let mut stream = accept_one(listener, accepted).await?;
+    write_head(&mut stream, 200, 100).await?;
+    stream.write_all(b"{\"all").await?;
+    stream.shutdown().await
+}
+
+async fn truncated_chunked_body(listener: &TcpListener, accepted: &AtomicUsize) -> io::Result<()> {
+    let mut stream = accept_one(listener, accepted).await?;
+    write_chunked_head(&mut stream).await?;
+    stream.write_all(b"10\r\n{\"allowed\":").await?;
+    stream.shutdown().await
+}
+
+async fn illegal_chunk_header(listener: &TcpListener, accepted: &AtomicUsize) -> io::Result<()> {
+    let mut stream = accept_one(listener, accepted).await?;
+    write_chunked_head(&mut stream).await?;
+    stream.write_all(b"ZZZ\r\n").await?;
+    stream.shutdown().await
+}
+
+async fn truncated_server_error(listener: &TcpListener, accepted: &AtomicUsize) -> io::Result<()> {
+    let mut stream = accept_one(listener, accepted).await?;
+    write_head(&mut stream, 500, 100).await?;
+    stream.write_all(b"{\"all").await?;
+    stream.shutdown().await
+}
+
+async fn reset_connection(listener: &TcpListener, accepted: &AtomicUsize) -> io::Result<()> {
+    let (mut stream, _) = listener.accept().await?;
+    accepted.fetch_add(1, Ordering::SeqCst);
+    let mut byte = [0_u8; 1];
+    let _read = stream.read(&mut byte).await;
+    // unread request bytes at close make the kernel send a reset instead of a fin
+    sleep(Duration::from_millis(20)).await;
+    Ok(())
 }
 
 async fn accept_one(listener: &TcpListener, accepted: &AtomicUsize) -> io::Result<TcpStream> {
@@ -232,15 +287,23 @@ async fn accept_one(listener: &TcpListener, accepted: &AtomicUsize) -> io::Resul
     Ok(stream)
 }
 
-async fn write_head(stream: &mut TcpStream, body_length: usize) -> io::Result<()> {
+async fn write_head(stream: &mut TcpStream, status: u16, body_length: usize) -> io::Result<()> {
     let head = format!(
-        "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {body_length}\r\nconnection: close\r\n\r\n"
+        "HTTP/1.1 {status} X\r\ncontent-type: application/json\r\ncontent-length: {body_length}\r\nconnection: close\r\n\r\n"
     );
     stream.write_all(head.as_bytes()).await
 }
 
+async fn write_chunked_head(stream: &mut TcpStream) -> io::Result<()> {
+    stream
+        .write_all(
+            b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ntransfer-encoding: chunked\r\nconnection: close\r\n\r\n",
+        )
+        .await
+}
+
 async fn write_response(stream: &mut TcpStream, reply: &str) -> io::Result<()> {
-    write_head(stream, reply.len()).await?;
+    write_head(stream, 200, reply.len()).await?;
     stream.write_all(reply.as_bytes()).await?;
     stream.shutdown().await
 }

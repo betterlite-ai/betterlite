@@ -1,8 +1,3 @@
-use std::collections::BTreeMap;
-use std::error::Error as _;
-use std::num::TryFromIntError;
-use std::time::{Duration, TryFromFloatSecsError};
-
 use crate::generic_guardrail_contracts::GuardrailInputType;
 use betterlite_config::loader::EnvironmentLookup;
 use betterlite_config::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity;
@@ -13,10 +8,14 @@ use reqwest::StatusCode;
 use reqwest::header::CONTENT_TYPE;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
+use std::error::Error as _;
+use std::io::Error as IoError;
+use std::io::ErrorKind::{InvalidData, InvalidInput, UnexpectedEof};
+use std::num::TryFromIntError;
+use std::time::{Duration, TryFromFloatSecsError};
 use thiserror::Error;
 use uuid::Uuid;
-
-pub const BLOCKED_STATUS: StatusCode = StatusCode::BAD_REQUEST;
 pub const SUPPORTED_EVENT_HOOKS: [&str; 3] = ["pre_call", "during_call", "post_call"];
 
 #[derive(Debug, Error)]
@@ -118,12 +117,7 @@ impl OnyxGuardrail {
             Ok(()) => Ok(inputs),
             Err(error @ OnyxGuardrailError::Blocked { .. }) => Err(error),
             Err(error) => {
-                tracing::error!(
-                    error = %error,
-                    conversation_id = %conversation_id,
-                    input_type = ?input_type,
-                    "Error in apply_guardrail guard"
-                );
+                tracing::error!(error = %error, "Error in apply_guardrail guard");
                 Ok(inputs)
             }
         }
@@ -135,7 +129,7 @@ impl OnyxGuardrail {
         endpoint: &str,
         request: &OnyxRequest<'_>,
     ) -> Result<OnyxVerdict, OnyxGuardrailError> {
-        let response = self
+        let mut response = self
             .client
             .post(endpoint)
             .header(CONTENT_TYPE, "application/json")
@@ -149,10 +143,17 @@ impl OnyxGuardrail {
             .await
             .map_err(request_error)?;
         let status = response.status();
+        // httpx reads the body inside send, before raise_for_status, so a truncated error reply is still retried.
+        let mut body = Vec::new();
+        while let Some(chunk) = response.chunk().await.map_err(request_error)? {
+            body.extend_from_slice(&chunk);
+            if body.len() > 1024 * 1024 {
+                return Err(OnyxGuardrailError::ResponseTooLarge { limit: 1024 * 1024 });
+            }
+        }
         if !status.is_success() {
             return Err(OnyxGuardrailError::HttpStatus { status });
         }
-        let body = read_capped_body(response).await?;
         serde_json::from_slice(&body).map_err(|source| OnyxGuardrailError::ResponseJson { source })
     }
 
@@ -200,8 +201,17 @@ fn retryable(error: &reqwest::Error) -> bool {
     }
     let mut source = error.source();
     while let Some(cause) = source {
-        if let Some(hyper) = cause.downcast_ref::<HyperError>() {
-            return hyper.is_incomplete_message() || hyper.is_parse();
+        if cause
+            .downcast_ref::<HyperError>()
+            .is_some_and(|hyper| hyper.is_incomplete_message() || hyper.is_parse())
+        {
+            return true;
+        }
+        if let Some(io) = cause.downcast_ref::<IoError>() {
+            // hyper reports a truncated or malformed body as an io error; a reset keeps its own kind.
+            if matches!(io.kind(), UnexpectedEof | InvalidInput | InvalidData) {
+                return true;
+            }
         }
         source = cause.source();
     }
@@ -273,16 +283,6 @@ fn request_error(source: reqwest::Error) -> OnyxGuardrailError {
     OnyxGuardrailError::Transport {
         source: source.without_url(),
     }
-}
-async fn read_capped_body(mut response: reqwest::Response) -> Result<Vec<u8>, OnyxGuardrailError> {
-    let mut body = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(request_error)? {
-        body.extend_from_slice(&chunk);
-        if body.len() > 1024 * 1024 {
-            return Err(OnyxGuardrailError::ResponseTooLarge { limit: 1024 * 1024 });
-        }
-    }
-    Ok(body)
 }
 // No Debug derive: LiteLLM's config model carries api_key as a plain string, and Debug would print it.
 #[derive(Clone, Default, Deserialize, Serialize)]
