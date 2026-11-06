@@ -123,13 +123,13 @@ impl<D: Delivery> AthinaLogger<D> {
 }
 
 fn selected_response(kwargs: &IndexMap<String, Json>, event: &Event<'_>) -> Option<Json> {
-    let streaming = matches!(kwargs.get("stream"), Some(Json::Bool(true)));
-    let response = if streaming {
-        kwargs.get("complete_streaming_response")
+    if matches!(kwargs.get("stream"), Some(Json::Bool(true))) {
+        kwargs
+            .get("complete_streaming_response")
+            .map(|buffered| event::response_dump(Some(buffered)))
     } else {
-        event.response
-    };
-    response.map(|value| event::response_dump(Some(value)))
+        Some(event::response_dump(event.response))
+    }
 }
 
 #[derive(Serialize)]
