@@ -1,8 +1,10 @@
+use std::collections::BTreeMap;
+
 use secrecy::SecretString;
 
 pub const API_KEY_VARIABLE: &str = "HUMANLOOP_API_KEY";
+pub const CACHE_TTL_VARIABLE: &str = "HUMANLOOP_PROMPT_CACHE_TTL_SECONDS";
 pub const DEFAULT_CACHE_TTL_SECONDS: u64 = 60;
-const CACHE_TTL_VARIABLE: &str = "HUMANLOOP_PROMPT_CACHE_TTL_SECONDS";
 
 #[derive(Debug)]
 pub struct HumanloopSettings {
@@ -17,14 +19,14 @@ pub enum SettingsError {
 }
 
 impl HumanloopSettings {
-    pub fn from_env_values(
-        api_key: Option<&str>,
-        cache_ttl: Option<&str>,
-    ) -> Result<Self, SettingsError> {
-        let resolved_api_key = api_key
+    pub fn from_environment(environment: &BTreeMap<String, String>) -> Result<Self, SettingsError> {
+        let resolved_api_key = environment
+            .get(API_KEY_VARIABLE)
+            .map(String::as_str)
             .filter(|text| !text.trim().is_empty())
             .map(SecretString::from);
-        let cache_ttl_seconds = cache_ttl
+        let cache_ttl_seconds = environment
+            .get(CACHE_TTL_VARIABLE)
             .map(|text| betterlite_env::number::<u64>(CACHE_TTL_VARIABLE, text))
             .transpose()?
             .flatten()

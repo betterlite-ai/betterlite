@@ -35,34 +35,30 @@ pub struct PromptCache<C> {
 }
 
 impl<C: Clock> PromptCache<C> {
-    pub fn get_or_fetch<E, F>(
+    pub fn peek(&mut self, key: &str) -> Option<&mut PromptManagementClient> {
+        let now = self.clock.now();
+        match self.entries.get_mut(key) {
+            Some(entry) if now <= entry.expiry => Some(&mut entry.prompt),
+            Some(_) | None => None,
+        }
+    }
+
+    pub fn store(
         &mut self,
         key: &str,
-        fetch: F,
-    ) -> Result<&mut PromptManagementClient, E>
-    where
-        F: FnOnce() -> Result<PromptManagementClient, E>,
-    {
+        prompt: PromptManagementClient,
+    ) -> &mut PromptManagementClient {
         let now = self.clock.now();
-        let live = self
-            .entries
-            .get(key)
-            .is_some_and(|entry| now <= entry.expiry);
-        if !live {
-            // Pruning here also removes an expired copy, so the entry below is vacant.
-            self.make_room(now);
-        }
+        self.make_room(now);
+        let expiry = now.saturating_add(self.ttl);
         let entry = match self.entries.entry(key.to_owned()) {
-            Entry::Occupied(occupied) => occupied.into_mut(),
-            Entry::Vacant(vacant) => {
-                let prompt = fetch()?;
-                vacant.insert(CacheEntry {
-                    prompt,
-                    expiry: now.saturating_add(self.ttl),
-                })
+            Entry::Occupied(mut occupied) => {
+                drop(occupied.insert(CacheEntry { prompt, expiry }));
+                occupied.into_mut()
             }
+            Entry::Vacant(vacant) => vacant.insert(CacheEntry { prompt, expiry }),
         };
-        Ok(&mut entry.prompt)
+        &mut entry.prompt
     }
 
     // Mirrors InMemoryCache.evict_cache: expired entries go first, then the earliest expiry while at capacity.

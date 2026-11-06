@@ -1,5 +1,7 @@
+use std::collections::HashMap;
 use std::error::Error;
 use std::sync::Mutex;
+use std::time::Duration;
 
 use betterlite_models::decisions::Json;
 use betterlite_models::prompt_contracts::{
@@ -8,8 +10,11 @@ use betterlite_models::prompt_contracts::{
 use secrecy::SecretString;
 
 use crate::humanloop::compile::{CompileError, compile_prompt};
-use crate::humanloop::prompt_cache::Clock;
-use crate::humanloop::prompt_manager::{FetchError, HumanLoopPromptManager, get_model_from_prompt};
+use crate::humanloop::prompt_cache::{Clock, PromptCache};
+use crate::humanloop::prompt_manager::{
+    FetchError, HumanLoopPromptManager, PROMPTS_URL, get_model_from_prompt,
+};
+use crate::humanloop::settings::HumanloopSettings;
 use crate::humanloop::transport::PromptTransport;
 
 #[derive(Debug, thiserror::Error)]
@@ -31,8 +36,6 @@ where
     DynamicKey(#[from] DynamicKeyError),
     #[error("prompt_id is required for Humanloop integration")]
     MissingPromptId,
-    #[error("the Humanloop prompt cache is unavailable")]
-    Unavailable,
 }
 
 pub struct ChatCompletionPromptRequest<'request> {
@@ -54,16 +57,33 @@ pub struct ChatCompletionPrompt {
 
 pub struct HumanloopLogger<T, C> {
     pub api_key: Option<SecretString>,
-    pub manager: Mutex<HumanLoopPromptManager<T, C>>,
+    pub manager: HumanLoopPromptManager<T, C>,
 }
 
 impl<T, C> HumanloopLogger<T, C>
 where
-    T: PromptTransport,
-    C: Clock,
+    T: PromptTransport + Sync,
+    C: Clock + Send,
 {
+    #[must_use]
+    pub fn new(settings: HumanloopSettings, transport: T, clock: C) -> Self {
+        let cache_ttl = Duration::from_secs(settings.cache_ttl_seconds);
+        Self {
+            api_key: settings.api_key,
+            manager: HumanLoopPromptManager {
+                transport,
+                cache: Mutex::new(PromptCache {
+                    clock,
+                    ttl: cache_ttl,
+                    entries: HashMap::new(),
+                }),
+                prompt_url: PROMPTS_URL.to_owned(),
+            },
+        }
+    }
+
     // LiteLLM accepts the ignore_prompt_manager_* arguments here and never reads them.
-    pub fn get_chat_completion_prompt(
+    pub async fn get_chat_completion_prompt(
         &self,
         request: ChatCompletionPromptRequest<'_>,
     ) -> Result<ChatCompletionPrompt, HumanloopError<T::Error>> {
@@ -78,24 +98,24 @@ where
                 non_default_params: request.non_default_params,
             });
         };
-        let mut manager = self
+        let prompt_variables = request.prompt_variables;
+        let compiled = self
             .manager
-            .lock()
-            .map_err(|_poisoned| HumanloopError::Unavailable)?;
-        let prompt = manager.get_prompt_from_id(prompt_id, api_key)?;
-        let model = get_model_from_prompt(prompt, request.model);
-        compile_prompt(&mut prompt.prompt_template, request.prompt_variables)?;
-        let mut non_default_params = request.non_default_params;
-        if let Some(optional_params) = &prompt.prompt_optional_params {
-            non_default_params.extend(optional_params.clone());
-        }
-        let messages = prompt.prompt_template.clone();
-        drop(manager);
-        Ok(ChatCompletionPrompt {
-            model,
-            messages,
-            non_default_params,
-        })
+            .resolve(prompt_id, api_key, move |prompt| {
+                let model = get_model_from_prompt(prompt, request.model);
+                compile_prompt(&mut prompt.prompt_template, prompt_variables)?;
+                let mut non_default_params = request.non_default_params.clone();
+                if let Some(optional_params) = &prompt.prompt_optional_params {
+                    non_default_params.extend(optional_params.clone());
+                }
+                Ok(ChatCompletionPrompt {
+                    model,
+                    messages: prompt.prompt_template.clone(),
+                    non_default_params,
+                })
+            })
+            .await?;
+        compiled.map_err(HumanloopError::Compile)
     }
 }
 

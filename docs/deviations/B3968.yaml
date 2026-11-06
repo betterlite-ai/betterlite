@@ -51,10 +51,9 @@ deviations:
       working setup relies on it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1540
   - what: >-
-      On a cache miss the expired entries and the over-capacity eviction are applied before the
-      upstream fetch, so a fetch that fails while the cache is full can drop one cached prompt early.
+      A prompt response body larger than 1 MiB is a transport error instead of being read whole.
     why: >-
-      The cache keeps a single mutable borrow of its map so the insert can return the stored prompt;
-      the dropped prompt is fetched again on its next use, and a successful fetch inserts exactly as
-      LiteLLM's set_cache does.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/humanloop.py#L101-L110
+      LiteLLM's httpx client reads any body size; rule bounded-inputs requires a cap, and 1 MiB is the
+      per-item size the source's own in-memory cache is built around. A prompt beyond that is not a
+      working configuration.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/humanloop.py#L68-L74

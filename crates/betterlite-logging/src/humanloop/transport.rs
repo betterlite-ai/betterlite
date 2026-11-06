@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::future::Future;
 
 use secrecy::SecretString;
 
@@ -15,7 +16,10 @@ pub struct TransportResponse {
 }
 
 pub trait PromptTransport {
-    type Error: Error + 'static;
+    type Error: Error + Send + Sync + 'static;
 
-    fn get(&self, fetch: &PromptFetch) -> Result<TransportResponse, Self::Error>;
+    fn get(
+        &self,
+        fetch: &PromptFetch,
+    ) -> impl Future<Output = Result<TransportResponse, Self::Error>> + Send;
 }

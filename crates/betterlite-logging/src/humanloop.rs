@@ -1,4 +1,5 @@
 pub mod compile;
+pub mod http_transport;
 pub mod logger;
 pub mod params;
 pub mod prompt_cache;

@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::sync::{Mutex, PoisonError};
 
 use betterlite_models::decisions::Json;
 use betterlite_models::prompt_contracts::{PromptManagementClient, PromptParams};
@@ -10,7 +11,7 @@ use crate::humanloop::prompt_cache::{Clock, PromptCache};
 use crate::humanloop::transport::{PromptFetch, PromptTransport};
 
 pub const INTEGRATION_NAME: &str = "humanloop";
-const PROMPTS_URL: &str = "https://api.humanloop.com/v5/prompts/";
+pub(crate) const PROMPTS_URL: &str = "https://api.humanloop.com/v5/prompts/";
 const API_KEY_HEADER: &str = "X-Api-Key";
 const CONTENT_TYPE_HEADER: &str = "Content-Type";
 const PROMPT_ID_UNRESERVED: AsciiSet = NON_ALPHANUMERIC.remove(b'-').remove(b'_').remove(b'~');
@@ -43,37 +44,72 @@ where
 #[derive(Debug)]
 pub struct HumanLoopPromptManager<T, C> {
     pub transport: T,
-    pub cache: PromptCache<C>,
+    pub cache: Mutex<PromptCache<C>>,
+    pub prompt_url: String,
 }
 
 impl<T, C> HumanLoopPromptManager<T, C>
 where
-    T: PromptTransport,
-    C: Clock,
+    T: PromptTransport + Sync,
+    C: Clock + Send,
 {
-    pub fn get_prompt_from_id(
-        &mut self,
+    pub async fn resolve<R, F>(
+        &self,
         humanloop_prompt_id: &str,
         humanloop_api_key: &SecretString,
-    ) -> Result<&mut PromptManagementClient, FetchError<T::Error>> {
-        let Self { transport, cache } = self;
-        cache.get_or_fetch(humanloop_prompt_id, || {
-            fetch_prompt(transport, humanloop_prompt_id, humanloop_api_key)
-        })
+        mut use_prompt: F,
+    ) -> Result<R, FetchError<T::Error>>
+    where
+        F: FnMut(&mut PromptManagementClient) -> R + Send,
+    {
+        if let Some(result) = self.with_cached(humanloop_prompt_id, &mut use_prompt) {
+            return Ok(result);
+        }
+        let prompt = fetch_prompt(
+            &self.transport,
+            &self.prompt_url,
+            humanloop_prompt_id,
+            humanloop_api_key,
+        )
+        .await?;
+        Ok(self.store_and(humanloop_prompt_id, prompt, &mut use_prompt))
+    }
+
+    fn with_cached<R, F>(&self, key: &str, use_prompt: F) -> Option<R>
+    where
+        F: FnOnce(&mut PromptManagementClient) -> R,
+    {
+        let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
+        let prompt = cache.peek(key)?;
+        let result = use_prompt(prompt);
+        drop(cache);
+        Some(result)
+    }
+
+    fn store_and<R, F>(&self, key: &str, prompt: PromptManagementClient, use_prompt: F) -> R
+    where
+        F: FnOnce(&mut PromptManagementClient) -> R,
+    {
+        let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
+        let entry = cache.store(key, prompt);
+        let result = use_prompt(entry);
+        drop(cache);
+        result
     }
 }
 
-fn fetch_prompt<T>(
+async fn fetch_prompt<T>(
     transport: &T,
+    prompt_url: &str,
     humanloop_prompt_id: &str,
     humanloop_api_key: &SecretString,
 ) -> Result<PromptManagementClient, FetchError<T::Error>>
 where
-    T: PromptTransport,
+    T: PromptTransport + Sync,
 {
     let fetch = PromptFetch {
         url: format!(
-            "{PROMPTS_URL}{}",
+            "{prompt_url}{}",
             utf8_percent_encode(humanloop_prompt_id, &PROMPT_ID_UNRESERVED)
         ),
         headers: vec![
@@ -83,6 +119,7 @@ where
     };
     let response = transport
         .get(&fetch)
+        .await
         .map_err(|source| FetchError::Transport { source })?;
     if !(200..300).contains(&response.status) {
         return Err(FetchError::Api {

@@ -1,4 +1,5 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
+use std::future::{Future, ready};
 use std::io;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
@@ -8,8 +9,11 @@ use betterlite_models::prompt_contracts::{PromptIgnoreFlags, PromptParams};
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::humanloop::logger::{ChatCompletionPromptRequest, HumanloopLogger};
-use crate::humanloop::prompt_cache::{Clock, PromptCache};
+use crate::humanloop::prompt_cache::Clock;
 use crate::humanloop::prompt_manager::HumanLoopPromptManager;
+use crate::humanloop::settings::{
+    API_KEY_VARIABLE, CACHE_TTL_VARIABLE, HumanloopSettings, SettingsError,
+};
 use crate::humanloop::transport::{PromptFetch, PromptTransport, TransportResponse};
 
 pub(super) const PROMPT_BODY: &str = r#"{
@@ -38,10 +42,8 @@ pub(super) struct FakeTransport {
     pub(super) recorded: Recorded,
 }
 
-impl PromptTransport for FakeTransport {
-    type Error = io::Error;
-
-    fn get(&self, fetch: &PromptFetch) -> Result<TransportResponse, io::Error> {
+impl FakeTransport {
+    fn answer(&self, fetch: &PromptFetch) -> Result<TransportResponse, io::Error> {
         let headers = fetch
             .headers
             .iter()
@@ -65,6 +67,17 @@ impl PromptTransport for FakeTransport {
                 })
             },
         )
+    }
+}
+
+impl PromptTransport for FakeTransport {
+    type Error = io::Error;
+
+    fn get(
+        &self,
+        fetch: &PromptFetch,
+    ) -> impl Future<Output = Result<TransportResponse, io::Error>> + Send {
+        ready(self.answer(fetch))
     }
 }
 
@@ -100,44 +113,51 @@ pub(super) fn replying(status: u16, body: &str) -> (FakeTransport, Recorded) {
     (transport, recorded)
 }
 
-pub(super) fn manager(
-    transport: FakeTransport,
-    clock: &FakeClock,
-    ttl_seconds: u64,
-) -> HumanLoopPromptManager<FakeTransport, FakeClock> {
-    HumanLoopPromptManager {
-        transport,
-        cache: PromptCache {
-            clock: clock.clone(),
-            ttl: Duration::from_secs(ttl_seconds),
-            entries: HashMap::new(),
-        },
+pub(super) fn resolve_settings(
+    api_key: Option<&str>,
+    cache_ttl: Option<&str>,
+) -> Result<HumanloopSettings, SettingsError> {
+    let mut environment = BTreeMap::new();
+    if let Some(value) = api_key {
+        environment.insert(API_KEY_VARIABLE.to_owned(), value.to_owned());
     }
+    if let Some(value) = cache_ttl {
+        environment.insert(CACHE_TTL_VARIABLE.to_owned(), value.to_owned());
+    }
+    HumanloopSettings::from_environment(&environment)
 }
 
 pub(super) fn logger(
     transport: FakeTransport,
     clock: &FakeClock,
     api_key: Option<&str>,
+    cache_ttl: Option<&str>,
 ) -> HumanloopLogger<FakeTransport, FakeClock> {
-    HumanloopLogger {
-        api_key: api_key.map(SecretString::from),
-        manager: Mutex::new(manager(transport, clock, 60)),
-    }
+    HumanloopLogger::new(
+        resolve_settings(api_key, cache_ttl).expect("settings"),
+        transport,
+        clock.clone(),
+    )
 }
 
-pub(super) fn fill_cache(
-    prompts: &mut HumanLoopPromptManager<FakeTransport, FakeClock>,
+pub(super) async fn fill_cache(
+    prompts: &HumanLoopPromptManager<FakeTransport, FakeClock>,
     key: &SecretString,
     count: usize,
     advance_seconds: Option<u64>,
 ) {
     for index in 0..count {
         prompts
-            .get_prompt_from_id(&format!("pr_{index}"), key)
+            .resolve(&format!("pr_{index}"), key, |prompt| prompt.clone())
+            .await
             .expect("fill");
         if let Some(seconds) = advance_seconds {
-            prompts.cache.clock.advance(seconds);
+            prompts
+                .cache
+                .lock()
+                .expect("clock lock")
+                .clock
+                .advance(seconds);
         }
     }
 }
