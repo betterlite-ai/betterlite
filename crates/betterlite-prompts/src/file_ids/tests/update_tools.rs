@@ -77,6 +77,7 @@ fn model_file_ids_behavior_tests_behavior(
         None => FileIdMapping::default(),
     };
     let updated = update_tools_with_file_ids(Some(&code_interpreter(input)), model_id, &mapping)
-        .expect("a tool list decodes");
+        .expect("the tools stay within the limits")
+        .expect("the tool list is present");
     assert_eq!(container_file_ids(&updated), expected);
 }

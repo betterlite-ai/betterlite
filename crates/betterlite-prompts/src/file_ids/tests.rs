@@ -4,6 +4,7 @@ mod corpus;
 mod decode_tools;
 mod extract;
 mod format;
+mod limits;
 mod managed_original_id;
 mod managed_output_id;
 mod managed_resource_id;

@@ -34,6 +34,7 @@ fn model_file_ids_behavior_tests_behavior(#[case] input: &str, #[case] expected:
         &responses_input(input),
         Some(DEPLOYMENT),
         &FileIdMapping::default(),
-    );
+    )
+    .expect("the input stays within the limits");
     assert_eq!(serialized(&updated), json(expected));
 }

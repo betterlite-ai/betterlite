@@ -87,6 +87,7 @@ fn model_file_ids_behavior_tests_behavior(
         )),
         None => FileIdMapping::default(),
     };
-    let updated = update_responses_file_ids(&input_file(file_id), model_id, &mapping);
+    let updated = update_responses_file_ids(&input_file(file_id), model_id, &mapping)
+        .expect("the input stays within the limits");
     assert_eq!(updated_file_id(&updated).as_deref(), Some(expected));
 }

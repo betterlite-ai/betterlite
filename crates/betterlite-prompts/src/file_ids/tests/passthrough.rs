@@ -32,6 +32,7 @@ const MAPPING: &str = r#"{"file-part":{"deployment-1":"provider-file-9"}}"#;
 )]
 fn model_file_ids_behavior_tests_behavior(#[case] input: &str, #[case] expected: &str) {
     let mut updated = messages(input);
-    update_messages_with_file_ids(&mut updated, Some(DEPLOYMENT), &mapping(MAPPING));
+    update_messages_with_file_ids(&mut updated, Some(DEPLOYMENT), &mapping(MAPPING))
+        .expect("the message list stays within the limits");
     assert_eq!(serialized(&updated), json(expected));
 }

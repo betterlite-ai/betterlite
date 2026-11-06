@@ -31,9 +31,12 @@ fn vector_ids(tools: &[ResponsesTool]) -> Vec<&str> {
 )]
 fn model_file_ids_behavior_tests_behavior(#[case] input: &[&str], #[case] expected: &[&str]) {
     let tools = file_search(input);
-    let decoded = decode_vector_store_ids(Some(&tools)).expect("a tool list decodes");
+    let decoded = decode_vector_store_ids(Some(&tools))
+        .expect("the tools stay within the limits")
+        .expect("the tool list is present");
     assert_eq!(vector_ids(&decoded), expected);
     let updated = update_tools_with_file_ids(Some(&tools), None, &FileIdMapping::default())
-        .expect("a tool list decodes");
+        .expect("the tools stay within the limits")
+        .expect("the tool list is present");
     assert_eq!(vector_ids(&updated), expected);
 }

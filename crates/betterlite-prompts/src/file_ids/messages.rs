@@ -1,4 +1,5 @@
 use crate::arguments::json::{Json, Object};
+use crate::file_ids::limits::{FileIdsError, check_messages};
 use crate::file_ids::managed_id::{get_format_from_file_id, llm_output_file_id, original_file_id};
 use crate::file_ids::mapping::FileIdMapping;
 use crate::message_content::{Content, Message};
@@ -7,7 +8,8 @@ pub fn update_messages_with_file_ids(
     messages: &mut [Message],
     model_id: Option<&str>,
     mapping: &FileIdMapping,
-) {
+) -> Result<(), FileIdsError> {
+    check_messages(messages)?;
     for message in messages.iter_mut() {
         if message.role != "user" {
             continue;
@@ -25,6 +27,7 @@ pub fn update_messages_with_file_ids(
             update_file(file, model_id, mapping);
         }
     }
+    Ok(())
 }
 
 fn update_file(file: &mut Object, model_id: Option<&str>, mapping: &FileIdMapping) {
@@ -51,8 +54,8 @@ fn update_file(file: &mut Object, model_id: Option<&str>, mapping: &FileIdMappin
     }
 }
 
-#[must_use]
-pub fn get_file_ids_from_messages(messages: &[Message]) -> Vec<String> {
+pub fn get_file_ids_from_messages(messages: &[Message]) -> Result<Vec<String>, FileIdsError> {
+    check_messages(messages)?;
     let mut file_ids = Vec::new();
     for message in messages {
         if message.role != "user" {
@@ -77,5 +80,5 @@ pub fn get_file_ids_from_messages(messages: &[Message]) -> Vec<String> {
             }
         }
     }
-    file_ids
+    Ok(file_ids)
 }

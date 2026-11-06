@@ -1,4 +1,5 @@
 use crate::arguments::json::{Json, Object};
+use crate::file_ids::limits::{FileIdsError, check_responses_input};
 use crate::file_ids::managed_id::{llm_output_file_id, original_file_id};
 use crate::file_ids::mapping::FileIdMapping;
 use serde::{Deserialize, Serialize};
@@ -33,14 +34,14 @@ pub struct ResponsesContentPart {
     pub fields: Object,
 }
 
-#[must_use]
 pub fn update_responses_file_ids(
     input: &ResponsesInput,
     model_id: Option<&str>,
     mapping: &FileIdMapping,
-) -> ResponsesInput {
+) -> Result<ResponsesInput, FileIdsError> {
+    check_responses_input(input)?;
     let ResponsesInput::Items(items) = input else {
-        return input.clone();
+        return Ok(input.clone());
     };
     let mut updated = Vec::with_capacity(items.len());
     for item in items {
@@ -52,7 +53,7 @@ pub fn update_responses_file_ids(
         }
         updated.push(updated_item);
     }
-    ResponsesInput::Items(updated)
+    Ok(ResponsesInput::Items(updated))
 }
 
 fn update_content_part(

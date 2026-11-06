@@ -23,7 +23,11 @@ fuzz_target!(|bytes: &[u8]| {
     let mapping = FileIdMapping::default();
     if let Ok(parsed) = serde_json::from_slice::<Vec<Message>>(bytes) {
         let mut messages = parsed;
-        update_messages_with_file_ids(&mut messages, Some("deployment-1"), &mapping);
+        drop(update_messages_with_file_ids(
+            &mut messages,
+            Some("deployment-1"),
+            &mapping,
+        ));
         drop(get_file_ids_from_messages(&messages));
     }
     if let Ok(input) = serde_json::from_slice::<ResponsesInput>(bytes) {

@@ -1,4 +1,5 @@
 use crate::helpers::{Helper, HelperError, HelperResult};
+use betterlite_prompts::file_ids::limits::{FileIdsError, check_messages};
 use betterlite_prompts::file_ids::managed_id::get_format_from_file_id;
 use betterlite_prompts::file_ids::mapping::FileIdMapping;
 use betterlite_prompts::file_ids::messages::{
@@ -67,33 +68,60 @@ impl Helper for Op {
                 messages,
                 model_id,
                 mapping,
-            } => {
-                let mut updated = messages.clone();
-                update_messages_with_file_ids(&mut updated, model_id.as_deref(), mapping);
-                ok_value(updated)
-            }
+            } => messages_value(messages, model_id.as_deref(), mapping),
             Input::Responses {
                 request,
                 model_id,
                 mapping,
-            } => ok_value(update_responses_file_ids(
-                request,
-                model_id.as_deref(),
-                mapping,
-            )),
-            Input::DecodeTools { tools } => ok_value(decode_vector_store_ids(tools.as_deref())),
+            } => responses_value(request, model_id.as_deref(), mapping),
+            Input::DecodeTools { tools } => decode_vector_store_ids(tools.as_deref())
+                .map_err(|error| helper_error(&error))
+                .and_then(ok_value),
             Input::Tools {
                 tools,
                 model_id,
                 mapping,
-            } => ok_value(update_tools_with_file_ids(
-                tools.as_deref(),
-                model_id.as_deref(),
-                mapping,
-            )),
-            Input::FileIds { messages } => ok_value(get_file_ids_from_messages(messages)),
+            } => update_tools_with_file_ids(tools.as_deref(), model_id.as_deref(), mapping)
+                .map_err(|error| helper_error(&error))
+                .and_then(ok_value),
+            Input::FileIds { messages } => get_file_ids_from_messages(messages)
+                .map_err(|error| helper_error(&error))
+                .and_then(ok_value),
         }
     }
+}
+
+fn messages_value(
+    messages: &[Message],
+    model_id: Option<&str>,
+    mapping: &FileIdMapping,
+) -> HelperResult {
+    check_messages(messages).map_err(|error| helper_error(&error))?;
+    let mut updated = messages.to_vec();
+    update_messages_with_file_ids(&mut updated, model_id, mapping)
+        .map_err(|error| helper_error(&error))?;
+    ok_value(updated)
+}
+
+fn responses_value(
+    input: &ResponsesInput,
+    model_id: Option<&str>,
+    mapping: &FileIdMapping,
+) -> HelperResult {
+    let updated = update_responses_file_ids(input, model_id, mapping)
+        .map_err(|error| helper_error(&error))?;
+    ok_value(updated)
+}
+
+fn helper_error(error: &FileIdsError) -> Box<HelperError> {
+    Box::new(HelperError {
+        class: "FileIdsError".to_owned(),
+        status: None,
+        error_type: None,
+        param: None,
+        code: None,
+        message: error.to_string(),
+    })
 }
 
 fn ok_value<Payload>(payload: Payload) -> HelperResult

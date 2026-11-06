@@ -133,7 +133,8 @@ fn model_file_ids_behavior_tests_behavior(
         None => FileIdMapping::default(),
     };
     let mut updated = vec![file_message(file_id, existing_format)];
-    update_messages_with_file_ids(&mut updated, model_id, &mapping);
+    update_messages_with_file_ids(&mut updated, model_id, &mapping)
+        .expect("the message list stays within the limits");
     let Some(Content::Parts(parts)) = updated.first().and_then(|message| message.content.as_ref())
     else {
         panic!("the user message keeps its content parts");

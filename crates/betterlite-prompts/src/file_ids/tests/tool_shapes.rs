@@ -43,12 +43,14 @@ fn tools(text: &str) -> Option<Vec<ResponsesTool>> {
 )]
 fn model_file_ids_behavior_tests_behavior(#[case] input: &str, #[case] expected: &str) {
     let tools = tools(input);
-    let decoded = decode_vector_store_ids(tools.as_deref());
+    let decoded =
+        decode_vector_store_ids(tools.as_deref()).expect("the tools stay within the limits");
     assert_eq!(serialized(&decoded), json(expected));
     let updated = update_tools_with_file_ids(
         tools.as_deref(),
         Some(DEPLOYMENT),
         &FileIdMapping::default(),
-    );
+    )
+    .expect("the tools stay within the limits");
     assert_eq!(serialized(&updated), json(expected));
 }

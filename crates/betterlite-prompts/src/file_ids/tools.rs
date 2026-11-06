@@ -1,4 +1,5 @@
 use crate::arguments::json::{Json, Object};
+use crate::file_ids::limits::{FileIdsError, check_tools};
 use crate::file_ids::managed_id::{is_unified_vector_id, provider_resource_id};
 use crate::file_ids::mapping::FileIdMapping;
 use serde::{Deserialize, Serialize};
@@ -11,14 +12,18 @@ pub struct ResponsesTool {
     pub fields: Object,
 }
 
-#[must_use]
-pub fn decode_vector_store_ids(tools: Option<&[ResponsesTool]>) -> Option<Vec<ResponsesTool>> {
-    let present = tools?;
+pub fn decode_vector_store_ids(
+    tools: Option<&[ResponsesTool]>,
+) -> Result<Option<Vec<ResponsesTool>>, FileIdsError> {
+    check_tools(tools)?;
+    let Some(present) = tools else {
+        return Ok(None);
+    };
     let mut updated = Vec::with_capacity(present.len());
     for tool in present {
         updated.push(decode_tool_vector_store_ids(tool));
     }
-    Some(updated)
+    Ok(Some(updated))
 }
 
 fn decode_tool_vector_store_ids(tool: &ResponsesTool) -> ResponsesTool {
@@ -55,22 +60,24 @@ fn decode_tool_vector_store_ids(tool: &ResponsesTool) -> ResponsesTool {
     updated
 }
 
-#[must_use]
 pub fn update_tools_with_file_ids(
     tools: Option<&[ResponsesTool]>,
     model_id: Option<&str>,
     mapping: &FileIdMapping,
-) -> Option<Vec<ResponsesTool>> {
-    let mut updated = decode_vector_store_ids(tools)?;
+) -> Result<Option<Vec<ResponsesTool>>, FileIdsError> {
+    check_tools(tools)?;
+    let Some(mut updated) = decode_vector_store_ids(tools)? else {
+        return Ok(None);
+    };
     let Some(model) = model_id else {
-        return Some(updated);
+        return Ok(Some(updated));
     };
     for tool in &mut updated {
         if tool.kind.as_deref() == Some("code_interpreter") {
             map_container_file_ids(tool, model, mapping);
         }
     }
-    Some(updated)
+    Ok(Some(updated))
 }
 
 fn map_container_file_ids(tool: &mut ResponsesTool, model_id: &str, mapping: &FileIdMapping) {

@@ -30,5 +30,7 @@ use rstest::rstest;
 )]
 fn model_file_ids_behavior_tests_behavior(#[case] input: &str, #[case] expected: &[&str]) {
     let expected_ids: Vec<String> = expected.iter().map(|id| (*id).to_owned()).collect();
-    assert_eq!(get_file_ids_from_messages(&messages(input)), expected_ids);
+    let file_ids = get_file_ids_from_messages(&messages(input))
+        .expect("the message list stays within the limits");
+    assert_eq!(file_ids, expected_ids);
 }
