@@ -85,8 +85,13 @@ impl Capture {
             .map_err(|_poison| CaptureError::Lock)?
             .pop_front();
         match answer {
-            None | Some(Answer { raise: Some(_), .. }) => Err(CaptureError::Transport),
-            Some(reply) => {
+            Some(Answer { raise: Some(_), .. }) => Err(CaptureError::Transport),
+            other => {
+                let reply = other.unwrap_or(Answer {
+                    status: SUCCESS_STATUS,
+                    body: None,
+                    raise: None,
+                });
                 let payload = reply.body.unwrap_or_else(|| Json::Object(IndexMap::new()));
                 let encoded = serde_json::to_vec(&payload).map_err(CaptureError::Encode)?;
                 Ok(PostResponse {
