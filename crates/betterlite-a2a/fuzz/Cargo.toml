@@ -30,3 +30,10 @@ path = "fuzz_targets/completion_bridge.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "watsonx_token_response"
+path = "fuzz_targets/watsonx_token_response.rs"
+test = false
+doc = false
+bench = false
