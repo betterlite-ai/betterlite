@@ -390,18 +390,31 @@ fn callback_registry_tests_behavior(#[case] scenario: Scenario) {
             let mut registry = CallbackRegistry::new(100);
             let (sink, _receiver) = channel_sink(4);
             let identity = named("Logger");
+            let other = named("Other");
             assert_eq!(
                 registry.register(identity.clone(), sink.clone(), CallbackList::Success),
                 Registration::Registered
             );
             assert_eq!(
-                registry.register(identity.clone(), sink, CallbackList::Callbacks),
+                registry.register(identity.clone(), sink.clone(), CallbackList::Callbacks),
+                Registration::Registered
+            );
+            assert_eq!(
+                registry.register(other, sink, CallbackList::Success),
                 Registration::Registered
             );
             assert!(registry.remove_from_list(&identity, CallbackList::Success));
-            assert!(keys(&registry, CallbackList::Success).is_empty());
+            assert_eq!(keys(&registry, CallbackList::Success), ["Other"]);
             assert_eq!(keys(&registry, CallbackList::Callbacks), ["Logger"]);
-            assert_eq!(phase_keys(&registry, CallbackPhase::Success), ["Logger"]);
+            assert_eq!(
+                phase_keys(&registry, CallbackPhase::Success),
+                ["Logger", "Other"]
+            );
+            assert!(registry.remove_from_list(&identity, CallbackList::Callbacks));
+            assert!(keys(&registry, CallbackList::Callbacks).is_empty());
+            assert_eq!(keys(&registry, CallbackList::Success), ["Other"]);
+            assert_eq!(phase_keys(&registry, CallbackPhase::Success), ["Other"]);
+            assert_eq!(registry.select().success, ["Other"]);
             assert!(!registry.remove_from_list(&identity, CallbackList::Success));
         }
         Scenario::RemoveEveryList => {
@@ -444,10 +457,12 @@ fn callback_registry_tests_behavior(#[case] scenario: Scenario) {
                 2
             );
             assert_eq!(keys(&registry, CallbackList::Success), ["Kept-id=1"]);
+            assert_eq!(phase_keys(&registry, CallbackPhase::Success), ["Kept-id=1"]);
             assert_eq!(
                 registry.remove_class_from_list("Absent", CallbackList::Success),
                 0
             );
+            assert_eq!(keys(&registry, CallbackList::Success), ["Kept-id=1"]);
         }
         Scenario::Delivery => {
             let mut registry = CallbackRegistry::new(100);

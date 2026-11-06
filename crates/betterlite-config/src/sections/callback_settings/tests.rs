@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use indexmap::IndexMap;
 use rstest::rstest;
 
-use super::Settings;
+use super::{RawCallbackList, Settings};
 use crate::loader::{ConfigError, ConfigLoader};
 
 enum Scenario {
@@ -25,6 +25,7 @@ enum Scenario {
     OtelUnknownScalar,
     OtelUnknownNested,
     NestedOwnerless,
+    CallbackListShapes,
 }
 
 fn load(source: &str, environment: &[(&str, &str)]) -> Result<Settings, ConfigError> {
@@ -76,6 +77,7 @@ fn variables(pairs: &[(&str, &str)]) -> IndexMap<String, String> {
 #[case::unknown_otel_scalar_is_kept(Scenario::OtelUnknownScalar)]
 #[case::unknown_otel_nested_value_is_unsupported(Scenario::OtelUnknownNested)]
 #[case::nested_settings_value_without_an_owner_is_unsupported(Scenario::NestedOwnerless)]
+#[case::callback_list_shapes_keep_their_names(Scenario::CallbackListShapes)]
 fn callback_registry_tests_behavior(#[case] scenario: Scenario) {
     match scenario {
         Scenario::EmptyLists => {
@@ -251,6 +253,14 @@ fn callback_registry_tests_behavior(#[case] scenario: Scenario) {
                     "callback_settings.generic_api.headers",
                 ])
             );
+        }
+        Scenario::CallbackListShapes => {
+            let one = RawCallbackList::One("one".to_owned());
+            assert_eq!(one.names(), ["one"]);
+            assert_eq!(one.into_names(), ["one"]);
+            let many = RawCallbackList::Many(vec!["a".to_owned(), "b".to_owned()]);
+            assert_eq!(many.names(), ["a", "b"]);
+            assert_eq!(many.into_names(), ["a", "b"]);
         }
     }
 }
