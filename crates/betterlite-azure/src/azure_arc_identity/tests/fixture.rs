@@ -24,6 +24,13 @@ pub(super) struct FixtureHost {
     pub(super) now: i64,
 }
 
+fn owned_pairs(pairs: &[(&str, &str)]) -> Vec<(String, String)> {
+    pairs
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect()
+}
+
 impl FixtureHost {
     pub(super) fn linux(files: &[(&str, &str)]) -> Self {
         Self {
@@ -31,10 +38,7 @@ impl FixtureHost {
             environment: BTreeMap::new(),
             program_data: "%ProgramData%".to_owned(),
             program_files: "%ProgramFiles%".to_owned(),
-            files: files
-                .iter()
-                .map(|(path, text)| ((*path).to_owned(), (*text).to_owned()))
-                .collect(),
+            files: owned_pairs(files).into_iter().collect(),
             now: 1_700_000_000,
         }
     }
@@ -86,16 +90,10 @@ pub(super) struct Recorded {
 
 impl Recorded {
     pub(super) fn challenge() -> Self {
-        let owned = |pairs: &[(&str, &str)]| -> Vec<(String, String)> {
-            pairs
-                .iter()
-                .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
-                .collect()
-        };
         Self {
             url: ENDPOINT.to_owned(),
-            query: owned(&[("api-version", "2020-06-01"), ("resource", RESOURCE)]),
-            headers: owned(&[("Metadata", "true")]),
+            query: owned_pairs(&[("api-version", "2020-06-01"), ("resource", RESOURCE)]),
+            headers: owned_pairs(&[("Metadata", "true")]),
         }
     }
 
