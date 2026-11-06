@@ -98,7 +98,7 @@ impl ChatExecutor {
             request.choice_count,
         );
         if let Some(plan) = mock {
-            return self.mocked_outcome(&plan, deployment, request);
+            return self.mocked_outcome(&plan, deployment);
         }
         let outbound = self.outbound(deployment, request, "application/json")?;
         let started = Instant::now();
@@ -127,19 +127,18 @@ impl ChatExecutor {
         &self,
         plan: &MockPlan<'_>,
         deployment: &ChatDeployment,
-        request: &ChatRequest,
     ) -> Result<ChatOutcome, ChatError> {
         let id = format!("chatcmpl-{}", (self.next_id)());
         let response = (self.mock_chat)(
             plan,
             self.mock.usage,
-            &deployment.litellm_model,
+            mock_model(&deployment.litellm_model),
             &id,
             (self.clock)(),
         )
         .map_err(mock_failure)?;
         Ok(ChatOutcome {
-            response: response.for_client(request.model.as_deref()),
+            response,
             upstream: UpstreamResponse {
                 status: 200,
                 headers: HeaderMap::new(),
@@ -240,6 +239,14 @@ impl ChatExecutor {
         }
         optional.extend(forwarded);
         Ok(policy.request_body(model, messages, &optional))
+    }
+}
+
+// LiteLLM strips the provider prefix before mock_completion receives the model
+pub(crate) fn mock_model(litellm_model: &str) -> &str {
+    match litellm_model.split_once('/') {
+        Some((_, model)) => model,
+        None => litellm_model,
     }
 }
 

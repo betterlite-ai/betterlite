@@ -1,13 +1,5 @@
 use thiserror::Error;
 
-// the failure facts of the LiteLLM exception each sentinel raises, before the proxy turns them into a body
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct MockFailure {
-    pub status: Option<u16>,
-    pub error_type: Option<&'static str>,
-    pub code: Option<&'static str>,
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Error)]
 pub enum MockError {
     #[error("the mock answer is a rate limit error")]
@@ -28,46 +20,28 @@ pub enum MockError {
     ObjectStream,
     #[error("mock_tool_calls needs at least one choice")]
     ToolCallsWithoutChoice,
+    #[error("a mock call asks for {count} choices, more than the {limit} betterlite builds")]
+    TooManyChoices { count: u32, limit: u32 },
     #[error("the mock embedding answer is an error")]
     EmbeddingFailure,
 }
 
 impl MockError {
+    // the HTTP status LiteLLM's exception carries; the shared classifier turns it into type and code
     #[must_use]
-    pub const fn failure(self) -> MockFailure {
+    pub const fn status(self) -> Option<u16> {
         match self {
-            Self::RateLimit => MockFailure {
-                status: Some(429),
-                error_type: Some("throttling_error"),
-                code: Some("429"),
-            },
-            Self::ContextWindowExceeded | Self::ContentFilter | Self::ObjectStream => MockFailure {
-                status: Some(400),
-                error_type: None,
-                code: None,
-            },
+            Self::RateLimit => Some(429),
+            Self::ContextWindowExceeded
+            | Self::ContentFilter
+            | Self::ObjectStream
+            | Self::TooManyChoices { .. } => Some(400),
             Self::InternalServerError | Self::WrongType { .. } | Self::ToolCallsWithoutChoice => {
-                MockFailure {
-                    status: Some(500),
-                    error_type: Some("internal_server_error"),
-                    code: None,
-                }
+                Some(500)
             }
-            Self::Streaming => MockFailure {
-                status: Some(529),
-                error_type: None,
-                code: None,
-            },
-            Self::Timeout => MockFailure {
-                status: Some(408),
-                error_type: None,
-                code: None,
-            },
-            Self::EmbeddingFailure => MockFailure {
-                status: None,
-                error_type: None,
-                code: None,
-            },
+            Self::Streaming => Some(529),
+            Self::Timeout => Some(408),
+            Self::EmbeddingFailure => None,
         }
     }
 }

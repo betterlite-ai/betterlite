@@ -8,6 +8,10 @@ from litellm._uuid import uuid as litellm_uuid  # pyright: ignore[reportPrivateU
 from litellm.litellm_core_utils.mock_functions import mock_embedding
 from litellm.main import mock_completion  # pyright: ignore[reportUnknownVariableType]
 from litellm.proxy._types import UserAPIKeyAuth
+from litellm.proxy.common_utils.openai_error_payload import (  # pyright: ignore[reportUnknownVariableType]
+    openai_error_param,
+    openai_error_type,
+)
 from litellm.proxy.litellm_pre_call_utils import add_litellm_data_to_request  # pyright: ignore[reportUnknownVariableType]
 from litellm.proxy.proxy_server import ProxyConfig  # pyright: ignore[reportPrivateUsage]
 from litellm.types.utils import ModelResponse, ModelResponseStream
@@ -17,6 +21,9 @@ from starlette.requests import Request
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
 DEFAULT_CONTENT: Final = "This is a mock request"
+MIN_ERROR_STATUS: Final = 400
+MAX_ERROR_STATUS: Final = 599
+DEFAULT_ERROR_STATUS: Final = 500
 REQUEST_SCOPE: Final[dict[str, object]] = {
     "type": "http", "method": "POST", "path": "/v1/chat/completions", "headers": [],
 }
@@ -41,16 +48,22 @@ def _outcome(input_value: dict[str, Json]) -> Json:
 
 
 def _error_facts(error: BaseException) -> Json:
-    carried = [
-        cast(object, getattr(error, name, None))
-        for name in ("status_code", "type", "param", "code")
-    ]
-    values = [
-        value if isinstance(value, (int, str)) and not isinstance(value, bool) else None
-        for value in carried
-    ]
-    status, error_type, param, code = values
-    return {"kind": "error", "status": status, "type": error_type, "param": param, "code": code}
+    carried = cast(object, getattr(error, "status_code", None))
+    status = (
+        carried
+        if isinstance(carried, int)
+        and not isinstance(carried, bool)
+        and MIN_ERROR_STATUS <= carried <= MAX_ERROR_STATUS
+        else DEFAULT_ERROR_STATUS
+    )
+    # the proxy answers with this envelope, so the adapter compares the body facts
+    return {
+        "kind": "error",
+        "status": status,
+        "type": openai_error_type(error, status),
+        "param": openai_error_param(error),
+        "code": str(status),
+    }
 
 
 def _embedding_outcome(input_value: dict[str, Json]) -> Json:

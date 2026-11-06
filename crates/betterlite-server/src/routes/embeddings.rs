@@ -101,6 +101,7 @@ fn failure(error: &EmbeddingError, call_id: &str, deployment: Option<&ChatDeploy
             provider_message(response.status, &response.body, error)
         }
         EmbeddingError::Body { .. }
+        | EmbeddingError::Unsupported { .. }
         | EmbeddingError::Encode { .. }
         | EmbeddingError::Decode { .. }
         | EmbeddingError::Http { .. }
@@ -129,7 +130,9 @@ fn embedding_failure(error: &EmbeddingError) -> ProviderFailure {
         EmbeddingError::Provider { response } => {
             classify(response.status, &response.body, ErrorBodyKind::MessageOnly)
         }
-        EmbeddingError::UnknownModel { .. } | EmbeddingError::Body { .. } => ProviderFailure {
+        EmbeddingError::UnknownModel { .. }
+        | EmbeddingError::Body { .. }
+        | EmbeddingError::Unsupported { .. } => ProviderFailure {
             status: 400,
             error_type: String::from("invalid_request_error"),
             param: None,
@@ -166,6 +169,7 @@ fn failure_headers_for_embedding(
             failure_headers(None, Some(&response.headers), call_id, deployment)
         }
         EmbeddingError::Body { .. }
+        | EmbeddingError::Unsupported { .. }
         | EmbeddingError::Encode { .. }
         | EmbeddingError::Decode { .. }
         | EmbeddingError::Http { .. }

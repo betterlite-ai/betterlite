@@ -13,7 +13,10 @@ use serde_json::Value;
 use thiserror::Error;
 
 use crate::chat::deployment::{ChatDeployment, DeploymentError, Provider};
-use crate::chat::execution::ChatExecutor;
+use crate::chat::execution::{ChatExecutor, mock_model};
+
+// LiteLLM's raise_if_mock_testing_params_disallowed rejects these before a request is routed
+const GATED_MOCK_PARAMS: [&str; 2] = ["mock_delay", "mock_timeout"];
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(untagged)]
@@ -105,6 +108,8 @@ pub enum EmbeddingError {
         #[source]
         source: serde_json::Error,
     },
+    #[error("betterlite does not support the {name} request parameter yet")]
+    Unsupported { name: String },
     #[error("the request could not be written as JSON: {source}")]
     Encode {
         #[source]
@@ -148,10 +153,16 @@ pub struct EmbeddingOutcome {
 
 impl EmbeddingRequest {
     pub fn parse(bytes: &[u8]) -> Result<Self, EmbeddingError> {
-        match serde_json::from_slice(bytes) {
-            Ok(request) => Ok(request),
-            Err(source) => Err(EmbeddingError::Body { source }),
+        let request: Self =
+            serde_json::from_slice(bytes).map_err(|source| EmbeddingError::Body { source })?;
+        if let Some(name) = request
+            .passthrough
+            .keys()
+            .find(|name| GATED_MOCK_PARAMS.contains(&name.as_str()))
+        {
+            return Err(EmbeddingError::Unsupported { name: name.clone() });
         }
+        Ok(request)
     }
 }
 
@@ -178,7 +189,7 @@ pub async fn send(
     );
     // LiteLLM mocks an embedding only when mock_response itself is set, unlike the chat path
     if let Some(response) = mock.and_then(|plan| plan.response) {
-        return mocked_embedding(executor, deployment, request, response);
+        return mocked_embedding(executor, deployment, response);
     }
     let (model, api_key) = servable(deployment)?;
     let post = post(deployment, request, model, api_key)?;
@@ -207,12 +218,11 @@ pub async fn send(
 fn mocked_embedding(
     executor: &ChatExecutor,
     deployment: &ChatDeployment,
-    request: &EmbeddingRequest,
     response: &MockResponse,
 ) -> Result<EmbeddingOutcome, EmbeddingError> {
-    let answer = (executor.mock_embedding)(Some(response), &deployment.litellm_model)?;
+    let answer = (executor.mock_embedding)(Some(response), mock_model(&deployment.litellm_model))?;
     Ok(EmbeddingOutcome {
-        response: answer.for_client(request.model.as_deref()),
+        response: answer,
         upstream: UpstreamResponse {
             status: 200,
             headers: HeaderMap::new(),

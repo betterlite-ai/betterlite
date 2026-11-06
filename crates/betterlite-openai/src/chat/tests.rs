@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use betterlite_config::sections::mock_response::MockResponse;
+use betterlite_config::sections::mock_response::{MockArguments, MockResponse};
 use rstest::rstest;
 
 use super::{ChatRequest, MessageContent, RequestError, Role, Stop, ToolChoice};
@@ -56,6 +56,18 @@ fn parses_the_mock_fields_it_acts_on() {
         Some(MockResponse::Text(String::from("client")))
     );
     assert_eq!(request.mock_tool_calls, Some(Vec::new()));
+}
+
+#[test]
+fn parses_a_mock_tool_call_with_litellm_defaults_open() {
+    let body =
+        br#"{"model":"m","messages":[],"mock_tool_calls":[{"function":{"name":"f","arguments":{"a":1}}}]}"#;
+    let request = ChatRequest::parse(body).unwrap();
+    let calls = request.mock_tool_calls.expect("tool calls");
+    assert_eq!(calls[0].id, None);
+    assert_eq!(calls[0].kind, None);
+    let expected: MockArguments = serde_json::from_str(r#"{"a":1}"#).expect("arguments");
+    assert_eq!(calls[0].function.arguments, Some(expected));
 }
 
 #[rstest]

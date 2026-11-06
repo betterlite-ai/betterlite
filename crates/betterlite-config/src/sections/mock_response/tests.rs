@@ -7,8 +7,8 @@ use rstest::rstest;
 use crate::loader::{ConfigError, ConfigLoader};
 
 use super::{
-    MockChatChoice, MockChatMessage, MockChatObject, MockResponse, MockToolCall, MockUsage,
-    Settings,
+    MockArguments, MockChatChoice, MockChatMessage, MockChatObject, MockResponse, MockToolCall,
+    MockUsage, Settings,
 };
 
 fn load(source: &str, environment: &BTreeMap<String, String>) -> Result<Settings, ConfigError> {
@@ -95,11 +95,11 @@ fn reads_tool_calls_and_usage_in_a_response_object() {
             .first()
             .and_then(|choice| choice.message.tool_calls.clone()),
         Some(vec![MockToolCall {
-            id: String::from("t"),
-            kind: String::from("function"),
+            id: Some(String::from("t")),
+            kind: Some(String::from("function")),
             function: super::MockFunctionCall {
                 name: String::from("f"),
-                arguments: String::from("{}"),
+                arguments: Some(MockArguments::Text(String::from("{}"))),
             },
         }])
     );
@@ -111,6 +111,32 @@ fn reads_tool_calls_and_usage_in_a_response_object() {
             total_tokens: 3,
         }
     );
+}
+
+#[test]
+fn reads_a_tool_call_that_leaves_litellm_defaults_open() {
+    let value = deployment(
+        "model_list:\n  - model_name: mock\n    litellm_params:\n      mock_response:\n        choices:\n          - message:\n              tool_calls:\n                - function: {name: f, arguments: {a: 1}}\n",
+    )
+    .expect("config");
+    let Some(MockResponse::Object(MockChatObject {
+        choices: Some(choices),
+        ..
+    })) = value
+    else {
+        panic!("expected an object with choices");
+    };
+    let call = choices
+        .first()
+        .and_then(|choice| choice.message.tool_calls.as_ref())
+        .and_then(|calls| calls.first())
+        .expect("tool call");
+    assert_eq!(call.id, None);
+    assert_eq!(call.kind, None);
+    let Some(MockArguments::Object(arguments)) = &call.function.arguments else {
+        panic!("expected object arguments");
+    };
+    assert_eq!(arguments.to_string(), r#"{"a":1}"#);
 }
 
 #[test]

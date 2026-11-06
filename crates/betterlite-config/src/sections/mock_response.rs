@@ -1,3 +1,8 @@
+#![expect(
+    clippy::disallowed_types,
+    reason = "a mock tool call carries arbitrary JSON arguments that LiteLLM serializes to text"
+)]
+
 pub mod failure;
 pub mod selection;
 
@@ -66,17 +71,27 @@ pub struct MockChatMessage {
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct MockToolCall {
-    pub id: String,
-    #[serde(rename = "type")]
-    pub kind: String,
+    #[serde(default)]
+    pub id: Option<String>,
+    #[serde(rename = "type", default)]
+    pub kind: Option<String>,
     pub function: MockFunctionCall,
+}
+
+// LiteLLM encodes an object arguments value as JSON text and accepts any other value as given
+#[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum MockArguments {
+    Text(String),
+    Object(serde_json::Value),
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct MockFunctionCall {
     pub name: String,
-    pub arguments: String,
+    #[serde(default)]
+    pub arguments: Option<MockArguments>,
 }
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]

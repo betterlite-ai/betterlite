@@ -30,11 +30,19 @@ fn executor_for(source: &str) -> ChatExecutor {
 }
 
 async fn mock_call(source: &str, body: &str) -> (StatusCode, Vec<u8>) {
-    routed(executor_for(source), body).await
+    mock_call_at("/v1/chat/completions", source, body).await
+}
+
+async fn mock_call_at(path: &str, source: &str, body: &str) -> (StatusCode, Vec<u8>) {
+    routed_at(path, executor_for(source), body).await
 }
 
 async fn routed(executor: ChatExecutor, body: &str) -> (StatusCode, Vec<u8>) {
-    let request = Request::post("/v1/chat/completions")
+    routed_at("/v1/chat/completions", executor, body).await
+}
+
+async fn routed_at(path: &str, executor: ChatExecutor, body: &str) -> (StatusCode, Vec<u8>) {
+    let request = Request::post(path)
         .header("content-type", "application/json")
         .body(Body::from(body.to_owned()))
         .expect("request");
@@ -102,6 +110,68 @@ async fn mock_stream_frames_use_the_injected_id_and_clock() {
 struct FrameHeader {
     id: String,
     created: u64,
+    model: String,
+}
+
+#[tokio::test]
+async fn a_mock_stream_answers_with_the_path_model() {
+    let source = "model_list:\n  - {model_name: text, litellm_params: {model: openai/gpt-4o, api_base: 'http://127.0.0.1:1', api_key: k, mock_response: hi}}\n";
+    let (status, body) = mock_call_at(
+        "/openai/deployments/text/chat/completions",
+        source,
+        r#"{"messages":[],"stream":true}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let text = String::from_utf8(body).expect("utf-8 SSE");
+    let first = text
+        .split("\n\n")
+        .next()
+        .expect("first frame")
+        .trim_start_matches("data: ");
+    let frame: FrameHeader = serde_json::from_str(first).expect("frame");
+    assert_eq!(frame.model, "text");
+}
+
+#[derive(serde::Deserialize)]
+struct UsageFrame {
+    choices: Vec<FrameChoice>,
+    usage: UsageCounts,
+}
+
+#[derive(serde::Deserialize)]
+struct UsageCounts {
+    #[serde(rename = "prompt_tokens")]
+    prompt: u64,
+    #[serde(rename = "completion_tokens")]
+    completion: u64,
+    #[serde(rename = "total_tokens")]
+    total: u64,
+}
+
+#[tokio::test]
+async fn an_included_usage_chunk_closes_the_mock_stream() {
+    let source = "model_list:\n  - {model_name: g, litellm_params: {model: openai/up, api_base: 'http://127.0.0.1:1', api_key: k, mock_response: abcdefg, timeout: 0.1}}\n";
+    let (status, body) = mock_call(
+        source,
+        r#"{"model":"g","messages":[],"stream":true,"stream_options":{"include_usage":true}}"#,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let text = String::from_utf8(body).expect("utf-8 SSE");
+    let frames: Vec<&str> = text
+        .split("\n\n")
+        .filter(|frame| !frame.is_empty())
+        .collect();
+    // three content chunks, the finish chunk, the usage chunk, then [DONE]
+    assert_eq!(frames.len(), 6, "{text}");
+    assert_eq!(frames[5], "data: [DONE]");
+    let usage: UsageFrame =
+        serde_json::from_str(frames[4].trim_start_matches("data: ")).expect("usage frame");
+    assert!(usage.choices.is_empty());
+    assert_eq!(usage.usage.prompt, 10);
+    assert_eq!(usage.usage.completion, 20);
+    assert_eq!(usage.usage.total, 30);
 }
 
 #[tokio::test]
@@ -163,6 +233,8 @@ fn sentinel_source(sentinel: &str) -> String {
     400,
     "invalid_request_error"
 )]
+#[case::context_window("litellm.ContextWindowExceededError", 400, "invalid_request_error")]
+#[case::internal_server("litellm.InternalServerError", 500, "internal_server_error")]
 #[tokio::test]
 async fn mock_calls_behavior_tests_behavior(
     #[case] sentinel: &str,

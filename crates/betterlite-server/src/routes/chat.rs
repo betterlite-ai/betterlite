@@ -92,7 +92,17 @@ pub(super) struct CallContext<'id> {
     pub(super) id: &'id str,
     pub(super) include_in_body: bool,
     pub(super) started: Instant,
+    pub(super) model: Option<&'id str>,
+    pub(super) include_usage: bool,
     errors: &'id ErrorLayer,
+}
+
+fn call_id(headers: &HeaderMap) -> String {
+    headers
+        .get("x-litellm-call-id")
+        .and_then(|value| value.to_str().ok())
+        .filter(|value| (1..=MAX_CALL_ID_LENGTH).contains(&value.len()))
+        .map_or_else(|| Uuid::new_v4().to_string(), str::to_owned)
 }
 
 async fn chat_completion(
@@ -102,18 +112,21 @@ async fn chat_completion(
     body: Bytes,
 ) -> Response {
     let started = Instant::now();
-    let call_id = request_headers
-        .get("x-litellm-call-id")
-        .and_then(|value| value.to_str().ok())
-        .filter(|value| (1..=MAX_CALL_ID_LENGTH).contains(&value.len()))
-        .map_or_else(|| Uuid::new_v4().to_string(), str::to_owned);
+    let call_id = call_id(&request_headers);
+    let parsed = ChatRequest::parse(&body);
+    let body_model = parsed
+        .as_ref()
+        .map_or(None, |request| request.model.clone());
+    let requested_model = path_model.map(|Path(model)| model).or(body_model);
     let mut call = CallContext {
         id: &call_id,
         include_in_body: state.include_call_id,
         started,
+        model: requested_model.as_deref(),
+        include_usage: false,
         errors: &state.errors,
     };
-    let request = match ChatRequest::parse(&body) {
+    let request = match parsed {
         Ok(request) => request,
         Err(source) => {
             if let RequestError::Body { source: json } = &source {
@@ -123,22 +136,18 @@ async fn chat_completion(
             return failure(&ChatError::from(source), call, None);
         }
     };
-    let deployment = match picked_deployment(&state, &request, path_model) {
+    call.include_usage = request
+        .stream_options
+        .as_ref()
+        .is_some_and(|options| options.include_usage);
+    let deployment = match pick_deployment(
+        &state.executor,
+        requested_model.as_deref().unwrap_or("None"),
+    ) {
         Ok(deployment) => deployment,
         Err(error) => return failure(&error, call, None),
     };
     execute_chat(&state, &request, deployment, call).await
-}
-
-fn picked_deployment<'executor>(
-    state: &'executor ChatRouteState,
-    request: &ChatRequest,
-    path_model: Option<Path<String>>,
-) -> Result<&'executor ChatDeployment, ChatError> {
-    let model = path_model
-        .map(|Path(model)| model)
-        .or_else(|| request.model.clone());
-    pick_deployment(&state.executor, model.as_deref().unwrap_or("None"))
 }
 
 async fn execute_chat(

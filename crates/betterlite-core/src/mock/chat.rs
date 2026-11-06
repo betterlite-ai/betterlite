@@ -3,30 +3,39 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::mock_response::failure::MockError;
 use betterlite_config::sections::mock_response::selection::MockPlan;
 use betterlite_config::sections::mock_response::{
-    MockChatChoice, MockChatObject, MockResponse, UsageDefaults,
+    MockArguments, MockChatChoice, MockChatObject, MockFunctionCall, MockResponse, MockToolCall,
+    UsageDefaults,
 };
 use betterlite_openai::chat::response::{
     AssistantMessage, ChatChoice, ChatResponse, ChatUsage, MessageProviderFields,
 };
-use betterlite_openai::chat::{FunctionCall, ToolCall};
+use betterlite_openai::chat::{FunctionCall, ToolCall, choice_finish_reason};
+use uuid::Uuid;
 
 // LiteLLM's mock_completion answer when the caller and the operator both leave mock_response unset
 pub const DEFAULT_CONTENT: &str = "This is a mock request";
+// LiteLLM builds one choice per n before it answers, so a mock caps n instead of allocating billions
+pub const MAX_MOCK_CHOICES: u32 = 128;
 
 pub enum ChatAnswer<'content> {
     Content(&'content str),
     Object(&'content MockChatObject),
 }
 
-pub fn answer(response: Option<&MockResponse>) -> Result<ChatAnswer<'_>, MockError> {
-    match response {
-        None => Ok(ChatAnswer::Content(DEFAULT_CONTENT)),
-        Some(MockResponse::Text(text)) => content(text),
-        Some(MockResponse::Object(object)) => Ok(ChatAnswer::Object(object)),
-        Some(MockResponse::Numbers(_)) => Err(MockError::WrongType {
-            field: "mock_response",
-        }),
-    }
+// LiteLLM raises a sentinel before it looks at n, and builds every choice in memory after that
+pub fn answer<'plan>(plan: &'plan MockPlan<'plan>) -> Result<ChatAnswer<'plan>, MockError> {
+    let answer = match plan.response {
+        None => ChatAnswer::Content(DEFAULT_CONTENT),
+        Some(MockResponse::Text(text)) => content(text)?,
+        Some(MockResponse::Object(object)) => ChatAnswer::Object(object),
+        Some(MockResponse::Numbers(_)) => {
+            return Err(MockError::WrongType {
+                field: "mock_response",
+            });
+        }
+    };
+    checked_choice_count(plan)?;
+    Ok(answer)
 }
 
 // LiteLLM raises these before it looks at the stream flag or the dict branch, so they win over both
@@ -48,7 +57,7 @@ pub fn response(
     id: &str,
     created: u64,
 ) -> Result<ChatResponse, MockError> {
-    match answer(plan.response)? {
+    match answer(plan)? {
         ChatAnswer::Content(content) => Ok(ChatResponse {
             id: id.to_owned(),
             object: String::from("chat.completion"),
@@ -60,6 +69,16 @@ pub fn response(
             service_tier: None,
         }),
         ChatAnswer::Object(object) => Ok(object_response(object, model, id, created)),
+    }
+}
+
+const fn checked_choice_count(plan: &MockPlan<'_>) -> Result<Option<u32>, MockError> {
+    match plan.choice_count {
+        Some(count) if count > MAX_MOCK_CHOICES => Err(MockError::TooManyChoices {
+            count,
+            limit: MAX_MOCK_CHOICES,
+        }),
+        count => Ok(count),
     }
 }
 
@@ -86,21 +105,35 @@ fn content_choices(content: &str, plan: &MockPlan<'_>) -> Result<Vec<ChatChoice>
         let first = choices
             .first_mut()
             .ok_or(MockError::ToolCallsWithoutChoice)?;
-        first.message.tool_calls = Some(
-            tool_calls
-                .iter()
-                .map(|call| ToolCall {
-                    id: call.id.clone(),
-                    kind: call.kind.clone(),
-                    function: FunctionCall {
-                        name: call.function.name.clone(),
-                        arguments: call.function.arguments.clone(),
-                    },
-                })
-                .collect(),
-        );
+        first.message.tool_calls = Some(tool_calls.iter().map(wire_tool_call).collect());
     }
     Ok(choices)
+}
+
+// ChatCompletionMessageToolCall fills a uuid id and the function type, and Function encodes object arguments as JSON
+fn wire_tool_call(call: &MockToolCall) -> ToolCall {
+    ToolCall {
+        id: call
+            .id
+            .clone()
+            .unwrap_or_else(|| Uuid::new_v4().to_string()),
+        kind: call
+            .kind
+            .clone()
+            .unwrap_or_else(|| String::from("function")),
+        function: FunctionCall {
+            name: call.function.name.clone(),
+            arguments: tool_arguments(&call.function),
+        },
+    }
+}
+
+fn tool_arguments(function: &MockFunctionCall) -> String {
+    match &function.arguments {
+        None => String::new(),
+        Some(MockArguments::Text(text)) => text.clone(),
+        Some(MockArguments::Object(value)) => value.to_string(),
+    }
 }
 
 fn usage_from(plan: &MockPlan<'_>, defaults: UsageDefaults) -> ChatUsage {
@@ -151,32 +184,27 @@ fn object_choices(object: &MockChatObject) -> Vec<ChatChoice> {
         .clone()
         .unwrap_or_else(|| vec![MockChatChoice::default()])
         .into_iter()
-        .map(|choice| ChatChoice {
-            index: choice.index,
-            message: AssistantMessage {
-                role: choice.message.role,
-                content: choice.message.content,
-                tool_calls: choice.message.tool_calls.map(|calls| {
-                    calls
-                        .into_iter()
-                        .map(|call| ToolCall {
-                            id: call.id,
-                            kind: call.kind,
-                            function: FunctionCall {
-                                name: call.function.name,
-                                arguments: call.function.arguments,
-                            },
-                        })
-                        .collect()
-                }),
-                annotations: None,
-                audio: None,
-                refusal: None,
-                provider_specific_fields: MessageProviderFields::default(),
-            },
-            finish_reason: choice.finish_reason,
-            logprobs: None,
-            provider_specific_fields: BTreeMap::new(),
+        .map(|choice| {
+            let (finish_reason, native) = choice_finish_reason(choice.finish_reason.as_deref());
+            ChatChoice {
+                index: choice.index,
+                message: AssistantMessage {
+                    role: choice.message.role,
+                    content: choice.message.content,
+                    tool_calls: choice
+                        .message
+                        .tool_calls
+                        .as_deref()
+                        .map(|calls| calls.iter().map(wire_tool_call).collect()),
+                    annotations: None,
+                    audio: None,
+                    refusal: None,
+                    provider_specific_fields: MessageProviderFields::default(),
+                },
+                finish_reason: Some(finish_reason),
+                logprobs: None,
+                provider_specific_fields: native,
+            }
         })
         .collect()
 }

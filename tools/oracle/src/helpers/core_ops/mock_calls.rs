@@ -1,4 +1,4 @@
-use betterlite_config::sections::mock_response::failure::{MockError, MockFailure};
+use betterlite_config::sections::mock_response::failure::MockError;
 use betterlite_config::sections::mock_response::selection::{
     MockPermission, MockPlan, resolve_mock,
 };
@@ -7,6 +7,8 @@ use betterlite_core::mock::chat::{self, ChatAnswer};
 use betterlite_core::mock::embedding;
 use betterlite_core::mock::stream::{self, StreamSpec};
 use betterlite_core::mock::timeout::{self, TimeoutValue};
+use betterlite_openai::chat::mock_failure;
+use betterlite_openai::chat::provider_error::ProviderFailure;
 use serde_json::Value;
 use thiserror::Error;
 
@@ -38,14 +40,14 @@ enum Failure {
 // the error travels as data, because a raised exception reaches the oracle with only its status
 fn error_value(failure: &Failure) -> Value {
     let facts = match failure {
-        Failure::Mock(error) => error.failure(),
-        Failure::Json(_) => MockFailure {
-            status: None,
-            error_type: None,
-            code: None,
+        Failure::Mock(error) => mock_failure(*error).failure(),
+        Failure::Json(_) => ProviderFailure {
+            status: 500,
+            error_type: String::from("internal_server_error"),
+            param: None,
         },
     };
-    serde_json::json!({"kind": "error", "status": facts.status, "type": facts.error_type, "param": null, "code": facts.code})
+    serde_json::json!({"kind": "error", "status": facts.status, "type": facts.error_type, "param": facts.param, "code": facts.status.to_string()})
 }
 
 fn embedding_outcome(input: &Input) -> Result<Value, Failure> {
@@ -80,7 +82,7 @@ fn chat_outcome(input: &Input) -> Result<Value, Failure> {
         prompt_tokens: input.prompt_tokens,
     };
     let id = format!("chatcmpl-{}", input.uuid);
-    let resolved = chat::answer(plan.response)?;
+    let resolved = chat::answer(&plan)?;
     if input.mode == Mode::Stream
         && let ChatAnswer::Content(content) = resolved
     {

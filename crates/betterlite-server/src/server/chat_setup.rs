@@ -1,4 +1,5 @@
 use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::sections::mock_response::MockResponse;
 use betterlite_config::sections::mock_response::selection::MockPermission;
 use betterlite_config::tls::{TlsPolicy, TlsPolicyError};
 use betterlite_config::types::{Config, RoutingStrategy};
@@ -13,6 +14,7 @@ use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::openai_base_config::CatalogCapabilities;
 use rand::rngs::StdRng;
 use std::collections::{BTreeMap, BTreeSet};
+use std::hash::{DefaultHasher, Hash as _, Hasher as _};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 use thiserror::Error;
@@ -58,11 +60,12 @@ pub fn chat_executor(
         return Err(ChatSetupError::RoutingStrategy { strategy });
     }
     let defaults = openai_defaults(config);
-    let deployments = config
+    let mut deployments = config
         .model_list
         .iter()
         .map(|deployment| ChatDeployment::resolve(deployment, &defaults))
         .collect::<Result<Vec<_>, _>>()?;
+    disambiguate_mock_ids(&mut deployments, &config.sections.mock_response.deployments);
     let client = outbound_client(config, environment, &deployments)?;
     let mock = mock_settings(config, &deployments);
     Ok(ChatExecutor {
@@ -86,6 +89,20 @@ fn unix_seconds() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_or(0, |elapsed| elapsed.as_secs())
+}
+
+// LiteLLM's model id hashes litellm_params, mock_response included, so deployments that differ only in it stay distinct
+fn disambiguate_mock_ids(deployments: &mut [ChatDeployment], responses: &[Option<MockResponse>]) {
+    for (deployment, response) in deployments.iter_mut().zip(responses) {
+        let Some(mock) = response else {
+            continue;
+        };
+        let mut hasher = DefaultHasher::new();
+        serde_json::to_string(mock)
+            .unwrap_or_default()
+            .hash(&mut hasher);
+        deployment.model_id = format!("{}-{:016x}", deployment.model_id, hasher.finish());
+    }
 }
 
 fn openai_defaults(config: &Config) -> OpenAiDefaults {

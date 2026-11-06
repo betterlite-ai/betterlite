@@ -73,7 +73,7 @@ fn mock_stream(
     plan: &MockPlan<'_>,
     call: CallContext<'_>,
 ) -> Response {
-    let answer = match answer(plan.response) {
+    let answer = match answer(plan) {
         Ok(answer) => answer,
         Err(error) => return failure(&mock_failure(error), call, Some(deployment)),
     };
@@ -85,16 +85,20 @@ fn mock_stream(
             Some(deployment),
         );
     };
-    let model = request.model.clone().unwrap_or_default();
     let id = format!("chatcmpl-{}", (executor.next_id)());
     let spec = StreamSpec {
         content,
         choice_count: plan.choice_count,
-        model: &model,
+        model: call.model.unwrap_or_default(),
         id: &id,
         created: (executor.clock)(),
     };
-    let frames = match mock_frames(&spec, plan.prompt_tokens, executor.mock.usage) {
+    let frames = match mock_frames(
+        &spec,
+        plan.prompt_tokens,
+        executor.mock.usage,
+        call.include_usage,
+    ) {
         Ok(frames) => frames,
         Err(source) => return failure(&ChatError::Encode { source }, call, Some(deployment)),
     };
@@ -114,6 +118,7 @@ fn mock_frames(
     spec: &StreamSpec<'_>,
     prompt_tokens: Option<u64>,
     usage: UsageDefaults,
+    include_usage: bool,
 ) -> Result<Vec<Vec<u8>>, serde_json::Error> {
     let mut frames = Vec::new();
     for (position, mut chunk) in chunks(spec).enumerate() {
@@ -143,7 +148,8 @@ fn mock_frames(
         system_fingerprint: None,
         service_tier: None,
     })?);
-    if let Some(count) = prompt_tokens {
+    if include_usage || prompt_tokens.is_some() {
+        let count = prompt_tokens.unwrap_or(usage.prompt_tokens);
         frames.push(sse_frame(&usage_chunk(spec, count, usage))?);
     }
     frames.push(b"data: [DONE]\n\n".to_vec());

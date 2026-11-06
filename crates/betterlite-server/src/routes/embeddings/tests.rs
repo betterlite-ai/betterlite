@@ -24,6 +24,7 @@ struct ErrorFields {
     #[serde(rename = "type")]
     error_type: String,
     param: Option<String>,
+    code: String,
 }
 
 #[test]
@@ -186,4 +187,64 @@ async fn mock_calls_behavior_tests_behavior() {
     assert_eq!(reply.usage.prompt, 10);
     assert_eq!(reply.usage.completion, 0);
     assert_eq!(reply.usage.total, 0);
+}
+
+#[rstest::rstest]
+#[case::mock_deployment(true)]
+#[case::plain_deployment(false)]
+#[tokio::test]
+async fn a_mock_testing_param_is_rejected_on_embeddings(#[case] mocked: bool) {
+    let source = [
+        "model_list:\n  - {model_name: embed, litellm_params: {model: openai/embed, api_base: 'http://127.0.0.1:1', api_key: k",
+        if mocked { ", mock_response: [0.1]" } else { "" },
+        "}}\n",
+    ]
+    .concat();
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(&source)
+    .expect("config");
+    let executor =
+        chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).expect("executor");
+    let request = Request::post("/v1/embeddings")
+        .header("content-type", "application/json")
+        .body(Body::from(
+            r#"{"model":"embed","input":"hello","mock_timeout":true}"#,
+        ))
+        .expect("request");
+    let response = embedding_routes(Arc::new(executor))
+        .oneshot(request)
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let body = to_bytes(response.into_body(), 8192).await.expect("body");
+    let envelope: ErrorEnvelope = serde_json::from_slice(&body).expect("error JSON");
+    assert_eq!(envelope.error.error_type, "invalid_request_error");
+    assert_eq!(envelope.error.code, "400");
+}
+
+#[tokio::test]
+async fn a_mock_embedding_answers_with_the_stripped_model() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load(
+        "model_list:\n  - {model_name: emb, litellm_params: {model: openai/text-embedding-3-small, api_base: 'http://127.0.0.1:1', mock_response: [0.1]}}\n",
+    )
+    .expect("config");
+    let executor =
+        chat_executor(&config, &BTreeMap::new(), StdRng::seed_from_u64(1)).expect("executor");
+    let request = Request::post("/openai/deployments/emb/embeddings")
+        .header("content-type", "application/json")
+        .body(Body::from(r#"{"input":"hello"}"#))
+        .expect("request");
+    let response = embedding_routes(Arc::new(executor))
+        .oneshot(request)
+        .await
+        .expect("response");
+    assert_eq!(response.status(), StatusCode::OK);
+    let body = to_bytes(response.into_body(), 8192).await.expect("body");
+    let reply: MockEmbeddingReply = serde_json::from_slice(&body).expect("reply");
+    assert_eq!(reply.model, "text-embedding-3-small");
 }

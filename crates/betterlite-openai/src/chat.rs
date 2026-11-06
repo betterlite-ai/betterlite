@@ -16,6 +16,7 @@ use indexmap::IndexMap;
 use crate::chat::execution::ChatError;
 use crate::chat::response::ChatResponse;
 use crate::embedding::EmbeddingResponse;
+use crate::text_completion_policy::reply::mapped_finish_reason;
 use serde::{Deserialize, Serialize};
 use serde_json::{Number, Value};
 use serde_with::skip_serializing_none;
@@ -62,7 +63,7 @@ pub struct MockSettings {
     pub permission: MockPermission,
 }
 
-// the shared failure classifier maps these statuses to LiteLLM's type and code; no provider was called
+// the shared failure classifier maps this status to LiteLLM's type and code; no provider was called
 #[must_use]
 pub fn mock_failure(error: MockError) -> ChatError {
     if error == MockError::Timeout {
@@ -70,11 +71,28 @@ pub fn mock_failure(error: MockError) -> ChatError {
     }
     ChatError::Provider {
         response: Box::new(UpstreamResponse {
-            status: error.failure().status.unwrap_or(500),
+            status: error.status().unwrap_or(500),
             headers: HeaderMap::new(),
             body: Vec::new(),
         }),
     }
+}
+
+// LiteLLM's Choices maps a given finish_reason and keeps the raw value when the mapping changed it
+#[must_use]
+pub fn choice_finish_reason(raw: Option<&str>) -> (String, BTreeMap<String, Value>) {
+    let Some(given) = raw else {
+        return (String::from("stop"), BTreeMap::new());
+    };
+    let mapped = mapped_finish_reason(given);
+    if mapped == given {
+        return (given.to_owned(), BTreeMap::new());
+    }
+    let native = BTreeMap::from([(
+        String::from("native_finish_reason"),
+        Value::String(given.to_owned()),
+    )]);
+    (mapped.to_owned(), native)
 }
 
 #[skip_serializing_none]

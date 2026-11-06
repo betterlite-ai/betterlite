@@ -36,6 +36,15 @@ fn parses_embedding_response_vectors() {
     assert!(matches!(base64, EmbeddingVector::Base64(value) if value == "AQID"));
 }
 
+#[rstest::rstest]
+#[case::mock_delay("mock_delay")]
+#[case::mock_timeout("mock_timeout")]
+fn refuses_the_gated_mock_testing_params(#[case] name: &str) {
+    let body = format!(r#"{{"input":"x","{name}":true}}"#);
+    let error = EmbeddingRequest::parse(body.as_bytes()).expect_err("gated parameter");
+    assert!(matches!(error, EmbeddingError::Unsupported { name: refused } if refused == name));
+}
+
 #[test]
 fn parses_embedding_string_input() {
     let request =

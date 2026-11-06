@@ -513,6 +513,26 @@ async fn mock_calls_behavior_tests_behavior(
     }
 }
 
+#[tokio::test]
+async fn a_denied_client_tool_call_is_stripped_before_its_shape_is_used() {
+    let (listener, base) = listen().await;
+    let entries = format!(
+        "[{{model_name: g, litellm_params: {{model: openai/up, api_base: '{base}', api_key: k}}}}]"
+    );
+    let chat = executor(&entries, 1, None, MockPermission::default());
+    let request = ChatRequest::parse(
+        br#"{"model":"g","messages":[],"mock_tool_calls":[{"function":{"name":"f","arguments":{"a":1}}}]}"#,
+    )
+    .unwrap();
+    let deployment = chat.deployments.first().unwrap();
+    let (sent, answered) = tokio::join!(
+        provider(listener, 200, UPSTREAM_ANSWER, Duration::ZERO),
+        chat.send(deployment, &request)
+    );
+    drop(answered.unwrap());
+    assert!(!sent.contains("mock_tool_calls"), "{sent}");
+}
+
 #[derive(Clone, Default)]
 struct Captured(Arc<Mutex<Vec<u8>>>);
 

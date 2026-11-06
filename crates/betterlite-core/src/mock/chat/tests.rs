@@ -3,13 +3,13 @@
 use betterlite_config::sections::mock_response::failure::MockError;
 use betterlite_config::sections::mock_response::selection::MockPlan;
 use betterlite_config::sections::mock_response::{
-    MockChatChoice, MockChatMessage, MockChatObject, MockFunctionCall, MockResponse, MockToolCall,
-    MockUsage, UsageDefaults,
+    MockArguments, MockChatChoice, MockChatMessage, MockChatObject, MockFunctionCall, MockResponse,
+    MockToolCall, MockUsage, UsageDefaults,
 };
 use betterlite_openai::chat::response::ChatUsage;
 use rstest::rstest;
 
-use super::{DEFAULT_CONTENT, response};
+use super::{DEFAULT_CONTENT, MAX_MOCK_CHOICES, response};
 
 fn defaults() -> UsageDefaults {
     UsageDefaults {
@@ -20,11 +20,11 @@ fn defaults() -> UsageDefaults {
 
 fn calls() -> Vec<MockToolCall> {
     vec![MockToolCall {
-        id: String::from("call-1"),
-        kind: String::from("function"),
+        id: Some(String::from("call-1")),
+        kind: Some(String::from("function")),
         function: MockFunctionCall {
             name: String::from("lookup"),
-            arguments: String::from("{}"),
+            arguments: Some(MockArguments::Text(String::from("{}"))),
         },
     }]
 }
@@ -298,6 +298,99 @@ fn an_object_mock_keeps_given_values() {
     assert_eq!(answer.usage.prompt_tokens, 1);
     assert_eq!(answer.usage.completion_tokens, 2);
     assert_eq!(answer.usage.total_tokens, 3);
+}
+
+#[test]
+fn a_choice_count_above_the_cap_is_a_typed_failure() {
+    let value = MockResponse::Text(String::from("abc"));
+    let count = MAX_MOCK_CHOICES.saturating_add(1);
+    let plan = MockPlan {
+        response: Some(&value),
+        tool_calls: None,
+        choice_count: Some(count),
+        prompt_tokens: None,
+    };
+    assert_eq!(
+        response(&plan, defaults(), "gpt-4o", "id", 1).err(),
+        Some(MockError::TooManyChoices {
+            count,
+            limit: MAX_MOCK_CHOICES
+        })
+    );
+}
+
+#[test]
+fn tool_calls_fill_litellm_defaults() {
+    let value = MockResponse::Text(String::from("abc"));
+    let arguments: MockArguments = serde_json::from_str(r#"{"a": 1}"#).expect("object arguments");
+    let calls = vec![MockToolCall {
+        id: None,
+        kind: None,
+        function: MockFunctionCall {
+            name: String::from("lookup"),
+            arguments: Some(arguments),
+        },
+    }];
+    let plan = MockPlan {
+        response: Some(&value),
+        tool_calls: Some(&calls),
+        choice_count: None,
+        prompt_tokens: None,
+    };
+    let answer = response(&plan, defaults(), "gpt-4o", "id", 1).expect("mock response");
+    let attached = answer.choices[0]
+        .message
+        .tool_calls
+        .as_ref()
+        .expect("tool calls");
+    assert_eq!(attached[0].kind, "function");
+    assert_eq!(attached[0].function.name, "lookup");
+    assert_eq!(attached[0].function.arguments, r#"{"a":1}"#);
+    uuid::Uuid::parse_str(&attached[0].id).expect("generated id");
+}
+
+#[rstest]
+#[case::missing(None, "stop", None)]
+#[case::given(Some("length"), "length", None)]
+#[case::mapped(Some("max_tokens"), "length", Some("max_tokens"))]
+fn an_object_finish_reason_is_mapped(
+    #[case] given: Option<&str>,
+    #[case] mapped: &str,
+    #[case] native: Option<&str>,
+) {
+    let object = MockChatObject {
+        id: None,
+        created: None,
+        model: None,
+        object: None,
+        system_fingerprint: None,
+        service_tier: None,
+        choices: Some(vec![MockChatChoice {
+            index: 0,
+            message: MockChatMessage {
+                role: String::from("assistant"),
+                content: Some(String::from("abc")),
+                tool_calls: None,
+            },
+            finish_reason: given.map(str::to_owned),
+        }]),
+        usage: None,
+    };
+    let value = MockResponse::Object(object);
+    let plan = MockPlan {
+        response: Some(&value),
+        tool_calls: None,
+        choice_count: None,
+        prompt_tokens: None,
+    };
+    let answer = response(&plan, defaults(), "gpt-4o", "id", 1).expect("mock response");
+    assert_eq!(answer.choices[0].finish_reason.as_deref(), Some(mapped));
+    let native_value = answer.choices[0]
+        .provider_specific_fields
+        .get("native_finish_reason")
+        .map(ToString::to_string);
+    let expected = native.map(|raw| format!("\"{raw}\""));
+    assert_eq!(native_value, expected);
 }
 
 #[test]
