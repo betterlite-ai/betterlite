@@ -975,11 +975,16 @@ dependencies = [
  "betterlite-http",
  "chrono",
  "futures-core",
+ "hex",
  "http 1.5.0",
+ "lru",
+ "num-traits",
  "rstest",
+ "secrecy",
  "serde",
  "serde_json",
  "serde_with",
+ "sha2 0.11.1",
  "strum",
  "thiserror",
  "tokio",
@@ -1056,8 +1061,19 @@ dependencies = [
  "betterlite-error",
  "indexmap 2.14.2",
  "rstest",
+ "secrecy",
  "serde",
  "serde_json",
+ "serde_path_to_error",
+ "thiserror",
+]
+
+[[package]]
+name = "betterlite-azure-fuzz"
+version = "0.0.0"
+dependencies = [
+ "betterlite-azure",
+ "libfuzzer-sys",
 ]
 
 [[package]]
@@ -1441,6 +1457,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-redact",
  "fancy-regex",
+ "futures-util",
  "indexmap 2.14.2",
  "lru",
  "mime_guess",
@@ -1522,6 +1539,7 @@ dependencies = [
  "h2",
  "hex",
  "http 1.5.0",
+ "libc",
  "opentelemetry-http",
  "percent-encoding",
  "rcgen",
@@ -1542,6 +1560,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "url",
  "uuid",
  "webpki-roots",
  "zip",
@@ -1826,6 +1845,7 @@ dependencies = [
  "betterlite-redis",
  "betterlite-router",
  "betterlite-sdk",
+ "betterlite-secret-managers",
  "betterlite-secrets",
  "betterlite-server",
  "betterlite-streaming",
@@ -1856,6 +1876,7 @@ dependencies = [
  "tokio",
  "tokio-postgres",
  "tokio-tungstenite",
+ "tower",
  "tracing",
  "tracing-subscriber",
  "ulid",
@@ -2137,6 +2158,7 @@ dependencies = [
  "betterlite-env",
  "http 1.5.0",
  "num-traits",
+ "percent-encoding",
  "regex",
  "rstest",
  "secrecy",

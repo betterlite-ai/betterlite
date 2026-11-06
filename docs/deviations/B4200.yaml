@@ -1,0 +1,20 @@
+task: B4200
+deviations:
+  - what: The effective root path travels in the request's extensions and get_request_root_path reads it from there, where LiteLLM reads a ContextVar.
+    why: A request extension cannot leak into another request or task, needs no reset on failure or cancellation, and callers outside the HTTP layer receive the value explicitly.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/per_request_root_path_middleware.py#L33-L53
+  - what: With SERVER_ROOT_PATHS empty or unset, the middleware is not installed, as in LiteLLM, and server.rs application() wraps the finished router instead of adding a layer inside routes::router.
+    why: routes::router has callers in tests outside this task's scope, and wrapping the router before it matches keeps every inner layer and route behind the stripped path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L20019-L20039
+  - what: A request for exactly a matched prefix, such as /tenant-a, is routed as / directly. LiteLLM routes it as an empty path, so Starlette answers with a redirect to the slash form.
+    why: The redirect ends at the same route, and an axum request path cannot be empty.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/per_request_root_path_middleware.py#L106-L111
+  - what: The middleware strips the root from the request URI itself, because axum has no scope root_path that its router honors. The original URI stays available as OriginalUri.
+    why: Starlette strips root_path during route matching, and the same effect here needs the path rewritten before the router runs.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/per_request_root_path_middleware.py#L106-L111
+  - what: Prefixes match the raw request path, so a percent-encoded prefix does not match.
+    why: Starlette matches scope["path"], which the server has already percent-decoded, and the decoded form is not kept by an axum URI.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/per_request_root_path_middleware.py#L106-L111
+  - what: CONNECT requests pass through untouched, the closest analog to the ASGI scope types the middleware ignores.
+    why: A CONNECT target is an authority such as host:443 with no path to match, and there are no lifespan or disconnect scopes in axum.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/middleware/per_request_root_path_middleware.py#L105-L106
