@@ -1819,6 +1819,7 @@ dependencies = [
  "betterlite-redact",
  "betterlite-redis",
  "betterlite-router",
+ "betterlite-sdk",
  "betterlite-secrets",
  "betterlite-server",
  "betterlite-streaming",
@@ -2101,6 +2102,19 @@ dependencies = [
 [[package]]
 name = "betterlite-sdk"
 version = "0.1.0"
+dependencies = [
+ "betterlite-config",
+ "betterlite-http",
+ "chrono",
+ "http 1.5.0",
+ "rstest",
+ "secrecy",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
+ "url",
+]
 
 [[package]]
 name = "betterlite-secret-managers"
