@@ -2,7 +2,9 @@ use std::collections::VecDeque;
 use std::future::Future;
 use std::sync::{Mutex, PoisonError};
 
-use betterlite_logging::batch::delivery::{BatchTransport, SendFailure, send_batch_with_413_split};
+use betterlite_logging::batch::delivery::{
+    BatchTransport, DeliverySettings, SendFailure, send_batch_with_413_split,
+};
 use betterlite_logging::batch::retry::RequeuePolicy;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -171,13 +173,14 @@ pub(super) async fn send_outcome(scenario: &SendScenario) -> Value {
         oversized: scenario.oversized.clone(),
         unserializable: scenario.unserializable.clone(),
     };
-    let result = send_batch_with_413_split(
-        &transport,
-        &scenario.events,
-        &scenario.success_status_codes,
-        scenario.policy.requeue(),
-    )
-    .await;
+    let settings = DeliverySettings {
+        success_status_codes: &scenario.success_status_codes,
+        policy: scenario.policy.requeue(),
+        integration_name: "BatchDelivery",
+        detail: "scripted transport",
+        drop_error_message: "batch delivery dropped a single event the destination rejected as too large",
+    };
+    let result = send_batch_with_413_split(&transport, &scenario.events, settings).await;
     let (undelivered, cancelled) = match result {
         Ok(undelivered) => (undelivered, false),
         Err(error) => (error.undelivered, true),

@@ -6,3 +6,6 @@ deviations:
   - what: BatchQueue::enqueue enforces max_queue_size at admission, dropping the oldest event with a warning and reporting the dropped count, where CustomBatchLogger only trims the queue after a failed flush.
     why: A producer whose flush is slow or hung would otherwise grow memory without bound from incoming events; the documented max_queue_size is a retention cap, and a working setup cannot rely on exceeding it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L74-L84
+  - what: LiteLLM's flush_queue returns without flushing when the injected flush_lock is None; BatchQueue always owns its flush mutex, so every flush is serialized, and a caller that cannot flush simply never calls flush.
+    why: The lock is internal state of the injected primitive here, so there is nothing for a caller to omit; keeping it nullable would let two flushes overlap and hide the skip, while the caller's own loop decides whether a flush happens at all.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L54-L58

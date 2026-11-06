@@ -19,6 +19,15 @@ pub struct BatchCancelled<E> {
     pub undelivered: Vec<E>,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct DeliverySettings<'text> {
+    pub success_status_codes: &'text [u16],
+    pub policy: RequeuePolicy,
+    pub integration_name: &'text str,
+    pub detail: &'text str,
+    pub drop_error_message: &'text str,
+}
+
 pub trait BatchTransport<E>: Send + Sync {
     type SendError: Send + Display;
     type LimitError: Send + Display;
@@ -43,8 +52,7 @@ type Delivery<'sender, E> =
 
 struct Splitter<'delivery, E, S> {
     transport: &'delivery S,
-    success_status_codes: &'delivery [u16],
-    policy: RequeuePolicy,
+    settings: DeliverySettings<'delivery>,
     events: PhantomData<&'delivery [E]>,
 }
 
@@ -66,13 +74,12 @@ where
                 | Err(SendFailure::Status {
                     status: PAYLOAD_TOO_LARGE,
                 }) => {
-                    self.halve_or_drop(
-                        batch,
-                        "batch delivery dropped a single event the destination rejected as too large",
-                    )
-                    .await
+                    self.halve_or_drop(batch, self.settings.drop_error_message)
+                        .await
                 }
-                Ok(status) if self.success_status_codes.contains(&status) => Ok(Vec::new()),
+                Ok(status) if self.settings.success_status_codes.contains(&status) => {
+                    Ok(Vec::new())
+                }
                 Ok(status) | Err(SendFailure::Status { status }) => {
                     Ok(self.retained(batch, status))
                 }
@@ -81,8 +88,10 @@ where
                 }),
                 Err(SendFailure::Other(error)) => {
                     tracing::error!(
+                        integration = self.settings.integration_name,
                         %error,
                         records = batch.len(),
+                        detail = self.settings.detail,
                         "the batch delivery send failed; the whole batch is requeued"
                     );
                     Ok(batch.to_vec())
@@ -97,9 +106,11 @@ where
             Ok(_) => None,
             Err(error) => {
                 tracing::error!(
+                    integration = self.settings.integration_name,
                     %error,
                     records = batch.len(),
-                    "batch delivery cannot measure a record against the destination limits"
+                    detail = self.settings.detail,
+                    "the integration dropped a record that cannot be serialized"
                 );
                 Some(
                     self.halve_or_drop(
@@ -113,32 +124,24 @@ where
     }
 
     fn retained(&self, batch: &[E], status: u16) -> Vec<E> {
-        if self.policy.retains(status) {
-            tracing::error!(
-                status,
-                records = batch.len(),
-                "the destination answered with a status a retry can clear; the records will be retried"
-            );
-            batch.to_vec()
-        } else {
-            tracing::error!(
-                status,
-                records = batch.len(),
-                "the destination answered with a status a retry cannot clear; the records are dropped"
-            );
-            Vec::new()
-        }
+        self.settings.policy.retained(
+            batch,
+            status,
+            self.settings.integration_name,
+            self.settings.detail,
+        )
     }
 
-    async fn halve_or_drop(
-        &self,
-        batch: &[E],
-        message: &'static str,
-    ) -> Result<Vec<E>, BatchCancelled<E>> {
+    async fn halve_or_drop(&self, batch: &[E], message: &str) -> Result<Vec<E>, BatchCancelled<E>> {
         if batch.len() > 1 {
             return self.halve(batch).await;
         }
-        tracing::error!("{message}");
+        tracing::error!(
+            integration = self.settings.integration_name,
+            records = batch.len(),
+            detail = self.settings.detail,
+            "{message}"
+        );
         Ok(Vec::new())
     }
 
@@ -164,8 +167,7 @@ where
 pub fn send_batch_with_413_split<'delivery, E, S>(
     transport: &'delivery S,
     batch: &'delivery [E],
-    success_status_codes: &'delivery [u16],
-    policy: RequeuePolicy,
+    settings: DeliverySettings<'delivery>,
 ) -> Delivery<'delivery, E>
 where
     E: Clone + Send + Sync,
@@ -174,8 +176,7 @@ where
     Box::pin(async move {
         let splitter = Splitter {
             transport,
-            success_status_codes,
-            policy,
+            settings,
             events: PhantomData,
         };
         splitter.deliver(batch).await

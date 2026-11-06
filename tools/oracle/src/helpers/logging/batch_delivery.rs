@@ -72,12 +72,18 @@ fn status_rows(scenario: &StatusScenario) -> Vec<Value> {
         .codes
         .iter()
         .map(|code| {
-            let undelivered = undelivered_after_http_error(&scenario.events, *code);
-            let requeued = if RequeuePolicy::RequeueAll.retains(*code) {
-                scenario.events.clone()
-            } else {
-                Vec::new()
-            };
+            let undelivered = undelivered_after_http_error(
+                &scenario.events,
+                *code,
+                "BatchDelivery",
+                "classification",
+            );
+            let requeued = RequeuePolicy::RequeueAll.retained(
+                &scenario.events,
+                *code,
+                "BatchDelivery",
+                "classification",
+            );
             json!({
                 "code": code,
                 "retryable": is_retryable_status(*code),

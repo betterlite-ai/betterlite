@@ -10,7 +10,9 @@ use tracing::Level;
 use tracing::subscriber::set_default;
 use tracing_subscriber::fmt::MakeWriter;
 
-use super::{BatchCancelled, BatchTransport, SendFailure, send_batch_with_413_split};
+use super::{
+    BatchCancelled, BatchTransport, DeliverySettings, SendFailure, send_batch_with_413_split,
+};
 use crate::batch::retry::RequeuePolicy;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -161,8 +163,14 @@ async fn drive(
         Policy::Undelivered => RequeuePolicy::Undelivered,
         Policy::Requeue => RequeuePolicy::RequeueAll,
     };
-    let result =
-        send_batch_with_413_split(&transport, &events, case.success_status_codes, policy).await;
+    let settings = DeliverySettings {
+        success_status_codes: case.success_status_codes,
+        policy,
+        integration_name: "BatchDelivery",
+        detail: "scripted transport",
+        drop_error_message: "batch delivery dropped a single event the destination rejected as too large",
+    };
+    let result = send_batch_with_413_split(&transport, &events, settings).await;
     (result, transport)
 }
 
@@ -294,7 +302,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &["e0", "e1", "e3"],
         undelivered: &[],
         cancelled: false,
-        logs: &["cannot be measured"],
+        logs: &["cannot measure"],
     }
 )]
 #[case::unserializable_single_record_is_dropped(
@@ -312,7 +320,7 @@ fn owned(events: &[&str]) -> Vec<String> {
         delivered: &[],
         undelivered: &[],
         cancelled: false,
-        logs: &["cannot be measured", "cannot be serialized"],
+        logs: &["cannot measure", "cannot be serialized"],
     }
 )]
 #[case::failed_left_half_skips_the_right_half(

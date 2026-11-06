@@ -2,6 +2,8 @@ use std::collections::{BTreeMap, VecDeque};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use tokio::sync::Mutex as AsyncMutex;
+
 use super::delivery::{BatchCancelled, BatchDelivery};
 
 pub const BATCH_SIZE_VARIABLE: &str = "DEFAULT_BATCH_SIZE";
@@ -64,6 +66,14 @@ pub struct FlushReport {
     pub cancelled: bool,
 }
 
+const EMPTY_FLUSH: FlushReport = FlushReport {
+    batch: 0,
+    delivered: 0,
+    requeued: 0,
+    dropped_oldest: 0,
+    cancelled: false,
+};
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Enqueued {
     pub depth: usize,
@@ -75,6 +85,7 @@ pub struct BatchQueue<E> {
     pub settings: BatchSettings,
     pub preserve_during_flush: bool,
     pub queue: Arc<Mutex<VecDeque<E>>>,
+    pub flush_lock: Arc<AsyncMutex<()>>,
 }
 
 impl<E> Clone for BatchQueue<E> {
@@ -83,7 +94,29 @@ impl<E> Clone for BatchQueue<E> {
             settings: self.settings,
             preserve_during_flush: self.preserve_during_flush,
             queue: Arc::clone(&self.queue),
+            flush_lock: Arc::clone(&self.flush_lock),
         }
+    }
+}
+
+struct InFlight<'queue, E> {
+    queue: &'queue BatchQueue<E>,
+    batch: Option<Vec<E>>,
+}
+
+impl<E> Drop for InFlight<'_, E> {
+    fn drop(&mut self) {
+        let Some(batch) = self.batch.take() else {
+            return;
+        };
+        let records = batch.len();
+        let (_, dropped_oldest) = self.queue.requeue(batch);
+        self.queue.warn_overflow(dropped_oldest);
+        tracing::warn!(
+            records,
+            dropped = dropped_oldest,
+            "a batch flush was dropped before it finished; its records are back in the queue"
+        );
     }
 }
 
@@ -94,6 +127,7 @@ impl<E> BatchQueue<E> {
             settings,
             preserve_during_flush: false,
             queue: Arc::new(Mutex::new(VecDeque::new())),
+            flush_lock: Arc::new(AsyncMutex::new(())),
         }
     }
 
@@ -105,13 +139,7 @@ impl<E> BatchQueue<E> {
         queue.drain(..dropped_oldest);
         let depth = queue.len();
         drop(queue);
-        if dropped_oldest > 0 {
-            tracing::warn!(
-                max_queue_size = self.settings.max_queue_size,
-                dropped = dropped_oldest,
-                "batch queue exceeded max_queue_size; dropped the oldest events"
-            );
-        }
+        self.warn_overflow(dropped_oldest);
         Enqueued {
             depth,
             dropped_oldest,
@@ -136,39 +164,44 @@ impl<E> BatchQueue<E> {
         E: Send,
         D: BatchDelivery<E> + Sync,
     {
+        let _flush = self.flush_lock.lock().await;
         let batch: Vec<E> = {
             let mut queue = self.queue.lock().unwrap_or_else(PoisonError::into_inner);
             queue.drain(..).collect()
         };
         let batch_len = batch.len();
         if batch_len == 0 {
-            return FlushReport {
-                batch: 0,
-                delivered: 0,
-                requeued: 0,
-                dropped_oldest: 0,
-                cancelled: false,
-            };
+            return EMPTY_FLUSH;
         }
-        let outcome = delivery.deliver(&batch).await;
+        let mut in_flight = InFlight {
+            queue: self,
+            batch: Some(batch),
+        };
+        let sent = in_flight.batch.as_deref().unwrap_or_default();
+        let outcome = delivery.deliver(sent).await;
         let cancelled = outcome.is_err();
         let undelivered = match outcome {
             Ok(undelivered) | Err(BatchCancelled { undelivered }) => undelivered,
         };
+        in_flight.batch = None;
         let (requeued, dropped_oldest) = self.requeue(undelivered);
-        if dropped_oldest > 0 {
-            tracing::warn!(
-                max_queue_size = self.settings.max_queue_size,
-                dropped = dropped_oldest,
-                "batch queue exceeded max_queue_size; dropped the oldest events"
-            );
-        }
+        self.warn_overflow(dropped_oldest);
         FlushReport {
             batch: batch_len,
             delivered: batch_len.saturating_sub(requeued),
             requeued,
             dropped_oldest,
             cancelled,
+        }
+    }
+
+    fn warn_overflow(&self, dropped_oldest: usize) {
+        if dropped_oldest > 0 {
+            tracing::warn!(
+                max_queue_size = self.settings.max_queue_size,
+                dropped = dropped_oldest,
+                "batch queue exceeded max_queue_size; dropped the oldest events"
+            );
         }
     }
 
