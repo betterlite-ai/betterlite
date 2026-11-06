@@ -9,9 +9,9 @@ use serde_json::value::RawValue;
 use tokio::time::Instant;
 
 use super::super::poll::{Endpoint, GetEndpoint, WaitForEndpoint, WaitUntilRunning, sandbox_state};
-use super::super::reply::MAX_RESPONSE_BYTES;
 use super::super::{MonotonicClock, OpenSandboxError, PollClock as _};
 use super::{FakeHttp, block_on, environment, sandbox};
+use betterlite_models::sandbox::SANDBOX_MAX_OUTPUT_BYTES;
 
 #[derive(Clone, Copy)]
 enum Answer {
@@ -183,9 +183,9 @@ fn wait_until_running_rejects_a_body_that_is_not_json() {
 }
 
 #[rstest]
-#[case::under_the_cap(MAX_RESPONSE_BYTES - 1, true)]
-#[case::at_the_cap(MAX_RESPONSE_BYTES, true)]
-#[case::over_the_cap(MAX_RESPONSE_BYTES + 1, false)]
+#[case::under_the_cap(SANDBOX_MAX_OUTPUT_BYTES - 1, true)]
+#[case::at_the_cap(SANDBOX_MAX_OUTPUT_BYTES, true)]
+#[case::over_the_cap(SANDBOX_MAX_OUTPUT_BYTES + 1, false)]
 fn wait_until_running_caps_the_response_body(#[case] size: usize, #[case] decoded: bool) {
     let body = "x".repeat(size);
     let sandbox = sandbox(FakeHttp::new(&[(200, body.as_str())]), environment(&[]));
@@ -200,7 +200,7 @@ fn wait_until_running_caps_the_response_body(#[case] size: usize, #[case] decode
     let error = block_on(sandbox.wait_until_running(&request, None)).unwrap_err();
     let capped = matches!(
         error,
-        OpenSandboxError::ResponseTooLarge { limit } if limit == MAX_RESPONSE_BYTES
+        OpenSandboxError::OutputTooLarge { limit } if limit == SANDBOX_MAX_OUTPUT_BYTES
     );
     assert_eq!(capped, !decoded);
 }

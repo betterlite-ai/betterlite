@@ -3,9 +3,7 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_config::loader::EnvironmentLookup;
-use betterlite_models::sandbox::{
-    ContainerHandle, HiddenParams, SandboxOutputError, read_capped_lines,
-};
+use betterlite_models::sandbox::{ContainerHandle, HiddenParams, read_capped_lines};
 use http::header::{CONTENT_TYPE, HeaderName, HeaderValue};
 use http::{HeaderMap, Method};
 use secrecy::{ExposeSecret as _, SecretString};
@@ -14,9 +12,11 @@ use serde_json::value::RawValue;
 use url::Url;
 
 use super::constants::{API_BASE_VARIABLE, API_KEY_VARIABLE};
-use super::reply::check_status;
 use super::sse::raw_text;
-use super::{OpenSandbox, OpenSandboxError, RequestTimeout, SandboxHttp, SandboxRequest};
+use super::{
+    OpenSandbox, OpenSandboxError, RequestTimeout, SandboxHttp, SandboxRequest, check_status,
+    output_error,
+};
 
 const EXECUTION_TIMEOUT: RequestTimeout = RequestTimeout {
     connect: Some(Duration::from_secs(30)),
@@ -137,15 +137,7 @@ where
         };
         let response = client.unwrap_or(&self.http).send(sent).await?;
         check_status(response.status)?;
-        read_capped_lines(response.body)
-            .await
-            .map_err(|error| match error {
-                SandboxOutputError::Exceeded { limit } => {
-                    OpenSandboxError::OutputTooLarge { limit }
-                }
-                SandboxOutputError::Utf8 { source } => OpenSandboxError::OutputNotUtf8 { source },
-                SandboxOutputError::Read { source } => source,
-            })
+        read_capped_lines(response.body).await.map_err(output_error)
     }
 }
 

@@ -4,6 +4,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use betterlite_http::error::HttpError;
 use betterlite_http::proxy::transport_error::TransportError;
+use betterlite_models::sandbox::SandboxOutputError;
 use futures_util::stream::BoxStream;
 use http::header::InvalidHeaderValue;
 use http::{HeaderMap, Method};
@@ -15,10 +16,24 @@ use url::Url;
 pub mod constants;
 pub mod create;
 pub mod poll;
-pub mod reply;
 pub mod request;
 pub mod sse;
 mod tests;
+
+pub const fn check_status(status: u16) -> Result<(), OpenSandboxError> {
+    match status {
+        200..=299 => Ok(()),
+        _ => Err(OpenSandboxError::HttpStatus { status }),
+    }
+}
+
+fn output_error(error: SandboxOutputError<OpenSandboxError>) -> OpenSandboxError {
+    match error {
+        SandboxOutputError::Exceeded { limit } => OpenSandboxError::OutputTooLarge { limit },
+        SandboxOutputError::Utf8 { source } => OpenSandboxError::OutputNotUtf8 { source },
+        SandboxOutputError::Read { source } => source,
+    }
+}
 
 #[derive(Debug, Error)]
 pub enum OpenSandboxError {
@@ -62,8 +77,6 @@ pub enum OpenSandboxError {
         #[source]
         source: InvalidHeaderValue,
     },
-    #[error("the OpenSandbox response body is larger than {limit} bytes")]
-    ResponseTooLarge { limit: usize },
     #[error("the sandbox output exceeded {limit} bytes; aborting to avoid unbounded memory use")]
     OutputTooLarge { limit: usize },
     #[error("the sandbox output is not valid UTF-8")]

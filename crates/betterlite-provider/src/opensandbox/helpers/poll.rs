@@ -1,15 +1,18 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+use betterlite_models::sandbox::read_capped_lines;
 use http::{HeaderMap, Method};
 use serde::Deserialize;
 use serde_json::value::RawValue;
 use url::Url;
 
 use super::constants::EXECD_PORT;
-use super::reply::{check_status, collect_reply};
 use super::request::as_str_dict;
-use super::{OpenSandbox, OpenSandboxError, PollClock, SandboxHttp, SandboxRequest};
+use super::{
+    OpenSandbox, OpenSandboxError, PollClock, SandboxHttp, SandboxRequest, check_status,
+    output_error,
+};
 
 #[derive(Debug, Clone, Copy)]
 pub struct GetEndpoint<'request> {
@@ -115,7 +118,7 @@ where
         .map_err(|source| OpenSandboxError::Url { source })?;
         let body = self.get_body(url, request.headers, client).await?;
         let document: Box<RawValue> =
-            serde_json::from_slice(&body).map_err(|source| OpenSandboxError::Decode { source })?;
+            serde_json::from_str(&body).map_err(|source| OpenSandboxError::Decode { source })?;
         match sandbox_state(&document).as_deref() {
             Some("Running") => Ok(PollState::Running),
             Some(terminal @ ("Failed" | "Stopping" | "Terminated")) => {
@@ -174,7 +177,7 @@ where
         );
         let body = self.get_body(url, request.headers, client).await?;
         let document: EndpointDocument =
-            serde_json::from_slice(&body).map_err(|source| OpenSandboxError::Decode { source })?;
+            serde_json::from_str(&body).map_err(|source| OpenSandboxError::Decode { source })?;
         let endpoint = document
             .endpoint
             .as_deref()
@@ -194,13 +197,16 @@ where
         url: Url,
         headers: &HeaderMap,
         client: Option<&Http>,
-    ) -> Result<Vec<u8>, OpenSandboxError> {
+    ) -> Result<String, OpenSandboxError> {
         let response = client
             .unwrap_or(&self.http)
             .send(get_request(url, headers))
             .await?;
         check_status(response.status)?;
-        collect_reply(response.body).await
+        let lines = read_capped_lines(response.body)
+            .await
+            .map_err(output_error)?;
+        Ok(lines.join("\n"))
     }
 }
 

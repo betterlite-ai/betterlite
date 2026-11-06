@@ -7,7 +7,6 @@ pub type Message = BTreeMap<String, Box<RawValue>>;
 
 const IGNORED_PREFIXES: [&str; 4] = [":", "event:", "id:", "retry:"];
 
-#[must_use]
 pub fn parse_sse_line(line: &str) -> Option<Message> {
     let stripped = line.trim();
     if stripped.is_empty() {
