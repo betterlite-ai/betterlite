@@ -30,6 +30,7 @@ enum Answer {
 enum Expect {
     Rendered(&'static str),
     NoTemplate,
+    NotText,
     Json,
     Transport,
     CacheRecovery,
@@ -109,6 +110,11 @@ fn expected_paths(model: &str, count: usize) -> Vec<String> {
     "org/model",
     vec![Answer::Status(200, b"not json")],
     Expect::Json
+)]
+#[case::config_non_text_template(
+    "org/model",
+    vec![Answer::Status(200, br#"{"tokenizer":{"chat_template":["first","second"]}}"#)],
+    Expect::NotText
 )]
 #[case::config_transport_error(
     "org/model",
@@ -192,6 +198,7 @@ async fn fetch_follows_litellm(
     match expected {
         Expect::Rendered(text) => assert_eq!(rendered.unwrap(), text),
         Expect::NoTemplate => assert!(matches!(rendered, Err(FactoryError::NoChatTemplate))),
+        Expect::NotText => assert!(matches!(rendered, Err(FactoryError::TemplateNotText))),
         Expect::Json => assert!(matches!(
             rendered,
             Err(FactoryError::Hub(HubError::Json { .. }))
