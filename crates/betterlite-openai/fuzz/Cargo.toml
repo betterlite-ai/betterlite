@@ -127,3 +127,10 @@ path = "fuzz_targets/xai_oauth.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "openai_fine_tuning"
+path = "fuzz_targets/openai_fine_tuning.rs"
+test = false
+doc = false
+bench = false
