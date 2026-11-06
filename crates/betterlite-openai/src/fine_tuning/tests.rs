@@ -482,14 +482,29 @@ fn openai_fine_tuning_secret_safe_failure() {
     assert!(!text.contains("sk-fixture-secret"), "{text}");
 }
 
-#[rstest]
-fn replays_the_openai_fine_tuning_corpus(
-    #[files("fuzz/corpus/openai_fine_tuning/*")] path: PathBuf,
-) {
-    let decoded = decode_fine_tune_job(&fs::read(&path).expect("a corpus file"), false);
-    let name = path
-        .file_name()
-        .and_then(|name| name.to_str())
-        .unwrap_or_default();
-    assert_eq!(decoded.is_ok(), name.starts_with("valid"), "{name}");
+#[test]
+fn replays_the_openai_fine_tuning_corpus() {
+    let corpus = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/openai_fine_tuning");
+    let paths: Vec<PathBuf> = fs::read_dir(&corpus)
+        .expect("corpus folder")
+        .map(|entry| entry.expect("corpus entry").path())
+        .collect();
+    assert!(!paths.is_empty());
+    let wrong: Vec<&str> = paths
+        .iter()
+        .filter(|path| {
+            let decoded = decode_fine_tune_job(&fs::read(path).expect("corpus file"), false);
+            let name = path
+                .file_name()
+                .and_then(|name| name.to_str())
+                .expect("corpus file name");
+            decoded.is_ok() != name.starts_with("valid")
+        })
+        .map(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .unwrap_or("?")
+        })
+        .collect();
+    assert!(wrong.is_empty(), "{wrong:?}");
 }
