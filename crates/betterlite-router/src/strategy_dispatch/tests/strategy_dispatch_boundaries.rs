@@ -239,3 +239,39 @@ fn updated_args_reject_ttft_percentile_and_keep_the_previous_selector(#[case] pe
     assert_eq!(value.to_bits(), percentile.to_bits());
     assert_eq!(dispatch.state(), before);
 }
+#[test]
+fn repeated_member_in_one_group_is_accepted() {
+    let groups = RoutingGroups::new(vec![RoutingGroupRoute {
+        name: "a".to_owned(),
+        models: vec!["m".to_owned(), "m".to_owned()],
+        strategy: GroupStrategy::Routing(RoutingStrategy::LeastBusy),
+        selector: None,
+    }])
+    .unwrap();
+    let route = groups.route("m", &no_shadowing()).unwrap();
+    assert_eq!(route.name, "a");
+    assert_eq!(
+        route.strategy,
+        GroupStrategy::Routing(RoutingStrategy::LeastBusy)
+    );
+}
+
+#[test]
+fn a_failed_reinit_keeps_the_live_selectors() {
+    let mut dispatch = new_dispatch(RoutingStrategy::LeastBusy);
+    let _cached = override_selector(&mut dispatch, RoutingStrategy::CostBasedRouting);
+    let before = dispatch.state();
+    let overrides_before = dispatch.override_selectors.clone();
+    let error = dispatch
+        .init(
+            RoutingStrategy::LatencyBasedRouting,
+            Some(latency_arguments(Some(5.0_f64))),
+        )
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        StrategyDispatchError::InvalidTtftPercentile { .. }
+    ));
+    assert_eq!(dispatch.state(), before);
+    assert_eq!(dispatch.override_selectors, overrides_before);
+}

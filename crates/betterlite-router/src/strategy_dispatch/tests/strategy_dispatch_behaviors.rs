@@ -208,7 +208,7 @@ fn request_override_ignores_unsupported_values(
 #[test]
 fn deployed_model_name_shadows_a_group_name() {
     let mut dispatch = new_dispatch(RoutingStrategy::UsageBasedRoutingV2);
-    let groups = cheap_groups();
+    let (groups, group_selector) = cheap_groups(&mut dispatch);
     let shadowed = BTreeSet::from(["cheap".to_owned()]);
     let resolution = resolve(
         &mut dispatch,
@@ -224,6 +224,7 @@ fn deployed_model_name_shadows_a_group_name() {
         &scope(&groups, &member_shadowed),
     );
     assert_eq!(member.strategy, RoutingStrategy::LeastBusy);
+    assert_eq!(member.selector, Some(group_selector));
     assert_eq!(
         member.source,
         ResolutionSource::RoutingGroup("cheap".to_owned())
@@ -233,7 +234,7 @@ fn deployed_model_name_shadows_a_group_name() {
 #[test]
 fn group_resolution_follows_group_and_default() {
     let mut dispatch = new_dispatch(RoutingStrategy::UsageBasedRoutingV2);
-    let groups = cheap_groups();
+    let (groups, group_selector) = cheap_groups(&mut dispatch);
     let shadowing = no_shadowing();
     let callable = resolve(
         &mut dispatch,
@@ -241,6 +242,7 @@ fn group_resolution_follows_group_and_default() {
         &scope(&groups, &shadowing),
     );
     assert_eq!(callable.strategy, RoutingStrategy::LeastBusy);
+    assert_eq!(callable.selector, Some(group_selector));
     assert_eq!(
         callable.source,
         ResolutionSource::RoutingGroup("cheap".to_owned())
@@ -251,6 +253,7 @@ fn group_resolution_follows_group_and_default() {
         &scope(&groups, &shadowing),
     );
     assert_eq!(member.strategy, RoutingStrategy::LeastBusy);
+    assert_eq!(member.selector, Some(group_selector));
     let priority = resolve(
         &mut dispatch,
         &mut request_for("prio"),
@@ -306,7 +309,7 @@ fn read_prefetch_plan_pairs_the_usage_selector() {
 #[test]
 fn binding_skips_globally_registered_strategies() {
     let mut dispatch = new_dispatch(RoutingStrategy::UsageBasedRoutingV2);
-    let groups = cheap_groups();
+    let (groups, _) = cheap_groups(&mut dispatch);
     let mut bindings = RequestBindings::default();
     let mut request = RoutingRequest {
         resolved_model: "gpt",
@@ -573,4 +576,119 @@ fn binding_edges_refuse_missing_inputs() {
         &RoutingGroups::default(),
         None
     ));
+}
+#[test]
+fn group_selection_uses_the_group_selector() {
+    let mut dispatch = new_dispatch(RoutingStrategy::UsageBasedRoutingV2);
+    let (groups, group_selector) = cheap_groups(&mut dispatch);
+    let shadowing = no_shadowing();
+    let mut random = StdRng::seed_from_u64(SEED);
+    let outcome = select(
+        &mut dispatch,
+        &mut request_for("cheap"),
+        &scope(&groups, &shadowing),
+        &candidates(),
+        &mut random,
+    )
+    .unwrap();
+    assert_eq!(
+        outcome.selection,
+        Selection::Selector {
+            selector: group_selector,
+            call: SelectorCall::LeastBusy,
+        }
+    );
+}
+
+#[test]
+fn read_prefetch_and_select_bind_once() {
+    let mut dispatch = new_dispatch(RoutingStrategy::UsageBasedRoutingV2);
+    let mut bindings = RequestBindings::default();
+    let deployments = ["one".to_owned()];
+    let mut prefetch_request = RoutingRequest {
+        resolved_model: "gpt",
+        strategy: StrategyOverride::Text("least-busy"),
+        bindings: Some(&mut bindings),
+    };
+    let plan = read_prefetch_plan(
+        &mut dispatch,
+        &mut prefetch_request,
+        &scope(&RoutingGroups::default(), &no_shadowing()),
+        &deployments,
+    )
+    .unwrap();
+    assert_eq!(plan.usage_selector, None);
+    let mut select_request = RoutingRequest {
+        resolved_model: "gpt",
+        strategy: StrategyOverride::Text("least-busy"),
+        bindings: Some(&mut bindings),
+    };
+    let mut random = StdRng::seed_from_u64(SEED);
+    let _outcome = select(
+        &mut dispatch,
+        &mut select_request,
+        &scope(&RoutingGroups::default(), &no_shadowing()),
+        &candidates(),
+        &mut random,
+    )
+    .unwrap();
+    assert_eq!(bindings.dynamic_callbacks.len(), 1);
+}
+
+#[test]
+fn supplied_arguments_reach_the_selector() {
+    let custom = latency_arguments(Some(0.5_f64));
+    let latency =
+        StrategyDispatch::new(RoutingStrategy::LatencyBasedRouting, Some(custom)).unwrap();
+    assert_eq!(
+        latency.state().selector.map(|selector| selector.args),
+        Some(custom)
+    );
+    let usage_arguments = SelectorArgs::Usage(UsageArgs { ttl_seconds: 5 });
+    let mut usage =
+        StrategyDispatch::new(RoutingStrategy::UsageBasedRouting, Some(usage_arguments)).unwrap();
+    let group = usage
+        .build_group_selector(RoutingStrategy::UsageBasedRoutingV2, Some(usage_arguments))
+        .unwrap()
+        .unwrap();
+    assert_eq!(usage.selectors[group.0].args, usage_arguments);
+    let overridden = override_selector(&mut usage, RoutingStrategy::UsageBasedRoutingV2);
+    let id = overridden.selector.unwrap();
+    assert_eq!(
+        usage.selectors[id.0].args,
+        SelectorArgs::Usage(UsageArgs { ttl_seconds: 60 })
+    );
+}
+
+#[test]
+fn resolve_reports_an_ignored_override() {
+    let mut dispatch = new_dispatch(RoutingStrategy::UsageBasedRoutingV2);
+    let (groups, _) = cheap_groups(&mut dispatch);
+    let mut request = RoutingRequest {
+        resolved_model: "fast",
+        strategy: StrategyOverride::Text("nope"),
+        bindings: None,
+    };
+    let resolution = resolve(
+        &mut dispatch,
+        &mut request,
+        &scope(&groups, &no_shadowing()),
+    );
+    assert_eq!(resolution.strategy, RoutingStrategy::LeastBusy);
+    let ignored = resolution.ignored_override.unwrap();
+    assert_eq!(ignored.raw.as_deref(), Some("nope"));
+    assert_eq!(ignored.supported.len(), 6);
+    assert!(ignored.supported.contains(&RoutingStrategy::LeastBusy));
+    let mut default_request = RoutingRequest {
+        resolved_model: "other",
+        strategy: StrategyOverride::NotText,
+        bindings: None,
+    };
+    let default = resolve(
+        &mut dispatch,
+        &mut default_request,
+        &scope(&groups, &no_shadowing()),
+    );
+    assert_eq!(default.strategy, RoutingStrategy::UsageBasedRoutingV2);
+    assert_eq!(default.ignored_override.unwrap().raw, None);
 }

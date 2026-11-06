@@ -6,8 +6,8 @@ use crate::strategy_dispatch::selector::SelectorId;
 use crate::strategy_dispatch::service::StrategyDispatch;
 use crate::strategy_dispatch::strategy::{RoutingStrategy, VALID_ROUTING_STRATEGIES};
 use crate::strategy_dispatch::types::{
-    OverrideDecision, OverrideSelector, RequestBindings, Resolution, ResolutionSource,
-    RoutingRequest, StrategyOverride,
+    IgnoredOverride, OverrideDecision, OverrideSelector, RequestBindings, Resolution,
+    ResolutionSource, RoutingRequest, StrategyOverride,
 };
 
 #[must_use]
@@ -97,7 +97,10 @@ pub fn bind_override_selector(
     if globally_registered_strategies(dispatch, groups).contains(&strategy) {
         return false;
     }
-    request_bindings.dynamic_callbacks.push(target);
+    // a prefetch resolve and a selection resolve share the request's bindings, and a retry resolves again
+    if !request_bindings.dynamic_callbacks.contains(&target) {
+        request_bindings.dynamic_callbacks.push(target);
+    }
     true
 }
 
@@ -106,22 +109,36 @@ pub fn resolve(
     request: &mut RoutingRequest<'_>,
     scope: &RoutingScope<'_>,
 ) -> Resolution {
-    if let OverrideDecision::Honored(strategy) = request_override(request.strategy) {
-        let overridden = override_selector(dispatch, strategy);
-        let bound = bind_override_selector(
-            dispatch,
-            strategy,
-            overridden.selector,
-            scope.groups,
-            request.bindings.as_deref_mut(),
-        );
-        return Resolution {
-            strategy,
-            selector: overridden.selector,
-            source: ResolutionSource::RequestOverride,
-            bound,
-        };
-    }
+    let ignored_override = match request_override(request.strategy) {
+        OverrideDecision::Honored(strategy) => {
+            let overridden = override_selector(dispatch, strategy);
+            let bound = bind_override_selector(
+                dispatch,
+                strategy,
+                overridden.selector,
+                scope.groups,
+                request.bindings.as_deref_mut(),
+            );
+            return Resolution {
+                strategy,
+                selector: overridden.selector,
+                source: ResolutionSource::RequestOverride,
+                bound,
+                ignored_override: None,
+            };
+        }
+        OverrideDecision::NoOverride => None,
+        OverrideDecision::Ignored { raw, supported } => Some(IgnoredOverride { raw, supported }),
+    };
+    fallback_resolution(dispatch, request, scope, ignored_override)
+}
+
+fn fallback_resolution(
+    dispatch: &StrategyDispatch,
+    request: &RoutingRequest<'_>,
+    scope: &RoutingScope<'_>,
+    ignored_override: Option<IgnoredOverride>,
+) -> Resolution {
     if let Some(route) = scope.groups.route(request.resolved_model, scope.shadowing) {
         let (strategy, selector) = match route.strategy {
             GroupStrategy::Priority => (RoutingStrategy::SimpleShuffle, None),
@@ -132,6 +149,7 @@ pub fn resolve(
             selector,
             source: ResolutionSource::RoutingGroup(route.name.clone()),
             bound: false,
+            ignored_override,
         };
     }
     Resolution {
@@ -139,6 +157,7 @@ pub fn resolve(
         selector: dispatch.default_selector,
         source: ResolutionSource::Default,
         bound: false,
+        ignored_override,
     }
 }
 

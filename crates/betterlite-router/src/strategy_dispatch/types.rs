@@ -37,11 +37,18 @@ pub struct OverrideSelector {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct IgnoredOverride {
+    pub raw: Option<String>,
+    pub supported: Vec<RoutingStrategy>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Resolution {
     pub strategy: RoutingStrategy,
     pub selector: Option<SelectorId>,
     pub source: ResolutionSource,
     pub bound: bool,
+    pub ignored_override: Option<IgnoredOverride>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

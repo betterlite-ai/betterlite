@@ -74,6 +74,7 @@ impl RoutingGroups {
             if let Some(first) = self
                 .model_to_group
                 .insert(model.clone(), route.name.clone())
+                && first != route.name
             {
                 return Err(StrategyDispatchError::DuplicateGroupModel {
                     model: model.clone(),

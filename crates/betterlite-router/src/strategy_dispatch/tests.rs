@@ -10,7 +10,7 @@ use crate::strategy_dispatch::args::{LatencyArgs, SelectorArgs};
 use crate::strategy_dispatch::groups::{
     GroupStrategy, RoutingGroupRoute, RoutingGroups, RoutingScope,
 };
-use crate::strategy_dispatch::selector::SelectorState;
+use crate::strategy_dispatch::selector::{SelectorId, SelectorState};
 use crate::strategy_dispatch::service::StrategyDispatch;
 use crate::strategy_dispatch::strategy::RoutingStrategy;
 use crate::strategy_dispatch::types::{RoutingRequest, StrategyOverride};
@@ -45,13 +45,18 @@ fn request_for(model: &'static str) -> RoutingRequest<'static> {
     }
 }
 
-fn cheap_groups() -> RoutingGroups {
-    RoutingGroups::new(vec![
+fn cheap_groups(dispatch: &mut StrategyDispatch) -> (RoutingGroups, SelectorId) {
+    let selector = dispatch
+        .build_group_selector(RoutingStrategy::LeastBusy, None)
+        .unwrap()
+        .unwrap();
+    dispatch.register_selector(selector).unwrap();
+    let groups = RoutingGroups::new(vec![
         RoutingGroupRoute {
             name: "cheap".to_owned(),
             models: vec!["fast".to_owned()],
             strategy: GroupStrategy::Routing(RoutingStrategy::LeastBusy),
-            selector: None,
+            selector: Some(selector),
         },
         RoutingGroupRoute {
             name: "prio".to_owned(),
@@ -60,7 +65,8 @@ fn cheap_groups() -> RoutingGroups {
             selector: None,
         },
     ])
-    .unwrap()
+    .unwrap();
+    (groups, selector)
 }
 
 fn no_shadowing() -> BTreeSet<String> {
