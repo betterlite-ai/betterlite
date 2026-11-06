@@ -37,6 +37,9 @@ call:
       - chain:
           - {kind: database, error_type: connect, message: connection refused}
         allow_requests: [true]
+      - chain:
+          - {kind: database, error_type: data, message: invalid byte sequence}
+        allow_requests: 17
 env: {}
 compare:
   ignore:
@@ -51,3 +54,4 @@ compare:
     - {pointer: /value/8/error/message, why: betterlite writes its own message}
     - {pointer: /value/9/error/message, why: betterlite writes its own message}
     - {pointer: /value/10/error/message, why: betterlite writes its own message}
+    - {pointer: /value/11/error/message, why: betterlite writes its own message}

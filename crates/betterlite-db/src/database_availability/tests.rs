@@ -396,6 +396,11 @@ fn unsupported_policy_value_is_an_error() {
         handle_db_exception(&connect, &AllowRequestsOnOutage::Unsupported),
         Err(PolicyError::UnsupportedValue)
     );
+    let data = database(ErrorType::Data, "invalid byte sequence");
+    assert_eq!(
+        handle_db_exception(&data, &AllowRequestsOnOutage::Unsupported),
+        Ok(HandleOutcome::Rethrown(data.clone()))
+    );
 }
 
 #[test]
