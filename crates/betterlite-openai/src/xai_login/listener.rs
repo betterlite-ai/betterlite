@@ -57,7 +57,7 @@ impl CallbackServer {
                 Ok(listener) => {
                     let address = listener
                         .local_addr()
-                        .map_err(|source| XaiLoginError::Listener { source })?;
+                        .map_err(|source| XaiLoginError::Bind { source })?;
                     return Ok(Self {
                         listener,
                         redirect_uri: format!("http://127.0.0.1:{}{CALLBACK_PATH}", address.port()),
@@ -69,7 +69,7 @@ impl CallbackServer {
                 Err(source) => failure = Some(source),
             }
         }
-        Err(XaiLoginError::Listener {
+        Err(XaiLoginError::Bind {
             source: failure.unwrap_or_else(|| io::Error::other("no callback port could be bound")),
         })
     }
@@ -92,7 +92,7 @@ impl CallbackServer {
             match timeout(slot, self.accept()).await {
                 Ok(Ok(Some(request))) => return Ok(request),
                 Ok(Ok(None)) => {}
-                Ok(Err(source)) => return Err(XaiLoginError::Listener { source }),
+                Ok(Err(source)) => return Err(XaiLoginError::Accept { source }),
                 Err(_elapsed) => {}
             }
         }

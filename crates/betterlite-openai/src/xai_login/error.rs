@@ -13,8 +13,13 @@ pub enum XaiLoginError {
         #[source]
         source: SysError,
     },
+    #[error("could not start the xAI OAuth callback listener")]
+    Bind {
+        #[source]
+        source: io::Error,
+    },
     #[error("the xAI OAuth callback listener failed")]
-    Listener {
+    Accept {
         #[source]
         source: io::Error,
     },
