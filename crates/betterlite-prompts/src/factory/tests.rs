@@ -214,7 +214,7 @@ async fn prompt_factory_cases(#[case] model: &str, #[case] custom_llm_provider: 
     Call::Template,
     "unlisted/config-template",
     None,
-    vec![Answer::Status(200, br#"{"tokenizer":{"chat_template":"{{ bos_token }}hi {{ messages[0]['content'] }}","bos_token":"<s>"}}"#)],
+    vec![Answer::Status(200, br#"{"chat_template":"{{ bos_token }}hi {{ messages[0]['content'] }}","bos_token":"<s>"}"#)],
     Expect::Exact("<s>hi s")
 )]
 #[case::config_without_template_uses_file(
@@ -222,7 +222,7 @@ async fn prompt_factory_cases(#[case] model: &str, #[case] custom_llm_provider: 
     "unlisted/config-and-file",
     None,
     vec![
-        Answer::Status(200, br#"{"tokenizer":{"bos_token":"<s>","eos_token":"<|e|>"}}"#),
+        Answer::Status(200, br#"{"bos_token":"<s>","eos_token":"<|e|>"}"#),
         Answer::Status(200, b"{{ bos_token }}{{ messages[1]['content'] }}{{ eos_token }}"),
     ],
     Expect::Exact("<s>u<|e|>")

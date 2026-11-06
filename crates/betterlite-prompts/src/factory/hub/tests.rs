@@ -19,7 +19,7 @@ use crate::builtin::Message;
 use crate::error::FactoryError;
 use crate::factory::PromptFactory;
 
-const CONFIG_WITHOUT_TEMPLATE: &[u8] = br#"{"tokenizer":{}}"#;
+const CONFIG_WITHOUT_TEMPLATE: &[u8] = br#"{"add_bos_token":true}"#;
 
 enum Answer {
     Status(u16, &'static [u8]),
@@ -98,7 +98,7 @@ fn expected_paths(model: &str, count: usize) -> Vec<String> {
 #[rstest]
 #[case::config_success(
     "org/model",
-    vec![Answer::Status(200, br#"{"tokenizer":{"chat_template":"{{ bos_token }}{{ eos_token }}","bos_token":"<s>","eos_token":{"content":"</s>"}}}"#)],
+    vec![Answer::Status(200, br#"{"chat_template":"{{ bos_token }}{{ eos_token }}","bos_token":"<s>","eos_token":{"content":"</s>"}}"#)],
     Expect::Rendered("<s></s>")
 )]
 #[case::config_not_found(
@@ -113,8 +113,21 @@ fn expected_paths(model: &str, count: usize) -> Vec<String> {
 )]
 #[case::config_non_text_template(
     "org/model",
-    vec![Answer::Status(200, br#"{"tokenizer":{"chat_template":["first","second"]}}"#)],
+    vec![Answer::Status(200, br#"{"chat_template":["first","second"]}"#)],
     Expect::NotText
+)]
+#[case::config_non_object_body(
+    "org/model",
+    vec![
+        Answer::Status(200, b"[]"),
+        Answer::Status(200, b"[{{ bos_token }}]")
+    ],
+    Expect::Rendered("[]")
+)]
+#[case::config_non_text_token(
+    "org/model",
+    vec![Answer::Status(200, br#"{"chat_template":"{{ bos_token }}x","bos_token":5}"#)],
+    Expect::Rendered("x")
 )]
 #[case::config_transport_error(
     "org/model",
@@ -306,7 +319,7 @@ async fn template_cache_caps_fetched_entries() {
     };
     let messages = bare_messages();
     let now = clock();
-    let answer = Answer::Status(200, br#"{"tokenizer":{"chat_template":"xx"}}"#);
+    let answer = Answer::Status(200, br#"{"chat_template":"xx"}"#);
     let (first, _) = tokio::join!(
         factory.hf_chat_template("org/model", &messages, now),
         respond(&listener, &answer),

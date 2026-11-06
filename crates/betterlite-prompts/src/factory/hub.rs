@@ -7,6 +7,7 @@ use betterlite_http::proxy::transport_error::TransportError;
 use http::{HeaderMap, Method};
 use serde::Deserialize;
 use serde::de::IgnoredAny;
+use serde_with::{DefaultOnError, serde_as};
 use thiserror::Error;
 use url::Url;
 
@@ -57,24 +58,31 @@ pub enum HubError {
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum TokenizerConfig {
-    Success(TokenizerDocument),
+    // the body parsed as a document, or none when it was valid JSON but not an object
+    Success(Option<TokenizerDocument>),
     Failure,
 }
 
+#[serde_as]
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 pub struct TokenizerDocument {
     #[serde(default)]
-    pub tokenizer: Option<TokenizerSection>,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq)]
-pub struct TokenizerSection {
-    #[serde(default)]
     pub chat_template: ChatTemplate,
+    // a bos or eos token of another JSON type extracts to an empty string, as LiteLLM's _extract_token_value answers
     #[serde(default)]
+    #[serde_as(as = "DefaultOnError")]
     pub bos_token: Option<TokenValue>,
     #[serde(default)]
+    #[serde_as(as = "DefaultOnError")]
     pub eos_token: Option<TokenValue>,
+}
+
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum ConfigBody {
+    Document(TokenizerDocument),
+    // LiteLLM only reads the parsed body when it is a dict, so any other JSON is a config without a template
+    Other(IgnoredAny),
 }
 
 // LiteLLM keeps whatever the config holds at chat_template and hands it to the renderer, which fails on anything but text
@@ -103,9 +111,13 @@ impl HubClient {
         if response.status != 200 {
             return Ok(TokenizerConfig::Failure);
         }
-        serde_json::from_slice(&response.body)
-            .map(TokenizerConfig::Success)
-            .map_err(|source| HubError::Json { url: text, source })
+        let body: ConfigBody = serde_json::from_slice(&response.body)
+            .map_err(|source| HubError::Json { url: text, source })?;
+        let document = match body {
+            ConfigBody::Document(document) => Some(document),
+            ConfigBody::Other(_) => None,
+        };
+        Ok(TokenizerConfig::Success(document))
     }
 
     pub(super) async fn chat_template_file(&self, model: &str) -> ChatTemplateFile {
@@ -198,17 +210,12 @@ pub fn builtin_entries() -> BTreeMap<String, TokenizerConfig> {
     builtins
         .into_iter()
         .map(|(model, chat_template, bos_token, eos_token)| {
-            let block = TokenizerSection {
+            let document = TokenizerDocument {
                 chat_template: ChatTemplate::Text(chat_template.to_owned()),
                 bos_token: Some(bos_token),
                 eos_token: Some(eos_token),
             };
-            (
-                model.to_owned(),
-                TokenizerConfig::Success(TokenizerDocument {
-                    tokenizer: Some(block),
-                }),
-            )
+            (model.to_owned(), TokenizerConfig::Success(Some(document)))
         })
         .collect()
 }

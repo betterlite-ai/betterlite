@@ -6,7 +6,7 @@ use crate::error::FactoryError;
 use crate::jinja::{self, LocalTemplate, TokenValue};
 use chrono::{DateTime, Utc};
 
-use hub::{ChatTemplate, ChatTemplateFile, Hub, TokenizerConfig, TokenizerSection};
+use hub::{ChatTemplate, ChatTemplateFile, Hub, TokenizerConfig, TokenizerDocument};
 
 mod bedrock;
 mod bounds;
@@ -77,26 +77,30 @@ impl PromptFactory {
         let TokenizerConfig::Success(document) = config else {
             return self.template_file(model, None).await;
         };
-        let Some(section) = document.tokenizer else {
+        let Some(tokenizer) = document else {
             return self.template_file(model, None).await;
         };
-        if section.chat_template == ChatTemplate::Absent {
-            return self.template_file(model, Some(section)).await;
+        if tokenizer.chat_template == ChatTemplate::Absent {
+            return self.template_file(model, Some(tokenizer)).await;
         }
-        Ok((section.chat_template, section.bos_token, section.eos_token))
+        Ok((
+            tokenizer.chat_template,
+            tokenizer.bos_token,
+            tokenizer.eos_token,
+        ))
     }
 
     async fn template_file(
         &self,
         model: &str,
-        config: Option<TokenizerSection>,
+        config: Option<TokenizerDocument>,
     ) -> Result<(ChatTemplate, Option<TokenValue>, Option<TokenValue>), FactoryError> {
         let ChatTemplateFile::Success(chat_template) = self.hub.chat_template_file(model).await
         else {
             return Err(FactoryError::NoChatTemplate);
         };
-        let (bos_token, eos_token) = config.map_or((None, None), |section| {
-            (section.bos_token, section.eos_token)
+        let (bos_token, eos_token) = config.map_or((None, None), |document| {
+            (document.bos_token, document.eos_token)
         });
         Ok((ChatTemplate::Text(chat_template), bos_token, eos_token))
     }
