@@ -1,5 +1,5 @@
 use std::collections::{BTreeMap, VecDeque};
-use std::future::{Future, ready};
+use std::future::{Future, Ready, ready};
 use std::io;
 use std::path::Path;
 use std::time::Duration;
@@ -154,11 +154,8 @@ fn record(method: &str, url: &str, headers: &Headers, body: &Value) -> Value {
     })
 }
 
-impl ApiKeyTransport for Scripted {
-    fn get<'call>(
-        &'call mut self,
-        get: Get<'call>,
-    ) -> impl Future<Output = Result<Reply, TransportFailure>> + Send + 'call {
+impl Scripted {
+    fn key_reply(&mut self, get: &Get<'_>) -> Ready<Result<Reply, TransportFailure>> {
         self.requests
             .push(record("GET", get.url, &get.headers, &Value::Null));
         ready(match self.replies.pop_front() {
@@ -169,6 +166,22 @@ impl ApiKeyTransport for Scripted {
             None => Err(TransportFailure::Unavailable),
         })
     }
+
+    fn post_refusal(&mut self, post: &Post<'_>) -> Ready<Result<Reply, TransportFailure>> {
+        let body = serde_json::from_slice::<Value>(&post.body).unwrap_or(Value::Null);
+        self.requests
+            .push(record("POST", post.url, &post.headers, &body));
+        ready(Err(TransportFailure::Unavailable))
+    }
+}
+
+impl ApiKeyTransport for Scripted {
+    fn get<'call>(
+        &'call mut self,
+        get: Get<'call>,
+    ) -> impl Future<Output = Result<Reply, TransportFailure>> + Send + 'call {
+        self.key_reply(&get)
+    }
 }
 
 impl Transport for Scripted {
@@ -176,10 +189,7 @@ impl Transport for Scripted {
         &'call mut self,
         post: Post<'call>,
     ) -> impl Future<Output = Result<Reply, TransportFailure>> + Send + 'call {
-        let body = serde_json::from_slice::<Value>(&post.body).unwrap_or(Value::Null);
-        self.requests
-            .push(record("POST", post.url, &post.headers, &body));
-        ready(Err(TransportFailure::Unavailable))
+        self.post_refusal(&post)
     }
 }
 
