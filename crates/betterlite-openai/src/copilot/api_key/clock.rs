@@ -17,3 +17,5 @@ impl Clock for TokioSleeper {
         }
     }
 }
+
+mod tests;
