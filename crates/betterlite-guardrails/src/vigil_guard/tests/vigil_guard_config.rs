@@ -1,5 +1,5 @@
 use betterlite_config::sections::guardrail_identity::config_models::GuardrailConfigModelIdentity as _;
-use betterlite_guardrails::vigil_guard::vigil_guard_config::VigilGuardGuardrailConfigModel;
+use betterlite_guardrails::vigil_guard::config::VigilGuardGuardrailConfigModel;
 
 #[test]
 fn deserialize_api_fields() {

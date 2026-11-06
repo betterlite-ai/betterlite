@@ -1,4 +1,4 @@
-use betterlite_guardrails::vigil_guard::vigil_guard_metadata::{CallIdSource, extract_call_id};
+use betterlite_guardrails::vigil_guard::metadata::{CallIdSource, extract_call_id};
 
 use crate::support::object;
 

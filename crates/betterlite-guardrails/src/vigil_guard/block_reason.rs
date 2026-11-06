@@ -1,7 +1,7 @@
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
 use super::BLOCK_REASON_MAX_CHARS;
-use super::vigil_guard_analysis::Analysis;
+use super::analysis::Analysis;
 
 const DEFAULT_BLOCK_REASON: &str = "Blocked by policy";
 

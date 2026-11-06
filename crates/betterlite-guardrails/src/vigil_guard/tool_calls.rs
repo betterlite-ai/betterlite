@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
-use super::vigil_guard_error::VigilGuardError;
-use super::vigil_guard_output::ToolCall;
+use super::error::VigilGuardError;
+use super::output::ToolCall;
 
 #[must_use]
 pub fn tool_call_arguments(tool_calls: Option<&[ToolCall]>) -> Vec<(usize, String)> {

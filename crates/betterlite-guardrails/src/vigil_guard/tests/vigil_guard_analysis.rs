@@ -2,11 +2,9 @@ use std::fs;
 use std::path::Path;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
-use betterlite_guardrails::vigil_guard::vigil_guard_analysis::{
-    Analysis, Decision, Source, analyze,
-};
-use betterlite_guardrails::vigil_guard::vigil_guard_error::VigilGuardError;
-use betterlite_guardrails::vigil_guard::vigil_guard_metadata::MetadataValue;
+use betterlite_guardrails::vigil_guard::analysis::{Analysis, Decision, Source, analyze};
+use betterlite_guardrails::vigil_guard::error::VigilGuardError;
+use betterlite_guardrails::vigil_guard::metadata::MetadataValue;
 use indexmap::IndexMap;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE};
 

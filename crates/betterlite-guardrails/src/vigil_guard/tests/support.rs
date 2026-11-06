@@ -6,17 +6,15 @@ use std::sync::{Mutex, MutexGuard, PoisonError};
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::generic_guardrail_contracts::UnreachableFallback;
 use betterlite_guardrails::vigil_guard::DEFAULT_TIMEOUT;
-use betterlite_guardrails::vigil_guard::vigil_guard_analysis::{
-    Analysis, AnalyzeMode, AnalyzePayload, Source,
-};
-use betterlite_guardrails::vigil_guard::vigil_guard_config::VigilGuardSettings;
-use betterlite_guardrails::vigil_guard::vigil_guard_failure::FailureContext;
-use betterlite_guardrails::vigil_guard::vigil_guard_handler_protocol::{
+use betterlite_guardrails::vigil_guard::analysis::{Analysis, AnalyzeMode, AnalyzePayload, Source};
+use betterlite_guardrails::vigil_guard::config::VigilGuardSettings;
+use betterlite_guardrails::vigil_guard::failure::FailureContext;
+use betterlite_guardrails::vigil_guard::handler_protocol::{
     AsyncPostHandler, HttpResponse, RequestTimeout,
 };
-use betterlite_guardrails::vigil_guard::vigil_guard_metadata::MetadataValue;
-use betterlite_guardrails::vigil_guard::vigil_guard_output::{Inputs, ToolCall};
-use betterlite_guardrails::vigil_guard::vigil_guard_transient::TransportError;
+use betterlite_guardrails::vigil_guard::metadata::MetadataValue;
+use betterlite_guardrails::vigil_guard::output::{Inputs, ToolCall};
+use betterlite_guardrails::vigil_guard::transient::TransportError;
 use indexmap::IndexMap;
 use reqwest::StatusCode;
 use reqwest::header::HeaderMap;

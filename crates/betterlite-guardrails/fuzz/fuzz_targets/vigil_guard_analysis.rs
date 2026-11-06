@@ -1,7 +1,7 @@
 #![no_main]
 
-use betterlite_guardrails::vigil_guard::vigil_guard_analysis::Analysis;
-use betterlite_guardrails::vigil_guard::vigil_guard_output::Inputs;
+use betterlite_guardrails::vigil_guard::analysis::Analysis;
+use betterlite_guardrails::vigil_guard::output::Inputs;
 use libfuzzer_sys::fuzz_target;
 
 fuzz_target!(|bytes: &[u8]| {

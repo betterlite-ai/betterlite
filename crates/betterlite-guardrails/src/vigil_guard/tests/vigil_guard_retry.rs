@@ -1,7 +1,8 @@
 use betterlite_guardrails::vigil_guard::DEFAULT_TIMEOUT;
-use betterlite_guardrails::vigil_guard::vigil_guard_error::VigilGuardError;
-use betterlite_guardrails::vigil_guard::vigil_guard_retry::post_with_retry;
-use betterlite_guardrails::vigil_guard::vigil_guard_transient::TransportError;
+use betterlite_guardrails::vigil_guard::error::VigilGuardError;
+use betterlite_guardrails::vigil_guard::handler_protocol::HttpResponse;
+use betterlite_guardrails::vigil_guard::retry::post_with_retry;
+use betterlite_guardrails::vigil_guard::transient::TransportError;
 use reqwest::StatusCode;
 use reqwest::header::HeaderMap;
 use rstest::rstest;
@@ -111,6 +112,29 @@ async fn second_attempt_is_not_retried() {
         } if status == StatusCode::BAD_REQUEST
     ));
     assert_eq!(handler.calls().len(), 2);
+}
+
+#[rstest]
+#[case::continue_status(StatusCode::CONTINUE)]
+#[case::moved_permanently(StatusCode::MOVED_PERMANENTLY)]
+#[case::not_modified(StatusCode::NOT_MODIFIED)]
+#[tokio::test]
+async fn non_success_status_with_a_json_body_is_a_failure(#[case] status: StatusCode) {
+    let response = HttpResponse {
+        status,
+        body: br#"{"decision":"ALLOWED"}"#.to_vec(),
+    };
+    let handler = FakeHandler::new(vec![Ok(response)]);
+    let headers = HeaderMap::new();
+    let error = post_with_retry(&handler, ENDPOINT, &headers, &payload(), DEFAULT_TIMEOUT)
+        .await
+        .unwrap_err();
+    let VigilGuardError::Transport { source } = error else {
+        panic!("expected a transport error, got {error:?}");
+    };
+    assert_eq!(source, TransportError::HttpStatus { status });
+    assert!(!source.is_transient());
+    assert_eq!(handler.calls().len(), 1);
 }
 
 #[tokio::test]

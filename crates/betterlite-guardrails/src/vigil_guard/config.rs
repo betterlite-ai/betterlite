@@ -2,7 +2,7 @@ use betterlite_config::sections::guardrail_identity::config_models::GuardrailCon
 use secrecy::SecretString;
 use serde::{Deserialize, Serialize};
 
-use super::vigil_guard_handler_protocol::RequestTimeout;
+use super::handler_protocol::RequestTimeout;
 
 #[derive(Debug, Clone)]
 pub struct VigilGuardSettings {

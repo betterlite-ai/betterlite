@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
-use betterlite_guardrails::vigil_guard::vigil_guard_error::VigilGuardError;
-use betterlite_guardrails::vigil_guard::vigil_guard_output::ToolCall;
-use betterlite_guardrails::vigil_guard::vigil_guard_tool_calls::set_tool_call_arguments;
+use betterlite_guardrails::vigil_guard::error::VigilGuardError;
+use betterlite_guardrails::vigil_guard::output::ToolCall;
+use betterlite_guardrails::vigil_guard::tool_calls::set_tool_call_arguments;
 
 use crate::support::{text, tool_call};
 

@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
-use betterlite_guardrails::vigil_guard::vigil_guard_metadata::{
+use betterlite_guardrails::vigil_guard::metadata::{
     MetadataScalar, MetadataValue, clamp_metadata_value,
 };
 

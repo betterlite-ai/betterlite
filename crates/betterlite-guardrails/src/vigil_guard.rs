@@ -2,21 +2,21 @@ use std::time::Duration;
 
 use reqwest::StatusCode;
 
-use self::vigil_guard_analysis::Decision;
-use self::vigil_guard_handler_protocol::RequestTimeout;
+use self::analysis::Decision;
+use self::handler_protocol::RequestTimeout;
 
-pub mod vigil_guard_analysis;
-pub mod vigil_guard_block_reason;
-pub mod vigil_guard_config;
-pub mod vigil_guard_error;
-pub mod vigil_guard_failure;
-pub mod vigil_guard_handler_protocol;
-pub mod vigil_guard_metadata;
-pub mod vigil_guard_output;
-pub mod vigil_guard_retry;
-pub mod vigil_guard_sanitize;
-pub mod vigil_guard_tool_calls;
-pub mod vigil_guard_transient;
+pub mod analysis;
+pub mod block_reason;
+pub mod config;
+pub mod error;
+pub mod failure;
+pub mod handler_protocol;
+pub mod metadata;
+pub mod output;
+pub mod retry;
+pub mod sanitize;
+pub mod tool_calls;
+pub mod transient;
 
 pub const ANALYZE_ENDPOINT: &str = "/v1/guard/analyze";
 pub const BLOCK_REASON_MAX_CHARS: usize = 500;

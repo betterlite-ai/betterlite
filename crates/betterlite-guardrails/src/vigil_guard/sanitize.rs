@@ -1,6 +1,6 @@
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 
-use super::vigil_guard_analysis::Analysis;
+use super::analysis::Analysis;
 
 #[must_use]
 pub fn resolve_sanitized_text(original: &str, analysis: &Analysis) -> String {

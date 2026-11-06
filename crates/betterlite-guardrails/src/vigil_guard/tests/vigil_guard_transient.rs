@@ -1,4 +1,4 @@
-use betterlite_guardrails::vigil_guard::vigil_guard_transient::TransportError;
+use betterlite_guardrails::vigil_guard::transient::TransportError;
 use reqwest::StatusCode;
 use rstest::rstest;
 

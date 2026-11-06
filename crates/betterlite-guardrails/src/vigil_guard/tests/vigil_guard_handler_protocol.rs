@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use betterlite_guardrails::vigil_guard::DEFAULT_TIMEOUT;
-use betterlite_guardrails::vigil_guard::vigil_guard_handler_protocol::AsyncPostHandler as _;
+use betterlite_guardrails::vigil_guard::handler_protocol::AsyncPostHandler as _;
 use reqwest::StatusCode;
 use reqwest::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue};
 

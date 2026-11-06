@@ -1,9 +1,9 @@
 use reqwest::header::HeaderMap;
 
-use super::vigil_guard_analysis::AnalyzePayload;
-use super::vigil_guard_error::VigilGuardError;
-use super::vigil_guard_handler_protocol::{AsyncPostHandler, HttpResponse, RequestTimeout};
-use super::vigil_guard_transient::TransportError;
+use super::analysis::AnalyzePayload;
+use super::error::VigilGuardError;
+use super::handler_protocol::{AsyncPostHandler, HttpResponse, RequestTimeout};
+use super::transient::TransportError;
 
 pub async fn post_with_retry(
     handler: &dyn AsyncPostHandler,
@@ -16,7 +16,7 @@ pub async fn post_with_retry(
     loop {
         let failure = match handler.post(endpoint, headers, payload, timeout).await {
             Ok(response) => {
-                if !response.status.is_client_error() && !response.status.is_server_error() {
+                if response.status.is_success() {
                     return Ok(response);
                 }
                 TransportError::HttpStatus {

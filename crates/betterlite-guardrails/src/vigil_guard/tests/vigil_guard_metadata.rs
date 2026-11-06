@@ -1,4 +1,4 @@
-use betterlite_guardrails::vigil_guard::vigil_guard_metadata::{MetadataValue, collect_metadata};
+use betterlite_guardrails::vigil_guard::metadata::{MetadataValue, collect_metadata};
 
 use crate::support::object;
 

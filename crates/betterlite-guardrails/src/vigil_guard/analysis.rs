@@ -5,11 +5,11 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde::{Deserialize, Serialize};
 
 use super::ANALYZE_ENDPOINT;
-use super::vigil_guard_config::VigilGuardSettings;
-use super::vigil_guard_error::VigilGuardError;
-use super::vigil_guard_handler_protocol::AsyncPostHandler;
-use super::vigil_guard_metadata::MetadataValue;
-use super::vigil_guard_retry::post_with_retry;
+use super::config::VigilGuardSettings;
+use super::error::VigilGuardError;
+use super::handler_protocol::AsyncPostHandler;
+use super::metadata::MetadataValue;
+use super::retry::post_with_retry;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "snake_case")]

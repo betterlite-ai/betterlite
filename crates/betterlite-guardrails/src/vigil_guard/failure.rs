@@ -1,8 +1,8 @@
 use crate::generic_guardrail_contracts::UnreachableFallback;
 
-use super::vigil_guard_analysis::Source;
-use super::vigil_guard_error::VigilGuardError;
-use super::vigil_guard_output::{Inputs, ToolCall, build_output};
+use super::analysis::Source;
+use super::error::VigilGuardError;
+use super::output::{Inputs, ToolCall, build_output};
 
 pub struct FailureContext<'guardrail> {
     pub fallback: UnreachableFallback,

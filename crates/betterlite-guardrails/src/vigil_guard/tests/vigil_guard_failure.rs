@@ -1,7 +1,7 @@
 use betterlite_guardrails::generic_guardrail_contracts::UnreachableFallback;
-use betterlite_guardrails::vigil_guard::vigil_guard_error::VigilGuardError;
-use betterlite_guardrails::vigil_guard::vigil_guard_failure::handle_backend_failure;
-use betterlite_guardrails::vigil_guard::vigil_guard_transient::TransportError;
+use betterlite_guardrails::vigil_guard::error::VigilGuardError;
+use betterlite_guardrails::vigil_guard::failure::handle_backend_failure;
+use betterlite_guardrails::vigil_guard::transient::TransportError;
 use reqwest::StatusCode;
 
 use crate::support::{failure_context, inputs, text, tool_call};

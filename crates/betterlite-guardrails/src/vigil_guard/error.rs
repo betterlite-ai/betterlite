@@ -2,7 +2,7 @@ use reqwest::StatusCode;
 use reqwest::header::InvalidHeaderValue;
 use thiserror::Error;
 
-use super::vigil_guard_transient::TransportError;
+use super::transient::TransportError;
 
 #[derive(Debug, Error)]
 pub enum VigilGuardError {

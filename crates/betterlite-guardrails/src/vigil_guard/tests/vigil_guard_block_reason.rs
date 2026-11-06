@@ -1,4 +1,4 @@
-use betterlite_guardrails::vigil_guard::vigil_guard_block_reason::build_block_reason;
+use betterlite_guardrails::vigil_guard::block_reason::build_block_reason;
 
 use crate::support::analysis;
 

@@ -1,4 +1,4 @@
-use betterlite_guardrails::vigil_guard::vigil_guard_output::build_output;
+use betterlite_guardrails::vigil_guard::output::build_output;
 
 use crate::support::{inputs, text, tool_call};
 

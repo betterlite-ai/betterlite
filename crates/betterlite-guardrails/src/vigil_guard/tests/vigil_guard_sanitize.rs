@@ -1,4 +1,4 @@
-use betterlite_guardrails::vigil_guard::vigil_guard_sanitize::resolve_sanitized_text;
+use betterlite_guardrails::vigil_guard::sanitize::resolve_sanitized_text;
 
 use crate::support::analysis;
 

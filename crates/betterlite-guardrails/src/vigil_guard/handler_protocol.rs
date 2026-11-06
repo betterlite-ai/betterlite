@@ -5,8 +5,8 @@ use std::time::Duration;
 use reqwest::StatusCode;
 use reqwest::header::HeaderMap;
 
-use super::vigil_guard_analysis::AnalyzePayload;
-use super::vigil_guard_transient::TransportError;
+use super::analysis::AnalyzePayload;
+use super::transient::TransportError;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RequestTimeout {
