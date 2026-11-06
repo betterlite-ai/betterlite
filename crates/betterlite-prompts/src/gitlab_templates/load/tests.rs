@@ -36,8 +36,7 @@ async fn a_later_load_adds_to_the_prompts_and_uses_the_per_call_ref() {
     let script = vec![answer!(200, "one"), answer!(200, "two")];
     let (built, transport) = build_manager(SCOPED_CONFIG, Some("a"), None, script).await;
     let mut manager = built.ok().unwrap();
-    manager
-        .load_prompt_from_gitlab("b", Some("v2"))
+    super::load_prompt(&mut manager, "b", Some("v2"))
         .await
         .unwrap();
     assert_eq!(manager.prompts.get("a").unwrap().content, "one");
@@ -56,7 +55,7 @@ async fn loading_the_same_id_again_replaces_the_template() {
     let script = vec![answer!(200, "old"), answer!(200, "new")];
     let (built, _) = build_manager(SCOPED_CONFIG, Some("a"), None, script).await;
     let mut manager = built.ok().unwrap();
-    manager.load_prompt_from_gitlab("a", None).await.unwrap();
+    super::load_prompt(&mut manager, "a", None).await.unwrap();
     assert_eq!(manager.prompts.get("a").unwrap().content, "new");
 }
 

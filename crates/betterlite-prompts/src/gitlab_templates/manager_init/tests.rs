@@ -6,7 +6,6 @@ use super::{ClientSource, scoped_prompts_path};
 use crate::gitlab_client::GitLabClient;
 use crate::gitlab_client::error::GitLabClientError;
 use crate::gitlab_client::tests::{FakeTransport, answer, config_from};
-use crate::gitlab_templates::GitLabTemplateManager;
 use crate::gitlab_templates::error::ManagerError;
 use crate::gitlab_templates::parse::FrontmatterParser;
 use crate::gitlab_templates::tests::{SCOPED_CONFIG, build_manager};
@@ -74,7 +73,7 @@ async fn a_provided_client_is_used_instead_of_building_one_from_the_config() {
         transport.clone(),
     )
     .unwrap();
-    let built = GitLabTemplateManager::new(
+    let built = super::build(
         &config_from("{}"),
         Some("a"),
         None,

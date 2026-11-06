@@ -1,3 +1,4 @@
+use super::GitLabTemplateManager;
 use super::encoding::encode_prompt_id;
 use super::error::{LoadFailure, ManagerError};
 use super::parse::{FrontmatterParser, parse_prompt_file};
@@ -32,6 +33,28 @@ where
     let template = parse_prompt_file(&content, prompt_id, parser)
         .map_err(|source| load_error(LoadFailure::Parse(source)))?;
     Ok(Some(template))
+}
+
+pub async fn load_prompt<T>(
+    manager: &mut GitLabTemplateManager<T>,
+    prompt_id: &str,
+    ref_override: Option<&str>,
+) -> Result<(), ManagerError>
+where
+    T: GitLabTransport,
+{
+    let fetched = fetch_template(
+        &manager.gitlab_client,
+        &manager.prompts_path,
+        manager.frontmatter_parser,
+        prompt_id,
+        ref_override,
+    )
+    .await?;
+    if let Some(template) = fetched {
+        manager.prompts.insert(prompt_id.to_owned(), template);
+    }
+    Ok(())
 }
 
 mod tests;

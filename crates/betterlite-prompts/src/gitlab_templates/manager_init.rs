@@ -1,3 +1,9 @@
+use indexmap::IndexMap;
+
+use super::GitLabTemplateManager;
+use super::error::ManagerError;
+use super::load;
+use super::parse::FrontmatterParser;
 use crate::gitlab_client::GitLabClient;
 use crate::gitlab_client::config::GitLabConfig;
 use crate::gitlab_client::error::GitLabClientError;
@@ -7,6 +13,28 @@ use crate::gitlab_client::transport::GitLabTransport;
 pub enum ClientSource<T> {
     Provided(GitLabClient<T>),
     Transport(T),
+}
+
+pub async fn build<T>(
+    config: &GitLabConfig,
+    prompt_id: Option<&str>,
+    ref_name: Option<&str>,
+    gitlab_client: ClientSource<T>,
+    frontmatter_parser: FrontmatterParser,
+) -> Result<GitLabTemplateManager<T>, ManagerError>
+where
+    T: GitLabTransport,
+{
+    let mut manager = GitLabTemplateManager {
+        gitlab_client: resolve_client(config, gitlab_client, ref_name)?,
+        prompts_path: scoped_prompts_path(config),
+        frontmatter_parser,
+        prompts: IndexMap::new(),
+    };
+    if let Some(initial) = prompt_id.filter(|id| !id.is_empty()) {
+        load::load_prompt(&mut manager, initial, None).await?;
+    }
+    Ok(manager)
 }
 
 // `prompts_path or folder or ""`, so an empty prompts_path defers to folder.

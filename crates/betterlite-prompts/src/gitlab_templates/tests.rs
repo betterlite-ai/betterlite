@@ -32,7 +32,7 @@ pub(super) async fn build_manager(
     FakeTransport,
 ) {
     let transport = FakeTransport::scripted(script);
-    let manager = GitLabTemplateManager::new(
+    let manager = super::manager_init::build(
         &config_from(config_json),
         prompt_id,
         ref_name,
