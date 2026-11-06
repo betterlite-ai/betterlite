@@ -26,10 +26,13 @@ use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tokio::time::sleep;
 
-use super::convert::to_compat_stream_response;
+use super::convert::{to_compat_stream_response, to_core_send_message_request};
 use super::error::ClientError;
 use super::records::compat::SendMessageRequest;
-use super::records::core::CoreStreamEvent;
+use super::records::core::{
+    CoreArtifact, CoreArtifactUpdate, CorePart, CoreStatusUpdate, CoreStreamEvent, CoreTask,
+    CoreTaskState, CoreTaskStatus, CoreTextPart,
+};
 use super::records::response::{SendMessageResponse, StreamResult};
 use super::retry::{SendError, SendTarget, execute_send_with_retry, execute_stream_with_retry};
 use super::send::send_message;
@@ -570,4 +573,153 @@ fn compat_stream_response_round_trip() {
     let json = serde_json::to_string(&value).unwrap();
     assert!(json.contains(r#""kind":"message""#));
     assert!(json.contains(r#""role":"agent""#));
+}
+
+fn multi_part_request() -> SendMessageRequest {
+    serde_json::from_str(
+        r#"{"id":"request-1","params":{"message":{"kind":"message","messageId":"m-1","role":"user","contextId":"c-1","parts":[{"kind":"text","text":"hi"},{"kind":"data","data":{"answer":42}},{"kind":"data","data":{"value":[1,2]},"metadata":{"data_part_compat":true}},{"kind":"file","file":{"bytes":"aGk=","mimeType":"text/plain","name":"a.txt"}},{"kind":"file","file":{"uri":"https://example/a.txt","mimeType":"text/plain"}}]}}}"#,
+    )
+    .unwrap()
+}
+
+fn request_id() -> JsonRpcId {
+    let raw = r#""request-1""#;
+    serde_json::from_str(raw).unwrap()
+}
+
+#[test]
+fn compat_part_conversion_to_core() {
+    let core = to_core_send_message_request(multi_part_request()).unwrap();
+    assert!(matches!(&core.message.parts[0], CorePart::Text(_)));
+    let CorePart::Data(data_part) = &core.message.parts[1] else {
+        panic!("expected a data part");
+    };
+    assert_eq!(
+        data_part.data,
+        serde_json::from_str::<AgentJson>(r#"{"answer":42}"#).unwrap()
+    );
+    assert!(data_part.metadata.is_none());
+
+    let CorePart::Data(unwrapped) = &core.message.parts[2] else {
+        panic!("expected an unwrapped data part");
+    };
+    assert_eq!(
+        unwrapped.data,
+        serde_json::from_str::<AgentJson>("[1,2]").unwrap()
+    );
+    assert!(unwrapped.metadata.is_none());
+
+    let CorePart::Raw(raw_part) = &core.message.parts[3] else {
+        panic!("expected a raw file part");
+    };
+    assert_eq!(raw_part.raw, "aGk=");
+    assert_eq!(raw_part.media_type.as_deref(), Some("text/plain"));
+    assert_eq!(raw_part.filename.as_deref(), Some("a.txt"));
+
+    let CorePart::Url(url_part) = &core.message.parts[4] else {
+        panic!("expected a url file part");
+    };
+    assert_eq!(url_part.url, "https://example/a.txt");
+}
+
+#[test]
+fn compat_part_conversion_to_compat() {
+    let core = to_core_send_message_request(multi_part_request()).unwrap();
+    let response = to_compat_stream_response(CoreStreamEvent::Message(core.message), request_id());
+    let json = serde_json::to_string(&response.result).unwrap();
+    assert!(json.contains(r#""kind":"message""#));
+    assert!(json.contains(r#"{"kind":"text","text":"hi"}"#));
+    assert!(json.contains(r#"{"kind":"data","data":{"answer":42}}"#));
+    assert!(json.contains(
+        r#"{"kind":"data","data":{"value":[1,2]},"metadata":{"data_part_compat":true}}"#
+    ));
+    assert!(json.contains(r#""bytes":"aGk=""#));
+    assert!(json.contains(r#""uri":"https://example/a.txt""#));
+}
+
+#[test]
+fn compat_part_conversion_errors() {
+    let bad_bytes: SendMessageRequest = serde_json::from_str(
+        r#"{"id":"request-1","params":{"message":{"messageId":"m-1","role":"user","parts":[{"kind":"file","file":{"bytes":"not base64!"}}]}}}"#,
+    )
+    .unwrap();
+    assert!(matches!(
+        to_core_send_message_request(bad_bytes),
+        Err(super::convert::ConvertError::FileBytes(_))
+    ));
+
+    let missing_value: SendMessageRequest = serde_json::from_str(
+        r#"{"id":"request-1","params":{"message":{"messageId":"m-1","role":"user","parts":[{"kind":"data","data":{"other":1},"metadata":{"data_part_compat":true}}]}}}"#,
+    )
+    .unwrap();
+    assert!(matches!(
+        to_core_send_message_request(missing_value),
+        Err(super::convert::ConvertError::MissingDataValue)
+    ));
+}
+
+#[test]
+fn compat_task_conversion() {
+    let task: CoreTask = serde_json::from_str(
+        r#"{"id":"t-1","contextId":"c-1","status":{"state":"TASK_STATE_COMPLETED","message":{"messageId":"m-2","role":"ROLE_AGENT","parts":[{"text":"done"}]},"timestamp":"2026-01-01T00:00:00Z"},"history":[{"messageId":"m-1","role":"ROLE_USER","parts":[{"text":"hi"}]}],"artifacts":[{"artifactId":"a-1","name":"out","parts":[{"text":"x"}]}]}"#,
+    )
+    .unwrap();
+    let response = to_compat_stream_response(CoreStreamEvent::Task(task), request_id());
+    let json = serde_json::to_string(&response.result).unwrap();
+    assert!(json.contains(r#""kind":"task""#));
+    assert!(json.contains(r#""status":{"state":"completed","message":{"kind":"message""#));
+    assert!(json.contains(r#""timestamp":"2026-01-01T00:00:00Z""#));
+    assert!(json.contains(r#""history":[{"kind":"message""#));
+    assert!(json.contains(
+        r#""artifacts":[{"artifactId":"a-1","name":"out","parts":[{"kind":"text","text":"x"}]}]"#
+    ));
+}
+
+#[test]
+fn compat_status_update_conversion() {
+    let status = CoreStatusUpdate {
+        task_id: "t-1".to_owned(),
+        context_id: Some("c-1".to_owned()),
+        status: Some(CoreTaskStatus {
+            state: CoreTaskState::Completed,
+            message: None,
+            timestamp: None,
+        }),
+        metadata: None,
+    };
+    let response = to_compat_stream_response(CoreStreamEvent::StatusUpdate(status), request_id());
+    let json = serde_json::to_string(&response.result).unwrap();
+    assert!(json.contains(r#""kind":"status-update""#));
+    assert!(json.contains(r#""final":true"#));
+    assert!(json.contains(r#""state":"completed""#));
+    assert!(json.contains(r#""taskId":"t-1""#));
+}
+
+#[test]
+fn compat_artifact_update_conversion() {
+    let artifact = CoreArtifactUpdate {
+        task_id: "t-1".to_owned(),
+        context_id: Some("c-1".to_owned()),
+        artifact: CoreArtifact {
+            artifact_id: "a-1".to_owned(),
+            name: Some("out".to_owned()),
+            description: None,
+            parts: vec![CorePart::Text(CoreTextPart {
+                text: "x".to_owned(),
+                metadata: None,
+            })],
+            metadata: None,
+            extensions: Vec::new(),
+        },
+        append: Some(true),
+        last_chunk: Some(true),
+        metadata: None,
+    };
+    let response =
+        to_compat_stream_response(CoreStreamEvent::ArtifactUpdate(artifact), request_id());
+    let json = serde_json::to_string(&response.result).unwrap();
+    assert!(json.contains(r#""kind":"artifact-update""#));
+    assert!(json.contains(r#""append":true"#));
+    assert!(json.contains(r#""lastChunk":true"#));
+    assert!(json.contains(r#""artifact":{"artifactId":"a-1""#));
 }
