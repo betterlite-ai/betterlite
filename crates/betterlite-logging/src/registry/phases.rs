@@ -28,14 +28,6 @@ pub enum CallbackList {
 }
 
 impl CallbackList {
-    pub const ALL: [Self; 5] = [
-        Self::Callbacks,
-        Self::Success,
-        Self::Failure,
-        Self::Input,
-        Self::Service,
-    ];
-
     // LiteLLM dispatches a streaming response's events through log_stream_event instead of log_success_event
     #[must_use]
     pub const fn phases(self) -> &'static [CallbackPhase] {
