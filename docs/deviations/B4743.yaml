@@ -1,0 +1,11 @@
+task: B4743
+deviations:
+  - what: The caller's cancellation is an explicit CancellationToken passed to run_bounded_cleanup, and the cleanup runs in a task on an injected TaskTracker. A caller that drops the future instead of cancelling the token leaves the cleanup running to its deadline.
+    why: Rust has no cancellation exception to catch, and rule async-hygiene forbids detached tasks, so the tracker is what the server drains on shutdown.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L176-L197
+  - what: Errors are shared as Arc values, and the cleanup record and the identity filter in first_non_cancelled_cause compare them with Arc::ptr_eq.
+    why: The same error object has to be both returned to the caller and recorded, as Python's `is` check relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L138-L147
+  - what: A panic or abort of the cleanup task is returned as CleanupError::Task instead of being re-raised as the caller's cancellation or the task's exception.
+    why: A panic in cleanup must not take down the caller, and the caller still gets a typed error naming the cause.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L176-L197
