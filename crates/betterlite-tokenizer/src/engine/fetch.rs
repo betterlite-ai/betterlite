@@ -1,6 +1,6 @@
 use crate::engine::assets;
 use crate::engine::error::EngineError;
-use crate::engine::tiktoken::{Encoding, TiktokenEngine};
+use crate::engine::tiktoken::Encoding;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::transport_error::TransportError;
@@ -8,9 +8,10 @@ use http::Method;
 use http::header::HeaderMap;
 use sha1::{Digest as _, Sha1};
 use sha2::Sha256;
+use std::collections::BTreeMap;
 use std::io::{Error as IoError, ErrorKind};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use thiserror::Error;
 use tokio::fs;
@@ -42,12 +43,18 @@ pub enum FetchError {
     #[error(transparent)]
     Engine(#[from] EngineError),
 }
-// tiktoken writes fetched files into TIKTOKEN_CACHE_DIR; betterlite keeps them in memory unless an operator sets a cache
+struct Hashes {
+    r50k: String,
+    gpt2_vocab: String,
+    gpt2_encoder: String,
+}
+// tiktoken writes fetched files into TIKTOKEN_CACHE_DIR; betterlite keeps each fetched vocabulary in memory and, with a cache dir set, on disk under the sha1 of its URL
 pub struct TiktokenFetcher {
     client: Arc<ProxiedClient>,
     cache_dir: Option<PathBuf>,
     base: String,
-    r50k_sha256: String,
+    hashes: Hashes,
+    memory: Mutex<BTreeMap<String, Vec<u8>>>,
 }
 impl TiktokenFetcher {
     #[must_use]
@@ -56,35 +63,48 @@ impl TiktokenFetcher {
             client,
             cache_dir,
             base: DEFAULT_BASE.to_owned(),
-            r50k_sha256: R50K_SHA256.to_owned(),
+            hashes: Hashes {
+                r50k: R50K_SHA256.to_owned(),
+                gpt2_vocab: GPT2_VOCAB_SHA256.to_owned(),
+                gpt2_encoder: GPT2_ENCODER_SHA256.to_owned(),
+            },
+            memory: Mutex::new(BTreeMap::new()),
         }
     }
     #[must_use]
-    pub fn with_base(mut self, base: String, r50k_sha256: String) -> Self {
+    pub fn with_base(
+        mut self,
+        base: String,
+        r50k: String,
+        gpt2_vocab: String,
+        gpt2_encoder: String,
+    ) -> Self {
         self.base = base;
-        self.r50k_sha256 = r50k_sha256;
+        self.hashes = Hashes {
+            r50k,
+            gpt2_vocab,
+            gpt2_encoder,
+        };
         self
     }
-    pub async fn engine(&self, encoding: Encoding) -> Result<Arc<TiktokenEngine>, FetchError> {
+    pub async fn data(&self, encoding: Encoding) -> Result<Vec<u8>, FetchError> {
         match assets::bundled(encoding) {
-            Some(data) => Ok(Arc::new(TiktokenEngine::from_bpe_file(encoding, &data)?)),
-            None => self.remote_engine(encoding).await,
+            Some(bundled) => Ok(bundled),
+            None => self.remote(encoding).await,
         }
     }
-    async fn remote_engine(&self, encoding: Encoding) -> Result<Arc<TiktokenEngine>, FetchError> {
+    async fn remote(&self, encoding: Encoding) -> Result<Vec<u8>, FetchError> {
         match encoding {
             Encoding::R50kBase => {
                 let url = format!("{}/encodings/r50k_base.tiktoken", self.base);
-                let data = self.read(&url, &self.r50k_sha256).await?;
-                Ok(Arc::new(TiktokenEngine::from_bpe_file(encoding, &data)?))
+                self.read(&url, &self.hashes.r50k).await
             }
             Encoding::Gpt2 => {
                 let vocabulary_url = format!("{}/gpt-2/encodings/main/vocab.bpe", self.base);
                 let encoder_url = format!("{}/gpt-2/encodings/main/encoder.json", self.base);
-                let vocabulary = self.read(&vocabulary_url, GPT2_VOCAB_SHA256).await?;
-                let encoder = self.read(&encoder_url, GPT2_ENCODER_SHA256).await?;
-                let bpe = gpt2::bpe_file(&vocabulary, &encoder)?;
-                Ok(Arc::new(TiktokenEngine::from_bpe_file(encoding, &bpe)?))
+                let vocabulary = self.read(&vocabulary_url, &self.hashes.gpt2_vocab).await?;
+                let encoder = self.read(&encoder_url, &self.hashes.gpt2_encoder).await?;
+                Ok(gpt2::bpe_file(&vocabulary, &encoder)?)
             }
             Encoding::Cl100kBase
             | Encoding::O200kBase
@@ -133,6 +153,14 @@ impl TiktokenFetcher {
         Ok(data)
     }
     async fn fetch(&self, url: &str, expected: &str) -> Result<Vec<u8>, FetchError> {
+        if let Some(found) = self
+            .memory
+            .lock()
+            .ok()
+            .and_then(|cache| cache.get(url).cloned())
+        {
+            return Ok(found);
+        }
         let request = OutboundRequest {
             method: Method::GET,
             url: Url::parse(url).map_err(FetchError::Url)?,
@@ -151,6 +179,9 @@ impl TiktokenFetcher {
         }
         if hex::encode(Sha256::digest(&response.body)) != expected {
             return Err(FetchError::HashMismatch(url.to_owned()));
+        }
+        if let Ok(mut cache) = self.memory.lock() {
+            cache.insert(url.to_owned(), response.body.clone());
         }
         Ok(response.body)
     }

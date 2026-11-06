@@ -7,8 +7,11 @@ use secrecy::SecretString;
 
 use crate::engine::fetch::TiktokenFetcher;
 use crate::engine::hub::{HubDownloader, HubError, SystemClock};
+use crate::engine::limits::CountingService;
 use crate::engine::selection::{CustomTokenizer, SelectionError, Selector, TokenizerType};
-use crate::engine::tests::support::{Reply, Request, Server, client, hub_settings, resolver};
+use crate::engine::tests::support::{
+    InlineCounter, Reply, Request, Server, client, hub_settings, resolver,
+};
 
 const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
 const CATALOG: &str = r#"{
@@ -47,7 +50,8 @@ fn selector(settings: &HubSettings, disable: bool) -> Selector {
     ));
     let fetcher = Arc::new(TiktokenFetcher::new(client(), None));
     let catalog = Arc::new(ModelCatalog::parse(CATALOG.as_bytes(), UnknownFields::Reject).unwrap());
-    Selector::new(fetcher, hub, catalog, disable)
+    let counter = Arc::new(CountingService::new(4, Arc::new(InlineCounter)));
+    Selector::new(fetcher, hub, catalog, counter, disable)
 }
 
 #[rstest]
@@ -156,7 +160,7 @@ async fn a_custom_tokenizer_failure_reaches_the_caller() {
         selector(&settings, false)
             .select("command-r", Some(&custom))
             .await,
-        Err(SelectionError::Hub(HubError::EntryNotFound(..)))
+        Err(SelectionError::Hub(HubError::RepoNotFound(..)))
     ));
 }
 

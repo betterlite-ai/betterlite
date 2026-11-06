@@ -4,7 +4,8 @@ use crate::engine::error::EngineError;
 use crate::engine::fetch::{FetchError, TiktokenFetcher};
 use crate::engine::hub::{HubDownloader, HubError};
 use crate::engine::huggingface::HuggingFaceEngine;
-use crate::engine::tiktoken::Encoding;
+use crate::engine::limits::{BuildJob, CountingService};
+use crate::engine::tiktoken::{Encoding, TiktokenEngine};
 use betterlite_models::catalog::ModelCatalog;
 use lru::LruCache;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -34,14 +35,6 @@ pub struct SelectTokenizerResponse {
     pub tokenizer_type: TokenizerType,
     pub engine: Engine,
 }
-impl From<(Engine, TokenizerType)> for SelectTokenizerResponse {
-    fn from((engine, tokenizer_type): (Engine, TokenizerType)) -> Self {
-        Self {
-            tokenizer_type,
-            engine,
-        }
-    }
-}
 #[derive(Debug, Error)]
 pub enum SelectionError {
     #[error("the custom tokenizer could not be downloaded")]
@@ -64,6 +57,7 @@ pub struct Selector {
     fetcher: Arc<TiktokenFetcher>,
     hub: Arc<HubDownloader>,
     catalog: Arc<ModelCatalog>,
+    counter: Arc<CountingService>,
     disable_hf_tokenizer_download: bool,
     kinds: Mutex<BTreeMap<Kind, Engine>>,
     custom: Mutex<LruCache<CustomKey, Engine>>,
@@ -74,6 +68,7 @@ impl Selector {
         fetcher: Arc<TiktokenFetcher>,
         hub: Arc<HubDownloader>,
         catalog: Arc<ModelCatalog>,
+        counter: Arc<CountingService>,
         disable_hf_tokenizer_download: bool,
     ) -> Self {
         let capacity = NonZeroUsize::new(CUSTOM_CACHE).unwrap_or(NonZeroUsize::MIN);
@@ -81,6 +76,7 @@ impl Selector {
             fetcher,
             hub,
             catalog,
+            counter,
             disable_hf_tokenizer_download,
             kinds: Mutex::new(BTreeMap::new()),
             custom: Mutex::new(LruCache::new(capacity)),
@@ -99,9 +95,10 @@ impl Selector {
         {
             match self.load_kind(kind).await {
                 Ok(engine) => {
-                    let response =
-                        SelectTokenizerResponse::from((engine, TokenizerType::HuggingFace));
-                    return Ok(response);
+                    return Ok(SelectTokenizerResponse {
+                        tokenizer_type: TokenizerType::HuggingFace,
+                        engine,
+                    });
                 }
                 Err(error) => tracing::debug!("Error selecting tokenizer: {error}"),
             }
@@ -126,9 +123,21 @@ impl Selector {
             .ok()
             .and_then(|mut cache| cache.get(&key).cloned());
         if let Some(found) = cached {
-            let response = SelectTokenizerResponse::from((found, TokenizerType::HuggingFace));
-            return Ok(response);
+            return Ok(SelectTokenizerResponse {
+                tokenizer_type: TokenizerType::HuggingFace,
+                engine: found,
+            });
         }
+        let engine = self.download_custom(custom).await?;
+        if let Ok(mut cache) = self.custom.lock() {
+            cache.put(key, engine.clone());
+        }
+        Ok(SelectTokenizerResponse {
+            tokenizer_type: TokenizerType::HuggingFace,
+            engine,
+        })
+    }
+    async fn download_custom(&self, custom: &CustomTokenizer) -> Result<Engine, SelectionError> {
         tracing::debug!(
             "Loading custom HuggingFace tokenizer {} (revision {})",
             custom.identifier,
@@ -142,12 +151,7 @@ impl Selector {
                 custom.auth_token.as_ref(),
             )
             .await?;
-        let engine = Engine::HuggingFace(Arc::new(HuggingFaceEngine::from_bytes(&bytes)?));
-        if let Ok(mut cache) = self.custom.lock() {
-            cache.put(key, engine.clone());
-        }
-        let response = SelectTokenizerResponse::from((engine, TokenizerType::HuggingFace));
-        Ok(response)
+        self.build_huggingface(bytes).await
     }
     pub async fn default_encoding(&self) -> Result<SelectTokenizerResponse, SelectionError> {
         Ok(SelectTokenizerResponse {
@@ -165,10 +169,11 @@ impl Selector {
             return Ok(found);
         }
         let engine = match kind {
-            Kind::OpenAi => Engine::Tiktoken(self.fetcher.engine(Encoding::Cl100kBase).await?),
-            Kind::Anthropic => Engine::HuggingFace(Arc::new(HuggingFaceEngine::from_bytes(
-                &assets::joined(assets::ANTHROPIC_PARTS),
-            )?)),
+            Kind::OpenAi => self.build_tiktoken(Encoding::Cl100kBase).await?,
+            Kind::Anthropic => {
+                let bytes = assets::joined(assets::ANTHROPIC_PARTS);
+                self.build_huggingface(bytes).await?
+            }
             Kind::Cohere => self.download_kind(COHERE_REPO).await?,
             Kind::Llama2 => self.download_kind(LLAMA2_REPO).await?,
             Kind::Llama3 => self.download_kind(LLAMA3_REPO).await?,
@@ -178,13 +183,23 @@ impl Selector {
         }
         Ok(engine)
     }
+    async fn build_tiktoken(&self, encoding: Encoding) -> Result<Engine, SelectionError> {
+        let data = self.fetcher.data(encoding).await?;
+        let job = tokenizer_job(encoding, data);
+        let engine = self.counter.build(job).await?;
+        Ok(engine)
+    }
+    async fn build_huggingface(&self, bytes: Vec<u8>) -> Result<Engine, SelectionError> {
+        let job = huggingface_job(bytes);
+        let engine = self.counter.build(job).await?;
+        Ok(engine)
+    }
     async fn download_kind(&self, repository: &str) -> Result<Engine, SelectionError> {
         let bytes = self
             .hub
             .download(repository, DEFAULT_REVISION, None)
             .await?;
-        let engine = HuggingFaceEngine::from_bytes(&bytes)?;
-        Ok(Engine::HuggingFace(Arc::new(engine)))
+        self.build_huggingface(bytes).await
     }
     fn kind(&self, model: &str) -> Option<Kind> {
         if self.provider_is(model, "cohere") && model.contains("command-r") {
@@ -208,4 +223,16 @@ impl Selector {
             .get(model)
             .is_some_and(|entry| entry.fields.provider_projection().litellm_provider == provider)
     }
+}
+fn tokenizer_job(encoding: Encoding, data: Vec<u8>) -> BuildJob {
+    Box::new(move || {
+        let engine = TiktokenEngine::from_bpe_file(encoding, &data)?;
+        Ok(Engine::Tiktoken(Arc::new(engine)))
+    })
+}
+fn huggingface_job(bytes: Vec<u8>) -> BuildJob {
+    Box::new(move || {
+        let engine = HuggingFaceEngine::from_bytes(&bytes)?;
+        Ok(Engine::HuggingFace(Arc::new(engine)))
+    })
 }

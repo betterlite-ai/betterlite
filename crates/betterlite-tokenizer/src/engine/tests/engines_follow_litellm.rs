@@ -86,8 +86,12 @@ async fn r50k_fixture() -> (Server, tempfile::TempDir, TiktokenFetcher, String) 
     })
     .await;
     let cache = tempfile::tempdir().unwrap();
-    let fetcher = TiktokenFetcher::new(client(), Some(cache.path().to_path_buf()))
-        .with_base(server.endpoint.clone(), sha256.clone());
+    let fetcher = TiktokenFetcher::new(client(), Some(cache.path().to_path_buf())).with_base(
+        server.endpoint.clone(),
+        sha256.clone(),
+        sha256.clone(),
+        sha256.clone(),
+    );
     (server, cache, fetcher, sha256)
 }
 
@@ -95,7 +99,8 @@ async fn r50k_fixture() -> (Server, tempfile::TempDir, TiktokenFetcher, String) 
 async fn r50k_fetch_follows_read_file_cached() {
     let (server, cache, fetcher, sha256) = r50k_fixture().await;
     let expected = synthetic_bpe_file();
-    let engine = fetcher.engine(Encoding::R50kBase).await.unwrap();
+    let data = fetcher.data(Encoding::R50kBase).await.unwrap();
+    let engine = TiktokenEngine::from_bpe_file(Encoding::R50kBase, &data).unwrap();
     assert_eq!(
         engine.encode("hello world").unwrap(),
         [256, 257, 111, 32, 119, 111, 114, 108, 100]
@@ -104,11 +109,16 @@ async fn r50k_fetch_follows_read_file_cached() {
     let key = hex::encode(Sha1::digest(url.as_bytes()));
     assert_eq!(fs::read(cache.path().join(key)).unwrap(), expected);
     let requests = server.request_count();
-    let second = TiktokenFetcher::new(client(), Some(cache.path().to_path_buf()))
-        .with_base(server.endpoint.clone(), sha256);
-    let cached = second.engine(Encoding::R50kBase).await.unwrap();
+    let second = TiktokenFetcher::new(client(), Some(cache.path().to_path_buf())).with_base(
+        server.endpoint.clone(),
+        sha256.clone(),
+        sha256.clone(),
+        sha256,
+    );
+    let cached = second.data(Encoding::R50kBase).await.unwrap();
+    let rebuilt = TiktokenEngine::from_bpe_file(Encoding::R50kBase, &cached).unwrap();
     assert_eq!(
-        cached.encode("hello world").unwrap(),
+        rebuilt.encode("hello world").unwrap(),
         [256, 257, 111, 32, 119, 111, 114, 108, 100]
     );
     assert_eq!(server.request_count(), requests);
@@ -122,4 +132,40 @@ fn gpt2_vocabulary_follows_data_gym() {
     let engine = TiktokenEngine::from_bpe_file(Encoding::Gpt2, &serialized).unwrap();
     assert_eq!(engine.encode("hello").unwrap(), [256, 257, 78]);
     assert_eq!(engine.decode(&[256, 257, 78]).unwrap(), "hello".to_owned());
+    assert_eq!(engine.encode(" t").unwrap(), [258]);
+    assert_eq!(engine.decode(&[258]).unwrap(), " t".to_owned());
+}
+
+#[tokio::test]
+async fn gpt2_fetch_converts_both_files() {
+    let vocabulary = include_bytes!("../../../fixtures/gpt2-test-vocab.bpe");
+    let encoder = include_bytes!("../../../fixtures/gpt2-test-encoder.json");
+    let vocabulary_hash = hex::encode(Sha256::digest(vocabulary));
+    let encoder_hash = hex::encode(Sha256::digest(encoder));
+    let body = vocabulary.to_vec();
+    let encoder_body = encoder.to_vec();
+    let server = Server::start(move |request| {
+        let (headers, data) = if request.path.ends_with("vocab.bpe") {
+            (Vec::new(), body.clone())
+        } else {
+            (Vec::new(), encoder_body.clone())
+        };
+        Reply::Response {
+            status: 200,
+            headers,
+            body: data,
+        }
+    })
+    .await;
+    let fetcher = TiktokenFetcher::new(client(), None).with_base(
+        server.endpoint.clone(),
+        String::new(),
+        vocabulary_hash,
+        encoder_hash,
+    );
+    let data = fetcher.data(Encoding::Gpt2).await.unwrap();
+    let engine = TiktokenEngine::from_bpe_file(Encoding::Gpt2, &data).unwrap();
+    assert_eq!(engine.encode(" t").unwrap(), [258]);
+    assert_eq!(fetcher.data(Encoding::Gpt2).await.unwrap(), data);
+    assert_eq!(server.request_count(), 2);
 }

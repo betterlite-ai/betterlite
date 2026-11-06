@@ -12,7 +12,7 @@ use tokio::time::{sleep, timeout};
 use crate::engine::Engine;
 use crate::engine::assets;
 use crate::engine::error::EngineError;
-use crate::engine::limits::{BlockingCounter, CountJob, CountingService};
+use crate::engine::limits::{BlockingCounter, BuildJob, CountJob, CountingService};
 use crate::engine::tiktoken::{Encoding, TiktokenEngine};
 
 struct Recorder {
@@ -44,6 +44,10 @@ impl BlockingCounter for Recorder {
         self.running.fetch_sub(1, Ordering::SeqCst);
         job()
     }
+
+    async fn build(&self, job: BuildJob) -> Result<Engine, EngineError> {
+        job()
+    }
 }
 
 struct GatedCounter {
@@ -59,6 +63,10 @@ impl BlockingCounter for GatedCounter {
         }
         let _sent = self.entered.send(()).await;
         pending().await
+    }
+
+    async fn build(&self, job: BuildJob) -> Result<Engine, EngineError> {
+        job()
     }
 }
 

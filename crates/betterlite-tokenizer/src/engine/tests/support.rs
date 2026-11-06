@@ -5,6 +5,7 @@ use std::path::Path;
 use std::str::from_utf8;
 use std::sync::{Arc, Mutex};
 
+use async_trait::async_trait;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::sections::huggingface_hub::{
     OfflineSetting, Settings as HubSettings, TransferSetting,
@@ -15,6 +16,10 @@ use betterlite_http::hub_oauth::clock::{HubClock, SystemHubClock};
 use betterlite_http::hub_token::{HubTokenFileReader, HubTokenResolver, TokioHubTokenFileReader};
 use betterlite_http::proxy::ProxiedClient;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+
+use crate::engine::Engine;
+use crate::engine::error::EngineError;
+use crate::engine::limits::{BlockingCounter, BuildJob, CountJob};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinSet;
 
@@ -246,4 +251,17 @@ pub(crate) fn resolver(settings: &HubSettings) -> Arc<HubTokenResolver> {
         reader,
         clock,
     ))
+}
+
+pub(crate) struct InlineCounter;
+
+#[async_trait]
+impl BlockingCounter for InlineCounter {
+    async fn count(&self, job: CountJob) -> Result<usize, EngineError> {
+        job()
+    }
+
+    async fn build(&self, job: BuildJob) -> Result<Engine, EngineError> {
+        job()
+    }
 }
