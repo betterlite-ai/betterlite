@@ -1,0 +1,14 @@
+task: B192
+deviations:
+  - what: Explicit overwrite opens the final target with O_NOFOLLOW, so a symlinked target is refused while symlinked parents still work.
+    why: LiteLLM's O_WRONLY | O_TRUNC follows the link and rewrites the file it points at, which can redirect a secret write.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/private_json.py#L64-L76
+  - what: safe_json_loads returns a typed error instead of a caller default, and rejects payloads over 1 MiB or nested deeper than 64 containers.
+    why: The loader keeps serde_json's error as its source and every stored payload stays bounded; callers pass their own fallback.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/safe_json_loads.py#L9-L16
+  - what: A staging or commit failure keeps its own error when removing the temporary also fails.
+    why: The cleanup failure is logged and the first cause reaches the caller, where LiteLLM would raise the unlink error in its place.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/private_json.py#L33-L35
+  - what: ensure_private_dir refuses a path with no final name, such as the filesystem root, instead of changing its mode.
+    why: Chmodding the root because a caller passed it is a bug no working setup relies on, and the typed error names the path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/private_json.py#L12-L16
