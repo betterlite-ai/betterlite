@@ -35,7 +35,10 @@ fn the_client_is_taken_from_the_pool_for_this_provider() {
     assert_eq!(second.timeout, Duration::from_secs(45));
     assert_eq!(pool.client_count(), 1);
     first.close();
+    let third = GitHub::pooled(&settings, &pool, &tls(), &routing).unwrap();
+    assert_eq!(pool.client_count(), 1);
     second.close();
+    third.close();
 }
 
 #[test]

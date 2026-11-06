@@ -39,3 +39,18 @@ async fn only_a_get_on_a_transient_status_is_retried(
     assert_eq!(script.seen().len(), 1);
     assert_eq!(started.elapsed(), Duration::ZERO);
 }
+
+#[tokio::test]
+async fn an_unreachable_transport_reports_the_connection_message() {
+    let script = Script::new(Vec::new());
+    let github = github(script.clone());
+    let error = github
+        .request(Method::GET, "user/repos", &[], None)
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Could not reach GitHub. Check the API URL and network connection."
+    );
+    assert_eq!(script.seen().len(), 1);
+}

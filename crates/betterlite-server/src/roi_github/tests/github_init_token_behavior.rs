@@ -1,8 +1,9 @@
 #![cfg(test)]
 
 use axum::http::Method;
+use betterlite_roi::settings::ROISettings;
 
-use super::client::ACCEPT_GITHUB_JSON;
+use super::client::{ACCEPT_GITHUB_JSON, GitHub};
 use super::support::{Script, github, github_with_token, json_reply};
 
 #[tokio::test]
@@ -43,5 +44,17 @@ async fn the_api_url_drops_trailing_slashes_and_paths_lose_leading_ones() {
     assert_eq!(
         script.seen()[0].url,
         "https://github.example/api/user/repos"
+    );
+}
+
+#[test]
+fn a_token_a_header_cannot_carry_fails_when_the_client_is_built() {
+    let settings: ROISettings = serde_json::from_str("{\"github_token\":\"bad\\nvalue\"}").unwrap();
+    let error = GitHub::new(&settings, Script::new(Vec::new()))
+        .err()
+        .unwrap();
+    assert_eq!(
+        error.to_string(),
+        "Could not reach GitHub. Check the API URL and network connection."
     );
 }
