@@ -6,6 +6,7 @@ call:
       - {function: reasoning_effort, budget_tokens: 1024}
       - {function: reasoning_effort, budget_tokens: 4096}
       - {function: resolved_service_tier, usage_tier: priority}
+      - {function: resolved_service_tier, usage_tier: provider-tier, requested_tier: auto}
       - {function: resolved_service_tier, requested_tier: flex}
       - {function: resolved_service_tier, requested_tier: turbo}
 env: {}

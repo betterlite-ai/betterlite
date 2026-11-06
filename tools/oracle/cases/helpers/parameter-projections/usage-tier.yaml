@@ -6,5 +6,6 @@ call:
       - {function: resolved_service_tier, usage_tier: priority}
       - {function: resolved_service_tier, usage_tier: batch, requested_tier: auto}
       - {function: resolved_service_tier, usage_tier: standard_only}
+      - {function: resolved_service_tier, usage_tier: provider-tier, requested_tier: auto}
 env: {}
 compare: {ignore: []}

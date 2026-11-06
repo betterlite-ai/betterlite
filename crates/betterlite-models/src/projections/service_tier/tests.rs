@@ -19,6 +19,12 @@ use super::resolved_service_tier;
     Some("default")
 )]
 #[case::served_tier_wins_over_the_requested_tier(None, Some("batch"), Some("auto"), Some("batch"))]
+#[case::unknown_usage_tier_is_served_unrestricted(
+    None,
+    Some("provider-tier"),
+    Some("auto"),
+    Some("provider-tier")
+)]
 #[case::provider_tiers_are_served_unrestricted(
     Some("provider-tier"),
     None,
