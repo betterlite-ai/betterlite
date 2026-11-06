@@ -19,7 +19,12 @@ pub fn parse_prompt_to_messages(rendered: &str) -> Vec<AllMessageValues> {
         if line.is_empty() {
             continue;
         }
-        match role_prefix(line) {
+        // LiteLLM lowercases the line before matching, so a role prefix is recognized in any case
+        let lowered = line.to_ascii_lowercase();
+        let prefix = ROLE_PREFIXES.iter().find_map(|&(prefix, offset, role)| {
+            lowered.starts_with(prefix).then_some((role, offset))
+        });
+        match prefix {
             Some((role, offset)) => {
                 if let Some(previous_role) = current_role {
                     messages.push(text_message(
@@ -43,14 +48,6 @@ pub fn parse_prompt_to_messages(rendered: &str) -> Vec<AllMessageValues> {
     }
 
     messages
-}
-
-fn role_prefix(line: &str) -> Option<(&'static str, usize)> {
-    // LiteLLM lowercases the line before matching, so a role prefix is recognized in any case
-    let lowered = line.to_ascii_lowercase();
-    ROLE_PREFIXES
-        .iter()
-        .find_map(|&(prefix, offset, role)| lowered.starts_with(prefix).then_some((role, offset)))
 }
 
 fn text_message(role: &str, content: &str) -> AllMessageValues {

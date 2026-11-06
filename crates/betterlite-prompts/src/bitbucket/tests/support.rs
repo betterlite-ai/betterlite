@@ -10,11 +10,13 @@ use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::decisions::Json as ContractJson;
 use betterlite_models::prompt_spec::{PromptLiteLLMParams, PromptSpec};
 use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::bitbucket::manager::BitBucketPromptManager;
 use betterlite_prompts::bitbucket_client::config::BitBucketConfig;
 use indexmap::IndexMap;
 use secrecy::SecretString;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::OnceCell;
 use tokio::task::JoinSet;
 
 pub(crate) const CLOSED_BASE: &str = "http://127.0.0.1:1/2.0";
@@ -29,6 +31,19 @@ pub(crate) fn config(base_url: &str) -> BitBucketConfig {
         auth_method: None,
         username: None,
         unrecognized: BTreeMap::new(),
+    }
+}
+
+pub(crate) fn manager(
+    config: BitBucketConfig,
+    prompt_id: Option<&str>,
+    transport: ProxiedClient,
+) -> BitBucketPromptManager {
+    BitBucketPromptManager {
+        bitbucket_config: config,
+        prompt_id: prompt_id.map(str::to_owned),
+        transport,
+        template_manager: OnceCell::const_new(),
     }
 }
 

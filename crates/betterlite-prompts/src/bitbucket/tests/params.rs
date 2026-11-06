@@ -1,6 +1,5 @@
 use betterlite_models::decisions::Json as ContractJson;
 use betterlite_models::prompt_contracts::PromptParams;
-use betterlite_prompts::bitbucket::manager::BitBucketPromptManager;
 
 use crate::support;
 
@@ -18,7 +17,7 @@ fn contract_number(value: Option<&ContractJson>) -> Option<f64> {
 
 async fn compiled_params(template: &str) -> PromptParams {
     let server = support::Server::start(&[("greeting.prompt", 200, template)]);
-    let manager = BitBucketPromptManager::new(
+    let manager = support::manager(
         support::config(&server.base_url),
         None,
         support::transport(),

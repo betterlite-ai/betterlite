@@ -5,9 +5,9 @@ use crate::support;
 
 #[tokio::test]
 async fn init_accepts_the_config_without_building_the_template_manager() {
-    let manager = BitBucketPromptManager::new(
+    let manager = support::manager(
         support::config(support::CLOSED_BASE),
-        Some("greeting".to_owned()),
+        Some("greeting"),
         support::transport(),
     );
 

@@ -1,11 +1,9 @@
-use betterlite_prompts::bitbucket::manager::BitBucketPromptManager;
-
 use crate::support;
 
 #[tokio::test]
 async fn compile_exception_wrap_names_the_prompt_and_the_cause() {
     let server = support::Server::start(&[("greeting.prompt", 500, "boom")]);
-    let manager = BitBucketPromptManager::new(
+    let manager = support::manager(
         support::config(&server.base_url),
         None,
         support::transport(),

@@ -12,28 +12,14 @@ use super::params::{project_optional_params, template_metadata};
 
 #[derive(Debug)]
 pub struct BitBucketPromptManager {
-    bitbucket_config: BitBucketConfig,
-    prompt_id: Option<String>,
-    transport: ProxiedClient,
-    template_manager: OnceCell<AsyncMutex<BitBucketTemplateManager>>,
+    pub bitbucket_config: BitBucketConfig,
+    pub prompt_id: Option<String>,
+    pub transport: ProxiedClient,
+    pub template_manager: OnceCell<AsyncMutex<BitBucketTemplateManager>>,
 }
 
 impl BitBucketPromptManager {
     pub const INTEGRATION_NAME: &'static str = "bitbucket";
-
-    #[must_use]
-    pub const fn new(
-        bitbucket_config: BitBucketConfig,
-        prompt_id: Option<String>,
-        transport: ProxiedClient,
-    ) -> Self {
-        Self {
-            bitbucket_config,
-            prompt_id,
-            transport,
-            template_manager: OnceCell::const_new(),
-        }
-    }
 
     // LiteLLM builds the template manager on first use, and that build fetches the configured prompt.
     pub async fn prompt_manager(
@@ -67,12 +53,6 @@ impl BitBucketPromptManager {
         render_template(&manager, prompt_id, prompt_variables)
     }
 
-    #[must_use]
-    pub const fn should_run_prompt_management(prompt_id: Option<&str>) -> bool {
-        // LiteLLM compares the id against None, so an empty id still runs the manager.
-        prompt_id.is_some()
-    }
-
     pub async fn compile_prompt_helper(
         &self,
         prompt_id: Option<&str>,
@@ -80,6 +60,7 @@ impl BitBucketPromptManager {
         _prompt_label: Option<&str>,
         _prompt_version: Option<i64>,
     ) -> Result<PromptManagementClient, BitBucketPromptError> {
+        // LiteLLM compares the id against None, so an empty id still runs the manager.
         let Some(resolved_id) = prompt_id else {
             return Err(BitBucketPromptError::PromptIdRequired);
         };

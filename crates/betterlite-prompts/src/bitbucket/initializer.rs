@@ -4,6 +4,7 @@ use betterlite_models::prompt_spec::{
     PromptLiteLLMParams, PromptSpec, SupportedPromptIntegrations,
 };
 use thiserror::Error;
+use tokio::sync::OnceCell;
 
 use crate::bitbucket_client::config::BitBucketConfig;
 
@@ -33,11 +34,12 @@ pub fn prompt_initializer(
 ) -> Result<BitBucketPromptManager, BitBucketInitializerError> {
     // LiteLLM reads both fields off the model, where pydantic keeps bitbucket_config as an extra
     let config = bitbucket_config(litellm_params)?;
-    Ok(BitBucketPromptManager::new(
-        config,
-        litellm_params.prompt_id.clone(),
+    Ok(BitBucketPromptManager {
+        bitbucket_config: config,
+        prompt_id: litellm_params.prompt_id.clone(),
         transport,
-    ))
+        template_manager: OnceCell::const_new(),
+    })
 }
 
 #[must_use]

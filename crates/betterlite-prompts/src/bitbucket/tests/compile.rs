@@ -1,5 +1,4 @@
 use betterlite_prompts::arguments::json::Object;
-use betterlite_prompts::bitbucket::manager::BitBucketPromptManager;
 
 use crate::support;
 
@@ -7,7 +6,7 @@ use crate::support;
 async fn compile_loads_the_missing_prompt_and_parses_the_rendered_messages() {
     let template = "---\nmodel: gpt-4\n---\nSystem: You greet\nUser: Hello {{ name }}";
     let server = support::Server::start(&[("greeting.prompt", 200, template)]);
-    let manager = BitBucketPromptManager::new(
+    let manager = support::manager(
         support::config(&server.base_url),
         None,
         support::transport(),
@@ -31,7 +30,7 @@ async fn compile_loads_the_missing_prompt_and_parses_the_rendered_messages() {
 
 #[tokio::test]
 async fn compile_requires_a_prompt_id() {
-    let manager = BitBucketPromptManager::new(
+    let manager = support::manager(
         support::config(support::CLOSED_BASE),
         None,
         support::transport(),

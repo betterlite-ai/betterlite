@@ -1,9 +1,9 @@
 task: B4056
 deviations:
   - what: >-
-      BitBucketPromptManager::new takes the ProxiedClient transport as a third argument, and the
-      generated manager is returned through an async OnceCell and mutex, so prompt_manager is an
-      async method that yields a guard instead of a synchronous property.
+      BitBucketPromptManager keeps its config, prompt id and ProxiedClient transport as fields, and
+      the built template manager is returned through an async OnceCell and mutex, so prompt_manager
+      is an async method that yields a guard instead of a synchronous property.
     why: The BitBucket client is async and dependencies enter through constructors, so the transport is injected and the lazy build is awaited.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/bitbucket/bitbucket_prompt_manager.py#L225-L233
   - what: >-
