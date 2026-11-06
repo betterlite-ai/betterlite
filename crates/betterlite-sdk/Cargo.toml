@@ -5,5 +5,20 @@ edition.workspace = true
 license.workspace = true
 publish.workspace = true
 
+[dependencies]
+betterlite-http = { path = "../betterlite-http" }
+chrono.workspace = true
+http = "1.5.0"
+secrecy = { workspace = true, features = ["serde"] }
+serde.workspace = true
+serde_json = "1.0.154"
+thiserror.workspace = true
+tokio.workspace = true
+url = "2.5.8"
+
+[dev-dependencies]
+betterlite-config = { path = "../betterlite-config" }
+rstest = "=0.27.0"
+
 [lints]
 workspace = true
