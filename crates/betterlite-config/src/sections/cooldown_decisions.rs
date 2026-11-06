@@ -4,15 +4,43 @@ use serde::Deserialize;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
 use crate::raw::RawNumber;
-use crate::resolve::{parse_float, parse_integer, resolve_number};
+use crate::resolve::{parse_float, parse_integer, resolve_number, resolve_string};
 use crate::sections::Section;
 
+use self::policy::RawPolicy;
+
+mod policy;
 mod tests;
 
 #[derive(Debug, Default, Deserialize)]
 pub struct Raw {
     #[serde(default)]
+    model_list: Vec<RawDeployment>,
+    #[serde(default)]
     router_settings: RawRouter,
+    #[serde(default)]
+    litellm_settings: RawLiteLlm,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct RawDeployment {
+    #[serde(default)]
+    litellm_params: RawParams,
+    #[serde(default)]
+    model_info: RawModelInfo,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct RawParams {
+    cooldown_time: Option<RawNumber>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+struct RawModelInfo {
+    #[serde(default)]
+    allowed_fails_policy: Option<RawPolicy>,
+    allowed_fails: Option<RawNumber>,
+    cooldown_time: Option<RawNumber>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -20,31 +48,43 @@ struct RawRouter {
     allowed_fails: Option<RawNumber>,
     cooldown_time: Option<RawNumber>,
     #[serde(default)]
-    disable_cooldowns: Option<bool>,
+    disable_cooldowns: Option<RawFlag>,
     #[serde(default)]
-    allowed_fails_policy: Option<AllowedFailsPolicy>,
+    allowed_fails_policy: Option<RawPolicy>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
+struct RawLiteLlm {
+    allowed_fails: Option<RawNumber>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum RawFlag {
+    Boolean(bool),
+    Text(String),
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AllowedFailsPolicy {
-    #[serde(default, rename = "ContentPolicyViolationErrorAllowedFails")]
     pub content_policy_violation: Option<u32>,
-    #[serde(default, rename = "BadRequestErrorAllowedFails")]
     pub bad_request: Option<u32>,
-    #[serde(default, rename = "AuthenticationErrorAllowedFails")]
     pub authentication: Option<u32>,
-    #[serde(default, rename = "TimeoutErrorAllowedFails")]
     pub timeout: Option<u32>,
-    #[serde(default, rename = "RateLimitErrorAllowedFails")]
     pub rate_limit: Option<u32>,
-    #[serde(default, rename = "InternalServerErrorAllowedFails")]
     pub internal_server: Option<u32>,
-    #[serde(default, rename = "ServiceUnavailableErrorAllowedFails")]
     pub service_unavailable: Option<u32>,
-    #[serde(default, rename = "BadGatewayErrorAllowedFails")]
     pub bad_gateway: Option<u32>,
-    #[serde(default, rename = "NotFoundErrorAllowedFails")]
     pub not_found: Option<u32>,
+}
+
+// index-aligned with model_list, which the deployment catalog keeps in config order
+#[derive(Debug, Clone, Default, PartialEq)]
+pub struct DeploymentCooldownSettings {
+    pub allowed_fails_policy: Option<AllowedFailsPolicy>,
+    pub allowed_fails: Option<u32>,
+    pub model_info_cooldown_time: Option<f64>,
+    pub litellm_params_cooldown_time: Option<f64>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -54,6 +94,7 @@ pub struct Settings {
     pub cooldown_time: f64,
     pub disable_cooldowns: bool,
     pub allowed_fails_policy: Option<AllowedFailsPolicy>,
+    pub deployments: Vec<DeploymentCooldownSettings>,
     pub failure_ratio_threshold: f64,
     pub minimum_requests: u64,
     pub single_deployment_traffic: u64,
@@ -66,33 +107,136 @@ impl Section for Raw {
     where
         L: EnvironmentLookup,
     {
-        let default_allowed_fails = environment_number(lookup, "DEFAULT_ALLOWED_FAILS", 3_u32)?;
-        let configured_fails = resolve_number(
-            self.router_settings.allowed_fails,
-            "router_settings.allowed_fails",
+        let configured_global = resolve_number(
+            self.litellm_settings.allowed_fails,
+            "litellm_settings.allowed_fails",
             lookup,
             parse_integer,
         )?;
-        let default_cooldown =
-            environment_number(lookup, "DEFAULT_COOLDOWN_TIME_SECONDS", 5.0_f64)?;
-        let configured_cooldown = resolve_number(
-            self.router_settings.cooldown_time,
-            "router_settings.cooldown_time",
-            lookup,
-            parse_float,
-        )?;
+        let environment_global = environment_number(lookup, "DEFAULT_ALLOWED_FAILS", 3_u32)?;
+        let global_default = configured_global.unwrap_or(environment_global);
+        let router = router_settings(self.router_settings, lookup)?;
+        let deployments = deployment_settings(self.model_list, lookup)?;
         let (failure_ratio_threshold, minimum_requests, single_deployment_traffic) =
             thresholds(lookup)?;
         Ok(Settings {
-            allowed_fails: configured_fails.unwrap_or(default_allowed_fails),
-            default_allowed_fails,
-            cooldown_time: configured_cooldown.unwrap_or(default_cooldown),
-            disable_cooldowns: self.router_settings.disable_cooldowns.unwrap_or(false),
-            allowed_fails_policy: self.router_settings.allowed_fails_policy,
+            allowed_fails: router.allowed_fails.unwrap_or(global_default),
+            default_allowed_fails: global_default,
+            cooldown_time: router.cooldown_time.unwrap_or(environment_number(
+                lookup,
+                "DEFAULT_COOLDOWN_TIME_SECONDS",
+                5.0_f64,
+            )?),
+            disable_cooldowns: router.disable_cooldowns,
+            allowed_fails_policy: router.allowed_fails_policy,
+            deployments,
             failure_ratio_threshold,
             minimum_requests,
             single_deployment_traffic,
         })
+    }
+}
+
+struct RouterCooldown {
+    allowed_fails: Option<u32>,
+    cooldown_time: Option<f64>,
+    disable_cooldowns: bool,
+    allowed_fails_policy: Option<AllowedFailsPolicy>,
+}
+
+fn router_settings<L>(raw: RawRouter, lookup: &L) -> Result<RouterCooldown, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let path = "router_settings.allowed_fails_policy";
+    Ok(RouterCooldown {
+        allowed_fails: resolve_number(
+            raw.allowed_fails,
+            "router_settings.allowed_fails",
+            lookup,
+            parse_integer,
+        )?,
+        cooldown_time: resolve_number(
+            raw.cooldown_time,
+            "router_settings.cooldown_time",
+            lookup,
+            parse_float,
+        )?,
+        disable_cooldowns: configured_flag(
+            raw.disable_cooldowns,
+            "router_settings.disable_cooldowns",
+            lookup,
+        )?,
+        allowed_fails_policy: raw
+            .allowed_fails_policy
+            .map(|policy| policy.resolve(path, lookup))
+            .transpose()?,
+    })
+}
+
+fn deployment_settings<L>(
+    raw: Vec<RawDeployment>,
+    lookup: &L,
+) -> Result<Vec<DeploymentCooldownSettings>, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let mut deployments = Vec::with_capacity(raw.len());
+    for (index, deployment) in raw.into_iter().enumerate() {
+        deployments.push(one_deployment(deployment, index, lookup)?);
+    }
+    Ok(deployments)
+}
+
+fn one_deployment<L>(
+    deployment: RawDeployment,
+    index: usize,
+    lookup: &L,
+) -> Result<DeploymentCooldownSettings, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    let prefix = format!("model_list.{index}");
+    let policy_path = format!("{prefix}.model_info.allowed_fails_policy");
+    Ok(DeploymentCooldownSettings {
+        allowed_fails_policy: deployment
+            .model_info
+            .allowed_fails_policy
+            .map(|policy| policy.resolve(&policy_path, lookup))
+            .transpose()?,
+        allowed_fails: resolve_number(
+            deployment.model_info.allowed_fails,
+            &format!("{prefix}.model_info.allowed_fails"),
+            lookup,
+            parse_integer,
+        )?,
+        model_info_cooldown_time: resolve_number(
+            deployment.model_info.cooldown_time,
+            &format!("{prefix}.model_info.cooldown_time"),
+            lookup,
+            parse_float,
+        )?,
+        litellm_params_cooldown_time: resolve_number(
+            deployment.litellm_params.cooldown_time,
+            &format!("{prefix}.litellm_params.cooldown_time"),
+            lookup,
+            parse_float,
+        )?,
+    })
+}
+
+fn configured_flag<L>(value: Option<RawFlag>, path: &str, lookup: &L) -> Result<bool, ConfigError>
+where
+    L: EnvironmentLookup,
+{
+    match value {
+        None => Ok(false),
+        Some(RawFlag::Boolean(flag)) => Ok(flag),
+        Some(RawFlag::Text(text)) => {
+            let name = text.strip_prefix("os.environ/").unwrap_or(path).to_owned();
+            let resolved = resolve_string(text, path, lookup)?;
+            Ok(betterlite_env::flag(&name, &resolved)?.unwrap_or(false))
+        }
     }
 }
 

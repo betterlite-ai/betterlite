@@ -5,7 +5,9 @@ use std::collections::BTreeMap;
 use rstest::rstest;
 
 use crate::loader::ConfigLoader;
-use crate::sections::cooldown_decisions::{AllowedFailsPolicy, Settings};
+use crate::sections::cooldown_decisions::{
+    AllowedFailsPolicy, DeploymentCooldownSettings, Settings,
+};
 
 fn settings(source: &str, variables: &[(&str, &str)]) -> Result<Settings, String> {
     let lookup: BTreeMap<String, String> = variables
@@ -16,6 +18,20 @@ fn settings(source: &str, variables: &[(&str, &str)]) -> Result<Settings, String
         .load(source)
         .map(|config| config.sections.cooldown_decisions)
         .map_err(|error| error.to_string())
+}
+
+fn rate_limit_policy(value: u32) -> AllowedFailsPolicy {
+    AllowedFailsPolicy {
+        content_policy_violation: None,
+        bad_request: None,
+        authentication: None,
+        timeout: None,
+        rate_limit: Some(value),
+        internal_server: None,
+        service_unavailable: None,
+        bad_gateway: None,
+        not_found: None,
+    }
 }
 
 #[rstest]
@@ -73,9 +89,39 @@ fn converts_router_cooldown_settings(
     assert_eq!(loaded.cooldown_time.to_bits(), cooldown_time.to_bits());
     assert_eq!(loaded.disable_cooldowns, disable_cooldowns);
     assert_eq!(loaded.allowed_fails_policy, None);
+    assert_eq!(loaded.deployments, Vec::new());
     assert_eq!(loaded.failure_ratio_threshold.to_bits(), 0.5_f64.to_bits());
     assert_eq!(loaded.minimum_requests, 5);
     assert_eq!(loaded.single_deployment_traffic, 1000);
+}
+
+#[rstest]
+#[case::proxy_global_default("litellm_settings:\n  allowed_fails: 5", &[], (5_u32, 5_u32))]
+#[case::router_overrides_proxy_global(
+    "litellm_settings:\n  allowed_fails: 5\nrouter_settings:\n  allowed_fails: 2",
+    &[],
+    (2_u32, 5_u32)
+)]
+#[case::proxy_global_beats_environment_default(
+    "litellm_settings:\n  allowed_fails: 5",
+    &[("DEFAULT_ALLOWED_FAILS", "7")],
+    (5_u32, 5_u32)
+)]
+#[case::proxy_global_environment_reference(
+    "litellm_settings:\n  allowed_fails: os.environ/GLOBAL_FAILS",
+    &[("GLOBAL_FAILS", "6")],
+    (6_u32, 6_u32)
+)]
+fn reads_the_proxy_global_allowed_fails(
+    #[case] source: &str,
+    #[case] variables: &[(&str, &str)],
+    #[case] expected: (u32, u32),
+) {
+    let loaded = settings(source, variables).unwrap();
+    assert_eq!(
+        (loaded.allowed_fails, loaded.default_allowed_fails),
+        expected
+    );
 }
 
 #[test]
@@ -111,6 +157,101 @@ router_settings:
 }
 
 #[test]
+fn reads_deployment_cooldown_settings() {
+    let source = "\
+model_list:
+  - model_name: g
+    litellm_params:
+      model: openai/gpt-4o
+      cooldown_time: 1.25
+    model_info:
+      id: dep-1
+      allowed_fails: 2
+      cooldown_time: 6.5
+      allowed_fails_policy:
+        RateLimitErrorAllowedFails: 1
+";
+    let loaded = settings(source, &[]).unwrap();
+    assert_eq!(
+        loaded.deployments,
+        vec![DeploymentCooldownSettings {
+            allowed_fails_policy: Some(rate_limit_policy(1)),
+            allowed_fails: Some(2),
+            model_info_cooldown_time: Some(6.5_f64),
+            litellm_params_cooldown_time: Some(1.25_f64),
+        }]
+    );
+}
+
+#[test]
+fn resolves_deployment_cooldown_references() {
+    let source = "\
+model_list:
+  - model_name: g
+    litellm_params:
+      model: openai/gpt-4o
+      cooldown_time: os.environ/PARAM_COOLDOWN
+    model_info:
+      id: dep-1
+      allowed_fails: os.environ/DEPLOYMENT_FAILS
+      cooldown_time: os.environ/INFO_COOLDOWN
+      allowed_fails_policy:
+        RateLimitErrorAllowedFails: os.environ/POLICY_FAILS
+";
+    let loaded = settings(
+        source,
+        &[
+            ("PARAM_COOLDOWN", "1.25"),
+            ("DEPLOYMENT_FAILS", "2"),
+            ("INFO_COOLDOWN", "6.5"),
+            ("POLICY_FAILS", "3"),
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        loaded.deployments,
+        vec![DeploymentCooldownSettings {
+            allowed_fails_policy: Some(rate_limit_policy(3)),
+            allowed_fails: Some(2),
+            model_info_cooldown_time: Some(6.5_f64),
+            litellm_params_cooldown_time: Some(1.25_f64),
+        }]
+    );
+}
+
+#[rstest]
+#[case::true_text(&[("DISABLE", "true")], true)]
+#[case::false_text(&[("DISABLE", "false")], false)]
+#[case::empty_environment(&[("DISABLE", "")], false)]
+fn resolves_the_disable_cooldowns_reference(
+    #[case] variables: &[(&str, &str)],
+    #[case] expected: bool,
+) {
+    let source = "router_settings:\n  disable_cooldowns: os.environ/DISABLE";
+    let loaded = settings(source, variables).unwrap();
+    assert_eq!(loaded.disable_cooldowns, expected);
+}
+
+#[test]
+fn resolves_the_allowed_fails_policy_reference() {
+    let source = "router_settings:\n  allowed_fails_policy:\n    RateLimitErrorAllowedFails: os.environ/LIMIT";
+    let configured = settings(source, &[("LIMIT", "7")]).unwrap();
+    assert_eq!(
+        configured
+            .allowed_fails_policy
+            .and_then(|policy| policy.rate_limit),
+        Some(7)
+    );
+    let empty = settings(source, &[("LIMIT", "")]).unwrap();
+    assert_eq!(
+        empty
+            .allowed_fails_policy
+            .and_then(|policy| policy.rate_limit),
+        None
+    );
+}
+
+#[test]
 fn reads_the_failure_threshold_environment() {
     let loaded = settings(
         "router_settings: {}",
@@ -140,6 +281,15 @@ fn reads_the_failure_threshold_environment() {
     "router_settings:\n  allowed_fails_policy:\n    RetryPolicyAllowedFails: 1",
     &[]
 )]
+#[case::missing_policy_reference(
+    "router_settings:\n  allowed_fails_policy:\n    RateLimitErrorAllowedFails: os.environ/MISSING",
+    &[]
+)]
+#[case::missing_disable_reference(
+    "router_settings:\n  disable_cooldowns: os.environ/MISSING",
+    &[]
+)]
+#[case::bad_disable_text("router_settings:\n  disable_cooldowns: maybe", &[])]
 fn rejects_invalid_cooldown_settings(#[case] source: &str, #[case] variables: &[(&str, &str)]) {
     settings(source, variables).unwrap_err();
 }

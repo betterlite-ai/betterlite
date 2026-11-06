@@ -1,5 +1,5 @@
 task: B369
 deviations:
-  - what: DEFAULT_ALLOWED_FAILS changes the router's default allowed-fails count, where LiteLLM imports the constant but leaves litellm.allowed_fails hardcoded at 3.
+  - what: DEFAULT_ALLOWED_FAILS supplies the global allowed-fails default when neither litellm_settings.allowed_fails nor router_settings.allowed_fails is set, where LiteLLM's litellm.allowed_fails stays hardcoded at 3 unless the proxy config sets litellm_settings.allowed_fails.
     why: The task text pins allowed_fails to DEFAULT_ALLOWED_FAILS and resolves it once in betterlite-config, so an operator who sets the variable gets the value they configured; a LiteLLM setup that set it only ever saw 3.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/__init__.py#L545
