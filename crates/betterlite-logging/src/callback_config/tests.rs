@@ -194,6 +194,13 @@ fn held(family: &str, var: &str) -> String {
     ),
     "callback variable arize_api_key must be a string, a number or null"
 )]
+#[case::metadata_object_variable_is_rejected(
+    Scenario::Metadata(
+        r#"{"logging": [{"callback_name": "arize", "callback_vars": {"arize_api_key": {"k": 1}}}]}"#,
+        false
+    ),
+    "callback variable arize_api_key must be a string, a number or null"
+)]
 #[case::metadata_not_json(
     Scenario::Metadata("{", false),
     "the callback config is not valid JSON of the expected shape"
@@ -210,6 +217,13 @@ fn held(family: &str, var: &str) -> String {
     "ok"
 )]
 #[case::team_validates_vars(Scenario::Team(r#"{"callback_name": "langfuse", "callback_type": "failure", "callback_vars": {"langfuse_environment": "Bad"}}"#, false), "Invalid langfuse_environment 'Bad': must be lowercase alphanumerics/hyphens/underscores and must not start with 'langfuse'")]
+#[case::team_list_variable_is_rejected(
+    Scenario::Team(
+        r#"{"callback_name": "arize", "callback_vars": {"arize_api_key": ["k"]}}"#,
+        false
+    ),
+    "callback variable arize_api_key must be a string, a number or null"
+)]
 #[case::team_unknown_type(
     Scenario::Team(
         r#"{"callback_name": "arize", "callback_type": "both", "callback_vars": {}}"#,
