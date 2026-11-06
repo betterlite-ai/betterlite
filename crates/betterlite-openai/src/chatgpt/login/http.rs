@@ -26,8 +26,8 @@ pub enum Body {
     Form(SecretString),
 }
 
-pub struct AuthPost {
-    pub url: &'static str,
+pub struct AuthPost<'url> {
+    pub url: &'url str,
     pub body: Body,
 }
 
@@ -49,7 +49,7 @@ impl AuthResponse {
 pub trait AuthTransport {
     fn post(
         &mut self,
-        request: AuthPost,
+        request: AuthPost<'_>,
     ) -> impl Future<Output = Result<AuthResponse, HttpFailure>> + Send;
 }
 
@@ -66,7 +66,7 @@ impl ProxiedTransport {
 }
 
 impl AuthTransport for ProxiedTransport {
-    async fn post(&mut self, request: AuthPost) -> Result<AuthResponse, HttpFailure> {
+    async fn post(&mut self, request: AuthPost<'_>) -> Result<AuthResponse, HttpFailure> {
         let body = match request.body {
             Body::Json(text) => RequestBody::Json(text.expose_secret().as_bytes().to_vec()),
             Body::Form(text) => RequestBody::Bytes {
@@ -93,3 +93,5 @@ impl AuthTransport for ProxiedTransport {
         })
     }
 }
+
+mod tests;

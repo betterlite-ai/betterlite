@@ -28,7 +28,8 @@ pub const DEVICE_VERIFY_URL: &str = "https://auth.openai.com/codex/device";
 pub const CLIENT_ID: &str = "app_EMoamEEZ73f0CkXaXp7hrann";
 const REDIRECT_URI: &str = "https://auth.openai.com/deviceauth/callback";
 const POLL_TIMEOUT: Decimal = Decimal::from_parts(900, 0, 0, false, 0);
-const COOLDOWN: Duration = Duration::from_mins(5);
+const COOLDOWN_SECONDS: Decimal = Decimal::from_parts(300, 0, 0, false, 0);
+const WAIT_STEP: Decimal = Decimal::from_parts(5, 0, 0, false, 0);
 const NANOSECONDS: Decimal = Decimal::from_parts(1_000_000_000, 0, 0, false, 0);
 
 pub trait Pause: Clock {
@@ -102,7 +103,7 @@ where
                 return Ok(token);
             }
         }
-        if let Some(token) = self.wait_out_cooldown(record.as_ref()) {
+        if let Some(token) = self.wait_out_cooldown(record.as_ref()).await {
             return Ok(token);
         }
         self.login_device_code().await
@@ -122,23 +123,40 @@ where
         }
     }
 
-    fn wait_out_cooldown(&mut self, record: Option<&AuthRecord>) -> Option<SecretString> {
+    async fn wait_out_cooldown(&mut self, record: Option<&AuthRecord>) -> Option<SecretString> {
         let remaining = self.store.cooldown_remaining(record);
         if remaining <= Decimal::ZERO {
             return None;
         }
         // a record dated far in the future must not hold a login longer than the cooldown itself
-        let wait = remaining
-            .checked_mul(NANOSECONDS)
-            .and_then(|nanos| nanos.to_u64())
-            .map_or(COOLDOWN, Duration::from_nanos)
-            .min(COOLDOWN);
-        self.store.wait_for_access_token(wait)
+        let deadline = self
+            .store
+            .clock
+            .now()
+            .checked_add(remaining.min(COOLDOWN_SECONDS))?;
+        while self.store.clock.now() < deadline {
+            if let Some(mut current) = self.store.read()
+                && let Some(token) = usable(current.access_token.as_ref())
+                && !self.store.is_expired(&mut current, &token)
+            {
+                return Some(token);
+            }
+            let left = deadline
+                .checked_sub(self.store.clock.now())?
+                .clamp(Decimal::ZERO, WAIT_STEP);
+            let nanos = left.checked_mul(NANOSECONDS)?.to_u64()?;
+            let pause = Duration::from_nanos(nanos);
+            if pause.is_zero() {
+                break;
+            }
+            self.store.clock.pause(pause).await;
+        }
+        None
     }
 
     pub async fn login_device_code(&mut self) -> Result<SecretString, LoginError> {
         let record = self.store.read();
-        if let Some(token) = self.wait_out_cooldown(record.as_ref()) {
+        if let Some(token) = self.wait_out_cooldown(record.as_ref()).await {
             return Ok(token);
         }
         let device = self.request_device_code().await?;

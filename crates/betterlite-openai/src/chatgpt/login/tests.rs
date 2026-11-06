@@ -35,6 +35,15 @@ const DEVICE: &str = r#"{"device_auth_id":"device-secret","user_code":"ABCD-1234
 const PENDING: &str = r#"{"authorization_code":"","code_challenge":"c","code_verifier":"v"}"#;
 const AUTHORIZED: &str =
     r#"{"authorization_code":"auth&code","code_challenge":"c","code_verifier":"verifier"}"#;
+const LOGIN_URLS: [&str; 7] = [
+    OAUTH_TOKEN_URL,
+    DEVICE_CODE_URL,
+    DEVICE_TOKEN_URL,
+    DEVICE_TOKEN_URL,
+    DEVICE_TOKEN_URL,
+    DEVICE_TOKEN_URL,
+    OAUTH_TOKEN_URL,
+];
 
 type Shared = Arc<Mutex<Option<Vec<u8>>>>;
 
@@ -87,7 +96,6 @@ impl FileAccess for Files {
 
 struct Time {
     now: Decimal,
-    sleeps: Vec<Duration>,
     pauses: Vec<Duration>,
     arrival: Option<(Shared, Vec<u8>)>,
     hang: bool,
@@ -97,6 +105,9 @@ impl Time {
     fn advance(&mut self, duration: Duration) {
         let seconds = Decimal::from(duration.as_secs());
         self.now = self.now.checked_add(seconds).unwrap();
+        if let Some((shared, bytes)) = self.arrival.take() {
+            *shared.lock().unwrap() = Some(bytes);
+        }
     }
 }
 
@@ -105,11 +116,8 @@ impl Clock for Time {
         self.now
     }
     fn sleep(&mut self, duration: Duration) {
-        self.sleeps.push(duration);
+        self.pauses.push(duration);
         self.advance(duration);
-        if let Some((shared, bytes)) = self.arrival.take() {
-            *shared.lock().unwrap() = Some(bytes);
-        }
     }
 }
 
@@ -124,7 +132,7 @@ impl Pause for Time {
 }
 
 struct Posted {
-    url: &'static str,
+    url: String,
     json: bool,
     body: String,
 }
@@ -145,14 +153,14 @@ struct Script {
 impl AuthTransport for Script {
     fn post(
         &mut self,
-        request: AuthPost,
+        request: AuthPost<'_>,
     ) -> impl Future<Output = Result<AuthResponse, HttpFailure>> + Send {
         let (json, text) = match request.body {
             Body::Json(text) => (true, text),
             Body::Form(text) => (false, text),
         };
         self.posts.push(Posted {
-            url: request.url,
+            url: request.url.to_owned(),
             json,
             body: text.expose_secret().to_owned(),
         });
@@ -203,7 +211,6 @@ fn subject(content: Option<Vec<u8>>, now: i64, replies: Vec<Reply>) -> Subject {
     };
     let clock = Time {
         now: Decimal::from(now),
-        sleeps: Vec::new(),
         pauses: Vec::new(),
         arrival: None,
         hang: false,
@@ -316,19 +323,13 @@ async fn failed_refresh_relogs_in_with_ordered_requests() {
     let mut subject = subject(Some(record("stale", "old-refresh", 10)), 1000, replies);
     let token = subject.get_access_token().await.unwrap();
     assert_eq!(token.expose_secret(), fresh);
-    let urls: Vec<_> = subject.http.posts.iter().map(|post| post.url).collect();
-    assert_eq!(
-        urls,
-        [
-            OAUTH_TOKEN_URL,
-            DEVICE_CODE_URL,
-            DEVICE_TOKEN_URL,
-            DEVICE_TOKEN_URL,
-            DEVICE_TOKEN_URL,
-            DEVICE_TOKEN_URL,
-            OAUTH_TOKEN_URL
-        ]
-    );
+    let urls: Vec<_> = subject
+        .http
+        .posts
+        .iter()
+        .map(|post| post.url.as_str())
+        .collect();
+    assert_eq!(urls, LOGIN_URLS);
     assert_eq!(
         subject.http.posts[1].body,
         r#"{"client_id":"app_EMoamEEZ73f0CkXaXp7hrann"}"#
@@ -473,7 +474,7 @@ async fn concurrent_login_in_cooldown_returns_the_other_token() {
     ));
     let token = subject.get_access_token().await.unwrap();
     assert_eq!(token.expose_secret(), access);
-    assert_eq!(subject.store.clock.sleeps, [Duration::from_secs(5)]);
+    assert_eq!(subject.store.clock.pauses, [Duration::from_secs(5)]);
     assert!(subject.http.posts.is_empty());
 }
 
@@ -497,7 +498,7 @@ async fn expired_cooldown_without_a_token_requests_a_code() {
     let mut subject = subject(Some(pending), 1000, vec![reply(503, "{}")]);
     let error = subject.get_access_token().await.unwrap_err();
     assert_eq!(error.status(), 503);
-    let waited: Duration = subject.store.clock.sleeps.iter().sum();
+    let waited: Duration = subject.store.clock.pauses.iter().sum();
     assert_eq!(waited, Duration::from_secs(290));
     assert_eq!(subject.http.posts.len(), 1);
 }
@@ -507,7 +508,7 @@ async fn far_future_cooldown_waits_no_longer_than_the_cooldown() {
     let pending = br#"{"device_code_requested_at":900000}"#.to_vec();
     let mut subject = subject(Some(pending), 1000, vec![reply(503, "{}")]);
     subject.get_access_token().await.unwrap_err();
-    let waited: Duration = subject.store.clock.sleeps.iter().sum();
+    let waited: Duration = subject.store.clock.pauses.iter().sum();
     // the wait runs once in get_access_token and once in login_device_code, each capped at the cooldown
     assert_eq!(waited, Duration::from_secs(600));
 }
@@ -596,7 +597,7 @@ fn device_interval_rejects_non_integers(#[case] interval: &str) {
         decode_chatgpt_oauth::<DeviceReply>(body.as_bytes()).and_then(DeviceReply::into_code);
     assert!(matches!(
         outcome,
-        Err(DecodeError::Interval | DecodeError::Json(_))
+        Err(DecodeError::Interval | DecodeError::IntervalText(_) | DecodeError::Json(_))
     ));
 }
 

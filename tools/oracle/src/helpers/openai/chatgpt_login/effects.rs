@@ -110,7 +110,7 @@ pub(super) struct Script {
 impl AuthTransport for Script {
     fn post(
         &mut self,
-        request: AuthPost,
+        request: AuthPost<'_>,
     ) -> impl Future<Output = Result<AuthResponse, HttpFailure>> + Send {
         let (content_type, sent) = match &request.body {
             Body::Json(text) => (

@@ -1,3 +1,4 @@
+use std::num::ParseIntError;
 use std::time::Duration;
 
 use secrecy::{ExposeSecret as _, SecretString};
@@ -19,6 +20,8 @@ pub enum DecodeError {
     Missing,
     #[error("device code interval is not a whole number of seconds")]
     Interval,
+    #[error("device code interval text is not a whole number of seconds")]
+    IntervalText(#[source] Box<ParseIntError>),
 }
 
 pub fn decode_chatgpt_oauth<Reply>(bytes: &[u8]) -> Result<Reply, DecodeError>
@@ -71,7 +74,10 @@ impl DeviceReply {
             None | Some(Interval::Flag(false)) => DEFAULT_INTERVAL,
             Some(Interval::Whole(number)) => number.as_i64().ok_or(DecodeError::Interval)?,
             Some(Interval::Text(text)) if text.is_empty() => DEFAULT_INTERVAL,
-            Some(Interval::Text(text)) => text.trim().parse().ok().ok_or(DecodeError::Interval)?,
+            Some(Interval::Text(text)) => text
+                .trim()
+                .parse()
+                .map_err(|source| DecodeError::IntervalText(Box::new(source)))?,
             Some(Interval::Flag(true)) => return Err(DecodeError::Interval),
         };
         // sleeping past the 900 second window ends the poll the same way as sleeping to its edge
@@ -79,7 +85,7 @@ impl DeviceReply {
         Ok(DeviceCode {
             device_auth_id,
             user_code,
-            interval: Duration::from_secs(u64::try_from(bounded).unwrap_or_default()),
+            interval: Duration::from_secs(bounded.unsigned_abs()),
         })
     }
 }
