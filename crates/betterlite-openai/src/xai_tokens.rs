@@ -55,7 +55,8 @@ impl<F: FileAccess, C: Clock, T: Transport> XaiOauth<F, C, T> {
     }
 
     pub async fn get_access_token(&self) -> Result<SecretString, XaiOauthError> {
-        let auth = self.read_auth_file().ok_or(XaiOauthError::LoginRequired)?;
+        let record = self.read_auth_file().await;
+        let auth = record.ok_or(XaiOauthError::LoginRequired)?;
         if let Some(token) = self.unexpired_token(&auth) {
             return Ok(token);
         }
@@ -67,27 +68,28 @@ impl<F: FileAccess, C: Clock, T: Transport> XaiOauth<F, C, T> {
             return Err(XaiOauthError::RefreshTokenMissing);
         }
         let _refreshing = self.refresh_lock.lock().await;
-        let latest = self.read_auth_file().unwrap_or(auth);
+        let latest = self.read_auth_file().await.unwrap_or(auth);
         if let Some(token) = self.unexpired_token(&latest) {
             return Ok(token);
         }
         Ok(self.refresh_tokens(&latest).await?.access_token)
     }
 
-    pub fn read_auth_file(&self) -> Option<AuthFile> {
-        let bytes = self.files.read(&self.auth_file).ok()?;
+    pub async fn read_auth_file(&self) -> Option<AuthFile> {
+        let bytes = self.files.read(&self.auth_file).await.ok()?;
         decode_xai_oauth(&bytes)
             .map_err(|error| tracing::debug!(%error, "Ignoring an unreadable xAI OAuth auth file"))
             .ok()
     }
 
-    pub fn write_auth_file(&self, record: &OauthRecord) -> Result<(), XaiOauthError> {
-        let contents = serde_json::to_vec(&record.stored()).map_err(io::Error::other);
+    pub async fn write_auth_file(&self, record: &OauthRecord) -> Result<(), XaiOauthError> {
+        let write = XaiOauthError::Write;
+        let bytes = serde_json::to_vec(&record.stored()).map_err(io::Error::other);
         let directory = Path::new(&self.settings.token_dir);
-        self.files
-            .ensure_dir(directory)
-            .and_then(|()| self.files.replace(directory, &self.auth_file, &contents?))
-            .map_err(XaiOauthError::Write)
+        let files = &self.files;
+        files.ensure_dir(directory).await.map_err(write)?;
+        let data = bytes.map_err(write)?;
+        files.replace(&self.auth_file, data).await.map_err(write)
     }
 
     fn unexpired_token(&self, auth: &AuthFile) -> Option<SecretString> {
@@ -160,7 +162,7 @@ impl<F: FileAccess, C: Clock, T: Transport> XaiOauth<F, C, T> {
         ];
         let payload = self.exchange_token(url, &fields).await?;
         let record = build_auth_record(self.clock.now(), payload, &endpoint, Some(refresh_token))?;
-        self.write_auth_file(&record)?;
+        self.write_auth_file(&record).await?;
         Ok(record)
     }
 

@@ -436,13 +436,13 @@ async fn failed_exchange_leaves_the_file_alone(#[case] reply: Reply) {
     assert!(!error.to_string().contains(TOKEN_URL));
 }
 
-#[test]
-fn failed_write_removes_the_temp_file_and_keeps_the_cause() {
+#[tokio::test]
+async fn failed_write_removes_the_temp_file_and_keeps_the_cause() {
     let fixture = Fixture::new(None, vec![]);
     fs::create_dir_all(fixture.oauth.auth_file.join("occupied")).unwrap();
     let record =
         build_auth_record(Decimal::from(NOW), payload(FRESH_REPLY), TOKEN_URL, None).unwrap();
-    let error = fixture.oauth.write_auth_file(&record).unwrap_err();
+    let error = fixture.oauth.write_auth_file(&record).await.unwrap_err();
     assert!(matches!(error, XaiOauthError::Write(_)));
     let cause = error.source().unwrap().downcast_ref::<io::Error>().unwrap();
     assert_ne!(cause.kind(), io::ErrorKind::NotFound);
