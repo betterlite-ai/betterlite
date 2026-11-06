@@ -19,9 +19,11 @@ fn cache_ttl_defaults_to_sixty_seconds(#[case] text: Option<&str>, #[case] expec
     assert_eq!(DEFAULT_CACHE_TTL_SECONDS, 60);
 }
 
-#[test]
-fn cache_ttl_that_is_not_a_number_is_a_settings_error() {
-    let error = HumanloopSettings::from_env_values(None, Some("soon")).expect_err("settings");
+#[rstest]
+#[case::not_a_number("soon")]
+#[case::negative("-5")]
+fn cache_ttl_that_is_not_an_unsigned_number_is_a_settings_error(#[case] text: &str) {
+    let error = HumanloopSettings::from_env_values(None, Some(text)).expect_err("settings");
     assert!(matches!(error, SettingsError::CacheTtl(_)));
     assert_eq!(
         error.to_string(),
@@ -142,6 +144,22 @@ fn expired_prompts_are_dropped_before_the_capacity_check() {
     clock.advance(11);
     prompts.get_prompt_from_id("pr_new", &key).expect("new");
     assert_eq!(prompts.cache.entries.len(), 1);
+    assert_eq!(recorded.lock().expect("lock").len(), MAX_CACHED_PROMPTS + 1);
+}
+
+#[test]
+fn a_failed_fetch_at_capacity_still_evicts_the_earliest_entry() {
+    let clock = fake_clock();
+    let (transport, recorded) = replying(200, PROMPT_BODY);
+    let mut prompts = manager(transport, &clock, 100_000);
+    let key = SecretString::from("hl-key");
+    fill_cache(&mut prompts, &key, MAX_CACHED_PROMPTS, Some(1));
+    assert_eq!(prompts.cache.entries.len(), MAX_CACHED_PROMPTS);
+    prompts.transport.status = None;
+    prompts
+        .get_prompt_from_id("pr_missing", &key)
+        .expect_err("fetch");
+    assert_eq!(prompts.cache.entries.len(), MAX_CACHED_PROMPTS - 1);
     assert_eq!(recorded.lock().expect("lock").len(), MAX_CACHED_PROMPTS + 1);
 }
 
