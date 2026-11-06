@@ -5,8 +5,20 @@ use std::path::Path;
 
 use rstest::rstest;
 
+use crate::loader::ConfigLoader;
 use crate::sections::Section as _;
 use crate::sections::tokenizer_engines::{Raw, Settings};
+
+// this section shares litellm_settings with every other one, so a key it does not read must still surface as unknown
+#[test]
+fn unknown_litellm_keys_stay_rejected() {
+    let error = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load("litellm_settings: {disable_hf_tokenizer_download: true, not_a_setting: 1}")
+    .unwrap_err();
+    assert!(error.to_string().contains("not_a_setting"));
+}
 
 #[rstest]
 #[case::absent("litellm_settings: {}", &[], false, None, 4)]

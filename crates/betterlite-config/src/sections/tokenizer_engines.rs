@@ -4,8 +4,8 @@ use std::path::PathBuf;
 mod tests;
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct Raw {
-    #[serde(default, rename = "litellm_settings")]
-    settings: Option<RawSettings>,
+    #[serde(default)]
+    litellm_settings: RawSettings,
 }
 #[derive(Debug, Default, serde::Deserialize)]
 struct RawSettings {
@@ -34,8 +34,7 @@ impl Section for Raw {
     {
         Ok(Settings {
             disable_hf_tokenizer_download: self
-                .settings
-                .unwrap_or_default()
+                .litellm_settings
                 .disable_hf_tokenizer_download
                 .unwrap_or(false),
             custom_tiktoken_cache_dir: lookup
