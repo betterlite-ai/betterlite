@@ -91,12 +91,12 @@ impl<T: RunStreamTransport> RunStream<T> {
         Ok(Box::pin(unfold(Some(open), next_event)))
     }
     pub async fn consume(self) -> Result<Vec<RunEvent>, ThreadRunsError> {
-        let mut stream = self.events().await?;
-        let mut events = Vec::new();
-        while let Some(event) = stream.next().await {
-            events.push(event?);
+        let mut events = self.events().await?;
+        let mut collected = Vec::new();
+        while let Some(event) = events.next().await {
+            collected.push(event?);
         }
-        Ok(events)
+        Ok(collected)
     }
 }
 pub type RunEventStream = Pin<Box<dyn Stream<Item = Result<RunEvent, ThreadRunsError>> + Send>>;
@@ -110,23 +110,19 @@ struct OpenStream {
     max_bytes: usize,
     total: usize,
 }
-enum Chunk {
-    Frames(Vec<Vec<u8>>),
-    End,
-}
 // The caller's timeout covers each read, so a live stream can run past it as long as chunks keep coming.
-async fn pull(stream: &mut OpenStream) -> Result<Chunk, ThreadRunsError> {
+async fn pull(stream: &mut OpenStream) -> Result<Option<Vec<Vec<u8>>>, ThreadRunsError> {
     let next = timeout(stream.read_timeout, stream.chunks.next()).await;
     match next {
         Err(_elapsed) => Err(ThreadRunsError::Timeout),
-        Ok(None) => Ok(Chunk::End),
+        Ok(None) => Ok(None),
         Ok(Some(Err(error))) => Err(error),
         Ok(Some(Ok(chunk))) => {
             stream.total = stream.total.saturating_add(chunk.len());
             if stream.total > stream.max_bytes {
                 return Err(ThreadRunsError::StreamTooLarge);
             }
-            stream.frames.push(&chunk).map(Chunk::Frames)
+            Ok(Some(stream.frames.push(&chunk)))
         }
     }
 }
@@ -153,8 +149,8 @@ async fn next_event(
             }
         }
         match pull(&mut stream).await {
-            Ok(Chunk::Frames(frames)) => stream.pending.extend(frames),
-            Ok(Chunk::End) => {
+            Ok(Some(frames)) => stream.pending.extend(frames),
+            Ok(None) => {
                 finish(&stream);
                 return None;
             }
@@ -165,11 +161,6 @@ async fn next_event(
         }
     }
 }
-fn deliver(handler: Option<&Arc<dyn RunEventHandler>>, event: &RunEvent) {
-    if let Some(sink) = handler {
-        sink.on_event(event);
-    }
-}
 // The SDK reports a timeout first, then the exception, and always ends the handler after a failure.
 fn fail(stream: &OpenStream, error: &ThreadRunsError) {
     if let Some(sink) = stream.handler.as_ref() {
@@ -178,6 +169,11 @@ fn fail(stream: &OpenStream, error: &ThreadRunsError) {
         }
         sink.on_exception(error);
         sink.on_end();
+    }
+}
+fn deliver(handler: Option<&Arc<dyn RunEventHandler>>, event: &RunEvent) {
+    if let Some(sink) = handler {
+        sink.on_event(event);
     }
 }
 fn finish(stream: &OpenStream) {

@@ -65,8 +65,7 @@ fn failure(error: &ThreadRunsError) -> Result<Value, Box<crate::helpers::HelperE
         | ThreadRunsError::Header(_)
         | ThreadRunsError::Encode(_)
         | ThreadRunsError::Transport(_)
-        | ThreadRunsError::PollAfterHeader(_)
-        | ThreadRunsError::PollAfter { .. }
+        | ThreadRunsError::PollAfter(_)
         | ThreadRunsError::StreamTooLarge
         | ThreadRunsError::Timeout => Err(invalid_input(error.to_string())),
     }
@@ -75,15 +74,10 @@ async fn stream_outcome(
     wire: &Wire,
     stream: RunStream<Wire>,
     calls: Arc<Mutex<Vec<String>>>,
-    recorded: bool,
 ) -> Result<Value, Box<crate::helpers::HelperError>> {
     let kind = selected(stream.kind, true);
     let events = stream.consume().await;
-    let logged = if recorded {
-        calls.lock().unwrap_or_else(PoisonError::into_inner).clone()
-    } else {
-        Vec::new()
-    };
+    let logged = calls.lock().unwrap_or_else(PoisonError::into_inner).clone();
     match events {
         Ok(decoded) => Ok(json!({
             "selected": kind,
@@ -131,9 +125,7 @@ async fn round_outcome(
             "requests": wire.requests(),
             "result": run,
         })),
-        Ok(RunInvocation::Streaming(stream)) => {
-            stream_outcome(&wire, *stream, calls, round.handler).await
-        }
+        Ok(RunInvocation::Streaming(stream)) => stream_outcome(&wire, *stream, calls).await,
         Err(error) => Ok(json!({
             "requests": wire.requests(),
             "error": failure(&error)?,

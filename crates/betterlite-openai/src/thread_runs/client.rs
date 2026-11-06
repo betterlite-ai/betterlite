@@ -70,10 +70,7 @@ pub(crate) fn outbound<T>(
 fn run_url<T>(client: &SdkClient<T>, segments: &[&str]) -> Result<Url, ThreadRunsError> {
     let mut url = Url::parse(client.base_url.as_deref().unwrap_or(DEFAULT_API_BASE))
         .map_err(ThreadRunsError::BaseUrl)?;
-    let mut path = url.path().to_owned();
-    if !path.ends_with('/') {
-        path.push('/');
-    }
+    let path = format!("{}/", url.path().trim_end_matches('/'));
     let quoted: Vec<String> = segments
         .iter()
         .map(|segment| utf8_percent_encode(segment, PATH_SEGMENT).to_string())

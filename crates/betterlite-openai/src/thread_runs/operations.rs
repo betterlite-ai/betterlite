@@ -9,11 +9,12 @@ use crate::assistants::client::{ClientKind, ClientOptions, SdkClient};
 use crate::assistants::operations::AssistantsApi;
 use crate::assistants::transport::AssistantsTransport;
 use crate::thread_runs::client::{CallKind, DEFAULT_TIMEOUT, outbound, send};
-use crate::thread_runs::decode::classify;
 use crate::thread_runs::error::ThreadRunsError;
-use crate::thread_runs::records::{RunCreate, RunReply, RunRequest, RunStatus};
+use crate::thread_runs::records::reply;
+use crate::thread_runs::records::{RunCreate, RunReply, RunRequest};
 use crate::thread_runs::stream::{MAX_EVENT_BYTES, RunEventHandler, RunStream};
 
+const TERMINAL: &str = "requires_action cancelled completed failed expired incomplete";
 pub struct RunsApi<T> {
     pub transport: Arc<T>,
 }
@@ -52,23 +53,15 @@ impl<T: AssistantsTransport> RunsApi<T> {
             RequestBody::Json(bytes),
         )?;
         let created = send(self.transport.as_ref(), create).await?;
-        let mut run = serde_json::from_slice::<RunReply>(&created.body).map_err(classify)?;
+        let mut run = reply(&created.body)?;
         let run_id = run.id.clone();
         let mut interval = None;
         loop {
             let poll_segments = run_segments(&request.thread_id, &run_id)?;
             let poll = outbound(client, CallKind::Poll, &poll_segments, RequestBody::Empty)?;
             let response = send(self.transport.as_ref(), poll).await?;
-            run = serde_json::from_slice::<RunReply>(&response.body).map_err(classify)?;
-            if matches!(
-                run.status,
-                RunStatus::RequiresAction
-                    | RunStatus::Cancelled
-                    | RunStatus::Completed
-                    | RunStatus::Failed
-                    | RunStatus::Expired
-                    | RunStatus::Incomplete
-            ) {
+            run = reply(&response.body)?;
+            if TERMINAL.split(' ').any(|state| state == run.status) {
                 return Ok(run);
             }
             let wait = interval.map_or_else(|| poll_interval(&response), Ok)?;
@@ -161,12 +154,11 @@ fn poll_interval(response: &UpstreamResponse) -> Result<Duration, ThreadRunsErro
     let Some(value) = response.headers.get("openai-poll-after-ms") else {
         return Ok(Duration::from_millis(1000));
     };
-    let text = value.to_str().map_err(ThreadRunsError::PollAfterHeader)?;
+    let text = value
+        .to_str()
+        .map_err(|error| ThreadRunsError::PollAfter(error.to_string()))?;
     let millis = text
         .parse::<u64>()
-        .map_err(|source| ThreadRunsError::PollAfter {
-            value: text.to_owned(),
-            source,
-        })?;
+        .map_err(|_invalid| ThreadRunsError::PollAfter(text.to_owned()))?;
     Ok(Duration::from_millis(millis))
 }

@@ -11,7 +11,7 @@ use tokio::time::{Instant, timeout};
 use crate::assistants::client::ClientKind;
 use crate::thread_runs::error::ThreadRunsError;
 use crate::thread_runs::operations::{RunCall, RunDispatch, RunInvocation};
-use crate::thread_runs::records::{RunEvent, RunReply, RunRequest, RunStatus};
+use crate::thread_runs::records::{RunEvent, RunReply, RunRequest};
 use crate::thread_runs::stream::RunEventHandler;
 
 use super::support::{
@@ -272,7 +272,7 @@ async fn poll_intervals() {
     let RunInvocation::Polled { run, .. } = outcome else {
         panic!("expected a polled invocation");
     };
-    assert_eq!(run.status, RunStatus::Completed);
+    assert_eq!(run.status, "completed");
     assert_eq!(transport.requests().len(), 4);
     assert_eq!(started.elapsed(), Duration::from_millis(500));
 
@@ -298,10 +298,7 @@ async fn poll_interval_failures() {
         .await
         .err()
         .unwrap();
-    assert!(
-        matches!(error, ThreadRunsError::PollAfterHeader(_)),
-        "{error}"
-    );
+    assert!(matches!(error, ThreadRunsError::PollAfter(_)), "{error}");
     assert_eq!(transport.requests().len(), 2);
 
     let (odd_api, odd_transport) = harness();
@@ -313,7 +310,7 @@ async fn poll_interval_failures() {
         .err()
         .unwrap();
     assert!(
-        matches!(odd_error, ThreadRunsError::PollAfter { .. }),
+        matches!(odd_error, ThreadRunsError::PollAfter(_)),
         "{odd_error}"
     );
     assert_eq!(odd_transport.requests().len(), 2);
@@ -356,7 +353,9 @@ async fn requires_action() {
     let tool_calls = run
         .required_action
         .as_ref()
-        .map(|action| action.submit_tool_outputs.tool_calls.len());
+        .and_then(|action| action.pointer("/submit_tool_outputs/tool_calls"))
+        .and_then(Value::as_array)
+        .map(Vec::len);
     assert_eq!(tool_calls, Some(1));
 }
 
@@ -364,7 +363,10 @@ async fn failed_run() {
     let (_, run) = poll_state(FAILED, false).await;
     assert_unchanged(&run, FAILED);
     assert_eq!(
-        run.last_error.as_ref().map(|error| error.message.as_str()),
+        run.last_error
+            .as_ref()
+            .and_then(|error| error.get("message"))
+            .and_then(Value::as_str),
         Some("boom")
     );
     let (api, transport) = harness();
