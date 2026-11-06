@@ -1,0 +1,11 @@
+kind: helper
+name: route-metadata-suffixed-model
+call:
+  route_metadata:
+    {
+      "function": "get_call_types",
+      "route": "/models/gpt:generateContent"
+    }
+env: {}
+compare:
+  ignore: []

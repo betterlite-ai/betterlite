@@ -1,7 +1,6 @@
 #![cfg(test)]
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::iter;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -20,7 +19,7 @@ use tokio::sync::Notify;
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 
-use super::{ChatError, ChatExecutor};
+use super::ChatExecutor;
 use crate::chat::ChatRequest;
 use crate::chat::deployment::{ChatDeployment, OpenAiDefaults};
 use crate::openai_base_config::CatalogCapabilities;
@@ -83,23 +82,6 @@ async fn listen() -> (TcpListener, String) {
     (listener, base)
 }
 
-#[test]
-fn picks_every_deployment_and_repeats_a_seeded_sequence() {
-    let entries = "[{model_name: g, litellm_params: {model: openai/a}}, {model_name: other, litellm_params: {model: openai/x}}, {model_name: g, litellm_params: {model: openai/b}}, {model_name: g, litellm_params: {model: openai/c}}]";
-    let sequence = |seed| {
-        let picker = executor(entries, seed);
-        iter::repeat_with(|| picker.pick("g").unwrap().litellm_model.clone())
-            .take(40)
-            .collect::<Vec<_>>()
-    };
-    let first = sequence(7);
-    assert_eq!(first, sequence(7));
-    let picked: BTreeSet<&str> = first.iter().map(String::as_str).collect();
-    assert_eq!(picked, BTreeSet::from(["openai/a", "openai/b", "openai/c"]));
-    let error = executor(entries, 7).pick("missing").unwrap_err();
-    assert!(matches!(error, ChatError::UnknownModel { model } if model == "missing"));
-}
-
 #[tokio::test]
 async fn sends_the_mapped_body_and_answers_with_the_requested_model() {
     let (listener, base) = listen().await;
@@ -109,7 +91,7 @@ async fn sends_the_mapped_body_and_answers_with_the_requested_model() {
     let chat = executor(&entries, 1);
     let body = br#"{"model":"g","stream":false,"temperature":1,"user":"u","vendor_flag":{"a":1},"messages":[{"role":"assistant","content":null,"tool_calls":[{"id":"t","type":"function","function":{"name":"f","arguments":"{}"}}]}]}"#;
     let request = ChatRequest::parse(body).unwrap();
-    let deployment = chat.pick("g").unwrap();
+    let deployment = chat.deployments.first().unwrap();
     let (sent, answered) = tokio::join!(
         provider(listener, 200, ANSWER, Duration::ZERO),
         chat.send(deployment, &request)
@@ -155,7 +137,7 @@ async fn reports_what_went_wrong_upstream(
     );
     let chat = executor(&entries, 1);
     let request = ChatRequest::parse(br#"{"messages":[]}"#).unwrap();
-    let deployment = chat.pick("g").unwrap();
+    let deployment = chat.deployments.first().unwrap();
     let (_sent, answered) = tokio::join!(
         provider(listener, status, answer, delay),
         chat.send(deployment, &request)
@@ -189,7 +171,7 @@ async fn refuses_calls_it_cannot_make(
     let chat = executor(&format!("[{{model_name: g, litellm_params: {params}}}]"), 1);
     let request = ChatRequest::parse(body.as_bytes()).unwrap();
     let error = chat
-        .send(chat.pick("g").unwrap(), &request)
+        .send(chat.deployments.first().unwrap(), &request)
         .await
         .err()
         .unwrap();
@@ -236,7 +218,7 @@ async fn stream_distinguishes_status(#[case] status: u16) {
     let body = r#"{"error":{"type":"requests","param":"p"}}"#;
     let (sent, result) = tokio::join!(
         provider(listener, status, body, Duration::ZERO),
-        chat.stream(chat.pick("g").unwrap(), &request)
+        chat.stream(chat.deployments.first().unwrap(), &request)
     );
     assert!(sent.contains("accept: text/event-stream"));
     if status == 200 {
@@ -320,7 +302,7 @@ async fn http_pool_chat_regression_behavior(
     );
     let mut chat = executor(&entries, 1);
     if own_client {
-        let model_id = chat.pick("g").unwrap().model_id.clone();
+        let model_id = chat.deployments.first().unwrap().model_id.clone();
         let sibling = ProxiedClient {
             limits,
             ..chat.client.clone()
@@ -329,7 +311,7 @@ async fn http_pool_chat_regression_behavior(
     } else {
         chat.client.limits = limits;
     }
-    let deployment = chat.pick("g").unwrap();
+    let deployment = chat.deployments.first().unwrap();
     let observed = if stream {
         let go = Arc::new(Notify::new());
         let mut server = JoinSet::new();
