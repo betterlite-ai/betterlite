@@ -1,0 +1,1 @@
+{"token":"fixture-key","expires_at":1800000000,"endpoints":{"api":"https://api.githubcopilot.com","proxy":"https://proxy.example"},"sku":"copilot-premium"}
