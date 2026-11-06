@@ -1302,6 +1302,7 @@ dependencies = [
  "futures-util",
  "http 1.5.0",
  "indexmap 2.14.2",
+ "jiff",
  "lopdf",
  "rstest",
  "rust_decimal",
@@ -1323,6 +1324,8 @@ name = "betterlite-core-fuzz"
 version = "0.0.0"
 dependencies = [
  "betterlite-core",
+ "chrono",
+ "jiff",
  "libfuzzer-sys",
  "serde_json",
 ]
