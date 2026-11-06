@@ -31,6 +31,21 @@ fn decodes_every_callback_field() {
     assert_eq!(request.error_description.as_deref(), Some("d"));
 }
 
+#[test]
+fn a_repeated_field_keeps_its_first_value() {
+    let request = decode_xai_callback(
+        b"/callback?code=one&code=two&state=one&state=two&error=one&error=two&error_description=one&error_description=two",
+    )
+    .unwrap();
+    assert_eq!(
+        request.code.as_ref().map(ExposeSecret::expose_secret),
+        Some("one")
+    );
+    assert_eq!(request.state.as_deref(), Some("one"));
+    assert_eq!(request.error.as_deref(), Some("one"));
+    assert_eq!(request.error_description.as_deref(), Some("one"));
+}
+
 #[rstest]
 #[case::other_path("/favicon.ico?code=x", "/favicon.ico")]
 #[case::trailing_segment("/callback/extra", "/callback/extra")]
