@@ -18,7 +18,7 @@ pub struct TransportRequest {
     pub method: Method,
     pub url: String,
     pub headers: Vec<(&'static str, String)>,
-    // Sent as x-api-key by the transport, so the key stays a SecretString until the wire
+    // Sent as x-api-key, so the key stays a SecretString until the wire
     pub api_key: Option<SecretString>,
     pub body: Vec<u8>,
     pub timeout: Duration,

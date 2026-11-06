@@ -5,6 +5,8 @@ use betterlite_logging::mavvrik_delivery::transport::Method;
 use chrono::DateTime;
 use rstest::rstest;
 
+mod wire;
+
 use super::support::{
     AGENT_URL, SESSION_URI, SIGNED_URL, ScriptedError, ScriptedTransport, Step, WINDOW_EPOCH,
     block_on, destination, registered, respond, respond_with_location, settings, signed_url_found,
