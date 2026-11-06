@@ -3,6 +3,8 @@ use std::time::Duration;
 use betterlite_prompts::arguments::json::Json;
 use secrecy::SecretString;
 
+use typesafe_config::TypeSafeSettings;
+
 pub mod typesafe_api_call;
 pub mod typesafe_candidate_exchanges;
 pub mod typesafe_config;
@@ -17,8 +19,6 @@ pub mod typesafe_truncation;
 
 #[path = "typesafe/tests/fixtures.rs"]
 mod fixtures;
-
-use typesafe_config::TypeSafeSettings;
 
 pub const DEFAULT_API_BASE: &str = "https://api.typesafe.ai";
 pub const DEFAULT_MODEL: &str = "jev-latest";

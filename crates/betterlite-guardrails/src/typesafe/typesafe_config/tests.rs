@@ -99,6 +99,35 @@ fn typesafe_config_rejects_out_of_range_values(#[case] text: &str, #[case] field
     assert!(error.to_string().contains(field), "{error}");
 }
 
+#[rstest]
+#[case::threshold_zero(
+    r#"{"optional_params":{"relevance_threshold":0.0}}"#,
+    RelevanceThreshold(0.0)
+)]
+#[case::threshold_one(
+    r#"{"optional_params":{"relevance_threshold":1.0}}"#,
+    RelevanceThreshold(1.0)
+)]
+fn typesafe_config_accepts_threshold_boundaries(
+    #[case] text: &str,
+    #[case] expected: RelevanceThreshold,
+) {
+    assert_eq!(model(text).resolve_settings().relevance_threshold, expected);
+}
+
+#[test]
+fn typesafe_config_accepts_zero_min_chars() {
+    let settings = model(r#"{"optional_params":{"min_chars_to_evaluate":0}}"#).resolve_settings();
+    assert_eq!(settings.min_chars_to_evaluate, MinCharsToEvaluate(0));
+}
+
+#[test]
+fn typesafe_config_accepts_the_minimum_result_budget() {
+    let settings =
+        model(r#"{"optional_params":{"max_result_chars_in_state":1}}"#).resolve_settings();
+    assert_eq!(settings.max_result_chars_in_state, MaxResultChars(1));
+}
+
 #[test]
 fn typesafe_config_rejects_unknown_keys() {
     assert!(serde_json::from_str::<TypeSafeGuardrailConfigModel>(r#"{"unknown":1}"#).is_err());
