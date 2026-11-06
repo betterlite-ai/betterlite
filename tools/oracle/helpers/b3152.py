@@ -51,8 +51,8 @@ class Script(httpx.AsyncBaseTransport):
         return httpx.Response(status, headers=headers, content=content, request=request)
 
 
-def header_pairs(raw: Json) -> dict[str, str]:
-    pairs: dict[str, str] = {}
+def header_pairs(raw: Json) -> list[tuple[str, str]]:
+    pairs: list[tuple[str, str]] = []
     if raw is None:
         return pairs
     if not isinstance(raw, list):
@@ -63,7 +63,7 @@ def header_pairs(raw: Json) -> dict[str, str]:
         name, value = pair
         if not isinstance(name, str) or not isinstance(value, str):
             raise ValueError("a header name and value must be strings")
-        pairs[name] = value
+        pairs.append((name, value))
     return pairs
 
 
@@ -89,7 +89,6 @@ def init(client: gh.GitHub) -> dict[str, Json]:
     return {
         "api_url": client._api_url,  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
         "timeout_seconds": int(client.client.timeout.read or 0),
-        "follow_redirects": client.client.follow_redirects,
         "accept": headers.get("Accept"),
         "authorization": headers.get("Authorization"),
     }

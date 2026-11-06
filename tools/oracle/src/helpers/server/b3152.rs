@@ -5,9 +5,10 @@ use std::future::Future;
 use axum::http::Method;
 use axum::http::header::{ACCEPT, AUTHORIZATION};
 use betterlite_roi::settings::ROISettings;
-use betterlite_server::roi_github::client::{FOLLOW_REDIRECTS, GitHub};
+use betterlite_server::roi_github::client::GitHub;
 use betterlite_server::roi_github::error::SourceError;
 use betterlite_server::roi_github::models::{PAGINATION_ERROR, RepositoryItem};
+use betterlite_server::roi_github::{pages, profile_email, repositories};
 use futures_util::TryStreamExt as _;
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -86,7 +87,7 @@ async fn run(input: &Input) -> HelperResult {
         "init" => init(&github),
         "request" => request(&github, input).await?,
         "fetch_page" => fetch_page(&github, input).await?,
-        "pages" => pages(&github, input).await?,
+        "pages" => pages(&github, &input.path, &input.params, input.limit).await?,
         "repositories" => repositories(&github, input).await?,
         "test_repositories" => test_repositories(&github, input).await?,
         "profile_email" => profile_email(&github, input).await?,
@@ -120,7 +121,6 @@ fn init(github: &GitHub<Script>) -> Value {
     json!({
         "api_url": github.api_url,
         "timeout_seconds": github.timeout.as_secs(),
-        "follow_redirects": FOLLOW_REDIRECTS,
         "accept": github.headers.get(ACCEPT).and_then(|value| value.to_str().ok()),
         "authorization": github.headers.get(AUTHORIZATION).and_then(|value| value.to_str().ok()),
     })
@@ -134,37 +134,45 @@ async fn request(github: &GitHub<Script>, input: &Input) -> HelperResult {
 }
 
 async fn fetch_page(github: &GitHub<Script>, input: &Input) -> HelperResult {
-    let message = input
-        .error_message
-        .clone()
-        .unwrap_or_else(|| PAGINATION_ERROR.to_owned());
-    let fetch =
-        github.fetch_page::<RepositoryItem>(&input.path, &input.params, input.page, &message);
-    let (items, has_next) = github_result(fetch).await?;
+    let message = input.error_message.as_deref().unwrap_or(PAGINATION_ERROR);
+    let (items, has_next) = pages::fetch_page::<RepositoryItem, _>(
+        github,
+        &input.path,
+        &input.params,
+        input.page,
+        message,
+    )
+    .await
+    .map_err(|error| helper_error("SourceError", error.to_string()))?;
     Ok(json!({"items": items, "has_next": has_next}))
 }
 
-async fn pages(github: &GitHub<Script>, input: &Input) -> HelperResult {
-    let pages = github.pages::<RepositoryItem>(&input.path, &input.params, input.limit);
-    let collected = github_result(pages.try_collect::<Vec<Vec<RepositoryItem>>>()).await?;
+async fn pages(
+    github: &GitHub<Script>,
+    path: &str,
+    params: &[(String, String)],
+    limit: u32,
+) -> HelperResult {
+    let stream = pages::pages::<RepositoryItem, _>(github, path, params, limit);
+    let collected = github_result(stream.try_collect::<Vec<Vec<RepositoryItem>>>()).await?;
     Ok(json!({"pages": collected}))
 }
 
 async fn repositories(github: &GitHub<Script>, input: &Input) -> HelperResult {
     let (repositories, has_more) =
-        github_result(github.repositories(&input.query, input.page)).await?;
+        github_result(repositories::repositories(github, &input.query, input.page)).await?;
     Ok(json!({"repositories": repositories, "has_more": has_more}))
 }
 
 async fn test_repositories(github: &GitHub<Script>, input: &Input) -> HelperResult {
-    github_result(github.test_repositories(&input.repos)).await?;
+    github_result(repositories::test_repositories(github, &input.repos)).await?;
     Ok(json!({}))
 }
 
 async fn profile_email(github: &GitHub<Script>, input: &Input) -> HelperResult {
     let mut emails = Vec::with_capacity(input.calls.len());
     for call in &input.calls {
-        emails.push(github.profile_email(&call.login, &call.fallback).await);
+        emails.push(profile_email::profile_email(github, &call.login, &call.fallback).await);
     }
     Ok(json!({"emails": emails}))
 }

@@ -1,43 +1,26 @@
 use std::collections::BTreeMap;
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use axum::http::Method;
 use axum::http::header::{ACCEPT, AUTHORIZATION};
-use axum::http::{HeaderMap, HeaderValue, Method};
+use axum::http::{HeaderMap, HeaderValue};
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::tls::TlsPolicy;
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use betterlite_http::proxy::pool::ClientPool;
-use betterlite_roi::settings::{ROISettings, normalize_email};
-use futures_util::Stream;
-use futures_util::stream::try_unfold;
-use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
+use betterlite_roi::settings::ROISettings;
 use secrecy::ExposeSecret as _;
-use serde::de::DeserializeOwned;
 use tokio::time::sleep;
 use url::Url;
 
-use super::adapters::{RepositoryValue, repository_values};
 use super::error::{BuildError, SourceError, http_label};
-use super::models::{
-    GitHubUserProfile, PAGINATION_ERROR, REPOSITORY_PAGE_ERROR, REPOSITORY_SEARCH_PAGES,
-    RepositoryItem,
-};
-use super::pages::has_next_link;
 use super::transport::Transport;
 
 pub const ACCEPT_GITHUB_JSON: &str = "application/vnd.github+json";
 pub const GITHUB_TIMEOUT: Duration = Duration::from_secs(45);
-// B173's transport never follows redirects, so the GitHub client hands a 3xx answer back to its caller
-pub const FOLLOW_REDIRECTS: bool = false;
-// Python's quote(safe="") leaves only the unreserved characters alone; "/" and everything else is encoded
-const QUOTE_SAFE: &AsciiSet = &NON_ALPHANUMERIC
-    .remove(b'_')
-    .remove(b'.')
-    .remove(b'-')
-    .remove(b'~');
 
 pub struct GitHub<T: Transport> {
     pub transport: T,
@@ -118,136 +101,6 @@ impl<T: Transport> GitHub<T> {
         }
     }
 
-    pub async fn fetch_page<M>(
-        &self,
-        path: &str,
-        params: &[(String, String)],
-        page: i64,
-        error_message: &str,
-    ) -> Result<(Vec<M>, bool), SourceError>
-    where
-        M: DeserializeOwned,
-    {
-        let mut page_params = params.to_vec();
-        page_params.push(("per_page".to_owned(), "100".to_owned()));
-        page_params.push(("page".to_owned(), page.to_string()));
-        let response = self.request(Method::GET, path, &page_params, None).await?;
-        let items =
-            serde_json::from_slice(&response.body).map_err(|error| SourceError::Pagination {
-                message: error_message.to_owned(),
-                source: error,
-            })?;
-        Ok((items, has_next_link(&response.headers)))
-    }
-
-    pub fn pages<'client, M>(
-        &'client self,
-        path: &'client str,
-        params: &'client [(String, String)],
-        limit: u32,
-    ) -> impl Stream<Item = Result<Vec<M>, SourceError>> + Send + 'client
-    where
-        M: DeserializeOwned + 'client,
-    {
-        try_unfold(Some((1_u32, false)), move |state| async move {
-            let Some((page, exhausted)) = state else {
-                return Ok(None);
-            };
-            if exhausted || page > limit {
-                return Err(SourceError::PaginationLimit);
-            }
-            let (items, has_next) = self
-                .fetch_page::<M>(path, params, i64::from(page), PAGINATION_ERROR)
-                .await?;
-            let next = (has_next).then(|| (page.saturating_add(1), page >= limit));
-            Ok(Some((items, next)))
-        })
-    }
-
-    pub async fn repositories(
-        &self,
-        query: &str,
-        page: i64,
-    ) -> Result<(Vec<RepositoryValue>, bool), SourceError> {
-        let params = vec![
-            ("sort".to_owned(), "updated".to_owned()),
-            ("direction".to_owned(), "desc".to_owned()),
-            (
-                "affiliation".to_owned(),
-                "owner,collaborator,organization_member".to_owned(),
-            ),
-        ];
-        if query.is_empty() {
-            return self.list_repositories(&params, page).await;
-        }
-        search_repositories(self, query, page, &params).await
-    }
-
-    async fn list_repositories(
-        &self,
-        params: &[(String, String)],
-        page: i64,
-    ) -> Result<(Vec<RepositoryValue>, bool), SourceError> {
-        let (repositories, has_more) = self
-            .fetch_page::<RepositoryItem>("user/repos", params, page, REPOSITORY_PAGE_ERROR)
-            .await?;
-        let values = repository_values(&repositories);
-        Ok((values, has_more))
-    }
-
-    pub async fn test_repositories(&self, repos: &[String]) -> Result<(), SourceError> {
-        for repo in repos {
-            self.request(Method::GET, &format!("repos/{repo}"), &[], None)
-                .await?;
-            let params = [
-                ("per_page".to_owned(), "1".to_owned()),
-                ("state".to_owned(), "closed".to_owned()),
-            ];
-            self.request(Method::GET, &format!("repos/{repo}/pulls"), &params, None)
-                .await?;
-        }
-        Ok(())
-    }
-
-    pub async fn profile_email(&self, login: &str, fallback: &str) -> String {
-        let key = caseless::default_case_fold_str(login);
-        let cached = self
-            .profiles
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get(&key)
-            .cloned();
-        if let Some(address) = cached {
-            return address.unwrap_or_else(|| fallback.to_owned());
-        }
-        let address = self.load_profile_email(login).await;
-        self.profiles
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .insert(key, address.clone());
-        address.unwrap_or_else(|| fallback.to_owned())
-    }
-
-    async fn load_profile_email(&self, login: &str) -> Option<String> {
-        let encoded = utf8_percent_encode(login, QUOTE_SAFE);
-        let url = self.url(&format!("users/{encoded}")).ok()?;
-        let request = OutboundRequest {
-            method: Method::GET,
-            url,
-            query: Vec::new(),
-            headers: self.headers.clone(),
-            body: RequestBody::Empty,
-            deadline: self.timeout,
-        };
-        let response = self.transport.send(request).await.ok()?;
-        if response.status != 200 {
-            return None;
-        }
-        let profile: GitHubUserProfile = serde_json::from_slice(&response.body).ok()?;
-        let email = profile.email.unwrap_or_default();
-        Some(normalize_email(&email))
-    }
-
     // B173's pool owns and drains the underlying clients, so this GitHub handle has nothing to close
     pub fn close(self) {}
 }
@@ -263,37 +116,5 @@ impl GitHub<ProxiedClient> {
             Ok(client) => Self::new(settings, client).map_err(BuildError::Source),
             Err(error) => Err(BuildError::Pool(error)),
         }
-    }
-}
-
-async fn search_repositories<T>(
-    github: &GitHub<T>,
-    query: &str,
-    page: i64,
-    params: &[(String, String)],
-) -> Result<(Vec<RepositoryValue>, bool), SourceError>
-where
-    T: Transport,
-{
-    let normalized_query = caseless::default_case_fold_str(query);
-    let mut github_page = page
-        .saturating_sub(1)
-        .saturating_mul(REPOSITORY_SEARCH_PAGES)
-        .saturating_add(1);
-    let mut pages_remaining = REPOSITORY_SEARCH_PAGES;
-    let mut matches: Vec<RepositoryItem> = Vec::new();
-    loop {
-        let (repositories, has_more) = github
-            .fetch_page::<RepositoryItem>("user/repos", params, github_page, REPOSITORY_PAGE_ERROR)
-            .await?;
-        matches.extend(repositories.into_iter().filter(|repository| {
-            caseless::default_case_fold_str(&repository.full_name)
-                .contains(normalized_query.as_str())
-        }));
-        if pages_remaining <= 1 || !has_more {
-            return Ok((repository_values(&matches), has_more));
-        }
-        github_page = github_page.saturating_add(1);
-        pages_remaining = pages_remaining.saturating_sub(1);
     }
 }

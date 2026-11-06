@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use super::repositories;
 use super::support::{Script, github, json_reply, reply};
 
 #[tokio::test]
@@ -11,8 +12,7 @@ async fn read_access_is_checked_with_the_repository_and_its_closed_pulls() {
         json_reply(200, "[]"),
     ]);
     let github = github(script.clone());
-    github
-        .test_repositories(&["Owner/Repo".to_owned(), "two/repo".to_owned()])
+    repositories::test_repositories(&github, &["Owner/Repo".to_owned(), "two/repo".to_owned()])
         .await
         .unwrap();
     let seen = script.seen();
@@ -42,8 +42,7 @@ async fn read_access_is_checked_with_the_repository_and_its_closed_pulls() {
 async fn an_unreadable_repository_stops_the_check() {
     let script = Script::new(vec![reply(404)]);
     let github = github(script.clone());
-    let error = github
-        .test_repositories(&["Owner/Repo".to_owned()])
+    let error = repositories::test_repositories(&github, &["Owner/Repo".to_owned()])
         .await
         .unwrap_err();
     assert_eq!(

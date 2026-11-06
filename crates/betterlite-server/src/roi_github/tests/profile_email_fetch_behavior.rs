@@ -2,6 +2,7 @@
 
 use rstest::rstest;
 
+use super::profile_email;
 use super::support::{Script, github, json_reply};
 
 #[rstest]
@@ -17,9 +18,7 @@ async fn the_profile_email_is_normalized_before_it_is_returned(
 ) {
     let script = Script::new(vec![json_reply(200, body)]);
     let github = github(script.clone());
-    let email = github
-        .profile_email("octocat", "fallback@example.com")
-        .await;
+    let email = profile_email::profile_email(&github, "octocat", "fallback@example.com").await;
     assert_eq!(email, expected);
     let seen = script.seen();
     assert_eq!(seen.len(), 1);
@@ -30,7 +29,7 @@ async fn the_profile_email_is_normalized_before_it_is_returned(
 async fn the_login_is_percent_encoded_into_the_profile_path() {
     let script = Script::new(vec![json_reply(200, "{}")]);
     let github = github(script.clone());
-    github.profile_email("octo cat/../", "").await;
+    profile_email::profile_email(&github, "octo cat/../", "").await;
     assert_eq!(
         script.seen()[0].url,
         "https://api.github.com/users/octo%20cat%2F..%2F"

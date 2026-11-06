@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use super::models::{GitHubHead, GitHubPullListItem, GitHubUser, PAGINATION_ERROR, RepositoryItem};
+use super::pages;
 use super::support::{Script, github, json_reply};
 
 #[tokio::test]
@@ -11,10 +12,10 @@ async fn repository_fields_outside_the_model_are_ignored() {
              "owner":{"login":"octo"},"permissions":{"push":true},"fork":true}]"#,
     )]);
     let github = github(script.clone());
-    let (items, _) = github
-        .fetch_page::<RepositoryItem>("user/repos", &[], 1, PAGINATION_ERROR)
-        .await
-        .unwrap();
+    let (items, _) =
+        pages::fetch_page::<RepositoryItem, _>(&github, "user/repos", &[], 1, PAGINATION_ERROR)
+            .await
+            .unwrap();
     assert_eq!(
         items,
         vec![RepositoryItem {
@@ -36,10 +37,15 @@ async fn pull_request_fields_outside_the_model_are_ignored() {
              "user":{"login":"octo","id":99},"draft":true,"labels":[]}]"#,
     )]);
     let github = github(script.clone());
-    let (items, _) = github
-        .fetch_page::<GitHubPullListItem>("repos/octo/repo/pulls", &[], 1, PAGINATION_ERROR)
-        .await
-        .unwrap();
+    let (items, _) = pages::fetch_page::<GitHubPullListItem, _>(
+        &github,
+        "repos/octo/repo/pulls",
+        &[],
+        1,
+        PAGINATION_ERROR,
+    )
+    .await
+    .unwrap();
     assert_eq!(
         items,
         vec![GitHubPullListItem {

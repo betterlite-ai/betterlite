@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use super::adapters::RepositoryValue;
+use super::repositories;
 use super::support::{NEXT_LINK, Script, github, json_reply, with_link};
 
 #[tokio::test]
@@ -19,7 +20,7 @@ async fn the_query_matches_a_case_insensitive_substring_of_the_full_name() {
         ),
     ]);
     let github = github(script.clone());
-    let (repositories, has_more) = github.repositories("Api", 1).await.unwrap();
+    let (repositories, has_more) = repositories::repositories(&github, "Api", 1).await.unwrap();
     assert_eq!(
         repositories,
         vec![
@@ -51,7 +52,9 @@ async fn the_query_matches_a_case_insensitive_substring_of_the_full_name() {
 async fn a_query_without_matches_returns_nothing() {
     let script = Script::new(vec![json_reply(200, r#"[{"full_name":"alpha/API"}]"#)]);
     let github = github(script.clone());
-    let (repositories, has_more) = github.repositories("missing", 1).await.unwrap();
+    let (repositories, has_more) = repositories::repositories(&github, "missing", 1)
+        .await
+        .unwrap();
     assert!(repositories.is_empty());
     assert!(!has_more);
 }
@@ -60,7 +63,7 @@ async fn a_query_without_matches_returns_nothing() {
 async fn the_search_starts_at_the_page_the_caller_asked_for() {
     let script = Script::new(vec![json_reply(200, r#"[{"full_name":"alpha/API"}]"#)]);
     let github = github(script.clone());
-    github.repositories("api", 2).await.unwrap();
+    repositories::repositories(&github, "api", 2).await.unwrap();
     assert_eq!(
         script.seen()[0].query.last().unwrap(),
         &("page".to_owned(), "11".to_owned())

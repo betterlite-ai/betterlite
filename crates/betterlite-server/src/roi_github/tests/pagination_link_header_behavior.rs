@@ -3,6 +3,7 @@
 use rstest::rstest;
 
 use super::models::{PAGINATION_ERROR, RepositoryItem};
+use super::pages;
 use super::support::{Script, github, json_reply, with_link};
 
 const EMPTY: &str = "[]";
@@ -25,10 +26,10 @@ async fn the_link_header_decides_whether_another_page_follows(
     }
     let script = Script::new(vec![reply]);
     let github = github(script.clone());
-    let (items, has_next) = github
-        .fetch_page::<RepositoryItem>("user/repos", &[], 1, PAGINATION_ERROR)
-        .await
-        .unwrap();
+    let (items, has_next) =
+        pages::fetch_page::<RepositoryItem, _>(&github, "user/repos", &[], 1, PAGINATION_ERROR)
+            .await
+            .unwrap();
     assert!(items.is_empty());
     assert_eq!(has_next, expected);
 }
@@ -39,9 +40,9 @@ async fn repeated_link_headers_are_joined_before_the_search() {
     reply = with_link(reply, "</b>; rel=\"next\"");
     let script = Script::new(vec![reply]);
     let github = github(script.clone());
-    let (_, has_next) = github
-        .fetch_page::<RepositoryItem>("user/repos", &[], 1, PAGINATION_ERROR)
-        .await
-        .unwrap();
+    let (_, has_next) =
+        pages::fetch_page::<RepositoryItem, _>(&github, "user/repos", &[], 1, PAGINATION_ERROR)
+            .await
+            .unwrap();
     assert!(has_next);
 }

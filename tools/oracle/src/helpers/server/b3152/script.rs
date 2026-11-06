@@ -93,7 +93,7 @@ fn answer(reply: ReplyInput) -> Result<UpstreamResponse, TransportError> {
             .map_err(|_error| TransportError::BodyTooLarge { limit: 1 })?;
         let value = HeaderValue::from_str(&raw)
             .map_err(|_error| TransportError::BodyTooLarge { limit: 1 })?;
-        headers.insert(field, value);
+        headers.append(field, value);
     }
     let body = match (reply.raw, reply.body) {
         (Some(raw), _) => raw.into_bytes(),

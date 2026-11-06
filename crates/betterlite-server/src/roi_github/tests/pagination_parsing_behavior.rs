@@ -3,6 +3,7 @@
 use rstest::rstest;
 
 use super::models::{PAGINATION_ERROR, RepositoryItem};
+use super::pages;
 use super::support::{Script, github, json_reply};
 
 #[tokio::test]
@@ -12,10 +13,10 @@ async fn a_page_parses_into_the_adapter_models() {
         r#"[{"full_name":"octo/repo","visibility":"internal","private":true,"archived":true}]"#,
     )]);
     let github = github(script.clone());
-    let (items, has_next) = github
-        .fetch_page::<RepositoryItem>("user/repos", &[], 4, PAGINATION_ERROR)
-        .await
-        .unwrap();
+    let (items, has_next) =
+        pages::fetch_page::<RepositoryItem, _>(&github, "user/repos", &[], 4, PAGINATION_ERROR)
+            .await
+            .unwrap();
     assert!(!has_next);
     assert_eq!(
         items,
@@ -38,8 +39,7 @@ async fn a_page_parses_into_the_adapter_models() {
 async fn an_invalid_page_reports_the_error_message(#[case] body: &str, #[case] expected: &str) {
     let script = Script::new(vec![json_reply(200, body)]);
     let github = github(script.clone());
-    let error = github
-        .fetch_page::<RepositoryItem>("user/repos", &[], 1, expected)
+    let error = pages::fetch_page::<RepositoryItem, _>(&github, "user/repos", &[], 1, expected)
         .await
         .unwrap_err();
     assert_eq!(error.to_string(), expected);
@@ -49,15 +49,15 @@ async fn an_invalid_page_reports_the_error_message(#[case] body: &str, #[case] e
 async fn the_page_request_asks_for_one_hundred_entries() {
     let script = Script::new(vec![json_reply(200, "[]")]);
     let github = github(script.clone());
-    github
-        .fetch_page::<RepositoryItem>(
-            "user/repos",
-            &[("state".to_owned(), "closed".to_owned())],
-            7,
-            PAGINATION_ERROR,
-        )
-        .await
-        .unwrap();
+    pages::fetch_page::<RepositoryItem, _>(
+        &github,
+        "user/repos",
+        &[("state".to_owned(), "closed".to_owned())],
+        7,
+        PAGINATION_ERROR,
+    )
+    .await
+    .unwrap();
     let seen = script.seen();
     assert_eq!(seen.len(), 1);
     assert_eq!(

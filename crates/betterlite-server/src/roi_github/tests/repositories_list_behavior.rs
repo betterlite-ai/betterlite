@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use super::adapters::RepositoryValue;
+use super::repositories;
 use super::support::{NEXT_LINK, Script, github, json_reply, with_link};
 
 #[tokio::test]
@@ -11,7 +12,7 @@ async fn the_user_repositories_are_listed_sorted_by_update() {
             {"full_name":"octo/two","visibility":null,"private":false,"archived":true}]"#,
     )]);
     let github = github(script.clone());
-    let (repositories, has_more) = github.repositories("", 1).await.unwrap();
+    let (repositories, has_more) = repositories::repositories(&github, "", 1).await.unwrap();
     assert_eq!(
         repositories,
         vec![
@@ -53,7 +54,7 @@ async fn a_next_link_and_page_number_are_passed_through() {
         NEXT_LINK,
     )]);
     let github = github(script.clone());
-    let (_, has_more) = github.repositories("", 3).await.unwrap();
+    let (_, has_more) = repositories::repositories(&github, "", 3).await.unwrap();
     assert!(has_more);
     assert_eq!(
         script.seen()[0].query.last().unwrap(),

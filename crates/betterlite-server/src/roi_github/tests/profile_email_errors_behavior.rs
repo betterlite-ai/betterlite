@@ -2,6 +2,7 @@
 
 use rstest::rstest;
 
+use super::profile_email;
 use super::support::{Reply, Script, github, json_reply, reply};
 
 #[rstest]
@@ -13,9 +14,7 @@ use super::support::{Reply, Script, github, json_reply, reply};
 async fn a_failed_profile_lookup_returns_the_fallback(#[case] answer: Option<Reply>) {
     let script = Script::new(answer.into_iter().collect());
     let github = github(script.clone());
-    let email = github
-        .profile_email("octocat", "fallback@example.com")
-        .await;
+    let email = profile_email::profile_email(&github, "octocat", "fallback@example.com").await;
     assert_eq!(email, "fallback@example.com");
     assert_eq!(script.seen().len(), 1);
 }

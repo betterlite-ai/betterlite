@@ -3,6 +3,7 @@
 use futures_util::TryStreamExt as _;
 
 use super::models::RepositoryItem;
+use super::pages;
 use super::support::{NEXT_LINK, Script, github, json_reply, with_link};
 
 #[tokio::test]
@@ -16,8 +17,7 @@ async fn pages_stop_at_the_first_answer_without_a_next_link() {
         json_reply(200, r#"[{"full_name":"octo/unused"}]"#),
     ]);
     let github = github(script.clone());
-    let pages = github
-        .pages::<RepositoryItem>("user/repos", &[], 10000)
+    let pages = pages::pages::<RepositoryItem, _>(&github, "user/repos", &[], 10000)
         .try_collect::<Vec<Vec<RepositoryItem>>>()
         .await
         .unwrap();
@@ -34,8 +34,7 @@ async fn pages_stop_at_the_first_answer_without_a_next_link() {
 async fn a_single_page_without_a_next_link_is_collected_once() {
     let script = Script::new(vec![json_reply(200, r#"[{"full_name":"octo/only"}]"#)]);
     let github = github(script.clone());
-    let pages = github
-        .pages::<RepositoryItem>("user/repos", &[], 10)
+    let pages = pages::pages::<RepositoryItem, _>(&github, "user/repos", &[], 10)
         .try_collect::<Vec<Vec<RepositoryItem>>>()
         .await
         .unwrap();
