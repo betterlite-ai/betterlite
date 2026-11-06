@@ -74,9 +74,9 @@ fn the_template_content_follows_the_frontmatter_split(
     "---\nstop: [yes, no, y]\ninput:\n  schema:\n    strict: off\n---\nx",
     r#"{"stop":[true,false,"y"],"input":{"schema":{"strict":false}}}"#
 )]
-#[case::quoted_bool_spellings_resolve_too(
-    "---\na: \"yes\"\nb: 'on'\n---\nx",
-    r#"{"a":true,"b":true}"#
+#[case::quoted_bool_spellings_stay_text(
+    "---\na: \"yes\"\nb: 'on'\nc: \"true\"\nd: 'FALSE'\n---\nx",
+    r#"{"a":"yes","b":"on","c":"true","d":"FALSE"}"#
 )]
 fn yaml_frontmatter_becomes_the_metadata(#[case] content: &str, #[case] expected: &str) {
     assert_eq!(metadata_json(content), expected);

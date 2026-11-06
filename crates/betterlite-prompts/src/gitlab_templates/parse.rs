@@ -7,6 +7,8 @@ use thiserror::Error;
 use super::template::{GitLabPromptTemplate, TemplateError};
 use crate::arguments::json::{Json, Object};
 
+mod booleans;
+
 const FRONTMATTER_FENCE: &str = "---";
 
 // Python falls back to the basic parser when the yaml module cannot be imported; Rust always has a YAML parser.
@@ -64,35 +66,16 @@ fn yaml_metadata(frontmatter: &str) -> Result<Object, ParseError> {
         duplicate_keys: DuplicateKeyPolicy::LastWins,
         strict_booleans: true,
     };
-    let Ok(document) = from_str_with_options::<Json>(frontmatter, options) else {
+    let Ok(document) = from_str_with_options::<Json>(&booleans::normalize(frontmatter), options)
+    else {
         return Ok(Object::new());
     };
-    match resolve_yaml11_booleans(document) {
+    match document {
         Json::Object(metadata) => Ok(metadata),
         other if !other.is_truthy() => Ok(Object::new()),
         Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::List(_) => {
             Err(ParseError::MetadataNotMapping)
         }
-    }
-}
-
-// PyYAML's resolver takes exactly these plain spellings as booleans; serde-saphyr's strict mode takes YAML 1.2 true/false only.
-const YAML11_TRUE_SPELLINGS: [&str; 6] = ["yes", "Yes", "YES", "on", "On", "ON"];
-const YAML11_FALSE_SPELLINGS: [&str; 6] = ["no", "No", "NO", "off", "Off", "OFF"];
-
-fn resolve_yaml11_booleans(value: Json) -> Json {
-    match value {
-        Json::Text(text) if YAML11_TRUE_SPELLINGS.contains(&text.as_str()) => Json::Bool(true),
-        Json::Text(text) if YAML11_FALSE_SPELLINGS.contains(&text.as_str()) => Json::Bool(false),
-        Json::Text(text) => Json::Text(text),
-        Json::List(items) => Json::List(items.into_iter().map(resolve_yaml11_booleans).collect()),
-        Json::Object(fields) => Json::Object(
-            fields
-                .into_iter()
-                .map(|(key, field)| (key, resolve_yaml11_booleans(field)))
-                .collect(),
-        ),
-        Json::Null | Json::Bool(_) | Json::Number(_) => value,
     }
 }
 
