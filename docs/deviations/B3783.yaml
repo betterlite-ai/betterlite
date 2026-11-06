@@ -10,6 +10,16 @@ deviations:
       every evaluation into a silent fail-open.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L43-L48
   - what: >-
+      A guardrail built without a timeout reads ONYX_TIMEOUT. LiteLLM's Python constructor
+      defaults the argument to 10.0, so it only reads the variable when the caller passes
+      None or 0; initialize_guardrail passes litellm_params.timeout, which is None when the
+      config omits it, so the proxy path reads the variable in both.
+    why: >-
+      betterlite's constructor takes the configured timeout as an Option and has no
+      separate omitted-argument state; the config model's default of None matches the
+      initialize_guardrail call LiteLLM makes.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L37-L44
+  - what: >-
       The Onyx Guard response body is read up to 1 MiB; a larger reply is treated as a
       backend error and fails open. LiteLLM parses a reply of any size.
     why: >-
@@ -32,13 +42,3 @@ deviations:
       server that denied the request is a bug no working setup relies on. Rules that are
       absent still use the same "Unknown violation" text LiteLLM uses.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L83-L92
-  - what: >-
-      The response payload conversion validates the ModelResponse top-level fields id,
-      created, model and system_fingerprint, and falls back to the whole request_data when
-      one of them has the wrong type. A malformed choices list is not validated, so for it
-      betterlite still sends request_data["response"] where LiteLLM's ModelResponse
-      construction raises and falls back.
-    why: >-
-      The nested choices conversion is the message/response conversion the task leaves out
-      of scope; the top-level fields cover every shape of a well-formed post-call request.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/onyx/onyx.py#L98-L114

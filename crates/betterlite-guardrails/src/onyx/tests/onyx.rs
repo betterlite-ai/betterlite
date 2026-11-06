@@ -378,6 +378,28 @@ async fn block_without_violated_rules_reports_unknown_violation() {
 }
 
 #[tokio::test]
+async fn block_with_null_violated_rules_blocks_with_unknown_violation() {
+    let mock = mock_onyx(
+        StatusCode::OK,
+        String::from(r#"{"allowed": false, "violated_rules": null}"#),
+    )
+    .await;
+    let error = guardrail(&mock.base)
+        .apply_guardrail(
+            inputs(r#"{"texts": ["hello"]}"#),
+            &object("{}"),
+            GuardrailInputType::Request,
+            Some("call-1"),
+        )
+        .await
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        "Request blocked by Onyx Guard. Violations: Unknown violation."
+    );
+}
+
+#[tokio::test]
 async fn fail_open_returns_the_inputs_on_a_backend_status_error() {
     let mock = mock_onyx(
         StatusCode::INTERNAL_SERVER_ERROR,
