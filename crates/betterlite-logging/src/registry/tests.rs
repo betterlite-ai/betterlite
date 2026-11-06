@@ -126,6 +126,7 @@ fn channel_sink(capacity: usize) -> (CallbackSink, mpsc::Receiver<CallbackEvent>
 fn keys(registry: &CallbackRegistry, list: CallbackList) -> Vec<String> {
     registry
         .list_identities(list)
+        .iter()
         .map(CallbackIdentity::key)
         .collect()
 }

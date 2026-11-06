@@ -44,7 +44,7 @@ impl Entry {
 pub struct CallbackRegistry {
     capacity: usize,
     entries: Vec<Entry>,
-    counts: BTreeMap<CallbackList, usize>,
+    lists: BTreeMap<CallbackList, Vec<CallbackIdentity>>,
     configured_vars: Vec<CallbackVars>,
 }
 
@@ -54,7 +54,7 @@ impl CallbackRegistry {
         Self {
             capacity,
             entries: Vec::new(),
-            counts: BTreeMap::new(),
+            lists: BTreeMap::new(),
             configured_vars: Vec::new(),
         }
     }
@@ -67,7 +67,7 @@ impl CallbackRegistry {
         sink: CallbackSink,
         list: CallbackList,
     ) -> Registration {
-        let count = self.counts.get(&list).copied().unwrap_or_default();
+        let count = self.lists.get(&list).map_or(0, Vec::len);
         if count >= self.capacity {
             tracing::warn!(
                 callback = %identity.class_name,
@@ -94,14 +94,13 @@ impl CallbackRegistry {
             entry.rebuild_phases();
         } else {
             self.entries.push(Entry {
-                identity,
+                identity: identity.clone(),
                 sink,
                 lists: BTreeSet::from([list]),
                 phases: list.phases().iter().copied().collect(),
             });
         }
-        let slot = self.counts.entry(list).or_default();
-        *slot = slot.saturating_add(1);
+        self.lists.entry(list).or_default().push(identity);
         Registration::Registered
     }
 
@@ -124,42 +123,44 @@ impl CallbackRegistry {
 
     pub fn remove_from_list(&mut self, identity: &CallbackIdentity, list: CallbackList) -> bool {
         let key = identity.key();
-        let Some(index) = self
+        let Some(entry) = self
             .entries
-            .iter()
-            .position(|entry| entry.identity.key() == key)
+            .iter_mut()
+            .find(|entry| entry.identity.key() == key)
         else {
-            return false;
-        };
-        let Some(entry) = self.entries.get_mut(index) else {
             return false;
         };
         if !entry.lists.remove(&list) {
             return false;
         }
         entry.rebuild_phases();
-        if entry.lists.is_empty() {
-            self.entries.remove(index);
+        let empty = entry.lists.is_empty();
+        if empty {
+            self.entries.retain(|stored| stored.identity.key() != key);
         }
-        if let Some(count) = self.counts.get_mut(&list) {
-            *count = count.saturating_sub(1);
+        if let Some(order) = self.lists.get_mut(&list) {
+            order.retain(|stored| stored.key() != key);
         }
         true
     }
 
     pub fn remove_class_from_list(&mut self, class_name: &str, list: CallbackList) -> usize {
-        let mut removed = 0_usize;
-        self.entries.retain_mut(|entry| {
-            if entry.identity.class_name != class_name || !entry.lists.remove(&list) {
-                return true;
-            }
-            removed = removed.saturating_add(1);
-            entry.rebuild_phases();
-            !entry.lists.is_empty()
-        });
-        if let Some(count) = self.counts.get_mut(&list) {
-            *count = count.saturating_sub(removed);
+        let Some(order) = self.lists.get_mut(&list) else {
+            return 0;
+        };
+        let before = order.len();
+        order.retain(|identity| identity.class_name != class_name);
+        let removed = before.saturating_sub(order.len());
+        if removed == 0 {
+            return 0;
         }
+        for entry in &mut self.entries {
+            if entry.identity.class_name == class_name {
+                entry.lists.remove(&list);
+                entry.rebuild_phases();
+            }
+        }
+        self.entries.retain(|entry| !entry.lists.is_empty());
         removed
     }
 
@@ -217,11 +218,12 @@ impl CallbackRegistry {
         }
     }
 
-    pub fn list_identities(&self, list: CallbackList) -> impl Iterator<Item = &CallbackIdentity> {
-        self.entries
-            .iter()
-            .filter(move |entry| entry.lists.contains(&list))
-            .map(|entry| &entry.identity)
+    #[must_use]
+    pub fn list_identities(&self, list: CallbackList) -> &[CallbackIdentity] {
+        let Some(order) = self.lists.get(&list) else {
+            return &[];
+        };
+        order
     }
 
     pub fn phase_identities(
