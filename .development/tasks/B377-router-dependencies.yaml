@@ -15,15 +15,11 @@ description: 'Implement StrategyRouterKind, RouterDependencies and configuration
   (L224-L226), validate_complexity_router_config_write (L347-L372), carries_complexity_router_settings
   (L380-L389), validate_complexity_router_config_placement (L392-L411), validate_strategy_router_model_write
   (L414-L453). Implement these behaviors through the typed Rust services above; synchronous facades and
-  structural accessors reuse the same primitive instead of separate ports.'
+  structural accessors reuse the same primitive instead of separate ports. This task adds no route or server state, so leave routes.rs and state.rs to B1100.'
 scope:
   paths:
   - crates/betterlite-server/src/router_dependencies.rs
   - crates/betterlite-server/src/router_dependencies/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/router_dependencies.rs
   - crates/betterlite-server/src/routing/router_dependencies/**
   - tools/oracle/src/router_probes/router_dependencies.rs

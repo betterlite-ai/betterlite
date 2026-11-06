@@ -17,21 +17,14 @@ description: 'Implement Decimal router spend increments and synchronization over
   (L615-L629), RouterBudgetLimiting._flush_queued_increments_with_lock (L631-L633), RouterBudgetLimiting._sync_in_memory_spend_with_redis
   (L635-L655), RouterBudgetLimiting._flush_increments_then_copy_redis_spend (L657-L695). Implement these
   behaviors through the typed Rust services above; synchronous facades and structural accessors reuse
-  the same primitive instead of separate ports.'
+  the same primitive instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B020 installs its state and calls its shutdown flush.'
 scope:
   paths:
   - crates/betterlite-router/src/routing_budget_state.rs
   - crates/betterlite-router/src/routing_budget_state/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/routing_budget_state.rs
   - crates/betterlite-server/src/routing/routing_budget_state/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/routing_budget_state.rs
   - tools/oracle/src/router_probes/routing_budget_state/**
   - tools/oracle/litellm/probes/routing_budget_state.py
