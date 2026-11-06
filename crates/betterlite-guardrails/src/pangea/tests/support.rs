@@ -16,8 +16,7 @@ use tokio::time::sleep;
 
 use crate::generic_guardrail_contracts::GuardrailMessage;
 use crate::javelin::AppliedGuardrailsHeader;
-use crate::pangea::config::PangeaGuardrailConfigModel;
-use crate::pangea::hooks::{PangeaGuardrail, RequestData};
+use crate::pangea::{PangeaGuardrail, PangeaGuardrailConfigModel, RequestData};
 
 pub(crate) const GUARDRAIL_NAME: &str = "pangea-ai-guard";
 

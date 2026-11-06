@@ -1,5 +1,4 @@
-use betterlite_guardrails::pangea::error::PangeaGuardrailError;
-use betterlite_guardrails::pangea::hooks::{GuardrailResponse, RequestData};
+use betterlite_guardrails::pangea::{GuardrailResponse, PangeaGuardrailError, RequestData};
 use serde_json::{Value, json};
 
 use crate::helpers::HelperResult;
