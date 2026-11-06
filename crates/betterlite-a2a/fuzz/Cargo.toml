@@ -37,3 +37,10 @@ path = "fuzz_targets/watsonx_token_response.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "watsonx_run_event"
+path = "fuzz_targets/watsonx_run_event.rs"
+test = false
+doc = false
+bench = false
