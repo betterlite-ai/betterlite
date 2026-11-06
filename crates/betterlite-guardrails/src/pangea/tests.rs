@@ -184,6 +184,23 @@ async fn backend_answer_that_is_not_json_is_a_server_error() {
 }
 
 #[tokio::test]
+async fn backend_answer_larger_than_the_cap_is_a_server_error() {
+    let server = serve(StatusCode::OK, "x".repeat(1024 * 1024 + 1)).await;
+    let instance = guardrail(&server.base);
+    let mut data = data_with_messages(vec![user("hello")]);
+    let mut recorder = Recorder::default();
+    let error = instance
+        .async_pre_call_hook(&mut data, "completion", &mut recorder)
+        .await
+        .expect_err("an oversized answer is refused");
+    assert!(matches!(
+        error,
+        PangeaGuardrailError::ResponseTooLarge { .. }
+    ));
+    assert_eq!(error.status_code(), StatusCode::INTERNAL_SERVER_ERROR);
+}
+
+#[tokio::test]
 async fn backend_timeout_is_a_server_error() {
     let server = serve_hanging().await;
     let mut instance = guardrail(&server.base);
