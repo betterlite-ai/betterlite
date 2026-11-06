@@ -147,14 +147,10 @@ fn prepare(call: &Call) -> Result<Prepared, Box<HelperError>> {
     let tracker_api_base = resolved.settings.tracker_api_base.clone();
     let mock = MockProvider::start(script(call)?)
         .map_err(|error| failure("ValueError", None, error.to_string()))?;
+    let mut settings = resolved.settings;
+    settings.tracker_api_base.clone_from(&mock.base_url);
     let guardrail = OvalixGuardrail {
-        settings: environment::Settings {
-            tracker_api_base: mock.base_url.clone(),
-            tracker_api_key: resolved.settings.tracker_api_key,
-            application_id: resolved.settings.application_id,
-            pre_checkpoint_id: resolved.settings.pre_checkpoint_id,
-            post_checkpoint_id: resolved.settings.post_checkpoint_id,
-        },
+        settings,
         guardrail_name: "ovalix".to_owned(),
         default_on: false,
         event_hooks: resolved.event_hooks.clone(),
