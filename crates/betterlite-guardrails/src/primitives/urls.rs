@@ -70,25 +70,48 @@ fn split_url(url: &str) -> Option<(String, String)> {
     Some((scheme, netloc.to_owned()))
 }
 
-// Mirrors urllib.parse._check_bracketed_netloc, whose ValueError becomes None here.
+// Mirrors urlsplit's bracket checks and urllib.parse._check_bracketed_netloc, whose ValueErrors become false.
 fn bracketed_netloc_valid(netloc: &str) -> bool {
-    let host = netloc.rsplit_once('@').map_or(netloc, |(_, host)| host);
-    let Some((before, rest)) = host.split_once('[') else {
-        return !host.contains(']');
-    };
-    let Some((inside, after)) = rest.split_once(']') else {
-        return false;
-    };
-    if !before.is_empty() || !(after.is_empty() || after.starts_with(':')) {
+    let has_open = netloc.contains('[');
+    let has_close = netloc.contains(']');
+    if has_open != has_close {
         return false;
     }
-    let Some(future) = inside.strip_prefix('v') else {
-        let (address, scope) = inside
-            .split_once('%')
-            .map_or((inside, true), |(address, scope)| {
-                (address, !scope.is_empty() && !scope.contains('%'))
-            });
-        return scope && address.parse::<Ipv6Addr>().is_ok();
+    if !has_open {
+        return true;
+    }
+    let host_and_port = netloc.rsplit_once('@').map_or(netloc, |(_, host)| host);
+    let Some((before, bracketed)) = host_and_port.split_once('[') else {
+        let hostname = host_and_port
+            .split_once(':')
+            .map_or(host_and_port, |(hostname, _)| hostname);
+        return ipvfuture_valid(hostname);
+    };
+    if !before.is_empty() {
+        return false;
+    }
+    let (hostname, port) = bracketed
+        .split_once(']')
+        .map_or((bracketed, ""), |(hostname, port)| (hostname, port));
+    (port.is_empty() || port.starts_with(':')) && bracketed_host_valid(hostname)
+}
+
+fn bracketed_host_valid(hostname: &str) -> bool {
+    if hostname.starts_with('v') {
+        return ipvfuture_valid(hostname);
+    }
+    let (address, scope) = hostname
+        .split_once('%')
+        .map_or((hostname, true), |(address, scope)| {
+            (address, !scope.is_empty() && !scope.contains('%'))
+        });
+    scope && address.parse::<Ipv6Addr>().is_ok()
+}
+
+// urllib.parse's IPvFuture form: \Av[a-fA-F0-9]+\..+\Z.
+fn ipvfuture_valid(hostname: &str) -> bool {
+    let Some(future) = hostname.strip_prefix('v') else {
+        return false;
     };
     future.split_once('.').is_some_and(|(digits, tail)| {
         !digits.is_empty()

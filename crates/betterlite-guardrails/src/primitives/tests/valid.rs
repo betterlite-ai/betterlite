@@ -207,6 +207,30 @@ use super::{FakeTransport, run};
     "{}",
     "true"
 )]
+#[case::is_valid_url_rejects_an_unclosed_bracket_with_userinfo(
+    "is_valid_url",
+    r#"["http://[a@b/"]"#,
+    "{}",
+    "false"
+)]
+#[case::is_valid_url_rejects_a_stray_closing_bracket(
+    "is_valid_url",
+    r#"["http://a]@b/"]"#,
+    "{}",
+    "false"
+)]
+#[case::is_valid_url_rejects_a_bracketed_userinfo_with_a_plain_host(
+    "is_valid_url",
+    r#"["http://[x]@host/"]"#,
+    "{}",
+    "false"
+)]
+#[case::is_valid_url_accepts_a_bracket_in_the_userinfo(
+    "is_valid_url",
+    r#"["http://a]@[::1/"]"#,
+    "{}",
+    "true"
+)]
 #[tokio::test]
 async fn primitives_management_valid(
     #[case] name: &str,
