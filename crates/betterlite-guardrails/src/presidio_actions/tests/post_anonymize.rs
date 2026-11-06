@@ -75,6 +75,25 @@ async fn an_http_error_returns_status_and_a_200_character_sample() {
 }
 
 #[tokio::test]
+async fn an_upper_case_json_content_type_is_accepted() {
+    let mock = spawn_anonymizer(
+        |_| {
+            (
+                StatusCode::OK,
+                "Application/JSON",
+                r#"{"text":"MASKED"}"#.to_owned(),
+            )
+        },
+        Duration::ZERO,
+    )
+    .await;
+    let response = post_anonymize(&anonymizer(&mock.base), "Alice", &[item("PERSON", 0, 5)])
+        .await
+        .unwrap();
+    assert_eq!(response.text, "MASKED");
+}
+
+#[tokio::test]
 async fn a_non_json_content_type_is_an_error() {
     let mock = spawn_anonymizer(|_| plain_reply(StatusCode::OK, "not json"), Duration::ZERO).await;
     let error = post_anonymize(&anonymizer(&mock.base), "Alice", &[item("PERSON", 0, 5)])

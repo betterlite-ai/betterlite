@@ -87,6 +87,30 @@ fn a_repeated_span_takes_the_last_sequence_number() {
 }
 
 #[test]
+fn overlapping_detections_past_the_shrunken_text_are_clamped() {
+    let detections = [item("EMAIL_ADDRESS", 8, 24), item("URL", 13, 24)];
+    let mut data = request_data("{}");
+    let mut counts = IndexMap::new();
+    let text = finalize_numbered_tokens(
+        "Contact john@example.com",
+        &detections,
+        Some(&mut data),
+        &mut counts,
+    )
+    .unwrap();
+    assert_eq!(text, "Contact <EMAIL_ADDRESS_1>");
+    let stored = tokens(&data);
+    assert_eq!(
+        stored.get("<EMAIL_ADDRESS_1>").map(String::as_str),
+        Some("john@example.com")
+    );
+    assert_eq!(
+        stored.get("<URL_2>").map(String::as_str),
+        Some("example.com")
+    );
+}
+
+#[test]
 fn overlapping_spans_store_the_unmodified_input_slices() {
     let detections = [item("PERSON", 0, 6), item("LOCATION", 3, 9)];
     let mut data = request_data("{}");

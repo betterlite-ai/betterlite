@@ -37,13 +37,7 @@ pub(super) fn number_spans(
         };
         // LiteLLM stores text[start:end] from the input, while replacements land on the mutated copy.
         let original: String = original_slice.iter().collect();
-        let Some(replaced) = replace_span(&replaced_text, *start, *end, &token) else {
-            return Err(PresidioActionsError::SpanOutOfBounds {
-                start: *start,
-                end: *end,
-            });
-        };
-        replaced_text = replaced;
+        replaced_text = replace_span(&replaced_text, *start, *end, &token);
         tokens.insert(token, original);
         let count = masked_entity_count
             .entry((*entity_type).to_owned())
@@ -90,11 +84,12 @@ fn sequence_numbers(spans: &[(usize, usize, &str)]) -> BTreeMap<(usize, usize), 
     sequence
 }
 
-fn replace_span(chars: &[char], start: usize, end: usize, token: &str) -> Option<Vec<char>> {
-    let mut replaced = chars.get(..start)?.to_vec();
+// Python slices clamp, so a span that no longer fits the shrunken copy keeps the prefix and drops the tail.
+fn replace_span(chars: &[char], start: usize, end: usize, token: &str) -> Vec<char> {
+    let mut replaced: Vec<char> = chars.iter().take(start).copied().collect();
     replaced.extend(token.chars());
-    replaced.extend_from_slice(chars.get(end..)?);
-    Some(replaced)
+    replaced.extend(chars.iter().skip(end).copied());
+    replaced
 }
 
 #[must_use]

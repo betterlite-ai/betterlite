@@ -143,7 +143,7 @@ fn response_mimetype(response: &reqwest::Response) -> String {
         .and_then(|value| value.split(';').next())
         .map_or_else(
             || "application/octet-stream".to_owned(),
-            |mimetype| mimetype.trim().to_owned(),
+            |mimetype| mimetype.trim().to_ascii_lowercase(),
         )
 }
 
