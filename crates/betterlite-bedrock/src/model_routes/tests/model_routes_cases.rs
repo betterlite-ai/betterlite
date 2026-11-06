@@ -146,9 +146,15 @@ fn chat_completions_prefix_cases(route: &ModelRouteSelector<'_>, fallback: &Para
     );
 }
 
-fn gpt_capability_map() -> ParamMap {
+fn capability_map() -> ParamMap {
     params(&[
-        ("openai.gpt-5.6", endpoint_entry("/v1/chat/completions")),
+        (
+            "openai.gpt-5.6",
+            mapping(&[
+                ("supported_endpoints", list(&["/v1/chat/completions"])),
+                (RESPONSE_FORMAT_FLAG, ParamValue::Bool(true)),
+            ]),
+        ),
         ("openai.gpt-5.5", endpoint_entry("/v1/chat/completions")),
         (
             "us.openai.gpt-5.6-luna",
@@ -178,6 +184,10 @@ fn gpt_capability_map() -> ParamMap {
         (
             "openai.gpt-5.6-true",
             flag_entry(RESPONSE_FORMAT_FLAG, ParamValue::Bool(true)),
+        ),
+        (
+            "openai.gpt-5.6-literal",
+            flag_entry(TOOLS_REASONING_FLAG, text("true")),
         ),
         ("openai.gpt-5.6-null", ParamValue::Null),
     ])
@@ -242,7 +252,7 @@ fn gpt_malformed_checks() {
 }
 
 fn gpt_runtime_default_capability() {
-    let price_map = gpt_capability_map();
+    let price_map = capability_map();
     let converse = IndexSet::new();
     let route = selector(&price_map, &converse, false);
     gpt_version_checks(&route);
@@ -317,30 +327,6 @@ fn converse_only_request_fields() {
     );
 }
 
-fn capability_map() -> ParamMap {
-    params(&[
-        (
-            "openai.gpt-5.6",
-            mapping(&[
-                ("supported_endpoints", list(&["/v1/chat/completions"])),
-                (RESPONSE_FORMAT_FLAG, ParamValue::Bool(true)),
-            ]),
-        ),
-        (
-            "openai.gpt-oss-20b-1:0",
-            flag_entry(TOOLS_REASONING_FLAG, ParamValue::Bool(true)),
-        ),
-        (
-            "openai.gpt-5.6-literal",
-            flag_entry(TOOLS_REASONING_FLAG, text("true")),
-        ),
-        (
-            "openai.gpt-5.6-number",
-            flag_entry(TOOLS_REASONING_FLAG, number(1)),
-        ),
-    ])
-}
-
 fn format_outcomes(route: &ModelRouteSelector<'_>, model: &str) -> Vec<bool> {
     let formats = [
         None,
@@ -397,29 +383,37 @@ fn response_format_needs_converse() {
     assert!(!request_needs_converse(&route, "openai.gpt-oss-20b-1:0", &null_request).unwrap());
 }
 
-fn tool_outcomes(route: &ModelRouteSelector<'_>, model: &str) -> Vec<bool> {
-    let requests = [
-        params(&[("tools", ParamValue::List(Vec::new()))]),
-        params(&[("functions", ParamValue::List(Vec::new()))]),
-        params(&[
+fn tool_requests() -> Vec<ParamMap> {
+    [
+        vec![("tools", ParamValue::List(Vec::new()))],
+        vec![("functions", ParamValue::List(Vec::new()))],
+        vec![
             ("tools", list(&["tool"])),
             ("reasoning_effort", text("none")),
-        ]),
-        params(&[("tools", list(&["tool"]))]),
-        params(&[("functions", list(&["function"]))]),
-        params(&[
+        ],
+        vec![("tools", list(&["tool"]))],
+        vec![("functions", list(&["function"]))],
+        vec![
             ("tools", list(&["tool"])),
             ("reasoning_effort", ParamValue::Null),
-        ]),
-        params(&[
+        ],
+        vec![
             ("tools", list(&["tool"])),
             ("reasoning_effort", text("low")),
-        ]),
-    ];
-    requests
-        .iter()
-        .map(|request| request_needs_converse(route, model, request).unwrap())
-        .collect()
+        ],
+    ]
+    .into_iter()
+    .map(|pairs| params(&pairs))
+    .collect()
+}
+
+fn tool_outcomes(route: &ModelRouteSelector<'_>, model: &str) -> Vec<bool> {
+    let requests = tool_requests();
+    let mut outcomes = Vec::new();
+    for request in &requests {
+        outcomes.push(request_needs_converse(route, model, request).unwrap());
+    }
+    outcomes
 }
 
 fn tools_with_reasoning() {
