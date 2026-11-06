@@ -12,6 +12,7 @@ bytes = "1.12.1"
 futures-util = { version = "0.3.34", default-features = false, features = ["async-await"] }
 hex.workspace = true
 http = "1.5.0"
+libc = "0.2.191"
 opentelemetry-http = { version = "0.33.1", default-features = false }
 percent-encoding.workspace = true
 regex.workspace = true
@@ -27,6 +28,7 @@ thiserror.workspace = true
 tokio.workspace = true
 tokio-util = { version = "0.7.20", default-features = false, features = ["rt"] }
 tracing.workspace = true
+url = "2.5.8"
 uuid.workspace = true
 webpki-roots = "1.0.11"
 zip = { version = "9.1.0", default-features = false, features = ["bzip2", "deflate-flate2-zlib", "lzma"] }
