@@ -1,18 +1,23 @@
 use crate::arguments::json::Json;
 use serde::Deserialize;
+use serde_with::{DefaultOnNull, serde_as};
 use thiserror::Error;
 
 // A provider response is already parsed in memory by the time these extractors see it, so the byte parser bounds only the fuzz and replay path.
 pub const MAX_RESPONSE_BYTES: usize = 8 * 1024 * 1024;
 
 // One response object carries only one surface's section, and LiteLLM probes all three, so every section is optional here.
+#[serde_as]
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 pub struct ToolCallResponse {
     #[serde(default)]
+    #[serde_as(as = "DefaultOnNull")]
     pub choices: Vec<ChatChoice>,
     #[serde(default)]
+    #[serde_as(as = "DefaultOnNull")]
     pub output: Vec<ResponsesOutputItem>,
     #[serde(default)]
+    #[serde_as(as = "DefaultOnNull")]
     pub content: Vec<AnthropicContentBlock>,
 }
 
@@ -21,9 +26,11 @@ pub struct ChatChoice {
     pub message: Option<ChatMessage>,
 }
 
+#[serde_as]
 #[derive(Clone, Debug, Default, PartialEq, Eq, Deserialize)]
 pub struct ChatMessage {
     #[serde(default)]
+    #[serde_as(as = "DefaultOnNull")]
     pub tool_calls: Vec<ChatToolCall>,
 }
 

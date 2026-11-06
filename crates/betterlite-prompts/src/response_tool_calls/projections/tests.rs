@@ -28,6 +28,19 @@ fn call_count(body: &str) -> usize {
     1
 )]
 #[case::empty_body_object("{}", 0)]
+#[case::null_tool_calls_falls_through_to_output(
+    r#"{"choices":[{"message":{"role":"assistant","content":"hi","tool_calls":null}}],"output":[{"type":"function_call","call_id":"c","name":"n","arguments":"{}"}]}"#,
+    1
+)]
+#[case::null_choices_falls_through_to_output(
+    r#"{"choices":null,"output":[{"type":"function_call","call_id":"c","name":"n","arguments":"{}"}]}"#,
+    1
+)]
+#[case::null_output_falls_through_to_content(
+    r#"{"choices":[],"output":null,"content":[{"type":"tool_use","id":"t","name":"n","input":{}}]}"#,
+    1
+)]
+#[case::null_content_yields_no_calls(r#"{"choices":[],"output":[],"content":null}"#, 0)]
 fn response_tool_calls_behavior_tests_behavior(#[case] body: &str, #[case] expected: usize) {
     assert_eq!(call_count(body), expected);
 }
