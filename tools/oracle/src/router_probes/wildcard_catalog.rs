@@ -92,7 +92,9 @@ pub(crate) fn execute(input: &Input) -> Result<Output, OperationError> {
                 routes.push(matched.map(resolved));
             }
             Step::GetDeployments { model, provider } => {
-                let matched = catalog.get_deployments_by_pattern(model, provider.as_deref());
+                let matched = catalog
+                    .get_pattern(model, provider.as_deref())
+                    .unwrap_or_default();
                 routes.push(Some(resolved(matched)));
             }
         }

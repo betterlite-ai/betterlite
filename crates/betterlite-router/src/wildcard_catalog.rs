@@ -117,25 +117,18 @@ impl PatternCatalog {
         )
     }
 
+    // the caller resolves custom_llm_provider or the inferred provider, as LiteLLM does before its fallback
     #[must_use]
-    pub fn get_pattern(&self, model: &str, provider: Option<&str>) -> Option<Vec<Candidate>> {
+    pub fn get_pattern(
+        &self,
+        model: &str,
+        resolved_provider: Option<&str>,
+    ) -> Option<Vec<Candidate>> {
         if let Some(candidates) = self.route(model, None) {
             return Some(candidates);
         }
-        let resolved_provider = provider?;
-        self.route(&format!("{resolved_provider}/{model}"), None)
-    }
-
-    #[must_use]
-    pub fn get_deployments_by_pattern(
-        &self,
-        model: &str,
-        provider: Option<&str>,
-    ) -> Vec<Candidate> {
-        let Some(candidates) = self.get_pattern(model, provider) else {
-            return Vec::new();
-        };
-        candidates
+        let provider = resolved_provider?;
+        self.route(&format!("{provider}/{model}"), None)
     }
 }
 

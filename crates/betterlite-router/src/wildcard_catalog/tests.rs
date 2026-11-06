@@ -1,8 +1,5 @@
 #![cfg(test)]
 
-use std::error::Error;
-
-use regex::Regex;
 use rstest::rstest;
 
 use super::error::PatternCatalogError;
@@ -15,8 +12,8 @@ type Expectation = Option<Vec<(&'static str, &'static str)>>;
 enum Lookup {
     Route(&'static str),
     Filtered(&'static str, &'static [&'static str]),
-    GetPattern(&'static str, Option<&'static str>),
-    Deployments(&'static str, Option<&'static str>),
+    GetPattern(&'static str, &'static str),
+    Deployments(&'static str, &'static str),
 }
 
 enum Boundary {
@@ -27,7 +24,7 @@ enum Boundary {
         expectations: Vec<Expectation>,
     },
     UnidentifiedCandidate,
-    RejectedCompile,
+    OversizedPattern,
 }
 
 fn candidate(id: &str, model: &str) -> Candidate {
@@ -55,10 +52,12 @@ fn resolve(catalog: &PatternCatalog, lookup: &Lookup) -> Option<Vec<Resolved>> {
             let keys: Vec<String> = patterns.iter().map(|name| (*name).to_owned()).collect();
             catalog.route(request, Some(&keys))
         }
-        Lookup::GetPattern(model, provider) => catalog.get_pattern(model, *provider),
-        Lookup::Deployments(model, provider) => {
-            Some(catalog.get_deployments_by_pattern(model, *provider))
-        }
+        Lookup::GetPattern(model, provider) => catalog.get_pattern(model, Some(*provider)),
+        Lookup::Deployments(model, provider) => Some(
+            catalog
+                .get_pattern(model, Some(*provider))
+                .unwrap_or_default(),
+        ),
     };
     matched.map(|entries| {
         entries
@@ -152,22 +151,20 @@ fn assert_lookups(catalog: &PatternCatalog, lookups: &[Lookup], expectations: Ve
     vec![("openai/*", "provider", "azure/*")],
     vec![],
     vec![
-        Lookup::GetPattern("gpt-4", Some("openai")),
-        Lookup::GetPattern("openai/gpt-4", Some("azure")),
-        Lookup::GetPattern("gpt-4", None),
+        Lookup::GetPattern("gpt-4", "openai"),
+        Lookup::GetPattern("openai/gpt-4", "azure"),
     ],
     vec![
         Some(vec![("provider", "azure/gpt-4")]),
         Some(vec![("provider", "azure/gpt-4")]),
-        None,
     ],
 )]
-#[case::get_deployments_by_pattern_returns_an_empty_list_without_a_match(
+#[case::a_missed_lookup_yields_no_candidates(
     vec![("openai/*", "provider", "azure/*")],
     vec![],
     vec![
-        Lookup::Deployments("gpt-4", Some("openai")),
-        Lookup::Deployments("claude", Some("anthropic")),
+        Lookup::Deployments("gpt-4", "openai"),
+        Lookup::Deployments("claude", "anthropic"),
     ],
     vec![Some(vec![("provider", "azure/gpt-4")]), Some(vec![])],
 )]
@@ -198,7 +195,7 @@ fn wildcard_catalog_behaviors(
 #[case::an_empty_catalog_has_no_pattern(Boundary::Routes {
     deployments: vec![],
     removed: vec![],
-    lookups: vec![Lookup::Route("anything"), Lookup::GetPattern("model", Some("openai"))],
+    lookups: vec![Lookup::Route("anything"), Lookup::GetPattern("model", "openai")],
     expectations: vec![None, None],
 })]
 #[case::an_empty_filter_allows_no_pattern(Boundary::Routes {
@@ -252,7 +249,7 @@ fn wildcard_catalog_behaviors(
     expectations: vec![Some(vec![("a", "azure/gpt-4")])],
 })]
 #[case::a_candidate_without_a_model_id_is_never_removed(Boundary::UnidentifiedCandidate)]
-#[case::a_rejected_compile_keeps_the_pattern_and_its_source(Boundary::RejectedCompile)]
+#[case::a_pattern_beyond_the_regex_size_limit_is_rejected(Boundary::OversizedPattern)]
 fn wildcard_catalog_boundaries(#[case] boundary: Boundary) {
     match boundary {
         Boundary::Routes {
@@ -274,15 +271,17 @@ fn wildcard_catalog_boundaries(#[case] boundary: Boundary) {
             assert_eq!(routed.first().unwrap().model_id, None);
             assert_eq!(routed.first().unwrap().model, "azure/gpt-4");
         }
-        Boundary::RejectedCompile => {
-            let invalid = "(".to_owned();
-            let source = Regex::new(&invalid).unwrap_err();
-            let error = PatternCatalogError::Compile {
-                pattern: "open(".to_owned(),
-                source,
-            };
-            assert!(error.to_string().contains("\"open(\""));
-            assert!(Error::source(&error).is_some());
+        Boundary::OversizedPattern => {
+            // the compiler emits one NFA state per literal byte, so a mebibyte of literal text is past the 10 MiB default
+            let oversized = "a".repeat(1 << 20);
+            let mut catalog = PatternCatalog::default();
+            let error = catalog
+                .add_pattern(&oversized, candidate("overflow", "azure/*"))
+                .unwrap_err();
+            let PatternCatalogError::Compile { pattern, source } = error;
+            assert_eq!(pattern, oversized);
+            assert!(source.to_string().contains("size limit"), "{source}");
+            assert!(catalog.route(&oversized, None).is_none());
         }
     }
 }
