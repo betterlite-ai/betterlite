@@ -1,0 +1,25 @@
+kind: helper
+name: openai-moderation-categories
+call:
+  b3731:
+    apply:
+      settings: {api_key: test-key}
+      inputs: {texts: [two results]}
+      request_data: {model: gpt-4o}
+      answer:
+        status: 200
+        headers: {}
+        body:
+          id: modr-3
+          model: omni-moderation-latest
+          results:
+            - flagged: false
+              categories: {violence: false, hate: false}
+              category_scores: {violence: 0.1, hate: 0.2}
+              category_applied_input_types: {violence: [text], hate: [text]}
+            - flagged: true
+              categories: {sexual: true, hate: true, violence: false}
+              category_scores: {sexual: 0.9, hate: 0.8, violence: 0.1}
+              category_applied_input_types: {sexual: [text], hate: [text], violence: [text]}
+env: {}
+compare: {ignore: []}

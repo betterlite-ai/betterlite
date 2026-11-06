@@ -1,0 +1,15 @@
+kind: helper
+name: bedrock-converse-content-json-mode-filter-seed
+call:
+  bedrock_converse_content:
+    json_mode_filter:
+      json_mode: true
+      message: {content: "prefix:"}
+      tools:
+        - {id: null, type: function, function: {name: real, arguments: "{}"}, index: 0}
+        - id: call-2
+          type: function
+          function: {name: json_tool_call, arguments: '{"properties": {"a": 1}}'}
+          index: 1
+env: {}
+compare: {ignore: []}

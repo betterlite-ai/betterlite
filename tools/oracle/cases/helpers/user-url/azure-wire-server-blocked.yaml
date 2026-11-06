@@ -1,0 +1,11 @@
+kind: helper
+name: user-url-azure-wire-server-blocked
+call:
+  b5082:
+    call: validate_url
+    url: "http://168.63.129.16/machine?comp=goalstate"
+    user_url_allowed_hosts: []
+    ssl_verify: true
+env: {}
+compare:
+  ignore: []

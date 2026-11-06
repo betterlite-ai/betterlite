@@ -1,0 +1,20 @@
+kind: sdk_http
+name: sdk-http-chat-authentication-error
+env: {}
+call:
+  openai_chat:
+    model: gpt-4o-mini
+    messages: [{role: user, content: hello}]
+    api_key: sk-test
+    timeout_seconds: 10
+upstream:
+  - status: 401
+    headers: {content-type: application/json}
+    body:
+      error: {type: invalid_api_key, message: bad key, param: null, code: invalid_api_key}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: [authorization, content-type]
+  ignore:
+    - {pointer: /failure/message, why: LiteLLM prefixes the provider name and betterlite writes its own text}

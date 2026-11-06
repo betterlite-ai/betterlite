@@ -1,0 +1,22 @@
+kind: helper
+name: pre-call-detector-server-batch
+call:
+  b3737:
+    pre_call:
+      settings:
+        auth_token: test-token
+        detector_id: jailbreak-detector
+        optional_params: {detector_params: {threshold: 3}}
+      data:
+        messages:
+          - {role: user, content: first message}
+          - role: assistant
+            content:
+              - {type: text, text: second message}
+              - {type: image_url, image_url: {url: "https://example.test/pixel.png"}}
+      answer:
+        status: 200
+        headers: {}
+        body: [[], []]
+env: {}
+compare: {ignore: []}

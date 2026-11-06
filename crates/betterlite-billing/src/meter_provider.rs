@@ -6,7 +6,7 @@ use betterlite_config::sections::billing_metrics::Metering;
 use betterlite_http::otlp_client::{OtlpClient, OtlpClientError, tls};
 use opentelemetry::KeyValue;
 use opentelemetry_otlp::{
-    ExporterBuildError, MetricExporter, WithExportConfig as _, WithHttpConfig as _,
+    ExporterBuildError, MetricExporter, Protocol, WithExportConfig as _, WithHttpConfig as _,
 };
 use opentelemetry_sdk::Resource;
 use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
@@ -73,6 +73,8 @@ pub fn build_mtls_meter_provider(
         .map_err(|source| ExporterError::Client { source })?;
     let exporter = MetricExporter::builder()
         .with_http()
+        // the default follows workspace-unified features, and http-json would win it
+        .with_protocol(Protocol::HttpBinary)
         .with_endpoint(metering.endpoint.clone())
         .with_http_client(client)
         .build()

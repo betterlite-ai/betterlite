@@ -1,0 +1,4 @@
+data: {"status": "completed", "last_message": {"content": [{"text": "split across chunks"}]}}
+data: {"status": "completed", "last_message": {"content": [{"text": "second"}]}}
+data: not json at all
+data: [DONE]

@@ -1,0 +1,5 @@
+kind: helper
+name: openai-assistants-seed-create-assistant
+call: {openai_assistants: {create_assistant: {options: {api_key: sk-seed, api_base: 'https://example.test/v1'}, data: {model: gpt-4o, tools: [{type: code_interpreter}]}}}}
+env: {}
+compare: {ignore: []}
