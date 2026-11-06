@@ -1,14 +1,54 @@
 kind: probe
 name: single-candidate
-clock:
-  unix_millis: 1700000000123
-  monotonic_millis: 42000
-samples:
-  - 0
-operation:
-  single_candidate:
-    deployments:
-      - id: only-deployment
-        weight: 3
-        rpm: 0
-        tpm: 0
+probes:
+  - clock:
+      unix_millis: 1700000000123
+      monotonic_millis: 42000
+    samples:
+      - 0
+    operation:
+      single_candidate:
+        deployments:
+          - id: zero-weight
+          - id: weighted
+            weight: 3
+  - clock:
+      unix_millis: 1700000000123
+      monotonic_millis: 42000
+    samples:
+      - 0
+    operation:
+      single_candidate:
+        deployments:
+          - id: zero-rpm
+          - id: rpm
+            rpm: 3
+  - clock:
+      unix_millis: 1700000000123
+      monotonic_millis: 42000
+    samples:
+      - 0
+    operation:
+      single_candidate:
+        deployments:
+          - id: zero-tpm
+          - id: tpm
+            tpm: 3
+  - clock:
+      unix_millis: 1700000000123
+      monotonic_millis: 42000
+    samples:
+      - 0
+    operation:
+      single_candidate:
+        deployments:
+          - id: only
+  - clock:
+      unix_millis: 1700000000123
+      monotonic_millis: 42000
+    samples: []
+    operation:
+      single_candidate:
+        deployments:
+          - id: weighted
+            weight: 3

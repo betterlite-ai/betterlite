@@ -41,13 +41,24 @@ fn selected(id: &str) -> Reply {
 #[case::weight(3, 0, 0)]
 #[case::rpm(0, 3, 0)]
 #[case::tpm(0, 0, 3)]
-#[case::uniform_fallback(0, 0, 0)]
-fn one_candidate_is_selected_through_every_metric(
+fn a_zero_deployment_never_wins_over_the_metric(
     #[case] weight: u32,
     #[case] rpm: u32,
     #[case] tpm: u32,
 ) {
-    let request = request(vec![deployment("only", weight, rpm, tpm)], vec![0]);
+    let request = request(
+        vec![
+            deployment("zero", 0, 0, 0),
+            deployment("only", weight, rpm, tpm),
+        ],
+        vec![0],
+    );
+    assert_eq!(execute(&request), selected("only"));
+}
+
+#[test]
+fn one_candidate_is_selected_through_the_uniform_fallback() {
+    let request = request(vec![deployment("only", 0, 0, 0)], vec![0]);
     assert_eq!(execute(&request), selected("only"));
 }
 
@@ -79,25 +90,31 @@ fn the_sample_at_the_draw_limit_is_accepted() {
 }
 
 #[test]
-fn an_operation_without_samples_reports_that_it_needs_one() {
+fn a_heavy_weight_candidate_answers_with_the_deployment_for_a_large_sample() {
+    let request = request(vec![deployment("only", 1000, 0, 0)], vec![1_u64 << 52_u32]);
+    assert_eq!(execute(&request), selected("only"));
+}
+
+#[test]
+fn a_weighted_candidate_without_samples_answers_samples_exhausted() {
     let request = request(vec![deployment("only", 3, 0, 0)], Vec::new());
-    assert!(matches!(
+    assert_eq!(
         execute(&request),
         Reply::Error {
             kind: ProbeFailure::SamplesExhausted,
-            ..
+            message: "the request has no sample left for this draw".to_owned(),
         }
-    ));
+    );
 }
 
 #[test]
 fn an_empty_deployment_list_is_an_invalid_request() {
     let request = request(Vec::new(), vec![0]);
-    assert!(matches!(
+    assert_eq!(
         execute(&request),
         Reply::Error {
             kind: ProbeFailure::InvalidRequest,
-            ..
+            message: "there are no deployments to choose from".to_owned(),
         }
-    ));
+    );
 }

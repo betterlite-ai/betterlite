@@ -24,11 +24,17 @@ pub(crate) const PROBE_BINARY: &str = "betterlite-router-probe";
 pub(crate) struct ProbeCase {
     kind: String,
     name: String,
+    probes: Vec<ProbeStep>,
+    #[serde(default)]
+    compare: ProbeCompare,
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ProbeStep {
     clock: ProbeClock,
     samples: Vec<Sample>,
     operation: ProbeOperation,
-    #[serde(default)]
-    compare: ProbeCompare,
 }
 
 #[derive(Debug, Clone, Default, Deserialize)]
@@ -47,6 +53,9 @@ pub(crate) fn validate_probe_case(path: &Path, case: &ProbeCase) -> Result<(), O
     }
     if case.name.is_empty() {
         return Err(invalid("name cannot be empty"));
+    }
+    if case.probes.is_empty() {
+        return Err(invalid("probes cannot be empty"));
     }
     validate_ignores(path, &case.compare.ignore)
 }
@@ -88,10 +97,24 @@ async fn run_case(
     commands: &Commands,
     case: &ProbeCase,
 ) -> Result<bool, OracleError> {
+    let mut different = false;
+    for (index, step) in case.probes.iter().enumerate() {
+        different |= run_step(options, commands, case, index, step).await?;
+    }
+    Ok(different)
+}
+
+async fn run_step(
+    options: &Options,
+    commands: &Commands,
+    case: &ProbeCase,
+    index: usize,
+    step: &ProbeStep,
+) -> Result<bool, OracleError> {
     let request = Request {
-        clock: case.clock,
-        samples: case.samples.clone(),
-        operation: case.operation.clone(),
+        clock: step.clock,
+        samples: step.samples.clone(),
+        operation: step.operation.clone(),
     };
     let bytes = serde_json::to_vec(&request).map_err(OracleError::Json)?;
     let (first, second) = if options.self_check {
@@ -107,13 +130,14 @@ async fn run_case(
     };
     match compare_replies(&first, &second, &case.compare.ignore)? {
         None => {
-            writeln!(io::stdout().lock(), "PASS {}", case.name).map_err(OracleError::Output)?;
+            writeln!(io::stdout().lock(), "PASS {}[{index}]", case.name)
+                .map_err(OracleError::Output)?;
             Ok(false)
         }
         Some(difference) => {
             writeln!(
                 io::stderr().lock(),
-                "FAIL {}: {}",
+                "FAIL {}[{index}]: {}",
                 case.name,
                 difference.pointer
             )
