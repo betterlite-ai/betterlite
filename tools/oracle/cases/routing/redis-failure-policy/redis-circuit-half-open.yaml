@@ -1,0 +1,67 @@
+kind: probe
+name: redis-circuit-half-open
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      redis_failure_policy:
+        settings:
+          enabled: true
+          failure_threshold: 1
+          recovery_timeout_seconds: 30
+          timeout_min_duration_millis: 5000
+          timeout_log_interval_millis: 1000
+        steps:
+          - {kind: admit, now_millis: 0, operation: get_cache}
+          - {kind: failure, now_millis: 0, outer: connection}
+          - {kind: admit, now_millis: 1000, operation: get_cache}
+          - {kind: admit, now_millis: 30000, operation: get_cache}
+          - {kind: admit, now_millis: 30001, operation: get_cache}
+          - {kind: admit, now_millis: 30002, operation: get_cache}
+          - {kind: finish, admission: 4}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      redis_failure_policy:
+        settings:
+          enabled: true
+          failure_threshold: 1
+          recovery_timeout_seconds: 30
+          timeout_min_duration_millis: 5000
+          timeout_log_interval_millis: 1000
+        steps:
+          - {kind: failure, now_millis: 0, outer: connection}
+          - {kind: admit, now_millis: 30001, operation: get_cache}
+          - {kind: failure, now_millis: 30001, outer: timeout}
+          - {kind: admit, now_millis: 60001, operation: get_cache}
+          - {kind: admit, now_millis: 60002, operation: get_cache}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      redis_failure_policy:
+        settings:
+          enabled: true
+          failure_threshold: 1
+          recovery_timeout_seconds: 30
+          timeout_min_duration_millis: 5000
+          timeout_log_interval_millis: 1000
+        steps:
+          - {kind: admit, now_millis: 0, operation: get_cache}
+          - {kind: failure, now_millis: 1, outer: connection}
+          - {kind: finish, admission: 0}
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      redis_failure_policy:
+        settings:
+          enabled: false
+          failure_threshold: 1
+          recovery_timeout_seconds: 30
+          timeout_min_duration_millis: 5000
+          timeout_log_interval_millis: 1000
+        steps:
+          - {kind: failure, now_millis: 0, outer: connection}
+          - {kind: admit, now_millis: 1, operation: get_cache}
+          - {kind: finish, admission: 1}
+compare:
+  ignore: []
