@@ -3,8 +3,8 @@
 use axum::http::StatusCode;
 
 use super::async_pre_call_hook;
-use crate::ibm_detector_client::message::detector_server_message;
-use crate::ibm_detector_client::wire::Detection;
+use crate::ibm_detector_client::message::{detector_server_message, orchestrator_message};
+use crate::ibm_detector_client::wire::{Detection, OrchestratorResponse};
 use crate::ibm_hooks::config::EventHook;
 use crate::ibm_hooks::error::IbmHookError;
 use crate::ibm_hooks::test_support::{
@@ -73,6 +73,75 @@ async fn pre_call_calls_the_orchestrator_once_per_text() {
     assert_eq!(first.content, "first");
     assert_eq!(second.content, "second");
     captured.try_recv().unwrap_err();
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn pre_call_orchestrator_raises_the_violation_message_when_blocking() {
+    let response = r#"{"detections":[{"detection_type":"jailbreak","score":0.9,"text":"bad"}]}"#;
+    let (base, mut captured, mut server) =
+        capturing_server(ORCHESTRATOR_PATH, StatusCode::OK, response, 4).await;
+    let guardrail = guardrail(
+        config(
+            Mode::Orchestrator,
+            &format!("{base}{ORCHESTRATOR_PATH}"),
+            true,
+        ),
+        None,
+    );
+    let mut prompt = data(
+        r#"{"messages":[{"role":"user","content":"first"},{"role":"user","content":"second"}]}"#,
+    );
+
+    let error = async_pre_call_hook(&guardrail, &mut prompt)
+        .await
+        .expect_err("violation");
+    let IbmHookError::Violation { message } = error else {
+        panic!("expected a violation");
+    };
+    let parsed: OrchestratorResponse = serde_json::from_str(response).expect("detections");
+    assert_eq!(
+        message,
+        orchestrator_message(&guardrail.client.config, &parsed.detections)
+    );
+    let first: OrchestratorBody =
+        serde_json::from_str(&captured.try_recv().expect("first request")).expect("body");
+    assert_eq!(first.content, "first");
+    captured.try_recv().unwrap_err();
+    assert!(prompt.metadata.is_none());
+    server.shutdown().await;
+}
+
+#[tokio::test]
+async fn pre_call_orchestrator_records_the_guardrail_when_blocking_is_disabled() {
+    let response = r#"{"detections":[{"detection_type":"jailbreak","score":0.9,"text":"bad"}]}"#;
+    let (base, mut captured, mut server) =
+        capturing_server(ORCHESTRATOR_PATH, StatusCode::OK, response, 4).await;
+    let guardrail = guardrail(
+        config(
+            Mode::Orchestrator,
+            &format!("{base}{ORCHESTRATOR_PATH}"),
+            false,
+        ),
+        None,
+    );
+    let mut prompt = data(
+        r#"{"messages":[{"role":"user","content":"first"},{"role":"user","content":"second"}]}"#,
+    );
+
+    async_pre_call_hook(&guardrail, &mut prompt)
+        .await
+        .expect("hook");
+
+    let first: OrchestratorBody =
+        serde_json::from_str(&captured.try_recv().expect("first request")).expect("body");
+    let second: OrchestratorBody =
+        serde_json::from_str(&captured.try_recv().expect("second request")).expect("body");
+    assert_eq!(first.content, "first");
+    assert_eq!(second.content, "second");
+    captured.try_recv().unwrap_err();
+    let metadata = prompt.metadata.expect("metadata");
+    assert_eq!(metadata.applied_guardrails, Some(vec!["ibm".to_owned()]));
     server.shutdown().await;
 }
 
