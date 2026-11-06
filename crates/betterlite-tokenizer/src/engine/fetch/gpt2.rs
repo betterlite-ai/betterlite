@@ -83,24 +83,20 @@ fn bpe_lines(tokens: &[(Vec<u8>, u32)]) -> Vec<u8> {
     }
     output
 }
+const PRINTABLE: fn(u8) -> bool =
+    |byte: u8| byte.is_ascii_graphic() || ((0xA1..=0xFF).contains(&byte) && byte != 0xAD);
 fn rank_order() -> Vec<u8> {
-    let printable =
-        |byte: u8| byte.is_ascii_graphic() || ((0xA1..=0xFF).contains(&byte) && byte != 0xAD);
-    let mut ordered: Vec<u8> = (0_u8..=255).filter(|byte| printable(*byte)).collect();
-    ordered.extend((0_u8..=255).filter(|byte| !printable(*byte)));
+    let mut ordered: Vec<u8> = (0_u8..=255).filter(|byte| PRINTABLE(*byte)).collect();
+    ordered.extend((0_u8..=255).filter(|byte| !PRINTABLE(*byte)));
     ordered
 }
 fn byte_map() -> Result<BTreeMap<char, u8>, Gpt2Error> {
-    let ordered = rank_order();
     let mut mapping = BTreeMap::new();
-    for byte in &ordered {
-        mapping.insert(char::from(*byte), *byte);
+    for byte in (0_u8..=255).filter(|byte| PRINTABLE(*byte)) {
+        mapping.insert(char::from(byte), byte);
     }
     let mut extra = 0_u32;
-    for byte in 0_u8..=255 {
-        if ordered.contains(&byte) {
-            continue;
-        }
+    for byte in (0_u8..=255).filter(|byte| !PRINTABLE(*byte)) {
         let codepoint = 256_u32.checked_add(extra).ok_or(Gpt2Error::BadCodepoint)?;
         mapping.insert(
             char::from_u32(codepoint).ok_or(Gpt2Error::BadCodepoint)?,
