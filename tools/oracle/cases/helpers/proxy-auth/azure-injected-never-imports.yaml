@@ -1,0 +1,11 @@
+kind: helper
+name: proxy-auth-azure-injected-never-imports
+call:
+  proxy_auth:
+    operation: azure
+    params:
+      installed: false
+      injected: true
+      scopes: ['api://one/.default']
+env: {}
+compare: {ignore: []}

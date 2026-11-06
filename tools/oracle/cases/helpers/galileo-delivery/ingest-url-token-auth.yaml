@@ -1,0 +1,5 @@
+kind: helper
+name: galileo-delivery-ingest-url-token-auth
+call: {"b3964": {"environment": {"GALILEO_USERNAME": "user", "GALILEO_PASSWORD": "pass", "GALILEO_PROJECT_ID": "project-1", "GALILEO_BASE_URL": "https://galileo.example/"}, "replies": [], "actions": [{"do": "push", "label": "a"}, {"do": "ingest_url"}]}}
+env: {}
+compare: {ignore: []}
