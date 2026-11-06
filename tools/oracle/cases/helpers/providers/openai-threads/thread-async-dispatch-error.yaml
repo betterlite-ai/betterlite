@@ -1,0 +1,5 @@
+kind: helper
+name: openai-threads-thread-async-dispatch-error
+call: {openai_threads: {dispatch: {options: {api_key: sk-test, api_base: 'https://example.test/v1'}, acreate_thread: true, aget_thread: true, a_add_message: true, aget_messages: true, reply: {status: 404, body: '{"error":{"message":"No thread found with id thread_1.","type":"invalid_request_error","param":null,"code":null}}'}}}}
+env: {}
+compare: {ignore: []}

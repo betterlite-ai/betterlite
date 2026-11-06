@@ -15,6 +15,7 @@ betterlite-models = { path = "../betterlite-models" }
 betterlite-rate-limit = { path = "../betterlite-rate-limit" }
 betterlite-secret-managers = { path = "../betterlite-secret-managers" }
 betterlite-secrets = { path = "../betterlite-secrets" }
+chrono.workspace = true
 fancy-regex = "0.19.2"
 indexmap = { version = "2.14.2", features = ["serde"] }
 netrc-rs = "0.1.2"
@@ -36,6 +37,7 @@ url = "2.5.8"
 
 [dev-dependencies]
 betterlite-auth = { path = "../betterlite-auth" }
+betterlite-db = { path = "../betterlite-db" }
 insta = { version = "1.49.0", default-features = false, features = ["yaml"] }
 rstest = "=0.27.0"
 tempfile = "3.27.0"
