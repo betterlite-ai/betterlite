@@ -26,6 +26,8 @@ pub struct Payload {
     pub minute: MinuteSamples,
     pub allowed_fails_before: u64,
     #[serde(default)]
+    pub local_fails: Option<u64>,
+    #[serde(default)]
     pub time_to_cooldown: Option<Seconds>,
 }
 
@@ -72,6 +74,7 @@ pub(crate) fn run(
         failure: &payload.failure,
         minute: payload.minute,
         allowed_fails_before: payload.allowed_fails_before,
+        local_fails: payload.local_fails,
         time_to_cooldown: payload.time_to_cooldown,
     };
     Ok(ProbeOutput::CooldownDecisions(decide(&request)))

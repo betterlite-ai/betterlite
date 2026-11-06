@@ -170,6 +170,7 @@ class FailureInput(Strict):
     status: int | str
     advisor_orchestration: bool
     background_response_cost_poll: bool
+    wrapped_exception: FailureClassName | None = None
     caller_timeout: CallerTimeout | None = None
 
 
@@ -191,9 +192,10 @@ class Output(Strict):
 
 @final
 class ProbeCache(DualCache):
-    def __init__(self, prior_fails: int) -> None:
+    def __init__(self, prior_fails: int, local_fails: int | None) -> None:
         super().__init__()
         self.prior_fails = prior_fails
+        self.local_fails = local_fails
         self.counter_key: str | None = None
         self.counter_ttl = 0.0
         self.counter_fails = 0
@@ -211,6 +213,10 @@ class ProbeCache(DualCache):
         self.counter_key = key
         ttl = kwargs.get("ttl")
         self.counter_ttl = float(ttl) if isinstance(ttl, (int, float)) else 0.0
+        if self.local_fails is not None:
+            self.counter_fails = self.local_fails
+            _ = super().increment_cache(key=key, value=self.local_fails, local_only=False, **kwargs)  # pyright: ignore[reportUnknownMemberType]
+            raise RuntimeError("the shared fail counter is unavailable")
         self.counter_fails = self.prior_fails + value
         return self.counter_fails
 
@@ -220,10 +226,21 @@ class ProbeCache(DualCache):
         return Counter(key=self.counter_key, ttl_seconds=self.counter_ttl, fails=self.counter_fails)
 
 
-def build_exception(name: FailureClassName) -> Exception:
-    factory = _FACTORIES.get(name)
+def build_exception(failure: FailureInput) -> Exception:
+    if failure.wrapped_exception == "api_connection":
+        return MidStreamFallbackError(
+            message=_MESSAGE,
+            model=_MODEL,
+            llm_provider=_PROVIDER,
+            original_exception=APIConnectionError(
+                message=_MESSAGE,
+                llm_provider=_PROVIDER,
+                model=_MODEL,
+            ),
+        )
+    factory = _FACTORIES.get(failure.class_name)
     if factory is None:
-        raise ProbeError("invalid_request", f"the probe cannot build a {name} exception")
+        raise ProbeError("invalid_request", f"the probe cannot build a {failure.class_name} exception")
     return factory()
 
 
@@ -262,16 +279,17 @@ class CooldownDecisions(Operation):
     failure: FailureInput
     minute: MinuteInput
     allowed_fails_before: int
+    local_fails: int | None = None
     time_to_cooldown: float | None = None
 
     @override
     def run(self) -> Output:
-        exception = build_exception(self.failure.class_name)
+        exception = build_exception(self.failure)
         if self.failure.advisor_orchestration:
             mark_advisor_orchestration_failure(exception)
         deployment = self.deployment
         router = self.build_router(deployment)
-        cache = ProbeCache(self.allowed_fails_before)
+        cache = ProbeCache(self.allowed_fails_before, self.local_fails)
         router.cache = cache
         if deployment is not None:
             self.seed_minute(router, deployment.id)
