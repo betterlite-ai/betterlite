@@ -122,6 +122,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "openai_fine_tuning"
+path = "fuzz_targets/openai_fine_tuning.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "xai_models"
 path = "fuzz_targets/xai_models.rs"
 test = false

@@ -1,0 +1,5 @@
+kind: helper
+name: openai-fine-tuning-create-method-hyperparameters
+call: {"openai_fine_tuning": {"steps": [{"action": "create", "client": "sync", "reply": {"status": 200, "body": {"id": "ft_1", "created_at": 1, "error": null, "fine_tuned_model": null, "finished_at": null, "estimated_finish": null, "integrations": null, "metadata": null, "hyperparameters": {"n_epochs": 3, "extra_hp": "x"}, "method": {"type": "supervised", "supervised": {"hyperparameters": {"n_epochs": 2}}}, "model": "gpt-4o-mini", "object": "fine_tuning.job", "organization_id": "org", "result_files": [], "seed": 5, "status": "queued", "trained_tokens": null, "training_file": "file_a", "validation_file": null, "extra_top": {"a": 1}}}, "data": {"model": "gpt-4o-mini", "training_file": "file_a", "suffix": null, "extra_body": {"trainingType": 1}, "method": {"type": "supervised", "supervised": {"hyperparameters": {"n_epochs": 2}}}}}]}}
+env: {}
+compare: {ignore: []}
