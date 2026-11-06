@@ -556,9 +556,12 @@ async fn apply_guardrail_blocks_with_400_and_logs_an_intervention() {
 }
 
 #[rstest]
-#[case::forbidden(StatusCode::FORBIDDEN, GuardrailStatus::GuardrailIntervened)]
-#[case::unprocessable(StatusCode::UNPROCESSABLE_ENTITY, GuardrailStatus::GuardrailIntervened)]
-#[case::bad_request(StatusCode::BAD_REQUEST, GuardrailStatus::GuardrailIntervened)]
+#[case::forbidden(StatusCode::FORBIDDEN, GuardrailStatus::GuardrailFailedToRespond)]
+#[case::unprocessable(
+    StatusCode::UNPROCESSABLE_ENTITY,
+    GuardrailStatus::GuardrailFailedToRespond
+)]
+#[case::bad_request(StatusCode::BAD_REQUEST, GuardrailStatus::GuardrailFailedToRespond)]
 #[case::unauthorized(StatusCode::UNAUTHORIZED, GuardrailStatus::GuardrailFailedToRespond)]
 #[case::server_error(
     StatusCode::INTERNAL_SERVER_ERROR,

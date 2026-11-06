@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
-use reqwest::StatusCode;
 use serde::{Deserialize, Serialize};
 
 use super::error::ModerationError;
@@ -59,13 +58,6 @@ pub struct RequestMetadata {
     pub rest: BTreeMap<String, GuardrailValue>,
 }
 
-// LiteLLM treats 400, 403 and 422 as deliberate blocks and every other failure as no answer.
-const INTERVENTION_STATUSES: [StatusCode; 3] = [
-    StatusCode::BAD_REQUEST,
-    StatusCode::FORBIDDEN,
-    StatusCode::UNPROCESSABLE_ENTITY,
-];
-
 #[must_use]
 pub fn build_tracing_detail(guardrail_response: &GuardrailResponse) -> Option<TracingDetail> {
     let GuardrailResponse::Moderation(moderation_response) = guardrail_response else {
@@ -92,7 +84,8 @@ pub fn process_outcome(
 ) {
     let (fallback, guardrail_status) = match outcome {
         Ok(()) => (ALLOW.to_owned(), GuardrailStatus::Success),
-        Err(error) if INTERVENTION_STATUSES.contains(&error.status_code()) => {
+        // LiteLLM masks upstream 4xx answers before its own check, so only a flagged result is an intervention.
+        Err(error @ ModerationError::Flagged { .. }) => {
             (error.to_string(), GuardrailStatus::GuardrailIntervened)
         }
         Err(error) => (error.to_string(), GuardrailStatus::GuardrailFailedToRespond),

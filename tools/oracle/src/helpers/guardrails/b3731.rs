@@ -14,7 +14,7 @@ use serde_json::{Value, json};
 use crate::case::UpstreamAnswer;
 use crate::helpers::{HelperError, HelperResult};
 use crate::mock::{MockProvider, ProviderRequest};
-use crate::routing_mock_scripts::{MockScript, redact};
+use crate::routing_mock_scripts::{MockScript, ProviderCall, redact};
 
 pub(crate) struct Op;
 
@@ -93,17 +93,6 @@ impl crate::helpers::Helper for Op {
     }
 }
 
-fn failure(class: &str, message: String) -> Box<HelperError> {
-    Box::new(HelperError {
-        class: class.to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    })
-}
-
 fn build(
     settings: &Settings,
     environment: &BTreeMap<String, String>,
@@ -122,11 +111,28 @@ fn build(
         api_key: global_keys.api_key.clone().map(SecretString::from),
         openai_key: global_keys.openai_key.clone().map(SecretString::from),
     };
-    let client = reqwest::Client::builder()
-        .build()
-        .map_err(|error| failure("OSError", error.to_string()))?;
-    OpenAiModerationGuardrail::new(params, keys, environment, client, || Duration::ZERO)
-        .map_err(|error| failure("ValueError", error.to_string()))
+    let client = reqwest::Client::builder().build().map_err(|error| {
+        Box::new(HelperError {
+            class: "OSError".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: error.to_string(),
+        })
+    })?;
+    OpenAiModerationGuardrail::new(params, keys, environment, client, || Duration::ZERO).map_err(
+        |error| {
+            Box::new(HelperError {
+                class: "ValueError".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
+        },
+    )
 }
 
 fn start_mock(
@@ -138,28 +144,59 @@ fn start_mock(
             MockScript::try_from(std::slice::from_ref(reply)).and_then(MockProvider::start)
         })
         .transpose()
-        .map_err(|error| failure("MockError", error.to_string()))?;
+        .map_err(|error| {
+            Box::new(HelperError {
+                class: "MockError".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
+        })?;
     let base = match &mock {
         Some(provider) => provider.base_url.clone(),
         None => format!(
             "http://{}",
-            silent
-                .local_addr()
-                .map_err(|error| failure("OSError", error.to_string()))?
+            silent.local_addr().map_err(|error| {
+                Box::new(HelperError {
+                    class: "OSError".to_owned(),
+                    status: None,
+                    error_type: None,
+                    param: None,
+                    code: None,
+                    message: error.to_string(),
+                })
+            })?
         ),
     };
     Ok((mock, base))
 }
 
+// with no answer the listener stays bound and silent until the call ends, so the request is never refused
+fn bind_silent_listener() -> Result<(TcpListener, tokio::runtime::Runtime), Box<HelperError>> {
+    TcpListener::bind(("127.0.0.1", 0))
+        .and_then(|listener| {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()?;
+            Ok((listener, runtime))
+        })
+        .map_err(|error| {
+            Box::new(HelperError {
+                class: "OSError".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
+        })
+}
+
 fn apply_guardrail(apply: &Apply) -> HelperResult {
-    let io = |error: std::io::Error| failure("OSError", error.to_string());
-    // with no answer this stays bound and silent until the call ends, so the request is never refused
-    let silent = TcpListener::bind(("127.0.0.1", 0)).map_err(io)?;
+    let (silent, runtime) = bind_silent_listener()?;
     let (mock, base) = start_mock(apply.answer.as_ref(), &silent)?;
-    let runtime = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .map_err(io)?;
     let mut moderation = build(&apply.settings, &apply.environment, &apply.global_keys)?;
     moderation.api_base = base;
     let mut request_data = apply.request_data.clone();
@@ -169,25 +206,48 @@ fn apply_guardrail(apply: &Apply) -> HelperResult {
     let calls = mock
         .map(MockProvider::finish)
         .transpose()
-        .map_err(|error| failure("MockError", error.to_string()))?;
+        .map_err(|error| {
+            Box::new(HelperError {
+                class: "MockError".to_owned(),
+                status: None,
+                error_type: None,
+                param: None,
+                code: None,
+                message: error.to_string(),
+            })
+        })?;
+    Ok(summarize(
+        &apply.inputs,
+        &moderation,
+        &outcome,
+        &request_data,
+        calls.unwrap_or_default(),
+    ))
+}
+
+fn summarize(
+    inputs: &Inputs,
+    moderation: &OpenAiModerationGuardrail,
+    outcome: &Result<Inputs, ModerationError>,
+    request_data: &RequestData,
+    calls: Vec<ProviderCall>,
+) -> Value {
     let sent = calls
-        .unwrap_or_default()
         .into_iter()
         .next()
-        .map(|call| sent_request(&call.request, &moderation));
-    let records: Vec<Value> = request_data
-        .metadata
-        .guardrail_records
-        .iter()
-        .map(record_summary)
-        .collect();
-    Ok(json!({
+        .map(|call| sent_request(&call.request, moderation));
+    json!({
         "request": sent,
-        "inputs_unchanged": outcome.as_ref().ok() == Some(&apply.inputs),
+        "inputs_unchanged": outcome.as_ref().ok() == Some(inputs),
         "error": outcome.as_ref().err().map(error_summary),
         "stash_left": request_data.metadata.openai_moderation_response.is_some(),
-        "records": records,
-    }))
+        "records": request_data
+            .metadata
+            .guardrail_records
+            .iter()
+            .map(record_summary)
+            .collect::<Vec<_>>(),
+    })
 }
 
 fn sent_request(request: &ProviderRequest, moderation: &OpenAiModerationGuardrail) -> Value {
