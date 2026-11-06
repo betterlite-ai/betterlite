@@ -1,0 +1,11 @@
+# promptlayer api key read by PromptLayerLogger from the environment
+kind: helper
+name: promptlayer-initialization
+call:
+  b3961:
+    function: promptlayer_init
+    scenarios:
+      - environment: {PROMPTLAYER_API_KEY: pl-key}
+      - environment: {}
+env: {}
+compare: {ignore: []}

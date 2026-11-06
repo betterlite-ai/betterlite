@@ -1,0 +1,12 @@
+# athina api key, base url and additional metadata keys from the environment
+kind: helper
+name: athina-initialization
+call:
+  b3961:
+    function: athina_init
+    scenarios:
+      - environment: {ATHINA_API_KEY: athina-key-1}
+      - environment: {ATHINA_API_KEY: athina-key-2, ATHINA_BASE_URL: "https://athina.example.com"}
+      - environment: {}
+env: {}
+compare: {ignore: []}
