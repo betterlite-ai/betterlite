@@ -4,9 +4,13 @@ use std::path::{Path, PathBuf};
 use std::str::from_utf8;
 use std::time::Duration;
 
+use rand::TryRng as _;
+use rstest::rstest;
+
 use crate::OracleError;
 use crate::process::sync_litellm;
-use crate::router_probes::{ProbeOperation, Reply, Request, UnbuiltInput, execute};
+use crate::router_probes::random::InjectedRandom;
+use crate::router_probes::{ProbeOperation, Reply, Request, Sample, UnbuiltInput, execute};
 use crate::routing_component_oracle::python_command;
 use crate::routing_probe_ipc::child::{ProbeCommand, run_bounded};
 use crate::routing_probe_ipc::{
@@ -65,12 +69,31 @@ fn a_reply_with_an_undeclared_failure_kind_is_malformed() {
     ));
 }
 
+#[rstest]
+#[case::smallest(0, 0)]
+#[case::half(1_u64 << 52_u32, 1_u32 << 31_u32)]
+#[case::largest((1_u64 << 53_u32) - 1, u32::MAX)]
+fn a_u32_draw_takes_the_high_bits_of_the_python_draw(#[case] sample: u64, #[case] expected: u32) {
+    let samples = [Sample::try_from(sample).unwrap()];
+    let mut random = InjectedRandom::from(samples.as_slice());
+    assert_eq!(random.try_next_u32().unwrap(), expected);
+    assert!(!random.exhausted);
+}
+
+#[test]
+fn a_u64_draw_scales_the_sample_to_the_full_width() {
+    let samples = [Sample::try_from(1_u64 << 52_u32).unwrap()];
+    let mut random = InjectedRandom::from(samples.as_slice());
+    assert_eq!(random.try_next_u64().unwrap(), 1_u64 << 63_u32);
+    assert!(!random.exhausted);
+}
+
 #[tokio::test]
 async fn a_probe_that_never_answers_is_stopped_at_the_deadline() {
     let deadline = Duration::from_millis(100);
     let command = ProbeCommand {
-        program: PathBuf::from("sh"),
-        args: vec![OsString::from("-c"), OsString::from("sleep 5")],
+        program: PathBuf::from("sleep"),
+        args: vec![OsString::from("5")],
         cwd: env::temp_dir(),
     };
     let error = run_bounded(&command, b"", deadline).await.unwrap_err();

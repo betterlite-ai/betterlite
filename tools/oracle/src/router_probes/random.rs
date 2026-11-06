@@ -5,6 +5,11 @@ use rand::TryRng;
 
 use super::Sample;
 
+// a sample is Python's 53-bit random() draw, so a wider draw scales the same fraction to its width
+const SAMPLE_BITS: u32 = 53;
+const U32_SCALE_DOWN: u32 = SAMPLE_BITS - u32::BITS;
+const U64_SCALE_UP: u32 = u64::BITS - SAMPLE_BITS;
+
 pub struct InjectedRandom<'samples> {
     pub samples: &'samples [Sample],
     pub next: usize,
@@ -38,17 +43,20 @@ impl TryRng for InjectedRandom<'_> {
     type Error = Infallible;
 
     fn try_next_u32(&mut self) -> Result<u32, Self::Error> {
-        let value = self.draw();
-        Ok(u32::try_from(value).unwrap_or_default())
+        let [first, second, third, fourth, ..] = (self.draw() >> U32_SCALE_DOWN).to_le_bytes();
+        Ok(u32::from_le_bytes([first, second, third, fourth]))
     }
 
     fn try_next_u64(&mut self) -> Result<u64, Self::Error> {
-        Ok(self.draw())
+        Ok(self.draw() << U64_SCALE_UP)
     }
 
     fn try_fill_bytes(&mut self, dst: &mut [u8]) -> Result<(), Self::Error> {
         for chunk in dst.chunks_mut(size_of::<u64>()) {
-            for (slot, byte) in chunk.iter_mut().zip(self.draw().to_le_bytes()) {
+            for (slot, byte) in chunk
+                .iter_mut()
+                .zip((self.draw() << U64_SCALE_UP).to_le_bytes())
+            {
                 *slot = byte;
             }
         }
