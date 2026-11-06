@@ -7,7 +7,8 @@ use super::error::CompileError;
 mod checks;
 mod rules;
 
-use rules::{definition_rules, expression_rules, statement_rules};
+use rules::definitions::definition_rules;
+use rules::{expression_rules, statement_rules};
 
 const MAX_DEPTH: usize = 200;
 const BUDGET_GUARD: &str = "_budget_ok_() and (";
