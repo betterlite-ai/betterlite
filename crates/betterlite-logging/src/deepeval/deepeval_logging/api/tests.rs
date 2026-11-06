@@ -101,6 +101,16 @@ async fn send_request_raises_with_the_body_on_a_non_200_status() {
 }
 
 #[tokio::test]
+async fn send_request_rejects_a_201_that_is_not_200() {
+    let api = api([Answer::status(201)]);
+    let Err(ApiError::Status { status, .. }) = api.send_request(HttpMethod::Post, &trace()).await
+    else {
+        panic!("a 201 must not be accepted by the sync send");
+    };
+    assert_eq!(status, 201);
+}
+
+#[tokio::test]
 async fn send_request_reports_a_transport_failure() {
     let api = api([Answer::Fail]);
     assert!(matches!(
@@ -139,11 +149,23 @@ async fn a_send_request_accepts_a_2xx_status_without_rechecking_200() {
 }
 
 #[tokio::test]
-async fn a_send_request_accepts_a_redirect_like_raise_for_status() {
+async fn a_send_request_raises_on_a_redirect() {
     let api = api([Answer::status(302)]);
-    api.a_send_request(HttpMethod::Post, &trace())
-        .await
-        .unwrap();
+    let Err(ApiError::Status { status, .. }) = api.a_send_request(HttpMethod::Post, &trace()).await
+    else {
+        panic!("a 302 must not be accepted");
+    };
+    assert_eq!(status, 302);
+}
+
+#[tokio::test]
+async fn a_send_request_raises_on_a_client_error() {
+    let api = api([Answer::status(401)]);
+    let Err(ApiError::Status { status, .. }) = api.a_send_request(HttpMethod::Post, &trace()).await
+    else {
+        panic!("a 401 must not be accepted");
+    };
+    assert_eq!(status, 401);
 }
 
 #[tokio::test]
