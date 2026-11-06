@@ -1,0 +1,7 @@
+kind: helper
+name: refresh_fallback
+call:
+  xai_oauth_tokens: {"record": {"now": 1000.5, "payload": {"access_token": "new-access", "expires_in": 7200}, "token_endpoint": "https://auth.x.ai/oauth2/token", "fallback": "old-refresh"}}
+env: {}
+compare:
+  ignore: []

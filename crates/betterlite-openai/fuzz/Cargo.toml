@@ -87,6 +87,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "openai_vector_stores"
+path = "fuzz_targets/openai_vector_stores.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "sse_events"
 path = "fuzz_targets/sse_events.rs"
 test = false
@@ -103,6 +110,20 @@ bench = false
 [[bin]]
 name = "responses_event_records"
 path = "fuzz_targets/responses_event_records.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "oauth_reply"
+path = "fuzz_targets/oauth_reply.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "xai_oauth"
+path = "fuzz_targets/xai_oauth.rs"
 test = false
 doc = false
 bench = false

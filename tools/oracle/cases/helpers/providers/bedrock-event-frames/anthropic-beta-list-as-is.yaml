@@ -1,0 +1,5 @@
+kind: helper
+name: anthropic-beta-list-as-is
+call: {"bedrock_event_frames": {"operation": "beta", "params": {"headers": {"anthropic-beta": ["a", " a ", "", "a"]}}}}
+env: {}
+compare: {ignore: []}
