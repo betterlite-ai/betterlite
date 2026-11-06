@@ -5,7 +5,7 @@ use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use rstest::rstest;
 use secrecy::SecretString;
 
-use crate::engine::fetch::TiktokenFetcher;
+use crate::engine::fetch::{RemoteSource, TiktokenFetcher};
 use crate::engine::hub::{HubDownloader, HubError, SystemClock};
 use crate::engine::selection::{CustomTokenizer, SelectionError, Selector, TokenizerType};
 use crate::engine::tests::support::{Reply, Request, Server, client, hub_settings, resolver};
@@ -45,7 +45,11 @@ fn selector(settings: &HubSettings, disable: bool) -> Selector {
         resolver(settings),
         Arc::new(SystemClock),
     ));
-    let fetcher = Arc::new(TiktokenFetcher::new(client(), None));
+    let fetcher = Arc::new(TiktokenFetcher::with_source(
+        client(),
+        None,
+        RemoteSource::default(),
+    ));
     let catalog = Arc::new(ModelCatalog::parse(CATALOG.as_bytes(), UnknownFields::Reject).unwrap());
     Selector::new(fetcher, hub, catalog, disable)
 }

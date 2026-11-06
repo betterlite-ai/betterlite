@@ -95,16 +95,6 @@ pub struct TiktokenFetcher {
 
 impl TiktokenFetcher {
     #[must_use]
-    pub fn new(client: Arc<ProxiedClient>, cache_dir: Option<PathBuf>) -> Self {
-        Self {
-            client,
-            cache_dir,
-            source: RemoteSource::default(),
-            memory: Mutex::new(BTreeMap::new()),
-        }
-    }
-
-    #[must_use]
     pub const fn with_source(
         client: Arc<ProxiedClient>,
         cache_dir: Option<PathBuf>,
