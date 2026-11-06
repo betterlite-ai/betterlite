@@ -29,6 +29,12 @@ fn fixtures() -> (Agents, Task) {
     let mut agents: Agents = read_yaml(&development.join("agents.yaml")).unwrap();
     let task: Task = read_yaml(&development.join("tasks/B000-workspace.yaml")).unwrap();
     agents.roles.worker.keep_rungs_for(&task.id);
+    // these tests walk the four-rung ladder that ran before DeepSeek went in front
+    agents
+        .roles
+        .worker
+        .ladder
+        .retain(|rung| rung.runner != "deepseek-worker");
     (agents, task)
 }
 
