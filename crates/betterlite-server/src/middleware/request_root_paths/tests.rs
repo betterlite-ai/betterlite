@@ -173,6 +173,14 @@ async fn root_path_middleware_matches_whole_segments(
     assert_eq!(observed.original, uri);
 }
 
+#[tokio::test]
+async fn root_path_middleware_does_not_match_a_percent_encoded_prefix() {
+    let app = wrapped("", &["/tenant-a"]);
+    let observed = seen(&app, "/tenant%2Da/models").await;
+    assert_eq!(observed.root, "");
+    assert_eq!(observed.path, "/tenant%2Da/models");
+}
+
 #[rstest]
 #[case::inner_wins("/a/b/models", "/a/b", "/models")]
 #[case::outer_for_other_child("/a/c/models", "/a", "/c/models")]

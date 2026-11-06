@@ -117,7 +117,7 @@ async fn assign_root_path(
     next.run(request).await
 }
 
-// Starlette strips root_path only on a whole-segment boundary and routes an exact match as "/".
+// Starlette strips root_path only on a whole-segment boundary; an exact match routes as "/" here.
 fn strip_root(uri: &Uri, root: &str) -> Result<Uri, RootPathError> {
     let rest = match uri.path().strip_prefix(root) {
         Some(rest) if !root.is_empty() && (rest.is_empty() || rest.starts_with('/')) => rest,
