@@ -353,6 +353,19 @@ fn lifetime_falls_back_to_one_hour(#[case] json: &str, #[case] expires_at: i64) 
 }
 
 #[rstest]
+#[case::given(r#""mac""#, "mac")]
+#[case::empty(r#""""#, "Bearer")]
+#[case::absent("null", "Bearer")]
+fn token_type_keeps_a_given_value_and_defaults_to_bearer(
+    #[case] supplied: &str,
+    #[case] expected: &str,
+) {
+    let json = format!(r#"{{"access_token":"a","refresh_token":"r","token_type":{supplied}}}"#);
+    let record = build_auth_record(Decimal::from(NOW), payload(&json), TOKEN_URL, None).unwrap();
+    assert_eq!(record.token_type, expected);
+}
+
+#[rstest]
 #[case::keeps_old_refresh_token(r#"{"access_token":"a"}"#, Some("kept"), Some("kept"))]
 #[case::prefers_new_refresh_token(
     r#"{"access_token":"a","refresh_token":"new"}"#,
@@ -438,6 +451,14 @@ fn debug_output_hides_every_secret(#[case] secret: &str) {
     };
     let shown = format!("{debug}{error}{error:?}");
     assert!(!shown.contains(secret));
+}
+
+#[test]
+fn decodes_a_document_of_exactly_the_size_limit() {
+    let mut document = vec![b' '; DOCUMENT_LIMIT];
+    document[0] = b'{';
+    document[1] = b'}';
+    decode_xai_oauth::<AuthFile>(&document).unwrap();
 }
 
 #[test]
