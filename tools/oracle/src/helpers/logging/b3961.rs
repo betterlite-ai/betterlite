@@ -10,13 +10,12 @@ use betterlite_logging::http_analytics_loggers::promptlayer::{
 };
 use betterlite_models::decisions::Json;
 use chrono::{DateTime, Utc};
-use indexmap::IndexMap;
 use serde::Deserialize;
 use serde_json::json;
 
 use crate::helpers::{Helper, HelperError, HelperResult};
 
-use self::capture::{Answer, Capture, FixedClock, Recorded};
+use self::capture::{Answer, Capture, FixedClock};
 use self::init::{athina_init, greenscale_init, promptlayer_init};
 
 mod capture;
@@ -27,18 +26,14 @@ pub(crate) struct Op;
 #[derive(Deserialize)]
 #[serde(tag = "function", rename_all = "snake_case")]
 pub(crate) enum Input {
-    AthinaInit { scenarios: Vec<InitScenario> },
-    AthinaLog { scenarios: Vec<LogScenario> },
-    GreenscaleInit { scenarios: Vec<InitScenario> },
-    GreenscaleLog { scenarios: Vec<LogScenario> },
-    PromptlayerInit { scenarios: Vec<InitScenario> },
-    PromptlayerLog { scenarios: Vec<LogScenario> },
+    Init { scenarios: Vec<InitScenario> },
     Log { scenarios: Vec<LogScenario> },
 }
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct InitScenario {
+    logger: LoggerName,
     #[serde(default)]
     environment: BTreeMap<String, String>,
 }
@@ -54,10 +49,9 @@ enum LoggerName {
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct LogScenario {
+    logger: LoggerName,
     #[serde(default)]
     environment: BTreeMap<String, String>,
-    #[serde(default)]
-    logger: Option<LoggerName>,
     #[serde(default)]
     kwargs: Option<Json>,
     #[serde(default)]
@@ -77,33 +71,29 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::AthinaInit { scenarios } => Ok(json!({
-                "results": scenarios.iter().map(athina_init).collect::<Vec<_>>(),
+            Input::Init { scenarios } => Ok(json!({
+                "results": scenarios.iter().map(init_json).collect::<Vec<_>>(),
             })),
-            Input::AthinaLog { scenarios } => run_logs(scenarios, Some(LoggerName::Athina)),
-            Input::GreenscaleInit { scenarios } => Ok(json!({
-                "results": scenarios.iter().map(greenscale_init).collect::<Vec<_>>(),
-            })),
-            Input::GreenscaleLog { scenarios } => run_logs(scenarios, Some(LoggerName::Greenscale)),
-            Input::PromptlayerInit { scenarios } => Ok(json!({
-                "results": scenarios.iter().map(promptlayer_init).collect::<Vec<_>>(),
-            })),
-            Input::PromptlayerLog { scenarios } => {
-                run_logs(scenarios, Some(LoggerName::Promptlayer))
-            }
-            Input::Log { scenarios } => run_logs(scenarios, None),
+            Input::Log { scenarios } => run_logs(scenarios),
         }
     }
 }
 
-fn run_logs(scenarios: &[LogScenario], forced: Option<LoggerName>) -> HelperResult {
+fn init_json(scenario: &InitScenario) -> serde_json::Value {
+    match scenario.logger {
+        LoggerName::Athina => athina_init(scenario),
+        LoggerName::Greenscale => greenscale_init(scenario),
+        LoggerName::Promptlayer => promptlayer_init(scenario),
+    }
+}
+
+fn run_logs(scenarios: &[LogScenario]) -> HelperResult {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .build()
         .map_err(|error| helper_error("RuntimeError", &error.to_string()))?;
     let mut results = Vec::with_capacity(scenarios.len());
     for scenario in scenarios {
-        let logger = forced.or(scenario.logger).unwrap_or(LoggerName::Athina);
-        results.push(runtime.block_on(log_scenario(scenario, logger))?);
+        results.push(runtime.block_on(log_scenario(scenario, scenario.logger))?);
     }
     Ok(json!({"results": results}))
 }
@@ -126,10 +116,7 @@ async fn log_scenario(
     let recorded = capture
         .requests()
         .map_err(|error| helper_error("CaptureError", &error.to_string()))?;
-    Ok(json!({
-        "requests": recorded.iter().map(record_json).collect::<Vec<_>>(),
-        "raised": false,
-    }))
+    Ok(json!({"requests": recorded, "raised": false}))
 }
 
 fn buffered_kwargs(scenario: &LogScenario) -> Result<Json, Box<HelperError>> {
@@ -184,15 +171,6 @@ async fn dispatch(
         }
     }
     Ok(())
-}
-
-fn record_json(recorded: &Recorded) -> serde_json::Value {
-    let headers: IndexMap<String, Json> = recorded
-        .headers
-        .iter()
-        .map(|(name, value)| (name.clone(), Json::Text(value.clone())))
-        .collect();
-    json!({"url": recorded.url, "headers": headers, "body": recorded.body})
 }
 
 fn parse_time(text: &str) -> Result<DateTime<Utc>, Box<HelperError>> {

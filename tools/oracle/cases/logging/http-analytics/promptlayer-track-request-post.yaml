@@ -3,9 +3,10 @@ kind: helper
 name: promptlayer-track-request-post
 call:
   b3961:
-    function: promptlayer_log
+    function: log
     scenarios:
-      - environment: {PROMPTLAYER_API_KEY: pl-key}
+      - logger: promptlayer
+        environment: {PROMPTLAYER_API_KEY: pl-key}
         kwargs:
           model: gpt-4o
           messages: [{role: user, content: Hello}]

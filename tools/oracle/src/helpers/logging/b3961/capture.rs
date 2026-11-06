@@ -1,13 +1,12 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::VecDeque;
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex};
 
 use betterlite_logging::http_analytics_loggers::clock::WallClock;
 use betterlite_logging::http_analytics_loggers::delivery::{Delivery, PostRequest, PostResponse};
-use betterlite_models::decisions::Json;
 use chrono::{DateTime, Utc};
-use indexmap::IndexMap;
 use serde::Deserialize;
+use serde_json::{Map, Value, json};
 
 pub(crate) const SUCCESS_STATUS: u16 = 200;
 
@@ -17,7 +16,7 @@ pub(crate) struct Answer {
     #[serde(default = "default_status")]
     pub(crate) status: u16,
     #[serde(default)]
-    pub(crate) body: Option<Json>,
+    pub(crate) body: Option<Value>,
     #[serde(default)]
     pub(crate) raise: Option<String>,
 }
@@ -29,24 +28,15 @@ pub(crate) const fn default_status() -> u16 {
 #[derive(Clone)]
 pub(crate) struct Capture {
     answers: Arc<Mutex<VecDeque<Answer>>>,
-    requests: Arc<Mutex<Vec<Recorded>>>,
-}
-
-#[derive(Clone)]
-pub(crate) struct Recorded {
-    pub(crate) url: String,
-    pub(crate) headers: BTreeMap<String, String>,
-    pub(crate) body: Json,
+    requests: Arc<Mutex<Vec<Value>>>,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum CaptureError {
     #[error("the capture transport lock is poisoned")]
     Lock,
-    #[error("the captured request body is not JSON")]
-    Body(#[source] serde_json::Error),
-    #[error("the captured response body could not be encoded")]
-    Encode(#[source] serde_json::Error),
+    #[error("the captured body is not JSON")]
+    Json(#[source] serde_json::Error),
     #[error("the capture transport failed")]
     Transport,
 }
@@ -60,25 +50,17 @@ impl Capture {
     }
 
     fn record(&self, request: &PostRequest) -> Result<PostResponse, CaptureError> {
-        let body = serde_json::from_slice::<Json>(&request.body).map_err(CaptureError::Body)?;
-        let headers = request
-            .headers
-            .iter()
-            .filter_map(|(name, value)| {
-                value
-                    .to_str()
-                    .ok()
-                    .map(|text| (name.as_str().to_owned(), text.to_owned()))
-            })
-            .collect();
+        let body = serde_json::from_slice::<Value>(&request.body).map_err(CaptureError::Json)?;
+        let mut headers = Map::new();
+        for (name, value) in &request.headers {
+            if let Ok(text) = value.to_str() {
+                headers.insert(name.as_str().to_owned(), Value::String(text.to_owned()));
+            }
+        }
         self.requests
             .lock()
             .map_err(|_poison| CaptureError::Lock)?
-            .push(Recorded {
-                url: request.url.to_string(),
-                headers,
-                body,
-            });
+            .push(json!({"url": request.url.to_string(), "headers": headers, "body": body}));
         let answer = self
             .answers
             .lock()
@@ -92,8 +74,8 @@ impl Capture {
                     body: None,
                     raise: None,
                 });
-                let payload = reply.body.unwrap_or_else(|| Json::Object(IndexMap::new()));
-                let encoded = serde_json::to_vec(&payload).map_err(CaptureError::Encode)?;
+                let payload = reply.body.unwrap_or_else(|| Value::Object(Map::new()));
+                let encoded = serde_json::to_vec(&payload).map_err(CaptureError::Json)?;
                 Ok(PostResponse {
                     status: reply.status,
                     body: encoded,
@@ -102,7 +84,7 @@ impl Capture {
         }
     }
 
-    pub(crate) fn requests(&self) -> Result<Vec<Recorded>, CaptureError> {
+    pub(crate) fn requests(&self) -> Result<Vec<Value>, CaptureError> {
         self.requests
             .lock()
             .map(|requests| requests.clone())

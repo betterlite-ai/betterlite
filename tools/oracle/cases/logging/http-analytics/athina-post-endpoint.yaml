@@ -3,9 +3,10 @@ kind: helper
 name: athina-post-endpoint
 call:
   b3961:
-    function: athina_log
+    function: log
     scenarios:
-      - environment: {ATHINA_API_KEY: athina-key-1}
+      - logger: athina
+        environment: {ATHINA_API_KEY: athina-key-1}
         kwargs: {model: gpt-4o, messages: [{role: user, content: Hello}], litellm_params: {metadata: {}}}
         response:
           id: chatcmpl-1
@@ -26,7 +27,8 @@ call:
         start_time: "2026-01-02T03:00:00Z"
         end_time: "2026-01-02T03:00:01Z"
         answers: [{status: 200, body: {ok: true}}]
-      - environment: {ATHINA_API_KEY: athina-key-1}
+      - logger: athina
+        environment: {ATHINA_API_KEY: athina-key-1}
         kwargs: {model: gpt-4o, messages: [{role: user, content: Hello}], litellm_params: {metadata: {}}}
         response:
           id: chatcmpl-1

@@ -3,9 +3,9 @@ kind: helper
 name: promptlayer-initialization
 call:
   b3961:
-    function: promptlayer_init
+    function: init
     scenarios:
-      - environment: {PROMPTLAYER_API_KEY: pl-key}
-      - environment: {}
+      - {logger: promptlayer, environment: {PROMPTLAYER_API_KEY: pl-key}}
+      - {logger: promptlayer, environment: {}}
 env: {}
 compare: {ignore: []}

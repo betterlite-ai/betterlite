@@ -3,9 +3,10 @@ kind: helper
 name: athina-payload-building
 call:
   b3961:
-    function: athina_log
+    function: log
     scenarios:
-      - environment: {ATHINA_API_KEY: athina-key-1}
+      - logger: athina
+        environment: {ATHINA_API_KEY: athina-key-1}
         kwargs:
           model: gpt-4o
           messages: [{role: user, content: Hello}]

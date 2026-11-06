@@ -142,21 +142,23 @@ def athina_init(scenario: dict[str, Json]) -> Json:
     })
 
 
-def athina_log(scenario: dict[str, Json]) -> Json:
+def plain_log(
+    scenario: dict[str, Json],
+    logger: type[AthinaLogger] | type[PromptLayerLogger],
+) -> Json:
     apply_environment(scenario)
     kwargs: dict[str, object] = dict(cast("dict[str, object]", scenario.get("kwargs") or {}))
     if "complete_streaming_response" in scenario:
         kwargs["complete_streaming_response"] = model_response(
             scenario["complete_streaming_response"]
         )
-    logger = AthinaLogger()
     start = parse_time(scenario.get("start_time"))
     end = parse_time(scenario.get("end_time"))
     response = model_response(scenario.get("response"))
     client = FakeClient(answer_list(scenario))
     raised = run_log_event(
         client,
-        lambda: invoke_logger(logger, kwargs, response, start, end),
+        lambda: invoke_logger(logger(), kwargs, response, start, end),
     )
     return log_result(client, raised=raised)
 
@@ -196,59 +198,40 @@ def promptlayer_init(scenario: dict[str, Json]) -> Json:
     return cast(Json, {"key": logger.key})
 
 
-def promptlayer_log(scenario: dict[str, Json]) -> Json:
-    apply_environment(scenario)
-    kwargs: dict[str, object] = dict(cast("dict[str, object]", scenario.get("kwargs") or {}))
-    logger = PromptLayerLogger()
-    start = parse_time(scenario.get("start_time"))
-    end = parse_time(scenario.get("end_time"))
-    response = model_response(scenario.get("response"))
-    client = FakeClient(answer_list(scenario))
-    raised = run_log_event(
-        client,
-        lambda: invoke_logger(logger, kwargs, response, start, end),
-    )
-    return log_result(client, raised=raised)
-
-
-LOGGERS: dict[str, Callable[[dict[str, Json]], Json]] = {
-    "athina": athina_log,
-    "greenscale": greenscale_log,
-    "promptlayer": promptlayer_log,
+INIT_LOGGERS: dict[str, Callable[[dict[str, Json]], Json]] = {
+    "athina": athina_init,
+    "greenscale": greenscale_init,
+    "promptlayer": promptlayer_init,
 }
 
 
-def log(scenario: dict[str, Json]) -> Json:
-    name = scenario.get("logger")
-    handler = LOGGERS.get(name) if isinstance(name, str) else None
-    if handler is None:
+def log_result_for(scenario: dict[str, Json], name: Json) -> Json:
+    if name == "greenscale":
+        return greenscale_log(scenario)
+    loggers: dict[str, type[AthinaLogger | PromptLayerLogger]] = {
+        "athina": AthinaLogger,
+        "promptlayer": PromptLayerLogger,
+    }
+    logger = loggers.get(name) if isinstance(name, str) else None
+    if logger is None:
         raise ValueError(f"unknown logger: {name}")
-    return handler(scenario)
-
-
-HANDLERS: dict[str, Callable[[dict[str, Json]], Json]] = {
-    "athina_init": athina_init,
-    "athina_log": athina_log,
-    "greenscale_init": greenscale_init,
-    "greenscale_log": greenscale_log,
-    "promptlayer_init": promptlayer_init,
-    "promptlayer_log": promptlayer_log,
-    "log": log,
-}
+    return plain_log(scenario, logger)
 
 
 def run(input_value: dict[str, Json]) -> Json:
     function = input_value.get("function")
-    handler = HANDLERS.get(function) if isinstance(function, str) else None
-    if handler is None:
-        raise ValueError(f"unknown function: {function}")
     scenarios = input_value.get("scenarios")
-    if not isinstance(scenarios, list):
-        raise ValueError("scenarios must be a list")
-    return {
-        "results": [
-            handler(cast(dict[str, Json], scenario))
-            for scenario in scenarios
-            if isinstance(scenario, dict)
-        ]
-    }
+    if function not in ("init", "log") or not isinstance(scenarios, list):
+        raise ValueError(f"expected init or log with scenarios, got {function}")
+    results: list[Json] = []
+    for value in scenarios:
+        scenario = cast(dict[str, Json], value)
+        name = scenario.get("logger")
+        if function == "init":
+            handler = INIT_LOGGERS.get(name) if isinstance(name, str) else None
+            if handler is None:
+                raise ValueError(f"unknown logger: {name}")
+            results.append(handler(scenario))
+        else:
+            results.append(log_result_for(scenario, name))
+    return {"results": results}

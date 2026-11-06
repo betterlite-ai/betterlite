@@ -3,9 +3,10 @@ kind: helper
 name: promptlayer-track-metadata-conditional
 call:
   b3961:
-    function: promptlayer_log
+    function: log
     scenarios:
-      - environment: {PROMPTLAYER_API_KEY: pl-key}
+      - logger: promptlayer
+        environment: {PROMPTLAYER_API_KEY: pl-key}
         kwargs:
           model: gpt-4o
           messages: [{role: user, content: Hello}]
@@ -33,7 +34,8 @@ call:
         answers:
           - {status: 200, body: {success: true, request_id: req-1}}
           - {status: 200, body: {}}
-      - environment: {PROMPTLAYER_API_KEY: pl-key}
+      - logger: promptlayer
+        environment: {PROMPTLAYER_API_KEY: pl-key}
         kwargs:
           model: gpt-4o
           messages: [{role: user, content: Hello}]
@@ -59,7 +61,8 @@ call:
         start_time: "2026-01-02T03:00:00Z"
         end_time: "2026-01-02T03:00:01Z"
         answers: [{status: 200, body: {success: true, request_id: req-1}}]
-      - environment: {PROMPTLAYER_API_KEY: pl-key}
+      - logger: promptlayer
+        environment: {PROMPTLAYER_API_KEY: pl-key}
         kwargs:
           model: gpt-4o
           messages: [{role: user, content: Hello}]
@@ -85,7 +88,8 @@ call:
         start_time: "2026-01-02T03:00:00Z"
         end_time: "2026-01-02T03:00:01Z"
         answers: [{status: 200, body: {success: true}}]
-      - environment: {PROMPTLAYER_API_KEY: pl-key}
+      - logger: promptlayer
+        environment: {PROMPTLAYER_API_KEY: pl-key}
         kwargs:
           model: gpt-4o
           messages: [{role: user, content: Hello}]

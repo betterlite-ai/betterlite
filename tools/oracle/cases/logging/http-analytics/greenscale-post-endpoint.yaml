@@ -3,9 +3,10 @@ kind: helper
 name: greenscale-post-endpoint
 call:
   b3961:
-    function: greenscale_log
+    function: log
     scenarios:
-      - environment: {GREENSCALE_API_KEY: green-key, GREENSCALE_ENDPOINT: "https://greenscale.example.com/v1/log"}
+      - logger: greenscale
+        environment: {GREENSCALE_API_KEY: green-key, GREENSCALE_ENDPOINT: "https://greenscale.example.com/v1/log"}
         kwargs: {model: gpt-4o, litellm_params: {metadata: {}}}
         response:
           id: chatcmpl-1
@@ -27,7 +28,8 @@ call:
         start_time: "2026-01-02T03:00:00Z"
         end_time: "2026-01-02T03:00:01Z"
         answers: [{status: 200, body: {ok: true}}]
-      - environment: {GREENSCALE_API_KEY: green-key, GREENSCALE_ENDPOINT: "https://greenscale.example.com/v1/log"}
+      - logger: greenscale
+        environment: {GREENSCALE_API_KEY: green-key, GREENSCALE_ENDPOINT: "https://greenscale.example.com/v1/log"}
         kwargs: {model: gpt-4o, litellm_params: {metadata: {}}}
         response:
           id: chatcmpl-1

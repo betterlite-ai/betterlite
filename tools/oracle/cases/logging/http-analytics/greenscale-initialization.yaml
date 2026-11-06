@@ -3,9 +3,9 @@ kind: helper
 name: greenscale-initialization
 call:
   b3961:
-    function: greenscale_init
+    function: init
     scenarios:
-      - environment: {GREENSCALE_API_KEY: green-key, GREENSCALE_ENDPOINT: "https://greenscale.example.com/v1/log"}
-      - environment: {GREENSCALE_API_KEY: green-key}
+      - {logger: greenscale, environment: {GREENSCALE_API_KEY: green-key, GREENSCALE_ENDPOINT: "https://greenscale.example.com/v1/log"}}
+      - {logger: greenscale, environment: {GREENSCALE_API_KEY: green-key}}
 env: {}
 compare: {ignore: []}
