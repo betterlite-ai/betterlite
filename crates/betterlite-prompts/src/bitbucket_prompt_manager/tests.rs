@@ -207,6 +207,16 @@ fn parse_rejects_frontmatter_that_is_not_a_mapping(#[case] content: &str) {
 }
 
 #[test]
+fn parse_reads_yaml_1_1_booleans_and_yaml_1_2_numbers() {
+    let content = "---\nflag: yes\nletter: y\noctal: 012\nclock: 1:30\n---\nbody";
+    let template = parse_prompt_file(content, "p", YamlParser::Full).unwrap();
+    assert_eq!(
+        template.metadata,
+        object(r#"{"flag": true, "letter": true, "octal": 12.0, "clock": "1:30"}"#)
+    );
+}
+
+#[test]
 fn parse_basic_parser_reads_simple_key_value_frontmatter() {
     let content = "---\nmodel: gpt-4\ntemperature: 0.5\nstream: true\n---\nhi";
     let template = parse_prompt_file(content, "p", YamlParser::Basic).unwrap();
@@ -285,6 +295,24 @@ fn render_sandbox_exposes_no_interpreter_internals(#[case] content: &str) {
         .render_template("t", &Object::new())
         .unwrap_or_default();
     assert_eq!(rendered, "");
+}
+
+#[test]
+fn render_stops_a_template_over_the_byte_budget() {
+    let content = "x".repeat(0x0001_0001);
+    let manager = manager_with(&[("big", content.as_str())]);
+    let error = manager.render_template("big", &Object::new()).unwrap_err();
+    assert_eq!(error.to_string(), "prompt template exceeds its byte budget");
+}
+
+#[test]
+fn render_stops_a_template_that_never_ends() {
+    let manager = manager_with(&[(
+        "loop",
+        "{% for x in range(100000) %}{% for y in range(100000) %}{% endfor %}{% endfor %}",
+    )]);
+    let error = manager.render_template("loop", &Object::new()).unwrap_err();
+    assert!(error.to_string().contains("fuel"));
 }
 
 #[test]
