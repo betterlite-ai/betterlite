@@ -1,12 +1,9 @@
-use tokenizers::Tokenizer;
-
 use crate::engine::error::EngineError;
-
+use tokenizers::Tokenizer;
 #[derive(Debug)]
 pub struct HuggingFaceEngine {
     tokenizer: Tokenizer,
 }
-
 impl HuggingFaceEngine {
     pub fn from_bytes(bytes: &[u8]) -> Result<Self, EngineError> {
         match Tokenizer::from_bytes(bytes) {
@@ -14,7 +11,6 @@ impl HuggingFaceEngine {
             Err(failure) => Err(EngineError::HuggingFaceLoad(failure)),
         }
     }
-
     pub fn encode(&self, text: &str) -> Result<Vec<u32>, EngineError> {
         let encoding = self
             .tokenizer
@@ -22,7 +18,6 @@ impl HuggingFaceEngine {
             .map_err(EngineError::HuggingFaceEncode)?;
         Ok(encoding.get_ids().to_vec())
     }
-
     pub fn decode(&self, ids: &[u32]) -> Result<String, EngineError> {
         self.tokenizer
             .decode(ids, true)

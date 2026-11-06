@@ -1,154 +1,86 @@
-use std::io::Error as IoError;
-use std::path::PathBuf;
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
-
 use betterlite_config::sections::huggingface_hub::{
     OfflineSetting, Settings as HubSettings, TransferSetting,
 };
 use betterlite_http::hub_token::{HubToken, HubTokenError, HubTokenResolver};
 use hf_hub::{HFClient, HFClientBuilder, HFError};
 use secrecy::{ExposeSecret as _, SecretString};
+use std::io::Error as IoError;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 use thiserror::Error;
 use tokio::time::Instant;
-
 mod classify;
 mod download;
-
 use classify::{not_available, read_file, retryable};
 use download::{Bounds, RETRY_START_TIMEOUT, download_bounded};
-
 pub(crate) struct Request<'request> {
     pub(crate) repository: &'request str,
     pub(crate) revision: &'request str,
     pub(crate) token: Option<&'request SecretString>,
 }
-
 pub trait Clock: Send + Sync {
     fn now(&self) -> Instant;
 }
-
 #[derive(Debug, Default)]
 pub struct SystemClock;
-
 impl Clock for SystemClock {
     fn now(&self) -> Instant {
         Instant::now()
     }
 }
-
 #[derive(Debug, Error)]
 pub enum HubError {
     #[error("the hugging face token could not be resolved")]
     Token(#[source] HubTokenError),
     #[error("the hugging face hub client could not be created")]
     Client(#[source] HFError),
-    #[error("the tokenizer repository {repository} was not found")]
-    RepoNotFound {
-        repository: String,
-        #[source]
-        source: HFError,
-    },
-    #[error("access to the tokenizer repository {repository} is gated")]
-    Gated {
-        repository: String,
-        #[source]
-        source: HFError,
-    },
+    #[error("the tokenizer repository {0} was not found")]
+    RepoNotFound(String, #[source] HFError),
+    #[error("access to the tokenizer repository {0} is gated")]
+    Gated(String, #[source] HFError),
     #[error("the hugging face token was rejected")]
-    Unauthorized {
-        #[source]
-        source: HFError,
-    },
-    #[error("revision {revision} of {repository} was not found")]
-    RevisionNotFound {
-        repository: String,
-        revision: String,
-        #[source]
-        source: HFError,
-    },
-    #[error("the tokenizer file was not found in {repository}")]
-    EntryNotFound {
-        repository: String,
-        #[source]
-        source: HFError,
-    },
-    #[error("the tokenizer is not in the local cache for {repository}")]
-    CacheMiss { repository: String, path: String },
-    #[error("the tokenizer could not be downloaded from {repository}")]
-    Download {
-        repository: String,
-        #[source]
-        source: HFError,
-    },
-    #[error(
-        "the tokenizer could not be downloaded from {repository} and is not in the local cache"
-    )]
-    NotAvailable {
-        repository: String,
-        #[source]
-        source: Box<Self>,
-    },
-    #[error("downloading the tokenizer from {repository} timed out")]
-    StartTimeout { repository: String },
-    #[error("downloading the tokenizer from {repository} stalled for {seconds} seconds")]
-    Stalled { repository: String, seconds: u64 },
-    #[error("the cached tokenizer at {path} could not be read")]
-    Read {
-        path: PathBuf,
-        #[source]
-        source: IoError,
-    },
+    Unauthorized(#[source] HFError),
+    #[error("revision {1} of {0} was not found")]
+    RevisionNotFound(String, String, #[source] HFError),
+    #[error("the tokenizer file was not found in {0}")]
+    EntryNotFound(String, #[source] HFError),
+    #[error("the tokenizer is not in the local cache for {0}")]
+    CacheMiss(String, String),
+    #[error("the tokenizer could not be downloaded from {0}")]
+    Download(String, #[source] HFError),
+    #[error("the tokenizer could not be downloaded from {0} and is not in the local cache")]
+    NotAvailable(String, #[source] Box<Self>),
+    #[error("downloading the tokenizer from {0} timed out")]
+    StartTimeout(String),
+    #[error("downloading the tokenizer from {0} stalled for {1} seconds")]
+    Stalled(String, u64),
+    #[error("the cached tokenizer at {0} could not be read")]
+    Read(PathBuf, #[source] IoError),
     #[error("the tokenizer timeout is too large to count in monotonic time")]
     TimeoutRange,
 }
-
 impl HubError {
-    const fn is_terminal(&self) -> bool {
-        match self {
-            Self::RevisionNotFound { .. } | Self::EntryNotFound { .. } | Self::Stalled { .. } => {
-                true
-            }
-            Self::Token(_)
-            | Self::Client(_)
-            | Self::RepoNotFound { .. }
-            | Self::Gated { .. }
-            | Self::Unauthorized { .. }
-            | Self::CacheMiss { .. }
-            | Self::Download { .. }
-            | Self::NotAvailable { .. }
-            | Self::StartTimeout { .. }
-            | Self::Read { .. }
-            | Self::TimeoutRange => false,
-        }
+    pub(super) const fn terminal(&self) -> bool {
+        matches!(
+            self,
+            Self::RevisionNotFound(..) | Self::EntryNotFound(..) | Self::Stalled(..)
+        )
     }
-
-    pub(super) const fn keeps_identity(&self) -> bool {
-        match self {
-            Self::RepoNotFound { .. } | Self::Gated { .. } | Self::Unauthorized { .. } => true,
-            Self::Token(_)
-            | Self::Client(_)
-            | Self::RevisionNotFound { .. }
-            | Self::EntryNotFound { .. }
-            | Self::CacheMiss { .. }
-            | Self::Download { .. }
-            | Self::NotAvailable { .. }
-            | Self::StartTimeout { .. }
-            | Self::Stalled { .. }
-            | Self::Read { .. }
-            | Self::TimeoutRange => false,
-        }
+    pub(super) const fn identity(&self) -> bool {
+        matches!(
+            self,
+            Self::RepoNotFound(..) | Self::Gated(..) | Self::Unauthorized(..)
+        )
     }
 }
-
 pub struct HubDownloader {
     pub(crate) settings: Arc<HubSettings>,
     pub(crate) tokens: Arc<HubTokenResolver>,
     pub(crate) clock: Arc<dyn Clock>,
     warned: AtomicBool,
 }
-
 impl HubDownloader {
     #[must_use]
     pub fn new(
@@ -163,7 +95,6 @@ impl HubDownloader {
             warned: AtomicBool::new(false),
         }
     }
-
     pub async fn download(
         &self,
         repository: &str,
@@ -188,30 +119,26 @@ impl HubDownloader {
             idle: Duration::from_secs(self.settings.download_timeout),
         };
         if self.settings.offline == OfflineSetting::Offline {
-            let path = download_bounded(self, &request, true, bounds).await?;
-            return read_file(&path).await;
+            return read_file(&download_bounded(self, &request, true, bounds).await?).await;
         }
         match download_bounded(self, &request, false, bounds).await {
             Ok(path) => read_file(&path).await,
             Err(first) => self.after_failure(&request, first, bounds).await,
         }
     }
-
     async fn after_failure(
         &self,
         request: &Request<'_>,
         first: HubError,
         bounds: Bounds,
     ) -> Result<Vec<u8>, HubError> {
-        if first.is_terminal() {
+        if first.terminal() {
             return Err(first);
         }
         match download_bounded(self, request, true, bounds).await {
             Ok(path) => read_file(&path).await,
+            Err(_missing) if !retryable(&first) => Err(not_available(first, request.repository)),
             Err(_missing) => {
-                if !retryable(&first) {
-                    return Err(not_available(first, request.repository));
-                }
                 let retry = Bounds {
                     start: RETRY_START_TIMEOUT,
                     idle: bounds.idle,
@@ -223,7 +150,6 @@ impl HubDownloader {
             }
         }
     }
-
     pub(crate) fn client(&self, token: Option<&SecretString>) -> Result<HFClient, HubError> {
         let mut builder = HFClientBuilder::new()
             .endpoint(self.settings.endpoint.clone())

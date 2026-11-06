@@ -1,8 +1,6 @@
 use kitoken::convert::ConversionError;
 use kitoken::{DecodeError, EncodeError, InitializationError, RegexError};
 use thiserror::Error;
-use tokio::task::JoinError;
-
 #[derive(Debug, Error)]
 pub enum EngineError {
     #[error("the tiktoken vocabulary is invalid")]
@@ -25,8 +23,4 @@ pub enum EngineError {
     NotBundled { encoding: &'static str },
     #[error("the token counting pool is closed")]
     PoolClosed,
-    #[error("the token counting task failed")]
-    Task(#[source] Box<JoinError>),
-    #[error("the token counting task returned no result")]
-    NoResult,
 }

@@ -4,27 +4,18 @@ version = "0.0.0"
 publish = false
 edition = "2024"
 license.workspace = true
-
 [lints]
 workspace = true
-
 [package.metadata]
 cargo-fuzz = true
-
 [dependencies]
 betterlite-tokenizer = { path = ".." }
 libfuzzer-sys = "0.4.9"
-
 [[bin]]
 name = "tokenizer_asset"
 path = "fuzz_targets/tokenizer_asset.rs"
 test = false
-doc = false
-bench = false
-
 [[bin]]
 name = "tokenizer_input"
 path = "fuzz_targets/tokenizer_input.rs"
 test = false
-doc = false
-bench = false

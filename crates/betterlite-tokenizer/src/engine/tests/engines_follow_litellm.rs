@@ -8,8 +8,8 @@ use sha2::Sha256;
 use std::fmt::Write as _;
 
 use crate::engine::assets;
+use crate::engine::fetch::TiktokenFetcher;
 use crate::engine::fetch::gpt2::bpe_file;
-use crate::engine::fetch::{RemoteSource, TiktokenFetcher};
 use crate::engine::huggingface::HuggingFaceEngine;
 use crate::engine::tests::support::{Reply, Server, client};
 use crate::engine::tiktoken::{Encoding, TiktokenEngine};
@@ -75,21 +75,8 @@ fn synthetic_bpe_file() -> Vec<u8> {
     file.into_bytes()
 }
 
-fn synthetic_source(url: String, sha256: String) -> RemoteSource {
-    RemoteSource {
-        r50k_url: url,
-        r50k_sha256: sha256,
-        gpt2_vocabulary_url: String::new(),
-        gpt2_vocabulary_sha256: String::new(),
-        gpt2_encoder_url: String::new(),
-        gpt2_encoder_sha256: String::new(),
-    }
-}
-
-#[tokio::test]
-async fn r50k_fetch_follows_read_file_cached() {
+async fn r50k_fixture() -> (Server, tempfile::TempDir, TiktokenFetcher, String) {
     let body = synthetic_bpe_file();
-    let expected = body.clone();
     let sha256 = hex::encode(Sha256::digest(&body));
     let server = Server::start(move |_request| Reply::Response {
         status: 200,
@@ -97,26 +84,27 @@ async fn r50k_fetch_follows_read_file_cached() {
         body: body.clone(),
     })
     .await;
-    let url = format!("{}/encodings/r50k_base.tiktoken", server.endpoint);
     let cache = tempfile::tempdir().unwrap();
-    let fetcher = TiktokenFetcher::with_source(
-        client(),
-        Some(cache.path().to_path_buf()),
-        synthetic_source(url.clone(), sha256.clone()),
-    );
+    let fetcher = TiktokenFetcher::new(client(), Some(cache.path().to_path_buf()))
+        .with_base(server.endpoint.clone(), sha256.clone());
+    (server, cache, fetcher, sha256)
+}
+
+#[tokio::test]
+async fn r50k_fetch_follows_read_file_cached() {
+    let (server, cache, fetcher, sha256) = r50k_fixture().await;
+    let expected = synthetic_bpe_file();
     let engine = fetcher.engine(Encoding::R50kBase).await.unwrap();
     assert_eq!(
         engine.encode("hello world").unwrap(),
         [256, 257, 111, 32, 119, 111, 114, 108, 100]
     );
+    let url = format!("{}/encodings/r50k_base.tiktoken", server.endpoint);
     let key = hex::encode(Sha1::digest(url.as_bytes()));
     assert_eq!(fs::read(cache.path().join(key)).unwrap(), expected);
     let requests = server.request_count();
-    let second = TiktokenFetcher::with_source(
-        client(),
-        Some(cache.path().to_path_buf()),
-        synthetic_source(url, sha256),
-    );
+    let second = TiktokenFetcher::new(client(), Some(cache.path().to_path_buf()))
+        .with_base(server.endpoint.clone(), sha256);
     let cached = second.engine(Encoding::R50kBase).await.unwrap();
     assert_eq!(
         cached.encode("hello world").unwrap(),

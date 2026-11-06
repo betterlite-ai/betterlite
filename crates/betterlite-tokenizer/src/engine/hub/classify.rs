@@ -1,134 +1,52 @@
-use std::path::Path;
-
-use hf_hub::HFError;
-use tokio::fs;
-
 use super::HubError;
-
-enum Kind {
-    Revision,
-    Entry,
-    Repo,
-    Unauthorized,
-    Gated,
-    Cache(String),
-    Other,
-}
-
-fn kind_of(error: &HFError) -> Kind {
-    match error {
-        HFError::RevisionNotFound { .. } => Kind::Revision,
-        HFError::EntryNotFound { .. } => Kind::Entry,
-        HFError::RepoNotFound { .. } => Kind::Repo,
-        HFError::AuthRequired { .. } => Kind::Unauthorized,
-        HFError::Forbidden { context } => {
-            if context.body.to_ascii_lowercase().contains("gated") {
-                Kind::Gated
-            } else {
-                Kind::Other
-            }
-        }
-        HFError::LocalEntryNotFound { path } => Kind::Cache(path.clone()),
-        HFError::Http { .. }
-        | HFError::BucketNotFound { .. }
-        | HFError::Conflict { .. }
-        | HFError::RateLimited { .. }
-        | HFError::CacheNotEnabled
-        | HFError::CacheLockTimeout { .. }
-        | HFError::Request { .. }
-        | HFError::Io(_)
-        | HFError::Json(_)
-        | HFError::Url(_)
-        | HFError::InvalidParameter(_)
-        | HFError::DiffParse(_)
-        | HFError::Xet { .. }
-        | HFError::MalformedResponse { .. }
-        | HFError::Other(_)
-        | _ => Kind::Other,
-    }
-}
-
+use hf_hub::HFError;
+use std::path::Path;
+use tokio::fs;
 pub(super) fn classify(error: HFError, repository: &str, revision: &str) -> HubError {
-    match kind_of(&error) {
-        Kind::Revision => HubError::RevisionNotFound {
-            repository: repository.to_owned(),
-            revision: revision.to_owned(),
-            source: error,
-        },
-        Kind::Entry => HubError::EntryNotFound {
-            repository: repository.to_owned(),
-            source: error,
-        },
-        Kind::Repo => HubError::RepoNotFound {
-            repository: repository.to_owned(),
-            source: error,
-        },
-        Kind::Unauthorized => HubError::Unauthorized { source: error },
-        Kind::Gated => HubError::Gated {
-            repository: repository.to_owned(),
-            source: error,
-        },
-        Kind::Cache(path) => HubError::CacheMiss {
-            repository: repository.to_owned(),
-            path,
-        },
-        Kind::Other => HubError::Download {
-            repository: repository.to_owned(),
-            source: error,
-        },
+    if matches!(&error, HFError::RevisionNotFound { .. }) {
+        return HubError::RevisionNotFound(repository.to_owned(), revision.to_owned(), error);
     }
+    if matches!(&error, HFError::EntryNotFound { .. }) {
+        return HubError::EntryNotFound(repository.to_owned(), error);
+    }
+    if matches!(&error, HFError::RepoNotFound { .. }) {
+        return HubError::RepoNotFound(repository.to_owned(), error);
+    }
+    if matches!(&error, HFError::AuthRequired { .. }) {
+        return HubError::Unauthorized(error);
+    }
+    let gated = matches!(&error, HFError::Forbidden { context } if context.body.to_ascii_lowercase().contains("gated"));
+    if gated {
+        return HubError::Gated(repository.to_owned(), error);
+    }
+    if let HFError::LocalEntryNotFound { path } = error {
+        return HubError::CacheMiss(repository.to_owned(), path);
+    }
+    HubError::Download(repository.to_owned(), error)
 }
-
 pub(super) fn retryable(error: &HubError) -> bool {
-    if matches!(error, HubError::StartTimeout { .. }) {
-        return true;
-    }
-    let HubError::Download { source, .. } = error else {
-        return false;
+    let HubError::Download(_, source) = error else {
+        return matches!(error, HubError::StartTimeout(_));
     };
-    match source {
-        HFError::Request {
-            source: transport, ..
-        } => transport.is_timeout() || transport.is_connect(),
-        HFError::Http { context } => {
-            matches!(context.status.as_u16(), 408 | 500 | 502 | 503 | 504)
-        }
-        HFError::RateLimited { .. } => true,
-        HFError::AuthRequired { .. }
-        | HFError::RepoNotFound { .. }
-        | HFError::RevisionNotFound { .. }
-        | HFError::EntryNotFound { .. }
-        | HFError::BucketNotFound { .. }
-        | HFError::Forbidden { .. }
-        | HFError::Conflict { .. }
-        | HFError::LocalEntryNotFound { .. }
-        | HFError::CacheNotEnabled
-        | HFError::CacheLockTimeout { .. }
-        | HFError::Io(_)
-        | HFError::Json(_)
-        | HFError::Url(_)
-        | HFError::InvalidParameter(_)
-        | HFError::DiffParse(_)
-        | HFError::Xet { .. }
-        | HFError::MalformedResponse { .. }
-        | HFError::Other(_)
-        | _ => false,
+    if let HFError::Request {
+        source: transport, ..
+    } = source
+    {
+        return transport.is_timeout() || transport.is_connect();
     }
+    if let HFError::Http { context } = source {
+        return matches!(context.status.as_u16(), 408 | 500 | 502 | 503 | 504);
+    }
+    matches!(source, HFError::RateLimited { .. })
 }
-
 pub(super) fn not_available(error: HubError, repository: &str) -> HubError {
-    if error.keeps_identity() {
+    if error.identity() {
         return error;
     }
-    HubError::NotAvailable {
-        repository: repository.to_owned(),
-        source: Box::new(error),
-    }
+    HubError::NotAvailable(repository.to_owned(), Box::new(error))
 }
-
 pub(super) async fn read_file(path: &Path) -> Result<Vec<u8>, HubError> {
-    fs::read(path).await.map_err(|source| HubError::Read {
-        path: path.to_path_buf(),
-        source,
-    })
+    fs::read(path)
+        .await
+        .map_err(|source| HubError::Read(path.to_path_buf(), source))
 }

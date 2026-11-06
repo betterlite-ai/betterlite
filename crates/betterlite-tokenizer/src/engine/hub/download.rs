@@ -1,29 +1,22 @@
-use std::future::{Future, pending};
+use super::classify::classify;
+use super::{Clock, HubDownloader, HubError, Request};
+use futures_util::future::{Either, select};
+use hf_hub::progress::{DownloadEvent, Progress, ProgressEvent, ProgressHandler};
+use hf_hub::split_id;
+use std::future::Future;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
-
-use futures_util::future::{Either, select};
-use hf_hub::HFError;
-use hf_hub::progress::{DownloadEvent, Progress, ProgressEvent, ProgressHandler};
-use hf_hub::split_id;
-use tokio::sync::mpsc;
+use tokio::sync::Notify;
 use tokio::time::timeout_at;
-
-use super::classify::classify;
-use super::{Clock, HubDownloader, HubError, Request};
-
 pub(super) const RETRY_START_TIMEOUT: Duration = Duration::from_secs(60);
-const EVENT_QUEUE: usize = 8;
 const TOKENIZER_FILE: &str = "tokenizer.json";
-
 #[derive(Debug, Clone, Copy)]
 pub(super) struct Bounds {
     pub(super) start: Duration,
     pub(super) idle: Duration,
 }
-
 pub(super) async fn download_bounded(
     downloader: &HubDownloader,
     request: &Request<'_>,
@@ -32,8 +25,11 @@ pub(super) async fn download_bounded(
 ) -> Result<PathBuf, HubError> {
     let client = downloader.client(request.token)?;
     let (owner, name) = split_id(request.repository);
+    let events = Arc::new(DownloadEvents {
+        notify: Notify::new(),
+        started: AtomicBool::new(false),
+    });
     let repo = client.model(owner.to_owned(), name.to_owned());
-    let (events, receiver) = DownloadEvents::new();
     let call = repo
         .download_file()
         .filename(TOKENIZER_FILE.to_owned())
@@ -41,39 +37,22 @@ pub(super) async fn download_bounded(
         .local_files_only(local_files_only)
         .progress(Progress::from(Arc::clone(&events)))
         .send();
-    run_bounded(call, &events, receiver, downloader.clock.as_ref(), bounds)
-        .await
-        .map_err(|failure| failure.classify(request.repository, request.revision))
+    run_bounded(call, &events, downloader.clock.as_ref(), bounds, request).await
 }
-
 struct DownloadEvents {
-    sender: mpsc::Sender<()>,
+    notify: Notify,
     started: AtomicBool,
 }
-
-impl DownloadEvents {
-    fn new() -> (Arc<Self>, mpsc::Receiver<()>) {
-        let (sender, receiver) = mpsc::channel(EVENT_QUEUE);
-        (
-            Arc::new(Self {
-                sender,
-                started: AtomicBool::new(false),
-            }),
-            receiver,
-        )
-    }
-}
-
 impl ProgressHandler for DownloadEvents {
     fn on_progress(&self, event: &ProgressEvent) {
         match event {
             ProgressEvent::Download(download) => match download {
                 DownloadEvent::Start { .. } => {
                     self.started.store(true, Ordering::SeqCst);
-                    let _sent = self.sender.try_send(());
+                    self.notify.notify_one();
                 }
                 DownloadEvent::Progress { .. } | DownloadEvent::AggregateProgress { .. } => {
-                    let _sent = self.sender.try_send(());
+                    self.notify.notify_one();
                 }
                 DownloadEvent::Complete => {}
             },
@@ -81,37 +60,13 @@ impl ProgressHandler for DownloadEvents {
         }
     }
 }
-
-enum Failure {
-    Hub(HFError),
-    StartTimeout,
-    Stalled { seconds: u64 },
-    TimeoutRange,
-}
-
-impl Failure {
-    fn classify(self, repository: &str, revision: &str) -> HubError {
-        match self {
-            Self::Hub(error) => classify(error, repository, revision),
-            Self::StartTimeout => HubError::StartTimeout {
-                repository: repository.to_owned(),
-            },
-            Self::Stalled { seconds } => HubError::Stalled {
-                repository: repository.to_owned(),
-                seconds,
-            },
-            Self::TimeoutRange => HubError::TimeoutRange,
-        }
-    }
-}
-
 async fn run_bounded<C>(
     call: C,
     events: &DownloadEvents,
-    mut receiver: mpsc::Receiver<()>,
     clock: &dyn Clock,
     bounds: Bounds,
-) -> Result<PathBuf, Failure>
+    request: &Request<'_>,
+) -> Result<PathBuf, HubError>
 where
     C: Future<Output = hf_hub::HFResult<PathBuf>>,
 {
@@ -120,26 +75,23 @@ where
     let mut deadline = clock
         .now()
         .checked_add(bounds.start)
-        .ok_or(Failure::TimeoutRange)?;
+        .ok_or(HubError::TimeoutRange)?;
     loop {
-        let signal = async {
-            match receiver.recv().await {
-                Some(()) => {}
-                None => pending::<()>().await,
-            }
-        };
+        let signal = events.notify.notified();
         tokio::pin!(signal);
         match timeout_at(deadline, select(pinned.as_mut(), signal.as_mut())).await {
-            Err(_elapsed) => {
-                if started {
-                    return Err(Failure::Stalled {
-                        seconds: bounds.idle.as_secs(),
-                    });
-                }
-                return Err(Failure::StartTimeout);
+            Err(_elapsed) if started => {
+                return Err(HubError::Stalled(
+                    request.repository.to_owned(),
+                    bounds.idle.as_secs(),
+                ));
             }
-            Ok(Either::Left((result, _))) => return result.map_err(Failure::Hub),
-            Ok(Either::Right(((), _))) => {
+            Err(_elapsed) => return Err(HubError::StartTimeout(request.repository.to_owned())),
+            Ok(Either::Left((result, _))) => {
+                return result
+                    .map_err(|error| classify(error, request.repository, request.revision));
+            }
+            Ok(Either::Right((_permit, _))) => {
                 let window = if events.started.load(Ordering::SeqCst) {
                     started = true;
                     bounds.idle
@@ -149,7 +101,7 @@ where
                 deadline = clock
                     .now()
                     .checked_add(window)
-                    .ok_or(Failure::TimeoutRange)?;
+                    .ok_or(HubError::TimeoutRange)?;
             }
         }
     }

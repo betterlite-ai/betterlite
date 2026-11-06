@@ -5,7 +5,7 @@ use betterlite_models::catalog::{ModelCatalog, UnknownFields};
 use rstest::rstest;
 use secrecy::SecretString;
 
-use crate::engine::fetch::{RemoteSource, TiktokenFetcher};
+use crate::engine::fetch::TiktokenFetcher;
 use crate::engine::hub::{HubDownloader, HubError, SystemClock};
 use crate::engine::selection::{CustomTokenizer, SelectionError, Selector, TokenizerType};
 use crate::engine::tests::support::{Reply, Request, Server, client, hub_settings, resolver};
@@ -45,11 +45,7 @@ fn selector(settings: &HubSettings, disable: bool) -> Selector {
         resolver(settings),
         Arc::new(SystemClock),
     ));
-    let fetcher = Arc::new(TiktokenFetcher::with_source(
-        client(),
-        None,
-        RemoteSource::default(),
-    ));
+    let fetcher = Arc::new(TiktokenFetcher::new(client(), None));
     let catalog = Arc::new(ModelCatalog::parse(CATALOG.as_bytes(), UnknownFields::Reject).unwrap());
     Selector::new(fetcher, hub, catalog, disable)
 }
@@ -160,7 +156,7 @@ async fn a_custom_tokenizer_failure_reaches_the_caller() {
         selector(&settings, false)
             .select("command-r", Some(&custom))
             .await,
-        Err(SelectionError::Hub(HubError::EntryNotFound { .. }))
+        Err(SelectionError::Hub(HubError::EntryNotFound(..)))
     ));
 }
 
@@ -187,4 +183,16 @@ async fn a_custom_tokenizer_is_downloaded_once_with_its_token() {
     drop(requests);
     assert_eq!(authorization.as_deref(), Some("Bearer secret"));
     assert!(path.contains("/owner/private/resolve/rev-9/tokenizer.json"));
+}
+
+#[tokio::test]
+async fn default_encoding_is_the_bundled_cl100k() {
+    let directory = tempfile::tempdir().unwrap();
+    let settings = hub_settings("http://127.0.0.1:1", directory.path());
+    let selected = selector(&settings, false).default_encoding().await.unwrap();
+    assert_eq!(selected.tokenizer_type, TokenizerType::OpenAi);
+    assert_eq!(
+        selected.engine.encode("hello world").unwrap(),
+        [15339, 1917]
+    );
 }

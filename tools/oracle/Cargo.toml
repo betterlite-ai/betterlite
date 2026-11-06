@@ -4,7 +4,6 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 publish.workspace = true
-
 [dependencies]
 async-trait = "0.1.92"
 aws-credential-types = "1.3.1"
@@ -84,17 +83,13 @@ tracing-subscriber = { version = "0.3.23", default-features = false, features = 
 ulid = "3.0.0"
 url = "2.5.8"
 uuid = { version = "1.28.0", default-features = false }
-
 [dev-dependencies]
 rstest = "=0.27.0"
 tokio-postgres.workspace = true
-
 [[test]]
 name = "otlp_normalization"
 path = "src/helpers/logging/otlp_normalization/tests.rs"
-
 [lints]
 workspace = true
-
 [package.metadata.cargo-shear]
 ignored-paths = ["src/helpers/*/*.rs"]

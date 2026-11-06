@@ -120,7 +120,7 @@ async fn offline_answers_from_the_cache_only() {
         downloader(&empty_offline)
             .download(REPO, "main", None)
             .await,
-        Err(HubError::CacheMiss { .. })
+        Err(HubError::CacheMiss(..))
     ));
 }
 
@@ -136,7 +136,7 @@ async fn unauthorized_is_reported() {
     let settings = hub_settings(&server.endpoint, directory.path());
     assert!(matches!(
         downloader(&settings).download(REPO, "main", None).await,
-        Err(HubError::Unauthorized { .. })
+        Err(HubError::Unauthorized(..))
     ));
     assert_eq!(server.request_count(), 1);
 }
@@ -154,12 +154,12 @@ async fn missing_revision_and_file_do_not_fall_back() {
     let hub = downloader(&settings);
     assert!(matches!(
         hub.download(REPO, "missing-revision", None).await,
-        Err(HubError::EntryNotFound { .. })
+        Err(HubError::EntryNotFound(..))
     ));
     assert_eq!(server.request_count(), 1);
     assert!(matches!(
         hub.download(REPO, "main", None).await,
-        Err(HubError::EntryNotFound { .. })
+        Err(HubError::EntryNotFound(..))
     ));
     assert_eq!(server.request_count(), 2);
 }
@@ -200,7 +200,7 @@ async fn head_past_etag_timeout_falls_back_and_retries() {
     settings.etag_timeout = 0;
     assert!(matches!(
         downloader(&settings).download(REPO, "main", None).await,
-        Err(HubError::NotAvailable { .. })
+        Err(HubError::NotAvailable(..))
     ));
 }
 
@@ -244,7 +244,7 @@ async fn stalled_body_fails_with_the_download_timeout() {
     settings.download_timeout = 0;
     assert!(matches!(
         downloader(&settings).download(REPO, "main", None).await,
-        Err(HubError::Stalled { .. })
+        Err(HubError::Stalled(..))
     ));
 }
 
