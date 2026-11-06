@@ -49,6 +49,16 @@ fn code_execution_result_defaults_to_the_code_execution_object() {
 }
 
 #[test]
+fn code_execution_result_deserializes_with_the_default_object() {
+    let result: CodeExecutionResult = serde_json::from_str(
+        r#"{"stdout":"out","stderr":"","results":[],"error":null,"execution_count":null}"#,
+    )
+    .unwrap();
+    assert_eq!(result.object, "code_execution");
+    assert_eq!(result.stdout, "out");
+}
+
+#[test]
 fn code_execution_result_writes_error_details_and_count_as_json() {
     let result = CodeExecutionResult {
         stdout: "out".to_owned(),
