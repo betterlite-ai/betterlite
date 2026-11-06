@@ -12,3 +12,13 @@ deviations:
   - what: The registry holds the ten safe builtins (len, str, int, float, bool, list, dict, True, False, None) as names only.
     why: The Starlark runtime that runs custom code provides these natively, so there is no Rust function to register.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/primitives.py#L840-L895
+  - what: >-
+      Regex primitives compile with fancy-regex instead of Python's re. Python's lookaround, backreferences
+      and named groups run, but without MULTILINE $ matches only at the very end of the text, where Python's $
+      also matches before one trailing newline, and \Z matches before trailing newlines where Python's \Z
+      matches only at the end. A pattern that passes fancy-regex's backtrack limit counts as no match, and a
+      replacement naming an unknown group returns the original text, where LiteLLM lets Python's IndexError escape.
+    why: >-
+      Python's re is not available in Rust; fancy-regex runs those constructs with bounded work, and a failing
+      match or template falls back the way re.error does instead of failing custom code.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/primitives.py#L113-L187

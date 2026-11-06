@@ -39,6 +39,18 @@ enum Check {
     "{}",
     r#""a""#
 ))]
+#[case::replace_with_an_out_of_range_octal_escape_keeps_the_text(Check::Returns(
+    "regex_replace",
+    r#"["a","a","\\777"]"#,
+    "{}",
+    r#""a""#
+))]
+#[case::replace_with_a_second_non_octal_digit_keeps_the_text(Check::Returns(
+    "regex_replace",
+    r#"["a","a","\\118"]"#,
+    "{}",
+    r#""a""#
+))]
 #[case::find_all_with_an_invalid_pattern(Check::Returns(
     "regex_find_all",
     r#"["text","[invalid"]"#,

@@ -23,6 +23,21 @@ use super::{FakeTransport, run};
     "{}",
     r#""[a]b""#
 )]
+#[case::replace_with_a_three_digit_octal_escape(
+    "regex_replace",
+    r#"["a","a","\\101"]"#,
+    "{}",
+    r#""A""#
+)]
+#[case::replace_with_an_octal_newline("regex_replace", r#"["a","a","\\012"]"#, "{}", r#""\n""#)]
+#[case::replace_octal_stops_after_three_digits(
+    "regex_replace",
+    r#"["a","a","\\1234"]"#,
+    "{}",
+    r#""S4""#
+)]
+#[case::replace_octal_masks_the_byte("regex_replace", r#"["a","a","\\0777"]"#, "{}", r#""?7""#)]
+#[case::replace_with_a_null_escape("regex_replace", r#"["a","a","\\0"]"#, "{}", r#""\u0000""#)]
 #[case::find_all_without_groups("regex_find_all", r#"["a1b22","\\d+"]"#, "{}", r#"["1","22"]"#)]
 #[case::find_all_one_group("regex_find_all", r#"["k=1 j=2","(\\w)="]"#, "{}", r#"["k","j"]"#)]
 #[case::find_all_many_groups(
