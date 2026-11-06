@@ -5,6 +5,7 @@ use super::CyberArkSecretManager;
 use super::error::CyberArkError;
 use super::transport::{ConjurRequest, ConjurResponse, ConjurTransport, HttpMethod};
 
+pub(super) mod blocking;
 mod tests;
 
 // Python's quote(name, safe="") leaves only letters, digits and "_.-~" unescaped.
@@ -23,20 +24,25 @@ pub(super) fn secret_url<T>(manager: &CyberArkSecretManager<T>, secret_name: &st
     )
 }
 
-pub(super) fn read_request<'borrowed, T>(
-    manager: &'borrowed CyberArkSecretManager<T>,
+pub(super) async fn fetch<T>(
+    manager: &CyberArkSecretManager<T>,
     secret_name: &str,
-    header: &'borrowed SecretString,
-) -> ConjurRequest<'borrowed> {
-    ConjurRequest {
+) -> Result<ConjurResponse, CyberArkError<T::Error>>
+where
+    T: ConjurTransport,
+{
+    let header = manager.authorization().await?;
+    let request = ConjurRequest {
         method: HttpMethod::Get,
         url: secret_url(manager, secret_name),
-        authorization: Some(header),
+        authorization: Some(&header),
         content_type: None,
         body: None,
         verify_tls: manager.settings.verify_tls,
         client_certificate: None,
-    }
+    };
+    let reply = manager.transport.send(request).await;
+    reply.map_err(CyberArkError::Transport)?.require_success()
 }
 
 pub(super) fn finish_read<T>(

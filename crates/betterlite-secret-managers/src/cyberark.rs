@@ -11,10 +11,10 @@ use crate::secret_contracts::options::{DeleteOptions, SecretOptions, SecretRotat
 use crate::secret_contracts::{BaseSecretManager, RotationError, SecretFuture};
 use crate::secret_helpers::read_boolean_text;
 use cyberark_auth::{TOKEN_KEY, begin_login, finish_login};
-use cyberark_read::{finish_read, read_request};
+use cyberark_read::finish_read;
 use error::{CyberArkError, CyberArkInitError};
 use operation::SecretOperation;
-use transport::{ClientCertificate, ConjurResponse, ConjurTransport};
+use transport::{ClientCertificate, ConjurTransport};
 use ttl_cache::TtlCache;
 
 mod cyberark_auth;
@@ -140,7 +140,7 @@ impl<T: ConjurTransport> CyberArkSecretManager<T> {
         if let Some(cached) = self.values.get(secret_name) {
             return Some(cached);
         }
-        let outcome = self.fetch(secret_name).await;
+        let outcome = cyberark_read::fetch(self, secret_name).await;
         finish_read(self, secret_name, outcome)
     }
 
@@ -148,22 +148,8 @@ impl<T: ConjurTransport> CyberArkSecretManager<T> {
         if let Some(cached) = self.values.get(secret_name) {
             return Some(cached);
         }
-        let outcome = self.fetch_blocking(secret_name);
+        let outcome = cyberark_read::blocking::fetch(self, secret_name);
         finish_read(self, secret_name, outcome)
-    }
-
-    async fn fetch(&self, secret_name: &str) -> Result<ConjurResponse, CyberArkError<T::Error>> {
-        let header = self.authorization().await?;
-        let request = read_request(self, secret_name, &header);
-        let reply = self.transport.send(request).await;
-        reply.map_err(CyberArkError::Transport)?.require_success()
-    }
-
-    fn fetch_blocking(&self, secret_name: &str) -> Result<ConjurResponse, CyberArkError<T::Error>> {
-        let header = self.authorization_blocking()?;
-        let request = read_request(self, secret_name, &header);
-        let reply = self.transport.send_blocking(request);
-        reply.map_err(CyberArkError::Transport)?.require_success()
     }
 }
 
