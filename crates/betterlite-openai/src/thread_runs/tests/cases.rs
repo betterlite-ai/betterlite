@@ -135,12 +135,13 @@ async fn run_poll_completion() {
     empty_thread_is_refused().await;
     dot_segments_are_refused().await;
     empty_run_id_is_refused().await;
+    trailing_slash_base_keeps_one_slash().await;
     poll_intervals().await;
     poll_interval_failures().await;
 }
 
 async fn dot_segments_are_refused() {
-    for thread_id in [".", "%2e"] {
+    for thread_id in [".", "..", "%2e", "%2E"] {
         let dotted = RunRequest {
             thread_id: String::from(thread_id),
             ..request()
@@ -157,6 +158,16 @@ async fn dot_segments_are_refused() {
         );
         assert!(transport.requests().is_empty());
     }
+}
+
+async fn trailing_slash_base_keeps_one_slash() {
+    let (api, transport) = harness();
+    transport.queue(200, &[], QUEUED);
+    transport.queue(200, &[("openai-poll-after-ms", "0")], COMPLETED);
+    let mut trailing = call(Facade::SyncRun);
+    trailing.options.api_base = Some(String::from("https://example.test/v1/"));
+    api.run_thread(trailing, &request()).await.unwrap();
+    assert_eq!(transport.requests()[0].url, RUNS);
 }
 
 async fn empty_run_id_is_refused() {
