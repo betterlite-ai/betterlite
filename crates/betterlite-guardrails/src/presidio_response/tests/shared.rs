@@ -33,6 +33,7 @@ pub(super) static NO_ENTITIES: BTreeMap<String, PiiAction> = BTreeMap::new();
 pub(super) static NO_PARAMS: BTreeMap<String, GuardrailValue> = BTreeMap::new();
 
 const SLOW_TEXT: &str = "Slow";
+const HOOK_TEXT: &str = "Hook";
 const DELAYED_TEXT: &str = "Alice";
 const DELAYED_REPLY: Duration = Duration::from_millis(100);
 const BARRIER_TIMEOUT: Duration = Duration::from_secs(2);
@@ -194,6 +195,8 @@ struct MockState {
     seen: Arc<Mutex<Vec<SeenAnalyze>>>,
     started: Arc<Semaphore>,
     release: Arc<Semaphore>,
+    anonymize_started: Arc<Semaphore>,
+    anonymize_release: Arc<Semaphore>,
 }
 
 pub(super) struct MockServer {
@@ -201,6 +204,8 @@ pub(super) struct MockServer {
     pub(super) seen: Arc<Mutex<Vec<SeenAnalyze>>>,
     pub(super) started: Arc<Semaphore>,
     pub(super) release: Arc<Semaphore>,
+    pub(super) anonymize_started: Arc<Semaphore>,
+    pub(super) anonymize_release: Arc<Semaphore>,
     _server: JoinSet<io::Result<()>>,
 }
 
@@ -246,10 +251,16 @@ async fn analyze(State(state): State<MockState>, body: Bytes) -> Response {
         .into_response()
 }
 
-async fn anonymize(body: Bytes) -> Response {
+async fn anonymize(State(state): State<MockState>, body: Bytes) -> Response {
     let Ok(seen) = serde_json::from_slice::<SeenAnonymize>(&body) else {
         return (StatusCode::BAD_REQUEST, "missing text").into_response();
     };
+    if seen.text == HOOK_TEXT {
+        state.anonymize_started.add_permits(1);
+        if state.anonymize_release.acquire().await.is_err() {
+            return (StatusCode::INTERNAL_SERVER_ERROR, "released").into_response();
+        }
+    }
     if seen.text == DELAYED_TEXT {
         sleep(DELAYED_REPLY).await;
     }
@@ -272,10 +283,14 @@ pub(super) async fn spawn_mock(concurrent: usize) -> MockServer {
         seen: Arc::new(Mutex::new(Vec::new())),
         started: Arc::new(Semaphore::new(0)),
         release: Arc::new(Semaphore::new(0)),
+        anonymize_started: Arc::new(Semaphore::new(0)),
+        anonymize_release: Arc::new(Semaphore::new(0)),
     };
     let seen = Arc::clone(&state.seen);
     let started = Arc::clone(&state.started);
     let release = Arc::clone(&state.release);
+    let anonymize_started = Arc::clone(&state.anonymize_started);
+    let anonymize_release = Arc::clone(&state.anonymize_release);
     let router = Router::new()
         .route("/analyze", post(analyze))
         .route("/anonymize", post(anonymize))
@@ -289,6 +304,8 @@ pub(super) async fn spawn_mock(concurrent: usize) -> MockServer {
         seen,
         started,
         release,
+        anonymize_started,
+        anonymize_release,
         _server: server,
     }
 }
@@ -312,8 +329,9 @@ pub(super) fn logged_count(request: &RequestData) -> usize {
 struct LoggedRecord {
     #[serde(default)]
     guardrail_name: Option<String>,
+    // the mock path logs {} while an analyzer path logs the detection list
     #[serde(default)]
-    guardrail_response: Vec<LoggedItem>,
+    guardrail_response: Option<Box<RawValue>>,
 }
 
 #[derive(Deserialize)]
@@ -340,8 +358,13 @@ pub(super) fn logged_entity_types(request: &RequestData) -> Vec<String> {
     logged_records(request)
         .into_iter()
         .map(|record| {
-            record
-                .guardrail_response
+            let Some(response) = record.guardrail_response else {
+                return String::new();
+            };
+            let Ok(items) = serde_json::from_str::<Vec<LoggedItem>>(response.get()) else {
+                return String::new();
+            };
+            items
                 .first()
                 .and_then(|item| item.entity_type.clone())
                 .unwrap_or_default()

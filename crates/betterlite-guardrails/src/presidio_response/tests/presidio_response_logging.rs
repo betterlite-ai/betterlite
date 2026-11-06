@@ -1,16 +1,20 @@
 #![cfg(test)]
 
 use std::sync::Arc;
+use std::sync::mpsc::sync_channel;
+use std::thread;
 use std::time::Duration;
 
-use tokio::runtime::Builder;
+use tokio::runtime::{Builder, Runtime};
+use tokio::sync::Semaphore;
 use tokio::time::timeout;
 
 use super::shared::{
     NO_PARAMS, analyzer, anonymizer, chat_content, content_text, context, messages, request_data,
     response_body, spawn_mock,
 };
-use crate::presidio_analysis::RequestOverrides;
+use crate::presidio_actions::PresidioAnonymizer;
+use crate::presidio_analysis::{PresidioAnalyzer, RequestOverrides};
 use crate::presidio_response::error::PresidioResponseError;
 use crate::presidio_response::logging::logging_hook;
 
@@ -87,6 +91,42 @@ const OVERRIDES: RequestOverrides<'static> = RequestOverrides {
     dynamic_params: &NO_PARAMS,
 };
 
+const WATCHDOG: Duration = Duration::from_secs(10);
+const HOOK_MESSAGES: &str = r#"{"messages":[{"role":"user","content":"Hook"}],"metadata":{}}"#;
+const BOBBY_MESSAGES: &str = r#"{"messages":[{"role":"user","content":"Bobby"}]}"#;
+const STREAM_BODY: &str = r#"{"object":"chat.completion.chunk","choices":[]}"#;
+const BOBBY_CHAT: &str = r#"{"choices":[{"message":{"role":"assistant","content":"Bobby"}}]}"#;
+
+type HookOutcome = (
+    Result<(), PresidioResponseError>,
+    Option<String>,
+    Option<String>,
+);
+
+fn run_hook(
+    analyzer: &PresidioAnalyzer,
+    anonymizer: &PresidioAnonymizer,
+    messages_json: &str,
+    response_json: &str,
+) -> HookOutcome {
+    let context = context(analyzer, anonymizer);
+    let mut request = request_data(messages_json);
+    let mut response = response_body(response_json);
+    let result = logging_hook(context, &mut request, &mut response, "acompletion");
+    let message = messages(&request)
+        .into_iter()
+        .next()
+        .and_then(|message| content_text(message.content.as_ref()));
+    (result, message, chat_content(&response))
+}
+
+fn wait_for(runtime: &Runtime, signal: &Semaphore) {
+    let waited = runtime.block_on(async { timeout(WATCHDOG, signal.acquire()).await });
+    let _permit = waited
+        .expect("the signal arrives within the watchdog timeout")
+        .expect("the signal");
+}
+
 #[test]
 fn a_hook_runtime_does_not_poison_the_shared_client_pool() {
     let runtime = Builder::new_multi_thread()
@@ -96,27 +136,100 @@ fn a_hook_runtime_does_not_poison_the_shared_client_pool() {
         .expect("main runtime");
     let mock = runtime.block_on(spawn_mock(1));
     let shared_analyzer = Arc::new(analyzer(&mock.base, None));
+    let anonymizer = Arc::new(anonymizer(&mock.base));
+    let (sender, receiver) = sync_channel(1);
+
+    thread::scope(|scope| {
+        let hook_analyzer = Arc::clone(&shared_analyzer);
+        let hook_anonymizer = Arc::clone(&anonymizer);
+        let hook = scope.spawn(move || {
+            let outcome = run_hook(&hook_analyzer, &hook_anonymizer, HOOK_MESSAGES, STREAM_BODY);
+            sender.send(outcome).expect("the hook result");
+        });
+        wait_for(&runtime, &mock.anonymize_started);
+        let slow_task = runtime.spawn({
+            let analyzer = Arc::clone(&shared_analyzer);
+            async move { analyzer.analyze_text("Slow", &OVERRIDES).await }
+        });
+        wait_for(&runtime, &mock.started);
+        mock.anonymize_release.add_permits(1);
+        let (result, _message, _reply) = receiver
+            .recv_timeout(WATCHDOG)
+            .expect("the hook returns within the watchdog timeout");
+        result.expect("logging hook");
+        hook.join().expect("the hook thread");
+        mock.release.add_permits(1);
+        let waited = runtime.block_on(async { timeout(WATCHDOG, slow_task).await });
+        let slow = waited
+            .expect("the slow request finishes within the watchdog timeout")
+            .expect("the slow request task");
+        let _slow = slow.expect("the slow request survives the hook runtime drop");
+    });
+}
+
+#[test]
+fn logging_hook_returns_from_a_current_thread_runtime() {
+    let server = Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .expect("server runtime");
+    let mock = server.block_on(spawn_mock(1));
+    let analyzer = analyzer(&mock.base, None);
     let anonymizer = anonymizer(&mock.base);
-    let in_flight = {
-        let analyzer = Arc::clone(&shared_analyzer);
-        runtime.spawn(async move { analyzer.analyze_text("Slow", &OVERRIDES).await })
-    };
-    let started = runtime.block_on(timeout(Duration::from_secs(5), mock.started.acquire()));
-    let _started = started
-        .expect("the slow request starts within the timeout")
-        .expect("the slow request started");
-    let context = context(&shared_analyzer, &anonymizer);
-    let mut request =
-        request_data(r#"{"messages":[{"role":"user","content":"Bobby"}],"metadata":{}}"#);
-    let mut response = response_body(r#"{"object":"chat.completion.chunk","choices":[]}"#);
+    let (sender, receiver) = sync_channel(1);
 
-    logging_hook(context, &mut request, &mut response, "acompletion").expect("logging hook");
+    thread::scope(|scope| {
+        scope.spawn(move || {
+            let runtime = Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("current-thread runtime");
+            let outcome = runtime
+                .block_on(async { run_hook(&analyzer, &anonymizer, BOBBY_MESSAGES, BOBBY_CHAT) });
+            sender.send(outcome).expect("the hook result");
+        });
+        let (result, message, reply) = receiver
+            .recv_timeout(WATCHDOG)
+            .expect("the hook returns within the watchdog timeout");
+        result.expect("logging hook");
+        assert_eq!(message.as_deref(), Some("MASKED-Bobby"));
+        assert_eq!(reply.as_deref(), Some("MASKED-Bobby"));
+    });
+}
 
-    let after = runtime.block_on(shared_analyzer.analyze_text("Carla", &OVERRIDES));
-    let _shared_still_works = after.expect("the shared client works after the hook runtime drops");
-    mock.release.add_permits(1);
-    let _slow = runtime
-        .block_on(in_flight)
-        .expect("the slow request task")
-        .expect("the slow analysis");
+#[test]
+fn logging_hook_returns_from_a_single_worker_runtime() {
+    let server = Builder::new_multi_thread()
+        .worker_threads(2)
+        .enable_all()
+        .build()
+        .expect("server runtime");
+    let mock = server.block_on(spawn_mock(1));
+    let analyzer = Arc::new(analyzer(&mock.base, None));
+    let anonymizer = Arc::new(anonymizer(&mock.base));
+    let runner = Builder::new_multi_thread()
+        .worker_threads(1)
+        .enable_all()
+        .build()
+        .expect("runner runtime");
+    let task = runner.spawn({
+        let task_analyzer = Arc::clone(&analyzer);
+        let task_anonymizer = Arc::clone(&anonymizer);
+        async move { run_hook(&task_analyzer, &task_anonymizer, BOBBY_MESSAGES, BOBBY_CHAT) }
+    });
+    let (sender, receiver) = sync_channel(1);
+
+    thread::scope(|scope| {
+        scope.spawn(move || {
+            let outcome = runner.block_on(task).expect("the hook task");
+            sender.send(outcome).expect("the hook result");
+        });
+        let (result, message, reply) = receiver
+            .recv_timeout(WATCHDOG)
+            .expect("the hook returns within the watchdog timeout");
+        result.expect("logging hook");
+        assert_eq!(message.as_deref(), Some("MASKED-Bobby"));
+        assert_eq!(reply.as_deref(), Some("MASKED-Bobby"));
+    });
 }

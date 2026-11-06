@@ -11,7 +11,7 @@ use crate::presidio_response::error::PresidioResponseError;
 use crate::presidio_response::logging::async_logging_hook;
 use crate::presidio_response::wire::ResponseBody;
 
-// The hook owns this client and its pool, so the connection tasks it starts die with the hook's throwaway runtime instead of poisoning the clients the server's long-lived runtime shares.
+// The hook drives this runtime and client itself, like LiteLLM's new loop with a per-loop session: its connections die with it and its own driver runs every timeout, even when the caller's runtime is single-threaded or blocked.
 pub(super) fn run_with_owned_client(
     context: HookContext<'_>,
     request: &mut RequestData,

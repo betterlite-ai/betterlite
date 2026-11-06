@@ -198,7 +198,7 @@ async fn keeps_unknown_fields() {
     let raw = serde_json::to_string(&response).expect("response JSON");
     assert_eq!(
         raw,
-        r#"{"choices":[{"index":0,"message":{"content":"MASKED","name":"helper","role":"assistant"}}],"id":"chat-1","object":"chat.completion"}"#
+        r#"{"choices":[{"message":{"content":"MASKED","name":"helper","role":"assistant"},"index":0}],"id":"chat-1","object":"chat.completion"}"#
     );
 }
 

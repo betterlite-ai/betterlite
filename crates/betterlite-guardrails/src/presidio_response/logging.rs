@@ -30,11 +30,10 @@ pub fn logging_hook(
     response: &mut ResponseBody,
     call_type: &str,
 ) -> Result<(), PresidioResponseError> {
-    if let Ok(handle) = Handle::try_current() {
+    // Like LiteLLM's new loop with a per-loop session, the hook always drives its own runtime and client; a running loop only decides whether that happens on this thread or a separate one.
+    if Handle::try_current().is_ok() {
         return thread::scope(|scope| {
-            let join = scope.spawn(|| {
-                handle.block_on(async_logging_hook(context, request, response, call_type))
-            });
+            let join = scope.spawn(|| run_with_owned_client(context, request, response, call_type));
             join.join()
                 .map_err(|_panic| PresidioResponseError::HookThreadPanicked)?
         });
