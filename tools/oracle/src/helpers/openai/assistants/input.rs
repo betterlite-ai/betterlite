@@ -82,3 +82,15 @@ pub(crate) enum AssistantsCall {
     DeleteAssistant(DeleteFields),
     ClientArguments(ClientFields),
 }
+
+impl AssistantsCall {
+    // LiteLLM treats an absent flag as the sync call, so the boundary maps a missing or null flag to false.
+    pub(super) fn async_request(&self) -> bool {
+        match self {
+            Self::ListAssistants(fields) => fields.flag.unwrap_or(false),
+            Self::CreateAssistant(fields) => fields.flag.unwrap_or(false),
+            Self::DeleteAssistant(fields) => fields.flag.unwrap_or(false),
+            Self::ClientArguments(_) => false,
+        }
+    }
+}

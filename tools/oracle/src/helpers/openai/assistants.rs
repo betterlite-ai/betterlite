@@ -6,10 +6,7 @@ use betterlite_openai::assistants::client::{ClientKind, ClientOptions, SdkClient
 use betterlite_openai::assistants::error::AssistantsError;
 use betterlite_openai::assistants::operations::AssistantsApi;
 use betterlite_openai::assistants::transport::AssistantsTransport;
-use input::{
-    AssistantsCall, ClientFields, CreateFields, DeleteFields, KindName, ListFields, OptionFields,
-    Reply,
-};
+use input::{AssistantsCall, ClientFields, KindName, OptionFields, Reply};
 use reqwest::header::HeaderMap;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Serialize;
@@ -228,61 +225,42 @@ fn invoke(input: &AssistantsCall) -> HelperResult {
     let runtime = tokio::runtime::Builder::new_current_thread()
         .build()
         .map_err(|error| invalid_input(error.to_string()))?;
+    let async_request = input.async_request();
     match input {
-        AssistantsCall::ListAssistants(fields) => runtime.block_on(list_assistants(fields)),
-        AssistantsCall::CreateAssistant(fields) => runtime.block_on(create_assistant(fields)),
-        AssistantsCall::DeleteAssistant(fields) => runtime.block_on(delete_assistant(fields)),
+        AssistantsCall::ListAssistants(fields) => runtime.block_on(exchange(
+            fields.reply.as_ref(),
+            PAGE,
+            &fields.options,
+            |api, options| async move {
+                if fields.direct {
+                    api.async_get_assistants(options, None, &fields.params)
+                        .await
+                } else {
+                    api.get_assistants(options, None, async_request, &fields.params)
+                        .await
+                }
+            },
+        )),
+        AssistantsCall::CreateAssistant(fields) => runtime.block_on(exchange(
+            fields.reply.as_ref(),
+            ASSISTANT,
+            &fields.options,
+            |api, options| async move {
+                api.create_assistants(options, &fields.data, None, async_request)
+                    .await
+            },
+        )),
+        AssistantsCall::DeleteAssistant(fields) => runtime.block_on(exchange(
+            fields.reply.as_ref(),
+            DELETED,
+            &fields.options,
+            |api, options| async move {
+                api.delete_assistant(options, &fields.assistant_id, None, async_request)
+                    .await
+            },
+        )),
         AssistantsCall::ClientArguments(fields) => client_arguments(fields),
     }
-}
-
-async fn list_assistants(fields: &ListFields) -> HelperResult {
-    exchange(
-        fields.reply.as_ref(),
-        PAGE,
-        &fields.options,
-        |api, options| async move {
-            if fields.direct {
-                api.async_get_assistants(options, None, &fields.params)
-                    .await
-            } else {
-                api.get_assistants(options, None, fields.flag.unwrap_or(false), &fields.params)
-                    .await
-            }
-        },
-    )
-    .await
-}
-
-async fn create_assistant(fields: &CreateFields) -> HelperResult {
-    exchange(
-        fields.reply.as_ref(),
-        ASSISTANT,
-        &fields.options,
-        |api, options| async move {
-            api.create_assistants(options, &fields.data, None, fields.flag.unwrap_or(false))
-                .await
-        },
-    )
-    .await
-}
-
-async fn delete_assistant(fields: &DeleteFields) -> HelperResult {
-    exchange(
-        fields.reply.as_ref(),
-        DELETED,
-        &fields.options,
-        |api, options| async move {
-            api.delete_assistant(
-                options,
-                &fields.assistant_id,
-                None,
-                fields.flag.unwrap_or(false),
-            )
-            .await
-        },
-    )
-    .await
 }
 
 pub(crate) struct Op;
