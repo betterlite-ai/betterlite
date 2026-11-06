@@ -56,12 +56,10 @@ fn clock_field(part: &str, field: ClockField) -> Option<u8> {
 }
 
 fn two_digit_value(lead: char, tail: char, field: ClockField) -> Option<u8> {
-    let tens = match field {
+    let tens: u8 = match field {
         // %H admits a non-ASCII second digit only after the ASCII digit 0 or 1
         ClockField::Hour if matches!(lead, '0' | '1') => u8::try_from(lead.to_digit(10)?).ok()?,
-        ClockField::Hour if lead == '2' => {
-            u8::try_from(tail.to_digit(10).filter(|digit| *digit <= 3)?).ok()?
-        }
+        ClockField::Hour if lead == '2' && matches!(tail, '0'..='3') => 2,
         ClockField::Minute | ClockField::Second if matches!(lead, '0'..='5') => {
             u8::try_from(lead.to_digit(10)?).ok()?
         }
