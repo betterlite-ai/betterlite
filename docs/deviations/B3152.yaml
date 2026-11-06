@@ -1,0 +1,14 @@
+task: B3152
+deviations:
+  - what: The GitHub client's timeout is a concrete 45 seconds rather than a per-client parameter.
+    why: B173's transport carries the deadline per request, and the ROI GitHub provider sets it explicitly.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/github.py#L332
+  - what: The 45 seconds is one total request deadline (OutboundRequest.deadline) rather than httpx's separate connect, read, write and pool timeouts.
+    why: B173's transport contract owns deadline semantics; a slow answer past 45 seconds is cut off here where httpx only cuts a single read.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/github.py#L332
+  - what: GitHub's close consumes the handle and closes nothing, where LiteLLM closes a client or transport it was given.
+    why: B173's pool owns the pooled clients and drains them at shutdown, so closing a per-caller handle would break the clients other callers share.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/github.py#L342-L346
+  - what: A GitHub token a header cannot carry fails when the client is built, where LiteLLM stores the string and fails on the first request.
+    why: HeaderValue refuses the bytes at construction; the message is the same "Could not reach GitHub" source error a request would raise.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/github.py#L319-L329
