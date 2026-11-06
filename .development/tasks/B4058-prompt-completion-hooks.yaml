@@ -16,6 +16,7 @@ description: >-
   ensure backend-specific initialization hooks are kept separate from these upper orchestration adapters.
 scope:
   paths:
+    - crates/betterlite-prompts/src/dotprompt_templates.rs
     - crates/betterlite-prompts/src/orchestration.rs
     - crates/betterlite-prompts/src/orchestration/**
   lint_tables: false
