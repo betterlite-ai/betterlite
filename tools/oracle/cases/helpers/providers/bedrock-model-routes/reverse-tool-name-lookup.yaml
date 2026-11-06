@@ -7,7 +7,7 @@ call:
     request_metadata_fields: []
     tool_names:
       converted_name: "Original Name"
-      x: y
+      x: "y"
       same: same
       empty_original: ""
     step:
