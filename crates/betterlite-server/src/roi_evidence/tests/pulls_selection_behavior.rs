@@ -86,6 +86,23 @@ async fn pulls_stop_after_a_page_whose_last_update_is_before_the_start() {
     assert_eq!(script.seen().len(), 1);
 }
 
+#[tokio::test]
+async fn pulls_judge_the_early_stop_by_the_page_last_item() {
+    let first = json_array(&[
+        pull_item(1, None, "2025-12-01T00:00:00Z"),
+        pull_item(2, None, "2026-01-05T00:00:00Z"),
+    ]);
+    let script = Script::new(vec![
+        with_link(json_reply(200, &first), NEXT_LINK),
+        json_reply(200, "[]"),
+    ]);
+    let github = github(script.clone());
+    pulls(&github, "o/r", date("2026-01-01"), date("2026-01-31"))
+        .await
+        .unwrap();
+    assert_eq!(script.seen().len(), 2);
+}
+
 #[rstest]
 #[case::the_start_date_itself_continues("2026-01-01T00:00:00Z", 2)]
 #[case::a_later_update_continues("2026-01-02T00:00:00Z", 2)]

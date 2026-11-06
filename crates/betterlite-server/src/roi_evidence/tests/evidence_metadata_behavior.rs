@@ -97,6 +97,10 @@ async fn evidence_keeps_the_detail_number_and_names_a_deleted_user() {
     let seen = script.seen();
     assert_eq!(seen[0].url, "https://api.github.com/repos/o/r/pulls/7");
     assert_eq!(seen[2].url, "https://api.github.com/users/deleted-user");
+    assert_eq!(
+        seen[3].url,
+        "https://api.github.com/repos/o/r/pulls/7/commits"
+    );
 }
 
 #[tokio::test]
