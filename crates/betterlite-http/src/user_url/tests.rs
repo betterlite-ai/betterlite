@@ -452,6 +452,16 @@ fn describe_headers(headers: &HeaderMap) -> String {
     "http://a.test:8080/b",
     "auth=false host=false cookie=false keep=true"
 )]
+#[case::an_https_upgrade_to_another_host_drops_authorization(
+    "http://a.test/a",
+    "https://b.test/b",
+    "auth=false host=false cookie=false keep=true"
+)]
+#[case::an_https_upgrade_from_another_port_drops_authorization(
+    "http://a.test:8080/a",
+    "https://a.test/b",
+    "auth=false host=false cookie=false keep=true"
+)]
 fn redirect_headers_follow_httpx(#[case] from: &str, #[case] to: &str, #[case] expected: &str) {
     let mut headers = HeaderMap::new();
     headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer k"));
