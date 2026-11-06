@@ -131,9 +131,8 @@ impl Fixture {
         fs::create_dir_all(&real).map_err(failure)?;
         let link = self.root.path().join("link");
         std::os::unix::fs::symlink(&real, &link).map_err(failure)?;
-        self.files
-            .write_private(&link.join(name), PrivateDocument::json(data)?)
-            .await?;
+        let document = PrivateDocument::json(data)?;
+        self.files.write_private(&link.join(name), document).await?;
         let parent_is_symlink = fs::symlink_metadata(&link)
             .map_err(failure)?
             .file_type()
