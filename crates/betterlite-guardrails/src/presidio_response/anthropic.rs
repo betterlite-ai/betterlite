@@ -1,5 +1,6 @@
 use serde_json::value::RawValue;
 
+use crate::presidio_actions::check::CheckPiiCall;
 use crate::presidio_actions::request_data::{
     RequestData, pii_tokens, presidio_settings_from_request,
 };
@@ -41,20 +42,30 @@ pub async fn process_anthropic_response(
         let ContentItem::Object(block) = item else {
             continue;
         };
-        if block.kind.as_deref() != Some("text") {
-            continue;
+        if block.kind.as_deref() == Some("text")
+            && let Some(text) = block.text.clone()
+        {
+            let masked = match mode {
+                Mode::Unmask => unmask_pii_text(&text, &tokens),
+                Mode::Mask => {
+                    context
+                        .anonymizer
+                        .check_pii(
+                            context.analyzer,
+                            CheckPiiCall {
+                                text: &text,
+                                output_parse_pii: false,
+                                presidio_config: presidio_config.as_ref(),
+                                dynamic_params: context.dynamic_params,
+                                pii_entities_config: context.pii_entities_config,
+                                request_data: &mut *request_data,
+                            },
+                        )
+                        .await?
+                }
+            };
+            block.set_text(masked);
         }
-        let Some(text) = block.text.clone() else {
-            continue;
-        };
-        let masked = match mode {
-            Mode::Unmask => unmask_pii_text(&text, &tokens),
-            Mode::Mask => {
-                let call = context.check_call(&text, presidio_config.as_ref(), request_data);
-                context.anonymizer.check_pii(context.analyzer, call).await?
-            }
-        };
-        block.set_text(masked);
     }
     Ok(())
 }

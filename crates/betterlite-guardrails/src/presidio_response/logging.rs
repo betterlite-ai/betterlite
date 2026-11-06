@@ -4,6 +4,7 @@ use futures_util::future::join_all;
 use serde_json::value::RawValue;
 use tokio::runtime::Handle;
 
+use crate::presidio_actions::check::CheckPiiCall;
 use crate::presidio_actions::error::PresidioActionsError;
 use crate::presidio_actions::request_data::{
     PresidioPerRequestConfig, RequestData, presidio_settings_from_request,
@@ -109,7 +110,14 @@ async fn run_checks(
                 .anonymizer
                 .check_pii(
                     context.analyzer,
-                    context.check_call(&text, config, &mut data),
+                    CheckPiiCall {
+                        text: &text,
+                        output_parse_pii: false,
+                        presidio_config: config,
+                        dynamic_params: context.dynamic_params,
+                        pii_entities_config: context.pii_entities_config,
+                        request_data: &mut data,
+                    },
                 )
                 .await;
             (outcome, data)

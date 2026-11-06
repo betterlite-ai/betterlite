@@ -1,5 +1,6 @@
 use indexmap::IndexMap;
 
+use crate::presidio_actions::check::CheckPiiCall;
 use crate::presidio_actions::request_data::{
     PresidioPerRequestConfig, RequestData, pii_tokens, presidio_settings_from_request,
 };
@@ -57,7 +58,14 @@ impl Masking<'_> {
             return Ok(unmask_pii_text(text, self.tokens));
         }
         let context = self.context;
-        let call = context.check_call(text, self.presidio_config, self.request_data);
+        let call = CheckPiiCall {
+            text,
+            output_parse_pii: false,
+            presidio_config: self.presidio_config,
+            dynamic_params: context.dynamic_params,
+            pii_entities_config: context.pii_entities_config,
+            request_data: &mut *self.request_data,
+        };
         context
             .anonymizer
             .check_pii(context.analyzer, call)
