@@ -67,6 +67,50 @@ async fn a_manager_without_a_prompt_id_fetches_nothing() {
 }
 
 #[tokio::test]
+async fn an_empty_prompt_id_is_not_configured_and_keeps_the_injected_client() {
+    let injected_transport = FakeTransport::scripted(vec![answer!(200, "User: hi")]);
+    let client = GitLabClient::new(
+        &config_from(r#"{"project": "own/project", "access_token": "t", "tag": "v9"}"#),
+        injected_transport.clone(),
+    )
+    .unwrap();
+    let transport = FakeTransport::scripted(vec![]);
+    let manager = GitLabPromptManager::new(
+        config_from("{}"),
+        Some(String::new()),
+        None,
+        Some(client),
+        transport.clone(),
+    )
+    .await
+    .unwrap();
+
+    let (rendered, _metadata) = manager
+        .get_prompt_template("chat/hi", None, None)
+        .await
+        .unwrap();
+
+    assert_eq!(rendered, "User: hi");
+    assert_eq!(injected_transport.requests().len(), 1);
+    assert!(transport.requests().is_empty());
+    let url = &injected_transport.requests()[0].url;
+    assert!(url.contains("/projects/own%2Fproject/"), "{url}");
+}
+
+#[tokio::test]
+async fn an_empty_prompt_id_loads_nothing_up_front() {
+    let (manager, transport) = manager(CONFIG, Some(""), vec![]).await;
+
+    let loaded = {
+        let slot = manager.prompt_manager().await.expect("the manager loads");
+        slot.configured_loaded
+    };
+
+    assert!(loaded);
+    assert!(transport.requests().is_empty());
+}
+
+#[tokio::test]
 async fn a_manager_uses_the_injected_client_when_no_prompt_id_is_configured() {
     let injected_transport = FakeTransport::scripted(vec![answer!(200, "User: hi")]);
     let client = GitLabClient::new(
