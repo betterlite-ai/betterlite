@@ -127,6 +127,7 @@ struct AiGuardInput {
 
 #[rustfmt::skip]
 #[derive(Debug, Clone, Default, Deserialize)]
+#[serde(default)]
 struct AiGuardResponse { result: AiGuardResult }
 
 #[rustfmt::skip]
