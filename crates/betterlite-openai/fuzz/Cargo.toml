@@ -169,3 +169,10 @@ path = "fuzz_targets/openai_batches.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "xai_models"
+path = "fuzz_targets/xai_models.rs"
+test = false
+doc = false
+bench = false
