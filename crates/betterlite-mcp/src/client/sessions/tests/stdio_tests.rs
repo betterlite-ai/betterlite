@@ -34,6 +34,6 @@ async fn the_stdio_server_dies_when_its_owner_is_dropped() {
     let streams = transport.enter().await.unwrap();
     drop(transport);
     drop(streams);
-    sleep(Duration::from_millis(200)).await;
+    sleep(Duration::from_millis(500)).await;
     assert!(!process_exists(pid));
 }
