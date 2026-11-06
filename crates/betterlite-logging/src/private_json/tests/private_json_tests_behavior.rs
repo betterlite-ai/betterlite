@@ -163,6 +163,29 @@ async fn staging_then_committing_replaces_the_original_without_a_temporary() {
 }
 
 #[tokio::test]
+async fn bytes_are_staged_and_written_with_owner_only_permissions() {
+    let directory = TempDir::new().expect("temp dir");
+    let target = directory.path().join("token");
+    let files = PrivateFiles::default();
+    let staged = files
+        .stage_private_bytes(&target, b"first")
+        .await
+        .expect("stages the bytes");
+    assert_eq!(mode_of(&staged.path), 0o600);
+    assert!(!target.exists());
+    files
+        .discard_staged_json(&staged)
+        .await
+        .expect("discards the stage");
+    files
+        .write_private_bytes(&target, b"second".to_vec())
+        .await
+        .expect("writes the bytes");
+    assert_eq!(fs::read(&target).expect("reads"), b"second");
+    assert_eq!(mode_of(&target), 0o600);
+}
+
+#[tokio::test]
 async fn failed_staging_preserves_originals_and_removes_temporaries() {
     let directory = TempDir::new().expect("temp dir");
     let target = directory.path().join("cache.json");
