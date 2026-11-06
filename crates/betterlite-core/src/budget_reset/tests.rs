@@ -323,14 +323,21 @@ fn two_month_duration_rejected() {
 }
 
 #[rstest]
-#[case::unsupported_unit("5x")]
-#[case::unparsable("abc")]
-#[case::two_month("2mo")]
-#[case::twelve_month("12mo")]
-fn seconds_or_reset_value_error_rejected(#[case] duration: &str) {
+#[case::unsupported_unit("5x", true)]
+#[case::unparsable("abc", true)]
+#[case::two_month("2mo", false)]
+#[case::twelve_month("12mo", false)]
+fn seconds_or_reset_value_error_rejected(#[case] duration: &str, #[case] seconds_step: bool) {
     let timezone = json!(null);
     let reset_time = json!(null);
     let clock = clocks("2024-06-15T12:00:00Z", "2024-06-15T12:00:00Z", None);
+    let seconds = duration_in_seconds(
+        duration,
+        clock.calendar_now,
+        clock.calendar_timezone,
+        &DATABASE(),
+    );
+    assert_eq!(seconds.is_err(), seconds_step, "{duration}");
     assert!(
         !is_persistable_budget_duration(duration, raw(&timezone, &reset_time), clock, &DATABASE())
             .unwrap()
@@ -344,6 +351,19 @@ fn overflow_rejected(#[case] duration: &str) {
     let timezone = json!(null);
     let reset_time = json!(null);
     let clock = clocks("2024-06-15T12:00:00Z", "2024-06-15T12:00:00Z", None);
+    let failure = get_budget_reset_time(
+        duration,
+        raw(&timezone, &reset_time),
+        clock.reset_now,
+        &DATABASE(),
+    )
+    .unwrap_err();
+    assert!(matches!(
+        failure,
+        BudgetResetError::Duration(
+            DurationError::QuantityOverflow { .. } | DurationError::Calendar { .. }
+        )
+    ));
     assert!(
         !is_persistable_budget_duration(duration, raw(&timezone, &reset_time), clock, &DATABASE())
             .unwrap()

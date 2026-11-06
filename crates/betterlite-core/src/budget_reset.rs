@@ -41,11 +41,15 @@ pub fn compute_budget_reset_at(
     now: DateTime<Utc>,
     database: &TimeZoneDatabase,
 ) -> Result<Reset, DurationError> {
+    let BudgetResetSettings {
+        timezone,
+        reset_time_of_day,
+    } = settings;
     next_standardized_reset_time(
         duration,
         now,
-        Some(settings.timezone.as_str()),
-        settings.reset_time_of_day,
+        Some(timezone.as_str()),
+        *reset_time_of_day,
         database,
     )
 }
@@ -56,13 +60,11 @@ pub fn get_budget_reset_time(
     now: DateTime<Utc>,
     database: &TimeZoneDatabase,
 ) -> Result<Reset, BudgetResetError> {
-    compute_budget_reset_at(
-        duration,
-        &get_budget_reset_settings(raw.timezone, raw.reset_time_of_day)?,
-        now,
-        database,
-    )
-    .map_err(BudgetResetError::from)
+    match get_budget_reset_settings(raw.timezone, raw.reset_time_of_day) {
+        Ok(settings) => compute_budget_reset_at(duration, &settings, now, database)
+            .map_err(BudgetResetError::Duration),
+        Err(error) => Err(BudgetResetError::Settings(error)),
+    }
 }
 
 pub fn is_persistable_budget_duration(
