@@ -6,7 +6,7 @@ use betterlite_openai::openai_base_config::{CatalogCapabilities, Object};
 use betterlite_openai::stream::chunk::Chunk;
 use futures_util::{StreamExt as _, stream};
 use secrecy::ExposeSecret as _;
-use serde_json::{Value, json};
+use serde_json::Value;
 
 use super::fixture::{FixedSession, FixtureError, Login, Recording};
 use super::{HeadersInput, Input, NormalizeInput, ParamsInput, ProviderInfoInput, Step};
@@ -67,9 +67,10 @@ fn headers_value(
     spec: &HeadersInput,
 ) -> Object {
     let params = LitellmParamsInput::Mapping(spec.litellm_params.clone());
-    let headers = config.validate_environment(&params, platform, &FixedSession);
     let mut output = Object::new();
-    output.insert(String::from("headers"), json!(headers));
+    for (name, value) in config.validate_environment(&params, platform, &FixedSession) {
+        output.insert(name, Value::String(value));
+    }
     output
 }
 

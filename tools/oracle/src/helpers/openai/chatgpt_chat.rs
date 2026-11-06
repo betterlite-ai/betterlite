@@ -1,7 +1,6 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::PoisonError;
 
-use betterlite_openai::chatgpt::chat::ChatGptError;
 use betterlite_openai::chatgpt::headers::PlatformEnvironment;
 use betterlite_openai::openai_base_config::{Headers, Object};
 use rust_decimal::Decimal;
@@ -119,10 +118,9 @@ fn run_step(input: &Input) -> Result<Value, FixtureError> {
     Ok(Value::Object(output))
 }
 
-const fn failure_status(error: &FixtureError) -> Option<u16> {
-    match error {
-        FixtureError::Chat(ChatGptError::Authentication { .. }) => Some(401),
-        FixtureError::Chat(ChatGptError::Login { source, .. }) => Some(source.status()),
+const fn failure_status(failure: &FixtureError) -> Option<u16> {
+    match failure {
+        FixtureError::Chat(error) => Some(error.status()),
         FixtureError::Config(_)
         | FixtureError::Store(_)
         | FixtureError::Json(_)

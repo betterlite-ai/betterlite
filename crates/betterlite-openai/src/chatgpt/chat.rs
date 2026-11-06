@@ -62,6 +62,17 @@ pub enum ChatGptError {
     },
 }
 
+impl ChatGptError {
+    // LiteLLM raises AuthenticationError with status 401 and lets a device-code failure keep its own status
+    #[must_use]
+    pub const fn status(&self) -> u16 {
+        match self {
+            Self::Authentication { .. } => 401,
+            Self::Login { source, .. } => source.status(),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ProviderInfo {
     pub api_base: String,
