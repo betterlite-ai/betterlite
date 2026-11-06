@@ -476,7 +476,9 @@ fn openai_fine_tuning_secret_safe_failure() {
     let request = JobRequest::Retrieve("ft_1");
     let failure = request_fine_tuning_job(connect(&missing, configured.clone()), &request);
     let message = failure.as_ref().err().map(ToString::to_string);
-    let text = format!("{configured:?} {args:?} {failure:?} {message:?}");
+    let rendered = format!("{args:?}");
+    assert_eq!(rendered, "ClientArgs { base_url: None, .. }");
+    let text = format!("{configured:?} {rendered} {failure:?} {message:?}");
     assert!(!text.contains("sk-fixture-secret"), "{text}");
 }
 
