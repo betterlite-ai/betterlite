@@ -414,17 +414,56 @@ fn metadata_snapshot_order_and_immutability() {
     assert_eq!(token.view.organization_alias.as_deref(), Some("other"));
 }
 
+#[rstest]
+#[case::utc("2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z")]
+#[case::offset("2026-01-01T00:00:00+05:30", "2026-01-01T00:00:00+05:30")]
+#[case::negative_offset("2026-01-01T00:00:00-05:00", "2026-01-01T00:00:00-05:00")]
+#[case::naive("2026-01-01T00:00:00", "2026-01-01T00:00:00")]
+#[case::fraction("2026-01-01T00:00:00.4Z", "2026-01-01T00:00:00.400000Z")]
+fn snapshot_datetimes_use_pydantic_text(#[case] reset_at: &str, #[case] expected: &str) {
+    let mut token = token("{}");
+    let team_row = team(&format!(
+        r#"{{"team_id":"t","budget_reset_at":"{reset_at}"}}"#
+    ));
+    carry_team_and_user(&mut token, Some(&team_row), None);
+    let metadata = carried_metadata(&token).unwrap();
+    assert_eq!(
+        metadata["user_api_key_team_budget_reset_at"].get(),
+        format!(r#""{expected}""#)
+    );
+}
+
+fn padded_window(target_bytes: usize) -> String {
+    let header = r#"{"a":1}"#;
+    format!(
+        "{header}{}",
+        " ".repeat(target_bytes.saturating_sub(header.len()))
+    )
+}
+
 #[test]
 fn native_window_limits_return_empty_mapping() {
-    let oversize = vec![b' '; MAX_WINDOW_BYTES.saturating_add(1)];
-    assert!(decode_budget_window(&oversize).as_ref().is_empty());
-    let allowed_depth = MAX_WINDOW_DEPTH;
-    let at_limit = format!(
-        "{}null{}",
-        "{\"a\":".repeat(allowed_depth),
-        "}".repeat(allowed_depth)
-    );
+    let at_limit = padded_window(MAX_WINDOW_BYTES);
+    assert_eq!(at_limit.len(), MAX_WINDOW_BYTES);
     assert_eq!(decode_budget_window(at_limit.as_bytes()).as_ref().len(), 1);
+    let oversize = padded_window(MAX_WINDOW_BYTES.saturating_add(1));
+    assert_eq!(oversize.len(), MAX_WINDOW_BYTES.saturating_add(1));
+    assert!(
+        decode_budget_window(oversize.as_bytes())
+            .as_ref()
+            .is_empty()
+    );
+    let depth_at_limit = format!(
+        "{}null{}",
+        "{\"a\":".repeat(MAX_WINDOW_DEPTH),
+        "}".repeat(MAX_WINDOW_DEPTH)
+    );
+    assert_eq!(
+        decode_budget_window(depth_at_limit.as_bytes())
+            .as_ref()
+            .len(),
+        1
+    );
     let too_deep = MAX_WINDOW_DEPTH.saturating_add(1);
     let over_limit = format!("{}null{}", "{\"a\":".repeat(too_deep), "}".repeat(too_deep));
     assert!(
