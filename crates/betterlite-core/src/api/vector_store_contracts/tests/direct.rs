@@ -186,6 +186,61 @@ async fn direct_executor_leaves_a_null_provider_parameter_out_of_the_body() {
     );
 }
 
+#[tokio::test]
+async fn direct_executor_keeps_other_providers_credentials_out_of_the_body() {
+    let executor = direct_executor("http://127.0.0.1:9/v1");
+    let configuration = r#"{"aws_secret_access_key": "k", "aws_region_name": "r", "vertex_project": "p", "vertex_credentials": "c", "aws_foo": 1, "vertex_x": 2, "hf_model_name": "h"}"#;
+    let (_sent, body) = embed_through(&executor, configuration).await;
+    assert_eq!(
+        body,
+        params(r#"{"model": "text-embedding-3-small", "input": ["hello"]}"#)
+    );
+}
+
+#[rstest]
+#[case::dimensions(r#"{"additional_drop_params": ["dimensions"], "dimensions": 2}"#, "{}")]
+#[case::user_and_encoding_format(
+    r#"{"additional_drop_params": ["user"], "user": "u", "encoding_format": "float"}"#,
+    r#"{"encoding_format": "float"}"#
+)]
+#[case::unknown_parameter_stays(
+    r#"{"additional_drop_params": ["input_type"], "input_type": "x"}"#,
+    r#"{"input_type": "x"}"#
+)]
+#[tokio::test]
+async fn direct_executor_drops_only_the_optional_parameters_additional_drop_params_names(
+    #[case] given: &str,
+    #[case] kept: &str,
+) {
+    let executor = direct_executor("http://127.0.0.1:9/v1");
+    let (_sent, body) = embed_through(&executor, given).await;
+    let mut expected = params(r#"{"model": "text-embedding-3-small", "input": ["hello"]}"#);
+    expected.extend(params(kept));
+    assert_eq!(body, expected);
+}
+
+#[tokio::test]
+async fn direct_executor_names_additional_drop_params_of_the_wrong_type() {
+    let executor = direct_executor("http://127.0.0.1:9/v1");
+    let configuration = params(r#"{"additional_drop_params": "dimensions"}"#);
+    let error = executor
+        .embed(
+            EmbeddingEntry::Embedding,
+            "openai/text-embedding-3-small",
+            "hello",
+            &configuration,
+        )
+        .await
+        .expect_err("wrong type");
+    assert!(matches!(
+        error,
+        VectorStoreEmbeddingError::FieldType {
+            field: "additional_drop_params",
+            ..
+        }
+    ));
+}
+
 #[rstest]
 #[case::known_openai_embedding_model("text-embedding-3-small", "{}", "text-embedding-3-small")]
 #[case::named_provider("some-model", r#"{"custom_llm_provider": "openai"}"#, "some-model")]

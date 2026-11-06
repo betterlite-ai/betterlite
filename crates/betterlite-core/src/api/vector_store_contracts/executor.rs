@@ -169,28 +169,33 @@ fn apply_call_options(
     Ok(())
 }
 
-fn embedding_request(
-    query: &str,
-    configuration: &Params,
-) -> Result<EmbeddingRequest, VectorStoreEmbeddingError> {
-    let mut body = Params::new();
-    body.insert(
-        "input".to_owned(),
-        Json::List(vec![Json::Text(query.to_owned())]),
-    );
-    for (name, value) in configuration {
-        match name.as_str() {
-            "model" | "input" => {
-                return Err(VectorStoreEmbeddingError::DuplicateArgument { name: name.clone() });
-            }
-            "extra_body" => {}
-            option if CALL_ARGUMENTS.contains(&option) || is_litellm_owned_kwarg(option) => {}
-            _ if matches!(value, Json::Null) => {}
-            _ => {
-                body.insert(name.clone(), value.clone());
+// additional_drop_params names the optional parameters to leave out, and only a list counts
+fn dropped_names(configuration: &Params) -> Result<Vec<&str>, VectorStoreEmbeddingError> {
+    let wrong_type = VectorStoreEmbeddingError::FieldType {
+        field: "additional_drop_params",
+        expected: "list of strings",
+    };
+    let items = match configuration.get("additional_drop_params") {
+        None | Some(Json::Null) => return Ok(Vec::new()),
+        Some(Json::List(items)) => items,
+        Some(_) => return Err(wrong_type),
+    };
+    let mut names = Vec::new();
+    for item in items {
+        match item {
+            Json::Text(name) => names.push(name.as_str()),
+            Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
+                return Err(wrong_type);
             }
         }
     }
+    Ok(names)
+}
+
+fn merge_extra_body(
+    body: &mut Params,
+    configuration: &Params,
+) -> Result<(), VectorStoreEmbeddingError> {
     match configuration.get("extra_body") {
         None | Some(Json::Null) => {}
         Some(Json::Object(extra)) => {
@@ -207,6 +212,40 @@ fn embedding_request(
             });
         }
     }
+    Ok(())
+}
+
+fn embedding_request(
+    query: &str,
+    configuration: &Params,
+) -> Result<EmbeddingRequest, VectorStoreEmbeddingError> {
+    let mut body = Params::new();
+    body.insert(
+        "input".to_owned(),
+        Json::List(vec![Json::Text(query.to_owned())]),
+    );
+    let dropped = dropped_names(configuration)?;
+    for (name, value) in configuration {
+        match name.as_str() {
+            "model" | "input" => {
+                return Err(VectorStoreEmbeddingError::DuplicateArgument { name: name.clone() });
+            }
+            "extra_body" => {}
+            "dimensions" | "encoding_format" | "user" if dropped.contains(&name.as_str()) => {}
+            // only openai is served, and LiteLLM keeps aws_*, vertex_* and hf_model_name for other providers
+            option
+                if CALL_ARGUMENTS.contains(&option)
+                    || is_litellm_owned_kwarg(option)
+                    || option.starts_with("aws_")
+                    || option.starts_with("vertex_")
+                    || option == "hf_model_name" => {}
+            _ if matches!(value, Json::Null) => {}
+            _ => {
+                body.insert(name.clone(), value.clone());
+            }
+        }
+    }
+    merge_extra_body(&mut body, configuration)?;
     // B006's parser owns the typed request, including the passthrough map for provider parameters
     let bytes = serde_json::to_vec(&body).map_err(|source| VectorStoreEmbeddingError::Request {
         source: EmbeddingError::Encode { source },
