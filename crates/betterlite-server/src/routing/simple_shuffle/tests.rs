@@ -80,7 +80,7 @@ fn a_model_group_nobody_serves_is_an_unknown_model() {
 #[rstest]
 #[case::weight(["a\n      weight: 1\n", "b\n      weight: 3\n"], 2300..=2700, 7300..=7700)]
 #[case::rpm(["a\n      rpm: 3\n", "b\n      rpm: 1\n"], 7300..=7700, 2300..=2700)]
-#[case::tpm(["a\n      tpm: 1\n", "b\n      tpm: 1\n"], 4800..=5200, 4800..=5200)]
+#[case::tpm(["a\n      tpm: 1\n", "b\n      tpm: 3\n"], 2300..=2700, 7300..=7700)]
 fn each_metric_splits_traffic_by_its_share(
     #[case] params: [&str; 2],
     #[case] first: RangeInclusive<usize>,
