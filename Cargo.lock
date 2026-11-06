@@ -2015,7 +2015,9 @@ name = "betterlite-prometheus"
 version = "0.1.0"
 dependencies = [
  "rstest",
+ "rust_decimal",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]
