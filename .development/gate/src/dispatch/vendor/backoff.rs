@@ -10,7 +10,10 @@ pub(super) enum Cause {
 }
 
 pub(super) fn cause(line: &str) -> Cause {
-    if line.contains("Not logged in") || line.contains("authentication failed") {
+    if line.contains("Not logged in")
+        || line.contains("authentication failed")
+        || line.contains("Authentication Fails")
+    {
         Cause::LoggedOut
     } else if line.contains("Can't reach the API server") || line.contains("EAI_AGAIN") {
         Cause::Offline
