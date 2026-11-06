@@ -361,6 +361,7 @@ fn record_carries_every_required_field() {
     assert_eq!(record.get("num_output_tokens"), Some(&number(4)));
     assert_eq!(record.get("num_total_tokens"), Some(&number(7)));
     assert_eq!(record.get("cost"), Some(&decimal("0.001")));
+    assert_eq!(record.get("messages"), Some(&user_messages("hi")));
     assert_eq!(
         record.get("created_at"),
         Some(&text("2026-05-25T12:00:00Z"))
@@ -370,7 +371,7 @@ fn record_carries_every_required_field() {
 #[test]
 fn record_leaves_unset_optional_fields_out() {
     let delivery = delivery_with_batch(API_KEY_ENV, 10);
-    let call_kwargs = kwargs(Some(standard_object()), Some(user_messages("hi")));
+    let call_kwargs = kwargs(Some(standard_object()), None);
     let response = chat_response("Hi");
     let transport = ScriptedTransport::default();
 
