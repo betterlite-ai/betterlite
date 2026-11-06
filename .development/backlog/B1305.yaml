@@ -2,7 +2,7 @@ id: B1305
 milestone: M3 providers
 title: Google model identifiers and native endpoint URLs
 status: todo
-depends_on: [B1300, B009, B193, B171]
+depends_on: [B009, B193, B171]
 file: tasks/B1305-vertex-model-urls.yaml
 covers:
   - "litellm/llms/vertex_ai/common_utils.py"
