@@ -25,6 +25,7 @@ pub mod routing_mock_scripts;
 pub mod routing_probe_ipc;
 pub mod routing_scenarios;
 pub mod runner;
+pub mod sdk_http;
 pub mod websocket_driver;
 pub mod websocket_oracle;
 
@@ -41,6 +42,7 @@ use axum::http::status::InvalidStatusCode;
 use betterlite_postgres_fixture::error::FixtureError;
 use case::browser_flow::PlaceholderError;
 use http::browser_flow::BrowserFlowError;
+use sdk_http::error::SdkHttpError;
 use thiserror::Error;
 use websocket_driver::DriverError;
 use websocket_oracle::decode::DecodeError;
@@ -49,6 +51,14 @@ use websocket_oracle::decode::DecodeError;
 pub enum OracleError {
     #[error("WebSocket driver failed: {0}")]
     WebSocket(#[from] DriverError),
+    #[error("SDK HTTP oracle failed: {0}")]
+    SdkHttp(#[from] SdkHttpError),
+    #[error("invalid SDK HTTP case {path}: {source}")]
+    SdkHttpCase {
+        path: PathBuf,
+        #[source]
+        source: SdkHttpError,
+    },
     #[error("invalid WebSocket case {path}: {source}")]
     WebSocketCase {
         path: PathBuf,
@@ -249,5 +259,15 @@ pub enum OracleError {
 pub fn run() -> Result<ExitCode, OracleError> {
     let options = <cli::Options as clap::Parser>::try_parse()?;
     let cases = case::load_cases(&options.paths)?;
-    runner::run_cases(&options, cases)
+    let sdk_cases = case::load_sdk_http_cases(&options.paths)?;
+    let sdk_different = runner::sdk_http::run_cases(&options, &sdk_cases)?.contains(&true);
+    if cases.is_empty() {
+        return Ok(runner::exit_status(sdk_different));
+    }
+    let status = runner::run_cases(&options, cases)?;
+    Ok(if sdk_different {
+        runner::exit_status(true)
+    } else {
+        status
+    })
 }
