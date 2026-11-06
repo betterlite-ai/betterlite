@@ -8,15 +8,16 @@ use http::header::{ACCEPT, AUTHORIZATION};
 use http::{HeaderMap, HeaderName, HeaderValue, Method};
 use indexmap::IndexMap;
 use secrecy::{ExposeSecret as _, SecretString};
-use serde::Deserialize;
 use serde_json::Value;
 use url::Url;
 
 use crate::batches::error::SdkError;
 use crate::batches::records::{BatchCreate, BatchPage, BatchQuery};
-use crate::batches::sdk::{
-    BatchesSdk, ClientConstructor, ClientKind, SdkArguments, Timeout, TimeoutPhases,
-};
+use crate::batches::sdk::{BatchesSdk, ClientConstructor, ClientKind, SdkArguments, Timeout};
+
+use self::timeouts::{duration_seconds, phase_names};
+
+mod timeouts;
 
 const DEFAULT_BASE_URL: &str = "https://api.openai.com/v1";
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
@@ -29,6 +30,7 @@ pub struct HttpBatchesClient {
     pub base_url: String,
     pub api_key: SecretString,
     pub organization: Option<String>,
+    pub project: Option<String>,
     pub timeout: Duration,
 }
 
@@ -37,6 +39,8 @@ pub struct HttpBatchesClient {
 pub struct HttpConstructor {
     pub transport: ProxiedClient,
     pub environment_key: Option<SecretString>,
+    pub environment_organization: Option<String>,
+    pub environment_project: Option<String>,
 }
 
 impl ClientConstructor for HttpConstructor {
@@ -47,11 +51,13 @@ impl ClientConstructor for HttpConstructor {
         arguments: &SdkArguments,
         kind: ClientKind,
     ) -> Result<Option<HttpBatchesClient>, SdkError> {
-        let Some(api_key) = arguments
+        // an empty key is no key: the SDK raises Missing credentials before it sends anything
+        let configured_key = arguments
             .api_key
             .clone()
             .or_else(|| self.environment_key.clone())
-        else {
+            .filter(|key| !key.expose_secret().is_empty());
+        let Some(api_key) = configured_key else {
             return Ok(None);
         };
         let timeout = match &arguments.timeout {
@@ -71,38 +77,13 @@ impl ClientConstructor for HttpConstructor {
                 .clone()
                 .unwrap_or_else(|| DEFAULT_BASE_URL.to_owned()),
             api_key,
-            organization: arguments.organization.clone(),
+            organization: arguments
+                .organization
+                .clone()
+                .or_else(|| self.environment_organization.clone()),
+            project: self.environment_project.clone(),
             timeout,
         }))
-    }
-}
-
-fn duration_seconds(seconds: f64) -> Result<Duration, SdkError> {
-    if !seconds.is_finite() || seconds < 0.0_f64 {
-        return Err(SdkError::InvalidTimeout { seconds });
-    }
-    Duration::try_from_secs_f64(seconds).map_err(|_source| SdkError::InvalidTimeout { seconds })
-}
-
-// The shared transport applies one total deadline, so every phase is refused by name
-fn phase_names(phases: &TimeoutPhases) -> String {
-    let mut names = Vec::new();
-    if phases.connect.is_some() {
-        names.push("connect");
-    }
-    if phases.read.is_some() {
-        names.push("read");
-    }
-    if phases.write.is_some() {
-        names.push("write");
-    }
-    if phases.pool.is_some() {
-        names.push("pool");
-    }
-    if names.is_empty() {
-        String::from("none")
-    } else {
-        names.join(", ")
     }
 }
 
@@ -115,14 +96,8 @@ struct Call<'call> {
     timeout: Option<f64>,
 }
 
-#[derive(Deserialize)]
-struct ErrorEnvelope {
-    error: Option<ErrorFields>,
-}
-
-#[derive(Default, Deserialize)]
+#[derive(Default)]
 struct ErrorFields {
-    #[serde(rename = "type")]
     error_type: Option<String>,
     param: Option<String>,
     code: Option<String>,
@@ -137,11 +112,27 @@ fn header_value(name: &str, value: &str) -> Result<HeaderValue, SdkError> {
     })
 }
 
+// The SDK reads type, param and code from body["error"] when it is a mapping and from the body itself otherwise
+fn error_fields(body: &[u8]) -> ErrorFields {
+    let Ok(Value::Object(mut fields)) = serde_json::from_slice::<Value>(body) else {
+        return ErrorFields::default();
+    };
+    let data = fields.remove("error").unwrap_or(Value::Object(fields));
+    let Value::Object(inner) = data else {
+        return ErrorFields::default();
+    };
+    ErrorFields {
+        error_type: inner.get("type").and_then(Value::as_str).map(str::to_owned),
+        param: inner
+            .get("param")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        code: inner.get("code").and_then(Value::as_str).map(str::to_owned),
+    }
+}
+
 fn status_error(response: &UpstreamResponse) -> SdkError {
-    let fields = serde_json::from_slice::<ErrorEnvelope>(&response.body)
-        .ok()
-        .and_then(|envelope| envelope.error)
-        .unwrap_or_default();
+    let fields = error_fields(&response.body);
     let body = str::from_utf8(&response.body).unwrap_or("<body is not UTF-8>");
     SdkError::Status {
         status: response.status,
@@ -175,16 +166,19 @@ impl HttpBatchesClient {
 
     fn headers(&self, extra: Option<&IndexMap<String, String>>) -> Result<HeaderMap, SdkError> {
         let mut headers = HeaderMap::new();
-        // the SDK treats an empty key as no key and sends no Authorization header
-        if !self.api_key.expose_secret().is_empty() {
-            let bearer = format!("Bearer {}", self.api_key.expose_secret());
-            headers.insert(AUTHORIZATION, header_value("authorization", &bearer)?);
-        }
+        let bearer = format!("Bearer {}", self.api_key.expose_secret());
+        headers.insert(AUTHORIZATION, header_value("authorization", &bearer)?);
         headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
         if let Some(organization) = &self.organization {
             headers.insert(
                 HeaderName::from_static("openai-organization"),
                 header_value("openai-organization", organization)?,
+            );
+        }
+        if let Some(project) = &self.project {
+            headers.insert(
+                HeaderName::from_static("openai-project"),
+                header_value("openai-project", project)?,
             );
         }
         for (name, value) in extra.into_iter().flatten() {

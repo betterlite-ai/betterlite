@@ -158,9 +158,10 @@ pub struct BatchObject {
     pub provider_fields: Map<String, Value>,
 }
 
+// LiteLLM returns the SDK's cursor page unchanged, so its items stay the SDK's own JSON and are never rebuilt through LiteLLMBatch
 #[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 pub struct BatchPage {
-    pub data: Vec<BatchObject>,
+    pub data: Vec<Value>,
     pub has_more: Option<bool>,
     #[serde(flatten)]
     pub provider_fields: Map<String, Value>,

@@ -14,12 +14,14 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::{TcpListener, TcpStream};
 
 use super::fake::{batch, create_request, query};
-use crate::batches::error::SdkError;
+use crate::batches::error::{BatchesError, SdkError};
 use crate::batches::http::{HttpBatchesClient, HttpConstructor};
 use crate::batches::records::BatchObject;
 use crate::batches::sdk::{
-    BatchesSdk as _, ClientConstructor as _, ClientKind, SdkArguments, Timeout, TimeoutPhases,
+    BatchesSdk as _, ClientConstructor as _, ClientKind, ClientSettings, Connection, SdkArguments,
+    Timeout, TimeoutPhases,
 };
+use crate::batches::{BatchOperation, BatchesApi};
 
 const SECRET: &str = "sk-fixture-secret-7731";
 
@@ -28,6 +30,22 @@ fn constructor(environment_key: Option<&str>) -> HttpConstructor {
     HttpConstructor {
         transport: ProxiedClient::outbound(&policy).unwrap(),
         environment_key: environment_key.map(SecretString::from),
+        environment_organization: None,
+        environment_project: None,
+    }
+}
+
+fn key_connection(api_key: Option<&str>, base_url: &str) -> Connection<HttpBatchesClient> {
+    Connection {
+        is_async: false,
+        settings: ClientSettings {
+            api_key: api_key.map(SecretString::from),
+            api_base: Some(base_url.to_owned()),
+            timeout: None,
+            max_retries: None,
+            organization: None,
+        },
+        client: None,
     }
 }
 
@@ -187,10 +205,64 @@ async fn http_client_reports_status_errors_with_their_fields() {
 }
 
 #[tokio::test]
-async fn openai_batches_credential_identity_isolation() {
-    let replies = vec![(200, batch("b", "validating")); 3];
+async fn http_client_reads_top_level_error_fields() {
+    let error = String::from(
+        r#"{"type":"invalid_request_error","param":"limit","code":"bad","message":"no"}"#,
+    );
     let (listener, base) = bind().await;
-    let environment = constructor(Some("sk-from-environment"));
+    let client = build(
+        &constructor(None),
+        &arguments(Some("k"), &base, None),
+        ClientKind::Async,
+    );
+    let (_requests, failure) = tokio::join!(
+        serve(listener, vec![(400, error)]),
+        client.list(None, Some(0))
+    );
+    let SdkError::Status {
+        error_type,
+        param,
+        code,
+        ..
+    } = failure.unwrap_err()
+    else {
+        panic!("expected a status error");
+    };
+    assert_eq!(error_type.as_deref(), Some("invalid_request_error"));
+    assert_eq!(param.as_deref(), Some("limit"));
+    assert_eq!(code.as_deref(), Some("bad"));
+}
+
+#[tokio::test]
+async fn listed_batches_keep_the_sdk_shape() {
+    let item = r#"{"id":"batch_1","object":"batch","endpoint":"/v1/embeddings","input_file_id":"file-1","completion_window":"24h","status":"completed","created_at":1,"usage":{"input_tokens":3,"input_tokens_details":{"cached_tokens":1},"output_tokens":4,"output_tokens_details":{"reasoning_tokens":2},"total_tokens":7}}"#;
+    let body = format!(r#"{{"data":[{item}],"has_more":false,"object":"list"}}"#);
+    let (listener, base) = bind().await;
+    let client = build(
+        &constructor(None),
+        &arguments(Some("k"), &base, None),
+        ClientKind::Sync,
+    );
+    let (_, page) = tokio::join!(serve(listener, vec![(200, body)]), client.list(None, None));
+    let serialized = serde_json::to_value(page.unwrap()).unwrap();
+    assert_eq!(
+        serialized["data"][0],
+        serde_json::from_str::<Value>(item).unwrap()
+    );
+    assert!(
+        serialized["data"][0]["usage"]
+            .get("prompt_tokens")
+            .is_none()
+    );
+}
+
+#[tokio::test]
+async fn openai_batches_credential_identity_isolation() {
+    let replies = vec![(200, batch("b", "validating")); 2];
+    let (listener, base) = bind().await;
+    let mut environment = constructor(Some("sk-from-environment"));
+    environment.environment_organization = Some(String::from("org-from-environment"));
+    environment.environment_project = Some(String::from("project-from-environment"));
     let explicit = build(
         &environment,
         &arguments(Some("sk-explicit"), &base, Some("org-a")),
@@ -201,26 +273,48 @@ async fn openai_batches_credential_identity_isolation() {
         &arguments(None, &base, None),
         ClientKind::Sync,
     );
-    let empty_key = build(
-        &environment,
-        &arguments(Some(""), &base, None),
-        ClientKind::Sync,
-    );
     let calls = async {
         explicit.retrieve(&query()).await.unwrap();
         inherited.retrieve(&query()).await.unwrap();
-        empty_key.retrieve(&query()).await.unwrap();
     };
     let (requests, ()) = tokio::join!(serve(listener, replies), calls);
     assert!(requests[0].contains("authorization: Bearer sk-explicit\r\n"));
     assert!(requests[0].contains("openai-organization: org-a\r\n"));
+    assert!(requests[0].contains("openai-project: project-from-environment\r\n"));
     assert!(requests[1].contains("authorization: Bearer sk-from-environment\r\n"));
-    assert!(!requests[1].contains("openai-organization"));
+    assert!(requests[1].contains("openai-organization: org-from-environment\r\n"));
+    assert!(requests[1].contains("openai-project: project-from-environment\r\n"));
     assert!(!requests[1].contains("sk-explicit"));
-    assert!(!requests[2].contains("authorization"));
-    assert!(!requests[2].contains("sk-from-environment"));
     let without_key = constructor(None).construct(&arguments(None, &base, None), ClientKind::Sync);
     assert!(matches!(without_key, Ok(None)));
+}
+
+#[tokio::test]
+async fn openai_batches_empty_keys_are_not_initialized() {
+    let (listener, base) = bind().await;
+    let with_environment = BatchesApi {
+        constructor: constructor(Some("sk-from-environment")),
+    };
+    let empty_environment = BatchesApi {
+        constructor: constructor(Some("")),
+    };
+    let explicit = with_environment
+        .batch(
+            key_connection(Some(""), &base),
+            BatchOperation::Retrieve(&query()),
+        )
+        .await;
+    let inherited = empty_environment
+        .batch(
+            key_connection(None, &base),
+            BatchOperation::Retrieve(&query()),
+        )
+        .await;
+    assert!(matches!(explicit, Err(BatchesError::NotInitialized)));
+    assert!(matches!(inherited, Err(BatchesError::NotInitialized)));
+    let standard = listener.into_std().unwrap();
+    standard.set_nonblocking(true).unwrap();
+    assert!(standard.accept().is_err(), "a request reached the listener");
 }
 
 #[tokio::test]
