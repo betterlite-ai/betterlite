@@ -1,7 +1,7 @@
 id: B3731
 milestone: M6 guardrails
 title: OpenAI moderation guardrail
-status: todo
+status: done
 depends_on: [B173, B219]
 file: tasks/B3731-openai-moderation-guardrail.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/types/proxy/guardrails/guardrail_hooks/openai/**"
 parent: B106
 split_from: B106
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 786
