@@ -23,6 +23,7 @@ use super::{
 };
 use crate::case::{Ignore, UpstreamAnswer};
 use crate::mock::ProviderRequest;
+use crate::process::sync_litellm;
 use crate::routing_mock_scripts::{MockScript, parse_script, redact};
 use crate::runner::sdk_http::judge;
 
@@ -58,8 +59,10 @@ fn answering(id: &str) -> Vec<UpstreamAnswer> {
 }
 
 fn python_sdk(case: &SdkHttpCase) -> PythonSdk {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+    sync_litellm(&root).unwrap();
     PythonSdk {
-        root: Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."),
+        root,
         inherited: ProcessEnvironment::try_parse_from([env!("CARGO_PKG_NAME")]).unwrap(),
         case_env: case.env.clone(),
         limits: OracleLimits::default(),

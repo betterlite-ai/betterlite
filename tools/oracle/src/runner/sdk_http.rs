@@ -9,6 +9,7 @@ use crate::artifacts::{self, SdkArtifactInput};
 use crate::cli::Options;
 use crate::compare::{self, Difference};
 use crate::paths::artifact_root;
+use crate::process::sync_litellm;
 use crate::routing_mock_scripts::MockScript;
 use crate::sdk_http::capture::{Capture, Run, Sdk, capture, observation};
 use crate::sdk_http::python::{ProcessEnvironment, PythonSdk};
@@ -19,6 +20,9 @@ pub(crate) fn run_cases(
     cases: &[SdkHttpCase],
 ) -> Result<Vec<bool>, OracleError> {
     let cancelled = AtomicBool::new(false);
+    if !cases.is_empty() {
+        sync_litellm(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../.."))?;
+    }
     cases
         .iter()
         .map(|case| run_case(options, case, &cancelled))
