@@ -41,13 +41,13 @@ struct Config<'call> {
     model_list: Vec<Entry<'call>>,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Copy, Serialize)]
 struct Entry<'call> {
     model_name: &'call str,
     litellm_params: EntryParams<'call>,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Copy, Serialize)]
 struct EntryParams<'call> {
     model: &'call str,
     api_base: &'call str,
@@ -98,30 +98,29 @@ async fn send(
     );
     let client =
         ProxiedClient::outbound(&policy).map_err(|error| SdkHttpError::Client(Box::new(error)))?;
-    let (_direct_config, direct_deployments) = deployments(direct_entries(call, api_base), env)?;
+    let (direct_entries, router_entries) = entries(call, api_base);
+    let (_direct_config, direct_deployments) = deployments(direct_entries, env)?;
     let direct = DirectEmbeddingExecutor {
         executor: chat_executor(&client, direct_deployments.clone()),
         deployments: direct_deployments,
     };
-    let outcomes = match &call.router {
-        Some(router) => {
-            let (router_config, router_deployments) =
-                deployments(router_entries(router, call, api_base), env)?;
-            let handle = FakeRouter {
-                direct: DirectEmbeddingExecutor {
-                    executor: chat_executor(&client, router_deployments.clone()),
-                    deployments: router_deployments,
-                },
-                deployments: router_config,
-            };
-            let executor = RouterEmbeddingExecutor {
-                router: handle,
-                metadata: call.metadata.clone(),
-                direct,
-            };
-            both_modes(&executor, call).await
-        }
-        None => both_modes(&direct, call).await,
+    let outcomes = if call.router.is_some() {
+        let (router_config, router_deployments) = deployments(router_entries, env)?;
+        let handle = FakeRouter {
+            direct: DirectEmbeddingExecutor {
+                executor: chat_executor(&client, router_deployments.clone()),
+                deployments: router_deployments,
+            },
+            deployments: router_config,
+        };
+        let executor = RouterEmbeddingExecutor {
+            router: handle,
+            metadata: call.metadata.clone(),
+            direct,
+        };
+        both_modes(&executor, call).await
+    } else {
+        both_modes(&direct, call).await
     };
     let projected = outcomes.map_err(|source| SdkHttpError::Embedding {
         source: Box::new(source),
@@ -163,33 +162,22 @@ fn entry<'call>(
     }
 }
 
-fn direct_entries<'call>(
+fn entries<'call>(
     call: &'call VectorStoreEmbeddingCall,
     api_base: &'call str,
-) -> Vec<Entry<'call>> {
-    let mut entries = vec![entry(&call.model, &call.model, call, api_base)];
-    if let Some(router) = &call.router {
-        entries.extend(router_entries(router, call, api_base));
+) -> (Vec<Entry<'call>>, Vec<Entry<'call>>) {
+    let mut router_entries = Vec::new();
+    for deployment in call.router.iter().flatten() {
+        router_entries.push(entry(
+            &deployment.model_name,
+            &deployment.litellm_params.model,
+            call,
+            api_base,
+        ));
     }
-    entries
-}
-
-fn router_entries<'call>(
-    router: &'call [RouterDeploymentSpec],
-    call: &'call VectorStoreEmbeddingCall,
-    api_base: &'call str,
-) -> Vec<Entry<'call>> {
-    router
-        .iter()
-        .map(|deployment| {
-            entry(
-                &deployment.model_name,
-                &deployment.litellm_params.model,
-                call,
-                api_base,
-            )
-        })
-        .collect()
+    let mut direct_entries = vec![entry(&call.model, &call.model, call, api_base)];
+    direct_entries.extend(router_entries.iter().copied());
+    (direct_entries, router_entries)
 }
 
 fn deployments(
