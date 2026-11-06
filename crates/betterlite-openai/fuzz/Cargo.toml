@@ -136,6 +136,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "xai_callback"
+path = "fuzz_targets/xai_callback.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "xai_oauth"
 path = "fuzz_targets/xai_oauth.rs"
 test = false
