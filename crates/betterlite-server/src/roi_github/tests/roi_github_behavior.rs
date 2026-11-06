@@ -26,7 +26,7 @@ fn a_graphql_response_parses_its_nested_connection() {
             "changedFilesIfAvailable":3,"author":{"email":"dev@example.com","user":{"login":"octo"}}}},
           {"commit":{"oid":"a2","message":"two","additions":0,"deletions":0,
             "changedFilesIfAvailable":null,"author":null}}
-        ]}}}}},"errors":[]}"#;
+        ]}}}},"errors":[]}"#;
     let parsed: GraphQlResponse = serde_json::from_str(body).unwrap();
     let pull_request = parsed
         .data
@@ -171,6 +171,11 @@ fn parses(kind: Record, body: &str) -> bool {
     Record::PullDetail,
     r#"{"number":1,"title":"t","html_url":"u","merged_at":"m","head":{}}"#,
     true
+)]
+#[case::pull_detail_needs_a_number(
+    Record::PullDetail,
+    r#"{"title":"t","html_url":"u","merged_at":"m","head":{}}"#,
+    false
 )]
 #[case::pull_detail_needs_a_title(
     Record::PullDetail,
