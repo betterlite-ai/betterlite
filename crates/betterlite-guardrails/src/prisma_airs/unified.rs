@@ -44,9 +44,9 @@ pub async fn apply_guardrail(
     context: &mut ScanContext<'_>,
     audit: &mut GuardrailAudit,
 ) -> Result<(), UnifiedError> {
-    let start_time = (guardrail.now)();
     let call_id = prepare_request(context, inputs);
     let metadata = context.request_data.scan_metadata();
+    let start_time = (guardrail.now)();
     let scannable = scannable_text_indices(
         guardrail,
         inputs,
