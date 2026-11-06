@@ -1,5 +1,5 @@
 use std::num::NonZeroUsize;
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use lru::LruCache;
@@ -56,6 +56,20 @@ impl TokenStore for BoundedTokenCache {
         for key in stale {
             entries.pop(&key);
         }
+    }
+}
+
+impl<T: TokenStore + ?Sized> TokenStore for Arc<T> {
+    fn lookup(&self, key: &str, now: Duration) -> Option<SecretString> {
+        (**self).lookup(key, now)
+    }
+
+    fn insert(&self, key: String, token: SecretString, expires_at: Duration) {
+        (**self).insert(key, token, expires_at);
+    }
+
+    fn evict_expired(&self, now: Duration) {
+        (**self).evict_expired(now);
     }
 }
 

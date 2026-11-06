@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::num::NonZeroUsize;
+use std::sync::Arc;
 use std::time::Duration;
 
 use rstest::rstest;
@@ -80,6 +81,22 @@ fn cache_evicts_every_entry_that_expired_and_keeps_the_rest() {
     assert_eq!(token(&cache, "old", 0), None);
     assert_eq!(token(&cache, "edge", 0), None);
     assert_eq!(token(&cache, "live", 0).as_deref(), Some("c"));
+}
+
+#[test]
+fn a_shared_arc_store_reaches_the_cache_behind_it() {
+    let cache = cache(2);
+    let shared = Arc::new(cache);
+    shared.insert("k".to_owned(), SecretString::from("t"), secs(10));
+    assert_eq!(
+        shared
+            .lookup("k", secs(9))
+            .map(|token| token.expose_secret().to_owned())
+            .as_deref(),
+        Some("t")
+    );
+    shared.evict_expired(secs(10));
+    assert!(shared.lookup("k", secs(0)).is_none());
 }
 
 #[test]

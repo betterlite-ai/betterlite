@@ -40,7 +40,7 @@ pub struct WxoRequestParams {
 }
 
 #[derive(Debug, Error)]
-#[error("'{key}' is required in litellm_params for WXO agents")]
+#[error("litellm_params for a WXO agent needs '{key}'")]
 pub struct MissingParam {
     pub key: &'static str,
 }

@@ -28,6 +28,14 @@ fn result_text(json: &str) -> String {
     r#"{"message": {"parts": [{"kind": "file", "text": "no"}, {"kind": "data", "text": "no"}, {"kind": "text", "text": "yes"}]}}"#,
     "yes"
 )]
+#[case::kinds_that_are_not_strings_are_skipped(
+    r#"{"message": {"parts": [{"kind": 5, "text": "no"}, {"kind": ["text"], "text": "no"}, {"kind": "text", "text": "yes"}]}}"#,
+    "yes"
+)]
+#[case::text_that_is_not_a_string_is_skipped(
+    r#"{"message": {"parts": [{"kind": "text", "text": 5}, {"kind": "text", "text": "yes"}]}}"#,
+    "yes"
+)]
 #[case::empty_text_is_skipped(
     r#"{"message": {"parts": [{"kind": "text", "text": ""}, {"kind": "text", "text": "x"}, {"kind": "text"}]}}"#,
     "x"

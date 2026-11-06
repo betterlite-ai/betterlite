@@ -31,7 +31,7 @@ pub struct TokenRequest {
 #[derive(Debug)]
 pub struct TokenHttpResponse {
     pub status: u16,
-    pub body: Vec<u8>,
+    pub body: SecretSlice<u8>,
 }
 
 pub trait TokenTransport: Send + Sync {
@@ -45,7 +45,7 @@ pub trait TokenTransport: Send + Sync {
 
 #[derive(Debug, Error)]
 pub enum CredentialsError<E> {
-    #[error("'username' is required in litellm_params when auth_mode='cp4d'")]
+    #[error("auth_mode 'cp4d' needs a 'username' in litellm_params")]
     MissingUsername,
     #[error("token request body could not be encoded")]
     Encode(#[source] serde_json::Error),
@@ -139,8 +139,12 @@ impl<T: TokenTransport, C: TokenClock, S: TokenStore> BearerTokens<T, C, S> {
                 status: response.status,
             });
         }
-        let grant = decode_wxo_token_response(&response.body, flow, self.clock.unix_seconds())
-            .map_err(CredentialsError::Decode)?;
+        let grant = decode_wxo_token_response(
+            response.body.expose_secret(),
+            flow,
+            self.clock.unix_seconds(),
+        )
+        .map_err(CredentialsError::Decode)?;
         self.remember(key, now, &grant);
         Ok(grant.token)
     }

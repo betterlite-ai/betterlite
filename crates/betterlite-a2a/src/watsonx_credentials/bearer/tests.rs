@@ -8,7 +8,7 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use rstest::rstest;
-use secrecy::{ExposeSecret as _, SecretString};
+use secrecy::{ExposeSecret as _, SecretSlice, SecretString};
 use url::form_urlencoded;
 
 use super::{
@@ -55,7 +55,7 @@ impl TokenTransport for &Transport {
         let (status, body) = self.answers.lock().unwrap().pop_front().unwrap();
         ready(Ok(TokenHttpResponse {
             status,
-            body: body.into_bytes(),
+            body: SecretSlice::from(body.into_bytes()),
         }))
     }
 }

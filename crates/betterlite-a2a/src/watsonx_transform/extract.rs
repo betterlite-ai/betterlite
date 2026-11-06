@@ -1,5 +1,5 @@
-use betterlite_core::agents::json::AgentJson;
 use serde::Deserialize;
+use serde::de::IgnoredAny;
 use serde_with::{DefaultOnError, DefaultOnNull, serde_as};
 
 mod tests;
@@ -16,8 +16,27 @@ pub struct WxoSendParams {
 #[derive(Debug, Default, Deserialize)]
 pub struct WxoSendMessage {
     #[serde(default)]
-    #[serde_as(as = "DefaultOnNull")]
-    pub parts: Vec<AgentJson>,
+    #[serde_as(as = "DefaultOnError<Vec<DefaultOnError>>")]
+    pub parts: Vec<WxoMessagePart>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum WxoPartKind {
+    Text(String),
+    // a kind the A2A spec does not allow is never a text part, but it must not fail the whole message
+    Other(IgnoredAny),
+}
+
+#[serde_as]
+#[derive(Debug, Default, Deserialize)]
+pub struct WxoMessagePart {
+    #[serde(default)]
+    #[serde_as(as = "DefaultOnError")]
+    kind: Option<WxoPartKind>,
+    #[serde(default)]
+    #[serde_as(as = "DefaultOnError")]
+    text: Option<String>,
 }
 
 // WXO answers with several shapes, so every level falls back to empty instead of failing
@@ -69,14 +88,17 @@ struct WxoContentItem {
 
 #[must_use]
 pub fn extract_text_from_a2a_params(params: &WxoSendParams) -> String {
-    let texts = params.message.parts.iter().filter_map(|item| {
-        let part = item.as_object()?;
-        let kind = part.get("kind").unwrap_or(&AgentJson::Null);
-        if !kind.is_null() && !matches!(kind.as_str(), Some("" | "text")) {
-            return None;
-        }
-        part.get("text")?.as_str().filter(|text| !text.is_empty())
-    });
+    let texts = params
+        .message
+        .parts
+        .iter()
+        .filter(|part| match &part.kind {
+            None => true,
+            Some(WxoPartKind::Text(kind)) => matches!(kind.as_str(), "" | "text"),
+            Some(WxoPartKind::Other(_)) => false,
+        })
+        .filter_map(|part| part.text.as_deref())
+        .filter(|text| !text.is_empty());
     texts.collect::<Vec<_>>().join(" ")
 }
 
