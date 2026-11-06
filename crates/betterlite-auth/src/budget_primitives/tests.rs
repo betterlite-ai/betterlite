@@ -182,7 +182,7 @@ fn window_mapping_json_scalar_dump_and_raising_dump() {
     );
     let scalar_text = json(r#""42""#);
     assert!(coerce_window(&scalar_text).as_ref().is_empty());
-    let malformed = json(r#""{"budget_duration":"#);
+    let malformed = json(r#""not json""#);
     assert!(coerce_window(&malformed).as_ref().is_empty());
     assert!(coerce_window(&json("5")).as_ref().is_empty());
     assert!(coerce_window(&json("true")).as_ref().is_empty());
@@ -312,6 +312,11 @@ fn coerce_datetime_retains_and_rejects_shapes() {
     assert_eq!(
         coerce_datetime(Some(&json(r#""2026-06-01T00:00:00""#))),
         Some(instant("2026-06-01T00:00:00+00:00"))
+    );
+    // fromisoformat keeps six fraction digits; the truncating parser must do the same
+    assert_eq!(
+        coerce_datetime(Some(&json(r#""2026-06-01T00:00:00.123456789Z""#))),
+        Some(instant("2026-06-01T00:00:00.123456+00:00"))
     );
     assert_eq!(coerce_datetime(Some(&json("null"))), None);
     assert_eq!(coerce_datetime(Some(&json("12"))), None);
@@ -476,6 +481,23 @@ fn native_window_limits_return_empty_mapping() {
     assert!(decode_budget_window(br#""text""#).as_ref().is_empty());
     assert!(
         decode_budget_window(br#"{"a":1,"a":2}"#)
+            .as_ref()
+            .is_empty()
+    );
+}
+
+#[test]
+fn nested_arrays_count_toward_the_depth_limit() {
+    let nested = MAX_WINDOW_DEPTH.saturating_sub(1);
+    let at_limit = format!("{{\"a\":{}null{}}}", "[".repeat(nested), "]".repeat(nested));
+    assert_eq!(decode_budget_window(at_limit.as_bytes()).as_ref().len(), 1);
+    let too_deep = format!(
+        "{{\"a\":{}null{}}}",
+        "[".repeat(MAX_WINDOW_DEPTH),
+        "]".repeat(MAX_WINDOW_DEPTH)
+    );
+    assert!(
+        decode_budget_window(too_deep.as_bytes())
             .as_ref()
             .is_empty()
     );
