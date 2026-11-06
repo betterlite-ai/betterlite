@@ -49,16 +49,13 @@ pub enum ClientError<Source> {
 }
 
 pub enum ClientBody<Body: ResponseBody> {
-    Plain(Body),
+    Buffered(Vec<u8>),
     Recorded(RecordingBody<Body>),
 }
 
 impl<Body: ResponseBody> ClientBody<Body> {
     // Only streamed bodies can fail after send returns, so only they report to the recorder
-    fn wrap(body: Body, stream: bool, shared: &Arc<Mutex<CleanupState<Body::Error>>>) -> Self {
-        if !stream {
-            return Self::Plain(body);
-        }
+    fn recorded(body: Body, shared: &Arc<Mutex<CleanupState<Body::Error>>>) -> Self {
         let state = Arc::clone(shared);
         let record_error: ErrorRecorder<Body::Error> =
             Arc::new(move |error| record_cleanup_error(&state, error));
@@ -74,21 +71,24 @@ impl<Body: ResponseBody> ResponseBody for ClientBody<Body> {
 
     async fn next_chunk(&mut self) -> Option<Result<Vec<u8>, Self::Error>> {
         match self {
-            Self::Plain(body) => Some(body.next_chunk().await?.map_err(Arc::new)),
+            Self::Buffered(content) => {
+                let bytes = take(content);
+                (!bytes.is_empty()).then_some(Ok(bytes))
+            }
             Self::Recorded(body) => body.next_chunk().await,
         }
     }
 
     async fn close(&mut self) -> Result<(), Self::Error> {
         match self {
-            Self::Plain(body) => body.close().await.map_err(Arc::new),
+            Self::Buffered(_) => Ok(()),
             Self::Recorded(body) => body.close().await,
         }
     }
 
     async fn read_all(&mut self) -> Result<Vec<u8>, Self::Error> {
         match self {
-            Self::Plain(body) => body.read_all().await.map_err(Arc::new),
+            Self::Buffered(content) => Ok(take(content)),
             Self::Recorded(body) => body.read_all().await,
         }
     }
@@ -139,42 +139,27 @@ impl<Client: Transport> McpHttpClient<Client> {
         request: Client::Request,
         stream: bool,
     ) -> Result<HttpResponse<ClientBody<Client::Body>>, ClientError<Client::Error>> {
-        let is_delete = *Client::method(&request) == Method::DELETE;
-        let terminal_scope = if is_delete {
+        let terminal_scope = if *Client::method(&request) == Method::DELETE {
             let state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
             state.scope.clone()
         } else {
             None
         };
-        let Some(scope) = terminal_scope else {
-            let response = self.fetch(request, stream).await.map_err(|source| {
-                let error = Arc::new(source);
-                record_cleanup_error(&self.state, &error);
-                ClientError::Transport(error)
-            })?;
-            return Ok(HttpResponse {
-                status: response.status,
-                body: ClientBody::wrap(response.body, stream, &self.state),
-            });
-        };
-        // A terminal DELETE reads its response so the connection is drained before the client closes
-        let transport = Arc::clone(&self.transport);
-        let operation = async move {
-            let mut response = transport.send(request, stream).await?;
-            response.body.read_all().await?;
-            Ok::<_, Client::Error>(response)
-        };
-        let response = run_bounded_cleanup(
-            &self.tracker,
-            &scope.caller_cancelled,
-            scope.deadline,
-            operation,
-        )
-        .await
-        .map_err(ClientError::Cleanup)?;
-        Ok(HttpResponse {
-            status: response.status,
-            body: ClientBody::Plain(response.body),
+        if let Some(scope) = terminal_scope {
+            let operation = read_terminal(Arc::clone(&self.transport), request, stream);
+            return run_bounded_cleanup(
+                &self.tracker,
+                &scope.caller_cancelled,
+                scope.deadline,
+                operation,
+            )
+            .await
+            .map_err(ClientError::Cleanup);
+        }
+        self.fetch(request, stream).await.map_err(|source| {
+            let error = Arc::new(source);
+            record_cleanup_error(&self.state, &error);
+            ClientError::Transport(error)
         })
     }
 
@@ -182,15 +167,45 @@ impl<Client: Transport> McpHttpClient<Client> {
         &self,
         request: Client::Request,
         stream: bool,
-    ) -> Result<HttpResponse<Client::Body>, Client::Error> {
+    ) -> Result<HttpResponse<ClientBody<Client::Body>>, Client::Error> {
         let is_post = *Client::method(&request) == Method::POST;
         let mut response = self.transport.send(request, stream).await?;
+        // httpx reads a non-streamed body before send returns, so its read failure is a send failure
+        let buffered = if stream {
+            None
+        } else {
+            Some(response.body.read_all().await?)
+        };
         if is_post && (400..600).contains(&response.status) && response.status != 404 {
             response.body.close().await?;
             return Err(self.transport.status_error(response.status));
         }
-        Ok(response)
+        let body = match buffered {
+            Some(content) => ClientBody::Buffered(content),
+            None => ClientBody::recorded(response.body, &self.state),
+        };
+        Ok(HttpResponse {
+            status: response.status,
+            body,
+        })
     }
+}
+
+// A terminal DELETE reads its response so the connection is drained before the client closes
+async fn read_terminal<Client>(
+    transport: Arc<Client>,
+    request: Client::Request,
+    stream: bool,
+) -> Result<HttpResponse<ClientBody<Client::Body>>, Client::Error>
+where
+    Client: Transport,
+{
+    let mut response = transport.send(request, stream).await?;
+    let content = response.body.read_all().await?;
+    Ok(HttpResponse {
+        status: response.status,
+        body: ClientBody::Buffered(content),
+    })
 }
 
 // Errors are kept only while a shielded cleanup scope is open

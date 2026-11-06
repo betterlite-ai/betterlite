@@ -33,19 +33,21 @@ async fn delete_inside_a_scope_reads_the_response_before_returning() {
     let read = Arc::clone(&body.read);
     let (client, transport) = client(vec![reply(204, body)]);
     client.enter_cleanup(scope(true, 5));
-    let response = client.send(Method::DELETE, false).await.unwrap();
+    let mut response = client.send(Method::DELETE, false).await.unwrap();
     assert_eq!(response.status, 204);
     assert!(read.load(Ordering::SeqCst));
+    assert_eq!(response.body.read_all().await.unwrap(), b"done");
     assert_eq!(transport.sent.lock().unwrap().len(), 1);
 }
 
 #[tokio::test(start_paused = true)]
 async fn delete_outside_a_scope_is_sent_like_any_other_request() {
-    let body = FakeBody::new(vec![]);
-    let read = Arc::clone(&body.read);
-    let (client, _) = client(vec![reply(204, body)]);
-    client.send(Method::DELETE, false).await.unwrap();
-    assert!(!read.load(Ordering::SeqCst));
+    let body = FakeBody::new(vec![Ok(b"done".to_vec())]);
+    let (client, transport) = client(vec![reply(204, body)]);
+    let mut response = client.send(Method::DELETE, false).await.unwrap();
+    assert_eq!(response.status, 204);
+    assert_eq!(response.body.read_all().await.unwrap(), b"done");
+    assert_eq!(transport.sent.lock().unwrap()[0], (Method::DELETE, false));
 }
 
 #[tokio::test(start_paused = true)]
@@ -105,12 +107,16 @@ async fn post_error_statuses_close_the_response_and_raise(#[case] status: u16) {
     let body = FakeBody::new(vec![]);
     let closed = Arc::clone(&body.closed);
     let (client, _) = client(vec![reply(status, body)]);
+    client.enter_cleanup(scope(true, 5));
     let ClientError::Transport(error) = client.send(Method::POST, false).await.err().unwrap()
     else {
         panic!("expected a transport error");
     };
     assert_eq!(*error, FakeError::Status(status));
     assert!(closed.load(Ordering::SeqCst));
+    let errors = client.leave_cleanup();
+    assert_eq!(errors.len(), 1);
+    assert!(Arc::ptr_eq(&errors[0], &error));
 }
 
 #[rstest]
@@ -161,13 +167,25 @@ async fn streamed_responses_record_body_failures_inside_a_scope() {
 }
 
 #[tokio::test]
-async fn buffered_responses_are_not_wrapped() {
+async fn buffered_body_failures_surface_from_send_and_are_recorded() {
     let body = FakeBody::new(vec![Err(FakeError::Boom("read"))]);
     let (client, _) = client(vec![reply(200, body)]);
     client.enter_cleanup(scope(true, 5));
+    let ClientError::Transport(error) = client.send(Method::GET, false).await.err().unwrap() else {
+        panic!("expected a transport error");
+    };
+    assert_eq!(*error, FakeError::Boom("read"));
+    let errors = client.leave_cleanup();
+    assert_eq!(errors.len(), 1);
+    assert!(Arc::ptr_eq(&errors[0], &error));
+}
+
+#[tokio::test]
+async fn buffered_responses_keep_the_bytes_read_before_returning() {
+    let body = FakeBody::new(vec![Ok(b"one".to_vec()), Ok(b"two".to_vec())]);
+    let (client, _) = client(vec![reply(200, body)]);
     let mut response = client.send(Method::GET, false).await.unwrap();
-    response.body.next_chunk().await.unwrap().unwrap_err();
-    assert!(client.leave_cleanup().is_empty());
+    assert_eq!(response.body.read_all().await.unwrap(), b"onetwo");
 }
 
 #[rstest]

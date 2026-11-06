@@ -6,9 +6,6 @@ deviations:
   - what: Errors are shared as Arc values, and the cleanup record and the identity filter in first_non_cancelled_cause compare them with Arc::ptr_eq.
     why: The same error object has to be both returned to the caller and recorded, as Python's `is` check relies on.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L138-L147
-  - what: A terminal DELETE response is read to the end before send returns, and its content is not kept; the returned body is the already drained one.
-    why: The transport body trait has no cached content like httpx's aread, and no caller reads a DELETE answer.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L238-L246
   - what: A panic or abort of the cleanup task is returned as CleanupError::Task instead of being re-raised as the caller's cancellation or the task's exception.
     why: A panic in cleanup must not take down the caller, and the caller still gets a typed error naming the cause.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/experimental_mcp_client/client.py#L176-L197
