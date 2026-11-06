@@ -47,6 +47,8 @@ where
     Api(#[from] ApiError<E>),
 }
 
+pub type DeepEvalResult<E> = Result<(), DeepEvalError<E>>;
+
 impl<D: Delivery, I: UuidSource> DeepEvalLogger<D, I> {
     // DeepEvalLogger.__init__: LITELM_ENVIRONMENT is validated before CONFIDENT_API_KEY is required.
     pub fn from_environment<L>(
@@ -72,43 +74,31 @@ impl<D: Delivery, I: UuidSource> DeepEvalLogger<D, I> {
         })
     }
 
-    pub async fn log_success_event(&self, call: Call<'_>) -> Result<(), DeepEvalError<D::Error>> {
+    pub async fn log_success_event(&self, call: Call<'_>) -> DeepEvalResult<D::Error> {
         let trace = self.prepare_trace(call, TraceSpanApiStatus::Success);
         let response = self.api.send_request(HttpMethod::Post, &trace).await?;
-        tracing::debug!(
-            status = response.status,
-            "DeepEvalLogger: sync success callback answered"
-        );
+        tracing::debug!(status = response.status, "DeepEvalLogger: sync sent");
         Ok(())
     }
 
-    pub async fn log_failure_event(&self, call: Call<'_>) -> Result<(), DeepEvalError<D::Error>> {
+    pub async fn log_failure_event(&self, call: Call<'_>) -> DeepEvalResult<D::Error> {
         let trace = self.prepare_trace(call, TraceSpanApiStatus::Errored);
         let response = self.api.send_request(HttpMethod::Post, &trace).await?;
-        tracing::debug!(
-            status = response.status,
-            "DeepEvalLogger: sync failure callback answered"
-        );
+        tracing::debug!(status = response.status, "DeepEvalLogger: sync failed");
         Ok(())
     }
 
-    pub async fn async_log_success_event(
-        &self,
-        call: Call<'_>,
-    ) -> Result<(), DeepEvalError<D::Error>> {
+    pub async fn async_log_success_event(&self, call: Call<'_>) -> DeepEvalResult<D::Error> {
         let trace = self.prepare_trace(call, TraceSpanApiStatus::Success);
         self.api.a_send_request(HttpMethod::Post, &trace).await?;
-        tracing::debug!("DeepEvalLogger: async success callback delivered");
+        tracing::debug!("DeepEvalLogger: async success sent");
         Ok(())
     }
 
-    pub async fn async_log_failure_event(
-        &self,
-        call: Call<'_>,
-    ) -> Result<(), DeepEvalError<D::Error>> {
+    pub async fn async_log_failure_event(&self, call: Call<'_>) -> DeepEvalResult<D::Error> {
         let trace = self.prepare_trace(call, TraceSpanApiStatus::Errored);
         self.api.a_send_request(HttpMethod::Post, &trace).await?;
-        tracing::debug!("DeepEvalLogger: async failure callback delivered");
+        tracing::debug!("DeepEvalLogger: async failure sent");
         Ok(())
     }
 

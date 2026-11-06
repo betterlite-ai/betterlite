@@ -16,6 +16,9 @@ pub const API_BASE_URL: &str = "https://api.confident-ai.com";
 pub const TRACING_ENDPOINT: &str = "/v1/tracing";
 pub const CONFIDENT_API_KEY_HEADER: &str = "confident_api_key";
 
+pub type Reply<E> = Result<PostResponse, ApiError<E>>;
+pub type Ack<E> = Result<(), ApiError<E>>;
+
 // litellm.integrations.deepeval.api.HttpMethods; only POST reaches the wire, the other names stay declared.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HttpMethod {
@@ -68,61 +71,47 @@ impl<D: Delivery> Api<D> {
     }
 
     // Api.send_request: _http_request POSTs, then the 200 check decides whether the response comes back.
-    pub async fn send_request(
-        &self,
-        method: HttpMethod,
-        trace: &TraceApi,
-    ) -> Result<PostResponse, ApiError<D::Error>> {
-        let request = self.request(method, trace)?;
-        let response = self
-            .delivery
-            .post(request)
-            .await
-            .map_err(ApiError::Transport)?;
+    pub async fn send_request(&self, method: HttpMethod, trace: &TraceApi) -> Reply<D::Error> {
+        let response = self.deliver(method, trace).await?;
         if response.status == 200 {
             return Ok(response);
         }
-        Err(ApiError::Status {
-            status: response.status,
-            body: str::from_utf8(&response.body).map_or_else(|_| String::new(), String::from),
-        })
+        Err(status_error(&response))
     }
 
     // Api.a_send_request: the async handler raises for a non-2xx status and the answer itself is dropped.
-    pub async fn a_send_request(
-        &self,
-        method: HttpMethod,
-        trace: &TraceApi,
-    ) -> Result<(), ApiError<D::Error>> {
-        let request = self.request(method, trace)?;
-        let response = self
-            .delivery
-            .post(request)
-            .await
-            .map_err(ApiError::Transport)?;
+    pub async fn a_send_request(&self, method: HttpMethod, trace: &TraceApi) -> Ack<D::Error> {
+        let response = self.deliver(method, trace).await?;
         if (200..300).contains(&response.status) {
             return Ok(());
         }
-        Err(ApiError::Status {
-            status: response.status,
-            body: str::from_utf8(&response.body).map_or_else(|_| String::new(), String::from),
-        })
+        Err(status_error(&response))
     }
 
-    fn request(
-        &self,
-        method: HttpMethod,
-        trace: &TraceApi,
-    ) -> Result<PostRequest, ApiError<D::Error>> {
+    async fn deliver(&self, method: HttpMethod, trace: &TraceApi) -> Reply<D::Error> {
         if method != HttpMethod::Post {
             return Err(ApiError::Method);
         }
         let body = serde_json::to_vec(trace).map_err(ApiError::Encode)?;
-        Ok(PostRequest {
+        let request = PostRequest {
             url: self.endpoint.clone(),
             headers: self.headers.clone(),
             body,
             deadline: DELIVERY_DEADLINE,
-        })
+        };
+        self.delivery
+            .post(request)
+            .await
+            .map_err(ApiError::Transport)
+    }
+}
+
+fn status_error<E>(response: &PostResponse) -> ApiError<E>
+where
+    E: StdError + 'static,
+{
+    ApiError::Status {
+        status: response.status,
+        body: str::from_utf8(&response.body).map_or_else(|_| String::new(), String::from),
     }
 }
