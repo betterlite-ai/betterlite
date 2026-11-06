@@ -32,10 +32,10 @@ fn detection(score: f64) -> Detection {
     Detection {
         start: None,
         end: None,
-        text: None,
+        text: "bad".to_owned(),
         detection: None,
-        detection_type: Some("toxic".to_owned()),
-        score: Some(score),
+        detection_type: "toxic".to_owned(),
+        score,
         evidences: None,
         metadata: None,
         detector_id: None,

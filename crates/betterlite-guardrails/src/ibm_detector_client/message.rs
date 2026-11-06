@@ -4,8 +4,6 @@ use super::wire::Detection;
 
 mod tests;
 
-const UNKNOWN_DETECTION_TYPE: &str = "unknown";
-
 #[must_use]
 pub fn detector_server_message(
     config: &IbmDetectorConfig,
@@ -22,9 +20,9 @@ pub fn detector_server_message(
         let lines = filtered.iter().fold(String::new(), |mut lines, detection| {
             let line = format!(
                 "  - {} (score: {:.3})\n    Text: '{}'\n",
-                detection_type(detection),
-                detection.score.unwrap_or(0.0_f64),
-                detection.text.as_deref().unwrap_or_default(),
+                detection.detection_type.to_uppercase(),
+                detection.score,
+                detection.text,
             );
             lines.push_str(&line);
             lines
@@ -49,23 +47,15 @@ pub fn orchestrator_message(config: &IbmDetectorConfig, detections: &[Detection]
     for detection in filtered {
         let line = format!(
             "- {} (detector: {}, score: {:.3})\n  Text: '{}'\n\n",
-            detection_type(detection),
+            detection.detection_type.to_uppercase(),
             detection
                 .detector_id
                 .as_deref()
                 .unwrap_or(&config.detector_id),
-            detection.score.unwrap_or(0.0_f64),
-            detection.text.as_deref().unwrap_or_default(),
+            detection.score,
+            detection.text,
         );
         message.push_str(&line);
     }
     message.trim().to_owned()
-}
-
-fn detection_type(detection: &Detection) -> String {
-    detection
-        .detection_type
-        .as_deref()
-        .unwrap_or(UNKNOWN_DETECTION_TYPE)
-        .to_uppercase()
 }

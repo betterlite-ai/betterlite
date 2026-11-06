@@ -25,18 +25,13 @@ fn config(score_threshold: Option<f64>) -> IbmDetectorConfig {
     }
 }
 
-fn detection(
-    detection_type: Option<&str>,
-    score: Option<f64>,
-    text: Option<&str>,
-    detector_id: Option<&str>,
-) -> Detection {
+fn detection(detection_type: &str, score: f64, text: &str, detector_id: Option<&str>) -> Detection {
     Detection {
         start: None,
         end: None,
-        text: text.map(ToOwned::to_owned),
+        text: text.to_owned(),
         detection: None,
-        detection_type: detection_type.map(ToOwned::to_owned),
+        detection_type: detection_type.to_owned(),
         score,
         evidences: None,
         metadata: None,
@@ -50,10 +45,7 @@ const DETECTOR_SERVER_HEADER: &str =
 #[test]
 fn message_detector_server_lists_each_message() {
     let config = config(None);
-    let detections = vec![
-        vec![detection(Some("toxic"), Some(0.9_f64), Some("bad"), None)],
-        Vec::new(),
-    ];
+    let detections = vec![vec![detection("toxic", 0.9_f64, "bad", None)], Vec::new()];
     assert_eq!(
         detector_server_message(&config, &detections),
         format!("{DETECTOR_SERVER_HEADER}Message 1:\n  - TOXIC (score: 0.900)\n    Text: 'bad'")
@@ -63,10 +55,7 @@ fn message_detector_server_lists_each_message() {
 #[test]
 fn message_detector_server_keeps_message_numbers_for_skipped_messages() {
     let config = config(None);
-    let detections = vec![
-        Vec::new(),
-        vec![detection(Some("pii"), Some(0.5_f64), Some("email"), None)],
-    ];
+    let detections = vec![Vec::new(), vec![detection("pii", 0.5_f64, "email", None)]];
     assert_eq!(
         detector_server_message(&config, &detections),
         format!("{DETECTOR_SERVER_HEADER}Message 2:\n  - PII (score: 0.500)\n    Text: 'email'")
@@ -77,8 +66,8 @@ fn message_detector_server_keeps_message_numbers_for_skipped_messages() {
 fn message_detector_server_applies_the_threshold() {
     let config = config(Some(0.8_f64));
     let detections = vec![vec![
-        detection(Some("toxic"), Some(0.5_f64), Some("mild"), None),
-        detection(Some("toxic"), Some(0.9_f64), Some("bad"), None),
+        detection("toxic", 0.5_f64, "mild", None),
+        detection("toxic", 0.9_f64, "bad", None),
     ]];
     assert_eq!(
         detector_server_message(&config, &detections),
@@ -89,7 +78,7 @@ fn message_detector_server_applies_the_threshold() {
 #[test]
 fn message_detector_server_names_an_unknown_detection_type() {
     let config = config(None);
-    let detections = vec![vec![detection(None, Some(0.0_f64), None, None)]];
+    let detections = vec![vec![detection("unknown", 0.0_f64, "", None)]];
     assert_eq!(
         detector_server_message(&config, &detections),
         "IBM Guardrail Detector failed: 1 violation(s) detected\n\nIBM Guardrail Detector failed:\n\nMessage 1:\n  - UNKNOWN (score: 0.000)\n    Text: ''"
@@ -109,13 +98,8 @@ fn message_detector_server_without_violations_reports_zero() {
 fn message_orchestrator_lists_each_detection_with_its_detector() {
     let config = config(None);
     let detections = vec![
-        detection(
-            Some("pii"),
-            Some(0.85_f64),
-            Some("email"),
-            Some("email-detector"),
-        ),
-        detection(Some("toxic"), Some(1.0_f64), Some("bad"), None),
+        detection("pii", 0.85_f64, "email", Some("email-detector")),
+        detection("toxic", 1.0_f64, "bad", None),
     ];
     assert_eq!(
         orchestrator_message(&config, &detections),
@@ -127,8 +111,8 @@ fn message_orchestrator_lists_each_detection_with_its_detector() {
 fn message_orchestrator_applies_the_threshold() {
     let config = config(Some(0.8_f64));
     let detections = vec![
-        detection(Some("pii"), Some(0.5_f64), Some("email"), None),
-        detection(Some("toxic"), Some(0.9_f64), Some("bad"), None),
+        detection("pii", 0.5_f64, "email", None),
+        detection("toxic", 0.9_f64, "bad", None),
     ];
     assert_eq!(
         orchestrator_message(&config, &detections),

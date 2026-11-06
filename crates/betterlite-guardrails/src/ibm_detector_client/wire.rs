@@ -3,30 +3,45 @@ use std::collections::BTreeMap;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use serde::{Deserialize, Serialize};
 
+mod tests;
+
 pub type DetectorParams = BTreeMap<String, GuardrailValue>;
 pub type ServerDetections = Vec<Vec<Detection>>;
 
-#[derive(Debug, Clone, Default, PartialEq, Deserialize, Serialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Detection {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub start: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end: Option<i64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub text: Option<String>,
+    pub text: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detection: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub detection_type: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub score: Option<f64>,
+    pub detection_type: String,
+    pub score: f64,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub evidences: Option<Vec<GuardrailValue>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub metadata: Option<BTreeMap<String, GuardrailValue>>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub detector_id: Option<String>,
+}
+
+impl Default for Detection {
+    fn default() -> Self {
+        Self {
+            start: None,
+            end: None,
+            text: String::new(),
+            detection: None,
+            detection_type: "unknown".to_owned(),
+            score: 0.0,
+            evidences: None,
+            metadata: None,
+            detector_id: None,
+        }
+    }
 }
 
 #[derive(Debug, Serialize)]

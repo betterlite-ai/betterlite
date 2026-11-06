@@ -25,13 +25,13 @@ fn config(score_threshold: Option<f64>) -> IbmDetectorConfig {
     }
 }
 
-fn scored(score: Option<f64>) -> Detection {
+fn scored(score: f64) -> Detection {
     Detection {
         start: None,
         end: None,
-        text: None,
+        text: String::new(),
         detection: None,
-        detection_type: None,
+        detection_type: "unknown".to_owned(),
         score,
         evidences: None,
         metadata: None,
@@ -39,7 +39,7 @@ fn scored(score: Option<f64>) -> Detection {
     }
 }
 
-fn kept_scores(config: &IbmDetectorConfig, scores: &[Option<f64>]) -> Vec<Option<f64>> {
+fn kept_scores(config: &IbmDetectorConfig, scores: &[f64]) -> Vec<f64> {
     let detections: Vec<Detection> = scores.iter().copied().map(scored).collect();
     filter_detections(config, &detections)
         .into_iter()
@@ -51,8 +51,8 @@ fn kept_scores(config: &IbmDetectorConfig, scores: &[Option<f64>]) -> Vec<Option
 fn threshold_absent_accepts_every_detection() {
     let config = config(None);
     assert_eq!(
-        kept_scores(&config, &[Some(0.0_f64), Some(0.5_f64), None]),
-        [Some(0.0_f64), Some(0.5_f64), None]
+        kept_scores(&config, &[0.0_f64, 0.5_f64]),
+        [0.0_f64, 0.5_f64]
     );
 }
 
@@ -60,11 +60,8 @@ fn threshold_absent_accepts_every_detection() {
 fn threshold_zero_keeps_every_non_negative_detection() {
     let config = config(Some(0.0_f64));
     assert_eq!(
-        kept_scores(
-            &config,
-            &[Some(-0.1_f64), Some(0.0_f64), None, Some(0.7_f64)]
-        ),
-        [Some(0.0_f64), None, Some(0.7_f64)]
+        kept_scores(&config, &[-0.1_f64, 0.0_f64, 0.7_f64]),
+        [0.0_f64, 0.7_f64]
     );
 }
 
@@ -72,7 +69,7 @@ fn threshold_zero_keeps_every_non_negative_detection() {
 fn threshold_filters_detections_below_the_score() {
     let config = config(Some(0.8_f64));
     assert_eq!(
-        kept_scores(&config, &[Some(0.79_f64), Some(0.8_f64), Some(1.0_f64)]),
-        [Some(0.8_f64), Some(1.0_f64)]
+        kept_scores(&config, &[0.79_f64, 0.8_f64, 1.0_f64]),
+        [0.8_f64, 1.0_f64]
     );
 }

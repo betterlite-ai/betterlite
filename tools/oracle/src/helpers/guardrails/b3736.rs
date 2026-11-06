@@ -7,7 +7,7 @@ use betterlite_guardrails::ibm_detector_client::config::IbmDetectorConfig;
 use betterlite_guardrails::ibm_detector_client::message::{
     detector_server_message, orchestrator_message,
 };
-use betterlite_guardrails::ibm_detector_client::threshold::filter_detections;
+use betterlite_guardrails::ibm_detector_client::threshold::is_violation;
 use betterlite_guardrails::ibm_detector_client::wire::Detection;
 use secrecy::ExposeSecret as _;
 use serde_json::{Value, json};
@@ -44,7 +44,7 @@ pub(crate) enum Input {
         settings: Settings,
         #[serde(default)]
         environment: Environment,
-        detections: Vec<Detection>,
+        detections: Vec<Value>,
     },
     MessageDetectorServer {
         settings: Settings,
@@ -82,11 +82,7 @@ impl crate::helpers::Helper for Op {
                 settings,
                 environment,
                 detections,
-            } => {
-                let config = configure(settings, environment)?;
-                serde_json::to_value(filter_detections(&config, detections))
-                    .map_err(|error| failure("SerializationError", error.to_string()))
-            }
+            } => filter(settings, environment, detections),
             Input::MessageDetectorServer {
                 settings,
                 environment,
@@ -107,16 +103,29 @@ impl crate::helpers::Helper for Op {
     }
 }
 
+fn filter(settings: &Settings, environment: &Environment, detections: &[Value]) -> HelperResult {
+    let config = configure(settings, environment)?;
+    let mut kept = Vec::new();
+    for detection in detections {
+        let parsed: Detection = serde_json::from_value(detection.clone())
+            .map_err(|error| failure("SerializationError", error.to_string()))?;
+        if is_violation(&config, &parsed) {
+            kept.push(detection);
+        }
+    }
+    Ok(Value::Array(kept.into_iter().cloned().collect()))
+}
+
 fn config_value(config: &IbmDetectorConfig) -> Value {
     json!({
-        "guardrail_name": config.guardrail_name.clone(),
+        "guardrail_name": config.guardrail_name,
         "auth_token_present": !config.auth_token.expose_secret().is_empty(),
-        "base_url": config.base_url.clone(),
-        "api_url": config.api_url.clone(),
-        "detector_id": config.detector_id.clone(),
+        "base_url": config.base_url,
+        "api_url": config.api_url,
+        "detector_id": config.detector_id,
         "is_detector_server": config.is_detector_server,
-        "detector_params": config.detector_params.clone(),
-        "extra_headers": config.extra_headers.clone(),
+        "detector_params": config.detector_params,
+        "extra_headers": config.extra_headers,
         "score_threshold": config.score_threshold,
         "block_on_detection": config.block_on_detection,
         "verify_ssl": config.ssl_verification == Verification::Enabled,

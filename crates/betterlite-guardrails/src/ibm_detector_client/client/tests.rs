@@ -107,7 +107,7 @@ async fn client_batches_texts_in_one_request() {
         .expect("call");
     assert_eq!(detections.len(), 2);
     assert_eq!(detections[0].len(), 1);
-    assert_eq!(detections[0][0].detection_type.as_deref(), Some("toxic"));
+    assert_eq!(detections[0][0].detection_type, "toxic");
     let request = captured.recv().await.expect("request");
     let body: DetectorServerBody = serde_json::from_str(&request.body).expect("body");
     assert_eq!(body.contents, ["first".to_owned(), "second".to_owned()]);

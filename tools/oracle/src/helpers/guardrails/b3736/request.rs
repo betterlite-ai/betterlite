@@ -16,8 +16,8 @@ pub(super) fn request_values(recorded: &[ProviderCall], config: &IbmDetectorConf
         .iter()
         .map(|call| {
             json!({
-                "path": call.request.path.clone(),
-                "body": call.request.body.clone(),
+                "path": call.request.path,
+                "body": call.request.body,
                 "headers": request_headers(
                     &call.request.headers,
                     &config.extra_headers,
