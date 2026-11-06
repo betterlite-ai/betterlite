@@ -9,10 +9,7 @@ use url::Url;
 
 use super::constants::EXECD_PORT;
 use super::request::as_str_dict;
-use super::{
-    OpenSandbox, OpenSandboxError, PollClock, SandboxHttp, SandboxRequest, check_status,
-    output_error,
-};
+use super::{OpenSandbox, OpenSandboxError, PollClock, SandboxHttp, SandboxRequest, output_error};
 
 #[derive(Debug, Clone, Copy)]
 pub struct GetEndpoint<'request> {
@@ -190,7 +187,7 @@ where
                 timeout: None,
             })
             .await?;
-        check_status(response.status)?;
+        // LiteLLM reads every GET answer whatever its status; only the body decides.
         let lines = read_capped_lines(response.body)
             .await
             .map_err(output_error)?;
@@ -242,10 +239,10 @@ where
 }
 
 fn is_retryable(error: &OpenSandboxError) -> bool {
-    if matches!(error, OpenSandboxError::HttpStatus { status: 404 }) {
+    if matches!(error, OpenSandboxError::MissingEndpoint { .. }) {
         return true;
     }
-    if matches!(error, OpenSandboxError::MissingEndpoint { .. }) {
+    if matches!(error, OpenSandboxError::OutputNotUtf8 { .. }) {
         return true;
     }
     matches!(error, OpenSandboxError::Decode { source } if source.is_syntax() || source.is_eof())

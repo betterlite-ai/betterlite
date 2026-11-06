@@ -16,6 +16,7 @@ use super::{OpenSandbox, OpenSandboxError, PollClock, SandboxHttp, SandboxReques
 
 mod corpus;
 mod create;
+mod defaults;
 mod poll;
 mod request;
 mod sse;
@@ -35,16 +36,20 @@ pub(super) struct FakeHttp {
 
 impl FakeHttp {
     pub(super) fn new(replies: &[(u16, &str)]) -> Self {
+        Self::from_replies(
+            replies
+                .iter()
+                .map(|(status, body)| Reply {
+                    status: *status,
+                    body: body.as_bytes().to_vec(),
+                })
+                .collect(),
+        )
+    }
+
+    pub(super) fn from_replies(replies: Vec<Reply>) -> Self {
         Self {
-            replies: Mutex::new(
-                replies
-                    .iter()
-                    .map(|(status, body)| Reply {
-                        status: *status,
-                        body: body.as_bytes().to_vec(),
-                    })
-                    .collect(),
-            ),
+            replies: Mutex::new(VecDeque::from(replies)),
             requests: Mutex::new(Vec::new()),
         }
     }
