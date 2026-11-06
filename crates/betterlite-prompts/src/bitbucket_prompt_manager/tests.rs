@@ -329,6 +329,20 @@ async fn load_stores_the_parsed_template_under_the_prompt_id() {
     assert_eq!(manager.prompts.keys().collect::<Vec<_>>(), ["greeting"]);
 }
 
+#[tokio::test]
+async fn load_get_template_returns_the_stored_template_and_none_for_another_id() {
+    let (_, manager, result) = load("greeting", "", "200 OK", "Hi").await;
+    result.unwrap();
+    assert_eq!(
+        manager
+            .prompts
+            .get("greeting")
+            .map(|template| template.content.as_str()),
+        Some("Hi")
+    );
+    assert!(manager.prompts.get("other").is_none());
+}
+
 #[rstest]
 #[case::missing_file("404 Not Found", "ignored")]
 #[case::empty_file("200 OK", "")]
