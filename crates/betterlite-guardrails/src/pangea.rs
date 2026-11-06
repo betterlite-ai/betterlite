@@ -239,6 +239,24 @@ impl PangeaGuardrail {
         Ok(parsed.result)
     }
 
+    async fn run_hook<A>(
+        &self,
+        event_type: &'static str,
+        input: AiGuardInput,
+        recipe: Option<String>,
+        applied: &mut A,
+    ) -> Result<Option<AiGuardOutput>, Error>
+    where
+        A: AppliedGuardrailsHeader,
+    {
+        let answer = self.call_ai_guard(event_type, input, recipe).await?;
+        applied.record_applied_guardrail(&self.guardrail_name);
+        if answer.transformed != Some(true) {
+            return Ok(None);
+        }
+        Ok(Some(answer.output.unwrap_or_default()))
+    }
+
     pub async fn async_pre_call_hook<A>(
         &self,
         data: &mut RequestData,
@@ -249,29 +267,24 @@ impl PangeaGuardrail {
         A: AppliedGuardrailsHeader,
     {
         let completion = COMPLETION_CALL_TYPES.contains(&call_type);
-        let input_messages = if completion {
-            Some(vec![user_message(
-                data.prompt
-                    .clone()
-                    .ok_or(Error::MissingData { field: "prompt" })?,
-            )])
-        } else {
-            data.messages.clone()
-        };
         let input = AiGuardInput {
-            messages: input_messages,
+            messages: if completion {
+                Some(completion_messages(data)?)
+            } else {
+                data.messages.clone()
+            },
             tools: data.tools.clone(),
             choices: None,
         };
         let answer = self
-            .call_ai_guard("input", input, self.input_recipe.clone())
+            .run_hook("input", input, self.input_recipe.clone(), applied)
             .await?;
-        applied.record_applied_guardrail(&self.guardrail_name);
-        if answer.transformed != Some(true) {
+        let Some(output) = answer else {
             return Ok(false);
-        }
-        let output_messages = answer.output.and_then(|output| output.messages);
-        let messages = output_messages.ok_or(Error::MissingData { field: "messages" })?;
+        };
+        let messages = output
+            .messages
+            .ok_or(Error::MissingData { field: "messages" })?;
         if completion {
             let [message] = messages.as_slice() else {
                 return Err(Error::InvalidTextCompletion);
@@ -294,49 +307,69 @@ impl PangeaGuardrail {
     where
         A: AppliedGuardrailsHeader,
     {
-        let (request_messages, sent_choices) = match response {
-            GuardrailResponse::Model { choices } => {
-                let Some(messages) = data.messages.clone() else {
-                    return Ok(false);
-                };
-                (messages, choices.clone())
-            }
-            GuardrailResponse::TextCompletion { choices } => {
-                let prompt = data
-                    .prompt
-                    .clone()
-                    .ok_or(Error::MissingData { field: "prompt" })?;
-                (vec![user_message(prompt)], choices.clone())
-            }
-        };
-        let input = AiGuardInput {
-            messages: Some(request_messages),
-            tools: data.tools.clone(),
-            choices: Some(sent_choices),
+        let Some(input) = post_call_input(data, response)? else {
+            return Ok(false);
         };
         let answer = self
-            .call_ai_guard("output", input, self.output_recipe.clone())
+            .run_hook("output", input, self.output_recipe.clone(), applied)
             .await?;
-        applied.record_applied_guardrail(&self.guardrail_name);
-        if answer.transformed != Some(true) {
+        let Some(output) = answer else {
             return Ok(false);
-        }
-        let transformed_choices = answer.output.and_then(|output| output.choices);
-        let transformed = transformed_choices.ok_or(Error::MissingData { field: "choices" })?;
-        match response {
-            GuardrailResponse::Model { choices }
-            | GuardrailResponse::TextCompletion { choices } => *choices = transformed,
-        }
-        Ok(true)
+        };
+        apply_post_call_output(response, output)
     }
 }
 
-fn user_message(content: GuardrailValue) -> GuardrailMessage {
+fn post_call_input(
+    data: &RequestData,
+    response: &GuardrailResponse,
+) -> Result<Option<AiGuardInput>, Error> {
+    let choices = match response {
+        GuardrailResponse::Model { choices } | GuardrailResponse::TextCompletion { choices } => {
+            choices.clone()
+        }
+    };
+    let messages = match response {
+        GuardrailResponse::Model { .. } => {
+            let Some(messages) = data.messages.clone() else {
+                return Ok(None);
+            };
+            messages
+        }
+        GuardrailResponse::TextCompletion { .. } => completion_messages(data)?,
+    };
+    Ok(Some(AiGuardInput {
+        messages: Some(messages),
+        tools: data.tools.clone(),
+        choices: Some(choices),
+    }))
+}
+
+fn apply_post_call_output(
+    response: &mut GuardrailResponse,
+    output: AiGuardOutput,
+) -> Result<bool, Error> {
+    let transformed = output
+        .choices
+        .ok_or(Error::MissingData { field: "choices" })?;
+    match response {
+        GuardrailResponse::Model { choices } | GuardrailResponse::TextCompletion { choices } => {
+            *choices = transformed;
+        }
+    }
+    Ok(true)
+}
+
+fn completion_messages(data: &RequestData) -> Result<Vec<GuardrailMessage>, Error> {
+    let content = data
+        .prompt
+        .clone()
+        .ok_or(Error::MissingData { field: "prompt" })?;
     let extra = BTreeMap::from([("content".to_owned(), content)]);
-    GuardrailMessage {
+    Ok(vec![GuardrailMessage {
         role: "user".to_owned(),
         extra,
-    }
+    }])
 }
 
 pub trait CallbackRegistry {
