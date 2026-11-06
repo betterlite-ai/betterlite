@@ -5,7 +5,7 @@ use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
 
 use tokio::fs;
-use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::io::{AsyncReadExt as _, AsyncWrite, AsyncWriteExt as _};
 
 pub const FILE_LIMIT: usize = 0x0010_0000;
 
@@ -53,8 +53,17 @@ impl FileAccess for LocalFiles {
             .open(path)
             .await?;
         file.set_permissions(Permissions::from_mode(0o600)).await?;
-        file.write_all(content).await
+        write_and_flush(&mut file, content).await
     }
+}
+
+// tokio's file write finishes in a blocking task, so only the flush waits for it and carries a failed write
+async fn write_and_flush<W>(file: &mut W, content: &[u8]) -> io::Result<()>
+where
+    W: AsyncWrite + Unpin,
+{
+    file.write_all(content).await?;
+    file.flush().await
 }
 
 mod tests;

@@ -1,10 +1,15 @@
 #![cfg(test)]
 
 use std::fs;
+use std::io;
 use std::os::unix::fs::PermissionsExt as _;
 use std::path::Path;
+use std::pin::Pin;
+use std::task::{Context, Poll};
 
-use super::{FILE_LIMIT, FileAccess as _, LocalFiles};
+use tokio::io::AsyncWrite;
+
+use super::{FILE_LIMIT, FileAccess as _, LocalFiles, write_and_flush};
 
 #[tokio::test]
 async fn local_files_write_then_read_and_truncate() {
@@ -48,6 +53,33 @@ async fn local_files_reject_oversized_or_missing_token_files() {
         .read(&directory.path().join("missing"))
         .await
         .unwrap_err();
+}
+
+struct FailingFlush;
+
+impl AsyncWrite for FailingFlush {
+    fn poll_write(
+        self: Pin<&mut Self>,
+        _context: &mut Context<'_>,
+        buf: &[u8],
+    ) -> Poll<io::Result<usize>> {
+        Poll::Ready(Ok(buf.len()))
+    }
+
+    fn poll_flush(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Poll::Ready(Err(io::Error::other("flush failed")))
+    }
+
+    fn poll_shutdown(self: Pin<&mut Self>, _context: &mut Context<'_>) -> Poll<io::Result<()>> {
+        Poll::Ready(Ok(()))
+    }
+}
+
+#[tokio::test]
+async fn a_flush_failure_is_reported_as_a_write_failure() {
+    let mut writer = FailingFlush;
+
+    write_and_flush(&mut writer, b"token").await.unwrap_err();
 }
 
 #[tokio::test]
