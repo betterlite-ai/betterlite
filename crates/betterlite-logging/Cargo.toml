@@ -8,16 +8,23 @@ publish.workspace = true
 [dependencies]
 betterlite-config = { path = "../betterlite-config" }
 betterlite-env = { path = "../betterlite-env" }
+betterlite-http = { path = "../betterlite-http" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-prometheus = { path = "../betterlite-prometheus" }
 betterlite-redact = { path = "../betterlite-redact" }
 chrono.workspace = true
+csv = "1.4.0"
 flate2 = "1.1.5"
 hex.workspace = true
+http = "1.5.0"
 indexmap = { version = "2.14.2", features = ["serde"] }
+jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
+minijinja = { version = "3.0.4", features = ["builtins", "fuel", "preserve_order", "serde"] }
+minijinja-contrib = { version = "3.0.4", default-features = false, features = ["pycompat"] }
 parquet-format-safe = "0.2.4"
 parquet2 = { version = "0.17.2", default-features = false, features = ["snappy"] }
 pep440_rs = "0.7.3"
+percent-encoding.workspace = true
 prost = "0.14.4"
 regex.workspace = true
 rust_decimal.workspace = true
@@ -26,10 +33,12 @@ secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
 serde_json = { version = "1.0.154", features = ["arbitrary_precision", "raw_value"] }
 serde_path_to_error = "0.1.20"
-serde_with = { version = "3.24.0", default-features = false, features = ["alloc"] }
+serde_with = { version = "3.24.0", default-features = false, features = ["alloc", "macros"] }
 sha2.workspace = true
 strum = { version = "0.28.0", features = ["derive"] }
 thiserror.workspace = true
+tokio = { workspace = true, features = ["time"] }
+tokio-util = { version = "0.7.20", features = ["rt"] }
 tracing.workspace = true
 unicode-properties = { version = "0.1.4", default-features = false, features = ["general-category"] }
 url = "2.5.8"
@@ -42,6 +51,7 @@ insta = { version = "1.49.0", default-features = false, features = ["yaml"] }
 rstest = "=0.27.0"
 serde-saphyr.workspace = true
 serde_json = { version = "1.0.154", features = ["arbitrary_precision", "raw_value"] }
+tokio = { workspace = true, features = ["test-util", "time"] }
 tracing-subscriber.workspace = true
 
 [[test]]
