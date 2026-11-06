@@ -9,7 +9,7 @@ use crate::assistants::client::{ClientKind, ClientOptions, SdkClient};
 use crate::assistants::operations::AssistantsApi;
 use crate::assistants::transport::AssistantsTransport;
 use crate::thread_runs::client::{CallKind, outbound, send};
-use crate::thread_runs::decode::decode_json;
+use crate::thread_runs::decode::classify;
 use crate::thread_runs::error::ThreadRunsError;
 use crate::thread_runs::records::{RunCreate, RunReply, RunRequest, RunStatus};
 use crate::thread_runs::stream::{RunEventHandler, RunStream};
@@ -17,21 +17,18 @@ use crate::thread_runs::stream::{RunEventHandler, RunStream};
 pub struct RunsApi<T> {
     pub transport: Arc<T>,
 }
-
 // Both run tests compare with `is True`, so the caller resolves every other value to false before dispatch.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RunDispatch {
     pub arun_thread: bool,
     pub stream: bool,
 }
-
 pub struct RunCall<T> {
     pub options: ClientOptions,
     pub client: Option<SdkClient<T>>,
     pub dispatch: RunDispatch,
     pub handler: Option<Arc<dyn RunEventHandler>>,
 }
-
 // The buffered and streaming results stay distinct, and each names the facade it was built for.
 pub enum RunInvocation<T> {
     Polled {
@@ -40,7 +37,6 @@ pub enum RunInvocation<T> {
     },
     Streaming(Box<RunStream<T>>),
 }
-
 impl<T: AssistantsTransport> RunsApi<T> {
     pub async fn create_and_poll(
         &self,
@@ -56,14 +52,14 @@ impl<T: AssistantsTransport> RunsApi<T> {
             RequestBody::Json(bytes),
         )?;
         let created = send(self.transport.as_ref(), create).await?;
-        let mut run = decode_json::<RunReply>(&created.body)?;
+        let mut run = serde_json::from_slice::<RunReply>(&created.body).map_err(classify)?;
         let run_id = run.id.clone();
         let mut interval = None;
         loop {
             let poll_segments = run_segments(&request.thread_id, &run_id)?;
             let poll = outbound(client, CallKind::Poll, &poll_segments, RequestBody::Empty)?;
             let response = send(self.transport.as_ref(), poll).await?;
-            run = decode_json::<RunReply>(&response.body)?;
+            run = serde_json::from_slice::<RunReply>(&response.body).map_err(classify)?;
             if matches!(
                 run.status,
                 RunStatus::RequiresAction
@@ -80,7 +76,6 @@ impl<T: AssistantsTransport> RunsApi<T> {
             sleep(wait).await;
         }
     }
-
     pub fn create_stream(
         &self,
         client: &SdkClient<T>,
@@ -100,7 +95,6 @@ impl<T: AssistantsTransport> RunsApi<T> {
             request: stream_request,
         })
     }
-
     pub async fn run_thread(
         &self,
         call: RunCall<T>,
@@ -126,7 +120,6 @@ impl<T: AssistantsTransport> RunsApi<T> {
         })
     }
 }
-
 // The SDK always sends every keyword LiteLLM's wrapper received, so a None argument stays null on the wire.
 fn create_body(request: &RunRequest, stream: bool) -> Result<Vec<u8>, ThreadRunsError> {
     let body = RunCreate {
@@ -138,14 +131,12 @@ fn create_body(request: &RunRequest, stream: bool) -> Result<Vec<u8>, ThreadRuns
         stream,
         tools: request.tools.as_deref(),
     };
-    serde_json::to_vec(&body).map_err(|source| ThreadRunsError::Encode { source })
+    serde_json::to_vec(&body).map_err(ThreadRunsError::Encode)
 }
-
 fn thread_segments(thread_id: &str) -> Result<[&str; 3], ThreadRunsError> {
     check_segment(thread_id, ThreadRunsError::EmptyThreadId)?;
     Ok(["threads", thread_id, "runs"])
 }
-
 fn run_segments<'call>(
     thread_id: &'call str,
     run_id: &'call str,
@@ -154,31 +145,21 @@ fn run_segments<'call>(
     check_segment(run_id, ThreadRunsError::EmptyRunId)?;
     Ok(["threads", thread_id, "runs", run_id])
 }
-
-// The SDK refuses both the literal and the percent-encoded dot segments before building the path.
+// The SDK quotes the id before its dot check, so only the literal dot segments reach the check here.
 fn check_segment(segment: &str, empty: ThreadRunsError) -> Result<(), ThreadRunsError> {
     if segment.is_empty() {
         return Err(empty);
     }
-    let folded = segment.to_ascii_lowercase();
-    if matches!(
-        folded.as_str(),
-        "." | ".." | "%2e" | "%2e%2e" | ".%2e" | "%2e."
-    ) {
-        return Err(ThreadRunsError::DotSegment {
-            segment: segment.to_owned(),
-        });
+    if matches!(segment, "." | "..") {
+        return Err(ThreadRunsError::DotSegment(segment.to_owned()));
     }
     Ok(())
 }
-
 fn poll_interval(response: &UpstreamResponse) -> Result<Duration, ThreadRunsError> {
     let Some(value) = response.headers.get("openai-poll-after-ms") else {
         return Ok(Duration::from_millis(1000));
     };
-    let text = value
-        .to_str()
-        .map_err(|source| ThreadRunsError::PollAfterHeader { source })?;
+    let text = value.to_str().map_err(ThreadRunsError::PollAfterHeader)?;
     let millis = text
         .parse::<u64>()
         .map_err(|source| ThreadRunsError::PollAfter {

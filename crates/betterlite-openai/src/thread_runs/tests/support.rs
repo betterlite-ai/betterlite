@@ -2,21 +2,27 @@
 
 use std::collections::VecDeque;
 use std::future::ready;
+use std::pin::Pin;
 use std::sync::{Arc, Mutex};
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody, merge_query};
 use betterlite_http::proxy::transport_error::TransportError;
+use futures_util::Stream;
+use futures_util::stream::iter;
 use http::{HeaderMap, HeaderName, HeaderValue};
 use secrecy::SecretString;
 use serde_json::Value;
+use tokio::sync::mpsc;
 
 use crate::assistants::client::ClientOptions;
 use crate::assistants::transport::AssistantsTransport;
+use crate::thread_runs::error::ThreadRunsError;
 use crate::thread_runs::operations::RunsApi;
 use crate::thread_runs::records::RunEvent;
-use crate::thread_runs::stream::RunEventHandler;
+use crate::thread_runs::stream::{RunChunks, RunEventHandler, RunStreamTransport};
 
 pub(super) const KEY: &str = "sk-fixture";
 pub(super) const BASE: &str = "https://example.test/v1";
@@ -47,6 +53,22 @@ pub(super) struct Seen {
 pub(super) struct Recorder {
     seen: Mutex<Vec<Seen>>,
     replies: Mutex<VecDeque<(u16, HeaderMap, Vec<u8>)>>,
+    gate: Mutex<Option<mpsc::Receiver<Vec<u8>>>>,
+}
+
+struct GateChunks {
+    receiver: mpsc::Receiver<Vec<u8>>,
+}
+
+impl Stream for GateChunks {
+    type Item = Result<Vec<u8>, ThreadRunsError>;
+
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.get_mut()
+            .receiver
+            .poll_recv(cx)
+            .map(|chunk| chunk.map(Ok))
+    }
 }
 
 impl Recorder {
@@ -79,22 +101,18 @@ impl Recorder {
             .push_back((status, headers, body.as_bytes().to_vec()));
     }
 
+    // The stream is fed by the caller through this channel, so a handler can release the next chunk.
+    pub(super) fn gate(&self) -> mpsc::Sender<Vec<u8>> {
+        let (sender, receiver) = mpsc::channel(1);
+        *self.gate.lock().unwrap() = Some(receiver);
+        sender
+    }
+
     pub(super) fn requests(&self) -> Vec<Seen> {
         self.seen.lock().unwrap().clone()
     }
-}
 
-fn header_of(headers: &HeaderMap, name: &str) -> Option<String> {
-    headers
-        .get(name)
-        .map(|value| value.to_str().unwrap().to_owned())
-}
-
-impl AssistantsTransport for Recorder {
-    fn send(
-        &self,
-        request: OutboundRequest,
-    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
+    fn record(&self, request: &OutboundRequest) {
         let mut url = request.url.clone();
         merge_query(&mut url, &request.query);
         let body = match &request.body {
@@ -117,12 +135,57 @@ impl AssistantsTransport for Recorder {
             content_type,
             body,
         });
-        let (status, headers, reply) = self.replies.lock().unwrap().pop_front().unwrap();
+    }
+
+    fn next_reply(&self) -> (u16, HeaderMap, Vec<u8>) {
+        self.replies.lock().unwrap().pop_front().unwrap_or_else(|| {
+            (
+                500,
+                HeaderMap::new(),
+                b"{\"error\":{\"message\":\"the fixture queues no reply\"}}".to_vec(),
+            )
+        })
+    }
+}
+
+fn header_of(headers: &HeaderMap, name: &str) -> Option<String> {
+    headers
+        .get(name)
+        .map(|value| value.to_str().unwrap().to_owned())
+}
+
+impl AssistantsTransport for Recorder {
+    fn send(
+        &self,
+        request: OutboundRequest,
+    ) -> impl Future<Output = Result<UpstreamResponse, TransportError>> + Send {
+        self.record(&request);
+        let (status, headers, body) = self.next_reply();
         ready(Ok(UpstreamResponse {
             status,
             headers,
-            body: reply,
+            body,
         }))
+    }
+}
+
+impl RunStreamTransport for Recorder {
+    fn open(
+        &self,
+        request: OutboundRequest,
+    ) -> impl Future<Output = Result<RunChunks, ThreadRunsError>> + Send {
+        self.record(&request);
+        let gated = self.gate.lock().unwrap().take();
+        if let Some(receiver) = gated {
+            let chunks: RunChunks = Box::pin(GateChunks { receiver });
+            return ready(Ok(chunks));
+        }
+        let (status, _headers, body) = self.next_reply();
+        if status >= 400 {
+            return ready(Err(ThreadRunsError::Status(status, body)));
+        }
+        let chunks: RunChunks = Box::pin(iter(vec![Ok(body)]));
+        ready(Ok(chunks))
     }
 }
 
@@ -137,9 +200,72 @@ impl RecordingHandler {
     }
 }
 
+fn error_kind(error: &ThreadRunsError) -> &'static str {
+    if matches!(error, ThreadRunsError::Timeout) {
+        return "timeout";
+    }
+    if matches!(error, ThreadRunsError::ProviderError { .. }) {
+        return "stream_error";
+    }
+    if matches!(error, ThreadRunsError::Status { .. }) {
+        return "status";
+    }
+    "other"
+}
+
 impl RunEventHandler for RecordingHandler {
     fn on_event(&self, event: &RunEvent) {
         self.calls.lock().unwrap().push(event.name().to_owned());
+    }
+
+    fn on_exception(&self, error: &ThreadRunsError) {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(format!("exception:{}", error_kind(error)));
+    }
+
+    fn on_timeout(&self) {
+        self.calls.lock().unwrap().push(String::from("timeout"));
+    }
+
+    fn on_end(&self) {
+        self.calls.lock().unwrap().push(String::from("end"));
+    }
+}
+
+// Releases one prepared chunk when the first event reaches the handler.
+pub(super) struct GatedHandler {
+    pub(super) calls: Mutex<Vec<String>>,
+    pub(super) sender: Mutex<Option<mpsc::Sender<Vec<u8>>>>,
+    pub(super) payload: Vec<u8>,
+}
+
+impl GatedHandler {
+    pub(super) fn take(&self) -> Vec<String> {
+        self.calls.lock().unwrap().clone()
+    }
+}
+
+impl RunEventHandler for GatedHandler {
+    fn on_event(&self, event: &RunEvent) {
+        self.calls.lock().unwrap().push(event.name().to_owned());
+        let pending = self.sender.lock().unwrap().take();
+        if let Some(queued) = pending {
+            queued.try_send(self.payload.clone()).unwrap();
+            self.calls.lock().unwrap().push(String::from("released"));
+        }
+    }
+
+    fn on_exception(&self, error: &ThreadRunsError) {
+        self.calls
+            .lock()
+            .unwrap()
+            .push(format!("exception:{}", error_kind(error)));
+    }
+
+    fn on_timeout(&self) {
+        self.calls.lock().unwrap().push(String::from("timeout"));
     }
 
     fn on_end(&self) {

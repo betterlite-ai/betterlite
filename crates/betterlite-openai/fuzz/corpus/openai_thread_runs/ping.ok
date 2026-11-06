@@ -1,0 +1,3 @@
+event: ping
+data: {"ok":true}
+

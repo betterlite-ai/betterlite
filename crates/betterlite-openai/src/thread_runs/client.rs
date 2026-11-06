@@ -5,6 +5,7 @@ use betterlite_http::proxy::UpstreamResponse;
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use http::header::{ACCEPT, AUTHORIZATION};
 use http::{HeaderMap, HeaderName, HeaderValue, Method};
+use percent_encoding::{AsciiSet, NON_ALPHANUMERIC, utf8_percent_encode};
 use secrecy::ExposeSecret as _;
 use url::Url;
 
@@ -18,7 +19,25 @@ const POLL_HELPER: HeaderName = HeaderName::from_static("x-stainless-poll-helper
 const STREAM_HELPER: HeaderName = HeaderName::from_static("x-stainless-stream-helper");
 const CUSTOM_HANDLER: HeaderName = HeaderName::from_static("x-stainless-custom-event-handler");
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
-
+// The SDK quotes a path id with Python's quote(safe="!$&'()*+,;=:@"), so "/" is encoded and the unreserved marks stay.
+const PATH_SEGMENT: &AsciiSet = &NON_ALPHANUMERIC
+    .remove(b'_')
+    .remove(b'.')
+    .remove(b'-')
+    .remove(b'~')
+    .remove(b'!')
+    .remove(b'$')
+    .remove(b'&')
+    .remove(b'\'')
+    .remove(b'(')
+    .remove(b')')
+    .remove(b'*')
+    .remove(b'+')
+    .remove(b',')
+    .remove(b';')
+    .remove(b'=')
+    .remove(b':')
+    .remove(b'@');
 // The SDK marks the poll and stream helpers on the request; the provider reads the custom-handler flag.
 #[derive(Clone, Copy)]
 pub(crate) enum CallKind {
@@ -26,7 +45,6 @@ pub(crate) enum CallKind {
     Poll,
     Stream { custom_handler: bool },
 }
-
 pub(crate) fn outbound<T>(
     client: &SdkClient<T>,
     kind: CallKind,
@@ -44,22 +62,20 @@ pub(crate) fn outbound<T>(
         deadline: client.timeout.unwrap_or(DEFAULT_TIMEOUT),
     })
 }
-
 fn run_url<T>(client: &SdkClient<T>, segments: &[&str]) -> Result<Url, ThreadRunsError> {
     let mut url = Url::parse(client.base_url.as_deref().unwrap_or(DEFAULT_API_BASE))
-        .map_err(|source| ThreadRunsError::BaseUrl { source })?;
-    {
-        let mut path = url
-            .path_segments_mut()
-            .map_err(|()| ThreadRunsError::BaseUrlPath)?;
-        path.pop_if_empty();
-        for segment in segments {
-            path.push(segment);
-        }
+        .map_err(ThreadRunsError::BaseUrl)?;
+    let mut path = url.path().to_owned();
+    if !path.ends_with('/') {
+        path.push('/');
     }
+    let quoted: Vec<String> = segments
+        .iter()
+        .map(|segment| utf8_percent_encode(segment, PATH_SEGMENT).to_string())
+        .collect();
+    url.set_path(&format!("{path}{}", quoted.join("/")));
     Ok(url)
 }
-
 fn call_headers<T>(
     client: &SdkClient<T>,
     kind: CallKind,
@@ -70,14 +86,14 @@ fn call_headers<T>(
         .ok_or(ThreadRunsError::MissingApiKey)?;
     let mut headers = HeaderMap::new();
     let mut bearer = HeaderValue::try_from(format!("Bearer {}", api_key.expose_secret()))
-        .map_err(|source| ThreadRunsError::Header { source })?;
+        .map_err(ThreadRunsError::Header)?;
     bearer.set_sensitive(true);
     headers.insert(AUTHORIZATION, bearer);
     headers.insert(ACCEPT, HeaderValue::from_static("application/json"));
     headers.insert(OPENAI_BETA, HeaderValue::from_static("assistants=v2"));
     if let Some(organization) = &client.organization {
-        let value = HeaderValue::try_from(organization.as_str())
-            .map_err(|source| ThreadRunsError::Header { source })?;
+        let value =
+            HeaderValue::try_from(organization.as_str()).map_err(ThreadRunsError::Header)?;
         headers.insert(OPENAI_ORGANIZATION, value);
     }
     let method = match kind {
@@ -97,7 +113,6 @@ fn call_headers<T>(
     }
     Ok((method, headers))
 }
-
 pub(crate) async fn send<T>(
     transport: &T,
     request: OutboundRequest,
@@ -108,12 +123,9 @@ where
     let response = transport
         .send(request)
         .await
-        .map_err(|source| ThreadRunsError::Transport { source })?;
+        .map_err(ThreadRunsError::Transport)?;
     if response.status >= 400 {
-        return Err(ThreadRunsError::Status {
-            status: response.status,
-            body: response.body,
-        });
+        return Err(ThreadRunsError::Status(response.status, response.body));
     }
     Ok(response)
 }

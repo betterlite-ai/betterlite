@@ -1,43 +1,78 @@
 use std::mem;
 use std::str;
 
-use serde::de::DeserializeOwned;
+use serde_json::Value;
 use serde_json::error::Category;
 
 use crate::thread_runs::error::ThreadRunsError;
-use crate::thread_runs::records::{RunErrorObject, RunEvent};
+use crate::thread_runs::records::{RunEvent, RunReply};
 
-// The provider names the event on the frame's `event:` line; the proxy's own frames carry it inside the data.
-pub fn decode_run_event(bytes: &[u8]) -> Result<Option<RunEvent>, ThreadRunsError> {
+const MAX_FRAME_BYTES: usize = 0x0010_0000;
+const RUN_EVENTS: [&str; 10] = [
+    "thread.run.created",
+    "thread.run.queued",
+    "thread.run.in_progress",
+    "thread.run.requires_action",
+    "thread.run.completed",
+    "thread.run.incomplete",
+    "thread.run.failed",
+    "thread.run.cancelling",
+    "thread.run.cancelled",
+    "thread.run.expired",
+];
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum FrameOutcome {
+    Event(Box<RunEvent>),
+    End,
+    Skip,
+}
+// The SDK wraps thread.* events and yields other payloads bare, raising when one carries an error key.
+pub fn decode_run_event(bytes: &[u8]) -> Result<FrameOutcome, ThreadRunsError> {
     let (event, data) = event_and_data(bytes);
     if data.starts_with(b"[DONE]") {
-        return Ok(None);
+        return Ok(FrameOutcome::End);
     }
-    event.map_or_else(
-        || decode_json(&data).map(Some),
-        |name| decode_named(&name, &data).map(Some),
+    if data.is_empty() {
+        return Ok(FrameOutcome::Skip);
+    }
+    let value = serde_json::from_slice::<Value>(&data).map_err(classify)?;
+    let thread_event = event.as_deref().filter(|name| name.starts_with("thread."));
+    let Some(name) = thread_event else {
+        if reports_error(&value) {
+            return Err(provider_error(&value));
+        }
+        return Ok(FrameOutcome::Event(Box::new(RunEvent::Bare(value))));
+    };
+    let frame = if RUN_EVENTS.contains(&name) {
+        let run = serde_json::from_value::<RunReply>(value).map_err(classify)?;
+        RunEvent::Typed {
+            event: name.to_owned(),
+            data: Box::new(run),
+        }
+    } else {
+        RunEvent::Named {
+            event: name.to_owned(),
+            data: value,
+        }
+    };
+    Ok(FrameOutcome::Event(Box::new(frame)))
+}
+fn reports_error(value: &Value) -> bool {
+    let Value::Object(fields) = value else {
+        return false;
+    };
+    !matches!(
+        fields.get("error"),
+        None | Some(Value::Null | Value::Bool(false))
     )
 }
-
-fn decode_named(name: &str, data: &[u8]) -> Result<RunEvent, ThreadRunsError> {
-    match name {
-        "thread.run.created" => decode_json(data).map(RunEvent::Created),
-        "thread.run.queued" => decode_json(data).map(RunEvent::Queued),
-        "thread.run.in_progress" => decode_json(data).map(RunEvent::InProgress),
-        "thread.run.requires_action" => decode_json(data).map(RunEvent::RequiresAction),
-        "thread.run.completed" => decode_json(data).map(RunEvent::Completed),
-        "thread.run.incomplete" => decode_json(data).map(RunEvent::Incomplete),
-        "thread.run.failed" => decode_json(data).map(RunEvent::Failed),
-        "thread.run.cancelling" => decode_json(data).map(RunEvent::Cancelling),
-        "thread.run.cancelled" => decode_json(data).map(RunEvent::Cancelled),
-        "thread.run.expired" => decode_json(data).map(RunEvent::Expired),
-        "error" => decode_json::<RunErrorObject>(data).map(RunEvent::Error),
-        other => Err(ThreadRunsError::UnsupportedEvent {
-            event: other.to_owned(),
-        }),
-    }
+fn provider_error(value: &Value) -> ThreadRunsError {
+    let body = value
+        .get("error")
+        .and_then(|error| serde_json::to_vec(error).ok())
+        .unwrap_or_default();
+    ThreadRunsError::ProviderError { body }
 }
-
 // The shared SseParser strips non-data fields and its event_end is private, so this keeps the event line and CRLF.
 fn lines(body: &[u8]) -> Vec<&[u8]> {
     let mut lines = Vec::new();
@@ -63,7 +98,6 @@ fn lines(body: &[u8]) -> Vec<&[u8]> {
     }
     lines
 }
-
 fn event_and_data(frame: &[u8]) -> (Option<String>, Vec<u8>) {
     let mut event = None;
     let mut data = Vec::new();
@@ -80,16 +114,53 @@ fn event_and_data(frame: &[u8]) -> (Option<String>, Vec<u8>) {
     }
     (event, data)
 }
-
-// One frame ends at a blank line whatever line terminator wrote it; a body without a final blank line keeps its tail.
-pub(crate) fn run_event_frames(body: &[u8]) -> Vec<Vec<u8>> {
+// Frames end at a blank line, so a tail the provider cut off before one is never dispatched.
+#[derive(Debug, Default)]
+pub(crate) struct RunFrames {
+    buffer: Vec<u8>,
+}
+impl RunFrames {
+    pub(crate) fn push(&mut self, bytes: &[u8]) -> Result<Vec<Vec<u8>>, ThreadRunsError> {
+        if self.buffer.len().saturating_add(bytes.len()) > MAX_FRAME_BYTES {
+            return Err(ThreadRunsError::StreamTooLarge);
+        }
+        self.buffer.extend_from_slice(bytes);
+        let Some(end) = terminated_end(&self.buffer) else {
+            return Ok(Vec::new());
+        };
+        let frames = frames_in(self.buffer.get(..end).unwrap_or_default());
+        self.buffer.drain(..end);
+        Ok(frames)
+    }
+}
+// The byte length through the last blank-line terminator; anything after it is an unterminated tail.
+fn terminated_end(buffer: &[u8]) -> Option<usize> {
+    let (mut line_start, mut end, mut cursor) = (0_usize, None, 0_usize);
+    while let Some(byte) = buffer.get(cursor) {
+        if !matches!(*byte, b'\r' | b'\n') {
+            cursor = cursor.saturating_add(1);
+            continue;
+        }
+        let next = cursor.saturating_add(1);
+        let after = if *byte == b'\r' && buffer.get(next) == Some(&b'\n') {
+            next.saturating_add(1)
+        } else {
+            next
+        };
+        if cursor == line_start {
+            end = Some(after);
+        }
+        line_start = after;
+        cursor = after;
+    }
+    end
+}
+fn frames_in(block: &[u8]) -> Vec<Vec<u8>> {
     let mut frames = Vec::new();
     let mut frame: Vec<u8> = Vec::new();
-    for line in lines(body) {
+    for line in lines(block) {
         if line.is_empty() {
-            if !frame.is_empty() {
-                frames.push(mem::take(&mut frame));
-            }
+            frames.extend((!frame.is_empty()).then(|| mem::take(&mut frame)));
             continue;
         }
         if !frame.is_empty() {
@@ -97,19 +168,12 @@ pub(crate) fn run_event_frames(body: &[u8]) -> Vec<Vec<u8>> {
         }
         frame.extend_from_slice(line);
     }
-    if !frame.is_empty() {
-        frames.push(frame);
-    }
     frames
 }
-
-pub fn decode_json<T>(bytes: &[u8]) -> Result<T, ThreadRunsError>
-where
-    T: DeserializeOwned,
-{
-    serde_json::from_slice(bytes).map_err(|source| match source.classify() {
-        Category::Eof => ThreadRunsError::Truncated { source },
-        Category::Data => ThreadRunsError::Shape { source },
-        Category::Syntax | Category::Io => ThreadRunsError::Malformed { source },
-    })
+pub(crate) fn classify(source: serde_json::Error) -> ThreadRunsError {
+    match source.classify() {
+        Category::Eof => ThreadRunsError::Truncated(source),
+        Category::Data => ThreadRunsError::Shape(source),
+        Category::Syntax | Category::Io => ThreadRunsError::Malformed(source),
+    }
 }

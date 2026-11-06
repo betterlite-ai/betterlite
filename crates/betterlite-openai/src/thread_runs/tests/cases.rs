@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use rstest::rstest;
@@ -10,12 +10,12 @@ use tokio::time::Instant;
 use crate::assistants::client::ClientKind;
 use crate::thread_runs::error::ThreadRunsError;
 use crate::thread_runs::operations::{RunCall, RunDispatch, RunInvocation};
-use crate::thread_runs::records::{RunReply, RunRequest};
+use crate::thread_runs::records::{RunEvent, RunReply, RunRequest, RunStatus};
 use crate::thread_runs::stream::RunEventHandler;
 
 use super::support::{
-    COMPLETED, FAILED, IN_PROGRESS, KEY, QUEUED, REQUIRES_ACTION, Recorder, RecordingHandler, Seen,
-    harness, options, parse, wire,
+    COMPLETED, FAILED, GatedHandler, IN_PROGRESS, KEY, QUEUED, REQUIRES_ACTION, Recorder,
+    RecordingHandler, Seen, harness, options, parse, wire,
 };
 
 const RUNS: &str = "https://example.test/v1/threads/thread_a/runs";
@@ -26,6 +26,10 @@ const STREAM_BODY: &str = r#"{"assistant_id":"asst_a","additional_instructions":
 const NULL_BODY: &str = r#"{"assistant_id":"asst_a","additional_instructions":null,"instructions":null,"metadata":null,"model":null,"stream":false,"tools":null}"#;
 const NULL_STREAM_BODY: &str = r#"{"assistant_id":"asst_a","additional_instructions":null,"instructions":null,"metadata":null,"model":null,"stream":true,"tools":null}"#;
 const ERROR_BODY: &str = r#"{"error":{"message":"no run","type":"invalid_request_error"}}"#;
+const STEP: &str = r#"{"id":"step_1","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"message_creation","status":"in_progress","step_details":{"type":"message_creation","message_creation":{"message_id":"msg_1"}}}"#;
+const MESSAGE: &str = r#"{"id":"msg_1","object":"thread.message","created_at":1700000000,"thread_id":"thread_a","role":"assistant","content":[],"status":"in_progress"}"#;
+const MESSAGE_DELTA: &str = r#"{"id":"msg_1","object":"thread.message.delta","delta":{}}"#;
+const FUTURE: &str = r#"{"thing":true}"#;
 
 #[derive(Clone, Copy)]
 enum Facade {
@@ -79,13 +83,20 @@ fn stream_wire(custom_handler: bool) -> Seen {
     seen
 }
 
+fn frame(event: &str, data: &str) -> String {
+    format!("event: {event}\ndata: {data}\n\n")
+}
+
 fn sse() -> String {
     format!(
-        "event: thread.run.created\ndata: {QUEUED}\n\nevent: thread.run.in_progress\ndata: {IN_PROGRESS}\n\nevent: thread.run.completed\ndata: {COMPLETED}\n\ndata: [DONE]\n\n"
+        "{}{}{}data: [DONE]\n\n",
+        frame("thread.run.created", QUEUED),
+        frame("thread.run.in_progress", IN_PROGRESS),
+        frame("thread.run.completed", COMPLETED),
     )
 }
 
-async fn poll_to(state: &str, arun_thread: bool) -> (Vec<Seen>, RunReply) {
+async fn poll_state(state: &str, arun_thread: bool) -> (Vec<Seen>, RunReply) {
     let (api, transport) = harness();
     transport.queue(200, &[], QUEUED);
     transport.queue(200, &[("openai-poll-after-ms", "0")], state);
@@ -107,6 +118,29 @@ async fn poll_to(state: &str, arun_thread: bool) -> (Vec<Seen>, RunReply) {
     (transport.requests(), *run)
 }
 
+// Every field the provider sent survives, and a declared field it left out is a null in the reply.
+fn assert_unchanged(reply: &RunReply, fixture: &str) {
+    let output = serde_json::to_value(reply).unwrap();
+    let Value::Object(expected) = parse(fixture) else {
+        panic!("fixture is not an object");
+    };
+    for key in [
+        "id",
+        "object",
+        "created_at",
+        "status",
+        "instructions",
+        "model",
+        "thread_id",
+        "tools",
+    ] {
+        assert_eq!(output.get(key), expected.get(key), "{key}");
+    }
+    assert_eq!(output.get("completed_at"), expected.get("completed_at"));
+    assert_eq!(output.get("cancelled_at"), Some(&Value::Null));
+    assert_eq!(output.get("expires_at"), Some(&Value::Null));
+}
+
 // Both buffered paths hand back the created-and-polled run, whatever terminal state it reached.
 async fn run_poll_completion() {
     for (state, arun_thread) in [
@@ -115,8 +149,8 @@ async fn run_poll_completion() {
         (REQUIRES_ACTION, false),
         (FAILED, true),
     ] {
-        let (seen, run) = poll_to(state, arun_thread).await;
-        assert_eq!(serde_json::to_value(&run).unwrap(), parse(state));
+        let (seen, run) = poll_state(state, arun_thread).await;
+        assert_unchanged(&run, state);
         assert_eq!(seen, vec![wire("POST", RUNS, Some(POLL_BODY)), poll_wire()]);
     }
     let (api, transport) = harness();
@@ -126,10 +160,7 @@ async fn run_poll_completion() {
         .await
         .err()
         .unwrap();
-    assert!(
-        matches!(error, ThreadRunsError::Status { status: 404, .. }),
-        "{error}"
-    );
+    assert!(matches!(error, ThreadRunsError::Status(404, _)), "{error}");
     assert_eq!(transport.requests().len(), 1);
 
     empty_thread_is_refused().await;
@@ -138,52 +169,7 @@ async fn run_poll_completion() {
     trailing_slash_base_keeps_one_slash().await;
     poll_intervals().await;
     poll_interval_failures().await;
-}
-
-async fn dot_segments_are_refused() {
-    for thread_id in [".", "..", "%2e", "%2E"] {
-        let dotted = RunRequest {
-            thread_id: String::from(thread_id),
-            ..request()
-        };
-        let (api, transport) = harness();
-        let rejected = api
-            .run_thread(call(Facade::SyncRun), &dotted)
-            .await
-            .err()
-            .unwrap();
-        assert!(
-            matches!(rejected, ThreadRunsError::DotSegment { .. }),
-            "{thread_id}: {rejected}"
-        );
-        assert!(transport.requests().is_empty());
-    }
-}
-
-async fn trailing_slash_base_keeps_one_slash() {
-    let (api, transport) = harness();
-    transport.queue(200, &[], QUEUED);
-    transport.queue(200, &[("openai-poll-after-ms", "0")], COMPLETED);
-    let mut trailing = call(Facade::SyncRun);
-    trailing.options.api_base = Some(String::from("https://example.test/v1/"));
-    api.run_thread(trailing, &request()).await.unwrap();
-    assert_eq!(transport.requests()[0].url, RUNS);
-}
-
-async fn empty_run_id_is_refused() {
-    let created = QUEUED.replace(r#""run_1""#, r#""""#);
-    let (api, transport) = harness();
-    transport.queue(200, &[], &created);
-    let rejected = api
-        .run_thread(call(Facade::SyncRun), &request())
-        .await
-        .err()
-        .unwrap();
-    assert!(
-        matches!(rejected, ThreadRunsError::EmptyRunId),
-        "{rejected}"
-    );
-    assert_eq!(transport.requests().len(), 1);
+    configured_timeout_is_the_deadline().await;
 }
 
 async fn empty_thread_is_refused() {
@@ -204,6 +190,85 @@ async fn empty_thread_is_refused() {
     assert!(transport.requests().is_empty());
 }
 
+// Only the literal dot segments are refused; the SDK quotes first, so an encoded form reaches the provider.
+async fn dot_segments_are_refused() {
+    for thread_id in [".", ".."] {
+        let dotted = RunRequest {
+            thread_id: String::from(thread_id),
+            ..request()
+        };
+        let (api, transport) = harness();
+        let rejected = api
+            .run_thread(call(Facade::SyncRun), &dotted)
+            .await
+            .err()
+            .unwrap();
+        assert!(
+            matches!(rejected, ThreadRunsError::DotSegment(_)),
+            "{thread_id}: {rejected}"
+        );
+        assert!(transport.requests().is_empty());
+    }
+    let encoded = RunRequest {
+        thread_id: String::from("%2e"),
+        ..request()
+    };
+    let (api, transport) = harness();
+    transport.queue(200, &[], QUEUED);
+    transport.queue(200, &[("openai-poll-after-ms", "0")], COMPLETED);
+    api.run_thread(call(Facade::SyncRun), &encoded)
+        .await
+        .unwrap();
+    assert_eq!(
+        transport.requests()[0].url,
+        "https://example.test/v1/threads/%252e/runs"
+    );
+}
+
+// The SDK's quote set leaves the unreserved and sub-delim marks alone and escapes the rest, brackets included.
+async fn path_segments_are_quoted() {
+    let bracketed = RunRequest {
+        thread_id: String::from("a[b]"),
+        ..request()
+    };
+    let (api, transport) = harness();
+    transport.queue(200, &[], QUEUED);
+    transport.queue(200, &[("openai-poll-after-ms", "0")], COMPLETED);
+    api.run_thread(call(Facade::SyncRun), &bracketed)
+        .await
+        .unwrap();
+    assert_eq!(
+        transport.requests()[0].url,
+        "https://example.test/v1/threads/a%5Bb%5D/runs"
+    );
+}
+
+async fn empty_run_id_is_refused() {
+    let created = QUEUED.replace(r#""run_1""#, r#""""#);
+    let (api, transport) = harness();
+    transport.queue(200, &[], &created);
+    let rejected = api
+        .run_thread(call(Facade::SyncRun), &request())
+        .await
+        .err()
+        .unwrap();
+    assert!(
+        matches!(rejected, ThreadRunsError::EmptyRunId),
+        "{rejected}"
+    );
+    assert_eq!(transport.requests().len(), 1);
+}
+
+async fn trailing_slash_base_keeps_one_slash() {
+    let (api, transport) = harness();
+    transport.queue(200, &[], QUEUED);
+    transport.queue(200, &[("openai-poll-after-ms", "0")], COMPLETED);
+    let mut trailing = call(Facade::SyncRun);
+    trailing.options.api_base = Some(String::from("https://example.test/v1/"));
+    api.run_thread(trailing, &request()).await.unwrap();
+    assert_eq!(transport.requests()[0].url, RUNS);
+}
+
 // The SDK reads openai-poll-after-ms on the first non-terminal poll and reuses it for every later one.
 async fn poll_intervals() {
     let started = Instant::now();
@@ -219,7 +284,7 @@ async fn poll_intervals() {
     let RunInvocation::Polled { run, .. } = outcome else {
         panic!("expected a polled invocation");
     };
-    assert_eq!(serde_json::to_value(&run).unwrap(), parse(COMPLETED));
+    assert_eq!(run.status, RunStatus::Completed);
     assert_eq!(transport.requests().len(), 4);
     assert_eq!(started.elapsed(), Duration::from_millis(500));
 
@@ -246,7 +311,7 @@ async fn poll_interval_failures() {
         .err()
         .unwrap();
     assert!(
-        matches!(error, ThreadRunsError::PollAfterHeader { .. }),
+        matches!(error, ThreadRunsError::PollAfterHeader(_)),
         "{error}"
     );
     assert_eq!(transport.requests().len(), 2);
@@ -266,9 +331,39 @@ async fn poll_interval_failures() {
     assert_eq!(odd_transport.requests().len(), 2);
 }
 
+// The client timeout is the deadline on every request instead of the 600s default.
+async fn configured_timeout_is_the_deadline() {
+    let (api, transport) = harness();
+    transport.queue(200, &[], QUEUED);
+    transport.queue(200, &[("openai-poll-after-ms", "0")], COMPLETED);
+    let mut timed = call(Facade::SyncRun);
+    timed.options.timeout = Some(Duration::from_millis(2500));
+    api.run_thread(timed, &request()).await.unwrap();
+    let deadlines: Vec<_> = transport
+        .requests()
+        .into_iter()
+        .map(|seen| seen.deadline)
+        .collect();
+    assert_eq!(deadlines, vec![Duration::from_millis(2500); 2]);
+
+    let (stream_api, stream_transport) = harness();
+    stream_transport.queue(200, &[("content-type", "text/event-stream")], &sse());
+    let mut streaming = call(Facade::AsyncStream);
+    streaming.options.timeout = Some(Duration::from_millis(2500));
+    let outcome = stream_api.run_thread(streaming, &request()).await.unwrap();
+    let RunInvocation::Streaming(stream) = outcome else {
+        panic!("expected a stream manager");
+    };
+    stream.consume().await.unwrap();
+    assert_eq!(
+        stream_transport.requests()[0].deadline,
+        Duration::from_millis(2500)
+    );
+}
+
 async fn requires_action() {
-    let (_, run) = poll_to(REQUIRES_ACTION, true).await;
-    assert_eq!(serde_json::to_value(&run).unwrap(), parse(REQUIRES_ACTION));
+    let (_, run) = poll_state(REQUIRES_ACTION, true).await;
+    assert_unchanged(&run, REQUIRES_ACTION);
     let tool_calls = run
         .required_action
         .as_ref()
@@ -277,8 +372,8 @@ async fn requires_action() {
 }
 
 async fn failed_run() {
-    let (_, run) = poll_to(FAILED, false).await;
-    assert_eq!(serde_json::to_value(&run).unwrap(), parse(FAILED));
+    let (_, run) = poll_state(FAILED, false).await;
+    assert_unchanged(&run, FAILED);
     assert_eq!(
         run.last_error.as_ref().map(|error| error.message.as_str()),
         Some("boom")
@@ -291,11 +386,165 @@ async fn failed_run() {
         .await
         .err()
         .unwrap();
+    assert!(matches!(error, ThreadRunsError::Status(500, _)), "{error}");
+    assert_eq!(transport.requests().len(), 2);
+}
+
+// Every SDK event family is yielded; unknown thread.* names and non-thread frames keep their payload.
+fn families_body() -> String {
+    let mut body = frame("thread.run.created", QUEUED);
+    body.push_str(&frame(
+        "thread.created",
+        r#"{"id":"thread_a","object":"thread","created_at":1,"metadata":{}}"#,
+    ));
+    body.push_str(&frame("thread.run.step.created", STEP));
+    body.push_str(&frame("thread.message.created", MESSAGE));
+    body.push_str(&frame("thread.message.completed", MESSAGE));
+    body.push_str(&frame("thread.message.delta", MESSAGE_DELTA));
+    body.push_str(&frame("thread.run.step.completed", STEP));
+    body.push_str(&frame("thread.future.thing", FUTURE));
+    body.push_str(&frame("thread.run.completed", COMPLETED));
+    body.push_str("data: [DONE]\n\n");
+    body
+}
+
+async fn stream_event_families() {
+    let (api, transport) = harness();
+    let body = families_body();
+    transport.queue(200, &[("content-type", "text/event-stream")], &body);
+    let outcome = api
+        .run_thread(call(Facade::SyncStream), &request())
+        .await
+        .unwrap();
+    let RunInvocation::Streaming(stream) = outcome else {
+        panic!("expected a stream manager");
+    };
+    let events = stream.consume().await.unwrap();
+    let names: Vec<_> = events.iter().map(RunEvent::name).collect();
+    assert_eq!(
+        names,
+        vec![
+            "thread.run.created",
+            "thread.created",
+            "thread.run.step.created",
+            "thread.message.created",
+            "thread.message.completed",
+            "thread.message.delta",
+            "thread.run.step.completed",
+            "thread.future.thing",
+            "thread.run.completed",
+        ]
+    );
+    let future = serde_json::to_value(&events[7]).unwrap();
+    assert_eq!(
+        future,
+        parse(r#"{"event":"thread.future.thing","data":{"thing":true}}"#)
+    );
+}
+
+// A comment-only frame is not an event.
+async fn stream_comment_frames() {
+    let body = format!(
+        ": keepalive\n\n{}{}: ping\n\ndata: [DONE]\n\n",
+        frame("thread.run.created", QUEUED),
+        frame("thread.run.completed", COMPLETED),
+    );
+    assert_eq!(consume_body(&body).await.len(), 2);
+}
+
+// A tail without its blank line, complete or cut mid-JSON, is never dispatched.
+async fn stream_tail_edges() {
+    let unterminated = format!("event: thread.run.completed\ndata: {COMPLETED}");
+    let tail = format!("{}{unterminated}", frame("thread.run.created", QUEUED));
+    assert_eq!(consume_body(&tail).await.len(), 1);
+    let cut = format!(
+        "{}event: thread.run.completed\ndata: {{\"id\":",
+        frame("thread.run.created", QUEUED)
+    );
+    assert_eq!(consume_body(&cut).await.len(), 1);
+}
+
+async fn consume_body(body: &str) -> Vec<RunEvent> {
+    let (api, transport) = harness();
+    transport.queue(200, &[("content-type", "text/event-stream")], body);
+    let outcome = api
+        .run_thread(call(Facade::SyncStream), &request())
+        .await
+        .unwrap();
+    let RunInvocation::Streaming(stream) = outcome else {
+        panic!("expected a stream manager");
+    };
+    stream.consume().await.unwrap()
+}
+
+async fn stream_stops_at_done() {
+    let body = format!(
+        "{}data: [DONE]\n\n{}",
+        frame("thread.run.created", QUEUED),
+        frame("thread.run.completed", COMPLETED),
+    );
+    let events = consume_body(&body).await;
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].name(), "thread.run.created");
+}
+
+async fn stream_provider_error() {
+    let body = format!(
+        "{}data: {{\"error\":{{\"message\":\"boom\",\"type\":\"t\",\"code\":\"c\"}}}}\n\n",
+        frame("thread.run.created", QUEUED),
+    );
+    let (api, transport) = harness();
+    transport.queue(200, &[("content-type", "text/event-stream")], &body);
+    let recorder = Arc::new(RecordingHandler::default());
+    let concrete: Arc<RecordingHandler> = Arc::clone(&recorder);
+    let supplied: Arc<dyn RunEventHandler> = concrete;
+    let mut supplied_call = call(Facade::SyncStream);
+    supplied_call.handler = Some(supplied);
+    let outcome = api.run_thread(supplied_call, &request()).await.unwrap();
+    let RunInvocation::Streaming(stream) = outcome else {
+        panic!("expected a stream manager");
+    };
+    let error = stream.consume().await.err().unwrap();
     assert!(
-        matches!(error, ThreadRunsError::Status { status: 500, .. }),
+        matches!(error, ThreadRunsError::ProviderError { .. }),
         "{error}"
     );
-    assert_eq!(transport.requests().len(), 2);
+    assert_eq!(
+        recorder.take().join(","),
+        "thread.run.created,exception:stream_error,end"
+    );
+}
+
+// The event reaches the handler before the next chunk is released, so delivery is incremental.
+async fn stream_delivers_per_chunk() {
+    let (api, transport) = harness();
+    let sender = transport.gate();
+    let released = format!(
+        "{}data: [DONE]\n\n",
+        frame("thread.run.completed", COMPLETED)
+    );
+    let handler = Arc::new(GatedHandler {
+        calls: Mutex::new(Vec::new()),
+        sender: Mutex::new(Some(sender.clone())),
+        payload: released.into_bytes(),
+    });
+    let concrete: Arc<GatedHandler> = Arc::clone(&handler);
+    let supplied: Arc<dyn RunEventHandler> = concrete;
+    let mut supplied_call = call(Facade::SyncStream);
+    supplied_call.handler = Some(supplied);
+    sender
+        .try_send(format!("event: thread.run.created\ndata: {QUEUED}\n\n").into_bytes())
+        .unwrap();
+    let outcome = api.run_thread(supplied_call, &request()).await.unwrap();
+    let RunInvocation::Streaming(stream) = outcome else {
+        panic!("expected a stream manager");
+    };
+    let events = stream.consume().await.unwrap();
+    assert_eq!(events.len(), 2);
+    assert_eq!(
+        handler.take().join(","),
+        "thread.run.created,released,thread.run.completed,end"
+    );
 }
 
 async fn stream_incremental_events() {
@@ -314,11 +563,18 @@ async fn stream_incremental_events() {
     let created = parse(&format!(
         r#"{{"event":"thread.run.created","data":{QUEUED}}}"#
     ));
-    assert_eq!(serde_json::to_value(&events[0]).unwrap(), created);
-    let completed = parse(&format!(
-        r#"{{"event":"thread.run.completed","data":{COMPLETED}}}"#
-    ));
-    assert_eq!(serde_json::to_value(&events[2]).unwrap(), completed);
+    let output = serde_json::to_value(&events[0]).unwrap();
+    assert_eq!(output.get("event"), created.get("event"));
+    let output_data = output.get("data").unwrap();
+    assert_eq!(
+        output_data.get("id"),
+        Some(&Value::String(String::from("run_1")))
+    );
+    assert_eq!(
+        output_data.get("status"),
+        Some(&Value::String(String::from("queued")))
+    );
+    assert_eq!(events[2].name(), "thread.run.completed");
     assert_eq!(
         transport.requests(),
         vec![wire("POST", RUNS, Some(STREAM_BODY))]
@@ -381,6 +637,7 @@ async fn instructions_tools_overrides() {
         streamed[0].body.as_ref().unwrap().get("model"),
         Some(&Value::Null)
     );
+    path_segments_are_quoted().await;
 }
 
 async fn dispatch_selections() {
@@ -496,7 +753,15 @@ async fn thread_runs_cases(#[case] scenario: Scenario) {
         Scenario::RunPollCompletion => run_poll_completion().await,
         Scenario::RequiresAction => requires_action().await,
         Scenario::FailedRun => failed_run().await,
-        Scenario::StreamIncrementalEvents => stream_incremental_events().await,
+        Scenario::StreamIncrementalEvents => {
+            stream_incremental_events().await;
+            stream_event_families().await;
+            stream_comment_frames().await;
+            stream_tail_edges().await;
+            stream_stops_at_done().await;
+            stream_provider_error().await;
+            stream_delivers_per_chunk().await;
+        }
         Scenario::InstructionsToolsOverrides => instructions_tools_overrides().await,
         Scenario::RunDispatch => dispatch_selections().await,
         Scenario::StreamEventHandler => stream_event_handler().await,

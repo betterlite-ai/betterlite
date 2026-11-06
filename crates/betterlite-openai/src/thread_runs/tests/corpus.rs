@@ -7,7 +7,7 @@ use std::path::Path;
 use rstest::rstest;
 use serde_json::Value;
 
-use crate::thread_runs::decode::decode_run_event;
+use crate::thread_runs::decode::{FrameOutcome, decode_run_event};
 use crate::thread_runs::error::ThreadRunsError;
 
 use super::support::QUEUED;
@@ -26,8 +26,8 @@ use super::support::QUEUED;
 #[case::expired("thread.run.expired")]
 fn every_run_event_name_keeps_its_variant(#[case] name: &str) {
     let frame = format!("event: {name}\ndata: {QUEUED}");
-    let Some(event) = decode_run_event(frame.as_bytes()).unwrap() else {
-        panic!("{name} ended the stream");
+    let Ok(FrameOutcome::Event(event)) = decode_run_event(frame.as_bytes()) else {
+        panic!("{name} did not decode to an event");
     };
     let value = serde_json::to_value(&event).unwrap();
     assert_eq!(value.get("event"), Some(&Value::String(String::from(name))));
@@ -48,12 +48,13 @@ fn replays_the_openai_thread_runs_corpus() {
             }
             let bytes = fs::read(&path)?;
             let outcome = match decode_run_event(&bytes) {
-                Ok(Some(_event)) => "ok",
-                Ok(None) => "done",
+                Ok(FrameOutcome::Event(_event)) => "ok",
+                Ok(FrameOutcome::End) => "done",
+                Ok(FrameOutcome::Skip) => "comment",
                 Err(ThreadRunsError::Truncated { .. }) => "truncated",
                 Err(ThreadRunsError::Malformed { .. }) => "malformed",
                 Err(ThreadRunsError::Shape { .. }) => "shape",
-                Err(ThreadRunsError::UnsupportedEvent { .. }) => "unsupported",
+                Err(ThreadRunsError::ProviderError { .. }) => "provider",
                 Err(other) => panic!("{name} failed outside decoding: {other}"),
             };
             assert_eq!(
