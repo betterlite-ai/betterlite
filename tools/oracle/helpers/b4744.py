@@ -75,8 +75,9 @@ class Settings(Strict):
     client_version: str = "1.105.1"
 
 
-class TransportInput(Settings):
+class TransportInput(Strict):
     operation: Literal["transport"]
+    settings: Settings
 
 
 class StdioInput(Strict):
@@ -103,8 +104,9 @@ class AuthVariant(Strict):
     sources: list[Literal["resolved", "aws", "explicit"]] = Field(default_factory=list)
 
 
-class FactoryInput(Settings):
+class FactoryInput(Strict):
     operation: Literal["factory"]
+    settings: Settings
     explicit_auth: bool = False
     redirect_checks: list[RedirectCheck] = Field(default_factory=list)
     auth_variants: list[AuthVariant] = Field(default_factory=list)
@@ -156,12 +158,6 @@ class FakeError(Exception):
     pass
 
 
-class StreamError(FakeError):
-    def __init__(self, kind: StreamKind) -> None:
-        super().__init__(kind)
-        self.kind = kind
-
-
 class FakeHttpClient:
     def __init__(self, **kwargs: object) -> None:
         self.kwargs: dict[str, object] = kwargs
@@ -209,6 +205,10 @@ class RecordingScope:
 
     @deadline.setter
     def deadline(self, value: float) -> None:
+        if value == math.inf:
+            self.last_span = None
+        else:
+            self.last_span = value - anyio.current_time()
         self._scope.deadline = value
 
     @property
@@ -306,7 +306,8 @@ def config_json(recorder: FakeHttpClient, handles: Handles) -> Json:
 
 
 def transport_operation(input_value: TransportInput) -> Json:
-    client = make_client(input_value)
+    settings = input_value.settings
+    client = make_client(settings)
     handles = Handles(
         url=client.server_url,
         slot=cast(str | None, private(client, "credential_slot")),
@@ -315,7 +316,7 @@ def transport_operation(input_value: TransportInput) -> Json:
         explicit=object(),
     )
     record: dict[str, Json] = {
-        "kind": input_value.transport_type,
+        "kind": settings.transport_type,
         "http_client": False,
         "stdio": None,
         "sse": None,
@@ -324,7 +325,7 @@ def transport_operation(input_value: TransportInput) -> Json:
     }
 
     def resolved_ssl(_verify: object) -> dict[str, Json]:
-        return cast(dict[str, Json], input_value.tls.model_dump())
+        return cast(dict[str, Json], settings.tls.model_dump())
 
     def stdio_client(parameters: object) -> object:
         record["kind"] = "stdio"
@@ -393,9 +394,9 @@ def stdio_operation(input_value: StdioInput) -> Json:
 
 
 class FakeInitResult:
-    def __init__(self, version: str) -> None:
+    def __init__(self, version: str, instructions: str | None = None) -> None:
         self.protocol_version = version
-        self.instructions: str | None = None
+        self.instructions = instructions
 
 
 class FakeInitializeSession:
@@ -472,17 +473,17 @@ def initialize_operation(input_value: InitializeInput) -> Json:
     }
 
 
-def resolved_ssl(input_value: FactoryInput) -> Callable[[object], dict[str, Json]]:
+def resolved_ssl(settings: Settings) -> Callable[[object], dict[str, Json]]:
     def resolve(_verify: object) -> dict[str, Json]:
-        return cast(dict[str, Json], input_value.tls.model_dump())
+        return cast(dict[str, Json], settings.tls.model_dump())
 
     return resolve
 
 
 def build_factory(
-    input_value: FactoryInput, *, explicit_auth: bool
+    settings: Settings, *, explicit_auth: bool
 ) -> tuple[Json, FakeHttpClient]:
-    client = make_client(input_value)
+    client = make_client(settings)
     explicit = cast(httpx2.Auth, FakeAuth(None))
     handles = Handles(
         url=client.server_url,
@@ -493,7 +494,7 @@ def build_factory(
     )
     with (
         patch.object(mcp_client, "_MCPHTTPClient", FakeHttpClient),
-        patch.object(mcp_client, "get_ssl_configuration", resolved_ssl(input_value)),
+        patch.object(mcp_client, "get_ssl_configuration", resolved_ssl(settings)),
     ):
         creator = cast(
             Callable[[], Callable[..., FakeHttpClient]],
@@ -502,19 +503,20 @@ def build_factory(
         factory = creator()
         produced = factory(
             headers={},
-            timeout=httpx2.Timeout(input_value.timeout_ms / 1000),
+            timeout=httpx2.Timeout(settings.timeout_ms / 1000),
             auth=explicit if explicit_auth else None,
         )
     return config_json(produced, handles), produced
 
 
 def factory_operation(input_value: FactoryInput) -> Json:
-    config, produced = build_factory(input_value, explicit_auth=input_value.explicit_auth)
+    settings = input_value.settings
+    config, produced = build_factory(settings, explicit_auth=input_value.explicit_auth)
     variants: list[Json] = []
     for variant in input_value.auth_variants:
-        settings = input_value.model_copy(
+        variant_settings = settings.model_copy(
             update={
-                "auth": input_value.auth.model_copy(
+                "auth": settings.auth.model_copy(
                     update={
                         "resolved_auth": "resolved" in variant.sources,
                         "aws_auth": "aws" in variant.sources,
@@ -523,7 +525,7 @@ def factory_operation(input_value: FactoryInput) -> Json:
             }
         )
         variant_config, _variant_http = build_factory(
-            settings, explicit_auth="explicit" in variant.sources
+            variant_settings, explicit_auth="explicit" in variant.sources
         )
         variants.append(variant_config)
     hooks = hooks_of(produced.kwargs.get("event_hooks"))
@@ -535,14 +537,29 @@ def factory_operation(input_value: FactoryInput) -> Json:
             request = httpx2.Request("GET", check.url, headers=check.headers)
             for guard in guards:
                 await guard(request)
-            results.append(cast(Json, dict(request.headers)))
+            results.append(
+                cast(
+                    Json,
+                    {name: value for name, value in request.headers.items() if name != "host"},
+                )
+            )
         return results
 
     return {"config": config, "variants": variants, "redirects": asyncio.run(apply())}
 
 
 class FakeOperationSession:
-    message_handler: Callable[[object], Awaitable[None]] | None = None
+    def __init__(
+        self, server_version: str, instructions: str | None, calls: list[str]
+    ) -> None:
+        self.server_version = server_version
+        self.instructions = instructions
+        self.calls = calls
+        self.message_handler: Callable[[object], Awaitable[None]] | None = None
+
+    async def initialize(self) -> FakeInitResult:
+        self.calls.append("initialize")
+        return FakeInitResult(self.server_version, self.instructions)
 
 
 class FakeSessionContext:
@@ -558,7 +575,9 @@ class FakeSessionContext:
         self.scope = RecordingScope.created[0] if RecordingScope.created else None
         if self.plan.session_enter == "fail":
             raise FakeError("session enter")
-        session = FakeOperationSession()
+        session = FakeOperationSession(
+            self.plan.server_version, self.plan.instructions, self.calls
+        )
         session.message_handler = self.handler
         return session
 
@@ -569,10 +588,8 @@ class FakeSessionContext:
         _trace: object,
     ) -> bool | None:
         self.calls.append("session.exit")
-        if self.scope is not None:
-            self.observed["session_bound"] = round(
-                (self.scope.deadline - anyio.current_time()) * 1000
-            )
+        if self.scope is not None and self.scope.last_span is not None:
+            self.observed["session_bound"] = round(self.scope.last_span * 1000)
         if self.plan.session_exit == "fail":
             raise FakeError("session exit")
         if self.plan.session_exit == "cancel":
@@ -612,10 +629,8 @@ class FakeTransportContext:
         _trace: object,
     ) -> bool | None:
         self.calls.append("transport.exit")
-        if self.scope is not None:
-            self.observed["transport_bound"] = round(
-                (self.scope.deadline - anyio.current_time()) * 1000
-            )
+        if self.scope is not None and self.scope.last_span is not None:
+            self.observed["transport_bound"] = round(self.scope.last_span * 1000)
         if self.scenario.plan.transport_exit == "fail":
             raise FakeError("transport exit")
         if self.scenario.plan.transport_exit == "cancel":
@@ -656,9 +671,17 @@ def timeout_error(code: int, *, context: bool) -> MCPError:
             return error
 
 
+def stream_kind_of(error: BaseException) -> str | None:
+    for error_type, name in ((ValueError, "value"), (httpx2.HTTPError, "http"), (OSError, "io")):
+        if isinstance(error, error_type):
+            return name
+    return None
+
+
 def outcome_of(error: BaseException, scopes: list["RecordingScope"]) -> str:
-    if isinstance(error, StreamError):
-        return f"stream:{error.kind}"
+    stream = stream_kind_of(error)
+    if stream is not None:
+        return f"stream:{stream}"
     if isinstance(error, MCPError):
         return f"protocol:{error.code}"
     if isinstance(error, TimeoutError):
@@ -684,6 +707,7 @@ async def run_scenario(  # noqa: C901 - the plan drives every lifecycle branch
         scenario, calls, observed, fake_http if scenario.http else None
     )
     context = FakeSessionContext(scenario.plan, calls, observed)
+    cancel_scope = REAL_SCOPE()
 
     def build_session(*_args: object, **kwargs: object) -> FakeSessionContext:
         context.handler = cast(
@@ -708,6 +732,7 @@ async def run_scenario(  # noqa: C901 - the plan drives every lifecycle branch
             case "application":
                 raise FakeError("application")
             case "cancel":
+                cancel_scope.cancel()
                 raise asyncio.CancelledError
             case "read_timeout":
                 raise timeout_error(-32001, context=True)
@@ -717,6 +742,7 @@ async def run_scenario(  # noqa: C901 - the plan drives every lifecycle branch
     async def recording_cleanup(
         pending: Callable[[], Awaitable[Result]], deadline: float
     ) -> Result:
+        calls.append("http.close")
         observed["http_bound"] = round((deadline - anyio.current_time()) * 1000)
         return await pending()
 
@@ -737,10 +763,16 @@ async def run_scenario(  # noqa: C901 - the plan drives every lifecycle branch
                     transport, operation, http_client=fake_http if scenario.http else None
                 )
             else:
+                def fake_transport_context() -> tuple[Transport, FakeHttpClient | None]:
+                    if scenario.http:
+                        calls.append("http_client")
+                        calls.append("streamable_http_client")
+                        return (transport, fake_http)
+                    calls.append("sse_client")
+                    return (transport, None)
+
                 with patch.object(
-                    mcp_client,
-                    "_create_transport_context",
-                    lambda: (transport, fake_http if scenario.http else None),
+                    mcp_client, "_create_transport_context", fake_transport_context
                 ):
                     await client.run_with_session(operation, quiet_on_error=scenario.quiet)
     except BaseException as error:  # noqa: BLE001 - every helper exception maps to an outcome

@@ -112,7 +112,6 @@ impl McpRuntime for Fixture {
     }
 
     fn session_context(&self, _streams: (), options: SessionOptions) -> FakeSessionContext {
-        self.script.record("session_context");
         FakeSessionContext {
             script: Arc::clone(&self.script),
             plan: Arc::clone(&self.plan),

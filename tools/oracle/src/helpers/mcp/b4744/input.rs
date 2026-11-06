@@ -118,7 +118,6 @@ pub(crate) struct SettingsInput {
 
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct TransportInput {
-    #[serde(flatten)]
     pub settings: SettingsInput,
 }
 
@@ -171,7 +170,6 @@ pub(crate) struct AuthVariant {
 
 #[derive(Clone, Debug, Deserialize)]
 pub(crate) struct FactoryInput {
-    #[serde(flatten)]
     pub settings: SettingsInput,
     #[serde(default)]
     pub explicit_auth: bool,

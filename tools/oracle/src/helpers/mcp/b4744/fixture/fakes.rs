@@ -33,10 +33,9 @@ impl TransportContext for FakeTransport {
     fn exit(self) -> impl Future<Output = Result<(), ExitFailure<TestError>>> + Send + 'static {
         exit_future(
             self.script,
-            "transport.exit",
             self.plan.transport_exit,
             self.http,
-            "transport exit",
+            Close::Transport,
         )
     }
 }
@@ -77,12 +76,7 @@ impl ClientSession for FakeSession {
     type InitializeResult = FakeInit;
 
     fn initialize(&mut self) -> impl Future<Output = Result<FakeInit, TestError>> + Send {
-        std::future::ready(init_call(
-            &self.script,
-            &self.plan,
-            "initialize",
-            self.plan.initialize,
-        ))
+        init_future(&self.script, &self.plan, "initialize", self.plan.initialize)
     }
 
     fn send_initialize(
@@ -90,12 +84,7 @@ impl ClientSession for FakeSession {
         request: InitializeRequest,
     ) -> impl Future<Output = Result<FakeInit, TestError>> + Send {
         self.push_request(request);
-        std::future::ready(init_call(
-            &self.script,
-            &self.plan,
-            "send_initialize",
-            InitStep::Ok,
-        ))
+        init_future(&self.script, &self.plan, "send_initialize", InitStep::Ok)
     }
 
     fn adopt(&mut self, _result: &FakeInit) {
@@ -105,34 +94,48 @@ impl ClientSession for FakeSession {
     fn send_initialized(&mut self) -> impl Future<Output = Result<(), TestError>> + Send {
         let script = Arc::clone(&self.script);
         async move {
-            script.record("send_initialized");
+            script.record("send_notification");
             Ok(())
         }
     }
 }
 
-fn init_call(
+fn init_future(
     script: &Script,
     plan: &Plan,
     name: &'static str,
     fail: InitStep,
-) -> Result<FakeInit, TestError> {
+) -> impl Future<Output = Result<FakeInit, TestError>> + Send + 'static {
     script.record(name);
-    match fail {
+    let result = match fail {
         InitStep::Fail => Err(TestError::Boom("initialize")),
         InitStep::Ok => Ok(fake_init(plan)),
-    }
+    };
+    std::future::ready(result)
+}
+
+#[derive(Clone, Copy)]
+enum Close {
+    Transport,
+    Session,
 }
 
 async fn exit_future(
     script: Arc<Script>,
-    name: &'static str,
     step: Step,
     http: Option<FakeHttp>,
-    label: &'static str,
+    close: Close,
 ) -> Result<(), ExitFailure<TestError>> {
-    script.record(name);
-    exit_result(step, http.as_ref(), label).await
+    match close {
+        Close::Transport => {
+            script.record("transport.exit");
+            exit_result(step, http.as_ref(), "transport exit").await
+        }
+        Close::Session => {
+            script.record("session.exit");
+            exit_result(step, http.as_ref(), "session exit").await
+        }
+    }
 }
 
 fn fake_init(plan: &Plan) -> FakeInit {
@@ -172,12 +175,6 @@ impl SessionContext for FakeSessionContext {
     }
 
     fn exit(self) -> impl Future<Output = Result<(), ExitFailure<TestError>>> + Send + 'static {
-        exit_future(
-            self.script,
-            "session.exit",
-            self.plan.session_exit,
-            None,
-            "session exit",
-        )
+        exit_future(self.script, self.plan.session_exit, None, Close::Session)
     }
 }

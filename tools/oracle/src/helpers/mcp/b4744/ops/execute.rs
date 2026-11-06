@@ -9,7 +9,7 @@ use betterlite_mcp::client::sessions::execute::{
 };
 use betterlite_mcp::client::sessions::run::{HTTP_CLOSE_TIMEOUT, run_with_session};
 use betterlite_mcp::client::sessions::stream::{StreamFailure, StreamMessage};
-use betterlite_mcp::client::sessions::transport::TransportContexts;
+use betterlite_mcp::client::sessions::transport::{TransportContexts, TransportType};
 use serde_json::{Value, json};
 use tokio::runtime::Builder;
 use tokio_util::sync::CancellationToken;
@@ -127,11 +127,18 @@ struct Run {
 }
 
 fn scenario_run(settings: &SettingsInput, scenario: &Scenario) -> Result<Run, Box<HelperError>> {
+    let mut relaxed = settings.clone();
+    let active = if scenario.mode == Mode::Run && !scenario.http {
+        relaxed.transport_type = TransportType::Sse;
+        &relaxed
+    } else {
+        settings
+    };
     let fixture = Fixture::new(scenario.plan.clone());
     let contexts = fixture.contexts(scenario.http);
     let script = Arc::clone(&fixture.script);
     let mut client = make_client(
-        settings,
+        active,
         fixture,
         TaskTracker::new(),
         CancellationToken::new(),
