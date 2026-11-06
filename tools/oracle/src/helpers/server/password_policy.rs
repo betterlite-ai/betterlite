@@ -158,32 +158,44 @@ async fn screened(
     Ok(observed(&fixture, logs, extra))
 }
 
+async fn hash<S>(hasher: &PasswordHasher<S>, password: &str) -> HelperResult
+where
+    S: SaltSource,
+{
+    let derived = hasher
+        .hash(&SecretString::from(password.to_owned()))
+        .await
+        .map_err(|error| failure(&error))?;
+    Ok(json!({ "hash": derived }))
+}
+
+async fn verify<S>(hasher: &PasswordHasher<S>, password: &str, stored: &str) -> HelperResult
+where
+    S: SaltSource,
+{
+    let verified = hasher
+        .verify(&SecretString::from(password.to_owned()), stored)
+        .await;
+    Ok(json!({ "verified": verified }))
+}
+
+fn strength_verdict(password: &str, general: &Map<String, Value>) -> HelperResult {
+    let outcome = strength::validate(
+        &SecretString::from(password.to_owned()),
+        &settings(general)?,
+    );
+    Ok(json!({ "error": verdict(outcome.err().as_ref()) }))
+}
+
 async fn run_function(input: &Input, logs: &Logs) -> HelperResult {
     let hasher = PasswordHasher::new(FixedSalts, WORKERS);
     match input {
-        Input::Hash { password } => {
-            let hash = hasher
-                .hash(&SecretString::from(password.clone()))
-                .await
-                .map_err(|error| failure(&error))?;
-            Ok(json!({ "hash": hash }))
-        }
-        Input::Verify { password, stored } => {
-            let verified = hasher
-                .verify(&SecretString::from(password.clone()), stored)
-                .await;
-            Ok(json!({ "verified": verified }))
-        }
+        Input::Hash { password } => hash(&hasher, password).await,
+        Input::Verify { password, stored } => verify(&hasher, password, stored).await,
         Input::Strength {
             password,
             general_settings,
-        } => {
-            let outcome = strength::validate(
-                &SecretString::from(password.clone()),
-                &settings(general_settings)?,
-            );
-            Ok(json!({ "error": verdict(outcome.err().as_ref()) }))
-        }
+        } => strength_verdict(password, general_settings),
         Input::Breach {
             password,
             general_settings,
