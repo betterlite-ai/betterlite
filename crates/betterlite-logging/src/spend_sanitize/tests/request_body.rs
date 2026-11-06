@@ -120,7 +120,10 @@ fn replaces_a_repeated_mapping_with_an_empty_object_across_siblings() {
 #[test]
 fn truncates_strings_at_every_depth() {
     let body = mapping(1, vec![("messages", sequence(2, vec![text("abcdefghij")]))]);
-    let sanitized = sanitize(body);
+    let SpendValue::Mapping(body_mapping) = body else {
+        panic!("a request body is a mapping")
+    };
+    let sanitized = sanitize_request_body(&body_mapping, 4);
     let Json::Text(truncated) = lookup(&sanitized, "messages.0") else {
         panic!("a list string stays text")
     };
