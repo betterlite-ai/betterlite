@@ -1,20 +1,30 @@
 #![cfg(test)]
 
 use crate::case::{HelperCase, helper::validate_helper};
-use rstest::rstest;
 use std::{fs, path::Path};
 
-#[rstest]
-#[case::search_query_id("search-query-id")]
-#[case::file_item("file-item")]
-#[case::credentials("credentials")]
-#[case::endpoints("endpoints")]
-#[case::bad_reply("bad-reply")]
-fn helper_seeds_select_openai_vector_stores(#[case] seed: &str) {
-    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("fuzz/corpus/helper_case")
-        .join(format!("openai_vector_stores-{seed}.yaml"));
-    let case: HelperCase = serde_saphyr::from_str(&fs::read_to_string(path).unwrap()).unwrap();
-    validate_helper(Path::new("<helper>"), &case).unwrap();
-    assert_eq!(case.call.operation, "openai_vector_stores");
+#[test]
+fn helper_seeds_select_openai_vector_stores() {
+    let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/helper_case");
+    let seeds: Vec<String> = fs::read_dir(corpus)
+        .unwrap()
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("openai_vector_stores"))
+        })
+        .map(|path| fs::read_to_string(path).unwrap())
+        .collect();
+    assert!(!seeds.is_empty());
+    assert!(seeds.iter().all(|source| {
+        let case: HelperCase = serde_saphyr::from_str(source).unwrap();
+        serde_saphyr::from_str(source)
+            .map_err(|error| error.to_string())
+            .and_then(|parsed| {
+                validate_helper(Path::new("<helper>"), &parsed).map_err(|error| error.to_string())
+            })
+            .is_ok()
+            && case.call.operation == "openai_vector_stores"
+    }));
 }
