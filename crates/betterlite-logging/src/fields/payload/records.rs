@@ -202,11 +202,4 @@ pub struct GuardrailInformation {
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
-pub struct Money(#[serde(with = "rust_decimal::serde::arbitrary_precision")] pub Decimal); // litellm.types.utils.StandardBuiltInToolsParams; the tool option shapes belong to the OpenAI wire crate.
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
-pub struct BuiltInToolsParams {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub web_search_options: Option<Json>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub file_search: Option<Json>,
-}
+pub struct Money(#[serde(with = "rust_decimal::serde::arbitrary_precision")] pub Decimal);
