@@ -1441,6 +1441,7 @@ dependencies = [
  "betterlite-prompts",
  "betterlite-redact",
  "fancy-regex",
+ "futures-util",
  "indexmap 2.14.2",
  "lru",
  "mime_guess",
