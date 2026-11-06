@@ -1,0 +1,18 @@
+kind: helper
+name: bearer-token-and-extra-headers
+call:
+  b3736:
+    detect:
+      settings:
+        auth_token: test-token
+        detector_id: jailbreak-detector
+        optional_params:
+          extra_headers:
+            Authorization: Custom token
+            content-type: "application/json; charset=utf-8"
+            X-Tenant: acme
+      environment: {}
+      contents: [hello]
+      answer: {status: 200, headers: {}, body: [[]]}
+env: {}
+compare: {ignore: []}

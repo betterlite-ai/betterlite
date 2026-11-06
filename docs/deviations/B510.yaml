@@ -1,0 +1,14 @@
+task: B510
+deviations:
+  - what: An upstream error body that is not UTF-8 text becomes a status-carrying error whose message says the body is not UTF-8 text.
+    why: LiteLLM reads response.text, which replaces invalid bytes with U+FFFD. Rust keeps error messages as valid text without silently rewriting bytes, so the caller sees the status and a plain reason.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/count_tokens/handler.py#L77
+  - what: An input_tokens value that is null, a float, a numeric string or any non-integer gives an error record with status 500 and the message "input_tokens is not an integer".
+    why: LiteLLM passes the value to a pydantic int field, which coerces floats with no fraction and numeric strings, and whose validation error text cannot be reproduced. Rust accepts only a JSON integer that fits i64.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/count_tokens/token_counter.py#L83
+  - what: The message of a 500 error record for a transport failure, an undecodable body or a body that is not a JSON object is betterlite's own text, not the text of httpx, json or Python.
+    why: Those messages name Python classes and library internals that Rust does not have. The status 500 and the CountTokens processing error prefix are the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/count_tokens/handler.py#L96-L101
+  - what: A tool output or a system value that is not text is rendered with a hand-written Python str() for JSON values, which can differ from CPython for floats such as 1e20 and for very large integers.
+    why: The count must send the same text LiteLLM sends for ordinary values, and the full float repr algorithm is not reproduced for edge values.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/count_tokens/transformation.py#L243
