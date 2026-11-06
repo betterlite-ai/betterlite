@@ -102,6 +102,10 @@ where
     // Each try gets LiteLLM's request timeout as a total deadline on top of the client's per-read timeout
     async fn attempt(&self, url: &str) -> Result<String, AttemptFailure> {
         let deadline = self.client.limits.read_timeout;
+        // Tokio's timer rounds a zero duration up to the next millisecond, so the failing deadline is decided before the fetch
+        if deadline.is_zero() {
+            return Err(AttemptFailure::Retry(AttemptError::Deadline));
+        }
         let Ok(result) = timeout(deadline, self.fetch_and_process(url)).await else {
             return Err(AttemptFailure::Retry(AttemptError::Deadline));
         };

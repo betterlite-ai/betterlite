@@ -36,6 +36,7 @@ use super::response::{ImageResponse, ProcessError, process_image_response};
 
 const PNG: &[u8] = b"\x89\x50\x4e\x47\x0d\x0a\x1a\x0a\x00\x00\x00\x0dIHDR";
 const TEN_MINUTES: Duration = Duration::from_mins(10);
+const LONGEST_TIMEOUT: Duration = Duration::from_hours(262_800);
 
 fn stream_of(body: &[u8]) -> BoxStream<'static, Result<Vec<u8>, HttpError>> {
     let chunks: Vec<Result<Vec<u8>, HttpError>> =
@@ -582,6 +583,19 @@ fn new_fetcher(allowed: &[&str], limit: f64, read_timeout: Duration) -> Fetcher<
     Fetcher::new(new_client(read_timeout), urls, limit, clock).unwrap()
 }
 
+fn fetcher_with_core(core: &CoreSettings, allowed: &[&str], limit: f64) -> Fetcher<SystemResolver> {
+    let policy = Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
+    let client = ProxiedClient::build(base_builder(), &policy, transport_limits(core)).unwrap();
+    let allowed_hosts: Vec<String> = allowed.iter().map(|host| (*host).to_owned()).collect();
+    let validator = UrlValidator::new(SystemResolver, &allowed_hosts, &Verification::Enabled);
+    let urls = UserUrlFetcher {
+        validator,
+        validation: true,
+    };
+    let clock: Arc<dyn Fn() -> f64 + Send + Sync> = Arc::new(|| 0.0_f64);
+    Fetcher::new(client, urls, limit, clock).unwrap()
+}
+
 async fn closed_port() -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -716,26 +730,14 @@ async fn url_conversion_matches_litellm(#[case] scenario: &str) {
                 litellm_request_timeout: None,
                 model_timeout_overrides: Vec::new(),
             };
-            let policy =
-                Arc::new(ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap());
-            let client =
-                ProxiedClient::build(base_builder(), &policy, transport_limits(&core)).unwrap();
-            let validator = UrlValidator::new(
-                SystemResolver,
-                &["127.0.0.1".to_owned()],
-                &Verification::Enabled,
-            );
-            let urls = UserUrlFetcher {
-                validator,
-                validation: true,
-            };
-            let fetcher = Fetcher::new(client, urls, 50.0, Arc::new(|| 0.0_f64)).unwrap();
+            let fetcher = fetcher_with_core(&core, &["127.0.0.1"], 50.0);
             let url = server.url("/image.png");
             let error = fetcher.convert(&url).await.unwrap_err();
             assert_eq!(
                 error.to_string(),
                 format!("Error: Unable to fetch image from URL after 3 attempts. url={url}")
             );
+            assert_eq!(server.request_count(), 0);
         }
         "total_deadline" => {
             let routes = vec![(
@@ -866,8 +868,9 @@ fn fetch_timeout_follows_litellm(
 #[rstest]
 #[case::negative_fails_every_try(-5.0_f64, Duration::ZERO)]
 #[case::infinite_fails_every_try(f64::INFINITY, Duration::ZERO)]
-#[case::huge_is_no_timeout(1e20_f64, Duration::MAX)]
-#[case::zero_is_no_timeout(0.0_f64, Duration::MAX)]
+#[case::nan_is_no_timeout(f64::NAN, LONGEST_TIMEOUT)]
+#[case::huge_is_no_timeout(1e20_f64, LONGEST_TIMEOUT)]
+#[case::zero_is_no_timeout(0.0_f64, LONGEST_TIMEOUT)]
 fn extreme_fetch_timeouts_follow_litellm(#[case] seconds: f64, #[case] expected: Duration) {
     let core = CoreSettings {
         request_timeout_seconds: seconds,
@@ -878,6 +881,30 @@ fn extreme_fetch_timeouts_follow_litellm(#[case] seconds: f64, #[case] expected:
     let limits = transport_limits(&core);
     assert_eq!(limits.connect_timeout, expected);
     assert_eq!(limits.read_timeout, expected);
+}
+
+#[rstest]
+#[case::zero_is_no_timeout(0.0_f64)]
+#[case::nan_is_no_timeout(f64::NAN)]
+#[case::huge_1e19_is_no_timeout(1e19_f64)]
+#[case::huge_1_8e19_is_no_timeout(1.8e19_f64)]
+#[case::huge_1e20_is_no_timeout(1e20_f64)]
+#[tokio::test]
+async fn huge_timeouts_still_fetch(#[case] seconds: f64) {
+    let server = Server::start(vec![("/image.png".to_owned(), Reply::ok(b"body"))]).await;
+    let core = CoreSettings {
+        request_timeout_seconds: seconds,
+        request_timeout_explicit: true,
+        litellm_request_timeout: None,
+        model_timeout_overrides: Vec::new(),
+    };
+    let fetcher = fetcher_with_core(&core, &["127.0.0.1"], 50.0);
+    let data_url = fetcher.convert(&server.url("/image.png")).await.unwrap();
+    assert_eq!(
+        data_url,
+        format!("data:image/png;base64,{}", BASE64.encode(b"body"))
+    );
+    assert_eq!(server.request_count(), 1);
 }
 
 fn movable_cache() -> (Arc<Mutex<f64>>, ImageCache) {
