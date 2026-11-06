@@ -1,3 +1,6 @@
+use std::fs::{read, read_dir};
+use std::path::Path;
+
 use axum::http::StatusCode;
 use rstest::rstest;
 use secrecy::SecretString;
@@ -9,7 +12,8 @@ use crate::panw_prisma_airs::construct::{ConstructError, PanwPrismaAirs};
 use crate::panw_prisma_airs::metadata::ScanMetadata;
 use crate::panw_prisma_airs::payload::{ScanRequest, build_payload};
 use crate::panw_prisma_airs::scan::call_panw_api;
-use crate::panw_prisma_airs::verdict::{Action, Failure};
+use crate::panw_prisma_airs::tool_scan::ToolCall;
+use crate::panw_prisma_airs::verdict::{Action, Failure, ScanVerdict};
 
 const ALLOW: &[u8] = br#"{"action":"allow","category":"benign","scan_id":"scan-1"}"#;
 
@@ -226,4 +230,17 @@ fn construct_rejects_an_api_key_that_is_not_a_header_value() {
         PanwPrismaAirs::new(settings),
         Err(ConstructError::InvalidApiKey { .. })
     ));
+}
+
+#[test]
+fn replays_the_prisma_scan_corpus() {
+    let folder = Path::new(env!("CARGO_MANIFEST_DIR")).join("fuzz/corpus/prisma_scan");
+    let mut entries = read_dir(folder).expect("corpus").peekable();
+    assert!(entries.peek().is_some(), "the corpus has no seed files");
+    assert!(entries.all(|entry| {
+        let bytes = read(entry.expect("entry").path()).expect("fixture");
+        let verdict = ScanVerdict::from_body(&bytes).is_ok();
+        let calls = serde_json::from_slice::<Vec<ToolCall>>(&bytes).is_ok();
+        verdict || calls
+    }));
 }

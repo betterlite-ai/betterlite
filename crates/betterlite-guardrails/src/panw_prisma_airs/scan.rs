@@ -64,7 +64,7 @@ async fn post_scan(
         result => result?,
     };
     if !status.is_success() {
-        // httpx decodes any bytes; a body that is not UTF-8 simply carries no profile phrase here.
+        // The lint table refuses bytes that are not UTF-8, so an undecodable body carries no profile phrase; the status still classifies it.
         let text = str::from_utf8(&body).unwrap_or_default().to_owned();
         return Err(TransportError::Status {
             status: status.as_u16(),

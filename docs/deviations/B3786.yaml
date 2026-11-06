@@ -6,7 +6,7 @@ deviations:
   - what: response_masked_data is left out of the client-visible error detail, while prompt_masked_data stays in.
     why: The model's generation is the operator's policy boundary, so returning it would defeat the block.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L155-L161
-  - what: The scan client never follows redirects, set once on the client instead of per request, and a response body is read up to 1 MiB only; a larger body is a transient network error.
+  - what: The scan client never follows redirects, set once on the client instead of per request, and reads a response body up to 1 MiB; a larger successful body is a transient api_error while an error status keeps its own classification.
     why: reqwest has no per-call redirect setting, and an unbounded body from a misbehaving endpoint should not be buffered.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/panw_prisma_airs/panw_prisma_airs.py#L334-L593
   - what: A timeout that is not a positive finite number of seconds falls back to the 10 second default.
