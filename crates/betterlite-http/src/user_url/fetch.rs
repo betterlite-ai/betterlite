@@ -18,8 +18,8 @@ const MAX_UNVALIDATED_REDIRECTS: usize = 20;
 
 #[derive(Debug, Clone)]
 pub struct UserUrlFetcher<R> {
-    validator: UrlValidator<R>,
-    validation: bool,
+    pub validator: UrlValidator<R>,
+    pub validation: bool,
 }
 
 fn get_request(
@@ -41,7 +41,7 @@ fn get_request(
     })
 }
 
-// httpx's own redirect handling, with no address check
+// B173's client never follows redirects, so the unvalidated branch repeats httpx's rules here
 async fn follow_redirects(
     client: &ProxiedClient,
     url: &str,
@@ -66,14 +66,7 @@ impl<R> UserUrlFetcher<R>
 where
     R: Resolve,
 {
-    pub const fn new(validator: UrlValidator<R>, validation: bool) -> Self {
-        Self {
-            validator,
-            validation,
-        }
-    }
-
-    // The GET pinned to the validated address, with the Host header of the original URL
+    // The connection goes to the validated IP, so Host carries the name the caller asked for
     async fn pinned_request(
         &self,
         url: &str,

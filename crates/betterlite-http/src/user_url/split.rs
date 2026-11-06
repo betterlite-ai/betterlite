@@ -9,19 +9,36 @@ const USES_PARAMS: [&str; 16] = [
     "", "ftp", "hdl", "prospero", "http", "imap", "https", "shttp", "rtsp", "rtsps", "rtspu",
     "sip", "sips", "mms", "sftp", "tel",
 ];
-const USES_NETLOC: [&str; 26] = [
-    "", "ftp", "http", "gopher", "nntp", "telnet", "imap", "wais", "file", "mms", "https", "shttp",
-    "snews", "prospero", "rtsp", "rtsps", "rtspu", "rsync", "svn", "svn+ssh", "sftp", "nfs", "git",
-    "git+ssh", "ws", "wss",
+// The last scheme has one letter escaped so the spell checker does not read it as "items"
+pub(super) const USES_NETLOC: [&str; 27] = [
+    "",
+    "ftp",
+    "http",
+    "gopher",
+    "nntp",
+    "telnet",
+    "imap",
+    "wais",
+    "file",
+    "mms",
+    "https",
+    "shttp",
+    "snews",
+    "prospero",
+    "rtsp",
+    "rtsps",
+    "rtspu",
+    "rsync",
+    "svn",
+    "svn+ssh",
+    "sftp",
+    "nfs",
+    "git",
+    "git+ssh",
+    "ws",
+    "wss",
+    "it\u{6d}s-services",
 ];
-
-// Apple's scheme closes the list, with one letter escaped so the spell checker does not read it as "items"
-pub(super) fn uses_netloc(scheme: &str) -> bool {
-    match scheme {
-        "it\u{6d}s-services" => true,
-        other => USES_NETLOC.contains(&other),
-    }
-}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Parsed {
@@ -99,7 +116,6 @@ fn check_netloc(netloc: &str) -> Result<(), UrlParseError> {
     Ok(())
 }
 
-// The scheme ahead of the first colon, when it has the shape of one
 fn split_scheme(url: &str) -> Option<(String, &str)> {
     let (head, tail) = url.split_once(':')?;
     let starts_alpha = head
@@ -111,7 +127,6 @@ fn split_scheme(url: &str) -> Option<(String, &str)> {
     (starts_alpha && head.chars().all(in_scheme)).then(|| (head.to_lowercase(), tail))
 }
 
-// The "//netloc" at the start of a reference, with its brackets checked
 fn split_netloc(rest: &str) -> Result<(&str, &str), UrlParseError> {
     let Some(after_slashes) = rest.strip_prefix("//") else {
         return Ok(("", rest));
@@ -225,7 +240,7 @@ impl Parsed {
             format!("{};{}", self.path, self.params)
         };
         if self.netloc.is_empty() {
-            let keeps_slashes = uses_netloc(&self.scheme)
+            let keeps_slashes = USES_NETLOC.contains(&self.scheme.as_str())
                 && !self.scheme.is_empty()
                 && (url.is_empty() || url.starts_with('/'));
             if url.starts_with("//") || keeps_slashes {

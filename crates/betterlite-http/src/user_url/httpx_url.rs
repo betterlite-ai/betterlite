@@ -234,7 +234,7 @@ impl HttpxUrl {
         })
     }
 
-    // httpx's str(URL): scheme, "//" and the authority when there is one, then path, query and fragment
+    // Some("") is a present but empty query or fragment, which httpx prints as a bare "?" or "#"
     #[must_use]
     pub fn href(&self) -> String {
         let (open, close) = if self.host.contains(':') {

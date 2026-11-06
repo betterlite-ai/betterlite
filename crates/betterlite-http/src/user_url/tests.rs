@@ -677,7 +677,10 @@ async fn fetch_status(run: Run<'_>) -> (String, Vec<String>) {
         Vec::new()
     };
     let validator = UrlValidator::new(FakeResolver, &allowed, &Verification::Enabled);
-    let fetcher = UserUrlFetcher::new(validator, run.validation);
+    let fetcher = UserUrlFetcher {
+        validator,
+        validation: run.validation,
+    };
     let mut headers = HeaderMap::new();
     headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer k"));
     headers.insert(COOKIE, HeaderValue::from_static("s=1"));

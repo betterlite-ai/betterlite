@@ -111,7 +111,7 @@ where
             .any(|entry| *entry == shown || *entry == with_port)
     }
 
-    // Resolves the host and returns the first address, after every address passed the blocklist unless the host is allowlisted
+    // LiteLLM pins addrinfo[0], so the resolver's order decides which address plain HTTP connects to
     async fn pinned_address(&self, target: &Target) -> Result<SocketAddr, SsrfError> {
         let addresses = self
             .resolver
