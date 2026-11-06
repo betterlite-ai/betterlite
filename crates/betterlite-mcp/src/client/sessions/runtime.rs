@@ -13,10 +13,13 @@ use super::negotiate::{Callbacks, ClientSession};
 use super::stream::MessageHandler;
 use super::transport::{StdioServerParameters, TransportContext};
 
-pub struct SessionOptions {
+pub struct SessionOptions<Source>
+where
+    Source: Error + Send + Sync + 'static,
+{
     pub read_timeout: Duration,
     pub callbacks: Callbacks,
-    pub message_handler: MessageHandler,
+    pub message_handler: MessageHandler<Source>,
 }
 
 pub trait SessionContext: Sized + Send + 'static {
@@ -67,7 +70,11 @@ pub trait McpRuntime: Send + Sync + 'static {
 
     fn http_client(&self, config: HttpClientConfig) -> Result<Self::HttpClient, Self::Error>;
 
-    fn session_context(&self, streams: Self::Streams, options: SessionOptions) -> Self::Session;
+    fn session_context(
+        &self,
+        streams: Self::Streams,
+        options: SessionOptions<Self::Error>,
+    ) -> Self::Session;
 
     fn close_http_client(
         self: Arc<Self>,

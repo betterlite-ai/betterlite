@@ -69,10 +69,11 @@ where
     };
     let outcome = log_failure(client, session_outcome, quiet_on_error);
     let close_cancelled = close_http_client(client, http_client).await;
-    if close_cancelled || client.caller_cancelled.is_cancelled() {
-        return Err(SessionError::Cancelled);
+    match outcome {
+        Ok(output) if !close_cancelled && !client.caller_cancelled.is_cancelled() => Ok(output),
+        Ok(_) => Err(SessionError::Cancelled),
+        Err(error) => Err(error),
     }
-    outcome
 }
 
 fn log_failure<Runtime, Output>(
@@ -122,7 +123,12 @@ where
     let close = runtime.close_http_client(Arc::clone(&client_handle));
     match run_bounded_cleanup(&client.tracker, &client.caller_cancelled, deadline, close).await {
         Ok(()) => false,
-        Err(CleanupError::Cancelled | CleanupError::Operation(ExitFailure::Cancelled)) => true,
+        Err(
+            error @ (CleanupError::Cancelled | CleanupError::Operation(ExitFailure::Cancelled)),
+        ) => {
+            debug!("Error during http client cleanup: {error}");
+            true
+        }
         Err(error) => {
             debug!("Error during http client cleanup: {error}");
             false

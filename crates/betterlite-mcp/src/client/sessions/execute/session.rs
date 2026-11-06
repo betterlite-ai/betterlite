@@ -2,11 +2,12 @@ use std::ops::AsyncFnOnce;
 use std::sync::PoisonError;
 
 use crate::client::cleanup::bounded::run_bounded_cleanup;
+use crate::client::cleanup::http_client::CleanupScope;
 
 use super::super::client::SessionClient;
 use super::super::error::SessionError;
 use super::super::negotiate::{InitializeOutcome as _, initialize_session};
-use super::super::runtime::{HttpClientHandle as _, McpRuntime, SessionContext};
+use super::super::runtime::{HttpClientHandle as _, McpRuntime, SessionContext, SessionOptions};
 use super::super::stream::MessageHandler;
 use super::super::transport::TransportContext as _;
 use super::{Execution, Shutdown, cleanup_deadline, prepare, until_cancelled};
@@ -28,12 +29,21 @@ where
         Err(error) => return Execution::failed(error),
     };
     let handler = MessageHandler::default();
-    let mut context = client
-        .runtime
-        .session_context(streams, client.session_options(handler.clone()));
+    let mut context = client.runtime.session_context(
+        streams,
+        SessionOptions {
+            read_timeout: client.auth.timeout,
+            callbacks: client.settings.callbacks.clone(),
+            message_handler: handler.clone(),
+        },
+    );
     let mut session = match prepare(context.enter(), &client.caller_cancelled).await {
         Ok(session) => session,
-        Err(error) => return Execution::failed(error),
+        Err(error) => {
+            let mut execution = Execution::failed(error);
+            execution.transport_open = true;
+            return execution;
+        }
     };
     let outcome = run_operation(client, &mut session, &handler, operation).await;
     drop(session);
@@ -43,7 +53,7 @@ where
 async fn run_operation<Runtime, Output, Operation>(
     client: &mut SessionClient<Runtime>,
     session: &mut <Runtime::Session as SessionContext>::Session,
-    handler: &MessageHandler,
+    handler: &MessageHandler<Runtime::Error>,
     operation: Operation,
 ) -> Result<Output, SessionError<Runtime::Error>>
 where
@@ -95,7 +105,11 @@ where
 {
     let deadline = cleanup_deadline();
     if let Some(handle) = http_client {
-        handle.begin_cleanup(client.cleanup_scope(deadline));
+        handle.begin_cleanup(CleanupScope {
+            shield: true,
+            deadline,
+            caller_cancelled: client.caller_cancelled.clone(),
+        });
     }
     let exit = run_bounded_cleanup(
         &client.tracker,
@@ -109,6 +123,7 @@ where
         outcome,
         shutdown: Shutdown::Clean,
         session_deadline: Some(deadline),
+        transport_open: true,
     };
     execution.record_exit(exit);
     execution

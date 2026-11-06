@@ -53,7 +53,7 @@ where
     #[error("the MCP runtime failed")]
     Runtime(#[source] Arc<Source>),
     #[error("the MCP response stream failed")]
-    Stream(#[source] Arc<StreamFailure>),
+    Stream(#[source] Arc<StreamFailure<Source>>),
     #[error("the caller cancelled the MCP session")]
     Cancelled,
     #[error("the MCP session cleanup timed out")]

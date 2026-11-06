@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::fmt;
 use std::time::Duration;
 
 use betterlite_config::tls::{TlsPolicy, Verification};
@@ -97,7 +98,7 @@ fn crosses_origin(configured: &Url, target: &Url) -> bool {
     !upgrade
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct HttpClientConfig {
     pub headers: BTreeMap<String, String>,
     pub timeout: Duration,
@@ -108,10 +109,34 @@ pub struct HttpClientConfig {
     pub capture_error_responses: bool,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
+impl fmt::Debug for HttpClientConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("HttpClientConfig")
+            .field("headers", &self.headers.keys().collect::<Vec<_>>())
+            .field("timeout", &self.timeout)
+            .field("tls", &self.tls)
+            .field("auth", &self.auth)
+            .field("follow_redirects", &self.follow_redirects)
+            .field("redirect_guard", &self.redirect_guard)
+            .field("capture_error_responses", &self.capture_error_responses)
+            .finish()
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
 pub struct SseRequest {
     pub url: String,
     pub timeout: Duration,
     pub headers: BTreeMap<String, String>,
     pub client: HttpClientConfig,
+}
+
+impl fmt::Debug for SseRequest {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SseRequest")
+            .field("url", &self.url)
+            .field("timeout", &self.timeout)
+            .field("client", &self.client)
+            .finish_non_exhaustive()
+    }
 }

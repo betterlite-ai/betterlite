@@ -12,6 +12,7 @@ use tracing::debug;
 
 use crate::client::cleanup::bounded::{CleanupError, run_bounded_cleanup};
 use crate::client::cleanup::failure::{Failure, first_non_cancelled_cause};
+use crate::client::cleanup::http_client::CleanupScope;
 
 use super::client::SessionClient;
 use super::error::{ExitFailure, SessionError, to_failure};
@@ -39,6 +40,7 @@ where
     in_flight_cancelled: bool,
     shutdown: Shutdown,
     session_deadline: Option<Instant>,
+    transport_open: bool,
 }
 
 impl<Output, Source> Execution<Output, Source>
@@ -51,6 +53,7 @@ where
             outcome: Err(error),
             shutdown: Shutdown::Clean,
             session_deadline: None,
+            transport_open: false,
         }
     }
 
@@ -77,11 +80,15 @@ where
                 debug!("MCP context exit failed");
                 if self.outcome.is_ok() && matches!(to_failure(failure), Failure::Cancelled) {
                     self.record_shutdown(Shutdown::Cancelled);
+                    self.in_flight_cancelled = true;
                 }
             }
             Err(CleanupError::TimedOut(_)) => {
                 debug!("MCP context exit passed its deadline");
                 self.record_shutdown(Shutdown::Expired);
+                if self.outcome.is_ok() {
+                    self.in_flight_cancelled = true;
+                }
             }
             Err(CleanupError::Cancelled) => {
                 debug!("MCP context exit was cancelled");
@@ -179,7 +186,11 @@ where
     let execution =
         run_session_layer(client, &mut transport, http_client.as_deref(), operation).await;
     let deadline = transport_deadline(&execution);
-    let exit = close_transport(client, transport, http_client.as_deref(), deadline).await;
+    let exit = if execution.transport_open {
+        close_transport(client, transport, http_client.as_deref(), deadline).await
+    } else {
+        Ok(())
+    };
     let recorded = http_client.map_or_else(Vec::new, |handle| handle.finish_cleanup());
     resolve_transport_exit(client, execution, exit, &recorded)
 }
@@ -194,7 +205,11 @@ where
     Runtime: McpRuntime,
 {
     if let Some(handle) = http_client {
-        handle.begin_cleanup(client.cleanup_scope(deadline));
+        handle.begin_cleanup(CleanupScope {
+            shield: true,
+            deadline,
+            caller_cancelled: client.caller_cancelled.clone(),
+        });
     }
     run_bounded_cleanup(
         &client.tracker,

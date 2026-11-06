@@ -133,6 +133,11 @@ pub trait ClientSession {
     fn adopt(&mut self, result: &Self::InitializeResult);
 
     fn send_initialized(&mut self) -> impl Future<Output = Result<(), Self::Error>> + Send;
+
+    // An SDK that reports JSON-RPC failures keeps their code and timeout context instead of a bare transport error
+    fn protocol_failure(_error: &Self::Error) -> Option<McpFailure> {
+        None
+    }
 }
 
 fn rejected<Source>(message: &str) -> SessionError<Source>
@@ -144,6 +149,16 @@ where
         message: message.to_owned(),
         context: None,
     })
+}
+
+fn session_error<Session>(error: Session::Error) -> SessionError<Session::Error>
+where
+    Session: ClientSession,
+{
+    Session::protocol_failure(&error).map_or_else(
+        || SessionError::Runtime(Arc::new(error)),
+        SessionError::Protocol,
+    )
 }
 
 pub async fn initialize_session<Session>(
@@ -168,7 +183,7 @@ where
     let result = session
         .send_initialize(request)
         .await
-        .map_err(|error| SessionError::Runtime(Arc::new(error)))?;
+        .map_err(session_error::<Session>)?;
     if result.protocol_version() != version.as_str() {
         return Err(rejected(
             "Upstream did not accept the configured MCP protocol version",
@@ -178,7 +193,7 @@ where
     session
         .send_initialized()
         .await
-        .map_err(|error| SessionError::Runtime(Arc::new(error)))?;
+        .map_err(session_error::<Session>)?;
     Ok(result)
 }
 
@@ -191,7 +206,7 @@ where
     let result = session
         .initialize()
         .await
-        .map_err(|error| SessionError::Runtime(Arc::new(error)))?;
+        .map_err(session_error::<Session>)?;
     let supported = LegacyVersion::ALL
         .iter()
         .any(|version| version.as_str() == result.protocol_version());

@@ -3,20 +3,17 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use betterlite_config::tls::TlsPolicy;
-use tokio::time::Instant;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::debug;
 
-use crate::client::cleanup::http_client::CleanupScope;
 use crate::credentials;
 
 use super::environment::safe_stdio_env;
 use super::error::{SessionConfigError, SessionError};
 use super::factory::{AuthSource, HttpClientConfig, RedirectGuard, SseRequest, TlsSettings};
 use super::negotiate::{Callbacks, ProtocolVersion};
-use super::runtime::{McpRuntime, SessionOptions};
-use super::stream::MessageHandler;
+use super::runtime::McpRuntime;
 use super::transport::{StdioConfig, StdioServerParameters, TransportContexts, TransportType};
 
 pub struct SessionSettings {
@@ -43,15 +40,6 @@ where
 }
 
 impl<Runtime: McpRuntime> SessionClient<Runtime> {
-    #[must_use]
-    pub fn session_options(&self, message_handler: MessageHandler) -> SessionOptions {
-        SessionOptions {
-            read_timeout: self.auth.timeout,
-            callbacks: self.settings.callbacks.clone(),
-            message_handler,
-        }
-    }
-
     pub fn create_transport_context(
         &self,
     ) -> Result<TransportContexts<Runtime>, SessionError<Runtime::Error>> {
@@ -140,15 +128,6 @@ impl<Runtime: McpRuntime> SessionClient<Runtime> {
                 self.auth.credential_slot.as_deref(),
             ),
             capture_error_responses: true,
-        }
-    }
-
-    #[must_use]
-    pub fn cleanup_scope(&self, deadline: Instant) -> CleanupScope {
-        CleanupScope {
-            shield: true,
-            deadline,
-            caller_cancelled: self.caller_cancelled.clone(),
         }
     }
 }
