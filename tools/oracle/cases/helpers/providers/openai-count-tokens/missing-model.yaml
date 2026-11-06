@@ -1,0 +1,5 @@
+kind: helper
+name: missing-model
+call: {openai_count_tokens: {"count": {"model": "", "messages": [{"role": "user", "content": "hi"}], "api_key": "sk-deployment"}}}
+env: {}
+compare: {ignore: []}
