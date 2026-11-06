@@ -10,15 +10,11 @@ description: 'Implement typed ShadowJob, ShadowLeg and lifecycle response constr
   of copying their algorithms. Function coverage in litellm/types/management_endpoints/auto_router_endpoints.py:
   ShadowEvalJobTargetResponse.budget_spent (L667-L669), ShadowEvalJobResponse.router_name (L729-L732),
   ShadowEvalJobResponse.status (L736-L752). Implement these behaviors through the typed Rust services
-  above; synchronous facades and structural accessors reuse the same primitive instead of separate ports.'
+  above; synchronous facades and structural accessors reuse the same primitive instead of separate ports. This task adds no route or server state, so leave routes.rs and state.rs to B1100.'
 scope:
   paths:
   - crates/betterlite-server/src/shadow_eval_models.rs
   - crates/betterlite-server/src/shadow_eval_models/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/shadow_eval_models.rs
   - crates/betterlite-server/src/routing/shadow_eval_models/**
   - tools/oracle/src/router_probes/shadow_eval_models.rs

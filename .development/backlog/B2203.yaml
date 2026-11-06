@@ -1,7 +1,7 @@
 id: B2203
 milestone: M3 providers
 title: Bedrock model normalization and region catalog
-status: todo
+status: done
 depends_on: [B193, B171, B198]
 file: tasks/B2203-bedrock-model.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/passthrough/utils.py"
 parent: B028
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 717

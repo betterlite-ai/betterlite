@@ -3,7 +3,7 @@ title: Router call pipeline and response metadata
 description: >-
   Compose B302 catalog resolution, B303 client/permit acquisition, B364 static eligibility and B014 dispatch in
   one typed RouteContext pipeline. Implement Strategy, CandidateSet and AttemptResult, selected-model headers and
-  typed no-deployment errors. Reuse B008 simple-shuffle; later strategy tasks add their own variants. Dynamic health,
+  typed no-deployment errors. Reuse B008 simple-shuffle as the one real strategy. Dynamic health,
   budget, affinity and retry services are explicit insertion points, not prerequisite algorithms. Calls already
   supported by B014 share this pipeline; endpoint-specific provider dispatch stays in B014. Configuration boundary
   keys introduced or consumed here: routing_strategy. Pinned declaration defaults: routing_strategy='simple-shuffle'.
@@ -27,6 +27,19 @@ description: >-
 
   Shared provider base helper implementations are B2202: use its owned primitives directly when called by these
   ranges. Do not reintroduce a dependency on B010/B016 for these small helpers.
+
+  Register every entry in the router-stubs check list up front, so no later router task edits strategy.rs or
+  context.rs. B1100 registers the server routes and state slots the same way, B341's state slot included. A
+  strategy entry is a Strategy variant in crates/betterlite-router/src/strategy.rs and a module
+  crates/betterlite-router/src/strategy/<module>.rs. Its stub select answers a NotBuilt variant of this task's
+  typed routing error, naming the entry, when routing_strategy picks it. A context entry is a RouteStage variant
+  in crates/betterlite-router/src/context.rs and a module crates/betterlite-router/src/context/<module>.rs. Its
+  stub reports the stage as not configured, so the pipeline skips it, and a direct call answers NotBuilt naming
+  the entry. Each stub module has an adjacent tests.rs whose router_core_boundaries case asserts that answer. Every match on Strategy or RouteStage has one arm per entry
+  that only calls into that entry's module, with no wildcard arm. The owner named in the list then replaces only
+  its own stub and stub test. B302, B303, B364, B395 and B396 build only in their own modules; this task wires
+  them into RouteContext. The stubs, their tests and their registry lines add about 600 lines outside the 800-line
+  budget.
 scope:
   paths:
   - crates/betterlite-router/src/router_core.rs
@@ -74,6 +87,12 @@ dod:
   proof:
   - router-core-behaviors
   - router-core-boundaries
+- text: >-
+    Every entry in the router-stubs list has its Strategy or RouteStage variant, its stub module and a router_core_boundaries case that
+    asserts NotBuilt.
+  proof:
+  - router-stubs
+  - router-core-boundaries
 - text: Every listed oracle case exercises the production operation and asserts exact selected model/tier, provider
     requests, status, code and state changes; only /error/message may be ignored for betterlite wording. Every declared
     deviation asserts independent exact reference/Rust values through B361.
@@ -102,6 +121,38 @@ checks:
   - id: router-core-boundaries
     why: the task-specific behavior test is absent or fails
     run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/::router_core_boundaries(::|$)/) - test(/replays_the_.*_corpus/)'
+  - id: router-stubs
+    why: a planned strategy or pipeline stage has no variant or stub module, so its task would have to edit strategy.rs or context.rs
+    run: |-
+      while read -r registry variant module owner; do
+        case "$registry" in
+          strategy) dir=crates/betterlite-router/src/strategy; list=crates/betterlite-router/src/strategy.rs ;;
+          context) dir=crates/betterlite-router/src/context; list=crates/betterlite-router/src/context.rs ;;
+        esac
+        test -f "$dir/$module.rs" && test -f "$dir/$module/tests.rs" && grep -qw "$variant" "$list" && grep -qE "^(pub(\([a-z]+\))? )?mod $module;" "$list" || { echo "$registry entry $variant ($module) for $owner is not registered"; exit 1; }
+      done <<'EOF'
+      strategy LeastBusy least_busy B314
+      strategy LatencyBasedRouting latency_routing B315
+      strategy CostBasedRouting cost_routing B316
+      strategy UsageBasedRouting usage_routing B317
+      strategy UsageBasedRoutingV2 usage_routing_v2 B318
+      strategy Lar1 lar1_routing B350
+      context CooldownState cooldown_state B307
+      context CooldownPolicy cooldown_policy B308
+      context FallbackAttempts fallback_attempts B310
+      context ChatStreamFallback chat_stream_fallback B311
+      context NativeStreamFallback native_stream_fallback B312
+      context GeneralizationIntegration generalization_integration B313
+      context ModelRateLimits model_rate_limits B319
+      context TagRouting tag_routing B321
+      context AccessWindows access_windows B322
+      context RoutingGroups routing_groups B323
+      context DeploymentAffinity deployment_affinity B324
+      context PromptAffinity prompt_affinity B325
+      context RequestScheduler request_scheduler B346
+      context RoutingPlugins routing_plugins B363
+      context ResponsesStreamFallback responses_stream_fallback B370
+      EOF
   - id: probe-python
     why: the new adapter is missing, unchanged, untyped or fails lint
     run: test -f tools/oracle/litellm/probes/router_core.py && test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/litellm/probes/router_core.py)"
@@ -123,6 +174,9 @@ out_of_scope:
 - B008's weighted random algorithm.
 - Retries (B017), cooldown/fallback (B018), extra selectors (B019), policy routing (B020), automatic routing (B021)
   and admission (B022).
+- >-
+  The router-stubs entries are only stubs here; the owner named beside each entry fills it and adds its regression
+  cases, with no dependency on those tasks here.
 - Python callbacks and class compatibility (B162/B165).
 - B364 owns static deployment eligibility; consume its tested public interface.
 - B395 owns native routing strategy dispatch; consume its tested public interface.
@@ -385,9 +439,13 @@ pitfalls:
   tasks.
 - Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become a hard
   request error.
-- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets; split source modules at the
-  repository 300-line limit.
+- The 800-line budget includes Rust/Python adapters, behavior tests and fuzz targets but not the router stubs, their
+  tests and their registry lines; split source modules at the repository 300-line limit.
+- >-
+  A stub select or stage call is not an async fn, since an async fn without an await fails clippy::unused_async; it
+  returns std::future::ready(Err(...)) so its owner can make it async later without touching the strategy.rs or
+  context.rs arm.
 review_level: standard
 budget:
-  max_changed_lines: 1500
+  max_changed_lines: 2100
   max_new_expects: 0

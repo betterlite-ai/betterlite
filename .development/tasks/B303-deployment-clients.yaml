@@ -21,21 +21,14 @@ description: 'Connect B302 catalog identities to B009 clients and B010 provider 
   structural accessors reuse the same primitive instead of separate ports. Function coverage in litellm/router_utils/clientside_credential_handler.py:
   is_clientside_credential (L69-L73), get_dynamic_litellm_params (L76-L105). Implement these behaviors
   through the typed Rust services above; synchronous facades and structural accessors reuse the same primitive
-  instead of separate ports.'
+  instead of separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B016 wires this service into RouteContext.'
 scope:
   paths:
   - crates/betterlite-router/src/deployment_clients.rs
   - crates/betterlite-router/src/deployment_clients/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/deployment_clients.rs
   - crates/betterlite-server/src/routing/deployment_clients/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/deployment_clients.rs
   - tools/oracle/src/router_probes/deployment_clients/**
   - tools/oracle/litellm/probes/deployment_clients.py

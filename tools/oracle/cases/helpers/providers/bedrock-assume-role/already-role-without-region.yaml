@@ -1,0 +1,11 @@
+kind: helper
+name: already-role-without-region
+call:
+  bedrock_assume_role:
+    operation: already_running
+    params:
+      environment: {AWS_ACCESS_KEY_ID: AKIAFIXTURE, AWS_SECRET_ACCESS_KEY: fixture}
+      target: 'arn:aws:iam::123456789012:role/MyRole'
+      reply: {identity: 'arn:aws:sts::123456789012:assumed-role/MyRole/session'}
+env: {}
+compare: {ignore: []}

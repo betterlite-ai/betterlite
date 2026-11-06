@@ -15,21 +15,14 @@ description: 'Build DeploymentCatalog snapshots and add/upsert/delete mutations 
   (L9896-L9923), Router.upsert_deployment (L9925-L9993), Router._restore_deployment_after_failed_upsert
   (L9995-L10021), Router.delete_deployment (L10183-L10220). Implement these behaviors through the typed
   Rust services above; synchronous facades and structural accessors reuse the same primitive instead of
-  separate ports.'
+  separate ports.
+  Leave strategy.rs, context.rs, routes.rs and state.rs as they are and build only in the modules this task owns; B302 calls this service.'
 scope:
   paths:
   - crates/betterlite-router/src/catalog_updates.rs
   - crates/betterlite-router/src/catalog_updates/**
-  - crates/betterlite-server/src/routes.rs
-  - crates/betterlite-server/src/routes/**
-  - crates/betterlite-server/src/state.rs
-  - crates/betterlite-server/src/state/**
   - crates/betterlite-server/src/routing/catalog_updates.rs
   - crates/betterlite-server/src/routing/catalog_updates/**
-  - crates/betterlite-router/src/strategy.rs
-  - crates/betterlite-router/src/strategy/**
-  - crates/betterlite-router/src/context.rs
-  - crates/betterlite-router/src/context/**
   - tools/oracle/src/router_probes/catalog_updates.rs
   - tools/oracle/src/router_probes/catalog_updates/**
   - tools/oracle/litellm/probes/catalog_updates.py

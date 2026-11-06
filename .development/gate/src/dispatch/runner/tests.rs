@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use crate::dispatch::runner::{Invocation, Reply, claude_reply, expand};
+use crate::dispatch::runner::{Invocation, Reply, claude_reply, env_pairs, expand};
 use crate::spec::agents::{PLACEHOLDERS, Rung};
 
 #[test]
@@ -13,6 +13,7 @@ fn every_placeholder_gets_its_own_value() {
         effort: "e".to_owned(),
         attempts: 1,
         timeout_minutes: 1,
+        tasks: None,
     };
     let invocation = Invocation {
         worktree: Path::new("/w"),
@@ -80,4 +81,30 @@ fn the_session_id_comes_back_with_the_answer() {
             session: Some("cdaf2939".to_owned()),
         }
     );
+}
+
+#[test]
+fn an_env_file_gives_its_names_and_values_without_quotes() {
+    let text = "# DeepSeek\n\nBASE=https://api.example.test/anthropic\nMODEL='flash[1m]'\nEMPTY=\n";
+    let pairs = env_pairs(text, Path::new("/e")).unwrap();
+    assert_eq!(
+        pairs,
+        [
+            (
+                "BASE".to_owned(),
+                "https://api.example.test/anthropic".to_owned()
+            ),
+            ("MODEL".to_owned(), "flash[1m]".to_owned()),
+            ("EMPTY".to_owned(), String::new()),
+        ]
+    );
+}
+
+#[test]
+fn an_env_line_without_a_value_names_its_line_and_not_its_text() {
+    let error = env_pairs("A=1\nsecret-text\n", Path::new("/e"))
+        .unwrap_err()
+        .to_string();
+    assert!(error.contains("line 2 of /e"), "{error}");
+    assert!(!error.contains("secret-text"), "{error}");
 }

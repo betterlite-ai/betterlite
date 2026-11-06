@@ -54,6 +54,7 @@ description: >-
   policy/context registration. No helper calls a proxy handler or sends provider traffic.
   The final owned signature/control/tail/wrapper contains 291 nonblank source lines; allocate
   290 composition/wiring, 280 tests and 230 oracle adapters/corpus within 800 changed lines.
+  B1100 registers state/cost_service.rs as a stub slot, so fill only crates/betterlite-server/src/state/cost_service.rs and leave state.rs as it is.
 scope:
   paths:
     - crates/betterlite-core/Cargo.toml
@@ -62,8 +63,8 @@ scope:
     - crates/betterlite-core/src/cost/response.rs
     - crates/betterlite-core/src/cost/response/**
     - crates/betterlite-server/Cargo.toml
-    - crates/betterlite-server/src/state.rs
-    - crates/betterlite-server/src/state/**
+    - crates/betterlite-server/src/state/cost_service.rs
+    - crates/betterlite-server/src/state/cost_service/**
     - crates/betterlite-server/src/cost_service.rs
     - crates/betterlite-server/src/cost_service/**
     - tools/oracle/src/helpers/core_ops/response_charge.rs

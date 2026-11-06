@@ -9,10 +9,13 @@ publish.workspace = true
 aws-sdk-kms = { version = "=1.120.0", default-features = false, features = ["rt-tokio"] }
 base64 = "0.23.1"
 betterlite-env = { path = "../betterlite-env" }
+num-traits = "0.2.19"
 percent-encoding.workspace = true
 regex.workspace = true
 secrecy.workspace = true
 serde.workspace = true
+serde_json = "1.0.154"
+soft-canonicalize = "0.5.6"
 thiserror.workspace = true
 tokio = { workspace = true, features = ["time"] }
 tracing.workspace = true
@@ -22,6 +25,7 @@ aws-smithy-http-client = { version = "1.5.1", default-features = false, features
 axum.workspace = true
 rstest = "=0.27.0"
 serde_json = "1.0.154"
+tempfile = "3.27.0"
 tokio = { workspace = true, features = ["rt", "test-util", "time"] }
 tracing-subscriber.workspace = true
 
