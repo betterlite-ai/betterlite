@@ -153,10 +153,41 @@ fn numeric_attributes_keep_their_decimal_digits() {
 #[case::attribute_object(VectorFileRecordKind::UpdateRequest, r#"{"attributes":{"k":{"a":1}}}"#)]
 #[case::attribute_overflow(VectorFileRecordKind::UpdateRequest, r#"{"attributes":{"k":1e99999}}"#)]
 #[case::unknown_status(VectorFileRecordKind::FileObject, r#"{"status":"queued"}"#)]
+#[case::other_chunking_type(
+    VectorFileRecordKind::FileObject,
+    r#"{"id":"file_a","chunking_strategy":{"type":"other"}}"#
+)]
 #[case::wrong_object(VectorFileRecordKind::ListResponse, r#"{"object":"collection"}"#)]
 #[case::string_limit(VectorFileRecordKind::ListQuery, r#"{"limit":"5"}"#)]
+#[case::unexpected_filter_and_order(
+    VectorFileRecordKind::ListQuery,
+    r#"{"filter":"unexpected","order":"sideways","limit":-1}"#
+)]
 #[case::fractional_count(VectorFileRecordKind::FileObject, r#"{"created_at":1.5}"#)]
 #[case::wrong_container(VectorFileRecordKind::ListResponse, r#"{"data":{}}"#)]
+#[case::list_with_unknown_status(
+    VectorFileRecordKind::ListResponse,
+    r#"{"object":"list","data":[{"id":"file_a","status":"queued","chunking_strategy":{"type":"other"}}],"has_more":false}"#
+)]
+fn out_of_annotation_values_round_trip_unchanged(
+    #[case] kind: VectorFileRecordKind,
+    #[case] input: &str,
+) {
+    round_trip(kind, input);
+}
+
+#[test]
+fn unfit_value_stays_in_extra_under_its_key() {
+    let VectorFileRecord::FileObject(file) =
+        decode(VectorFileRecordKind::FileObject, r#"{"status":"queued"}"#).unwrap()
+    else {
+        panic!("not a file");
+    };
+    assert!(file.status.is_none());
+    assert_eq!(file.extra["status"], "queued");
+}
+
+#[rstest]
 #[case::not_an_object(VectorFileRecordKind::FileObject, "[]")]
 #[case::truncated(VectorFileRecordKind::FileObject, r#"{"id":"#)]
 #[case::empty_input(VectorFileRecordKind::FileObject, "")]

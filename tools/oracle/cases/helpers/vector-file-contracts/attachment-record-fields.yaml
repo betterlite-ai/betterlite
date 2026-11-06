@@ -10,6 +10,11 @@ call:
       - {kind: file_object, value: {status: cancelled}}
       - {kind: file_object, value: {usage_bytes: null, last_error: null, chunking_strategy: null, attributes: null}}
       - {kind: file_object, value: {}}
+      - {kind: file_object, value: {status: queued, chunking_strategy: {type: other}}}
+      - {kind: file_object, value: {object: vector_store.other, created_at: 1.5, usage_bytes: "2", attributes: []}}
+      - {kind: chunking_strategy, value: {type: other, static: {max_chunk_size_tokens: "800"}}}
+      - {kind: list_response, value: {object: list, data: [{id: file_a, status: queued, chunking_strategy: {type: other}}], first_id: file_a, last_id: null, has_more: false}}
+      - {kind: list_query, value: {filter: unexpected, order: sideways, limit: -1}}
       - {kind: chunking_strategy, value: {type: static, static: {max_chunk_size_tokens: 800, chunk_overlap_tokens: 400}}}
       - {kind: chunking_strategy, value: {type: static, static: null}}
       - {kind: static_chunking, value: {max_chunk_size_tokens: -5, chunk_overlap_tokens: 900000}}

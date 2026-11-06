@@ -57,49 +57,49 @@ pub enum TextPartKind {
 }
 
 record!(StaticChunkingConfig {
-    max_chunk_size_tokens: i64 => "max_chunk_size_tokens" [strict],
-    chunk_overlap_tokens: i64 => "chunk_overlap_tokens" [strict],
+    max_chunk_size_tokens: i64 => "max_chunk_size_tokens",
+    chunk_overlap_tokens: i64 => "chunk_overlap_tokens",
 });
 record!(ChunkingStrategy {
-    kind: ChunkingKind => "type" [strict],
-    static_config: StaticChunkingConfig => "static" [strict],
+    kind: ChunkingKind => "type",
+    static_config: StaticChunkingConfig => "static",
 });
 record!(VectorStoreFileObject {
-    id: String => "id" [strict], object: FileObjectKind => "object" [strict],
-    created_at: i64 => "created_at" [strict], usage_bytes: i64 => "usage_bytes" [strict],
-    vector_store_id: String => "vector_store_id" [strict], status: FileStatus => "status" [strict],
-    last_error: BTreeMap<String, Value> => "last_error" [strict],
-    chunking_strategy: ChunkingStrategy => "chunking_strategy" [strict],
-    attributes: Attributes => "attributes" [strict],
+    id: String => "id", object: FileObjectKind => "object",
+    created_at: i64 => "created_at", usage_bytes: i64 => "usage_bytes",
+    vector_store_id: String => "vector_store_id", status: FileStatus => "status",
+    last_error: BTreeMap<String, Value> => "last_error",
+    chunking_strategy: ChunkingStrategy => "chunking_strategy",
+    attributes: Attributes => "attributes",
 });
 record!(VectorStoreFileCreateRequest {
-    file_id: String => "file_id" [strict], attributes: Attributes => "attributes" [strict],
-    chunking_strategy: ChunkingStrategy => "chunking_strategy" [strict],
+    file_id: String => "file_id", attributes: Attributes => "attributes",
+    chunking_strategy: ChunkingStrategy => "chunking_strategy",
 });
-record!(VectorStoreFileUpdateRequest { attributes: Attributes => "attributes" [strict] });
+record!(VectorStoreFileUpdateRequest { attributes: Attributes => "attributes" });
 record!(VectorStoreFileListQueryParams {
-    after: String => "after" [strict], before: String => "before" [strict],
-    filter: FileStatus => "filter" [strict], limit: i64 => "limit" [strict],
-    order: ListOrder => "order" [strict],
+    after: String => "after", before: String => "before",
+    filter: FileStatus => "filter", limit: i64 => "limit",
+    order: ListOrder => "order",
 });
 record!(VectorStoreFileListResponse {
-    object: ListObjectKind => "object" [strict], data: Vec<VectorStoreFileObject> => "data" [strict],
-    first_id: String => "first_id" [strict], last_id: String => "last_id" [strict],
-    has_more: bool => "has_more" [strict],
+    object: ListObjectKind => "object", data: Vec<VectorStoreFileObject> => "data",
+    first_id: String => "first_id", last_id: String => "last_id",
+    has_more: bool => "has_more",
 });
 record!(VectorStoreFileDeleteResponse {
-    id: String => "id" [strict], object: DeletedObjectKind => "object" [strict],
-    deleted: bool => "deleted" [strict],
+    id: String => "id", object: DeletedObjectKind => "object",
+    deleted: bool => "deleted",
 });
 record!(VectorStoreFileContentTextPart {
-    kind: TextPartKind => "type" [strict], text: String => "text" [strict],
+    kind: TextPartKind => "type", text: String => "text",
 });
 record!(VectorStoreFileContentResponse {
-    file_id: String => "file_id" [strict], filename: String => "filename" [strict],
-    attributes: Attributes => "attributes" [strict],
-    content: Vec<VectorStoreFileContentTextPart> => "content" [strict],
+    file_id: String => "file_id", filename: String => "filename",
+    attributes: Attributes => "attributes",
+    content: Vec<VectorStoreFileContentTextPart> => "content",
 });
 record!(VectorStoreFileAuthCredentials {
-    headers: BTreeMap<String, Value> => "headers" [strict],
-    query_params: BTreeMap<String, Value> => "query_params" [strict],
+    headers: BTreeMap<String, Value> => "headers",
+    query_params: BTreeMap<String, Value> => "query_params",
 });
