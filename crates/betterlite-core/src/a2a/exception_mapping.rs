@@ -1,3 +1,4 @@
+use std::error::Error;
 use std::fmt::Display;
 use std::future::Future;
 
@@ -17,7 +18,7 @@ pub const AGENT_CARD_ERROR_PATTERNS: [&str; 5] = [
 
 // Card helpers live in betterlite-a2a (B4800), which depends on this crate, so they come in through this trait.
 pub trait CardUrls {
-    type Card;
+    type Card: Send;
 
     fn is_localhost_or_internal_url(&self, url: Option<&str>) -> bool;
 
@@ -25,13 +26,13 @@ pub trait CardUrls {
 }
 
 // The client and its A2A SDK calls belong to B4801 and the SDK, so recovery reaches them through this trait.
-pub trait A2aSdk: CardUrls {
+pub trait A2aSdk: CardUrls + Sync {
     const A2A_SDK_AVAILABLE: bool;
 
-    type Client;
-    type HttpClient: Clone;
+    type Client: Sync;
+    type HttpClient: Clone + Send;
     type CallContext;
-    type Error: std::error::Error + 'static;
+    type SdkError: Error + 'static;
 
     // Reads the client LiteLLM stashes as _litellm_httpx_client; None for a client built elsewhere.
     fn httpx_client(&self, client: &Self::Client) -> Option<Self::HttpClient>;
@@ -43,7 +44,7 @@ pub trait A2aSdk: CardUrls {
         &self,
         card: &Self::Card,
         config: ClientConfig<Self::HttpClient>,
-    ) -> impl Future<Output = Result<Self::Client, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<Self::Client, Self::SdkError>> + Send;
 
     // Writes the _litellm_httpx_client, _litellm_call_context and _litellm_agent_card stashes.
     fn attach_stash(
@@ -98,7 +99,7 @@ pub enum A2AException {
 }
 
 #[derive(Debug, Error)]
-pub enum RecoveryError<SdkError: std::error::Error + 'static> {
+pub enum RecoveryError<SdkError> {
     #[error("A2A SDK is required for localhost retry handling")]
     SdkUnavailable,
     #[error(
@@ -138,17 +139,17 @@ impl A2AExceptionCheckers {
 pub fn map_a2a_exception<Cards, Original>(
     cards: &Cards,
     original_error: &Original,
-    card_url: Option<&str>,
-    api_base: Option<&str>,
-    model: Option<&str>,
+    card_url_hint: Option<&str>,
+    api_base_hint: Option<&str>,
+    model_name: Option<&str>,
 ) -> A2AException
 where
     Cards: CardUrls,
     Original: Display,
 {
     let message = original_error.to_string();
-    let model = model.map(str::to_owned);
-    if let (Some(card_url), Some(api_base)) = (card_url, api_base)
+    let model = model_name.map(str::to_owned);
+    if let (Some(card_url), Some(api_base)) = (card_url_hint, api_base_hint)
         && cards.is_localhost_or_internal_url(Some(card_url))
         && A2AExceptionCheckers::is_connection_error(&message)
     {
@@ -162,14 +163,14 @@ where
     if A2AExceptionCheckers::is_agent_card_error(&message) {
         return A2AException::AgentCard {
             message,
-            url: api_base.map(str::to_owned),
+            url: api_base_hint.map(str::to_owned),
             model,
         };
     }
     if A2AExceptionCheckers::is_connection_error(&message) {
         return A2AException::Connection {
             message,
-            url: card_url.or(api_base).map(str::to_owned),
+            url: card_url_hint.or(api_base_hint).map(str::to_owned),
             model,
         };
     }
@@ -179,10 +180,10 @@ where
 pub async fn handle_a2a_localhost_retry<Sdk>(
     sdk: &Sdk,
     error: &LocalhostUrlError,
-    agent_card: Option<&mut Sdk::Card>,
+    card_to_fix: Option<&mut Sdk::Card>,
     a2a_client: &Sdk::Client,
     is_streaming: bool,
-) -> Result<Sdk::Client, RecoveryError<Sdk::Error>>
+) -> Result<Sdk::Client, RecoveryError<Sdk::SdkError>>
 where
     Sdk: A2aSdk,
     Sdk::Card: Clone,
@@ -190,7 +191,7 @@ where
     if !Sdk::A2A_SDK_AVAILABLE {
         return Err(RecoveryError::SdkUnavailable);
     }
-    let agent_card = agent_card.ok_or(RecoveryError::MissingAgentCard)?;
+    let agent_card = card_to_fix.ok_or(RecoveryError::MissingAgentCard)?;
     let request_type = if is_streaming { "streaming " } else { "" };
     tracing::warn!(
         "A2A {request_type}request to '{}' failed: {}. Agent card contains localhost/internal URL. Retrying with base_url '{}'.",

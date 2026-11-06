@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use std::future::ready;
 use std::io;
 use std::sync::{Arc, Mutex};
 
@@ -23,7 +24,10 @@ impl Captured {
 
 impl io::Write for Captured {
     fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
-        self.0.lock().unwrap().extend_from_slice(buf);
+        self.0
+            .lock()
+            .map_err(|error| io::Error::other(error.to_string()))?
+            .extend_from_slice(buf);
         Ok(buf.len())
     }
 
@@ -83,10 +87,10 @@ impl<const AVAILABLE: bool> CardUrls for FakeSdk<AVAILABLE> {
     type Card = FakeCard;
 
     fn is_localhost_or_internal_url(&self, url: Option<&str>) -> bool {
-        url.is_some_and(|url| {
+        url.is_some_and(|candidate| {
             ["localhost", "0.0.0.0", "internal-marker"]
                 .iter()
-                .any(|marker| url.contains(marker))
+                .any(|marker| candidate.contains(marker))
         })
     }
 
@@ -102,7 +106,7 @@ impl<const AVAILABLE: bool> A2aSdk for FakeSdk<AVAILABLE> {
     type Client = FakeClient;
     type HttpClient = &'static str;
     type CallContext = FakeCallContext;
-    type Error = FakeSdkError;
+    type SdkError = FakeSdkError;
 
     fn httpx_client(&self, client: &FakeClient) -> Option<&'static str> {
         self.record("httpx_client");
@@ -113,21 +117,23 @@ impl<const AVAILABLE: bool> A2aSdk for FakeSdk<AVAILABLE> {
         client.call_context.clone()
     }
 
-    async fn create_client(
+    fn create_client(
         &self,
         card: &FakeCard,
         config: ClientConfig<&'static str>,
-    ) -> Result<FakeClient, FakeSdkError> {
+    ) -> impl Future<Output = Result<FakeClient, FakeSdkError>> + Send {
         self.record("create_client");
-        if self.fail_create {
-            return Err(FakeSdkError);
-        }
-        Ok(FakeClient {
-            httpx_client: None,
-            call_context: None,
-            config: Some((config.httpx_client, config.streaming, card.url.clone())),
-            stashed_card: None,
-        })
+        let created = if self.fail_create {
+            Err(FakeSdkError)
+        } else {
+            Ok(FakeClient {
+                httpx_client: None,
+                call_context: None,
+                config: Some((config.httpx_client, config.streaming, card.url.clone())),
+                stashed_card: None,
+            })
+        };
+        ready(created)
     }
 
     fn attach_stash(
