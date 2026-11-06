@@ -305,9 +305,16 @@ async fn content_type_decides_between_text_base64_and_the_raw_body(
 #[case::text_prefix_is_case_sensitive(Some(&b"Text/plain"[..]), b"aGVsbG8=", "hello")]
 #[case::newlines_are_skipped(Some(&b"application/json"[..]), b"aGVs\nbG8=", "hello")]
 #[case::padding_may_be_complete(Some(&b"application/json"[..]), b"aGVsbA==", "hell")]
+#[case::noise_between_trailing_pads_is_skipped(Some(&b"application/json"[..]), b"aGVsbG8=\n=", "hello")]
 #[case::missing_padding_falls_back(Some(&b"application/json"[..]), b"aGVsbG8", "aGVsbG8")]
 #[case::short_padding_falls_back(Some(&b"application/json"[..]), b"aGVsbA=", "aGVsbA=")]
-#[case::data_after_padding_is_dropped(Some(&b"application/json"[..]), b"aGVsbG8=junk", "hello")]
+#[case::data_after_padding_falls_back(Some(&b"application/json"[..]), b"aGVsbG8=junk", "aGVsbG8=junk")]
+#[case::data_after_completed_padding_decodes(
+    Some(&b"application/json"[..]),
+    b"YWJj=ZGVm",
+    "abcdef"
+)]
+#[case::padding_before_the_last_sextet_falls_back(Some(&b"application/json"[..]), b"AA=A", "AA=A")]
 #[case::an_empty_body_stays_empty(Some(&b"application/json"[..]), b"", "")]
 #[case::only_padding_decodes_to_nothing(Some(&b"application/json"[..]), b"====", "")]
 #[case::a_lone_sextet_falls_back(Some(&b"application/json"[..]), b"a", "a")]

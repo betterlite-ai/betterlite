@@ -13,26 +13,21 @@ fn sextet(byte: u8) -> Option<u16> {
     }
 }
 
-// binascii.a2b_base64 outside strict mode: bytes off the alphabet are skipped, a '=' ends the data once the quad is far enough along, and a quad cut short is an error
+// CPython 3.13's binascii.a2b_base64 outside strict mode skips bytes off the alphabet and needs the trailing padding to complete the last quad
 fn decode_lenient(body: &[u8]) -> Option<Vec<u8>> {
     let mut decoded = Vec::with_capacity(body.len());
     let mut quad_position = 0_u8;
-    let mut pads = 0_u8;
+    let mut trailing_pads = 0_usize;
     let mut carry = 0_u16;
     for byte in body {
         if *byte == b'=' {
-            if quad_position >= 2 {
-                pads = pads.saturating_add(1);
-            }
-            if quad_position >= 2 && quad_position.saturating_add(pads) >= 4 {
-                return Some(decoded);
-            }
+            trailing_pads = trailing_pads.saturating_add(1);
             continue;
         }
         let Some(value) = sextet(*byte) else {
             continue;
         };
-        pads = 0;
+        trailing_pads = 0;
         match quad_position {
             0 => {
                 carry = value;
@@ -54,7 +49,14 @@ fn decode_lenient(body: &[u8]) -> Option<Vec<u8>> {
             }
         }
     }
-    (quad_position == 0).then_some(decoded)
+    // a final quad of two sextets needs two pads and one of three needs one; a single sextet cannot exist
+    let required_pads = match quad_position {
+        0 => 0,
+        2 => 2,
+        3 => 1,
+        _ => return None,
+    };
+    (trailing_pads >= required_pads).then_some(decoded)
 }
 
 // httpx would decode a body that is not UTF-8 with replacement characters; betterlite refuses it
