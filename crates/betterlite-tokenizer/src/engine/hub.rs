@@ -155,18 +155,25 @@ impl HubDownloader {
 pub(super) async fn classify(
     client: &HFClient,
     error: HFError,
-    repository: &str,
-    revision: &str,
+    request: &Request<'_>,
     start: Duration,
+    local_files_only: bool,
 ) -> HubError {
+    if local_files_only {
+        return cached_only(error, request.repository);
+    }
     if matches!(&error, HFError::RevisionNotFound { .. }) {
-        return HubError::RevisionNotFound(repository.to_owned(), revision.to_owned(), error);
+        return HubError::RevisionNotFound(
+            request.repository.to_owned(),
+            request.revision.to_owned(),
+            error,
+        );
     }
     if matches!(&error, HFError::EntryNotFound { .. }) {
-        return missing_entry(client, error, repository, revision, start).await;
+        return missing_entry(client, error, request, start).await;
     }
     if matches!(&error, HFError::RepoNotFound { .. }) {
-        return HubError::RepoNotFound(repository.to_owned(), error);
+        return HubError::RepoNotFound(request.repository.to_owned(), error);
     }
     let gated = matches!(
         &error,
@@ -174,12 +181,16 @@ pub(super) async fn classify(
             if context.error_code.as_deref() == Some("GatedRepo")
     );
     if gated {
-        return HubError::Gated(repository.to_owned(), error);
+        return HubError::Gated(request.repository.to_owned(), error);
     }
     if matches!(&error, HFError::AuthRequired { .. }) {
         return HubError::Unauthorized(error);
     }
-    if let HFError::LocalEntryNotFound { path } = error {
+    HubError::Download(request.repository.to_owned(), error)
+}
+// a local-only download makes no request, so hf-hub's negative cache answer is a cache miss, the match for LocalEntryNotFoundError
+fn cached_only(error: HFError, repository: &str) -> HubError {
+    if let HFError::EntryNotFound { path, .. } | HFError::LocalEntryNotFound { path } = error {
         return HubError::CacheMiss(repository.to_owned(), path);
     }
     HubError::Download(repository.to_owned(), error)
@@ -188,23 +199,24 @@ pub(super) async fn classify(
 async fn missing_entry(
     client: &HFClient,
     error: HFError,
-    repository: &str,
-    revision: &str,
+    request: &Request<'_>,
     start: Duration,
 ) -> HubError {
-    let (owner, name) = split_id(repository);
+    let (owner, name) = split_id(request.repository);
     let repo = client.model(owner.to_owned(), name.to_owned());
     match within(start, repo.exists().send()).await {
         Ok(Ok(true)) => {}
-        Ok(Ok(false)) => return HubError::RepoNotFound(repository.to_owned(), error),
-        _ => return HubError::EntryNotFound(repository.to_owned(), error),
+        Ok(Ok(false)) => return HubError::RepoNotFound(request.repository.to_owned(), error),
+        _ => return HubError::EntryNotFound(request.repository.to_owned(), error),
     }
-    let probe = repo.revision_exists().revision(revision).send();
+    let probe = repo.revision_exists().revision(request.revision).send();
     match within(start, probe).await {
-        Ok(Ok(false)) => {
-            HubError::RevisionNotFound(repository.to_owned(), revision.to_owned(), error)
-        }
-        _ => HubError::EntryNotFound(repository.to_owned(), error),
+        Ok(Ok(false)) => HubError::RevisionNotFound(
+            request.repository.to_owned(),
+            request.revision.to_owned(),
+            error,
+        ),
+        _ => HubError::EntryNotFound(request.repository.to_owned(), error),
     }
 }
 pub(super) fn retryable(error: &HubError) -> bool {

@@ -133,6 +133,30 @@ async fn offline_answers_from_the_cache_only() {
 }
 
 #[tokio::test]
+async fn offline_negative_cache_hit_makes_no_request() {
+    let server = Server::start(|_request| Reply::Response {
+        status: 404,
+        headers: vec![("X-Repo-Commit", COMMIT.to_owned())],
+        body: Vec::new(),
+    })
+    .await;
+    let directory = tempfile::tempdir().unwrap();
+    let online = hub_settings(&server.endpoint, directory.path());
+    assert!(matches!(
+        downloader(&online).download(REPO, "main", None).await,
+        Err(HubError::RepoNotFound(..))
+    ));
+    let requests = server.request_count();
+    let mut offline = hub_settings(&server.endpoint, directory.path());
+    offline.offline = OfflineSetting::Offline;
+    assert!(matches!(
+        downloader(&offline).download(REPO, "main", None).await,
+        Err(HubError::CacheMiss(..))
+    ));
+    assert_eq!(server.request_count(), requests);
+}
+
+#[tokio::test]
 async fn unauthorized_is_reported() {
     let server = Server::start(|_request| Reply::Response {
         status: 401,

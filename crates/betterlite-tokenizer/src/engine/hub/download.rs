@@ -40,6 +40,7 @@ pub(super) async fn download_bounded(
         events: &events,
         clock: downloader.clock.as_ref(),
         client: &client,
+        local_files_only,
     };
     run_bounded(call, &watch, bounds, request).await
 }
@@ -47,6 +48,7 @@ struct Watch<'watch> {
     events: &'watch DownloadEvents,
     clock: &'watch Clock,
     client: &'watch HFClient,
+    local_files_only: bool,
 }
 struct DownloadEvents {
     notify: Notify,
@@ -98,9 +100,9 @@ where
                 let failed = classify(
                     watch.client,
                     failure,
-                    request.repository,
-                    request.revision,
+                    request,
                     bounds.start,
+                    watch.local_files_only,
                 );
                 return Err(failed.await);
             }
