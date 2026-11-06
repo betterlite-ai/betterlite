@@ -39,9 +39,8 @@ fn run_case(
         limits: limits.clone(),
     };
     sync_litellm(&python.root)?;
-    let [first, second] = sides(options.self_check);
     let mut captures = Vec::new();
-    for side in [first, second] {
+    for side in sides(options.self_check) {
         let sdk = Sdk::for_side(side, &python);
         let run = Run {
             call: &case.call,
