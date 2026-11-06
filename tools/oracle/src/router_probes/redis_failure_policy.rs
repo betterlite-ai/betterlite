@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+use betterlite_redis::breaker_metrics::BreakerMetrics;
 use betterlite_router::redis_failure_policy::classify::{
     Failure, FailureClass, failure_kind, is_timeout_failure,
 };
@@ -96,8 +97,12 @@ pub(crate) fn run(
     _random: &mut InjectedRandom<'_>,
 ) -> Result<ProbeOutput, OperationError> {
     let settings = input.settings.to_settings();
-    let mut policy = RedisFailurePolicy::from(settings);
-    let mut throttle = TimeoutLogThrottle::from(settings.timeout_log_interval);
+    let mut policy = RedisFailurePolicy::new(settings, BreakerMetrics::new(None));
+    let mut throttle = TimeoutLogThrottle {
+        interval: settings.timeout_log_interval,
+        last_logged_at: None,
+        suppressed: 0,
+    };
     let mut admissions = BTreeMap::<usize, Admission>::new();
     let steps = input
         .steps

@@ -67,8 +67,12 @@ fn timeout_fail(policy: &mut RedisFailurePolicy, now: u64) -> Option<BreakerEven
     fail(policy, now, FailureClass::Timeout)
 }
 
+fn policy(settings: Settings) -> RedisFailurePolicy {
+    RedisFailurePolicy::new(settings, BreakerMetrics::new(None))
+}
+
 fn opened_policy(configuration: Settings) -> RedisFailurePolicy {
-    let mut policy = RedisFailurePolicy::from(configuration);
+    let mut policy = policy(configuration);
     fail(&mut policy, 0, FailureClass::Connection);
     policy
 }
@@ -105,7 +109,7 @@ fn redis_failure_policy_behaviors(#[case] scenario: fn()) {
 }
 
 fn timeout_streak_opens() {
-    let mut policy = RedisFailurePolicy::from(settings(3, true));
+    let mut policy = policy(settings(3, true));
     let events = [
         timeout_fail(&mut policy, 1_000),
         timeout_fail(&mut policy, 2_000),
@@ -122,7 +126,7 @@ fn timeout_streak_opens() {
 }
 
 fn timeout_streak_below_the_minimum() {
-    let mut policy = RedisFailurePolicy::from(settings(3, true));
+    let mut policy = policy(settings(3, true));
     let events = [
         timeout_fail(&mut policy, 1_000),
         timeout_fail(&mut policy, 2_000),
@@ -134,7 +138,7 @@ fn timeout_streak_below_the_minimum() {
 }
 
 fn connectivity_opens_at_the_threshold() {
-    let mut policy = RedisFailurePolicy::from(settings(3, true));
+    let mut policy = policy(settings(3, true));
     let events = [
         fail(&mut policy, 0, FailureClass::Connection),
         fail(&mut policy, 10, FailureClass::Connection),
@@ -145,7 +149,7 @@ fn connectivity_opens_at_the_threshold() {
 }
 
 fn a_connectivity_failure_restarts_the_streak() {
-    let mut policy = RedisFailurePolicy::from(settings(3, true));
+    let mut policy = policy(settings(3, true));
     timeout_fail(&mut policy, 0);
     timeout_fail(&mut policy, 1_000);
     fail(&mut policy, 2_000, FailureClass::Connection);
@@ -176,7 +180,7 @@ fn a_success_while_open_is_ignored() {
 }
 
 fn a_streak_below_the_threshold_never_opens() {
-    let mut policy = RedisFailurePolicy::from(settings(3, true));
+    let mut policy = policy(settings(3, true));
     assert_eq!(timeout_fail(&mut policy, 0), None);
     assert_eq!(
         timeout_fail(&mut policy, 10_000),
@@ -187,7 +191,7 @@ fn a_streak_below_the_threshold_never_opens() {
 }
 
 fn a_disabled_policy_never_counts() {
-    let mut policy = RedisFailurePolicy::from(settings(1, false));
+    let mut policy = policy(settings(1, false));
     let events = [
         fail(&mut policy, 0, FailureClass::Connection),
         fail(&mut policy, 1, FailureClass::Connection),
@@ -202,7 +206,7 @@ fn a_disabled_policy_never_counts() {
 }
 
 fn a_success_resets_the_counts() {
-    let mut policy = RedisFailurePolicy::from(settings(3, true));
+    let mut policy = policy(settings(3, true));
     timeout_fail(&mut policy, 0);
     timeout_fail(&mut policy, 1_000);
     let admission = policy
@@ -223,7 +227,7 @@ fn half_open_success_closes() {
 }
 
 fn a_swallowed_failure_keeps_the_call() {
-    let mut policy = RedisFailurePolicy::from(settings(3, true));
+    let mut policy = policy(settings(3, true));
     let mut admission = policy
         .admit(millis(0), "get")
         .expect("the breaker is closed");
@@ -243,7 +247,7 @@ fn a_swallowed_failure_keeps_the_call() {
 }
 
 fn a_swallowed_non_health_failure_does_not_mark_the_call() {
-    let mut policy = RedisFailurePolicy::from(settings(3, true));
+    let mut policy = policy(settings(3, true));
     timeout_fail(&mut policy, 0);
     let mut admission = policy
         .admit(millis(1), "get")
@@ -259,7 +263,7 @@ fn a_swallowed_non_health_failure_does_not_mark_the_call() {
 }
 
 fn an_explicit_timeout_cause_is_a_timeout() {
-    let mut policy = RedisFailurePolicy::from(settings(3, true));
+    let mut policy = policy(settings(3, true));
     let chained = Failure {
         class: FailureClass::Connection,
         causes: &[FailureClass::Timeout],
@@ -269,7 +273,7 @@ fn an_explicit_timeout_cause_is_a_timeout() {
 }
 
 fn timeout_logs_are_throttled() {
-    let mut policy = RedisFailurePolicy::from(settings(3, true));
+    let mut policy = policy(settings(3, true));
     let decisions = [
         policy.log_failure(millis(0), failure(FailureClass::Timeout)),
         policy.log_failure(millis(500), failure(FailureClass::Timeout)),
@@ -292,7 +296,7 @@ fn timeout_logs_are_throttled() {
 }
 
 fn circuit_open_and_command_failures_do_not_spend_the_log_interval() {
-    let mut policy = RedisFailurePolicy::from(settings(3, true));
+    let mut policy = policy(settings(3, true));
     assert_eq!(
         policy.log_failure(millis(0), failure(FailureClass::CircuitOpen)),
         LogDecision::Debug
@@ -311,7 +315,7 @@ fn circuit_open_and_command_failures_do_not_spend_the_log_interval() {
 fn metrics_record_states_failures_and_transitions() {
     let mut registry = Registry::default();
     let metrics = BreakerMetrics::new(Some(&mut registry));
-    let mut policy = RedisFailurePolicy::from((settings(1, true), metrics));
+    let mut policy = RedisFailurePolicy::new(settings(1, true), metrics);
     timeout_fail(&mut policy, 0);
     fail(&mut policy, 1, FailureClass::Connection);
     let mut text = String::new();
@@ -373,7 +377,7 @@ fn recovery_one_millisecond_past_the_timeout() {
 }
 
 fn timeout_streak_at_exactly_the_minimum() {
-    let mut policy = RedisFailurePolicy::from(settings(3, true));
+    let mut policy = policy(settings(3, true));
     timeout_fail(&mut policy, 0);
     timeout_fail(&mut policy, 0);
     assert_eq!(timeout_fail(&mut policy, 5_000), Some(opened(3, 0)));
@@ -381,7 +385,7 @@ fn timeout_streak_at_exactly_the_minimum() {
 }
 
 fn timeout_streak_one_millisecond_below_the_minimum() {
-    let mut policy = RedisFailurePolicy::from(settings(3, true));
+    let mut policy = policy(settings(3, true));
     timeout_fail(&mut policy, 0);
     timeout_fail(&mut policy, 0);
     assert_eq!(timeout_fail(&mut policy, 4_999), None);
@@ -389,7 +393,7 @@ fn timeout_streak_one_millisecond_below_the_minimum() {
 }
 
 fn hard_failures_one_below_the_threshold() {
-    let mut policy = RedisFailurePolicy::from(settings(3, true));
+    let mut policy = policy(settings(3, true));
     assert_eq!(fail(&mut policy, 0, FailureClass::Connection), None);
     assert_eq!(fail(&mut policy, 1, FailureClass::Connection), None);
     assert_eq!(policy.status(), status(State::Closed, 0, 2, 2, 0));
@@ -419,14 +423,22 @@ fn causes_past_the_depth_limit() {
     cause_depth(20, false);
 }
 
+fn throttle() -> TimeoutLogThrottle {
+    TimeoutLogThrottle {
+        interval: secs(1),
+        last_logged_at: None,
+        suppressed: 0,
+    }
+}
+
 fn throttle_at_exactly_the_interval() {
-    let mut throttle = TimeoutLogThrottle::from(secs(1));
+    let mut throttle = throttle();
     assert_eq!(throttle.admit(millis(0)), Some(0));
     assert_eq!(throttle.admit(millis(1_000)), Some(0));
 }
 
 fn throttle_one_millisecond_below_the_interval() {
-    let mut throttle = TimeoutLogThrottle::from(secs(1));
+    let mut throttle = throttle();
     assert_eq!(throttle.admit(millis(0)), Some(0));
     assert_eq!(throttle.admit(millis(999)), None);
     assert_eq!(throttle.admit(millis(1_000)), Some(1));
@@ -445,7 +457,7 @@ fn the_open_error_names_the_operation() {
 }
 
 fn a_stale_admission_records_no_success() {
-    let mut policy = RedisFailurePolicy::from(settings(3, true));
+    let mut policy = policy(settings(3, true));
     let admission = policy
         .admit(millis(0), "get")
         .expect("the breaker is closed");
@@ -474,7 +486,7 @@ fn a_repeated_failure_pins_the_timer() {
 }
 
 fn a_cancelled_call_records_no_success() {
-    let mut policy = RedisFailurePolicy::from(settings(3, true));
+    let mut policy = policy(settings(3, true));
     timeout_fail(&mut policy, 0);
     let _admission = policy
         .admit(millis(1), "get")

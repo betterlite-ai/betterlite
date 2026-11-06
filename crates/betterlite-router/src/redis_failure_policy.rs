@@ -79,14 +79,9 @@ pub struct RedisFailurePolicy {
     timeout_log: TimeoutLogThrottle,
 }
 
-impl From<Settings> for RedisFailurePolicy {
-    fn from(settings: Settings) -> Self {
-        Self::from((settings, BreakerMetrics::new(None)))
-    }
-}
-
-impl From<(Settings, BreakerMetrics)> for RedisFailurePolicy {
-    fn from((settings, metrics): (Settings, BreakerMetrics)) -> Self {
+impl RedisFailurePolicy {
+    #[must_use]
+    pub fn new(settings: Settings, metrics: BreakerMetrics) -> Self {
         metrics.record_state_change(None, State::Closed.label());
         Self {
             settings,
@@ -98,12 +93,14 @@ impl From<(Settings, BreakerMetrics)> for RedisFailurePolicy {
             timeout_count: 0,
             timeout_streak_started: None,
             opened_at: Duration::ZERO,
-            timeout_log: TimeoutLogThrottle::from(settings.timeout_log_interval),
+            timeout_log: TimeoutLogThrottle {
+                interval: settings.timeout_log_interval,
+                last_logged_at: None,
+                suppressed: 0,
+            },
         }
     }
-}
 
-impl RedisFailurePolicy {
     #[must_use]
     pub const fn status(&self) -> Status {
         Status {

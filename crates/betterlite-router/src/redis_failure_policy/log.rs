@@ -8,19 +8,9 @@ pub enum LogDecision {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TimeoutLogThrottle {
-    interval: Duration,
-    last_logged_at: Option<Duration>,
-    suppressed: u32,
-}
-
-impl From<Duration> for TimeoutLogThrottle {
-    fn from(interval: Duration) -> Self {
-        Self {
-            interval,
-            last_logged_at: None,
-            suppressed: 0,
-        }
-    }
+    pub interval: Duration,
+    pub last_logged_at: Option<Duration>,
+    pub suppressed: u32,
 }
 
 impl TimeoutLogThrottle {
