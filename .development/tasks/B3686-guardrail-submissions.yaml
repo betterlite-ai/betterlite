@@ -1,0 +1,138 @@
+id: B3686
+title: Guardrail team submissions
+description: >-
+  Build the team side of the guardrail submission flow in betterlite-server: a team registers a Generic Guardrail API guardrail, which waits as `pending_review`, and callers list and read the submissions. Three routes, the response records they share and the database seam behind them. Approving and rejecting a submission is B3685's. Everything goes in crates/betterlite-server/src/guardrails/submissions.rs and submissions/. Read B3685's `MutationState` and `routes` first and shape this module's the same way; the architect's skeleton mounts it, so do not touch app.rs. The read routes are B3684, create, change, delete, approve and reject are B3685, the catalog and apply routes are B3687 and the custom-code test route is B6670.
+
+  Routes, all behind the normal key check:
+  - `POST /guardrails/register`
+  - `GET /guardrails/submissions`
+  - `GET /guardrails/submissions/{guardrail_id}`
+  B3685 registers `POST /guardrails/submissions/{guardrail_id}/approve` and `.../reject`, so do not register them: axum panics on a duplicate. The literal `/guardrails/submissions` path must win over B3684's `GET /guardrails/{guardrail_id}`; axum ranks a literal segment above a parameter, so register it as it is and cover it with a test.
+
+  Files, each below 300 lines: `error.rs` (`SubmissionError`, a thiserror enum), `models.rs`, `rows.rs`, `postgres_rows.rs`, `json_field.rs`, `teams.rs`, `register.rs`, `listing.rs`, `route.rs`, `tests.rs`.
+
+  `models.rs` holds LiteLLM's pydantic records (L647-L695) as serde types: `RegisterGuardrailRequest` (`guardrail_name: String`, `litellm_params: BTreeMap<String, GuardrailValue>`, `guardrail_info: Option<BTreeMap<..>>`, `team_id: Option<String>`), `RegisterGuardrailResponse`, `GuardrailSubmissionItem` (`team_guardrail` defaults to false, the other optional fields to null), `GuardrailSubmissionSummary` and `ListGuardrailSubmissionsResponse`. `GuardrailValue` is B3660's. Unknown body keys are ignored. Add `decode_register_body(body: &[u8]) -> Result<RegisterGuardrailRequest, SubmissionError>` through `serde_path_to_error` over `serde_json::Deserializer::from_slice`. It is the only place the route reads body bytes, and a body that does not decode gives the 422 validation body B3685 gives (reuse its helper for that shape; if none exists, `detail` is a list of `{type, loc, msg, input}` with `loc` starting at `["body"]`). The records `Guardrail` and `LitellmParams` are B3662's (betterlite-config, sections::guardrail_params).
+
+  `rows.rs` holds the seam. B3685's `ReviewRows` (crates/betterlite-server/src/guardrails/admin_mutations/review_rows.rs) cannot be reused as it is: its `ReviewRow` has no `created_at`, `updated_at`, `submitted_at` or `reviewed_at`, no name lookup, no team query and no insert. So this task adds a sibling trait and leaves B3685's files alone. `SubmissionRow` has `guardrail_id`, `guardrail_name`, `litellm_params` and `guardrail_info` (each `Option<ColumnJson>`, where `ColumnJson` is `Text(String)` or `Object(serde_json::Map<String, serde_json::Value>)`, because the table may give either), `status: Option<String>`, `team_id`, `submitted_at`, `reviewed_at`, `created_at` and `updated_at`. `SubmissionRows` is a trait of async methods in the `impl Future + Send` style B3682 uses: `find_by_id`, `find_by_name`, `find_team_rows(filter: TeamFilter)` (newest `created_at` first; `TeamFilter` is `AnyTeam`, meaning `team_id` is not null, or `Teams(Vec<String>)`, meaning `team_id` is in the list) and `create(NewSubmission)`. `postgres_rows.rs` implements it over B726's binding of `litellm_guardrailstable` (its `table_binding_guardrailstable` case shows the handle; B3685's `PostgresReviewRows` uses the same binding) with `find_many`, `find_unique` and `create`, and writes no SQL. Use the write handle B726 gives for writes. Tests use a fake `SubmissionRows`.
+
+
+  `json_field.rs` holds `parse_json_field(column: Option<&ColumnJson>) -> Option<serde_json::Map<String, serde_json::Value>>`, LiteLLM's `_parse_json_field` (L811-L821): null gives `None`, an object is returned as it is, text is parsed as JSON and an object result is returned, and anything else (bad JSON, a non-object) gives `None`. B3685 keeps its own private copy for approval.
+
+  `teams.rs` holds `user_team_ids(caller, ..) -> Result<Vec<String>, SubmissionError>`, LiteLLM's `_get_user_team_ids` (L824-L846): empty when the caller has no user id or there is no database, else the `teams` of B736's `get_user_object` called with `user_id_upsert` false, with empty strings dropped. The caller type with its `user_id`, `user_email`, `team_id` and role comes from B732.
+
+  State. `SubmissionsState<S: SubmissionRows>` holds `database: Option<Arc<S>>` (`None` is a proxy without a database), the user lookup for teams and a `Clock` trait object with `now() -> DateTime<Utc>`, all passed in when it is built. Every route first needs the database: with none, the answer is 500 with detail "Prisma client not initialized". The order of checks below is LiteLLM's, so keep it.
+
+  `register.rs`, `POST /guardrails/register` (L696-L808). After the database check:
+  1. `team_id` is the body's value, else the key's team; an empty or missing result is 400 with detail "team_id is required. Provide it in the request body or use a team-scoped API key.".
+  2. A caller whose role is not exactly `proxy_admin` and whose chosen `team_id` differs from the key's team must be in `user_team_ids`, else 403 with detail "You are not a member of team '{team_id}'" (the id in single quotes).
+  3. `litellm_params.guardrail` must equal `generic_guardrail_api`, else 400 "Only guardrails with litellm_params.guardrail='generic_guardrail_api' are accepted for registration".
+  4. `api_base` must be present and not empty, else 400 "litellm_params.api_base is required for generic_guardrail_api". Its scheme must be `http` or `https`, else 400 "litellm_params.api_base must use http or https scheme". It must have a host, else 400 "litellm_params.api_base must contain a valid hostname". Use the `url` crate for the parse.
+  5. `mode` must be present (null counts as absent), else 400 "litellm_params.mode is required (e.g. pre_call, post_call)".
+  6. A row with the same `guardrail_name` gives 400 "Guardrail with name '{name}' already exists". A store error here is 500 with the error text and the log line "Error checking guardrail name uniqueness: {error}"; the 400 passes through untouched.
+  7. Create the row with `status` `pending_review`, `team_id`, and `submitted_at`, `created_at` and `updated_at` all set to one `now` from the clock. `litellm_params` is the body's map as JSON text. `guardrail_info` is the body's map (empty when absent) plus `submitted_by_user_id` (the caller's user id), `submitted_by_email` (the caller's email) and `team_guardrail` true, as JSON text. A store error is 500 with the error text and the log line "Error registering guardrail: {error}". The answer is `RegisterGuardrailResponse` with the new `guardrail_id`, the name, the status and `submitted_at`.
+
+  `listing.rs`, `GET /guardrails/submissions` (query `status`, `team_id`, `search`) and `GET /guardrails/submissions/{guardrail_id}` (L872-L1001). Both use B732's admin-view predicate (`_user_has_admin_view`: proxy_admin and the read-only admin role).
+  - The list for a non-admin loads `user_team_ids` first. A `team_id` filter outside those ids is 403 with "You are not a member of team '{team_id}'", before any query. A non-admin with no teams gets `{"submissions": [], "summary": {"total": 0, "pending_review": 0, "active": 0, "rejected": 0}}` without a query.
+  - The query is `find_team_rows`: `AnyTeam` for admins, `Teams(ids)` for others. The summary counts come from all rows of that query, with a missing status counted as `active`. Only then the filters apply, in this order: `status` (an exact match on the raw column, so a row with no status never matches `active`), `team_id` (exact match), `search` (case-insensitive substring of the name, or of `guardrail_info.description` when the info is an object, or of the whole lowercase info text when the column is text). A store error is 500 with the text and the log line "Error listing guardrail submissions: {error}".
+  - The single read finds the row by id, else 404 with detail "Guardrail submission not found". A non-admin whose `user_team_ids` do not hold the row's team (or the row has no team) gets 403 "You are not a member of the team that owns this submission". A store error is 500 with the text and the log line "Error getting guardrail submission: {error}".
+  - Both build items with one projection (`_row_to_submission_item`, L848-L869): `guardrail_info` through `parse_json_field` (`{}` when `None`), `team_guardrail` true when `team_id` is set, `litellm_params` through `parse_json_field` and then `mask_sensitive_values` (B3684's `pub(crate)` function at `crate::guardrails::admin_reads::masking::mask_sensitive_values`, called on that map as it is; an empty map stays an empty map), `status` defaulting to `active`, `submitted_by_user_id` and `submitted_by_email` read from `guardrail_info` (null when absent), and the four timestamps as stored.
+
+  `route.rs` builds the router: `pub fn routes<S: SubmissionRows>(state: SubmissionsState<S>) -> Router`. Add the fuzz target `guardrail_register` at crates/betterlite-server/fuzz/fuzz_targets/guardrail_register.rs that feeds the bytes to `decode_register_body`, with a `[[bin]]` entry in crates/betterlite-server/fuzz/Cargo.toml (`test = false`, `doc = false`, `bench = false`), seeds in crates/betterlite-server/fuzz/corpus/guardrail_register/ (a valid body, a body without `litellm_params`, truncated JSON, bytes that are not UTF-8) and the test `replays_the_guardrail_register_corpus` in tests.rs. The module path to `decode_register_body` must be `pub` for the fuzz crate.
+
+  Oracle: the HTTP cases boot LiteLLM and betterlite with the master key and no database. They check what no database gives: 500 "Prisma client not initialized" on register, list and single read, the 401 without a key and the 422 for a register body without `guardrail_name`. The real flow needs a database and virtual keys, so named Rust tests with a fake `SubmissionRows` cover every branch above, including the non-admin team filters, the summary counts and the order of the register checks.
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/submissions.rs
+    - crates/betterlite-server/src/guardrails/submissions/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/guardrail_register.rs
+    - crates/betterlite-server/fuzz/corpus/guardrail_register/**
+    - tools/oracle/cases/guardrails/submissions/**
+    - tools/oracle/helpers/b3686.py
+    - tools/oracle/helpers/b3686/**
+    - tools/oracle/src/helpers/server/b3686.rs
+    - tools/oracle/src/helpers/server/b3686/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L647-L695
+    why: The request and response records of the flow.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L696-L808
+    why: The register route from its decorator, every check in order and the row it writes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L811-L869
+    why: The JSON column reader, the team lookup and the row to item projection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L872-L965
+    why: The list route with its team rule, summary counts and filters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L968-L1001
+    why: The single submission read and its team check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L97-L106
+    why: The team rows query and its newest-first order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4346-L4404
+    why: _get_masked_values, the masking rule for the item params.
+  - url: https://docs.litellm.ai/docs/adding_provider/generic_guardrail_api
+    why: The Generic Guardrail API format a registered guardrail follows.
+dod:
+  - text: A submission item masks its litellm_params with B3684's mask_sensitive_values and keeps an empty map empty.
+    proof: [submissions-item-tests]
+  - text: parse_json_field returns an object column as it is, parses JSON text into an object, and gives none for null, bad text and non-objects.
+    proof: [submissions-item-tests]
+  - text: Register checks team_id, membership, the guardrail type, api_base, mode and name uniqueness in LiteLLM's order with its exact status and detail texts, and stores a pending_review row with the three timestamps, the team and the guardrail_info additions.
+    proof: [submissions-register-tests, oracle]
+  - text: The register body decoder ignores unknown keys, rejects a body without `guardrail_name` or `litellm_params` as 422, survives arbitrary bytes and its seed corpus replays.
+    proof: [submissions-register-tests, submissions-corpus, oracle]
+  - text: The list route gives admins every team row and others only their teams, refuses a team filter outside them with 403, returns the empty answer for a non-admin without teams, counts the summary before the filters and applies status, team and search as LiteLLM does.
+    proof: [submissions-read-tests]
+  - text: The single read returns the masked item, 404 for a missing row and 403 for a non-admin outside the owning team, and the literal submissions path wins over the `/guardrails/{guardrail_id}` route.
+    proof: [submissions-read-tests]
+  - text: Without a database register, list and single read answer 500 "Prisma client not initialized", and every route needs a valid key.
+    proof: [submissions-read-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: submissions-item-tests
+      why: the column reader or the item projection is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::submissions::tests::(json_field_|item_)/)'
+    - id: submissions-register-tests
+      why: a register check, its order, its text or the stored row differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::submissions::tests::(register_|body_)/)'
+    - id: submissions-read-tests
+      why: the list, the single read, the team rules or the no-database answer are wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::submissions::tests::(list_|get_|teams_|nodb_)/)'
+    - id: submissions-corpus
+      why: the fuzz target, its seeds or the replay test are missing
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/guardrail_register)"
+        && test -f crates/betterlite-server/fuzz/fuzz_targets/guardrail_register.rs
+        && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_guardrail_register_corpus)'
+oracle_cases:
+  - tools/oracle/cases/guardrails/submissions/register-no-database.yaml
+  - tools/oracle/cases/guardrails/submissions/register-body-missing-name.yaml
+  - tools/oracle/cases/guardrails/submissions/list-no-database.yaml
+  - tools/oracle/cases/guardrails/submissions/get-no-database.yaml
+  - tools/oracle/cases/guardrails/submissions/auth-required.yaml
+deviations:
+  - what: The guardrail params are stored as plain JSON text of the body's map, without LiteLLM's `safe_dumps` depth marker ("MaxDepthExceeded" past depth 100).
+    why: The JSON decoder already refuses nesting past 128 levels with a 422, so the marker cannot be reached.
+  - what: A non-text `api_base` in a register body is answered as 400 "litellm_params.api_base must use http or https scheme".
+    why: LiteLLM passes any value to `urlparse` and fails with an unhandled error (500); docs/compatibility.md leaves types outside the declared ones undefined, and 400 names the field.
+out_of_scope:
+  - "approve_guardrail_submission and reject_guardrail_submission (L1004-L1126): B3685, which also owns the status write seam `ReviewRows`."
+  - "The list, info and form routes, and `_get_masked_values` as a shared function: B3684 (it owns `mask_sensitive_values`, which this task calls)."
+  - "create_guardrail, update_guardrail, delete_guardrail and patch_guardrail (L331-L645 and L1129-L1295): B3685."
+  - "category_yaml, major_airlines, validate_blocked_words_file and apply_guardrail (L1450-L1620 and L2337-L2457): B3687."
+  - "test_custom_code and its timeout helpers (L2006-L2240): B6670."
+  - "`_create_guardrail_row`, `_find_team_guardrail_rows` and `_guardrails_table` as functions: they become the `SubmissionRows` methods here; `_delete_guardrail_row` has no caller in this task and B3685 deletes through B3682's registry."
+  - "`_as_str_object_mapping` (L80): a typing helper with no behavior."
+pitfalls:
+  - "register compares the role with `proxy_admin` exactly, while the two read routes use the admin-view predicate, so a read-only admin can list every submission but cannot register for a team it is not in."
+  - "`team_id = request.team_id or key.team_id` treats an empty string as absent, so `\"team_id\": \"\"` falls back to the key's team."
+  - "The membership check runs only when the chosen team differs from the key's team, so a key bound to team A registers for A without any team lookup."
+  - "`api_base` is checked for presence before its scheme, and `mode` is checked last, so a body with a bad scheme and no mode gets the scheme error."
+  - "The duplicate-name check covers every row, including rejected ones and rows without a team."
+  - "The summary counts are taken before the `status`, `team_id` and `search` filters, so a filtered list can show fewer submissions than `summary.total`."
+  - "A missing status counts as `active` in the summary and in the item, but the `status` filter compares the raw column, so `status=active` skips such a row."
+  - "`search` also matches inside the whole info text when the column holds text, so it can hit a key name such as `submitted_by_email`."
+  - "`/guardrails/submissions` is also a valid `{guardrail_id}` for B3684's GET route; LiteLLM declares these routes earlier in the file, so they win."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

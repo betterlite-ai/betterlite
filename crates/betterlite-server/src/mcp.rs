@@ -7,6 +7,7 @@ pub mod management_visibility;
 pub mod oauth_caches;
 pub mod openapi_registry;
 pub mod outbound_credentials;
+pub mod rest_reads;
 pub mod search_handlers;
 pub mod semantic_filter;
 pub mod server_writes;
