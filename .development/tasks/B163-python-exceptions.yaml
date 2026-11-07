@@ -1,0 +1,183 @@
+id: B163
+title: Python exception classes raised with LiteLLM's names and fields
+description: >-
+  Code written for LiteLLM does `except litellm.RateLimitError as e` and reads `e.status_code`, `e.llm_provider`, `e.model`,
+  `e.num_retries` and `str(e)`. Build the same classes in the wheel as the package `betterlite.exceptions`, so
+  `from betterlite.exceptions import RateLimitError` and `betterlite.RateLimitError` both work. The Python
+  side of B158 builds these classes from the native error JSON, so the names, constructor parameter names and attribute names
+  must match litellm/exceptions.py exactly.
+
+
+  The wheel depends only on python-dotenv, so there is no `openai` and no `httpx`. LiteLLM's classes inherit from
+  `openai.APIStatusError` and friends and build `httpx.Response` objects. Replace both with two small private modules.
+  `_http.py` has `Request(method, url)` and `Response(status_code, request=None, headers=None, content=None)`. `Response` keeps
+  `status_code`, a case-insensitive `headers` mapping (`get`, `items`, `__getitem__`, `__contains__`), `content` as bytes, and `text`.
+  Its `request` property raises `RuntimeError` when none was given, the way httpx does, because `BadRequestError` tests for a
+  usable request. `_openai_base.py` has the classes of openai-python's `_exceptions.py` at the version in
+  `tools/oracle/litellm/uv.lock`, with the same names, base classes and attribute rules: `OpenAIError`, `APIError(message,
+  request, *, body)`, `APIResponseValidationError`, `APIStatusError`, `APIConnectionError`, `APITimeoutError`, `BadRequestError`,
+  `AuthenticationError`, `PermissionDeniedError`, `NotFoundError`, `ConflictError`, `UnprocessableEntityError`, `RateLimitError`
+  and `InternalServerError`. `APIError` copies `code`, `param` and `type` from a dict body (`type` is None when the body is not a dict).
+  `APIStatusError` takes `status_code` from the response and `request_id` from its `x-request-id` header. The status classes
+  have no code of their own beyond that. In the LiteLLM classes below, import this module as `base` and write
+  `class AuthenticationError(base.AuthenticationError)`, so the name clash with LiteLLM's own classes never needs an alias.
+
+
+  Files under `python/betterlite/exceptions/`, each under the 300-line limit: `__init__.py` imports by name and has the
+  explicit `__all__`, `_rate_limit.py`, `_text.py`, `_status.py`, `_server.py` and `_process.py`. `_rate_limit.py` has
+  `RateLimitErrorCategory`, `RateLimitType`, `validate_rate_limit_category` and `validate_rate_limit_type` (L24-L115), with the same
+  values. `_text.py` has one mixin, `RetryText`, with the `__str__` and `__repr__` that all of LiteLLM's classes repeat: the
+  message, then " LiteLLM Retried: N times" when `num_retries` is truthy, then ", LiteLLM Max Retries: N" when `max_retries` is truthy.
+  Put it first in each class's bases, so its methods win over the base's. `MidStreamFallbackError` writes its own.
+
+
+  `_status.py` has the classes with a fixed status: `AuthenticationError` (401), `NotFoundError` (404), `BadRequestError` (400),
+  `ImageFetchError`, `VectorStoreSearchError`, `UnprocessableEntityError` (422), `PermissionDeniedError` (403),
+  `ContextWindowExceededError`, `RejectedRequestError`, `ContentPolicyViolationError`, `UnsupportedParamsError`,
+  `InvalidRequestError` and `LiteLLMUnknownProvider`. `_server.py` has `Timeout`, `RateLimitError`, `ServiceUnavailableError`,
+  `BadGatewayError`, `InternalServerError`, `APIError`, `APIConnectionError`, `APIResponseValidationError`,
+  `JSONSchemaValidationError`, `OpenAIError`, `MockException`, `MidStreamFallbackError` and the list
+  `LITELLM_EXCEPTION_TYPES` (L970-L991, in that order, with `InternalServerError` twice). `_process.py` has `ModelNotMappedError`,
+  `BudgetExceededError`, `GuardrailRaisedException`, `BlockedPiiEntityError`, `ModifyResponseException` and
+  `SensitiveDataRouteException`, which are plain `Exception` subclasses. Port each `__init__` line by line from its linked range:
+  the order of assignments matters, because the base constructor overwrites `message`, `status_code` and `response`.
+  Every constructor keeps LiteLLM's parameter names, order and defaults, with real types in place of the missing annotations
+  (`str`, `str | None`, `int | None`). No `Any`: a body is `object | None`, and `request_data` is `dict[str, object]`.
+
+
+  Text and defaults to carry over: every message gets the prefix `litellm.<ClassName>: ` (the prefix says `litellm` on purpose, tests
+  match on it). `BudgetExceededError.status_code` reads `betterlite.budget_exceeded_status_code` (B157, default 422) when the error
+  is built, so `import betterlite` at the top of `_process.py` and read the attribute in `__init__`. `LiteLLMUnknownProvider` formats the string
+  `"Unmapped LLM provider for this endpoint. You passed model={model}, custom_llm_provider={custom_llm_provider}. Check supported provider and route: https://docs.litellm.ai/docs/providers"`
+  (types/utils.py L151). Keep it as a constant in `_status.py`, since `LiteLLMCommonStrings` is not part of this task.
+  `VectorStoreSearchFailure` (types/vector_stores.py L104-L108) is a three-key `TypedDict` in `_status.py` for the same reason, and
+  `VECTOR_STORE_SEARCH_FAILED_CODE` is "vector_store_search_failed".
+
+
+  The tests are `tests/test_exceptions_status.py`, `tests/test_exceptions_server.py`, `tests/test_exceptions_process.py` and
+  `tests/test_exceptions_exports.py`. Each builds the same instance with LiteLLM and with betterlite from one parameter table
+  (pytest `parametrize`) and compares `str`, `repr`, `args`, `message`, `status_code`, `llm_provider`, `model`, `num_retries`,
+  `max_retries`, `litellm_debug_info`, `code`, `param`, `type`, `body`, `headers`, `response.status_code`, `response.headers`,
+  `request.method` and `request.url`, plus the class names of `__mro__` with the `openai` and `httpx` modules ignored.
+  Class names that the two sides share are the contract; nothing is compared by identity.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/exceptions/**
+  - crates/betterlite-python/tests/test_exceptions_status.py
+  - crates/betterlite-python/tests/test_exceptions_server.py
+  - crates/betterlite-python/tests/test_exceptions_process.py
+  - crates/betterlite-python/tests/test_exceptions_exports.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L24-L129
+  why: The rate-limit enums, their validators and the cached minimal response that `BadRequestError` falls back to.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L132-L354
+  why: The 401, 404, 400, ImageFetch, VectorStoreSearch and 422 classes. The response validity test in `BadRequestError` is L240-L248.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L356-L533
+  why: "`Timeout`, `PermissionDeniedError` and `RateLimitError`, which rebuilds its own 429 response and sets `code` and `type` after the base constructor."
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L535-L662
+  why: The `BadRequestError` subclasses ContextWindowExceeded, RejectedRequest and ContentPolicyViolation.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L664-L943
+  why: 503, 502, 500, APIError, APIConnectionError, APIResponseValidationError, JSONSchemaValidationError and OpenAIError.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L945-L1077
+  why: UnsupportedParamsError, the type list, BudgetExceededError, InvalidRequestError, MockException and LiteLLMUnknownProvider.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/exceptions.py#L1079-L1264
+  why: The guardrail exceptions, MidStreamFallbackError and the two routing exceptions.
+- url: https://github.com/openai/openai-python/blob/main/src/openai/_exceptions.py
+  why: The base classes that `_openai_base.py` copies. Read the copy in tools/oracle/litellm/.venv for the pinned version.
+dod:
+- text: >-
+    Every class and helper in litellm/exceptions.py exists in `betterlite.exceptions` with the same parameter names, order and
+    defaults, and `__all__` lists exactly those public names.
+  proof: [exceptions-exports]
+- text: >-
+    The status classes (401, 404, 400, 422, 403, ContextWindow, Rejected, ContentPolicy, UnsupportedParams, InvalidRequest,
+    ImageFetch, VectorStoreSearch, LiteLLMUnknownProvider) match LiteLLM in `str`, `repr`, attributes, response and class order.
+  proof: [exceptions-status]
+- text: >-
+    `Timeout`, `RateLimitError`, 503, 502, 500, `APIError`, `APIConnectionError`, `APIResponseValidationError`,
+    `JSONSchemaValidationError`, `OpenAIError`, `MockException` and `MidStreamFallbackError` match LiteLLM the same way, and
+    `RateLimitError` keeps its category, rate_limit_type, headers and detail rules.
+  proof: [exceptions-server]
+- text: >-
+    The plain exceptions match LiteLLM, and `BudgetExceededError.status_code` follows `betterlite.budget_exceeded_status_code` at the
+    time the error is built.
+  proof: [exceptions-process]
+- text: >-
+    The new Python files pass ruff and basedpyright in strict mode, with no `Any` and no `type: ignore`.
+  proof: [exceptions-lint]
+checks:
+  optional: []
+  commands:
+  - id: exceptions-exports
+    why: A name or a signature is missing, so `from betterlite.exceptions import X` fails or takes other arguments.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm
+      --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_exceptions_exports.py
+  - id: exceptions-status
+    why: A fixed-status class differs from LiteLLM in text, status or response, so `except` clauses and retries act differently.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm
+      --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_exceptions_status.py
+  - id: exceptions-server
+    why: A timeout, rate-limit or server error loses a field that the router and callbacks read.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm
+      --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_exceptions_server.py
+  - id: exceptions-process
+    why: A guardrail or budget exception differs in message, status code or fields.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm
+      --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_exceptions_process.py
+  - id: exceptions-lint
+    why: The other-languages rule needs clean strict checks.
+    run: test -d crates/betterlite-python/python/betterlite/exceptions && uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python/betterlite/exceptions
+      crates/betterlite-python/tests/test_exceptions_status.py crates/betterlite-python/tests/test_exceptions_server.py crates/betterlite-python/tests/test_exceptions_process.py
+      crates/betterlite-python/tests/test_exceptions_exports.py && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: >-
+    The classes do not inherit from `openai.*` and do not use `httpx.Request` or `httpx.Response`. Their bases are copies in
+    `betterlite.exceptions._openai_base` and their `request` and `response` objects come from `betterlite.exceptions._http`.
+  why: The wheel depends only on python-dotenv. A user's `except openai.RateLimitError` does not catch betterlite's error, and
+    `isinstance(e.response, httpx.Response)` is False.
+- what: This task has no helper oracle cases.
+  why: The pytest files import both packages and compare instances directly, and a helper adapter cannot construct Python exceptions.
+out_of_scope:
+- The Anthropic error format in litellm/anthropic_interface/exceptions/** is B5790.
+- >-
+  The table from the native error `type` to these classes, `UnknownNativeError` and the mock-exception rule are B158. The
+  native side that produces the JSON is B5659.
+- >-
+  Setting `budget_exceeded_status_code` and the star line `from betterlite.exceptions import *` in `python/betterlite/__init__.py`
+  belong to B157 and the architect. This task never edits that file.
+- '`LiteLLMCommonStrings` and `VectorStoreSearchFailure` are not ported as types; only the one string and the one TypedDict above.'
+- The Rust error types in litellm/exceptions.py and their mapping were done by B184 and B011.
+pitfalls:
+- >-
+  The base constructor overwrites what the subclass set earlier: `APIStatusError` sets `status_code` from the response, and
+  `APIError` sets `message` again. Assign the attributes in LiteLLM's order, and test `status_code` after a response with a different status.
+- >-
+  `UnsupportedParamsError` never calls its base constructor. It has no `response`, `args` is empty and its `status_code` argument is
+  ignored. Copy that, and do not add the call.
+- >-
+  `Timeout` calls `APITimeoutError(request)` first and only then sets `message`, so `args` still holds "Request timed out.";
+  it sets `response` only when one is passed, and `status_code` is `exception_status_code or 408`.
+- >-
+  `RateLimitError` does not copy headers from `response`: only the `headers=` argument reaches `self.headers`, as strings. It builds a new
+  429 response from the old content and its headers, and sets `code = "429"` and `type = "throttling_error"` after the base
+  constructor, which overrides what the body gave.
+- >-
+  503, 502 and 500 rebuild their response against the URL " https://cloud.google.com/vertex-ai/" with a leading space. Keep the space.
+  `InternalServerError` also sets `type = "internal_server_error"` after the base call.
+- >-
+  `BadRequestError` keeps a given response only when it is a `Response` whose private `_request` is set. Otherwise it uses the one cached
+  400 response, shared by all errors. `ContextWindowExceededError` adds its prefix after the base call, and passes the plain message in.
+- '`APIConnectionError` ignores its `request` argument and always builds a POST to https://api.openai.com/v1; its `status_code` is 500.'
+- >-
+  `MidStreamFallbackError` takes `status_code` from `original_exception.status_code` when it is set, runs the 503 constructor, then
+  restores `status_code`, `response`, `request`, `message` and `args`. Its `__str__` appends " Original exception: Type: text".
+- >-
+  `JSONSchemaValidationError` builds a message that starts with "litellm.JSONSchemaValidationError:", and `APIResponseValidationError` then
+  puts its own prefix in front, so `str(e)` carries both. Test the final text.
+- '`BudgetExceededError` stores `category` "litellm_rate_limit" and `rate_limit_type` "budget" as plain strings, not enum members.'
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

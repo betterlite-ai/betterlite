@@ -1,0 +1,227 @@
+id: B3098
+title: Stream scoped daily activity exports as CSV or JSON
+description: >-
+  Build the module `daily_activity_export` in betterlite-server. It serves GET `{prefix}/daily/activity/export` for
+  every entity that has daily activity routes and streams the rows of the caller's scope as a CSV or JSON download.
+  The scope of the caller (which users, teams, tags and so on they may see) is decided before any row is read, by
+  B3094 and B3095. This task does not touch daily_activity_routes (B3096 owns that module); it imports that module's
+  helpers `resolved_scope`, `get_daily_activity_prisma_client` and `get_daily_activity_repository`.
+
+  Routes. For each prefix of an entity's resolver (`route_prefixes`: /user, /team, /tag, /organization, /customer and
+  /end_user, /agent) register one GET route `{prefix}/daily/activity/export`. That makes 7 routes. /end_user is an alias of
+  /customer that LiteLLM leaves out of /openapi.json; keep it out of the schema too. Each route is authenticated by
+  B052, carries the resolver's tags and the `export` operation name from B3094's `OperationNames`, and runs inside
+  B865's management completion wrapper, like `@management_endpoint_wrapper`. The wrapper sees the response when the
+  handler returns it, before the body streams, so a failure inside the body never reaches it. Expose one public
+  function `export_routes(resolver)` that returns the axum routes for one resolver; B074 composes them and this task
+  adds no loop over all entities. The OpenAPI entry lists a 200 response with the description "Streamed daily
+  activity export" and two content types, text/csv (schema string) and application/json (array of objects).
+
+  Query parameters. The entity's own parameters come from B3094 and B3095 types, and this task turns the query string
+  into them (a malformed timezone or boolean answers 422 in the envelope B003 uses for query validation errors, like
+  B3096). Added by this task: `export_type` (daily, daily_with_keys, daily_with_models or daily_with_users, default
+  daily; B2312's `ExportType`) and `format` (csv or json, default csv; the Rust field is `file_format` and the query
+  name is `format`). Any other value answers 422, never a fallback.
+
+  Order inside the handler. First the dependencies run in this order: the entity query, the caller (B052), the daily
+  activity repository, the database handle. A missing database stops there with HTTP 500 and detail
+  `{"error": <CommonProxyErrors.db_not_connected_error text>}`, before any 422 for `export_type` or `format`. Then
+  `resolved_scope` runs with user_aggregated=false (400-day cap included; a bad range is 400, a denied scope 403 or
+  404, detail `{"error": <reason>}`). Then the handler calls the repository's `export_rows(scope, export_type)` (B729)
+  and reads its first row before it builds the response. A failure of that first read, or any other error that is
+  not already an HTTP error, answers 500 with detail `{"error": "Failed to fetch analytics: <error text>"}` and logs
+  at error level "Daily activity export failed: %s". An HTTP error from the scope step passes through unchanged.
+
+  Response. Status 200, media type text/csv for csv (with "; charset=utf-8" appended, as Starlette does for any text/*
+  type) or application/json for json (no charset), and two headers: `Cache-Control: no-store` and
+  `Content-Disposition: attachment; filename="<name>"`. The name is
+  `{entity}-usage-{start_date}-{end_date}-{export_type}.{csv|json}`, where entity is the resolver's entity name
+  (user, team, tag, organization, customer, agent), the two dates are the scope's dates parsed as ISO dates and
+  printed back, and export_type is the wire spelling. Functions `export_filename` and `content_disposition` build
+  them. A scope date that is not YYYY-MM-DD is a 500 through the generic error path above, as in LiteLLM.
+
+  Body. `ExportRow` (B2312) has 17 fields in this order: date, entity_id, entity_alias, api_key, key_alias, user_id,
+  user_email, model, spend, flat_cost, prompt_tokens, completion_tokens, api_requests, successful_requests,
+  failed_requests, cache_read_input_tokens, cache_creation_input_tokens. CSV: the first chunk is the header row of
+  the field names, then one chunk per row. Every row ends with CRLF. Cells follow Python's csv.writer with default
+  dialect and quoting minimal: a cell containing a comma, a double quote, CR or LF is wrapped in double quotes with
+  inner quotes doubled; None is an empty cell; integers print in plain decimal; floats print as the shortest text
+  that reads back to the same number (a deviation from Python's repr is listed below). `csv_cell` guards against
+  spreadsheet formula injection: a string cell that starts with one of `=`, `+`, `-`, `@`, TAB or CR gets a leading
+  single quote, before quoting. The guard applies to strings only, so a negative number is not changed. It also
+  applies to the header row (field names never start with these characters). Use the `csv` crate's writer with
+  those settings if it matches byte for byte (check the CRLF terminator and the quoting of fields with a bare CR);
+  otherwise write the small quoting function in `csv_row`. JSON: an empty export is exactly `[]`; otherwise `[`,
+  the first row object, then `,` plus each later row object, then `]`. Each object lists the 17 fields in order with
+  None as null, and is compact (separators "," and ":", no spaces). With no rows, csv still sends the header row.
+
+  Limits. LiteLLM streams every row the repository returns, which has no upper bound (B729 reads pages of 1000 until
+  a short page). rules.yaml bounded-inputs requires a limit, so this task adds one: `pub const EXPORT_MAX_ROWS:
+  usize = 1_000_000`, a fixed constant and not an env setting. The stream counts rows as it sends them. When it has
+  sent EXPORT_MAX_ROWS rows and the repository still has a next row, it stops, logs at error level "Daily activity
+  export stopped at %s rows" and ends the body with an I/O error so the connection is cut and the client sees a
+  failed download. It does not close a JSON array or send a short CSV as if it were complete. If the repository
+  ends right at the limit, the export finishes normally. No row is buffered: each row is encoded and handed to the
+  body before the next one is read, and when the client disconnects the stream is dropped so B729 stops its page
+  queries.
+
+  Mid-stream failure. After the headers are sent a repository error cannot change the status. The stream logs at
+  error level "Daily activity export stream failed: %s" and ends the body with an I/O error, as above; rows already
+  sent stay sent.
+
+  HTTP oracle cases are in this task. The seeded database holds users, keys and teams but no daily spend rows, so
+  the cases cover empty exports (the CSV header line, `[]`), headers, parameter validation, date errors, access
+  errors, the route set per prefix and the missing database. Row encoding, the row limit and mid-stream failure are
+  covered by native tests with a stub repository and by helper cases for the pure functions.
+scope:
+  paths:
+    - crates/betterlite-server/src/daily_activity_export.rs
+    - crates/betterlite-server/src/daily_activity_export/**
+    - tools/oracle/cases/management/daily-activity-export/**
+    - tools/oracle/cases/helpers/daily-activity-export/**
+    - "tools/oracle/fuzz/corpus/helper_case/daily-activity-export-*"
+    - tools/oracle/helpers/b3098.py
+    - tools/oracle/helpers/b3098/**
+    - tools/oracle/src/helpers/server/b3098.rs
+    - tools/oracle/src/helpers/server/b3098/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_routes.py#L165-L184
+    why: _export_filename and _content_disposition, the file name pattern and the attachment header.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_routes.py#L203-L237
+    why: _csv_cell (formula guard), _csv_row (CRLF, csv.writer) and _stream_export_rows (header first, empty JSON as [], comma-prefixed rows).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_routes.py#L455-L513
+    why: The export route from the decorator-equivalent management_endpoint_wrapper to add_api_route, including export_type, the format alias, headers, error handling and the OpenAPI responses block.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_routes.py#L560-L579
+    why: Which prefixes get the export route (all of them); the loop itself is not built here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_routes.py#L63-L94
+    why: The repository and database dependencies and _resolved_scope, built by B3096 and called here.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/repositories/daily_activity.py#L79-L104
+    why: ExportType and ExportRow, built by B2312; the field order is the CSV column order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/repositories/daily_activity_repository.py#L212-L223
+    why: export_rows, built by B729; pages of USAGE_EXPORT_BATCH_SIZE rows yielded in order, and a later page failure after earlier rows were yielded.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_scopes.py#L358-L396
+    why: USER_RESOLVER and TEAM_RESOLVER; each resolver's entity name, route prefixes, tags and export operation name.
+  - url: https://docs.python.org/3/library/csv.html#csv.writer
+    why: Default dialect, QUOTE_MINIMAL and the lineterminator argument that _csv_row sets to CRLF.
+dod:
+  - text: Every prefix of the six resolvers (7 paths, /end_user included) answers GET `{prefix}/daily/activity/export`, and /end_user is hidden from /openapi.json.
+    proof: [oracle, routes-tests]
+  - text: >-
+      The default export is CSV with media type "text/csv; charset=utf-8", `Cache-Control: no-store` and
+      `Content-Disposition: attachment; filename="<entity>-usage-<start>-<end>-daily.csv"`; format=json gives
+      application/json and the .json name, and export_type changes the name's last part.
+    proof: [oracle, routes-tests, filename-tests]
+  - text: An export with no rows is the CSV header line of the 17 field names ending in CRLF, or exactly `[]` for JSON.
+    proof: [oracle, encode-tests]
+  - text: >-
+      CSV cells follow csv.writer: commas, quotes, CR and LF force quoting with doubled quotes, None is empty, CRLF ends every row,
+      and string cells starting with =, +, -, @, TAB or CR get a leading single quote while numbers do not.
+    proof: [csv-tests, helper-case-corpus]
+  - text: JSON rows are compact objects with the 17 fields in order and null for None, joined by commas inside one array.
+    proof: [encode-tests]
+  - text: An export_type or format outside the listed values answers 422 instead of falling back to a default.
+    proof: [oracle, routes-tests]
+  - text: A missing database answers 500 with the db_not_connected_error text before a 422 for export_type or format.
+    proof: [oracle, routes-tests]
+  - text: A missing or non-canonical date, a reversed range and a range over 400 days answer 400 with detail.error before the scope resolver runs, and a denied scope answers 403 or 404 with detail.error.
+    proof: [oracle, routes-tests]
+  - text: >-
+      A failure while reading the first row answers 500 with detail.error starting "Failed to fetch analytics" and logs "Daily activity export failed";
+      a failure after the first row ends the body with an error and logs "Daily activity export stream failed".
+    proof: [failure-tests]
+  - text: The stream sends at most EXPORT_MAX_ROWS rows; with one more row available it logs and ends the body with an error without closing the JSON array, and with exactly EXPORT_MAX_ROWS rows it finishes normally.
+    proof: [limit-tests]
+  - text: Rows are sent one at a time without collecting the export, and dropping the response body stops reading from the repository.
+    proof: [limit-tests]
+checks:
+  optional: []
+  commands:
+    - id: routes-tests
+      why: the export route set, parameter validation, date check order, database check or headers are missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_export::tests::route_/)'
+    - id: filename-tests
+      why: export_filename or content_disposition build another name than LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_export::tests::filename_/)'
+    - id: csv-tests
+      why: csv_cell or csv_row quote, terminate or guard cells differently from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_export::tests::csv_/)'
+    - id: encode-tests
+      why: the CSV header, the JSON array framing or the field order of a row are wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_export::tests::encode_/)'
+    - id: failure-tests
+      why: repository errors before or after the first row are not handled and logged as LiteLLM does
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_export::tests::failure_/)'
+    - id: limit-tests
+      why: the row limit is missing, off by one, closes a truncated JSON array, or the stream buffers rows
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_export::tests::limit_/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3098)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3098 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3098/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added export cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/daily-activity-export-*")" &&
+        grep -lE '^[[:space:]]+b3098:' tools/oracle/fuzz/corpus/helper_case/daily-activity-export-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/management/daily-activity-export/csv-default-empty.yaml
+  - tools/oracle/cases/management/daily-activity-export/json-empty.yaml
+  - tools/oracle/cases/management/daily-activity-export/export-type-daily-with-keys.yaml
+  - tools/oracle/cases/management/daily-activity-export/export-type-unknown.yaml
+  - tools/oracle/cases/management/daily-activity-export/format-unknown.yaml
+  - tools/oracle/cases/management/daily-activity-export/format-uppercase.yaml
+  - tools/oracle/cases/management/daily-activity-export/bad-timezone.yaml
+  - tools/oracle/cases/management/daily-activity-export/missing-dates.yaml
+  - tools/oracle/cases/management/daily-activity-export/range-over-400-days.yaml
+  - tools/oracle/cases/management/daily-activity-export/other-user-denied.yaml
+  - tools/oracle/cases/management/daily-activity-export/team-prefix.yaml
+  - tools/oracle/cases/management/daily-activity-export/customer-prefix.yaml
+  - tools/oracle/cases/management/daily-activity-export/end-user-alias.yaml
+  - tools/oracle/cases/management/daily-activity-export/user-post-not-allowed.yaml
+  - tools/oracle/cases/management/daily-activity-export/no-database.yaml
+  - tools/oracle/cases/management/daily-activity-export/no-database-beats-bad-format.yaml
+  - tools/oracle/cases/management/daily-activity-export/no-credentials.yaml
+  - tools/oracle/cases/helpers/daily-activity-export/csv-cells.yaml
+  - tools/oracle/cases/helpers/daily-activity-export/csv-rows.yaml
+  - tools/oracle/cases/helpers/daily-activity-export/filenames.yaml
+deviations:
+  - what: >-
+      The export stops at EXPORT_MAX_ROWS (1,000,000) rows. When more rows exist, the body ends with an I/O error and the connection drops
+      instead of the export running on; LiteLLM has no limit.
+    why: rules.yaml bounded-inputs requires a cap on a stream. A hard error is used because status 200 and headers are already sent, and a quiet cut would hand the client an export that looks complete.
+  - what: 'A repository failure after the first row is logged ("Daily activity export stream failed: %s") by the stream itself.'
+    why: LiteLLM leaves the log to the ASGI server when a generator raises mid-body; betterlite has no such server log, and a failed export must not be silent.
+  - what: Float cells in CSV print with Rust's shortest round-trip text, so very small or large values (1e-05, 1e16) can read differently from Python's repr; JSON floats use serde_json's text for the same reason.
+    why: Python repr text is not ported (docs/compatibility.md); every value reads back to the same number.
+  - what: 'A repository failure answers 500 with "Failed to fetch analytics: " followed by the display text of the Rust error.'
+    why: Python exception text cannot be matched; the prefix, status and detail.error shape are kept.
+  - what: The six resolver callables become a match on B3094's Entity enum, so the route function takes the entity and calls B3095's dispatch.
+    why: rules.yaml requires an exhaustive enum in place of a registry of callables.
+out_of_scope:
+  - "B3096 owns resolved_scope, date_range_error, get_daily_activity_prisma_client, get_daily_activity_repository and the key report routes (L63-L162, L313-L353, L405-L452, L516-L557)."
+  - "B3097 owns the aggregated and search routes and _sum_metrics, _fold_key_metrics and _search_rows (L97-L116, L187-L200, L240-L310, L356-L402)."
+  - "B074 composes the routes of B3096 to B3098 and owns register_daily_activity_routes with its loop over the six resolvers (L560-L579); this task only exposes export_routes."
+  - "B729 owns DailyActivityRepository.export_rows and its keyset paging; B2312 owns ExportType and ExportRow; B3094 and B3095 own the resolvers and query shapes."
+  - "B3090 owns ScopeDenied, InvalidDateRange and raise_public; B815 owns aggregated_date_range_error."
+  - "Registering these routes in the app router is done by the skeleton and B074, not by this task."
+pitfalls:
+  - The query parameter is `format`, not `file_format`; Python renames it with alias="format", and `?file_format=json` must be ignored and give CSV.
+  - The first row is read before the response is built, so an empty or failing first page is decided while a normal 500 is still possible; later pages cannot change the status.
+  - csv_cell guards strings only, and the check runs before quoting, so "=1,2" becomes the quoted cell "'=1,2" and a float -0.5 is left alone.
+  - The CSV terminator is CRLF on every row including the last, and the header row is built with the same writer, so a bare LF never appears.
+  - An empty JSON export is the two bytes `[]` and an empty CSV is still one header row; neither is an empty body.
+  - The JSON stream writes "[" with the first row and "," before each later row, so a stream cut after row N is invalid JSON and must not receive "]".
+  - format and export_type are validated after the missing-database check, so a case with no database and `format=xml` answers 500, not 422.
+  - /end_user and /customer share one handler set, so the filename entity for /end_user is "customer" (the resolver's name), not "end_user".
+  - The Content-Disposition dates come from the resolved scope, not the raw query strings, so they are always printed as YYYY-MM-DD.
+  - Starlette adds "; charset=utf-8" to text/csv but not to application/json; the header values differ in that way and the oracle compares them.
+  - The cap counts rows and not bytes, and each row is written to the body as it is read; nothing may collect the rows into a Vec, since that would defeat the cap.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

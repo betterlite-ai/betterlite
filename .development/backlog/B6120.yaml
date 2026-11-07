@@ -1,0 +1,15 @@
+id: B6120
+milestone: M3 providers
+title: Perplexity chat citations and billed cost
+status: todo
+depends_on: [B668, B504, B2221, B2219, B1669, B204]
+file: tasks/B6120-perplexity-chat-cost.yaml
+covers:
+  - "litellm/llms/perplexity/chat/transformation.py"
+  - "litellm/llms/perplexity/cost_calculator.py"
+parent: B041
+split_from: B5834
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

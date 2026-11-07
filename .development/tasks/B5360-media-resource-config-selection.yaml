@@ -1,0 +1,181 @@
+id: B5360
+title: Config selection for media and resource APIs
+description: >-
+  LiteLLM's `ProviderConfigManager` picks a provider config object for each API family. B2230 does this for chat.
+  This task does it for audio, images, speech and the resource APIs, in two modules of betterlite-context:
+  `media_config_selection` and `resource_config_selection`.
+
+
+  Each selector is a plain function from provider and model to a closed tag enum, or `None` when LiteLLM returns
+  `None`. A tag names the config class and carries the constructor arguments. No provider object is built and no
+  provider crate is imported: a provider task matches on the tag and builds its own adapter. Use `ProviderId` from
+  betterlite-models as the provider type.
+
+
+  `media_config_selection` holds four selectors. Transcription (L9012-L9110): AZURE gives the speech tag only when the model's cost entry has
+  `audio_transcription_config` equal to "azure_speech", and any other Azure model gives `None`. DEEPGRAM, ELEVENLABS, XAI,
+  HOSTED_VLLM, WATSONX, OVHCLOUD, SCALEWAY, MISTRAL, NVIDIA_RIVA, SONIOX, GEMINI and EDENAI map straight to a tag.
+  OPENAI gives the GPT audio tag when "gpt-4o" is in the model and the Whisper tag otherwise. VERTEX_AI gives the
+  Gemini tag when the bare model starts with "gemini" and contains "transcribe", and the Vertex tag otherwise. Image
+  generation (L9575-L9688): OPENAI, AZURE, AZURE_AI, XINFERENCE, RECRAFT, AIML, COMETAPI, GEMINI, FAL_AI, STABILITY,
+  RUNWAYML, BLACK_FOREST_LABS, VERTEX_AI, OPENROUTER and MODELSCOPE give a per-model tag holding the model.
+  LITELLM_PROXY and EDENAI are direct tags. DASHSCOPE, QWENCLOUD and QWEN_AI_PLATFORM give one family tag holding
+  the provider's name. Image edit (L9784-L9857): OPENAI, HOSTED_VLLM, FAL_AI, AZURE_AI, GEMINI, VERTEX_AI, STABILITY,
+  BEDROCK and OPENROUTER are per-model; AZURE, RECRAFT, BLACK_FOREST_LABS and LITELLM_PROXY are direct. Text to
+  speech (L9967-L10033): AZURE only when the model starts with "speech/"; ELEVENLABS, RUNWAYML, MINIMAX, MISTRAL,
+  AWS_POLLY and EDENAI direct; VERTEX_AI gives `None` when "gemini" is in the model, the Lyria tag when the caller's
+  `is_lyria` is true, and the Vertex tag otherwise.
+
+
+  `resource_config_selection` holds the rest. Anthropic messages (L8937-L8978) lowers the model first: ANTHROPIC and
+  MINIMAX are direct, BEDROCK gives a tag holding the model for the Bedrock messages lookup, and BEDROCK_MANTLE,
+  VERTEX_AI and AZURE_AI need "claude" in the lowered model. Responses (L9150-L9243): no provider gives `None`;
+  OPENAI, XAI, SAIL, CHATGPT, LITELLM_PROXY, VOLCENGINE, MANUS, PERPLEXITY, OPENROUTER, HOSTED_VLLM, FIREWORKS_AI and
+  EDENAI are direct; AZURE gives the o-series tag when "o_series" is in the lowered model or `supports_reasoning` is
+  true and the plain Azure tag otherwise; AZURE_AI needs `azure_ai_native_responses`; GITHUB_COPILOT applies when the
+  model is `None` or `github_copilot_responses` is true; DATABRICKS needs "gpt" in the lowered model; BEDROCK gives a
+  tag holding the model; BEDROCK_MANTLE needs `mantle_responses`. Those booleans come from code above this crate, so
+  the caller passes them in a `ResponsesModelFacts` struct. Skills is ANTHROPIC only and evals is OPENAI only.
+  Passthrough (L9344-L9397): BEDROCK, BEDROCK_MANTLE, AZURE, AZURE_AI, GIGACHAT, WATSONX and NVIDIA_NIM, with VLLM and
+  HOSTED_VLLM sharing one tag. Batches: BEDROCK, MISTRAL. Vector store: BEDROCK. Vector stores (L9474-L9561): OPENAI,
+  AZURE, BEDROCK, PG_VECTOR, AZURE_AI, MILVUS, GEMINI, RAGFLOW, S3_VECTORS, VALKEY, MONGODB, and VERTEX_AI where
+  `api_type` "rag_api" or no value gives the RAG tag, "search_api" gives the search tag and any other value gives
+  `None`. Vector store files: OPENAI. Realtime: GEMINI, META. Realtime HTTP: OPENAI, AZURE. Search (L9859-L9916) is the
+  20-row `PROVIDER_TO_CONFIG_MAP` over a closed `SearchProvider` enum. Harness (L9936-L9965): CLAUDE_CODE, CODEX,
+  OPENCODE, DEEPAGENTS.
+
+
+  `_get_model_cost_entry_for_provider_config` (L8427-L8442) goes in `media_config_selection`, since the Azure transcription
+  check is its only caller. It takes the live and the bundled `ModelCatalog`, tries the model and then "provider/model" in
+  the live catalog, then both in the bundled one, and returns `Option<&CatalogEntry>` through the public `lookup` and
+  `entries` maps. It gives `None` where LiteLLM gives an empty dict. The field is
+  `entry.fields.metadata.audio_transcription_config`.
+
+
+  The oracle operation is `b5360`. Its Python adapter calls the real `ProviderConfigManager` method with fixture
+  inputs and reports the class name of the result or null. The Rust side reports the tag's class name and arguments.
+scope:
+  paths:
+  - crates/betterlite-context/src/media_config_selection.rs
+  - crates/betterlite-context/src/media_config_selection/**
+  - crates/betterlite-context/src/resource_config_selection.rs
+  - crates/betterlite-context/src/resource_config_selection/**
+  - tools/oracle/cases/helpers/providers/media-config-selection/**
+  - tools/oracle/cases/helpers/providers/resource-config-selection/**
+  - "tools/oracle/fuzz/corpus/helper_case/media_config_selection-*"
+  - tools/oracle/helpers/b5360.py
+  - tools/oracle/helpers/b5360/**
+  - tools/oracle/src/helpers/context/b5360.rs
+  - tools/oracle/src/helpers/context/b5360/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9012-L9110
+  why: Audio transcription branches, including the OpenAI and Vertex model checks.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9575-L9688
+  why: Image generation branches and the Dashscope family call.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9784-L9857
+  why: Image edit branches.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9967-L10033
+  why: Speech branches, where Azure and Vertex depend on the model name.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L8930-L8978
+  why: Anthropic messages selection on the lowered model.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9150-L9279
+  why: Responses, skills and evals selection.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9344-L9397
+  why: Passthrough selection.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9447-L9573
+  why: Batches and the three vector store selectors.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9745-L9782
+  why: Realtime selectors.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9859-L9965
+  why: The search map and the harness selector. L9918-L9934 between them belongs to B3519.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L8427-L8442
+  why: The cost entry lookup behind the Azure transcription branch.
+dod:
+- text: >-
+    The four media selectors return the tag LiteLLM's method class maps to, or `None`, for every provider listed and
+    for a provider outside each list.
+  proof: [media-selection, oracle, helper-python]
+- text: >-
+    Anthropic messages and responses selection follow the lowered-model checks and the `ResponsesModelFacts` booleans,
+    and a `None` provider gives `None`.
+  proof: [messages-responses-selection, oracle, helper-python]
+- text: >-
+    Skills, evals, passthrough, batches, the vector store selectors and the realtime selectors match LiteLLM, with the
+    VLLM and HOSTED_VLLM rows sharing a tag and an unknown Vertex `api_type` giving `None`.
+  proof: [resource-tables, oracle, helper-python]
+- text: All 20 search rows and the four harness rows match LiteLLM.
+  proof: [search-harness-selection, oracle, helper-python]
+- text: Azure transcription depends on the cost entry, and the lookup checks the live catalog before the bundled one and the bare model before "provider/model".
+  proof: [cost-entry-lookup]
+- text: New helper corpus seeds call `b5360` and replay through the shared parser.
+  proof: [helper-case-corpus]
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: media-selection
+    why: A media selector is missing, or a branch gives the wrong tag.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/^media_config_selection::/)'
+  - id: messages-responses-selection
+    why: The lowered-model checks or the caller's facts are not honored.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/^resource_config_selection::.*(messages|responses)/)'
+  - id: resource-tables
+    why: A row of the smaller selectors is wrong or absent.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/^resource_config_selection::.*(skills|evals|passthrough|batches|vector_store|realtime)/)'
+  - id: search-harness-selection
+    why: The search or harness tables differ from the source rows.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/^resource_config_selection::.*(search|harness)/)'
+  - id: cost-entry-lookup
+    why: The lookup order is wrong.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/^media_config_selection::.*cost_entry/)'
+  - id: helper-python
+    why: The b5360 adapter is missing, unchanged or fails strict Python checks.
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5360)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers/b5360 && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5360/pyrightconfig.json
+  - id: helper-case-corpus
+    why: Seeds for b5360 are missing or do not replay.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/media_config_selection-*")"
+      && grep -lE '^[[:space:]]+b5360:' tools/oracle/fuzz/corpus/helper_case/media_config_selection-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/providers/media-config-selection/transcription.yaml
+- tools/oracle/cases/helpers/providers/media-config-selection/image-generation.yaml
+- tools/oracle/cases/helpers/providers/media-config-selection/image-edit.yaml
+- tools/oracle/cases/helpers/providers/media-config-selection/text-to-speech.yaml
+- tools/oracle/cases/helpers/providers/resource-config-selection/anthropic-messages.yaml
+- tools/oracle/cases/helpers/providers/resource-config-selection/responses.yaml
+- tools/oracle/cases/helpers/providers/resource-config-selection/passthrough.yaml
+- tools/oracle/cases/helpers/providers/resource-config-selection/vector-stores.yaml
+- tools/oracle/cases/helpers/providers/resource-config-selection/realtime-batches-skills-evals.yaml
+- tools/oracle/cases/helpers/providers/resource-config-selection/search-harness.yaml
+deviations:
+- what: A selector returns a tag where LiteLLM returns a config object or class.
+  why: >-
+    Provider crates sit above betterlite-context, so importing them here would make a cycle. B2230 keeps the same
+    boundary for chat.
+out_of_scope:
+- >-
+  Building or calling any provider config. The per-model image factories, `get_bedrock_provider_config_for_messages_api`,
+  `BedrockOpenAIResponsesConfig.for_model`, `azure_ai_supports_native_responses`, `mantle_supports_responses`,
+  `github_copilot_supports_responses_api` and `is_lyria_model` stay with whoever matches on the tag.
+- >-
+  The other selectors in the same class: embedding and rerank L8767-L8908 belong to B037, decisions L8910-L8928 to
+  B3513, the non-Python responses path L9112-L9148 and messages L8979-L9010 to B1440, files L9410-L9445 to B2464,
+  video L9690-L9725 to B3332, container L9727-L9743 to B3361, sandbox L9918-L9934 to B3519 and Google GenAI
+  L10035-L10067 to B3483. B2230 owns the rest of the chat side.
+- >-
+  The full owner list for litellm/utils.py is the Function ownership inventory in the B157 task file. Parameter
+  mapping that uses these selectors is B5362.
+pitfalls:
+- >-
+  Some selectors compare with `==` on the enum and some check a substring of the model. Keep each check as written and
+  note where the lowered model is used: only messages, responses and the Azure o-series test lower it.
+- A tag that carries the model must carry it unchanged, with any provider prefix the caller passed.
+- >-
+  The tests need the words from the checks in their names, such as `search` or `vector_store`, because the check
+  filters match on them.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

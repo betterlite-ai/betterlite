@@ -1,9 +1,9 @@
 id: B3686
 milestone: M6 guardrails
-title: Guardrail submissions and bounded custom-code testing
+title: Guardrail team submissions
 status: todo
-depends_on: [B3662, B3684, B726, B732]
-file: null
+depends_on: [B3660, B3662, B3684, B3685, B726, B732, B736, B6670]
+file: tasks/B3686-guardrail-submissions.yaml
 covers:
   - "litellm/proxy/guardrails/guardrail_endpoints.py"
 parent: B104

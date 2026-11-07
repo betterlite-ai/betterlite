@@ -1,0 +1,278 @@
+id: B3247
+title: Pipeline execution and pipeline test route
+description: >-
+  Build the policy pipeline executor and the route POST /policies/test-pipeline in betterlite-server. A pipeline is an ordered list of
+  steps, each naming one guardrail and what to do on pass, fail and error. The executor runs the steps one at a time and stops at the
+  first terminal action. B3240 already gives the types (`PipelineStep`, `GuardrailPipeline`, `PipelineMode`, `PipelineAction`,
+  `PipelineStepResult`, `PipelineExecutionResult`) in betterlite-policy. B3246 gives the lookup and capability checks
+  (`find_guardrail_callback`, `supports_unified_execution`, `supports_streaming_execution`) and the streaming step
+  (`_run_streaming_step`, with `_release_original_chunks`). B3680 gives `UnifiedGuardrailHooks::pre_call` and `post_call_success`. This
+  task calls all of those and re-implements none of them. Use their exact names and types as they exist when you start. Request data is
+  `BTreeMap<String, GuardrailValue>` like the other guardrail tasks, a failure is B5471's `GuardrailFailure`
+  (`ModifyResponse` stands for LiteLLM's `ModifyResponseException`, `Http { status, detail }` for `HTTPException`), and the key's
+  identity is B732's authenticated principal.
+
+  Code goes in crates/betterlite-server/src/guardrails/pipeline_executor.rs and pipeline_executor/. Files: executor.rs (`execute_steps`),
+  step.rs (`_run_step` and `_prepare_hook_input`), data.rs (the request-data helpers) and error.rs. Each file that can fail owns its error
+  enum. The route goes in crates/betterlite-server/src/pipeline_test_route.rs and pipeline_test_route/. Inputs the executor needs come in
+  through the constructor of `PipelineExecutor`: the guardrail lookup from B3246, the `UnifiedGuardrailHooks` from B3680 and the logging
+  of applied guardrails that B3246 already takes. No module-level state.
+
+  Signature, chosen to fit B6370's `PipelineRunner`. `PipelineExecutor::execute_steps(&self, request: ExecuteSteps<'_, T>) ->
+  Result<PipelineExecutionResult, PipelineExecError>` where `T` is B3661's `BaseTranslation` type. `ExecuteSteps<'a, T>` holds `steps:
+  &'a [PipelineStep]`, `mode: PipelineMode`, `data: &'a mut BTreeMap<String, GuardrailValue>`, `user_api_key_dict: &'a` B732's principal,
+  `call_type: &'a str`, `policy_name: &'a str`, `raw_request_snapshot: Option<&'a BTreeMap<String, GuardrailValue>>`, `streaming_chunks:
+  Option<&'a mut Vec<serde_json::Value>>` and `endpoint_translation: Option<&'a T>`. These are LiteLLM's nine arguments in the same order.
+  B6370's `PipelineRunner::execute_steps(...)` is a thin forward to this call, so keep this one struct and do not add a second entry point.
+
+  `execute_steps` (pipeline_executor.py L311-L426). Make `working_data` a copy of `data`, with its own copy of `metadata` when the key
+  exists. For each step in order: time it, call the step runner, and map the outcome with `_pipeline_action_for_outcome` (pass gives
+  `on_pass`, fail gives `on_fail`, error gives `on_error` when set and `on_fail` otherwise). Push a `PipelineStepResult` with
+  `duration_seconds` rounded to 4 decimals, and emit a debug line with the policy name, the step index, the guardrail, the outcome and the
+  action. When the step returned `modified_data` and (`step.pass_data` or the mode is `post_call`), merge it over `working_data`, its
+  keys replacing the old ones. Then act. `allow` returns at once through `_allow_result`. `block` first calls
+  `_carry_working_guardrail_information`, then returns terminal_action `block` with `error_message` set to the step's error detail,
+  `original_exception` set to the step's failure, and `modified_data` set to `working_data` when it differs from `data` and to none
+  otherwise. `modify_response` does the same carry, then returns terminal_action `modify_response` with `modify_response_message` set to
+  `step.modify_response_message` or else the error detail (an empty message counts as not set), the same `modified_data` rule, and no
+  exception. `next` goes on. Running out of steps is `_allow_result`. `PipelineExecutionResult` is B3240's type, so `original_exception`
+  is its skipped optional boxed error.
+
+  `_run_step` (L487-L598). Look the guardrail up by `step.guardrail`. When it is missing, log the warning `Pipeline: guardrail '%s' not
+  found in callbacks` and return outcome `error`, detail `Guardrail '<name>' not found`, no data and no exception. Next call
+  `_prepare_hook_input` (L268-L289): create `metadata` as an empty map when it is missing from the data, set `metadata.guardrails` to the
+  one-element list `[step.guardrail]` so `should_run_guardrail` lets that step through, and pick the payload: when the guardrail has
+  `scan_raw_request` on and a snapshot was given, the payload is B2204's `independent_snapshot` of it with the same
+  `metadata.guardrails` override set, and otherwise it is the data itself. Count the guardrail-information entries already in the payload.
+  The mode switch then works like this.
+  - `pre_call`. When the guardrail uses the unified path (B3246's `supports_unified_execution`) and `streaming_chunks` is none, call B3680's
+    `pre_call` with the guardrail as its typed guardrail argument, in place of LiteLLM's `hook_input["guardrail_to_apply"]` key and
+    `UnifiedLLMGuardrails()` target. Otherwise call the guardrail's own pre-call hook with `cache` none. Then call the guardrail's
+    `mark_pre_call_hook_ran` (B3666) on `data`, and again on the returned map when the hook returned a map.
+  - `post_call` with `streaming_chunks` set. With no `endpoint_translation` return outcome `error`, detail `Guardrail '<name>' cannot run
+    on a stream without an endpoint translation`. Otherwise call B3246's streaming step with the payload and `data`'s logging object and
+    take the response as none.
+  - `post_call` without chunks. Call the unified `post_call_success` (guardrail given only when the guardrail is unified and the payload is
+    `data` itself) or the guardrail's own post-call hook, with `data` and `data["response"]`.
+  - any other mode string gives outcome `error`, detail `Unsupported pipeline mode: <mode>`. B3240's `PipelineMode` only holds the two
+    modes, so this arm exists for the typed run function that takes the mode as text; keep it and test it.
+
+  Then classify the result. A normal return is `pass`. The returned value is dropped (no data) when it is none or the guardrail had
+  `scan_raw_request` on. A `post_call` return that is not none becomes the data `{"response": value}`. A `pre_call` return becomes the data
+  only when it is a map. A failure that B5471's `is_intervention()` accepts is outcome `fail` with `_extract_error_message` as the detail
+  and the failure kept as the exception. Any other failure logs `Pipeline: unexpected error from guardrail '%s': %s` at error level and
+  is outcome `error` with the failure's text as detail and the failure kept. This runs for every path inside the mode switch, the
+  missing-translation early return included. After it, whenever the payload is not `data` itself, append the guardrail-information entries
+  the payload gained since the count to `data` with `_append_guardrail_information`.
+
+  `data.rs` holds the remaining helpers, each with a native test:
+  - `_allow_result` (L628) returns terminal `allow` with `modified_data` set to the restored data when it differs from the request
+    data, else none.
+  - `_restore_request_guardrails` (L642) puts the request's own `metadata.guardrails` back. When working metadata is not a map return the
+    working data. Otherwise take working metadata without `guardrails`; when the request metadata is a map holding `guardrails` (even an
+    empty list, only a missing key or null counts as absent) put that value back; when it holds none, the stripped metadata is empty and
+    the request had no metadata map, drop `metadata` altogether; else use the stripped metadata.
+  - `_recorded_guardrail_information` (L670) reads the list under `standard_logging_guardrail_information` in the metadata bucket (the key
+    `litellm_metadata` when the data has it, else `metadata`, from B206's `get_metadata_variable_name_from_kwargs`) and gives an empty list
+    when the bucket or the list is not there or is not a list.
+  - `_append_guardrail_information` (L676) does nothing for no entries. Otherwise it gets or creates the bucket with B206's
+    `get_or_create_metadata_bucket`, extends an existing list in place, and else stores a new list.
+  - `_carry_working_guardrail_information` (L690) appends to the request data the working entries that it does not hold yet (equal
+    entries count as held), and does nothing when working and request data share the same list.
+  - `_pipeline_action_for_outcome` (L701) as above.
+  - `_extract_error_message` (L718): a `ModifyResponse` gives its message; an `Http` failure gives its detail when the detail is not empty
+    and else the text `<status>: ` (Starlette's `str(HTTPException)`, that is the status, a colon, a space, and the empty detail);
+    anything else gives its text.
+
+  Aliasing in LiteLLM: `working_data` is a shallow copy, so a `standard_logging_guardrail_information` list that already sits in the
+  request's metadata is the same list object in `working_data`, and entries appended during a step are visible in the caller's data even
+  on `allow`. When the list is not there yet, the new list lives only in `working_data`'s own metadata copy and reaches the caller only
+  through `modified_data` or the block carry. Rust has no shared mutation, so keep the observable result: on every return path, entries
+  appended to a list that existed in `data` before the call end up in `data`. A native test and a helper case cover it.
+
+  The route (policy_endpoints.py L593-L653), path `/policies/test-pipeline`, method POST, tag `Policies`, in the standard authenticated
+  route group (B855 and B756 own the auth). It is not a management route that a non-admin key may call, so route access follows
+  whatever the shared route checks say for a path they do not list (a non-admin key gets LiteLLM's 403 there); do not special-case it.
+  Add the pure function `decode_pipeline_test_request(bytes: &[u8]) -> Result<PipelineTestRequest, PipelineTestError>`: a JSON object with
+  `pipeline` (an object) and `test_messages` (a list of objects whose values are all strings); a missing field, a wrong type, a non-string
+  message value or invalid JSON is the shared 422 validation response of the server. Then: build B3240's `GuardrailPipeline` from the
+  `pipeline` object; any failure is HTTP 400 with `detail` `Invalid pipeline: <reason>`. Build the data as `messages` (the test messages),
+  `model` `test` and `metadata` `{}`, and call `execute_steps` with `mode` and `steps` of the pipeline, `call_type` `completion`,
+  `policy_name` `test-pipeline` and no snapshot, chunks or translation. Return the result as JSON with the keys `terminal_action`,
+  `step_results` (each with `guardrail_name`, `outcome`, `action_taken`, `modified_data`, `error_detail`, `duration_seconds`),
+  `modified_data`, `error_message` and `modify_response_message`, nulls kept. `original_exception` is never written. An error out of
+  `execute_steps` is logged with `Error testing pipeline: %s` and returned as HTTP 500 with the error text as `detail`. The `Invalid
+  pipeline` reason is betterlite's wording, see deviations. B3248 and B3244 own the other `/policies` routes in policy_endpoints.py; do
+  not touch them.
+
+  Tests. Name independent native tests under `guardrails::pipeline_executor::tests` with these prefixes, since the checks filter on them:
+  `loop_` (action routing, step order, pass_data and post_call merge, default allow after the last step, empty steps), `step_` (missing
+  guardrail, each mode arm, unified versus own hook, scan_raw_request drops data, intervention versus error classification, the finally
+  append), `data_` (every helper in data.rs, including the aliasing rule above and `_restore_request_guardrails` branches) and `stream_`
+  (the streaming arm: no translation, chunks given, the logging object passed on, the B3246 step called once with the payload and
+  `data`). Route tests live in `pipeline_test_route::tests`. A fake guardrail and a fake unified hook set stand in for the real ones.
+
+  Oracle. The helper operation for this task takes `function` and its arguments and runs LiteLLM's own functions: `restore_request_guardrails`,
+  `action_for_outcome`, `extract_error_message`, `append_guardrail_information`, `carry_guardrail_information`, and `execute_steps` over
+  scripted legacy guardrails (no `apply_guardrail`). A scripted guardrail has a name, `scan_raw_request`, and per mode one of: return none,
+  return a map, raise an HTTP error with status and detail, raise a modify-response, raise a plain error. The Python adapter builds a
+  `CustomGuardrail` subclass per script, puts them in `litellm.callbacks`, and calls `PipelineExecutor.execute_steps`; the Rust adapter
+  builds the matching fakes. Both answer with the result's fields, `duration_seconds` left out. Unified guardrails are covered by native
+  tests and the HTTP cases cannot reach them without a configured guardrail, so the unified arm gets no oracle case.
+  HTTP cases go in tools/oracle/cases/policies/test-pipeline/ and send the real request to the booted proxy with the master key. They
+  use guardrail names that are not configured (every guardrail then yields outcome `error`) and compare with `ignore` pointers for
+  `/step_results/0/duration_seconds` and its siblings by index.
+
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-server/src/guardrails/pipeline_executor.rs
+    - crates/betterlite-server/src/guardrails/pipeline_executor/**
+    - crates/betterlite-server/src/pipeline_test_route.rs
+    - crates/betterlite-server/src/pipeline_test_route/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/pipeline_test_request.rs
+    - crates/betterlite-server/fuzz/corpus/pipeline_test_request/**
+    - tools/oracle/cases/helpers/pipeline-executor/**
+    - tools/oracle/cases/policies/test-pipeline/**
+    - "tools/oracle/fuzz/corpus/helper_case/pipeline-executor-*"
+    - tools/oracle/helpers/b3247.py
+    - tools/oracle/helpers/b3247/**
+    - tools/oracle/src/helpers/server/b3247.rs
+    - tools/oracle/src/helpers/server/b3247/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L268-L289
+    why: _prepare_hook_input sets metadata.guardrails to the step's guardrail and picks the raw snapshot for scan_raw_request guardrails.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L307-L426
+    why: PipelineExecutor.execute_steps with its nine arguments, the working-data copy, the pass_data merge and the three terminal actions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L486-L598
+    why: _run_step, including the unified branch at L522-L527, the mode switch, result classification and the finally-block append.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/pipeline_executor.py#L628-L726
+    why: Allow result, guardrail restore, guardrail-information helpers, outcome-to-action map and error message extraction.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_endpoints.py#L593-L653
+    why: The test-pipeline route from its decorator, request handling and the 400 and 500 errors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/resolver_types.py#L362-L370
+    why: PipelineTestRequest, the route's request body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/pipeline_types.py#L60-L105
+    why: GuardrailPipeline, step result and execution result shapes the route returns.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L195-L240
+    why: The unified pre-call hook pops guardrail_to_apply from the data, which is why the typed argument replaces the key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L2218-L2227
+    why: A caller of execute_steps (non-streaming), showing the arguments real code passes.
+
+dod:
+  - text: >-
+      execute_steps runs steps in order, maps each outcome to on_pass, on_fail or on_error (falling back to on_fail), stops on allow, block and
+      modify_response, continues on next, and allows after the last step; block and modify_response carry the guardrail information, the
+      step's exception and the message rules.
+    proof: [executor-loop-tests, oracle, helper-python]
+  - text: >-
+      pass_data steps and every post_call step merge their returned data over the working data, and the allow result restores the
+      request's own metadata.guardrails (kept, stripped or dropped as the helper rules say).
+    proof: [executor-data-tests, oracle, helper-python]
+  - text: >-
+      A step whose guardrail is not registered, whose mode is unsupported, or that runs on a stream without a translation returns outcome error
+      with LiteLLM's exact detail text, and a missing guardrail logs the not-found warning.
+    proof: [executor-step-tests, oracle, helper-python]
+  - text: >-
+      A step runs the unified path for a unified guardrail only outside streaming, uses the guardrail's own hooks otherwise, marks the
+      pre-call hook as run, and treats scan_raw_request guardrails as block-only on the raw snapshot.
+    proof: [executor-step-tests, oracle, helper-python]
+  - text: >-
+      Intervention failures become outcome fail and every other failure becomes outcome error, with the extracted message, and the failure
+      is kept for the block result.
+    proof: [executor-step-tests, oracle, helper-python]
+  - text: >-
+      A streaming post_call step with chunks and a translation calls B3246's streaming step with the payload and the request's logging object, and
+      reports pass.
+    proof: [executor-stream-tests]
+  - text: >-
+      The request-data helpers append and carry guardrail information, keep the aliasing result of LiteLLM for lists that already exist, and
+      extract error messages including the empty-detail HTTP case.
+    proof: [executor-data-tests, oracle, helper-python]
+  - text: >-
+      POST /policies/test-pipeline returns the execution result fields, answers 400 `Invalid pipeline: ...` for a bad pipeline, 422 for a bad
+      body, 500 for an executor error, and keeps LiteLLM's auth behavior.
+    proof: [route-tests, oracle, request-corpus]
+  - text: >-
+      The pipeline test request decoder rejects malformed bytes and wrong shapes without panicking and has committed corpus inputs.
+    proof: [request-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: executor-loop-tests
+      why: the step loop, action routing or terminal results are missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::pipeline_executor::.*tests::loop_/)'
+    - id: executor-step-tests
+      why: the single-step runner, its mode arms or its outcome classification are missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::pipeline_executor::.*tests::step_/)'
+    - id: executor-data-tests
+      why: a request-data helper or the merge rules are missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::pipeline_executor::.*tests::data_/)'
+    - id: executor-stream-tests
+      why: the streaming arm does not call the B3246 step the way the description says
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::pipeline_executor::.*tests::stream_/)'
+    - id: route-tests
+      why: the test-pipeline route or its errors are missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pipeline_test_route::/) - test(replays_the_pipeline_test_request_corpus)'
+    - id: request-corpus
+      why: the request decoder has no committed malformed-input regressions or no replay test
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/pipeline_test_request)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_pipeline_test_request_corpus)'
+    - id: helper-python
+      why: the Python oracle helper adapter for this task fails strict Python checks
+      run: test -f tools/oracle/helpers/b3247.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/pipeline-executor/next-then-allow-order.yaml
+  - tools/oracle/cases/helpers/pipeline-executor/fail-blocks-with-http-detail.yaml
+  - tools/oracle/cases/helpers/pipeline-executor/error-uses-on-error-else-on-fail.yaml
+  - tools/oracle/cases/helpers/pipeline-executor/modify-response-message-fallback.yaml
+  - tools/oracle/cases/helpers/pipeline-executor/pass-data-merges-into-next-step.yaml
+  - tools/oracle/cases/helpers/pipeline-executor/post-call-response-replacement-chains.yaml
+  - tools/oracle/cases/helpers/pipeline-executor/scan-raw-request-drops-data.yaml
+  - tools/oracle/cases/helpers/pipeline-executor/restore-guardrails-branches.yaml
+  - tools/oracle/cases/helpers/pipeline-executor/extract-message-empty-http-detail.yaml
+  - tools/oracle/cases/helpers/pipeline-executor/carry-information-on-block.yaml
+  - tools/oracle/cases/policies/test-pipeline/unknown-guardrail-blocks.yaml
+  - tools/oracle/cases/policies/test-pipeline/unknown-guardrail-on-error-next.yaml
+  - tools/oracle/cases/policies/test-pipeline/post-call-mode-unknown-guardrail.yaml
+  - tools/oracle/cases/policies/test-pipeline/invalid-pipeline-mode.yaml
+  - tools/oracle/cases/policies/test-pipeline/invalid-step-action.yaml
+  - tools/oracle/cases/policies/test-pipeline/empty-steps.yaml
+  - tools/oracle/cases/policies/test-pipeline/missing-test-messages-422.yaml
+  - tools/oracle/cases/policies/test-pipeline/no-auth-401.yaml
+
+deviations:
+  - what: "The 400 detail after `Invalid pipeline` plus a colon and space is betterlite's own reason text (built from B3240's validation messages) and not pydantic's multi-line ValidationError text."
+    why: Pydantic's text includes its library version URL and line layout, which no Rust validator produces; status 400 and the prefix match.
+  - what: The 422 body for a bad request body uses the server's shared validation response and its wording, not FastAPI's `loc` and `msg` strings.
+    why: Every route in the server shares one validation response shape, and this route follows it.
+  - what: The unified guardrail is passed to B3680's hooks as a typed argument and `guardrail_to_apply` is never a key in the request data.
+    why: LiteLLM's unified hooks pop that key before returning, so no data ever carries it; the typed argument is the same in effect (B3680 states the same deviation).
+
+out_of_scope:
+  - "B3246 owns UndeliverableStreamRewrite, _StreamRewriteObserver, _ScannedTextRecorder, _LegacyHookStreamAdapter, _release_original_chunks, _run_streaming_step, supports_unified_execution, supports_streaming_execution and find_guardrail_callback (pipeline_executor.py L52-L266, L292-L304, L428-L484, L600-L625). This task only calls them."
+  - "B3240 owns PipelineStep, GuardrailPipeline, PipelineStepResult, PipelineExecutionResult and the action and mode validation (pipeline_types.py)."
+  - "B3680 owns UnifiedLLMGuardrails pre_call and post_call_success; B3666 owns mark_pre_call_hook_ran; B5471 owns CustomGuardrail's is_guardrail_intervention (as GuardrailFailure::is_intervention) and scan_raw_request."
+  - "B2204 owns independent_snapshot; B206 owns get_metadata_variable_name_from_kwargs and get_or_create_metadata_bucket."
+  - "B3244 and B3248 own the other routes of policy_endpoints.py; B124 owns ProxyLogging._handle_pipeline_result, _policy_pipelines and the callers of execute_steps in litellm/proxy/utils.py (L2218 and L4056); B6370 owns the stream wrapper that calls execute_steps."
+  - "No task owns the production implementation of the guardrail handle's own pre-call and post-call hooks for registered non-unified guardrails; this task defines how it calls them (see notes) and tests with fakes."
+
+pitfalls:
+  - "The `metadata.guardrails` override is written to the working data on every step, so `_restore_request_guardrails` must run on the allow result or later lifecycle stages lose the request's own `guardrails` list."
+  - "A post_call step always chains its returned response into the next step (key `response`) even when `pass_data` is false, and a pre_call step chains only with `pass_data`."
+  - "A `scan_raw_request` guardrail returns data that is thrown away, and in post_call with the unified path it gets no guardrail argument at all, so it is skipped with outcome `pass`."
+  - "`mark_pre_call_hook_ran` runs on the returned map too, so the marker `_pre_call_executed_guardrails` shows up in that step's `modified_data`."
+  - "The finally-block append runs on the early return for a missing translation as well, and only when the payload is the raw snapshot copy and not `data`."
+  - "`modify_response_message` falls back to the error detail only when the step's message is none or empty, and `original_exception` is set on block but never on modify_response."
+  - "`str(HTTPException)` with an empty detail is `<status>: `, not an empty string, so an empty-detail 400 gives `400: ` as the error message."
+  - "`duration_seconds` differs every run, so every HTTP and helper case that returns step results must ignore it by pointer."
+  - "An unconfigured guardrail name is outcome `error`, which maps through `on_error` first, so `on_error: next` lets the pipeline pass where `on_fail: block` would stop it."
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

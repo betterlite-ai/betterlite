@@ -1,0 +1,15 @@
+kind: helper
+name: opensandbox-create-success
+call:
+  b3518:
+    operation: create
+    api_base: http://sandbox.example
+    api_key: test-key
+    responses:
+      - status: 200
+        body: '{"id":"sbx_1","status":{"state":"Running"}}'
+      - status: 200
+        body: '{"endpoint":"http://execd.example","headers":{"X-Execd-Token":"abc"}}'
+env: {}
+compare:
+  ignore: []

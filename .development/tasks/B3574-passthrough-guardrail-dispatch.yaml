@@ -1,0 +1,102 @@
+id: B3574
+title: Native passthrough guardrail dispatch and registration
+description: >-
+  Build the part of LiteLLM's pass_through guardrail translation package that picks a handler: the provider router behind the `allm_passthrough_route` call type, and the table that says which handler serves `pass_through_endpoint` and `allm_passthrough_route`. The handler for `pass_through_endpoint` itself (field extraction, the check-only guardrail call) is B3573 and is not built here.
+
+  Add the module `llm_passthrough_dispatch` to betterlite-guardrails (crates/betterlite-guardrails/src/llm_passthrough_dispatch.rs and its folder). The crate already depends on betterlite-core, where B3573 keeps `PassThroughEndpointHandler`, so nothing new is needed in Cargo.toml. Types come from earlier tasks: the `BaseTranslation` trait is B3661's (crates/betterlite-guardrails/src/guardrail_translation.rs), the guardrail trait `GuardrailContract`, `GuardrailLogTarget` and `GuardrailFailure` are B5471's `guardrail_base`, request bodies are `BTreeMap<String, GuardrailValue>` from `betterlite_config::sections::guardrail_identity::item`, and the call type enum is B207's `CallType` in betterlite-core `routes`. Read B3661's trait first and copy its exact method signatures; this text says what each method does, not how the trait spells it.
+
+  `LlmPassthroughRouteHandler<H: BaseTranslation>` is LiteLLM's `LlmPassthroughRouteHandler` (handler.py lines 210 to 260). It owns `providers: BTreeMap<String, H>`, built by `LlmPassthroughRouteHandler::new(providers: Vec<(String, H)>)`. A later entry with the same name replaces an earlier one. Nothing is looked up by scanning or by reflection. LiteLLM fills the table lazily in `_get_provider_handlers` with one entry, `"bedrock"` mapped to `BedrockPassthroughGuardrailHandler`. That lazy import only avoids a Python import cycle, so Rust has no equivalent: whoever builds the handler (B3680) passes the list, and for now it holds only `("bedrock", <B3678's bedrock handler>)`. This module must not import the bedrock handler. LiteLLM creates a new provider handler object for every call (`handler_cls()`); a handler here is stateless, so calling the stored value gives the same result.
+
+  The type implements `BaseTranslation`, and only two of its methods do work, as in LiteLLM. `process_input_messages(data, guardrail, logging_obj)` reads `data["custom_llm_provider"]`. When that key is missing, null, not text or an empty text, or no table entry has exactly that name (the match is exact and case-sensitive), it logs at debug `LlmPassthroughRouteHandler: no handler for provider={provider}, skipping guardrail` and returns the data untouched. For a missing provider `{provider}` prints `None`, as Python's `%s` does. Otherwise it calls the provider handler's `process_input_messages` with the same data, guardrail and logging object and returns exactly what that call returns. `process_output_response(response, guardrail, logging_obj, user_api_key_dict, request_data)` is the same, with two differences. The provider is read from `request_data["custom_llm_provider"]`, never from the response, and an absent `request_data` counts as an empty map, so the call is skipped. The skip returns the response untouched. When a handler is found, all five arguments pass through unchanged, `request_data` included. Both methods return the provider handler's error as it is: no catch, no log, no rewrite of a guardrail failure.
+
+  Every other `BaseTranslation` method of `LlmPassthroughRouteHandler` keeps the trait default, which LiteLLM's base class gives it too: streaming returns `responses_so_far` as it came, `get_streaming_scan_key` is `None`, `build_block_sse_chunks` and `build_stream_error_items` are `None`, `get_structured_messages` is `None`, `extract_request_tool_names` is empty, and both class flags (`delivers_ended_stream_rewrites`, `assembles_streamed_response`) are false. If B3661's trait has no default for one of these, write the default here; do not forward the call to the provider handler, because LiteLLM does not.
+
+  The registration table is `PASSTHROUGH_TRANSLATION_KINDS: [(CallType, PassthroughTranslationKind); 2]`, LiteLLM's `guardrail_translation_mappings` in __init__.py. `PassthroughTranslationKind` has two variants, `Endpoint` (B3573's `PassThroughEndpointHandler`) and `LlmRoute` (`LlmPassthroughRouteHandler`). `CallType::PassThroughEndpoint` (wire name `pass_through_endpoint`, LiteLLM's `CallTypes.pass_through`) maps to `Endpoint` and `CallType::AllmPassthroughRoute` to `LlmRoute`. Nothing else maps: the sync `llm_passthrough_route` call type has no entry and must stay without one. This task does not build the registry. B3679 owns `TranslationRegistry` and `TranslationEntry<T>`, and B3680 builds the entries; it reads this constant, wraps each kind in its own handler enum, and calls `LlmPassthroughRouteHandler::new` with the provider list. Do not add a second registry or a global table here.
+
+  `PassThroughEndpointHandler` needs a `BaseTranslation` impl for the registry to hold it. B3573 builds the handler logic in betterlite-core as plain functions on a type of that name. Add the trait impl for it in this module, a thin forwarder that calls B3573's two entry points and nothing else, if B3573's code does not already provide one. Read crates/betterlite-core/src/passthrough_guardrail.rs; if the trait cannot be implemented from outside because of a signature mismatch, record that in notes of the report and do not change B3573's files, they are not in this task's scope.
+
+  Out of the build on purpose: LlmPassthroughRouteHandler.is_event_stream_response, event_stream_media_type, _resolve_event_stream_de_anonymizer, supports_event_stream_de_anonymization and de_anonymize_event_stream (handler.py lines 262 to 311). Nothing at the pinned commit calls any of them outside the class itself; the bedrock handler defines the methods they look up, and B3678 decides what to do with those.
+
+  Tests live in `llm_passthrough_dispatch::tests` and use a small fake provider handler defined there: a struct that implements `BaseTranslation`, records the arguments it was called with and returns a scripted value. Test names start with `input_`, `output_` and `mapping_`, which the checks filter on. The handler is not reachable from a route yet and the helper adapters cannot build a guardrail, so there are no oracle cases; the HTTP cases for passthrough guardrails come with the dispatcher umbrella (B3680).
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/llm_passthrough_dispatch.rs
+    - crates/betterlite-guardrails/src/llm_passthrough_dispatch/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/pass_through/guardrail_translation/handler.py#L196-L207
+    why: _PROVIDER_HANDLERS and _get_provider_handlers, the lazily built table with the single "bedrock" entry.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/pass_through/guardrail_translation/handler.py#L210-L260
+    why: LlmPassthroughRouteHandler.process_input_messages and process_output_response, with the provider lookup and the skip log line.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/pass_through/guardrail_translation/handler.py#L262-L311
+    why: The five static event-stream helpers that nothing calls at the pin.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/pass_through/guardrail_translation/__init__.py#L1-L20
+    why: guardrail_translation_mappings, the two call types and their handlers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/pass_through/guardrail_translation/README.md
+    why: Says the module sits under llms/ only for auto-discovery, which betterlite replaces with an explicit list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/__init__.py#L83-L199
+    why: The discovery, loader and getter that the explicit table replaces (B3679 owns the replacement).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/guardrail_translation/base_translation.py#L58-L265
+    why: The base class defaults that LlmPassthroughRouteHandler keeps for every method it does not override.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L602-L605
+    why: llm_passthrough_route and allm_passthrough_route are separate call types; only the async one is mapped.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/guardrail_translation/handler.py#L254-L270
+    why: The only provider handler in the table, and the event-stream methods the unused static helpers look up on it (B3678).
+dod:
+  - text: A request whose `custom_llm_provider` names a table entry is handed to that provider handler with the same data, guardrail and logging object, and the call returns what the provider handler returned.
+    proof: [dispatch-input-tests]
+  - text: A request whose `custom_llm_provider` is missing, null, empty, not text, differently cased or not in the table makes no provider call and returns the data untouched.
+    proof: [dispatch-input-tests]
+  - text: A response whose `request_data["custom_llm_provider"]` names a table entry reaches that provider handler with the response, guardrail, logging object, user key dict and request data all unchanged, and the call returns what it returned.
+    proof: [dispatch-output-tests]
+  - text: A response with a missing `request_data`, or a `request_data` without a usable provider, makes no provider call and comes back untouched, even when the response itself carries a `custom_llm_provider` key.
+    proof: [dispatch-output-tests]
+  - text: An error from the provider handler, input or output, reaches the caller unchanged.
+    proof: [dispatch-input-tests, dispatch-output-tests]
+  - text: When two entries of the provider list share a name, the later one is used.
+    proof: [dispatch-input-tests]
+  - text: Streaming, scan key, block chunks, stream error items, structured messages and tool names on LlmPassthroughRouteHandler return the trait defaults and never call a provider handler.
+    proof: [dispatch-defaults-tests]
+  - text: The registration table has exactly two rows, `PassThroughEndpoint` mapped to `Endpoint` and `AllmPassthroughRoute` mapped to `LlmRoute`, and `LlmPassthroughRoute` is not in it.
+    proof: [dispatch-mapping-tests]
+checks:
+  optional: []
+  commands:
+    - id: dispatch-input-tests
+      why: the provider lookup for requests, its skip cases or the error passthrough are missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^llm_passthrough_dispatch::tests::input_/)'
+    - id: dispatch-output-tests
+      why: the provider lookup for responses, its skip cases or the argument passthrough are missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^llm_passthrough_dispatch::tests::output_/)'
+    - id: dispatch-defaults-tests
+      why: the default behaviors of the other trait methods are missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^llm_passthrough_dispatch::tests::defaults_/)'
+    - id: dispatch-mapping-tests
+      why: the registration table is missing or has the wrong rows
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^llm_passthrough_dispatch::tests::mapping_/)'
+oracle_cases: []
+deviations:
+  - what: The provider table is passed in as an explicit list and the registration rows are a constant, not discovered by scanning llms/ for `guardrail_translation_mappings` and not built by a lazy import.
+    why: Rules forbid auto-discovery and module-level state, and the lazy import in LiteLLM only avoids a Python import cycle. A user sees no difference; the same two call types and the same single provider are served.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/__init__.py#L83-L162
+  - what: The five static event-stream helpers of LlmPassthroughRouteHandler are not built.
+    why: Nothing calls them at the pinned commit, so no request path can reach them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/pass_through/guardrail_translation/handler.py#L262-L311
+out_of_scope:
+  - "PassThroughEndpointHandler logic (_get_guardrail_settings, _extract_text_for_guardrail, process_input_messages, process_output_response) is B3573, which also owns handler.py lines 24 to 193."
+  - "BedrockPassthroughGuardrailHandler, its event-stream functions and is_event_stream_content_type, event_stream_media_type, event_stream_endpoint_is_de_anonymizable and de_anonymize_event_stream are B3678."
+  - "The static LlmPassthroughRouteHandler helpers is_event_stream_response, event_stream_media_type, _resolve_event_stream_de_anonymizer, supports_event_stream_de_anonymization and de_anonymize_event_stream have no caller at the pin."
+  - "discover_guardrail_translation_mappings, load_guardrail_translation_mappings and get_guardrail_translation_mapping are replaced by B3679's TranslationRegistry; B3680 builds the entries from PASSTHROUGH_TRANSLATION_KINDS."
+  - "The README.md under guardrail_translation is documentation only and has no behavior to build."
+pitfalls:
+  - "The request path reads the provider from `data[\"custom_llm_provider\"]` but the response path reads it from `request_data`, so a response that arrives with no `request_data` is never scanned, whatever its own fields say."
+  - "LiteLLM writes `provider or \"\"` before the lookup, so `None` and `\"\"` both skip; the match is exact, so `\"Bedrock\"` or `\"bedrock \"` skip too."
+  - "A skip is silent for the client: only a debug line is written, and the data or response goes on unchanged. Do not raise for an unknown provider such as `vertex_ai` or `openai`."
+  - "The process methods return whatever the provider handler returns, and the bedrock handler may rewrite the body, so do not return the original input after the call."
+  - "The call types `llm_passthrough_route` and `allm_passthrough_route` are two values; only the async one is in `guardrail_translation_mappings`."
+  - "`CallTypes.pass_through` has the wire value `pass_through_endpoint`; B207's variant for it is `PassThroughEndpoint`."
+  - "Only the two process methods are overridden. The other BaseTranslation methods are not forwarded to the provider handler, so bedrock streaming behavior is not reachable through this dispatcher."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

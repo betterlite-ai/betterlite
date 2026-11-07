@@ -1,0 +1,176 @@
+id: B5846
+title: Predibase text generation request, reply and error transforms
+description: >-
+  Build the predibase provider in betterlite-provider as crates/betterlite-provider/src/predibase.rs and its folder
+  (add betterlite-prompts to that crate's Cargo.toml, as the watsonx text task does). Predibase serves a Hugging Face
+  text-generation-inference API, so the wire format is not OpenAI-shaped. This is PredibaseConfig, PredibaseError and
+  the request and error parts of PredibaseChatCompletion. Everything is a pure transform; the HTTP call and the
+  main.py wiring belong to B042. Credentials and the base URL come in as plain arguments, and no config section is added
+  except that max_new_tokens takes the DEFAULT_MAX_TOKENS value (env DEFAULT_MAX_TOKENS, default 4096) as an argument
+  that the caller reads through B2202's loader.
+
+  Errors. PredibaseError is a struct {status_code, message, headers}. PredibaseSetupError is an enum for the two
+  ValueErrors, with LiteLLM's exact texts: "Missing Predibase Tenant ID - Required for making the request. Set dynamically
+  (e.g. `completion(..tenant_id=<MY-ID>)`) or in env - `PREDIBASE_TENANT_ID`." and "Missing Predibase API Key - A call is being
+  made to predibase but no key is set either in the environment variables or via params", plus a variant for a custom
+  prompt dictionary entry that lacks roles, initial_prompt_value or final_prompt_value (a KeyError in Python).
+  get_error_class(message, status, headers) builds a PredibaseError for any status.
+
+  get_supported_openai_params returns, in order: stream, temperature, max_completion_tokens, max_tokens, top_p, stop,
+  n, response_format. map_openai_params walks the non-default params in their given order and writes into the options
+  map: temperature (0 or 0.0 becomes 0.01), top_p, stream and stop under their names, n to best_of and also
+  do_sample true, max_tokens and max_completion_tokens to max_new_tokens (0 becomes 1; when both are present the later
+  one wins), echo to decoder_input_details true, response_format copied as given. Any other key is ignored, with no
+  drop_params check. echo is not in the supported list, but the function still maps it.
+
+  get_config returns the class defaults that are not None: details true, max_new_tokens (the DEFAULT_MAX_TOKENS argument),
+  return_full_text false. Every other field of the Python class (adapter_id, best_of, seed, top_k and so on) defaults to
+  None and is never sent. transform_request: the prompt is custom_prompt (B177) over the roles, initial_prompt_value and
+  final_prompt_value of custom_prompt_dict[model] when the model is a key of that dictionary, else prompt_factory(model,
+  messages) with no provider name (B177). The parameters map is a copy of the options with each config default added
+  only where the key is missing, then stream removed. The body is {inputs: prompt, parameters: map}. A parameter the caller
+  set to false or 0 still wins over the default.
+
+  get_complete_url: the tenant id argument is required. The base is the api_base argument when it is non-empty, else
+  https://serving.app.predibase.com. The URL is {base}/{tenant_id}/deployments/v2/llms/{model} plus /generate_stream when
+  the stream argument is true (or, when it is None, when options.stream is exactly true), else /generate. No slash is
+  trimmed from the base. validate_environment fails with the API key error when api_key is None (an empty string passes
+  and gives "Bearer "). Otherwise the headers are the defaults content-type: application/json and Authorization: Bearer
+  <key>, overlaid by the caller's headers, with case-sensitive keys: a caller key Content-Type sits next to content-type,
+  and a caller Authorization replaces the default.
+
+  Streaming request. The caller that streams adds "stream": true at the top of the body, next to inputs and parameters,
+  after transform_request (async_streaming does data["stream"] = True). The proxy always uses the async path, so betterlite
+  has only this path: the non-stream body has no top-level stream key. A streaming call with a status other than 200
+  raises PredibaseError(status, response text) with no wrapper. A non-streaming call with an HTTP error status raises
+  PredibaseError(status, "HTTPStatusError - received status_code=<n>, error_message=<response text>"); any other client
+  failure becomes PredibaseError 500 with the failure text. Expose both as one function over (status, body, streaming).
+  Stream lines are decoded by B5653 (handle_predibase_chunk), not here.
+
+  transform_response takes the reply bytes, status, headers, request body, options, the messages, the model name, a clock
+  value for created and a TokenCounter trait object (two methods, count_messages and count_text, each returning None on
+  failure; B042 wires B196's counter). It starts from the usual empty ModelResponse: one choice with finish_reason stop
+  and no content. Steps in order. Body that is not JSON: PredibaseError 422 with the raw text as message. A JSON object with
+  an error key: PredibaseError with str(error) and the response status (which can be 200). A JSON body that is not an
+  object: 422 "'completion_response' is not a dictionary - <body>". No generated_text key: 422 "'generated_text' is not a
+  key response dictionary - <body>". A non-empty generated_text sets choice 0 content to output_parser(text). When
+  details has tokens: choice 0 finish_reason is map_finish_reason(details.finish_reason) (B2204), and the sum of the
+  non-null token logprobs is kept on choice 0 as _logprob. best_of is options.best_of when present, else
+  request.parameters.best_of, else 0; a value that is not an integer counts as 0. When best_of is above 1 and details has
+  best_of_sequences, one extra choice is appended per sequence with index position+1, finish_reason through
+  map_finish_reason, and a message that has the output_parser text and logprobs set to the token logprob sum (content null
+  when its generated_text is empty). Usage: prompt_tokens is count_messages(messages) or 0; completion_tokens is
+  count_text(choice 0 content) when content is non-empty and a tokenizer exists, else 0; total is their sum. created is the
+  clock value and model is the model argument. Response headers whose lowercase name starts with "x-" are copied as
+  llm_provider-<name> into the additional_headers hidden parameter.
+
+  output_parser removes chat template tokens. For each of <|assistant|>, <|system|>, <|user|>, <s>, </s> in that order:
+  if the text with surrounding whitespace trimmed starts with the token, the first occurrence in the untrimmed text is
+  removed; then, if the text ends with the token (no trimming), its last occurrence is removed. Each step sees the text left
+  by the earlier ones.
+
+  decode_predibase_reply(bytes) is the typed decoder for the reply. A field of the wrong type is an error, never a default.
+  A missing finish_reason when details.tokens is present is a KeyError in Python and becomes PredibaseError 500 here (see
+  deviations).
+scope:
+  paths:
+    - crates/betterlite-provider/src/predibase.rs
+    - crates/betterlite-provider/src/predibase/**
+    - crates/betterlite-provider/Cargo.toml
+    - crates/betterlite-provider/fuzz/Cargo.toml
+    - crates/betterlite-provider/fuzz/fuzz_targets/predibase_reply.rs
+    - crates/betterlite-provider/fuzz/corpus/predibase_reply/**
+    - Cargo.lock
+    - tools/oracle/cases/helpers/predibase/**
+    - tools/oracle/helpers/b5846.py
+    - tools/oracle/helpers/b5846/**
+    - tools/oracle/src/helpers/provider/b5846.rs
+    - tools/oracle/src/helpers/provider/b5846/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/predibase/chat/transformation.py#L29-L140
+    why: Class defaults, the supported list and map_openai_params (the n, echo and zero-limit rules).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/predibase/chat/transformation.py#L142-L264
+    why: transform_response, with its error cases, best_of choices, usage and x- header copy.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/predibase/chat/transformation.py#L267-L318
+    why: transform_request body and output_parser.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/predibase/chat/transformation.py#L320-L373
+    why: URL, error class and header validation.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/predibase/chat/handler.py#L22-L47
+    why: The streaming status check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/predibase/chat/handler.py#L53-L146
+    why: How the handler orders validate_environment, get_complete_url and transform_request, and the sync and async split.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/predibase/chat/handler.py#L148-L260
+    why: The async completion error wrapping and the top-level stream flag.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/predibase/common_utils.py#L6-L21
+    why: PredibaseError.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L3936-L3992
+    why: Where tenant id, api base and key are resolved (B042 wires it; read it to see the argument order).
+  - url: https://docs.predibase.com/user-guide/inference/rest_api
+    why: The generate and generate_stream request and reply shape.
+dod:
+  - text: Supported params and map_openai_params give LiteLLM's options, including the zero fixes and n to best_of with do_sample.
+    proof: [predibase-tests, predibase-cases]
+  - text: The request body, config defaults, URL and headers match, for plain, streaming and custom-prompt calls.
+    proof: [predibase-tests, predibase-cases]
+  - text: A reply gives the same content, finish reasons, extra best_of choices, usage and x- headers, and each bad reply gives the same PredibaseError status and message.
+    proof: [predibase-tests, predibase-cases]
+  - text: output_parser strips template tokens in LiteLLM's order.
+    proof: [predibase-tests, predibase-cases]
+  - text: The reply decoder rejects malformed bodies without panicking and its corpus replays.
+    proof: [predibase-corpus]
+  - text: New helper cases for these functions exist.
+    proof: [predibase-cases]
+checks:
+  optional: [mutants]
+  commands:
+    - id: predibase-tests
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^predibase::/) - test(replays_the_predibase_reply_corpus)'
+      why: A generic OpenAI-shaped transform has no inputs/parameters body, no best_of choices and no template-token stripping.
+    - id: predibase-corpus
+      run: test -f crates/betterlite-provider/fuzz/fuzz_targets/predibase_reply.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-provider/fuzz/corpus/predibase_reply)" && cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(replays_the_predibase_reply_corpus)'
+      why: Reply bytes come from outside and need a fuzz target with a replayed corpus.
+    - id: predibase-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/predibase)"
+      why: Without new case files the oracle proof passes with nothing compared.
+oracle_cases:
+  - tools/oracle/cases/helpers/predibase/param-mapping.yaml
+  - tools/oracle/cases/helpers/predibase/request-body-defaults.yaml
+  - tools/oracle/cases/helpers/predibase/custom-prompt-dict.yaml
+  - tools/oracle/cases/helpers/predibase/url-and-stream-suffix.yaml
+  - tools/oracle/cases/helpers/predibase/headers-and-key.yaml
+  - tools/oracle/cases/helpers/predibase/reply-text-and-finish.yaml
+  - tools/oracle/cases/helpers/predibase/reply-best-of-choices.yaml
+  - tools/oracle/cases/helpers/predibase/reply-error-cases.yaml
+  - tools/oracle/cases/helpers/predibase/output-parser-tokens.yaml
+deviations:
+  - what: A reply whose details has tokens but no finish_reason gives PredibaseError 500 naming the missing field.
+    why: Python raises KeyError there, which LiteLLM's exception mapping turns into a generic server error; a typed decoder cannot keep an untyped KeyError.
+  - what: An empty PREDIBASE_API_BASE value counts as unset, so the default base URL is used.
+    why: Python keeps an empty base from the environment and builds a URL that starts with a slash, which never reaches Predibase. The caller passes the resolved api_base, so this function cannot see the variable.
+out_of_scope:
+  - B042 owns _complete_predibase (main.py L3936-L3992), the tenant id, api base and key lookup order (tenant_id, predibase_tenant_id, PREDIBASE_TENANT_ID; PREDIBASE_API_BASE; predibase_key, PREDIBASE_API_KEY), the dispatch.rs wiring, the HTTP client calls and the HTTP oracle cases.
+  - B5653 owns handle_predibase_chunk and the stream line decoding (streaming_handler.py L515-L550).
+  - B177 owns custom_prompt and prompt_factory, B2204 owns map_finish_reason, B196 owns token_counter, and B2202 owns the DEFAULT_MAX_TOKENS loader.
+  - get_supported_openai_params is also called from get_supported_openai_params.py L245 and map_openai_params from utils.py L4613; B668 owns those call sites and uses the functions built here.
+  - "PredibaseConfig.__init__ (L51-L87) sets class-level defaults for the process; every call site is PredibaseConfig() with no arguments, so it has no caller with values at the pin. PredibaseConfig.get_config (L89-L90) is built only as the defaults described above."
+  - "PredibaseChatCompletion.embedding is a no-op (pass) and has no caller."
+  - The sync completion and sync streaming branches of PredibaseChatCompletion.completion have no proxy caller; the gateway always takes the async branches.
+  - The bearer-key redaction for "authorization denied for" errors is in exception_mapping_utils.py, which B186 built.
+  - Predibase in PROVIDERS_GLOBALLY_SUPPORT_RESPONSE_SCHEMA (utils.py L2726) is B2221's.
+  - B1427 (line streaming shared with Databricks) is not used; Predibase streams through B5653's chunk handler.
+pitfalls:
+  - 'The oracle helper for this task is pre-registered as b5846 by the skeleton. Write its Rust and Python files as the skeleton leaves them; the registry files are not this task''s to edit.'
+  - The body key is "inputs", not messages, and every option goes under "parameters"; a top-level "stream" exists only on streaming calls and is added by the caller after transform_request.
+  - 'stream is removed from parameters, but do_sample, best_of, response_format and decoder_input_details stay in it.'
+  - return_full_text false and details true are sent on every request unless the caller set the key, so a bare call carries three default parameters.
+  - A caller header named Authorization or content-type replaces the default of that exact spelling only; other spellings sit beside it.
+  - An error key in a 200 reply raises PredibaseError with status 200.
+  - An empty generated_text leaves content null and does not change the finish reason, which stays stop unless details.tokens is present.
+  - The extra best_of choices start at index 1, and only appear when the best_of request value is above 1, not when the reply has sequences alone.
+  - Usage is counted locally with LiteLLM's token counter and is not read from the reply; a counter failure gives 0 for that part.
+  - Header copy checks the lowercase name starts with "x-", so x-request-id becomes llm_provider-x-request-id.
+  - output_parser trims only for the startswith test, then removes the first occurrence in the untrimmed text, so leading whitespace stays.
+  - The message logprobs value on extra choices and the _logprob value on choice 0 may not appear in the serialized reply. Run the helper case first and copy what LiteLLM serializes.
+budget: {max_changed_lines: 1500, max_new_expects: 0}
+review_level: standard
