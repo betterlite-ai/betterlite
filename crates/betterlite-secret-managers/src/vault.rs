@@ -11,7 +11,7 @@ use crate::secret_name::{UnsafeSecretNameError, raise_if_unsafe_secret_name};
 use error::{LoginMethod, VaultError, VaultInitError};
 use settings::{DEFAULT_MOUNT, VaultAuth, VaultSettings};
 use target::{VaultSecretParams, VaultSecretSettings, VaultSecretTarget};
-use transport::VaultTransport;
+use transport::{MAX_RESPONSE_BYTES, VaultRequest, VaultResponse, VaultTransport};
 
 mod auth;
 pub mod error;
@@ -36,6 +36,16 @@ pub struct HashicorpSecretManager<T> {
 struct CachedToken {
     token: SecretString,
     expiry: Instant,
+}
+
+enum PendingLogin {
+    Ready(SecretString),
+    Send(LoginPlan),
+}
+
+struct LoginPlan {
+    method: LoginMethod,
+    request: VaultRequest,
 }
 
 impl<T: VaultTransport> HashicorpSecretManager<T> {
@@ -87,77 +97,19 @@ impl<T: VaultTransport> HashicorpSecretManager<T> {
     }
 
     pub async fn request_token(&self) -> Result<SecretString, VaultError<T::Error>> {
-        match &self.settings.auth {
-            VaultAuth::Token(token) => Ok(token.clone()),
-            VaultAuth::AppRole {
-                role_id,
-                secret_id,
-                mount_path,
-            } => {
-                if let Some(token) = self.cached_token() {
-                    return Ok(token);
-                }
-                let request = auth::begin_approle_login(self, role_id, secret_id, mount_path)?;
-                let limit = request.max_response_bytes;
-                let login = auth::finish_login::<T>(
-                    self.transport.send(request).await,
-                    LoginMethod::AppRole,
-                    limit,
-                )?;
-                self.store_token(login.client_token.clone(), login.lease_duration);
-                Ok(login.client_token)
-            }
-            VaultAuth::TlsCert {
-                client_certificate,
-                role,
-            } => {
-                let request = auth::begin_tls_login(self, client_certificate, role.as_deref())?;
-                let limit = request.max_response_bytes;
-                let login = auth::finish_login::<T>(
-                    self.transport.send(request).await,
-                    LoginMethod::TlsCert,
-                    limit,
-                )?;
-                Ok(login.client_token)
-            }
-        }
+        let plan = match self.pending_login()? {
+            PendingLogin::Ready(token) => return Ok(token),
+            PendingLogin::Send(plan) => plan,
+        };
+        self.login_outcome(plan.method, self.transport.send(plan.request).await)
     }
 
     pub fn request_token_blocking(&self) -> Result<SecretString, VaultError<T::Error>> {
-        match &self.settings.auth {
-            VaultAuth::Token(token) => Ok(token.clone()),
-            VaultAuth::AppRole {
-                role_id,
-                secret_id,
-                mount_path,
-            } => {
-                if let Some(token) = self.cached_token() {
-                    return Ok(token);
-                }
-                let request = auth::begin_approle_login(self, role_id, secret_id, mount_path)?;
-                let limit = request.max_response_bytes;
-                let login = auth::finish_login::<T>(
-                    self.transport.send_blocking(request),
-                    LoginMethod::AppRole,
-                    limit,
-                )?;
-                self.store_token(login.client_token.clone(), login.lease_duration);
-                Ok(login.client_token)
-            }
-            VaultAuth::TlsCert {
-                client_certificate,
-                role,
-            } => {
-                let request = auth::begin_tls_login(self, client_certificate, role.as_deref())?;
-                let limit = request.max_response_bytes;
-                let login = auth::finish_login::<T>(
-                    self.transport.send_blocking(request),
-                    LoginMethod::TlsCert,
-                    limit,
-                )?;
-                Ok(login.client_token)
-            }
-        }
+        let plan = match self.pending_login()? {
+            PendingLogin::Ready(token) => return Ok(token),
+            PendingLogin::Send(plan) => plan,
+        };
+        self.login_outcome(plan.method, self.transport.send_blocking(plan.request))
     }
 
     pub fn get_url(
@@ -216,6 +168,69 @@ impl<T: VaultTransport> HashicorpSecretManager<T> {
             data_key: data_key.unwrap_or("key").to_owned(),
             secret_name: secret_name.to_owned(),
         })
+    }
+
+    fn pending_login(&self) -> Result<PendingLogin, VaultError<T::Error>> {
+        match &self.settings.auth {
+            VaultAuth::Token(token) => Ok(PendingLogin::Ready(token.clone())),
+            VaultAuth::AppRole {
+                role_id,
+                secret_id,
+                mount_path,
+            } => {
+                tracing::debug!("Using AppRole auth for Hashicorp Vault");
+                if let Some(token) = self.cached_token() {
+                    tracing::debug!("Using cached Vault token from AppRole auth");
+                    return Ok(PendingLogin::Ready(token));
+                }
+                let channel = auth::LoginChannel::AppRole {
+                    role_id,
+                    secret_id,
+                    mount_path,
+                };
+                let request = auth::login_request(self, channel)?;
+                Ok(PendingLogin::Send(LoginPlan {
+                    method: LoginMethod::AppRole,
+                    request,
+                }))
+            }
+            VaultAuth::TlsCert {
+                client_certificate,
+                role,
+            } => {
+                tracing::debug!("Using TLS cert auth for Hashicorp Vault");
+                let channel = auth::LoginChannel::TlsCert {
+                    client_certificate,
+                    role: role.as_deref(),
+                };
+                let request = auth::login_request(self, channel)?;
+                Ok(PendingLogin::Send(LoginPlan {
+                    method: LoginMethod::TlsCert,
+                    request,
+                }))
+            }
+        }
+    }
+
+    fn login_outcome(
+        &self,
+        method: LoginMethod,
+        reply: Result<VaultResponse, T::Error>,
+    ) -> Result<SecretString, VaultError<T::Error>> {
+        let login = auth::finish_login::<T>(reply, method, MAX_RESPONSE_BYTES)?;
+        match method {
+            LoginMethod::AppRole => {
+                tracing::debug!(
+                    "Successfully obtained Vault token via AppRole auth. Lease duration: {}s",
+                    login.lease_duration
+                );
+                self.store_token(login.client_token.clone(), login.lease_duration);
+            }
+            LoginMethod::TlsCert => {
+                tracing::debug!("Successfully obtained Vault token via TLS cert auth.");
+            }
+        }
+        Ok(login.client_token)
     }
 
     fn cached_token(&self) -> Option<SecretString> {

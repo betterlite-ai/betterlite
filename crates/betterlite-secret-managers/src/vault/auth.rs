@@ -27,59 +27,89 @@ struct TlsCertLoginBody<'borrowed> {
     name: Option<&'borrowed str>,
 }
 
-pub(super) fn begin_approle_login<T>(
-    manager: &HashicorpSecretManager<T>,
-    role_id: &SecretString,
-    secret_id: &SecretString,
-    mount_path: &str,
-) -> Result<VaultRequest, VaultError<T::Error>>
-where
-    T: VaultTransport,
-{
-    let body = serde_json::to_string(&AppRoleLoginBody {
-        role_id: role_id.expose_secret(),
-        secret_id: secret_id.expose_secret(),
-    })
-    .map_err(|_source| VaultError::InvalidLogin {
-        method: LoginMethod::AppRole,
-    })?;
-    Ok(VaultRequest {
-        method: VaultMethod::Post,
-        url: format!("{}/v1/auth/{mount_path}/login", manager.vault_addr()),
-        token: None,
-        namespace: manager.vault_login_namespace().map(str::to_owned),
-        body: Some(SecretString::from(body)),
-        client_certificate: None,
-        timeout: APPROLE_LOGIN_TIMEOUT,
-        follow_redirects: true,
-        max_response_bytes: MAX_RESPONSE_BYTES,
-    })
+#[derive(Clone, Copy)]
+pub(super) enum LoginChannel<'borrowed> {
+    AppRole {
+        role_id: &'borrowed SecretString,
+        secret_id: &'borrowed SecretString,
+        mount_path: &'borrowed str,
+    },
+    TlsCert {
+        client_certificate: &'borrowed ClientCertificate,
+        role: Option<&'borrowed str>,
+    },
 }
 
-pub(super) fn begin_tls_login<T>(
+pub(super) fn login_request<T>(
     manager: &HashicorpSecretManager<T>,
-    client_certificate: &ClientCertificate,
-    role: Option<&str>,
+    channel: LoginChannel<'_>,
 ) -> Result<VaultRequest, VaultError<T::Error>>
 where
     T: VaultTransport,
 {
-    let body = serde_json::to_string(&TlsCertLoginBody { name: role }).map_err(|_source| {
-        VaultError::InvalidLogin {
-            method: LoginMethod::TlsCert,
+    match channel {
+        LoginChannel::AppRole {
+            role_id,
+            secret_id,
+            mount_path,
+        } => {
+            let body = serde_json::to_string(&AppRoleLoginBody {
+                role_id: role_id.expose_secret(),
+                secret_id: secret_id.expose_secret(),
+            })
+            .map_err(|_source| VaultError::InvalidLogin {
+                method: LoginMethod::AppRole,
+            })?;
+            let url = format!("{}/v1/auth/{mount_path}/login", manager.vault_addr());
+            Ok(request_for(manager, LoginMethod::AppRole, url, body, None))
         }
-    })?;
-    Ok(VaultRequest {
+        LoginChannel::TlsCert {
+            client_certificate,
+            role,
+        } => {
+            let body =
+                serde_json::to_string(&TlsCertLoginBody { name: role }).map_err(|_source| {
+                    VaultError::InvalidLogin {
+                        method: LoginMethod::TlsCert,
+                    }
+                })?;
+            let url = format!("{}/v1/auth/cert/login", manager.vault_addr());
+            Ok(request_for(
+                manager,
+                LoginMethod::TlsCert,
+                url,
+                body,
+                Some(client_certificate.clone()),
+            ))
+        }
+    }
+}
+
+fn request_for<T>(
+    manager: &HashicorpSecretManager<T>,
+    method: LoginMethod,
+    url: String,
+    body: String,
+    client_certificate: Option<ClientCertificate>,
+) -> VaultRequest
+where
+    T: VaultTransport,
+{
+    let (timeout, follow_redirects) = match method {
+        LoginMethod::AppRole => (APPROLE_LOGIN_TIMEOUT, true),
+        LoginMethod::TlsCert => (TLS_LOGIN_TIMEOUT, false),
+    };
+    VaultRequest {
         method: VaultMethod::Post,
-        url: format!("{}/v1/auth/cert/login", manager.vault_addr()),
+        url,
         token: None,
         namespace: manager.vault_login_namespace().map(str::to_owned),
         body: Some(SecretString::from(body)),
-        client_certificate: Some(client_certificate.clone()),
-        timeout: TLS_LOGIN_TIMEOUT,
-        follow_redirects: false,
+        client_certificate,
+        timeout,
+        follow_redirects,
         max_response_bytes: MAX_RESPONSE_BYTES,
-    })
+    }
 }
 
 pub(super) fn finish_login<T>(

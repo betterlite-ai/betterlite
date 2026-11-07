@@ -258,7 +258,12 @@ fn the_approle_request_debug_hides_the_secrets() {
     let (manager, _transport) = scripted(APPROLE, &[]);
     let role_id = secrecy::SecretString::from("role-hidden");
     let secret_id = secrecy::SecretString::from("secret-hidden");
-    let request = super::begin_approle_login(&manager, &role_id, &secret_id, "approle").unwrap();
+    let channel = super::LoginChannel::AppRole {
+        role_id: &role_id,
+        secret_id: &secret_id,
+        mount_path: "approle",
+    };
+    let request = super::login_request(&manager, channel).unwrap();
     let debug = format!("{request:?}");
     assert!(!debug.contains("role-hidden"));
     assert!(!debug.contains("secret-hidden"));
@@ -271,7 +276,11 @@ fn the_tls_request_debug_hides_the_body() {
         certificate_path: "/certs/client.crt".to_owned(),
         key_path: "/certs/client.key".to_owned(),
     };
-    let request = super::begin_tls_login(&manager, &certificate, Some("role-hidden")).unwrap();
+    let channel = super::LoginChannel::TlsCert {
+        client_certificate: &certificate,
+        role: Some("role-hidden"),
+    };
+    let request = super::login_request(&manager, channel).unwrap();
     let debug = format!("{request:?}");
     assert!(!debug.contains("role-hidden"));
 }
