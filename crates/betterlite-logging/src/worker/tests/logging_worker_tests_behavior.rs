@@ -271,6 +271,7 @@ async fn each_event_keeps_the_context_captured_before_enqueue() {
 async fn a_full_queue_rejects_only_the_new_event() {
     let record = Arc::new(Record::default());
     let release = Arc::new(Notify::new());
+    let model_response = String::from("the successful model response");
     let worker = LoggingWorker::start(settings(3, 1)).unwrap();
     let _blocker = worker.enqueue(blocked(&record, "blocker", Arc::clone(&release)));
     wait_for_names(&record, &["blocker"]).await;
@@ -285,6 +286,7 @@ async fn a_full_queue_rejects_only_the_new_event() {
         Admission::Rejected(Rejection::QueueFull)
     );
     assert_eq!(worker.stats().rejected_full, 1);
+    assert_eq!(model_response, "the successful model response");
     release.notify_one();
     let flush = worker.flush().await;
     assert_eq!(flush.accepted, 5);
@@ -330,6 +332,13 @@ async fn stop_drains_accepted_events_before_the_deadline() {
     assert_eq!(shutdown.completed, 2);
     assert_eq!(shutdown.cancelled, 0);
     assert_eq!(shutdown.dropped, 0);
+    let settled = shutdown
+        .completed
+        .saturating_add(shutdown.failed)
+        .saturating_add(shutdown.timed_out)
+        .saturating_add(shutdown.cancelled)
+        .saturating_add(shutdown.dropped);
+    assert_eq!(shutdown.accepted, settled);
 }
 
 #[tokio::test(start_paused = true)]
@@ -351,6 +360,13 @@ async fn stop_accounts_for_events_left_at_the_deadline() {
     assert_eq!(shutdown.completed, 0);
     assert_eq!(shutdown.cancelled, 1);
     assert_eq!(shutdown.dropped, 1);
+    let settled = shutdown
+        .completed
+        .saturating_add(shutdown.failed)
+        .saturating_add(shutdown.timed_out)
+        .saturating_add(shutdown.cancelled)
+        .saturating_add(shutdown.dropped);
+    assert_eq!(shutdown.accepted, settled);
     let flush = worker.flush().await;
     assert_eq!(flush.accepted, 2);
     assert_eq!(flush.completed, 0);
