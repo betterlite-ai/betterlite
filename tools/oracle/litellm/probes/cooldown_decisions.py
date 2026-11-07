@@ -181,7 +181,7 @@ class MinuteInput(Strict):
 
 class Counter(Strict):
     key: str
-    ttl_seconds: float
+    ttl_seconds: str  # fixed-point text: the reply buffer turns a JSON float into a map
     fails: int
 
 
@@ -223,7 +223,8 @@ class ProbeCache(DualCache):
     def recorded(self) -> Counter | None:
         if self.counter_key is None:
             return None
-        return Counter(key=self.counter_key, ttl_seconds=self.counter_ttl, fails=self.counter_fails)
+        ttl_seconds = f"{self.counter_ttl:.6f}"
+        return Counter(key=self.counter_key, ttl_seconds=ttl_seconds, fails=self.counter_fails)
 
 
 def build_exception(failure: FailureInput) -> Exception:

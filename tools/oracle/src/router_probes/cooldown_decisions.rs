@@ -1,5 +1,5 @@
 use betterlite_router::cooldown_decisions::decision::{
-    CooldownDecision, CooldownRequest, DeploymentFacts, MinuteSamples, decide,
+    AllowedFailsCounter, CooldownDecision, CooldownRequest, DeploymentFacts, MinuteSamples, decide,
 };
 use betterlite_router::cooldown_decisions::failure::{FailureFacts, Seconds};
 use betterlite_router::cooldown_decisions::policy::{
@@ -42,7 +42,21 @@ pub struct RouterInput {
     pub allowed_fails_policy: Option<AllowedFailsPolicy>,
 }
 
-pub type Output = CooldownDecision;
+// the reply buffer hands a JSON float to serde's content type as a map under serde_json's arbitrary_precision feature, so the TTL travels as fixed-point text
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct Output {
+    pub cooldown: bool,
+    pub counter: Option<CounterOutput>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CounterOutput {
+    pub key: String,
+    pub ttl_seconds: String,
+    pub fails: u64,
+}
 
 pub(crate) fn run(
     input: &Input,
@@ -77,5 +91,26 @@ pub(crate) fn run(
         local_fails: payload.local_fails,
         time_to_cooldown: payload.time_to_cooldown,
     };
-    Ok(ProbeOutput::CooldownDecisions(decide(&request)))
+    Ok(ProbeOutput::CooldownDecisions(Output::from(decide(
+        &request,
+    ))))
+}
+
+impl From<CooldownDecision> for Output {
+    fn from(decision: CooldownDecision) -> Self {
+        Self {
+            cooldown: decision.cooldown,
+            counter: decision.counter.map(CounterOutput::from),
+        }
+    }
+}
+
+impl From<AllowedFailsCounter> for CounterOutput {
+    fn from(counter: AllowedFailsCounter) -> Self {
+        Self {
+            key: counter.key,
+            ttl_seconds: format!("{:.6}", counter.ttl_seconds.0),
+            fails: counter.fails,
+        }
+    }
 }
