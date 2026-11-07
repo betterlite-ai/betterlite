@@ -130,10 +130,20 @@ fn literal_batch_size_overrides_the_base_batch_size() {
     );
 }
 
+#[test]
+fn a_zero_literal_batch_size_keeps_the_default_batch_size_variable() {
+    assert_eq!(
+        resolved(&[("DEFAULT_BATCH_SIZE", "7"), ("LITERAL_BATCH_SIZE", "0"),])
+            .batch
+            .batch_size,
+        7
+    );
+}
+
 #[rstest]
 #[case::plain("4", 4)]
 #[case::surrounded_by_spaces(" 4 ", 4)]
-#[case::zero("0", 0)]
+#[case::zero("0", DEFAULT_BATCH_SIZE)]
 #[case::negative("-2", 0)]
 fn the_batch_size_comes_from_the_environment(#[case] text: &str, #[case] expected: usize) {
     assert_eq!(

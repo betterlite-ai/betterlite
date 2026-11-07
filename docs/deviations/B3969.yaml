@@ -34,3 +34,11 @@ deviations:
       an unbounded in-memory queue is a leak, and the oldest events are the ones already repeated by the last
       send.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L24
+  - what: >-
+      The queue cap applies to the async callbacks too, and the flush threshold is the smaller of the batch size
+      and DEFAULT_MAX_QUEUE_SIZE, so a batch size above 50,000 flushes once the queue is full. LiteLLM's async
+      callbacks append to an unbounded list and flush at whatever batch size is configured.
+    why: >-
+      An unbounded in-memory queue is a leak; with a bounded one, comparing the depth against an unclamped batch
+      size above the cap would leave the threshold unreachable, so Literal AI would never receive a step.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/literal_ai.py#L104-L121

@@ -54,10 +54,9 @@ where
         ids: I,
     ) -> Result<Self, SettingsError> {
         let settings = Settings::from_environment(environment, overrides)?;
-        let queue = BatchQueue::new(settings.batch);
         Ok(Self {
+            queue: BatchQueue::new(settings.batch),
             settings,
-            queue,
             delivery,
             ids,
         })
@@ -111,7 +110,13 @@ where
     async fn record_and_send(&self, call: Call<'_>, mode: Mode) -> Result<(), StepError> {
         let step = prepare_log_data(call.kwargs, call.start_time, call.end_time, &self.ids)?;
         let queued = self.queue.enqueue(step);
-        if queued.depth < self.settings.batch.batch_size {
+        // The bounded queue caps the depth, so the threshold is clamped to its capacity to stay reachable.
+        let threshold = self
+            .settings
+            .batch
+            .batch_size
+            .min(self.settings.batch.max_queue_size);
+        if queued.depth < threshold {
             return Ok(());
         }
         match mode {

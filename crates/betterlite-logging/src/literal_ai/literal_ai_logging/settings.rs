@@ -67,7 +67,8 @@ impl Settings {
             .map(|text| betterlite_env::number::<i64>("LITERAL_BATCH_SIZE", text))
             .transpose()?
             .flatten();
-        if let Some(value) = literal_batch_size {
+        // int("0") is falsy in CustomBatchLogger's `batch_size or DEFAULT_BATCH_SIZE`, so only a nonzero value overrides.
+        if let Some(value) = literal_batch_size.filter(|value| *value != 0) {
             batch.batch_size = usize::try_from(value.max(0)).map_err(SettingsError::BatchSize)?;
         }
         Ok(Self {

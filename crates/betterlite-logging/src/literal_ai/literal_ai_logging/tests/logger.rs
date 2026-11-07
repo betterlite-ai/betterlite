@@ -7,12 +7,12 @@ use betterlite_models::decisions::Json;
 use super::super::payload::CallbackKwargs;
 use super::super::prepare::prepare_log_data;
 use super::super::send::SendError;
-use super::super::settings::Overrides;
+use super::super::settings::{Overrides, Settings};
 use super::super::{Call, LiteralAILogger};
 use super::support::{
     Answer, Buffer, FixedIds, Recording, at, capture, json, kwargs, object, text, variables,
 };
-use crate::batch::logger::DEFAULT_MAX_QUEUE_SIZE;
+use crate::batch::logger::{BatchQueue, DEFAULT_MAX_QUEUE_SIZE};
 
 const START: &str = "2024-05-01T10:00:00.120Z";
 const END: &str = "2024-05-01T10:00:01.500Z";
@@ -164,6 +164,74 @@ async fn send_batch_posts_to_the_graphql_endpoint_with_the_client_headers() {
     assert_eq!(request.headers["x-client-name"], "litellm");
     assert_eq!(request.headers["x-api-key"], "literal-key");
     assert!(!request.headers.contains_key("x-env"));
+}
+
+#[tokio::test]
+async fn the_request_goes_to_the_literal_api_url_from_the_environment() {
+    let (logger, delivery) = logger(
+        &[
+            ("LITERAL_API_KEY", "literal-key"),
+            ("LITERAL_API_URL", "https://literal.internal"),
+        ],
+        Vec::new(),
+    );
+    let kwargs = kwargs(CALLBACK);
+    logger.log_success_event(call(&kwargs)).await;
+    logger.send_batch().await.unwrap();
+    assert_eq!(
+        delivery.requests()[0].url,
+        "https://literal.internal/api/graphql"
+    );
+}
+
+#[tokio::test]
+async fn the_request_goes_to_the_constructor_url_when_the_environment_has_none() {
+    let delivery = Recording::with_answers(Vec::new());
+    let environment = variables(&[("LITERAL_API_KEY", "literal-key")]);
+    let configured = LiteralAILogger::from_environment(
+        &environment,
+        Overrides {
+            api_key: None,
+            api_url: Some("https://constructor.local".to_owned()),
+            environment: None,
+        },
+        delivery.clone(),
+        FixedIds::default(),
+    )
+    .unwrap();
+    let kwargs = kwargs(CALLBACK);
+    configured.log_success_event(call(&kwargs)).await;
+    configured.send_batch().await.unwrap();
+    assert_eq!(
+        delivery.requests()[0].url,
+        "https://constructor.local/api/graphql"
+    );
+}
+
+#[tokio::test]
+async fn a_batch_size_above_the_queue_cap_still_sends() {
+    let mut settings = Settings::from_environment(
+        &variables(&[
+            ("LITERAL_API_KEY", "literal-key"),
+            ("LITERAL_BATCH_SIZE", "50"),
+        ]),
+        Overrides::default(),
+    )
+    .unwrap();
+    settings.batch.max_queue_size = 2;
+    let delivery = Recording::with_answers(Vec::new());
+    let capped = LiteralAILogger {
+        queue: BatchQueue::new(settings.batch),
+        settings,
+        delivery: delivery.clone(),
+        ids: FixedIds::default(),
+    };
+    let kwargs = kwargs(CALLBACK);
+    capped.log_success_event(call(&kwargs)).await;
+    assert!(delivery.requests().is_empty());
+    capped.log_success_event(call(&kwargs)).await;
+    assert_eq!(delivery.requests().len(), 1);
+    assert_eq!(capped.queue.pending().len(), 2);
 }
 
 #[tokio::test]
