@@ -234,18 +234,19 @@ env: {}
 upstream: []
 scenario:
   steps:
-    - request:
-        method: POST
-        path: /v1/chat/completions
-        headers: {content-type: application/json}
-        body: {model: m}
-      compare:
-        headers: []
-        headers_present: []
-        upstream_headers: []
-        ignore: []
-        expected_difference:
-          - {pointer: /detail, reference: from-litellm, rust: from-betterlite, why: declared, link: ''}
+    - http:
+        request:
+          method: POST
+          path: /v1/chat/completions
+          headers: {content-type: application/json}
+          body: {model: m}
+        compare:
+          headers: []
+          headers_present: []
+          upstream_headers: []
+          ignore: []
+          expected_difference:
+            - {pointer: /detail, reference: from-litellm, rust: from-betterlite, why: declared, link: ''}
     - concurrent:
         requests:
           - request:
