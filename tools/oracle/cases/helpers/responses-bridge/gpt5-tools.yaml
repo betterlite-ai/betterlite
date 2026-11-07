@@ -10,8 +10,8 @@ call:
           function: {name: lookup, parameters: {}}
     capabilities:
       resolved_openai_api_base: https://api.openai.com/v1
-      is_gpt_5_model: true
-      is_gpt_5_4_plus_model: true
+      gpt: {five: true}
+      gpt_5_4_plus: true
 env: {}
 compare:
   ignore: []

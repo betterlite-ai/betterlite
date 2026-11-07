@@ -23,17 +23,29 @@ class BridgeRequest(BaseModel):
     route_all_chat_openai_to_responses: bool = False
 
 
+class FoundryFacts(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    supports_native_responses: bool = False
+    chat_rejects_function_tools: bool = False
+
+
+class GptFacts(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    five: bool = False
+    search: bool = False
+
+
 class Capabilities(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     model_info: dict[str, JsonValue] = Field(default_factory=dict)
     model_info_fails: bool = False
     resolved_openai_api_base: str
-    foundry_supports_native_responses: bool = False
-    foundry_chat_rejects_function_tools: bool = False
-    is_gpt_5_model: bool = False
-    is_gpt_5_4_plus_model: bool = False
-    is_gpt_5_search_model: bool = False
+    foundry: FoundryFacts = Field(default_factory=FoundryFacts)
+    gpt: GptFacts = Field(default_factory=GptFacts)
+    gpt_5_4_plus: bool = False
 
 
 class Case(BaseModel):
@@ -118,20 +130,20 @@ def run(input_value: dict[str, Json]) -> dict[str, Json]:
         patch.object(
             litellm_main,
             "azure_ai_supports_native_responses",
-            FoundrySupports(supported=facts.foundry_supports_native_responses),
+            FoundrySupports(supported=facts.foundry.supports_native_responses),
         ),
         patch.object(
             litellm_main,
             "foundry_chat_rejects_function_tools_while_reasoning",
-            FoundryRejects(rejects=facts.foundry_chat_rejects_function_tools),
+            FoundryRejects(rejects=facts.foundry.chat_rejects_function_tools),
         ),
         patch.object(
             litellm_main,
             "OpenAIGPT5Config",
             GptFiveNames(
-                gpt_5=facts.is_gpt_5_model,
-                gpt_5_4_plus=facts.is_gpt_5_4_plus_model,
-                gpt_5_search=facts.is_gpt_5_search_model,
+                gpt_5=facts.gpt.five,
+                gpt_5_4_plus=facts.gpt_5_4_plus,
+                gpt_5_search=facts.gpt.search,
             ),
         ),
     ):

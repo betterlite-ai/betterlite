@@ -9,11 +9,10 @@ call:
         - type: function
           function: {name: lookup}
     capabilities:
-      foundry_supports_native_responses: true
-      foundry_chat_rejects_function_tools: false
+      foundry: {supports_native_responses: true, chat_rejects_function_tools: false}
       resolved_openai_api_base: https://example.invalid/openai/v1
-      is_gpt_5_model: true
-      is_gpt_5_4_plus_model: true
+      gpt: {five: true}
+      gpt_5_4_plus: true
 env: {}
 compare:
   ignore: []

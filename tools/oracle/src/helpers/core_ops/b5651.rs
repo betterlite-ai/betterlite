@@ -33,39 +33,39 @@ struct Request {
     route_all_openai_to_responses: bool,
 }
 
-#[derive(Debug, Clone, Copy, Default, Deserialize)]
-#[serde(from = "bool")]
-enum Toggle {
-    #[default]
-    Off,
-    On,
-}
-
-impl From<bool> for Toggle {
-    fn from(value: bool) -> Self {
-        if value { Self::On } else { Self::Off }
-    }
-}
-
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Facts {
     #[serde(default, rename = "model_info")]
     known_model_info: Object,
-    #[serde(default, rename = "model_info_fails")]
-    model_info_fails: Toggle,
+    #[serde(default)]
+    model_info_fails: bool,
     #[serde(rename = "resolved_openai_api_base")]
     resolved_api_base: String,
-    #[serde(default, rename = "foundry_supports_native_responses")]
-    foundry_native_responses: Toggle,
-    #[serde(default, rename = "foundry_chat_rejects_function_tools")]
-    foundry_rejects_tools: Toggle,
-    #[serde(default, rename = "is_gpt_5_model")]
-    gpt_5: Toggle,
-    #[serde(default, rename = "is_gpt_5_4_plus_model")]
-    gpt_5_4_plus: Toggle,
-    #[serde(default, rename = "is_gpt_5_search_model")]
-    gpt_5_search: Toggle,
+    #[serde(default)]
+    foundry: FoundryFacts,
+    #[serde(default)]
+    gpt: GptFacts,
+    #[serde(default)]
+    gpt_5_4_plus: bool,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FoundryFacts {
+    #[serde(default)]
+    supports_native_responses: bool,
+    #[serde(default)]
+    chat_rejects_function_tools: bool,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct GptFacts {
+    #[serde(default)]
+    five: bool,
+    #[serde(default)]
+    search: bool,
 }
 
 impl ResponsesBridgeCapabilities for Facts {
@@ -74,7 +74,7 @@ impl ResponsesBridgeCapabilities for Facts {
         model: &str,
         _custom_llm_provider: &str,
     ) -> Result<Object, ModelInfoError> {
-        if matches!(self.model_info_fails, Toggle::On) {
+        if self.model_info_fails {
             return Err(ModelInfoError::Unknown {
                 model: model.to_owned(),
             });
@@ -87,7 +87,7 @@ impl ResponsesBridgeCapabilities for Facts {
     }
 
     fn foundry_supports_responses(&self, _model: &str, _api_base: Option<&str>) -> bool {
-        matches!(self.foundry_native_responses, Toggle::On)
+        self.foundry.supports_native_responses
     }
 
     fn foundry_chat_rejects_tools(
@@ -95,19 +95,19 @@ impl ResponsesBridgeCapabilities for Facts {
         _model: &str,
         _reasoning_effort: Option<&ReasoningEffort>,
     ) -> bool {
-        matches!(self.foundry_rejects_tools, Toggle::On)
+        self.foundry.chat_rejects_function_tools
     }
 
     fn is_gpt_5_model(&self, _model: &str) -> bool {
-        matches!(self.gpt_5, Toggle::On)
+        self.gpt.five
     }
 
     fn is_gpt_5_4_plus_model(&self, _model: &str) -> bool {
-        matches!(self.gpt_5_4_plus, Toggle::On)
+        self.gpt_5_4_plus
     }
 
     fn is_gpt_5_search_model(&self, _model: &str) -> bool {
-        matches!(self.gpt_5_search, Toggle::On)
+        self.gpt.search
     }
 }
 

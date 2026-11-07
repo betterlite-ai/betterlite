@@ -10,9 +10,8 @@ call:
           function: {name: lookup, parameters: {}}
     capabilities:
       resolved_openai_api_base: https://example.services.ai.azure.com/openai/v1
-      foundry_supports_native_responses: true
-      foundry_chat_rejects_function_tools: true
-      is_gpt_5_model: true
+      foundry: {supports_native_responses: true, chat_rejects_function_tools: true}
+      gpt: {five: true}
 env: {}
 compare:
   ignore: []

@@ -9,7 +9,7 @@ call:
       reasoning_summary: auto
     capabilities:
       resolved_openai_api_base: https://api.openai.com/v1
-      is_gpt_5_model: true
+      gpt: {five: true}
 env: {}
 compare:
   ignore: []
