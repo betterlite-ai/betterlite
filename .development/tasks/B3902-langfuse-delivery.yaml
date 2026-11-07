@@ -16,7 +16,9 @@ description: >-
   interface, not queue drain: a batch counted as failed never succeeds, and a successful flush means
   delivery rather than acceptance into a queue. Every HTTP header sent to Langfuse, including
   Authorization, carries Langfuse SDK identity (SDK name, version) and ingestion-version for
-  compatibility negotiation. The exporter-path and base-URL join preserves trailing and leading
+  compatibility negotiation. The SDK identity is two public constants in the exporter module, LANGFUSE_SDK_NAME = "python"
+  and LANGFUSE_SDK_VERSION = "4.15.2" (the langfuse release in LiteLLM's lock file, inside its pinned range >=4.7,<5.0),
+  sent as x-langfuse-sdk-name and x-langfuse-sdk-version. The exporter-path and base-URL join preserves trailing and leading
   slashes: LANGFUSE_OTEL_TRACES_EXPORT_PATH defaults to /api/public/otel/v1/traces, both the path
   and base_url.rstrip('/') and the path.lstrip('/') are joined with a single slash. Implement via
   betterlite-http; do not reuse B256's generic batch policy for the distinct Langfuse truncation and
@@ -139,7 +141,7 @@ out_of_scope:
 - OTLP protobuf encoding is a library boundary.
 - Configuration of the exporter's endpoint, credentials and timeout happens in B3900 and B3903.
 - The tracer that supplies spans and the provider that owns the batch export thread are B3903's channel lifetime management.
-- Python SDK version headers and Langfuse compatibility are B3900's concerns.
+- The installed-SDK version check is dropped by B3900. The two SDK header values are B3902's constants.
 pitfalls:
 - >-
     The oracle helper for this task is pre-registered as b3902 in the logging group.
@@ -169,6 +171,7 @@ pitfalls:
     of its largest field from its respective group, marked with the v2 consumer's truncation constant.
     Once all three groups (input, output, metadata) are truncated and the span is still rejected,
     it is dropped and logged.
+- "LANGFUSE_SDK_VERSION is a constant, not a lookup: betterlite links no langfuse package, so nothing may read an installed version, an environment variable or Cargo package metadata to fill x-langfuse-sdk-version."
 review_level: standard
 budget:
   max_changed_lines: 1500

@@ -2,8 +2,8 @@ id: B3345
 milestone: M5 api families
 title: Video character routes
 status: todo
-depends_on: [B3330, B3341, B672, B052, B014, B082, B1100, B2400, B844]
-file: null
+depends_on: [B3330, B3341, B672, B052, B014, B004, B082, B1100, B1101, B2400, B844]
+file: tasks/B3345-video-character-routes.yaml
 covers:
   - "litellm/proxy/video_endpoints/endpoints.py"
 parent: B093

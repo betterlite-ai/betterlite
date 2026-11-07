@@ -1,0 +1,176 @@
+id: B3125
+title: Serve cache cost comparisons and paginated caching requests
+description: >-
+  Add the module `prompt_cache_routes` to betterlite-server with two routes and nothing else. The prediction
+  route is POST /cost/predict-cache. The listing route is GET /cost_optimization/prompt_caching/requests. Both
+  need a Bearer or master-key caller through the existing auth layer. Submodules: `predict` (handler and arm
+  composition), `requests` (query decoding, SQL, row mapping, paging) and `error` (the module's error enum).
+  This task adds betterlite-anthropic and betterlite-rate-limit to the server's Cargo.toml. It registers both
+  routes itself. The settings-route task B1650 composes its router without re-registering /cost/predict-cache.
+
+  Route one, POST /cost/predict-cache. The body type `CachePredictionRequest` has current_deployment_id and
+  candidate_deployment_id (strings of 1 to 256 characters) and request (a JSON object); any other field is a 422.
+  The response type `CachePredictionResponse` has stay, switch, switch_delta, cache_rebuild_penalty,
+  pricing_basis (always "input_before_discounts_and_margins") and cache_guarantee (always false). The arm types
+  belong to B3123; reuse them. Steps in this order, because the status codes depend on it. (1) No model router in
+  server state: 503 with detail "Model router is unavailable". (2) Look both deployments up with B746's
+  get_cache_prediction_deployments; a missing deployment, or one whose team_id is neither null nor the caller's
+  team, is 404 with detail "Deployment not found". (3) For current then candidate, run B886's
+  can_key_call_resolved_model on the deployment's model_name; its error propagates. (4) parse_prompt of B3120 on
+  the request object. (5) Compute the reason. The caller key is the caller's hashed api_key. A caller whose
+  resolved key settings have a non-empty `config`, or a process where B3123's has_request_transforms is true,
+  is "unsupported_request_transform". The request headers fail B3121's supported_prediction_headers when
+  anthropic-beta is present or anthropic-version differs from 2023-06-01. The reason precedence, first match
+  wins: unsupported_provider_headers, unsupported_request_transform, unsupported_prompt_shape (prefix is None),
+  caller_identity_unavailable (empty api_key), limiter_unavailable (no main rate limiter in state). With any
+  reason, return 200 with stay for the current id and switch for the candidate id, each holding only
+  deployment_id and that reason, and switch_delta and cache_rebuild_penalty null. No provider call happens.
+  (6) Otherwise read the request body again through B1100's parsed-body cache. Rebuild the limiter request data:
+  the parsed body plus the client-tag policy and key-tag merges of B1106 (apply_client_tag_policy_pre_auth, then
+  apply_key_tags_pre_auth), because the cache keeps only the original top-level keys. (7) Call B3123's
+  AnthropicCacheRouting::predict for the current deployment with a TokenCounter that, for every count, takes
+  B3055's request_capacity guard (model = that deployment's model_name, the rebuilt data) and holds it while
+  B3121's count_prompt_tokens runs. A 429 from the guard is not caught: it leaves the handler as the response.
+  (8) When both deployments have the same model_info.id, switch is the same value as stay and no second
+  prediction runs. Otherwise predict for the candidate the same way. (9) switch_delta is switch.estimate.input_cost
+  minus stay.estimate.input_cost when both estimates exist, else null. cache_rebuild_penalty is
+  switch.estimate.input_cost minus switch.warm.input_cost when both exist, else null. Costs are floats, not
+  rounded.
+
+  Route two, GET /cost_optimization/prompt_caching/requests. Query values: start_date and end_date (required,
+  datetimes), page_size (integer 1 to 100, default 50), filter (all, injected or hits; default all),
+  cursor_start_time (datetime) and cursor_request_id (non-empty string). Decode with `decode_requests_query`,
+  the raw query string parser and the fuzz target. Datetimes follow pydantic: ISO 8601 with or without an offset
+  (use the speedate crate the server already has) or a Unix number. A naive datetime means UTC. Any failure is
+  the shared 422 response. Order of checks after decoding: (1) caller is not a proxy_admin or
+  proxy_admin_viewer (B2314's user_api_key_has_admin_view): 403, detail "Only proxy admin roles can view prompt
+  caching requests". (2) Exactly one of cursor_start_time and cursor_request_id: 400, detail "cursor_start_time
+  and cursor_request_id must be provided together". (3) No database: 500 with the db_not_connected_error text
+  from B2314/B1726's shared constant. (4) end before start: 400, detail "end_date must not be earlier than
+  start_date". Then run the SQL below through B700's typed query interface (B1726 owns the same
+  _query_raw_rows seam; do not build a parallel one) with page_size + 1 as the limit. The SQL selects request_id,
+  startTime as start_time, endTime as end_time, model, model_id, custom_llm_provider, spend, usage_object and
+  cost_breakdown (each only when the metadata value is a JSON object) and gateway_marker (the
+  litellm_gateway_injected_cache metadata value when it is a string) from LiteLLM_SpendLogs. Filters: startTime
+  between the two bounds inclusive, in UTC; cache_hit not equal to 'true' (a null cache_hit counts as 'false');
+  the filter clause; and the cursor test (startTime, request_id) less than (cursor time, cursor id) when a
+  cursor is given. Order by startTime descending, then request_id descending. The filter clauses are: hits means
+  cache-read tokens > 0; injected means the gateway marker is a string that is empty or equals model_id; all
+  means injected OR read > 0 OR creation > 0. The token expressions read metadata.usage_object: read is the
+  first non-zero of cache_read_input_tokens and prompt_tokens_details.cached_tokens, creation is the first
+  non-zero of cache_creation_input_tokens, prompt_tokens_details.cache_write_tokens and
+  prompt_tokens_details.cache_creation_tokens. A candidate counts only when it is a JSON number (truncated) or a
+  JSON boolean (true is 1), and no match gives 0. Build the SQL with bound parameters only; the filter picks
+  from a closed enum of three fixed fragments.
+
+  Each row becomes a `PromptCachingRequest`: request_id, start_time (UTC), model, gateway_injected
+  (B1693's marks_gateway_injection with the marker and model_id), cache_read_tokens and cache_creation_tokens
+  (B1693's extract_cache_read_tokens and extract_cache_creation_tokens on usage_object), spend and net_savings
+  (B1694's prompt_caching_savings_for_request with model, provider, usage_object, model_id, the current router,
+  cost_breakdown and end_time as billed_at; null when unavailable). The response `PromptCachingRequestsResponse`
+  holds requests (the first page_size rows), page_size, has_more (more than page_size rows came back) and
+  next_cursor. next_cursor is {start_time, request_id} of the last returned request when has_more, else null.
+  Timestamps serialize as pydantic does: UTC with a trailing Z.
+
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/prompt_cache_routes.rs
+    - crates/betterlite-server/src/prompt_cache_routes/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/caching_requests_query.rs
+    - crates/betterlite-server/fuzz/corpus/caching_requests_query/**
+    - tools/oracle/cases/http/prompt-cache-routes/**
+    - tools/oracle/helpers/b3125.py
+    - tools/oracle/helpers/b3125/**
+    - tools/oracle/src/helpers/server/b3125.rs
+    - tools/oracle/src/helpers/server/b3125/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/prompt_cache_prediction.py#L64-L167
+    why: The route decorator, the numbered handler steps, the reason precedence and the two delta formulas.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/prompt_cache_prediction.py#L33-L62
+    why: Capacity-holding token counter and the rebuilt limiter request data.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/prompt_cache_prediction.py#L1-L63
+    why: Request and response shapes, field limits, extra=forbid and the two fixed response literals.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/prompt_caching_requests.py#L34-L87
+    why: Token-count SQL fragments, the three filter clauses and the full query.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/prompt_caching_requests.py#L89-L125
+    why: Row validation and the row to response mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/prompt_caching_requests.py#L128-L184
+    why: Route decorator, query constraints, check order, bind values and paging.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/management_endpoints/prompt_caching_requests.py#L1-L35
+    why: Listing response types and the filter literal.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cost_tracking_settings.py#L36-L43
+    why: Shows the prediction router is mounted through the cost settings router; the path stays /cost/predict-cache.
+
+dod:
+  - text: The prediction route returns 503 without a router, 404 for a missing or other-team deployment, and runs the model access check for both deployments before any prompt work.
+    proof: [predict-tests, oracle]
+  - text: Header, request-transform, prompt-shape, identity and limiter reasons win in the stated order and return 200 with only deployment_id and reason per arm and null deltas, without a provider call.
+    proof: [predict-tests, oracle]
+  - text: A comparison counts under the request_capacity guard for each count, reuses the stay arm when both deployments share one model_info.id, and lets a 429 from the guard become the response.
+    proof: [predict-tests]
+  - text: switch_delta and cache_rebuild_penalty are computed from estimate and warm costs and are null when an operand is missing; pricing_basis and cache_guarantee are fixed.
+    proof: [predict-tests, oracle]
+  - text: The prediction body rejects unknown fields and empty or over-256 ids with the shared 422 response.
+    proof: [predict-tests, oracle]
+  - text: The listing route checks the admin view role, then the cursor pair, then the database, then the date order, with the stated statuses and details.
+    proof: [requests-tests, oracle]
+  - text: The listing SQL has the exact filter clauses, token expressions, cache-hit exclusion, cursor test and ordering, with every value bound.
+    proof: [sql-tests]
+  - text: Rows map to requests with gateway_injected, token counts, spend and net_savings, and paging returns page_size rows, has_more and a next_cursor from the last returned row.
+    proof: [requests-tests]
+  - text: Query decoding applies the page_size range, the filter enum, naive datetimes as UTC and required start_date and end_date, and never panics on arbitrary query bytes.
+    proof: [requests-tests, caching-query-corpus, oracle]
+checks:
+  optional: []
+  commands:
+    - id: predict-tests
+      why: the prediction route tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prompt_cache_routes::predict::/)'
+    - id: requests-tests
+      why: the listing route tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prompt_cache_routes::requests::/) - test(/^prompt_cache_routes::requests::sql_/) - test(replays_the_caching_requests_query_corpus)'
+    - id: sql-tests
+      why: the listing SQL text tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^prompt_cache_routes::requests::sql_/)'
+    - id: caching-query-corpus
+      why: the query decoder has no new fuzz replay samples
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/caching_requests_query)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_caching_requests_query_corpus)'
+oracle_cases:
+  - tools/oracle/cases/http/prompt-cache-routes/predict-unknown-deployment-404.yaml
+  - tools/oracle/cases/http/prompt-cache-routes/predict-unsupported-prompt-shape.yaml
+  - tools/oracle/cases/http/prompt-cache-routes/predict-beta-header-reason.yaml
+  - tools/oracle/cases/http/prompt-cache-routes/predict-body-validation-422.yaml
+  - tools/oracle/cases/http/prompt-cache-routes/requests-cursor-pair-400.yaml
+  - tools/oracle/cases/http/prompt-cache-routes/requests-without-database-500.yaml
+  - tools/oracle/cases/http/prompt-cache-routes/requests-query-validation-422.yaml
+deviations:
+  - what: limiter_unavailable is returned only when betterlite's main rate limiter is absent from server state, not when a different limiter class is installed.
+    why: betterlite has one limiter type (B5660 builds it at boot), so LiteLLM's isinstance test against the v3 handler has no second case.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/prompt_cache_prediction.py#L103-L111
+  - what: The oracle cases for the listing route stop at the 400, 422 and no-database 500 answers; the admin 403, the date-order 400, rows and paging are covered by native tests only.
+    why: The oracle has no database for either gateway in the worker sandbox, so cases stop at the 500 database check.
+out_of_scope:
+  - "B3120 owns parse_prompt, B3121 owns supported_prediction_headers, count_prompt_tokens and TokenCounter, B3123 owns predict, the arm types and has_request_transforms, and B3122 owns observation lookup."
+  - "B746 owns get_cache_prediction_deployments and the /cost/predict-cache model-candidate extraction for auth; B886 owns can_key_call_resolved_model."
+  - "B3055 owns request_capacity and the 429 body; B1106 owns the two tag merges; B1100 owns the parsed-body cache."
+  - "B1693 and B1694 own the usage extractors, marks_gateway_injection and prompt_caching_savings_for_request; B1726 and B700 own the spend-log query seam."
+  - "B1650 and B1651 own the other routes of cost_tracking_settings.py and compose this module's routes without registering them again."
+pitfalls:
+  - A 429 from the capacity guard inside a token count is outside count_prompt_tokens' catch-all, so it fails the whole request instead of giving token_count_unavailable.
+  - The same-id shortcut compares model_info.id of the two deployments, not their model names, and then reuses the stay arm without a second count.
+  - Header reasons look at every request header; anthropic-version equal to 2023-06-01 passes, any other value or any anthropic-beta header turns both arms to unsupported_provider_headers.
+  - An empty caller api_key gives caller_identity_unavailable only when the prompt shape is supported, because unsupported_prompt_shape is checked before it.
+  - The cursor test is a row comparison (startTime, request_id), so rows with the same startTime page by request_id descending and none repeat or vanish.
+  - The SQL excludes rows with cache_hit 'true' in any letter case, and treats a null cache_hit as not a hit.
+  - NULLIF(candidate, 0) in the token SQL means a zero cache_read_input_tokens falls through to prompt_tokens_details.cached_tokens, and TRUNC means 0.9 counts as 0 for the filter.
+  - The Rust extractors of B1693 run on the same usage_object after the SQL filter, so filter and displayed counts can differ for odd values; do not reconcile them.
+  - A naive start_date or end_date or cursor_start_time is UTC, and an end_date equal to start_date is allowed.
+  - The database check comes before the date-order check, so a reversed range with no database is 500, not 400.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

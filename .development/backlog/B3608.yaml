@@ -2,8 +2,8 @@ id: B3608
 milestone: M5 api families
 title: Pass-through streamed response logging reconstruction
 status: todo
-depends_on: [B3600, B3605, B250]
-file: null
+depends_on: [B3600, B3605, B250, B005, B3638]
+file: tasks/B3608-passthrough-stream-logging.yaml
 covers:
   - "litellm/proxy/pass_through_endpoints/streaming_handler.py"
 parent: B102

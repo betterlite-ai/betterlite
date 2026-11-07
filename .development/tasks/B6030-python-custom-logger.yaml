@@ -1,0 +1,118 @@
+id: B6030
+title: Python CustomLogger and CustomBatchLogger
+description: >-
+  Users subclass `litellm.integrations.custom_logger.CustomLogger` to receive request events, and many LiteLLM callbacks
+  inherit from it. After `import betterlite as litellm`, the same subclass must work unchanged. This task ports the class
+  and `CustomBatchLogger` to Python. It is Python only: no Rust file changes.
+
+
+  Put the code in `python/betterlite/_integrations/` (a package with an explicit `__all__` and files under 300 lines).
+  `custom_logger.py` holds the class, `custom_batch_logger.py` holds the batch class, and `custom_logger_types.py` holds the
+  small types from litellm/types/integrations/custom_logger.py (`StandardCustomLoggerInitParams`,
+  `AgenticLoopRequestPatch`, `AgenticLoopSafetyError` and the module constants it defines). Those two types are pydantic
+  models in LiteLLM. The wheel depends only on python-dotenv, so write them as plain classes or dataclasses with the same
+  field names and defaults. Then add re-export modules at LiteLLM's paths: `python/betterlite/integrations/custom_logger.py`,
+  `python/betterlite/integrations/custom_batch_logger.py` and `python/betterlite/types/integrations/custom_logger.py`. A
+  re-export module only imports names from `_integrations` and lists them in `__all__`. Do not create
+  `integrations/__init__.py`, `types/integrations/__init__.py` or any other `__init__.py` outside `_integrations`: the
+  architect writes those. If one is missing when you start, stop and report a blocker.
+
+
+  Port every method of `CustomLogger` in source order with the same name, signature and default return. That covers the
+  sync and async hooks (`log_pre_api_call`, `log_post_api_call`, `log_success_event`, `log_failure_event`, `async_log_*`,
+  the stream and pre-call hooks, the moderation and post-call hooks), `get_callback_env_vars`, `handle_callback_failure`,
+  `_select_metadata_field`, `redacts_messages_itself` and the message redaction and truncation helpers near L933. Read the
+  file from the top and do not stop at this list. Hooks that return the request data unchanged must return the same object,
+  not a copy. Inheritance is the point of the class, so keep every method on the class itself and keep private names that
+  subclasses call. Annotations use `JsonValue`-style aliases and Protocols, never `Any`. Types such as `ModelResponse`,
+  `EmbeddingResponse` and `StandardLoggingPayload` come from `betterlite.types.utils` (B5657, B5658). A type that does not
+  exist there yet, such as `CustomStreamWrapper`, is a small Protocol in `custom_logger_types.py` with only the members the
+  logger calls, so this task does not wait for the completion port (B158).
+
+
+  The helpers that strip base64 payloads, truncate long strings and redact messages are pure functions that Rust owns for
+  the proxy. Here, port them in Python with the same results, since a subclass may call them without a gateway. Where
+  `litellm.turn_off_message_logging` or another module setting is read, read it from `betterlite` the way LiteLLM reads it
+  from `litellm`, at call time, so a user's assignment after import takes effect. `CustomBatchLogger` keeps its queue,
+  `flush_interval`, `batch_size`, `max_queue_size`, `flush_lock`, `preserve_events_added_during_flush` and `periodic_flush`
+  behavior. `flush_queue` returns at once when `flush_lock` is None. When `async_send_batch` raises, it keeps the queued events,
+  drops the oldest ones beyond `max_queue_size` and returns. The defaults come from `betterlite.DEFAULT_FLUSH_INTERVAL_SECONDS`
+  and `betterlite.DEFAULT_BATCH_SIZE`, read when the constructor runs.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/_integrations/__init__.py
+  - crates/betterlite-python/python/betterlite/_integrations/custom_logger.py
+  - crates/betterlite-python/python/betterlite/_integrations/custom_logger_*.py
+  - crates/betterlite-python/python/betterlite/_integrations/custom_batch_logger.py
+  - crates/betterlite-python/python/betterlite/integrations/custom_logger.py
+  - crates/betterlite-python/python/betterlite/integrations/custom_batch_logger.py
+  - crates/betterlite-python/python/betterlite/types/integrations/custom_logger.py
+  - crates/betterlite-python/tests/test_custom_logger.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_logger.py
+  why: The class to port. Work through it from the top.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py
+  why: The batch logger and its flush loop.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/integrations/custom_logger.py
+  why: The init params and agentic loop types.
+dod:
+- text: >-
+    Every public and private method of `CustomLogger` exists on the betterlite class with the same name and the same
+    parameter names, and a LiteLLM subclass body runs on both without change.
+  proof: [logger-surface]
+- text: Each default hook returns what LiteLLM's returns, including the same object for pass-through pre-call hooks.
+  proof: [logger-hooks]
+- text: The base64, truncation and redaction helpers give the same output as LiteLLM's on the same inputs.
+  proof: [logger-helpers]
+- text: >-
+    `CustomBatchLogger` keeps its defaults, its no-lock early return and its overflow drop, and a flush that raises keeps the
+    queued events.
+  proof: [batch-logger]
+- text: The three re-export modules expose the same names as LiteLLM's modules.
+  proof: [logger-surface]
+- text: Python files pass ruff and basedpyright in strict mode.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: logger-surface
+    why: A method is missing or its parameters differ from LiteLLM's.
+    run: >-
+      uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_custom_logger.py -k logger_surface
+  - id: logger-hooks
+    why: A default hook returns something different.
+    run: >-
+      uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_custom_logger.py -k logger_hook
+  - id: logger-helpers
+    why: A helper changes its output.
+    run: >-
+      uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_custom_logger.py -k logger_helper
+  - id: batch-logger
+    why: Queue, flush or lock behavior differs.
+    run: >-
+      uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_custom_logger.py -k batch_logger
+  - id: python-lint
+    why: Strict typing has to hold for every new module.
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: The init params and loop patch types are plain classes, not pydantic models.
+  why: The wheel depends only on python-dotenv. Field names and defaults stay the same.
+- what: This task has no helper oracle cases.
+  why: The test imports both packages and compares them, and that covers more than a helper call would.
+out_of_scope:
+- The guardrail base class is B6032, and the prompt management and secret manager bases are B6033.
+- Callbacks that inherit from CustomLogger, such as the Langfuse, S3 or OpenTelemetry classes, belong to their own entries.
+- Registering a logger in `litellm.callbacks` and running it is the callback registry, B189 and B256.
+- The `__init__.py` files of `betterlite/integrations` and `betterlite/types/integrations`, and any star line in `betterlite/__init__.py`, are written by the architect.
+pitfalls:
+- Default hooks that return their input must return the same object. A copy breaks subclasses that compare identity.
+- Do not read a setting once at import. LiteLLM reads module settings when the hook runs, and users assign them late.
+- 'Do not use `Any`. Use a Protocol or `JsonValue`, and do not add `cast` or `type: ignore` to get the checker through.'
+- 'Keep the events queued when a send raises, and clear them only after a send that returned. The two flush modes differ: with the class flag set, only the sent events go.'
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

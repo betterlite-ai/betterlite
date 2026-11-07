@@ -1,0 +1,157 @@
+id: B3342
+title: Video edit and extension calls
+description: >-
+  Build the four SDK call functions for video edit and video extension in betterlite-core::api: video_edit, avideo_edit,
+  video_extension and avideo_extension (litellm/videos/main.py). Two modules, `api::video_edit_call` and
+  `api::video_extension_call`, one file tree each. Each call decides the provider, checks the mock shortcut, builds the
+  provider config lookup, updates the logging object and hands one prepared request to the transport handler that B3336
+  owns (`api::video_edit_transport` and its extension twin, both on one struct). Follow the shape of B3338
+  (video_generation_call) and B3339 (video_content_call). The two calls differ only in their arguments, the unsupported
+  message and the logging call type, so write each module on its own and do not share a helper between them.
+
+  Inputs. Edit takes video_id, prompt, timeout (default 600), custom_llm_provider, extra_headers, extra_query, extra_body, the
+  keyword-only video file (B3330's file content type) and the loose keyword map. Extension takes video_id, prompt, seconds
+  (a string, passed on unchanged), timeout, custom_llm_provider, extra_headers, extra_query, extra_body and the loose
+  keyword map. The logging object arrives in the loose keywords under litellm_logging_obj, supplied by the SDK wrapper.
+
+  Sync path (video_edit, video_extension), steps in this order. (1) Take litellm_logging_obj out of the loose keywords; a
+  missing one is an error. (2) Read litellm_call_id from the loose keywords without removing it. (3) Take async_call out of
+  the loose keywords; it counts as async only when it is exactly true. (4) If mock_response is present and not null, decode
+  it as JSON when it is a string, build a VideoObject (B3330) from the map and return it at once, with no provider lookup,
+  no logging update and no handler call; an async caller gets the object directly, not a future. The mock key is read, not
+  removed, so it still reaches GenericLiteLLMParams below. (5) When custom_llm_provider is none, run B672's
+  decode_video_id_with_provider on video_id and take its custom_llm_provider, using "openai" when that is none or empty. (6)
+  Build GenericLiteLLMParams (B010) from the remaining loose keywords. (7) Select the video config with B3332's
+  get_provider_video_config with model none and the provider. A provider string that is not a known provider name fails in
+  this step with LiteLLM's ValueError for an invalid LlmProviders value; a known provider with no video config makes the
+  selector return none, and then the call fails with "video edit is not supported for <provider>" (edit) or "video
+  extension is not supported for <provider>" (extension). (8) Merge the loose keywords into the error-context map that
+  exception_type will receive later. (9) Call B247's update_environment_variables on the logging object with model "" (the
+  empty string, not none), user = the loose keyword user, optional_params = the request params, litellm_params = a map with
+  litellm_call_id first and then the request params, and the provider. Request params are {video_id, prompt} for edit and
+  {video_id, prompt, seconds} for extension. The video file and extra_* arguments are not in them. (10) Set the logging
+  call type to "video_edit" or "video_extension". (11) Call the B3336 handler with prompt, video_id, the video file (edit)
+  or seconds (extension), the config, provider, litellm params, logging object, extra_headers, extra_body, timeout =
+  `timeout or DEFAULT_REQUEST_TIMEOUT` (argument default 600; 0 or none falls back to B198's request_timeout, REQUEST_TIMEOUT
+  env var, default 6000 seconds), the async flag, and the client loose keyword (read, not removed). extra_query is accepted
+  and never used. api_key is never passed, so the handler falls back to the params' api_key.
+
+  Any failure in steps 1 to 11, including the ones raised by the handler and the mock decode, goes through B185/B186's
+  exception_type with model "" (empty string), the provider as known at that moment (none when the failure came before step
+  5 finished), the original error, the call's arguments plus loose keywords as completion kwargs, and the loose keywords as
+  extra kwargs. exception_type runs once; do not map an already mapped error again.
+
+  Async path (avideo_edit, avideo_extension). Set async_call to true in the loose keywords, run the sync function with the
+  same arguments and the caller's B198 call context (no global state, no executor hop), and await the result when it is a
+  pending future; a plain value (the mock object) is returned as is. Unlike avideo_generation there is no provider inference
+  here, so the provider stays whatever the caller passed, possibly none. Errors from the whole async function go through
+  exception_type with model "" and the caller's custom_llm_provider argument, which makes the same error pass through
+  exception_type twice when the sync part already mapped it; keep this order and let exception_type's own idempotence
+  (B185/B186) decide the final error. Expose each pair as two Rust entry points (sync, async) sharing one private
+  implementation, and no flag argument.
+
+  Name the rstest functions `edit_call_behavior`, `extension_call_behavior` and `call_error_behavior`, one named case per DoD
+  item, using a recording fake of the B3336 handler trait and a fake logging handle. The task changes no wire format, so
+  there is no fuzz target.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/video_edit_call.rs
+    - crates/betterlite-core/src/api/video_edit_call/**
+    - crates/betterlite-core/src/api/video_extension_call.rs
+    - crates/betterlite-core/src/api/video_extension_call/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1340-L1397
+    why: avideo_edit, the keyword-only video argument, async_call, the partial run with a copied context and the exception wrap with model "".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1399-L1480
+    why: video_edit, from the mock shortcut and provider decode through the logging update to the handler call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1483-L1540
+    why: avideo_extension, the same async wrapper with seconds as a required argument.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1542-L1618
+    why: video_extension, with request params that include seconds and the extension handler call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/videos/utils.py#L59-L113
+    why: decode_video_id_with_provider, owned by B672; this task reads its custom_llm_provider key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L910-L957
+    why: update_environment_variables, owned by B247; the call passes model "" and the request params through it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L539-L542
+    why: CallTypes values video_edit, avideo_edit, video_extension and avideo_extension.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L938-L941
+    why: The /videos/edits and /videos/extensions route-to-call-type map (proxy wiring is not this task).
+dod:
+  - text: >-
+      With mock_response set (a JSON string or a map) the sync call returns a VideoObject before the provider lookup, the logging
+      update and the handler call, for both edit and extension.
+      Example: mock_response '{"id":"video_1","object":"video","status":"completed"}' gives id video_1 and records zero handler calls.
+    proof: [edit-call-tests, extension-call-tests]
+  - text: >-
+      With custom_llm_provider none the provider comes from decode_video_id_with_provider(video_id), and "openai" is used when the
+      decoded provider is none or empty; an explicit custom_llm_provider skips the decode.
+    proof: [edit-call-tests, extension-call-tests]
+  - text: >-
+      A provider whose video config is none fails with "video edit is not supported for <provider>" or "video extension is not
+      supported for <provider>", and an unknown provider string fails at the provider conversion; both go through exception_type with model "".
+    proof: [call-error-tests]
+  - text: >-
+      The logging object gets update_environment_variables with model "", user from the loose keywords, optional_params {video_id, prompt}
+      for edit or {video_id, prompt, seconds} for extension, and litellm_params with litellm_call_id first; its call type is then set to
+      video_edit or video_extension.
+    proof: [edit-call-tests, extension-call-tests]
+  - text: >-
+      The handler receives the video file (edit) or the unchanged seconds string (extension), extra_headers, extra_body, the config,
+      the provider, the client loose keyword and the async flag, and does not receive extra_query or an api_key.
+    proof: [edit-call-tests, extension-call-tests]
+  - text: >-
+      The handler timeout is `timeout or request_timeout`: the default 600 is passed as 600, while 0 and none become B198's
+      request_timeout (6000 unless REQUEST_TIMEOUT is set).
+    proof: [edit-call-tests, extension-call-tests]
+  - text: >-
+      async_call counts only when it is exactly true: a string "true" or the number 1 leaves the handler on its sync path.
+    proof: [edit-call-tests, extension-call-tests]
+  - text: >-
+      avideo_edit and avideo_extension set async_call true, run the sync function with the caller's call context, await a pending
+      future and return a plain value as is, and they do no provider inference.
+    proof: [edit-call-tests, extension-call-tests]
+  - text: >-
+      A missing litellm_logging_obj, a mock decode error and a handler error each reach exception_type once with model "", the
+      provider known at that point and the loose keywords as extra kwargs.
+    proof: [call-error-tests]
+checks:
+  optional: []
+  commands:
+    - id: edit-call-tests
+      why: the edit call tests are missing or the mock shortcut, provider decode, logging update, timeout or async hand-off differ
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_edit_call::(.*::)?edit_call_behavior::/)'
+    - id: extension-call-tests
+      why: the extension call tests are missing or the seconds pass-through, logging params, timeout or async hand-off differ
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_extension_call::(.*::)?extension_call_behavior::/)'
+    - id: call-error-tests
+      why: the unsupported-provider text or the exception_type boundary differs in either module
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_(edit|extension)_call::(.*::)?call_error_behavior::/)'
+oracle_cases: []
+deviations:
+  - what: Python's executor thread with a copied contextvars context is replaced by B198's explicit call context passed to the sync path, and the async function awaits the handler's future directly.
+    why: betterlite keeps no ContextVars and its handlers are async, so the caller sees the same result.
+  - what: A provider string that LiteLLM's LlmProviders enum rejects fails with betterlite's typed unknown-provider error, not Python's ValueError text "'x' is not a valid LlmProviders".
+    why: The Rust provider type is a closed enum parsed from the name; the status and error class after exception_type stay the same, only the message text differs.
+out_of_scope:
+  - "The @client wrapper that creates litellm_logging_obj, fills litellm_call_id and applies caching, retries and callbacks belongs to the SDK wrapper tasks; this task receives the logging object in the loose keywords."
+  - "video_edit_handler, async_video_edit_handler, video_extension_handler and async_video_extension_handler: B3336."
+  - "async_video_delete_handler (llm_http_handler.py 8528-8602): no caller at the pin, no owner."
+  - "Generation, content, remix, list, status and character calls in litellm/videos/main.py: B3338, B3339, B3340 and B3341."
+  - "decode_video_id_with_provider: B672. get_provider_video_config: B3332. GenericLiteLLMParams: B010. update_environment_variables: B247. exception_type: B185 and B186."
+  - "The /v1/videos/edits and /v1/videos/extensions proxy routes and their multipart parsing: the video endpoint tasks under B093."
+  - "litellm/videos/__init__.py re-exports and the router's avideo_edit and avideo_extension factory wiring: module wiring is B093 and the router tasks."
+pitfalls:
+  - The mock check reads mock_response with get, not pop, and runs before the provider decode, so a mocked call never needs a valid video id or provider.
+  - The unsupported message differs by call ("video edit is not supported for" and "video extension is not supported for"), and it names the provider only, never the video id.
+  - The logging update passes model "" and only video_id, prompt (and seconds for extension) as params; the video file, extra_headers and extra_body are left out, and litellm_call_id comes first in litellm_params.
+  - extension's seconds is a string and goes to the handler unchanged; do not parse it as a number or validate it.
+  - extra_query is a named argument in both calls and no code reads it after that.
+  - async_call is removed from the loose keywords before GenericLiteLLMParams is built, but client, mock_response and litellm_call_id stay in them.
+  - The video file of edit is keyword-only in Python, so the Rust edit entry points take it as a named field and not as a position.
+  - exception_type gets model "" in both the sync and the async functions, unlike avideo_generation, which uses model or "sora-2".
+  - The sync function's except clause reads custom_llm_provider as it is at the failure, so an error before the decode step reports a none provider.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,14 @@
+id: B5362
+milestone: M12 python
+title: Non-default parameter handling with transcription and image optional params
+status: todo
+depends_on: [B171, B176, B2214, B2231, B5360]
+file: tasks/B5362-non-default-params.yaml
+covers:
+  - "litellm/utils.py"
+parent: B157
+split_from: B157
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

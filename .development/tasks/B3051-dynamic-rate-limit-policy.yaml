@@ -188,7 +188,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^dynamic_priority::handler(::|$)/)'
     - id: cases-tests
       why: Oracle cases verify priority allocation, saturation detection and descriptor generation
-      run: cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/dynamic_priority -k 'b3051'
+      run: cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/dynamic_priority
 
 oracle_cases:
   - tools/oracle/cases/dynamic_priority/priority-not-set.yaml
