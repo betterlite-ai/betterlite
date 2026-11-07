@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
+
 use crate::otel::config::{ExporterOwner, ExporterSpec};
 
 use super::{credential_gated_exporters, ensure_mappers, is_unconfigured_placeholder};
@@ -55,26 +57,60 @@ fn a_default_spec_is_the_unconfigured_placeholder() {
 #[test]
 fn a_configured_spec_is_not_the_placeholder() {
     assert!(!is_unconfigured_placeholder(&configured()));
-    let mut gated = placeholder();
-    gated.requires_headers = true;
-    assert!(!is_unconfigured_placeholder(&gated));
-    let mut owned = placeholder();
-    owned.owner = Some(ExporterOwner::ArizeAx);
-    assert!(!is_unconfigured_placeholder(&owned));
-    let mut in_memory = placeholder();
-    in_memory.kind = "in_memory".to_owned();
-    assert!(!is_unconfigured_placeholder(&in_memory));
+    assert!(!is_unconfigured_placeholder(&ExporterSpec {
+        kind: "in_memory".to_owned(),
+        ..placeholder()
+    }));
+    assert!(!is_unconfigured_placeholder(&ExporterSpec {
+        endpoint: Some("https://collector.example/v1/traces".to_owned()),
+        ..placeholder()
+    }));
+    assert!(!is_unconfigured_placeholder(&ExporterSpec {
+        traces_endpoint: Some("https://collector.example/v1/traces".to_owned()),
+        ..placeholder()
+    }));
+    assert!(!is_unconfigured_placeholder(&ExporterSpec {
+        headers: Some("x=1".to_owned()),
+        ..placeholder()
+    }));
+    assert!(!is_unconfigured_placeholder(&ExporterSpec {
+        owner: Some(ExporterOwner::ArizeAx),
+        ..placeholder()
+    }));
+    assert!(!is_unconfigured_placeholder(&ExporterSpec {
+        options: Some(BTreeMap::from([("key".to_owned(), "value".to_owned())])),
+        ..placeholder()
+    }));
+    assert!(!is_unconfigured_placeholder(&ExporterSpec {
+        use_simple_processor: Some(true),
+        ..placeholder()
+    }));
+    assert!(!is_unconfigured_placeholder(&ExporterSpec {
+        requires_headers: true,
+        ..placeholder()
+    }));
 }
 
 #[test]
 fn credential_gating_drops_placeholders_and_appends_the_gated_spec() {
     let gated =
         credential_gated_exporters(vec![placeholder(), configured()], ExporterOwner::WeaveOtel);
-    assert_eq!(gated.len(), 2);
-    assert_eq!(gated[0].kind, "otlp_http");
-    assert_eq!(gated[1].kind, "console");
-    assert_eq!(gated[1].owner, Some(ExporterOwner::WeaveOtel));
-    assert!(gated[1].requires_headers);
+    assert_eq!(
+        gated,
+        [
+            configured(),
+            ExporterSpec {
+                kind: "console".to_owned(),
+                endpoint: None,
+                traces_endpoint: None,
+                headers: None,
+                owner: Some(ExporterOwner::WeaveOtel),
+                options: None,
+                use_simple_processor: None,
+                requires_headers: true,
+            }
+        ]
+    );
 }
 
 #[test]

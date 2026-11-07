@@ -64,17 +64,22 @@ fn preset_appends_one_http_exporter() {
         .expect("the levo preset builds");
     assert_eq!(settings.exporters.len(), 2);
     assert_eq!(settings.exporters[0].kind, "console");
-    let exporter = &settings.exporters[1];
-    assert_eq!(exporter.kind, "otlp_http");
     assert_eq!(
-        exporter.endpoint.as_deref(),
-        Some("https://levo.example/v1/traces")
+        settings.exporters[1],
+        ExporterSpec {
+            kind: "otlp_http".to_owned(),
+            endpoint: Some("https://levo.example/v1/traces".to_owned()),
+            traces_endpoint: None,
+            headers: Some(
+                "Authorization=Bearer key,x-levo-organization-id=org,x-levo-workspace-id=workspace"
+                    .to_owned()
+            ),
+            owner: Some(ExporterOwner::Levo),
+            options: None,
+            use_simple_processor: None,
+            requires_headers: false,
+        }
     );
-    assert_eq!(
-        exporter.headers.as_deref(),
-        Some("Authorization=Bearer key,x-levo-organization-id=org,x-levo-workspace-id=workspace")
-    );
-    assert_eq!(exporter.owner, Some(ExporterOwner::Levo));
 }
 
 #[test]

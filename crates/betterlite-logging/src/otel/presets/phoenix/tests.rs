@@ -54,17 +54,19 @@ fn build(variables: &[(&str, &str)], mapper_names: &[&str], allow: bool) -> Sett
 fn preset_appends_the_exporter_and_the_mapper() {
     let settings = build(&[("PHOENIX_API_KEY", "key")], &["genai"], false);
     assert_eq!(settings.exporters.len(), 2);
-    let exporter = &settings.exporters[1];
-    assert_eq!(exporter.kind, "otlp_http");
     assert_eq!(
-        exporter.endpoint.as_deref(),
-        Some("http://localhost:6006/v1/traces")
+        settings.exporters[1],
+        ExporterSpec {
+            kind: "otlp_http".to_owned(),
+            endpoint: Some("http://localhost:6006/v1/traces".to_owned()),
+            traces_endpoint: None,
+            headers: Some("Authorization=Bearer key".to_owned()),
+            owner: Some(ExporterOwner::ArizePhoenix),
+            options: None,
+            use_simple_processor: None,
+            requires_headers: false,
+        }
     );
-    assert_eq!(
-        exporter.headers.as_deref(),
-        Some("Authorization=Bearer key")
-    );
-    assert_eq!(exporter.owner, Some(ExporterOwner::ArizePhoenix));
     assert_eq!(settings.mapper_names, ["genai", "openinference"]);
 }
 

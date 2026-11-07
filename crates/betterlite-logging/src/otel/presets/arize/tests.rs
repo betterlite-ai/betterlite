@@ -55,13 +55,19 @@ fn preset_appends_the_exporter_and_the_mapper() {
     let settings = build(&[("ARIZE_SPACE_ID", "space")], &["genai"]);
     assert_eq!(settings.exporters.len(), 2);
     assert_eq!(settings.exporters[0].kind, "console");
-    let exporter = &settings.exporters[1];
-    assert_eq!(exporter.kind, "otlp_grpc");
     assert_eq!(
-        exporter.endpoint.as_deref(),
-        Some("https://otlp.arize.com/v1")
+        settings.exporters[1],
+        ExporterSpec {
+            kind: "otlp_grpc".to_owned(),
+            endpoint: Some("https://otlp.arize.com/v1".to_owned()),
+            traces_endpoint: None,
+            headers: Some("space_id=space".to_owned()),
+            owner: Some(ExporterOwner::ArizeAx),
+            options: None,
+            use_simple_processor: None,
+            requires_headers: false,
+        }
     );
-    assert_eq!(exporter.owner, Some(ExporterOwner::ArizeAx));
     assert_eq!(settings.mapper_names, ["genai", "openinference"]);
 }
 

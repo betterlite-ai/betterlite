@@ -59,17 +59,19 @@ fn preset_appends_the_exporter_and_the_mappers() {
         )
         .expect("the weave preset builds");
     assert_eq!(settings.exporters.len(), 2);
-    let exporter = &settings.exporters[1];
-    assert_eq!(exporter.kind, "otlp_http");
     assert_eq!(
-        exporter.endpoint.as_deref(),
-        Some("https://trace.wandb.ai/otel/v1/traces")
+        settings.exporters[1],
+        ExporterSpec {
+            kind: "otlp_http".to_owned(),
+            endpoint: Some("https://trace.wandb.ai/otel/v1/traces".to_owned()),
+            traces_endpoint: None,
+            headers: Some("Authorization=Basic YXBpOmFiYw==,project_id=entity/project".to_owned()),
+            owner: Some(ExporterOwner::WeaveOtel),
+            options: None,
+            use_simple_processor: None,
+            requires_headers: false,
+        }
     );
-    assert_eq!(
-        exporter.headers.as_deref(),
-        Some("Authorization=Basic YXBpOmFiYw==,project_id=entity/project")
-    );
-    assert_eq!(exporter.owner, Some(ExporterOwner::WeaveOtel));
     assert_eq!(settings.mapper_names, ["genai", "openinference", "weave"]);
 }
 
@@ -101,11 +103,19 @@ fn preset_gates_the_exporters_when_credentials_are_allowed_to_be_missing() {
     let settings = WeavePreset
         .build(&environment(&[]), base_settings(&["genai"]), true)
         .expect("the gated preset builds");
-    assert_eq!(settings.exporters.len(), 1);
-    let gated = &settings.exporters[0];
-    assert_eq!(gated.kind, "console");
-    assert_eq!(gated.owner, Some(ExporterOwner::WeaveOtel));
-    assert!(gated.requires_headers);
+    assert_eq!(
+        settings.exporters,
+        [ExporterSpec {
+            kind: "console".to_owned(),
+            endpoint: None,
+            traces_endpoint: None,
+            headers: None,
+            owner: Some(ExporterOwner::WeaveOtel),
+            options: None,
+            use_simple_processor: None,
+            requires_headers: true,
+        }]
+    );
     assert_eq!(settings.mapper_names, ["genai", "openinference", "weave"]);
 }
 
