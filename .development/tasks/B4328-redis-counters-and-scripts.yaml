@@ -1,0 +1,352 @@
+id: B4328
+title: Read Redis counters and execute namespaced Lua operations
+description: >-
+  B5220 opens live connections and B4325 hands out the reusable client. This task
+  adds the module `redis_counters` to betterlite-redis. It is the counter side of
+  LiteLLM's `RedisCache`: increments, floor-clamped in-flight counters, counter
+  reads, key scans, the max-only setter and registered Lua scripts. Every key goes
+  through `cache_primitives::namespace::check_and_fix_namespace` first. No new
+  dependency is needed: `redis`, `tokio`, `tracing` and `thiserror` already come
+  from B5220 and B4325.
+
+  Public API. `RedisCounters` has public fields `transport: Arc<RedisTransport>`,
+  `namespace: Option<String>`, `default_ttl: i64`, `hooks: Arc<dyn ServiceHooks>`
+  and `gate: Arc<dyn BreakerGate>`, and the constructor `RedisCounters::new` takes
+  the same five in that order. `default_ttl` is LiteLLM's `BaseCache.default_ttl`
+  (60, or `litellm.default_redis_ttl` when set); the caller resolves it.
+  `ServiceHooks`, `ServiceEvent`, `BreakerGate`, `BreakerAdmission` and
+  `BreakerOpen` come from B4325's module `redis_client_reuse`, and this task
+  declares none of them. They stand in for `service_logger_obj.service_success_hook`
+  and `service_failure_hook` (B012) and for B393's breaker, and B5630 implements
+  both. The hooks are sync, so the implementer must not block. The error type
+  `RedisCountersError` is a `thiserror` enum owned by this module, with
+  `Client(#[from] LiveClientError)`, `Reuse(#[from] ClientReuseError)`,
+  `Decode(#[from] DecodeError)`, `Breaker(#[from] BreakerOpen)`,
+  `UnexpectedReply { operation: &'static str }`, `InvalidTtl` and
+  `NonFiniteValue`. The module reaches Redis only through `RedisTransport`,
+  `LiveAsyncClient::query` and `LiveSyncClient::query`.
+
+  Guard rule, as in B4327. A guarded method calls `gate.enter(name)` first, and an
+  open breaker returns `RedisCountersError::Breaker` with nothing sent. On `Err` from
+  the body it calls `gate.record_failure(&error)` and returns the error. On `Ok` it
+  calls `gate.exit(admission)` once. The guarded methods are `increment_with_floor`,
+  `async_increment_with_floor`, `batch_get_counts`, `async_batch_get_counts`,
+  `async_scan_iter` and `async_set_max`, the ones LiteLLM wraps in
+  `_redis_circuit_breaker_guard`. `increment_cache`, `RegisteredScript::run`,
+  `incr_by_float_with_ttl` and `pipeline_increment` take no gate call here. B360's
+  guarded `async_increment` and `async_increment_pipeline` wrap the last two,
+  LiteLLM does not guard `increment_cache`, and script callers guard `run`. No
+  method here swallows an error, so `gate.swallowed` is never called. A test gate
+  and a test hook in `redis_counters/tests/support.rs` record every call.
+
+  Sync methods. These block on the network and are for sync call sites only, as
+  `LiveSyncClient::query` says. `fn increment_cache(&self, key: &str, value: i64,
+  ttl: Option<f64>) -> Result<i64, RedisCountersError>` (L851-L906) works out
+  `set_ttl` as LiteLLM's `get_ttl` does: `ttl` cut toward zero with `as i64`, NaN
+  falls to `default_ttl`, and an infinite value returns `InvalidTtl`. It sends
+  `INCRBY key value` and keeps the integer reply as the result. It then sends `TTL
+  key`, and only when the reply is exactly -1 sends `EXPIRE key set_ttl`. A reply
+  of -2 sends nothing. `hooks.success` fires for the calls named
+  `increment_cache`, `increment_cache_ttl` and `increment_cache_expire`, each
+  event with its own duration. Any failure calls `hooks.failure` with the call
+  type `increment_cache` and the error,
+  writes a `tracing::error!` line that names the operation and carries the error
+  text, and returns the error. A failure after the INCRBY leaves the increment
+  applied, because LiteLLM has no transaction there either. `fn
+  increment_with_floor(&self, key: &str, value: i64, ttl: i64) -> Result<i64, ..>`
+  (L908-L926) sends `EVAL` with `cache_primitives::decode::INCREMENT_WITH_FLOOR_LUA`,
+  numkeys 1, the namespaced key, then `value` and `ttl` as decimal text. An integer
+  reply is the count. A bulk-string reply goes through
+  `decode::validate_lua_count`. Anything else is `UnexpectedReply`. `fn
+  batch_get_counts(&self, key_list: &[String]) -> Result<Vec<Option<i64>>, ..>`
+  (L928-L937) namespaces every key, calls `RedisTransport::mget` and turns each
+  `redis::Value` into `Option<Vec<u8>>`: `Nil` is `None`, a bulk string is `Some`,
+  and anything else is `UnexpectedReply`. Then it calls `decode::decoded_counts`.
+  A failure surfaces. It is not swallowed the way `batch_get_cache` swallows it.
+  An empty list returns an empty list and sends nothing.
+
+  Async methods. `async fn async_batch_get_counts` (L939-L943) is the same with
+  `async_mget`. `async fn async_increment_with_floor` (L1515-L1520) is the sync
+  floor method over `RedisTransport::async_client` and
+  `AsyncRedisCommands::eval`, using `RedisScalar::Text` for the key and both
+  numbers, and the same reply rule. `async fn async_set_max(&self, key: &str,
+  value: f64, ttl: Option<i64>) -> Result<Option<f64>, ..>` (L1478-L1513) takes
+  `used_ttl` as `ttl` or `default_ttl`. A `value` that is NaN or infinite returns
+  `NonFiniteValue` before anything is sent, because Lua cannot compare it. It sends
+  `EVAL` with numkeys 1, the namespaced key, `value.to_string()` and
+  `used_ttl.to_string()`, and the script is this text exactly, joined by single
+  spaces, so the bytes match LiteLLM's: `local cur = redis.call('GET', KEYS[1]) if
+  cur == false or tonumber(cur) < tonumber(ARGV[1]) then redis.call('SET',
+  KEYS[1], ARGV[1]) if tonumber(ARGV[2]) > 0 then redis.call('EXPIRE', KEYS[1],
+  ARGV[2]) end return ARGV[1] end return cur`. Keep it as one `const` in
+  `redis_counters/set_max.rs`. A `Nil` reply returns `None`. A bulk string is
+  parsed as `f64`, and a parse failure is `UnexpectedReply`. The TTL is passed
+  only to the script, so `0` or a negative value sets no expiry. A stored value
+  that is not a number makes Lua raise, and the error comes back unchanged.
+
+  Scan. `async fn async_scan_iter(&self, pattern: &str, count: usize) ->
+  Result<Vec<Vec<u8>>, ..>` (L945-L993) builds `match_pattern` as the namespaced
+  pattern followed by `*`, so the pattern is a prefix and its own glob characters
+  stay live. It loops `SCAN <cursor> MATCH <match_pattern> COUNT <count>` from
+  cursor `0` until the server returns cursor `0`, and stops at once, mid-batch,
+  when the collected list reaches `count`. Keys come back as raw bytes. On a
+  `LiveAsyncClient::Cluster` client the kind decides, not the family, as in B4325.
+  Send `CLUSTER SLOTS` through `query`, take the first node in every slot entry
+  (the primary), drop repeated host and port pairs keeping the first seen order,
+  and run the cursor loop on each primary in turn. Send each SCAN with
+  `ClusterConnection::route_command` on a clone of the connection and
+  `RoutingInfo::SingleNode(SingleNodeRoutingInfo::ByAddress { host, port })`.
+  redis-rs 1.7.0 has no cluster scan, and `SCAN` is unrouted without an address.
+  The `count` cap covers all primaries together. `hooks.success` fires for
+  `async_scan_iter` on return and `hooks.failure` before the error is returned.
+
+  Scripts. `fn async_register_script(&self, script: &str) -> RegisteredScript`
+  (L995-L1083) is infallible and sends nothing. `RegisteredScript` has the public
+  fields `source: String` and `sha1: String`, which is
+  `redis::Script::new(script).get_hash()`, and it keeps the transport and the
+  namespace. B4330 reads `sha1` to build its pipelined EVALSHA. `async fn
+  run(&self, keys: &[String], args: &[RedisScalar]) -> Result<redis::Value, ..>`
+  namespaces `keys` and leaves `args` untouched. It sends `EVALSHA sha1 numkeys
+  keys.. args..` through `LiveAsyncClient::query::<redis::Value>`. When the error's
+  `kind()` is `ErrorKind::Server(ServerErrorKind::NoScript)`, it sends `SCRIPT
+  LOAD source` once and repeats the EVALSHA once, which is what redis-py's
+  `AsyncScript.__call__` does. A second failure is returned. Any other error is
+  returned at once. A Cluster connection routes `SCRIPT LOAD` to every node by
+  itself and routes EVALSHA by the first key.
+
+  Float increments. These two are the I/O half of B4324's pure planners in
+  `cache_primitives::float_ttl` and `cache_primitives::pipeline_increment`. `async
+  fn incr_by_float_with_ttl(&self, key: &str, value: f64, ttl: Option<i64>,
+  refresh_ttl: bool) -> Result<f64, ..>` (L1400-L1416) takes an already namespaced
+  key. With no `ttl` it sends INCRBYFLOAT alone. Otherwise it runs a pipeline built
+  with `pipeline(false)` holding INCRBYFLOAT and then, per
+  `plan_ttl_followup`, either `EXPIRE key ttl` or `TTL key`. A reply of -1 to TTL,
+  by `needs_standalone_expire`, sends one more `EXPIRE key ttl`. The first pipeline
+  error is returned. `async fn pipeline_increment(&self, increment_list:
+  &[IncrementOperation]) -> Result<Vec<f64>, ..>` (L1931-L1952) builds its steps
+  with `plan_pipeline_steps(operations, namespace)`, runs one `pipeline(false)`
+  `execute`, parses the reply of each `IncrByFloat` step as `f64` (bulk string or
+  double), treats an `Expire` reply as no float, and returns `float_replies`. An
+  empty list sends nothing and returns an empty list. B360's `async_increment` and
+  `async_increment_pipeline` call these two.
+
+  Tests. Every test talks to B5220's fake server at
+  `crate::redis_live_client::tests::fake_server`, since CI has no Redis service.
+  Build a `RedisTransport` with the fake's port in the settings. Declare
+  `#[cfg(test)] mod tests;`, put the group list in `redis_counters/tests.rs`, and
+  give each group below one file under `redis_counters/tests/`, so test paths read
+  `redis_counters::tests::<group>::<name>`. Scripted replies come from the fake's
+  per-command table, and tests read its recorded commands to check the bytes sent.
+
+scope:
+  paths:
+    - crates/betterlite-redis/src/redis_counters.rs
+    - crates/betterlite-redis/src/redis_counters/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L851-L926
+    why: increment_cache with its three timed calls and increment_with_floor, the sync pair.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L99-L104
+    why: The floor Lua script both floor methods send (the constant itself is B4324's).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L928-L943
+    why: batch_get_counts and async_batch_get_counts, which raise instead of swallowing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L945-L993
+    why: async_scan_iter, the appended "*", the count cap and the hasattr branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L995-L1083
+    why: async_register_script and the per-loop registration, including the cluster script_load branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1400-L1416
+    why: The pipelined INCRBYFLOAT plus TTL or EXPIRE and the extra EXPIRE after a TTL of -1.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1478-L1520
+    why: async_set_max with its inline Lua, and async_increment_with_floor.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L1931-L1952
+    why: The increment pipeline helper that keeps only float replies.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/base_cache.py#L22-L33
+    why: default_ttl and get_ttl, which decide the TTL of increment_cache and async_set_max.
+  - url: https://github.com/redis-rs/redis-rs/blob/redis-1.7.0/redis/src/script.rs#L190-L212
+    why: The NOSCRIPT then SCRIPT LOAD then retry sequence that run copies.
+
+dod:
+  - text: >-
+      `increment_cache` sends INCRBY, then TTL, then EXPIRE only when TTL answered
+      exactly -1. It returns the INCRBY reply. A TTL of -2 or a positive TTL sends no
+      EXPIRE. A given `ttl` of 30.9 sets 30, a missing `ttl` sets `default_ttl`, NaN
+      sets `default_ttl`, and infinity returns `InvalidTtl` with nothing sent. The key
+      is namespaced once even when it already carries the prefix.
+    proof: [increment-tests]
+  - text: >-
+      `increment_with_floor` and `async_increment_with_floor` send EVAL with the B4324
+      script, numkeys 1, the namespaced key, the value and the TTL as text. An integer
+      reply and a bulk-string reply both give the count, and a nil or array reply
+      gives `UnexpectedReply`. A server error comes back unchanged.
+    proof: [floor-tests]
+  - text: >-
+      `batch_get_counts` and `async_batch_get_counts` return one entry per key in input
+      order with `None` for a miss and integers decoded from text. A non-numeric value
+      and a server error both return an error and never an empty list. Empty input
+      returns an empty list and the fake records no command. Keys are namespaced, and
+      two Cluster nodes still give input order.
+    proof: [counts-tests]
+  - text: >-
+      `async_scan_iter` sends the namespaced pattern plus `*` with `COUNT`, follows the
+      cursor until it is `0`, and stops as soon as `count` keys are collected, with no
+      further SCAN. On a Cluster client it scans each primary from `CLUSTER SLOTS`
+      once, addressed to that node, with the cap shared across nodes. The hooks
+      get success and failure events named `async_scan_iter`.
+    proof: [scan-tests]
+  - text: >-
+      `async_register_script` sends nothing. `run` sends EVALSHA with the SHA-1 of the
+      source, namespaced keys and untouched args. After a NOSCRIPT reply it sends
+      SCRIPT LOAD once and repeats the EVALSHA, and a second NOSCRIPT is returned. Any
+      other error is returned with no SCRIPT LOAD. On two Cluster nodes the EVALSHA
+      goes to the node owning the first key. `sha1` equals the SHA-1 of `source`.
+    proof: [scripts-tests]
+  - text: >-
+      `async_set_max` sends the exact Lua text above with the namespaced key, the value
+      as text and `used_ttl` as text. A missing `ttl` sends `default_ttl`. A bulk-string
+      reply is parsed to a float, a nil reply gives `None`, and NaN or infinity returns
+      `NonFiniteValue` with nothing sent.
+    proof: [set-max-tests]
+  - text: >-
+      `incr_by_float_with_ttl` sends INCRBYFLOAT alone with no TTL, INCRBYFLOAT then
+      EXPIRE in one pipeline with `refresh_ttl`, and INCRBYFLOAT then TTL without it,
+      plus one standalone EXPIRE only when TTL answered -1. `pipeline_increment` sends
+      one pipeline with an EXPIRE only after the operations that carry a TTL, returns
+      one float per operation in order, and sends nothing for an empty list.
+    proof: [float-increment-tests]
+  - text: >-
+      `increment_cache` and `async_scan_iter` fire the hooks once per timed call on
+      success and once on failure with the operation name. Each guarded method enters
+      the gate once and exits it once on success, and an open breaker returns
+      `Breaker` with nothing sent. No error text, log line or hook argument holds a
+      password, a token or a value read from Redis.
+    proof: [hooks-and-gate-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: increment-tests
+      why: increment_cache, its TTL rule or the TTL conversion is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_counters::tests::increment::/)'
+    - id: floor-tests
+      why: Either floor method, its script arguments or its reply handling is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_counters::tests::floor::/)'
+    - id: counts-tests
+      why: Counter reads, miss handling or error propagation is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_counters::tests::counts::/)'
+    - id: scan-tests
+      why: Pattern building, the count cap or the per-primary Cluster scan is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_counters::tests::scan::/)'
+    - id: scripts-tests
+      why: Registered script execution, namespaced keys or the NOSCRIPT retry is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_counters::tests::scripts::/)'
+    - id: set-max-tests
+      why: The max-only setter, its script text or its TTL rule is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_counters::tests::set_max::/)'
+    - id: float-increment-tests
+      why: The INCRBYFLOAT with TTL helper or the increment pipeline is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_counters::tests::float_increment::/)'
+    - id: hooks-and-gate-tests
+      why: Hook events, the breaker admission order or secret-free errors are missing
+      run: >-
+        cargo nextest run --locked -p betterlite-redis --no-tests=fail
+        -E 'test(/^redis_counters::tests::hooks_and_gate::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: >-
+      No throttled failure log runs inside these methods. A failure writes a plain
+      `tracing::error!` line.
+    why: The throttle belongs to B393's `log_redis_failure`, and the gate carries the failure there.
+  - what: >-
+      The hooks are called inline and get the operation name only. LiteLLM sends the
+      async hooks through `asyncio.create_task` and adds a "current <- caller" string
+      read from the Python stack.
+    why: A Rust call has no frame names to report, and the hook implementer can spawn if it needs to.
+  - what: >-
+      `async_register_script` keeps no executor cache per event loop and no entry in
+      `in_memory_llm_clients_cache`. `RegisteredScript` is a SHA-1 and the source text.
+    why: A script object holds no connection in redis-rs and betterlite has one runtime, so the per-loop binding has nothing to protect.
+  - what: >-
+      The `client` argument of the script runner is not built, and neither is the
+      `script_load` and `evalsha` branch for clients without `register_script`.
+    why: No caller passes `client=` at the pin, and redis-py's async RedisCluster has `register_script`, so that branch never runs.
+  - what: >-
+      `async_scan_iter` on a Cluster client scans the primaries one after another.
+      redis-py reads the first batch of every node before it continues node by node,
+      so with a `count` cap the returned keys can differ. The `hasattr(scan_iter)`
+      branch that returns an empty list is not built.
+    why: The key order of SCAN is undefined anyway, and redis-py's async RedisCluster has `scan_iter`, so that branch never runs.
+  - what: >-
+      `async_set_max` rejects a NaN or infinite `value` with `NonFiniteValue`. LiteLLM
+      sends the text and lets the Lua comparison decide.
+    why: The Lua result for those strings depends on the server's Lua build, and an error that names the field is the rule in docs/compatibility.md.
+  - what: >-
+      `increment_cache` returns `InvalidTtl` for an infinite `ttl`. LiteLLM's `int()`
+      raises `OverflowError` there, outside its own try block.
+    why: Both are errors the caller sees before any Redis call.
+
+out_of_scope:
+  - "Opening connections, sync client reuse, `RedisTransport`, `mget` and `async_mget`; B5220 and B4325 own them and this task calls them."
+  - "`check_and_fix_namespace`, `_decoded_counts`, `_INCREMENT_WITH_FLOOR_LUA`, `_LUA_COUNT` and `_OPTIONAL_COUNTS`; B4324 owns them. The two float helpers keep B4324's planners and add only the sending."
+  - "`RedisCache.async_increment` (L1419-L1476) and `async_increment_pipeline` (L1954-L2017); B360 owns them and calls `incr_by_float_with_ttl` and `pipeline_increment` here."
+  - "`RedisCircuitBreaker`, `_run_under_circuit_breaker` and `_redis_circuit_breaker_guard` around `run_script` and every other method; B393 owns them and B5630 implements `BreakerGate` over it."
+  - "`_get_async_client_cache_key`, `init_async_client` and `_async_commands`; B4325 owns them. Scripts here don't need the client cache key."
+  - "`BaseCache.get_ttl`; B4290 owns the contract and this task applies its rule to `increment_cache` and `async_set_max` locally."
+  - "`async_register_script` callers (the rate limiters, session limits, login throttle, pod lock manager); each caller task owns its script text and its use of `RegisteredScript::run`."
+  - "Batch execution of scripts and counters in `litellm/caching/redis_batch.py`; B4330 owns it and reads `RegisteredScript::sha1`."
+
+pitfalls:
+  - >-
+    `increment_cache` asks for the TTL and sets the expiry only when the reply is
+    exactly -1. A key with an expiry, or a TTL of -2, must send no EXPIRE.
+  - >-
+    `async_set_max` falls back to `default_ttl` when `ttl` is None, so 0 appears in
+    ARGV[2] only when the caller passes 0. The script skips EXPIRE when ARGV[2] is
+    not above 0.
+  - >-
+    Namespace `KEYS` only. Script `ARGV` can hold any text, and prefixing it would
+    corrupt the arguments.
+  - >-
+    `async_scan_iter` namespaces the pattern, then appends `*`. A pattern that already
+    starts with `namespace:` is not prefixed twice, and `*` is appended even when the
+    pattern already ends in one.
+  - >-
+    A SCAN cursor is a string. Compare it with `"0"`, not with an integer parse that
+    fails on a large cursor, and send `COUNT 0` only when the caller asks for it,
+    since the server rejects it.
+  - >-
+    A script with no keys has numkeys 0 and the Cluster routes it to a random node.
+    Don't add a fake key.
+  - >-
+    `batch_get_counts` must not reuse a swallowing read path. A caller that falls back
+    to its own numbers on Redis failure needs the error.
+  - >-
+    The sync methods call `LiveSyncClient::query`, which holds a mutex over network
+    I/O. Don't call them from async code outside `spawn_blocking`, and don't use them
+    in tests that run on the Tokio test runtime thread.
+  - >-
+    Don't hold `LiveAsyncClient::Cluster`'s connection across two awaits by reference.
+    Clone it per SCAN, since `route_command` takes `&mut self`.
+  - Keep each file under 300 lines, one per area, with `redis_counters.rs` holding only the types and the error.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

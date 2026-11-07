@@ -1,0 +1,166 @@
+id: B3630
+title: Passthrough response cost and attribution primitives
+description: >-
+  Build the shared pieces that every provider pass-through logging handler uses to price a relayed response and to tie its spend to a key, tags and an end user.
+  They live in betterlite-server under src/pass_through_logging, in four modules. The skeleton declares them.
+  Every function is pure or takes its collaborators through the constructor or an argument: B068's completion_cost service, B1717's custom pricing detection, B253's router model id helper, B247's per-call log (LiteLLM's model_call_details and litellm_call_id), B190's get_standard_logging_object_payload and B880's get_end_user_id_from_request_body.
+  Nothing here holds module-level state.
+
+
+  batch_attribution (batch_attribution.py, all of it). optional_str(value) gives the string for a JSON string and none for anything else. is_collection_route(url_route, collection_suffix) cuts the route at the first "?", strips every trailing "/" and tests ends_with(collection_suffix); a POST to the collection is a batch create, an id-scoped route is not.
+  request_tags_from_metadata(request_metadata) returns the tags for the batch spend row. First read request_metadata["tags"]: when it is a JSON array, keep only its string items with NUL characters removed, and when that gives at least one tag, return them. An array of no strings, a non-array or a missing key falls through. Then read request_metadata["user_api_key_auth_metadata"]: only when it is a JSON object, apply the same array rule to its "tags" and return the result even when it is empty (an empty list, not none). Any other case returns none.
+  The NUL strip is one `replace('\0', "")` written as a private helper in this module. B3630 is its only caller at the pin, so it needs no shared owner.
+  log_batch_registration_result(finished, provider, unified_object_id, model_object_id, is_batch_create) reports how the fire-and-forget write of the managed batch object ended. In Rust `finished` is the join result of the spawned task: `Result<Result<(), E>, tokio::task::JoinError>` with E: Display. A cancelled join, a join error or an inner Err logs at error level "Failed to store {provider} batch managed object with unified_object_id={unified_object_id}, batch_id={model_object_id}; {consequence}: {error}", where the consequence is "its cost will not be tracked" for a create and "its status and output file may be stale" otherwise, and the error text is the error, or "None" for a cancelled task (LiteLLM prints Python's None). An Ok(Ok(())) logs at info level "Stored {provider} batch managed object with unified_object_id={unified_object_id}, batch_id={model_object_id}".
+
+
+  stream_fields (anthropic_passthrough_logging_handler.py, the message_start readers). extract_message_start_field(all_chunks, field) takes the raw chunks (each one is text or bytes) and returns the first non-empty string at message[field] of the first message_start event, or none. Decode bytes as strict UTF-8 and return a typed error on bad bytes, as LiteLLM lets UnicodeDecodeError out. Split each chunk into lines the way Python's str.splitlines does (\n, \r, \r\n, \v, \f, \x1c, \x1d, \x1e, \x85,  ,  ). Skip lines that do not start with "data:". Strip the rest of the line with Python's strip() whitespace rules and parse it as JSON; skip a line that fails to parse or is not an object. A message_start whose message lacks the field, holds a non-string or an empty string, does not stop the scan; later chunks are still read. extract_model_from_chunks asks for "model" and extract_response_id_from_chunks asks for "id".
+  resolve_logged_model(call_log, request_body, all_chunks) takes request_body["model"] when it is a non-empty string, else the call log's "model" or the empty string. When that is not empty and not "unknown", return it. Otherwise return the model read from the chunks, and when there is none, the first value unchanged.
+  This is the decoder for bytes from outside, so it gets a cargo-fuzz target and a corpus replay check.
+
+
+  response_costing (anthropic_passthrough_logging_handler.py cost helpers). cost_relevant_speed(request_body) returns request_body["speed"] when it is a string, else none (a missing body is none). resolve_costing_model(model, call_log) returns the model when it is non-empty and not "unknown". Otherwise it tries the call log's litellm_params["model"] (same two tests), then litellm_params["metadata"]["model_group"] with one leading "passthrough/" removed, and last returns the model it was given. A missing or null litellm_params or metadata counts as empty.
+  compute_response_cost(response, model, call_log) returns 0.0 when the call log's "cache_hit" is exactly true. Otherwise it reads custom_llm_provider from the call log, prefixes "{provider}/" to the model unless the model already starts with it or the provider is empty, and calls B068's completion_cost with that model, the provider, B1717's custom pricing detection on the call log's litellm_params and B253's router model id. Its errors come back as a typed error.
+  cost_partial_stream_or_zero(partial_response, model, call_log) runs resolve_costing_model then compute_response_cost; any error logs at warn "Anthropic passthrough: could not cost the partial usage of an interrupted stream (model={model}): {error}" and returns 0.0.
+
+
+  response_payload (base_passthrough_logging_handler.py, the two helpers the base class owns). end_user_from_request_body(request_body) returns B880's get_end_user_id_from_request_body(request_body) with no headers when the body is present and not empty, else none. It serves the Anthropic helper of the same name too; the two are the same code.
+  create_response_logging_payload(response, model, kwargs, start_time, end_time, call_log) returns the kwargs, which are a typed ResponseLoggingKwargs struct (response_cost, model, the end user under litellm_params.proxy_server_request.body.user, standard_logging_object, and the passthrough request body it reads). The steps run in this order and each one's effect stays when a later one fails: cost with B068's completion_cost on the response and model; store response_cost and model on the kwargs; store response_cost in the call log's "response_cost" (the pass-through success path reads spend from there); when the kwargs carry a passthrough request body, look up the end user and, when found, set litellm_params.proxy_server_request to {"body": {"user": user}} replacing whatever was there; build B190's standard logging object with status "success" and store it; log it at debug level as indented JSON; set the response id to the call log's litellm_call_id, the response model to the model and the call log's "model" to the model. Any error in these steps logs at error level "Error creating LLM passthrough response logging payload: {error}" and returns the kwargs as they stand at that point, never an Err.
+
+
+  Tests: module tests under pass_through_logging::batch_attribution::tests, ::stream_fields::tests, ::response_costing::tests and ::response_payload::tests, each test name starting with the group word the checks use (batch_, fields_, costing_, payload_). Fakes stand in for the cost service and the call log; the real B880 function runs where it is cheap.
+  No route reaches this code yet, so the oracle cases are helper cases for the pure functions (is_collection_route, request_tags_from_metadata, the two extractors, resolve_costing_model, cost_relevant_speed); the umbrella B103 and the handlers that call these add the HTTP cases. The helper calls the pinned Python static functions with a stub logging object and never copies the algorithm.
+scope:
+  paths:
+    - crates/betterlite-server/src/pass_through_logging/batch_attribution.rs
+    - crates/betterlite-server/src/pass_through_logging/batch_attribution/**
+    - crates/betterlite-server/src/pass_through_logging/stream_fields.rs
+    - crates/betterlite-server/src/pass_through_logging/stream_fields/**
+    - crates/betterlite-server/src/pass_through_logging/response_costing.rs
+    - crates/betterlite-server/src/pass_through_logging/response_costing/**
+    - crates/betterlite-server/src/pass_through_logging/response_payload.rs
+    - crates/betterlite-server/src/pass_through_logging/response_payload/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/message_start_field.rs
+    - crates/betterlite-server/fuzz/corpus/message_start_field/**
+    - tools/oracle/cases/helpers/passthrough-attribution/**
+    - "tools/oracle/fuzz/corpus/helper_case/passthrough_attribution-*"
+    - tools/oracle/helpers/b3630.py
+    - tools/oracle/helpers/b3630/**
+    - tools/oracle/src/helpers/server/b3630.rs
+    - tools/oracle/src/helpers/server/b3630/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/batch_attribution.py#L16-L47
+    why: optional_str, the NUL-stripping tag sanitizer, is_collection_route and request_tags_from_metadata with its fall-through order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/batch_attribution.py#L50-L79
+    why: log_batch_registration_result, the two log texts and the cancelled-task case.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/base_passthrough_logging_handler.py#L87-L158
+    why: _get_user_from_metadata and _create_response_logging_payload, the step order and the catch-all that returns partial kwargs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L119-L178
+    why: _cost_relevant_speed, the Anthropic copy of _get_user_from_metadata, _resolve_costing_model and _resolve_logged_model.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L253-L327
+    why: _cost_partial_stream_or_zero, _compute_response_cost and the message_start field readers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1595-L1678
+    why: get_end_user_id_from_request_body, which B880 owns and these helpers call with no headers.
+  - url: https://docs.python.org/3/library/stdtypes.html#str.splitlines
+    why: The exact list of line boundaries str.splitlines uses, longer than Rust's lines().
+dod:
+  - text: optional_str, is_collection_route and request_tags_from_metadata follow the fall-through rules (request tags first, key tags only when the request gave none, an empty key list still returned).
+    proof: [batch-tests, attribution-oracle]
+  - text: log_batch_registration_result logs the error text for a failed or cancelled write with the right consequence for create and non-create, and the info text for a clean one.
+    proof: [batch-tests]
+  - text: extract_message_start_field splits like splitlines, skips bad JSON and events that are not message_start, keeps scanning past a message_start without the field, and returns a typed error on invalid UTF-8.
+    proof: [fields-tests, attribution-oracle]
+  - text: resolve_logged_model picks the request model, then the call log model, then the model seen in the chunks when the first is empty or "unknown".
+    proof: [fields-tests]
+  - text: The message_start decoder has a fuzz target that replays its corpus without a panic.
+    proof: [fields-corpus]
+  - text: cost_relevant_speed and resolve_costing_model return the specified values for the speed types, the "unknown" cases and the model_group prefix strip.
+    proof: [costing-tests, attribution-oracle]
+  - text: compute_response_cost returns zero on an exact cache hit and adds the provider prefix once; cost_partial_stream_or_zero turns an error into a warning and 0.0.
+    proof: [costing-tests]
+  - text: create_response_logging_payload runs its steps in order, keeps the effects of finished steps when a later one fails, replaces proxy_server_request wholesale and never returns an error.
+    proof: [payload-tests]
+  - text: The helper adapter's Python passes the strict lint and type check.
+    proof: [helper-python]
+checks:
+  optional: []
+  commands:
+    - id: batch-tests
+      why: the batch attribution tests fail, or do not exist
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::batch_attribution::tests::batch_/)'
+    - id: fields-tests
+      why: the message_start readers or the logged model choice are wrong, or have no tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::stream_fields::tests::fields_/) - test(replays_the_message_start_field_corpus)'
+    - id: fields-corpus
+      why: the message_start decoder has no fuzz target, no new corpus seeds or the replay fails
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/message_start_field)" &&
+        grep -q 'extract_message_start_field' crates/betterlite-server/fuzz/fuzz_targets/message_start_field.rs &&
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_message_start_field_corpus)'
+    - id: costing-tests
+      why: the speed, costing model or response cost helpers are wrong, or have no tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::response_costing::tests::costing_/)'
+    - id: payload-tests
+      why: the response logging payload steps, their order or the partial-failure behavior are wrong, or have no tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::response_payload::tests::payload_/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3630)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3630 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3630/pyrightconfig.json
+    - id: helper-case-corpus
+      why: new helper seeds are absent or do not replay through the shared helper-case parser
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/passthrough_attribution-*')" &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: attribution-oracle
+      why: newly added helper cases are absent, do not use the b3630 operation or disagree with LiteLLM
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/passthrough-attribution)" &&
+        grep -rlE '^[[:space:]]+b3630:' tools/oracle/cases/helpers/passthrough-attribution &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/passthrough-attribution
+oracle_cases:
+  - tools/oracle/cases/helpers/passthrough-attribution/collection-route-query-and-slashes.yaml
+  - tools/oracle/cases/helpers/passthrough-attribution/tags-request-wins.yaml
+  - tools/oracle/cases/helpers/passthrough-attribution/tags-key-fallback-empty-list.yaml
+  - tools/oracle/cases/helpers/passthrough-attribution/tags-nul-stripped-non-strings-dropped.yaml
+  - tools/oracle/cases/helpers/passthrough-attribution/message-start-model-second-chunk.yaml
+  - tools/oracle/cases/helpers/passthrough-attribution/message-start-splitlines-boundary.yaml
+  - tools/oracle/cases/helpers/passthrough-attribution/message-start-empty-value-keeps-scanning.yaml
+  - tools/oracle/cases/helpers/passthrough-attribution/costing-model-unknown-falls-to-model-group.yaml
+  - tools/oracle/cases/helpers/passthrough-attribution/costing-model-deployment-model.yaml
+  - tools/oracle/cases/helpers/passthrough-attribution/speed-non-string-is-none.yaml
+deviations:
+  - what: log_batch_registration_result takes the join result of a tokio task, so a task that panicked counts as a failed write, with the join error as the error text, where Python only saw a task exception or a cancel.
+    why: asyncio.Task has no Rust twin; the join result is the same information, and a panic must still reach the log.
+  - what: The debug log of the standard logging object is serialized with serde_json pretty printing, not Python's json.dumps(indent=4).
+    why: Python's dumps formatting is runtime behavior (docs/compatibility.md); the line is a debug log and no client reads it.
+  - what: A cost or payload error is caught as a typed error. LiteLLM's blanket `except Exception` also catches Python bugs such as a missing attribute, and betterlite has no such class of failure.
+    why: Rust has no runtime attribute errors, and a panic is banned by the no-panics rule, so the typed error is the only case left.
+out_of_scope:
+  - "passthrough_chat_handler, _build_complete_streaming_response, _handle_logging_llm_collected_chunks and the abstract provider accessors of base_passthrough_logging_handler.py: B3650 owns them and its covers include the file. B3650 calls create_response_logging_payload from this task."
+  - "anthropic_passthrough_handler, _create_anthropic_response_logging_payload and _handle_logging_anthropic_collected_chunks: B3634 owns them (the Anthropic response logging task). They call this task's cost, speed, model and message_start helpers."
+  - "_stream_was_interrupted, _recover_interrupted_stream_output_tokens, _clear_placeholder_cost, record_partial_usage_for_failure, _usage_only_response_or_none, _assemble_streaming_response and _build_streaming_response_for_logging: B3632 owns the interrupted stream usage recovery; no backlog entry says so in words, see the notes."
+  - "_split_sse_chunk_into_events, _build_complete_streaming_response, _collapse_pure_text_chunks, _build_complete_streaming_response_legacy, _extract_sse_data and _build_usage_only_response_from_chunks: B3631 owns the stream reconstruction."
+  - "batch_creation_handler, _store_batch_managed_object and get_actual_model_id_from_router: B3633 owns Anthropic batch logging. It spawns the managed object write and calls log_batch_registration_result from here."
+  - "The OpenAI override of _get_user_from_metadata (returns request_body['user'] unchanged) and every other function in openai_passthrough_logging_handler.py: B3635, B3636 and B3637 own them. B3637 must not call this task's end_user_from_request_body for that override."
+  - "get_end_user_id_from_request_body (B880), completion_cost (B068), get_standard_logging_object_payload (B190), the per-call log (B247), the router model id helper (B253) and the custom pricing detection (B1717)."
+  - "The PassthroughStandardLoggingPayload type from litellm/types/passthrough_endpoints/pass_through_endpoints.py: this task only reads its request_body, and the route tasks that fill the rest define the struct."
+pitfalls:
+  - The OpenAI handler overrides _get_user_from_metadata and returns the raw request_body["user"], while the base and Anthropic versions go through get_end_user_id_from_request_body; do not merge the three.
+  - When the standard logging object step fails, the kwargs already hold response_cost, model and the user, but the response id and model and the call log "model" are not rewritten.
+  - 'The user is set by replacing litellm_params["proxy_server_request"] with {"body": {"user": user}}, so any body, headers or url that was there is dropped.'
+  - request_tags_from_metadata treats an empty tags list as absent for the request and falls to the key's tags, but returns an empty key list as is, so an empty list and none are different answers.
+  - Only strings in a tags list survive, and each one loses its NUL bytes; a list of numbers gives an empty tuple, not none.
+  - is_collection_route strips every trailing slash, so "/v1/messages/batches///" is the collection, while "/v1/messages/batches/abc" is not.
+  - str.splitlines also breaks on \v, \f, \x1c to \x1e, \x85,   and  , so a JSON string value with one of those inside a data line splits the line; Rust's lines() would not.
+  - extract_message_start_field returns the first non-empty string only; a message_start with an empty "model" does not end the scan, and a later message_start can still answer.
+  - resolve_costing_model strips "passthrough/" once from the front of model_group with removeprefix, not every occurrence, and returns the original model when no source gives a better one.
+  - compute_response_cost checks cache_hit with `is True`, so the string "true" or the number 1 in the call log does not give zero cost.
+  - The provider prefix is added only when custom_llm_provider is truthy and the model does not already start with "{provider}/".
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

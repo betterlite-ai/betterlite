@@ -1,0 +1,134 @@
+id: B5842
+title: Watsonx embeddings, rerank, audio transcription and passthrough
+description: >-
+  Last part of the watsonx.ai provider (litellm/llms/watsonx). B5970 built the shared auth and URL functions, B5971 chat
+  and B5972 text generation. This task builds the other four endpoint families, each using B5970 for credentials, error
+  type, base URL, version suffix and payload ids. B4808 is a different thing (Watsonx Orchestrate agents under
+  a2a_protocol) and shares no code with this folder.
+
+  Embeddings (crates/betterlite-provider/src/watsonx_embed.rs, IBMWatsonXEmbeddingConfig). No OpenAI params are
+  supported and map_openai_params returns the options unchanged. The request runs B5970's get_api_params on the options
+  (removing project, space and region keys), then builds {inputs, parameters: the remaining options, then the
+  prepare_payload fields}. A string input becomes a one-item list, a list is sent as is, and a non-empty list whose first
+  item is an integer or a list (token ids) fails with the error "WatsonX embeddings require a string or list of strings".
+  The URL is the base without trailing slashes plus /ml/v1/text/embeddings and the version suffix (popping api_version);
+  a deployment/<id> model gets the same path because the path has no placeholder. The reply gives data items
+  {object: embedding, index: position, embedding: values} from results, object list, and usage with prompt and total
+  tokens equal to input_token_count (default 0) and completion tokens 0. decode_watsonx_embedding_reply(bytes) is the typed
+  decoder and fails when a result lacks embedding.
+
+  Rerank (crates/betterlite-provider/src/watsonx_rerank.rs, IBMWatsonXRerankConfig, records from B1013). The URL is the
+  base plus /ml/v1/text/rerank plus the version suffix, reading api_version without popping it. The cohere params are
+  query, documents, top_n, return_documents, max_tokens_per_doc. validate_environment returns the two default headers
+  overlaid with the caller headers when Authorization is present, else pops token (or WATSONX_TOKEN) for Bearer, else
+  pops zen_api_key (or WATSONX_ZENAPIKEY) for "ZenApiKey", else Bearer with B5970's IAM token. map_cohere_rerank_params
+  keeps query, turns documents into inputs ({text: s} for strings, objects unchanged), puts top_n at
+  parameters.return_options.top_n, a boolean return_documents at parameters.return_options.inputs and max_tokens_per_doc
+  at parameters.truncate_input_tokens, copies project_id and space_id, and ignores None values and every other key.
+  transform_rerank_request runs get_api_params on the mapped map in place and returns it overlaid with the prepare_payload
+  fields. The reply gives {index, relevance_score from score} per result plus document {text} for a string input or the
+  input object, id from the body or a new UUID4, and meta.tokens.input_tokens from input_token_count (default 0). A body
+  that is not JSON fails with WatsonxError using the response status; a body without results fails with "No results found
+  in the response=<body>". decode_watsonx_rerank_reply(bytes) is the typed decoder.
+
+  Audio transcription (crates/betterlite-openai/src/watsonx_audio.rs, IBMWatsonXAudioTranscriptionConfig over B515's
+  Whisper config). Headers come from B5970's validate_environment with Content-Type removed. Supported params: language,
+  prompt, response_format, temperature, timestamp_granularities. The multipart form has model, then project_id (from
+  project_id or watsonx_project) or else space_id, only when given (no env fallback, no 401), then every supported option
+  that is not None in options order; the file part is B1001's processed filename, bytes and content type. The URL is the
+  base without trailing slashes plus /ml/v1/audio/transcriptions?version= with api_version or 2024-03-13, not popped. The
+  reply needs text or usage (else an error that includes the body), keeps both, drops model, and keeps every other key.
+  decode_watsonx_transcription_reply(bytes) is the typed decoder.
+
+  Passthrough (crates/betterlite-openai/src/watsonx_passthrough.rs, WatsonxPassthroughConfig over B3570). is_streaming_request
+  returns request_data["stream"] with default false. get_complete_url takes api_base or B5970's get_base_url (401 when
+  neither exists) and B3570's format_url(endpoint, base, query params) and returns (url, base). get_api_key returns the
+  argument or B5970's credentials api_key; get_base_model returns the model unchanged; validate_environment is B5970's.
+scope:
+  paths:
+    - crates/betterlite-provider/src/watsonx_embed.rs
+    - crates/betterlite-provider/src/watsonx_embed/**
+    - crates/betterlite-provider/src/watsonx_rerank.rs
+    - crates/betterlite-provider/src/watsonx_rerank/**
+    - crates/betterlite-provider/fuzz/Cargo.toml
+    - crates/betterlite-provider/fuzz/fuzz_targets/watsonx_embed_rerank_reply.rs
+    - crates/betterlite-provider/fuzz/corpus/watsonx_embed_rerank_reply/**
+    - crates/betterlite-openai/src/watsonx_audio.rs
+    - crates/betterlite-openai/src/watsonx_audio/**
+    - crates/betterlite-openai/src/watsonx_passthrough.rs
+    - crates/betterlite-openai/src/watsonx_passthrough/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/watsonx_transcription_reply.rs
+    - crates/betterlite-openai/fuzz/corpus/watsonx_transcription_reply/**
+    - tools/oracle/cases/helpers/watsonx-endpoints/**
+    - tools/oracle/helpers/b5842.py
+    - tools/oracle/helpers/b5842/**
+    - tools/oracle/src/helpers/provider/b5842.rs
+    - tools/oracle/src/helpers/provider/b5842/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/embed/transformation.py#L20-L120
+    why: Embedding request, URL and reply conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/rerank/transformation.py#L28-L206
+    why: Rerank URL, own validate_environment, parameter mapping, request and reply conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/audio_transcription/transformation.py#L29-L205
+    why: Transcription headers, form fields, URL and reply conversion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/watsonx/passthrough/transformation.py#L10-L67
+    why: Passthrough streaming flag, URL, key and model helpers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7068-L7097
+    why: Call site of the embedding config, for the credentials it passes in.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rerank_api/main.py#L492-L520
+    why: Call site of the rerank config.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L4036-L4106
+    why: The proxy route that adds the version query parameter (owned by B3627).
+dod:
+  - text: Embedding requests and replies match the source, including token-id rejection and the shared path for deployment models.
+    proof: [watsonx-endpoints-tests, oracle]
+  - text: Rerank parameter mapping, auth headers, request and reply conversion match the source, including the two failure messages.
+    proof: [watsonx-endpoints-tests, oracle]
+  - text: Transcription form fields, URL and reply conversion match the source.
+    proof: [watsonx-endpoints-tests, oracle]
+  - text: Passthrough URL, streaming flag, key and base model match the source.
+    proof: [watsonx-endpoints-tests, oracle]
+  - text: The embedding, rerank and transcription reply decoders reject malformed bodies without panicking and their corpora replay.
+    proof: [watsonx-endpoints-corpus]
+  - text: New helper cases for these functions exist.
+    proof: [watsonx-endpoints-cases]
+checks:
+  optional: [mutants]
+  commands:
+    - id: watsonx-endpoints-tests
+      run: cargo nextest run --locked -p betterlite-provider -p betterlite-openai --no-tests=fail -E 'test(/^(watsonx_embed|watsonx_rerank|watsonx_audio|watsonx_passthrough)::/) - test(/^replays_the_watsonx_/)'
+      why: Each family has its own URL, header and body rules that a generic OpenAI-shaped config would get wrong.
+    - id: watsonx-endpoints-corpus
+      run: test -f crates/betterlite-provider/fuzz/fuzz_targets/watsonx_embed_rerank_reply.rs && test -f crates/betterlite-openai/fuzz/fuzz_targets/watsonx_transcription_reply.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-provider/fuzz/corpus/watsonx_embed_rerank_reply crates/betterlite-openai/fuzz/corpus/watsonx_transcription_reply)" && cargo nextest run --locked -p betterlite-provider -p betterlite-openai --no-tests=fail -E 'test(replays_the_watsonx_embed_rerank_reply_corpus) + test(replays_the_watsonx_transcription_reply_corpus)'
+      why: Reply bodies come from outside and need fuzz targets with replayed corpora.
+    - id: watsonx-endpoints-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/watsonx-endpoints)"
+      why: Without new case files the oracle proof passes with nothing compared.
+oracle_cases:
+  - tools/oracle/cases/helpers/watsonx-endpoints/embed-input-shapes.yaml
+  - tools/oracle/cases/helpers/watsonx-endpoints/embed-deployment-url.yaml
+  - tools/oracle/cases/helpers/watsonx-endpoints/embed-reply-usage.yaml
+  - tools/oracle/cases/helpers/watsonx-endpoints/rerank-parameter-mapping.yaml
+  - tools/oracle/cases/helpers/watsonx-endpoints/rerank-auth-pops-token.yaml
+  - tools/oracle/cases/helpers/watsonx-endpoints/rerank-request-ids.yaml
+  - tools/oracle/cases/helpers/watsonx-endpoints/rerank-reply-and-errors.yaml
+  - tools/oracle/cases/helpers/watsonx-endpoints/audio-form-fields.yaml
+  - tools/oracle/cases/helpers/watsonx-endpoints/audio-url-and-reply.yaml
+  - tools/oracle/cases/helpers/watsonx-endpoints/passthrough-url-and-key.yaml
+deviations: []
+out_of_scope:
+  - B5970 owns IBMWatsonXMixin, get_api_params, the IAM token, WatsonxError and the endpoint paths used here.
+  - B5971 owns chat and B5972 owns text generation and the prompt functions.
+  - B1013 owns BaseRerankConfig and the rerank records, B515 the Whisper config this one extends, B1001 process_audio_file, and B3570 BasePassthroughConfig and format_url. get_models on the passthrough config only calls the base method, which B3570's covers own.
+  - B3627 owns the /watsonx proxy route in llm_passthrough_endpoints.py, including the version query parameter it adds. B042 owns the main.py and rerank_api/main.py credential call sites, dispatch wiring and HTTP oracle cases.
+pitfalls:
+  - 'The oracle helper for this task is pre-registered as b5842 by the skeleton. Write its Rust and Python files as the skeleton leaves them; the registry files are not this task''s to edit.'
+  - Embedding deployment models get no deployment path because EMBEDDINGS has no placeholder, so format changes nothing.
+  - The rerank validate_environment pops token from the options, while the shared one reads it with get. An early Authorization header returns before any pop.
+  - The passthrough get_complete_url docstring says it always adds version, but the code does not; the proxy route adds it through the query parameters.
+  - The transcription model field is the model string as received, and a missing project_id and space_id is not an error here, unlike chat and text.
+  - The audio config puts the Watsonx mixin before the Whisper config, so its error class is WatsonxError, not the OpenAI one.
+budget: {max_changed_lines: 1500, max_new_expects: 0}
+review_level: standard

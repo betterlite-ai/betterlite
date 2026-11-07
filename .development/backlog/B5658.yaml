@@ -1,0 +1,14 @@
+id: B5658
+milestone: M12 python
+title: Python response objects for other endpoints and small types
+status: todo
+depends_on: [B5657]
+file: tasks/B5658-python-other-objects.yaml
+covers:
+  - "litellm/types/utils.py"
+parent: B158
+split_from: B158
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

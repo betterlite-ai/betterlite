@@ -1,0 +1,52 @@
+id: B159
+title: Python endpoint families surface check
+description: >-
+  This is the last part of the entry. B6040 to B6045 build the Python functions for embeddings, text completion, moderation,
+  images, rerank, transcription and speech. This task checks that the whole surface works together and that every name in the
+  entry's facades has an owner. It adds no feature code beyond small gaps found.
+
+
+  Write `tests/test_endpoint_surface.py`. One test lists the public names that must exist on `betterlite` and on
+  `betterlite.main`: `embedding`, `aembedding`, `text_completion`, `atext_completion`, `moderation`, `amoderation`,
+  `image_generation`, `aimage_generation`, `image_variation`, `aimage_variation`, `image_edit`, `aimage_edit`, `rerank`,
+  `arerank`, `transcription`, `atranscription`, `speech`, `aspeech`, `TextCompletionStreamWrapper`. A second test checks that
+  `inspect.iscoroutinefunction` is true for each `a`-prefixed name. A third runs one call per family against B6040's test server
+  in one process, to show that the five native sessions do not clash. A fourth checks that a call with `client=` raises
+  `UnsupportedCallArgument` in each family.
+
+scope:
+  paths:
+  - crates/betterlite-python/tests/test_endpoint_surface.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6196-L8330
+  why: The facade functions this entry covers.
+dod:
+- text: Every public name exists on betterlite and betterlite.main, and the async ones are coroutine functions.
+  proof: [surface-names]
+- text: One call per family works in one process.
+  proof: [surface-calls]
+- text: "`client=` raises UnsupportedCallArgument in each family."
+  proof: [surface-client]
+checks:
+  optional: []
+  commands:
+  - id: surface-names
+    why: A family forgot its main.py re-export.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_endpoint_surface.py -k names
+  - id: surface-calls
+    why: Two families share a native name or a global.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_endpoint_surface.py -k calls
+  - id: surface-client
+    why: One family silently ignores a client object.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_endpoint_surface.py -k client
+oracle_cases: []
+deviations: []
+out_of_scope:
+- The functions themselves are B6041 to B6045.
+pitfalls:
+- The surface test must not call a provider on the network. Use B6040's local server only.
+review_level: standard
+budget:
+  max_changed_lines: 300
+  max_new_expects: 0

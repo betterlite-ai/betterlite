@@ -28,7 +28,7 @@ description: >-
   model and api_key absent, page=1, page_size=10. Split truthy IDs on commas without trimming or
   deduplication; empty strings become None. The scope resolver loads aliases via B700 find_many_in
   for explicit IDs, otherwise find_many(where={}); metadata maps user_id to alias including null.
-  Empty tuples remain empty scopes and missing rows do not produce404. Call B074 get_daily_activity
+  Empty tuples remain empty scopes and missing rows do not produce404. Call B3091 get_daily_activity
   with litellm_dailyenduserspend, entity_id_field=end_user_id, scope IDs, aliases, exclusions and every
   filter/page argument unchanged. Activity has no local except or handle_exception_on_proxy call;
   B003 global mapping handles raised HTTP errors. All paths are reads, with no cache mutation.
@@ -88,7 +88,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - B830 owns customer row adapters and response projection; B831 owns updates; B829 owns budgets.
-  - B074 owns activity date validation, aggregation and pagination; B700 owns find_many_in.
+  - B3091 owns activity date validation, aggregation and pagination; B700 owns find_many_in.
 pitfalls:
   - Info/list locally map exceptions, but activity does not. Their missing-database statuses differ.
   - Activity's admin-only check forbids an end user reading its own activity.

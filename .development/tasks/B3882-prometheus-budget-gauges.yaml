@@ -1,0 +1,207 @@
+id: B3882
+title: Prometheus budget gauge projection
+description: >-
+  Build the code that turns one budget record (a team, an organization, a virtual key, a user or a
+  customer) into Prometheus gauge samples, plus the two small gauges that sit next to them. Put it in
+  crates/betterlite-logging/src/prometheus/budget_gauges.rs and budget_gauges/**. It ports
+  litellm/integrations/prometheus.py lines 161-162, 3597-3615, 3893-3934, 4017-4072, 4136-4182,
+  4230-4310, 4469-4519.
+
+  The gauges are the collectors B3874 builds (crates/betterlite-prometheus) and the label sets come
+  from get_labels_for_metric (B3874) and prometheus_label_factory (B3873) fed with UserAPIKeyLabelValues
+  (B3870). A disabled gauge is B3874's no-op collector, so a setter here never checks for it. Define one
+  plain input record per entity, so the caller builds it and no setter needs the auth or table types:
+  TeamBudgetGaugeInput (team_id, team_alias: Option, spend: Option<Decimal>, max_budget: Option<Decimal>,
+  budget_reset_at: Option<DateTime<Utc>>), OrgBudgetGaugeInput (org_id, org_alias, spend, max_budget,
+  budget_reset_at), KeyBudgetGaugeInput (token, key_alias: Option, spend, max_budget, budget_reset_at),
+  UserBudgetGaugeInput (user_id, user_email: Option, user_alias: Option, spend, max_budget,
+  budget_reset_at) and CustomerBudgetGaugeInput (end_user_id, spend, max_budget, budget_reset_at).
+  Money is rust_decimal::Decimal. Hours are f64.
+
+  Shared helpers. remaining_budget(max_budget, spend) returns RemainingBudget::Unlimited when max_budget
+  is None, the max_budget alone when spend is None, and max_budget minus spend otherwise (it can be
+  negative). Unlimited is written to the gauge as positive infinity through the explicit infinity value
+  B3874's collector exposes; never convert it to a large number. remaining_hours_for_budget_reset(reset_at,
+  now) is (reset_at minus now) in seconds divided by 3600, negative when the reset time has passed. Take
+  `now` as an argument from an injected clock so tests are exact.
+
+  Each setter follows one shape. First the remaining-budget gauge is always set. Then the max-budget gauge
+  is set only when max_budget is Some. Then the remaining-hours gauge is set only when budget_reset_at is
+  Some. Per entity:
+  set_team_budget_metrics uses labels team = team_id and team_alias = alias or "" and the metrics
+  litellm_remaining_team_budget_metric, litellm_team_max_budget_metric, litellm_team_budget_remaining_hours_metric.
+  set_org_budget_metrics uses org_id and org_alias and the three litellm_*_org_* metrics
+  (litellm_remaining_org_budget_metric, litellm_org_max_budget_metric, litellm_org_budget_remaining_hours_metric).
+  set_key_budget_metrics uses hashed_api_key = token and api_key_alias = alias or "" with
+  litellm_remaining_api_key_budget_metric, litellm_api_key_max_budget_metric,
+  litellm_api_key_budget_remaining_hours_metric.
+  set_user_budget_metrics uses user, user_email or "" and user_alias or "" with litellm_remaining_user_budget_metric,
+  litellm_user_max_budget_metric, litellm_user_budget_remaining_hours_metric.
+  set_customer_budget_metrics uses the end_user label with litellm_remaining_customer_budget_metric,
+  litellm_customer_max_budget_metric, litellm_customer_budget_remaining_hours_metric. It builds the labels
+  once with the remaining-budget metric's label list. When the resulting end_user label is None (the
+  end-user cost-tracking policy suppressed it) it returns without writing anything. After every customer
+  set it calls B3876's track_end_user_metric_series for that gauge so the end-user series cap applies.
+  The team, org and user setters rebuild the label set for each gauge from that gauge's own label list.
+  The key setter does not: its remaining-hours gauge reuses the label set of the most recent label build,
+  which is the max-budget gauge's labels when max_budget is Some and the remaining-budget gauge's labels
+  when it is None. Keep that, because a user can give those two metrics different label lists.
+
+  Smaller pieces. set_team_members_metric sets litellm_team_members_metric to the number of members the
+  team has, with team and team_alias (alias or "") labels; its input is the team id, alias and a member
+  count. track_provider_remaining_budget(provider, spend, budget_limit) sets
+  litellm_provider_remaining_budget_metric for the single label value `provider`, with no label factory,
+  to remaining_budget(budget_limit, spend). customer_budget_metrics_enabled(gate) is true only when
+  litellm.enable_end_user_cost_tracking_prometheus_only is exactly true and litellm.disable_end_user_cost_tracking
+  is not truthy; both settings default to None, so it is false by default. The gate is a small struct of two
+  Option<bool> fields that the caller fills from the settings B1716 already loads. customer_budget_gauges_are_noop
+  is true when all three customer gauges are the no-op collector.
+
+  Bulk setters used by the refresh job (B3884). set_key_list_budget_metrics takes a list whose entries are
+  either a full key record or just a key string, and sets metrics only for full records; strings are
+  skipped. set_team_list_budget_metrics and set_user_list_budget_metrics call the single setter for each
+  entry in order. set_org_list_budget_metrics reads each org row: org_id = organization_id or "", org_alias
+  = organization_alias or "", spend = spend or 0, and max_budget and budget_reset_at from the joined budget
+  table, both None when the row has no budget table. set_customer_budget_metrics_from_row(customer,
+  default_budget) uses the customer's own budget table when it has one, else the default budget (may be
+  None), and passes that table's max_budget and budget_reset_at. Note this is the one customer path that
+  does pass budget_reset_at; the per-request customer path (B3883) always passes None.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/prometheus/budget_gauges.rs
+    - crates/betterlite-logging/src/prometheus/budget_gauges/**
+    - tools/oracle/cases/helpers/budget-gauges/**
+    - tools/oracle/helpers/b3882.py
+    - tools/oracle/helpers/b3882/**
+    - tools/oracle/src/helpers/logging/b3882.rs
+    - tools/oracle/src/helpers/logging/b3882/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L161-L162
+    why: _customer_budget_metrics_enabled, exact-true opt-in plus the disable flag.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3597-L3615
+    why: track_provider_remaining_budget and _safe_get_remaining_budget (None max is infinity, None spend leaves max).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3893-L3934
+    why: The four list setters and _set_customer_budget_metrics_from_row with the default-budget fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4017-L4072
+    why: _set_team_budget_metrics and set_team_members_metric.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4136-L4182
+    why: _set_org_budget_metrics.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4230-L4275
+    why: _customer_budget_gauges_are_noop and _set_customer_budget_metrics with the early return and series tracking.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4277-L4310
+    why: _set_key_budget_metrics, including the hours gauge reusing the previous label set.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L4469-L4519
+    why: _set_user_budget_metrics and _get_remaining_hours_for_budget_reset.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L427-L530
+    why: The fifteen budget gauge names and help texts as B3874 registers them, to copy exact names.
+
+dod:
+  - text: remaining_budget returns Unlimited for no max_budget, max_budget when spend is None, and max_budget minus spend (negative allowed) otherwise; Unlimited is written as positive infinity.
+    proof: [remaining-budget-tests]
+  - text: remaining_hours_for_budget_reset returns (reset_at - now) in hours and is negative once the reset time has passed.
+    proof: [reset-hours-tests]
+  - text: Team, org, key and user setters always set the remaining-budget gauge, set the max-budget gauge only when max_budget is Some, and set the remaining-hours gauge only when budget_reset_at is Some, with the alias and email fallbacks to "".
+    proof: [entity-setter-tests]
+  - text: The key setter's remaining-hours gauge uses the label set of the last label build, so it takes the max-budget gauge's labels when max_budget is Some.
+    proof: [key-label-reuse-tests]
+  - text: The customer setter writes nothing when the resolved end_user label is None, and calls the end-user series tracker after each gauge it sets.
+    proof: [customer-setter-tests]
+  - text: customer_budget_metrics_enabled is true only for enable flag exactly true with the disable flag not truthy, and false when both are None.
+    proof: [customer-gate-tests]
+  - text: customer_budget_gauges_are_noop is true only when all three customer gauges are no-op collectors.
+    proof: [customer-gate-tests]
+  - text: set_team_members_metric and track_provider_remaining_budget set their gauges with the labels described, the provider one without the label factory.
+    proof: [small-gauge-tests]
+  - text: The key list setter skips string entries, the org list setter defaults a missing id, alias and spend and a missing budget table to None limits, and the customer row setter falls back to the default budget and passes its reset time.
+    proof: [list-setter-tests]
+  - text: The setters give the same sample names, label sets and values as LiteLLM for the recorded cases.
+    proof: [helper-case-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: remaining-budget-tests
+      why: the remaining-budget rule is missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus::budget_gauges::remaining_budget::/)'
+    - id: reset-hours-tests
+      why: the hours-to-reset calculation is missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus::budget_gauges::reset_hours::/)'
+    - id: entity-setter-tests
+      why: team, org, key or user setters skip a gauge or mislabel one
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus::budget_gauges::team::/) | test(/^prometheus::budget_gauges::org::/) | test(/^prometheus::budget_gauges::key::/) | test(/^prometheus::budget_gauges::user::/)'
+    - id: key-label-reuse-tests
+      why: the key hours gauge does not reuse the previous label set
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus::budget_gauges::key_label_reuse::/)'
+    - id: customer-setter-tests
+      why: the customer setter emits without an end_user label or skips series tracking
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus::budget_gauges::customer::/)'
+    - id: customer-gate-tests
+      why: the customer opt-in gate or the no-op check is wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus::budget_gauges::customer_gate::/)'
+    - id: small-gauge-tests
+      why: the team members or provider remaining budget gauge is missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus::budget_gauges::small_gauges::/)'
+    - id: list-setter-tests
+      why: the bulk setters used by the refresh job are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus::budget_gauges::lists::/)'
+    - id: helper-case-corpus
+      why: the recorded LiteLLM gauge samples are missing or differ
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/budget-gauges)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/budget-gauges/remaining-no-max-budget.yaml
+  - tools/oracle/cases/helpers/budget-gauges/remaining-no-spend.yaml
+  - tools/oracle/cases/helpers/budget-gauges/remaining-hours-past-reset.yaml
+  - tools/oracle/cases/helpers/budget-gauges/team-all-three-gauges.yaml
+  - tools/oracle/cases/helpers/budget-gauges/team-no-max-no-reset.yaml
+  - tools/oracle/cases/helpers/budget-gauges/org-all-three-gauges.yaml
+  - tools/oracle/cases/helpers/budget-gauges/key-reset-uses-max-budget-labels.yaml
+  - tools/oracle/cases/helpers/budget-gauges/key-no-alias-empty-label.yaml
+  - tools/oracle/cases/helpers/budget-gauges/user-email-alias-empty-labels.yaml
+  - tools/oracle/cases/helpers/budget-gauges/customer-all-three-gauges.yaml
+  - tools/oracle/cases/helpers/budget-gauges/customer-end-user-label-none.yaml
+  - tools/oracle/cases/helpers/budget-gauges/team-members-count.yaml
+  - tools/oracle/cases/helpers/budget-gauges/provider-remaining-budget.yaml
+  - tools/oracle/cases/helpers/budget-gauges/key-list-skips-string-entries.yaml
+  - tools/oracle/cases/helpers/budget-gauges/org-list-missing-budget-table.yaml
+  - tools/oracle/cases/helpers/budget-gauges/customer-row-falls-back-to-default-budget.yaml
+
+deviations:
+  - what: Each setter takes a plain input record (TeamBudgetGaugeInput and the like) instead of LiteLLM_TeamTable, UserAPIKeyAuth, LiteLLM_UserTable or a prisma row.
+    why: betterlite-logging cannot depend on the auth or table crates, and the caller already holds typed data.
+  - what: spend and max_budget are Decimal, and the gauge value is converted once at the collector call; an unlimited budget is written as the collector's explicit positive-infinity value.
+    why: money is never a float in betterlite, and LiteLLM's float("inf") needs an explicit form (see B3874's deviation).
+  - what: budget_reset_at is a UTC timestamp, so a reset time without a timezone is not accepted; LiteLLM's datetime.now(reset_at.tzinfo) would use local time for a naive value.
+    why: the carried snapshots (B3890) and stored columns are UTC, and a local-time clock would make the gauge depend on the host.
+  - what: The hours calculation takes `now` from an injected clock.
+    why: tests and oracle cases need exact values.
+
+out_of_scope:
+  - "The per-request lookups that build the input record (_set_team_budget_metrics_after_api_request, _assemble_team_object, _set_org_budget_metrics_after_api_request, _set_customer_budget_metrics_after_api_request, _get_default_customer_budget, _set_api_key_budget_metrics_after_api_request, _assemble_key_object, _set_user_budget_metrics_after_api_request, _assemble_user_object): B3883."
+  - "_increment_remaining_budget_metrics (the asyncio.gather fan-out with the PROMETHEUS_BUDGET_METRICS_PER_REQUEST_TIMEOUT wait_for, default 5 seconds) and _get_budget_metrics_per_request_timeout: no task owns them at the moment; it calls B3883's functions, so it cannot sit here. See the notes in the report."
+  - "The paginated refresh job and its cron (_initialize_budget_metrics and the _initialize_*_budget_metrics functions at prometheus.py:3617-3860, initialize_budget_metrics_cron_job): B3884."
+  - "The gauge definitions and registration (prometheus.py:427-530, 636): B3874 builds the collectors and B3875 registers them."
+  - "_track_end_user_metric_series and the series tracker: B3876."
+  - "prometheus_label_factory and the end-user label resolution: B3873."
+  - "Counters for usage and spend: B3877. Latency, guardrail and _safe_duration_seconds: B3878. Rate-limit gauges: B3879."
+  - "The deployment-level budget and tpm/rpm gauges and the callers of track_provider_remaining_budget in routing: their own tasks (B020 and the routing budget tasks call this function)."
+
+pitfalls:
+  - The key setter reuses `_labels` from the max-budget build for the remaining-hours gauge, but the team, org and user setters rebuild labels for their hours gauge; do not unify them.
+  - remaining_budget with max_budget None is infinity even when spend is set, and with spend None it is the whole max_budget, so a fresh key with a limit shows the limit.
+  - "A max_budget of zero is still Some, so the max-budget gauge is written with 0. Test Some versus None, never truthiness."
+  - The hours gauge is written for a reset time in the past, with a negative value; do not clamp it to zero.
+  - litellm_team_budget_remaining_hours_metric's help text in LiteLLM says "days" while the gauge is hours; keep B3874's registered text and write hours.
+  - The customer path returns before any write when the label factory resolves end_user to None, so the remaining-budget gauge is not written either.
+  - team_alias, api_key_alias, user_email, user_alias, org_alias are written as "" when absent, not left out of the label set.
+  - The org list setter has no budget table for an org created without a budget, so max_budget and budget_reset_at are both None and only the remaining-budget gauge (infinity) is written.
+  - track_provider_remaining_budget passes the provider as the only positional label value, so it must not go through the label factory or the label include/exclude filters.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

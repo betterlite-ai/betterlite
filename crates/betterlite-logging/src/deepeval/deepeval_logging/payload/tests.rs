@@ -75,11 +75,11 @@ fn failure_span_names_the_failure_callback_with_the_llm_type() {
 }
 
 #[test]
-fn failure_span_takes_the_error_string_and_omits_the_token_counts() {
+fn failure_span_takes_the_error_str_text_and_omits_the_token_counts() {
     let kwargs = kwargs(
         r#"{
             "standard_logging_object": {
-                "error_string": "upstream returned 500",
+                "error_str": "upstream returned 500",
                 "response": {"usage": {"prompt_tokens": 3, "completion_tokens": 5}}
             }
         }"#,
@@ -93,8 +93,8 @@ fn failure_span_takes_the_error_string_and_omits_the_token_counts() {
 #[rstest]
 #[case::absent("{}")]
 #[case::null(r#"{"standard_logging_object": null}"#)]
-#[case::null_error_string(r#"{"standard_logging_object": {"error_string": null}}"#)]
-fn failure_span_outputs_an_empty_string_without_an_error_string(#[case] raw: &str) {
+#[case::null_error_str(r#"{"standard_logging_object": {"error_str": null}}"#)]
+fn failure_span_outputs_an_empty_string_without_an_error_str(#[case] raw: &str) {
     let span = span(&kwargs(raw), TraceSpanApiStatus::Errored);
     assert_eq!(span.output, Some(text("")));
     assert_eq!(span.model, None);

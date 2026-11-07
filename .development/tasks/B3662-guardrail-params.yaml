@@ -1,0 +1,404 @@
+id: B3662
+title: Guardrail mode validation and request configuration
+description: >-
+  Add the `guardrail_params` config section: the typed form of one entry under the top-level `guardrails:` list, and of the guardrail bodies the admin routes will take. No config view reads `mode` today, so a real LiteLLM entry with `mode: pre_call` fails to load with `ConfigError::Unsupported`. After this task that entry loads and later tasks read `config.sections.guardrail_params.guardrails`.
+
+  Put the view in `crates/betterlite-config/src/sections/guardrail_params.rs` (`Raw`, `Settings`, `impl Section for Raw`, the `pub mod` lines) and the rest in these files under `guardrail_params/`, each below 300 lines: `error.rs` (`GuardrailParamsError`, a thiserror enum), `keys.rs`, `opaque.rs`, `content_filter.rs`, `decision_check.rs`, `mode.rs`, `base.rs`, `params.rs`, `environment.rs`, `records.rs`, `routes.rs`, `decode.rs`, `tests.rs`. Add `serde_path_to_error = "0.1.20"` and `chrono.workspace = true` to `crates/betterlite-config/Cargo.toml`; both are already in `Cargo.lock`.
+
+  `opaque.rs` holds `OpaqueParams`, a `#[serde(transparent)]` newtype over `BTreeMap<String, GuardrailValue>` with a hand-written Debug that prints only the keys. `GuardrailValue` already exists in `sections::guardrail_identity::item`. Provider secrets such as `aws_secret_access_key`, `client_secret` and `akto_api_key` land in these maps, so no derived Debug may reach their values.
+
+  `base.rs` holds `BaseParamFields`, one field for each of the 40 fields LiteLLM's `BaseLitellmParams` declares from line 908 to line 1149, deriving Serialize and Deserialize. `api_key` and `credentials` are `Option<SecretString>`. `experimental_use_latest_role_message_only`, `only_scan_new_messages` and `skip_unscannable_attachments` are `bool` defaulting to false. `fail_on_error`, `sanitize_error_detail` and `sticky_session_routing` are `bool` defaulting to true (`serde-inline-default` is already a dependency). `unreachable_fallback` is `UnreachableFallback` (`fail_closed` by default, `fail_open`). `on_violation` is `Option<OnViolation>` (`warn`, `end_session`, `block`, `alert`) and `on_sensitive_data` is `Option<OnSensitiveData>` (`block`, `route`). `max_input_chars` and `max_concurrent_decision_calls` are `Option<NonZeroU64>`, because LiteLLM declares `gt=0`. `end_session_after_n_fails` is `Option<i64>`, `timeout` is `Option<f64>`, `extra_headers` is `Option<Vec<String>>`, `category_thresholds` is `Option<LakeraCategoryThresholds>`, and `detect_secrets_config` and `additional_provider_specific_params` are `Option<OpaqueParams>`. The rest are `Option<bool>` or `Option<String>` as declared. Three names pass the 30-character limit, so keep the wire name with `#[serde(rename)]`: `latest_role_message_only`, `provider_specific_params`, `skip_system_message`.
+
+  `BaseLitellmParams` has `fields: BaseParamFields`, `content_filter: ContentFilterConfigModel`, `extra: OpaqueParams` and two private `BTreeSet<String>` fields, `sent_keys` and `null_keys`. Serialize flattens the first three and skips the sets, with `api_key` and `credentials` written as text through `serialize_with` and `expose_secret`, because stored rows need the text and B3684 masks before it builds a response. So a dump has every declared key, unset ones as null, then the extras, the same shape as `model_dump()`. Deserialize goes through `#[serde(try_from = "BTreeMap<String, GuardrailValue>")]` so every path runs the same checks.
+
+  The `TryFrom` works in this order. Record every key in `sent_keys` and the null ones in `null_keys`. Drop the null keys, so they take their default as docs/compatibility.md says. Lowercase `unreachable_fallback` and `on_sensitive_data` when they are text. Write the map with `serde_json::to_vec`, then decode `BaseParamFields` and `ContentFilterConfigModel` from those bytes with `serde_path_to_error::deserialize`. Put every key missing from `BASE_KEYS` into `extra`. Last, `on_sensitive_data: route` with `sensitive_data_route_to_model` unset or empty is an error with LiteLLM's message. A failed decode becomes `GuardrailParamsError::InvalidField { field }` holding the text of `error.path()` and nothing else, since serde's own message quotes the bad value. Going through bytes also means no `serde_json::Value` appears, so `max_new_expects` stays 0. Use `#[serde(flatten)]` only for Serialize: `serde_path_to_error` loses the path through a flattened Deserialize.
+
+  Add `BaseLitellmParams::sent_fields(&self) -> Result<BTreeMap<String, GuardrailValue>, GuardrailParamsError>` for the PATCH route, the same result as `model_dump(exclude_unset=True)`: dump self, keep `sent_keys`, and write null for every key in `null_keys`.
+
+  `keys.rs` holds four constants. `BASE_KEYS` is the 47 names of `BaseParamFields` and `ContentFilterConfigModel`. `PARAM_KEYS` is `guardrail`, `decision_model`, `checks`, `mode`. `BOOL_KEYS` and `NUMBER_KEYS` are the declared bool and number keys, with `timeout`, `max_input_chars`, `max_concurrent_decision_calls` and `end_session_after_n_fails` as the numbers.
+
+  `content_filter.rs` holds `ContentFilterConfigModel` with its seven optional fields: `patterns`, `blocked_words`, `categories`, and the text fields `blocked_words_file`, `severity_threshold`, `pattern_redaction_format`, `keyword_redaction_tag`. LiteLLM's `BaseLitellmParams` inherits this class, so the keys sit directly on the entry. Reuse `ContentFilterPattern`, `BlockedWord` and `ContentFilterCategoryConfig` from `sections::content_filter_records`. `ContentFilterPattern.pattern_type` stays a `String` on main, because `crates/betterlite/src/guardrails/pattern_matching.rs` reports unknown types itself. This model does its own check: a `pattern_type` other than `prebuilt` or `regex` is `InvalidField`.
+
+  `mode.rs` holds `ModeTarget` (untagged, `One(String)`, `Many(Vec<String>)`), `Mode` (`tags: BTreeMap<String, ModeTarget>`, required, and `default: Option<ModeTarget>`) and `LitellmParamsMode` (untagged, `One(String)`, `Many(Vec<String>)`, `Tagged(Mode)`). This task doesn't compare mode text against `GuardrailEventHooks`.
+
+  `decision_check.rs` holds `DecisionModelCheck` and `GuardrailChecks`. `DecisionModelCheck` has `name` (not empty), `instructions` (not empty, not blank after trim), `threshold` (default 0.7, from 0.0 to 1.0 inclusive) and `action`, `DecisionCheckAction` with `block` by default and `log`. `GuardrailChecks` is untagged, `Bedrock(BedrockChecksConfigModel)` and `Decision(Vec<DecisionModelCheck>)`. B3661 builds `BedrockChecksConfigModel` under `sections::guardrail_translation`.
+
+  `params.rs` holds `LitellmParams` with `base: BaseLitellmParams`, `guardrail: String`, `decision_model: Option<String>`, `checks: Option<GuardrailChecks>`, `mode: LitellmParamsMode`, and the same serde shape as the base: Serialize flattens `base`, Deserialize goes through `TryFrom<BTreeMap<String, GuardrailValue>>`. Before it builds the base, the `TryFrom` lowercases `mode`, `default_action` and `on_disallowed_action` (text, and the text items of a list; a mapping stays as it is), turns `timeout` text into a number, and sets an absent or null `default_on` to false. `""` as `timeout` removes the key; other text goes through `betterlite_env::number::<f64>("timeout", text)` and anything not finite is `GuardrailParamsError::InvalidTimeout`. After the base it decodes the four `PARAM_KEYS` the same path-tracking way, removes them from `base.extra`, and applies two rules with LiteLLM's messages: `on_violation` of `block` or `alert` needs `guardrail: mcp_security`, and `checks` in list form needs `guardrail: decision_model`. A missing or null `guardrail` or `mode` is `MissingField { field }`.
+
+  `records.rs` holds the plain types: `Guardrail` (`guardrail_id`, `guardrail_name`, `litellm_params`, `guardrail_info`, `policy_template`, `created_at`, `updated_at`, with the two times as `Option<DateTime<Utc>>`), `GuardrailEventHooks` (the eight hooks from `pre_call` to `realtime_input_transcription`, wire names as in LiteLLM), `DynamicGuardrailParams` (`extra_body`), `GuardrailDefinitionLocation` (`db`, `config`), `PiiEntityCategoryMap`, `GuardrailItemSpec` (`callbacks` required, `default_on`, `logging_only`, `enabled_roles: Option<Vec<Role>>`, `callback_args`) and `LakeraCategoryThresholds`. Move that last one out of `crates/betterlite-guardrails/src/lakera.rs` unchanged and `pub use` it there so `lakera/tests.rs` keeps compiling; the guardrails crate depends on config, so config can't import it from there. Every Python `dict` in `records.rs` and `routes.rs` is a `BTreeMap<String, GuardrailValue>`.
+
+  `routes.rs` holds the admin route records: `GuardrailInfoResponse` (`guardrail_definition_location` defaults to `config`, `litellm_params: Option<BaseLitellmParams>`), `ListGuardrailsResponse`, `GuardrailUiAddSettings` (LiteLLM's `GuardrailUIAddGuardrailSettings`, shortened for the 30-character limit; `decision_model_providers` defaults to empty), `ApplyGuardrailRequest` (`input_type` defaults to `request`, `entities: Option<Vec<PiiEntityType>>`), `ApplyGuardrailResponse` and `PatchGuardrailRequest` (`litellm_params: Option<BaseLitellmParams>`). All ignore unknown body keys, as a default pydantic model does.
+
+  The section view: `Raw { guardrails: Vec<RawEntry> }` with `#[serde(default)]`, where `RawEntry` reads `guardrail_name`, `guardrail_id`, `guardrail_info`, `policy_template`, `created_at`, `updated_at` with the types `Guardrail` declares, and `litellm_params` as `KnownParams`. `KnownParams` wraps a `BTreeMap<String, GuardrailValue>` and has a small hand-written Deserialize with a map visitor: a key in `BASE_KEYS` or `PARAM_KEYS` is read as `GuardrailValue`, and any other key is read with `map.next_value::<IgnoredAny>()`. `serde_ignored` only reports what goes through `IgnoredAny`, so a key no section reads stays `ConfigError::Unsupported`. Never read the whole map as a `BTreeMap`: that marks every key as read and breaks `generic_guardrail_api_config_retains_unknown_paths`, `grayswan_config_retains_unknown_paths` and `lasso_config_retains_unknown_paths`. So a `LitellmParams` built from config has an empty `extra`, and provider keys stay with the provider's own section. A `LitellmParams` built from a request body keeps them.
+
+  `Settings` has `guardrails: Vec<Guardrail>` and `rejected: Vec<RejectedGuardrail>` (`guardrail_name`, `reason: String`), deriving Debug, Clone and Default. `convert` walks the entries in file order, resolves env references, then calls `LitellmParams::try_from`. A failure pushes a `RejectedGuardrail` and the load goes on, because `init_guardrails_v2` logs and skips a bad entry and starts the proxy without it. B3683 writes that log line from `rejected`.
+
+  `environment.rs` follows `_resolved_config_value` in proxy_server.py. Text starting with `os.environ/` is replaced by the variable's value, a mapping's values recurse, and a list recurses only into items that are mappings, so a plain text item in a list stays as written. A missing or empty variable gives null. When a top-level key in `BOOL_KEYS` or `NUMBER_KEYS` was resolved from a variable, its text goes through `betterlite_env::flag` or `betterlite_env::number`, and bad text rejects that entry through `GuardrailParamsError::Environment` naming the variable. Call `EnvironmentLookup::lookup` directly: `resolve_string` in resolve.rs turns a missing variable into a load error, and LiteLLM doesn't.
+
+  `decode.rs` names the byte decoders for outside input: `decode_litellm_params(body: &[u8])`, `decode_patch_request(body: &[u8])` and `decode_apply_request(body: &[u8])`, each returning `Result<_, GuardrailParamsError>` through `serde_path_to_error` over `serde_json::Deserializer::from_slice`. The routes that call them (B3684 to B3687) own the body size limit, and serde_json's recursion limit of 128 bounds nesting. Add the fuzz target `guardrail_params` at `crates/betterlite-config/fuzz/fuzz_targets/guardrail_params.rs`, feeding the same bytes to all three, with a `[[bin]]` entry in `crates/betterlite-config/fuzz/Cargo.toml` (`test = false`, `doc = false`, `bench = false`). Seed `crates/betterlite-config/fuzz/corpus/guardrail_params/` with a valid params body, a valid patch body, a valid apply body, truncated JSON and bytes that aren't UTF-8. Add `replays_the_guardrail_params_corpus` to tests.rs, shaped like `replays_the_collector_settings_corpus` in `crates/betterlite-config/src/collector/tests.rs`.
+
+  The helper operation the skeleton created for this task takes `function` and `body`, with `function` one of `base_params`, `litellm_params`, `patch_request`, `apply_request`, `content_filter`. Both sides answer `{"accepted": false}` when validation fails and `{"accepted": true, "dump": ...}` otherwise, so no error class or message is compared. The Python side calls `BaseLitellmParams.model_validate(body)`, `LitellmParams(**body)`, `PatchGuardrailRequest(**body)`, `ApplyGuardrailRequest(**body)` or `ContentFilterConfigModel(**body)`, then `model_dump(mode="json")`. LiteLLM's `LitellmParams` dump also holds every provider mixin field, so for `litellm_params` the Python side keeps only `BaseLitellmParams.model_fields`, the four `PARAM_KEYS` and keys sent in the body. For `patch_request` the dump is `litellm_params.model_dump(mode="json", exclude_unset=True)` on one side and `sent_fields()` on the other. Add one seed per helper case under `tools/oracle/fuzz/corpus/helper_case/guardrail-params-*`.
+
+  Tests live in `guardrail_params/tests.rs`, with rstest for tables, and start with the prefix their check filters on: `defaults_`, `keys_`, `limits_`, `extras_`, `lowercase_`, `mode_`, `route_rule_`, `violation_rule_`, `checks_rule_`, `decision_check_`, `timeout_`, `default_on_`, `sent_fields_`, `secret_`, `content_filter_`, `record_`, `section_load_`, `section_reject_`, `section_unknown_`, `env_`. `keys_` compares `BASE_KEYS` with the keys of a serialized default so the two can't drift. `section_load_every_declared_key` loads one YAML entry that sets every name in `BASE_KEYS` and `PARAM_KEYS`, because a config key counts as supported only when a named test loads it.
+
+scope:
+  paths:
+    - crates/betterlite-config/src/sections/guardrail_params.rs
+    - crates/betterlite-config/src/sections/guardrail_params/**
+    - crates/betterlite-config/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-guardrails/src/lakera.rs
+    - crates/betterlite-config/fuzz/Cargo.toml
+    - crates/betterlite-config/fuzz/fuzz_targets/guardrail_params.rs
+    - crates/betterlite-config/fuzz/corpus/guardrail_params/**
+    - tools/oracle/cases/helpers/guardrail-params/**
+    - "tools/oracle/fuzz/corpus/helper_case/guardrail-params-*"
+    - tools/oracle/helpers/b3662.py
+    - tools/oracle/helpers/b3662/**
+    - tools/oracle/src/helpers/config/b3662.rs
+    - tools/oracle/src/helpers/config/b3662/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L907-L1184
+    why: BaseLitellmParams, every field with its default, normalize_lowercase, the routing rule and extra="allow".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1187-L1288
+    why: Mode, the LitellmParams base list and own fields, coerce_timeout, the two guardrail rules and the default_on fix in __init__.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L875-L901
+    why: ContentFilterConfigModel, the parent class of BaseLitellmParams.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1291-L1349
+    why: Guardrail, GuardrailEventHooks, DynamicGuardrailParams, the definition location, the info and list responses and the UI settings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1361-L1378
+    why: ApplyGuardrailRequest, ApplyGuardrailResponse and PatchGuardrailRequest.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L164-L170
+    why: GuardrailItemSpec fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L202-L205
+    why: LakeraCategoryThresholds keys.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L430-L433
+    why: PiiEntityCategoryMap fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/decision_model.py#L11-L26
+    why: DecisionModelCheck limits and the blank-instructions check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/init_guardrails.py#L19-L44
+    why: A bad entry is logged and skipped while the proxy keeps starting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5748-L5787
+    why: The os.environ/ walk over the config, with its dict and list rules and None for a missing variable.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1213-L1223
+    why: PATCH merges model_dump(exclude_unset=True) and validates the result as LitellmParams.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/headroom.py#L21-L22
+    why: The first base that declares unreachable_fallback, so its default is the one LitellmParams gets.
+
+dod:
+  - text: >-
+      An empty map gives a `BaseLitellmParams` with LiteLLM's defaults: `fail_on_error`, `sanitize_error_detail` and `sticky_session_routing` true, `unreachable_fallback` `fail_closed`, the false-by-default bools false, and unset fields null in the dump.
+    proof: [defaults-tests, oracle, helper-python]
+  - text: >-
+      `BASE_KEYS` holds exactly the keys a default `BaseLitellmParams` serializes.
+    proof: [keys-tests]
+  - text: >-
+      `max_input_chars: 0`, `max_concurrent_decision_calls: 0` and an unknown `on_violation`, `unreachable_fallback` or `on_sensitive_data` are refused with `InvalidField` naming the field.
+    proof: [limits-tests, oracle, helper-python]
+  - text: >-
+      A key outside `BASE_KEYS` in a body lands in `extra` and comes back in the dump unchanged, and `PARAM_KEYS` stay in `extra` on `BaseLitellmParams` but not on `LitellmParams`.
+    proof: [extras-tests, oracle, helper-python]
+  - text: >-
+      `unreachable_fallback` and `on_sensitive_data` are lowercased on both types. `mode` text and list items, `default_action` and `on_disallowed_action` are lowercased on `LitellmParams` and left alone in the extras of `BaseLitellmParams`.
+    proof: [lowercase-tests, oracle, helper-python]
+  - text: >-
+      `mode` accepts text, a list and a `tags` mapping with an optional `default`, the mapping keeps its case, and a mapping without `tags` is refused.
+    proof: [mode-tests, oracle, helper-python]
+  - text: >-
+      `on_sensitive_data: route` is refused with `sensitive_data_route_to_model` unset or empty and accepted when it's set, on both types.
+    proof: [route-rule-tests, oracle, helper-python]
+  - text: >-
+      `on_violation` of `block` or `alert` is refused unless `guardrail` is `mcp_security`, and `warn` and `end_session` pass for any guardrail.
+    proof: [violation-rule-tests, oracle, helper-python]
+  - text: >-
+      `checks` in list form is refused unless `guardrail` is `decision_model`.
+    proof: [checks-rule-tests, oracle, helper-python]
+  - text: >-
+      `DecisionModelCheck` refuses an empty name, empty or blank instructions, a threshold outside 0.0 to 1.0 and an unknown action, and defaults `threshold` to 0.7 and `action` to `block`.
+    proof: [decision-check-tests, oracle, helper-python]
+  - text: >-
+      On `LitellmParams` a numeric `timeout` and numeric text give a float, `""` gives null, and other text, blank text and non-finite text are refused. `BaseLitellmParams` takes only a number.
+    proof: [timeout-tests, oracle, helper-python]
+  - text: >-
+      An absent or null `default_on` is false on `LitellmParams` and null on `BaseLitellmParams`.
+    proof: [default-on-tests, oracle, helper-python]
+  - text: >-
+      `sent_fields` returns only the keys the body sent, an explicit null stays null, and lowercased values come back lowercased.
+    proof: [sent-fields-tests, oracle, helper-python]
+  - text: >-
+      The Debug text of `BaseLitellmParams`, `LitellmParams`, `Guardrail` and `Settings`, and the text of every `GuardrailParamsError`, contain neither `api_key`, `credentials`, an extra's value nor the bad value of a refused field, while the serialized dump still holds `api_key` and `credentials` as text.
+    proof: [secret-tests]
+  - text: >-
+      `ContentFilterConfigModel` round-trips its seven fields and refuses a `pattern_type` other than `prebuilt` or `regex`.
+    proof: [content-filter-tests, oracle, helper-python]
+  - text: >-
+      `Guardrail`, `GuardrailEventHooks`, `DynamicGuardrailParams`, `GuardrailDefinitionLocation`, `PiiEntityCategoryMap`, `GuardrailItemSpec`, `GuardrailInfoResponse`, `ListGuardrailsResponse`, `GuardrailUiAddSettings`, `ApplyGuardrailRequest`, `ApplyGuardrailResponse` and `PatchGuardrailRequest` carry LiteLLM's wire names and defaults, and `ApplyGuardrailRequest` and `PatchGuardrailRequest` ignore unknown keys.
+    proof: [record-tests, oracle, helper-python]
+  - text: >-
+      A YAML entry with `mode: pre_call` loads through `ConfigLoader` into `config.sections.guardrail_params.guardrails`, and a named test loads every key in `BASE_KEYS` and `PARAM_KEYS`.
+    proof: [section-load-tests]
+  - text: >-
+      A bad entry lands in `rejected` with its name and a reason, and the entries around it still load in file order.
+    proof: [section-reject-tests]
+  - text: >-
+      A key no section reads on a guardrail entry still fails the load with `ConfigError::Unsupported`, and every existing section test still passes with this view in place.
+    proof: [section-unknown-tests, section-regression]
+  - text: >-
+      `os.environ/` text resolves in nested mappings and mappings inside lists, stays as written for plain text list items, gives null for a missing or empty variable, and goes through the shared parsers for bool and number keys, with bad text rejecting only that entry and naming the variable.
+    proof: [env-tests]
+  - text: >-
+      `LakeraCategoryThresholds` lives in the section and the existing Lakera tests pass through the re-export.
+    proof: [lakera-tests]
+  - text: >-
+      New valid, truncated and non-UTF-8 byte seeds replay through the three decoders without a panic.
+    proof: [decoder-corpus]
+  - text: >-
+      New helper seeds replay through the shared helper-case parser.
+    proof: [helper-case-corpus]
+
+  - text: "A float in an extras value, such as `timeout: 1.5`, stays a number after decoding even with serde_json `arbitrary_precision` on, and a test named `extras_keep_float_numbers` proves it."
+    proof: [extras-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: defaults-tests
+      why: field defaults or the null-for-unset dump are missing
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::guardrail_params::tests::defaults_/) - test(replays_the_guardrail_params_corpus)'
+    - id: keys-tests
+      why: the key table has drifted from the struct
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::guardrail_params::tests::keys_/) - test(replays_the_guardrail_params_corpus)'
+    - id: limits-tests
+      why: positive limits or closed sets accept values LiteLLM refuses
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::guardrail_params::tests::limits_/) - test(replays_the_guardrail_params_corpus)'
+    - id: extras-tests
+      why: undeclared body keys are dropped or kept in the wrong type
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::guardrail_params::tests::extras_/) - test(replays_the_guardrail_params_corpus)'
+    - id: lowercase-tests
+      why: normalize_lowercase behavior is missing or runs on the wrong type
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::guardrail_params::tests::lowercase_/) - test(replays_the_guardrail_params_corpus)'
+    - id: mode-tests
+      why: one of the three mode shapes doesn't parse or the mapping changes case
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::guardrail_params::tests::mode_/) - test(replays_the_guardrail_params_corpus)'
+    - id: route-rule-tests
+      why: the sensitive data routing rule is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::guardrail_params::tests::route_rule_/) - test(replays_the_guardrail_params_corpus)'
+    - id: violation-rule-tests
+      why: the on_violation rule for mcp_security is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::guardrail_params::tests::violation_rule_/) - test(replays_the_guardrail_params_corpus)'
+    - id: checks-rule-tests
+      why: the list-form checks rule for decision_model is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::guardrail_params::tests::checks_rule_/) - test(replays_the_guardrail_params_corpus)'
+    - id: decision-check-tests
+      why: DecisionModelCheck limits or defaults are missing
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::guardrail_params::tests::decision_check_/) - test(replays_the_guardrail_params_corpus)'
+    - id: timeout-tests
+      why: timeout coercion is missing or also runs on the base type
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::guardrail_params::tests::timeout_/) - test(replays_the_guardrail_params_corpus)'
+    - id: default-on-tests
+      why: the default_on fix is missing or also runs on the base type
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::guardrail_params::tests::default_on_/) - test(replays_the_guardrail_params_corpus)'
+    - id: sent-fields-tests
+      why: the exclude_unset view loses an explicit null or adds unsent keys
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::guardrail_params::tests::sent_fields_/) - test(replays_the_guardrail_params_corpus)'
+    - id: secret-tests
+      why: a key, an extra's value or a refused value leaks through Debug or an error
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::guardrail_params::tests::secret_/) - test(replays_the_guardrail_params_corpus)'
+    - id: content-filter-tests
+      why: ContentFilterConfigModel fields or the pattern_type check are missing
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::guardrail_params::tests::content_filter_/) - test(replays_the_guardrail_params_corpus)'
+    - id: record-tests
+      why: a record type has the wrong wire name or default
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::guardrail_params::tests::record_/) - test(replays_the_guardrail_params_corpus)'
+    - id: section-load-tests
+      why: a guardrail entry or one of its declared keys doesn't load through ConfigLoader
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::guardrail_params::tests::section_load_/) - test(replays_the_guardrail_params_corpus)'
+    - id: section-reject-tests
+      why: a bad entry fails the whole load or vanishes without a record
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::guardrail_params::tests::section_reject_/) - test(replays_the_guardrail_params_corpus)'
+    - id: section-unknown-tests
+      why: the view marks keys as read that nothing uses
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::guardrail_params::tests::section_unknown_/) - test(replays_the_guardrail_params_corpus)'
+    - id: section-regression
+      why: the new view changed what another section loads or refuses
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- crates/betterlite-config/src/sections/guardrail_params)" &&
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::/) - test(/replays_the_/)'
+    - id: env-tests
+      why: the os.environ/ walk differs from LiteLLM or skips the shared parsers
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::guardrail_params::tests::env_/) - test(replays_the_guardrail_params_corpus)'
+    - id: lakera-tests
+      why: moving LakeraCategoryThresholds broke the Lakera guardrail
+      run: >-
+        grep -q 'guardrail_params' crates/betterlite-guardrails/src/lakera.rs &&
+        cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^lakera::/)'
+    - id: helper-python
+      why: the Python side of the helper is missing or fails lint or type checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3662.py tools/oracle/helpers/b3662)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: the new helper seeds are absent or don't replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/guardrail-params-*")" &&
+        grep -lE 'b3662"?:' tools/oracle/fuzz/corpus/helper_case/guardrail-params-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: decoder-corpus
+      why: the byte decoder fuzz target or its fresh corpus is missing or fails
+      run: >-
+        test -f crates/betterlite-config/fuzz/fuzz_targets/guardrail_params.rs &&
+        grep -q 'name = "guardrail_params"' crates/betterlite-config/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-config/fuzz/corpus/guardrail_params)" &&
+        cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_guardrail_params_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/guardrail-params/base-empty-defaults.yaml
+  - tools/oracle/cases/helpers/guardrail-params/minimal-entry.yaml
+  - tools/oracle/cases/helpers/guardrail-params/mode-uppercase-text.yaml
+  - tools/oracle/cases/helpers/guardrail-params/mode-mixed-case-list.yaml
+  - tools/oracle/cases/helpers/guardrail-params/mode-tags-keep-case.yaml
+  - tools/oracle/cases/helpers/guardrail-params/mode-tags-missing.yaml
+  - tools/oracle/cases/helpers/guardrail-params/mode-missing.yaml
+  - tools/oracle/cases/helpers/guardrail-params/fallback-and-sensitive-lowercased.yaml
+  - tools/oracle/cases/helpers/guardrail-params/tool-keys-lowercased.yaml
+  - tools/oracle/cases/helpers/guardrail-params/base-keeps-tool-key-case.yaml
+  - tools/oracle/cases/helpers/guardrail-params/timeout-numeric-text.yaml
+  - tools/oracle/cases/helpers/guardrail-params/timeout-empty-text.yaml
+  - tools/oracle/cases/helpers/guardrail-params/timeout-bad-text.yaml
+  - tools/oracle/cases/helpers/guardrail-params/route-without-model.yaml
+  - tools/oracle/cases/helpers/guardrail-params/route-with-model.yaml
+  - tools/oracle/cases/helpers/guardrail-params/block-outside-mcp-security.yaml
+  - tools/oracle/cases/helpers/guardrail-params/block-on-mcp-security.yaml
+  - tools/oracle/cases/helpers/guardrail-params/list-checks-wrong-guardrail.yaml
+  - tools/oracle/cases/helpers/guardrail-params/decision-checks.yaml
+  - tools/oracle/cases/helpers/guardrail-params/decision-check-blank-instructions.yaml
+  - tools/oracle/cases/helpers/guardrail-params/limits-must-be-positive.yaml
+  - tools/oracle/cases/helpers/guardrail-params/unknown-on-violation.yaml
+  - tools/oracle/cases/helpers/guardrail-params/extra-keys-kept.yaml
+  - tools/oracle/cases/helpers/guardrail-params/default-on-absent.yaml
+  - tools/oracle/cases/helpers/guardrail-params/base-default-on-unset.yaml
+  - tools/oracle/cases/helpers/guardrail-params/patch-sent-keys.yaml
+  - tools/oracle/cases/helpers/guardrail-params/apply-request-defaults.yaml
+  - tools/oracle/cases/helpers/guardrail-params/apply-request-entities.yaml
+  - tools/oracle/cases/helpers/guardrail-params/content-filter-fields.yaml
+  - tools/oracle/cases/helpers/guardrail-params/content-filter-bad-pattern-type.yaml
+
+deviations:
+  - what: >-
+      A key under `guardrails[].litellm_params` that no section reads fails the config load with `ConfigError::Unsupported`. LiteLLM keeps such a key through `extra="allow"`.
+    why: >-
+      The loader refuses keys nothing reads, so a misspelled guardrail setting can't be ignored without notice. Three section tests on main pin this.
+  - what: >-
+      In a request body, provider keys outside `BASE_KEYS` and `PARAM_KEYS` are kept in `extra` with no type check, and provider mixin validators don't run at this layer. LiteLLM's `LitellmParams` checks them against every provider mixin for every entry.
+    why: >-
+      The provider models live in their own sections and tasks, and betterlite-config holds only some of them. A bad provider value fails when that provider's code reads it.
+  - what: >-
+      `timeout` text such as `nan`, `inf` or `1_000` is refused, where Python's `float()` takes it, and the message is `timeout must be numeric` without the value.
+    why: >-
+      Text goes through the shared number parser from docs/compatibility.md, a timeout that isn't finite can't be used, and the value may come from a variable that holds a secret.
+  - what: >-
+      `rejected` reasons and decoder errors name the bad field and don't quote its value, unlike pydantic's message.
+    why: >-
+      The secrets-stay-secret rule, since a mistyped field can hold a key.
+
+out_of_scope:
+  - >-
+    The rest of litellm/types/guardrails.py belongs to the tasks that cover it: B3660 owns `SupportedGuardrailIntegrations`, `Role`, `GuardrailItem`, `PiiEntityType` and `PiiAction`, and B3661 owns the Bedrock, LakeraV2, Lasso, DeepKeep, Pillar, Noma, Zscaler and Javelin config models.
+  - >-
+    `guardrailConfig` at litellm/types/guardrails.py line 1301 has no caller at the pin. The `guardrailConfig` hits in the Bedrock code are a different thing.
+  - >-
+    `__contains__`, `get` and `__getitem__` on `LitellmParams` exist for Python callers that treat it as a dict; Rust callers read fields directly.
+  - >-
+    `PresidioPerRequestConfig` is on main in `crates/betterlite-guardrails/src/presidio_actions/request_data.rs`, and `ContentFilterAction`, `BlockedWord` and `ContentFilterPattern` are on main in `sections::content_filter_records`.
+  - >-
+    `DecisionModelGuardrailConfigModel` in decision_model.py and `_parse_checks` in guardrail_hooks/decision_model/__init__.py belong to B108's decision_model guardrail. It imports `DecisionModelCheck` from here.
+  - >-
+    Checking mode text against a guardrail's supported hooks is `_validate_event_hook` in custom_guardrail.py, owned by B3664.
+  - >-
+    The log line for a skipped entry, legacy `initialize_guardrails` and reading `litellm_settings.guardrails` into `GuardrailItemSpec` are in init_guardrails.py, owned by B3683.
+  - >-
+    `LitellmParams(**data)` and the `api_key` and `api_base` handling in guardrail_registry.py are owned by B3682.
+  - >-
+    The admin routes in guardrail_endpoints.py, their masking, `model_dump(exclude_none=True)`, the PATCH merge and the 422 answers are owned by B3684 to B3687.
+  - >-
+    Provider mixin fields and validators stay with each provider's task, for example B3810 for `default_action` and `on_disallowed_action`, B3751 for Akto and B3784 for Ovalix. This task only lowercases those two keys in a body.
+
+pitfalls:
+  - >-
+    With serde_json `arbitrary_precision` on (core, harness, logging, models and others turn it on, and features unify), a float such as `timeout: 1.5` reaches the untagged `GuardrailValue` in crates/betterlite-config/src/sections/guardrail_identity/item.rs as the object `{"$serde_json::private::Number": ...}`. Numbers in extras must stay numbers, so use a hand-written Deserialize or go through serde_json::Value.
+  - >-
+    Pydantic takes a redeclared field from the first listed base, so `unreachable_fallback` on `LitellmParams` comes from Headroom with `fail_closed`, even for a typesafe entry where the TypeSafe mixin says `fail_open`.
+  - >-
+    `normalize_lowercase` runs only on declared fields, so on `BaseLitellmParams` a `mode`, `default_action` or `on_disallowed_action` key sits in the extras and keeps its case.
+  - >-
+    `normalize_lowercase` leaves a `Mode` mapping alone, so `tags` and `default` keep their case, and `on_violation` isn't in its list at all.
+  - >-
+    `default_on` is fixed to false only in `LitellmParams.__init__`, so a `BaseLitellmParams` dump shows it as null.
+  - >-
+    `coerce_timeout` exists only on `LitellmParams`, so `timeout: "30"` is fine there and is a refused type on `BaseLitellmParams`.
+  - >-
+    `betterlite_env::number` returns `Ok(None)` for blank text, but `float("   ")` fails in LiteLLM, so only the exact `""` gives null and a `None` from the parser is `InvalidTimeout`.
+  - >-
+    `str::parse::<f64>` takes `nan` and `inf`, so check `is_finite` after `betterlite_env::number`.
+  - >-
+    `sensitive_data_route_to_model: ""` with `on_sensitive_data: route` is refused like an unset value, because LiteLLM checks `not self.sensitive_data_route_to_model`.
+  - >-
+    PATCH treats an explicit `api_base: null` as sent, so dropping null keys before decoding must not lose them from `sent_fields`.
+  - >-
+    `checks` is untagged and `BedrockChecksConfigModel` needs at least one check, so `checks: {}` is refused rather than read as the list form.
+  - >-
+    `max_input_chars` defaults to 24000 and `max_concurrent_decision_calls` to 8 only on `DecisionModelGuardrailConfigModel`; on these types both stay unset.
+  - >-
+    Existing section tests build entries without `mode`, so a missing `mode` must land in `rejected` and never fail the load.
+  - >-
+    `model_dump` writes a check's defaulted `threshold` and `action`, so the Serialize side of `DecisionModelCheck` must not skip defaults.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,15 @@
+id: B5991
+milestone: M3 providers
+title: Hugging Face embedding request, task lookup and response
+status: todo
+depends_on: [B195, B5990]
+file: tasks/B5991-huggingface-embedding.yaml
+covers:
+  - "litellm/llms/huggingface/embedding/**"
+  - "litellm/llms/huggingface/huggingface_llms_metadata/**"
+parent: B042
+split_from: B5848
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,208 @@
+id: B6100
+title: Eden AI credentials, chat, embeddings, Responses and Messages
+description: >-
+  Build the first half of the Eden AI provider (litellm/llms/edenai): the shared helpers in common_utils.py and the four
+  text endpoint families, chat, embedding, responses and messages. Audio, video, speech and image are B5838. Eden AI is an
+  OpenAI-shaped gateway at https://api.edenai.run/v3. Every config here calls the matching OpenAI config and then lifts
+  the real per-request cost Eden puts in the answer. All of it is pure transforms: nothing here sends a request, reads the
+  environment or registers a route. B041 wires the configs into dispatch.
+
+  Modules. In betterlite-openai: edenai_common, edenai_chat, edenai_embedding, edenai_responses (each a file plus a folder
+  with tests.rs). In betterlite-core: edenai_messages, because the Messages policy it composes (B1426) lives in
+  betterlite-core and a provider leaf must not import core. Credentials and settings are plain arguments. Define
+  EdenAiEnv, a struct the caller fills, with api_key (EDENAI_API_KEY), api_base (EDENAI_API_BASE) and global_api_key
+  (litellm.api_key). Do not add a config section.
+
+  edenai_common (common_utils.py). Constants EDENAI_API_BASE "https://api.edenai.run/v3" and EDENAI_COST_HEADER
+  "x-edenai-cost". EdenAiError carries message, status_code and headers (the type behind EdenAIException, built on B2202's
+  BaseLLMException projection). resolve_api_base(api_base, env) is the explicit base, then env.api_base, then the default.
+  resolve_api_key(api_key, env) is the explicit key, then env.api_key. require_api_key(api_key, model, env) resolves the
+  explicit key, then env.global_api_key, then env.api_key, and when nothing is found returns B184's AuthenticationError
+  (status 401, provider edenai, the given model) with the message "Missing Eden AI API key: set EDENAI_API_KEY or pass
+  api_key". authorized_headers(headers, api_key, model, env) returns the headers plus Authorization "Bearer <key>" taken
+  from require_api_key, replacing a caller Authorization. json_headers does the same and also sets Content-Type
+  "application/json", replacing a caller value. endpoint_url(api_base, path, env) is the resolved base with trailing
+  slashes removed, then "/" and the path. pick(params, keys) keeps only the listed keys, in the order of params, and is used
+  by B5838 as well. reported_cost reads the key "cost" from a JSON object, or the header "x-edenai-cost" from a header map.
+  Give it three entry points: from a JSON value, from raw body bytes and from headers. An invalid value, a non-object body or
+  undecodable bytes give None, never an error. Its Python is a pydantic model with AliasChoices("cost", "x-edenai-cost")
+  and a lax float, so the oracle cases decide what counts as a number (integer, numeric string, bool, null) and which alias
+  wins when both are present. Use the numeric type B1717's cost argument takes. The decoders are reported_cost_from_bytes
+  (any bytes from the provider) and parse_model_catalog (the /models body), both fuzzed.
+
+  edenai_chat (chat/transformation.py). Delegate to B668/B503/B504 and add only these differences. Supported params are the
+  parent list plus reasoning_effort when B2221's supports_reasoning is true for the model under provider edenai.
+  get_api_key(api_key) is resolve_api_key and get_api_base(api_base) is resolve_api_base. transform_request calls the parent
+  and, only when the request has a truthy stream, replaces stream_options with the existing options (a null or absent value
+  counts as empty) plus include_usage true; a non-mapping stream_options is a typed error naming the field. transform_response
+  calls the parent and then records the cost found in the raw body bytes into the response hidden params through B1717's
+  set_response_cost_in_hidden_params. The streaming chunk parser runs B504's parser, reads the cost from the chunk, and when
+  both a cost and a parsed usage exist sets usage.cost; otherwise it changes nothing. get_error_class returns EdenAiError.
+  get_models builds the URL "<resolved base>/models" and parses the reply: a non-success status is EdenAiError with that
+  status, the body text and headers; a success body is {"data":[{"id":..}]} and the result is "edenai/<id>" per entry, in
+  order. The GET sends no Authorization header. The caller sends it, as with B5991's injected lookup.
+
+  edenai_embedding (embedding/transformation.py), over B006. Supported params are exactly dimensions, encoding_format and
+  user. map_openai_params returns optional_params overlaid with only those keys from non_default_params. Headers are
+  json_headers. The URL is endpoint_url(api_base, "embeddings"). The request body is model, input, then every optional
+  param, so an optional param named model or input overwrites them. The response is built from the JSON body as an embedding
+  response through B004's convert_to_model_response_object, then the cost from the same body is stored in hidden params.
+  get_error_class returns EdenAiError.
+
+  edenai_responses (responses/transformation.py), over B506/B507/B508. Provider tag edenai. Headers: authorized_headers with
+  the key from litellm_params only (never a Content-Type). The URL is B508's get_complete_url called with the already
+  resolved Eden base, so the OpenAI base env vars and litellm.api_base are never read, and the result is the base without
+  trailing slashes plus "/responses". The reply is B508's reply with usage.cost stored in hidden params when present.
+  should_fake_stream is false for every model and supports_native_websocket is false. get_error_class returns EdenAiError.
+  The cost on streamed events is lifted by the shared usage-cost code, not here.
+
+  edenai_messages (messages/transformation.py), in betterlite-core over B1426's JSON Messages policy. Build the Eden
+  descriptor in code with B1424's descriptor type: slug edenai, base_url EDENAI_API_BASE, api_key_env EDENAI_API_KEY,
+  api_base_env EDENAI_API_BASE, base class openai_gpt, no constraints. Environment validation first runs require_api_key
+  and then B1426's validation with that key, so a missing key is AuthenticationError and never reaches the policy. The URL is
+  B1426's, which gives https://api.edenai.run/v3/v1/messages by default. The reply is B1426's native reply, after which a
+  cost read from the reply object is written to the call log's response_cost (B247's mutable call log, the field spend
+  logging reads), and a reply without a cost leaves it alone. Eden sends no cost in Messages streams, so streams use the
+  price map and need no code. get_error_class returns EdenAiError.
+
+  Helper b6100 calls these functions with typed inputs (no network, no environment) and compares the pinned LiteLLM
+  classes. Source size is 388 nonblank, noncomment lines. Plan about 420 production lines, 320 test lines, 200 adapter lines
+  and 60 fuzz and wiring lines.
+scope:
+  paths:
+    - crates/betterlite-openai/src/edenai_common.rs
+    - crates/betterlite-openai/src/edenai_common/**
+    - crates/betterlite-openai/src/edenai_chat.rs
+    - crates/betterlite-openai/src/edenai_chat/**
+    - crates/betterlite-openai/src/edenai_embedding.rs
+    - crates/betterlite-openai/src/edenai_embedding/**
+    - crates/betterlite-openai/src/edenai_responses.rs
+    - crates/betterlite-openai/src/edenai_responses/**
+    - crates/betterlite-core/src/edenai_messages.rs
+    - crates/betterlite-core/src/edenai_messages/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/edenai_cost_reply.rs
+    - crates/betterlite-openai/fuzz/corpus/edenai_cost_reply/**
+    - tools/oracle/cases/helpers/edenai-wire/**
+    - "tools/oracle/fuzz/corpus/helper_case/edenai_wire-*"
+    - tools/oracle/helpers/b6100.py
+    - tools/oracle/helpers/b6100/**
+    - tools/oracle/src/helpers/openai/b6100.rs
+    - tools/oracle/src/helpers/openai/b6100/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/edenai/common_utils.py#L18-L80
+    why: Constants, the exception, key and base resolution, the missing-key error, cost extraction and the shared header and URL helpers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/edenai/chat/transformation.py#L31-L87
+    why: Stream options with include_usage, the chunk parser that sets usage.cost, reasoning_effort support and the static key and base getters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/edenai/chat/transformation.py#L89-L144
+    why: Response cost lift, error class, iterator factory and the unauthenticated /models fetch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/edenai/embedding/transformation.py#L24-L97
+    why: Supported params, the request body and the cost lift on the embedding reply.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/edenai/responses/transformation.py#L29-L80
+    why: Responses auth, the resolved base passed to the OpenAI URL builder, usage.cost lift and the two false flags.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/responses/transformation.py#L604-L623
+    why: The URL builder Eden's base goes through, to see which fallbacks the resolved base skips.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/edenai/messages/transformation.py#L27-L79
+    why: The descriptor, key check before the policy, and the cost written to the call log.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai_like/messages/transformation.py#L113-L176
+    why: The JSON provider Messages config Eden subclasses, with its own key and base resolution.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L762-L772
+    why: How the cost lands in hidden params, owned by B1717.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L3626-L3650
+    why: The chat call site that passes the resolved key and base, owned by B041.
+  - url: https://www.edenai.co/docs/v3/llms/embeddings
+    why: Embedding endpoint and the top-level cost field.
+  - url: https://www.edenai.co/docs/v3/llms/responses
+    why: Responses endpoint and usage.cost.
+  - url: https://www.edenai.co/docs/api-reference/anthropic-messages/create-anthropic-message
+    why: Messages endpoint served at /v3/v1/messages.
+dod:
+  - text: The cost is read from a JSON object, raw bytes or a header map, and anything unreadable gives no cost.
+    proof: [edenai-common-tests, edenai-cost-corpus, helper-python, helper-case-corpus]
+  - text: Key and base resolution, the missing-key error, the Authorization and Content-Type headers and the endpoint URL match LiteLLM.
+    proof: [edenai-common-tests, helper-python, helper-case-corpus]
+  - text: Chat adds reasoning_effort by capability, forces include_usage on streams, lifts the cost into hidden params and usage, and lists models with the edenai/ prefix.
+    proof: [edenai-chat-tests, helper-python, helper-case-corpus]
+  - text: Embedding params, URL, request body order and cost lift match LiteLLM.
+    proof: [edenai-embedding-tests, helper-python, helper-case-corpus]
+  - text: Responses auth, URL, cost lift, no fake stream and no websocket match LiteLLM.
+    proof: [edenai-responses-tests, helper-python, helper-case-corpus]
+  - text: Messages checks the key before the policy, builds the /v3/v1/messages URL and records the reply cost in the call log.
+    proof: [edenai-messages-tests, helper-python, helper-case-corpus]
+  - text: The new helper cases replay through the shared helper-case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: edenai-common-tests
+      why: The shared Eden helpers or the cost reader are missing or fail
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^edenai_common::/) - test(replays_the_edenai_cost_reply_corpus)'
+    - id: edenai-chat-tests
+      why: The chat differences from the OpenAI config are missing or fail
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^edenai_chat::/)'
+    - id: edenai-embedding-tests
+      why: The embedding transform is missing or fails
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^edenai_embedding::/)'
+    - id: edenai-responses-tests
+      why: The Responses overrides are missing or fail
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^edenai_responses::/)'
+    - id: edenai-messages-tests
+      why: The Messages key check, URL or cost record is missing or fails
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^edenai_messages::/)'
+    - id: edenai-cost-corpus
+      why: The cost and model catalog fuzz target or its fresh replay corpus is missing
+      run: >-
+        test -f crates/betterlite-openai/fuzz/fuzz_targets/edenai_cost_reply.rs &&
+        grep -q 'name = "edenai_cost_reply"' crates/betterlite-openai/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/edenai_cost_reply)" &&
+        cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_edenai_cost_reply_corpus)'
+    - id: helper-python
+      why: The strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b6100.py)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: Newly added Eden AI helper cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/edenai_wire-*")" &&
+        grep -lE '^[[:space:]]+b6100:' tools/oracle/fuzz/corpus/helper_case/edenai_wire-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/edenai-wire/reported-cost-shapes.yaml
+  - tools/oracle/cases/helpers/edenai-wire/key-and-base-resolution.yaml
+  - tools/oracle/cases/helpers/edenai-wire/missing-key-error.yaml
+  - tools/oracle/cases/helpers/edenai-wire/chat-supported-params-and-stream-options.yaml
+  - tools/oracle/cases/helpers/edenai-wire/chat-cost-lift-and-chunk-usage.yaml
+  - tools/oracle/cases/helpers/edenai-wire/model-catalog.yaml
+  - tools/oracle/cases/helpers/edenai-wire/embedding-request-and-url.yaml
+  - tools/oracle/cases/helpers/edenai-wire/responses-url-and-flags.yaml
+  - tools/oracle/cases/helpers/edenai-wire/messages-key-url-and-cost.yaml
+deviations:
+  - what: A /models body that does not match {"data":[{"id":..}]} gives EdenAiError with status 500 and a message that names the missing field.
+    why: LiteLLM lets a pydantic ValidationError escape from model_validate, which the proxy reports as a generic 500. A typed error keeps the status and names the field.
+  - what: A non-mapping stream_options on a stream request is a 400 error that names the field.
+    why: LiteLLM lets a pydantic ValidationError escape from the TypeAdapter, so the client sees an unhandled 500 and not a clear message.
+out_of_scope:
+  - B5838 owns audio_transcription, videos, text_to_speech and image_generation, and uses edenai_common from here.
+  - B041 owns _complete_edenai and the embedding branch in litellm/main.py (key order api_key, litellm.api_key, EDENAI_API_KEY), the ProviderConfigManager branches in litellm/utils.py, the get_llm_provider_logic branches, reading EDENAI_API_KEY and EDENAI_API_BASE into EdenAiEnv, sending the /models GET, registering the configs in dispatch and the HTTP oracle cases through the booted proxy.
+  - B2230 owns choosing EdenAIChatConfig for provider edenai.
+  - B668, B503 and B504 own the OpenAI chat parent methods, B006 and B004 the embedding contract and response builder, B506 to B508 the Responses parent methods, and B1426 the JSON Messages policy.
+  - B1717 owns set_response_cost_in_hidden_params and the cost recorder that reads the call log.
+  - The pre_call and post_call logging calls inside the Python embedding transform belong to the caller (B249 hooks), which logs the parsed body before this transform runs.
+  - Usage cost on a streamed Responses event comes from the shared usage-cost lift, not from edenai_responses.
+pitfalls:
+  - The embedding body puts the optional params after model and input, so an optional param named model or input replaces them.
+  - Responses passes the resolved Eden base into the OpenAI URL builder, so OPENAI_BASE_URL, OPENAI_API_BASE and litellm.api_base never apply to Eden.
+  - The Responses headers step uses only the key in litellm_params, then litellm.api_key, then EDENAI_API_KEY, and adds no Content-Type.
+  - The chat get_models request has no Authorization header at all, and a failed status is EdenAiError while a bad body is not.
+  - The cost reader accepts the header name x-edenai-cost inside a JSON body and the plain key cost inside a header map, because both aliases are tried on every input.
+  - The chat chunk parser sets the cost on usage only when the parsed chunk has a usage, so a cost on a chunk with no usage is dropped silently.
+  - Messages calls require_api_key before the policy resolves its own key, so the explicit key, then litellm.api_key and then EDENAI_API_KEY decide the key and a missing one never reaches the policy.
+  - Messages writes the cost to the call log's response_cost, not to hidden params like the other three families.
+  - Streams only get include_usage when the request stream flag is true, and the existing stream_options keys survive.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

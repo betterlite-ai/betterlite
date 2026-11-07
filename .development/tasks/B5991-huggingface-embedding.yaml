@@ -1,0 +1,140 @@
+id: B5991
+title: Hugging Face embedding request, task lookup and response
+description: >-
+  Build huggingface_embedding in betterlite-openai (crates/betterlite-openai/src/huggingface_embedding.rs and its folder) from litellm/llms/huggingface/embedding/handler.py and the
+  three live methods of HuggingFaceEmbeddingConfig in embedding/transformation.py (get_special_options_params, validate_environment, get_error_class). It uses B5990's HuggingfaceError.
+  It makes no HTTP call itself: the pipeline tag lookup goes through an injected PipelineTagSource trait, tag(model, task_type) -> Result<Option<String>, HuggingfaceError>, which B042
+  backs with a plain GET of "https://huggingface.co/api/models/{model}" (no auth header, no status check, JSON field pipeline_tag, absent means None). The token encoder is an injected
+  OrdinaryEncoder trait with encode_ordinary(text) -> usize that returns the token count with LiteLLM's default encoding; the helper adapter backs it with B195's bundled cl100k_base.
+  The resolved api_key, api_base and the two env values (HF_API_BASE, HUGGINGFACE_API_BASE) come in as plain arguments (an HuggingfaceEnv value).
+
+
+  Task lookup. get_hf_task_embedding_for_model returns task_type unchanged when it is one of sentence-similarity, feature-extraction, rerank, embed, similarity; any other non-None
+  task_type is a typed error "Invalid task_type={task_type}. Expected one of=..." (LiteLLM raises a bare Exception). With no task_type, the result is the pipeline_tag from the source.
+  The async twin async_get_hf_task_embedding_for_model, _async_transform_input and the call_type "async" branch of _transform_input are never reached at the pin (aembedding itself
+  calls _transform_input with "sync"), so there is one code path. Keep the call count: embedding() asks for the task once to build the URL, and _transform_input asks again unless the
+  model contains "sentence-transformers". A case that records source calls shows 2 (or 1).
+
+
+  Request. prepare(model, input, optional_params, api_key, api_base, env, source) returns the URL, headers and body. Headers: content-type "application/json" plus Authorization
+  "Bearer {api_key}" when api_key is not None, defaults over caller headers. URL: the model when it starts with http:// or https://; else a truthy api_base; else HF_API_BASE when set;
+  else HUGGINGFACE_API_BASE when set; else "https://router.huggingface.co/hf-inference/pipeline/{task}/{model}" where task is the looked-up value, written "None" when absent. Body, in
+  _transform_input: a model containing "sentence-transformers" with an empty input is a 400 HuggingfaceError "sentence transformers requires 2+ sentences"; otherwise it gets
+  {"inputs": {"source_sentence": input[0], "sentences": input[1:]}} and input_type stays in optional_params. Every other model removes input_type from optional_params, asks for the
+  task with it and applies _transform_input_on_pipeline_tag: None gives {"inputs": input}; "sentence-similarity" or "similarity" with fewer than 2 inputs is 400 "sentence-similarity requires 2+ sentences",
+  else {"inputs": {"source_sentence": input[0], "sentences": input[1:]}}; "rerank" with fewer than 2 inputs is 400 "reranker requires 2+ sentences", else {"inputs": {"query": input[0],
+  "texts": input[1:]}}; any other tag gives {"inputs": input}. Then each remaining optional param goes by name (_process_optional_params): use_cache and wait_for_model into data.options,
+  min_length, max_length, top_k, top_p, temperature, repetition_penalty and max_time into data.parameters, everything else at top level of the body. The body is sent as a JSON string.
+
+
+  Response. process_embedding_response takes the decoded JSON and the input texts. When the object has "similarities", each [idx, embedding] pair becomes one data item. Otherwise each
+  element at position idx becomes {"object": "embedding", "index": idx, "embedding": E} where E is the element itself when it is a float or a list whose first item is a float, else
+  element[0][0]. An empty list element is a typed error (LiteLLM hits IndexError). The result has object "list", the model, and usage with prompt_tokens, completion_tokens and
+  total_tokens all equal to the sum of encode_ordinary over the inputs. An "error" key in the response is a HuggingfaceError 500 with that text. decode_embedding_response(bytes) is the
+  fuzz entry point (1 MiB cap): target huggingface_embedding_response, replay test replays_the_embedding_response_corpus.
+
+
+  Helper cases (helper b5991) call the pinned HuggingFaceEmbedding._transform_input, _transform_input_on_pipeline_tag, _process_optional_params and _process_embedding_response, with the
+  task lookup replaced by the value and call count the case records, and the config's validate_environment. The embedding() URL branch is covered through a small adapter that runs its
+  URL block only. Size: about 255 LiteLLM lines live out of 927 (the rest of embedding/transformation.py is unreachable, see out_of_scope); budget 1500 changed lines.
+scope:
+  paths:
+    - crates/betterlite-openai/src/huggingface_embedding.rs
+    - crates/betterlite-openai/src/huggingface_embedding/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/huggingface_embedding_response.rs
+    - crates/betterlite-openai/fuzz/corpus/huggingface_embedding_response/**
+    - tools/oracle/cases/helpers/huggingface-embedding/**
+    - "tools/oracle/fuzz/corpus/helper_case/huggingface_embedding-*"
+    - tools/oracle/helpers/b5991.py
+    - tools/oracle/helpers/b5991/**
+    - tools/oracle/src/helpers/openai/b5991.rs
+    - tools/oracle/src/helpers/openai/b5991/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/embedding/handler.py#L22-L71
+    why: Task values, task_type validation and the pipeline_tag lookup in both forms.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/embedding/handler.py#L80-L172
+    why: Pipeline-tag input shapes, optional param placement and the sentence-transformers branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/embedding/handler.py#L175-L229
+    why: Response flattening and the equal-token usage.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/embedding/handler.py#L231-L387
+    why: aembedding and embedding bodies, header setup, URL choice, the task lookup and the error key check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/embedding/transformation.py#L95-L96
+    why: get_special_options_params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/embedding/transformation.py#L323-L345
+    why: validate_environment and get_error_class that the handler calls.
+  - url: https://huggingface.github.io/text-embeddings-inference/
+    why: The TEI request and response shapes this handler targets.
+dod:
+  - text: Task lookup accepts the five task values, rejects any other task_type, and the handler asks twice except for sentence-transformers.
+    proof: [hf-embed-task-tests, oracle]
+  - text: URL and headers follow model, api_base, the two env values and the router default, with "None" for an absent task.
+    proof: [hf-embed-url-tests, oracle]
+  - text: Request bodies follow the pipeline tag, the sentence-transformers branch and the option placement, with the 400 errors.
+    proof: [hf-embed-body-tests, oracle, helper-python]
+  - text: Responses flatten the three shapes, produce equal-token usage and raise 500 on an error key.
+    proof: [hf-embed-response-tests, oracle]
+  - text: The response decoder rejects over 1 MiB and malformed JSON with a typed error, and the corpus replays.
+    proof: [hf-embed-response-corpus]
+  - text: The new helper cases replay through the shared parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: hf-embed-task-tests
+      why: Task validation or the number of lookups differs from LiteLLM.
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^huggingface_embedding::tests::task_/)'
+    - id: hf-embed-url-tests
+      why: The embedding URL or header rules differ from LiteLLM.
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^huggingface_embedding::tests::url_/)'
+    - id: hf-embed-body-tests
+      why: A pipeline body, option placement or the 400 error is missing.
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^huggingface_embedding::tests::body_/)'
+    - id: hf-embed-response-tests
+      why: Response flattening, usage or the error key rule is missing.
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^huggingface_embedding::tests::response_/)'
+    - id: hf-embed-response-corpus
+      why: The embedding decoder fuzz target or its replay corpus is missing or fails.
+      run: >-
+        test -f crates/betterlite-openai/fuzz/fuzz_targets/huggingface_embedding_response.rs &&
+        grep -q 'name = "huggingface_embedding_response"' crates/betterlite-openai/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/huggingface_embedding_response)" &&
+        cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_embedding_response_corpus)'
+    - id: helper-python
+      why: The strict oracle adapter lint or type checks fail.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5991.py)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: Newly added embedding cases are absent or do not replay.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/huggingface_embedding-*")" &&
+        grep -lE '^[[:space:]]+b5991:' tools/oracle/fuzz/corpus/helper_case/huggingface_embedding-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/huggingface-embedding/pipeline-bodies.yaml
+  - tools/oracle/cases/helpers/huggingface-embedding/sentence-transformers.yaml
+  - tools/oracle/cases/helpers/huggingface-embedding/option-placement.yaml
+  - tools/oracle/cases/helpers/huggingface-embedding/url-selection.yaml
+  - tools/oracle/cases/helpers/huggingface-embedding/response-shapes.yaml
+  - tools/oracle/cases/helpers/huggingface-embedding/task-type-validation.yaml
+deviations:
+  - what: A task lookup that LiteLLM does with two blocking GETs inside an async call is made through the injected source and awaits like any other call.
+    why: betterlite has no sync/async split; the number of lookups and their URL stay the same.
+out_of_scope:
+  - B042 owns the embedding branch of litellm/main.py (key order api_key, litellm.huggingface_key, HUGGINGFACE_API_KEY, litellm.api_key), the HTTP POST of the body, the pre_call and post_call logging, the pooled client choice and the proxy HTTP cases.
+  - The class attributes, __init__, get_config, get_supported_openai_params, map_openai_params, get_hf_api_key, read_tgi_conv_models, get_hf_task_for_model, transform_request, transform_response, convert_to_model_response_object and _convert_streamed_response_to_complete_response of HuggingFaceEmbeddingConfig have no caller at the pin (chat uses HuggingFaceChatConfig), so they and the two huggingface_llms_metadata text files are not built.
+  - async_get_hf_task_embedding_for_model and _async_transform_input have no caller at the pin and are folded into the single lookup path above.
+  - The Hub error type is B5990's HuggingfaceError.
+pitfalls:
+  - For a sentence-transformers model, input_type is not removed from optional_params, so it lands at the top level of the body as "input_type".
+  - embedding() looks the task up before the URL is built even when the URL comes from api_base or the model, so the lookup runs and can fail in those cases too.
+  - The lookup does not check the status, so a Hub 404 body without pipeline_tag gives task None and the router URL contains the text "None".
+  - Usage sets completion_tokens equal to prompt_tokens, and total_tokens is that same number, not the sum.
+  - An element that is a list starting with a float is the vector itself, but a list starting with a list is unwrapped with element[0][0], dropping the rest.
+  - HF_API_BASE and HUGGINGFACE_API_BASE are tested as present in the environment, in that order, after api_base.
+  - sentence-transformers rejects only an empty input, while the sentence-similarity tag rejects fewer than two.
+budget: {max_changed_lines: 1500, max_new_expects: 0}
+review_level: standard

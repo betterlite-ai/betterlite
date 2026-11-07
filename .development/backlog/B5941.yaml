@@ -1,0 +1,14 @@
+id: B5941
+milestone: M3 providers
+title: OCI embedText request and response
+status: todo
+depends_on: [B5940, B2202, B171, B173, B186]
+file: tasks/B5941-oci-embed.yaml
+covers:
+  - "litellm/llms/oci/embed/**"
+parent: B042
+split_from: B042
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

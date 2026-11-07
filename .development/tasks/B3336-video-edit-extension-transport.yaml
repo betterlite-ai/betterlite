@@ -1,0 +1,108 @@
+id: B3336
+title: Video edit and extension transport
+description: >-
+  Build the HTTP handlers for video edit and video extension in betterlite-core, module `api::video_edit_transport`.
+  They are the four LiteLLM methods video_edit_handler, async_video_edit_handler, video_extension_handler and async_video_extension_handler.
+  Each takes the prompt, the video id, a `BaseVideoConfig` (B3331), the provider name, the call's litellm params, the logging object (B249),
+  and the optional extra headers, extra body, timeout, client and api_key. Edit also takes an optional video file; extension also takes `seconds` (a string).
+  Create the typed error enum `VideoEditTransportError` in this module. It wraps B2402's transport error conversion, so a failure inside a try block
+  becomes the provider's error class the same way LiteLLM's `_handle_error` does.
+
+  Steps shared by all four, in this order. The sync handler returns the async handler's future when `_is_async` is true, before any client is picked.
+  Pick the client: use the supplied one only when it has the right mode (sync for the sync path, async for the async path), otherwise take a pooled one from B173
+  built with `ssl_verify` from the litellm params (default none). The async pool is keyed by the provider name, and an unknown provider name fails there,
+  outside every try block, so the provider error class does not convert it.
+  Call `validate_environment` with api_key set to the argument or else the params' api_key, headers set to the extra headers or an empty map, model set to the empty string.
+  Then update the returned headers with the extra headers again. Call `get_complete_url` with model empty and the params' api_base.
+
+  Extension continues: call `transform_video_extension_request` (prompt, video id, seconds, api base, params, headers, extra body) to get `(url, data)`.
+  This call and the pre_call below sit outside the try block, so their errors are not converted. pre_call has input = the prompt, api_key empty,
+  additional_args holding complete_input_dict = data, api_base = url, headers and video_id. Then, inside the try block, POST `data` as JSON with the timeout,
+  and return `transform_video_extension_response` (raw response, logging object, provider name).
+
+  Edit continues differently. First call `get_video_edit_prefetch_params` (video id, api base, params, headers). When it returns `(prefetch_url, prefetch_body)`,
+  POST the body as JSON to that URL with the headers and the timeout, inside its own try block, and then check the status; a 4xx or 5xx raises and goes through error conversion.
+  The decoded JSON of that response is `prefetched_source_data`, and decoding happens after the try block, so a decode error is not converted. When it returns none, the data is none.
+  Then, inside one try block: call `transform_video_edit_request` (prompt, video id, video file, api base, params, headers, extra body, prefetched data) to get `(url, data, files)`,
+  call pre_call (same shape as extension), and send. When `files` is non-empty send a multipart POST with `data` as the form fields and `files` as the parts, with the timeout;
+  otherwise send `data` as JSON. Check the status, then return `transform_video_edit_response` (raw response, logging object, provider name, request_data = data).
+  The request transform and pre_call are inside the edit try block, so their errors are converted too. This is the opposite of extension.
+
+  Both send paths call raise_for_status, so any 4xx or 5xx response reaches error conversion before the response transform. The response status text and headers feed the converted error.
+  Model each handler pair as a method on one struct holding the injected B173 client factories, the B249 logging handle and the B2402 error converter. The provider config is a trait object argument.
+  Tests use a local mock server and a fake `BaseVideoConfig` with recording methods. Name the rstest functions `edit_transport_behavior`, `extension_transport_behavior`
+  and `transport_error_behavior`, with one named case per DoD item. The task changes no wire format, so there is no fuzz target.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/video_edit_transport.rs
+    - crates/betterlite-core/src/api/video_edit_transport/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8019-L8128
+    why: video_edit_handler, with the _is_async hand-off, client choice, headers, the prefetch POST, the request transform, pre_call and the multipart-or-JSON send.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8130-L8225
+    why: async_video_edit_handler, the same steps on the pooled async client.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8227-L8314
+    why: video_extension_handler, where the request transform and pre_call sit before the try block.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8316-L8389
+    why: async_video_extension_handler, the same on the pooled async client.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1451-L1464
+    why: the only edit call site; it passes client from kwargs and never api_key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L1589-L1602
+    why: the only extension call site; same, so api_key is always none.
+dod:
+  - text: Each sync handler returns its async handler's future when `_is_async` is true, before any client is picked, and an unknown provider name fails before error conversion.
+    proof: [edit-transport-tests, extension-transport-tests]
+  - text: Edit and extension use a supplied client only when its mode matches, otherwise a pooled one with ssl_verify from the params; validate_environment gets api_key or the params' api_key, headers are re-updated with the extra headers, and get_complete_url gets an empty model.
+    proof: [edit-transport-tests, extension-transport-tests]
+  - text: Edit calls get_video_edit_prefetch_params; when it returns a pair it POSTs the JSON body to the prefetch URL with the timeout, checks the status, and passes the decoded JSON to transform_video_edit_request; when it returns none the prefetched data is none.
+    proof: [edit-transport-tests]
+  - text: Edit sends a multipart POST when the request transform returns non-empty files and a JSON POST otherwise, both with the timeout, and returns transform_video_edit_response called with request_data = data.
+    proof: [edit-transport-tests]
+  - text: Edit logs pre_call with input = the prompt, an empty api_key and additional_args complete_input_dict, api_base, headers and video_id, after the request transform and before the send.
+    proof: [edit-transport-tests]
+  - text: Extension calls transform_video_extension_request with seconds, logs the same pre_call shape, POSTs the JSON body with the timeout and returns transform_video_extension_response.
+    proof: [extension-transport-tests]
+  - text: Extension errors from the request transform or from pre_call are returned unconverted, while edit errors from the same two steps are converted.
+    proof: [transport-error-tests]
+  - text: A 4xx or 5xx on the prefetch POST or the main send, and an error from either response transform, become the provider's error class with the HTTP status, headers and body text; a prefetch JSON decode error is not converted.
+    proof: [transport-error-tests]
+  - text: Calling a sync handler with `_is_async` false inside a running async runtime returns the typed error with status 500.
+    proof: [transport-error-tests]
+checks:
+  optional: []
+  commands:
+    - id: edit-transport-tests
+      why: the edit handler tests are missing or the prefetch, multipart-or-JSON choice, logging or client choice differ
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_edit_transport::(.*::)?edit_transport_behavior::/)'
+    - id: extension-transport-tests
+      why: the extension handler tests are missing or the request order, timeout or hand-off differ
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_edit_transport::(.*::)?extension_transport_behavior::/)'
+    - id: transport-error-tests
+      why: the conversion boundary differs between edit and extension, or the runtime guard is missing
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_edit_transport::(.*::)?transport_error_behavior::/)'
+oracle_cases: []
+deviations:
+  - what: A sync handler called from inside a running async runtime returns a typed error with status 500 and message "video sync handler cannot run inside a running runtime".
+    why: Python runs sync code on the caller's thread; blocking on a Rust future inside a runtime would deadlock.
+  - what: The client mode check is a type match on the supplied client, not isinstance.
+    why: Rust clients are typed, so the outcome is the same.
+out_of_scope:
+  - "async_video_delete_handler (llm_http_handler.py 8528-8602): no caller at the pin."
+  - "Generation and content handlers are owned by B3333; remix and list by B3334; character by B3335; status by B3337."
+  - "Shared _handle_error (6052-6111) is owned by B2402; this task calls it."
+  - "Pooled client construction and limits are owned by B173; pre_call logging by B249."
+  - "The edit and extension request and response transforms of each provider (B526 OpenAI, B547, B1361-B1364, and the Fal and Runway tasks); this task calls them only through the B3331 trait."
+  - "The edit and extension call functions in litellm/videos/main.py (id decoding, provider lookup, logging setup) are not owned by this task."
+pitfalls:
+  - Edit puts the request transform and pre_call inside the try block, but extension puts both before it, so only edit converts their errors.
+  - The edit prefetch POST has its own try block with a status check, and the `.json()` decode comes after it and is not converted.
+  - Edit picks multipart by whether `files` is truthy, so an empty files map must send JSON.
+  - The edit response transform also gets `request_data` = data; the extension one does not.
+  - Edit and extension use the same `api_key or litellm_params api_key` fallback as remix; no caller passes api_key, so the params' key is the one used.
+  - Extension takes `seconds` as a string and hands it to the transform unchanged; do not parse it.
+  - The async path builds the pooled client from the provider name before the headers step, so an unknown provider name fails first.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

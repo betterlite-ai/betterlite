@@ -7,9 +7,10 @@ description: >-
   Construct DualCache with optional Redis and required memory tiers, applying configured TTLs
   to both layers on writes and backfilling memory from Redis reads with the memory tier's TTL.
 
-  On memory misses, single-key Redis reads apply throttling to avoid overloading a slow backend,
-  reusing access times across concurrent calls with thread-safe atomic reservations. Local-only
-  fallback when Redis is absent or writes are deferred works for all operations. Async increment
+  On memory misses, single-key Redis reads go straight to Redis with no throttling. LiteLLM's
+  throttle (dual_cache.py L312-L347, inside _reserve_redis_batch_keys from L299) sits in the batch
+  path only. The access-time state and its thread-safe reservations live here for B4294 to use.
+  Local-only fallback when Redis is absent or writes are deferred works for all operations. Async increment
   catches Redis errors and returns the memory result rather than propagating, while sync increment
   propagates errors. Mutation ordering preserves local writes ahead of remote completion;
   request-batched writes defer Redis operations to pipelines and unbatched calls execute directly.
@@ -193,11 +194,12 @@ out_of_scope:
   - 'active_request_redis_batch and request-scoped batch management (RequestRedisBatches context variable): owned by B4331.'
   - 'Batch operation result protocols (BatchResult, on_settled callbacks): owned by B4330.'
   - 'Memory-cache primitives (get, set, delete, increment): owned by B2226 and B390, composed only.'
-  - 'Redis constructor and non-batched fallback operations: owned by B360, composed only.'
+  - 'Redis constructor and non-batched fallback operations: owned by B5630, composed only.'
   - 'Cache key derivation and semantic-cache logic: owned by B4296.'
   - 'Cache configuration and backend construction: owned by B4299.'
 
 pitfalls:
+  - "Expose the memory tier, the redis tier, last_redis_batch_access_time with its lock, redis_batch_cache_expiry, default_in_memory_ttl and `_backfill_kwargs` to the crate, since B4294 uses them."
   - "active_request_redis_batch(redis_cache) is provided by B4331 and returns the current request's
     active batch if one exists, or None outside the context. Call this before every potential Redis
     read to check miss tracking without blocking the caller."
