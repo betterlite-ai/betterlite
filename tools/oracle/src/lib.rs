@@ -21,6 +21,12 @@ pub mod mock;
 pub mod multipart_oracle;
 pub mod paths;
 pub mod process;
+#[expect(
+    clippy::mod_module_files,
+    reason = "The probe operations live one per module, and mod.rs keeps their closed enum and dispatch together."
+)]
+pub mod router_probes;
+mod routing_component_oracle;
 pub mod routing_mock_scripts;
 pub mod routing_probe_ipc;
 pub mod routing_scenarios;
@@ -191,6 +197,14 @@ pub enum OracleError {
     ProbeTimeout(Duration),
     #[error("probe exited with {status}")]
     ProbeExited { status: ExitStatus, stderr: Vec<u8> },
+    #[error("cannot start the component probe runtime: {0}")]
+    ProbeRuntime(#[source] io::Error),
+    #[error("cannot find the running probe's own path: {0}")]
+    ProbeExecutable(#[source] io::Error),
+    #[error("betterlite-router-probe is missing next to {directory}")]
+    ProbeBinary { directory: PathBuf },
+    #[error("building betterlite-router-probe exited with {status}")]
+    ProbeBuild { status: ExitStatus, stderr: Vec<u8> },
     #[error("helper input is invalid: {message}")]
     HelperInput { message: String },
     #[error("cannot start helper: {0}")]
@@ -260,12 +274,14 @@ pub fn run() -> Result<ExitCode, OracleError> {
     let options = <cli::Options as clap::Parser>::try_parse()?;
     let cases = case::load_cases(&options.paths)?;
     let sdk_cases = case::load_sdk_http_cases(&options.paths)?;
-    let sdk_different = runner::sdk_http::run_cases(&options, &sdk_cases)?.contains(&true);
+    let probe_cases = case::load_probe_cases(&options.paths)?;
+    let mut different = runner::sdk_http::run_cases(&options, &sdk_cases)?.contains(&true);
+    different |= routing_component_oracle::run_cases(&options, &probe_cases)?.contains(&true);
     if cases.is_empty() {
-        return Ok(runner::exit_status(sdk_different));
+        return Ok(runner::exit_status(different));
     }
     let status = runner::run_cases(&options, cases)?;
-    Ok(if sdk_different {
+    Ok(if different {
         runner::exit_status(true)
     } else {
         status

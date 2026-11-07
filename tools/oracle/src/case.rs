@@ -1,10 +1,8 @@
 use std::collections::BTreeMap;
-use std::fs;
 use std::path::{Path, PathBuf};
 use std::str;
 
 use crate::OracleError;
-use crate::sdk_http::{OracleLimits as SdkHttpLimits, SdkHttpCase, decode_sdk_http_case};
 use crate::websocket_oracle::{
     OracleLimits,
     decode::{FilesystemFixtures, decode_ws_case},
@@ -21,9 +19,11 @@ pub mod browser_flow;
 mod config_inspection;
 mod group;
 pub mod helper;
+mod load;
 
 pub(crate) use group::{LoadedCase, ScenarioCase};
 pub(crate) use helper::HelperCase;
+pub(crate) use load::{load_cases, load_probe_cases, load_sdk_http_cases};
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -122,66 +122,6 @@ pub(crate) struct Ignore {
     pub(crate) why: String,
 }
 
-fn read_case_files(paths: &[PathBuf]) -> Result<Vec<(PathBuf, String)>, OracleError> {
-    let mut files = Vec::new();
-    for path in paths {
-        collect_yaml(path, &mut files)?;
-    }
-    if files.is_empty() {
-        return Err(OracleError::CaseInvalid {
-            path: PathBuf::from("<arguments>"),
-            message: "no YAML cases found".to_owned(),
-        });
-    }
-    files.sort();
-    let mut texts = Vec::with_capacity(files.len());
-    for path in files {
-        let text = fs::read_to_string(&path).map_err(|source| OracleError::CaseRead {
-            path: path.clone(),
-            source,
-        })?;
-        texts.push((path, text));
-    }
-    Ok(texts)
-}
-
-fn is_sdk_http(path: &Path, text: &str) -> Result<bool, OracleError> {
-    let probe: CaseKind =
-        serde_saphyr::from_str(text).map_err(|source| OracleError::CaseParse {
-            path: path.to_owned(),
-            source: Box::new(source),
-        })?;
-    Ok(probe.kind.as_deref() == Some("sdk_http"))
-}
-
-fn files_of_kind(paths: &[PathBuf], sdk_http: bool) -> Result<Vec<(PathBuf, String)>, OracleError> {
-    let mut selected = Vec::new();
-    for (path, text) in read_case_files(paths)? {
-        if is_sdk_http(&path, &text)? == sdk_http {
-            selected.push((path, text));
-        }
-    }
-    Ok(selected)
-}
-
-// sdk_http cases run through their own driver, so this list leaves them out
-pub(crate) fn load_cases(paths: &[PathBuf]) -> Result<Vec<LoadedCase>, OracleError> {
-    files_of_kind(paths, false)?
-        .iter()
-        .map(|(path, text)| parse_case(path, text))
-        .collect()
-}
-
-pub(crate) fn load_sdk_http_cases(paths: &[PathBuf]) -> Result<Vec<SdkHttpCase>, OracleError> {
-    files_of_kind(paths, true)?
-        .into_iter()
-        .map(|(path, text)| {
-            decode_sdk_http_case(text.as_bytes(), &SdkHttpLimits::default())
-                .map_err(|source| OracleError::SdkHttpCase { path, source })
-        })
-        .collect()
-}
-
 pub(crate) fn parse_case(path: &Path, text: &str) -> Result<LoadedCase, OracleError> {
     let parse_error = |source: serde_saphyr::Error| OracleError::CaseParse {
         path: path.to_owned(),
@@ -223,35 +163,9 @@ pub fn decode_http_body(bytes: &[u8]) -> Result<RequestBody, MultipartError> {
 
 pub fn decode_case(path: &Path, bytes: &[u8]) -> Result<HttpCase, OracleError> {
     let text = str::from_utf8(bytes).map_err(|source| OracleError::CaseUtf8 { source })?;
-    let case: Case = serde_saphyr::from_str(text).map_err(|source| OracleError::CaseParse {
-        path: path.to_owned(),
-        source: Box::new(source),
-    })?;
+    let case: Case = load::parse_case_text(path, text)?;
     validate(path, &case)?;
     Ok(case)
-}
-
-fn collect_yaml(path: &Path, files: &mut Vec<PathBuf>) -> Result<(), OracleError> {
-    let read_error = |source| OracleError::CaseRead {
-        path: path.to_owned(),
-        source,
-    };
-    let metadata = fs::metadata(path).map_err(&read_error)?;
-    if metadata.is_file() {
-        if path
-            .extension()
-            .is_some_and(|extension| extension == "yaml" || extension == "yml")
-        {
-            files.push(path.to_owned());
-        }
-        return Ok(());
-    }
-    let entries = fs::read_dir(path).map_err(&read_error)?;
-    for result in entries {
-        let entry = result.map_err(&read_error)?;
-        collect_yaml(&entry.path(), files)?;
-    }
-    Ok(())
 }
 
 pub(crate) fn validate(path: &Path, case: &Case) -> Result<(), OracleError> {

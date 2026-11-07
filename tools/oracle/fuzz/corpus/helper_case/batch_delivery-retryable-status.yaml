@@ -1,0 +1,10 @@
+kind: helper
+name: batch-delivery-retryable-status
+call:
+  batch_delivery:
+    statuses:
+      events: [e0, e1, e2]
+      codes: [200, 204, 299, 399, 400, 401, 404, 408, 409, 413, 429, 430, 499, 500, 502, 599]
+env: {}
+compare:
+  ignore: []
