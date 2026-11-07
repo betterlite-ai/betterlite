@@ -150,7 +150,7 @@ checks:
       run: "cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^reconciliation_operations::success_ops_emission(::|$)/)'"
     - id: oracle-cases-tests
       why: Oracle cases verify reconciliation across missing usage, aggregate-only, release-guarded, and reserved-vs-actual paths
-      run: "cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/reconciliation_operations -k 'b3045'"
+      run: "cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/reconciliation_operations"
 
 oracle_cases:
   - tools/oracle/cases/reconciliation_operations/io-token-missing-usage.yaml
