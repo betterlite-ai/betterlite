@@ -36,11 +36,3 @@ deviations:
       LiteLLM takes a zero-sized batch from the queue and inserts it forever without making
       progress, so the flush loop never returns; a zero cannot be part of a working setup.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_batch_logger.py#L81-L90
-  - what: >-
-      The Lens analysis flag is an injected LensAnalysis context with a scope guard instead of a
-      per-task ContextVar, so an open scope is visible to every caller sharing that context.
-    why: >-
-      tokio's task_local macro expands to std::cell::RefCell, which clippy.toml disallows;
-      betterlite injects context explicitly, so the tracing runtime hands one context to the Lens
-      inference code and the spend logger.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/context.py#L6-L19

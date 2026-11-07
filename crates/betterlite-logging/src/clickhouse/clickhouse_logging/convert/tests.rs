@@ -65,7 +65,8 @@ fn strip_cache_hit_suffix_removes_the_terminal_suffix(#[case] request_id: &str, 
 
 #[rstest]
 #[case::whole_seconds("2", Some(2000))]
-#[case::fraction("0.123", Some(122))]
+#[case::fraction("0.123", Some(123))]
+#[case::timestamp("1730000000.123", Some(1_730_000_000_123))]
 #[case::negative("-1.5", Some(-1500))]
 #[case::zero("0", Some(0))]
 #[case::text("\"2\"", None)]

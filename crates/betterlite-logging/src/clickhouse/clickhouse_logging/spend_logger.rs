@@ -1,32 +1,26 @@
 use std::future::{Ready, ready};
 
-use tokio_util::task::TaskTracker;
-
 use super::batch_logger::ClickHouseBatchLogger;
 use super::context::LensAnalysis;
 use super::convert::TRACE_INGEST_ROUTE;
 use super::payload::CallbackKwargs;
 use super::row::{Projection, spend_log_row_from_payload};
-use super::schema::SPEND_LOGS_TABLE;
-use super::settings::ClickHouseSettings;
 use super::storage::ClickHouseStorage;
+
+// The callback kwargs plus the caller's request state: the redaction setting and the request's Lens context
+pub struct CallbackEvent<'event> {
+    pub kwargs: &'event CallbackKwargs,
+    pub redact: bool,
+    pub lens: &'event LensAnalysis,
+}
 
 pub struct ClickHouseSpendLogger<Storage: ClickHouseStorage> {
     pub batch: ClickHouseBatchLogger<Storage>,
-    pub lens: LensAnalysis,
 }
 
 impl<Storage: ClickHouseStorage> ClickHouseSpendLogger<Storage> {
-    pub fn new(storage: Storage, settings: ClickHouseSettings, tasks: TaskTracker) -> Self {
-        let batch = ClickHouseBatchLogger::new(storage, SPEND_LOGS_TABLE, settings, tasks);
-        Self {
-            batch,
-            lens: LensAnalysis::default(),
-        }
-    }
-
-    pub fn log(&self, kwargs: &CallbackKwargs, redact: bool) {
-        let Some(payload) = kwargs.standard_logging_object.as_ref() else {
+    pub fn log(&self, event: &CallbackEvent<'_>) {
+        let Some(payload) = event.kwargs.standard_logging_object.as_ref() else {
             return;
         };
         let call_type = payload.call_type.as_deref().unwrap_or_default();
@@ -35,21 +29,21 @@ impl<Storage: ClickHouseStorage> ClickHouseSpendLogger<Storage> {
         }
         let projection = Projection {
             payload,
-            kwargs,
-            message_logging_disabled: redact,
-            lens: &self.lens,
+            kwargs: event.kwargs,
+            message_logging_disabled: event.redact,
+            lens: event.lens,
         };
         let row = spend_log_row_from_payload(projection);
         self.batch.enqueue([row]);
     }
 
-    pub fn async_log_success_event(&self, kwargs: &CallbackKwargs, redact: bool) -> Ready<()> {
-        self.log(kwargs, redact);
+    pub fn async_log_success_event(&self, event: &CallbackEvent<'_>) -> Ready<()> {
+        self.log(event);
         ready(())
     }
 
-    pub fn async_log_failure_event(&self, kwargs: &CallbackKwargs, redact: bool) -> Ready<()> {
-        self.log(kwargs, redact);
+    pub fn async_log_failure_event(&self, event: &CallbackEvent<'_>) -> Ready<()> {
+        self.log(event);
         ready(())
     }
 }

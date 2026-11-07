@@ -4,7 +4,7 @@ use rust_decimal::Decimal;
 
 use super::payload::{CallbackKwargs, StandardLoggingPayload};
 
-pub const MILLISECONDS_PER_SECOND: i64 = 1000;
+pub const MILLISECONDS_PER_SECOND: f64 = 1000.0;
 pub const CACHE_HIT_SUFFIX: &str = "_cache_hit";
 pub const TRACE_INGEST_ROUTE: &str = "/v1/traces";
 const VERSION_HEX_DIGITS: usize = 2;
@@ -62,9 +62,9 @@ pub fn to_ms(value: Option<&Json>) -> Option<i64> {
     let Some(Json::Number(seconds)) = value else {
         return None;
     };
-    let exact = Decimal::from_f64_retain(seconds.as_f64()?)?;
-    let millis = exact.checked_mul(Decimal::from(MILLISECONDS_PER_SECOND))?;
-    i64::try_from(millis.trunc()).ok()
+    let milliseconds = seconds.as_f64()?.mul_add(MILLISECONDS_PER_SECOND, 0.0_f64);
+    let rounded = Decimal::from_f64_retain(milliseconds)?;
+    i64::try_from(rounded.trunc()).ok()
 }
 
 #[must_use]
