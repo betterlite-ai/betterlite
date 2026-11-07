@@ -10,6 +10,7 @@ pub mod payloads;
 pub mod providers;
 pub mod relay;
 pub mod sandbox;
+pub mod serve;
 pub mod session;
 pub mod snapshots;
 pub mod state;

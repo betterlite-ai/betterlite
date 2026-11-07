@@ -254,6 +254,8 @@ pub mod mcp_access_requirements;
 pub mod mcp_allow_all_scope;
 pub mod mcp_bearer_credentials;
 pub mod mcp_client_side_auth;
+pub mod mcp_env_values;
+pub mod mcp_required_fields;
 pub mod mcp_sso_assertion_cache;
 pub mod mcp_tool_helpers;
 pub mod mcp_tools;
@@ -540,8 +542,8 @@ sections! {
     langfuse_settings, lar1_routing, lasso_classification, latency_observations, latency_routing, least_busy, legacy_guardrails,
     lemonade_model_metadata, llm_classifier, local_ttl_cache, logging_privacy, login_form,
     login_return, login_routes, login_throttle, management_rbac, mcp_access_requirements,
-    mcp_allow_all_scope, mcp_bearer_credentials, mcp_client_side_auth, mcp_sso_assertion_cache,
-    mcp_tool_helpers, mcp_tools, mcp_toolset_storage, member_row_write, messages_advisor, messages_dispatch, messages_mcp,
+    mcp_allow_all_scope, mcp_bearer_credentials, mcp_client_side_auth, mcp_env_values,
+    mcp_required_fields, mcp_sso_assertion_cache, mcp_tool_helpers, mcp_tools, mcp_toolset_storage, member_row_write, messages_advisor, messages_dispatch, messages_mcp,
     messages_native_call, messages_native_stream, messages_response_call,
     messages_responses_output, messages_thinking, migration_drift, migration_ledger,
     migration_recovery, mistral_credentials, mistral_options, mistral_resources, mock_response,
