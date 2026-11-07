@@ -7,7 +7,7 @@ use super::payload::CallbackKwargs;
 use super::row::{Projection, spend_log_row_from_payload};
 use super::storage::ClickHouseStorage;
 
-// The callback kwargs plus the caller's request state: the redaction setting and the request's Lens context
+// a logger-wide Lens context would mark every concurrent request's rows as Lens-internal
 pub struct CallbackEvent<'event> {
     pub kwargs: &'event CallbackKwargs,
     pub redact: bool,
