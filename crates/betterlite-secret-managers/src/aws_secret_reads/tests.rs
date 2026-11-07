@@ -613,6 +613,30 @@ async fn request_failure_reads_as_none(#[case] reply: PostReply) {
     assert_eq!(transport.blocking_posts.load(Ordering::Relaxed), 1);
 }
 
+#[rstest]
+#[case::timeout(PostReply::Timeout, "timeout")]
+#[case::failed_transport(PostReply::FailedTransport, "transport")]
+#[case::oversized_reply(PostReply::TooLarge, "response_too_large")]
+#[case::error_status(PostReply::ErrorStatus, "http")]
+#[case::non_utf8_error_status(PostReply::NonUtf8ErrorStatus, "error_text")]
+#[case::not_json(PostReply::NotJson, "response")]
+#[case::missing_secret_string(PostReply::MissingKey, "missing_secret_string")]
+#[case::non_text_secret_string(PostReply::NonTextValue, "missing_secret_string")]
+#[tokio::test]
+async fn failed_reads_log_the_kind_of_failure(#[case] reply: PostReply, #[case] failure: &str) {
+    let (logs, _guard) = capture_logs();
+    let transport = FakeTransport::with_replies(vec![post_reply(reply)]);
+    let manager = manager(&transport, FakeResolver::working(), BTreeMap::new());
+    let value = manager
+        .async_read_secret("my/secret", None, None, None)
+        .await
+        .unwrap();
+    assert!(value.is_none());
+    let text = logs.text();
+    assert_eq!(text.lines().filter(|line| !line.is_empty()).count(), 1);
+    assert!(text.contains(&format!("failure=\"{failure}\"")));
+}
+
 #[tokio::test]
 async fn credential_failure_reaches_the_caller() {
     let transport = FakeTransport::with_replies(Vec::new());
