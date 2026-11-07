@@ -1,0 +1,194 @@
+id: B3049
+title: Legacy key user and team admission
+description: >-
+  Build the admission step of LiteLLM's legacy per-minute limiter: `_PROXY_MaxParallelRequestsHandler.async_pre_call_hook`,
+  the function that decides, per request, whether a key, a key-and-model pair, a user, a team and an end user are still under
+  their limits. LiteLLM runs it instead of the v3 limiter only when the env var `LEGACY_MULTI_INSTANCE_RATE_LIMITING` is
+  `true`; choosing between the two limiters is the umbrella's wiring, not this task. B3047 already owns the pieces this hook
+  calls (the handler holding the usage cache, `check_key_in_limits`, `get_all_cache_objects`, `raise_rate_limit_error`,
+  `CacheObject`, `time_to_next_minute`, `print_verbose`). Call them, do not copy them. B3048 owns the success and failure
+  callbacks that later add tokens and release counts.
+
+  Add `crates/betterlite-rate-limit/src/legacy_admission.rs`. It exposes `LegacyAdmission`, built with the B3047 handler and
+  the clock B3047 uses, and one method `pre_call(&self, principal: &UserApiKeyAuth, request: &mut AdmissionRequest) ->
+  Result<(), LegacyAdmissionError>`. `UserApiKeyAuth` is the B2314 record. `AdmissionRequest` has `model: Option<String>` and
+  `metadata: serde_json::Map<String, Value>`. LiteLLM's `data is None` becomes an empty request. The two unused arguments
+  `cache` and `call_type` are not carried over. `LegacyAdmissionError` is this module's error enum: it wraps the B3047 429
+  error and the cache error and adds no new status.
+
+  Steps, in LiteLLM's order. Any step that raises stops the request and the later steps do not run.
+
+  1. Print "Inside Max Parallel Request Pre-Call Hook" through B3047's `print_verbose`.
+
+  2. Read the effective limits. `api_key` is B1106's `get_logged_api_key` (the key alias for a session token that has one,
+  otherwise `api_key`). `max_parallel_requests` is the key's value, or `i64::MAX` (Python's `sys.maxsize`) when absent.
+  `tpm_limit` and `rpm_limit` are the key's values run through B2325's `throttled_limit` with the key's `budget_throttle_pct`,
+  and `i64::MAX` when the result is absent. User, team and end-user limits are never throttled.
+
+  3. Global parallel cap. Read `metadata.global_max_parallel_requests`. When it is present, read the counter
+  `global_max_parallel_requests` from the usage cache (local only). A missing counter counts as 1. When the counter is greater
+  than or equal to the cap, call B3047's `raise_rate_limit_error` with detail `Hit Global Limit: Limit={cap}, current:
+  {counter}` and the request model, so the type is CONCURRENT_REQUESTS. Otherwise increment the counter by 1 (local only).
+  This increment is written immediately, so it stays even when a later step raises.
+
+  4. Build the minute id `precise_minute` as `%Y-%m-%d-%H-%M` of the local wall clock (the process time zone, not UTC), then
+  call B3047's `get_all_cache_objects` once with these keys, each present only when its parts are not None: the literal
+  `global_max_parallel_requests` (only when the cap is present), `{api_key}::{precise_minute}::request_count`,
+  `{api_key}::{model}::{precise_minute}::request_count` (needs api_key and model), `{user_id}::...`, `{team_id}::...`,
+  `{end_user_id}::...` with the same suffix. Pass the principal's parent span as LiteLLM does.
+
+  5. Key check. When `api_key` is present, call `check_key_in_limits` with the key's three limits, `current` from the key
+  entry, the key counter id and type `key`. The returned counters are not used.
+
+  6. Key-and-model check. Ask B745 for `get_key_model_tpm_limit` and `get_key_model_rpm_limit` with the request model. When
+  either map is present (not None, an empty map counts as present), run the check with `max_parallel_requests = i64::MAX`.
+  The per-model limits are `map.get(model)` read only when the model is present and the map is non-empty. The limit passed on
+  is the per-model limit, or `i64::MAX` when it is absent or `0` (Python's `or`, so a configured zero is not enforced here).
+  The counter id is `{api_key}::{model}::{precise_minute}::request_count` even when api_key or model is None (the text `None`
+  is written into the id), and `current` is the key-model entry. The type is `model_per_key`. From the returned counters set
+  `litellm-key-remaining-tokens-{model}` to `tpm_limit_for_model - current_tpm` and `litellm-key-remaining-requests-{model}`
+  to `rpm_limit_for_model - current_rpm` when that per-model limit is not None (zero included), else null, and write both
+  into `request.metadata`.
+
+  7. User check. When `user_id` is not None (an empty string counts), use `user_tpm_limit` and `user_rpm_limit` (absent means
+  `i64::MAX`), `max_parallel_requests = i64::MAX`, the counter id `{user_id}::{precise_minute}::request_count`, the `user`
+  entry and type `user`.
+
+  8. Team check. Same shape for `team_id`, with `team_tpm_limit` and `team_rpm_limit`, the `team` entry and type `team`.
+
+  9. End-user check. Run only when `end_user_id` is truthy (None and the empty string both skip it), with
+  `end_user_tpm_limit` and `end_user_rpm_limit`, the `end_user` entry and type `customer`. Note the entry lookup in step 4
+  accepts an empty string, only this check does not.
+
+  10. Spawn, without waiting, one call to the cache's `async_batch_set_cache` with every `(counter id, new counters)` pair
+  the earlier checks collected, `ttl = 60` and no local-only flag. The list is passed even when empty. If the spawned write
+  fails, log the error at error level; the request is still admitted.
+
+  The collected list is shared: each `check_key_in_limits` call appends its own pair and writes the whole list so far with
+  `local_only = true` (B3047 does that). Keep this order of writes: counters of the dimensions that passed stay written when a
+  later dimension raises.
+
+  Defaults are LiteLLM's. Names for tests live under `legacy_admission::tests`. Use the prefixes the checks below filter on.
+  Each test drives `LegacyAdmission::pre_call` with a recording in-memory cache and a fixed clock, and asserts the calls it
+  made and the error it returned. Name one test per case; use named rstest inputs for related values.
+
+  No outside bytes are parsed here and the metadata is already decoded JSON, so there is no fuzz target. No route reaches the
+  limiter at this commit (the umbrella registers it), so there are no HTTP oracle cases and no helper cases: the helper
+  adapter can't run the hook against proxy globals. The umbrella adds the HTTP cases that send `LEGACY_MULTI_INSTANCE_RATE_LIMITING=true`.
+
+scope:
+  paths:
+    - crates/betterlite-rate-limit/src/legacy_admission.rs
+    - crates/betterlite-rate-limit/src/legacy_admission/**
+    - crates/betterlite-rate-limit/Cargo.toml
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L246-L272
+    why: Hook entry, key alias lookup, limit defaults of sys.maxsize and the budget throttle applied to the key's tpm and rpm only.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L273-L309
+    why: Global parallel cap read from metadata, local-only counter read, the raise at counter >= cap and the increment.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L305-L336
+    why: The three clock reads that build precise_minute and the six-key batch read with its None conditions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L337-L399
+    why: Key check, then the key-and-model check with the `or sys.maxsize` rule and the remaining-limit metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L401-L482
+    why: User, team and end-user checks, including the `is not None` test for user and team and the truthiness test for the end user.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter.py#L484-L490
+    why: The detached final batch write with ttl 60.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/__init__.py#L20-L33
+    why: The legacy handler replaces the v3 one only when LEGACY_MULTI_INSTANCE_RATE_LIMITING is "true".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/budget_throttle.py#L48-L56
+    why: throttled_limit, called here for the key's tpm and rpm.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1006-L1067
+    why: get_key_model_rpm_limit and get_key_model_tpm_limit, the maps this hook reads (owned by B745).
+
+dod:
+  - text: With metadata.global_max_parallel_requests absent the global counter is neither read nor changed, and the first batch read gets None for its global key.
+    proof: [global-cap-tests]
+  - text: With the cap present, a counter at or above it raises the CONCURRENT_REQUESTS 429 "Hit Global Limit" with the cap and counter in the detail, and a counter below it (or missing, which counts as 1) is incremented by 1, local only.
+    proof: [global-cap-tests]
+  - text: The six cache ids use precise_minute built from one local-time reading as `%Y-%m-%d-%H-%M`, and each id is None exactly when LiteLLM's conditions say so (api_key, model, user_id, team_id, end_user_id not None).
+    proof: [cache-key-tests]
+  - text: The key's max_parallel_requests, tpm and rpm default to i64::MAX when absent, and the key's tpm and rpm go through throttled_limit with budget_throttle_pct, while user, team and end-user limits are not throttled.
+    proof: [key-limit-tests]
+  - text: The key check runs only when the logged api key is present, uses type `key`, and a key over a limit surfaces B3047's 429.
+    proof: [key-limit-tests]
+  - text: The key-and-model check runs only when the tpm map or the rpm map is not None, uses the per-model limit with `or i64::MAX` semantics (zero or missing becomes unlimited), and the id contains `None` text for a missing api_key or model.
+    proof: [model-limit-tests]
+  - text: The remaining-token and remaining-request values are written to metadata as `litellm-key-remaining-tokens-{model}` and `litellm-key-remaining-requests-{model}` from the returned counters, null when the per-model limit is None and a numeric value (zero included) otherwise.
+    proof: [remaining-metadata-tests]
+  - text: The user check runs for any non-None user_id including an empty string, with type `user` and unlimited defaults.
+    proof: [user-team-tests]
+  - text: The team check runs for any non-None team_id, with type `team` and unlimited defaults.
+    proof: [user-team-tests]
+  - text: The end-user check runs only for a truthy end_user_id, uses type `customer`, and an empty end_user_id skips the check while still being looked up in the batch read.
+    proof: [end-user-tests]
+  - text: The checks run in the order global, key, key-and-model, user, team, end user, and counters of passed dimensions stay written when a later one raises.
+    proof: [order-and-write-tests]
+  - text: After all checks pass, one detached batch write carries every collected pair with ttl 60 and no local-only flag, an empty list included, and a failure of that write is logged and does not fail the request.
+    proof: [final-write-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: global-cap-tests
+      why: the global parallel cap is not read, compared, raised on or incremented as LiteLLM does
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^legacy_admission::tests::global_cap_/)'
+    - id: cache-key-tests
+      why: the minute id or one of the six batch-read ids differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^legacy_admission::tests::cache_key_/)'
+    - id: key-limit-tests
+      why: the key check, its defaults or the budget throttle are missing
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^legacy_admission::tests::key_limit_/)'
+    - id: model-limit-tests
+      why: the key-and-model check is skipped, wrongly gated or treats a zero limit as enforced
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^legacy_admission::tests::model_limit_/)'
+    - id: remaining-metadata-tests
+      why: the remaining-limit metadata is missing or computed from the wrong counters
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^legacy_admission::tests::remaining_metadata_/)'
+    - id: user-team-tests
+      why: user or team admission is missing, or uses the wrong gate or limits
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^legacy_admission::tests::(user|team)_limit_/)'
+    - id: end-user-tests
+      why: end-user admission is missing or uses the wrong gate
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^legacy_admission::tests::end_user_limit_/)'
+    - id: order-and-write-tests
+      why: the checks run in a different order or the earlier counters are lost when a later check raises
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^legacy_admission::tests::order_/)'
+    - id: final-write-tests
+      why: the detached batch write is missing, awaited, local-only, has another ttl, or its failure fails the request
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^legacy_admission::tests::final_write_/)'
+
+oracle_cases: []
+
+deviations:
+  - what: precise_minute is built from one clock reading. LiteLLM reads the clock three times (date, hour, minute).
+    why: Three reads can straddle a midnight, hour or minute change and build an id that never existed. One reading cannot, and it matches LiteLLM whenever the reads agree.
+  - what: A failure of the detached final batch write is logged at error level.
+    why: Python's event loop prints an unretrieved task exception; a Rust task would drop it silently.
+  - what: The arguments `cache` and `call_type` are not accepted.
+    why: LiteLLM never reads them in this hook, and an unused parameter would only invite a reader to guess its purpose.
+
+out_of_scope:
+  - "Choosing the legacy limiter when `LEGACY_MULTI_INSTANCE_RATE_LIMITING` is `true` and registering it in the hook chain; the umbrella B072 does this and adds the HTTP oracle cases."
+  - "`check_key_in_limits`, `get_all_cache_objects`, `raise_rate_limit_error`, `time_to_next_minute`, `print_verbose` and `CacheObject`; B3047 owns them."
+  - "`async_log_success_event`, `async_log_failure_event`, `get_internal_user_object` and `async_post_call_success_hook` (L492-L855), which add tokens, release counts and attach headers; B3048 owns them."
+  - "`get_key_model_tpm_limit`, `get_key_model_rpm_limit` (B745), `throttled_limit` (B2325) and `get_logged_api_key` (B1106)."
+  - "The `UserAPIKeyAuth` record (B2314) and the usage cache's get, increment and batch methods (InternalUsageCache, B124); no part of B124 has a Rust task yet, so this task uses them through the handler B3047 holds."
+
+pitfalls:
+  - "The key-and-model limits use Python's `tpm_limit_for_model or sys.maxsize`, so a configured per-model limit of 0 is unlimited here, while the same 0 on the key itself raises through check_key_in_limits."
+  - "The remaining-limit math uses `is not None`, not truthiness, so a per-model limit of 0 still yields `0 - current` (a negative number) in `litellm-key-remaining-tokens-{model}`."
+  - "The key-and-model counter id is built with f-strings, so a missing api_key or model puts the text `None` into the id, and the batch read only fills that entry when both are present, so `current` is None on every request in that case."
+  - "The user and team gates are `is not None`, the end-user gate is truthiness, but the end-user id in the batch read is `is not None`; an empty end_user_id is read from the cache and never checked."
+  - "The global counter is incremented before any dimension is checked and is never rolled back when a later check raises."
+  - "Only the key's tpm and rpm are throttled; the throttle uses `budget_throttle_pct` from the principal, which B2314 marks as not serialized."
+  - "`metadata.global_max_parallel_requests` is read from the request metadata that earlier hooks filled; reading it from the key would change which requests are capped."
+  - "The minute id uses local time (`datetime.now()`), so a process in another time zone rolls to a new counter at its own local minute, not at UTC."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

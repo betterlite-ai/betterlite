@@ -1,0 +1,164 @@
+id: B3338
+title: Video generation call and option precedence
+description: >-
+  Build the video generation entry points in betterlite-core::api: the async avideo_generation, the sync video_generation
+  and the request-option projection from litellm/videos/utils.py. Plain words first: the caller passes prompt, model,
+  input_reference, seconds, size, user, timeout, custom_llm_provider, extra_headers, extra_query, extra_body and loose
+  keyword arguments. This task decides which of those reach the provider as request options, in what order they win,
+  picks the provider, and hands one prepared request to the transport that B3333 owns.
+
+  Option projection (module video_generation_call::options, two functions). requested_optional_params takes the call's
+  named arguments merged with its loose keyword arguments and returns a VideoCreateOptionalRequestParams (B3330's type).
+  Rules, in order. (1) Take every entry of the merged call data except the keys kwargs, extra_body, prompt and model, and
+  drop entries whose value is null. (2) Remove LiteLLM-owned names from that set with B2228's is_litellm_owned_kwarg
+  (api_base, client, mock_response, litellm_call_id, custom_llm_provider and the rest of that registry). (3) Take the
+  nested loose-keyword map, drop null values, remove owned names the same way, and lay it over the result from step 2, so
+  a loose keyword wins over a named argument of the same name. (4) Merge extra_body: first the top-level extra_body, then
+  the extra_body found inside the loose-keyword map, each only if it is a map, skipping null values; the later one wins.
+  Remove owned names from the merged map. If anything is left, store it as the extra_body option and also copy its
+  entries flat into the options, where they win over everything from steps 1 to 3. (5) Remove the timeout option last, so
+  timeout never reaches the provider as a request option. The nested loose-keyword map loses its extra_body entry during
+  this step, and the caller sees that removal afterwards (the logging update later in video_generation reads the same
+  map). Do not reproduce this by cloning; take the map by &mut and remove the key, as LiteLLM does.
+
+  provider_request_params runs the provider config's map_openai_params (B3331 trait) with the options, the model and the
+  drop_params setting from CoreSettings (B198, default false), then lets extra_body override the mapped result key by
+  key when it is a non-empty map, and removes extra_body from the mapped result. An empty or non-map extra_body is ignored.
+
+  video_generation (sync). Steps in this order: take the logging object and the call id out of the loose keywords, and
+  read async_call (true only when it is exactly true). If mock_response is present, JSON-decode it when it is a string,
+  build a VideoObject from it and return at once, with no provider lookup and no logging; an async caller gets the object
+  directly. Otherwise build GenericLiteLLMParams from the remaining loose keywords, resolve (model, custom_llm_provider)
+  with B174's get_llm_provider using model or "sora-2" (DEFAULT_VIDEO_ENDPOINT_MODEL) and the given custom_llm_provider,
+  select the video config with B3332, and fail with the error text "video generation is not supported for <provider>" when
+  the selector returns none. Build the options with the two functions above, then call B247's update_from_kwargs on the
+  logging object with kwargs, the resolved model, user, the mapped params as optional_params, litellm_params holding
+  litellm_call_id plus the mapped params, and the provider. Set the logging call type to create_video. Then call B3333's
+  video_generation_handler with the resolved model, prompt, config, mapped params, provider, litellm params, logging
+  object, extra_headers, extra_body (the original argument, not the merged one), timeout and the client loose keyword.
+  timeout is `timeout or DEFAULT_REQUEST_TIMEOUT`: the default argument is 600, and 0 or none falls back to B198's
+  request_timeout (REQUEST_TIMEOUT env var, default 6000 seconds). extra_query is accepted but never forwarded to the
+  handler; it only becomes an option through step 1. Any failure goes through B185/B186's exception_type with model or
+  "sora-2", the provider, the original error, the call's locals and the loose keywords.
+
+  avideo_generation (async). Set async_call to true in the loose keywords. When custom_llm_provider is absent, resolve it
+  with get_llm_provider on model or "sora-2"; api_base is read from the function's locals, which never hold it, so it is
+  always none here even when the caller passed api_base as a loose keyword. Run video_generation on a worker with the
+  caller's context copied (B198's call context, no global state), await the result when it is a future, and return it.
+  Errors go through exception_type with the original model (possibly none) and the provider found so far.
+
+  The Python overloads (avideo_generation flag true or false) are typing only. In Rust, expose two entry points that share
+  one private implementation, and no flag argument.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/video_generation_call.rs
+    - crates/betterlite-core/src/api/video_generation_call/**
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/core/video-generation-call/**
+    - tools/oracle/helpers/b3338.py
+    - tools/oracle/helpers/b3338/**
+    - tools/oracle/src/helpers/core_ops/b3338.rs
+    - tools/oracle/src/helpers/core_ops/b3338/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L33-L116
+    why: avideo_generation, with provider inference, the worker-with-context call and exception mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L119-L161
+    why: The two typing overloads; no runtime behavior.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L164-L269
+    why: video_generation, from the mock shortcut through option building, logging update and handler call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/utils.py#L9-L36
+    why: get_optional_params_video_generation, the provider mapping and the extra_body override.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/utils.py#L38-L98
+    why: get_requested_video_generation_optional_param, the option precedence rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4196-L4199
+    why: filter_out_litellm_params, a one-line filter over is_litellm_owned_kwarg; B5362 owns it, this task applies B2228's predicate directly.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L9690-L9725
+    why: get_provider_video_config, owned by B3332; this task only calls it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L576
+    why: request_timeout, from REQUEST_TIMEOUT, default 6000 seconds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L677
+    why: DEFAULT_VIDEO_ENDPOINT_MODEL is "sora-2".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L959-L1002
+    why: update_from_kwargs, which video_generation calls and B247 owns.
+dod:
+  - text: >-
+      requested_optional_params removes kwargs, extra_body, prompt, model and null entries, then removes owned names.
+      Example: seconds "8", size null, mock_response set gives only seconds.
+    proof: [option-tests, oracle]
+  - text: >-
+      A loose keyword beats a named argument of the same name, and a flat entry from extra_body beats both.
+      Example: size "720x1280" named, size "1080x1920" loose, extra_body size "480x854" gives size "480x854".
+    proof: [option-tests, oracle]
+  - text: >-
+      extra_body from the top level and from the loose keywords are merged with the loose one winning, nulls skipped,
+      owned names removed, and the result is stored under extra_body and also flat.
+    proof: [option-tests, oracle]
+  - text: >-
+      The timeout option is removed last and the loose-keyword map loses its extra_body entry as a side effect.
+    proof: [option-tests]
+  - text: >-
+      provider_request_params passes drop_params from CoreSettings, lets a non-empty map extra_body override mapped keys,
+      removes extra_body from the result, and ignores an empty or non-map extra_body.
+    proof: [option-tests, oracle]
+  - text: >-
+      video_generation returns a VideoObject built from mock_response (string or map) before any provider lookup or logging.
+    proof: [call-tests, oracle]
+  - text: >-
+      video_generation resolves the provider with model "sora-2" when model is none, fails with
+      "video generation is not supported for <provider>" when the selector returns none, and sets call type create_video.
+    proof: [call-tests]
+  - text: >-
+      The handler gets timeout `timeout or request_timeout`, the original extra_body argument, the client keyword and
+      the async flag; extra_query is not forwarded.
+    proof: [call-tests]
+  - text: >-
+      avideo_generation infers the provider from model or "sora-2" with api_base always none, runs the sync path with the
+      caller's context, and maps errors through exception_type with the original model.
+    proof: [call-tests]
+checks:
+  optional: []
+  commands:
+    - id: option-tests
+      why: the option projection or the provider mapping tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_generation_call::options::/) - test(/replays_the_/)'
+    - id: call-tests
+      why: the generation call tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_generation_call::call::/) - test(/replays_the_/)'
+    - id: helper-python
+      why: the b3338 helper adapter is missing or strict Python checking fails
+      run: test -f tools/oracle/helpers/b3338.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/core/video-generation-call/options-drop-null-and-owned.yaml
+  - tools/oracle/cases/helpers/core/video-generation-call/options-loose-keyword-beats-named.yaml
+  - tools/oracle/cases/helpers/core/video-generation-call/options-extra-body-merge-flat.yaml
+  - tools/oracle/cases/helpers/core/video-generation-call/options-timeout-removed.yaml
+  - tools/oracle/cases/helpers/core/video-generation-call/provider-params-extra-body-override.yaml
+  - tools/oracle/cases/helpers/core/video-generation-call/mock-response-string.yaml
+deviations:
+  - what: Python's typing overloads for video_generation are not ported; Rust has separate sync and async entry points.
+    why: The overloads only describe the return type for the avideo_generation flag and change no behavior.
+  - what: Worker-thread execution with a copied contextvars context is replaced by B198's explicit call context passed to the sync path.
+    why: betterlite keeps no ContextVars; the context is a value the caller passes.
+out_of_scope:
+  - "The @client wrapper that creates litellm_logging_obj, fills litellm_call_id and applies caching and retries belongs to the SDK wrapper tasks; this task receives the logging object as an argument."
+  - "video_content, video_remix, video_list, video_status, character, edit and extension calls in litellm/videos/main.py belong to B3339, B3340, B3341 and B3342."
+  - "filter_out_litellm_params itself belongs to B5362; this task applies B2228's is_litellm_owned_kwarg."
+  - "The three request paths, HTTP send and response conversion in video_generation_handler belong to B3333."
+  - "ProviderConfigManager.get_provider_video_config belongs to B3332, and each provider's map_openai_params to its provider task."
+  - "litellm/videos/__init__.py re-exports are not code to port; module wiring belongs to B093."
+pitfalls:
+  - A loose keyword and a named argument with the same name both land in the options and the loose one wins, because cleaned_kwargs is spread after base_params.
+  - extra_body entries are copied flat into the options after the other merges, so they beat named and loose values; the mapped result then also takes extra_body again and drops the extra_body key.
+  - get_requested_video_generation_optional_param pops extra_body out of the caller's loose-keyword map, so the logging update that follows sees kwargs without extra_body.
+  - extra_headers and extra_query pass step 1 (they are not owned names), so they appear in the options as ordinary entries as well as being used elsewhere.
+  - mock_response is checked after the logging object is popped but before the provider lookup, and a sync call with async_call true still returns the VideoObject directly, so the async caller must accept both a value and a future.
+  - avideo_generation reads api_base from its own locals, which never contain it, so a loose api_base does not influence provider inference there (it still reaches GenericLiteLLMParams in the sync path).
+  - The timeout argument defaults to 600 but the handler gets `timeout or DEFAULT_REQUEST_TIMEOUT`, so 0 and none become 6000 seconds (REQUEST_TIMEOUT env var), not 600.
+  - The sync path passes the original extra_body argument to the handler, not the merged map from the options.
+  - The error text for an unknown provider is "video generation is not supported for <provider>", with the resolved provider string and no model.
+  - The exception model is `model or "sora-2"` in the sync path but the raw model (possibly none) in the async path.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,299 @@
+id: B3645
+title: Transcribe job polling and media pricing
+description: >-
+  Price a started Amazon Transcribe job. Transcribe reports no duration, so betterlite polls GetTranscriptionJob until the job is COMPLETED
+  or FAILED, then reads the length of the media file the job was started with and charges the rounded-up seconds at the cost rate. If
+  anything stops the length from being read, the job is charged as the longest media AWS accepts. This task builds that pipeline in
+  betterlite-transcribe, below B3646. B3646 schedules it after a StartTranscriptionJob response and logs the spend. It reuses B3644's
+  records and cost functions: `TranscriptionJobRecord`, `TranscriptionJobResponse`, `StartedJob`, the `JobLookup` trait,
+  `transcription_job_cost(audio_seconds: Decimal, cost_per_second: Decimal)` and `transcribe_max_job_cost(cost_per_second)`. Money is
+  `rust_decimal::Decimal`, never f64. Read those files in crates/betterlite-transcribe/src before writing code.
+
+  Build four new modules and one small change to records.rs. The skeleton creates the module stubs and the `pub mod` lines in lib.rs.
+
+  Module `polling`. `aws_error_type(body: &[u8]) -> Option<String>` parses the body as a JSON object and returns the `__type` member
+  after its last `#` (`com.amazon.coral.service#NotFoundException` gives `NotFoundException`; no `#` gives the whole text). A body that is not
+  JSON, not an object, or has no string `__type` gives None. `enum PollOutcome { Finished(TranscriptionJobRecord), Missing }` stands for
+  LiteLLM's record-or-MissingJob. `trait PollSleeper` has one async method `sleep(&self, seconds: f64)`; production uses tokio's timer, tests
+  record the calls. One private poll step calls `JobLookup::get_transcription_job` and returns Some only when the job exists and its
+  `transcription_job_status` is exactly "COMPLETED" or "FAILED". A lookup answered with `JobLookupError::Rejected` whose `aws_error_type`
+  is "BadRequestException" or "NotFoundException" means Transcribe no longer knows the job, so the step returns `PollOutcome::Missing` (log a
+  warning). Every other failure (other AWS error types, a rejection with no type, `Unavailable`, `InvalidResponse`, a job still running or
+  missing from the response) logs a warning and counts as "not finished yet". `await_transcription_job(job_name, lookup, sleeper,
+  max_attempts) -> Option<PollOutcome>` runs the step up to `max_attempts` times (default 720, LiteLLM's
+  TRANSCRIBE_JOB_MAX_POLLING_ATTEMPTS) and sleeps 10.0 seconds (TRANSCRIBE_JOB_POLLING_INTERVAL_SECONDS) after every step that did not
+  finish, the last one included, so a job that never finishes sleeps 720 times before it returns None. Keep these constants in one file
+  as `pub const`.
+
+  Module `records.rs` change. `JobLookupError` (B3644) has no way to carry an AWS error type. Add one variant `Rejected { status: u16,
+  aws_error_type: Option<String> }` for a non-2xx answer from Transcribe. B3644's ownership check treats every lookup error as "job not found"
+  (404), so confirm in policy/ownership.rs that a `Rejected` error takes the same path as `Unavailable`; change nothing there.
+
+  Module `media_source`. Pure helpers over the media bytes and URI.
+  `s3_media_url(media_uri, aws_region_name) -> Result<Option<String>, MediaSourceError>`: for an `s3://bucket/key` URI, split bucket and key
+  at the first "/"; a bucket containing "." gives the path-style `https://s3.{region}.{dns_suffix}/{bucket}/{key}`, any other bucket gives
+  `https://{bucket}.s3.{region}.{dns_suffix}/{key}`; the key is percent-encoded like Python's `urllib.parse.quote` (letters, digits and
+  `_ . - ~ /` stay, everything else becomes %XX of its UTF-8 bytes). The dns suffix comes from betterlite-context's `get_aws_partition(region).dns_suffix`
+  (B198). Any other URI is returned unchanged only when it parses as a URL with scheme https and a host ending in `.{dns_suffix}`, otherwise
+  Ok(None). A string that does not parse as a URL is an `Err`, because LiteLLM's `httpx.URL()` raises there and the caller retries it.
+  `media_predates_job(headers, job_created_at: f64) -> bool` reads the `last-modified` header (case-insensitive name), parses it as an RFC 2822
+  date (chrono's `parse_from_rfc2822` is enough), and is true when that timestamp in whole seconds is `<= job_created_at + 1.0`
+  (TRANSCRIBE_MEDIA_LAST_MODIFIED_TOLERANCE_SECONDS). A missing or unparsable header is false.
+  `MediaSizeGuard` (or two plain functions) enforces `TRANSCRIBE_MAX_MEDIA_BYTES` = 2 * 1024^3: a `content-length` header above the cap stops the
+  download, a missing header counts as 0, a header that is not an integer is an `Err`, and the running byte count of the streamed chunks above
+  the cap stops it too. Both stops are reported as "too large", not as an error.
+  `media_duration_seconds(media: impl Read + Seek) -> Option<Decimal>` is the decoder for untrusted bytes. LiteLLM opens the downloaded file
+  with soundfile (libsndfile) and returns frames divided by sample rate, or None with a warning when it cannot decode the file. Sniff the
+  container from the first bytes, never from a file name (the temp file has none). Use maintained, deny.toml-clean crates that read headers
+  rather than decode audio: `hound` for WAV (`WavReader::duration()` and `spec().sample_rate`), `claxon` for FLAC (STREAMINFO `samples`; it
+  may be absent and then gives None; plus `sample_rate`), `ogg` plus `lewton` for Ogg Vorbis (sample rate from the identification header, frames
+  from the last page's granule position), and `mp3-duration` for MP3. The seconds are `Decimal::from(frames) / Decimal::from(sample_rate)`
+  so a whole number of seconds stays exact; a zero sample rate gives None. Do not use symphonia: its MPL-2.0 license is not in deny.toml.
+  Every failure path returns None and logs one warning, and the decoder must not panic or allocate from a size the header claims. Only the
+  four formats in TRANSCRIBE_MEASURABLE_MEDIA_FORMATS (flac, mp3, ogg, wav) are expected; B3644 already refuses other formats at admission.
+  Add a cargo-fuzz target `media_duration` in crates/betterlite-transcribe/fuzz that feeds arbitrary bytes to `media_duration_seconds`, with a
+  seed corpus of a valid and a truncated file per format, and a test `replays_the_media_duration_corpus` that runs every corpus file.
+
+  Module `media_pricing`. `trait MediaDurationProbe` has one async method `media_seconds(&self, media_uri: &str, job_created_at: f64) ->
+  Result<Option<Decimal>, ProbeError>`. `measure_media_seconds(media_uri, job_created_at, probe, sleeper, attempts)` (default attempts 3,
+  TRANSCRIBE_MEDIA_FETCH_ATTEMPTS) calls the probe; `Ok(x)` returns x at once, even when x is None (None means "unmeasurable", not "retry");
+  an `Err` logs a warning, sleeps 10.0 seconds only when attempts remain, and tries again; after the last attempt it returns None.
+  `price_transcription_job(job_name, cost_per_second, lookup, probe, sleeper, max_attempts, started_job) -> Result<Decimal, PricingError>`
+  is the pipeline: poll with `await_transcription_job`; if that gives None (never finished), charge `transcribe_max_job_cost`; if the poll
+  found the job FAILED, charge zero; otherwise take the job to measure: the polled record when `Finished`, and the `started_job` from
+  the StartTranscriptionJob response when `Missing`. A job with no `media.media_file_uri`, or no `creation_time`, or no job at all, is
+  charged the max. Otherwise measure; None gives the max, a value gives `transcription_job_cost(seconds, cost_per_second)`. `PricingError`
+  wraps `TranscribeCostError` and has no other cases. Do not add a retry or catch-all around the lookup or probe: their errors are already
+  turned into "not finished" and `Err` above.
+
+  Module `live`. The real adapters, built from the injected pieces and tested with fakes. `TranscribeJobLookup::new(region, signer, http)`
+  implements `JobLookup`. It POSTs `{"TranscriptionJobName": name}` to `https://transcribe.{region}.{dns_suffix}/` with headers
+  `Content-Type: application/x-amz-json-1.1` and `X-Amz-Target: Transcribe.GetTranscriptionJob`, signed with SigV4 for service "transcribe" in
+  that region, through B595's `AwsSignedRequest` and B594's `AwsCredentialResolver` (resolve credentials for the region only, the same call
+  `BaseAWSLLM().get_credentials(aws_region_name=...)` makes) and B173's pooled client. Read the merged public items of bedrock's credentials.rs
+  and signing.rs and call them; do not copy their logic. A non-2xx answer becomes `JobLookupError::Rejected { status, aws_error_type }` with
+  the type from `aws_error_type` on the body; a 2xx body that is not a `TranscriptionJobResponse` becomes `InvalidResponse`; a transport failure
+  becomes `Unavailable`. `S3MediaProbe::new(region, signer, http, download_slots: Arc<tokio::sync::Semaphore>)` implements `MediaDurationProbe`:
+  build the URL with `s3_media_url` (None gives `Ok(None)`), sign a GET for service "s3" with the region's credentials, take one permit from
+  `download_slots`, stream the response into a temp file, and call `error_for_status`-style handling so any non-2xx is an `Err`. Before reading the
+  body check `media_predates_job` on the response headers; false logs a warning and gives `Ok(None)`. Then apply the size cap while streaming
+  (over the cap logs a warning and gives `Ok(None)`), then run `media_duration_seconds` on the file inside `tokio::task::spawn_blocking`. Release
+  the permit after the file is measured. `price_transcription_job_live(job_name, region, cost_per_second, started_job, download_slots,
+  deps) -> Result<Decimal, PricingError>` builds both adapters and calls `price_transcription_job` with the default attempts; if that returns
+  `Err`, it logs an error and returns `transcribe_max_job_cost` (the job is charged high rather than free), and only a failure of that
+  max-cost calculation is returned. B3646 owns the permit count (TRANSCRIBE_MEDIA_DOWNLOAD_CONCURRENCY, 1) and passes the semaphore in.
+  The HTTP calls use B173's client with connect timeout 5 s and read timeout 600 s (LiteLLM's pooled client defaults).
+
+  The new modules have no HTTP route of their own, so the oracle cases are helper cases for the pure functions `s3_media_url`,
+  `media_predates_job` and `aws_error_type`; the Transcribe route and B3646's handler call this code later. Native tests cover the rest.
+  Test module names are `polling::tests`, `media_source::tests`, `media_pricing::tests` and `live::tests`; test function names start with the
+  prefixes in the checks. Fakes for `JobLookup`, `PollSleeper`, `MediaDurationProbe` and the HTTP layer live in each module's tests.rs.
+
+scope:
+  paths:
+    - Cargo.lock
+    - crates/betterlite-transcribe/Cargo.toml
+    - crates/betterlite-transcribe/src/records.rs
+    - crates/betterlite-transcribe/src/records/tests.rs
+    - crates/betterlite-transcribe/src/polling.rs
+    - crates/betterlite-transcribe/src/polling/**
+    - crates/betterlite-transcribe/src/media_source.rs
+    - crates/betterlite-transcribe/src/media_source/**
+    - crates/betterlite-transcribe/src/media_pricing.rs
+    - crates/betterlite-transcribe/src/media_pricing/**
+    - crates/betterlite-transcribe/src/live.rs
+    - crates/betterlite-transcribe/src/live/**
+    - crates/betterlite-transcribe/fuzz/Cargo.toml
+    - crates/betterlite-transcribe/fuzz/fuzz_targets/media_duration.rs
+    - crates/betterlite-transcribe/fuzz/corpus/media_duration/**
+    - tools/oracle/cases/helpers/transcribe-media/**
+    - "tools/oracle/fuzz/corpus/helper_case/transcribe_media-*"
+    - crates/betterlite-transcribe/src/policy/cost.rs
+    - crates/betterlite-transcribe/src/policy/tests.rs
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L354-L390
+    why: aws_error_type, the single poll step with its MissingJob and retry rules, and await_transcription_job with its sleep after every unfinished attempt.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L393-L440
+    why: measure_media_seconds (retry only on exceptions) and price_transcription_job (the order of the max-cost, zero-cost and measured outcomes).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L443-L474
+    why: The signed GetTranscriptionJob request (URL, headers, body) and the raise_for_status plus JSON-object check on the answer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L477-L518
+    why: s3_media_url, media_predates_job, write_media_within_limit and media_file_seconds.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L521-L576
+    why: The S3 media probe (signed GET, download slot, rewrite and size checks, decode off the loop) and the fail-closed live pricer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1651-L1658
+    why: The polling, size, concurrency, retry and tolerance constants, and the measurable formats.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L636-L661
+    why: The caller in B3646 that passes the job name, region, cost rate and started job into the pricer.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L1685-L1702
+    why: The Transcribe route builds transcribe_job_lookup(aws_region_name) for its ownership check, so the lookup must serve B3644's job_access_refusal too.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L163-L167
+    why: The pooled client's default timeouts, 600 s with a 5 s connect timeout.
+  - url: https://docs.aws.amazon.com/transcribe/latest/APIReference/API_GetTranscriptionJob.html
+    why: Request and response shape, and the BadRequestException and NotFoundException error types.
+
+dod:
+  - text: aws_error_type returns the part of `__type` after the last `#`, the whole text when there is no `#`, and None for a body that is not a JSON object or has no string `__type`.
+    proof: [error-type-tests, helper-oracle, helper-python]
+  - text: A poll step returns a job only when its status is exactly COMPLETED or FAILED, and treats RUNNING, QUEUED, a missing status and an empty response as not finished.
+    proof: [poll-status-tests]
+  - text: A lookup rejected with BadRequestException or NotFoundException gives Missing and stops polling, while other AWS error types, a rejection with no type, unavailable and invalid-response errors are retried on the next tick.
+    proof: [missing-job-tests]
+  - text: await_transcription_job stops after max_attempts (default 720), sleeps 10 seconds after every unfinished attempt including the last, returns None when nothing finished, and returns at once on a finished or missing job without sleeping.
+    proof: [await-tests]
+  - text: measure_media_seconds tries at most 3 times, sleeps 10 seconds between tries only, retries only on a probe error, and returns an Ok(None) from the probe at once without a retry.
+    proof: [measure-tests]
+  - text: price_transcription_job charges the max for a job that never finished, zero for a FAILED job, the started job's media when the job is Missing, the max when media or creation time is missing or the length is unmeasurable, and the rounded-up seconds times the rate otherwise.
+    proof: [price-tests]
+  - text: s3_media_url builds the virtual-host URL for a dotless bucket, the path-style URL for a dotted bucket, percent-encodes the key like Python's quote, passes through only https URLs on the partition's own dns suffix, and returns None for anything else.
+    proof: [media-url-tests, helper-oracle, helper-python]
+  - text: A URI that does not parse as a URL is an error from s3_media_url, not None.
+    proof: [media-url-tests]
+  - text: media_predates_job is true only when Last-Modified is no later than the job creation time plus one second, and false for a missing or unparsable header.
+    proof: [last-modified-tests, helper-oracle, helper-python]
+  - text: The size cap stops a download whose content-length is above 2 GiB or whose streamed bytes pass it, treats a missing content-length as 0, and reports a non-integer content-length as an error.
+    proof: [size-limit-tests]
+  - text: media_duration_seconds returns the exact length of WAV, FLAC, Ogg Vorbis and MP3 files by sniffing the bytes, and None with no panic for truncated, unknown or zero-rate input.
+    proof: [media-duration-tests]
+  - text: The fuzz target and its seed corpus (a valid and a truncated file per format) exist and every corpus file replays without a panic.
+    proof: [decoder-corpus]
+  - text: JobLookupError has a Rejected variant carrying the status and the AWS error type, and B3644's ownership checks still answer 404 for it.
+    proof: [lookup-error-tests]
+  - text: The real job lookup sends the signed POST with the exact URL, Content-Type and X-Amz-Target and body, and maps a non-2xx answer to Rejected with the error type, a malformed 2xx body to InvalidResponse, and a transport failure to Unavailable.
+    proof: [live-lookup-tests]
+  - text: The S3 media probe errors on a non-2xx answer, gives Ok(None) for a rewritten or oversized object or an unusable URL, measures a decodable object, and holds a download slot while it reads.
+    proof: [live-probe-tests]
+  - text: price_transcription_job_live returns the max cost when pricing fails and only reports an error when the max cost itself overflows.
+    proof: [live-fail-closed-tests]
+  - text: MAX_MEDIA_DURATION_SECONDS in policy/cost.rs is 28800 (LiteLLM constants.py L1653, TRANSCRIBE_MAX_MEDIA_DURATION_SECONDS), so transcribe_max_job_cost is 28800 seconds at the given rate. The existing policy test that expects 7.2 for a 0.002 rate expects 57.6, and a new test max_job_cost_is_eight_hours covers the cap.
+    proof: [max-job-cost-tests]
+  - text: The new decoder crates pass the dependency policy.
+    proof: [dependency-policy]
+  - text: Helper oracle cases for aws_error_type, s3_media_url and media_predates_job agree with LiteLLM.
+    proof: [helper-oracle, helper-python, helper-case-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: error-type-tests
+      why: the AWS error type is not read from the "__type" member, or a bad body does not give None
+      run: cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(/^polling::tests::error_type_/)'
+    - id: poll-status-tests
+      why: a poll step accepts a status other than COMPLETED or FAILED, or rejects one of them
+      run: cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(/^polling::tests::poll_status_/)'
+    - id: missing-job-tests
+      why: a deleted job is not told apart from a failed poll, or the wrong error types end polling
+      run: cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(/^polling::tests::missing_job_/)'
+    - id: await-tests
+      why: the attempt limit, the 10 second sleep after each unfinished attempt or the early return is wrong
+      run: cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(/^polling::tests::await_/)'
+    - id: measure-tests
+      why: media measurement retries the wrong cases, sleeps after the last try, or retries an unmeasurable result
+      run: cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(/^media_pricing::tests::measure_/)'
+    - id: price-tests
+      why: a pricing outcome (never finished, FAILED, Missing, no media, unmeasurable, measured) charges the wrong amount
+      run: cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(/^media_pricing::tests::price_/)'
+    - id: media-url-tests
+      why: the S3 media URL form, key encoding, https host rule or bad-URL error is wrong
+      run: cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(/^media_source::tests::media_url_/)'
+    - id: last-modified-tests
+      why: the rewrite check accepts a newer object or reads the header wrongly
+      run: cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(/^media_source::tests::last_modified_/)'
+    - id: size-limit-tests
+      why: the 2 GiB cap, the missing content-length case or the non-integer content-length error is wrong
+      run: cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(/^media_source::tests::size_limit_/)'
+    - id: media-duration-tests
+      why: a media format is measured wrongly, or bad input panics or gives a value
+      run: cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(/^media_source::tests::media_duration_/) - test(replays_the_media_duration_corpus)'
+    - id: decoder-corpus
+      why: the media duration fuzz target or its replay corpus is missing or fails
+      run: >-
+        test -f crates/betterlite-transcribe/fuzz/fuzz_targets/media_duration.rs &&
+        grep -q 'name = "media_duration"' crates/betterlite-transcribe/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-transcribe/fuzz/corpus/media_duration)" &&
+        cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(replays_the_media_duration_corpus)'
+    - id: lookup-error-tests
+      why: the Rejected variant is missing, or B3644's ownership checks changed behavior
+      run: >-
+        cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(/^records::tests::rejected_lookup_/)' &&
+        cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(/^policy::tests::/)'
+    - id: live-lookup-tests
+      why: the signed GetTranscriptionJob request or its error mapping is wrong
+      run: cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(/^live::tests::lookup_/)'
+    - id: live-probe-tests
+      why: the S3 media probe fetches, checks or measures the object wrongly
+      run: cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(/^live::tests::probe_/)'
+    - id: live-fail-closed-tests
+      why: a pricing failure is charged as free or reported instead of charged the max
+      run: cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(/^live::tests::fail_closed_/)'
+    - id: max-job-cost-tests
+      why: the longest-media charge still uses 3600 seconds instead of LiteLLM's 28800
+      run: cargo nextest run --locked -p betterlite-transcribe --no-tests=fail -E 'test(/^policy::tests::(max_job_cost_|rounds_seconds_for_transcription_job_cost)/)'
+    - id: dependency-policy
+      why: a decoder crate is missing, has a license deny.toml refuses, or adds a duplicate crate version
+      run: grep -q '^hound' crates/betterlite-transcribe/Cargo.toml && cargo deny --locked check
+    - id: helper-oracle
+      why: the helper cases for the pure functions are missing or differ from LiteLLM
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/transcribe-media)" &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/transcribe-media
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3645)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3645 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3645/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added transcribe media cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/transcribe_media-*")" &&
+        grep -lE '^[[:space:]]+b3645:' tools/oracle/fuzz/corpus/helper_case/transcribe_media-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/transcribe-media/error-type-hash-prefix.yaml
+  - tools/oracle/cases/helpers/transcribe-media/error-type-not-json.yaml
+  - tools/oracle/cases/helpers/transcribe-media/s3-url-virtual-host.yaml
+  - tools/oracle/cases/helpers/transcribe-media/s3-url-dotted-bucket.yaml
+  - tools/oracle/cases/helpers/transcribe-media/s3-url-key-encoding.yaml
+  - tools/oracle/cases/helpers/transcribe-media/s3-url-https-own-partition.yaml
+  - tools/oracle/cases/helpers/transcribe-media/s3-url-https-foreign-host.yaml
+  - tools/oracle/cases/helpers/transcribe-media/last-modified-within-tolerance.yaml
+  - tools/oracle/cases/helpers/transcribe-media/last-modified-rewritten.yaml
+  - tools/oracle/cases/helpers/transcribe-media/last-modified-missing.yaml
+
+deviations:
+  - what: Media length is read from the file headers (WAV, FLAC) or the last Ogg page and MP3 frames, with Rust crates, instead of libsndfile. Ogg Opus files (libsndfile 1.2 reads them) give None and are charged the maximum.
+    why: libsndfile has no maintained pure-Rust equivalent that passes deny.toml (symphonia is MPL-2.0), and the four crates cover the formats B3644 admits; an Opus file is billed high rather than free.
+  - what: The longest-media charge uses B3644's transcribe_max_job_cost, and the media length is exact Decimal arithmetic (frames over sample rate, rounded up) instead of a float.
+    why: Money is Decimal in betterlite, and an exact quotient never rounds a whole number of seconds up by float error.
+  - what: The Last-Modified header is parsed with chrono's RFC 2822 parser, so a "-0000" zone is read as UTC.
+    why: Python's parsedate_to_datetime returns a naive datetime there and `.timestamp()` then uses the machine's local zone, so the result depends on where the proxy runs.
+  - what: The GetTranscriptionJob body is serialized compactly and the media download has a total deadline of two hours (connect 5 s, read 600 s as in LiteLLM).
+    why: docs/compatibility.md leaves json.dumps spacing open, and B173's client requires a total deadline where httpx has none.
+
+out_of_scope:
+  - "TranscribePassthroughLoggingHandler (L579-L733 of the handler file): is_priced_job_start, schedule_priced_job_logging, the _price_then_log task, transcribe_passthrough_handler, the pricing task set and the download semaphore belong to B3646. It calls price_transcription_job_live from this task."
+  - "JobPricer and PassThroughLogDispatch (L105, L124-L135) are B3646's injection points; this task only exposes price_transcription_job_live with the same inputs."
+  - "Everything in L1-L351 (operation list, cost lookup, eligibility, admin gate, bucket policy, owner tag, job access check, transcription_job_cost, transcribe_max_job_cost, started_transcription_job and the record types) is B3644's and is called, not changed. The one exception is the added JobLookupError::Rejected variant."
+  - "The Transcribe route in llm_passthrough_endpoints.py (L1636 on) and the success_handler.py wiring (B3606 dispatch, B3607 completion) call transcribe_job_lookup and the handler later; no HTTP oracle case belongs here because no route reaches this code yet."
+  - "AWS credential discovery (B594) and SigV4 signing (B595) are used through their public items and not rebuilt."
+pitfalls:
+  - "await_transcription_job sleeps 10.0 seconds even after the last unfinished attempt, so a job that never finishes costs 720 sleeps; do not skip the final sleep."
+  - "A poll that throws any error other than a BadRequestException or NotFoundException answer is retried, but a rejection with no parsable `__type` is also retried, never treated as Missing."
+  - "measure_media_seconds retries only when the probe raises; a probe that returns None (rewritten object, over the size cap, https URL on a foreign host, undecodable file) is final and is charged the maximum without a second fetch."
+  - "A Missing job is priced from the StartTranscriptionJob response's media and creation time, but a COMPLETED job is priced from the polled record even if that record has no media, and that gives the maximum."
+  - "A FAILED job costs zero, and a job that never reaches COMPLETED or FAILED within the polling window costs the maximum."
+  - "s3_media_url treats a dot anywhere in the bucket as path style, and an https URL is accepted only when its host ends with `.{dns_suffix}` for the job's region, so the signature never reaches a foreign host; the dns suffix differs outside the standard partition (China regions use amazonaws.com.cn)."
+  - "An unparsable content-length header is an error that gets retried three times, but a missing one counts as 0; the cap compares with `>`, so exactly 2 GiB is allowed."
+  - "The Last-Modified check runs on the response headers before the body is read, so a rewritten object is never downloaded."
+  - "The temp file for the media has no extension, so the decoder must identify the container from its first bytes."
+  - "The download slot (a semaphore of one in LiteLLM) is held across the download and the length read, so two pricing tasks never fetch media at once."
+  - "price_transcription_job_live catches everything and returns the max cost; the only error it may return is the overflow of that max calculation."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

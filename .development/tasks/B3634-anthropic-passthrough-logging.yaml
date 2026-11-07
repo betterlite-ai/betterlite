@@ -1,0 +1,160 @@
+id: B3634
+title: Anthropic passthrough response logging
+description: >-
+  Build the Anthropic leaf of pass-through response logging in betterlite-server, in the module anthropic_passthrough_logging (crates/betterlite-server/src/pass_through_logging/anthropic_passthrough_logging.rs and its folder; the skeleton declares it).
+  It turns a relayed Anthropic response, whole or streamed, into the response object and the kwargs that the success logger prices and writes as spend. A wrong cost or a missing model here means wrong spend for the key, so the cost order and the call log writes below are exact.
+  Nothing here holds module-level state. The struct takes its collaborators in its constructor. This task writes glue and the order of calls; the work itself is done by tasks that are already merged, so call them and do not copy their logic.
+
+
+  Collaborators, called and not defined here. B3630: cost_relevant_speed, resolve_costing_model, compute_response_cost, resolve_logged_model, extract_response_id_from_chunks, end_user_from_request_body, optional_str, and its typed kwargs struct ResponseLoggingKwargs (response_payload module). B3632: build_streaming_response_for_logging(call_log, request_body, all_chunks, model) -> Result<Option<AssembledResponse>, InterruptedStreamUsageError>. B3633: AnthropicBatchLogging, BatchCreationInput, BatchCreationLogged and its batch_creation_handler. B580: AnthropicConfig.transform_response. B587: AnthropicBatchesConfig.transform_response. B247: CallLog, the per-call log (LiteLLM's logging object with model_call_details and litellm_call_id). B3608: CollectedChunksHandler, CollectedChunksCall and HandlerOutcome. B3605: the response-object enum and the typed kwargs map that HandlerOutcome holds. Read the merged code for the exact Rust names and signatures and use them; the names above are the roles. If a function you need is not there, say so in the report notes and stop.
+
+
+  Constructor and public surface, pinned. B3606 (the provider dispatcher) and B102 (the wiring) call these, so names and argument lists do not change.
+  `pub struct AnthropicPassthroughLogger` with `AnthropicPassthroughLogger::new(batch_logging: AnthropicBatchLogging, cost: <the Arc cost collaborator that B3630's compute_response_cost takes>) -> AnthropicPassthroughLogger`.
+  `pub struct AnthropicPassthroughInput<'a> { pub status_code: u16, pub response_headers: &'a http::HeaderMap, pub response_text: &'a str, pub response_body: &'a serde_json::Map<String, serde_json::Value>, pub url_route: &'a str, pub start_time: DateTime<Utc>, pub end_time: DateTime<Utc>, pub request_body: &'a serde_json::Map<String, serde_json::Value>, pub kwargs: <B3605 typed kwargs map> }`. response_text is the whole buffered upstream body as text (LiteLLM's httpx_response.text). response_body is that body parsed as an object, or an empty map when the body was a list or absent (B3606 does that shaping). LiteLLM's result and cache_hit arguments are not used by this handler, so they are not in the struct.
+  `impl AnthropicPassthroughLogger { pub fn anthropic_passthrough_handler(&self, input: AnthropicPassthroughInput<'_>, call_log: &mut CallLog) -> Result<HandlerOutcome, AnthropicPassthroughError> }`. It is synchronous.
+  `impl CollectedChunksHandler for AnthropicPassthroughLogger`, the streaming entry that B3608 calls once a stream ends.
+  AnthropicPassthroughError is this module's own thiserror enum with variants for a failed response transform (source B580's or B587's error), a failed stream build (source B3632's InterruptedStreamUsageError) and a failed message_start read (source B3630's stream_fields error). It must convert into B3608's HandlerError so the stream seam can return it. Where the module needs a CallLog from the logging object handle in CollectedChunksCall, get it the way B3640's collected-chunks handlers do.
+
+
+  anthropic_passthrough_handler, in LiteLLM's order.
+  1. Batch branch. When url_route contains the text "/v1/messages/batches" anywhere (a plain substring test, not B3630's is_collection_route) and status_code is exactly 200, call B3633's batch_creation_handler and return its result. Build BatchCreationInput with status_code, the body bytes (response_text as bytes), url_route, start_time, request_body (Some of the map) and request_metadata, which is kwargs litellm_params.metadata with a missing or null litellm_params or metadata counted as empty. Turn the BatchCreationLogged into a HandlerOutcome: its result becomes the chat variant of B3605's response-object enum field by field (id, model, object, created, the one choice with its message and provider_specific_fields), and its kwargs (response_cost, model, batch_id, unified_object_id, batch_job_state) go into the typed kwargs map. LiteLLM's `request_body or kwargs.get("request_body", {})` fallback can never reach a different value (a request_body key in kwargs would already be a TypeError in the caller), so the request body is used as given.
+  2. Model and speed. model is response_body["model"] when it is a string, else "". speed is B3630's cost_relevant_speed(request_body).
+  3. Pick the transform. When url_route contains both "messages/batches" and "results" (two separate case-sensitive substring tests, anywhere, either order), use B587's AnthropicBatchesConfig.transform_response. Otherwise use B580's AnthropicConfig.transform_response. This is LiteLLM's get_anthropic_config (llms/anthropic/__init__.py L7-L13); B027, the Anthropic provider umbrella, owns that selector at the composition level, and a task never depends on an umbrella, so write the two tests inline in the handler. Call the chosen transform with: the raw upstream response (status, headers, response_text), a fresh empty chat response, the model from step 2, no messages, optional params {"speed": speed} when speed is set and empty otherwise, empty api key, empty request data, empty litellm params, json_mode false, and the token encoding the merged transform asks for. A transform error comes back as Err; LiteLLM lets the exception rise.
+  4. Payload. Call create_anthropic_response_logging_payload (below) with that response, the model, the input kwargs, the times, the call log and response_id = optional_str(response_body["id"]). Return HandlerOutcome with the response as result and the returned kwargs.
+
+
+  create_anthropic_response_logging_payload(response, model, kwargs, start_time, end_time, call_log, response_id) -> kwargs. It is `pub(crate)` and never returns an error. Steps, in this order; the effect of a finished step stays when a later one fails.
+  1. Outside the guarded block: when the call log's "stream" entry is exactly true, store the response in the call log under "complete_streaming_response". Store it only for a stream. The redaction step scrubs that entry only when stream is true, so storing it for a non-streaming call would let message text skip redaction.
+  2. model = B3630's resolve_costing_model(model, call_log). response_cost = B3630's compute_response_cost(response, model, call_log) (0.0 on an exact cache hit).
+  3. Set kwargs response_cost and model. Set the call log's "response_cost" to the cost (the pass-through success path reads spend from there and not from kwargs).
+  4. When the kwargs carry a passthrough logging payload that is not empty: user = B3630's end_user_from_request_body(payload.request_body) when that request body is present and not empty. When user is found, set kwargs litellm_params.proxy_server_request to {"body": {"user": user}}, replacing whatever was in proxy_server_request and keeping the other litellm_params keys (LiteLLM's setdefault then update).
+  5. Log the kwargs at debug level as indented JSON.
+  6. Set response.id = response_id when it is some and not empty, else the call log's litellm_call_id. Set response.model = model. Set the call log's "model" = model. When the call log's "custom_llm_provider" is missing or empty, set it to "anthropic". When the stream rule of step 1 holds, store the response in "complete_streaming_response" again, so the stored copy carries the id and model (LiteLLM shares one object; Rust holds a copy).
+  Any error in steps 2 to 6 logs at error level "Error creating Anthropic response logging payload: {error}" and returns the kwargs as they stand at that point.
+  This is not B3630's create_response_logging_payload. The Anthropic copy builds no standard_logging_object, resolves the costing model first, writes the stream entry and the "anthropic" provider, and takes the response id as an argument.
+
+
+  Collected chunks (CollectedChunksHandler::handle). call.lines are the stream split into text lines; wrap each as a text entry of the chunk type B3630's stream_fields already uses. Do not define another chunk type.
+  1. model = B3630's resolve_logged_model(call_log, request_body, all_chunks). call.model is not used for Anthropic.
+  2. response = B3632's build_streaming_response_for_logging(call_log, request_body, all_chunks, model).
+  3. When that gives none, log at error level "Unable to build complete streaming response for Anthropic passthrough endpoint, not logging..." and return no result with empty kwargs.
+  4. Otherwise call create_anthropic_response_logging_payload with an empty kwargs, the model, the times, the call log and response_id = B3630's extract_response_id_from_chunks(all_chunks), and return the response with those kwargs.
+  A typed error from B3630's chunk readers (invalid UTF-8) or from B3632 is returned as Err, as LiteLLM lets UnicodeDecodeError rise. endpoint_type and the passthrough success handler argument of LiteLLM's signature are not used.
+
+
+  Tests: module tests under pass_through_logging::anthropic_passthrough_logging::tests, every name starting anthropic_. Fakes stand in for the cost collaborator and the batch registry; the real B3630 helpers run. Cover: the batch branch taken for 200 with a "/v1/messages/batches" route and a "/v1/messages/batches/x/results" route (still taken, because of the substring test) and not taken for a 400 on the same route; the get_anthropic_config tests (both substrings needed, either order); speed passed to the transform; the payload steps in order with a failure at the cost step leaving model unset and kwargs untouched by later steps; complete_streaming_response stored only when stream is true and carrying the final id and model; proxy_server_request replacement that keeps other litellm_params keys; id fallback to litellm_call_id for none and for an empty string; custom_llm_provider kept when already set; the collected-chunks none case with its log line; and a typed UTF-8 error coming out as Err.
+  Oracle: this code is not reached by a route until B3606 and B102 wire it, so the cases are helper cases through the helper operation named after this task. The adapter calls the pinned Python static methods (anthropic_passthrough_handler with an httpx.Response, _create_anthropic_response_logging_payload and _handle_logging_anthropic_collected_chunks) on a real litellm Logging object with a fixed litellm_call_id, with LITELLM_RUST=false and the local model cost map, and returns the kwargs, the response id and model, and the model_call_details entries that were written. It never copies the algorithm. B3606 and B102 add the HTTP cases.
+scope:
+  paths:
+    - crates/betterlite-server/src/pass_through_logging/anthropic_passthrough_logging.rs
+    - crates/betterlite-server/src/pass_through_logging/anthropic_passthrough_logging/**
+    - tools/oracle/cases/helpers/anthropic-passthrough-logging/**
+    - "tools/oracle/fuzz/corpus/helper_case/anthropic_passthrough_logging-*"
+    - tools/oracle/helpers/b3634.py
+    - tools/oracle/helpers/b3634/**
+    - tools/oracle/src/helpers/server/b3634.rs
+    - tools/oracle/src/helpers/server/b3634/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L52-L117
+    why: anthropic_passthrough_handler, the batch branch, the transform call and the hand-off to the payload step.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L410-L466
+    why: _create_anthropic_response_logging_payload, with the stream-only complete_streaming_response comment, the step order and the catch-all.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L468-L514
+    why: _handle_logging_anthropic_collected_chunks and its error log.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/__init__.py#L7-L13
+    why: get_anthropic_config, the two-substring test that picks the batches results config.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/batches/transformation.py#L282-L331
+    why: AnthropicBatchesConfig.transform_response, which parses a JSONL results body and sums usage (B587 builds it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/success_handler.py#L195-L215
+    why: The non-streaming call site, which passes response_body as an object or an empty dict.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L383-L411
+    why: The streaming call site, which splits the bytes into text lines and calls the collected-chunks handler for the Anthropic endpoint type.
+dod:
+  - text: A status 200 response on a route containing "/v1/messages/batches" goes to B3633's batch_creation_handler, and its result and kwargs come back as the outcome; any other status on that route takes the normal transform path.
+    proof: [anthropic-tests, anthropic-oracle]
+  - text: The batches results transform is chosen only when the route contains both "messages/batches" and "results"; every other route uses the chat transform, which gets the request speed as an optional param.
+    proof: [anthropic-tests, anthropic-oracle]
+  - text: The payload step sets response_cost and model on the kwargs and the call log, resolves the costing model first, and gives a cache hit a cost of 0.0.
+    proof: [anthropic-tests, anthropic-oracle]
+  - text: complete_streaming_response is written to the call log only when stream is exactly true, and the stored copy carries the final id and model.
+    proof: [anthropic-tests, anthropic-oracle]
+  - text: A request body with an end user replaces litellm_params.proxy_server_request with a body holding that user and keeps the other litellm_params keys.
+    proof: [anthropic-tests, anthropic-oracle]
+  - text: The response id is the upstream id when it is non-empty and the call log's litellm_call_id otherwise; custom_llm_provider is set to "anthropic" only when it was missing or empty.
+    proof: [anthropic-tests, anthropic-oracle]
+  - text: An error inside the payload step is logged with the "Error creating Anthropic response logging payload" text and the kwargs built so far come back without an error.
+    proof: [anthropic-tests]
+  - text: The collected-chunks handler uses the logged model, B3632's response builder and the id from the message_start event, and returns no result with empty kwargs and the error log when nothing could be built.
+    proof: [anthropic-tests, anthropic-oracle]
+  - text: A typed error from the chunk readers or the stream builder comes back as Err and converts into HandlerError.
+    proof: [anthropic-tests]
+  - text: The helper adapter's Python passes the strict lint and type check.
+    proof: [helper-python]
+checks:
+  optional: []
+  commands:
+    - id: anthropic-tests
+      why: the batch branch, config choice, payload steps or collected-chunks handler are wrong, or have no tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::anthropic_passthrough_logging::tests::anthropic_/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3634)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3634 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3634/pyrightconfig.json
+    - id: helper-case-corpus
+      why: new helper seeds are absent or do not replay through the shared helper-case parser
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/anthropic_passthrough_logging-*')" &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: anthropic-oracle
+      why: newly added helper cases are absent, do not use the b3634 operation or disagree with LiteLLM
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/anthropic-passthrough-logging)" &&
+        grep -rlE '^[[:space:]]+b3634:' tools/oracle/cases/helpers/anthropic-passthrough-logging &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/anthropic-passthrough-logging
+oracle_cases:
+  - tools/oracle/cases/helpers/anthropic-passthrough-logging/batch-create-200-collection-route.yaml
+  - tools/oracle/cases/helpers/anthropic-passthrough-logging/batch-route-400-takes-normal-path.yaml
+  - tools/oracle/cases/helpers/anthropic-passthrough-logging/messages-response-priced-with-speed.yaml
+  - tools/oracle/cases/helpers/anthropic-passthrough-logging/payload-stream-true-stores-complete-response.yaml
+  - tools/oracle/cases/helpers/anthropic-passthrough-logging/payload-stream-false-no-complete-response.yaml
+  - tools/oracle/cases/helpers/anthropic-passthrough-logging/payload-end-user-replaces-proxy-server-request.yaml
+  - tools/oracle/cases/helpers/anthropic-passthrough-logging/payload-empty-response-id-uses-call-id.yaml
+  - tools/oracle/cases/helpers/anthropic-passthrough-logging/payload-cache-hit-zero-cost.yaml
+  - tools/oracle/cases/helpers/anthropic-passthrough-logging/chunks-complete-stream-logged.yaml
+  - tools/oracle/cases/helpers/anthropic-passthrough-logging/chunks-no-message-start-unknown-model.yaml
+deviations:
+  - what: The handler takes the upstream body as text plus a parsed object, and has no result or cache_hit argument.
+    why: LiteLLM passes an httpx.Response and never reads result or cache_hit in this handler; Rust has no httpx object, so the two views of the body are explicit.
+  - what: The response is stored in complete_streaming_response twice for a stream (before the guarded block, and again once id and model are set).
+    why: LiteLLM stores one shared object that later steps mutate in place; Rust holds a copy, so the second store gives the same final state.
+  - what: Errors are typed errors. LiteLLM's blanket `except Exception` in the payload step catches only the typed errors of the steps it wraps, and a bad UTF-8 chunk is an Err where LiteLLM lets UnicodeDecodeError rise.
+    why: Rust has no runtime attribute errors and a panic is banned by the no-panics rule, so the typed error is the only failure left.
+  - what: The batch result is converted into the chat variant of B3605's response-object enum.
+    why: LiteLLM returns a ModelResponse built by hand in batch_creation_handler; the enum has no batch variant, and the downstream logger reads it as a chat response.
+out_of_scope:
+  - "batch_creation_handler, _store_batch_managed_object and get_actual_model_id_from_router: B3633 owns Anthropic batch logging and this task only calls it."
+  - "record_partial_usage_for_failure, _build_streaming_response_for_logging, _assemble_streaming_response, _usage_only_response_or_none, _stream_was_interrupted, _recover_interrupted_stream_output_tokens and _clear_placeholder_cost: B3632 owns them. Their callers on the failure path are in B3609."
+  - "_split_sse_chunk_into_events, _build_complete_streaming_response, _collapse_pure_text_chunks, _build_complete_streaming_response_legacy, _extract_sse_data and _build_usage_only_response_from_chunks: B3631 owns the stream reconstruction."
+  - "_cost_relevant_speed, _resolve_costing_model, _resolve_logged_model, _cost_partial_stream_or_zero, _compute_response_cost, _extract_message_start_field, _extract_model_from_anthropic_chunks, _extract_response_id_from_anthropic_chunks and _get_user_from_metadata: B3630 owns them and its covers include the file."
+  - "AnthropicConfig.transform_response (B580), AnthropicBatchesConfig.transform_response (B587) and get_anthropic_config as the umbrella's own selector (B027)."
+  - "Choosing this handler for a route (is_anthropic_route, TRACKED_ANTHROPIC_ROUTES) and the adapter that reshapes ProviderLogInput into AnthropicPassthroughInput: B3606 owns them."
+  - "The Anthropic frame probes and the stream routing that call the CollectedChunksHandler: B3608 owns them."
+pitfalls:
+  - The batch branch tests the substring "/v1/messages/batches" and status 200, so a 200 results download at ".../v1/messages/batches/{id}/results" goes to batch_creation_handler and becomes a "failed" record; AnthropicBatchesConfig is reached only for a non-200 status or a route without the "/v1/" prefix.
+  - The batches transform needs both "messages/batches" and "results" in the route; "messages/batches" alone, such as a status poll, uses the chat transform.
+  - complete_streaming_response must be written only when model_call_details["stream"] is exactly true; writing it for a non-streaming call lets message text skip redaction.
+  - The costing model comes from resolve_costing_model before the cost is computed, and the same resolved model is what lands in kwargs["model"], the response and model_call_details["model"].
+  - A cost error at step 2 leaves kwargs without response_cost and model and leaves the call log without response_cost, model and custom_llm_provider; the handler still returns normally with the result.
+  - The response id uses `response_id or litellm_call_id`, so an empty string from the upstream falls back to the call id, and a non-string id was already turned into none by optional_str.
+  - proxy_server_request is replaced as a whole, so any earlier proxy_server_request keys (headers, url) are lost when an end user is found; other litellm_params keys stay.
+  - custom_llm_provider is set to "anthropic" only when the call log has none or an empty one; a value such as "bedrock" set earlier stays.
+  - In the streaming path kwargs start empty, so there is no passthrough logging payload and no end-user step.
+  - Anthropic's own payload step builds no standard_logging_object; do not call B3630's create_response_logging_payload here.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -2,8 +2,8 @@ id: B3103
 milestone: M4 keys, spend and management
 title: Fetch and summarize role-specific usage chat tools
 status: todo
-depends_on: [B3090, B3091, B3092, B3093]
-file: null
+depends_on: [B729, B3090, B3091, B3092, B3093]
+file: tasks/B3103-usage-chat-tools.yaml
 covers:
   - "litellm/proxy/management_endpoints/usage_endpoints/ai_usage_chat.py"
 parent: B074

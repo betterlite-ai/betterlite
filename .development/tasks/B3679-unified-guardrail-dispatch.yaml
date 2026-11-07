@@ -1,0 +1,188 @@
+id: B3679
+title: Unified guardrail dispatch and stream emission primitives
+description: >-
+  Add the module `unified_dispatch` to betterlite-guardrails. It holds the pure pieces of LiteLLM's `UnifiedLLMGuardrails` that the hooks share: choosing the translation handler for a call, turning a block or an HTTP failure into the chunks a stream emits, building the synthetic delta chunk of the incremental transform, and reading flags and chunks. The hooks themselves (pre call, moderation, post call success, the streaming loops) are B3680 and B3681 and call everything here. Nothing in this task talks to a guardrail, a provider or the network, and nothing here is async.
+
+  Types come from earlier tasks. `GuardrailValue` is from `betterlite_config::sections::guardrail_identity::item` (B3660). `GuardrailFailure` is B5471's failure enum, where `ModifyResponse` stands for LiteLLM's `ModifyResponseException`. The `BaseTranslation` trait, `StreamingScanKey` and `StreamTransformSink` are B3661's. The call type enum and `get_call_types_for_route` are B207's (betterlite-core routes). A stream item is a `serde_json::Value`: a chat chunk is an object, and a raw SSE frame is a JSON string. If B3661 fixed another item type, use B3661's and keep the same behavior.
+
+  Files, all under crates/betterlite-guardrails/src/unified_dispatch/ and each owning its own error type if it can fail: `registry.rs`, `emit.rs`, `transform_chunk.rs`, `stream_items.rs`, `flags.rs`.
+
+  registry.rs replaces `discover_guardrail_translation_mappings`, `load_guardrail_translation_mappings` and `get_guardrail_translation_mapping`. Nothing scans the file system. `TranslationRegistry<T: BaseTranslation>` is built from an explicit `Vec<TranslationEntry<T>>`, where `TranslationEntry<T> { call_type: <B207 call type>, translation: T, chat_completions: bool }`. `chat_completions` is true only for the OpenAI chat handler (LiteLLM maps `completion` and `acompletion` to it, and no other handler is a subclass). `TranslationRegistry::get(&self, call_type) -> Option<&TranslationEntry<T>>` returns the entry, and a later entry for the same call type replaces an earlier one, like `dict.update`. `resolve_endpoint_translation<'a, T>(registry: &'a TranslationRegistry<T>, request_route: Option<&str>, first_item: Option<&serde_json::Value>) -> Option<(CallType, &'a T)>` is `resolve_endpoint_translation`: when `request_route` is set and non-empty and `get_call_types_for_route` returns a non-empty list, the first call type wins. Otherwise the call type is inferred from `first_item` when there is one, and it is `None` when there is not. No call type, or a call type with no entry, gives `None`. `resolve_transform_call_type(registry, request_route: Option<&str>) -> Option<CallType>` is `_resolve_transform_call_type`. It needs a route, a non-empty call type list for it, and an entry for the first call type whose `chat_completions` is true. Anything else gives `None`, and the caller falls back to block only. `infer_call_type(kind: ResponseKind) -> Option<CallType>` is LiteLLM's `_infer_call_type` with no explicit call type: `ResponseKind` is an enum with `ChatCompletion` (a model response or a stream chunk), `Embedding`, `Transcription`, `Speech`, `Rerank`, `Image`, `TextCompletion`, `SendMessage` and `Other`, giving `completion`, `embedding`, `transcription`, `speech`, `rerank`, `image_generation`, `text_completion`, `send_message` and `None`. `ResponseKind::of_stream_item(item: &serde_json::Value) -> Self` is `ChatCompletion` for an object whose `object` is `chat.completion.chunk` and `Other` for everything else, because LiteLLM only types a `ModelResponseStream` as a chunk and treats bytes, strings and A2A dicts as unknown. `A2A_CALL_TYPES` is the two call types `asend_message` and `send_message`. `ensure_request_metadata(data: &mut BTreeMap<String, GuardrailValue>, user_metadata: BTreeMap<String, GuardrailValue>)` sets `litellm_metadata` to `user_metadata` only when the key is absent and `user_metadata` is not empty. The caller builds `user_metadata` with B3661's `transform_user_api_key_dict_to_metadata`.
+
+  emit.rs. `StreamHttpError { status_code: u16, detail: HttpErrorDetail }` with `HttpErrorDetail { Text(String), Object(serde_json::Map<String, serde_json::Value>) }` stands in for FastAPI's `HTTPException`, because B5471's `GuardrailFailure::Http` holds only a string and the A2A chunk has to tell a dict detail from a text one. It implements `std::error::Error`, and Display prints the text or the JSON of the object. `handle_streaming_block(translation: &T, failure: GuardrailFailure, stream_started: bool, responses_so_far: &[serde_json::Value]) -> Result<Vec<serde_json::Value>, GuardrailFailure>` is `handle_streaming_block`. It calls the translation's `build_block_sse_chunks` with the failure, `stream_started` and the items, and returns the chunks in order. When that returns `None` it gives back `Err(failure)`, which is LiteLLM's `raise exc`. The callers set `original_response` before they call it (B3680 and B3681), so this function never touches it. `emit_streaming_http_error(call_type: Option<CallType>, error: StreamHttpError, responses_so_far: &[serde_json::Value], request_data: &BTreeMap<String, GuardrailValue>, translation: Option<&T>, stream_started: bool, responses_yielded: Option<&[serde_json::Value]>) -> Result<Vec<serde_json::Value>, StreamHttpError>` is `emit_streaming_http_error`. Order of checks: an A2A call type returns one item, the JSON-RPC error object below. Next, when `stream_started` is true and a translation is given, it calls `build_stream_error_items` with the error and with `responses_yielded` (not `responses_so_far`) as the items already sent, and returns the items when the translation gives some. Otherwise it returns `Err(error)`. `a2a_request_id(responses_so_far: &[serde_json::Value], request_data: &BTreeMap<String, GuardrailValue>) -> serde_json::Value` is `_get_a2a_request_id`. It walks the items. An object item with an `id` key returns that value (null included) at once. A string item is trimmed and parsed as JSON, and an object with an `id` key returns it, while a parse failure or any other result moves on to the next item. After the loop it reads `body` from `request_data`, or `data` when `body` is missing or empty, and an object body returns its `id`, or null when there is none. The answer is null when nothing was found. `a2a_jsonrpc_error_chunk(error: &StreamHttpError, request_id: serde_json::Value) -> serde_json::Value` returns `{"jsonrpc": "2.0", "id": request_id, "error": {"code": -32603, "message": ..., "data": {...}}}`. For an object detail, `message` is its `error` value when the key exists, else its `message` value when that exists, else the detail's JSON text. For a text detail the detail becomes `{"message": text}` first. `data` holds every key of the detail except `error` and `message`.
+
+  transform_chunk.rs is `_build_transform_chunk`. `build_transform_chunk(input: TransformChunkInput<'_>) -> Result<Option<serde_json::Value>, StreamHttpError>`, with `TransformChunkInput { reference_chunk: &Value, mutated_text_per_choice: &IndexMap<i64, String>, emitted_text_per_choice: &mut IndexMap<i64, String>, holdback_per_choice: &IndexMap<i64, i64>, finish_reason_per_choice: &IndexMap<i64, Option<String>>, held_chars_per_choice: &mut IndexMap<i64, i64>, is_final: bool }`. If B3661 gave `StreamTransformSink` other map types, follow it, but iterate the mutated texts in the sink's own order, because that order sets the order of choices in the output. The output chunk copies `id`, `created` and `model` from the reference chunk (missing ones are null, and the serializer then makes a fresh id and time as LiteLLM's `ModelResponseStream` does), has `object` set to `chat.completion.chunk`, and its choices are objects `{index, finish_reason, delta: {content, role, tool_calls: null}}`. Two paths. With no mutated texts: on the final round, each choice in `finish_reason_per_choice` that has a reason becomes a terminator choice with `content` empty text, `role` null and that reason, and the chunk is returned when there is at least one; otherwise `None`. With mutated texts, per choice: `already` is the emitted text (empty when missing), and if the mutated text does not start with `already` the function returns `StreamHttpError { 400, Object({"error": "stream_transform_underflow", "message": ...}) }` with the exact message in the references. Otherwise `holdback` is 0 on the final round and `max(0, holdback_per_choice[idx])` (0 when missing) before it, `end = max(len(already), len(text) - holdback)`, the delta is `text[len(already)..end]` and `held_chars_per_choice[idx] = len(text) - end`. All lengths and slices count Unicode characters, never bytes. Then every mutated choice, in order: its `finish_reason` is the reason from `finish_reason_per_choice` on the final round and null before it, a choice with an empty delta and no reason is skipped, and `role` is `assistant` when the choice's emitted text is empty or missing and null otherwise. When no choice survives the function returns `None`. Only then are the emitted texts extended with the deltas, for every mutated choice. A `None` result still leaves `held_chars_per_choice` updated. An empty text as `finish_reason` counts as no reason, like `StreamingChoices`.
+
+  stream_items.rs holds the chunk readers, each over one `&serde_json::Value`. `chunk_choices(item) -> &[serde_json::Value]` is `_chunk_choices`: the `choices` array, and an empty slice when the item is not an object, has no `choices` or has a non-array. A choice's index is its `index` when it is an integer and 0 otherwise (null counts as 0, like `index or 0`). `chunk_has_tool_calls`, `chunk_carries_text` (any choice with a non-empty string `delta.content`), `chunk_has_finish_reason` (any choice whose `finish_reason` is not null) and `is_trailing_metadata_chunk` (no choices, or a non-null `usage` with no text and no finish reason) are the same-named LiteLLM predicates. `trailing_metadata_chunks(items) -> Vec<&Value>` keeps the matching items in order. `record_finish_reasons(item, finish_reason_per_choice: &mut IndexMap<i64, Option<String>>)` stores each non-null `finish_reason` under the choice index. `tool_call_passthrough_chunk(item, finish_reason_per_choice: Option<&mut IndexMap<i64, Option<String>>>, held_choices: &BTreeSet<i64>) -> serde_json::Value` copies a tool call chunk with the text taken out: `id`, `created`, `model`, `object`, and per choice `index`, `delta {content: null, role, tool_calls}` and a finish reason. A choice whose delta has text, or whose index is in `held_choices`, and that has a finish reason, and when the map is given, stores the reason in the map and sends null in the chunk. Every other choice keeps its own reason. `held_choices(held_chars_per_choice) -> BTreeSet<i64>` is the indexes with more than zero held characters.
+
+  flags.rs. `resolve_streaming_flag(attribute: Option<&GuardrailValue>, guardrail_config: Option<&BTreeMap<String, GuardrailValue>>, optional_params: &BTreeMap<String, GuardrailValue>, name: &str, default: &GuardrailValue) -> GuardrailValue` follows `resolve_streaming_flag`, later source wins: the default, then the guardrail's own attribute (`None` when it has none), then the key in `guardrail_config`, then the key in the callback's `optional_params`. A key that is present with a null value still wins, because LiteLLM uses `dict.get(name, previous)`. `is_redundant_scan(scan_key: Option<&StreamingScanKey>, last_scan_key: Option<&StreamingScanKey>) -> bool` is false for no key, else true when the two keys are equal or the key has nothing to scan, using B3661's equality and `has_nothing_to_scan`.
+
+  The oracle helper for this task runs the same inputs through LiteLLM's own functions and compares results. Cases give chunks with fixed `id` and `created`, so the generated ones never differ.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/unified_dispatch.rs
+    - crates/betterlite-guardrails/src/unified_dispatch/**
+    - tools/oracle/cases/helpers/unified-guardrail-dispatch/**
+    - "tools/oracle/fuzz/corpus/helper_case/unified_dispatch-*"
+    - tools/oracle/helpers/b3679.py
+    - tools/oracle/helpers/b3679/**
+    - tools/oracle/src/helpers/guardrails/b3679.rs
+    - tools/oracle/src/helpers/guardrails/b3679/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L43-L46
+    why: A2A_CALL_TYPES holds asend_message and send_message. GUARDRAIL_NAME has no caller at the pin.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L73-L100
+    why: resolve_endpoint_translation, route first and chunk inference second, None when unresolvable or unmapped.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L103-L120
+    why: _chunk_choices, _held_choices and _is_redundant_scan.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L123-L168
+    why: A2A request id lookup, the JSON-RPC error object and _ensure_litellm_metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L382-L470
+    why: handle_streaming_block, _resolve_transform_call_type and emit_streaming_http_error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L472-L587
+    why: _build_transform_chunk, with the terminator path, the underflow error text, holdback and role rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py#L864-L969
+    why: Chunk predicates, trailing metadata, tool call passthrough, finish reason recording and resolve_streaming_flag.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/cost_calculator.py#L1094-L1118
+    why: _infer_call_type, the response class to call type table.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/__init__.py#L162-L199
+    why: The mapping loader and getter that the explicit registry replaces.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/guardrail_translation/__init__.py#L1-L15
+    why: Only completion and acompletion map to the chat completions handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2006-L2040
+    why: StreamingChoices turns an empty finish_reason into null and defaults index to 0.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2103-L2150
+    why: ModelResponseStream generates id and created when missing and fixes object to chat.completion.chunk.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4073-L4085
+    why: The one external caller of handle_streaming_block and emit_streaming_http_error, with stream_started false and empty items.
+
+dod:
+  - text: A route that maps to call types selects the first one, a missing route falls back to inferring from the first item, and an unmapped or unresolvable call type gives None.
+    proof: [dispatch-tests, oracle-cases]
+  - text: resolve_transform_call_type returns a call type only for a route whose first call type is completion or acompletion and has a chat completions entry, and None for any other route or handler.
+    proof: [dispatch-tests]
+  - text: infer_call_type maps each ResponseKind as the table says, and of_stream_item calls only an object with object `chat.completion.chunk` a chat completion.
+    proof: [dispatch-tests]
+  - text: ensure_request_metadata sets `litellm_metadata` only when absent and non-empty, and a request that already has the key keeps it.
+    proof: [dispatch-tests]
+  - text: handle_streaming_block returns the translation's chunks in order and gives back the failure when the translation returns None.
+    proof: [emit-tests]
+  - text: emit_streaming_http_error returns the A2A error object for an A2A call type, the translation's error items (built from the yielded items) only when the stream started, and gives back the error in every other case.
+    proof: [emit-tests, oracle-cases]
+  - text: a2a_request_id finds the id in an object item, a JSON string item, the `body` and then the `data` of the request, and gives null when none has one.
+    proof: [a2a-tests, oracle-cases]
+  - text: a2a_jsonrpc_error_chunk builds code -32603, takes the message from `error` then `message` then the detail text, and puts every other detail key in `data`.
+    proof: [a2a-tests, oracle-cases]
+  - text: build_transform_chunk emits only the new text past what was sent, keeps back the holdback characters until the final round, counts characters and not bytes, and reports the held count.
+    proof: [transform-chunk-tests, oracle-cases]
+  - text: build_transform_chunk returns the stream_transform_underflow 400 when a mutated text does not start with the text already sent.
+    proof: [transform-chunk-tests, oracle-cases]
+  - text: build_transform_chunk builds the terminator chunk on the final round when there is no text, sets role assistant only on a choice's first delta, skips choices with nothing to say and returns None when none is left.
+    proof: [transform-chunk-tests, oracle-cases]
+  - text: The chunk predicates and trailing metadata selection match LiteLLM on chunks with no choices, usage only, text, tool calls and finish reasons.
+    proof: [stream-item-tests, oracle-cases]
+  - text: tool_call_passthrough_chunk removes text, defers the finish reason of a choice that has text or is held and records it in the map, and keeps the reason of other choices.
+    proof: [stream-item-tests, oracle-cases]
+  - text: resolve_streaming_flag applies default, attribute, config and optional params in that order, and a present null wins, and is_redundant_scan matches LiteLLM for none, equal and empty keys.
+    proof: [flag-tests, oracle-cases]
+  - text: The helper adapter lints and type checks, and its new cases replay through the shared parser.
+    proof: [helper-python, helper-case-corpus]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: dispatch-tests
+      why: registry lookup, route and item resolution, the transform call type rule, inference or request metadata are wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^unified_dispatch::tests::dispatch_/) - test(replays_the_helper_case_corpus)'
+    - id: emit-tests
+      why: block chunks or the HTTP error emission rules are missing
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^unified_dispatch::tests::emit_/)'
+    - id: a2a-tests
+      why: the A2A request id search or the JSON-RPC error object is wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^unified_dispatch::tests::a2a_/)'
+    - id: transform-chunk-tests
+      why: the incremental delta chunk, its holdback, its terminator or the underflow error is wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^unified_dispatch::tests::transform_chunk_/)'
+    - id: stream-item-tests
+      why: a chunk predicate, the trailing metadata selection or the tool call passthrough is wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^unified_dispatch::tests::stream_item_/)'
+    - id: flag-tests
+      why: flag precedence or the redundant scan rule is wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^unified_dispatch::tests::flag_/)'
+    - id: oracle-cases
+      why: the helper cases disagree with LiteLLM or are missing
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/unified-guardrail-dispatch)" &&
+        cargo run --locked -p betterlite-oracle -- tools/oracle/cases/helpers/unified-guardrail-dispatch
+    - id: helper-python
+      why: the strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3679)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3679 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3679/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added dispatch cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/unified_dispatch-*")" &&
+        grep -lE '^[[:space:]]+b3679:' tools/oracle/fuzz/corpus/helper_case/unified_dispatch-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/unified-guardrail-dispatch/transform-chunk-delta.yaml
+  - tools/oracle/cases/helpers/unified-guardrail-dispatch/transform-chunk-holdback.yaml
+  - tools/oracle/cases/helpers/unified-guardrail-dispatch/transform-chunk-terminator.yaml
+  - tools/oracle/cases/helpers/unified-guardrail-dispatch/transform-chunk-underflow.yaml
+  - tools/oracle/cases/helpers/unified-guardrail-dispatch/transform-chunk-multibyte.yaml
+  - tools/oracle/cases/helpers/unified-guardrail-dispatch/a2a-request-id.yaml
+  - tools/oracle/cases/helpers/unified-guardrail-dispatch/a2a-error-chunk.yaml
+  - tools/oracle/cases/helpers/unified-guardrail-dispatch/http-error-emission.yaml
+  - tools/oracle/cases/helpers/unified-guardrail-dispatch/chunk-predicates.yaml
+  - tools/oracle/cases/helpers/unified-guardrail-dispatch/tool-call-passthrough.yaml
+  - tools/oracle/cases/helpers/unified-guardrail-dispatch/streaming-flag-order.yaml
+  - tools/oracle/cases/helpers/unified-guardrail-dispatch/redundant-scan.yaml
+  - tools/oracle/cases/helpers/unified-guardrail-dispatch/endpoint-resolution.yaml
+
+deviations:
+  - what: The translation handlers come from an explicit `TranslationRegistry` built at startup, not from scanning the llms packages for `guardrail_translation_mappings`.
+    why: The code rules forbid auto-discovery. The set of handlers is the same, and a caller lists them.
+  - what: "`handle_streaming_block` and `emit_streaming_http_error` return a list of chunks, where LiteLLM yields them from an async generator."
+    why: Both only call synchronous translation methods, so the caller sees the same chunks in the same order. A caller that streams sends them one by one.
+  - what: A stream item that is not a JSON object has no choices, and an A2A chunk is a JSON object or string.
+    why: LiteLLM reads attributes of `ModelResponseStream` objects. Rust has one JSON item type, and `object` equal to `chat.completion.chunk` marks the chat chunks.
+  - what: The error detail is `HttpErrorDetail` (text or object), and the fallback message of an object detail with neither `error` nor `message` is the detail's JSON text.
+    why: LiteLLM prints the Python dict repr there, and docs/compatibility.md leaves repr text out.
+
+out_of_scope:
+  - "B3680 owns async_pre_call_hook, async_moderation_hook, async_post_call_success_hook, __init__, _run_incremental_transform_stream, _emit_transform_round, _inspect_full_response_for_block, _emit_stream_tail and the _StreamTerminated signal. They call this task's functions and set `original_response` on a block before calling handle_streaming_block."
+  - "B3681 owns async_post_call_streaming_iterator_hook, the buffering and sampling logic and guardrail_initializers.py. It calls resolve_streaming_flag, is_redundant_scan and resolve_transform_call_type."
+  - "The _EndpointTranslation Protocol and _as_endpoint_translation only narrow Python types. B3661's BaseTranslation trait is the contract here."
+  - "GUARDRAIL_NAME ('unified_llm_guardrails') has no caller at the pin, so it is not built."
+  - "B5471 owns ModifyResponseException (GuardrailFailure::ModifyResponse), SensitiveDataRouteException and GenericGuardrailAPIInputs (GuardrailApiInputs). B3664 owns the GuardrailInvocation records. This task only passes them through."
+  - "B207 owns get_call_types_for_route and the call type enum. B3661 owns StreamTransformSink, StreamingScanKey, BaseTranslation, build_block_sse_chunks and build_stream_error_items, and transform_user_api_key_dict_to_metadata."
+  - "The per-handler translation bodies (B3667 to B3669 chat, B3670 to B3676 Responses and Anthropic) and the stream item helpers of B3663 are not rebuilt here."
+  - "B010 and B1687 list discover_guardrail_translation_mappings in llms/__init__.py but no task builds it. The explicit TranslationRegistry in this task is its replacement, and B3680 or the architect's startup code fills it."
+  - "The non-stream branches of _infer_call_type for Python response classes beyond ResponseKind (duck typing, subclasses) follow docs/compatibility.md and are left out."
+
+pitfalls:
+  - "`emit_streaming_http_error` passes `responses_yielded`, not `responses_so_far`, to `build_stream_error_items`. The error frame must reflect only what the client received."
+  - "`emit_streaming_http_error` returns the A2A error even when the stream has not started, since the A2A branch is checked before `stream_started`."
+  - "An object item with an `id` key ends the A2A id search even when the id is null, so a later item with a real id is not used."
+  - "`_ensure_litellm_metadata` writes nothing when the key exists, even if its value is empty, and writes nothing when the user metadata is empty."
+  - "In `build_transform_chunk` the role is `assistant` when the choice's emitted text is empty, so a choice whose first delta was an empty string gets the role again on the next chunk."
+  - "`held_chars_per_choice` is updated before the function decides it has nothing to return, so a `None` result can still carry new held counts."
+  - "The emitted texts are extended only for a returned chunk, and for every mutated choice, including one that was skipped for having no delta."
+  - "The underflow check runs on every mutated choice before any chunk is built, so one bad choice fails the whole round and nothing is emitted."
+  - "A text slice by byte offset breaks on multibyte text. Python counts code points, so use `chars()` for the length, the cut and the holdback."
+  - "`tool_call_passthrough_chunk` defers a choice's finish reason only when the map is given. With no map, a choice with text still sends its reason."
+  - "`is_trailing_metadata_chunk` is true for a chunk with `usage` and no text and no finish reason even when its choices array is not empty, so a usage chunk with an empty delta is replayed at the end."
+  - "A stream item that is a string or bytes frame has no choices, so every predicate returns false for it except `is_trailing_metadata_chunk`, which is true."
+  - "`resolve_streaming_flag` takes a present key with a null value over the lower sources. Do not use `Option::or` to merge them."
+  - "The transform path is chosen from the route alone, before any chunk arrives. A request with no route never uses it, whatever the first chunk looks like."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

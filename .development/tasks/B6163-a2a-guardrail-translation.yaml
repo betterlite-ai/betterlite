@@ -1,0 +1,127 @@
+id: B6163
+title: A2A guardrail translation handler
+description: >-
+  Port LiteLLM's `A2AGuardrailHandler` (litellm/llms/a2a/chat/guardrail_translation/handler.py) for the
+  send_message and asend_message call types. No other task owns it. It scans the text parts of an A2A JSON-RPC 2.0
+  request and response, and the accumulated text of a stream, and writes the guardrailed text back.
+
+  Code goes in crates/betterlite-server/src/guardrails/a2a_translation.rs and a2a_translation/. Files: input.rs,
+  output.rs, stream.rs, paths.rs and adapter.rs. Use `GuardrailValue` from B3663 for JSON, as B3671 does. The
+  handler functions are plain async functions generic over `G: GuardrailContract`; `adapter.rs` has
+  `A2ATranslation` implementing B3661's `BaseTranslation` over them, with the two class flags false and the table
+  `A2A_CALL_TYPES` = send_message, asend_message (B207's `CallType`).
+
+  Input (`input.rs`). `process_input_messages(data, guardrail, logging_obj)`: read `data.params.message.parts`. If
+  there are none, return. For each part whose `kind` is "text" and whose `text` is non-empty, collect the text and
+  its index. If any, call `apply_guardrail` once with `texts`, `structured_messages` = `[message]`, and `model`
+  when `data.model` is set, with input type request and `data` as the request data. If the guardrail returns texts
+  and their count equals the collected count, write each back to its part. Otherwise change nothing.
+
+  Output (`output.rs`). `process_output_response(response, guardrail, logging_obj, user_api_key_dict, request_data)`.
+  The response is a JSON object; a non-object is logged as a warning and returned unchanged (betterlite has no
+  Pydantic response, see deviations). Take `result`; if it is missing, not an object or empty, return. Collect text
+  parts with `extract_texts_from_result`. It looks, in this order, at: `result.parts`; `result.message.parts`;
+  `result.artifact.parts`; `result.status.message.parts`; and each `result.artifacts[i].parts`. Each hit is a text
+  part (kind "text", non-empty text) recorded with its path (a list of keys, where an array index is a decimal
+  string) and part index. If no text, return. When `request_data` is None use a fresh map holding `response`; when
+  given and it has no `response` key, insert it. If `request_data` has no `litellm_metadata`, set it from B3661's
+  `transform_user_api_key_dict_to_metadata(user_api_key_dict)` when that is non-empty. Call `apply_guardrail` once
+  with `texts`, input type response. If the returned count equals the collected count, write each text back with
+  `apply_text_to_path`. It walks the path (a digit key indexes an array) and sets `text` of the part.
+
+  Stream (`stream.rs`). `process_output_streaming_response(responses_so_far, ...)`: each item is a JSON object or an
+  NDJSON string. `parse_streaming_responses` parses a string with trim then JSON, skips what fails, and keeps an
+  item only when its `result` is an object. If none are valid, return. `collect_text_from_parsed_chunks` calls
+  B2210's `extract_text_from_a2a_response` per valid item (that function reads only one location per item, and its
+  depth cap is 10) and joins the non-empty texts with no separator, remembering the indices that had text. If the
+  combined text is empty, return. Set `request_data` as in the output path but with the key `responses_so_far`.
+  Call `apply_guardrail` once with `texts = [combined]`, input type response. If it returns no texts, return. Write
+  the first returned text into the first chunk that had text: in that chunk, the first text part found by
+  `extract_texts_from_result` gets the text and every other text part is set to "". In every other valid chunk set
+  all text parts to "". Items that were NDJSON strings are replaced by the compact JSON dump of the parsed object
+  plus "\n". `get_streaming_scan_key` returns a `StreamingScanKey` with `texts = (combined,)` even when the
+  combined text is empty (B3661 has `has_nothing_to_scan`).
+
+  Which stream item type crosses the trait is B3661's choice; if it is `serde_json::Value`, an NDJSON string is a
+  `Value::String`.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/a2a_translation.rs
+    - crates/betterlite-server/src/guardrails/a2a_translation/**
+    - tools/oracle/cases/helpers/a2a-guardrail-translation/**
+    - tools/oracle/helpers/b6163.py
+    - tools/oracle/helpers/b6163/**
+    - tools/oracle/src/helpers/server/b6163.rs
+    - tools/oracle/src/helpers/server/b6163/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/chat/guardrail_translation/handler.py#L40-L166
+    why: Input and output processing, the text-part rule and the write-back checks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/chat/guardrail_translation/handler.py#L168-L286
+    why: Stream parsing, the single combined scan and the write-back that clears the other chunks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/chat/guardrail_translation/handler.py#L288-L406
+    why: Text extraction paths and apply_text_to_path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/chat/guardrail_translation/__init__.py
+    why: The send_message and asend_message table.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/a2a/common_utils.py#L96-L145
+    why: The per-item text extraction that B2210 ports.
+
+dod:
+  - text: Input scanning sends the text parts of `params.message.parts` in one call with the structured message and model, and writes the returned texts back only when the count matches.
+    proof: [input-tests, oracle-helper]
+  - text: Output scanning finds text in the five result locations in order, builds the request data as LiteLLM does, and writes the returned texts back by path.
+    proof: [output-tests, oracle-helper]
+  - text: Stream scanning joins the item texts, makes one guardrail call, puts the result in the first text chunk and clears the rest, and returns NDJSON items as compact JSON lines.
+    proof: [stream-tests, oracle-helper]
+  - text: The scan key holds the combined text, and the adapter implements `BaseTranslation` with the table send_message and asend_message.
+    proof: [adapter-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: input-tests
+      why: the input scan, its skip rules or its write-back check are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::a2a_translation::input::tests::/)'
+    - id: output-tests
+      why: a result location, the request-data setup or the path write-back is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::a2a_translation::(output|paths)::tests::/)'
+    - id: stream-tests
+      why: the combined scan, the clearing of other chunks or the NDJSON rewrite is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::a2a_translation::stream::tests::/)'
+    - id: adapter-tests
+      why: the trait is not implemented or the table is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::a2a_translation::adapter::tests::/)'
+    - id: oracle-helper
+      why: the helper cases are missing or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/a2a-guardrail-translation)" &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases
+
+oracle_cases:
+  - tools/oracle/cases/helpers/a2a-guardrail-translation/input-text-parts.yaml
+  - tools/oracle/cases/helpers/a2a-guardrail-translation/output-locations.yaml
+  - tools/oracle/cases/helpers/a2a-guardrail-translation/stream-combined.yaml
+
+deviations:
+  - what: A response that is not a JSON object is returned unchanged with a warning, and there is no Pydantic `model_dump` path.
+    why: docs/compatibility.md excludes Python duck typing; betterlite responses are JSON values.
+
+out_of_scope:
+  - "`extract_text_from_a2a_response`; B2210 owns it."
+  - The JSON-RPC error chunk helpers; B3679 owns them.
+  - Registering the call types and the hooks; B3680 owns them.
+  - HTTP oracle cases for A2A guardrails; B3680 adds them.
+
+pitfalls:
+  - The stream path concatenates with no separator, unlike B3672's Responses scan.
+  - "`extract_text_from_a2a_response` reads only the first artifact, so the stream path and the output path find different text for a task with two artifacts; keep both."
+  - Path keys that are digits index arrays; a key like "0" must not be read as an object key.
+  - The write-back count check uses the number of collected texts, not the number of parts.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1200
+  max_new_expects: 0
