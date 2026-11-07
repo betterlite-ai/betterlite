@@ -1,0 +1,36 @@
+task: B3969
+deviations:
+  - what: >-
+      The x-env header is added when the LiteralAILogger constructor's env argument is set. LiteLLM reads that
+      argument from the caller and never from an environment variable; betterlite takes it from the explicit
+      Overrides value the caller passes to from_environment, and sends no x-env header when it is absent.
+    why: >-
+      A direct constructor caller can pass env, but the proxy only ever builds the logger with no arguments, so
+      there is no environment variable to read. An explicit override keeps the header configurable without
+      inventing a variable name LiteLLM does not have.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/literal_ai.py#L34-L35
+  - what: >-
+      A message that carries a __literal_prompt__ object sets the step's generation.promptId and variables,
+      adds uuid to that message and marks it templated. LiteLLM's getattr(message, "__literal_prompt__")
+      reads an attribute from a dict, which never exists, so its literal-prompt branch never runs.
+    why: >-
+      The task requires the literal prompt attributes to be preserved, and no working LiteLLM setup can rely on
+      a branch that cannot run; reading the key from the message dict is what the code was written to do.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/literal_ai.py#L182-L188
+  - what: >-
+      A response whose choices value is not a list, whose first choice is not an object, or whose first choice
+      has no message produces a step with no messageCompletion. LiteLLM indexes choices[0] and its message
+      without a check, so such a payload raises inside _prepare_log_data and the whole event is dropped.
+    why: >-
+      The declared response type leaves the inner object untyped, and the missing completion is the same fact
+      the absent choices case already covers; dropping the event would lose a step LiteLLM can deliver.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/literal_ai.py#L176-L178
+  - what: >-
+      The sync queue keeps at most 50,000 steps and drops the oldest beyond that, with a warning. LiteLLM's
+      _send_batch never clears the queue, so a deployment that only calls the sync callbacks grows it without
+      a bound until the process runs out of memory.
+    why: >-
+      The cap is CustomBatchLogger's own DEFAULT_MAX_QUEUE_SIZE, applied to the sync path that never drains;
+      an unbounded in-memory queue is a leak, and the oldest events are the ones already repeated by the last
+      send.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L24
