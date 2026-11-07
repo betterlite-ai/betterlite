@@ -1,0 +1,135 @@
+id: B5951
+title: SAP orchestration request models
+description: >-
+  Add `sap_models` to betterlite-provider. It is the typed port of litellm/llms/sap/chat/models.py: the validators and
+  serializers for SAP Generative AI Hub Orchestration v2 requests. Chat and embeddings (both B5845) build
+  untyped JSON and then run it through these models to get the wire body, so this module exposes one
+  entry point per root, `validate_orchestration_request(&Json) -> Result<Json, SapModelError>`, plus the smaller
+  `validate_sap_message`, `validate_chat_completion_tool`, `validate_response_format` and `validate_masking_module(&Json)`
+  functions that return the dumped JSON of one model. They mirror `validate_dict(data, Model)`, which is
+  `Model(**data).model_dump(by_alias=True, exclude_unset=True)`.
+
+  Port every class in the file: content and message models (TextContent, ImageURLContent, ImageContent, FunctionObj,
+  FunctionTool, ChatCompletionTool, MessageToolCall, SAPMessage, SAPUserMessage, SAPAssistantMessage, SAPToolChatMessage),
+  response formats (ResponseFormat, JSONResponseSchema, ResponseFormatJSONSchema), grounding (KeyValueListPair,
+  DocumentMetadataKeyValueListPairs, GroundingSearchConfig, DocumentGroundingFilter, DocumentGroundingPlaceholders,
+  DocumentGroundingConfig, GroundingModuleConfig), the prompt template (Template, LLMModelDetails,
+  PromptTemplatingModuleConfig), masking (SAPMaskingProfileEntity with all its values, DPIMethodConstant,
+  DPIMethodFabricatedData, DPICustomEntity, DPIStandardEntity, MaskGroundingInput, MaskingProviderConfig,
+  MaskingModuleConfig), filtering (AzureThreshold, AzureContentFilter, AzureContentSafetyInput and Output,
+  LlamaGuard38bFilter with its 14 flags, the filter configs, FilteringStreamOptions, InputFiltering, OutputFiltering,
+  FilteringModuleConfig), translation (selector, input and output configs, SAPDocumentTranslationInput and Output,
+  TranslationModuleConfig) and the roots (ModuleConfig, GlobalStreamOptions, OrchestrationConfig, OrchestrationRequest).
+  Use serde structs with the same field names and the same required, optional and default rules. `type_` fields
+  are written and read as `type`. `schema_` is `schema` and `id_` is `id`.
+
+  Serialization follows `exclude_unset=True`: a field appears in the output only when the input object had the key,
+  and defaults are not filled in. Keep "absent" and "explicit null" apart for optional fields (a small three-state
+  field type, or `Option<Option<T>>`), because Python writes an explicit `null` back out. Output field order is the
+  model's declared order. Unknown input keys are ignored, as pydantic does by default. The one exception is
+  `ChatCompletionTool` and `FunctionTool`: their `model_dump` forces `exclude_unset=False` when they are the dumped
+  root, so `validate_chat_completion_tool` always writes `type`, `function.description` (default ""),
+  `function.name`, `function.parameters` and `function.strict` (default false). Chat feeds those full dumps back into
+  `validate_orchestration_request`, where every key is then present and so is written again.
+
+  Validators to keep exactly: `FunctionTool.parameters` is normalized before validation. An empty or null value becomes
+  `{"type":"object","properties":{}}`, a missing `type` is added as `"object"` in front, and a missing `properties` is added
+  as `{}`. `SAPMessage`, `SAPAssistantMessage` and `SAPToolChatMessage` content passes through `validate_different_content`:
+  an empty list, tuple or map becomes the empty string; a map with a `text` key becomes that value; a list joins its
+  non-empty `text` map entries and plain string entries with a newline; a string stays; anything else, null included,
+  is the error "Content must be a string". `SAPUserMessage.content` is a string, one text or image part, or a list of
+  parts. `SAPMessage.role` is `system` or `developer`. `GroundingSearchConfig` rejects both counts together with the text
+  "Cannot specify both maxChunkCount and maxDocumentCount." `MaskingModuleConfig` needs exactly one of `providers` or
+  `masking_providers` (each with at least one entry), with the two LiteLLM error texts, and using `masking_providers` logs one
+  deprecation warning with LiteLLM's text. `FilteringModuleConfig` and `TranslationModuleConfig` need `input` or `output`
+  and keep their error texts. `GlobalStreamOptions.chunk_size` is at least 1, `FilteringStreamOptions.overlap` is 0 to 10000, and an unset overlap is not written. `AzureThreshold` accepts 0, 2, 4 and 6.
+  `OrchestrationConfig.modules` is one ModuleConfig or a list of them. `OrchestrationRequest.placeholder_values` maps
+  strings to strings. Unions (message kinds, part kinds, filter configs, `DPIStandardEntity | DPICustomEntity`) pick the
+  variant that validates, trying them in the declared order.
+
+  A failed validation is a `SapModelError` that carries the field path and message. Declared-type inputs only: do not
+  reproduce pydantic's coercion of strings to numbers, per docs/compatibility.md. The file has about 485 nonblank lines
+  counting its docstrings; the executable part is smaller. Helper cases dump real models and compare with the pinned file.
+scope:
+  paths:
+    - crates/betterlite-provider/src/sap_models.rs
+    - crates/betterlite-provider/src/sap_models/**
+    - tools/oracle/cases/helpers/sap-models/**
+    - "tools/oracle/fuzz/corpus/helper_case/sap_models-*"
+    - tools/oracle/helpers/b5951.py
+    - tools/oracle/helpers/b5951/**
+    - tools/oracle/src/helpers/provider/b5951.rs
+    - tools/oracle/src/helpers/provider/b5951/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/models.py#L8-L135
+    why: Content validator, message, tool and response format models with their aliases.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/models.py#L137-L199
+    why: Grounding models, the template and the model details.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/models.py#L201-L394
+    why: Masking entity values, replacement strategies and the exactly-one-provider-list rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/models.py#L396-L604
+    why: Azure thresholds, Llama Guard flags and the filtering module rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/models.py#L606-L714
+    why: Translation selectors and configs, then the module, stream and request roots.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/transformation.py#L55-L57
+    why: validate_dict, the dump that every other task relies on.
+dod:
+  - text: Messages, tools and response formats validate and dump with the same keys, aliases and defaults as LiteLLM, and the content validator accepts the same shapes.
+    proof: [sap-models-tests, sap-models-python, oracle]
+  - text: Only keys present in the input are written, except the full dump of tools, and explicit nulls on optional fields are written back.
+    proof: [sap-models-tests, oracle]
+  - text: Masking, filtering, grounding and translation modules enforce LiteLLM's range and exactly-one rules with its error texts.
+    proof: [sap-models-tests, oracle]
+  - text: The orchestration request root takes a single module or a list and keeps placeholder values and stream options.
+    proof: [sap-models-tests, oracle]
+  - text: New model seeds replay through the helper case parser.
+    proof: [sap-models-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: sap-models-tests
+      why: a validator, alias, default or unset-key rule is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-provider --no-tests=fail
+        -E 'test(/^sap_models::/)'
+    - id: sap-models-python
+      why: the strict oracle adapter fails lint or type checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5951)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b5951 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5951/pyrightconfig.json
+    - id: sap-models-seeds
+      why: new helper seeds are missing or do not select this helper operation
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/sap_models-*")" &&
+        grep -lE '^[[:space:]]+b5951:' tools/oracle/fuzz/corpus/helper_case/sap_models-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/sap-models/messages-and-content.yaml
+  - tools/oracle/cases/helpers/sap-models/tool-parameters-normalized.yaml
+  - tools/oracle/cases/helpers/sap-models/unset-keys-and-null.yaml
+  - tools/oracle/cases/helpers/sap-models/response-format-json-schema.yaml
+  - tools/oracle/cases/helpers/sap-models/masking-exactly-one-list.yaml
+  - tools/oracle/cases/helpers/sap-models/filtering-and-translation.yaml
+  - tools/oracle/cases/helpers/sap-models/request-root-module-list.yaml
+deviations:
+  - what: A failed validation is a typed `SapModelError` with a field path and message, not a pydantic ValidationError with its repr text.
+    why: Pydantic's error text is a Python library detail. The status a caller sees for it is an open question in the planning notes.
+  - what: Strings are not coerced into numbers or booleans.
+    why: docs/compatibility.md leaves pydantic's lax coercion of undeclared input types out.
+out_of_scope:
+  - Building the untyped request body, popping optional parameters and the call to these validators; B5845 owns transformation.py.
+  - The embedding request models (EmbeddingRequest and its parts) live in embed/transformation.py; B5845 owns them and calls `validate_masking_module` from here.
+  - Python `warnings.warn` stack levels and the DeprecationWarning class. Log one warning line with the same text.
+pitfalls:
+  - A null `content` on an assistant message is an error, not an empty string, because the before-validator runs on every provided value and only empty containers map to "".
+  - '`SAPUserMessage` keeps list content as parts, while the system, assistant and tool messages flatten it to one string.'
+  - '`FunctionTool.ensure_object_type` mutates the caller''s map when `properties` is missing. Rust works on a copy, so the visible result is the same.'
+  - '`GroundingSearchConfig` error text names `maxChunkCount` and `maxDocumentCount` although the fields are snake_case, and the wire names are snake_case.'
+  - Both `AzureContentSafetyInputFilterConfig` and `AzureContentSafetyOutputFilterConfig` use the type `azure_content_safety`, so the variant is chosen by the enclosing InputFiltering or OutputFiltering.
+  - '`ImageURLContent.detail` defaults to `auto` only inside a validated object. Unset it is not written.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

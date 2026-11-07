@@ -1,0 +1,253 @@
+id: B3036
+title: Windowed request admission and concurrency checks
+description: >-
+  Build should_rate_limit, the check that decides whether a list of rate-limit descriptors lets a request
+  in. It reads the RPM and TPM window counters, bumps them, and then asks the concurrency gauges (B3035)
+  about max_parallel_requests. One Rust module, windowed_admission, in betterlite-rate-limit. It imports the
+  records and seams of B3031, the window store of B3032, the refunds of B3034 and the gauges of B3035,
+  and it adds no Lua script of its own.
+
+  Five pieces, each the port of one Python method.
+
+  One, WindowedAdmission, the struct that owns the calls. Its constructor takes everything it needs and
+  nothing is global: window_size (i64, from the rate_limiter_settings section of B3031, default 60), the
+  LimiterClock of B3031, the FailClosedPolicy of B3031, the window store of B3032 (cache reads and writes,
+  the Redis batch script, the hash-tag grouping and the in-memory sliding window), the settlement of B3034
+  (the two refund functions), the gauge check of B3035 and a SlotIdGenerator. SlotIdGenerator is a trait
+  with one method that returns a fresh 32-character lowercase hex string (a UUID v4 without dashes); the
+  production implementation uses the uuid crate already in the workspace. Tests inject a fixed generator.
+  The module owns an error enum WindowedAdmissionError. It has a variant that carries B3031's
+  RateLimitUnverifiableError, and one variant per owner error type it can see (the window store, the
+  gauges, a failed decode of a script reply), each with #[from].
+
+  Two, collect_windowed_keys_and_gauges(descriptors, skip_tpm_check), the port of
+  _collect_windowed_keys_and_gauges. It walks the descriptors in order and returns three things: the list
+  keys_to_fetch, a map key_metadata from window key to B3031's WindowKeyMetadata, and the list of
+  ParallelRequestGauge. For each descriptor: requests_limit is rate_limit.requests_per_unit; tokens_limit is
+  rate_limit.tokens_per_unit, or none when skip_tpm_check is true; max_parallel_requests is read the same
+  way; window_size is rate_limit.window_size when it is set and not 0, otherwise the handler's window_size.
+  The window key is the text "{" + key + ":" + value + "}:window", built inline. When max_parallel_requests
+  is set, push a ParallelRequestGauge whose counter_key is create_rate_limit_keys(key, value,
+  max_parallel_requests), whose limit is that number and whose descriptor_key is the descriptor key. This
+  happens even when the descriptor has no windowed limit. Then, if requests_limit is set, append the window
+  key and the "requests" counter key to keys_to_fetch; if tokens_limit is set, append the window key and
+  the "tokens" counter key. The window key is therefore listed once per limit type, so a descriptor with
+  both limits adds four keys. If neither limit was added, the descriptor adds no metadata. Otherwise the map
+  gets an entry for the window key with requests_limit, tokens_limit, window_size, descriptor_key and
+  descriptor_value. The map is keyed by window key, so two descriptors with the same key and value share
+  one entry and the later one wins, while keys_to_fetch keeps both lists of keys.
+
+  Three, is_cache_list_over_limit(keys_to_fetch, cache_values, key_metadata, read_only), the port of
+  is_cache_list_over_limit. cache_values is a list of optional CacheCounterValue (B3031). Walk it two at a
+  time: window_key is keys_to_fetch[i], counter_key is keys_to_fetch[i + 1], counter_value is
+  cache_values[i + 1]. A counter key ending in ":requests" uses the entry's requests_limit and the type
+  "requests"; one ending in ":tokens" uses tokens_limit and "tokens"; anything else, or a limit that is
+  none, is skipped with no status. pending_increment is 1 when read_only is true and 0 otherwise. A counter
+  is over when it is present and int(counter) + pending_increment is greater than the limit. int() of a
+  CacheCounterValue truncates a float toward zero and parses text or bytes as a base-10 integer; text that
+  is not an integer is a typed error (Python raises ValueError). limit_remaining is limit - int(counter),
+  not clamped, so it can be negative, and it is the limit itself when the counter is absent. Each status
+  carries code "OK" or "OVER_LIMIT", current_limit, limit_remaining, rate_limit_type, descriptor_key and
+  descriptor_value from the metadata. overall_code is "OVER_LIMIT" if any status is. The response has no
+  reservation_windows.
+
+  Four, execute_redis_batch_rate_limiter_script(keys_to_fetch, now_int), the port of
+  _execute_redis_batch_rate_limiter_script. With no batch rate limiter script it returns an empty list. It
+  asks the window store to group the keys by hash tag; the groups must come back as an ordered list of
+  (tag, keys) pairs in first-seen order (Python uses a dict), and the result values must follow that order.
+  The script args are (now_int, window_size) with the handler's window_size. It calls the store's
+  pipeline_scripts once for all groups before the loop, so every group that has an open Redis batch is
+  already declared. Then for each group in order: if the group has no batch handle, run the script directly
+  with that group's keys and args; otherwise await the handle and turn its reply into values with
+  counter_values_from_reply of B3031. Append the values. When a group fails for any reason: if
+  FailClosedPolicy is enabled, first refund the groups before it (B3034's counter_refunds_from_batch_values
+  over the keys of those groups and the values collected so far, then refund_counter_increments), then run
+  refund_later_pipelined_groups for the groups after it. Next call policy.reject_if_unverifiable with the
+  operation name "batch_rate_limiter_script" and return its error through `?`. When fail-closed is off, log
+  at WARNING through B393's log_redis_failure with the message "Redis Lua script failed for hash tag
+  <tag>", run the store's in_memory_cache_sliding_window for just that group's keys with now_int and the
+  handler's window_size, and append those values. The failed group itself is never refunded, and with
+  fail-closed off the earlier groups keep their increments.
+
+  Five, refund_later_pipelined_groups(groups, handles), the port of _refund_later_pipelined_groups. For
+  each group that has a batch handle, await it and decode the values; if awaiting or decoding fails, skip
+  the group (it incremented nothing). Otherwise call refund_counter_increments on
+  counter_refunds_from_batch_values(group keys, values). Groups without a handle are skipped.
+
+  Six, should_rate_limit(request), the entry point. The request is a record with descriptors, an optional
+  parent span (the type B4293 and B4294 use for DualCache calls), read_only (default false), skip_tpm_check
+  (default false) and parallel_slot_id (optional). The return is a RateLimitResponse of B3031. Steps, in
+  this order:
+
+  1. now = clock.current_time() as seconds since the epoch; now_int is now cut toward zero.
+  2. Collect keys, metadata and gauges.
+  3. If keys_to_fetch is not empty: read the keys from the local cache only (the store's batch read with
+     local_only true). If that read returned values, run is_cache_list_over_limit on them with the
+     request's read_only. When it says OVER_LIMIT, return that response at once. The gauges are not checked
+     and Redis is not touched.
+  4. Still inside the keys branch, get the real values. read_only: use the store's
+     read_counter_values_without_incrementing; if it returns none, build a list where each key that ends in
+     ":window" is the text of now_int and every other key is the integer 0. Not read_only and a batch rate
+     limiter script exists: run execute_redis_batch_rate_limiter_script, then walk the returned values two
+     at a time and write each pair to the local cache only, counter key first and then window key, both with
+     ttl equal to the handler's window_size (not the descriptor's own window size). Not read_only and no
+     script: use the store's in_memory_cache_sliding_window with the handler's window_size.
+  5. Run is_cache_list_over_limit on these values with read_only. When it says OVER_LIMIT, return it.
+  6. If there are no gauges, return the windowed response (an empty OK response when there were no keys
+     either).
+  7. Otherwise call B3035's check_parallel_request_gauges with the gauges, the slot id (parallel_slot_id,
+     or a generated one when it is none or an empty string), the span and read_only. Return a new response
+     whose overall_code is the gauge response's code and whose statuses are the windowed statuses followed
+     by the gauge statuses. reservation_windows is not carried over.
+
+  The gauge phase must stay after the windowed phase. A windowed rejection returns before any slot is
+  taken, so an RPM or TPM rejection never leaves a slot behind. This task does not add new HTTP routes. B3055
+  wires the limiter into the proxy and adds the HTTP cases then.
+
+scope:
+  paths:
+    - crates/betterlite-rate-limit/src/windowed_admission.rs
+    - crates/betterlite-rate-limit/src/windowed_admission/**
+    - tools/oracle/cases/helpers/windowed-admission/**
+    - "tools/oracle/fuzz/corpus/helper_case/windowed_admission-*"
+    - tools/oracle/helpers/b3036.py
+    - tools/oracle/helpers/b3036/**
+    - tools/oracle/src/helpers/rate_limit/b3036.rs
+    - tools/oracle/src/helpers/rate_limit/b3036/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1528-L1655
+    why: should_rate_limit, the whole admission flow with its early returns, the read-only branch, the local mirror write-back and the gauge phase last.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1657-L1714
+    why: _collect_windowed_keys_and_gauges, which splits descriptors into window and counter keys, per-window metadata and gauges.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1266-L1319
+    why: is_cache_list_over_limit, the status list and the read-only pending increment. No other task owns it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1456-L1510
+    why: _execute_redis_batch_rate_limiter_script, per-hash-tag groups, fail-closed refunds and the in-memory fallback per group.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1512-L1526
+    why: _refund_later_pipelined_groups, which refunds groups that shared the failed round trip.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1348-L1361
+    why: _pipeline_scripts, the B3032 function this task calls, which returns one batch handle or none per group.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1444-L1454
+    why: _reject_if_rate_limit_unverifiable, the B3031 policy call this task makes with "batch_rate_limiter_script".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3940-L3955
+    why: request_capacity calls should_rate_limit with skip_tpm_check true and the slot id it will release.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L4041-L4046
+    why: The pre-call hook passes skip_tpm_check from tpm_reservation_enabled and the slot id it releases later.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/dynamic_rate_limiter_v3.py#L560-L564
+    why: The dynamic limiter calls should_rate_limit with read_only false and ignores the OVER_LIMIT answer.
+
+dod:
+  - text: Each descriptor with requests_per_unit adds its window key and ":requests" counter key, each with tokens_per_unit adds its window key and ":tokens" counter key, and the window key text is "{key:value}:window".
+    proof: [collect-tests, windowed-admission-oracle, helper-python, helper-case-corpus]
+  - text: skip_tpm_check drops tokens_per_unit, so no ":tokens" key and no tokens_limit reach the keys or the metadata.
+    proof: [collect-tests, windowed-admission-oracle, helper-python, helper-case-corpus]
+  - text: A descriptor with max_parallel_requests becomes a gauge on the "max_parallel_requests" counter key even when it has no windowed limit, and a descriptor with no limits adds nothing.
+    proof: [collect-tests, windowed-admission-oracle, helper-python, helper-case-corpus]
+  - text: The window size in the metadata is the descriptor's window_size, and the handler's window_size when it is absent or 0.
+    proof: [collect-tests, windowed-admission-oracle, helper-python, helper-case-corpus]
+  - text: A counter over its limit gives an OVER_LIMIT status and an OVER_LIMIT overall code, an absent counter gives OK with limit_remaining equal to the limit, and limit_remaining goes negative for an over-limit counter.
+    proof: [over-limit-tests, windowed-admission-oracle, helper-python, helper-case-corpus]
+  - text: With read_only the check counts one pending request, so a counter equal to its limit is OVER_LIMIT, and without read_only that counter is OK.
+    proof: [over-limit-tests, windowed-admission-oracle, helper-python, helper-case-corpus]
+  - text: Counter text that is not an integer is a typed error, and a float counter is cut toward zero.
+    proof: [over-limit-tests]
+  - text: Statuses carry the descriptor key and value, a key that ends in neither ":requests" nor ":tokens" gives no status, and the response has no reservation_windows.
+    proof: [over-limit-tests, windowed-admission-oracle, helper-python, helper-case-corpus]
+  - text: The batch script runs once per hash-tag group in order with the args now_int and window_size, and the returned values keep the group order.
+    proof: [batch-script-tests]
+  - text: A group that fails with fail-closed off logs the WARNING and gets in-memory sliding-window values for its own keys, and earlier groups keep their increments.
+    proof: [batch-script-tests]
+  - text: A group that fails with fail-closed on refunds the earlier groups and the later pipelined groups, then returns RateLimitUnverifiableError for "batch_rate_limiter_script", and the failed group is not refunded.
+    proof: [batch-script-tests]
+  - text: The refund of later groups skips groups with no batch handle and groups whose reply fails to await or decode, and refunds the others.
+    proof: [batch-script-tests]
+  - text: should_rate_limit returns the local-mirror OVER_LIMIT response before it touches Redis or the gauges.
+    proof: [admission-tests]
+  - text: Read-only mode reads without incrementing and, when the read returns nothing, builds zero counters with the window key text equal to now_int.
+    proof: [admission-tests]
+  - text: Normal mode with a batch script writes each returned counter and window to the local cache with the handler's window_size as the ttl, counter first, and without a script uses the in-memory sliding window.
+    proof: [admission-tests]
+  - text: The gauge phase runs only after the windowed phase passes, uses parallel_slot_id or a generated id (an empty id also generates), and returns windowed statuses followed by gauge statuses with the gauge overall code.
+    proof: [admission-tests]
+  - text: A request with no keys and no gauges gets an OK response with no statuses.
+    proof: [admission-tests]
+  - text: Newly added helper cases for key collection and the over-limit decision replay through the shared helper-case parser.
+    proof: [helper-case-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: collect-tests
+      why: the key, metadata and gauge collection tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^windowed_admission::collect(::|$)/)'
+    - id: over-limit-tests
+      why: the over-limit status tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^windowed_admission::over_limit(::|$)/)'
+    - id: batch-script-tests
+      why: the grouped batch script, fail-closed refund or per-group fallback tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^windowed_admission::batch_script(::|$)/)'
+    - id: admission-tests
+      why: the should_rate_limit flow tests (early return, read-only, write-back, gauge phase) are missing or fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^windowed_admission::admission(::|$)/)'
+    - id: windowed-admission-oracle
+      why: the oracle cases for key collection and the over-limit decision are missing or differ from LiteLLM
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/windowed-admission)" &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/windowed-admission
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3036)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3036 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3036/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added windowed admission cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/windowed_admission-*")" &&
+        grep -lE '^[[:space:]]+b3036:' tools/oracle/fuzz/corpus/helper_case/windowed_admission-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/windowed-admission/collect-requests-and-tokens.yaml
+  - tools/oracle/cases/helpers/windowed-admission/collect-skip-tpm-check.yaml
+  - tools/oracle/cases/helpers/windowed-admission/collect-gauge-only-descriptor.yaml
+  - tools/oracle/cases/helpers/windowed-admission/collect-window-size-fallback.yaml
+  - tools/oracle/cases/helpers/windowed-admission/over-limit-statuses.yaml
+  - tools/oracle/cases/helpers/windowed-admission/over-limit-read-only-pending.yaml
+
+deviations:
+  - what: Counter text that is not an integer makes is_cache_list_over_limit return a typed error.
+    why: Python raises ValueError out of int(). The cache only ever stores integers written by the limiter, so no working setup reaches it.
+  - what: The Redis group handles, the script runner and the cache reads are traits from B3032, so a test can run the whole flow without Redis.
+    why: LiteLLM builds these on the handler and patches them in tests. The constructor wiring is the same behavior in Rust.
+
+out_of_scope:
+  - "The batch rate limiter script text, the counter read script, group_keys_by_hash_tag, keyslot_for_redis_cluster, in_memory_cache_sliding_window, pipeline_scripts, batch_get_counter_values and read_counter_values_without_incrementing: B3032. This task calls them."
+  - "_refund_counter_increments and _counter_refunds_from_batch_values: B3034. This task calls them."
+  - "_check_parallel_request_gauges, _gauge_status and _gauge_in_flight_from_cache_value: B3035. This task calls the first one."
+  - "create_rate_limit_keys, RateLimitedModel and the records: B3031. WindowKeyMetadata, ParallelRequestGauge, RateLimitResponse and RateLimitStatus are defined there."
+  - "atomic_check_and_increment_by_n and its builders: B3033 and B3034. They are the other admission path (reserve_tpm_tokens and project quotas) and do not run through should_rate_limit."
+  - "The callers of should_rate_limit (request_capacity, async_pre_call_hook, _build_request_rate_limit_descriptors) and the dynamic limiter's call: B3046, B3055 and B3053. This task does not read descriptors from a request."
+  - "The handler constructor that creates the scripts and the batch rate limiter script object: B3055."
+
+pitfalls:
+  - should_rate_limit returns the local-mirror OVER_LIMIT response before Redis is read, so a request already over its limit locally never increments the Redis counters.
+  - The pending increment of 1 applies only when read_only is true, because only the read-only check has not incremented yet; the normal check compares the counter after the script bumped it.
+  - The local-cache write-back and the script args use the handler's window_size, never the descriptor's own window_size, which only reaches the metadata.
+  - The write-back writes the counter key before the window key, so a reader never sees a fresh window next to an old counter.
+  - The window key is built as "{key:value}:window" inline and is not made by create_rate_limit_keys, which builds the counter keys only.
+  - key_metadata is keyed by window key, so two descriptors with one key and value collapse into a single entry while keys_to_fetch lists the keys twice.
+  - A window_size of 0 on a descriptor counts as absent, because LiteLLM uses `or` and not a None test.
+  - A parallel_slot_id of "" is replaced by a generated id, for the same reason.
+  - The gauge phase runs only after the windowed phase passes, otherwise an RPM rejection would leave a slot in a gauge with nobody to release it.
+  - The fail-closed refunds run before the 503 is returned, and only when fail-closed is on; the unverifiable error is the last step, so refunds cannot be skipped by it.
+  - A group handle that failed in Redis incremented nothing, so refund_later_pipelined_groups skips it instead of failing the refund.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

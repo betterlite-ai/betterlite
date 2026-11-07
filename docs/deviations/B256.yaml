@@ -1,0 +1,14 @@
+task: B256
+deviations:
+  - what: A flush that returns undelivered events requeues them before the events that arrived during the flush and keeps the queue capped, where CustomBatchLogger.flush_queue clears the whole queue after async_send_batch returns normally.
+    why: Datadog and Azure Sentinel override flush_queue and requeue the events their 413 splitter reports undelivered, so a working setup relies on retention rather than the base class clear. Betterlite exposes the undelivered set from the injected transport and keeps it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L84-L89
+  - what: BatchQueue::enqueue enforces max_queue_size at admission, dropping the oldest event with a warning and reporting the dropped count, where CustomBatchLogger only trims the queue after a failed flush.
+    why: A producer whose flush is slow or hung would otherwise grow memory without bound from incoming events; the documented max_queue_size is a retention cap, and a working setup cannot rely on exceeding it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L74-L84
+  - what: LiteLLM's flush_queue returns without flushing when the injected flush_lock is None; BatchQueue always owns its flush mutex, so every flush is serialized, and a caller that cannot flush simply never calls flush.
+    why: The lock is internal state of the injected primitive here, so there is nothing for a caller to omit; keeping it nullable would let two flushes overlap and hide the skip, while the caller's own loop decides whether a flush happens at all.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L54-L58
+  - what: A flush that delivers every event keeps the events that were enqueued while the send was in flight, where CustomBatchLogger.flush_queue runs log_queue.clear() after a normal send unless preserve_events_added_during_flush is set.
+    why: Events enqueued during the send would be lost, and no working setup can rely on that; LiteLLM's own langsmith, s3_v2 and zerobus loggers already opt in to keeping them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L86-L89

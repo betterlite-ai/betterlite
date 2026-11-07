@@ -1,0 +1,126 @@
+id: B5952
+title: SAP orchestration stream events and error type
+description: >-
+  Add `sap_stream` to betterlite-provider. It ports litellm/llms/sap/chat/handler.py: the orchestration error type,
+  the event to chunk mapping, the two line iterators and the stream flag the handler writes into the request body.
+  Build chunks with B004's chat record construction and B005's stream contracts and cancellation, and read
+  the existing chunk record in betterlite-openai before adding any type.
+
+  `SapOrchestrationError { status_code: u16, message: String }` is `GenAIHubOrchestrationError`. B5845 uses it for
+  its 400 and for embeddings.
+
+  `event_to_chunk(event: &Json, now: i64) -> Result<Option<Chunk>, SapStreamError>` is `_StreamParser.to_openai_chunk`.
+  Order of checks: an object with a top-level `code` or `error` key is an in-stream error and fails with the event
+  re-serialized as the message. Then `final_result` (a null or empty value counts as an empty object): add
+  `object: "chat.completion.chunk"` when `object` is missing and parse it as a chunk; it is an ordinary chunk, not a
+  terminal marker. Then `orchestration_result`: an empty or null value gives no chunk; otherwise build a chunk with
+  `id` = result id, else the event `request_id`, else `stream-chunk`; `object` default `chat.completion.chunk`;
+  `created` = result `created`, else event `created`, else `now`; `model` default `unknown`; each choice keeps `index`
+  (default 0), `delta` (default empty) and `finish_reason`, and nothing else. A top-level event with both `choices`
+  and `object` is parsed as a chunk. Anything else, such as a heartbeat or metrics event, gives no chunk.
+
+  `SapLineStream` holds the `done` flag and takes one decoded line at a time through `next_chunk(line, mode)`, where
+  `mode` is Sync or Async. Per line: trim whitespace, skip an empty line, remove the prefix `data: ` (one trailing space
+  is part of the prefix) and compare with `[DONE]`. `[DONE]` closes the stream and ends it. Text that is not valid JSON is
+  skipped without an error. Then `event_to_chunk`. An error event or a chunk that fails to parse closes the stream and
+  surfaces as: Sync, the original error (a plain parse failure type); Async, `SapOrchestrationError` with status 502 and
+  the error text. A returned chunk with any choice whose `finish_reason` is not null closes the stream after it is
+  returned, and the next call ends the stream. The end of the lines closes the stream and ends it. In Async mode a
+  read error or an I/O error from the line source closes the stream and ends it without an error; Sync lets such errors through.
+
+  `add_stream_flag(body: &mut Json)` is `_add_stream_param_to_request_body`: set `config.stream.enabled = true`,
+  creating `stream` as `{"enabled": true}` when it is absent or null, and keeping other stream keys such as
+  `chunk_size`. A body with no `config` object is an error.
+
+  The decoder takes untrusted text, so add a cargo-fuzz target `sap_stream_line` that runs arbitrary strings through
+  both modes and replay new seeds. Helper cases drive the real `SAPStreamIterator` and `AsyncSAPStreamIterator` with
+  fixture lines, fixing time with a patched `_now_ts`. About 190 nonblank, noncomment LiteLLM lines.
+scope:
+  paths:
+    - crates/betterlite-provider/src/sap_stream.rs
+    - crates/betterlite-provider/src/sap_stream/**
+    - crates/betterlite-provider/fuzz/Cargo.toml
+    - crates/betterlite-provider/fuzz/fuzz_targets/sap_stream_line.rs
+    - crates/betterlite-provider/fuzz/corpus/sap_stream_line/**
+    - tools/oracle/cases/helpers/sap-stream/**
+    - "tools/oracle/fuzz/corpus/helper_case/sap_stream-*"
+    - tools/oracle/helpers/b5952.py
+    - tools/oracle/helpers/b5952/**
+    - tools/oracle/src/helpers/provider/b5952.rs
+    - tools/oracle/src/helpers/provider/b5952/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/handler.py#L19-L107
+    why: Error type, terminal test and the event to chunk mapping with its defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/handler.py#L113-L176
+    why: Sync iterator line handling, DONE, skipped lines and closing on a finish reason.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/handler.py#L178-L243
+    why: Async iterator, which swallows read errors and wraps parse errors as a 502.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sap/chat/handler.py#L249-L255
+    why: The stream flag the handler writes into config.stream.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L1089-L1100
+    why: The base method this one replaces, and its two call sites at lines 732 and 801.
+dod:
+  - text: Orchestration, final result and OpenAI-shaped events map to chunks with LiteLLM's defaults, and error events fail.
+    proof: [sap-stream-tests, sap-stream-python, oracle]
+  - text: 'Lines handle blank, `data: ` prefix, DONE and invalid JSON the same way in both modes, and close after a finish reason.'
+    proof: [sap-stream-tests, oracle]
+  - text: Async mode wraps in-stream errors as status 502 and ends quietly on read errors, while Sync mode surfaces them.
+    proof: [sap-stream-tests, oracle]
+  - text: The stream flag is added to config.stream and keeps chunk_size and delimiters.
+    proof: [sap-stream-tests, oracle]
+  - text: New malformed line seeds replay through the fuzz target and the helper case parser.
+    proof: [sap-stream-corpus, sap-stream-seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: sap-stream-tests
+      why: event mapping, line handling, mode differences or the stream flag is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-provider --no-tests=fail
+        -E 'test(/^sap_stream::/) - test(replays_the_sap_stream_line_corpus)'
+    - id: sap-stream-python
+      why: the strict oracle adapter fails lint or type checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5952)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b5952 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5952/pyrightconfig.json
+    - id: sap-stream-corpus
+      why: the stream line fuzz target or its new replay seeds are missing
+      run: >-
+        test -f crates/betterlite-provider/fuzz/fuzz_targets/sap_stream_line.rs &&
+        grep -q 'name = "sap_stream_line"' crates/betterlite-provider/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-provider/fuzz/corpus/sap_stream_line)" &&
+        cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(replays_the_sap_stream_line_corpus)'
+    - id: sap-stream-seeds
+      why: new helper seeds are missing or do not select this helper operation
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/sap_stream-*")" &&
+        grep -lE '^[[:space:]]+b5952:' tools/oracle/fuzz/corpus/helper_case/sap_stream-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/sap-stream/orchestration-result-defaults.yaml
+  - tools/oracle/cases/helpers/sap-stream/final-result-and-passthrough.yaml
+  - tools/oracle/cases/helpers/sap-stream/error-event-sync-versus-async.yaml
+  - tools/oracle/cases/helpers/sap-stream/done-blank-and-bad-json.yaml
+  - tools/oracle/cases/helpers/sap-stream/finish-reason-closes.yaml
+  - tools/oracle/cases/helpers/sap-stream/stream-flag.yaml
+deviations:
+  - what: In Sync mode a chunk that fails to parse surfaces as a typed stream error, not a pydantic ValidationError.
+    why: The Python exception class is a library detail. The caller sees the same failure at the same point.
+out_of_scope:
+  - The chat config that picks these iterators (get_model_response_iterator), and the HTTP read loop that supplies lines; B5845 and B042 own them.
+  - The class `GenAIHubOrchestration(BaseLLMHTTPHandler)` apart from `_add_stream_param_to_request_body`. Its inherited completion path is B042's dispatch.
+  - OpenAI chunk model validation itself; B004 and B005 own the chunk record, and this task calls them.
+  - Streamed `usage` and cost accounting for the finished stream; the shared stream assembly tasks own those.
+pitfalls:
+  - 'The prefix removed is `data: ` with the trailing space. A line `data:{...}` keeps its prefix, fails JSON parsing and is skipped silently.'
+  - '`orchestration_result` events lose their `usage`, because the mapped chunk copies only id, object, created, model and the choice index, delta and finish_reason.'
+  - The finish-reason check closes the stream after any chunk with a non-null finish reason, so a usage-only chunk that comes later in the same response is never read. Keep this.
+  - Error detection tests the top-level keys `code` and `error` before `final_result`, so a final_result event that also carries `error` is an error.
+  - '`final_result` chunks are described as non-terminal in the source comment, but they close the stream when they carry a finish reason like any other chunk.'
+  - '`[DONE]` is compared after the prefix is removed, so a bare `[DONE]` line without `data: ` also ends the stream.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

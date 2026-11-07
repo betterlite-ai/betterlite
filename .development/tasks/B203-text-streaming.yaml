@@ -10,7 +10,7 @@ description: >-
   timing and client-disconnect tests that prove incremental delivery and upstream cancellation without buffering
   a whole completion.  Own the reverse direction too: /v1/completions on openai/gpt-4o or another installed chat
   provider builds chat messages and converts chat responses to text with convert_chat_to_text_completion; streaming
-  uses TextCompletionStreamWrapper semantics. Native providers added later reuse this same direction. Match completion-to-chat
+  calls B5366's TextCompletionStreamWrapper (B5366 owns it; this task does not rebuild it). Native providers added later reuse this same direction. Match completion-to-chat
   dispatch for ft:babbage-002, ft:davinci-002 and openai_text_completion_compatible_providers. B014 registers the TextStream
   entry as a stub, so replace the stub and its not-built test in crates/betterlite-core/src/operation/text_stream.rs
   and crates/betterlite-core/src/dispatch/text_stream.rs, put the two bridge selections in
@@ -64,8 +64,6 @@ references:
   why: _complete_text_completion_openai.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/convert_dict_to_response.py#L470-L516
   why: Chat response to text completion.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7325-L7402
-  why: Chat stream to text stream wrapper.
 dod:
 - text: Text streams, usage, multi-choice/logprob chunks and explicit chat/text bridge calls match listed HTTP cases.
   proof:

@@ -2,6 +2,7 @@ pub mod access_windows;
 pub mod adaptive_classification;
 pub mod admission_control;
 pub mod agent_host_settings;
+pub mod agent_search;
 pub mod aim_inspection;
 pub mod aiohttp_transport_toggle;
 pub mod akto_mirroring;
@@ -120,6 +121,7 @@ pub mod cometapi_embedding_credentials;
 pub mod compatible_embedding_settings;
 pub mod compatible_image_credentials;
 pub mod compatible_provider_settings;
+pub mod compatible_providers_m_z;
 pub mod complexity_adaptive_placement;
 pub mod complexity_config;
 pub mod complexity_placement;
@@ -161,6 +163,7 @@ pub mod deployment_catalog;
 pub mod deployment_clients;
 pub mod deployment_identity;
 pub mod drop_params;
+pub mod dynamic_rate_limit_health;
 pub mod dynamic_rate_limit_policy;
 pub mod dynamoai_moderation;
 pub mod embedding_host_settings;
@@ -187,6 +190,10 @@ pub mod generic_guardrail_api;
 pub mod grayswan;
 pub mod guardrail_identity;
 pub mod guardrail_judge;
+pub mod guardrail_message_skip;
+pub mod guardrail_modes;
+pub mod guardrail_params;
+pub mod guardrail_scan_cache;
 pub mod guardrail_translation;
 pub mod headroom_compression;
 pub mod headroom_hiddenlayer_support;
@@ -227,11 +234,13 @@ pub mod key_persistence;
 pub mod key_policy_fields;
 pub mod key_rotation;
 pub mod key_rotation_write;
+pub mod langfuse_settings;
 pub mod lar1_routing;
 pub mod lasso_classification;
 pub mod latency_observations;
 pub mod latency_routing;
 pub mod least_busy;
+pub mod legacy_guardrails;
 pub mod lemonade_model_metadata;
 pub mod llm_classifier;
 pub mod local_ttl_cache;
@@ -241,7 +250,10 @@ pub mod login_return;
 pub mod login_routes;
 pub mod login_throttle;
 pub mod management_rbac;
+pub mod mcp_access_requirements;
 pub mod mcp_bearer_credentials;
+pub mod mcp_client_side_auth;
+pub mod mcp_sso_assertion_cache;
 pub mod mcp_tool_helpers;
 pub mod mcp_toolset_storage;
 pub mod member_row_write;
@@ -286,8 +298,11 @@ pub mod pass_through_registry;
 pub mod passthrough_request_policies;
 pub mod password_login;
 pub mod password_policy;
+pub mod payload_exclusions;
 pub mod pre_routing_registry;
 pub mod prometheus_bounded_series;
+pub mod prometheus_budget_refresh;
+pub mod prometheus_exporter;
 pub mod prompt_affinity;
 pub mod prompt_cache_accounting;
 pub mod provider_resolution;
@@ -298,7 +313,9 @@ pub mod public_router_presets;
 pub mod quality_router;
 pub mod rag_records_and_chunking;
 pub mod rate_limit_usage;
+pub mod rate_limiter_settings;
 pub mod rds_credentials;
+pub mod redis_cache;
 pub mod redis_cache_primitives;
 pub mod redis_credentials;
 pub mod redis_failure_policy;
@@ -333,6 +350,7 @@ pub mod routing_timeouts;
 pub mod s3_response_cache;
 pub mod sandbox_dispatch;
 pub mod scheduled_job_stagger;
+pub mod semantic_embedding_inputs;
 pub mod semantic_router;
 pub mod sensitive_data_routing;
 pub mod service_callback;
@@ -462,7 +480,7 @@ macro_rules! sections {
 }
 
 sections! {
-    access_windows, adaptive_classification, admission_control, agent_host_settings,
+    access_windows, adaptive_classification, admission_control, agent_host_settings, agent_search,
     aim_inspection, aiohttp_transport_toggle, akto_mirroring, alert_settings,
     alice_conduct_decisions, anthropic_beta_config, anthropic_capability_catalog,
     anthropic_completion, anthropic_count_tokens, anthropic_credentials, anthropic_headers,
@@ -475,54 +493,54 @@ sections! {
     auth_route_policy, auth_user_lookup, available_models, azure_arc_identity, azure_blob_cache,
     azure_client_secret, azure_credentials, azure_default_chain, azure_endpoints,
     azure_image_transport, azure_managed_identity, azure_oidc_exchange, azure_responses,
-    azure_search, azure_transcription, azure_url_policy, batch_cost_finalize,
-    batch_create_route, batch_limit_descriptors, batch_managed_records, batch_provider_cancel,
-    batch_provider_create, batch_provider_list, batch_provider_read, batch_read_routes,
-    batch_route_support, bedrock_agentcore_request, bedrock_aws_endpoints, bedrock_aws_settings,
+    azure_search, azure_transcription, azure_url_policy, batch_cost_finalize, batch_create_route,
+    batch_limit_descriptors, batch_managed_records, batch_provider_cancel, batch_provider_create,
+    batch_provider_list, batch_provider_read, batch_read_routes, batch_route_support,
+    bedrock_agentcore_request, bedrock_aws_endpoints, bedrock_aws_settings,
     bedrock_converse_messages, bedrock_converse_options, bedrock_invoke_request,
     bedrock_legacy_models, bedrock_mantle_inputs, bedrock_model_capabilities, bedrock_nova_chat,
     bedrock_other_image_models, bedrock_other_titan_embeddings, bedrock_qwen_deepseek,
-    bedrock_services_batch_create, bedrock_services_batch_records,
-    bedrock_services_invoke_agent, bedrock_services_s3_access, bedrock_services_s3_signing,
-    bedrock_services_search, bedrock_services_vector_stores, bedrock_settings,
-    bedrock_web_identity, billing_metrics, budget_admission_handoff, budget_primitives,
-    budget_reset, budget_windows, cache_cost_routing, callback_settings, capability_classifier,
-    capability_forecast, catalog_source, catalog_updates, cato_lifecycle, cato_projections,
-    central_auth_checks, chatgpt_headers, chatgpt_token_store,
+    bedrock_services_batch_create, bedrock_services_batch_records, bedrock_services_invoke_agent,
+    bedrock_services_s3_access, bedrock_services_s3_signing, bedrock_services_search,
+    bedrock_services_vector_stores, bedrock_settings, bedrock_web_identity, billing_metrics,
+    budget_admission_handoff, budget_primitives, budget_reset, budget_windows, cache_cost_routing,
+    callback_settings, capability_classifier, capability_forecast, catalog_source, catalog_updates,
+    cato_lifecycle, cato_projections, central_auth_checks, chatgpt_headers, chatgpt_token_store,
     cisco_verdict_contracts, classifier_context, classifier_message_text, claude_gateway_oauth,
     claude_gateway_policy, claude_platform_inputs, claude_skill_write, clickhouse_spend_logging,
     cloud_storage, codestral_credentials, cohere_rerank_settings, cometapi_embedding_credentials,
-    compatible_embedding_settings, compatible_image_credentials, compatible_provider_settings,
+    compatible_embedding_settings, compatible_image_credentials, compatible_provider_settings, compatible_providers_m_z,
     complexity_adaptive_placement, complexity_config, complexity_placement,
     complexity_placement_gates, complexity_scoring, complexity_sessions, complexity_turn_overrides,
     component_contracts, compresr_writeback, compression_interception_state, content_category,
     content_filter_catalog, content_filter_inputs, content_filter_records, context_placement,
     cooldown_decisions, cooldown_state, copilot_device, cost_adjustments, cost_routing,
-    current_spend, custom_auth,
-    custom_dimensions, database_availability, database_diagnostics, database_failures,
-    database_reencryption, database_refresh_loop, database_startup, database_tls, database_tokens,
-    database_urls, deepinfra_settings, deepkeep_firewall, deepseek_identity, default_user_teams,
-    deployment_affinity, deployment_catalog, deployment_clients, deployment_identity, drop_params,
+    current_spend, custom_auth, custom_dimensions, database_availability, database_diagnostics,
+    database_failures, database_reencryption, database_refresh_loop, database_startup,
+    database_tls, database_tokens, database_urls, deepinfra_settings, deepkeep_firewall,
+    deepseek_identity, default_user_teams, deployment_affinity, deployment_catalog,
+    deployment_clients, deployment_identity, drop_params, dynamic_rate_limit_health,
     dynamic_rate_limit_policy, dynamoai_moderation, embedding_host_settings,
     embedding_provider_settings, end_user_identity, end_user_registry, enkryptai_detection,
     error_body_call_id, executed_batch_runner, fallback_budget, fallback_plans,
     file_upload_options, file_upload_routing, file_upload_validation, focus_export_schedule,
     foundry_credentials, foundry_image_edits, foundry_vector_stores, full_model_metadata,
     gdc_settings, gemini_cache_create, gemini_cache_prefix, generic_guardrail_api, grayswan,
-    guardrail_identity, guardrail_judge, guardrail_translation, headroom_compression,
-    headroom_hiddenlayer_support, health_probe_policy, hiddenlayer_evaluation,
-    host_identity_settings, hosted_chat_settings, huggingface_hub, huggingface_oidc,
-    ibm_guardrails, image_edit_call, image_generation_call, image_url_download, image_variations,
-    includes, io_token_reservations, jev_classifier, jina_infinity_rerank, jwt_auth, jwt_claims,
-    jwt_db_teams, jwt_key_resolution, jwt_keys, jwt_permissions, jwt_provisioning, jwt_role_claims,
-    jwt_settings, jwt_team_authorization, jwt_team_selection, jwt_verification, key_access,
-    key_context, key_create, key_event_sinks, key_limit_policy, key_management_settings,
-    key_persistence, key_policy_fields, key_rotation, key_rotation_write, lar1_routing,
-    lasso_classification, latency_observations, latency_routing, least_busy,
+    guardrail_identity, guardrail_judge, guardrail_message_skip, guardrail_modes, guardrail_params, guardrail_scan_cache, guardrail_translation,
+    headroom_compression, headroom_hiddenlayer_support, health_probe_policy,
+    hiddenlayer_evaluation, host_identity_settings, hosted_chat_settings, huggingface_hub,
+    huggingface_oidc, ibm_guardrails, image_edit_call, image_generation_call, image_url_download,
+    image_variations, includes, io_token_reservations, jev_classifier, jina_infinity_rerank,
+    jwt_auth, jwt_claims, jwt_db_teams, jwt_key_resolution, jwt_keys, jwt_permissions,
+    jwt_provisioning, jwt_role_claims, jwt_settings, jwt_team_authorization, jwt_team_selection,
+    jwt_verification, key_access, key_context, key_create, key_event_sinks, key_limit_policy,
+    key_management_settings, key_persistence, key_policy_fields, key_rotation, key_rotation_write,
+    langfuse_settings, lar1_routing, lasso_classification, latency_observations, latency_routing, least_busy, legacy_guardrails,
     lemonade_model_metadata, llm_classifier, local_ttl_cache, logging_privacy, login_form,
-    login_return, login_routes, login_throttle, management_rbac, mcp_bearer_credentials,
-    mcp_tool_helpers, mcp_toolset_storage, member_row_write, messages_advisor, messages_dispatch,
-    messages_mcp, messages_native_call, messages_native_stream, messages_response_call,
+    login_return, login_routes, login_throttle, management_rbac, mcp_access_requirements,
+    mcp_bearer_credentials, mcp_client_side_auth, mcp_sso_assertion_cache, mcp_tool_helpers,
+    mcp_toolset_storage, member_row_write, messages_advisor, messages_dispatch, messages_mcp,
+    messages_native_call, messages_native_stream, messages_response_call,
     messages_responses_output, messages_thinking, migration_drift, migration_ledger,
     migration_recovery, mistral_credentials, mistral_options, mistral_resources, mock_response,
     model_create, model_effective_fields, model_generalizations, model_info_v1, model_management,
@@ -530,18 +548,20 @@ sections! {
     native_messages_hosts_settings, oauth_tokens, ollama_model_metadata, openai_chat_content,
     openai_credentials, openai_like_settings, openai_mock_transport, openai_provider,
     openai_realtime, openai_workload_identity, otel_settings, panw_prisma_airs,
-    pass_through_registry, passthrough_request_policies, password_login, password_policy,
-    pre_routing_registry, prometheus_bounded_series, prompt_affinity, prompt_cache_accounting,
-    provider_resolution, provider_url_destination, proxy_custom_dispatch, proxy_provider_options,
-    public_router_presets, quality_router, rag_records_and_chunking, rate_limit_usage,
-    rds_credentials, redis_cache_primitives, redis_credentials, redis_failure_policy, request_body,
-    request_body_safety, request_form, request_headers, request_intake, request_metadata_safety,
-    request_model_overrides, request_records, request_root_paths, request_scheduler, request_setup,
-    request_setup_options, resource_sdk_settings, responses_id_security, responses_mcp_execute,
-    responses_parameters, responses_ws_auth, responses_ws_native, retry_policy, router_compaction,
-    router_core, router_weights, routing_budgets, routing_groups, routing_plugins, routing_state,
-    routing_state_store, routing_timeouts, s3_response_cache, sandbox_dispatch,
-    scheduled_job_stagger, semantic_router, sensitive_data_routing, service_callback,
+    pass_through_registry, passthrough_request_policies, password_login, password_policy, payload_exclusions,
+    pre_routing_registry, prometheus_bounded_series, prometheus_budget_refresh,
+    prometheus_exporter, prompt_affinity, prompt_cache_accounting, provider_resolution,
+    provider_url_destination, proxy_custom_dispatch, proxy_provider_options, public_router_presets,
+    quality_router, rag_records_and_chunking, rate_limit_usage, rate_limiter_settings,
+    rds_credentials, redis_cache, redis_cache_primitives, redis_credentials, redis_failure_policy,
+    request_body, request_body_safety, request_form, request_headers, request_intake,
+    request_metadata_safety, request_model_overrides, request_records, request_root_paths,
+    request_scheduler, request_setup, request_setup_options, resource_sdk_settings,
+    responses_id_security, responses_mcp_execute, responses_parameters, responses_ws_auth,
+    responses_ws_native, retry_policy, router_compaction, router_core, router_weights,
+    routing_budgets, routing_groups, routing_plugins, routing_state, routing_state_store,
+    routing_timeouts, s3_response_cache, sandbox_dispatch, scheduled_job_stagger,
+    semantic_embedding_inputs, semantic_router, sensitive_data_routing, service_callback,
     session_iteration_limits, session_token_codec, settings, speech_call, spend_reseed,
     static_eligibility, studio_identity, summary_model_access, tag_matchers, tag_routing,
     team_admin_fields, team_create, team_fields, team_limits, team_state, tier_artifact_predictor,

@@ -1,0 +1,193 @@
+id: B3038
+title: Model and organization rate-limit descriptors
+description: >-
+  Build the descriptor builders of the v3 limiter that depend on which model the caller asked for, plus the
+  organization descriptor. Each builder turns already-parsed key, team, organization and project limits into
+  RateLimitDescriptor records (B3031) that the later admission code counts against. Nothing here reads Redis,
+  counts anything or raises a rate-limit error. One Rust module, model_descriptors, in betterlite-rate-limit.
+
+  The module holds a struct ModelDescriptorBuilder. It is made with the limiter window size (the value of
+  rate_limiter_settings.window_size from B3031's config section, default 60) and a boxed ModelGroupResolver
+  (the B3031 trait). Every descriptor it builds carries that window size in rate_limit.window_size. All methods
+  are plain sync functions that take the caller as a UserAPIKeyAuth (betterlite-auth) and return or append
+  RateLimitDescriptor values. The builder never reads global state.
+
+  rated_model(requested) is the port of _rate_limited_model. A missing or empty requested name gives none.
+  Otherwise it returns a B3031 RateLimitedModel with requested set to the name and group set to the resolver's
+  answer, falling back to the requested name when the resolver answers none or an empty string.
+
+  organization_descriptors(auth, requested_model) is create_organization_rate_limit_descriptor and returns a
+  Vec in this order. First, when org_id is set and organization_rpm_limit or organization_tpm_limit is set, a
+  descriptor key "organization", value org_id, requests_per_unit the rpm limit, tokens_per_unit the tpm limit
+  (either may be none). Second, when rated_model gives a model, it reads the organization_metadata maps
+  model_rpm_limit and model_tpm_limit through B745's get_model_rate_limit_from_metadata and picks each limit
+  with RateLimitedModel.limit_in. When at least one is set it adds key "model_per_organization", value
+  "<org_id>:<group>", the two limits and the window size. The two descriptors are independent: the model one is
+  built even when no global organization limit exists.
+
+  key_model_descriptor(auth, requested_model, out) is _add_model_per_key_rate_limit_descriptor. It reads the
+  key's limits with B745's get_key_model_rpm_limit and get_key_model_tpm_limit, called with model_name set to
+  the group (so B745's deployment default for that group applies), and picks each with limit_in. When at least
+  one limit is set it appends key "model_per_key", value "<api_key>:<group>". Which source B745 uses (key
+  metadata, key model_max_budget, team metadata, deployment default) is B745's job, not repeated here.
+
+  team_model_descriptor(auth, requested_model, out) is _add_team_model_rate_limit_descriptor_from_metadata. For
+  rpm and for tpm separately it takes the team_metadata limit (get_model_rate_limit_from_metadata with
+  "team_metadata" and limit_in) and drops it when the key owns a limit for that model. A key owns a limit when
+  limit_in on B745's get_key_own_model_rate_limit (key metadata first, then model_max_budget) is not none, so an
+  own limit of 0 still counts as owned. When at least one limit survives it appends key "model_per_team",
+  value "<team_id>:<group>". Dropping one of the two does not drop the other: a key that owns only the tpm limit
+  still gets the team's rpm limit.
+
+  project_model_descriptor(auth, requested_model, out) is _add_project_model_rate_limit_descriptor_from_metadata.
+  It reads project_metadata model_rpm_limit and model_tpm_limit, picks with limit_in, and when one is set
+  appends key "model_per_project", value "<project_id>:<group>". It does not check project_id.
+
+  project_io_descriptors(auth, requested_model, out) is
+  add_project_io_token_rate_limit_descriptors_from_metadata. It returns without adding anything when there is no
+  model or project_id is none. Otherwise it reads project_metadata model_itpm_limit and model_otpm_limit,
+  picks with limit_in, and appends up to two descriptors that share the value "<project_id>:<group>": first
+  key PROJECT_ITPM_DESCRIPTOR_KEY ("model_per_project_itpm") when the input limit is set, then
+  PROJECT_OTPM_DESCRIPTOR_KEY ("model_per_project_otpm") when the output limit is set. Both have
+  requests_per_unit none and tokens_per_unit the limit. The python sink protocol becomes a plain &mut
+  Vec<RateLimitDescriptor>. B3042 calls this function.
+
+  key_owns_tpm_from_request_metadata(request_metadata, model) is
+  _key_owns_model_tpm_limit_from_request_metadata, used by the success callback (B3045) to decide whether the
+  team's model_per_team scope is charged. It returns false when model is none. Otherwise it builds a
+  UserAPIKeyAuth with UserAPIKeyAuth::construct from a dict holding only "metadata" (the request metadata's
+  user_api_key_metadata, or an empty map when missing, none or empty) and "model_max_budget" (the request
+  metadata's user_api_key_model_max_budget, same fallback), then returns whether the key owns a model_tpm_limit
+  for that model. A value that does not fit the UserAPIKeyAuth field types is a typed error from this module,
+  not a panic.
+
+  Descriptor ordering matters: B3040 appends these in the order LiteLLM's _create_rate_limit_descriptors does,
+  and the organization ones are added by the pre-call hook (B3055), so this module only guarantees the order
+  inside each method.
+
+  Direct dependencies: B2314 supplies UserAPIKeyAuth and its construct function; B745 supplies
+  get_model_rate_limit_from_metadata, get_key_own_model_rate_limit, get_key_model_rpm_limit and
+  get_key_model_tpm_limit; B3031 supplies RateLimitDescriptor, RateLimitDescriptorRateLimit, RateLimitedModel,
+  ModelGroupResolver and the two PROJECT_*_DESCRIPTOR_KEY constants.
+
+scope:
+  paths:
+    - crates/betterlite-rate-limit/src/model_descriptors.rs
+    - crates/betterlite-rate-limit/src/model_descriptors/**
+    - tools/oracle/cases/helpers/rate-limit-model-descriptors/**
+    - "tools/oracle/fuzz/corpus/helper_case/rate_limit_model_descriptors-*"
+    - tools/oracle/helpers/b3038.py
+    - tools/oracle/helpers/b3038/**
+    - tools/oracle/src/helpers/rate_limit/b3038.rs
+    - tools/oracle/src/helpers/rate_limit/b3038/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L105-L114
+    why: RateLimitedModel.limit_in tests "is not None", so a requested-name limit of 0 wins over the group limit (B3031 builds it, this task calls it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2741-L2747
+    why: _rate_limited_model, the group fallback to the requested name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2749-L2792
+    why: create_organization_rate_limit_descriptor, both the global "organization" and the "model_per_organization" descriptor.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L2794-L2835
+    why: _add_model_per_key_rate_limit_descriptor, limits read for the group name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3345-L3404
+    why: Key-owned limit test, inherited team limit rule, the request-metadata key view and the model_per_team descriptor.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3406-L3434
+    why: _add_project_model_rate_limit_descriptor_from_metadata, the model_per_project descriptor.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3436-L3486
+    why: add_project_io_token_rate_limit_descriptors_from_metadata, the ITPM then OTPM descriptors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L986-L1067
+    why: The B745 functions this task calls, for the precedence of key own, team metadata and deployment default limits.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/auth_utils.py#L1271-L1278
+    why: get_model_rate_limit_from_metadata returns the metadata map whole, or none when the metadata is empty.
+
+dod:
+  - text: rated_model returns none for a missing or empty name, uses the resolver's group when it answers, and falls back to the requested name when the resolver answers none or an empty string.
+    proof: [model-descriptor-tests, rate-limit-model-descriptors-oracle, helper-python, helper-case-corpus]
+  - text: The organization descriptor appears only when org_id and at least one of the organization rpm and tpm limits are set, with value org_id, the two limits and the configured window size.
+    proof: [model-descriptor-tests, rate-limit-model-descriptors-oracle, helper-python, helper-case-corpus]
+  - text: model_per_organization has value "<org_id>:<group>", reads organization_metadata, prefers the requested-name limit over the group limit, and is built even when there is no global organization limit.
+    proof: [model-descriptor-tests, rate-limit-model-descriptors-oracle, helper-python, helper-case-corpus]
+  - text: model_per_key reads the key limits for the group name, and no descriptor is added when neither limit is set.
+    proof: [model-descriptor-tests, rate-limit-model-descriptors-oracle, helper-python, helper-case-corpus]
+  - text: model_per_team drops a team limit only for the kind (rpm or tpm) the key owns, counts an own limit of 0 as owned, and keeps the other kind.
+    proof: [model-descriptor-tests, rate-limit-model-descriptors-oracle, helper-python, helper-case-corpus]
+  - text: model_per_project reads project_metadata with value "<project_id>:<group>" and is added when either limit is set.
+    proof: [model-descriptor-tests, rate-limit-model-descriptors-oracle, helper-python, helper-case-corpus]
+  - text: The project input-output builder adds nothing without a model or a project_id, adds the ITPM descriptor before the OTPM one, and each has requests_per_unit none.
+    proof: [model-descriptor-tests, rate-limit-model-descriptors-oracle, helper-python, helper-case-corpus]
+  - text: key_owns_tpm_from_request_metadata is false without a model, reads only user_api_key_metadata and user_api_key_model_max_budget, treats missing, none and empty values as an empty map, and returns a typed error for a value of the wrong shape.
+    proof: [model-descriptor-tests]
+  - text: Every descriptor carries the window size the builder was made with, not a fixed 60.
+    proof: [model-descriptor-tests]
+  - text: Newly added model and organization descriptor cases replay through the shared helper-case parser.
+    proof: [helper-case-corpus]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: model-descriptor-tests
+      why: the model, organization, team, project or request-metadata descriptor tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^model_descriptors::/)'
+    - id: rate-limit-model-descriptors-oracle
+      why: the oracle cases for the model and organization descriptors are missing or differ from LiteLLM
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/rate-limit-model-descriptors)" &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/rate-limit-model-descriptors
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3038)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3038 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3038/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added descriptor cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/rate_limit_model_descriptors-*")" &&
+        grep -lE '^[[:space:]]+b3038:' tools/oracle/fuzz/corpus/helper_case/rate_limit_model_descriptors-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/rate-limit-model-descriptors/rated-model-group.yaml
+  - tools/oracle/cases/helpers/rate-limit-model-descriptors/organization-global.yaml
+  - tools/oracle/cases/helpers/rate-limit-model-descriptors/organization-model.yaml
+  - tools/oracle/cases/helpers/rate-limit-model-descriptors/key-model.yaml
+  - tools/oracle/cases/helpers/rate-limit-model-descriptors/team-model-key-owned.yaml
+  - tools/oracle/cases/helpers/rate-limit-model-descriptors/project-model.yaml
+  - tools/oracle/cases/helpers/rate-limit-model-descriptors/project-io-tokens.yaml
+
+deviations:
+  - what: key_owns_tpm_from_request_metadata returns a typed error when the request metadata values do not fit the UserAPIKeyAuth field types.
+    why: LiteLLM's model_validate raises a pydantic ValidationError that the callback does not catch, so the success callback fails. The error type is Rust's, and B3045 decides how the callback reports it. Request metadata the proxy built itself always fits.
+  - what: The output sink is a &mut Vec<RateLimitDescriptor> and the builders are methods on ModelDescriptorBuilder, not methods of the limiter.
+    why: The limiter object is built by B3055. The builder holds only the two things these methods read (window size and the group resolver), so tasks that need descriptors do not need the whole limiter.
+
+out_of_scope:
+  - "The api_key, user, team, team_member and end_user descriptors and _create_rate_limit_descriptors, _should_enforce_rate_limit, _get_enforced_limit, _is_dynamic_rate_limiting_enabled and _check_model_has_recent_failures: B3040."
+  - "Tag, MCP, agent and session descriptors (_add_tag_per_key_..., _add_mcp_per_key_..., _add_mcp_per_team_..., _create_agent_rate_limit_descriptors, _get_resolved_agent_id, _get_session_id_from_data, _create_tag_rate_limit_descriptors): B3039."
+  - "RateLimitedModel, limit_in, ModelGroupResolver, the descriptor records and the PROJECT_*_DESCRIPTOR_KEY constants: B3031. _resolve_model_group_alias_via_proxy_router and the production resolver wiring: B3055."
+  - "get_key_model_rpm_limit, get_key_model_tpm_limit, get_key_own_model_rate_limit, get_model_rate_limit_from_metadata and the deployment default limits: B745."
+  - "Reserving and enforcing the ITPM and OTPM quotas (reserve_io_tokens, enforce_project_io_token_quota_for_frame): B3042 and B3043. This task only builds their descriptors."
+  - "Calling these builders from the pre-call hook, the order of the full descriptor list and dropping the model_per_team scope at settlement time: B3040, B3055 and B3045."
+  - "_handle_rate_limit_error: B3030."
+
+pitfalls:
+  - limit_in is called on a map that may hold both the requested name and the group name (alias "gpt4" for group "gpt-4"), so the requested-name limit must be preferred and a requested-name limit of 0 must not fall through to the group.
+  - model_per_key asks B745 for the key limits with model_name set to the group, not the requested name, so the deployment default is looked up under the group; the descriptor value also uses the group.
+  - The three owners differ in where limits come from. model_per_key uses key then team then deployment default through B745. model_per_organization and model_per_project read only their own metadata map. model_per_team skips a kind when the key owns it, so one request can charge a key descriptor and a team descriptor for the same model.
+  - The team ownership check is per kind. A key that owns only model_tpm_limit leaves the team's model_rpm_limit in force, and the descriptor is added with tokens_per_unit none.
+  - get_key_own_model_rate_limit returns key metadata only when the limit map is non-empty, and builds the model_max_budget map only from entries whose rpm_limit or tpm_limit is not none; an empty result is none, so a key whose metadata holds an empty model_tpm_limit map owns nothing.
+  - get_model_rate_limit_from_metadata returns none for empty or missing metadata; a present map is used whole, with no filtering to the requested model.
+  - The global "organization" descriptor does not need a model, and the model one does not need a global limit; build each on its own condition.
+  - The descriptor values are built by string formatting, so an absent id prints as "None" in LiteLLM ("None:gpt-4" for model_per_team without a team_id); keep that text, since two keys with no team share one counter in LiteLLM too.
+  - The ITPM and OTPM descriptors have requests_per_unit none and use tokens_per_unit for their limit; model_per_project_itpm and model_per_project_otpm are separate counters from model_per_project.
+  - The request-metadata key view fills only metadata and model_max_budget; missing or none values become an empty map, so the "or {}" fallback must not turn a falsy but valid map into an error.
+  - window_size comes from the builder, which is LITELLM_RATE_LIMIT_WINDOW_SIZE (default 60) copied by B3055; do not read the env var here.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

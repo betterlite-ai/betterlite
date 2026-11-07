@@ -1,0 +1,217 @@
+id: B3605
+title: Pass-through logging state and upstream usage
+description: >-
+  Build the shared state of the pass-through success logger in betterlite-logging, in the new module
+  passthrough_logging_state (crates/betterlite-logging/src/passthrough_logging_state.rs and its folder). It holds three things:
+  the upstream-reported usage contract, the cost-per-request rule, and the route predicates that need no provider handler.
+  Later tasks (B3606 provider dispatch, B3607 success completion, B3608 streams, B3610 failure payload) call it.
+
+  Upstream usage. Some pass-through targets run several models for one HTTP request and report the totals in two response
+  headers: `x-litellm-response-cost` and `x-litellm-total-tokens`. Build `UpstreamReportedUsage { response_cost: Option<f64>,
+  total_tokens: Option<i64> }` and these functions. `parse_upstream_reported_usage(headers: &http::HeaderMap) ->
+  Option<UpstreamReportedUsage>` returns None when neither header is present, otherwise Some with each field parsed on its own.
+  Header lookup is case-insensitive. When a header is repeated, join the values with ", " in order (httpx does the same), so
+  "1, 2" is unparseable. Decode header bytes the way httpx does: ASCII first, then UTF-8, then ISO-8859-1.
+  `parse_response_cost(raw: Option<&str>) -> Option<f64>` turns an absent, unparseable, non-finite or negative value into None
+  and logs a warning for each case (four messages, text below); "-0" is accepted and kept as -0.0.
+  `parse_total_tokens(raw: Option<&str>) -> Option<i64>` does the same for absent, unparseable or negative values. Both functions
+  are pure over a str so a fuzz target can feed them bytes.
+  Warning texts, logged at the tracing warn level: absent cost
+  "pass_through_endpoint: upstream did not send x-litellm-response-cost; recording 0 cost for this request"; unparseable
+  "pass_through_endpoint: upstream sent unparseable x-litellm-response-cost='<raw>'; recording 0 cost for this request";
+  out of range "pass_through_endpoint: upstream sent out-of-range x-litellm-response-cost='<raw>'; recording 0 cost for this request".
+  The token messages are the same with x-litellm-total-tokens, "tokens" instead of "cost", "did not send", "unparseable" and
+  "negative" (not "out-of-range"). `<raw>` is the value in Python repr style, single quotes. Note the header-absent warning
+  fires when the other header is present and this one is not.
+
+  `PassThroughCallState` is the typed slice of LiteLLM's model_call_details that this module touches: `upstream_reported_usage:
+  Option<UpstreamReportedUsage>`, `response_cost: Option<f64>` and `combined_usage_total_tokens: Option<i64>` (LiteLLM stores
+  `Usage(total_tokens=n)` under combined_usage_object, and total_tokens is the only field set). B3607 owns embedding this record in
+  the per-request logging state. `apply_upstream_reported_usage(state: &mut PassThroughCallState, headers: &http::HeaderMap) ->
+  Option<UpstreamReportedUsage>` calls the parser; on None it changes nothing. On Some it stores the value in
+  upstream_reported_usage (even when both fields are None), sets response_cost only if the cost field is Some, and sets
+  combined_usage_total_tokens only if the tokens field is Some, so a target that reports only cost keeps the token count that
+  LiteLLM derived. `has_upstream_reported_usage(state: &PassThroughCallState) -> bool` is true whenever the marker is stored, even
+  if both reported values were unusable: an upstream that speaks this contract owns the request cost, and an unparseable value
+  means zero, never a fallback to an estimate.
+
+  Cost per request. `set_cost_per_request(state: &mut PassThroughCallState, kwargs_response_cost: &mut Option<f64>,
+  cost_per_request: Option<Decimal>)` mirrors _set_cost_per_request: if has_upstream_reported_usage is true it returns at once and
+  writes nothing; else if cost_per_request is Some (0 counts as set) it converts it to f64 with rust_decimal's ToPrimitive and
+  writes the same value to the kwargs response_cost slot and to state.response_cost. B3607 passes the payload's `cost_per_request`
+  from betterlite-server's PassthroughLogPayload.
+
+  Logger state. `PassThroughEndpointLogging` holds an optional injected `Arc<dyn PassThroughLogDispatch>` and exposes the tracked
+  route tables as associated consts with LiteLLM's values: vertex methods generateContent, streamGenerateContent, predict,
+  rawPredict, streamRawPredict, search, predictLongRunning, embedContent, batchEmbedContents; vertex resources batchPredictionJobs;
+  anthropic "/messages" and "/v1/messages/batches"; cohere "/v2/chat" and "/v1/embed"; langfuse "/langfuse/"; gemini
+  generateContent, streamGenerateContent, predictLongRunning; cursor "/v0/agents", "/v0/me", "/v0/models", "/v0/repositories";
+  vertex live "/vertex_ai/live". `PassThroughLogDispatch` is an async trait with one method taking a `PassThroughLogCall`
+  (response object enum or None, result string, start and end time, cache_hit, and the shared logging kwargs as a typed map).
+  The default dispatcher, `handle_logging`, hands the call to B250's dispatch_success_handlers with the response object, the same
+  times, `cache_hit: false` and `prefer_async_handlers: true`. It ignores the cache_hit it was given and never passes the
+  `result` string on (LiteLLM only does that for a dict result, which the declared str type rules out). `log_dispatch()` returns the
+  injected dispatcher when set, else the default.
+
+  The response object enum, PassThroughResponse, has a variant for each result a provider handler can return. Three are for the Vertex and Gemini handlers: VideoOperation carries LiteLLM's VideoObject (Gemini and Vertex predictLongRunning), VertexBatchRecord carries the ModelResponse that batch_prediction_jobs_handler returns (with batch_job_state in provider_specific_fields), and VertexSearchWrapper carries StandardPassThroughResponseObject, the {"response": ...} dict that wraps the Vertex search response.
+
+  Response text. `safe_response_text(body: &UpstreamBodyText) -> String` where `UpstreamBodyText` is `Read(String)` or `NotRead`.
+  Streamed responses are never read into memory, so NotRead gives an empty string and Read gives the text. The caller decodes bytes.
+
+  Route predicates on PassThroughEndpointLogging, all pure over url_route and custom_llm_provider: is_anthropic_route,
+  is_cohere_route, is_assemblyai_route, is_comprehend_medical_route, is_azure_speech_route, is_transcribe_route, is_typesafe_route,
+  is_openrouter_decisions_route, is_langfuse_route, is_vertex_ai_live_route, is_cursor_route. Rules are in the pitfalls. Split a
+  url_route with the url crate when it parses as an absolute URL; otherwise treat the whole string up to the first ? or # as the
+  path with no hostname, as Python urlparse does for a string without a scheme.
+
+  Tests live under passthrough_logging_state::tests and are named by group (see checks). Add the fuzz target
+  passthrough_upstream_usage in crates/betterlite-logging/fuzz that feeds arbitrary bytes, as lossy UTF-8, to parse_response_cost
+  and parse_total_tokens, with a committed corpus and a test replays_the_passthrough_upstream_usage_corpus.
+scope:
+  paths:
+    - crates/betterlite-logging/src/passthrough_logging_state.rs
+    - crates/betterlite-logging/src/passthrough_logging_state/**
+    - crates/betterlite-logging/fuzz/Cargo.toml
+    - crates/betterlite-logging/fuzz/fuzz_targets/passthrough_upstream_usage.rs
+    - crates/betterlite-logging/fuzz/corpus/passthrough_upstream_usage/**
+    - tools/oracle/cases/logging/passthrough-logging-state/**
+    - "tools/oracle/fuzz/corpus/helper_case/passthrough_logging_state-*"
+    - tools/oracle/helpers/b3605.py
+    - tools/oracle/helpers/b3605/**
+    - tools/oracle/src/helpers/logging/b3605.rs
+    - tools/oracle/src/helpers/logging/b3605/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/upstream_usage_headers.py#L19-L38
+    why: Header names, the model_call_details marker key and the UpstreamReportedUsage record where None means absent or unusable.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/upstream_usage_headers.py#L40-L89
+    why: Cost and token parsing, with every warning text and the finite and non-negative checks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/upstream_usage_headers.py#L92-L137
+    why: parse_upstream_reported_usage, apply_upstream_reported_usage (writes only reported fields) and has_upstream_reported_usage.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/success_handler.py#L55-L64
+    why: _safe_response_text returns an empty string when a streamed body was never read.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/success_handler.py#L67-L149
+    why: Logger constructor with injected dispatch, the tracked route tables, the _log_dispatch choice and _handle_logging.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/success_handler.py#L526-L594
+    why: Route predicates for anthropic, cohere, assemblyai, comprehend medical, azure speech, transcribe, typesafe, openrouter decisions, langfuse, vertex live and cursor.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/success_handler.py#L644-L673
+    why: _set_cost_per_request and the rule that an upstream-reported cost always wins.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L1418-L1421
+    why: Call site for apply_upstream_reported_usage on the streaming-flag path, owned by B3613.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L1506-L1509
+    why: Call site for apply_upstream_reported_usage on the non-streaming path, owned by B3613.
+dod:
+  - text: parse_upstream_reported_usage returns None when neither header is present and Some when either is, reading names case-insensitively and joining repeated headers with ", ".
+    proof: [usage-parse-tests, oracle, helper-python]
+  - text: parse_response_cost returns None, with the matching warning, for an absent, unparseable (abc), non-finite (nan, inf) or negative value, and keeps 0, "-0" and decimal or exponent forms.
+    proof: [cost-parse-tests, oracle]
+  - text: parse_total_tokens returns None, with the matching warning, for an absent, unparseable (1.5, abc) or negative value, and keeps 0 and "-0".
+    proof: [token-parse-tests, oracle]
+  - text: apply_upstream_reported_usage writes only the fields the upstream reported, stores the marker even when both values are unusable, and changes nothing when neither header is present.
+    proof: [usage-apply-tests, oracle]
+  - text: has_upstream_reported_usage is true after a header with an unusable value and false when no header was sent.
+    proof: [usage-apply-tests, oracle]
+  - text: set_cost_per_request writes cost_per_request (including 0) to both the kwargs slot and the state, and writes nothing when the upstream reported usage or the payload has no cost.
+    proof: [cost-per-request-tests, oracle]
+  - text: The default dispatcher passes cache_hit false and prefer_async_handlers true to B250 whatever the caller's cache_hit, and an injected dispatcher replaces it.
+    proof: [dispatch-tests]
+  - text: safe_response_text returns the text for a read body and an empty string for an unread one.
+    proof: [response-text-tests]
+  - text: The route predicates and tracked route tables match LiteLLM, including the cohere embeddings exclusion, the assemblyai hostname-or-path rule and the cursor hostname rule.
+    proof: [route-predicate-tests, oracle]
+  - text: The upstream-usage parser survives arbitrary bytes and the committed corpus replays.
+    proof: [usage-corpus]
+  - text: Newly added helper cases replay through the shared helper-case parser and the strict Python adapter lints clean.
+    proof: [helper-case-corpus, helper-python]
+checks:
+  optional: []
+  commands:
+    - id: usage-parse-tests
+      why: header presence, lookup or joined-duplicate parsing is missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^passthrough_logging_state::tests::usage_parse_/)'
+    - id: cost-parse-tests
+      why: cost parsing or its warnings are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^passthrough_logging_state::tests::cost_parse_/)'
+    - id: token-parse-tests
+      why: token parsing or its warnings are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^passthrough_logging_state::tests::token_parse_/)'
+    - id: usage-apply-tests
+      why: applying reported usage or the marker rule is missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^passthrough_logging_state::tests::usage_apply_/)'
+    - id: cost-per-request-tests
+      why: the cost-per-request rule is missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^passthrough_logging_state::tests::cost_per_request_/)'
+    - id: dispatch-tests
+      why: the default or injected log dispatch is missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^passthrough_logging_state::tests::dispatch_/)'
+    - id: response-text-tests
+      why: safe_response_text is missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^passthrough_logging_state::tests::response_text_/)'
+    - id: route-predicate-tests
+      why: a route predicate or route table is missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^passthrough_logging_state::tests::route_/)'
+    - id: usage-corpus
+      why: the usage parser fuzz target or its fresh replay corpus is missing or fails
+      run: >-
+        test -f crates/betterlite-logging/fuzz/fuzz_targets/passthrough_upstream_usage.rs &&
+        grep -q 'name = "passthrough_upstream_usage"' crates/betterlite-logging/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-logging/fuzz/corpus/passthrough_upstream_usage)" &&
+        cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(replays_the_passthrough_upstream_usage_corpus)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3605)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3605 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3605/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added helper cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/passthrough_logging_state-*")" &&
+        grep -lE '^[[:space:]]+b3605:' tools/oracle/fuzz/corpus/helper_case/passthrough_logging_state-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/logging/passthrough-logging-state/usage-parse-both-valid.yaml
+  - tools/oracle/cases/logging/passthrough-logging-state/usage-parse-absent.yaml
+  - tools/oracle/cases/logging/passthrough-logging-state/usage-parse-cost-only.yaml
+  - tools/oracle/cases/logging/passthrough-logging-state/usage-parse-unusable-values.yaml
+  - tools/oracle/cases/logging/passthrough-logging-state/usage-parse-repeated-header.yaml
+  - tools/oracle/cases/logging/passthrough-logging-state/usage-apply-keeps-derived-tokens.yaml
+  - tools/oracle/cases/logging/passthrough-logging-state/usage-apply-unusable-marker.yaml
+  - tools/oracle/cases/logging/passthrough-logging-state/cost-per-request-set.yaml
+  - tools/oracle/cases/logging/passthrough-logging-state/cost-per-request-zero.yaml
+  - tools/oracle/cases/logging/passthrough-logging-state/cost-per-request-upstream-wins.yaml
+  - tools/oracle/cases/logging/passthrough-logging-state/route-predicates-matrix.yaml
+deviations:
+  - what: Python's float() and int() accept underscore digit separators ("1_0") and integers of any size; betterlite treats "1_0" as unparseable and an integer above i64 as unparseable.
+    why: No real upstream sends either, and an i64 token count is the type the rest of betterlite uses. Both cases log the unparseable warning and record 0.
+  - what: A url_route written as a network-path reference ("//host/path") is treated as a plain path with no hostname.
+    why: The url crate rejects it without a base, and no betterlite caller builds such a route; Python's urlparse would read a hostname.
+  - what: PassThroughEndpointLogging holds only the injected dispatcher and the route tables. The provider handler instances (transcribe, assemblyai) stay with the tasks that call them.
+    why: Those handlers belong to provider leaves that this task must not depend on, so B3607 owns constructing and holding them.
+out_of_scope:
+  - "normalize_llm_passthrough_logging_payload (success_handler.py:151-410) and the route predicates that call a provider handler's own helper: is_vertex_route, is_openai_route, is_gemini_route, _is_supported_openai_endpoint and is_tinyfish_route. B3606 owns them."
+  - "pass_through_async_success_handler (success_handler.py:412-517) with its TinyFish, AssemblyAI, Langfuse and Transcribe early returns and the StandardPassThroughResponseObject fallback. B3607 owns it and calls the pieces built here."
+  - "Calling apply_upstream_reported_usage on a live response and building the failure payload from its result: pass_through_endpoints.py:1418 and :1506 belong to the HTTP request lifecycle (B3613), and _build_passthrough_failure_request_payload to B3610."
+  - "dispatch_success_handlers itself belongs to B250; this task only calls it from the default dispatcher."
+  - "Decoding response bytes into text (charset handling) and converting the body to UpstreamBodyText belong to B3607."
+  - "The streaming counterpart that reads the marker in streaming_handler.py belongs to B3608 and B3609."
+pitfalls:
+  - "The marker is stored whenever either header is present, so a request with x-litellm-response-cost=abc has has_upstream_reported_usage true and a cost of None; set_cost_per_request must still not apply cost_per_request."
+  - "apply_upstream_reported_usage skips a None field instead of writing 0, so an upstream that sends only x-litellm-response-cost keeps the token usage LiteLLM derived."
+  - "The absent-header warning fires for the missing one of the two headers whenever the other is present, even when the upstream deliberately sends only one."
+  - "nan and inf parse as floats in Python and are then rejected as out-of-range, so the warning text is 'out-of-range', not 'unparseable'; a Rust parser that rejects them at parse time prints the wrong message."
+  - "response_cost < 0 is false for -0.0, so 'x-litellm-response-cost: -0' is accepted and recorded as a zero cost, not discarded."
+  - "A repeated header is joined with ', ', so '0.5, 0.5' is unparseable and logs the unparseable warning with the whole joined text in the message."
+  - "cost_per_request of 0 is 'set' (the check is `is not None`), and config-defined endpoints default to 0, which is why the upstream-reported cost has to win."
+  - "handle_logging ignores its own cache_hit parameter and always dispatches with cache_hit False and prefer_async_handlers True, so async-only loggers such as the spend logger fire."
+  - "is_cohere_route skips '/v1/embed' only when '/v1/embeddings' is a substring of the route, so '/v1/embed/v2' still matches and '/v1/embeddings' does not."
+  - "is_assemblyai_route is true for hostname exactly api.assemblyai.com or any path containing '/transcript'; B3607 combines it with 'not is_azure_speech_route'."
+  - "is_cursor_route is true for custom_llm_provider 'cursor' or any hostname containing 'api.cursor.com'. The tracked /v0/ routes only match when the provider is already 'cursor', so a bare /v0/agents URL with another provider is false."
+  - "is_langfuse_route checks the parsed path only, while is_vertex_ai_live_route checks the whole route string and returns false for an empty string."
+  - "is_openrouter_decisions_route needs both custom_llm_provider 'openrouter' and a path ending in '/alpha/decisions'; the query string is not part of the path."
+  - "The response object enum has the variants VideoOperation (VideoObject), VertexBatchRecord (ModelResponse) and VertexSearchWrapper (StandardPassThroughResponseObject) for B3640 and B3642; the other variants belong to the tasks that return them."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

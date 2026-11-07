@@ -1,0 +1,151 @@
+id: B5990
+title: Hugging Face chat URL, headers, request and provider mapping
+description: >-
+  Build huggingface_chat in betterlite-openai (crates/betterlite-openai/src/huggingface_chat.rs and its folder) over B668 and B503: the Hugging Face router chat
+  config from litellm/llms/huggingface/chat/transformation.py and the shared pieces of litellm/llms/huggingface/common_utils.py that the embedding (B5991) and rerank
+  (B5848) parts import. Everything here is a pure function or a struct with injected input. It reads no env var, makes no HTTP call itself and keeps no module state.
+  The caller (B042 wires it into dispatch) passes the already resolved api_key, api_base, the two env values and the Hub token as plain arguments.
+
+
+  HuggingfaceError is a struct with status_code, message and headers (the BaseLLMException B2202 builds, with the headers kept). get_error_class returns it with the status,
+  message and headers it was given. B5991 and B5848 use this same type.
+
+
+  validate_environment returns the caller headers merged with content-type "application/json" and, only when api_key is not None, Authorization "Bearer {api_key}". The
+  defaults win over a caller header of the same name, and an empty api_key still gets a Bearer header.
+
+
+  get_complete_url takes api_base, model and an HuggingfaceEnv value holding the HF_API_BASE and HUGGINGFACE_API_BASE values the caller read. In order: (1) a given api_base
+  goes through build_chat_completion_url: strip trailing slashes, append "/chat/completions" when it ends in "/v1", then append "/v1/chat/completions" unless it now ends in
+  "/chat/completions". (2) Otherwise, when HF_API_BASE or HUGGINGFACE_API_BASE is set, the URL is HF_API_BASE if set; when only HUGGINGFACE_API_BASE is set, LiteLLM formats the
+  missing HF_API_BASE as the text "None", and the URL becomes "None" (a LiteLLM bug, copied on purpose, see the pitfalls). This branch does not call build_chat_completion_url.
+  (3) Otherwise a model that starts with http:// or https:// goes through build_chat_completion_url. (4) Otherwise split the model once on "/" into first_part and remaining
+  (no "/" at all is a typed error, LiteLLM's unpack failure). When remaining contains "/", the provider is first_part and the URL is "https://router.huggingface.co/{route}"
+  with route "hf-inference/models/{model}/v1/chat/completions" for hf-inference ({model} is the whole model string, provider prefix included), "novita/v3/openai/chat/completions"
+  for novita, "fireworks-ai/inference/v1/chat/completions" for fireworks-ai and "{provider}/v1/chat/completions" for every other provider. When remaining has no "/", the URL is
+  "https://router.huggingface.co/v1/chat/completions". Every result loses its trailing slashes.
+
+
+  transform_request takes model, messages, optional_params, litellm_params (only whether its api_base is truthy matters), the Hub token and a ProviderMappingSource trait with
+  one method, mapping(model_id) -> Result<ProviderMapping, HuggingfaceError>. With a truthy litellm_params api_base the body is {model, messages, **optional_params} with no
+  message transform and no mapping. Otherwise: warn "`max_retries` is not supported. It will be ignored." and drop that key when present; split the model once on "/" (no "/" is a
+  typed error); when remaining contains "/", provider is first_part and model_id is remaining; ask the source for model_id's mapping; a missing provider key is
+  HuggingfaceError 404 "Model {model_id} is not supported for provider {provider}" with empty headers; status "staging" logs the warning "Model {model_id} is in staging mode
+  for provider {provider}. Meant for test purposes only." and continues; the sent model is that provider entry's providerId. Without a "/" in remaining the model is sent
+  unchanged. Messages go through B503's OpenAIGPTConfig message transform (sync form) with the sent model, and the body is {model, messages, **optional_params}.
+
+
+  ProviderMappingCache is the fetch that LiteLLM's lru_cache wraps. fetch_inference_provider_mapping(model) sends GET "https://huggingface.co/api/models/{model}?expand=inferenceProviderMapping"
+  with Accept "application/json" and Authorization "Bearer {token}" when a Hub token was passed (LiteLLM reads only HUGGINGFACE_API_KEY here, not HF_TOKEN and not the request key; the
+  caller passes that one value). The HTTP call goes through an injected HubGet trait (url, headers, query) -> status, headers, body, built by B042 on B173's pooled client. A 4xx or 5xx
+  becomes HuggingfaceError with the response status and headers and message "Failed to fetch provider mapping: {error}"; a transport failure becomes status 500 with empty headers and the same
+  message prefix. A body without "inferenceProviderMapping" (or with null) is a typed no-mapping error that is not a HuggingfaceError (LiteLLM raises ValueError). Successes are cached per model
+  with 128 entries, least recently used out; failures are never cached. The cache belongs to the ProviderMappingCache value, not to a static. decode_provider_mapping(bytes) parses the body
+  with a 1 MiB cap and is the fuzz entry point: fuzz target huggingface_provider_mapping, corpus replay test replays_the_provider_mapping_corpus.
+
+
+  Helper cases (the helper b5990 exists after the skeleton) call the pinned HuggingFaceChatConfig methods directly, with _fetch_inference_provider_mapping replaced by the value
+  the case records. Cases: URL for each route, api_base and env precedence, the "None" bug, validate_environment merge, request transform with and without api_base, missing provider
+  (404), staging, max_retries removal, message transform on a user content list. Size: about 130 LiteLLM lines (chat/transformation.py 156 lines, common_utils.py error and fetch);
+  budget 1500 changed lines.
+scope:
+  paths:
+    - crates/betterlite-openai/src/huggingface_chat.rs
+    - crates/betterlite-openai/src/huggingface_chat/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/huggingface_provider_mapping.rs
+    - crates/betterlite-openai/fuzz/corpus/huggingface_provider_mapping/**
+    - tools/oracle/cases/helpers/huggingface-chat/**
+    - "tools/oracle/fuzz/corpus/helper_case/huggingface_chat-*"
+    - tools/oracle/helpers/b5990.py
+    - tools/oracle/helpers/b5990/**
+    - tools/oracle/src/helpers/openai/b5990.rs
+    - tools/oracle/src/helpers/openai/b5990/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/chat/transformation.py#L23-L121
+    why: Route table, URL builder, the env branch with the "None" bug, validate_environment and get_error_class.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/chat/transformation.py#L123-L156
+    why: transform_request with and without api_base, mapping lookup, staging warning and providerId model.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/common_utils.py#L9-L35
+    why: HuggingFaceError and the Hub base URL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/huggingface/common_utils.py#L60-L102
+    why: The cached provider mapping fetch and how each failure maps to a status.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L350-L385
+    why: The inherited _transform_messages that transform_request calls in its sync form.
+  - url: https://huggingface.co/docs/inference-providers/index
+    why: The router and the inferenceProviderMapping field of the model API.
+dod:
+  - text: Chat URLs match LiteLLM for api_base, the env branch (including the "None" result), a URL model and every provider route.
+    proof: [hf-chat-url-tests, oracle, helper-python]
+  - text: validate_environment sets content-type and Bearer only when a key is given, and its defaults win over caller headers.
+    proof: [hf-chat-header-tests, oracle]
+  - text: transform_request resolves the providerId, raises 404 for an unsupported provider, warns for staging and for max_retries, and skips mapping and message transform when api_base is set.
+    proof: [hf-chat-request-tests, oracle]
+  - text: The mapping fetch sends the documented GET, maps each failure to its status, and caches successes only, 128 entries.
+    proof: [hf-chat-mapping-tests]
+  - text: The mapping body decoder rejects over 1 MiB and malformed JSON with a typed error, and the corpus replays.
+    proof: [hf-chat-mapping-corpus]
+  - text: The new helper cases replay through the shared parser and the Python adapter passes strict checks.
+    proof: [helper-python, helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: hf-chat-url-tests
+      why: A router URL, env branch or api_base rule differs from LiteLLM.
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^huggingface_chat::tests::url_/)'
+    - id: hf-chat-header-tests
+      why: Header defaults, the Bearer rule or the merge order differs from LiteLLM.
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^huggingface_chat::tests::headers_/)'
+    - id: hf-chat-request-tests
+      why: Mapping lookup, providerId rewrite, the 404, the warnings or the api_base shortcut is missing.
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^huggingface_chat::tests::request_/)'
+    - id: hf-chat-mapping-tests
+      why: The Hub fetch request, failure statuses or the cache rules are missing.
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^huggingface_chat::tests::mapping_/)'
+    - id: hf-chat-mapping-corpus
+      why: The mapping decoder fuzz target or its replay corpus is missing or fails.
+      run: >-
+        test -f crates/betterlite-openai/fuzz/fuzz_targets/huggingface_provider_mapping.rs &&
+        grep -q 'name = "huggingface_provider_mapping"' crates/betterlite-openai/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/huggingface_provider_mapping)" &&
+        cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_provider_mapping_corpus)'
+    - id: helper-python
+      why: The strict oracle adapter lint or type checks fail.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5990.py)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: Newly added chat cases are absent or do not replay.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/huggingface_chat-*")" &&
+        grep -lE '^[[:space:]]+b5990:' tools/oracle/fuzz/corpus/helper_case/huggingface_chat-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/huggingface-chat/router-routes.yaml
+  - tools/oracle/cases/helpers/huggingface-chat/api-base-and-env.yaml
+  - tools/oracle/cases/helpers/huggingface-chat/headers-merge.yaml
+  - tools/oracle/cases/helpers/huggingface-chat/request-provider-mapping.yaml
+  - tools/oracle/cases/helpers/huggingface-chat/request-with-api-base.yaml
+  - tools/oracle/cases/helpers/huggingface-chat/request-unsupported-provider.yaml
+deviations:
+  - what: The provider mapping cache is held by a ProviderMappingCache value passed in by the caller, not by a function-level lru_cache.
+    why: The code rules forbid module state; the size (128) and the failures-not-cached rule stay the same.
+out_of_scope:
+  - B042 owns _complete_huggingface in litellm/main.py (key order api_key, litellm.huggingface_key, HF_TOKEN, HUGGINGFACE_API_KEY, litellm.api_key; header fallback), the dispatch wiring and the HTTP cases through the proxy.
+  - B668, B503 and B504 own everything HuggingFaceChatConfig inherits from OpenAIGPTConfig (supported params, map_openai_params, transform_response, the stream iterator).
+  - get_base_url in chat/transformation.py has no caller at the pin and is not built.
+  - output_parser, hf_tasks and hf_task_list in common_utils.py are used only by the legacy text-generation code in embedding/transformation.py, which B5991 lists as unreachable.
+  - The huggingface_llms_metadata text files are read only by that same unreachable code and are not copied.
+  - Streaming chat uses the OpenAI iterator; HuggingFaceChatConfig adds nothing to it.
+pitfalls:
+  - With only HUGGINGFACE_API_BASE set, LiteLLM's expression str(os.getenv("HF_API_BASE")) turns the missing value into "None" before the "or", so the URL is the text "None".
+  - hf-inference puts the whole model string, provider prefix included, into its route, so "hf-inference/org/m" gives "hf-inference/models/hf-inference/org/m/v1/chat/completions".
+  - A model with exactly one "/" ("org/model") has no provider and gets the plain router URL, and transform_request sends it unchanged without any Hub call.
+  - A model without any "/" fails LiteLLM's tuple unpack in both get_complete_url and transform_request, so both need a typed error.
+  - The api_base shortcut in transform_request runs before the max_retries warning, so with api_base set the key stays in optional_params.
+  - The mapping fetch authenticates with HUGGINGFACE_API_KEY only, and a missing "inferenceProviderMapping" is a ValueError, not a HuggingFaceError, so it must not get a status or headers.
+  - The cache key is the model_id after the provider prefix, not the full model string.
+budget: {max_changed_lines: 1500, max_new_expects: 0}
+review_level: standard

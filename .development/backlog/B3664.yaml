@@ -1,12 +1,11 @@
 id: B3664
 milestone: M6 guardrails
-title: Guardrail invocation records and content inspection primitives
+title: Guardrail invocation records
 status: todo
-depends_on: [B3662, B3688, B188, B198, B2204, B909]
-file: null
+depends_on: [B5470, B5471, B3662, B3800, B909]
+file: tasks/B3664-guardrail-invocation-records.yaml
 covers:
   - "litellm/integrations/custom_guardrail.py"
-  - "litellm/proxy/guardrails/_content_utils.py"
 parent: B104
 split_from: B104
 resolution: null

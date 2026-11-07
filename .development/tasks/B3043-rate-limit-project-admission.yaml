@@ -84,6 +84,7 @@ pitfalls:
   - "Storing scopes as frozenset() of tuples (key, value) and window_identities as frozenset() of tuples (counter_key, window_start, backend) ensures immutability and consistent post-call access."
   - "The implicit output cap is applied before reservation, not after. A hard cap prevents unbounded responses from overshooting the budget during generation, so it must be called even if the reservation succeeds."
   - "Merging IO response statuses into the stored rate_limit_response maintains header values from both windowed RPM/TPM and project IO limits; storing the IO response directly when none is stored yet ensures statuses reach logging callbacks."
+  - "B3041 now lives in betterlite-rate-limit too, so call token_estimation directly."
 review_level: standard
 budget:
   max_changed_lines: 1500

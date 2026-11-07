@@ -4,9 +4,8 @@ description: >-
   Own messages/streaming_iterator.py task sets L29-L30, drain-slot/queue helpers L167-L186 and the complete
   async_sse_wrapper,_enqueue_for_client,_pump_upstream_to_queue,_handle_pump_upstream_error at
   L468-L525,L579-L697. B2436 owns logging,formatting,constructor and teardown callbacks; B978 classifies raw
-  terminal chunks and closes streams. B102 owns schedule_stream_failure_logging and has no task file: inject
-  that explicit seam with request body,ANTHROPIC endpoint,original exception and partial raw bytes. The owner
-  remains a dependency, and its missing specification is an architect note, not an invented billing subsystem.
+  terminal chunks and closes streams. B3609 owns schedule_stream_failure_logging, and this task reaches it through B2436: inject
+  that explicit seam with request body,ANTHROPIC endpoint,original exception and partial raw bytes.
 
   Resolve ANTHROPIC_MESSAGES_STREAM_RELAY_QUEUE_MAXSIZE (default1024) and
   ANTHROPIC_MESSAGES_MAX_DETACHED_STREAM_DRAINS (default100) through B002. The queue counts chunks, not bytes;
@@ -90,7 +89,7 @@ dod:
     completed pump bills with stream_teardown=true and never synthesizes an incomplete event for the departed client.
   proof: [behavior-tests, oracle, python-adapter]
 - text: >-
-    upstream_exception_arbitration makes a provider raise status429/message=busy after two chunks. B102 receives
+    upstream_exception_arbitration makes a provider raise status429/message=busy after two chunks. B3609 receives
     the original exception and both raw chunks for failure logging; connected relay rethrows that same exception,
     not the incomplete-stream api_error. After relay detach, an exception consumed from the queue suppresses the
     detached failure hook. Already-detached or queued-but-unconsumed exception invokes it once. The queue scan
@@ -142,13 +141,14 @@ deviations:
   why: A bounded queue does not bound the separate collected_chunks list; B1087 supplies finite byte/item limits.
   link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/streaming_iterator.py#L632-L643
 out_of_scope:
-- B2436 owns complete logging/constructor/format/teardown helpers at L388-L466,L527-L576,L699-L710 and B102/B191 delegation.
+- B2436 owns complete logging/constructor/format/teardown helpers at L388-L466,L527-L576,L699-L710 and B3609/B191 delegation.
 - B978 owns L33-L164,L189-L379 raw event parsing/rendering/response view. Its1MiB raw-read bound also applies before relay retention.
-- B102 owns failure billing internals and B191 rooted logging dispatch; B009 owns transport timeout/cancellation and B081 the HTTP error boundary.
+- B3609 owns failure billing internals and B191 rooted logging dispatch; B009 owns transport timeout/cancellation and B081 the HTTP error boundary.
 pitfalls:
 - Queue capacity counts chunks; collected billing bytes need a separate aggregate bound even while the client keeps up.
 - The detached cap is shared across all live streams, not reset for each request or provider.
 - Logging must be parked before the end sentinel becomes observable, or disconnect can lose the spend callback.
+- "B979 owns _is_message_stop_chunk and _is_provider_error_chunk from litellm/llms/anthropic/pass_through/messages/streaming_iterator.py. B3608 calls them through its AnthropicFrameProbe trait."
 review_level: standard
 budget:
   max_changed_lines: 1500

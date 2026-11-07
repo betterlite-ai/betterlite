@@ -1,0 +1,167 @@
+id: B3632
+title: Anthropic interrupted stream usage recovery
+description: >-
+  Build the recovery of token usage and cost for an Anthropic pass-through stream that ended early, in betterlite-server at src/pass_through_logging/interrupted_stream_usage.rs (the skeleton declares it).
+  Why it exists: when a client disconnects mid-stream, Anthropic has sent message_start, which carries a placeholder output_tokens of 1 to 3, but not the final message_delta that carries the real count. Without this task the failure log bills about a twentieth of the real output.
+  The task rebuilds the response from the buffered chunks, re-counts the output text when the stream was cut, and hands usage and cost to the failure log.
+  Nothing here holds module-level state. Collaborators come in as arguments: B3630's call log accessors and cost helpers, B3631's reconstruction functions, B196's token count, B218's get_content_from_model_response, and B251's record_partial_usage_for_failure on the per-call log.
+
+
+  Chunk and error types. Every function takes the raw chunks as a slice of the chunk type B3630's stream_fields module already uses for extract_message_start_field (one entry is text or bytes). Do not define a second chunk type. The module has one thiserror enum, InterruptedStreamUsageError, with variants for invalid UTF-8 in a chunk (the source is B3630's stream_fields error), a failed reconstruction (source B3631's error), a failed token count (source B196's error) and a failed cost (source B3630's response_costing error).
+
+
+  Public surface, pinned. B3609 (partial usage on a failed stream) and B3634 (the success-side collected chunks handler) call these two; they are `pub` and their names and argument lists do not change.
+  `pub fn record_partial_usage_for_failure(call_log: &mut CallLog, request_body: &RequestBody, all_chunks: &[StreamChunk]) -> Result<(), InterruptedStreamUsageError>`
+  `pub fn build_streaming_response_for_logging(call_log: &CallLog, request_body: &RequestBody, all_chunks: &[StreamChunk], model: &str) -> Result<Option<AssembledResponse>, InterruptedStreamUsageError>`
+  CallLog is B247's per-call log (what LiteLLM calls the logging object with its model_call_details), RequestBody is the parsed JSON body B3630's functions take, and AssembledResponse is the enum B2227's stream assembly returns (a chat ModelResponse or a TextCompletionResponse). Use the exact type names the merged B247, B3630 and B2227 code exports; the names above are the roles. Each collaborator is a generic parameter bounded by the trait its owner exports (no `impl Trait` arguments, no `dyn`); the two pinned functions carry those generics, the argument lists above do not change.
+  The other five functions are `pub(crate)` so B3634 and the tests reach them: `stream_was_interrupted`, `recover_interrupted_stream_output_tokens`, `clear_placeholder_cost`, `usage_only_response_or_none`, `assemble_streaming_response`. Drop LiteLLM's leading underscore from every name.
+
+
+  stream_was_interrupted(all_chunks) -> Result<bool, InterruptedStreamUsageError>. Walk the chunks from the last to the first, and inside each chunk the lines from the last to the first. Decode bytes as strict UTF-8 and return the typed error on bad bytes (LiteLLM lets UnicodeDecodeError out). Split a chunk into lines the way Python's str.splitlines does (\n, \r, \r\n, \v, \f, \x1c, \x1d, \x1e, \x85, U+2028, U+2029). Skip a line that does not start with "data:". Strip the rest of the line with Python's strip() whitespace rules and parse it as JSON; skip a line that fails to parse or is not an object (so "data: [DONE]" is skipped). Decide on the first event whose "type" is one of these three: "message_delta" gives false; "content_block_delta", "content_block_stop" and "message_start" give true. Any other type (message_stop, ping, error, a missing or non-string type) is skipped and the walk continues. When the walk ends without a decision, including an empty chunk list, the answer is true.
+  If B3630's stream_fields module already exposes a Python-style line splitter and strip to the crate, use it; if it does not, write one private helper here and list the duplicate in the task's notes for the architect. The fuzz target below is for this decoder.
+
+
+  recover_interrupted_stream_output_tokens(response, all_chunks, model) -> Result<bool, InterruptedStreamUsageError>. It takes the response by mutable reference and returns true only when it changed the usage. Run these guards in this order, each one returns false: the response is a text completion and not a chat ModelResponse; stream_was_interrupted is false; the response has no usage; the output text is empty. The output text is B218's get_content_from_model_response on the response: for each chat choice, the message content, then the function_call as JSON, then every tool call as JSON, all concatenated. Count it with B196's token count in text mode with model set to the `model` argument (the logged model, not the costing model) and the count-response-tokens flag on. A count error logs at warn "Could not re-tokenize interrupted stream output; keeping placeholder completion token count." and returns false; it never reaches the caller. When the recovered count is not greater than the usage's completion_tokens (a missing value is 0), return false and change nothing. Otherwise set completion_tokens to the recovered count, total_tokens to prompt_tokens (missing is 0) plus the recovered count, and, only when completion_tokens_details exists and its text_tokens is set, text_tokens to the recovered count. Anthropic costing reads text_tokens, so leaving the message_start placeholder there keeps the spend low. Return true.
+  When B196's disable_token_counter setting is on, the count is 0, which is never greater than the placeholder, so nothing changes.
+
+
+  clear_placeholder_cost(response). Sets the response usage's cost to none and removes "response_cost" from the response's hidden params. LiteLLM also takes the usage as a second argument, but there it is the same object as response.usage; Rust has no aliasing, so the function takes only the response.
+
+
+  usage_only_response_or_none(all_chunks, model, speed) -> Option<AssembledResponse>. Call B3631's usage-only builder (LiteLLM's _build_usage_only_response_from_chunks). On Ok return its answer. On any error log at warn "Anthropic passthrough: usage-only fallback failed (model={model}): {error}" and return none. It never returns an error.
+
+
+  assemble_streaming_response(all_chunks, call_log, model, speed) -> Option<AssembledResponse>. Call B3631's full reconstruction (LiteLLM's _build_complete_streaming_response). On Ok(Some) return that response. On Ok(None) call usage_only_response_or_none with no extra log. On an error log at warn "Anthropic passthrough: stream assembly raised (model={model}): {error}; falling back to usage-only cost from raw SSE events." and call usage_only_response_or_none. It never returns an error.
+
+
+  build_streaming_response_for_logging(call_log, request_body, all_chunks, model). Run assemble_streaming_response with speed from B3630's cost_relevant_speed(request_body). When the result is none or a text completion, return it unchanged. When it is a chat response, run recover_interrupted_stream_output_tokens, and only when that returned true run clear_placeholder_cost, so the cost that was built from the placeholder is dropped and the later cost step prices the corrected tokens. Return the response. An error from stream_was_interrupted or the recovery token count path other than the logged warning comes back as the typed error.
+
+
+  record_partial_usage_for_failure(call_log, request_body, all_chunks). Do nothing for an empty chunk list. Otherwise: model from B3630's resolve_logged_model; the response from build_streaming_response_for_logging; when there is no response or it has no usage, return Ok(()) without recording; else the cost from B3630's cost_partial_stream_or_zero(response, model, call_log) and then B251's call log record_partial_usage_for_failure(usage, cost). B251 stores the usage under model_call_details["combined_usage_object"] and the cost under "response_cost"; this task only calls it. Read the usage from either response variant.
+
+
+  Tests: module tests under pass_through_logging::interrupted_stream_usage::tests, every name starting interrupted_. Fakes stand in for the token counter, the cost service and the call log (reuse the fakes B3630's tests define where they are exported to the crate, otherwise write small ones). Cover: the tail walk on a completed stream, a cut mid content_block_delta, a cut after content_block_stop, a message_stop-only tail, an empty list and a [DONE] tail; recovery that raises tokens, keeps them when the recount is lower or equal, skips an empty text, tolerates a token count error with the warning, corrects text_tokens only when present and uses tool call JSON as output text; the assembled-then-usage-only fallbacks with their log lines; and record_partial_usage_for_failure recording usage plus a cost of 0.0 on a costing error.
+  Oracle: helper cases for the pure functions through the helper operation named after this task. They call the pinned Python static functions on stub objects and never copy the algorithm. There is no route for this code yet; the umbrella adds the HTTP cases.
+  Fuzz: stream_was_interrupted decodes bytes from outside. Add the cargo-fuzz target stream_interrupted in betterlite-server/fuzz that feeds it arbitrary byte chunks and asserts no panic, plus a corpus replay test named replays_the_stream_interrupted_corpus.
+scope:
+  paths:
+    - crates/betterlite-server/src/pass_through_logging/interrupted_stream_usage.rs
+    - crates/betterlite-server/src/pass_through_logging/interrupted_stream_usage/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/stream_interrupted.rs
+    - crates/betterlite-server/fuzz/corpus/stream_interrupted/**
+    - tools/oracle/cases/helpers/interrupted-stream-usage/**
+    - "tools/oracle/fuzz/corpus/helper_case/interrupted_stream_usage-*"
+    - tools/oracle/helpers/b3632.py
+    - tools/oracle/helpers/b3632/**
+    - tools/oracle/src/helpers/server/b3632.rs
+    - tools/oracle/src/helpers/server/b3632/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L168-L251
+    why: usage_only_response_or_none, assemble_streaming_response, build_streaming_response_for_logging and record_partial_usage_for_failure, with their warning texts and the order of fallbacks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L329-L408
+    why: stream_was_interrupted tail scan, the output token recovery with its guards and text_tokens fix, and clear_placeholder_cost.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/anthropic_passthrough_logging_handler.py#L253-L293
+    why: cost_partial_stream_or_zero and compute_response_cost, which B3630 builds and this task calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/streaming_handler.py#L98-L110
+    why: The caller of record_partial_usage_for_failure for the Anthropic endpoint type (B3609 builds it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2206-L2210
+    why: The per-call log's record_partial_usage_for_failure, which B251 owns and this task calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/common_utils.py#L305-L326
+    why: get_content_from_model_response, the output text that gets re-counted.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/token_counter.py#L398-L461
+    why: token_counter in text mode, the call the recovery makes with count_response_tokens set.
+  - url: https://docs.python.org/3/library/stdtypes.html#str.splitlines
+    why: The exact line boundaries str.splitlines uses, longer than Rust's lines().
+dod:
+  - text: stream_was_interrupted decides on the first message_delta (false) or content_block_delta, content_block_stop or message_start (true) found from the tail, skips other events and bad lines, and returns true for an empty list or when nothing decides.
+    proof: [interrupted-tests, interrupted-oracle]
+  - text: stream_was_interrupted splits lines like Python splitlines, strips like Python strip, and returns a typed error on invalid UTF-8.
+    proof: [interrupted-tests, interrupted-oracle]
+  - text: The tail decoder has a fuzz target that replays its corpus without a panic.
+    proof: [interrupted-corpus]
+  - text: recover_interrupted_stream_output_tokens raises completion_tokens, total_tokens and a present text_tokens only when the stream was cut and the recount is higher, and leaves usage alone for a completed stream, a text completion, missing usage, empty output text or a lower recount.
+    proof: [interrupted-tests, interrupted-oracle]
+  - text: A token count error in the recovery logs the re-tokenize warning and keeps the placeholder count instead of failing the caller.
+    proof: [interrupted-tests]
+  - text: clear_placeholder_cost removes the usage cost and the hidden response_cost, and build_streaming_response_for_logging calls it only after a recovery that changed usage.
+    proof: [interrupted-tests, interrupted-oracle]
+  - text: assemble_streaming_response falls back to the usage-only response on an assembly error (with its warning) and on an empty result (without one); usage_only_response_or_none turns an error into a warning and none.
+    proof: [interrupted-tests]
+  - text: record_partial_usage_for_failure does nothing for empty chunks or a response without usage, and otherwise records the usage with the partial stream cost, using 0.0 when costing fails.
+    proof: [interrupted-tests]
+  - text: The helper adapter's Python passes the strict lint and type check.
+    proof: [helper-python]
+checks:
+  optional: []
+  commands:
+    - id: interrupted-tests
+      why: the interrupted stream detection, token recovery, fallbacks or failure recording are wrong, or have no tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::interrupted_stream_usage::tests::interrupted_/) - test(replays_the_stream_interrupted_corpus)'
+    - id: interrupted-corpus
+      why: the tail decoder has no fuzz target, no new corpus seeds or the replay fails
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/stream_interrupted)" &&
+        grep -q 'stream_was_interrupted' crates/betterlite-server/fuzz/fuzz_targets/stream_interrupted.rs &&
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_stream_interrupted_corpus)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3632)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3632 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3632/pyrightconfig.json
+    - id: helper-case-corpus
+      why: new helper seeds are absent or do not replay through the shared helper-case parser
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/interrupted_stream_usage-*')" &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: interrupted-oracle
+      why: newly added helper cases are absent, do not use the b3632 operation or disagree with LiteLLM
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/interrupted-stream-usage)" &&
+        grep -rlE '^[[:space:]]+b3632:' tools/oracle/cases/helpers/interrupted-stream-usage &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/interrupted-stream-usage
+oracle_cases:
+  - tools/oracle/cases/helpers/interrupted-stream-usage/tail-completed-message-delta.yaml
+  - tools/oracle/cases/helpers/interrupted-stream-usage/tail-cut-mid-content-block-delta.yaml
+  - tools/oracle/cases/helpers/interrupted-stream-usage/tail-message-stop-then-delta.yaml
+  - tools/oracle/cases/helpers/interrupted-stream-usage/tail-empty-and-done-only.yaml
+  - tools/oracle/cases/helpers/interrupted-stream-usage/tail-splitlines-boundary.yaml
+  - tools/oracle/cases/helpers/interrupted-stream-usage/recover-raises-placeholder.yaml
+  - tools/oracle/cases/helpers/interrupted-stream-usage/recover-completed-stream-unchanged.yaml
+  - tools/oracle/cases/helpers/interrupted-stream-usage/recover-lower-recount-unchanged.yaml
+  - tools/oracle/cases/helpers/interrupted-stream-usage/recover-text-tokens-absent.yaml
+  - tools/oracle/cases/helpers/interrupted-stream-usage/clear-placeholder-cost.yaml
+deviations:
+  - what: clear_placeholder_cost takes only the response, not the response and its usage.
+    why: In LiteLLM the usage argument is the same object as response.usage; Rust has no aliasing, so a second argument would be a copy that clears nothing.
+  - what: recover_interrupted_stream_output_tokens returns whether it changed the usage, not the usage object.
+    why: The only caller tests the result for none and then clears the cost; the response already holds the corrected usage.
+  - what: Failures are typed errors where LiteLLM lets Python exceptions (UnicodeDecodeError out of stream_was_interrupted) propagate, and the catch-all `except Exception` blocks catch only the typed errors of the steps they wrap.
+    why: Rust has no runtime attribute errors and a panic is banned by the no-panics rule, so the typed error is the only failure left to catch.
+  - what: The token count error branch catches B196's typed error only.
+    why: LiteLLM's bare `except Exception` also hides Python bugs such as a missing attribute; betterlite has no such class of failure.
+out_of_scope:
+  - "anthropic_passthrough_handler, _create_anthropic_response_logging_payload and _handle_logging_anthropic_collected_chunks: B3634 owns them. It calls build_streaming_response_for_logging from this task."
+  - "batch_creation_handler, _store_batch_managed_object and get_actual_model_id_from_router: B3633 owns Anthropic batch logging."
+  - "_split_sse_chunk_into_events, _build_complete_streaming_response, _collapse_pure_text_chunks, _build_complete_streaming_response_legacy, _extract_sse_data and _build_usage_only_response_from_chunks: B3631 owns the stream reconstruction. This task only calls its full reconstruction and its usage-only builder."
+  - "_cost_relevant_speed, _resolve_costing_model, _resolve_logged_model, _cost_partial_stream_or_zero, _compute_response_cost, _extract_message_start_field, _extract_model_from_anthropic_chunks, _extract_response_id_from_anthropic_chunks and _get_user_from_metadata: B3630 owns them and its covers include the file."
+  - "Logging.record_partial_usage_for_failure and record_assembled_response_for_failure on the per-call log: B251 owns them."
+  - "PassThroughStreamingHandler._record_partial_usage_for_failure and schedule_stream_failure_logging, which choose this task's function for the Anthropic endpoint type: B3609 owns them."
+  - "get_content_from_model_response (B218), token_counter (B196), stream_chunk_builder (B2227) and AnthropicConfig.calculate_usage (B579)."
+pitfalls:
+  - The usage-only response built from raw events has message content "" so recover_interrupted_stream_output_tokens finds no output text and never corrects it; an interrupted stream that fell back to usage-only keeps the message_start output_tokens placeholder.
+  - A stream that ends with content_block_stop but no message_delta still counts as interrupted; only message_delta marks it complete, and message_stop alone does not.
+  - The walk skips a message_stop or ping at the tail and keeps looking back, so "message_delta, message_stop" is complete and "content_block_delta, ping" is interrupted.
+  - The recount uses the logged model, while the cost uses resolve_costing_model's model; passing the costing model to the token counter changes the tokenizer choice for a "passthrough/..." model group.
+  - A recount that is equal to or lower than completion_tokens changes nothing, so a short interrupted stream whose placeholder is already right keeps its cost and hidden response_cost.
+  - text_tokens is touched only when completion_tokens_details exists and text_tokens is not none; do not create the details object when it is missing.
+  - clear_placeholder_cost runs only after a recovery returned true; clearing it on every chat response would drop the response_cost that a completed stream legitimately carries.
+  - assemble_streaming_response logs the "stream assembly raised" warning only for an error, and an Ok(None) reconstruction goes to usage-only silently.
+  - record_partial_usage_for_failure returns without recording when there are no chunks or no usage, so the failure row keeps the cost and usage the call log already held.
+  - cost_partial_stream_or_zero swallows costing errors into 0.0 and the call log still gets the recovered usage, so tokens are billed with a zero cost rather than lost.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,14 @@
+id: B5848
+milestone: M3 providers
+title: Hugging Face provider
+status: todo
+depends_on: [B1013, B196, B5990, B5991]
+file: tasks/B5848-huggingface-rerank.yaml
+covers:
+  - "litellm/llms/huggingface/**"
+parent: B042
+split_from: B042
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

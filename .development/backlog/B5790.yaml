@@ -1,0 +1,14 @@
+id: B5790
+milestone: M12 python
+title: Anthropic error format in the Python wheel
+status: todo
+depends_on: [B5369]
+file: tasks/B5790-anthropic-error-format.yaml
+covers:
+  - "litellm/anthropic_interface/exceptions/**"
+parent: B163
+split_from: B163
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
