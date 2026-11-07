@@ -1,0 +1,188 @@
+id: B5838
+title: Eden AI transcription, video, speech and image endpoints
+description: >-
+  Build the second half of the Eden AI provider (litellm/llms/edenai): audio_transcription, videos, text_to_speech and
+  image_generation. B6100 built the first half and edenai_common (EdenAiEnv, EdenAiError, authorized_headers, json_headers,
+  endpoint_url, pick and the cost readers); import those and do not write them again. Every family points an OpenAI
+  config at https://api.edenai.run/v3, authenticates with the Eden key and lifts the cost Eden reports. All code is pure
+  transforms with no network call, no environment read and no route. B041 wires them into dispatch. Credentials arrive as
+  the EdenAiEnv argument; add no config section.
+
+  Modules, all in betterlite-openai, each a file plus a folder with tests.rs: edenai_transcription, edenai_videos,
+  edenai_speech, edenai_image. A provider leaf never imports betterlite-core or betterlite-provider, so the records come
+  from B1122, B1135 and B997 in betterlite-openai, and B041 implements the provider traits over these functions.
+
+  edenai_transcription (audio_transcription/transformation.py), over B515's Whisper config. Supported params and
+  map_openai_params are B515's Whisper ones, unchanged. The config reports a native transcription endpoint. URL:
+  endpoint_url(api_base, "audio/transcriptions"). Headers: authorized_headers with no Content-Type, since the body is
+  multipart. The request makes B1001's process_audio_file of the input and builds files as one "file" part of (filename,
+  bytes, content type). The form fields are every optional param, then every entry of the optional param extra_body when it is
+  a mapping, then model, and the key extra_body itself is dropped. A later duplicate wins, so extra_body overrides a plain
+  param and model overrides both. There is no default response_format here, unlike Whisper's verbose_json. The result is
+  B1122's AudioTranscriptionRequestData with data and files. The response: when the content-type header does not contain
+  the text "application/json" (a plain substring test on the header as sent), the result is a transcription response whose
+  text is the body text and nothing else. Otherwise the JSON body is built through B004's convert_to_model_response_object
+  with response type audio_transcription, and the cost from the same body goes into hidden params through B1717's
+  set_response_cost_in_hidden_params. get_error_class returns EdenAiError, not the OpenAI error.
+
+  edenai_videos (videos/transformation.py), over B525 (which uses B672's id helpers). Headers: authorized_headers with the
+  explicit key, else litellm_params.api_key. URL: endpoint_url(api_base, "videos"); the model plays no part. Multipart is off:
+  use_multipart_form_data is false. The create request has two paths. When input_reference is a JSON object (file_id or
+  image_url), call B525's create transform with input_reference removed from the optional params and return its data plus
+  "input_reference" set to a copy of the object, with its files and URL. For any other input_reference (a string or bytes) call
+  B525's create transform unchanged, so it becomes a multipart file part. The create reply is B525's reply with the
+  usage object rebuilt as the existing usage entries plus provider_reported_cost_usd from the cost in the body bytes, and
+  every entry whose value is null is dropped. Eden returns cost 0 on create, so that stays as 0. The status reply does the same
+  after the status check below. The content reply returns the body bytes after the status check. The list reply is B525's
+  after the status check. The status check is LiteLLM's raise_for_status: any 4xx or 5xx status becomes an error before the
+  body is read. get_error_class returns EdenAiError. The other OpenAIVideoConfig methods (delete, remix, content and
+  list requests, the characters operations) are not overridden and stay with B525 and B526.
+
+  edenai_speech (text_to_speech/transformation.py), over B1135's contract. Supported params are exactly voice,
+  response_format, speed and instructions. map_openai_params returns the voice when it is a string, else none, together with
+  the optional params unchanged (it does not filter them). Headers: json_headers. URL: endpoint_url(api_base,
+  "audio/speech"). The request body is the ordered pairs model, input, voice, then every optional param, with null values
+  removed and a later duplicate key winning, returned as B1135's dict_body. The reply wraps the raw response as binary
+  content through B1035's HttpxBinaryResponseContent and calls its set_response_cost with the cost read from the
+  x-edenai-cost response header, so a missing header removes any response_cost already stored. get_error_class returns
+  EdenAiError.
+
+  edenai_image (image_generation/transformation.py), over B997's contract and B004's response builder. Supported params, in
+  this order: background, moderation, n, output_compression, output_format, quality, response_format, size, style, user.
+  map_openai_params returns optional_params overlaid with only those keys from non_default_params; anything else is dropped
+  without an error and drop_params has no effect. Headers: json_headers. URL: endpoint_url(api_base, "images/generations").
+  The request body is model, prompt, then every optional param. The reply is built from the JSON body with response type
+  image_generation through convert_to_model_response_object, and the cost from the same body goes into hidden params.
+  get_error_class returns EdenAiError. B511's DALL-E and GPT image configs are OpenAI's and are not used.
+
+  The reply decoders take bytes from the provider: decode_transcription_reply for the JSON path and the cost merge for
+  video bodies. Add one cargo-fuzz target, edenai_media_reply, that feeds arbitrary bytes and a content-type string to
+  both. Helper b5838 calls these functions with typed inputs and compares the pinned LiteLLM classes. Source size is 374
+  nonblank, noncomment lines. Plan about 400 production lines, 300 test lines, 190 adapter lines and 80 fuzz and wiring
+  lines.
+scope:
+  paths:
+    - crates/betterlite-openai/src/edenai_transcription.rs
+    - crates/betterlite-openai/src/edenai_transcription/**
+    - crates/betterlite-openai/src/edenai_videos.rs
+    - crates/betterlite-openai/src/edenai_videos/**
+    - crates/betterlite-openai/src/edenai_speech.rs
+    - crates/betterlite-openai/src/edenai_speech/**
+    - crates/betterlite-openai/src/edenai_image.rs
+    - crates/betterlite-openai/src/edenai_image/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/edenai_media_reply.rs
+    - crates/betterlite-openai/fuzz/corpus/edenai_media_reply/**
+    - tools/oracle/cases/helpers/edenai-media/**
+    - "tools/oracle/fuzz/corpus/helper_case/edenai_media-*"
+    - tools/oracle/helpers/b5838.py
+    - tools/oracle/helpers/b5838/**
+    - tools/oracle/src/helpers/openai/b5838.rs
+    - tools/oracle/src/helpers/openai/b5838/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/edenai/audio_transcription/transformation.py#L25-L91
+    why: Form field assembly with extra_body, the multipart file part, no default response_format and the content-type branch of the reply.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/transcriptions/whisper_transformation.py#L20-L141
+    why: The Whisper parent whose params, mapping and default response_format this config keeps or replaces.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/edenai/videos/transformation.py#L27-L148
+    why: Key choice, URL, JSON input_reference, usage with provider_reported_cost_usd and the raise_for_status calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L74-L200
+    why: The parent create request and reply that Eden wraps.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/edenai/text_to_speech/transformation.py#L21-L83
+    why: Supported params, voice handling, the null-free body and the cost read from the header.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L141-L145
+    why: set_response_cost, which removes the stored cost when given none.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/edenai/image_generation/transformation.py#L25-L114
+    why: The ten supported params, the overlay mapping, the request body and the cost lift.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/edenai/common_utils.py#L18-L80
+    why: The shared helpers these modules call, built in B6100.
+  - url: https://www.edenai.co/docs/api-reference/audio/audio-transcriptions
+    why: Transcription endpoint and the cost in the JSON body.
+  - url: https://www.edenai.co/docs/v3/llms/video-generation
+    why: Video jobs, cost 0 on create and the settled cost on status.
+  - url: https://www.edenai.co/docs/api-reference/audio/audio-speech
+    why: Speech endpoint with the cost in x-edenai-cost.
+  - url: https://www.edenai.co/docs/v3/llms/image-generation
+    why: Image endpoint and the cost in the body.
+dod:
+  - text: Transcription builds the multipart form from params, extra_body and model with the right precedence, sets no default response_format, and reads a plain-text or JSON reply with the cost.
+    proof: [edenai-transcription-tests, edenai-media-corpus, helper-python, helper-case-corpus]
+  - text: Video create sends a JSON input_reference object as JSON and any other reference as a file part, and create and status replies carry provider_reported_cost_usd.
+    proof: [edenai-videos-tests, helper-python, helper-case-corpus]
+  - text: Video status, content and list replies fail on an error status before the body is read.
+    proof: [edenai-videos-tests, helper-case-corpus]
+  - text: Speech keeps its four params, builds the null-free body, and stores or clears the response cost from the header.
+    proof: [edenai-speech-tests, helper-python, helper-case-corpus]
+  - text: Image keeps its ten params in order, drops others silently, builds the body and lifts the cost.
+    proof: [edenai-image-tests, helper-python, helper-case-corpus]
+  - text: The new helper cases replay through the shared helper-case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: edenai-transcription-tests
+      why: The transcription request or reply transform is missing or fails
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^edenai_transcription::/) - test(replays_the_edenai_media_reply_corpus)'
+    - id: edenai-videos-tests
+      why: The video request, usage cost or status checks are missing or fail
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^edenai_videos::/)'
+    - id: edenai-speech-tests
+      why: The speech params, body or cost header handling is missing or fails
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^edenai_speech::/)'
+    - id: edenai-image-tests
+      why: The image params, body or cost lift is missing or fails
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^edenai_image::/)'
+    - id: edenai-media-corpus
+      why: The media reply fuzz target or its fresh replay corpus is missing
+      run: >-
+        test -f crates/betterlite-openai/fuzz/fuzz_targets/edenai_media_reply.rs &&
+        grep -q 'name = "edenai_media_reply"' crates/betterlite-openai/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/edenai_media_reply)" &&
+        cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_edenai_media_reply_corpus)'
+    - id: helper-python
+      why: The strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5838.py)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: Newly added Eden AI media helper cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/edenai_media-*")" &&
+        grep -lE '^[[:space:]]+b5838:' tools/oracle/fuzz/corpus/helper_case/edenai_media-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/edenai-media/transcription-form-fields.yaml
+  - tools/oracle/cases/helpers/edenai-media/transcription-reply-shapes.yaml
+  - tools/oracle/cases/helpers/edenai-media/video-create-input-reference.yaml
+  - tools/oracle/cases/helpers/edenai-media/video-usage-cost.yaml
+  - tools/oracle/cases/helpers/edenai-media/video-error-status.yaml
+  - tools/oracle/cases/helpers/edenai-media/speech-params-and-body.yaml
+  - tools/oracle/cases/helpers/edenai-media/speech-cost-header.yaml
+  - tools/oracle/cases/helpers/edenai-media/image-params-and-request.yaml
+deviations:
+  - what: On a video status, content or list reply with an error status, betterlite returns EdenAiError with that status, the body text and the headers.
+    why: LiteLLM calls raise_for_status and lets httpx.HTTPStatusError escape. The status code reaches the client the same way, and a typed error carries the provider body without Python's exception text.
+  - what: A body that has a JSON content-type but is not valid JSON gives EdenAiError with status 502 and a message that names the endpoint.
+    why: LiteLLM lets the JSONDecodeError from response.json() escape as an unhandled 500. A typed upstream error is clearer, and the decoder is fuzzed.
+out_of_scope:
+  - B6100 owns common_utils.py (edenai_common), chat, embedding, responses and messages.
+  - B041 owns the dispatch branches for transcription, video, speech and image in litellm/utils.py and litellm/main.py (the aspeech EdenAITextToSpeechConfig branch at main.py L8319), the ProviderConfigManager entries, reading EDENAI_API_KEY and EDENAI_API_BASE into EdenAiEnv, registering the configs in dispatch and the HTTP oracle cases through the booted proxy.
+  - B3332 and B5360 own provider selection for video and media configs, and B2453 owns the native transcription HTTP path and subtitle replies.
+  - B515 owns the Whisper params and mapping, B1001 process_audio_file, B525 and B526 the OpenAI video methods Eden does not override, B1035 HttpxBinaryResponseContent, B1717 set_response_cost_in_hidden_params, and B004 convert_to_model_response_object.
+  - The logging call logging_obj.post_call(original_response=body) in the image transform belongs to the caller (B249 hooks).
+pitfalls:
+  - The transcription form is built with a later key winning, so extra_body values override plain optional params and the model argument overrides both.
+  - The transcription content-type test is a case-sensitive substring test on the raw header, so "Application/JSON" is treated as plain text.
+  - Eden transcription sends no default response_format, so a request without one leaves the field out of the form.
+  - A JSON input_reference object stays a JSON field in data and creates no file part, while a string reference becomes a multipart file part even when it looks like a URL.
+  - The video usage rebuild drops every null entry, existing usage entries included, but keeps a cost of 0.
+  - Video create does not check the status and has no raise_for_status, unlike status, content and list.
+  - The speech cost is set from the response header on the binary wrapper, and a reply without the header clears any stored response_cost.
+  - Speech map_openai_params returns the optional params unchanged, so a param outside the four supported ones still reaches the body.
+  - Image map_openai_params drops unsupported keys even when drop_params is false, unlike most OpenAI-shaped configs.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

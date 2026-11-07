@@ -1,3 +1,4 @@
+pub mod client_credentials;
 pub mod distributed_lock;
 pub mod refresh_coordinator;
 pub mod refresh_coordinator_factory;

@@ -1,0 +1,14 @@
+id: B5940
+milestone: M3 providers
+title: OCI request signing, region URLs and schema cleanup
+status: todo
+depends_on: [B171, B184, B186]
+file: tasks/B5940-oci-common.yaml
+covers:
+  - "litellm/llms/oci/common_utils.py"
+parent: B042
+split_from: B042
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,217 @@
+id: B5844
+title: Snowflake Cortex chat, Claude messages and embedding transforms
+description: >-
+  Build the Snowflake Cortex transforms in betterlite-provider as one module, snowflake, with submodules config, request,
+  messages, response, stream and embedding (litellm/llms/snowflake/**). Everything is a pure function. Credentials, the
+  base URL and the account id are plain arguments: B042 reads SNOWFLAKE_JWT and SNOWFLAKE_ACCOUNT_ID and does the HTTP
+  calls. The module needs betterlite-provider to depend on betterlite-anthropic and betterlite-prompts (neither depends
+  on betterlite-provider, so there is no cycle). Define SnowflakeError for the three ValueError texts and the embedding
+  error class SnowflakeException (message, status_code, headers) on top of the B2202 base error.
+
+  Routing. A model is a Claude model when, lowercased and with a leading "snowflake/" removed, it starts with "claude-"
+  or "claude_". Claude models use the Anthropic Messages dialect, every other model uses OpenAI chat completions. The
+  test is lowercase but the body model is cut with a case-sensitive removeprefix("snowflake/") and never lowercased.
+
+  Config (utils.py L16-L102, chat L198-L264). get_supported_openai_params for chat is temperature, max_tokens,
+  max_completion_tokens, top_p, stream, tools, tool_choice, plus thinking for Claude models. The embedding config uses
+  the base list: temperature, max_tokens, top_p, stream, response_format, tools, tool_choice. map_openai_params copies
+  every supported key of non_default_params into optional_params and ignores the rest, with no drop or error.
+  _get_api_base(api_base, optional_params, account_id_env): a falsy api_base takes account_id from optional_params
+  (popped when the key exists, whatever its value) and otherwise from the env argument; None raises "Missing snowflake
+  account_id"; a value that fails re.match of ^[a-zA-Z0-9_-]+$ raises "Invalid account_id format"; the base becomes
+  https://{id}.snowflakecomputing.com/api/v2. Then trailing "/" characters are stripped and "/api/v2" is appended when
+  missing. A given api_base is never validated and leaves account_id in optional_params. get_complete_url appends
+  /cortex/v1/messages for Claude models, /cortex/v1/chat/completions for the rest, and /cortex/inference:embed for
+  embeddings. validate_environment raises "Missing Snowflake JWT key" for a None key; an api_key starting with "pat/"
+  loses that prefix and sets X-Snowflake-Authorization-Token-Type to PROGRAMMATIC_ACCESS_TOKEN, otherwise it is
+  KEYPAIR_JWT. It updates the given headers with Content-Type and Accept application/json, Authorization "Bearer {key}"
+  and that token type, and Claude models add anthropic-version 2023-06-01. _get_openai_compatible_provider_info returns
+  api_base unchanged and api_key or the JWT env argument. The chat error class is OpenAIError (B668), the embedding one
+  SnowflakeException.
+
+  Chat request. transform_request pops stream (default false) and extra_body (default empty) from optional_params, then
+  builds the body for the model family. OpenAI body keys, in order: model without "snowflake/", messages, stream, the
+  remaining optional_params, extra_body. max_tokens and max_completion_tokens are both popped first and the value
+  max_completion_tokens-or-max_tokens (the Python "or", so 0 falls through) is written last as max_completion_tokens
+  when it is not None. Claude body: pop system from optional_params as the passthrough system; split the messages with
+  _extract_system_and_messages; system is the passthrough when it is not None, else the extracted list or none. Convert
+  tools with _transform_tools_to_anthropic and tool_choice with _transform_tool_choice_to_anthropic. Pop
+  max_completion_tokens and copy it to max_tokens only when it is truthy and max_tokens is absent. Build model
+  (prefix removed), messages, stream, optional_params, extra_body, run normalize_cache_control_in_anthropic_payload
+  (B571) on that body, then set system from the same function applied to {"system": system} when system is not None,
+  and set max_tokens 4096 when the body still has none. The async variant inlines remote media with B183 for Claude
+  models only, then calls the same sync transform; take the fetcher B183 needs as an injected argument.
+
+  Claude messages (L298-L396). system messages: a non-empty string becomes one text block; a list keeps only blocks of
+  type text, with text defaulting to "" and cache_control carried when the key exists; empty strings and other
+  contents add nothing. assistant with tool_calls: signed thinking blocks first (a block with a truthy signature or
+  type redacted_thinking, copied), then a text block when content is truthy, then one tool_use per call with id, name
+  and input; string arguments are JSON-decoded and a decode error gives {}, a non-string value is used as it is.
+  assistant without tool_calls but with signed thinking blocks: list content becomes thinking blocks then a deep copy of
+  the content, string content becomes thinking blocks then one text block when non-empty. Any other assistant keeps its
+  content untouched. tool messages: tool_call_id counts only when it is a string, else "". Non-list content becomes a
+  tool_result block with content as the string or its JSON text; list content goes through B222's
+  convert_to_anthropic_tool_result with force_base64 true; the message-level cache_control is added to the block when
+  not None. The block joins the previous conversation entry when that is a user message whose list content starts with
+  a tool_result block, else it starts a new user message. Every other role keeps its role and its content passes
+  through _convert_image_url_blocks_to_anthropic: a list content has each image_url block replaced. The URL is the
+  image_url string or its url field; no URL leaves the block as it is. A data URI whose media type
+  (data:([^;,]+)) B223's select_anthropic_content_block_type_for_file maps to "document" goes through B223's
+  anthropic_process_openai_file_message as file_data; otherwise B222's create_anthropic_image_param runs with the
+  image_url object or string, its format field when a string, and is_bedrock_invoke true. A block cache_control that is
+  not None is added to the converted block. Tools: a function tool becomes name (default ""), description when the key
+  exists, input_schema from parameters minus a top-level "$schema" key or {type: object, properties: {}} when parameters
+  is absent; any other tool keeps its shape and only cleans a present input_schema the same way. tool_choice: strings
+  auto, required, none map to {type: auto}, {type: any}, {type: none} and unknown strings to auto; a dict of type
+  function becomes {type: tool, name}; any other dict passes through; any other value is {type: auto}.
+
+  Responses. OpenAI family: the JSON body is the response; model becomes "snowflake/" + (model or ""), and the
+  request model is stored in hidden_params.model; the raw body is logged through post_call first. Claude family: log the
+  body, take text, thinking blocks, reasoning content and tool calls from B578's extract_response_content, map
+  stop_reason end_turn, max_tokens, tool_use, stop_sequence to stop, length, tool_calls, stop (missing is end_turn,
+  unknown is stop), build one choice at index 0 whose message content is the text or None, tool_calls or None, plus
+  thinking_blocks and reasoning_content, and set usage with B579's calculate_usage over the usage object (default {})
+  and the whole body. The response model is "snowflake/" + (body model, default the request model), id is the body id
+  or "", and hidden_params.model is the request model. Embedding: every data item's embedding is replaced by its first
+  element (the Cortex array is nested), model becomes "snowflake/" + (model or ""), hidden_params.model is the request
+  model. The embedding request is {"text": input, "model": model, ...optional_params} with the model unchanged and
+  later keys overriding earlier ones.
+
+  Stream. get_model_response_iterator builds SnowflakeStreamingHandler over B2214's base iterator with the sync flag
+  and json_mode (default false), and also an Anthropic chunk parser (B581/B582) over the same stream. chunk_parser
+  sends a chunk that has a "choices" key to the OpenAI path and every other chunk to the Anthropic parser. The OpenAI
+  path returns an empty chunk (empty text, not finished, empty finish reason, no usage, index 0, no tool call) for an
+  empty choices list. Otherwise it reads only choices[0]: text is delta.content or "", finish_reason is the choice
+  value or "", is_finished is finish_reason != "", index is the choice index (default 0), and only the first entry of
+  delta.tool_calls becomes a tool chunk with id, function name and arguments defaulting to "", type function and index
+  default 0. usage is always None on this path.
+
+  The response bodies and stream chunks come from the network, so add a cargo-fuzz target snowflake_reply in
+  crates/betterlite-provider/fuzz that feeds arbitrary bytes to the chat reply decoder, the embedding reply decoder and
+  the chunk parser, plus a check that replays its corpus.
+
+  Sizing: about 680 nonblank, noncomment LiteLLM lines. Plan 560 transform lines, 430 tests, 120 fuzz and exports and
+  190 helper adapters.
+scope:
+  paths:
+    - crates/betterlite-provider/src/snowflake.rs
+    - crates/betterlite-provider/src/snowflake/**
+    - crates/betterlite-provider/Cargo.toml
+    - crates/betterlite-provider/fuzz/Cargo.toml
+    - crates/betterlite-provider/fuzz/fuzz_targets/snowflake_reply.rs
+    - crates/betterlite-provider/fuzz/corpus/snowflake_reply/**
+    - tools/oracle/cases/helpers/snowflake/**
+    - "tools/oracle/fuzz/corpus/helper_case/snowflake-*"
+    - tools/oracle/helpers/b5844.py
+    - tools/oracle/helpers/b5844/**
+    - tools/oracle/src/helpers/provider/b5844.rs
+    - tools/oracle/src/helpers/provider/b5844/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/snowflake/utils.py#L16-L102
+    why: Exception class, supported params, base URL rule, header rules and the key and base resolution.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/snowflake/chat/transformation.py#L50-L264
+    why: Claude model test, image block conversion, thinking block filter, supported params, URL and headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/snowflake/chat/transformation.py#L266-L396
+    why: Tool conversion and the system, assistant and tool message split.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/snowflake/chat/transformation.py#L398-L516
+    why: Request assembly for both families, tool_choice mapping and the max token rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/snowflake/chat/transformation.py#L518-L711
+    why: Both response conversions and the two-dialect stream handler.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/snowflake/embedding/transformation.py#L14-L65
+    why: Embed URL, request body, nested embedding unwrap and error class.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L4655-L4700
+    why: The dispatch B042 owns, which only calls the config through the shared HTTP handler.
+  - url: https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-rest-api
+    why: The Cortex REST endpoints and the PAT and keypair JWT token types.
+dod:
+  - text: Routing, supported params, base URL, account id rules, endpoint URLs and auth headers match LiteLLM for JWT and pat/ keys and for Claude and other models.
+    proof: [config-tests, helper-python, helper-case-corpus]
+  - text: The OpenAI-family body keeps LiteLLM's key order and max token rule, and the Claude body matches in system, tools, tool_choice, max_tokens and cache control handling.
+    proof: [request-tests, helper-python, helper-case-corpus]
+  - text: Claude message conversion matches LiteLLM for system parts, tool_use and tool_result grouping, signed thinking blocks and image_url and document blocks.
+    proof: [message-tests, helper-python, helper-case-corpus]
+  - text: Chat and embedding replies match LiteLLM for the model prefix, stop reason map, usage, hidden model and nested embeddings.
+    proof: [response-tests, reply-corpus, helper-python, helper-case-corpus]
+  - text: The stream parser routes OpenAI and Anthropic chunks the way LiteLLM does and never reports usage on the OpenAI path.
+    proof: [stream-tests, reply-corpus, helper-python, helper-case-corpus]
+  - text: New helper cases replay through the shared helper-case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: config-tests
+      why: the routing, params, URL or header tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^snowflake::config::/)'
+    - id: request-tests
+      why: the chat or embedding request body tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^snowflake::request::/)'
+    - id: message-tests
+      why: the Claude message, tool or tool_choice tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^snowflake::messages::/)'
+    - id: response-tests
+      why: the chat or embedding response tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^snowflake::response::/) + test(/^snowflake::embedding::/) - test(replays_the_snowflake_reply_corpus)'
+    - id: stream-tests
+      why: the stream chunk tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^snowflake::stream::/)'
+    - id: reply-corpus
+      why: the reply fuzz target or its fresh replay corpus is missing
+      run: >-
+        test -f crates/betterlite-provider/fuzz/fuzz_targets/snowflake_reply.rs &&
+        grep -q 'name = "snowflake_reply"' crates/betterlite-provider/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-provider/fuzz/corpus/snowflake_reply)" &&
+        cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(replays_the_snowflake_reply_corpus)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5844)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b5844 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5844/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added Snowflake helper cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/snowflake-*")" &&
+        grep -lE '^[[:space:]]+b5844:' tools/oracle/fuzz/corpus/helper_case/snowflake-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/snowflake/url-and-account.yaml
+  - tools/oracle/cases/helpers/snowflake/headers-and-key.yaml
+  - tools/oracle/cases/helpers/snowflake/supported-and-mapped-params.yaml
+  - tools/oracle/cases/helpers/snowflake/openai-request.yaml
+  - tools/oracle/cases/helpers/snowflake/claude-request-options.yaml
+  - tools/oracle/cases/helpers/snowflake/claude-messages.yaml
+  - tools/oracle/cases/helpers/snowflake/claude-tools.yaml
+  - tools/oracle/cases/helpers/snowflake/openai-response.yaml
+  - tools/oracle/cases/helpers/snowflake/claude-response.yaml
+  - tools/oracle/cases/helpers/snowflake/stream-chunks.yaml
+  - tools/oracle/cases/helpers/snowflake/embedding.yaml
+deviations: []
+out_of_scope:
+  - B042 owns _complete_snowflake and the embedding branch in main.py (L7297-L7298), the SNOWFLAKE_JWT and SNOWFLAKE_ACCOUNT_ID env reads, get_llm_provider_logic (L811-L815), the HTTP calls, provider registration in dispatch and the HTTP oracle cases.
+  - SnowflakeBase.validate_environment in common_utils.py has no caller at the pin (the configs use SnowflakeBaseConfig), so it is not built and has no case.
+  - SnowflakeConfig.get_config only calls the parent and the class has no config attributes, so B2202's get_config covers it.
+  - "The Anthropic helpers stay with their owners and are only called here: B578 extract_response_content, B579 calculate_usage, B571 normalize_cache_control_in_anthropic_payload, B581 and B582 the Anthropic chunk parser, B222 convert_to_anthropic_tool_result and create_anthropic_image_param, B223 select_anthropic_content_block_type_for_file and anthropic_process_openai_file_message, B183 async_inline_remote_media."
+  - B2214 owns the base iterator and its line decoding, B668 owns OpenAIError, and B2202 owns BaseLLMException and the base config.
+pitfalls:
+  - 'The Claude test needs the dash or underscore: "claude-3-5-sonnet" and "Snowflake/CLAUDE_x" are Claude, "claude3" and "mistral-large" are not.'
+  - The body model uses a case-sensitive removeprefix("snowflake/"), so "Snowflake/claude-3-5-sonnet" routes as Claude and still sends the model with its capital S prefix.
+  - The account id regex uses re.match with "$", which also accepts one trailing newline after a valid id, and an api_base that is given skips it and leaves account_id in optional_params to reach the body.
+  - An empty-string api_key is not None, so validate_environment sends "Bearer " and KEYPAIR_JWT, and "pat/" alone gives an empty PAT token.
+  - validate_environment overwrites Content-Type and Accept on the headers it was given but keeps every other header.
+  - OpenAI body merge order lets extra_body override stream and model, and a max_tokens inside extra_body survives next to the max_completion_tokens the code adds.
+  - 'max_completion_tokens 0 with max_tokens 5 sends 5 on the OpenAI path, and 0 with no max_tokens sends no limit at all.'
+  - The Claude max_tokens default 4096 is applied after extra_body is merged, and system is added to the body after the cache control normalization, so it is normalized on its own.
+  - A tool message joins the previous user entry only when that entry's first content block is a tool_result, so a user text turn between two tool messages starts a fresh user entry.
+  - An assistant text block is built from content as it is whenever tool_calls exist, even when content is a list.
+  - Tool call arguments that decode to a non-object JSON value (for example 5) are used as the tool_use input without a check.
+  - Embedding requests keep the "snowflake/" prefix in model, while chat bodies drop it.
+  - Embedding replies fail on an item whose embedding array is empty, and each item is replaced by element 0 only.
+  - The OpenAI stream path sets usage to None, so a final usage-only chunk produces the empty chunk and no usage is ever reported on it.
+  - 'Only delta.tool_calls[0] is read, and delta.reasoning_content is ignored on the OpenAI stream path.'
+  - A stream chunk with a "choices" key goes to the OpenAI path even when it also has a type key.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

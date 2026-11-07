@@ -3,7 +3,7 @@ milestone: M6 guardrails
 title: Policy values, conditions and inheritance
 status: todo
 depends_on: [B882]
-file: null
+file: tasks/B3240-policy-values-conditions.yaml
 covers:
   - "litellm/types/proxy/policy_engine/policy_types.py"
   - "litellm/types/proxy/policy_engine/pipeline_types.py"

@@ -74,6 +74,7 @@ pitfalls:
   - "The tenant_overrides flag in build_tracer_provider only applies _OverriddenBackendFilter when owner is not None; a per-tenant provider built from the same config must pass tenant_overrides=false to avoid double-filtering (the filter exists to skip delivery, not to suppress reception)."
   - "Thread safety: _tracer_provider_cache_lock guards the cache in dynamic provider reuse; do not hold it across I/O (exporter creation, resource build)."
   - "Provider.add_span_processor is not thread-safe across concurrent provider builds. Serialize provider construction per tenant if needed."
+  - "Call B3855's legacy_resource, legacy_tracer_name(env), LegacyExporterBuilder::span_processor, log_exporter, metric_reader and the three plan functions; do not rebuild them."
 review_level: standard
 budget:
   max_changed_lines: 1500

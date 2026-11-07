@@ -135,7 +135,7 @@ out_of_scope:
   - safe_dumps JSON serialization (B192)
   - stream_chunk_builder (B2227)
   - Anthropic SSE parser (B3669 owns assemble_anthropic_sse_stream and is_raw_sse_stream)
-  - Message/choice transformation and legacy attribute dispatch (B3856)
+  - Message and choice transforms (B3845); legacy attribute dispatch (B3856)
   - _capture_in_event predicate (B3854)
   - drop_none and json_or_none serialization helpers (B3845)
 pitfalls:

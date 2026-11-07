@@ -1,0 +1,14 @@
+id: B6021
+milestone: M12 python
+title: Router generic calls and anthropic_messages
+status: todo
+depends_on: [B014, B016, B017, B303, B310, B312, B336, B398, B401, B982, B6020]
+file: tasks/B6021-router-generic-call.yaml
+covers:
+  - "litellm/router.py"
+parent: B162
+split_from: B5078
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

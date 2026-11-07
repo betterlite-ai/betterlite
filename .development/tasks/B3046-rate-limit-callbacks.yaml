@@ -58,7 +58,7 @@ description: >-
 
   Depends on B732 for UserAPIKeyAuth and parent_otel_span; B1042 for BatchEnqueuedTokenReservation,
   batch_response_view, canonical_provider_batch_id; B1043 for BatchEnqueuedTokenStore.save_reservation,
-  pop_reservation, refund; B3031 for get_request_stash, get_request_stash_for_call, _call_id_from_callback_kwargs;
+  pop_reservation, refund; B3031 for get_request_stash, get_request_stash_for_call (_call_id_from_callback_kwargs is not ported: read litellm_call_id from the typed callback record and pass it to for_call);
   B3035 for _release_stashed_parallel_slot; B3037 for async_increment_tokens_with_ttl_preservation,
   async_increment_reservation_aware_tokens, _build_reservation_aware_tpm_ops, _build_project_reservation_ops;
   B3044 for get_rate_limit_type, _recovered_partial_usage_tokens; B3045 for _build_success_event_pipeline_operations.
@@ -278,7 +278,7 @@ pitfalls:
   - async_post_call_failure_hook's exception handling must be broad (catch Exception) so batch/reservation failures never fail the response. Separate exception blocks per task preserve partial success when some operations fail.
   - batch_response_view(response) returns None for non-batch responses; always check before dereferencing the view.
   - BATCH_ENQUEUED_REFUND_STATUSES is a string set (e.g. {"failed", "expired"}); use .lower() on status values before set membership checks.
-  - Slot stashing uses call_id filtering to prevent nested callbacks from releasing the wrong acquisition. Always pass the correct call ID to _call_id_from_callback_kwargs.
+  - Slot stashing uses call_id filtering to prevent nested callbacks from releasing the wrong acquisition. Always read litellm_call_id from the typed callback record and pass it to for_call (_call_id_from_callback_kwargs is not ported).
 
 review_level: standard
 budget:

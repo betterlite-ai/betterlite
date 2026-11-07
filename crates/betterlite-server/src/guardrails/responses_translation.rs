@@ -1,1 +1,10 @@
+pub mod block_events;
+pub mod input_provenance;
+pub mod open_item;
+pub mod output_rewrite;
+pub mod request_rewrite;
+pub mod stream_output;
+pub mod stream_scan;
+pub mod stream_shapes;
+pub mod stream_sync;
 pub mod tool_merge;
