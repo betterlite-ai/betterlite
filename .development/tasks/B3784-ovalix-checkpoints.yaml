@@ -53,15 +53,15 @@ dod:
   - text: The guardrail normalizes actor identity from user_api_key_user_email or user_api_key_user_id to a SHA-256-based actor id and builds session_id as actor_id + date + application_id.
     proof: [ovalix-session-identity]
   - text: For each text in reverse order, the guardrail calls the Tracker checkpoint endpoint and applies action_type logic (block current, replace earlier, or correct).
-    proof: [oracle-pre-call-block, oracle-post-call-correct, oracle-earlier-block]
+    proof: [oracle]
   - text: When action_type is "block" for the first response, the guardrail raises a blocked-exception type with status 400.
-    proof: [oracle-current-block, ovalix-exception-status]
+    proof: [oracle, ovalix-exception-status]
   - text: When action_type is "block" for earlier responses, the guardrail replaces them with the blocking message from the Tracker response, or falls back to a constant blocking message if the response lacks modified_data.
-    proof: [oracle-earlier-block]
+    proof: [oracle]
   - text: The guardrail supports pre_call and post_call event hooks, and auto-adds hooks when checkpoint IDs are set.
-    proof: [oracle-event-hooks, ovalix-unit-tests]
+    proof: [oracle, ovalix-unit-tests]
   - text: On checkpoint API errors, the guardrail logs and propagates as GuardrailRaisedException.
-    proof: [oracle-backend-error]
+    proof: [oracle]
   - text: The configuration model has tracker_api_base, tracker_api_key, application_id, pre_checkpoint_id, post_checkpoint_id fields with documentation.
     proof: [ovalix-config-model]
 checks:
@@ -82,24 +82,6 @@ checks:
     - id: ovalix-unit-tests
       why: unit tests for checkpoint payload construction or text processing fail
       run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^ovalix::/)'
-    - id: oracle-pre-call-block
-      why: the oracle comparison fails for a blocked pre-call request
-      run: cargo gate run B3784 --only oracle
-    - id: oracle-post-call-correct
-      why: the oracle comparison fails for a corrected post-call response
-      run: cargo gate run B3784 --only oracle
-    - id: oracle-earlier-block
-      why: the oracle comparison fails when an earlier response is blocked
-      run: cargo gate run B3784 --only oracle
-    - id: oracle-current-block
-      why: the oracle comparison fails when the current response is blocked
-      run: cargo gate run B3784 --only oracle
-    - id: oracle-backend-error
-      why: the oracle comparison fails for checkpoint API error handling
-      run: cargo gate run B3784 --only oracle
-    - id: oracle-event-hooks
-      why: the oracle comparison fails for pre_call or post_call event hooks
-      run: cargo gate run B3784 --only oracle
 oracle_cases:
   - tools/oracle/cases/guardrails/ovalix-request-allowed.yaml
   - tools/oracle/cases/guardrails/ovalix-request-blocked.yaml
