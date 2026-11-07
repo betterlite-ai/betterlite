@@ -76,6 +76,7 @@ pub mod lasso_masking;
 pub mod llm_passthrough_dispatch;
 pub mod mcp_end_user_permission;
 pub mod mcp_guardrail_translation;
+pub mod mcp_jwt_signer;
 pub mod mcp_security;
 pub mod mcp_token_claims;
 pub mod microsoft_purview;
