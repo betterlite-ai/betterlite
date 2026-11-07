@@ -1,0 +1,45 @@
+kind: helper
+name: resource-hints-video-character-ids
+call:
+  auth_resource_hints:
+    steps:
+      - kind: video_id
+        encoded: "video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOmF6O21vZGVsX2lkOmdwdC00O3ZpZGVvX2lkOnZpZC0x"
+      - kind: video_id
+        encoded: "video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOmF6O21vZGVsX2lkOmdwdC00O3ZpZGVvX2lkOnZpZC0xMg"
+      - kind: video_id
+        encoded: "video_video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOmF6O21vZGVsX2lkOm07dmlkZW9faWQ6djE="
+      - kind: video_id
+        encoded: "video_Q"
+      - kind: video_id
+        encoded: "video_/w=="
+      - kind: video_id
+        encoded: "video_YTti"
+      - kind: video_id
+        encoded: "video_YTtiO2M7ZDtl"
+      - kind: video_id
+        encoded: "video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOjttb2RlbF9pZDo7dmlkZW9faWQ6"
+      - kind: character_id
+        encoded: "character_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOmF6O21vZGVsX2lkOm07Y2hhcmFjdGVyX2lkOmM7dmlkZW9faWQ6dg=="
+      - kind: character_id
+        encoded: "character_bm8tc2VtaWNvbG9u"
+      - kind: character_id
+        encoded: "character_Q"
+      - kind: video_id
+        encoded: ""
+      - kind: character_id
+        encoded: ""
+      - kind: video_id
+        encoded: "not-managed"
+      - kind: character_id
+        encoded: "not-managed"
+      - kind: video_id
+        encoded: "video_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOmxpdGVsbG06Y3VzdG9tX2xsbV9wcm92aWRlcjphejttb2RlbF9pZDptb2RlbF9pZDptO3ZpZGVvX2lkOnZpZGVvX2lkOnY="
+      - kind: character_id
+        encoded: "character_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOmxpdGVsbG06Y3VzdG9tX2xsbV9wcm92aWRlcjphejttb2RlbF9pZDptb2RlbF9pZDptO2NoYXJhY3Rlcl9pZDpjaGFyYWN0ZXJfaWQ6Yw=="
+      - kind: character_id
+        encoded: "character_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOmF6O21vZGVsX2lkOmdwdC00O2NoYXJhY3Rlcl9pZDpjaGFyLTE"
+      - kind: character_id
+        encoded: "character_bGl0ZWxsbTpjdXN0b21fbGxtX3Byb3ZpZGVyOjttb2RlbF9pZDo7Y2hhcmFjdGVyX2lkOg=="
+env: {}
+compare: {ignore: []}
