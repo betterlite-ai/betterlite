@@ -16,6 +16,7 @@ pub mod idp_token_exchange;
 pub mod mcp_preview;
 pub mod mcp_registry_resolve;
 pub mod oauth_resource;
+pub mod openapi_tools;
 pub mod outbound_credentials;
 pub mod redirect_trust;
 pub mod request_headers;

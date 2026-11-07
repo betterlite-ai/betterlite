@@ -56,6 +56,7 @@ pub mod guardrail_records;
 pub mod guardrail_registry;
 pub mod guardrail_scan_cache;
 pub mod guardrail_selection;
+pub mod guardrail_startup;
 pub mod guardrail_translation;
 pub mod guardrails_ai_guardrail;
 pub mod headroom;

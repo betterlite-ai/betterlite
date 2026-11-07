@@ -240,6 +240,7 @@ pub mod lasso_classification;
 pub mod latency_observations;
 pub mod latency_routing;
 pub mod least_busy;
+pub mod legacy_guardrails;
 pub mod lemonade_model_metadata;
 pub mod llm_classifier;
 pub mod local_ttl_cache;
@@ -297,6 +298,7 @@ pub mod pass_through_registry;
 pub mod passthrough_request_policies;
 pub mod password_login;
 pub mod password_policy;
+pub mod payload_exclusions;
 pub mod pre_routing_registry;
 pub mod prometheus_bounded_series;
 pub mod prometheus_budget_refresh;
@@ -533,7 +535,7 @@ sections! {
     jwt_provisioning, jwt_role_claims, jwt_settings, jwt_team_authorization, jwt_team_selection,
     jwt_verification, key_access, key_context, key_create, key_event_sinks, key_limit_policy,
     key_management_settings, key_persistence, key_policy_fields, key_rotation, key_rotation_write,
-    langfuse_settings, lar1_routing, lasso_classification, latency_observations, latency_routing, least_busy,
+    langfuse_settings, lar1_routing, lasso_classification, latency_observations, latency_routing, least_busy, legacy_guardrails,
     lemonade_model_metadata, llm_classifier, local_ttl_cache, logging_privacy, login_form,
     login_return, login_routes, login_throttle, management_rbac, mcp_access_requirements,
     mcp_bearer_credentials, mcp_client_side_auth, mcp_sso_assertion_cache, mcp_tool_helpers,
@@ -546,7 +548,7 @@ sections! {
     native_messages_hosts_settings, oauth_tokens, ollama_model_metadata, openai_chat_content,
     openai_credentials, openai_like_settings, openai_mock_transport, openai_provider,
     openai_realtime, openai_workload_identity, otel_settings, panw_prisma_airs,
-    pass_through_registry, passthrough_request_policies, password_login, password_policy,
+    pass_through_registry, passthrough_request_policies, password_login, password_policy, payload_exclusions,
     pre_routing_registry, prometheus_bounded_series, prometheus_budget_refresh,
     prometheus_exporter, prompt_affinity, prompt_cache_accounting, provider_resolution,
     provider_url_destination, proxy_custom_dispatch, proxy_provider_options, public_router_presets,

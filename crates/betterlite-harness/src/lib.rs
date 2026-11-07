@@ -8,6 +8,7 @@ pub mod handlers;
 pub mod options;
 pub mod payloads;
 pub mod providers;
+pub mod relay;
 pub mod sandbox;
 pub mod session;
 pub mod snapshots;

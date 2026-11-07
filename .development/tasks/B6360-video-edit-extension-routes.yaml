@@ -41,8 +41,7 @@ description: >-
   prompt, seconds, custom_llm_provider, extra_headers, extra_query, extra_body, timeout and the loose keywords. B3342 reads the logging
   object from the loose keywords, so the entry passes the one B004 supplies. Keys in data that are not named arguments go to the loose
   map unchanged. LiteLLM's route_llm_request sends these two route types straight to the SDK function when data has no model or an empty
-  one. With a model it tries the router's avideo_edit or avideo_extension first and falls back to the SDK function on any exception.
-  The router wrappers are not built by any task (see deviations and notes), so both entries call B3342 directly in both cases.
+  one. With a model it calls the router's avideo_edit or avideo_extension. Each entry therefore first calls B6460's plan_video_route (VideoCallKind Edit or Extension). A Direct plan calls the B3342 function described above. A Router plan calls the matching VideoRouterCalls method. A NotFound plan returns the model-not-found error. VideoRouterCalls and VideoRouteView are injected into the entries, because betterlite-core cannot import sdk or router. At the pin a call with a model gets no SDK fallback: the Router.avideo_* wrapper is an async_wrapper, so route_llm_request.py L700-L706 gets an unawaited coroutine and a router error surfaces at the caller's await, outside the try. The router error reaches the client and the entry never retries the SDK function.
 
   Count about 140 non-blank, non-comment LiteLLM lines (endpoints.py L725-L923 less docstrings). Budget 230 implementation, 260 tests
   and 200 oracle fixtures. The task parses no new bytes (B1100 and B1101 own body and form decoding), so there is no fuzz target. Tests:
@@ -85,9 +84,9 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L612-L636
     why: avideo_edit and avideo_extension with an empty model go straight to the SDK function.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L695-L705
-    why: With a model the router is tried first and any exception falls back to the SDK function.
+    why: With a model the router is called. The except branch never runs for a router error, see the description.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L2136-L2141
-    why: The router factory wiring for avideo_edit, video_edit, avideo_extension and video_extension, which no task owns.
+    why: The router factory wiring for avideo_edit, video_edit, avideo_extension and video_extension, built by B6460.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L502-L528
     why: What the OpenAI edit call sends upstream (POST {api_base}/edits, multipart for a file, JSON with video.id otherwise), for the oracle cases.
 dod:
@@ -162,12 +161,6 @@ oracle_cases:
   - tools/oracle/cases/api/video-edit-extension-routes/edit-route-auth.yaml
 deviations:
   - what: >-
-      With a model in data (from an encoded video id), VideoEdit and VideoExtension call the SDK function only. They do not try the
-      router's avideo_edit or avideo_extension first, so the call is not load balanced across deployments.
-    why: >-
-      No task builds the router wrappers for these two call types, and the router's call pipeline is not in this task's scope. The model
-      still reaches the call as a loose keyword, so the request uses the same credentials as the direct fallback in LiteLLM.
-  - what: >-
       GET /v1/videos/edits, /videos/edits, /v1/videos/extensions and /videos/extensions answer 405. LiteLLM sends those GETs to
       video_status with the video id "edits" or "extensions".
     why: axum prefers the static path over {video_id} and does not fall back across methods. No real video has that id.
@@ -176,7 +169,7 @@ out_of_scope:
   - "video_reference_to_id, get_custom_provider_from_data and extract_model_from_target_model_names in video_endpoints/utils.py: B3330. This task calls the first two."
   - "avideo_edit and avideo_extension, the SDK calls: B3342. The transport behind them: B3336. The OpenAI edit and extension request transforms: B526."
   - "ProxyBaseLLMRequestProcessing and its exception handler: B004. Body reading: B1100. Form parsing: B1101. Provider getters: B2400. Model-id lookup: B844. Authentication: B052. batch_to_bytesio: B082."
-  - "route_llm_request itself and the router factory wiring of avideo_edit, video_edit, avideo_extension and video_extension (router.py 2136-2141): no task owns the video wiring; B016 owns the router call pipeline. See deviations."
+  - "route_llm_request itself and the router factory wiring of avideo_edit, video_edit, avideo_extension and video_extension (router.py 2136-2141): B6460 owns the route choice and the wrappers; B016 owns the router call pipeline."
 pitfalls:
   - "Edit sets video_id to the empty string for any uploaded file, even when batch_to_bytesio returns an empty list, and then sets no video key. Extension has no such branch."
   - "A file part is only an upload when it is a file. A plain string under video in a multipart form is a reference and goes through video_reference_to_id like a JSON value."

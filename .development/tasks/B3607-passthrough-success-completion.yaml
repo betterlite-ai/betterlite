@@ -22,8 +22,8 @@ description: >-
   `PassThroughRequestState { call: PassThroughCallState, payload: PassthroughStandardLoggingPayload }` is the per-request record. `call`
   is B3605's PassThroughCallState embedded as it is, never redefined: B3613 fills it with apply_upstream_reported_usage on the live
   response before it enqueues the completion. `payload` is B3600's record. `record_on_logging_object(state, logging_obj)` is the one place
-  that maps the record onto the logging object's model_call_details (LiteLLM's dict): key "passthrough_logging_payload" gets the payload
-  and key "response_cost" gets state.call.response_cost when it is Some. Read the merged B3604 and B3646 code for the logging object's
+  that maps the record onto the logging object's model_call_details (LiteLLM's dict): key "passthrough_logging_payload" gets the payload,
+  key "response_cost" gets state.call.response_cost when it is Some, the upstream-reported-usage marker key (B3605's constant for LiteLLM's UPSTREAM_REPORTED_USAGE_KEY) gets the record when state.call.upstream_reported_usage is Some, and key "combined_usage_object" gets a usage object with only total_tokens set (the merged Usage type) when state.call.combined_usage_total_tokens is Some. LiteLLM's apply_upstream_reported_usage writes all three on the logging object, and B3613 only fills the state. Read the merged B3604 and B3646 code for the logging object's
   model_call_details update call and use that one; do not add a second way to write to it.
 
   Completion input and the path choice. `CompletionInput<'a>` holds: logging_obj (the handle type B3606's ProviderLogInput declares),
@@ -157,6 +157,8 @@ dod:
   - text: decode_response_text follows httpx for utf-8, a declared charset, an unknown charset, invalid bytes, an empty body and an unread body.
     proof: [text-tests, completion-oracle, response-text-corpus]
   - text: PassThroughRequestState embeds B3605's PassThroughCallState and maps the payload and cost onto the logging object.
+    proof: [state-tests]
+  - text: record_on_logging_object also writes the upstream-reported-usage marker and combined_usage_object when the state holds them, and writes neither when it does not (test state_usage_marker).
     proof: [state-tests]
   - text: The relay yields every chunk unchanged and runs the completion once after a clean end, a read error or a client drop, with no body, an empty result and cache_hit false.
     proof: [relay-tests]
