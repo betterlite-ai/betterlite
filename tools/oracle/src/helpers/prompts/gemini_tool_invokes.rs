@@ -1,5 +1,4 @@
 use betterlite_prompts::arguments::json::Json;
-use betterlite_prompts::gemini_tool_invokes::error::GeminiToolInvokesError;
 use betterlite_prompts::gemini_tool_invokes::invoke::{
     convert_tool_calls_to_gemini, gemini_tool_call_invoke_helper,
 };
@@ -61,10 +60,9 @@ impl Helper for Op {
             Input::Invoke {
                 function_call_params,
                 tool_call_id,
-            } => ok_result(gemini_tool_call_invoke_helper(
-                function_call_params,
-                tool_call_id.as_deref(),
-            )),
+            } => gemini_tool_call_invoke_helper(function_call_params, tool_call_id.as_deref())
+                .map_err(|error| helper_error("GeminiToolInvokesError", error.to_string()))
+                .and_then(ok_value),
             Input::Encode { pairs } => ok_value(
                 pairs
                     .iter()
@@ -84,29 +82,10 @@ impl Helper for Op {
                 message,
                 model,
                 forward_function_call_id,
-            } => ok_result(convert_tool_calls_to_gemini(
-                message,
-                model.as_deref(),
-                *forward_function_call_id,
-            )),
+            } => convert_tool_calls_to_gemini(message, model.as_deref(), *forward_function_call_id)
+                .map_err(|error| helper_error("GeminiToolInvokesError", error.to_string()))
+                .and_then(ok_value),
         }
-    }
-}
-
-fn ok_result<Payload>(result: Result<Payload, GeminiToolInvokesError>) -> HelperResult
-where
-    Payload: serde::Serialize,
-{
-    match result {
-        Ok(payload) => ok_value(payload),
-        Err(error) => Err(Box::new(HelperError {
-            class: "GeminiToolInvokesError".to_owned(),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: error.to_string(),
-        })),
     }
 }
 
@@ -116,13 +95,17 @@ where
 {
     match to_value(payload) {
         Ok(value) => Ok(value),
-        Err(error) => Err(Box::new(HelperError {
-            class: "SerializationError".to_owned(),
-            status: None,
-            error_type: None,
-            param: None,
-            code: None,
-            message: error.to_string(),
-        })),
+        Err(error) => Err(helper_error("SerializationError", error.to_string())),
     }
+}
+
+fn helper_error(class: &str, message: String) -> Box<HelperError> {
+    Box::new(HelperError {
+        class: class.to_owned(),
+        status: None,
+        error_type: None,
+        param: None,
+        code: None,
+        message,
+    })
 }
