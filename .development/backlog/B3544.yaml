@@ -2,8 +2,8 @@ id: B3544
 milestone: M5 api families
 title: Build compression retrieval follow-up plans
 status: todo
-depends_on: [B3543]
-file: null
+depends_on: [B3543, B189]
+file: tasks/B3544-compression-retrieval-loop.yaml
 covers:
   - "litellm/integrations/compression_interception/handler.py"
 parent: B100

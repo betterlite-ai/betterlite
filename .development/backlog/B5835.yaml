@@ -1,0 +1,14 @@
+id: B5835
+milestone: M3 providers
+title: Vercel AI Gateway provider
+status: todo
+depends_on: [B668, B006]
+file: tasks/B5835-vercel-ai-gateway.yaml
+covers:
+  - "litellm/llms/vercel_ai_gateway/**"
+parent: B041
+split_from: B041
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

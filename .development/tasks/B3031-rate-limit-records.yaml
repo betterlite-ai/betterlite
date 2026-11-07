@@ -1,0 +1,255 @@
+id: B3031
+title: Rate-limit records and request-owned state
+description: >-
+  Build the shared vocabulary every other rate-limit task uses: the typed records of the v3 limiter,
+  the per-request state its callbacks share, the fail-closed 503 and the limiter's two env settings.
+  Nothing here talks to Redis or decides a limit. The Lua scripts, the window store, the counter
+  algorithms, the descriptor builders and the callbacks live in the sibling tasks and import these types.
+
+  Three Rust modules in betterlite-rate-limit and one config section in betterlite-config.
+
+  Module limiter_records holds plain data. Port RateLimitDescriptor (key, value, optional rate_limit)
+  and its RateLimitDescriptorRateLimit object (requests_per_unit, tokens_per_unit, max_parallel_requests,
+  window_size, all optional). Port ParallelRequestGauge (counter_key, limit, descriptor_key),
+  ParallelSlotAcquisition (slot_id, counter_keys), RateLimitStatus (code, current_limit, limit_remaining,
+  rate_limit_type, descriptor_key, optional descriptor_value), RateLimitResponse (overall_code, statuses,
+  optional reservation_windows), RateLimitResponseWithDescriptors, WindowKeyMetadata, AtomicCounterMeta,
+  AtomicCounterState, DescriptorAtomicGroup and CounterRefund. rate_limit_type is an enum RateLimitType
+  with the exact wire strings "requests", "tokens" and "max_parallel_requests"; AtomicCounterMeta and
+  WindowKeyMetadata use only the first two, so give them a narrower enum or a documented invariant.
+  ReservationWindowIdentity is a struct of two strings and a ReservationBackend enum ("redis" or "local");
+  reservation_windows is an ordered set of them (Python uses a frozenset). ReservationAwareIncrement wraps
+  IncrementOperation (key, increment_value, ttl). betterlite-redis already has it in crates/betterlite-redis/src/cache_primitives/pipeline_increment.rs. Reuse it from betterlite-redis (betterlite-rate-limit's Cargo.toml gains that crate dependency); this task no longer waits for B4290. It adds the optional window_key,
+  expected_window_start and reservation_backend. The status codes stay plain strings ("OK", "OVER_LIMIT");
+  other tasks own what they mean. Also here: CacheCounterValue (int, float, text or bytes) and
+  counter_values_from_reply, the port of _as_counter_values. Its input is a small enum ScriptReply
+  (nil, int, float, text, bytes, array) that the Redis transport maps its client reply into. It returns
+  the values of an array whose elements are all int, float, text or bytes, and a typed error that names
+  the kind for a non-array reply or for a nil or nested element (Python raises TypeError there).
+
+  limiter_records also holds the key helpers and constants. create_rate_limit_keys(key, value, type)
+  returns "{key:value}:type" with literal braces (the braces are the Redis hash tag). sibling_counter_keys
+  takes a window key, strips one trailing ":window" and returns the ":requests" and ":tokens" keys under
+  that prefix. RateLimitedModel is a pair (requested, group) with limit_in(limits): the limit stored under
+  the requested name, else the one under the group name, else none. Constants with LiteLLM's values:
+  PROJECT_ITPM_DESCRIPTOR_KEY "model_per_project_itpm", PROJECT_OTPM_DESCRIPTOR_KEY "model_per_project_otpm",
+  PARALLEL_REQUEST_SLOT_TTL_SECONDS 3600, DEFAULT_MAX_TOKENS_ESTIMATE 4096, DEFAULT_CHARS_PER_TOKEN 4,
+  the TPM floor fraction 4, RESPONSES_API_MIN_OUTPUT_TOKENS 16, DEFAULT_AUDIO_TOKEN_ESTIMATE 300,
+  the audio bytes per token 1600, and the call-type families RESPONSES_API_CALL_TYPES (aresponses, responses),
+  EMBEDDING_API_CALL_TYPES (aembedding, embedding), TEXT_COMPLETION_API_CALL_TYPES (atext_completion,
+  text_completion), RERANK_API_CALL_TYPES (rerank, arerank) and GOOGLE_GENAI_NATIVE_CALL_TYPES
+  (generate_content, agenerate_content, generate_content_stream, agenerate_content_stream). The Redis
+  cluster constants and the Lua scripts are not here: B3032, B3033, B3035 and B3037 own them.
+  TagRateLimit (optional rpm_limit and tpm_limit) and the async seam TagRateLimitResolver
+  (tag names in, map of tag name to TagRateLimit out) live here too; B3039 builds the production resolver.
+  ModelGroupResolver is the sync seam (model name in, optional group name out) that replaces LiteLLM's
+  import of proxy_server.llm_router; production wiring is B3055. LimiterClock is a trait with one method
+  returning the current SystemTime, and current_time() on it is the port of _get_current_time.
+
+  Module request_stash replaces the ContextVar. LiteLLM keeps a mutable RequestRateLimiterStash in a
+  ContextVar so the pre-call hook can hand its bookkeeping to the success, failure and disconnect callbacks
+  without putting it in the request body. Rust has no ContextVar and the rules forbid task-local state, so
+  the request owns a RequestStashSlot and every hook receives it explicitly. The slot holds an optional
+  Arc<RequestStash>. RequestStash has a std Mutex around StashState and a separate tokio Mutex
+  (parallel_slot_release_lock) that the slot-release code in B3035 holds across its await points.
+  StashState has LiteLLM's fields and defaults: owner_litellm_call_id (none), rate_limit_response (none),
+  parallel_slot (none), reserved_tokens 0, reserved_model (none), reserved_scopes (empty set of
+  (descriptor key, value) pairs), itpm_reserved_tokens 0, itpm_reserved_scopes, itpm_reserved_window_identities,
+  otpm_reserved_tokens 0, otpm_reserved_scopes, otpm_reserved_window_identities, batch_enqueued_reservation
+  (B1042's BatchEnqueuedTokenReservation, none), batch_tpd_refund_ops (empty list), reservation_released false
+  and tpm_limited_tags (empty set). Slot methods, one per Python function: get (get_request_stash),
+  get_or_create (get_or_create_request_stash), claim_for_call_id (claim_request_stash_for_data: get or create,
+  then set the owner only when the call id is a string) and for_call (get_request_stash_for_call: none when
+  nothing is stashed; the stash when either the owner or the given call id is none; the stash when both ids
+  are equal; otherwise none). _call_id_from_callback_kwargs is not ported as a function: it only reads
+  litellm_call_id out of an untyped kwargs dict, and the callbacks (B3046) get a typed record whose call id
+  they pass to for_call directly.
+
+  Module fail_closed holds general_settings.fail_closed_rate_limit_enforcement. RateLimitUnverifiableError
+  carries status 503 and the detail {"error": RATE_LIMIT_UNVERIFIABLE_MESSAGE}; the message text is copied
+  from LiteLLM byte for byte. FailClosedPolicy is a struct with the resolved bool and a method
+  reject_if_unverifiable(failed_operation, error) that does nothing when disabled and otherwise logs at
+  WARNING through B393's Redis failure logger with the message
+  "fail_closed_rate_limit_enforcement: rejecting request, {failed_operation} could not verify the counters
+  against Redis" and returns the error as Err. It is a Result, not a panic, so callers use `?`.
+
+  Config section rate_limiter_settings (crates/betterlite-config/src/sections/rate_limiter_settings.rs).
+  It reads three things and exposes them as config.sections.rate_limiter_settings. One: the bool
+  general_settings.fail_closed_rate_limit_enforcement. Absent or null is false. A bool is used as given.
+  A string goes through the shared env bool parser of betterlite-config (so an os.environ/ reference works).
+  Any other value logs the LiteLLM warning "general_settings.fail_closed_rate_limit_enforcement=<value> is not
+  a boolean, treating it as disabled" and is false. Two: env LITELLM_RATE_LIMIT_WINDOW_SIZE, an integer
+  number of seconds, default 60. Three: env LITELLM_TPM_TOKEN_RESERVATION_ENABLED, default "true", and it is
+  true only when the value lowercased equals "true" (so "1", "yes" and "on" turn it off, exactly as in LiteLLM).
+  The handler constructor in B3055 copies these into the limiter; this task only exposes them.
+
+scope:
+  paths:
+    - Cargo.toml
+    - crates/betterlite-rate-limit/Cargo.toml
+    - crates/betterlite-rate-limit/src/limiter_records.rs
+    - crates/betterlite-rate-limit/src/limiter_records/**
+    - crates/betterlite-rate-limit/src/request_stash.rs
+    - crates/betterlite-rate-limit/src/request_stash/**
+    - crates/betterlite-rate-limit/src/fail_closed.rs
+    - crates/betterlite-rate-limit/src/fail_closed/**
+    - crates/betterlite-config/src/sections/rate_limiter_settings.rs
+    - crates/betterlite-config/src/sections/rate_limiter_settings/**
+    - tools/oracle/cases/helpers/rate-limit-records/**
+    - "tools/oracle/fuzz/corpus/helper_case/rate_limit_records-*"
+    - tools/oracle/helpers/b3031.py
+    - tools/oracle/helpers/b3031/**
+    - tools/oracle/src/helpers/rate_limit/b3031.rs
+    - tools/oracle/src/helpers/rate_limit/b3031/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L105-L114
+    why: RateLimitedModel and limit_in, which prefers the requested name over the group name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L125-L165
+    why: Fail-closed setting name, the 503 message and error, the lenient bool read with its warning, and _sibling_counter_keys.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L431-L477
+    why: Token estimate constants, call-type families and the project ITPM/OTPM descriptor keys, plus the slot TTL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L480-L605
+    why: Counter value aliases, _as_counter_values, and every TypedDict record (descriptors, gauges, statuses, responses, atomic meta).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L597-L668
+    why: CallTypeRateLimiter protocol, RequestRateLimiterStash with its call-id ownership rule, CounterRefund, TagRateLimit and its resolver protocol.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L701-L739
+    why: Stash accessors and the call-id filter that keeps nested calls from touching the owning request's state.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L761-L773
+    why: Constructor seams for the clock, the tag resolver, the model-group resolver and the fail-closed resolver.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L811-L817
+    why: LITELLM_RATE_LIMIT_WINDOW_SIZE (60) and LITELLM_TPM_TOKEN_RESERVATION_ENABLED ("true") reads.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L856-L858
+    why: _get_current_time returns the injected time provider's value.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1253-L1264
+    why: create_rate_limit_keys builds the braced hash-tag counter key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L1444-L1454
+    why: _reject_if_rate_limit_unverifiable logs and raises only when fail-closed is on.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/caching.py#L1-L40
+    why: RedisPipelineIncrementOperation (key, increment_value, ttl) that ReservationAwareIncrementOperation extends; the Rust record is IncrementOperation in betterlite-redis.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2735-L2741
+    why: Declared type bool | None and the description of general_settings.fail_closed_rate_limit_enforcement.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/context_management/editors/compact.py#L540-L620
+    why: A caller that catches RateLimitUnverifiableError and denies, so the error must stay a distinct type.
+
+dod:
+  - text: The descriptor, gauge, slot, status, response, atomic meta and refund records exist with LiteLLM's field names and optional fields, and RateLimitType serializes to exactly requests, tokens and max_parallel_requests.
+    proof: [records-tests]
+  - text: create_rate_limit_keys returns "{key:value}:type" with literal braces, and sibling_counter_keys strips one trailing ":window" and returns the ":requests" and ":tokens" keys.
+    proof: [records-tests, rate-limit-records-oracle, helper-python, helper-case-corpus]
+  - text: RateLimitedModel.limit_in returns the requested-name limit first, the group-name limit second, none when neither is set or the map is absent, and a requested-name limit of 0 wins over the group limit.
+    proof: [records-tests, rate-limit-records-oracle, helper-python, helper-case-corpus]
+  - text: counter_values_from_reply returns the elements of an array of int, float, text and bytes in order, and returns a typed error naming the kind for a non-array reply, a nil element or a nested array.
+    proof: [records-tests]
+  - text: The constants carry LiteLLM's values and members, including both project descriptor keys, the 3600 second slot TTL, the 4096, 4, 16, 300 and 1600 estimate numbers and the five call-type families.
+    proof: [records-tests]
+  - text: The clock trait, the model-group resolver and the tag resolver are injectable seams, and current_time returns what the injected clock returns.
+    proof: [records-tests]
+  - text: RequestStash starts with every LiteLLM default and the two locks are separate.
+    proof: [stash-tests]
+  - text: claim_for_call_id sets the owner only for a string call id and keeps an existing owner when the id is absent; get_or_create returns the same stash on every call.
+    proof: [stash-tests]
+  - text: for_call returns the stash when the owner is unset, when the given id is unset or when both ids are equal, returns none for a different id, and returns none when the slot is empty.
+    proof: [stash-tests]
+  - text: Two clones of the slot handed to separate tasks see one stash, so a flag set in one task (reservation_released) is visible in the other.
+    proof: [stash-tests]
+  - text: A request with no slot passed to a nested call sees no stash, so nested LiteLLM calls cannot release the owning request's reservation.
+    proof: [stash-tests]
+  - text: "RateLimitUnverifiableError has status 503 and the detail {\"error\": <LiteLLM message>} with the message text identical to LiteLLM's."
+    proof: [fail-closed-tests]
+  - text: reject_if_unverifiable returns Ok and logs nothing when disabled, and when enabled logs at WARNING and returns the error.
+    proof: [fail-closed-tests]
+  - text: The fail-closed flag is false when absent or null, true or false as given for a bool, read through the shared env bool parser for a string, and false with the LiteLLM warning for any other value.
+    proof: [fail-closed-tests, config-tests, rate-limit-records-oracle, helper-python, helper-case-corpus]
+  - text: The config section loads LITELLM_RATE_LIMIT_WINDOW_SIZE with default 60 and LITELLM_TPM_TOKEN_RESERVATION_ENABLED with default true, and the reservation flag is true only for "true" in any case.
+    proof: [config-tests]
+  - text: A non-integer or non-positive LITELLM_RATE_LIMIT_WINDOW_SIZE is a load error that names the variable.
+    proof: [config-tests]
+  - text: Newly added helper cases for keys, model limits and the fail-closed flag replay through the shared helper-case parser.
+    proof: [helper-case-corpus]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: records-tests
+      why: the record, key, constant, reply-decoding or seam tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^limiter_records::/)'
+    - id: stash-tests
+      why: the request stash defaults, ownership filter or shared-handle tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^request_stash::/)'
+    - id: fail-closed-tests
+      why: the 503 error, the rejection policy or the flag parsing tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^fail_closed::/)'
+    - id: config-tests
+      why: the rate_limiter_settings section does not load its three settings from a named test
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::rate_limiter_settings::/)'
+    - id: rate-limit-records-oracle
+      why: the oracle cases for keys, model limits and the fail-closed flag are missing or differ from LiteLLM
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/rate-limit-records)" &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/rate-limit-records
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3031)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3031 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3031/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added rate-limit record cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/rate_limit_records-*")" &&
+        grep -lE '^[[:space:]]+b3031:' tools/oracle/fuzz/corpus/helper_case/rate_limit_records-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/rate-limit-records/counter-keys.yaml
+  - tools/oracle/cases/helpers/rate-limit-records/sibling-counter-keys.yaml
+  - tools/oracle/cases/helpers/rate-limit-records/model-limit-requested-first.yaml
+  - tools/oracle/cases/helpers/rate-limit-records/model-limit-group-fallback.yaml
+  - tools/oracle/cases/helpers/rate-limit-records/fail-closed-flag.yaml
+
+deviations:
+  - what: The per-request stash is a RequestStashSlot passed to every hook and callback, not a ContextVar that child tasks inherit.
+    why: The rules forbid task-local and global state. The ownership rule is kept (a stash with an owner call id answers only that id or no id), so router retries still reach it and nested calls that get no slot see nothing.
+  - what: A string value of general_settings.fail_closed_rate_limit_enforcement is read with betterlite's shared env bool parser (true, false, 1, 0, yes, no, on, off in any case).
+    why: LiteLLM's pydantic read accepts a similar set of strings, so a setup that passes the flag through os.environ/ keeps working. Values neither reads as a bool warn and disable, as in LiteLLM.
+  - what: A LITELLM_RATE_LIMIT_WINDOW_SIZE that is not a positive integer is a config load error naming the variable.
+    why: LiteLLM crashes at startup on text (int() raises) and silently builds a zero or negative window that resets on every request; no working setup relies on either.
+  - what: ReservationWindowIdentity is a named struct and reservation_windows an ordered set.
+    why: Python uses a tuple and a frozenset. Order and the tuple shape are not visible to clients.
+
+out_of_scope:
+  - "The Lua scripts: BATCH_RATE_LIMITER_SCRIPT and BATCH_COUNTER_READ_SCRIPT (B3032), CHECK_AND_INCREMENT_BY_N_SCRIPT (B3033), PARALLEL_ACQUIRE_SCRIPT, PARALLEL_RELEASE_SCRIPT and PARALLEL_COUNT_SCRIPT (B3035), TOKEN_INCREMENT_SCRIPT and WINDOW_GUARDED_TOKEN_INCREMENT_SCRIPT (B3037). B3033's description calls its script 'owned by B3031'; B3033 builds it, this task does not."
+  - "REDIS_CLUSTER_SLOTS, REDIS_NODE_HASHTAG_NAME, _is_redis_cluster, keyslot_for_redis_cluster and _group_keys_by_hash_tag: B3032."
+  - "The handler constructor __init__ (script registration, batch_enqueued_token_store, _check_and_increment_lock, wiring of the resolvers) and _get_batch_rate_limiter: B3055. It reads the settings and seams defined here."
+  - "resolve_tag_rate_limits_from_db and _tag_rate_limit_descriptor: B3039. Only the TagRateLimit record and the resolver seam are here."
+  - "_resolve_model_group_alias_via_proxy_router and the router's resolve_model_group_alias: the production ModelGroupResolver is wired by B3055 over the router; this task only defines the trait."
+  - "_rate_limited_model (builds a RateLimitedModel from a requested name): B3038."
+  - "no_max_tokens_output_floor, _is_embedding_request and _parse_output_cap_value: B3041. It uses the constants defined here."
+  - "get_rate_limit_type and token_rate_limit_type: B3044."
+  - "Proxy 503 rendering of RateLimitUnverifiableError into the HTTP body {\"detail\": {\"error\": ...}}: the proxy error layer; B3055 adds the HTTP oracle cases once a route reaches the limiter."
+  - "ProxyStartupEvent._warn_fail_closed_rate_limits_without_redis at proxy_server.py L10171-L10182: proxy startup task (B1125 and B1216 list it)."
+  - "CallTypeRateLimiter protocol (L597-L604) is consumed by the batch limiter; B3055 defines the Rust trait where it selects batch admission."
+  - "_call_id_from_callback_kwargs (L735-L739): no function; B3046 and B3045 read the call id from their typed callback record and pass it to for_call."
+  - "log_redis_failure: B393. BatchEnqueuedTokenReservation: B1042. RedisPipelineIncrementOperation: IncrementOperation in betterlite-redis (no B4290 wait)."
+
+pitfalls:
+  - create_rate_limit_keys puts the braces in the output, "{team:abc}:requests", and they are the Redis Cluster hash tag that keeps a descriptor's window and counters on one slot; dropping them breaks the Lua scripts in cluster mode.
+  - sibling_counter_keys uses removesuffix, so a window key without the ":window" suffix is used whole as the prefix instead of failing.
+  - RateLimitedModel.limit_in tests "is not None", not truthiness, so a requested-name limit of 0 is returned and does not fall through to the group limit.
+  - reservation_released and parallel_slot are shared mutable state across the success, failure and disconnect callbacks, so keep one Arc<RequestStash> per request and never copy the state out and back.
+  - owner_litellm_call_id is set only when the request data holds a string litellm_call_id; a second claim without one must not clear an owner already set.
+  - for_call answers the stash when either id is missing, so a callback with no id still reaches it; only two different ids hide it.
+  - LITELLM_TPM_TOKEN_RESERVATION_ENABLED is true only for the text "true" in any case; "1", "yes" and "on" disable reservation, unlike the shared env bool parser, so do not use that parser for this one.
+  - The fail-closed warning for a non-bool value is logged once per read and the value is treated as disabled, never as an error.
+  - RateLimitUnverifiableError is its own type and not a generic 503, because callers such as the Anthropic compact editor catch it to deny the request.
+  - RateLimitDescriptorRateLimit fields are all optional and window_size absent means the limiter's configured window size, so do not default it to 60 in the record.
+  - counter_values_from_reply accepts int, float, text and bytes only; a nil element (a missing key in a Redis reply) is an error here, so callers read missing counters through the MGET path instead.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

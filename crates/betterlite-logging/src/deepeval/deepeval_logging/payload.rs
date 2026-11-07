@@ -15,7 +15,6 @@ pub struct CallbackKwargs {
     pub input: SpanField,
 }
 
-// The standard_logging_object fields _create_base_api_span reads; error_string is spelled that way in LiteLLM.
 #[derive(Clone, Debug, Default, Deserialize)]
 pub struct StandardLoggingObject {
     #[serde(default)]
@@ -25,7 +24,7 @@ pub struct StandardLoggingObject {
     #[serde(default)]
     pub model: Option<String>,
     #[serde(default)]
-    pub error_string: Option<String>,
+    pub error_str: Option<String>,
     #[serde(default)]
     pub response: Option<ResponseBody>,
 }
@@ -129,7 +128,7 @@ fn span_output(
         TraceSpanApiStatus::Success => success_output(standard),
         TraceSpanApiStatus::Errored => Some(SpanValue::Text(
             standard
-                .and_then(|object| object.error_string.clone())
+                .and_then(|object| object.error_str.clone())
                 .unwrap_or_default(),
         )),
     }

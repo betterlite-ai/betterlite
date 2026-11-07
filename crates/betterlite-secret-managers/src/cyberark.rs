@@ -26,7 +26,7 @@ pub mod error;
 pub mod operation;
 mod tests;
 pub mod transport;
-mod ttl_cache;
+pub(crate) mod ttl_cache;
 mod yaml_scalar;
 
 const DEFAULT_REFRESH_SECONDS: u64 = 300;

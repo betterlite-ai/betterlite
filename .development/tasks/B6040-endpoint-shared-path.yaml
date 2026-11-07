@@ -1,0 +1,133 @@
+id: B6040
+title: Shared call path and types for the Python endpoint families
+description: >-
+  B6041 to B6045 add the Python functions for embeddings, text and moderation, images, rerank and audio. They all move
+  arguments into JSON, call a native session and turn an error back into a LiteLLM exception. This task writes that path once
+  so the five families do not each write their own, and it adds the plain types they share. B158 does the same for
+  `completion` inside `_completion`, and this task reuses its error table and its `UnsupportedCallArgument`.
+
+
+  Python helpers, in the package `python/betterlite/_endpoints/` with files under 300 lines. `payload.py` has
+  `to_call_payload(values)`, which returns a `CallPayload` with `text` (JSON text) and `blobs` (a list of `bytes`). Bytes,
+  `bytearray`, `BytesIO` and `BufferedReader` values, other objects with `read()`, `os.PathLike` paths and tuples
+  `(name, content)` or `(name, content, content_type)` are file values. A file value is read in full from position 0, the
+  position is put back for objects that have `tell` and `seek`, and the JSON gets `{"$file": {"name": ..., "blob": <index>,
+  "content_type": ...}}`. The name is the object's `name` attribute reduced to its last path part, or "file". Each blob is
+  sent once as bytes, never as base64, so an audio file of 25 MB costs one copy. A timeout that has `connect`, `read`, `write`
+  and `pool` attributes (an `httpx.Timeout`, read through a `typing.Protocol`, since httpx is no dependency) becomes the
+  largest of the four, and a plain number stays a number. `client` and `shared_session` in the values raise B158's
+  `UnsupportedCallArgument` with the name, and `logger_fn` logs one warning and is dropped. Any other value that is not JSON
+  raises `TypeError` that names the key.
+
+
+  `settings.py` has `read_settings(names)`, which returns a dict of the named module settings read from `betterlite._settings`
+  at call time, so a later `betterlite.drop_params = True` takes effect. A name that is missing raises `AttributeError` that
+  names it. `runner.py` has `call_native(method, payload)` and `acall_native(method, payload)`. They call a native method with
+  `(payload.text, payload.blobs)`, catch the family's `NativeError`, and raise the class from the dict in B158's
+  `_completion/errors.py` with `raise ... from error`. A `type` that is not in the dict raises B158's `UnknownNativeError`.
+  `call_native` returns the JSON text parsed with `json.loads`. `proxy.py` has `proxy_headers()`, the same rule as B158's
+  `_proxy_auth_headers` use: call `get_auth_headers()` on `betterlite.proxy_auth` when it is set, log "Failed to get proxy
+  auth headers: %s" as a warning on failure, and give an empty dict otherwise. `awaitables.py` has the one async rule the
+  families repeat: `args[0]` or `kwargs["model"]` is the model, and a missing key raises `KeyError` before any `try`.
+
+
+  Rust helper, `crates/betterlite-sdk/src/call_files.rs`. `CallFile` holds `name`, `content_type` and `bytes`. `files_from_payload`
+  takes the request `serde_json::Map` and the blob list and replaces every `$file` object by a `CallFile`, in key order. A blob
+  index that is out of range, a `$file` with no `blob`, or a blob that is used twice gives `CallFilesError` and never panics.
+  B6043 and B6045 use it for the image and audio files.
+
+
+  Plain types, in `python/betterlite/types/`. `embedding.py` has `EmbeddingRequest` (types/embedding.py), `rerank.py` has
+  `RerankRequest`, `HostedVLLMRerankTruncationParams`, `OptionalRerankParams`, `RerankBilledUnits`, `RerankTokens`,
+  `RerankResponseMeta`, `RerankResponseDocument`, `RerankResponseResult` and `RerankResponse` (types/rerank.py). The images folder
+  has `ImageEditOptionalRequestParams` and `ImageEditRequestParams` (types/images/main.py). The pydantic classes become B5657's
+  `ResponseObject` subclasses with the same defaults and the `extra="allow"` behavior. `HostedVLLMRerankTruncationParams` is frozen.
+  `RerankResponse` keeps `__getitem__`, `get` and `__contains__` over its fields and has `_hidden_params` as a dict per
+  object. The TypedDicts keep their `total` and `Required` and `ReadOnly` markers.
+
+
+  `tests/endpoint_server.py` is the local HTTP server the families' tests use, built on `http.server` with a thread. It answers
+  `/v1/embeddings`, `/v1/moderations`, `/v1/completions`, `/v1/images/generations`, `/v1/images/edits`, `/v1/images/variations`,
+  `/v1/audio/transcriptions`, `/v1/audio/speech` and `/v1/rerank` with fixed JSON (or fixed bytes for speech), records each request
+  (path, headers, body bytes) in a list, and gives a 401 body in the OpenAI error shape when the bearer key is "bad-key". It
+  also counts calls per path, so a test can show that a retry did not repeat a call.
+scope:
+  paths:
+  - crates/betterlite-sdk/Cargo.toml
+  - crates/betterlite-sdk/src/call_files.rs
+  - crates/betterlite-sdk/src/call_files/**
+  - crates/betterlite-python/python/betterlite/_endpoints/**
+  - crates/betterlite-python/python/betterlite/types/embedding.py
+  - crates/betterlite-python/python/betterlite/types/rerank.py
+  - crates/betterlite-python/python/betterlite/types/images/**
+  - crates/betterlite-python/tests/endpoint_server.py
+  - crates/betterlite-python/tests/test_endpoint_payload.py
+  - crates/betterlite-python/tests/test_endpoint_types.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/rerank.py#L1-L95
+  why: The rerank request, option and response types.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/embedding.py#L1-L19
+  why: The embedding request type.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/images/main.py#L1-L40
+  why: The image edit parameter types.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L6196-L6204
+  why: The model-from-args rule that every async wrapper repeats.
+dod:
+- text: Files, paths, tuples, byte strings, timeouts and plain values become one JSON text plus a blob list, and a position is restored.
+  proof: [payload-encode]
+- text: "`client` and `shared_session` raise `UnsupportedCallArgument`, `logger_fn` warns once, and an unknown object raises `TypeError` with its key."
+  proof: [payload-refuse]
+- text: Settings are read at call time, and a native error becomes the matching exception class with its cause.
+  proof: [runner-errors]
+- text: "`files_from_payload` rebuilds files in order and refuses bad indexes without a panic."
+  proof: [call-files]
+- text: The rerank, embedding and image types default and dump as in LiteLLM.
+  proof: [endpoint-types]
+- text: The endpoint test server answers each route and records requests.
+  proof: [server-routes]
+- text: The new Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: payload-encode
+    why: A file reaches the native side as text or loses its name.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_endpoint_payload.py -k encode
+  - id: payload-refuse
+    why: A client object is dropped and a call skips a caller's proxy.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_endpoint_payload.py -k refuse
+  - id: runner-errors
+    why: A provider error becomes a generic exception or settings go stale.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_endpoint_payload.py -k "runner or settings"
+  - id: call-files
+    why: A bad blob index panics the process.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^call_files::/)'
+  - id: endpoint-types
+    why: A type dumps differently from LiteLLM's.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_endpoint_types.py
+  - id: server-routes
+    why: A family test gets a route that does not exist.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_endpoint_payload.py -k server
+  - id: python-lint
+    why: The shared layer is where an untyped dict would creep back in.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: "`EmbeddingRequest`, `RerankRequest` and `RerankResponse` are not pydantic models, so `model_validate`, `model_fields` and `model_json_schema` are missing."
+  why: The wheel depends only on python-dotenv. They keep attributes, item access, `model_dump` and the defaults.
+- what: Files cross to Rust as raw blobs next to the JSON text and not as base64 inside it.
+  why: Audio and image files can be many megabytes, and base64 would copy them twice.
+out_of_scope:
+- The embedding, text, image, rerank and audio functions are B6041 to B6045. This task has no public function.
+- The error table and `UnsupportedCallArgument` are B158. This task only calls them.
+- "`litellm/types/images/main.py` has nothing else at the pin, and `litellm/types/rerank.py` is fully built here."
+pitfalls:
+- A file object that is read to the end by the caller must still be read from position 0, and its position must go back, because LiteLLM's `calculate_request_duration` and the provider both read the same object.
+- '`os.PathLike` and `str` differ: a plain string is a value, not a path, so only a `PathLike` is opened.'
+- '`bool` is an `int` in Python, so check for it first when a number is expected, or `True` becomes a timeout of 1.'
+- '`RerankResponse._hidden_params` must be a new dict for every object, as `PrivateAttr(default_factory=dict)` makes it.'
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

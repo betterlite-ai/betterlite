@@ -1,0 +1,14 @@
+id: B5653
+milestone: M12 python
+title: Provider stream chunk decoding
+status: todo
+depends_on: [B5652]
+file: tasks/B5653-provider-chunk-decode.yaml
+covers:
+  - "litellm/litellm_core_utils/streaming_handler.py"
+parent: B158
+split_from: B158
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

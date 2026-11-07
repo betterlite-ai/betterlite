@@ -1,0 +1,14 @@
+id: B6042
+milestone: M12 python
+title: Python text_completion, atext_completion, moderation and amoderation
+status: todo
+depends_on: [B6040]
+file: tasks/B6042-python-text-moderation.yaml
+covers:
+  - "litellm/main.py"
+parent: B159
+split_from: B159
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

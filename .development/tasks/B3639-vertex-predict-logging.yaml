@@ -1,0 +1,215 @@
+id: B3639
+title: Vertex passthrough prediction and embedding logging
+description: >-
+  Build the logging handlers for Vertex predict, embedContent and batchEmbedContents responses in betterlite-server, in the new module
+  vertex_predict_logging (crates/betterlite-server/src/pass_through_logging/vertex_predict_logging.rs and its folder). They are
+  VertexPassthroughLoggingHandler._handle_predict_response, _handle_audio_predict_response, _is_audio_predict_response,
+  _get_audio_prediction_count, _extract_embed_content_input, _handle_embed_content_response and _is_multimodal_embedding_response in
+  LiteLLM. B3642 owns the Vertex dispatch and calls the two public methods below. The module reads no network and holds no state. betterlite-vertex
+  is a leaf that never imports core, provider or logging, so this glue lives in betterlite-server, the same place as B3640, and the cost goes
+  through the injected trait that B3638 declares in vertex_relay_metadata. B068 is not a dependency.
+
+  Types you use and do not define. From B3608 (betterlite-logging): HandlerOutcome (an optional result and a kwargs map) and the logging
+  object handle type of CollectedChunksCall. From B3605: the response-object enum and the typed kwargs map. From B3638 (betterlite-vertex,
+  vertex_relay_metadata): extract_model_from_url (the "/models/([^:]+)" rule, "unknown" when absent), get_custom_llm_provider_from_url ("gemini"
+  when the host ends with generativelanguage.googleapis.com, else "vertex_ai") and the cost trait. From B1304: get_vertex_location_from_url.
+  From B1306: the Lyria catalog lookup behind get_vertex_ai_lyria_generation_cost (the model's output_cost_per_image, None for a model that is not
+  a Lyria model). From B1340: process_embed_content_response and the batch process_response (gemini_embedding_records). From B1342: the
+  transform_vertex_response_to_openai step (vertex_text_embeddings). From B1343: the multimodal transform_embedding_response step
+  (multimodal_embedding_records). From B1349 (vertex_image_policy): is_image_generation_response and process_image_generation_response. Read the
+  merged code for the exact Rust names and signatures and call them. Do not copy their logic. If a function you need is not there, or the
+  cost trait cannot take an embedding or image response or a vertex_location, report it in notes and stop.
+
+  Constructor. `VertexPredictLogger::new(cost: Arc<dyn <B3638's cost trait>>)` keeps the handle. No module-level state. B102 builds it once
+  and B3642 holds it. Pass B3638's cost trait the response, model, custom_llm_provider and the vertex_location, as LiteLLM passes them to
+  completion_cost; call_type is not passed on these paths.
+
+  The fixed names B3642 calls. In vertex_predict_logging:
+  `pub struct VertexPredictInput<'a> { pub logging_obj: &'a <logging object handle>, pub url_route: &'a str, pub status: http::StatusCode,
+  pub response_headers: &'a http::HeaderMap, pub response_body: &'a [u8], pub kwargs: <B3605 typed kwargs map> }` and
+  `pub struct VertexEmbedContentInput<'a>` with the same fields plus `pub request_body: Option<&'a serde_json::Map<String, serde_json::Value>>`.
+  `impl VertexPredictLogger { pub fn handle_predict_response(&self, input: VertexPredictInput<'_>) -> Result<HandlerOutcome, VertexPredictError>;
+  pub fn handle_embed_content_response(&self, input: VertexEmbedContentInput<'_>) -> Result<HandlerOutcome, VertexPredictError> }`. The full path is
+  betterlite_server::pass_through_logging::vertex_predict_logging::VertexPredictLogger. Both methods are synchronous. response_body is the whole
+  buffered upstream body (LiteLLM calls httpx_response.json() on it). status and response_headers are there because the multimodal step reads them
+  and LiteLLM passes the whole httpx response. VertexPredictError is this module's own thiserror enum (invalid JSON body, plus the error types of
+  the called steps by #[from]). A decode or cost error is returned as Err, as LiteLLM lets the exception rise. Unlike B3638's factory, these two
+  paths do not turn a cost failure into a warning with zero cost. Vertex location, the route test for embedContent and the call to the
+  right method are B3642's work.
+
+  handle_predict_response, in order. model = extract_model_from_url(url_route). Parse the body as JSON. (1) Audio: the body counts as audio
+  when its prediction count is above zero and the Lyria cost lookup for the model gives a value. The prediction count is the number of entries of
+  "predictions" (0 when it is absent or not a list) that are objects with a truthy audioContent or a truthy bytesBase64Encoded (non-empty
+  string, and for any other JSON type its Python truthiness: false, 0, null, "", [] and {} are falsy). On audio: response_cost = (lyria cost or
+  0.0) * count; set logging_obj.model = model, model_call_details["model"] = model, model_call_details["custom_llm_provider"] = "vertex_ai",
+  logging_obj.custom_llm_provider = "vertex_ai" and model_call_details["response_cost"] = response_cost; set kwargs response_cost, model and
+  custom_llm_provider ("vertex_ai"); return the standard pass-through response object holding the parsed JSON body as "response", plus the kwargs. It
+  never calls the cost trait. (2) Image: if B1349's is_image_generation_response(body) is true, build the image response with
+  process_image_generation_response (empty image response, model) and set the logging object's call_type to the "passthrough-image-generation" value
+  of PassthroughCallTypes. (3) Else if _is_multimodal_embedding_response(body) is true, run B1343's transform_embedding_response with the model,
+  status, headers and body, empty api key, request data and params. (4) Else run B1342's transform_vertex_response_to_openai on the parsed body with
+  the model. When the result is an embedding response, set its model to model (the image result keeps whatever process_image_generation_response
+  left). Then set logging_obj.model = model, model_call_details["model"] = model, model_call_details["custom_llm_provider"] = "vertex_ai" and
+  logging_obj.custom_llm_provider = "vertex_ai"; response_cost = cost trait(result, model, "vertex_ai", get_vertex_location_from_url(url_route));
+  set kwargs response_cost, model and custom_llm_provider ("vertex_ai"); set model_call_details["response_cost"]; return the result and the kwargs. The
+  provider is the literal "vertex_ai" here and is not read from the host.
+
+  _is_multimodal_embedding_response(body): true when "predictions" is present and any entry that is an object has the key textEmbedding,
+  imageEmbedding or videoEmbeddings (key presence, not truthiness); false otherwise, including when predictions is not iterable as a list of
+  entries. Entries that are not objects are skipped. Keep this as a private function of the module; it is pure, so test it directly.
+
+  handle_embed_content_response. model = extract_model_from_url(url_route). Parse the body. is_batch = the route contains "batchEmbedContents"
+  (case sensitive). input_text = extract_embed_content_input(request_body, is_batch): empty string when the request body is absent or empty; for a batch,
+  the text of every part of every item of "requests" (item.content.parts[].text, a part without text gives "") joined with a single space; for a single
+  request, content.parts[].text joined with a single space, again "" for a part without text. Missing "requests", "content" or "parts" count as empty. Build
+  the response with B1340: the batch process_response for a batch (input = input_text, an empty embedding response, model, the parsed body) and
+  process_embed_content_response for a single one. custom_llm_provider = get_custom_llm_provider_from_url(url_route), so this path does read the host.
+  Set the response model to model, logging_obj.model = model, model_call_details["model"] = model, model_call_details["custom_llm_provider"] =
+  custom_llm_provider and logging_obj.custom_llm_provider = custom_llm_provider. response_cost = cost trait(response, model, custom_llm_provider,
+  get_vertex_location_from_url(url_route)). Set kwargs response_cost, model and custom_llm_provider; set model_call_details["response_cost"]; return
+  the response and the kwargs. A body without "embedding" (single) or "embeddings" (batch) is B1340's error and comes back as Err.
+
+  Tests live in the module's tests folder under pass_through_logging::vertex_predict_logging::tests, named by group (see checks): predict_,
+  audio_, embed_ and multimodal_. A fake stands in for the cost trait and for the logging object; the real B1340, B1342, B1343 and B1349 steps
+  run. betterlite-server's Cargo.toml gains betterlite-vertex if missing. The oracle helper b3639 calls the pinned Python static methods
+  with a stub logging object (a real litellm Logging object with a fixed litellm_call_id) and an httpx response built from the case's status and body, and returns the result's
+  model, data and usage (embedding or image count) and the kwargs. It never copies the algorithm. Run it with LITELLM_RUST=false and the
+  local model cost map.
+scope:
+  paths:
+    - crates/betterlite-server/src/pass_through_logging/vertex_predict_logging.rs
+    - crates/betterlite-server/src/pass_through_logging/vertex_predict_logging/**
+    - tools/oracle/cases/vertex/passthrough-predict-logging/**
+    - "tools/oracle/fuzz/corpus/helper_case/passthrough_predict_logging-*"
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/helpers/b3639.py
+    - tools/oracle/helpers/b3639/**
+    - tools/oracle/src/helpers/server/b3639.rs
+    - tools/oracle/src/helpers/server/b3639/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L333-L417
+    why: _handle_predict_response, the audio, image, multimodal and text branches, the call_type write and the cost write.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L419-L480
+    why: _handle_audio_predict_response, _is_audio_predict_response and _get_audio_prediction_count with the truthiness rule and the Lyria cost.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L481-L559
+    why: _extract_embed_content_input and _handle_embed_content_response, the batch switch, the provider from the host and the cost write.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L722-L751
+    why: _is_multimodal_embedding_response, key presence over the prediction entries.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L124-L133
+    why: how vertex_passthrough_handler routes to these two handlers, which B3642 owns (predict is tested after embedContent and batchEmbedContents).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/common_utils.py#L79-L99
+    why: get_vertex_ai_lyria_generation_cost, the output_cost_per_image of the model or None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_generation/image_generation_handler.py#L22-L44
+    why: process_image_generation_response, called here and owned by B1349.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/image_generation/image_generation_handler.py#L275-L279
+    why: is_image_generation_response, which reads predictions[0] only.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/gemini_embeddings/batch_embed_content_transformation.py#L401-L481
+    why: process_embed_content_response and the batch process_response, called here and owned by B1340.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/vertex_ai/vertex_embeddings/transformation.py#L218-L260
+    why: transform_vertex_response_to_openai, called here and owned by B1342.
+dod:
+  - text: >-
+      The predict handler treats a body as audio when it has predictions with a truthy audioContent or bytesBase64Encoded and the model has a Lyria
+      cost, prices it as that cost times the count without calling the cost trait, and returns the parsed body as the standard pass-through response.
+    proof: [audio-tests]
+  - text: >-
+      A predictions list with no counted entry, or a model without a Lyria cost, does not take the audio branch and falls to the image, multimodal or text branches.
+    proof: [audio-tests, predict-tests]
+  - text: >-
+      An image prediction body builds the image response through B1349, sets the logging object's call_type to "passthrough-image-generation", and
+      is priced through the cost trait with provider "vertex_ai" and the URL's vertex_location.
+    proof: [predict-tests, predict-oracle]
+  - text: >-
+      A body with textEmbedding, imageEmbedding or videoEmbeddings in any prediction entry goes to the multimodal step, and any other body goes
+      to the text embedding step, whose response gets the URL model.
+    proof: [multimodal-tests, predict-oracle]
+  - text: >-
+      The predict handler writes model, custom_llm_provider ("vertex_ai") and response_cost to the kwargs and to the logging object's
+      model_call_details, and sets logging_obj.model and logging_obj.custom_llm_provider.
+    proof: [predict-tests, predict-oracle]
+  - text: >-
+      embedContent builds a single embedding response with the text of content.parts joined by a space, batchEmbedContents builds one from the text of
+      every part of every request, and an absent request body gives an empty input.
+    proof: [embed-tests, embed-oracle]
+  - text: >-
+      The embedding handler takes custom_llm_provider from the URL host ("gemini" for generativelanguage.googleapis.com, else "vertex_ai"), prices with
+      it and writes it, the model, response_cost and the logging object fields.
+    proof: [embed-tests, embed-oracle]
+  - text: >-
+      A cost, decode or transform failure comes back as Err and is not turned into a zero cost.
+    proof: [predict-tests, embed-tests]
+  - text: The strict Python oracle adapter lints clean and its cases replay.
+    proof: [helper-python, helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: audio-tests
+      why: the audio test, the entry count, the truthiness rule or the Lyria price is wrong, or the cost trait is called on the audio path
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::vertex_predict_logging::tests::audio_/)'
+    - id: predict-tests
+      why: the image branch, the call_type write, the text branch, the model or provider writes or the error path of the predict handler are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::vertex_predict_logging::tests::predict_/)'
+    - id: multimodal-tests
+      why: the multimodal detection looks at truthiness, skips the wrong entries or sends a body to the wrong embedding step
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::vertex_predict_logging::tests::multimodal_/)'
+    - id: embed-tests
+      why: the embed input text, the batch switch, the host provider, the model and cost writes or the error path of the embedding handler are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::vertex_predict_logging::tests::embed_/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3639)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3639 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3639/pyrightconfig.json
+    - id: helper-case-corpus
+      why: new helper seeds are absent or do not replay through the shared helper-case parser
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/passthrough_predict_logging-*')" &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: predict-oracle
+      why: newly added predict helper cases are absent, do not use the b3639 operation or disagree with LiteLLM
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/vertex/passthrough-predict-logging)" &&
+        grep -rlE '^[[:space:]]+b3639:' tools/oracle/cases/vertex/passthrough-predict-logging &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/vertex/passthrough-predict-logging
+    - id: embed-oracle
+      why: newly added embed helper cases are absent or betterlite and LiteLLM disagree on them
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/vertex/passthrough-predict-logging)" &&
+        grep -rlE 'operation": "embed_' tools/oracle/cases/vertex/passthrough-predict-logging &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/vertex/passthrough-predict-logging
+oracle_cases:
+  - tools/oracle/cases/vertex/passthrough-predict-logging/predict-text-embedding.yaml
+  - tools/oracle/cases/vertex/passthrough-predict-logging/predict-multimodal-embedding.yaml
+  - tools/oracle/cases/vertex/passthrough-predict-logging/predict-image-generation.yaml
+  - tools/oracle/cases/vertex/passthrough-predict-logging/predict-lyria-audio.yaml
+  - tools/oracle/cases/vertex/passthrough-predict-logging/predict-audio-model-without-price.yaml
+  - tools/oracle/cases/vertex/passthrough-predict-logging/embed-single-content.yaml
+  - tools/oracle/cases/vertex/passthrough-predict-logging/embed-batch-requests.yaml
+  - tools/oracle/cases/vertex/passthrough-predict-logging/embed-gemini-host.yaml
+  - tools/oracle/cases/vertex/passthrough-predict-logging/embed-no-request-body.yaml
+deviations:
+  - what: Both handlers take the buffered response bytes, the status and the headers, where LiteLLM takes the httpx response object.
+    why: Rust has no httpx response; the handlers read the JSON body, and the multimodal step reads the status and headers.
+  - what: A cost, decode or transform failure is returned as Err and reaches the caller, which logs it and drops the dispatch.
+    why: Rust has no exceptions; this keeps LiteLLM's rule that a failure rises and nothing is dispatched.
+out_of_scope:
+  - "B3642 owns vertex_passthrough_handler, its route tests (embedContent and batchEmbedContents before predict), the vertex_location write to optional_params and the call into these two methods."
+  - "B3638 owns extract_model_from_url, _get_custom_llm_provider_from_url and the generateContent payload factory. This task calls the first two and does not use the factory."
+  - "B3640 owns the Gemini handler and Vertex stream collection. B3641 owns batch prediction jobs."
+  - "B1340, B1342, B1343 and B1349 own the embedding and image response steps this task calls. B1306 owns the Lyria catalog and B1304 get_vertex_location_from_url."
+  - "_handle_audio_predict_response's rawPredict and search siblings in vertex_passthrough_handler belong to B3642."
+pitfalls:
+  - "The audio test needs both a counted prediction and a Lyria price; a model without a price with audioContent present falls through to the text embedding step."
+  - "A prediction counts as audio on a truthy audioContent or bytesBase64Encoded, so an empty string or null does not count. The same bytesBase64Encoded key also marks an image body, so the audio test runs first."
+  - "The audio path prices as price times count and never calls the cost trait; the other two paths always call it."
+  - "is_image_generation_response reads predictions[0] only, so a body with an empty predictions list takes B1349's error path and not the text embedding step."
+  - "The call_type write to \"passthrough-image-generation\" happens only on the image branch, and only embedding results get the model reset."
+  - "The predict handler writes the literal \"vertex_ai\" as provider, but the embedContent handler reads it from the host, so a generativelanguage.googleapis.com embedContent URL is priced as \"gemini\"."
+  - "Batch is decided by the substring \"batchEmbedContents\" in the route, and batch input text is the parts of every request joined by one space, with a part that has no text giving an empty string."
+  - "The multimodal test is key presence, so {\"textEmbedding\": null} still counts as multimodal."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

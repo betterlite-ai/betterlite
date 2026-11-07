@@ -1,0 +1,25 @@
+kind: helper
+name: opensandbox-run-endpoint-headers
+call:
+  b3518:
+    operation: run
+    container:
+      id: sbx_1
+      provider: opensandbox
+      domain: http://stored.example
+      hidden_params:
+        api_base: http://stored.example
+        api_key: stored-key
+        execd_endpoint: http://execd.local
+        execd_headers:
+          Accept: application/json
+          Cache-Control: no-store
+        use_server_proxy: false
+    code: 1 + 1
+    responses:
+      - status: 200
+        body: |
+          data: {"type":"stdout","text":"2\n"}
+env: {}
+compare:
+  ignore: []

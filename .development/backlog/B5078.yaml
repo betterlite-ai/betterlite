@@ -2,8 +2,8 @@ id: B5078
 milestone: M12 python
 title: Router anthropic_messages and completion dispatch
 status: todo
-depends_on: [B158, B016]
-file: null
+depends_on: [B158, B163, B6020, B6021, B6022]
+file: tasks/B5078-router-dispatch.yaml
 covers:
   - "litellm/router.py"
 parent: B162

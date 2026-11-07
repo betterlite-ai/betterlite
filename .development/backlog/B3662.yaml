@@ -3,9 +3,10 @@ milestone: M6 guardrails
 title: Guardrail mode validation and request configuration
 status: todo
 depends_on: [B3660, B3661]
-file: null
+file: tasks/B3662-guardrail-params.yaml
 covers:
   - "litellm/types/guardrails.py"
+  - "litellm/types/proxy/guardrails/guardrail_hooks/decision_model.py"
 parent: B104
 split_from: B104
 resolution: null

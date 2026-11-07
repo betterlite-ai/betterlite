@@ -1,0 +1,167 @@
+id: B5836
+title: Cloudflare Workers AI chat endpoint rules and decisions config
+description: >-
+  Build cloudflare_chat and cloudflare_decisions in betterlite-openai. They cover every function in
+  litellm/llms/cloudflare: chat/transformation.py, decisions/transformation.py and chat/handler.py (a docstring and unused
+  imports, no code). Cloudflare speaks the OpenAI chat wire format, so chat is only the endpoint and credential rules of
+  CloudflareChatConfig; the base option mapping, request body and reply conversion are B668, B503 and B504 and are not
+  repeated. Everything here is a pure function. The account id and the key come in as plain arguments the caller already
+  read (CLOUDFLARE_ACCOUNT_ID and the key chain in _complete_cloudflare are B041's), and no config section is added.
+
+  cloudflare_chat. Define CloudflareError in its own error file, built from a status code and a message. It becomes the
+  existing ProviderError (crates/betterlite-openai/src/error.rs) with request method POST and url https://api.cloudflare.com,
+  a response that carries the status, and no headers. get_error_class ignores the headers it is given. Also define a typed
+  error for the two LiteLLM ValueError cases, carrying the exact texts below.
+
+  complete_url(api_base, account_id) -> String. Step one, pick the base. If api_base is None or the empty string, take the
+  account id, strip surrounding whitespace, and treat empty as unset. An unset id is an error with the text "Missing
+  CLOUDFLARE_ACCOUNT_ID - set CLOUDFLARE_ACCOUNT_ID in the environment or pass api_base explicitly" (a hyphen with spaces, as
+  written). Otherwise the base is https://api.cloudflare.com/client/v4/accounts/{id}/ai/v1 with the id put in as is. If api_base
+  is not empty, trim trailing "/" characters into a scratch copy. When the scratch copy ends in "/ai/run", log one warning
+  with LiteLLM's text ("Cloudflare api_base ending in '/ai/run' is the legacy Workers AI path and no longer serves
+  OpenAI-compatible requests; rewriting to the '/ai/v1' endpoint") and use the copy without "/ai/run" plus "/ai/v1". Any other
+  api_base is used unchanged, trailing slash included. Step two is the OpenAIGPTConfig.get_complete_url rule: trim trailing
+  "/" from that base; if the result contains the substring "chat/completions" anywhere, return it as is; otherwise return it
+  plus "/chat/completions". So https://api.cloudflare.com/client/v4/accounts/A/ai/run/ becomes
+  .../accounts/A/ai/v1/chat/completions.
+
+  validate_environment(headers, api_key). A None key is an error with the text "Missing Cloudflare API Key - A call is being
+  made to cloudflare but no key is set either in the environment variables or via params". An empty string is not None and
+  passes. Otherwise set Authorization to "Bearer {key}" on the map, add Content-Type "application/json" only when neither
+  "content-type" nor "Content-Type" is a key (other casings do not count, so a caller "CONTENT-TYPE" gets a second entry),
+  and return the map. Other headers stay.
+
+  Both base steps are OpenAIGPTConfig.get_complete_url (L717-L743) and validate_environment (L745-L762). No finished task
+  exposes them as functions this module can call, so write them here as two small private functions and do not export
+  them; see the architect note.
+
+  cloudflare_decisions. Implement DecisionsProviderConfig (crates/betterlite-openai/src/decisions/transformation/provider_config.rs,
+  B3511) for CloudflareDecisionsConfig. Keep the trait default PATH, because get_complete_url below replaces the join. API_KEY_ENV is
+  CLOUDFLARE_API_KEY and API_BASE_ENV is CLOUDFLARE_API_BASE. The struct holds the already read account id (trimmed, empty means
+  none) because get_default_api_base takes no lookup argument. get_default_api_base is
+  https://api.cloudflare.com/client/v4/accounts/{id}/ai/run, or None with no id. missing_api_base_message ignores the provider
+  name and returns "Missing CLOUDFLARE_ACCOUNT_ID - set CLOUDFLARE_ACCOUNT_ID or pass api_base explicitly". canonical_model
+  returns a model that starts with "@cf/" unchanged and otherwise "@cf/cloudflare/{model}". request_model keeps the text after
+  the last "/" (the whole string when there is none). get_complete_url(api_base, model) trims trailing "/" from the base, then:
+  a base ending in "/ai/v1" loses that suffix and becomes {rest}/ai/run/{model}; a base ending in "/ai/run" becomes
+  {base}/{model}; any other base becomes {base}/ai/run/{model}. The model passed in is the canonical one, so the URL ends in
+  .../ai/run/@cf/cloudflare/foo for model foo, while the request body model is request_model (foo). unwrap_response works on
+  the reply bytes: when the JSON is not an object, return the bytes unchanged; when the object has an "answers" key return the
+  bytes unchanged; otherwise when "result" is an object return that object serialized as JSON; in every other case (no
+  result, null, a list, a string) return the original bytes. Invalid JSON is returned unchanged too, so the base parser
+  reports it. Nothing else is overridden: validate_environment, resolve_api_base, resolve_api_key and the cost rule are the
+  trait defaults.
+
+  The LiteLLM source here is 152 lines, about 118 nonblank, non-comment. Add fuzz target cloudflare_decisions_reply in
+  crates/betterlite-openai/fuzz that feeds arbitrary bytes to unwrap_response, with a corpus and a replay test
+  replays_the_cloudflare_decisions_reply_corpus. Tests are rstest rows named after the behavior. The oracle helper b5836
+  (named by the skeleton) calls CloudflareChatConfig and CloudflareDecisionsConfig from the pinned LiteLLM with the env set
+  from the case input, and records the URL, headers, error text, model names and unwrapped payload.
+scope:
+  paths:
+    - crates/betterlite-openai/src/cloudflare_chat.rs
+    - crates/betterlite-openai/src/cloudflare_chat/**
+    - crates/betterlite-openai/src/cloudflare_decisions.rs
+    - crates/betterlite-openai/src/cloudflare_decisions/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/cloudflare_decisions_reply.rs
+    - crates/betterlite-openai/fuzz/corpus/cloudflare_decisions_reply/**
+    - tools/oracle/cases/helpers/cloudflare-wire/**
+    - "tools/oracle/fuzz/corpus/helper_case/cloudflare_wire-*"
+    - tools/oracle/helpers/b5836.py
+    - tools/oracle/helpers/b5836/**
+    - tools/oracle/src/helpers/openai/b5836.rs
+    - tools/oracle/src/helpers/openai/b5836/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cloudflare/chat/transformation.py#L15-L63
+    why: CloudflareError shape, account id lookup, the /ai/run rewrite with its warning and the api_base left untouched otherwise.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cloudflare/chat/transformation.py#L65-L93
+    why: Missing key text, delegation to the base header rule and get_error_class dropping headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/chat/gpt_transformation.py#L717-L762
+    why: The base URL join (chat/completions substring test) and header rule that the Cloudflare config calls through super().
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/cloudflare/decisions/transformation.py#L15-L54
+    why: Key and base names, default base, model naming, the ai/run URL rules and the result unwrapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/decisions/call.py#L170-L245
+    why: Read-only context for which model (canonical or request) reaches the URL and the body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L4576-L4615
+    why: Read-only context for the key and base chain before these rules run (B041 owns it).
+  - url: https://developers.cloudflare.com/workers-ai/configuration/open-ai-compatibility/
+    why: The /ai/v1 OpenAI-compatible base that the /ai/run rewrite points at.
+dod:
+  - text: The chat URL resolves the base from api_base or the account id, rewrites a trailing /ai/run with one warning, and joins chat/completions as the base config does.
+    proof: [cloudflare-chat-tests, oracle]
+  - text: A missing account id or key gives LiteLLM's exact error text, an empty key passes, and the Content-Type rule matches the two exact casings.
+    proof: [cloudflare-chat-tests, oracle]
+  - text: CloudflareError keeps the status and message, uses the POST api.cloudflare.com request and carries no headers.
+    proof: [cloudflare-chat-tests, oracle]
+  - text: The decisions config reports the key and base names, the default base from the account id, the missing-base text and the model names.
+    proof: [cloudflare-decisions-tests, oracle]
+  - text: The decisions URL maps /ai/v1, /ai/run and other bases to .../ai/run/{model}, and unwrap_response follows the answers and result rules.
+    proof: [cloudflare-decisions-tests, cloudflare-reply-corpus, oracle]
+  - text: The new helper cases call b5836 and replay through the shared parser.
+    proof: [helper-python, helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: cloudflare-chat-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^cloudflare_chat::/)'
+      why: The plain OpenAI URL rule has no account id base, no /ai/run rewrite and no missing-key error.
+    - id: cloudflare-decisions-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^cloudflare_decisions::/) - test(replays_the_cloudflare_decisions_reply_corpus)'
+      why: The trait defaults give /v1/systemone, the model name unchanged and no result unwrapping.
+    - id: cloudflare-reply-corpus
+      run: >-
+        test -f crates/betterlite-openai/fuzz/fuzz_targets/cloudflare_decisions_reply.rs &&
+        /usr/bin/grep -q 'name = "cloudflare_decisions_reply"' crates/betterlite-openai/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/cloudflare_decisions_reply)" &&
+        cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_cloudflare_decisions_reply_corpus)'
+      why: The reply bytes come from the network, so unwrap_response needs a fuzz target and fresh seeds.
+    - id: helper-python
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5836)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b5836 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5836/pyrightconfig.json
+      why: The Python adapter must call the pinned Cloudflare config classes directly.
+    - id: helper-case-corpus
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/cloudflare_wire-*")" &&
+        /usr/bin/grep -lE '^[[:space:]]+b5836:' tools/oracle/fuzz/corpus/helper_case/cloudflare_wire-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+      why: New seeds must name the b5836 operation and replay.
+oracle_cases:
+  - tools/oracle/cases/helpers/cloudflare-wire/chat-url-from-account-id.yaml
+  - tools/oracle/cases/helpers/cloudflare-wire/chat-url-explicit-base.yaml
+  - tools/oracle/cases/helpers/cloudflare-wire/chat-url-legacy-ai-run.yaml
+  - tools/oracle/cases/helpers/cloudflare-wire/chat-url-missing-account-id.yaml
+  - tools/oracle/cases/helpers/cloudflare-wire/chat-headers-and-missing-key.yaml
+  - tools/oracle/cases/helpers/cloudflare-wire/chat-error-class.yaml
+  - tools/oracle/cases/helpers/cloudflare-wire/decisions-credentials-and-default-base.yaml
+  - tools/oracle/cases/helpers/cloudflare-wire/decisions-model-names.yaml
+  - tools/oracle/cases/helpers/cloudflare-wire/decisions-url-rules.yaml
+  - tools/oracle/cases/helpers/cloudflare-wire/decisions-unwrap-response.yaml
+deviations:
+  - what: The two LiteLLM ValueError cases (missing account id, missing key) are typed errors in the module. The wire status a client sees for them is set by whoever wires the call.
+    why: A Rust function returns a typed error, not an exception. Mapping it to an HTTP status belongs to B041 and the shared error mapping, and this task has no route.
+  - what: The environment value of CLOUDFLARE_ACCOUNT_ID is an argument, and the decisions config stores it at construction.
+    why: Provider modules take credentials from the caller, so tests need no process state. The default base is computed from that stored value.
+out_of_scope:
+  - B668, B503 and B504 own the inherited OpenAIGPTConfig option mapping, supported params, request body and reply conversion. Only the base URL join and header rule are written again here, privately, because no finished task exposes them.
+  - B2202 owns BaseLLMException and the ProviderError projection CloudflareError builds on. B241 and B5115 own the Cloudflare exception mapping ("Authentication error", "must have required property") in exception_mapping_utils.
+  - B3511 owns the DecisionsProviderConfig trait and its defaults. B3513 picks CloudflareDecisionsConfig in get_provider_decisions_config, and B3514 sends the request.
+  - B2230 owns the provider to CloudflareChatConfig selection, and B2220 and B2222 own model metadata (nothing in this folder reads it).
+  - B041 owns _complete_cloudflare (litellm/main.py L4576), the key chain api_key, litellm.cloudflare_api_key, litellm.api_key, CLOUDFLARE_API_KEY and the base chain api_base, litellm.api_base, CLOUDFLARE_API_BASE, the missing-key check in utils.py L6957, dispatch wiring and the HTTP oracle cases. This task touches neither dispatch file.
+  - litellm/llms/cloudflare/chat/handler.py has no code at the pin (a module docstring and imports), so there is nothing to build.
+pitfalls:
+  - The /ai/run rewrite runs on the trimmed copy but any other explicit api_base is returned with its trailing slash, and only the base join afterwards trims it.
+  - An api_base that is only spaces is not empty, so it is used as is and the account id is never read.
+  - The chat base join tests for the substring "chat/completions" anywhere in the base, so a base like .../chat/completions/extra comes back without a new suffix.
+  - The legacy rewrite only fires when the trimmed base ends in "/ai/run"; a base such as .../ai/run/@cf/meta/llama is left alone.
+  - An empty string key passes validate_environment because only None is rejected, and the Content-Type check looks for the exact keys "content-type" and "Content-Type".
+  - The chat default base ends in /ai/v1 but the decisions default base ends in /ai/run, and the decisions URL rule accepts both endings.
+  - canonical_model prefixes bare names with "@cf/cloudflare/", so a model "meta/llama" becomes "@cf/cloudflare/meta/llama", while request_model then keeps only the part after the last "/".
+  - The decisions URL gets the canonical model and the request body gets request_model, so the two differ for every model that does not start with "@cf/".
+  - unwrap_response returns the inner "result" object only when "answers" is absent at the top level and result is an object; a top-level "answers" wins even when "result" exists.
+review_level: standard
+budget: {max_changed_lines: 1500, max_new_expects: 0}
