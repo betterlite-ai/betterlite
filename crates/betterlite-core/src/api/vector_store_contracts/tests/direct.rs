@@ -268,6 +268,7 @@ async fn direct_executor_resolves_the_openai_provider_like_get_llm_provider(
     let executor = executor_over(Vec::new(), OpenAiDefaults::default());
     let mut configuration = params(given);
     configuration.insert("api_base".to_owned(), text(&base));
+    configuration.insert("api_key".to_owned(), text("sk-config"));
     let (sent, answered) = tokio::join!(
         provider(listener),
         executor.embed(EmbeddingEntry::Embedding, model, "hello", &configuration)

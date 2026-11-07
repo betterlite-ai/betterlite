@@ -2,6 +2,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::proxy::ProxyPolicy;
@@ -30,6 +31,7 @@ use serde_json::Number;
 use thiserror::Error;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
+use tokio::time::timeout;
 
 use super::executor::DirectEmbeddingExecutor;
 use super::filters::{requested_create_params, requested_search_params};
@@ -283,7 +285,10 @@ fn metadata_entries_build_a_string_keyed_map() {
 }
 
 async fn provider(listener: TcpListener) -> String {
-    let (mut stream, _) = listener.accept().await.expect("connection");
+    let (mut stream, _) = timeout(Duration::from_secs(5), listener.accept())
+        .await
+        .expect("the executor never connected")
+        .expect("connection");
     let mut received = Vec::new();
     while !received.ends_with(b"\r\n\r\n") {
         received.push(stream.read_u8().await.expect("request head"));
