@@ -298,6 +298,31 @@ async fn a_full_queue_rejects_only_the_new_event() {
     assert_eq!(shutdown.accepted, 5);
 }
 
+#[tokio::test]
+async fn at_most_the_configured_callbacks_run_at_once() {
+    let record = Arc::new(Record::default());
+    let first_release = Arc::new(Notify::new());
+    let second_release = Arc::new(Notify::new());
+    let worker = LoggingWorker::start(settings(4, 1)).unwrap();
+    let _first = worker.enqueue(blocked(&record, "first", Arc::clone(&first_release)));
+    let _second = worker.enqueue(blocked(&record, "second", Arc::clone(&second_release)));
+    wait_for_names(&record, &["first"]).await;
+    wait_for_dequeued(&worker, 2).await;
+    yield_now().await;
+    yield_now().await;
+    let stats = worker.stats();
+    assert_eq!(stats.started, 1);
+    assert_eq!(stats.dequeued, 2);
+    assert_eq!(record.names(), ["first"]);
+    first_release.notify_one();
+    wait_for_names(&record, &["first", "second"]).await;
+    second_release.notify_one();
+    let flush = worker.flush().await;
+    assert_eq!(flush.completed, 2);
+    let shutdown = worker.stop().await;
+    assert!(shutdown.drained);
+}
+
 #[tokio::test(start_paused = true)]
 async fn a_timed_out_callback_releases_its_permit() {
     let record = Arc::new(Record::default());
