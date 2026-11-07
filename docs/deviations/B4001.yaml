@@ -1,0 +1,46 @@
+task: B4001
+deviations:
+  - what: >-
+      Spend is held as rust_decimal::Decimal in the shared SpendLogRecord and serialized into the
+      ClickHouse row as a JSON number, where LiteLLM's SpendLogRecord declares float and its row
+      carries a Python float.
+    why: >-
+      Rule money-is-decimal keeps costs in Decimal from the moment they are read, and
+      docs/compatibility.md leaves the digits of a float out of the wire contract; a ClickHouse
+      Float64 column stores the same value from either form.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_spend_logger.py#L131
+  - what: >-
+      The batch logger never enforces CLICKHOUSE_MAX_BUFFERED_ROWS: is_full only reports the queue
+      depth as a backpressure hint and enqueue keeps every row.
+    why: >-
+      LiteLLM's enqueue extends the list unconditionally and only exposes is_full() so producers
+      can answer 429; a hard cap would drop rows a working setup expects queued.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_batch_logger.py#L70-L79
+  - what: >-
+      The spend row session id falls back from the payload session_id to request metadata and then
+      to the payload trace id, so a payload with an empty session id still yields a session.
+    why: >-
+      The spend logger mirrors the proxy's _get_session_id_for_spend_log helper, and LiteLLM writes
+      an empty session_id when the caller supplied none.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_spend_logger.py#L95-L98
+  - what: >-
+      Cache read and write counters take the first non-zero of the OpenAI prompt_tokens_details
+      fields and then the Anthropic usage fields.
+    why: >-
+      Providers report cache usage differently; the first non-zero keeps LiteLLM's choice between
+      the two shapes for a payload that carries both.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_spend_logger.py#L77-L86
+  - what: >-
+      A CLICKHOUSE_BATCH_SIZE of zero is a load error that names the variable.
+    why: >-
+      LiteLLM takes a zero-sized batch from the queue and inserts it forever without making
+      progress, so the flush loop never returns; a zero cannot be part of a working setup.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/clickhouse_batch_logger.py#L81-L90
+  - what: >-
+      The Lens analysis flag is an injected LensAnalysis context with a scope guard instead of a
+      per-task ContextVar, so an open scope is visible to every caller sharing that context.
+    why: >-
+      tokio's task_local macro expands to std::cell::RefCell, which clippy.toml disallows;
+      betterlite injects context explicitly, so the tracing runtime hands one context to the Lens
+      inference code and the spend logger.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/clickhouse/context.py#L6-L19
