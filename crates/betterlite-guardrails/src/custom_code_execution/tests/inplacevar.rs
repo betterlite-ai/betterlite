@@ -678,6 +678,22 @@ fn a_bytes_operand_may_not_go_unused_by_a_bytes_template() {
 }
 
 #[test]
+fn a_formatted_result_past_the_cap_is_refused_when_each_piece_is_under_it() {
+    let mapping = Value::Dict(IndexMap::from([(
+        "a".to_owned(),
+        Value::Str("x".repeat(600_000)),
+    )]));
+    assert_eq!(
+        inplacevar(InplaceOp::Modulo, &Value::Str("%(a)s".repeat(2)), &mapping),
+        Err(InplaceError::RepetitionTooLong)
+    );
+    assert_eq!(
+        inplacevar(InplaceOp::Modulo, &Value::Str("%(a)s".to_owned()), &mapping),
+        Ok(Value::Str("x".repeat(600_000)))
+    );
+}
+
+#[test]
 fn padding_is_capped_across_all_conversions_of_a_template() {
     let mapping = Value::Dict(IndexMap::from([(
         "a".to_owned(),
@@ -749,5 +765,19 @@ fn a_negative_power_of_a_base_that_rounds_to_two_to_the_63_still_divides(
     assert_eq!(
         inplacevar(InplaceOp::Power, &Value::Int(base), &Value::Int(-1)),
         Ok(Value::Float(f64::from_bits(bits)))
+    );
+}
+
+#[rstest]
+#[case::even_exponent(-2, -2, 0.25_f64)]
+#[case::odd_exponent(-2, -3, -0.125_f64)]
+fn a_negative_base_takes_its_sign_from_the_exponent_parity(
+    #[case] base: i64,
+    #[case] exponent: i64,
+    #[case] expected: f64,
+) {
+    assert_eq!(
+        inplacevar(InplaceOp::Power, &Value::Int(base), &Value::Int(exponent)),
+        Ok(Value::Float(expected))
     );
 }

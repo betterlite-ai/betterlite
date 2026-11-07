@@ -18,7 +18,7 @@ deviations:
   - what: _inplacevar_ covers integer arithmetic, sequence concatenation, repetition and /= on two integers; float operands and matrix multiplication report an unsupported operand.
     why: The value model has no host numeric types, the lint table forbids float arithmetic, and integers are 64-bit so a value or intermediate above i64 reports an overflow.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/custom_code/sandbox.py#L103-L111
-  - what: Source nesting deeper than 200 levels is rejected at compile time, and a repeated text or list larger than one million items, or percent-format padding that adds up to more than one million spaces across one template, is refused by _inplacevar_.
+  - what: Source nesting deeper than 200 levels is rejected at compile time, and a repeated text or list larger than one million items, or a percent-formatted result longer than one million characters, is refused by _inplacevar_.
     why: Both are ways for untrusted source to exhaust the stack or memory before a deadline applies.
     link: ""
   - what: compile_sandboxed does not reproduce every CPython syntax error, including a try with no handler, a bare except before another handler, await without an operand, async and await used as names, malformed lambda, call and function parameter lists, del of a literal, a starred or tuple augmented target, a literal with target, a starred comprehension iterable, global after assignment, adjacent string literals and a leading-zero decimal; the runtime that executes the guarded source performs the final compile.

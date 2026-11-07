@@ -81,20 +81,38 @@ impl<'source> Arguments<'source> {
         Ok(value)
     }
 }
+struct Output {
+    text: String,
+    length: usize,
+}
+impl Output {
+    fn push(&mut self, padding: usize, piece: &str) -> Result<(), InplaceError> {
+        let added = padding.saturating_add(piece.chars().count());
+        self.length = self.length.saturating_add(added);
+        if self.length > MAX_REPEATED_ITEMS {
+            return Err(InplaceError::RepetitionTooLong);
+        }
+        self.text.push_str(&" ".repeat(padding));
+        self.text.push_str(piece);
+        Ok(())
+    }
+}
 fn render(text: &str, left: &Value, right: &Value, bytes: bool) -> Result<String, InplaceError> {
     let mut arguments = Arguments::new(right);
     let characters: Vec<char> = text.chars().collect();
-    let mut output = String::new();
-    let mut padded = 0_usize;
+    let mut output = Output {
+        text: String::new(),
+        length: 0,
+    };
     let mut index = 0_usize;
     while let Some(character) = characters.get(index).copied() {
         index = index.saturating_add(1);
         if character != '%' {
-            output.push(character);
+            output.push(0, character.encode_utf8(&mut [0; 4]))?;
             continue;
         }
         if characters.get(index) == Some(&'%') {
-            output.push('%');
+            output.push(0, "%")?;
             index = index.saturating_add(1);
             continue;
         }
@@ -103,18 +121,12 @@ fn render(text: &str, left: &Value, right: &Value, bytes: bool) -> Result<String
         let value = arguments.take(&spec, left, right)?;
         let body = convert(&spec, value, bytes)
             .ok_or_else(|| unsupported(InplaceOp::Modulo, left, right))?;
-        let padding = spec.width.saturating_sub(body.chars().count());
-        padded = padded.saturating_add(padding);
-        if padded > MAX_REPEATED_ITEMS {
-            return Err(InplaceError::RepetitionTooLong);
-        }
-        output.push_str(&" ".repeat(padding));
-        output.push_str(&body);
+        output.push(spec.width.saturating_sub(body.chars().count()), &body)?;
     }
     if arguments.used < arguments.sequence.len() && !leftover_allowed(right, bytes) {
         return Err(unsupported(InplaceOp::Modulo, left, right));
     }
-    Ok(output)
+    Ok(output.text)
 }
 const fn leftover_allowed(right: &Value, bytes: bool) -> bool {
     match right {
