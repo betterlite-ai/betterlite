@@ -1,0 +1,128 @@
+id: B4731
+title: MCP server registry reads and server resolution
+description: >-
+  Build the in-memory registry of MCP servers and every read that does not depend on who is asking: the lookups by id and name, the client IP and public-hub rules, permission list expansion, the table view of a server and the server_resolution.py pair that routes use. In LiteLLM these are methods of MCPServerManager plus server_resolution.py. B6591 builds the per-caller allowed list on top, B4717 and B4671 call the reads, and B6590 owns the MCPServer record they hold.
+
+
+  Code goes in betterlite-mcp, module registry: crates/betterlite-mcp/src/registry.rs, registry/** and a tests.rs beside each file. No Cargo.toml change is needed: B6590 adds the betterlite-db dependency and betterlite-mcp already depends on betterlite-auth and betterlite-config. ServerRegistry holds config_servers: IndexMap<String, MCPServer> and db_servers: IndexMap<String, MCPServer> (indexmap is already a workspace dependency; add it to betterlite-mcp if it is not there) and a RegistrySettings struct { public_mcp_servers: Vec<String>, public_hub_strict: bool, internal_ip_ranges: Option<Vec<String>> } passed in a struct literal. The composition root fills the settings from config: public_mcp_servers comes from litellm_settings.public_mcp_servers (B002, default empty), public_hub_strict from litellm_settings.public_mcp_hub_strict_whitelist (default true) and internal_ip_ranges from general_settings.mcp_internal_ip_ranges (B743). The registry itself has no global state and no lock; the caller shares it behind its own pointer.
+
+
+  Functions to build, each a method on ServerRegistry unless said otherwise (LiteLLM name in backticks).
+
+  1. `get_registry`: the config servers first in their order, then the database servers. LiteLLM computes config | registry, a dict union, so a key present in both keeps the config key's position and takes the database record. Return a Vec<&MCPServer> in that order. Also `get_all_mcp_server_ids` (the set of server_id values of that union), `get_allow_all_keys_server_ids` (server_id of each record with allow_all_keys true, in registry order), `is_config_declared_server` (the id is in config_servers) and `get_mcp_servers_from_ids` (the records whose server_id is in the given list, in registry order, not in list order).
+
+  2. `is_accessible_from_ip` (`_is_server_accessible_from_ip`), inputs: server and client_ip: Option<&str>. No client ip is true. A server with available_on_public_internet is true. A server whose server_id is in settings.public_mcp_servers is true. Otherwise parse settings.internal_ip_ranges with B743's IPAddressUtils.parse_internal_networks and answer B743's is_internal_ip(client_ip, networks). Read B743's task for the exact Rust names. It is the only place that decides IP access.
+
+  3. `server_by_id` (`get_mcp_server_by_id`), inputs: server_id and client_ip. The first record in registry order with that server_id, or None when it is not accessible from the ip. `server_by_name` (`get_mcp_server_by_name`): three passes over the registry in order, alias equal to the name, then server_name equal, then name equal. The first match of the first pass that has any match decides, and when that match is not accessible from the ip the answer is None (it does not fall through to the next pass or the next record). `filtered_registry` (`get_filtered_registry`): the registry unchanged for no ip, else only the accessible records, as a Vec of (server_id, record) pairs in registry order.
+
+  4. `is_server_public` (`is_mcp_server_public`), inputs: server_id and optional public_ids (default settings.public_mcp_servers). The record is looked up in db_servers first, then config_servers (not the union order). True when the record exists and (its id is in public_ids, or the hub is not strict and the record has available_on_public_internet). `public_servers` (`get_public_mcp_servers`): every registry record that is_server_public, in registry order, with the public ids taken once.
+
+  5. `expand_permission_list` (`expand_permission_list`), input: identifiers. Empty input gives an empty list. For each identifier: if it is a registry key it stays. Otherwise every registry record whose alias, server_name or name equals it contributes its server_id (duplicate names grant all matches). An identifier that matches nothing passes through unchanged and is logged at debug with the identifier quoted (use {:?} so control characters are escaped). The result is de-duplicated in first-seen order. `expand_tool_permissions` (`expand_tool_permissions`): input is an optional map from key to tool list. None or empty gives an empty map. Each key expands through expand_permission_list into server ids; for every id take that key's tools; then group by server id, sorted by id, and union the tool lists in first-seen order without duplicates. The wildcard entry "*" is an ordinary tool name here.
+
+  6. `server_table` (`_build_mcp_server_table`): the LiteLLM_MCPServerTable row of B858 (name spelled as B858 spells it) for one record. is_config is is_config_declared_server(server_id) and server_id not in db_servers. teams is the empty list. description is mcp_info["description"] when mcp_info exists and has it, else None. credentials is {"scopes": configured_scopes} when configured_scopes is non-empty, else None. mcp_access_groups, allowed_tools, extra_headers and args default to the empty list, env to the empty map. authorization_url, token_url and registration_url are the configured value when set, else the live value. env_vars map to B858's MCPEnvVar rows (None stays None). status, last_health_check and health_check_error are None (no health check ran). The remaining row fields copy the record field with the same name: server_id, server_name, alias, url, spec_path, transport, auth_type, created_at, updated_at, tool_name_to_display_name, tool_name_to_description, pinned_tools, static_headers, mcp_info, command, issuer, oauth2_flow, token_exchange_endpoint, audience, subject_token_type, token_exchange_profile, allow_all_keys, available_on_public_internet, delegate_auth_to_upstream, oauth_passthrough, dcr_bridge, per_server_oauth_discovery, is_byok, byok_description, byok_api_key_help_url, source_url, instructions, timeout, max_concurrent_requests. Read the row type and match every field it has. `all_server_tables` (`get_all_mcp_servers_unfiltered`): server_table for every registry record in order, empty for an empty registry.
+
+  7. Tool owner lookups. `ToolOwners` is a plain struct holding the map from tool name to owning server name (LiteLLM's tool_name_to_mcp_server_name_mapping); this task only reads it, the catalog code fills it. `known_prefix_to_server` (`_known_prefix_to_server`): for each record, going through the registry in reverse, each prefix form from iter_known_server_prefixes (B4682) normalized with normalize_server_name (B4682) maps to the record, so when two servers share a form the one registered first wins. `server_exposes_tool` (`server_exposes_tool`): the owned names are the normalized known prefixes of the server plus its normalized name; true when some spelling from iter_known_tool_name_spellings(tool_name, server) has an owner in ToolOwners whose normalized name is among them. iter_known_tool_name_spellings is at utils.py L365 of the pinned file; if B4682 does not export it, build it in registry::tool_owner from that function. `server_for_tool_name` (`_get_mcp_server_from_tool_name`): first, if the tool name itself is in ToolOwners, take the owner name, normalize it, and return the prefix map entry for it, else the first registry record whose normalized name equals it. If that finds nothing, match_known_server_prefix(tool_name, prefixes) (B4682); with a match (prefix, original tool name) return the prefix's server when server_exposes_tool(server, original) or the server's transport is stdio and blocked. The blocked check is is_mcp_stdio_blocked, a B4682 or B136 function; if neither crate has it, treat it as a RegistrySettings flag stdio_blocked: bool and say so in the PR. Otherwise None. `server_owning_prefix` (`server_owning_tool_name_prefix`): the prefix map entry for match_known_server_prefix(tool_name, prefixes), else None.
+
+  8. server_resolution.py, in registry::resolution. ResolvedServer { table: LiteLLM_MCPServerTable, runtime: Option<MCPServer>, source: ResolutionSource } with ResolutionSource Temp, Db or Registry. `resolve_server` (`resolve_mcp_server`), inputs: server_id, the optional TempLookup and DbLookup, id_client_ip, name_client_ip and match_name (default false). The two lookups are optional ports: TempLookup has async temp_server(server_id) -> Result<Option<MCPServer>, ResolveError> and DbLookup has async db_table(server_id) -> Result<Option<LiteLLM_MCPServerTable>, ResolveError>, and the caller passes an Option<&impl Trait> for each. Order: temp lookup gives (server_table of the temp record, runtime = the record, Temp); then the database lookup gives (the row, no runtime, Db); then server_by_id(server_id, no ip) when it exists and (id_client_ip is None or it is accessible from id_client_ip) gives (server_table, runtime, Registry); then, only when match_name, server_by_name(server_id, name_client_ip) gives the same with Registry. Otherwise None. Lookup errors propagate. `authorize_server` (`authorize_mcp_server`), inputs: resolved: Option<ResolvedServer>, auth, is_admin_view, not_found_detail and forbidden_detail (string maps), non_admin_missing (NotFound or Forbidden), allow_catalog_view (default false), and the CanAccess port described next. Returns Result<ResolvedServer, ResolutionDenied> where ResolutionDenied is NotFound(detail) or Forbidden(detail); the route layer turns them into 404 and 403 with a JSON body {"detail": ...}. A missing resolution is NotFound for an admin view or when non_admin_missing is NotFound, else Forbidden. An admin view returns the resolution as is. A Temp resolution is Forbidden for non-admins. Otherwise, unless allow_catalog_view, can_access_mcp_server(auth, table.server_id, lister) from B4672 decides; false is Forbidden. The lister is B4672's ContextServers port.
+
+
+  Tests use synthetic records (the prefix test-, aliases like test-alias) and an in-memory fake for the two lookups. The registry has no route at this commit, so there are no HTTP cases.
+
+scope:
+  paths:
+    - crates/betterlite-mcp/Cargo.toml
+    - crates/betterlite-mcp/src/registry.rs
+    - crates/betterlite-mcp/src/registry/**
+    - Cargo.lock
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2377-L2389
+    why: get_registry as a dict union and is_config_declared_server.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3342-L3352
+    why: get_all_mcp_server_ids and get_allow_all_keys_server_ids.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6903-L6984
+    why: ip accessibility, lookup by id, is_mcp_server_public and get_public_mcp_servers, with the strict hub flag.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6986-L7103
+    why: expand_permission_list, expand_tool_permissions, get_mcp_server_by_name three-pass priority and get_filtered_registry.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L7333-L7397
+    why: _build_mcp_server_table and get_all_mcp_servers_unfiltered.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L2903-L2928
+    why: _owned_mapping_values, server_exposes_tool, _known_prefix_to_server and server_owning_tool_name_prefix.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6716-L6751
+    why: _get_mcp_server_from_tool_name, the two-step lookup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server_resolution.py#L1-L122
+    why: resolve_mcp_server and authorize_mcp_server, the order of the sources and the denials.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L365-L384
+    why: iter_known_tool_name_spellings, used by server_exposes_tool.
+
+dod:
+  - text: The registry lists config servers first and database servers after, a shared id keeps the config position with the database record, and the id, allow-all, config-declared and by-ids reads follow that order.
+    proof: [registry-tests]
+  - text: IP accessibility is true without an ip, for a public-internet server and for an id in the public list, and otherwise follows B743's internal range check; lookup by id returns None when blocked, and lookup by name tries alias, then server_name, then name, and a blocked first match gives None without trying further.
+    proof: [lookup-tests]
+  - text: Public servers use the strict allow-list by default, include public-internet servers only when the hub is not strict, and look a server up in the database map before the config map.
+    proof: [lookup-tests]
+  - text: Permission list expansion passes through ids, expands aliases, server names and names to every match, keeps unknown entries, drops duplicates, and expand_tool_permissions groups and unions tool lists by expanded id sorted by id.
+    proof: [expand-tests]
+  - text: The table view fills is_config, credentials scopes, URL precedence, empty-list defaults and env vars as described, with no health fields.
+    proof: [table-tests]
+  - text: The tool owner lookups find a server through the owner map, then through a known prefix that the server exposes or a blocked stdio server, and a shared prefix stays with the server registered first.
+    proof: [tool-owner-tests]
+  - text: resolve_server tries temp, database, registry (with the id ip check) and then the name match in that order, and authorize_server maps missing, temp and no-access cases to the NotFound and Forbidden results as described.
+    proof: [resolution-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: registry-tests
+      why: the registry order or one of the id reads is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^registry::tests::registry_/)'
+    - id: lookup-tests
+      why: ip access, lookup by id or name, or the public server rules are missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^registry::tests::lookup_/)'
+    - id: expand-tests
+      why: permission or tool permission expansion is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^registry::tests::expand_/)'
+    - id: table-tests
+      why: the table view of a server has a wrong or missing field
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^registry::tests::table_/)'
+    - id: tool-owner-tests
+      why: the tool name to server lookup is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^registry::tool_owner::tests::/)'
+    - id: resolution-tests
+      why: server resolution order or the authorization result is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^registry::resolution::tests::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: Settings (public ids, strict flag, internal ranges) are read from a RegistrySettings struct, not from litellm globals and the live general_settings dict on every call.
+    why: betterlite has no module-level state and its config is immutable after load.
+  - what: authorize_server returns a ResolutionDenied value, not an HTTPException.
+    why: this crate has no HTTP framework; the route layer renders the same 404 and 403 bodies.
+  - what: Lists LiteLLM builds from a Python set (expand_permission_list) come back de-duplicated in first-seen order.
+    why: Python set order is not stable, so no client can rely on it.
+
+out_of_scope:
+  - "get_allowed_mcp_servers, operator_open_server_ids, the BYOM submitted-server cache, resolve_toolset_tool_permissions and get_all_allowed_mcp_servers: B6591."
+  - "The MCPServer record: B6590."
+  - "can_access_mcp_server and the ContextServers port: B4672."
+  - "Registry mutation and reload (load_servers_from_config, reload_servers_from_database, add_server, update_server, remove_server, build_mcp_server_from_table), OAuth discovery, health_check_server, _run_health_checks and get_all_mcp_servers_with_health_and_teams: B6592 owns them."
+  - "Filling ToolOwners (initialize_tool_name_to_mcp_server_name_mapping) and the catalog guards: B4682 and the tool listing task."
+  - "admitted_user_context, build_effective_auth_contexts and _user_has_admin_view: B4672 and B2314, not this task."
+
+pitfalls:
+  - "get_registry is a dict union: a database record replaces a config record of the same id but the key keeps the config position, so do not append it at the end."
+  - "get_mcp_server_by_name stops at the first matching pass; a blocked alias match returns None and does not try server_name or name."
+  - "is_server_public looks in the database map first and then the config map, and the strict flag defaults to true: a public-internet server is not on the hub unless its id is in the list."
+  - "get_mcp_servers_from_ids returns records in registry order, not in the order of the ids given."
+  - "expand_permission_list keeps an unknown identifier on purpose, because the later access check denies it by comparing with the real server id."
+  - "known_prefix_to_server walks the registry in reverse so the first registered server wins a shared prefix."
+  - "A Temp resolution is never authorized for a non-admin, even when the user could reach the same id in the registry."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

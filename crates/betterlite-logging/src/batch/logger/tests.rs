@@ -50,7 +50,6 @@ enum FlushStep {
 #[derive(Debug, Clone, Copy)]
 struct FlushCase {
     settings: BatchSettings,
-    preserve: bool,
     steps: &'static [FlushStep],
 }
 
@@ -259,8 +258,7 @@ async fn flush_once(
 }
 
 async fn drive(case: &FlushCase) -> Outcome {
-    let mut queue = BatchQueue::new(case.settings);
-    queue.preserve_during_flush = case.preserve;
+    let queue = BatchQueue::new(case.settings);
     let mut outcome = Outcome {
         queue: Vec::new(),
         reports: Vec::new(),
@@ -440,7 +438,7 @@ const SMALL: BatchSettings = BatchSettings {
 
 #[rstest]
 #[case::empty_flush_sends_nothing(
-    FlushCase { settings: DEFAULT, preserve: false, steps: &[FlushStep::Flush { reply: Reply::Delivered, arrivals: &[] }] },
+    FlushCase { settings: DEFAULT, steps: &[FlushStep::Flush { reply: Reply::Delivered, arrivals: &[] }] },
     Expectation {
         sent: &[&[]],
         delivered: &[],
@@ -453,7 +451,6 @@ const SMALL: BatchSettings = BatchSettings {
 #[case::delivered_flush_clears_the_queue(
     FlushCase {
         settings: DEFAULT,
-        preserve: false,
         steps: &[
             FlushStep::Enqueue(&["a", "b"]),
             FlushStep::Flush { reply: Reply::Delivered, arrivals: &[] },
@@ -471,7 +468,6 @@ const SMALL: BatchSettings = BatchSettings {
 #[case::failed_flush_retains_the_events(
     FlushCase {
         settings: DEFAULT,
-        preserve: false,
         steps: &[
             FlushStep::Enqueue(&["a", "b"]),
             FlushStep::Flush { reply: Reply::Failed, arrivals: &[] },
@@ -493,7 +489,6 @@ const SMALL: BatchSettings = BatchSettings {
 #[case::overflow_drops_the_oldest(
     FlushCase {
         settings: SMALL,
-        preserve: false,
         steps: &[
             FlushStep::Enqueue(&["a", "b"]),
             FlushStep::Flush { reply: Reply::Failed, arrivals: &["c", "d"] },
@@ -511,7 +506,6 @@ const SMALL: BatchSettings = BatchSettings {
 #[case::enqueue_overflow_drops_the_oldest(
     FlushCase {
         settings: SMALL,
-        preserve: false,
         steps: &[FlushStep::Enqueue(&["a", "b", "c", "d"])],
     },
     Expectation {
@@ -526,7 +520,6 @@ const SMALL: BatchSettings = BatchSettings {
 #[case::aborted_flush_restores_the_batch(
     FlushCase {
         settings: DEFAULT,
-        preserve: false,
         steps: &[
             FlushStep::Enqueue(&["a", "b"]),
             FlushStep::Abort { arrivals: &["c"], settled: 0 },
@@ -544,7 +537,6 @@ const SMALL: BatchSettings = BatchSettings {
 #[case::aborted_flush_restores_only_the_unconfirmed_remainder(
     FlushCase {
         settings: DEFAULT,
-        preserve: false,
         steps: &[
             FlushStep::Enqueue(&["a", "b", "c", "d"]),
             FlushStep::Abort { arrivals: &[], settled: 2 },
@@ -562,7 +554,6 @@ const SMALL: BatchSettings = BatchSettings {
 #[case::split_flush_keeps_the_unaccepted_half(
     FlushCase {
         settings: DEFAULT,
-        preserve: false,
         steps: &[
             FlushStep::Enqueue(&["a", "b", "c", "d"]),
             FlushStep::SplitTimeout,
@@ -580,7 +571,6 @@ const SMALL: BatchSettings = BatchSettings {
 #[case::overlapping_flushes_run_one_at_a_time(
     FlushCase {
         settings: DEFAULT,
-        preserve: false,
         steps: &[
             FlushStep::Enqueue(&["a", "b"]),
             FlushStep::Overlap { second_events: &["c"] },
@@ -601,7 +591,6 @@ const SMALL: BatchSettings = BatchSettings {
 #[case::undelivered_is_requeued_before_arrivals(
     FlushCase {
         settings: DEFAULT,
-        preserve: false,
         steps: &[
             FlushStep::Enqueue(&["a", "b"]),
             FlushStep::Flush { reply: Reply::Partial { kept: 1 }, arrivals: &["c"] },
@@ -619,7 +608,6 @@ const SMALL: BatchSettings = BatchSettings {
 #[case::cancelled_flush_keeps_the_undelivered(
     FlushCase {
         settings: DEFAULT,
-        preserve: false,
         steps: &[
             FlushStep::Enqueue(&["a", "b", "c"]),
             FlushStep::Flush { reply: Reply::Cancelled { kept: 1 }, arrivals: &["d"] },
@@ -634,10 +622,9 @@ const SMALL: BatchSettings = BatchSettings {
         warns: false,
     }
 )]
-#[case::preserve_keeps_events_added_during_the_flush(
+#[case::delivered_flush_keeps_events_added_during_it(
     FlushCase {
         settings: DEFAULT,
-        preserve: true,
         steps: &[
             FlushStep::Enqueue(&["a", "b"]),
             FlushStep::Flush { reply: Reply::Delivered, arrivals: &["c"] },
@@ -652,28 +639,9 @@ const SMALL: BatchSettings = BatchSettings {
         warns: false,
     }
 )]
-#[case::clearing_drops_events_added_during_the_flush(
-    FlushCase {
-        settings: DEFAULT,
-        preserve: false,
-        steps: &[
-            FlushStep::Enqueue(&["a", "b"]),
-            FlushStep::Flush { reply: Reply::Delivered, arrivals: &["c"] },
-        ],
-    },
-    Expectation {
-        sent: &[&["a", "b"]],
-        delivered: &["a", "b"],
-        queue: &[],
-        enqueued: ENQUEUED_TWO,
-        reports: &[ReportExpectation { batch: 2, delivered: 2, requeued: 0, dropped_oldest: 0, cancelled: false }],
-        warns: false,
-    }
-)]
 #[case::requeue_keeps_the_newest_when_over_capacity(
     FlushCase {
         settings: SMALL,
-        preserve: false,
         steps: &[
             FlushStep::Enqueue(&["a", "b", "c"]),
             FlushStep::Flush {

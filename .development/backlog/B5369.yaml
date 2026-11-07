@@ -1,0 +1,16 @@
+id: B5369
+milestone: M12 python
+title: The betterlite Python crate, wheel build and version
+status: todo
+depends_on: [B193, B5361]
+file: tasks/B5369-python-package.yaml
+covers:
+  - "pyproject.toml"
+  - "litellm/_version.py"
+  - "litellm/py.typed"
+parent: B157
+split_from: B157
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -103,7 +103,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - Framework dispatch of the streaming iterator hook through callback registration and event type filtering.
-  - "should_run_guardrail and log_guardrail_information from the guardrail decorator, owned by B3664."
+  - "should_run_guardrail, owned by B3665, and log_guardrail_information from the guardrail decorator, owned by B3664."
   - "Anthropic SSE classifiers, framing and assembly helpers (is_anthropic_sse_stream, anthropic_sse_error_frames, assemble_anthropic_sse_stream), owned by B3669."
   - "OpenAIResponsesHandler._extract_output_text_and_images and build_stream_error_items, owned by B3670."
   - "MockResponseIterator and response record constructors, owned by B2214."

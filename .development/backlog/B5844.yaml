@@ -1,0 +1,14 @@
+id: B5844
+milestone: M3 providers
+title: Snowflake provider
+status: todo
+depends_on: [B2202, B668, B2214, B004, B005, B006, B578, B579, B571, B581, B582, B222, B223, B183]
+file: tasks/B5844-snowflake-provider.yaml
+covers:
+  - "litellm/llms/snowflake/**"
+parent: B042
+split_from: B042
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

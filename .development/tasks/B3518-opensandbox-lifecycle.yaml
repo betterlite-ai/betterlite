@@ -112,13 +112,13 @@ checks:
       run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^opensandbox::lifecycle/)'
     - id: opensandbox-create-oracle
       why: OpenSandbox create cases do not match LiteLLM on handle structure or endpoint caching
-      run: cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/sandbox/ -k "opensandbox.*create"
+      run: cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/sandbox/opensandbox-create-*.yaml
     - id: opensandbox-run-oracle
       why: OpenSandbox execution cases do not match LiteLLM on code submission or result parsing
-      run: cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/sandbox/ -k "opensandbox.*run"
+      run: cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/sandbox/opensandbox-run*.yaml
     - id: opensandbox-delete-oracle
       why: OpenSandbox delete cases do not match LiteLLM on credential handling or 404 behavior
-      run: cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/sandbox/ -k "opensandbox.*delete"
+      run: cargo run --locked --quiet -p betterlite-oracle -- tools/oracle/cases/sandbox/opensandbox-delete-*.yaml
 oracle_cases:
   - tools/oracle/cases/sandbox/opensandbox-create-success.yaml
   - tools/oracle/cases/sandbox/opensandbox-create-endpoint-wait.yaml

@@ -6,7 +6,7 @@ description: >-
   model/provider with api_base or base_url and api_key, then replace the explicit key whenever dynamic_api_key
   is non-None, even empty. Named language,prompt,response_format,timestamp_granularities,temperature,user
   default None; timeout=600,max_retries defaults OpenAI's 2 independently of litellm.num_retries. Remove tags,
-  pop atranscription=false/client=None, filter nondefault options through B157 and map with B175. Log client
+  pop atranscription=false/client=None, filter nondefault options through B5362 and map with B175. Log client
   string when logging exists, then update environment with optional_params={} and metadata default None.
 
   B157's provider config selector controls native transport. OpenAI and compatibles use B515 unless config
@@ -122,7 +122,7 @@ oracle_cases:
 - tools/oracle/cases/sdk-http/transcription-call/transcription-async-results.yaml
 deviations: []
 out_of_scope:
-- B1122 owns every transcription base-contract method; B1001 audio extraction/duration; B175 get_optional_params_transcription; B157 get_non_default_transcription_params and ProviderConfigManager.get_provider_audio_transcription_config.
+- B1122 owns every transcription base-contract method; B1001 audio extraction/duration; B175 get_optional_params_transcription; B5362 get_non_default_transcription_params; B157 owns ProviderConfigManager.get_provider_audio_transcription_config.
 - B515 and B539 own OpenAI/Azure execution, B047 Riva/Soniox, B642 Bedrock and B2453 generic native HTTP. Downstream implementations are injected B010 operations rather than backward dependencies.
 - B1083/B1084 own aspeech/speech; B158 retains other general main.py SDK facade methods and provider umbrellas retain their _complete_* functions. The cached transcription converter is owned here in full.
 pitfalls:

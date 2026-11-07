@@ -1,0 +1,134 @@
+id: B5660
+title: Assemble the shared limiter and choose batch admission
+description: >-
+  Add the module `limiter_assembly` to betterlite-rate-limit. It builds the one shared limiter that every
+  rate-limit hook uses, and it picks the limiter that handles batch calls. Nothing in it reads a request.
+
+  Four pieces.
+
+  One, `RateLimiterAssembly`, the port of the handler constructor (parallel_request_limiter_v3.py L102
+  to L122) and of `_get_batch_rate_limiter`. Its constructor takes every owner it needs and nothing is
+  global: the rate_limiter_settings section of B3031, the LimiterClock and FailClosedPolicy of B3031, the
+  window store of B3032, the atomic counters of B3033, the settlement of B3034, the gauges of B3035, the
+  WindowedAdmission of B3036, the token adjustments of B3037, a boxed ModelGroupResolver, and the batch
+  limit counters of B1045. Build it once at boot and share it as an `Arc`. It exposes the parts as
+  read-only accessors. It owns an error enum `LimiterAssemblyError` with one `#[from]` variant per owner
+  error it can see.
+
+  Two, `CallTypeRateLimiter`, the Rust trait for the Python protocol at L597 to L604. It has one async
+  method `async_pre_call_hook(&self, user_api_key_dict: &UserAPIKeyAuth, data: &RateLimitCallData,
+  call_type: CallType, stash: &RequestStashSlot) -> Result<(), ProxyRateLimitError>`. `RateLimitCallData`
+  is the typed request view that B3031 already defines. `ProxyRateLimitError` is the error of B3030, so a
+  429 and a 503 keep their bodies. Two implementations exist: the main limiter (built by B3055) and the
+  batch limiter of B1047. This task defines the trait only. It does not implement it.
+
+  Three, `select_call_type_limiter(call_type: CallType) -> LimiterChoice`, the port of the branch in
+  `_get_batch_rate_limiter` and its caller. `LimiterChoice` is an enum with the variants `Main` and
+  `Batch`. `CallType::AcreateBatch` gives `Batch`. Every other call type gives `Main`. Read L751 to L837 in
+  the LiteLLM file to see the exact call types, and match them with an exhaustive `match` on the existing
+  `CallType` enum in crates/betterlite-core/src/routes.rs. Do not add a wildcard arm. The batch limiter is
+  built lazily in Python, but here it is built at boot, because a constructor with no I/O has nothing to defer.
+
+  Four, `RouterModelGroupResolver`, the production implementation of the `ModelGroupResolver` seam of
+  B3031. It holds a handle to the router's alias table, and `resolve(model_name)` returns the group name when
+  the router maps the name to a different group, and nothing otherwise. It is the port of
+  `_resolve_model_group_alias_via_proxy_router`. It never panics when the router has no entry. It takes the
+  router handle through the constructor and reads no global.
+
+  Native tests live under `limiter_assembly::tests` and are grouped as `assembly_`, `select_` and
+  `resolver_`. They cover: the constructor keeps every owner and the default window size of 60, a custom
+  window size reaches the accessors, `AcreateBatch` selects `Batch`, each other call type selects `Main`,
+  the resolver returns the group for an alias, returns nothing for a name that is already a group, and returns
+  nothing for an unknown name.
+
+scope:
+  paths:
+    - crates/betterlite-rate-limit/src/limiter_assembly.rs
+    - crates/betterlite-rate-limit/src/limiter_assembly/**
+    - tools/oracle/cases/helpers/limiter-assembly/**
+    - "tools/oracle/fuzz/corpus/helper_case/limiter_assembly-*"
+    - tools/oracle/helpers/b5660.py
+    - tools/oracle/helpers/b5660/**
+    - tools/oracle/src/helpers/rate_limit/b5660.rs
+    - tools/oracle/src/helpers/rate_limit/b5660/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L102-L122
+    why: The constructor lines that create the cache, window size, scripts and clock.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L597-L604
+    why: The CallTypeRateLimiter protocol the trait ports.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L751-L837
+    why: The batch limiter lookup and the call types that pick it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/parallel_request_limiter_v3.py#L3338-L3343
+    why: The model group alias lookup through the proxy router.
+
+dod:
+  - text: The assembly is built from injected owners, shares them through accessors, and reads no global.
+    proof: [assembly-tests]
+  - text: AcreateBatch selects the batch limiter and every other call type selects the main limiter, with no wildcard arm.
+    proof: [select-tests, selector-oracle, helper-python, helper-case-corpus]
+  - text: The CallTypeRateLimiter trait has the one async pre-call method and returns the ProxyRateLimitError of B3030.
+    proof: [assembly-tests]
+  - text: The router resolver returns the group for an alias and nothing for a group name or an unknown name.
+    proof: [resolver-tests]
+  - text: Newly added helper cases for call type selection replay through the shared helper-case parser.
+    proof: [helper-case-corpus]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: assembly-tests
+      why: the constructor, accessor or trait tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^limiter_assembly::tests::assembly_/)'
+    - id: select-tests
+      why: the call type selection tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^limiter_assembly::tests::select_/)'
+    - id: resolver-tests
+      why: the router model group resolver tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^limiter_assembly::tests::resolver_/)'
+    - id: selector-oracle
+      why: the call type selection cases are missing or differ from LiteLLM
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/limiter-assembly)" &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/limiter-assembly
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5660)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b5660 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5660/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added limiter assembly cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/limiter_assembly-*")" &&
+        grep -lE '^[[:space:]]+b5660:' tools/oracle/fuzz/corpus/helper_case/limiter_assembly-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/limiter-assembly/select-batch-call-type.yaml
+  - tools/oracle/cases/helpers/limiter-assembly/select-main-call-types.yaml
+
+deviations:
+  - what: The batch limiter is built at boot and not on the first batch call.
+    why: Python builds it lazily to avoid an import cycle. Rust has no such cycle and a constructor with no I/O needs no deferral.
+  - what: CallTypeRateLimiter is a typed trait over RateLimitCallData and a RequestStashSlot argument.
+    why: Python passes an untyped dict and keeps the per-request stash in a ContextVar. The workspace rules forbid both.
+
+out_of_scope:
+  - "The pre-call hook, request_capacity, _build_request_rate_limit_descriptors and the HTTP cases: B3055."
+  - "The batch limiter's own pre-call hook, descriptors and counters: B1047, B1044 and B1045. This task only selects it."
+  - "The records, the RequestStashSlot type and the ModelGroupResolver trait: B3031."
+  - "The windowed check, gauges, window store, settlement and token adjustments: B3036, B3035, B3032, B3034 and B3037. This task holds them."
+
+pitfalls:
+  - The selector needs a real match on CallType. A wildcard arm would send a new call type to the main limiter without anyone deciding it.
+  - The assembly holds no per-request state. The RequestStashSlot is made once per proxy request by B3055 and passed in, never stored here.
+  - betterlite-rate-limit sits above core, cache, auth, config, logging, redis and router, so the resolver may import the router crate and the router must never import this module.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1200
+  max_new_expects: 0

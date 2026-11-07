@@ -2,7 +2,7 @@ id: B3392
 milestone: M5 api families
 title: Skill creation and requester metadata precedence
 status: todo
-depends_on: [B157, B185, B186, B198, B247, B567, B3390, B3391]
+depends_on: [B185, B186, B198, B247, B567, B3390, B3391, B5360]
 file: tasks/B3392-skills-create.yaml
 covers:
   - "litellm/skills/main.py"

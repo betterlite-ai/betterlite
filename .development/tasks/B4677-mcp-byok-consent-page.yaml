@@ -182,7 +182,7 @@ deviations:
     why: "Consistency with betterlite's error responses, and LiteLLM's error messages reference the Python library name."
 
   - what: "The authorization code store is in-memory HashMap with time-based expiration; no distributed backend is used."
-    why: "Matches LiteLLM's single-proxy design. Multi-proxy support with shared state is deferred to B4658 or later tasks."
+    why: "Matches LiteLLM's single-proxy design. Multi-proxy support with shared state is deferred to later tasks."
 
 out_of_scope:
   - "HTML form builder (_build_authorize_html, lines 187-644): Split into B4687 per call-graph split rule."
@@ -192,7 +192,7 @@ out_of_scope:
   - "Token endpoint (POST /v1/mcp/oauth/token). Owned by B4678."
   - "OAuth metadata discovery endpoints (/.well-known/oauth-authorization-server, /.well-known/oauth-authorization-server/.../v1/mcp/oauth, /.well-known/oauth-authorization-server/{root_path:path}/v1/mcp/oauth). Owned by B4678."
   - "GET /v1/mcp/oauth/protected-resource (byok_protected_resource_metadata). Owned by B4678."
-  - "store_user_credential database write (persisting the credential from the API key field). Owned by B4658."
+  - "store_user_credential database write (persisting the credential from the API key field). Owned by B4713."
   - "global_mcp_server_manager and MCP registry lookup (ServerConfig metadata retrieval). Owned by B136."
   - "Session-key DB liveness lookup (get_key_object, hash_token utilities). Owned by B738."
   - "get_request_base_url and validate_loopback_redirect_uri utilities. Owned by B4654."
