@@ -6,18 +6,6 @@ use std::str::FromStr as _;
 
 use crate::fields::usage::{Usage, UsageError};
 
-const USAGE_FIELDS: [&str; 8] = [
-    "prompt_tokens",
-    "completion_tokens",
-    "total_tokens",
-    "reasoning_tokens",
-    "prompt_tokens_details",
-    "completion_tokens_details",
-    "server_tool_use",
-    "cost",
-];
-
-// Usage(**mapping): the declared token fields default to zero, unknown keys stay as model extras, and the cache counters a provider sends fill the prompt details they name.
 pub fn usage_from_mapping(mapping: &IndexMap<String, Json>) -> Result<Usage, UsageError> {
     let prompt_tokens = optional_integer(mapping, "prompt_tokens")?.unwrap_or(0);
     let completion_tokens = optional_integer(mapping, "completion_tokens")?.unwrap_or(0);
@@ -29,7 +17,16 @@ pub fn usage_from_mapping(mapping: &IndexMap<String, Json>) -> Result<Usage, Usa
     apply_reasoning(&mut completion_tokens_details, mapping, completion_tokens)?;
     let server_tool_use = object_field(mapping, "server_tool_use")?.cloned();
     let mut extras = mapping.clone();
-    for name in USAGE_FIELDS {
+    for name in [
+        "prompt_tokens",
+        "completion_tokens",
+        "total_tokens",
+        "reasoning_tokens",
+        "prompt_tokens_details",
+        "completion_tokens_details",
+        "server_tool_use",
+        "cost",
+    ] {
         extras.shift_remove(name);
     }
     Ok(Usage {
@@ -44,7 +41,6 @@ pub fn usage_from_mapping(mapping: &IndexMap<String, Json>) -> Result<Usage, Usa
     })
 }
 
-// The reasoning_tokens argument fills the completion details and derives text tokens from the completion total the caller sent.
 fn apply_reasoning(
     details: &mut Option<IndexMap<String, Json>>,
     mapping: &IndexMap<String, Json>,
@@ -86,7 +82,6 @@ fn apply_reasoning(
     Ok(())
 }
 
-// The Usage constructor maps the Anthropic and DeepSeek cache counters onto prompt details.
 fn apply_cache_aliases(
     details: &mut Option<IndexMap<String, Json>>,
     mapping: &IndexMap<String, Json>,
@@ -150,7 +145,6 @@ fn integer_number(number: &Number, name: &'static str) -> Result<i64, UsageError
     i64::try_from(value).map_err(|_error| UsageError::IntegerOverflow { field: name })
 }
 
-// A detail counter the wrapper would coerce or reject; reading it as given keeps the mapping intact.
 fn detail_number(fields: &IndexMap<String, Json>, name: &str) -> Option<i64> {
     match fields.get(name) {
         Some(Json::Number(number)) => number.as_i64(),

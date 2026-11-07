@@ -3,7 +3,6 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
-// A logging timestamp: a datetime, a float of epoch seconds, or an int that cleanup_timestamps rejects.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Moment {
     DateTime(DateTime<FixedOffset>),
@@ -31,7 +30,6 @@ pub enum TimestampError {
     ResponseTimeOverflow,
 }
 
-// StandardLoggingPayloadSetup.cleanup_timestamps: completion_start_time falls back to end_time unless it is a datetime or float.
 pub fn cleanup_timestamps(
     start: Option<&Moment>,
     end: Option<&Moment>,
@@ -47,7 +45,6 @@ pub fn cleanup_timestamps(
     })
 }
 
-// _timestamp_seconds: a datetime or any number is epoch seconds; a value outside those shapes never reaches it.
 #[must_use]
 pub fn timestamp_seconds(moment: &Moment) -> Decimal {
     match moment {
@@ -57,7 +54,6 @@ pub fn timestamp_seconds(moment: &Moment) -> Decimal {
     }
 }
 
-// Logging.get_response_ms, with the current moment injected for the missing-timestamp fallback.
 pub fn get_response_ms(
     start: Option<&Moment>,
     end: Option<&Moment>,
@@ -74,7 +70,6 @@ pub fn get_response_ms(
     Ok(with_fraction(millis))
 }
 
-// Python's json.dumps writes every float with a decimal point, so a whole number of seconds keeps one digit.
 pub(crate) fn with_fraction(value: Decimal) -> Decimal {
     let mut normalized = value.normalize();
     if normalized.scale() == 0 {
@@ -83,7 +78,6 @@ pub(crate) fn with_fraction(value: Decimal) -> Decimal {
     normalized
 }
 
-// cleanup_timestamps accepts only a datetime or a float; an int is a declared-type error there.
 fn accepted_seconds(moment: Option<&Moment>) -> Option<Decimal> {
     match moment {
         Some(Moment::DateTime(datetime)) => {

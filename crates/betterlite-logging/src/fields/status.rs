@@ -26,7 +26,6 @@ pub struct StatusFields {
     pub guardrail_status: GuardrailStatus,
 }
 
-// _get_status_fields aggregates every entry: an earlier passing guardrail must not hide a later block.
 #[must_use]
 pub fn get_status_fields(
     status: LoggingStatus,
@@ -37,7 +36,10 @@ pub fn get_status_fields(
         let Some(raw) = entry.guardrail_status.as_deref() else {
             continue;
         };
-        guardrail_status = higher_severity(guardrail_status, map_status(raw));
+        let mapped = map_status(raw);
+        if severity(mapped) > severity(guardrail_status) {
+            guardrail_status = mapped;
+        }
     }
     StatusFields {
         llm_api_status: status,
@@ -45,7 +47,6 @@ pub fn get_status_fields(
     }
 }
 
-// LiteLLM's GUARDRAIL_STATUS_MAP, including the legacy blocked and failure values; anything else is not_run.
 fn map_status(raw: &str) -> GuardrailStatus {
     match raw {
         "success" => GuardrailStatus::Success,
@@ -56,15 +57,6 @@ fn map_status(raw: &str) -> GuardrailStatus {
     }
 }
 
-const fn higher_severity(current: GuardrailStatus, candidate: GuardrailStatus) -> GuardrailStatus {
-    if severity(candidate) > severity(current) {
-        candidate
-    } else {
-        current
-    }
-}
-
-// LiteLLM's GUARDRAIL_STATUS_SEVERITY, least severe first.
 const fn severity(status: GuardrailStatus) -> u8 {
     match status {
         GuardrailStatus::NotRun => 0,

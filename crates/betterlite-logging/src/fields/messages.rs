@@ -1,7 +1,6 @@
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 
-// StandardLoggingPayloadSetup.append_system_prompt_messages: a system prompt already at the head is kept, otherwise it is prepended.
 #[must_use]
 pub fn append_system_prompt_messages(
     system: Option<&str>,
@@ -32,7 +31,6 @@ pub fn append_system_prompt_messages(
     }
 }
 
-// A message map in the shape the declared messages type carries.
 fn message(role: &str, content: &str) -> Json {
     Json::Object(IndexMap::from([
         (String::from("role"), Json::Text(role.to_owned())),
