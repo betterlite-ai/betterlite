@@ -21,6 +21,12 @@ use super::super::format;
     r#"[{"type":"function","function":{"name":"bad","parameters":{"properties":[]}}}]"#,
     "properties"
 )]
+#[case::non_object_function_parameters(
+    r#"[{"function":{"name":"bad","parameters":[]}}]"#,
+    "parameters"
+)]
+#[case::non_object_inline_input_schema(r#"[{"input_schema":5,"name":"x"}]"#, "input_schema")]
+#[case::non_object_inline_parameters(r#"[{"parameters":5,"name":"x"}]"#, "parameters")]
 #[case::non_text_property_description(
     r#"[{"type":"function","function":{"name":"bad","parameters":{"properties":{"field":{"type":"string","description":7}}}}}]"#,
     "description"

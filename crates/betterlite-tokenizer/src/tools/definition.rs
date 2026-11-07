@@ -11,6 +11,12 @@ pub(super) struct Function<'raw> {
     #[serde(default)]
     description: Option<String>,
     #[serde(borrow, default)]
+    parameters: Option<&'raw RawValue>,
+}
+
+struct Inline<'raw> {
+    name: Option<String>,
+    description: Option<String>,
     parameters: Option<SchemaNode<'raw>>,
 }
 
@@ -72,8 +78,12 @@ pub(super) fn format_tool(
         return Ok(total);
     }
     let total = charge(used, 1, limit)?;
-    let function = inline_function(index, &fields)?;
-    lines.extend(format_function(&function)?);
+    let inline = inline_function(index, &fields)?;
+    lines.extend(format_definition(
+        inline.name.as_deref(),
+        inline.description.as_deref(),
+        inline.parameters.as_ref(),
+    )?);
     Ok(total)
 }
 
@@ -107,15 +117,15 @@ fn array_field(field: Option<&RawValue>) -> Option<&RawValue> {
 fn inline_function<'raw>(
     index: usize,
     fields: &ToolFields<'raw>,
-) -> Result<Function<'raw>, ToolFormatError> {
+) -> Result<Inline<'raw>, ToolFormatError> {
     let (field, source) = fields.input_schema.map_or_else(
         || ("parameters", fields.parameters),
         |raw| ("input_schema", Some(raw)),
     );
     let parameters = source
-        .map(|raw| parse_branch(index, field, raw))
+        .map(|raw| schema::parse_schema(raw, field))
         .transpose()?;
-    Ok(Function {
+    Ok(Inline {
         name: text_field(index, fields.name, "name")?,
         description: text_field(index, fields.description, "description")?,
         parameters,
@@ -150,10 +160,14 @@ where
 }
 
 fn format_function(function: &Function<'_>) -> Result<Vec<String>, ToolFormatError> {
+    let parameters = function
+        .parameters
+        .map(|raw| schema::parse_schema(raw, "parameters"))
+        .transpose()?;
     format_definition(
         function.name.as_deref(),
         function.description.as_deref(),
-        function.parameters.as_ref(),
+        parameters.as_ref(),
     )
 }
 

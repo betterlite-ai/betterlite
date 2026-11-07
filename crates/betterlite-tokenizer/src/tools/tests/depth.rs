@@ -38,14 +38,25 @@ fn token_formatting_behavior_tests_behavior() {
         }
     ));
 
-    let tools = tool_with(&nested_arrays(40, &leaf_with(20_000)));
+    let deep = tool_with(&nested_arrays(40, &leaf_with(20_000)));
     let limits = ToolLimits {
-        max_bytes: tools.len(),
+        max_bytes: deep.len(),
         max_tools: 8,
     };
-    let definitions = parse_tool_definitions(tools.as_bytes(), limits)
+    let definitions = parse_tool_definitions(deep.as_bytes(), limits)
         .expect("the definitions fit the byte limit");
     let formatted =
         format_function_definitions(&definitions).expect("a deep schema under the cap formats");
     assert!(formatted.contains("f19999?: string,"));
+
+    // 60 array levels under the default 16 MiB limit: the scan stays linear in the bytes
+    let near_limit = tool_with(&nested_arrays(60, &leaf_with(550_000)));
+    assert!(near_limit.len() > 14 * 1024 * 1024);
+    let defaults = ToolLimits::default();
+    let large = parse_tool_definitions(near_limit.as_bytes(), defaults)
+        .expect("the definitions fit the default byte limit");
+    let rendered =
+        format_function_definitions(&large).expect("a deep schema near the byte limit formats");
+    assert!(rendered.contains("f549999?: string,"));
+    assert!(rendered.ends_with("} // namespace functions"));
 }

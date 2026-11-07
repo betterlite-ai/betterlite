@@ -20,6 +20,11 @@ use crate::tools::{ToolLimits, format_function_definitions, parse_tool_definitio
     ToolLimits { max_bytes: 1024, max_tools: 2 },
     Some("the tool definitions hold 3 entries, over the 2 entry limit")
 )]
+#[case::declarations_over_the_limit_across_tools(
+    br#"[{"functionDeclarations":[{"name":"a"},{"name":"b"}]},{"functionDeclarations":[{"name":"c"}]}]"#,
+    ToolLimits { max_bytes: 1024, max_tools: 2 },
+    Some("the tool definitions hold 3 entries, over the 2 entry limit")
+)]
 fn token_formatting_behavior_tests_behavior(
     #[case] bytes: &[u8],
     #[case] limits: ToolLimits,
