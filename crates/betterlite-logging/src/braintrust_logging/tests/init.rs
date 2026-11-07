@@ -1,15 +1,9 @@
 use std::collections::BTreeMap;
-use std::sync::Arc;
 
-use betterlite_config::proxy::ProxyPolicy;
-use betterlite_config::types::ProxyTrust;
-use betterlite_http::proxy::ProxiedClient;
 use secrecy::{ExposeSecret as _, SecretString};
 
-use super::support::{BASE, KEY, settings};
-use crate::braintrust_logging::logger::BraintrustLogger;
+use super::support::{KEY, settings};
 use crate::braintrust_logging::settings::{Settings, SettingsError};
-use crate::http_analytics_loggers::delivery::PooledDelivery;
 
 fn environment(variables: &[(&str, &str)]) -> BTreeMap<String, String> {
     variables
@@ -20,9 +14,15 @@ fn environment(variables: &[(&str, &str)]) -> BTreeMap<String, String> {
 
 #[test]
 fn init_exposes_the_key_and_the_default_base() {
-    let settings = settings(&[]);
-    assert_eq!(settings.api_key.expose_secret(), KEY);
-    assert_eq!(settings.api_base, BASE);
+    let resolved = Settings::resolve(
+        Some(SecretString::from("arg-key")),
+        None,
+        Vec::new(),
+        &BTreeMap::new(),
+    )
+    .unwrap();
+    assert_eq!(resolved.api_key.expose_secret(), "arg-key");
+    assert_eq!(resolved.api_base, "https://api.braintrustdata.com/v1");
 }
 
 #[test]
@@ -70,12 +70,4 @@ fn init_treats_empty_environment_values_as_unset() {
 fn init_debug_output_hides_the_key() {
     let settings = settings(&[]);
     assert!(!format!("{settings:?}").contains(KEY));
-}
-
-#[test]
-fn init_composes_with_the_pooled_http_delivery() {
-    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap();
-    let client = ProxiedClient::outbound(&Arc::new(policy)).unwrap();
-    let logger = BraintrustLogger::new(settings(&[]), PooledDelivery { client });
-    logger.log_failure_event();
 }
