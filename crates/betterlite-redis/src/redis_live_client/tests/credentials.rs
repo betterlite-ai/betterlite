@@ -51,6 +51,32 @@ async fn a_source_without_a_username_sends_default() {
 }
 
 #[tokio::test]
+async fn a_url_userinfo_is_dropped_when_a_source_is_active() {
+    let server = FakeServer::start().await;
+    let url = format!(
+        "redis://url-user:url-password@{}:{}/0",
+        server.host(),
+        server.port()
+    );
+    let mut record = url_client(url);
+    record.credential_provider = true;
+    let credential_source = source(vec![credential(Some("token-user"), "token-value")]);
+    let client = factory(Some(credential_source))
+        .open_async(&RedisClient::Url(record), None)
+        .await
+        .expect("a url connection");
+    client.query::<String>(&cmd("PING")).await.expect("a reply");
+    let auth = server.commands_named("AUTH");
+    assert_eq!(auth[0].args, ["AUTH", "token-user", "token-value"]);
+    assert!(
+        !auth
+            .iter()
+            .any(|recorded| recorded.args.iter().any(|arg| arg == "url-password")),
+        "the URL password never authenticates"
+    );
+}
+
+#[tokio::test]
 async fn a_new_token_is_sent_after_the_refresh_interval() {
     let server = FakeServer::start().await;
     let rotating = TestSource::new(vec![
