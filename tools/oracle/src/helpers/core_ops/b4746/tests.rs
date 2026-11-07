@@ -94,6 +94,24 @@ fn a_repeated_cursor_returns_the_items_collected_so_far() {
 }
 
 #[test]
+fn an_empty_cursor_ends_the_walk() {
+    let outcome = run(&input(
+        "list_prompts",
+        &json!({
+            "capabilities": {"prompts": {}},
+            "pages": [
+                {"delay_ms": 0_u64, "next_cursor": "", "items": [{"name": "first"}], "error": null},
+                {"delay_ms": 0_u64, "next_cursor": null, "items": [{"name": "second"}], "error": null}
+            ]
+        }),
+    ));
+    assert_eq!(
+        outcome,
+        json!({"items": [{"name": "first"}], "cursors": [null]})
+    );
+}
+
+#[test]
 fn a_page_past_the_deadline_returns_the_items_collected_so_far() {
     let outcome = run(&input(
         "list_prompts",
@@ -152,6 +170,17 @@ fn read_resource_forwards_the_url() {
             "uris": ["test://one"]
         })
     );
+}
+
+#[test]
+fn read_resource_normalizes_the_url() {
+    let outcome = run(&input(
+        "read_resource",
+        &json!({
+            "resource": {"uri": "http://example.com", "result": {"contents": []}, "error": null}
+        }),
+    ));
+    assert_eq!(outcome["uris"], json!(["http://example.com/"]));
 }
 
 #[test]
