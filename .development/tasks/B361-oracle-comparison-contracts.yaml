@@ -32,6 +32,7 @@ scope:
   - tools/oracle/src/runner/**
   - tools/oracle/src/compare.rs
   - tools/oracle/src/compare/**
+  - tools/oracle/src/multipart_oracle/tests.rs
   - tools/oracle/src/router_probes/mod.rs
   - tools/oracle/src/router_probes/comparison/**
   - tools/oracle/src/router_probes/tests.rs
