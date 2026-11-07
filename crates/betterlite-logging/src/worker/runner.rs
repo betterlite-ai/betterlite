@@ -101,6 +101,7 @@ where
         let has_tasks = !self.tasks.is_empty();
         let deadline = self.summary.deadline.unwrap_or_else(Instant::now);
         let armed = self.summary.deadline.is_some();
+        // tokio::select! expands a percent operator the denied restriction lint rejects, so select_all polls the same sources
         let mut pending: Vec<NextEvent<'_, C>> = Vec::new();
         pending.push(Box::pin(async {
             Event::Received(self.receiver.recv().await)
