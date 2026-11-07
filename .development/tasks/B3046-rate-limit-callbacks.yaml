@@ -215,7 +215,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^post_call_settlement::failure_hook_error(::|$)/)'
     - id: oracle-cases-tests
       why: Oracle cases verify callback settlement across success, failure, proxy rejection, and disconnect paths
-      run: cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/post_call_settlement -k 'b3046'
+      run: cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/post_call_settlement
 
 oracle_cases:
   - tools/oracle/cases/post_call_settlement/header-merge-single-status.yaml

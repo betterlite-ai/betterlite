@@ -1,0 +1,10 @@
+kind: helper
+name: spend-sanitize-cycle-seed
+call:
+  spend_sanitize:
+    operation: sanitize_and_project
+    max_string_length: 2048
+    sanitize_body: {$py: mapping, id: 1, entries: {self: {$py: ref, id: 1, kind: mapping}}}
+    project_body: {$py: mapping, id: 2, entries: {self: {$py: ref, id: 2, kind: mapping}, items: {$py: list, id: 3, items: [{$py: ref, id: 3, kind: list}]}}}
+env: {}
+compare: {ignore: []}

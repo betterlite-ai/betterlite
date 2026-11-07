@@ -1,0 +1,30 @@
+[package]
+name = "betterlite-auth-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+license.workspace = true
+
+[lints]
+workspace = true
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+betterlite-auth = { path = ".." }
+libfuzzer-sys = "0.4.9"
+
+[[bin]]
+name = "budget_window"
+path = "fuzz_targets/budget_window.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "resource_hint"
+path = "fuzz_targets/resource_hint.rs"
+test = false
+doc = false
+bench = false

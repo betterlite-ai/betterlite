@@ -1,0 +1,5 @@
+kind: helper
+name: fetch-page-link-header
+call: {"b3152": {"operation": "fetch_page", "path": "user/repos", "page": 1, "replies": [{"status": 200, "headers": [["link", '<https://api.github.com/user/repos?page=2>; rel="next"'], ["link", '<https://api.github.com/user/repos?page=1>; rel="prev"']], "body": [{"full_name": "octo/repo", "visibility": "private", "private": true, "archived": false}]}]}}
+env: {}
+compare: {ignore: []}

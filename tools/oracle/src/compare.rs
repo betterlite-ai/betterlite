@@ -7,7 +7,7 @@ pub(crate) mod multipart;
 mod value;
 
 use multipart::{captured_parts, first_part_difference, masked_boundary};
-use value::{first_difference, remove_pointer};
+pub(crate) use value::{first_difference, remove_pointer};
 
 use helper::HelperOutput;
 

@@ -45,6 +45,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "copilot_key"
+path = "fuzz_targets/copilot_key.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "device_reply"
 path = "fuzz_targets/device_reply.rs"
 test = false
@@ -136,6 +143,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "xai_callback"
+path = "fuzz_targets/xai_callback.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "xai_oauth"
 path = "fuzz_targets/xai_oauth.rs"
 test = false
@@ -180,6 +194,13 @@ bench = false
 [[bin]]
 name = "passthrough_bytes"
 path = "fuzz_targets/passthrough_bytes.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "openai_threads"
+path = "fuzz_targets/openai_threads.rs"
 test = false
 doc = false
 bench = false

@@ -1,0 +1,9 @@
+kind: helper
+name: anthropic
+call:
+  tokenizer_engine:
+    operation: encode
+    engine: anthropic
+    text: hello world
+env: {}
+compare: {ignore: []}
