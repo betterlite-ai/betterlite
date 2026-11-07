@@ -8,9 +8,8 @@ pub mod step;
 
 mod tests;
 
-use std::time::Duration;
+use std::collections::BTreeMap;
 
-use betterlite_config::loader::EnvironmentLookup;
 use chrono::{DateTime, Utc};
 
 use self::ids::IdSource;
@@ -19,9 +18,7 @@ use self::prepare::{StepError, prepare_log_data};
 use self::send::{BatchSender, SendError, post_steps};
 use self::settings::{Overrides, Settings, SettingsError};
 use self::step::Step;
-use crate::batch::logger::{
-    BatchQueue, BatchSettings, DEFAULT_FLUSH_INTERVAL_SECONDS, DEFAULT_MAX_QUEUE_SIZE,
-};
+use crate::batch::logger::BatchQueue;
 use crate::http_analytics_loggers::delivery::Delivery;
 
 // The litellm.integrations.literal_ai.LiteralAILogger callback surface, without the response object it never reads.
@@ -50,21 +47,14 @@ where
     D: Delivery,
     I: IdSource,
 {
-    pub fn from_environment<L>(
-        lookup: &L,
+    pub fn from_environment(
+        environment: &BTreeMap<String, String>,
         overrides: Overrides,
         delivery: D,
         ids: I,
-    ) -> Result<Self, SettingsError>
-    where
-        L: EnvironmentLookup,
-    {
-        let settings = Settings::from_environment(lookup, overrides)?;
-        let queue = BatchQueue::new(BatchSettings {
-            batch_size: settings.batch_size,
-            flush_interval: Duration::from_secs(DEFAULT_FLUSH_INTERVAL_SECONDS),
-            max_queue_size: DEFAULT_MAX_QUEUE_SIZE,
-        });
+    ) -> Result<Self, SettingsError> {
+        let settings = Settings::from_environment(environment, overrides)?;
+        let queue = BatchQueue::new(settings.batch);
         Ok(Self {
             settings,
             queue,
@@ -121,7 +111,7 @@ where
     async fn record_and_send(&self, call: Call<'_>, mode: Mode) -> Result<(), StepError> {
         let step = prepare_log_data(call.kwargs, call.start_time, call.end_time, &self.ids)?;
         let queued = self.queue.enqueue(step);
-        if queued.depth < self.settings.batch_size {
+        if queued.depth < self.settings.batch.batch_size {
             return Ok(());
         }
         match mode {

@@ -1,10 +1,10 @@
+use std::collections::BTreeMap;
 use std::num::TryFromIntError;
 
-use betterlite_config::loader::EnvironmentLookup;
 use http::header::{CONTENT_TYPE, HeaderMap, HeaderName, HeaderValue, InvalidHeaderValue};
 use secrecy::{ExposeSecret as _, SecretString};
 
-use crate::batch::logger::DEFAULT_BATCH_SIZE;
+use crate::batch::logger::{BatchSettings, SettingsError as BatchSettingsError};
 
 pub const DEFAULT_API_URL: &str = "https://cloud.getliteral.ai";
 pub const GRAPHQL_PATH: &str = "/api/graphql";
@@ -26,13 +26,15 @@ pub struct Settings {
     pub api_url: String,
     pub api_key: Option<SecretString>,
     pub environment: Option<String>,
-    pub batch_size: usize,
+    pub batch: BatchSettings,
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum SettingsError {
     #[error(transparent)]
     Environment(#[from] betterlite_env::EnvError),
+    #[error(transparent)]
+    Batch(#[from] BatchSettingsError),
     #[error("environment variable LITERAL_BATCH_SIZE is outside the range a batch size can hold")]
     BatchSize(#[source] TryFromIntError),
     #[error("the Literal AI header value could not be built")]
@@ -42,34 +44,37 @@ pub enum SettingsError {
 impl Settings {
     // LiteralAILogger.__init__: an environment URL wins over the constructor's, a constructor key wins over the environment's.
     pub fn from_environment(
-        lookup: &dyn EnvironmentLookup,
+        environment: &BTreeMap<String, String>,
         overrides: Overrides,
     ) -> Result<Self, SettingsError> {
-        let api_url = lookup
-            .lookup("LITERAL_API_URL")
+        let api_url = environment
+            .get("LITERAL_API_URL")
             .filter(|url| !url.is_empty())
+            .cloned()
             .or(overrides.api_url)
             .unwrap_or_else(|| DEFAULT_API_URL.to_owned());
         let api_key = overrides.api_key.or_else(|| {
-            lookup
-                .lookup("LITERAL_API_KEY")
+            environment
+                .get("LITERAL_API_KEY")
                 .filter(|key| !key.is_empty())
+                .cloned()
                 .map(SecretString::from)
         });
-        let configured_batch_size = lookup
-            .lookup("LITERAL_BATCH_SIZE")
-            .map(|text| betterlite_env::number::<i64>("LITERAL_BATCH_SIZE", &text))
+        // CustomBatchLogger's DEFAULT_BATCH_SIZE and DEFAULT_FLUSH_INTERVAL_SECONDS apply unless LITERAL_BATCH_SIZE overrides the size.
+        let mut batch = BatchSettings::from_environment(environment)?;
+        let literal_batch_size = environment
+            .get("LITERAL_BATCH_SIZE")
+            .map(|text| betterlite_env::number::<i64>("LITERAL_BATCH_SIZE", text))
             .transpose()?
             .flatten();
-        let batch_size = match configured_batch_size {
-            None => DEFAULT_BATCH_SIZE,
-            Some(value) => usize::try_from(value.max(0)).map_err(SettingsError::BatchSize)?,
-        };
+        if let Some(value) = literal_batch_size {
+            batch.batch_size = usize::try_from(value.max(0)).map_err(SettingsError::BatchSize)?;
+        }
         Ok(Self {
             api_url,
             api_key,
             environment: overrides.environment,
-            batch_size,
+            batch,
         })
     }
 

@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::time::Duration;
+
 use http::header::CONTENT_TYPE;
 use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
@@ -9,7 +11,7 @@ use super::super::settings::{
     Overrides, Settings, SettingsError,
 };
 use super::support::variables;
-use crate::batch::logger::DEFAULT_BATCH_SIZE;
+use crate::batch::logger::{DEFAULT_BATCH_SIZE, DEFAULT_FLUSH_INTERVAL_SECONDS};
 
 fn resolved(pairs: &[(&str, &str)]) -> Settings {
     Settings::from_environment(&variables(pairs), Overrides::default()).unwrap()
@@ -92,8 +94,40 @@ fn an_empty_url_counts_as_unset() {
 
 #[test]
 fn the_batch_size_defaults_to_the_batch_logger_default() {
-    assert_eq!(resolved(&[]).batch_size, DEFAULT_BATCH_SIZE);
-    assert_eq!(resolved(&[("LITERAL_BATCH_SIZE", "")]).batch_size, 512);
+    assert_eq!(resolved(&[]).batch.batch_size, DEFAULT_BATCH_SIZE);
+    assert_eq!(
+        resolved(&[("LITERAL_BATCH_SIZE", "")]).batch.batch_size,
+        512
+    );
+}
+
+#[test]
+fn the_base_batch_size_comes_from_the_default_batch_size_variable() {
+    assert_eq!(resolved(&[("DEFAULT_BATCH_SIZE", "7")]).batch.batch_size, 7);
+}
+
+#[test]
+fn the_flush_interval_comes_from_the_default_flush_interval_variable() {
+    assert_eq!(
+        resolved(&[("DEFAULT_FLUSH_INTERVAL_SECONDS", "12")])
+            .batch
+            .flush_interval,
+        Duration::from_secs(12)
+    );
+    assert_eq!(
+        resolved(&[]).batch.flush_interval,
+        Duration::from_secs(DEFAULT_FLUSH_INTERVAL_SECONDS)
+    );
+}
+
+#[test]
+fn literal_batch_size_overrides_the_base_batch_size() {
+    assert_eq!(
+        resolved(&[("DEFAULT_BATCH_SIZE", "7"), ("LITERAL_BATCH_SIZE", "3"),])
+            .batch
+            .batch_size,
+        3
+    );
 }
 
 #[rstest]
@@ -103,7 +137,7 @@ fn the_batch_size_defaults_to_the_batch_logger_default() {
 #[case::negative("-2", 0)]
 fn the_batch_size_comes_from_the_environment(#[case] text: &str, #[case] expected: usize) {
     assert_eq!(
-        resolved(&[("LITERAL_BATCH_SIZE", text)]).batch_size,
+        resolved(&[("LITERAL_BATCH_SIZE", text)]).batch.batch_size,
         expected
     );
 }
