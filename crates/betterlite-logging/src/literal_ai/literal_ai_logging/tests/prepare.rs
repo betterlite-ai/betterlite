@@ -209,6 +209,19 @@ fn a_response_without_choices_leaves_the_completion_empty() {
     assert_eq!(generation(&step(text))["messageCompletion"], Json::Null);
 }
 
+#[rstest]
+#[case::choices_not_a_list(r#"{"choices": "none"}"#)]
+#[case::first_choice_not_an_object(r#"{"choices": ["none"]}"#)]
+#[case::first_choice_without_a_message(r#"{"choices": [{"content": "hi"}]}"#)]
+fn a_malformed_response_leaves_the_completion_empty(#[case] response: &str) {
+    let callback = format!(
+        r#"{{"model": "gpt-4o", "standard_logging_object": {{"model_parameters": {{}}, "response": {response}}}}}"#
+    );
+    let prepared =
+        prepare_log_data(&kwargs(&callback), at(START), at(END), &FixedIds::default()).unwrap();
+    assert_eq!(generation(&prepared)["messageCompletion"], Json::Null);
+}
+
 #[test]
 fn messages_that_are_not_a_list_are_passed_through() {
     let text = r#"{

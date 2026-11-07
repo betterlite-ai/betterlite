@@ -1,14 +1,18 @@
 #![cfg(test)]
 
+use std::iter::repeat_with;
+
 use betterlite_models::decisions::Json;
 
 use super::super::payload::CallbackKwargs;
+use super::super::prepare::prepare_log_data;
 use super::super::send::SendError;
 use super::super::settings::Overrides;
 use super::super::{Call, LiteralAILogger};
 use super::support::{
     Answer, Buffer, FixedIds, Recording, at, capture, json, kwargs, object, text, variables,
 };
+use crate::batch::logger::DEFAULT_MAX_QUEUE_SIZE;
 
 const START: &str = "2024-05-01T10:00:00.120Z";
 const END: &str = "2024-05-01T10:00:01.500Z";
@@ -268,6 +272,20 @@ async fn a_prepare_failure_is_logged_and_leaves_the_queue_empty() {
     assert!(logger.queue.pending().is_empty());
     assert!(delivery.requests().is_empty());
     assert!(buffer.contents().contains("error logging success event"));
+}
+
+#[test]
+fn the_sync_queue_keeps_the_maximum_and_drops_the_oldest() {
+    let (logger, _delivery) = batch_logger(Vec::new());
+    let step =
+        prepare_log_data(&kwargs(CALLBACK), at(START), at(END), &FixedIds::default()).unwrap();
+    let outcomes: Vec<_> = repeat_with(|| logger.queue.enqueue(step.clone()))
+        .take(DEFAULT_MAX_QUEUE_SIZE.checked_add(1).unwrap())
+        .collect();
+    let last = &outcomes[DEFAULT_MAX_QUEUE_SIZE];
+    assert_eq!(last.depth, DEFAULT_MAX_QUEUE_SIZE);
+    assert_eq!(last.dropped_oldest, 1);
+    assert_eq!(logger.queue.pending().len(), DEFAULT_MAX_QUEUE_SIZE);
 }
 
 #[tokio::test]
