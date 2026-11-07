@@ -102,23 +102,15 @@ fn callback(record: &Arc<Record>, name: &'static str, outcome: Outcome) -> Scrip
 }
 
 fn contextual(record: &Arc<Record>, name: &'static str, context: &'static str) -> ScriptedCallback {
-    ScriptedCallback {
-        name,
-        outcome: Outcome::Success,
-        context,
-        record: Arc::clone(record),
-        release: None,
-    }
+    let mut callback = callback(record, name, Outcome::Success);
+    callback.context = context;
+    callback
 }
 
 fn blocked(record: &Arc<Record>, name: &'static str, release: Arc<Notify>) -> ScriptedCallback {
-    ScriptedCallback {
-        name,
-        outcome: Outcome::Blocked,
-        context: "request-blocked",
-        record: Arc::clone(record),
-        release: Some(release),
-    }
+    let mut callback = callback(record, name, Outcome::Blocked);
+    callback.release = Some(release);
+    callback
 }
 
 fn settings(max_queue_size: usize, concurrency: usize) -> WorkerSettings {
