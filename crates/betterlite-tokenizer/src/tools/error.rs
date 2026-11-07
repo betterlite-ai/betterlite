@@ -24,16 +24,16 @@ pub enum ToolFormatError {
         #[source]
         source: serde_path_to_error::Error<serde_json::Error>,
     },
+    #[error("{field} does not match the expected shape: {source}")]
+    Nested {
+        field: &'static str,
+        #[source]
+        source: serde_path_to_error::Error<serde_json::Error>,
+    },
+    #[error("the tool schema nests deeper than {limit} levels")]
+    TooDeep { limit: usize },
     #[error("{field} is missing from an array schema")]
     MissingItems { field: &'static str },
-    #[error("{field} must be a JSON object")]
-    NotAnObject { field: &'static str },
-    #[error("{field} must be a JSON array")]
-    NotArray { field: &'static str },
-    #[error("{field} must be an array of strings")]
-    NotTextArray { field: &'static str },
     #[error("{field} must hold scalar values")]
     NotScalar { field: &'static str },
-    #[error("{field} must be a string")]
-    NotText { field: &'static str },
 }

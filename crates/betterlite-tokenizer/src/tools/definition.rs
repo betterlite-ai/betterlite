@@ -1,66 +1,91 @@
-use indexmap::IndexMap;
 use serde::Deserialize;
-use serde::de::DeserializeOwned;
 use serde_json::value::RawValue;
 
 use crate::tools::error::ToolFormatError;
 use crate::tools::schema::{self, SchemaNode};
 
 #[derive(Debug, Deserialize)]
-pub(super) struct Function {
+pub(super) struct Function<'raw> {
     #[serde(default)]
     name: Option<String>,
     #[serde(default)]
     description: Option<String>,
-    #[serde(default)]
-    parameters: Option<SchemaNode>,
-}
-
-#[derive(Debug)]
-pub(super) enum Tool {
-    Function(Box<Function>),
-    Declarations(Vec<Function>),
+    #[serde(borrow, default)]
+    parameters: Option<SchemaNode<'raw>>,
 }
 
 // step one records each branch field's text; step two parses only the branch LiteLLM takes
 #[derive(Debug, Deserialize)]
-struct ToolFields {
-    #[serde(default)]
-    function: Option<Box<RawValue>>,
-    #[serde(default)]
-    function_declarations: Option<Box<RawValue>>,
-    #[serde(default, rename = "functionDeclarations")]
-    camel_declarations: Option<Box<RawValue>>,
-    #[serde(default)]
-    input_schema: Option<Box<RawValue>>,
-    #[serde(default)]
-    parameters: Option<Box<RawValue>>,
-    #[serde(default)]
-    name: Option<Box<RawValue>>,
-    #[serde(default)]
-    description: Option<Box<RawValue>>,
+struct ToolFields<'raw> {
+    #[serde(borrow, default)]
+    function: Option<&'raw RawValue>,
+    #[serde(borrow, default)]
+    function_declarations: Option<&'raw RawValue>,
+    #[serde(rename = "functionDeclarations", borrow, default)]
+    camel_declarations: Option<&'raw RawValue>,
+    #[serde(borrow, default)]
+    input_schema: Option<&'raw RawValue>,
+    #[serde(borrow, default)]
+    parameters: Option<&'raw RawValue>,
+    #[serde(borrow, default)]
+    name: Option<&'raw RawValue>,
+    #[serde(borrow, default)]
+    description: Option<&'raw RawValue>,
 }
 
-pub(super) fn parse_tool(index: usize, raw: &RawValue) -> Result<Option<Tool>, ToolFormatError> {
+pub(super) fn format_tool(
+    index: usize,
+    raw: &RawValue,
+    used: usize,
+    limit: usize,
+    lines: &mut Vec<String>,
+) -> Result<usize, ToolFormatError> {
     // LiteLLM skips a tool entry that is not an object
     if !raw.get().trim_start().starts_with('{') {
-        return Ok(None);
+        return Ok(used);
     }
-    let fields: ToolFields = serde_json::from_str(raw.get())
+    let fields: ToolFields<'_> = serde_json::from_str(raw.get())
         .map_err(|source| ToolFormatError::Object { index, source })?;
-    if let Some(source) = object_field(fields.function.as_deref()) {
+    if let Some(source) = object_field(fields.function) {
+        let total = charge(used, 1, limit)?;
         let function = parse_branch(index, "function", source)?;
-        return Ok(Some(Tool::Function(Box::new(function))));
+        lines.extend(format_function(&function)?);
+        return Ok(total);
     }
-    let declarations = array_field(fields.function_declarations.as_deref())
-        .or_else(|| array_field(fields.camel_declarations.as_deref()));
-    if let Some(found) = declarations {
-        let functions = declaration_functions(index, found)?;
-        return Ok(Some(Tool::Declarations(functions)));
+    let declarations = array_field(fields.function_declarations)
+        .or_else(|| array_field(fields.camel_declarations));
+    if let Some(source) = declarations {
+        let entries: Vec<&RawValue> =
+            serde_json::from_str(source.get()).map_err(|failure| ToolFormatError::Object {
+                index,
+                source: failure,
+            })?;
+        let total = charge(used, entries.len(), limit)?;
+        for entry in entries {
+            // LiteLLM skips a declaration that is not an object
+            if !entry.get().trim_start().starts_with('{') {
+                continue;
+            }
+            let function = parse_branch(index, "functionDeclarations", entry)?;
+            lines.extend(format_function(&function)?);
+        }
+        return Ok(total);
     }
-    Ok(Some(Tool::Function(Box::new(inline_function(
-        index, &fields,
-    )?))))
+    let total = charge(used, 1, limit)?;
+    let function = inline_function(index, &fields)?;
+    lines.extend(format_function(&function)?);
+    Ok(total)
+}
+
+const fn charge(used: usize, count: usize, limit: usize) -> Result<usize, ToolFormatError> {
+    let total = used.saturating_add(count);
+    if total > limit {
+        return Err(ToolFormatError::TooMany {
+            count: total,
+            limit,
+        });
+    }
+    Ok(total)
 }
 
 fn object_field(field: Option<&RawValue>) -> Option<&RawValue> {
@@ -79,37 +104,26 @@ fn array_field(field: Option<&RawValue>) -> Option<&RawValue> {
     Some(raw)
 }
 
-fn declaration_functions(index: usize, raw: &RawValue) -> Result<Vec<Function>, ToolFormatError> {
-    let entries: Vec<Box<RawValue>> = serde_json::from_str(raw.get())
-        .map_err(|source| ToolFormatError::Object { index, source })?;
-    let mut functions = Vec::new();
-    for entry in &entries {
-        // LiteLLM skips a declaration that is not an object
-        if !entry.get().trim_start().starts_with('{') {
-            continue;
-        }
-        functions.push(parse_branch(index, "functionDeclarations", entry)?);
-    }
-    Ok(functions)
-}
-
-fn inline_function(index: usize, fields: &ToolFields) -> Result<Function, ToolFormatError> {
+fn inline_function<'raw>(
+    index: usize,
+    fields: &ToolFields<'raw>,
+) -> Result<Function<'raw>, ToolFormatError> {
     let parameters = inline_parameters(index, fields)?;
     Ok(Function {
-        name: text_field(index, fields.name.as_deref(), "name")?,
-        description: text_field(index, fields.description.as_deref(), "description")?,
+        name: text_field(index, fields.name, "name")?,
+        description: text_field(index, fields.description, "description")?,
         parameters,
     })
 }
 
-fn inline_parameters(
+fn inline_parameters<'raw>(
     index: usize,
-    fields: &ToolFields,
-) -> Result<Option<SchemaNode>, ToolFormatError> {
-    if let Some(raw) = fields.input_schema.as_deref() {
+    fields: &ToolFields<'raw>,
+) -> Result<Option<SchemaNode<'raw>>, ToolFormatError> {
+    if let Some(raw) = fields.input_schema {
         return Ok(Some(parse_branch(index, "input_schema", raw)?));
     }
-    let Some(raw) = fields.parameters.as_deref() else {
+    let Some(raw) = fields.parameters else {
         return Ok(None);
     };
     Ok(Some(parse_branch(index, "parameters", raw)?))
@@ -126,9 +140,13 @@ fn text_field(
     Ok(Some(parse_branch(index, field, raw)?))
 }
 
-fn parse_branch<T>(index: usize, field: &'static str, raw: &RawValue) -> Result<T, ToolFormatError>
+fn parse_branch<'de, T>(
+    index: usize,
+    field: &'static str,
+    raw: &'de RawValue,
+) -> Result<T, ToolFormatError>
 where
-    T: DeserializeOwned,
+    T: Deserialize<'de>,
 {
     let mut deserializer = serde_json::Deserializer::from_str(raw.get());
     serde_path_to_error::deserialize(&mut deserializer).map_err(|source| ToolFormatError::Shape {
@@ -138,19 +156,7 @@ where
     })
 }
 
-pub(super) fn format_tool(tool: &Tool, lines: &mut Vec<String>) -> Result<(), ToolFormatError> {
-    match tool {
-        Tool::Function(function) => lines.extend(format_function(function)?),
-        Tool::Declarations(declarations) => {
-            for declaration in declarations {
-                lines.extend(format_function(declaration)?);
-            }
-        }
-    }
-    Ok(())
-}
-
-fn format_function(function: &Function) -> Result<Vec<String>, ToolFormatError> {
+fn format_function(function: &Function<'_>) -> Result<Vec<String>, ToolFormatError> {
     format_definition(
         function.name.as_deref(),
         function.description.as_deref(),
@@ -161,7 +167,7 @@ fn format_function(function: &Function) -> Result<Vec<String>, ToolFormatError> 
 fn format_definition(
     function_name: Option<&str>,
     description: Option<&str>,
-    parameters: Option<&SchemaNode>,
+    parameters: Option<&SchemaNode<'_>>,
 ) -> Result<Vec<String>, ToolFormatError> {
     // a function with no name has no type declaration to emit, as in LiteLLM
     let Some(name) = function_name.filter(|candidate| !candidate.is_empty()) else {
@@ -174,11 +180,12 @@ fn format_definition(
     let Some(node) = parameters else {
         return Ok(single_parameter_list(lines, name));
     };
-    if node.property_map()?.is_none_or(IndexMap::is_empty) {
+    let rendered = schema::object_parameters(node, 0, 0)?;
+    if rendered.is_empty() {
         return Ok(single_parameter_list(lines, name));
     }
     lines.push(format!("type {name} = (_: {{"));
-    lines.push(schema::object_parameters(node, 0)?);
+    lines.push(rendered);
     lines.push("}) => any;".to_owned());
     lines.push(String::new());
     Ok(lines)
