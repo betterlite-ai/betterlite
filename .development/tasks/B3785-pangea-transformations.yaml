@@ -28,6 +28,7 @@ scope:
   paths:
     - crates/betterlite-guardrails/src/pangea.rs
     - crates/betterlite-guardrails/src/pangea/tests.rs
+    - crates/betterlite-guardrails/src/pangea/**
     - tools/oracle/helpers/b3785.py
     - tools/oracle/helpers/b3785/**
     - tools/oracle/src/helpers/guardrails/b3785.rs
