@@ -107,8 +107,7 @@ fn provider_usage(mapping: &IndexMap<String, Json>) -> Result<bool, UsageError> 
     if mapping.contains_key("input_tokens") && mapping.contains_key("output_tokens") {
         return Ok(true);
     }
-    let parsed = parse_interactions(mapping)?;
-    Ok(is_interactions_usage_object(&parsed))
+    parse_interactions(mapping).map(|parsed| is_interactions_usage_object(&parsed))
 }
 
 fn converted_usage(

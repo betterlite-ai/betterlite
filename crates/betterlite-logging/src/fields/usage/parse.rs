@@ -17,18 +17,14 @@ pub fn usage_from_mapping(mapping: &IndexMap<String, Json>) -> Result<Usage, Usa
     apply_reasoning(&mut completion_tokens_details, mapping, completion_tokens)?;
     let server_tool_use = object_field(mapping, "server_tool_use")?.cloned();
     let mut extras = mapping.clone();
-    for name in [
-        "prompt_tokens",
-        "completion_tokens",
-        "total_tokens",
-        "reasoning_tokens",
-        "prompt_tokens_details",
-        "completion_tokens_details",
-        "server_tool_use",
-        "cost",
-    ] {
-        extras.shift_remove(name);
-    }
+    extras.shift_remove("prompt_tokens");
+    extras.shift_remove("completion_tokens");
+    extras.shift_remove("total_tokens");
+    extras.shift_remove("reasoning_tokens");
+    extras.shift_remove("prompt_tokens_details");
+    extras.shift_remove("completion_tokens_details");
+    extras.shift_remove("server_tool_use");
+    extras.shift_remove("cost");
     Ok(Usage {
         prompt_tokens,
         completion_tokens,

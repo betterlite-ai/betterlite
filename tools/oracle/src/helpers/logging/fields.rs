@@ -85,20 +85,19 @@ fn decode_moment(
         }
         Some(Value::Number(number)) => {
             let text = number.to_string();
-            if text.contains(['.', 'e', 'E']) {
-                let parsed = if text.contains(['e', 'E']) {
-                    Decimal::from_scientific(&text)
-                } else {
-                    Decimal::from_str(&text)
-                };
-                let value = parsed.map_err(|error| invalid(&error.to_string()))?;
-                Ok(Some(Moment::Float(value)))
-            } else {
+            if !text.contains(['.', 'e', 'E']) {
                 let value = text
                     .parse::<i64>()
                     .map_err(|error| invalid(&error.to_string()))?;
-                Ok(Some(Moment::Integer(value)))
+                return Ok(Some(Moment::Integer(value)));
             }
+            let parsed = if text.contains(['e', 'E']) {
+                Decimal::from_scientific(&text)
+            } else {
+                Decimal::from_str(&text)
+            };
+            let value = parsed.map_err(|error| invalid(&error.to_string()))?;
+            Ok(Some(Moment::Float(value)))
         }
         Some(Value::Null | Value::Bool(_) | Value::Array(_) | Value::Object(_)) | None => Ok(None),
     }
