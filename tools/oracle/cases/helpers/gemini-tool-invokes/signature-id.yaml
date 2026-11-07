@@ -1,0 +1,35 @@
+kind: helper
+name: gemini-tool-invokes-signature-id
+call:
+  gemini_tool_invokes:
+    operation: thought_signature_from_tool
+    tools:
+      - id: call_plain
+        function:
+          name: plain
+          arguments: '{}'
+      - id: call_id__thought__from-id
+        function:
+          name: from_id
+          arguments: '{}'
+      - id: call_both
+        provider_specific_fields:
+          thought_signature: tool-level
+        function:
+          name: both
+          arguments: '{}'
+          provider_specific_fields:
+            thought_signature: function-level
+      - id: call_function
+        function:
+          name: function_only
+          arguments: '{}'
+          provider_specific_fields:
+            thought_signature: function-only
+      - id: __thought__only-sig
+        function:
+          name: signature_only_id
+          arguments: '{}'
+env: {}
+compare:
+  ignore: []

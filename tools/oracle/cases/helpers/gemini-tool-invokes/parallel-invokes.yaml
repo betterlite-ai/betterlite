@@ -1,0 +1,31 @@
+kind: helper
+name: gemini-tool-invokes-parallel-invokes
+call:
+  gemini_tool_invokes:
+    operation: convert_to_gemini_tool_call_invoke
+    model: gemini-3-pro-preview
+    forward_function_call_id: true
+    message:
+      role: assistant
+      content: null
+      tool_calls:
+        - id: call_0__thought__sig-zero
+          type: function
+          function:
+            name: get_weather
+            arguments: '{"city":"Paris"}'
+        - id: call_1
+          type: function
+          function:
+            name: get_time
+            arguments: ''
+        - id: call_2
+          type: function
+          function:
+            name: get_stock
+            arguments: '{"symbol":"ACME"}'
+            provider_specific_fields:
+              thought_signature: sig-two
+env: {}
+compare:
+  ignore: []
