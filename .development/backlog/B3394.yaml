@@ -1,14 +1,14 @@
 id: B3394
 milestone: M5 api families
 title: Skill hook settings and execution result handling
-status: todo
+status: done
 depends_on: [B189]
 file: tasks/B3394-skills-hook-execution.yaml
 covers:
   - "litellm/proxy/hooks/litellm_skills/main.py"
 parent: B095
 split_from: B095
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 826

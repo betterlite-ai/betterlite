@@ -1,0 +1,71 @@
+task: B3972
+deviations:
+  - what: >-
+      A successful sync POST reaches send_request as a response with its status, so the 200 check runs and a
+      non-200 answer raises a typed status error carrying the response text. LiteLLM's _http_request returns
+      None, and send_request reads res.status_code off that None, so every successful sync delivery raises
+      AttributeError before the check.
+    why: >-
+      The AttributeError is a latent bug that no working setup can rely on, since it fires on every success.
+      Copying it would drop every sync trace.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/api.py#L66-L98
+  - what: >-
+      A 3xx answer to the async send raises a typed status error. LiteLLM's async client follows a redirect
+      that carries a Location (follow_redirects=True) and accepts the 2xx it lands on, so a tracing POST it
+      follows is delivered while betterlite reports the redirect.
+    why: >-
+      betterlite's outbound client never follows redirects, so a provider key is not replayed to a redirect
+      target; the Confident API answers the tracing POST directly, and a redirect there means the trace was
+      not accepted rather than delivered.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L618
+  - what: >-
+      A response whose choices list is empty produces a success span with output "NO_OUTPUT". LiteLLM indexes
+      choices[0] after defaulting a missing choices key to [{}], so an explicit empty list raises IndexError
+      and no trace is sent.
+    why: >-
+      The declared type of choices is a list, which allows an empty one, and the IndexError is a Python
+      runtime accident rather than behavior a working setup relies on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/deepeval.py#L104-L109
+  - what: >-
+      A choices key that is present with a null value produces a success span with output "NO_OUTPUT".
+      LiteLLM's .get("choices", [{}]) returns None for a present null, and indexing it raises TypeError, so
+      no trace is sent.
+    why: >-
+      The null points at the same missing first choice the default covers; copying the TypeError would drop
+      a trace for a value the HTTP API itself can return.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/deepeval.py#L104-L109
+  - what: >-
+      A message that is present with a null value produces a success span with output "NO_OUTPUT".
+      LiteLLM's .get("message", {}) returns None for a present null and the next .get raises AttributeError,
+      so no trace is sent.
+    why: >-
+      The null means the same missing message the empty-object default covers; copying the AttributeError
+      would drop a trace for a value the HTTP API itself can return.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/deepeval.py#L106-L109
+  - what: >-
+      A standard_logging_object, response or usage that is present with a null value, or a response that is
+      a str or a list, is treated as absent: the span carries no model and no token counts, and its output
+      gets the NO_OUTPUT default. LiteLLM chains .get on those values, which raises AttributeError for None,
+      a str or a list, so no trace is sent.
+    why: >-
+      The StandardLoggingPayload type declares response as str | list | dict | None and leaves the inner
+      object untyped; a working setup that hits one of these shapes today loses the whole trace, so copying
+      the exception would only port the crash.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/deepeval.py#L102-L109
+  - what: >-
+      An id or trace_id that is present with a null value falls back to a generated uuid4. LiteLLM passes
+      the None into BaseApiSpan's uuid and trace_uuid, which are declared str, so pydantic rejects it with a
+      ValidationError and no trace is sent.
+    why: >-
+      The StandardLoggingPayload type declares both keys as str, so null is out of type and no working setup
+      can rely on the validation failure; a generated uuid keeps the trace deliverable.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/deepeval.py#L113-L117
+  - what: >-
+      An absent id or trace_id gets a generated uuid4 string, and when trace_id is absent that one uuid is
+      both the span's traceUuid and the trace's uuid. LiteLLM's uuid.uuid4() fallback is a fastuuid UUID
+      object, and BaseApiSpan declares uuid and trace_uuid as str, so pydantic rejects the fallback and no
+      trace is sent even when the rest of the payload is complete.
+    why: >-
+      The task's DoD asks for the uuid4 fallback, and a string id keeps a trace LiteLLM would drop; using one
+      id keeps the span inside the trace it arrives with.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/deepeval.py#L113-L117

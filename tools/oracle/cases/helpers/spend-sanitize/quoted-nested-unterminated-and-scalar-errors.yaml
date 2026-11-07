@@ -1,0 +1,19 @@
+kind: helper
+name: quoted-nested-unterminated-and-scalar-errors
+call:
+  spend_sanitize:
+    operation: sanitize_error_information
+    store_bodies: false
+    max_string_length: 2048
+    information:
+      $py: mapping
+      id: 1
+      entries:
+        error_message: >-
+          provider rejected request: {"input": [{"content": "secret"}]} then 'messages': {'role': 'user'}
+          then "prompt": 42 then input_value={'a': 1} and finally "input": [unterminated
+        traceback: input_value="secret"
+        error_code: 400
+        secret_fields: {authorization: "Bearer abc"}
+env: {}
+compare: {ignore: []}

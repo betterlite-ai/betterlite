@@ -1,0 +1,1 @@
+{"kind":"helper","name":"b4744_stdio_env_provided","call":{"b4744":{"operation":"stdio_env","provided":{"OPENAI_API_KEY":"sk-secret"},"environment":{"PATH":"/usr/bin"},"npm_cache_dir":"/cache"}},"env":{},"compare":{"ignore":[]}}

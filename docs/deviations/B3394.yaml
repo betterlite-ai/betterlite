@@ -1,0 +1,11 @@
+task: B3394
+deviations:
+  - what: >-
+      A generated file whose content_base64 does not decode makes the whole execution
+      result the failure text. Python's base64.b64decode without validate ignores
+      characters outside the alphabet, so it decodes some payloads betterlite rejects.
+    why: >-
+      The sandbox executor base64-encodes generated files itself, so a working setup
+      never relies on a lenient decode. A strict decode reports a corrupt payload
+      instead of silently dropping bytes from the size attached to the response.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/litellm_skills/main.py#L630
