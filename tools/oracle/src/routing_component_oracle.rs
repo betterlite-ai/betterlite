@@ -4,12 +4,13 @@ use std::io::{self, Write as _};
 use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
+use serde_json::Value;
 use tokio::runtime::Builder;
 
 use crate::OracleError;
 use crate::case::{Ignore, validate_ignores};
 use crate::cli::Options;
-use crate::compare::Difference;
+use crate::compare::{Difference, first_difference, remove_pointer};
 use crate::oracle_comparison_contracts::{ExpectedDifference, NumericRule, validate};
 use crate::process::sync_litellm;
 use crate::router_probes::{ProbeOperation, Reply, Request, Sample, comparison};
@@ -178,8 +179,7 @@ fn compare_probe_replies(
     if compare.numeric.is_empty() && compare.expected_difference.is_empty() {
         return compare_replies(first, second, &compare.ignore);
     }
-    let first_value = serde_json::to_value(first).map_err(OracleError::Json)?;
-    let second_value = serde_json::to_value(second).map_err(OracleError::Json)?;
+    let (first_value, second_value) = reply_values(first, second)?;
     Ok(comparison::compare(&comparison::Documents {
         reference: &second_value,
         rust: &first_value,
@@ -191,22 +191,28 @@ fn compare_probe_replies(
     }))
 }
 
+fn reply_values(first: &Reply, second: &Reply) -> Result<(Value, Value), OracleError> {
+    let first_value = serde_json::to_value(first).map_err(OracleError::Json)?;
+    let second_value = serde_json::to_value(second).map_err(OracleError::Json)?;
+    Ok((first_value, second_value))
+}
+
 fn compare_replies(
     first: &Reply,
     second: &Reply,
     ignores: &[Ignore],
 ) -> Result<Option<Difference>, OracleError> {
-    let first_value = serde_json::to_value(first).map_err(OracleError::Json)?;
-    let second_value = serde_json::to_value(second).map_err(OracleError::Json)?;
-    Ok(comparison::compare(&comparison::Documents {
-        reference: &second_value,
-        rust: &first_value,
-        numeric: &[],
-        expected_difference: &[],
-        ignore: ignores,
-        self_check: false,
-        message: "probe results differ",
-    }))
+    let (mut first_value, mut second_value) = reply_values(first, second)?;
+    for ignored in ignores {
+        remove_pointer(&mut first_value, &ignored.pointer);
+        remove_pointer(&mut second_value, &ignored.pointer);
+    }
+    Ok(
+        first_difference(&first_value, &second_value, "").map(|pointer| Difference {
+            message: "probe results differ".to_owned(),
+            pointer,
+        }),
+    )
 }
 
 struct Commands {
