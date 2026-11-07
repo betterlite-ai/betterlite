@@ -1,10 +1,14 @@
 use std::future::{Ready, ready};
 
+use tokio_util::task::TaskTracker;
+
 use super::batch_logger::ClickHouseBatchLogger;
 use super::context::LensAnalysis;
 use super::convert::TRACE_INGEST_ROUTE;
 use super::payload::CallbackKwargs;
 use super::row::{Projection, spend_log_row_from_payload};
+use super::schema::SPEND_LOGS_TABLE;
+use super::settings::ClickHouseSettings;
 use super::storage::ClickHouseStorage;
 
 pub struct ClickHouseSpendLogger<Storage: ClickHouseStorage> {
@@ -13,6 +17,14 @@ pub struct ClickHouseSpendLogger<Storage: ClickHouseStorage> {
 }
 
 impl<Storage: ClickHouseStorage> ClickHouseSpendLogger<Storage> {
+    pub fn new(storage: Storage, settings: ClickHouseSettings, tasks: TaskTracker) -> Self {
+        let batch = ClickHouseBatchLogger::new(storage, SPEND_LOGS_TABLE, settings, tasks);
+        Self {
+            batch,
+            lens: LensAnalysis::default(),
+        }
+    }
+
     pub fn log(&self, kwargs: &CallbackKwargs, message_logging_disabled: bool) {
         let Some(payload) = kwargs.standard_logging_object.as_ref() else {
             return;

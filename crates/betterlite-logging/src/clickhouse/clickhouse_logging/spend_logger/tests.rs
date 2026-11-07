@@ -5,7 +5,6 @@ use std::time::Duration;
 use tokio_util::task::TaskTracker;
 
 use super::ClickHouseSpendLogger;
-use crate::clickhouse::clickhouse_logging::batch_logger::ClickHouseBatchLogger;
 use crate::clickhouse::clickhouse_logging::context::LensAnalysis;
 use crate::clickhouse::clickhouse_logging::payload::CallbackKwargs;
 use crate::clickhouse::clickhouse_logging::schema::SPEND_LOGS_TABLE;
@@ -21,14 +20,8 @@ fn build(
 ) -> (ClickHouseSpendLogger<FakeStorage>, FakeStorage, TaskTracker) {
     let storage = FakeStorage::default();
     let tasks = TaskTracker::new();
-    let batch = ClickHouseBatchLogger::new(
-        storage.clone(),
-        SPEND_LOGS_TABLE,
-        configuration,
-        tasks.clone(),
-    );
-    let lens = LensAnalysis::default();
-    (ClickHouseSpendLogger { batch, lens }, storage, tasks)
+    let logger = ClickHouseSpendLogger::new(storage.clone(), configuration, tasks.clone());
+    (logger, storage, tasks)
 }
 
 fn completion() -> CallbackKwargs {
@@ -110,5 +103,29 @@ async fn a_completion_row_keeps_its_messages_when_message_logging_is_enabled() {
     assert_eq!(
         storage.calls()[0].rows[0].messages,
         r#"[{"role":"user","content":"hi"}]"#
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn a_shared_lens_context_marks_rows_written_during_analysis() {
+    let (mut logger, storage, _tasks) = build(settings(10, LONG_INTERVAL, 3));
+    let lens = LensAnalysis::default();
+    logger.lens = lens.clone();
+    let scope = lens.lens_analysis();
+    logger.log(&completion(), false);
+    drop(scope);
+    logger.log(&completion(), false);
+    logger.batch.flush_queue().await;
+    let calls = storage.calls();
+    assert_eq!(calls.len(), 1);
+    assert!(
+        calls[0].rows[0]
+            .metadata
+            .contains(r#""litellm_lens_internal":true"#)
+    );
+    assert!(
+        calls[0].rows[1]
+            .metadata
+            .contains(r#""litellm_lens_internal":false"#)
     );
 }
