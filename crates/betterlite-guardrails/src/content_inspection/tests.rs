@@ -129,6 +129,38 @@ fn text_skips_empty_strings_and_empty_part_text() {
 }
 
 #[test]
+fn text_skips_parts_that_are_not_strings_or_objects() {
+    let data = body(&[(
+        "messages",
+        list(&[object(&[(
+            "content",
+            list(&[
+                text(""),
+                object(&[("text", text(""))]),
+                GuardrailValue::SignedInteger(5),
+                GuardrailValue::Null,
+            ]),
+        )])]),
+    )]);
+    assert!(iter_message_text(&data).is_empty());
+}
+
+#[test]
+fn text_ignores_content_that_is_not_a_string_or_list() {
+    let data = body(&[(
+        "messages",
+        list(&[object(&[
+            ("role", text("user")),
+            (
+                "content",
+                object(&[("type", text("text")), ("text", text("nested"))]),
+            ),
+        ])]),
+    )]);
+    assert!(iter_message_text(&data).is_empty());
+}
+
+#[test]
 fn text_reads_a_string_input_as_one_message() {
     let data = body(&[("input", text("hello"))]);
     assert_eq!(iter_message_text(&data), ["hello"]);
@@ -348,6 +380,21 @@ fn inspection_falls_back_to_the_user_role(
 }
 
 #[test]
+fn inspection_drops_content_that_is_not_a_string_or_list() {
+    let data = body(&[(
+        "messages",
+        list(&[object(&[
+            ("role", text("user")),
+            (
+                "content",
+                object(&[("type", text("text")), ("text", text("nested"))]),
+            ),
+        ])]),
+    )]);
+    assert!(build_inspection_messages(&data).is_empty());
+}
+
+#[test]
 fn inspection_keeps_messages_before_input() {
     let data = body(&[
         (
@@ -487,6 +534,27 @@ fn write_back_leaves_a_list_input_unchanged() {
         &[object(&[("content", text("y"))])]
     ));
     assert_eq!(data, original);
+}
+
+#[test]
+fn write_back_empties_a_batch_position_for_object_content() {
+    let mut data = body(&[("input", list(&[text("a"), text("b")]))]);
+    let redacted = [
+        object(&[("content", object(&[("text", text("x"))]))]),
+        object(&[("content", text("B"))]),
+    ];
+    assert!(apply_redacted_messages_back(&mut data, &redacted));
+    assert_eq!(data.get("input"), Some(&list(&[text(""), text("B")])));
+}
+
+#[test]
+fn write_back_empties_a_string_input_for_object_content() {
+    let mut data = body(&[("input", text("orig"))]);
+    assert!(apply_redacted_messages_back(
+        &mut data,
+        &[object(&[("content", object(&[("text", text("x"))]))])]
+    ));
+    assert_eq!(data.get("input"), Some(&text("")));
 }
 
 #[test]

@@ -13,6 +13,8 @@ call:
             - bare string part
             - {type: image_url, image_url: {url: "https://host/x.png"}}
             - {type: image_url, text: "caption"}
+        - role: user
+          content: {type: text, text: "object content is not a list"}
         - not an object
 env: {}
 compare:

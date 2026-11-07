@@ -40,10 +40,17 @@ fn part_fragments(part: &GuardrailValue) -> Vec<&str> {
 }
 
 pub(super) fn content_value_texts(content: &GuardrailValue) -> Vec<&str> {
-    if let GuardrailValue::Array(parts) = content {
-        return parts.iter().flat_map(part_fragments).collect();
+    match content {
+        GuardrailValue::Text(text) if !text.is_empty() => vec![text],
+        GuardrailValue::Array(parts) => parts.iter().flat_map(part_fragments).collect(),
+        GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Text(_)
+        | GuardrailValue::Object(_) => Vec::new(),
     }
-    part_fragments(content)
 }
 
 pub(super) fn content_texts<'value>(content: &LiftedContent<'value>) -> Vec<&'value str> {
