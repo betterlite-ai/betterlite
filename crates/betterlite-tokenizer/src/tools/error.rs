@@ -11,16 +11,12 @@ pub enum ToolFormatError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("{field} must be a JSON object")]
-    NotAnObject { field: &'static str },
-    #[error("{field} must be a JSON array")]
-    NotAnArray { field: &'static str },
-    #[error("{field} must be a string")]
-    NotText { field: &'static str },
-    #[error("{field} must be an array of strings")]
-    NotTextArray { field: &'static str },
-    #[error("{field} must hold scalar values")]
-    NotScalar { field: &'static str },
+    #[error("tool definition {index} has an unsupported shape: {source}")]
+    Shape {
+        index: usize,
+        #[source]
+        source: serde_path_to_error::Error<serde_json::Error>,
+    },
     #[error("{field} is missing from an array schema")]
     MissingItems { field: &'static str },
 }

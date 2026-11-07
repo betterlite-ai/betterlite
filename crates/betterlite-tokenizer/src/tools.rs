@@ -23,32 +23,43 @@ impl Default for ToolLimits {
     }
 }
 
+#[derive(Debug)]
+pub struct ToolDefinitions {
+    tools: Vec<definition::Tool>,
+}
+
 pub fn parse_tool_definitions(
     bytes: &[u8],
     limits: ToolLimits,
-) -> Result<Vec<Box<RawValue>>, error::ToolFormatError> {
+) -> Result<ToolDefinitions, error::ToolFormatError> {
     if bytes.len() > limits.max_bytes {
         return Err(error::ToolFormatError::TooLarge {
             bytes: bytes.len(),
             limit: limits.max_bytes,
         });
     }
-    let tools: Vec<Box<RawValue>> =
+    let entries: Vec<Box<RawValue>> =
         serde_json::from_slice(bytes).map_err(|source| error::ToolFormatError::Json { source })?;
-    if tools.len() > limits.max_tools {
+    if entries.len() > limits.max_tools {
         return Err(error::ToolFormatError::TooMany {
-            count: tools.len(),
+            count: entries.len(),
             limit: limits.max_tools,
         });
     }
-    Ok(tools)
+    let mut tools = Vec::new();
+    for (index, entry) in entries.iter().enumerate() {
+        if let Some(tool) = definition::parse_tool(index, entry)? {
+            tools.push(tool);
+        }
+    }
+    Ok(ToolDefinitions { tools })
 }
 
 pub fn format_function_definitions(
-    tools: &[Box<RawValue>],
+    definitions: &ToolDefinitions,
 ) -> Result<String, error::ToolFormatError> {
     let mut lines = vec!["namespace functions {".to_owned(), String::new()];
-    for tool in tools {
+    for tool in &definitions.tools {
         definition::format_tool(tool, &mut lines)?;
     }
     lines.push("} // namespace functions".to_owned());
