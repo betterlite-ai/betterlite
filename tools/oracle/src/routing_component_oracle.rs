@@ -9,9 +9,10 @@ use tokio::runtime::Builder;
 use crate::OracleError;
 use crate::case::{Ignore, validate_ignores};
 use crate::cli::Options;
-use crate::compare::{Difference, first_difference, remove_pointer};
+use crate::compare::Difference;
+use crate::oracle_comparison_contracts::{ExpectedDifference, NumericRule, validate};
 use crate::process::sync_litellm;
-use crate::router_probes::{ProbeOperation, Reply, Request, Sample};
+use crate::router_probes::{ProbeOperation, Reply, Request, Sample, comparison};
 use crate::routing_probe_ipc::child::{ProbeCommand, run_bounded};
 use crate::routing_probe_ipc::{BUILD_DEADLINE, OPERATION_DEADLINE, ProbeClock, parse_message};
 
@@ -40,7 +41,12 @@ struct ProbeStep {
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ProbeCompare {
+    #[serde(default)]
     ignore: Vec<Ignore>,
+    #[serde(default)]
+    numeric: Vec<NumericRule>,
+    #[serde(default)]
+    expected_difference: Vec<ExpectedDifference>,
 }
 
 pub(crate) fn validate_probe_case(path: &Path, case: &ProbeCase) -> Result<(), OracleError> {
@@ -57,7 +63,9 @@ pub(crate) fn validate_probe_case(path: &Path, case: &ProbeCase) -> Result<(), O
     if case.probes.is_empty() {
         return Err(invalid("probes cannot be empty"));
     }
-    validate_ignores(path, &case.compare.ignore)
+    validate_ignores(path, &case.compare.ignore)?;
+    validate(&case.compare.numeric, &case.compare.expected_difference)
+        .map_err(|error| invalid(&error.to_string()))
 }
 
 pub(crate) fn run_cases(options: &Options, cases: &[ProbeCase]) -> Result<Vec<bool>, OracleError> {
@@ -128,7 +136,7 @@ async fn run_step(
             run_probe(&commands.python, &bytes).await?,
         )
     };
-    match compare_replies(&first, &second, &case.compare.ignore)? {
+    match compare_probe_replies(&first, &second, &case.compare, options.self_check)? {
         None => {
             writeln!(io::stdout().lock(), "PASS {}[{index}]", case.name)
                 .map_err(OracleError::Output)?;
@@ -161,23 +169,44 @@ async fn run_probe(command: &ProbeCommand, bytes: &[u8]) -> Result<Reply, Oracle
     parse_message(&output.stdout.bytes)
 }
 
+fn compare_probe_replies(
+    first: &Reply,
+    second: &Reply,
+    compare: &ProbeCompare,
+    self_check: bool,
+) -> Result<Option<Difference>, OracleError> {
+    if compare.numeric.is_empty() && compare.expected_difference.is_empty() {
+        return compare_replies(first, second, &compare.ignore);
+    }
+    let first_value = serde_json::to_value(first).map_err(OracleError::Json)?;
+    let second_value = serde_json::to_value(second).map_err(OracleError::Json)?;
+    Ok(comparison::compare(&comparison::Documents {
+        reference: &second_value,
+        rust: &first_value,
+        numeric: &compare.numeric,
+        expected_difference: &compare.expected_difference,
+        ignore: &compare.ignore,
+        self_check,
+        message: "probe results differ",
+    }))
+}
+
 fn compare_replies(
     first: &Reply,
     second: &Reply,
     ignores: &[Ignore],
 ) -> Result<Option<Difference>, OracleError> {
-    let mut first_value = serde_json::to_value(first).map_err(OracleError::Json)?;
-    let mut second_value = serde_json::to_value(second).map_err(OracleError::Json)?;
-    for ignored in ignores {
-        remove_pointer(&mut first_value, &ignored.pointer);
-        remove_pointer(&mut second_value, &ignored.pointer);
-    }
-    Ok(
-        first_difference(&first_value, &second_value, "").map(|pointer| Difference {
-            message: "probe results differ".to_owned(),
-            pointer,
-        }),
-    )
+    let first_value = serde_json::to_value(first).map_err(OracleError::Json)?;
+    let second_value = serde_json::to_value(second).map_err(OracleError::Json)?;
+    Ok(comparison::compare(&comparison::Documents {
+        reference: &second_value,
+        rust: &first_value,
+        numeric: &[],
+        expected_difference: &[],
+        ignore: ignores,
+        self_check: false,
+        message: "probe results differ",
+    }))
 }
 
 struct Commands {
