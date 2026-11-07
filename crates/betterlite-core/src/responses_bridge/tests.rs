@@ -467,6 +467,36 @@ fn gpt5_custom_tools_stay_on_chat() {
 }
 
 #[test]
+fn gpt5_non_object_tools_are_not_function_tools() {
+    let fake = Fake::default()
+        .with(Fact::Gpt5)
+        .with(Fact::Gpt54Plus)
+        .on_base("https://api.openai.com/v1");
+    let tools = [text("function")];
+    let mut request = bridge_request("gpt-5.4", "openai");
+    request.tools = &tools;
+    assert_eq!(
+        responses_api_bridge_check(&request, &fake),
+        check(Object::new(), "gpt-5.4")
+    );
+}
+
+#[test]
+fn gpt5_4_function_tools_with_an_unparsable_base_stay_on_chat() {
+    let fake = Fake::default()
+        .with(Fact::Gpt5)
+        .with(Fact::Gpt54Plus)
+        .on_base("http://[::1");
+    let tools = [function_tool()];
+    let mut request = bridge_request("gpt-5.4", "openai");
+    request.tools = &tools;
+    assert_eq!(
+        responses_api_bridge_check(&request, &fake),
+        check(Object::new(), "gpt-5.4")
+    );
+}
+
+#[test]
 fn gpt5_effort_none_keeps_function_tools_on_chat() {
     let fake = Fake::default()
         .with(Fact::Gpt5)
