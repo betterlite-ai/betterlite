@@ -2,6 +2,7 @@ pub mod access_windows;
 pub mod adaptive_classification;
 pub mod admission_control;
 pub mod agent_host_settings;
+pub mod agent_search;
 pub mod aim_inspection;
 pub mod aiohttp_transport_toggle;
 pub mod akto_mirroring;
@@ -120,6 +121,7 @@ pub mod cometapi_embedding_credentials;
 pub mod compatible_embedding_settings;
 pub mod compatible_image_credentials;
 pub mod compatible_provider_settings;
+pub mod compatible_providers_m_z;
 pub mod complexity_adaptive_placement;
 pub mod complexity_config;
 pub mod complexity_placement;
@@ -188,6 +190,7 @@ pub mod generic_guardrail_api;
 pub mod grayswan;
 pub mod guardrail_identity;
 pub mod guardrail_judge;
+pub mod guardrail_message_skip;
 pub mod guardrail_modes;
 pub mod guardrail_params;
 pub mod guardrail_scan_cache;
@@ -231,11 +234,13 @@ pub mod key_persistence;
 pub mod key_policy_fields;
 pub mod key_rotation;
 pub mod key_rotation_write;
+pub mod langfuse_settings;
 pub mod lar1_routing;
 pub mod lasso_classification;
 pub mod latency_observations;
 pub mod latency_routing;
 pub mod least_busy;
+pub mod legacy_guardrails;
 pub mod lemonade_model_metadata;
 pub mod llm_classifier;
 pub mod local_ttl_cache;
@@ -246,10 +251,14 @@ pub mod login_routes;
 pub mod login_throttle;
 pub mod management_rbac;
 pub mod mcp_access_requirements;
+pub mod mcp_allow_all_scope;
 pub mod mcp_bearer_credentials;
 pub mod mcp_client_side_auth;
+pub mod mcp_env_values;
+pub mod mcp_required_fields;
 pub mod mcp_sso_assertion_cache;
 pub mod mcp_tool_helpers;
+pub mod mcp_tools;
 pub mod mcp_toolset_storage;
 pub mod member_row_write;
 pub mod messages_advisor;
@@ -293,6 +302,7 @@ pub mod pass_through_registry;
 pub mod passthrough_request_policies;
 pub mod password_login;
 pub mod password_policy;
+pub mod payload_exclusions;
 pub mod pre_routing_registry;
 pub mod prometheus_bounded_series;
 pub mod prometheus_budget_refresh;
@@ -474,7 +484,7 @@ macro_rules! sections {
 }
 
 sections! {
-    access_windows, adaptive_classification, admission_control, agent_host_settings,
+    access_windows, adaptive_classification, admission_control, agent_host_settings, agent_search,
     aim_inspection, aiohttp_transport_toggle, akto_mirroring, alert_settings,
     alice_conduct_decisions, anthropic_beta_config, anthropic_capability_catalog,
     anthropic_completion, anthropic_count_tokens, anthropic_credentials, anthropic_headers,
@@ -503,7 +513,7 @@ sections! {
     cisco_verdict_contracts, classifier_context, classifier_message_text, claude_gateway_oauth,
     claude_gateway_policy, claude_platform_inputs, claude_skill_write, clickhouse_spend_logging,
     cloud_storage, codestral_credentials, cohere_rerank_settings, cometapi_embedding_credentials,
-    compatible_embedding_settings, compatible_image_credentials, compatible_provider_settings,
+    compatible_embedding_settings, compatible_image_credentials, compatible_provider_settings, compatible_providers_m_z,
     complexity_adaptive_placement, complexity_config, complexity_placement,
     complexity_placement_gates, complexity_scoring, complexity_sessions, complexity_turn_overrides,
     component_contracts, compresr_writeback, compression_interception_state, content_category,
@@ -520,7 +530,7 @@ sections! {
     file_upload_options, file_upload_routing, file_upload_validation, focus_export_schedule,
     foundry_credentials, foundry_image_edits, foundry_vector_stores, full_model_metadata,
     gdc_settings, gemini_cache_create, gemini_cache_prefix, generic_guardrail_api, grayswan,
-    guardrail_identity, guardrail_judge, guardrail_modes, guardrail_params, guardrail_scan_cache, guardrail_translation,
+    guardrail_identity, guardrail_judge, guardrail_message_skip, guardrail_modes, guardrail_params, guardrail_scan_cache, guardrail_translation,
     headroom_compression, headroom_hiddenlayer_support, health_probe_policy,
     hiddenlayer_evaluation, host_identity_settings, hosted_chat_settings, huggingface_hub,
     huggingface_oidc, ibm_guardrails, image_edit_call, image_generation_call, image_url_download,
@@ -529,11 +539,11 @@ sections! {
     jwt_provisioning, jwt_role_claims, jwt_settings, jwt_team_authorization, jwt_team_selection,
     jwt_verification, key_access, key_context, key_create, key_event_sinks, key_limit_policy,
     key_management_settings, key_persistence, key_policy_fields, key_rotation, key_rotation_write,
-    lar1_routing, lasso_classification, latency_observations, latency_routing, least_busy,
+    langfuse_settings, lar1_routing, lasso_classification, latency_observations, latency_routing, least_busy, legacy_guardrails,
     lemonade_model_metadata, llm_classifier, local_ttl_cache, logging_privacy, login_form,
     login_return, login_routes, login_throttle, management_rbac, mcp_access_requirements,
-    mcp_bearer_credentials, mcp_client_side_auth, mcp_sso_assertion_cache, mcp_tool_helpers,
-    mcp_toolset_storage, member_row_write, messages_advisor, messages_dispatch, messages_mcp,
+    mcp_allow_all_scope, mcp_bearer_credentials, mcp_client_side_auth, mcp_env_values,
+    mcp_required_fields, mcp_sso_assertion_cache, mcp_tool_helpers, mcp_tools, mcp_toolset_storage, member_row_write, messages_advisor, messages_dispatch, messages_mcp,
     messages_native_call, messages_native_stream, messages_response_call,
     messages_responses_output, messages_thinking, migration_drift, migration_ledger,
     migration_recovery, mistral_credentials, mistral_options, mistral_resources, mock_response,
@@ -542,7 +552,7 @@ sections! {
     native_messages_hosts_settings, oauth_tokens, ollama_model_metadata, openai_chat_content,
     openai_credentials, openai_like_settings, openai_mock_transport, openai_provider,
     openai_realtime, openai_workload_identity, otel_settings, panw_prisma_airs,
-    pass_through_registry, passthrough_request_policies, password_login, password_policy,
+    pass_through_registry, passthrough_request_policies, password_login, password_policy, payload_exclusions,
     pre_routing_registry, prometheus_bounded_series, prometheus_budget_refresh,
     prometheus_exporter, prompt_affinity, prompt_cache_accounting, provider_resolution,
     provider_url_destination, proxy_custom_dispatch, proxy_provider_options, public_router_presets,

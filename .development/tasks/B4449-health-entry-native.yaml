@@ -1,0 +1,117 @@
+id: B4449
+title: Native health entry point dispatch
+description: >-
+  Build `health_native_backend` in betterlite-server. It is the real `HealthProbeBackend` that B4440 defines and
+  the wiring that makes B6750's `HealthCheckEntry` (the Rust `ahealth_check`) usable by B4443. B6750 owns the
+  entry flow, the unknown-mode result and the error text. B4440 owns the call arguments per mode. This task owns
+  only what turns those arguments into real calls, and the two other traits B4440 and B6750 take. Nothing here
+  adds a mode, a default or an error text.
+
+  `NativeHealthBackend` is built with constructor injection, one field per call operation, each held as the
+  trait or client its owner publishes. Read the owner's task file for the exact public function before you
+  write the call. Methods and owners: chat and the wildcard chat call use B5656 (acompletion, betterlite-sdk
+  completion_call); embedding has no native owner yet and goes through a trait `EmbeddingProbeCall` this task
+  defines; completion (atext_completion) goes through `TextCompletionProbeCall`, defined here for the same
+  reason; audio_speech uses B1083 (aspeech); audio_transcription uses B1082 (atranscription); image_generation
+  uses B998; image_edit uses B999; video_generation uses B3338; rerank uses B1014; realtime uses B1127's health
+  probe; batch list_batches uses B1129; responses uses B932; ocr goes through `OcrProbeCall`, defined here
+  (its production implementation calls B6809's `aocr` in betterlite-ocr module ocr_route); evaluation uses B3515's asystemone. A defined trait has one
+  async method that takes the typed arguments B4440 passes for that mode and returns the reply type of the
+  matching method on `HealthProbeBackend`. The bodies only convert B4440's call arguments into the owner's
+  request type and the owner's response into B4440's reply, with the response's `hidden_params.headers` map
+  carried over unchanged (None when the response has no hidden params).
+
+  Error handling. A failing call returns its error as the backend method's error, with the owner's error kept as
+  the source. Nothing is swallowed, retried or rewritten here. The image edit moderation swallow is B4440's.
+
+  Wiring. `NativeHealthBackend::cheapest_chat_models` is B4440's `CheapestChatModels` implemented with B176's
+  `pick_cheapest_chat_models_from_llm_provider` (betterlite-models controls module): it passes the provider
+  and n = 3 and returns the model names in B176's order. `OcrHealthDocuments` (B4440's trait for the ocr mode)
+  is implemented by a small struct over betterlite-ocr's default health document; if betterlite-ocr has no
+  such document yet, return `HealthProbeError` naming the provider, as B4440's deviation says. Finally,
+  `build_health_check_entry(deps: HealthEntryDeps) -> HealthCheckEntry` assembles the backend and B6750's
+  struct from settings the server already loads; it creates no global and reads no env var. B4443 receives the
+  result.
+
+  Tests live in `health_native_backend::tests` with a fake owner for every operation. Prefixes: `backend_` (one
+  case per mode, the arguments reach the owner unchanged and the reply carries hidden params headers over),
+  `error_` (an owner error comes back with its source), `cheapest_` (n = 3, the provider is passed through,
+  order kept, empty list for an unknown provider) and `wiring_` (build_health_check_entry returns a working entry
+  over the fakes for chat and a wildcard model). There are no oracle cases: the behavior LiteLLM has is in
+  B4440 and B6750, and each call operation has its own cases at its owner.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/health_native_backend.rs
+    - crates/betterlite-server/src/health_native_backend/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L164-L287
+    why: get_mode_handlers, the table of litellm a* calls this backend stands for.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8725-L8831
+    why: Where the backend result is read (hidden_params headers) and the call that wires the wildcard path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_request_utils.py#L136-L170
+    why: pick_cheapest_chat_models_from_llm_provider, the function behind CheapestChatModels.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L57-L85
+    why: The wildcard probe that asks for the 3 cheapest models.
+
+dod:
+  - text: Every HealthProbeBackend method forwards its mode's arguments to the right owner operation without changing them, and carries the response's hidden_params.headers into the reply.
+    proof: [backend-tests]
+  - text: The production OcrProbeCall implementation passes the ocr mode arguments to B6809's aocr and returns its OCRResponse headers unchanged.
+    proof: [backend-tests]
+  - text: A failing owner call returns its error from the backend method with the owner's error as source and no retry.
+    proof: [error-tests]
+  - text: CheapestChatModels returns up to 3 model names from B176's function in its order, and an empty list for a provider without chat models.
+    proof: [cheapest-tests]
+  - text: build_health_check_entry returns a HealthCheckEntry that probes a chat model and a wildcard model through the fake operations.
+    proof: [wiring-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: backend-tests
+      why: a mode's forwarding or the headers carry-over is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_native_backend::tests::backend_/)'
+    - id: error-tests
+      why: owner errors are swallowed, rewritten or retried
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_native_backend::tests::error_/)'
+    - id: cheapest-tests
+      why: the CheapestChatModels wiring is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_native_backend::tests::cheapest_/)'
+    - id: wiring-tests
+      why: build_health_check_entry or its end to end probe is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_native_backend::tests::wiring_/)'
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - "The entry flow (mode lookup, cache flag, error result, header extraction): B6750."
+  - "Call arguments per mode, wildcard, tracking, batch and image edit probes, health_check_response: B4440."
+  - "The call operations themselves: their owners named in the description."
+  - "pick_cheapest_chat_models_from_llm_provider itself: B176. The health cycle that uses the entry: B4443."
+  - "Other functions in litellm/main.py: each belongs to its own task."
+
+pitfalls:
+  - "The batch mode with an unsupported provider sends a chat call with the unfiltered params, so the backend's chat method must accept `messages` while every other method never sees it."
+  - "list_batches gets `custom_llm_provider` set by B4440; do not add or replace it here."
+  - "The wildcard chat call and the chat mode use the same chat method; only B4440 decides to ignore the wildcard response headers."
+  - "Do not retry or catch an owner error to build an error dict: B6750 turns errors into the result."
+  - "Keep header values as given by the owner; the three header names are matched in lowercase by B4440, so do not change their case."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

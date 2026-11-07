@@ -9,3 +9,4 @@ pub mod mcp_loop;
 pub mod proxy_auth;
 pub mod router_completion;
 pub mod router_generic;
+pub mod router_video;

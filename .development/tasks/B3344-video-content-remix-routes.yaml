@@ -6,7 +6,7 @@ description: >-
   Do not touch the other video routes: B3343 owns create, list and status, B3345 owns the character routes. Do not edit routes.rs or state.rs, B1100 declares the stub.
   Both routes sit behind the virtual key authentication of B052, and a missing or wrong key answers 401 before any route code runs.
   The calls behind them are B3339 (video_content, avideo_content) and B3340 (video_remix, avideo_remix) in betterlite-core. Fill the two core dispatch entries B014 registers for them,
-  operation/video_content.rs with dispatch/video_content.rs and operation/video_remix.rs with dispatch/video_remix.rs. The content entry sends route type avideo_content and its result is the raw bytes. The remix entry sends route type avideo_remix and its result is the video object as JSON.
+  operation/video_content.rs with dispatch/video_content.rs and operation/video_remix.rs with dispatch/video_remix.rs. Both LiteLLM handlers go through route_request, so each entry first calls B6460's plan_video_route (VideoCallKind Content or Remix). A Direct plan calls the B3339 or B3340 SDK function. A Router plan calls the matching VideoRouterCalls method (avideo_content or avideo_remix). A NotFound plan returns the model-not-found error. VideoRouterCalls and VideoRouteView are injected into the entries, because betterlite-core cannot import sdk or router. The content entry sends route type avideo_content and its result is the raw bytes. The remix entry sends route type avideo_remix and its result is the video object as JSON.
   B004 owns the common request processing and the exception handling (LiteLLM's ProxyBaseLLMRequestProcessing and _handle_llm_api_exception). These routes only build the data map and hand it over.
 
   Content route steps, in order. (1) Start data as {video_id}. The video_id is the whole path segment. (2) Call B672 decode_video_id_with_provider(video_id) and keep its custom_llm_provider and model_id.
@@ -19,7 +19,7 @@ description: >-
   (4) When the pick is truthy, overwrite data["custom_llm_provider"]; when none is truthy, the body's own falsy value stays. (5) Resolve the model from the decoded model_id exactly as in the content route, and a resolved name replaces a body "model". (6) Call the common processing with route type avideo_remix and model none, and return its result unchanged.
   The body is not validated here: prompt, extra_body and the rest go straight to the call. A JSON body that is not an object fails before the try block and is not shaped by the common exception handling; mirror what LiteLLM returns and record it in a case.
 
-  Why the video calls need no model: when data has no model, the dispatch calls the SDK function directly with custom_llm_provider (route_llm_request.py), and when a model was resolved it tries the router first and falls back to the direct call on any router error. B014 owns that dispatch; this task only fills the two entries so both paths reach B3339 and B3340.
+  Why the video calls need no model: when data has no model, plan_video_route plans Direct and the entry calls the SDK function with custom_llm_provider (route_llm_request.py). When a model was resolved the plan is Router and the entry calls VideoRouterCalls. At the pin a call with a model gets no SDK fallback: the Router.avideo_* wrapper is an async_wrapper, so route_llm_request.py L700-L706 gets an unawaited coroutine and a router error surfaces at the caller's await, outside the try. The router error reaches the client and the entry never retries the SDK function. B6460 owns the plan and the router wrappers; this task only fills the two entries.
 
   Tests: rstest functions named content_route_behavior, remix_route_behavior and provider_pick_behavior in api::video_content_remix_routes (betterlite-server), with a mock upstream server and fake collaborators for the model resolver and the calls, one named case per DoD item. Core entry tests are named video_entry_behavior.
   The task parses no new bytes (B1100 owns the body decoder), so there is no fuzz target. Oracle cases are plain HTTP cases through the booted proxy, in tools/oracle/cases/api/video-content-remix-routes, with the mock provider as the openai upstream (config api_base "{{upstream}}", master key oracle-master as in tools/oracle/cases/chat/upstream-429.yaml).
@@ -59,7 +59,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L611-L631
     why: Video route types with no model go straight to the SDK function with custom_llm_provider.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/route_llm_request.py#L688-L703
-    why: With a model, the router is tried first and any router error falls back to the direct call.
+    why: With a model the router is called. The except branch never runs for a router error, see the description.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/videos/utils.py#L59-L113
     why: decode_video_id_with_provider, the source of the provider and model_id picks.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/openai/videos/transformation.py#L202-L262
