@@ -8,7 +8,7 @@ use betterlite_mcp::client::sessions::runtime::McpRuntime;
 use tracing::info;
 
 use super::detail::{get_prompt, read_resource};
-use super::failure::detail_failure;
+use super::failure::{FailureMode, finish_failure};
 use super::list::{Prompts, Resources, Templates, run_optional_list};
 use super::session::{ResourceSession, RuntimeSession};
 use super::settings::ResourceSettings;
@@ -88,6 +88,7 @@ pub(crate) async fn run_detail_operation<Runtime, Output, Operation>(
 where
     Runtime: McpRuntime,
     RuntimeSession<Runtime>: ResourceSession<Error = Runtime::Error>,
+    Output: Default,
     Operation:
         AsyncFnOnce(&mut RuntimeSession<Runtime>) -> Result<Output, SessionError<Runtime::Error>>,
 {
@@ -97,7 +98,7 @@ where
             info!("MCP client {operation_name} completed successfully from {server}");
             Ok(output)
         }
-        Err(error) => detail_failure(error, operation_name, &server),
+        Err(error) => finish_failure(error, FailureMode::Detail, operation_name, &server),
     }
 }
 

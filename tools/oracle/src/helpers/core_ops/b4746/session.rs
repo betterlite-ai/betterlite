@@ -124,6 +124,33 @@ where
         .map_err(|error| ScriptedFailure::Plain(error.to_string()))
 }
 
+macro_rules! page_method {
+    ($method:ident, $page:ident, $field:ident) => {
+        async fn $method(&mut self, cursor: Option<String>) -> Result<$page, ScriptedFailure> {
+            let page = self.next_page(cursor).await?;
+            Ok($page {
+                $field: items(page.items)?,
+                next_cursor: page.next_cursor,
+            })
+        }
+    };
+}
+
+macro_rules! result_method {
+    ($method:ident, $queue:ident, $record:ident, $request:ty, $output:ty) => {
+        async fn $method(&mut self, request: $request) -> Result<$output, ScriptedFailure> {
+            let scripted = {
+                let mut script = self.script.locked();
+                script.$record.push(request);
+                script.$queue.take().ok_or_else(|| {
+                    ScriptedFailure::Plain("the case scripted no result for this call".to_owned())
+                })
+            };
+            resolve(scripted?).await
+        }
+    };
+}
+
 impl ResourceSession for FakeSession {
     type Error = ScriptedFailure;
 
@@ -131,63 +158,27 @@ impl ResourceSession for FakeSession {
         self.script.locked().capabilities.clone()
     }
 
-    async fn list_prompts(
-        &mut self,
-        cursor: Option<String>,
-    ) -> Result<PromptPage, ScriptedFailure> {
-        let page = self.next_page(cursor).await?;
-        Ok(PromptPage {
-            prompts: items(page.items)?,
-            next_cursor: page.next_cursor,
-        })
-    }
-
-    async fn list_resources(
-        &mut self,
-        cursor: Option<String>,
-    ) -> Result<ResourcePage, ScriptedFailure> {
-        let page = self.next_page(cursor).await?;
-        Ok(ResourcePage {
-            resources: items(page.items)?,
-            next_cursor: page.next_cursor,
-        })
-    }
-
-    async fn list_resource_templates(
-        &mut self,
-        cursor: Option<String>,
-    ) -> Result<ResourceTemplatePage, ScriptedFailure> {
-        let page = self.next_page(cursor).await?;
-        Ok(ResourceTemplatePage {
-            resource_templates: items(page.items)?,
-            next_cursor: page.next_cursor,
-        })
-    }
-
-    async fn get_prompt(
-        &mut self,
-        params: GetPromptRequestParams,
-    ) -> Result<GetPromptResult, ScriptedFailure> {
-        let scripted = {
-            let mut script = self.script.locked();
-            script.prompt_params.push(params);
-            script.prompt_result.take().ok_or_else(|| {
-                ScriptedFailure::Plain("the case scripted no result for this call".to_owned())
-            })
-        };
-        resolve(scripted?).await
-    }
-
-    async fn read_resource(&mut self, uri: String) -> Result<ReadResourceResult, ScriptedFailure> {
-        let scripted = {
-            let mut script = self.script.locked();
-            script.resource_uris.push(uri);
-            script.resource_result.take().ok_or_else(|| {
-                ScriptedFailure::Plain("the case scripted no result for this call".to_owned())
-            })
-        };
-        resolve(scripted?).await
-    }
+    page_method!(list_prompts, PromptPage, prompts);
+    page_method!(list_resources, ResourcePage, resources);
+    page_method!(
+        list_resource_templates,
+        ResourceTemplatePage,
+        resource_templates
+    );
+    result_method!(
+        get_prompt,
+        prompt_result,
+        prompt_params,
+        GetPromptRequestParams,
+        GetPromptResult
+    );
+    result_method!(
+        read_resource,
+        resource_result,
+        resource_uris,
+        String,
+        ReadResourceResult
+    );
 
     fn protocol_failure(error: &ScriptedFailure) -> Option<McpFailure> {
         error.protocol_failure()

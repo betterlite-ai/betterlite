@@ -86,7 +86,7 @@ pub struct GetPromptRequestParams {
     pub arguments: Option<BTreeMap<String, String>>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 pub struct GetPromptResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,

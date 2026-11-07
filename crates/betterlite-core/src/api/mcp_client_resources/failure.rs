@@ -4,39 +4,41 @@ use std::error::Error;
 use betterlite_mcp::client::sessions::error::SessionError;
 use tracing::{debug, error, warn};
 
-pub(crate) fn list_failure<Source, Item>(
-    error: SessionError<Source>,
-    raise_on_error: bool,
-    operation: &str,
-    server: &str,
-) -> Result<Vec<Item>, SessionError<Source>>
-where
-    Source: Error + Send + Sync + 'static,
-{
-    if was_cancelled(&error, operation) {
-        return Err(error);
-    }
-    if raise_on_error {
-        return Err(error);
-    }
-    log_failure(&error, operation, server);
-    Ok(Vec::new())
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum FailureMode {
+    List { raise_on_error: bool },
+    Detail,
 }
 
-pub(crate) fn detail_failure<Output, Source>(
+pub(crate) fn finish_failure<Output, Source>(
     error: SessionError<Source>,
+    mode: FailureMode,
     operation: &str,
     server: &str,
 ) -> Result<Output, SessionError<Source>>
 where
     Source: Error + Send + Sync + 'static,
+    Output: Default,
 {
     if was_cancelled(&error, operation) {
         return Err(error);
     }
-    debug!("MCP client {operation} traceback:\n{}", error_chain(&error));
-    log_failure(&error, operation, server);
-    Err(error)
+    match mode {
+        FailureMode::List {
+            raise_on_error: true,
+        } => Err(error),
+        FailureMode::List {
+            raise_on_error: false,
+        } => {
+            log_failure(&error, operation, server);
+            Ok(Output::default())
+        }
+        FailureMode::Detail => {
+            debug!("MCP client {operation} traceback:\n{}", error_chain(&error));
+            log_failure(&error, operation, server);
+            Err(error)
+        }
+    }
 }
 
 fn was_cancelled<Source>(error: &SessionError<Source>, operation: &str) -> bool

@@ -90,40 +90,50 @@ fn script_for(input: &Input) -> Result<Script, Box<HelperError>> {
     Ok(script)
 }
 
-async fn prompt(
-    session: &mut FakeSession,
-    input: &Input,
-    script: &Arc<Mutex<Script>>,
-) -> HelperResult {
-    let prompt = input
-        .prompt
-        .as_ref()
-        .ok_or_else(|| failure("the case has no prompt input"))?;
-    let params = GetPromptRequestParams {
-        name: prompt.name.clone(),
-        arguments: prompt.arguments.clone(),
+macro_rules! detail_operation {
+    ($method:ident, $call:ident, $request:expr, $record:ident, $key:literal) => {
+        async fn $method(
+            session: &mut FakeSession,
+            input: &Input,
+            script: &Arc<Mutex<Script>>,
+        ) -> HelperResult {
+            let request = $request(input)?;
+            let result = session.$call(request).await.map_err(failure)?;
+            let recorded = script.locked().$record.clone();
+            Ok(json!({"result": result, $key: recorded}))
+        }
     };
-    let result = session.get_prompt(params).await.map_err(failure)?;
-    let recorded = script.locked().prompt_params.clone();
-    Ok(json!({"result": result, "params": recorded}))
 }
 
-async fn resource(
-    session: &mut FakeSession,
-    input: &Input,
-    script: &Arc<Mutex<Script>>,
-) -> HelperResult {
-    let resource = input
-        .resource
-        .as_ref()
-        .ok_or_else(|| failure("the case has no resource input"))?;
-    let result = session
-        .read_resource(resource.uri.clone())
-        .await
-        .map_err(failure)?;
-    let recorded = script.locked().resource_uris.clone();
-    Ok(json!({"result": result, "uris": recorded}))
-}
+detail_operation!(
+    prompt,
+    get_prompt,
+    |input: &Input| -> Result<GetPromptRequestParams, Box<HelperError>> {
+        let prompt = input
+            .prompt
+            .as_ref()
+            .ok_or_else(|| failure("the case has no prompt input"))?;
+        Ok(GetPromptRequestParams {
+            name: prompt.name.clone(),
+            arguments: prompt.arguments.clone(),
+        })
+    },
+    prompt_params,
+    "params"
+);
+detail_operation!(
+    resource,
+    read_resource,
+    |input: &Input| -> Result<String, Box<HelperError>> {
+        let resource = input
+            .resource
+            .as_ref()
+            .ok_or_else(|| failure("the case has no resource input"))?;
+        Ok(resource.uri.clone())
+    },
+    resource_uris,
+    "uris"
+);
 
 fn step<Value>(
     scripted_error: Option<&ErrorInput>,

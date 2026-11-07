@@ -7,7 +7,7 @@ use betterlite_mcp::client::sessions::run::run_with_session;
 use betterlite_mcp::client::sessions::runtime::McpRuntime;
 use tracing::debug;
 
-use super::failure::list_failure;
+use super::failure::{FailureMode, finish_failure};
 use super::operations::server_name;
 use super::pagination::{METHOD_NOT_FOUND, PageFailure, list_optional_pages};
 use super::session::{ResourceSession, RuntimeSession, session_error};
@@ -106,7 +106,12 @@ where
 {
     match optional_list::<Session, Kind>(session, deadline, server).await {
         Ok(items) => Ok(items),
-        Err(error) => list_failure(error, raise_on_error, Kind::OPERATION, server),
+        Err(error) => finish_failure(
+            error,
+            FailureMode::List { raise_on_error },
+            Kind::OPERATION,
+            server,
+        ),
     }
 }
 
@@ -127,7 +132,12 @@ where
     };
     match run_with_session(client, operation, false).await {
         Ok(items) => Ok(items),
-        Err(error) => list_failure(error, raise_on_error, Kind::OPERATION, &server),
+        Err(error) => finish_failure(
+            error,
+            FailureMode::List { raise_on_error },
+            Kind::OPERATION,
+            &server,
+        ),
     }
 }
 

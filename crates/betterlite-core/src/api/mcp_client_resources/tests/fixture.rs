@@ -253,21 +253,6 @@ where
     }
 }
 
-pub(crate) async fn resolve_step<Source, Value>(step: Step<Value>) -> Result<Value, Source>
-where
-    Source: FakeError,
-{
-    match step {
-        Step::Ready(value) => Ok(value),
-        Step::Delayed { value, delay } => {
-            sleep(delay).await;
-            Ok(value)
-        }
-        Step::Protocol(failure) => Err(Source::protocol(failure)),
-        Step::Plain(message) => Err(Source::plain(message)),
-    }
-}
-
 pub(crate) async fn resolve_session_step<Source, Value>(
     step: Step<Value>,
 ) -> Result<Value, SessionError<Source>>
@@ -285,6 +270,60 @@ where
     }
 }
 
+macro_rules! page_method {
+    ($method:ident, $source:ident, $queue:ident, $page:ident) => {
+        fn $method(
+            &mut self,
+            cursor: Option<String>,
+        ) -> impl Future<Output = Result<$page, $source>> + Send {
+            let next_step = {
+                let mut script = lock(&self.script);
+                script.cursors.push(cursor);
+                script.$queue.pop_front()
+            };
+            async move {
+                match next_step {
+                    Some(Step::Ready(value)) => Ok(value),
+                    Some(Step::Delayed { value, delay }) => {
+                        sleep(delay).await;
+                        Ok(value)
+                    }
+                    Some(Step::Protocol(failure)) => Err($source::protocol(failure)),
+                    Some(Step::Plain(message)) => Err($source::plain(message)),
+                    None => Err($source::plain("no scripted page")),
+                }
+            }
+        }
+    };
+}
+
+macro_rules! result_method {
+    ($method:ident, $source:ident, $queue:ident, $record:ident, $request:ty, $output:ty) => {
+        fn $method(
+            &mut self,
+            request: $request,
+        ) -> impl Future<Output = Result<$output, $source>> + Send {
+            let next_step = {
+                let mut script = lock(&self.script);
+                script.$record.push(request);
+                script.$queue.take()
+            };
+            async move {
+                match next_step {
+                    Some(Step::Ready(value)) => Ok(value),
+                    Some(Step::Delayed { value, delay }) => {
+                        sleep(delay).await;
+                        Ok(value)
+                    }
+                    Some(Step::Protocol(failure)) => Err($source::protocol(failure)),
+                    Some(Step::Plain(message)) => Err($source::plain(message)),
+                    None => Err($source::plain("no scripted result")),
+                }
+            }
+        }
+    };
+}
+
 impl<Source> ResourceSession for FakeSession<Source>
 where
     Source: FakeError,
@@ -295,90 +334,30 @@ where
         lock(&self.script).capabilities.clone()
     }
 
-    fn list_prompts(
-        &mut self,
-        cursor: Option<String>,
-    ) -> impl Future<Output = Result<PromptPage, Source>> + Send {
-        let next_step = {
-            let mut script = lock(&self.script);
-            script.cursors.push(cursor);
-            script.prompts.pop_front()
-        };
-        async move {
-            match next_step {
-                Some(next) => resolve_step::<Source, _>(next).await,
-                None => Err(Source::plain("no scripted prompt page")),
-            }
-        }
-    }
-
-    fn get_prompt(
-        &mut self,
-        params: GetPromptRequestParams,
-    ) -> impl Future<Output = Result<GetPromptResult, Source>> + Send {
-        let next_step = {
-            let mut script = lock(&self.script);
-            script.prompt_params.push(params);
-            script.prompt_result.take()
-        };
-        async move {
-            match next_step {
-                Some(next) => resolve_step::<Source, _>(next).await,
-                None => Err(Source::plain("no scripted prompt result")),
-            }
-        }
-    }
-
-    fn list_resources(
-        &mut self,
-        cursor: Option<String>,
-    ) -> impl Future<Output = Result<ResourcePage, Source>> + Send {
-        let next_step = {
-            let mut script = lock(&self.script);
-            script.cursors.push(cursor);
-            script.resources.pop_front()
-        };
-        async move {
-            match next_step {
-                Some(next) => resolve_step::<Source, _>(next).await,
-                None => Err(Source::plain("no scripted resource page")),
-            }
-        }
-    }
-
-    fn list_resource_templates(
-        &mut self,
-        cursor: Option<String>,
-    ) -> impl Future<Output = Result<ResourceTemplatePage, Source>> + Send {
-        let next_step = {
-            let mut script = lock(&self.script);
-            script.cursors.push(cursor);
-            script.templates.pop_front()
-        };
-        async move {
-            match next_step {
-                Some(next) => resolve_step::<Source, _>(next).await,
-                None => Err(Source::plain("no scripted template page")),
-            }
-        }
-    }
-
-    fn read_resource(
-        &mut self,
-        uri: String,
-    ) -> impl Future<Output = Result<ReadResourceResult, Source>> + Send {
-        let next_step = {
-            let mut script = lock(&self.script);
-            script.resource_uris.push(uri);
-            script.resource_result.take()
-        };
-        async move {
-            match next_step {
-                Some(next) => resolve_step::<Source, _>(next).await,
-                None => Err(Source::plain("no scripted resource contents")),
-            }
-        }
-    }
+    page_method!(list_prompts, Source, prompts, PromptPage);
+    page_method!(list_resources, Source, resources, ResourcePage);
+    page_method!(
+        list_resource_templates,
+        Source,
+        templates,
+        ResourceTemplatePage
+    );
+    result_method!(
+        get_prompt,
+        Source,
+        prompt_result,
+        prompt_params,
+        GetPromptRequestParams,
+        GetPromptResult
+    );
+    result_method!(
+        read_resource,
+        Source,
+        resource_result,
+        resource_uris,
+        String,
+        ReadResourceResult
+    );
 
     fn protocol_failure(error: &Source) -> Option<McpFailure> {
         error.protocol_failure()
