@@ -1,0 +1,74 @@
+id: B5078
+title: Python Router completion and anthropic_messages dispatch
+description: >-
+  Give the Python `Router` class its call methods: `completion`, `acompletion`, `anthropic_messages`, `abatch_completion_one_model_multiple_requests` and `abatch_completion_fastest_response`. Each one is thin. It builds the request JSON, calls the matching `NativeRouter` method from B6022 and wraps the answer in the Python types that B158 already defines. All routing, retry, fallback, cooldown and stream-fallback logic lives in Rust (B6020 and B6021). This task adds none of it.
+
+
+  Files: `python/betterlite/_router/calls.py` holds a mixin class `RouterCalls` with the methods above, and `python/betterlite/_router/__init__.py` is where B162's last part wires `Router(RouterCalls)`. If the package or the mixin base is missing when you start, add only `calls.py` and its test, and report in the blocker that the wiring is missing.
+
+
+  Behavior to keep from LiteLLM's `Router`: `acompletion(model, messages, stream=False, **kwargs)` returns the response or, with `stream=True`, an object you iterate with `async for` that yields chunk objects. `completion` is the blocking form and returns a stream you iterate with `for`. `anthropic_messages` is async only and yields raw bytes when streaming. Responses are B158's `ModelResponse` and `ModelResponseStream` (parse the chunk JSON with B158's own function, never a second parser). The `_hidden_params` key of the answer fills `response._hidden_params`, and for streams it is read from `hidden_params()` on every access so a mid-stream fallback shows up. A `NativeError` becomes the matching class from B163 through B158's error mapping, with `num_retries` and `max_retries` set. The batch helpers take a list of messages lists (or a list of model names) and return a list in input order, where a failed item is the exception object and is not raised, as LiteLLM does.
+
+
+  Kwargs that cannot be JSON (callables, a `client` object, `mock_response` that is an exception instance) are handled the way B158 handles them in `completion`: the same helper converts them, and an unsupported one raises the same error. Do not copy that helper. A `metadata` kwarg goes in the request unchanged, because B6021 chooses the metadata key by call type.
+
+
+  Sync callers inside a running event loop: `completion` calls the blocking native method and never starts a loop.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/_router/calls.py
+  - crates/betterlite-python/tests/test_router_calls.py
+  - crates/betterlite-python/tests/router_server.py
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L2533-L2654
+    why: "`completion` and its attempt, as the blocking form."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L2779-L2830
+    why: "`acompletion` signature and what it returns for stream and non-stream."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L4249-L4375
+    why: The two batch helpers whose result order and error items the Python side must keep.
+dod:
+  - text: "`acompletion` and `completion` return B158's response objects with `_hidden_params` filled, against a local mock server."
+    proof: [router-calls]
+  - text: Streams from both forms yield chunk objects, end cleanly, and show the hidden params of the current source after a mid-stream fallback.
+    proof: [router-streams]
+  - text: "`anthropic_messages` returns the response dict or yields raw bytes when streaming."
+    proof: [router-messages]
+  - text: Native errors become the B163 classes with retry counts set, and a batch returns failures as items.
+    proof: [router-errors]
+  - text: The file stays under the 300-line limit and passes strict basedpyright and ruff.
+    proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: router-calls
+    why: A call returns the wrong type or loses the hidden params.
+    run: $U crates/betterlite-python/tests/test_router_calls.py -k calls
+  - id: router-streams
+    why: A stream never ends or shows stale hidden params.
+    run: $U crates/betterlite-python/tests/test_router_calls.py -k streams
+  - id: router-messages
+    why: Anthropic bytes are decoded, re-encoded or dropped.
+    run: $U crates/betterlite-python/tests/test_router_calls.py -k messages
+  - id: router-errors
+    why: An error class or retry count is wrong, or a batch raises for one item.
+    run: $U crates/betterlite-python/tests/test_router_calls.py -k errors
+  - id: python-lint
+    why: Type drift against the stubs.
+    run: $LINT
+oracle_cases: []
+deviations:
+  - what: A native error carries `num_retries` and `max_retries` taken from the Rust call, and the Python side adds nothing.
+    why: LiteLLM sets them in the retry loop; here the loop is Rust.
+out_of_scope:
+  - "Routing, retry, fallback and cooldown logic is B6020 and B6021. The native bridge is B6022. Router construction and settings JSON is B162's last part."
+  - "Other Router call types (embeddings, images, audio and the like) are plugged in by later parts."
+pitfalls:
+  - "Do not call `asyncio.run` or start a thread for `completion`; the native blocking method releases the GIL."
+  - "A stream's `hidden_params()` must be read on each access, never copied once."
+  - "A batch error item is an exception object in the list. Raising it hides the other results."
+  - "Do not decode the anthropic bytes: callers forward them as they are."
+review_level: standard
+budget:
+  max_changed_lines: 1200
+  max_new_expects: 0

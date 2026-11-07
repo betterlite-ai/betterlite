@@ -9,3 +9,6 @@ deviations:
   - what: LiteLLM's flush_queue returns without flushing when the injected flush_lock is None; BatchQueue always owns its flush mutex, so every flush is serialized, and a caller that cannot flush simply never calls flush.
     why: The lock is internal state of the injected primitive here, so there is nothing for a caller to omit; keeping it nullable would let two flushes overlap and hide the skip, while the caller's own loop decides whether a flush happens at all.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L54-L58
+  - what: A flush that delivers every event keeps the events that were enqueued while the send was in flight, where CustomBatchLogger.flush_queue runs log_queue.clear() after a normal send unless preserve_events_added_during_flush is set.
+    why: Events enqueued during the send would be lost, and no working setup can rely on that; LiteLLM's own langsmith, s3_v2 and zerobus loggers already opt in to keeping them.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L86-L89

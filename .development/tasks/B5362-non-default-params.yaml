@@ -1,0 +1,152 @@
+id: B5362
+title: Non-default parameter handling with transcription and image optional params
+description: >-
+  Before a call goes to a provider, LiteLLM works out which parameters the user really set, drops or rejects the ones the
+  provider can't take, and asks the provider config to map the rest. Build that shared stage in betterlite-context:
+  module `non_default_params` for the general helpers and `media_optional_params` for the transcription and image
+  generation entry points.
+
+
+  Parameters stay in `serde_json::Map<String, serde_json::Value>` because user kwargs are open. Everything else has
+  named fields. Provider work goes through a trait in `non_default_params`, `OptionalParamsMapper`, with one method for
+  the supported names and one for the mapping, since provider crates sit above this one. B5360's tags tell the caller
+  which mapper to pass, and the caller also passes the supported list where LiteLLM calls `get_supported_openai_params`.
+
+
+  `non_default_params` covers: `_should_drop_param`, `_get_non_default_params`, `_bedrock_route_for_request`,
+  `_remove_additional_properties` (removes the key only when its value is false), `_remove_strict_from_schema`,
+  `_remove_unsupported_params` (no supported list gives an empty map), `filter_out_litellm_params`,
+  `_provider_supports_vertex_params`, `PreProcessNonDefaultParams.base_pre_process_non_default_params` and its embedding
+  twin, `pre_process_non_default_params`, `remove_sensitive_keys_from_dict`, `pre_process_optional_params`,
+  `add_provider_specific_params_to_optional_params`, `_apply_openai_param_overrides`, `provider_rejectable_params`,
+  `get_non_default_params`, `get_standard_openai_params`, `get_non_default_completion_params`,
+  `peek_reasoning_summary_aliases`, `strip_reasoning_summary_aliases_from_optional_params` and
+  `get_non_default_transcription_params`.
+
+
+  The rules that matter most: `aws_bedrock_project_id` is skipped; other `aws_` keys are dropped unless the provider is
+  bedrock or starts with sagemaker; `hf_model_name` is dropped unless sagemaker; `vertex_` keys are dropped unless the
+  provider supports them. `remove_sensitive_keys_from_dict` drops keys containing "key", "secret", "access" or
+  "credential". `pre_process_optional_params` handles the function calling fallback: ollama sets format to json and
+  records `functions_unsupported_model`, `add_function_to_prompt` moves the functions into the prompt, and any other
+  provider raises UnsupportedParamsError with status 500 and "Function calling is not supported by {provider}.".
+  `add_provider_specific_params_to_optional_params` puts unknown params into `extra_body` for openai, azure,
+  text-completion-openai and the OpenAI-compatible providers, removes `EXTRA_BODY_ROUTING_KEYS` and runs B176's
+  `_ensure_extra_body_is_safe`. `provider_rejectable_params` is the non-default set minus `PROVIDER_UNVALIDATED_PARAMS`
+  (user, stream_options, stream, max_retries).
+
+
+  `media_optional_params` covers `get_optional_params_transcription` (L3510-L3597: the openai and azure branch, the groq
+  branch, the provider config path) and `get_optional_params_image_gen` (L3617-L3744: the provider config map, bedrock,
+  vertex_ai `n` and `size` through `_map_openai_size_to_vertex_ai_aspect_ratio`).
+
+
+  The oracle operation is `b5362`. Its Python adapter calls the `litellm.utils` function with fixture inputs. Where a
+  provider config is needed it passes a small fixture class, and the Rust side uses a test mapper with the same answers.
+scope:
+  paths:
+  - crates/betterlite-context/Cargo.toml
+  - crates/betterlite-context/src/non_default_params.rs
+  - crates/betterlite-context/src/non_default_params/**
+  - crates/betterlite-context/src/media_optional_params.rs
+  - crates/betterlite-context/src/media_optional_params/**
+  - tools/oracle/cases/helpers/non-default-params/**
+  - "tools/oracle/fuzz/corpus/helper_case/non_default_params-*"
+  - tools/oracle/helpers/b5362.py
+  - tools/oracle/helpers/b5362/**
+  - tools/oracle/src/helpers/context/b5362.rs
+  - tools/oracle/src/helpers/context/b5362/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3482-L3507
+  why: Drop decision, Bedrock route check and the non-default filter.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3510-L3744
+  why: Transcription and image generation entry points.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4104-L4145
+  why: Schema cleanup helpers. Provider tasks for hosted_vllm, watsonx and Gemini call them too.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L4181-L4431
+  why: Unsupported param removal, the pre-process class and the function calling fallback.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5049-L5142
+  why: extra_body handling, OpenAI overrides and the rejectable set.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L10235-L10289
+  why: The small entry points and the reasoning summary aliases.
+dod:
+- text: >-
+    Non-default filtering, drop decisions, `filter_out_litellm_params` and the pre-process rules for `aws_`,
+    `hf_model_name` and `vertex_` keys match LiteLLM on fixture params.
+  proof: [param-filters, oracle, helper-python]
+- text: >-
+    The function calling fallback gives the ollama result, the prompt result or the UnsupportedParamsError with status
+    500 and LiteLLM's message.
+  proof: [function-fallback, oracle, helper-python]
+- text: >-
+    `extra_body` gets unknown params for the listed providers only, routing keys are gone and B176's safety check runs
+    on the result.
+  proof: [extra-body, oracle, helper-python]
+- text: >-
+    `get_optional_params_transcription` and `get_optional_params_image_gen` match LiteLLM on every branch, including
+    the Vertex aspect ratio map.
+  proof: [media-params, oracle, helper-python]
+- text: Reasoning summary aliases are read and stripped as LiteLLM does, and sensitive keys are removed from a dict.
+  proof: [aliases-and-sensitive-keys, oracle, helper-python]
+- text: New helper corpus seeds call `b5362` and replay through the shared parser.
+  proof: [helper-case-corpus]
+checks:
+  optional:
+  - mutants
+  commands:
+  - id: param-filters
+    why: A filter keeps or drops the wrong key.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/^non_default_params::.*filter/)'
+  - id: function-fallback
+    why: A fallback path is absent or the error differs.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/^non_default_params::.*function_fallback/)'
+  - id: extra-body
+    why: extra_body handling leaks routing keys or runs for the wrong provider.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/^non_default_params::.*extra_body/)'
+  - id: media-params
+    why: A media branch is wrong.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/^media_optional_params::/)'
+  - id: aliases-and-sensitive-keys
+    why: Alias handling or key removal differs from the source.
+    run: cargo nextest run --locked -p betterlite-context --no-tests=fail -E 'test(/^non_default_params::.*(alias|sensitive)/)'
+  - id: helper-python
+    why: The Python side of b5362 is missing or fails its linters.
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5362)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers/b5362 && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5362/pyrightconfig.json
+  - id: helper-case-corpus
+    why: The corpus has no new b5362 seed.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/non_default_params-*")"
+      && grep -lE '^[[:space:]]+b5362:' tools/oracle/fuzz/corpus/helper_case/non_default_params-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/non-default-params/filters.yaml
+- tools/oracle/cases/helpers/non-default-params/pre-process.yaml
+- tools/oracle/cases/helpers/non-default-params/function-fallback.yaml
+- tools/oracle/cases/helpers/non-default-params/extra-body.yaml
+- tools/oracle/cases/helpers/non-default-params/transcription.yaml
+- tools/oracle/cases/helpers/non-default-params/image-generation.yaml
+- tools/oracle/cases/helpers/non-default-params/reasoning-aliases.yaml
+deviations:
+- what: Provider mapping goes through the `OptionalParamsMapper` trait where LiteLLM calls a config object.
+  why: Provider crates depend on betterlite-context, so this crate can't name their types.
+out_of_scope:
+- Embedding params are B5363, including the provider branches of `get_optional_params_embeddings`.
+- >-
+  `_remove_json_schema_refs` L4148-L4178 belongs to B1408 and the chat `get_optional_params` L4434-L5043 to B175.
+  The B157 task file lists the owner of every other function there.
+- Each provider's own mapping stays with that provider's task.
+pitfalls:
+- >-
+  `pre_process_non_default_params` tests `isinstance(non_default_params, list)` in its tools branch, but the value is a
+  dict, so the additionalProperties cleanup never runs at the pin. Don't run it either. The oracle case proves the
+  schema comes out untouched.
+- Don't treat a value of `None` as unset everywhere. Each filter compares with its own defaults, so read the default table it uses.
+- >-
+  The guard in `pre_process_optional_params` starts with `custom_llm_provider == "ollama" and ...` and its operator
+  order matters. Copy the condition as it is.
+- The test names must carry the words the checks filter on, such as `function_fallback` or `extra_body`.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

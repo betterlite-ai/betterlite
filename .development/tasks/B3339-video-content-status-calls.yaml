@@ -1,0 +1,148 @@
+id: B3339
+title: Video content and status calls
+description: >-
+  Build the four call-level functions of litellm/videos/main.py that fetch a finished video: video_content, avideo_content, video_status and avideo_status.
+  Put them in betterlite-core, next to the transports, as two modules: crates/betterlite-core/src/api/video_content_call.rs and crates/betterlite-core/src/api/video_status_call.rs.
+  Each module is a plain struct that holds its collaborators by constructor: the B3332 video provider selector, the B3333 content handler (content module) or the B3337 status handler (status module), the B247 logging handle, the B185/B186 error mapper, and the B198 request-timeout setting.
+  Each module has one error enum that wraps the mapped error.
+  The sync function takes an async_call flag (LiteLLM reads it with kwargs.pop("async_call", False) is True, so only the value true counts) and returns an enum with two cases: the finished result, or the pending future the handler returned.
+  The async function sets the flag to true, calls the sync function, and awaits the future when it gets one. LiteLLM hops through run_in_executor with a copied context; betterlite does not, because B198 carries the call context explicitly. This is listed under deviations.
+  The Python overloads of video_status (avideo_status=True returns a coroutine, False returns VideoObject) are type hints only and become the enum above.
+
+  Shared steps in video_content and video_status, in this order. (1) Take litellm_logging_obj and litellm_call_id from the extra kwargs. (2) When custom_llm_provider is none, call B672 decode_video_id_with_provider(video_id) and use its custom_llm_provider, or "openai" when that is none or empty. An explicit provider, even an empty string, is kept as given.
+  (3) Build GenericLiteLLMParams (B010) from the extra kwargs. (4) Turn the provider string into the LlmProviders enum; an unknown name fails here with the enum's own error. (5) Ask B3332 get_provider_video_config(model = none, provider); a none answer raises a ValueError-class error.
+  (6) Call update_from_kwargs on the logging object with model "", user from kwargs, optional_params = {video_id} and litellm_params = {litellm_call_id, video_id}, plus custom_llm_provider. (7) Call the handler.
+  Steps 2 to 7 all sit inside one try: every error, including the unsupported-provider error and the unknown-provider-name error, goes through exception_type (B185/B186) with model "", the provider string, and the call's local values. The async function wraps its own steps the same way, so an error can be mapped twice; B185 leaves an already-mapped error as it is.
+
+  video_content only. Signature: video_id, timeout (default none), custom_llm_provider, variant, extra_headers, extra_query, extra_body, and extra kwargs. The unsupported message is exactly "video support download is not supported for {custom_llm_provider}".
+  There is no mock_response branch and no change to the logging call type. It calls the B3333 video_content_handler with video_id, the provider config, provider, litellm_params, the logging object, timeout = timeout or the request-timeout setting (so 0 and none both fall back), extra_headers, client from kwargs, _is_async, and variant. extra_query and extra_body are accepted and never forwarded. api_key is not passed; the handler gets none.
+  avideo_content decodes the provider from video_id itself with the same rule before it calls video_content, and passes the resulting provider on.
+
+  video_status only. Signature: video_id, timeout (default 600), custom_llm_provider, extra_headers, extra_query, extra_body, and extra kwargs. The unsupported message is exactly "video status is not supported for {custom_llm_provider}".
+  Before the decode in step 2, check kwargs mock_response. When it is not none and is a string, parse it as JSON. Build a B3330 VideoObject from the resulting map and return it at once, with no provider lookup, logging or handler call. A mock reply is therefore also returned as a finished result when async_call is true.
+  After step 6, set the logging object's call_type to "video_retrieve" (CallTypes.video_retrieve, also for the async call; never "avideo_retrieve"). Then call the B3337 video_status_handler with video_id, the provider config, provider, litellm_params, the logging object, extra_headers, extra_body, timeout = timeout or the request-timeout setting, _is_async, and client from kwargs. extra_query is accepted and never forwarded.
+  Unlike video_content, the status function does forward extra_body to the handler (the handler itself then ignores it, which B3337 owns).
+  avideo_status does no provider decode of its own: it passes custom_llm_provider through as given, so the decode happens in video_status.
+
+  The request-timeout setting is B198's REQUEST_TIMEOUT (env REQUEST_TIMEOUT, default 6000 seconds). The 600 default only applies to the status signature when the caller passes no timeout.
+  HTTP cases for the status and content routes are owned by B3343, which registers the routes; this task has no route and no pure function an oracle helper can call, so it has no oracle cases. B3337 left the status HTTP cases to B3339 or B3343; they go to B3343.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/video_content_call.rs
+    - crates/betterlite-core/src/api/video_content_call/**
+    - crates/betterlite-core/src/api/video_status_call.rs
+    - crates/betterlite-core/src/api/video_status_call/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L272-L379
+    why: video_content, decorated with @client. Provider decode, config lookup, the unsupported message, pre-call logging update, the handler call and the exception_type wrap.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L382-L450
+    why: avideo_content, its own provider decode, the partial and copied-context run, and awaiting a coroutine result.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L869-L934
+    why: avideo_status, which passes custom_llm_provider through undecoded.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L937-L1082
+    why: The two video_status overloads and the runtime video_status with the mock branch, call type and handler call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7386-L7410
+    why: The video_content_handler parameter list the call must fill, including variant and the absent api_key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L576-L577
+    why: request_timeout, read from REQUEST_TIMEOUT with a default of 6000, which videos/main.py imports as DEFAULT_REQUEST_TIMEOUT.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L519-L532
+    why: CallTypes values for the video operations, including video_retrieve.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L2126-L2129
+    why: The router wraps these four functions by name, so their names and argument names must stay.
+dod:
+  - text: With no custom_llm_provider, video_content and video_status read it from the video id and fall back to "openai" when the decode gives none or empty; an explicit provider is never decoded.
+    proof: [provider-decode]
+  - text: avideo_content decodes the provider itself before calling video_content, and avideo_status passes the provider through undecoded.
+    proof: [async-provider-decode]
+  - text: A none provider config gives the exact message "video support download is not supported for {provider}" for content and "video status is not supported for {provider}" for status, and both go through exception_type.
+    proof: [unsupported-provider]
+  - text: An unknown provider name fails when the LlmProviders value is built and the error goes through exception_type, not past it.
+    proof: [unknown-provider]
+  - text: The logging object gets update_from_kwargs with model "", optional_params {video_id}, litellm_params {litellm_call_id, video_id} and the provider, before the handler is called.
+    proof: [logging-update]
+  - text: video_status sets call_type to "video_retrieve" for sync and async calls, and video_content leaves call_type unchanged.
+    proof: [call-type]
+  - text: video_status with a mock_response (JSON string or map) returns a VideoObject without a provider lookup, logging update or handler call; video_content has no mock branch.
+    proof: [status-mock-response]
+  - text: The handler gets timeout = timeout or the REQUEST_TIMEOUT setting, so 0 and none fall back; the status signature defaults timeout to 600 and the content signature to none.
+    proof: [timeout-fallback]
+  - text: Content forwards variant and client and never forwards extra_query or extra_body; status forwards extra_body and never forwards extra_query; neither passes an api_key.
+    proof: [forwarded-arguments]
+  - text: Only an async_call value of true makes the handler run async; the sync function returns the handler's pending future in that case, and the async functions await it.
+    proof: [async-dispatch]
+  - text: Errors from the handler are mapped by exception_type with model "" and the provider string, and an already-mapped error is not mapped again by the async wrapper.
+    proof: [error-mapping]
+  - text: Both modules compile with their error enums and constructors in betterlite-core and are covered by tests in both modules.
+    proof: [content-tests, status-tests]
+checks:
+  optional: []
+  commands:
+    - id: provider-decode
+      why: the video-id decode or the openai fallback is missing, or an explicit provider is decoded anyway
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_(content|status)_call::(.*::)?provider_decode_/)'
+    - id: async-provider-decode
+      why: avideo_content skips its own decode or avideo_status decodes where LiteLLM does not
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_(content|status)_call::(.*::)?async_provider_decode_/)'
+    - id: unsupported-provider
+      why: the unsupported-provider message differs between content and status or skips exception_type
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_(content|status)_call::(.*::)?unsupported_provider_/)'
+    - id: unknown-provider
+      why: an unknown provider name escapes exception_type
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_(content|status)_call::(.*::)?unknown_provider_/)'
+    - id: logging-update
+      why: the update_from_kwargs payload or its position before the handler call is wrong
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_(content|status)_call::(.*::)?logging_update_/)'
+    - id: call-type
+      why: status does not set video_retrieve, or content changes the call type
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_(content|status)_call::(.*::)?call_type_/)'
+    - id: status-mock-response
+      why: the status mock branch is missing, does not parse a string, or runs the provider lookup
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_status_call::(.*::)?mock_response_/)'
+    - id: timeout-fallback
+      why: a falsey timeout does not fall back to REQUEST_TIMEOUT or the signature defaults differ
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_(content|status)_call::(.*::)?timeout_fallback_/)'
+    - id: forwarded-arguments
+      why: extra_query, extra_body, variant, client or api_key reach the handler differently from LiteLLM
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_(content|status)_call::(.*::)?forwarded_arguments_/)'
+    - id: async-dispatch
+      why: the async_call flag is read loosely, or the async function does not await the pending future
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_(content|status)_call::(.*::)?async_dispatch_/)'
+    - id: error-mapping
+      why: handler errors skip exception_type or get mapped twice
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_(content|status)_call::(.*::)?error_mapping_/)'
+    - id: content-tests
+      why: the content call module has no tests or does not compile
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_content_call::/)'
+    - id: status-tests
+      why: the status call module has no tests or does not compile
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_status_call::/)'
+oracle_cases: []
+deviations:
+  - what: avideo_content and avideo_status await the sync function's pending future directly, with no executor thread hop and no copied context.
+    why: Python needs run_in_executor because the sync function can block; betterlite's handlers are async and the call context travels explicitly through B198, so the observable result is the same.
+  - what: The overloaded video_status signatures become one function that returns an enum of finished result or pending future.
+    why: Rust has no overloads on a flag value; the enum keeps the same two outcomes.
+out_of_scope:
+  - "video_generation and avideo_generation (videos/main.py 34-270), plus the option merge in litellm/videos/utils.py: B3338."
+  - "video_remix, avideo_remix, video_list and avideo_list (videos/main.py 453-866): B3340."
+  - "video_create_character, avideo_create_character, video_get_character and avideo_get_character (videos/main.py 1085-1337): B3341."
+  - "video_edit, avideo_edit, video_extension and avideo_extension (videos/main.py 1340-1611): B3342, the edit and extension calls."
+  - "The HTTP handlers video_content_handler and async_video_content_handler (B3333) and video_status_handler and async_video_status_handler (B3337)."
+  - "The @client lifecycle wrapper in litellm/utils.py around each call, owned by B012 and B157; this task only calls through it. The module-level llm_http_handler object in videos/main.py has no caller here: video_content and video_status use base_llm_http_handler from litellm.main."
+  - "Proxy routes /videos/{video_id} and /videos/{video_id}/content and their HTTP oracle cases: B3343."
+  - "The router factory wrappers around these functions (router.py 2126-2129): the router tasks."
+pitfalls:
+  - "video_content has no mock_response branch and does not set call_type, while video_status has both; do not give them the same body."
+  - "avideo_content decodes the provider before calling video_content, but avideo_status does not; both end up with the same provider because video_status decodes it when it gets none."
+  - "The call type is the string CallTypes.video_retrieve.value ('video_retrieve'), even on the async path, where the router and callbacks may expect avideo_retrieve."
+  - "Status forwards extra_body to the handler while content does not; neither forwards extra_query, and neither passes api_key."
+  - "The unsupported messages differ: 'video support download is not supported for {p}' for content and 'video status is not supported for {p}' for status."
+  - "'timeout or REQUEST_TIMEOUT' treats 0 as unset, so timeout=0 sends the 6000 second default; the status signature's own default is 600 and the content signature's is none."
+  - "An empty-string custom_llm_provider is kept and then fails the LlmProviders lookup; only none triggers the decode."
+  - "The mock response of video_status is returned before the provider decode and before any logging update, so a mock call never touches the provider config or the handler."
+  - "async_call is read with 'is True' after being popped from kwargs, so it never reaches GenericLiteLLMParams; a truthy non-bool value does not make the call async."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

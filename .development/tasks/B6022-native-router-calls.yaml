@@ -1,0 +1,97 @@
+id: B6022
+title: Native router calls in the Python crate
+description: >-
+  The Python `Router` has to reach B6020's and B6021's Rust calls. This task adds that bridge to crates/betterlite-python as the `router_call` family, with the same shape as B5659's `completion` family. It holds no routing logic. It moves JSON text across the language boundary, runs futures and wraps streams.
+
+
+  Family files, as B5659 describes them: `src/router_call.rs` has one `pub(crate) fn register(module: &Bound<'_, PyModule>) -> PyResult<()>` that adds the classes below, `src/router_call/**` holds the rest, and `python/betterlite/_native_router_call.pyi` types it all. `lib.rs` and `_native.pyi` get their `router_call` lines from the architect with a stub `register`, and this task never edits them. If the lines are missing when you start, stop and report a blocker.
+
+
+  `NativeRouter` is a `#[pyclass]` built once from a JSON settings text. The text is an object with `model_list` (a list of objects with `model_name`, `litellm_params` and optional `model_info`), `routing_strategy`, `num_retries`, `retry_policy`, `fallbacks`, `context_window_fallbacks`, `content_policy_fallbacks`, `cache_responses`, `default_priority`, `default_litellm_params`, `expose_router_debug_in_errors`, `timeout`, `allowed_fails` and `cooldown_time`. Deserialize it into the typed settings that B302, B016 and B020's parts already define and into `RouterCompletionParts` (B6020). A key none of them knows raises `NativeError` of type `ValueError` naming the key, so a typo is never ignored, the same rule as B002. `NativeRouter` owns the `RouterCompletion` and `RouterGeneric` objects with the HTTP client, the clock and the sleeper as its fields, so the crate has no static.
+
+
+  Methods, each taking one JSON text with the arguments (and for batches the model list or message lists) and giving JSON text:
+  `completion(request)` blocks inside `py.detach` on `pyo3_async_runtimes::tokio::get_runtime()`. `acompletion(request)`, `anthropic_messages(request)`, `batch_one_model_multiple_requests(request)` and `batch_fastest_response(request)` return awaitables through `future_into_py`. A finished answer is the response JSON with a `_hidden_params` key that holds B6020's hidden params, so the Python side can read response headers. A batch answer is a JSON list in order, where a failed item is a `NativeError` payload object with the key `error` set to true.
+
+
+  Streams. A chat stream result is a `NativeRouterChatStream`: `next_chunk()` blocks with the GIL released, `anext_chunk()` returns an awaitable, each gives chunk JSON text or None at the end, `close()` and `aclose()` close once, and `hidden_params()` gives the JSON of the current hidden params (they change when a mid-stream fallback adopts a new source). It wraps B6020's async wrapper or its `SyncFallbackStream` and is told which by the call that made it, behind a `tokio::sync::Mutex` as B5659 does for `NativeChatStream`. An anthropic messages stream result is a `NativeMessagesStream` over B6021's `MessagesStream`: `anext_chunk()` gives bytes or None, `aclose()`, `hidden_params()`, `fallback_headers_adopted()`, `has_buffered_provider_output()`, `chunks_json()`, `messages_json()` and `model()`. It has no blocking form, because the call has none.
+
+
+  Errors reuse B5659's `NativeError` and its JSON keys (`type`, `message`, `status_code`, `llm_provider`, `model`, `body`, `headers`, `num_retries`, `max_retries`). Conversions between JSON text and the typed Rust arguments sit in `src/router_call/convert.rs` and need no interpreter, so `cargo nextest` covers them. Test names there start with `request_`, `settings_` and `error_`. No panic may cross the boundary: a malformed text gives `NativeError`.
+scope:
+  paths:
+  - crates/betterlite-python/Cargo.toml
+  - crates/betterlite-python/src/router_call*
+  - crates/betterlite-python/src/router_call/**
+  - crates/betterlite-python/python/betterlite/_native_router_call.pyi
+  - crates/betterlite-python/tests/test_native_router_call.py
+  lint_tables: false
+references:
+  - url: https://github.com/PyO3/pyo3-async-runtimes
+    why: The `future_into_py` bridge, as B5659 uses it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L772-L1237
+    why: The constructor arguments that the settings text has to carry (read only; the constructor itself is B162's last part).
+dod:
+  - text: A settings text builds a router, an unknown key is refused by name, and a malformed text never panics.
+    proof: [router-settings]
+  - text: A request text turns into typed arguments for each method, and a bad one gives `NativeError` with no panic.
+    proof: [router-request]
+  - text: Every router error turns into `NativeError` JSON with the class name and fields, including the retry counts.
+    proof: [router-error]
+  - text: A blocking completion returns against a local server while another Python thread keeps running.
+    proof: [router-blocking]
+  - text: "`acompletion` and `anthropic_messages` run on the running event loop and two calls run alongside each other."
+    proof: [router-async]
+  - text: A chat stream and a messages stream give chunks, None at the end, current hidden params and a single close.
+    proof: [router-stream]
+  - text: Both batch helpers return in order with failures as error objects.
+    proof: [router-batch]
+  - text: The stubs pass strict basedpyright and the test file passes ruff.
+    proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: router-settings
+    why: A typo in a router setting is ignored, or a bad text panics.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^router_call::convert::tests::settings_/)'
+  - id: router-request
+    why: Arguments change on the way in.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^router_call::convert::tests::request_/)'
+  - id: router-error
+    why: A status code or retry count is lost on the way out.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^router_call::convert::tests::error_/)'
+  - id: router-blocking
+    why: A blocking call holds the GIL and stops the caller's other threads.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_native_router_call.py -k blocking
+  - id: router-async
+    why: The awaitable blocks the event loop.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_native_router_call.py -k async_calls
+  - id: router-stream
+    why: A stream hangs at its end, reports old hidden params or leaks its connection.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_native_router_call.py -k stream
+  - id: router-batch
+    why: A batch loses order or raises for one failed item.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_native_router_call.py -k batch
+  - id: python-lint
+    why: Stubs that drift from the native names break every typed caller.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+  - what: A settings key the router does not know raises `ValueError` at build time.
+    why: LiteLLM's `Router.__init__` takes keyword arguments and a wrong name is a `TypeError`; the native text has no signature, so the check is by key and has the same effect.
+  - what: The router takes no Python callables (callbacks, custom routing functions, `client`).
+    why: A Python object cannot drive the Rust call; B165 handles hooks that config names.
+out_of_scope:
+  - "B6020 and B6021 own the routing logic, B5659 owns `NativeSession`, `NativeChatStream` and `NativeError`, and B5078 owns the Python methods that call this bridge."
+  - "Building the settings text from `Router.__init__` arguments is B162's last part."
+  - "Other call types than chat completion and anthropic_messages are plugged in by their families later."
+pitfalls:
+  - "`unsafe_code = \"forbid\"` stays in Cargo.toml, so report a blocker if a PyO3 macro fails under it."
+  - "A `tokio::sync::Mutex` guard held across `next` makes `close` wait for a stalled read, so close through a cancel signal."
+  - "The hidden params of a stream change after a mid-stream fallback, so `hidden_params()` reads the live value on each call and never a copy taken at creation."
+  - "A batch item error is an object in the list, and an error that is raised for the whole call must not be mixed up with it."
+  - "A panic inside `future_into_py` becomes a Python exception without a `NativeError` payload, so return errors and never unwrap."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

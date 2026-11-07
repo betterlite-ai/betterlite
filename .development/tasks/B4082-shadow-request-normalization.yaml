@@ -1,0 +1,262 @@
+id: B4082
+title: Normalize shadow requests and verify guardrail snapshots
+description: >-
+  Build `betterlite-core::shadow_requests`, the part of the shadow eval logger that turns one logged
+  request into the chat-shaped conversation a shadow arm replays, and that decides whether a request
+  that a guardrail rewrote may be replayed at all. It has four parts. It adds no config key and no
+  environment variable. Add `betterlite-context` and `betterlite-websearch` as normal dependencies of
+  betterlite-core (core only has context as a dev-dependency today, and neither crate depends on core,
+  so there is no cycle).
+
+  Part 1, the surface table. `SurfaceOps` has three fields: a `chat_request` function, a `final_text`
+  function and a `wire_params` bool. `surface_ops(call_type: &str) -> Option<&'static SurfaceOps>`
+  is the sampling allowlist and returns None for anything but these five call types: "completion" and
+  "acompletion" (chat), "anthropic_messages" (Anthropic Messages) and "aresponses" and "responses"
+  (Responses API). An unknown call type means "do not sample". The chat row uses B4081's chat text
+  reader and has `wire_params` false. The Anthropic row uses the chat text reader and has `wire_params`
+  true. The Responses row uses B4081's Responses text reader and has `wire_params` true. Keep the
+  Responses row distinguishable from the Anthropic row (a `Surface` enum on the struct), because the
+  snapshot code in part 3 reads `input` for one and `messages` for the other.
+
+  The inputs are plain JSON objects (`serde_json::Map<String, Value>`): `kwargs` (the logger's call
+  details), `model_parameters` (the logged generation params) and the response value. Each
+  `chat_request` function returns a chat request object or an error. The chat row returns
+  `model_parameters` plus a `messages` key, where `messages` is `kwargs["messages"]` filtered down to
+  its object elements (a missing or non-array value gives an empty list). The
+  `proxy_wire_body(kwargs)` helper is `kwargs.litellm_params.proxy_server_request.body` when each step is
+  an object, otherwise an empty object. The Anthropic row builds a request from the wire body keys that
+  are in (B1117's `translatable_anthropic_params`, which is messages, metadata, system, tool_choice,
+  tools, thinking, output_format, output_config, stop_sequences, plus max_tokens, temperature, top_p,
+  top_k and reasoning_effort) minus messages and system. Then it sets `model` to the string of
+  `kwargs.model` ("" when absent or falsy), `messages` to `kwargs.messages` checked as an array of objects
+  (null or missing counts as an empty array, anything else that is not an array of objects is an error),
+  and `system` to `kwargs.system` or else the wire body `system` when that is not null. It then calls
+  B967's `translate_anthropic_to_openai` and uses only the request half of the result. The Responses row
+  reads `instructions` the same way (`kwargs.instructions` or else the wire body's, when not null), builds a
+  Responses request from the wire body keys that are in the field list of `ResponsesAPIOptionalRequestParams`
+  (see the references: include, instructions, max_output_tokens, metadata, parallel_tool_calls,
+  previous_response_id, reasoning, store, background, stream, temperature, text, tool_choice, tools, top_p,
+  truncation, user, service_tier, safety_identifier, prompt, max_tool_calls, prompt_cache_key,
+  prompt_cache_retention, prompt_cache_options, stream_options, top_logprobs, partial_images,
+  context_management) with `instructions` set on top, and calls B908's
+  `transform_responses_api_request_to_chat_completion_request` with model = `kwargs.model` as a string,
+  input = `kwargs.messages` (LiteLLM stores the raw Responses `input` there), no provider and no stream
+  override. The result must be an object. Neither surface reads the logged `model_parameters`, because the
+  logged optional params switch dialect per provider path.
+
+  Part 2, the hosted web search gate. `request_has_hosted_web_search(request)` is true when
+  `web_search_options` is present and not null (an empty object counts), or when `tools` is an array that
+  holds an object tool whose `type` is not "function" and for which B4111's `is_web_search_tool_responses`
+  is true. A tool with `type: "function"` is never hosted search, even the `litellm_web_search` function
+  tool. A `tools` value that is not an array gives false.
+
+  Part 3, the guardrail snapshot. A guardrail entry is the object under
+  `metadata.standard_logging_guardrail_information` (an array; a non-array gives no entries and
+  non-object entries are skipped). The entry's `guardrail_mode` is one string or an array of strings.
+  `guardrail_is_non_mutating(entry, allowed_modes)` is true when every mode is a string in the allowed
+  set; a missing, null or non-string mode makes it false, and an empty array makes it true. The shared
+  non-mutating set is during_call, post_call, logging_only, during_mcp_call, post_mcp_call and
+  realtime_input_transcription. `request_mutating_guardrail_ran(metadata)` is true when any entry is not
+  non-mutating under that set, so unknown modes such as pre_call and pre_mcp_call, and a missing mode,
+  count as mutating. `request_guardrail_fingerprint(metadata)` keeps the entries that are not
+  non-mutating under the set without logging_only (so a logging_only entry still counts here), serializes
+  that list as JSON with sorted object keys and returns the SHA-256 hex digest, or None when it cannot
+  serialize. Use the sha2 and serde_json already in the workspace; sort keys by serializing through a
+  sorted map. Values with no JSON form do not exist in a `serde_json::Value`, so the None branch is kept
+  only for a serialization error from serde_json.
+
+  `GuardrailRequestSnapshot` is an immutable struct with `body` and `fingerprint`.
+  `GuardrailRequestSnapshot::capture(body, metadata) -> Option<Self>` returns None when no
+  request-mutating guardrail ran or the fingerprint is None. Otherwise it stores a copy of the body made
+  with B2204's `independent_snapshot`, so later changes to the request never reach the snapshot.
+  `post_guardrail_kwargs(kwargs, request_metadata, surface, snapshot) -> Option<Map>` returns None when
+  the snapshot is missing or its fingerprint differs from the fingerprint of the current metadata (the
+  guardrail history changed after capture, so the snapshot is stale). Otherwise it returns a copy of
+  `kwargs` with `messages` set to the snapshot body's `input` for the Responses surface and `messages`
+  for the others, `system` and `instructions` set from the body (null when the body lacks them), and
+  `litellm_params.proxy_server_request.body` replaced by the snapshot body (other `litellm_params` and
+  `proxy_server_request` keys stay).
+
+  Part 4, the judgeable sample. `judgeable_sample(surface, kwargs, model_parameters, response)` returns
+  Some((messages, params, real_text)) or None. In order: return None when hosted web search is present in
+  the wire body (for `wire_params` surfaces) or in `model_parameters` (for the chat surface); run the
+  surface's `chat_request`; return None when it errors or when the resulting request has hosted web
+  search; take its `messages` as an array whose items are objects (items that are typed objects are
+  dumped without null fields first; a non-array or any non-object item is an error, which also gives
+  None, and a failure is logged at debug level only); compute `real_text` with the surface's final text
+  function; return None when `messages` is empty or `real_text` is empty. `params` is every key of the
+  request except model, messages, stream, stream_options and metadata, dropping values that are null or
+  an empty array (an empty object or empty string stays). A rejected shape is skipped, never an error to
+  the caller.
+
+  The hook that calls these functions (`async_log_success_event`) and the place that stores the snapshot
+  on the logging object are not part of this task; see out_of_scope. Public items need real types and a
+  `ShadowRequestError` enum for the failures above; no `unwrap`, no `expect`.
+
+scope:
+  paths:
+    - Cargo.lock
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/shadow_requests.rs
+    - crates/betterlite-core/src/shadow_requests/**
+    - tools/oracle/cases/helpers/shadow-requests/**
+    - tools/oracle/helpers/b4082.py
+    - tools/oracle/helpers/b4082/**
+    - tools/oracle/src/helpers/core_ops/b4082.rs
+    - tools/oracle/src/helpers/core_ops/b4082/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L72-L135
+    why: Shared constants, the lenient shape adapters, chat message filtering, the proxy wire body reader and the Anthropic param key set.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L93-L168
+    why: The three chat_request functions, one per surface, with their parameter sources.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L280-L303
+    why: SurfaceOps and the three rows; membership in the table is the sampling allowlist.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L305-L362
+    why: Non-mutating mode set, mutating-guardrail detection, the fingerprint and GuardrailRequestSnapshot.capture.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L365-L388
+    why: _post_guardrail_kwargs rebuilds the call details from the verified snapshot.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L391-L450
+    why: Unforwarded keys, hosted web search check, _judgeable_sample and the _SURFACE_OPS table.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/shadow_eval_logger.py#L976-L992
+    why: The caller's use of the table and the snapshot, which fixes when post_guardrail_kwargs is needed (wire_params surfaces with a mutating guardrail).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1960-L1990
+    why: The only caller of GuardrailRequestSnapshot.capture, with the body keys excluded from the snapshot.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L566-L617
+    why: independent_snapshot, used by capture; owned by B2204.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/adapters/transformation.py#L420-L431
+    why: translatable_anthropic_params, the exact key list the Anthropic row copies.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/openai.py#L1277-L1308
+    why: ResponsesAPIOptionalRequestParams, whose field names are the Responses wire body keys that are copied.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/websearch_interception/tools.py#L126-L160
+    why: is_web_search_tool_responses, owned by B4111, used by the hosted web search check.
+
+dod:
+  - text: >-
+      surface_ops returns a row for exactly completion, acompletion, anthropic_messages, aresponses and
+      responses, with wire_params false only for the two chat names, and None for any other call type,
+      including an empty string and "embedding".
+    proof: [surface-tests, shadow-requests-oracle]
+  - text: >-
+      The chat row keeps model_parameters and sets messages to the object elements of kwargs.messages;
+      a missing messages value, a string and an array of strings all give an empty messages list.
+    proof: [surface-tests, shadow-requests-oracle]
+  - text: >-
+      The Anthropic row takes system from kwargs.system before the wire body system, copies only the
+      allowed wire body keys, ignores model_parameters, and returns the translated chat request (system
+      prompt becomes the first system message); a kwargs.messages that is not an array of objects is a
+      rejected shape.
+    proof: [surface-tests, shadow-requests-oracle]
+  - text: >-
+      The Responses row builds the chat request from kwargs.messages as the raw input plus the wire body
+      keys of the optional Responses params, with instructions taken from kwargs before the wire body
+      and mapped to a system message, and max_output_tokens mapped to max_tokens; keys outside the
+      Responses param list (for example a made-up key) never reach the request.
+    proof: [surface-tests, shadow-requests-oracle]
+  - text: >-
+      request_has_hosted_web_search is true for a non-null web_search_options (including {}) and for a
+      tool of type web_search or web_search_preview, and false for a function tool named litellm_web_search,
+      for tools that is not an array, and for web_search_options null.
+    proof: [web-search-gate-tests, shadow-requests-oracle]
+  - text: >-
+      request_mutating_guardrail_ran is false for no entries, for entries whose modes are all in the
+      non-mutating set (modes given as one string or an array), and true for pre_call, for an unknown
+      mode, for an entry without guardrail_mode, and for a non-string mode; non-object entries are
+      skipped.
+    proof: [guardrail-tests, shadow-requests-oracle]
+  - text: >-
+      request_guardrail_fingerprint is equal for two metadata values whose relevant entries match
+      regardless of object key order, differs when a relevant entry changes, ignores a post_call-only
+      entry, but changes when a logging_only entry is added, and is 64 lowercase hex characters.
+    proof: [guardrail-tests, shadow-requests-oracle]
+  - text: >-
+      GuardrailRequestSnapshot::capture returns None when no mutating guardrail ran and Some otherwise;
+      the stored body is an independent copy, so changing the original body afterward does not change
+      the snapshot, and the body's litellm_parent_otel_span placeholder rules follow B2204.
+    proof: [guardrail-tests, shadow-requests-oracle]
+  - text: >-
+      post_guardrail_kwargs returns None for a missing snapshot and for a snapshot whose fingerprint
+      differs from the current metadata, and otherwise returns kwargs with messages from input
+      (Responses) or messages (others), system, instructions and proxy_server_request.body taken from
+      the snapshot, keeping every other kwargs key.
+    proof: [guardrail-tests, shadow-requests-oracle]
+  - text: >-
+      judgeable_sample returns None for hosted web search in the wire body or in the translated request,
+      for an empty conversation, for empty real text and for a chat_request error, and otherwise returns
+      the messages, the forwardable params (model, messages, stream, stream_options and metadata dropped;
+      null and [] dropped; {} and "" kept) and the real text.
+    proof: [sample-tests, shadow-requests-oracle]
+  - text: The oracle cases run the same inputs through LiteLLM and betterlite and agree.
+    proof: [shadow-requests-oracle, helper-python]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: surface-tests
+      why: the surface table or the per-surface request building tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^shadow_requests::surfaces::/)'
+    - id: web-search-gate-tests
+      why: the hosted web search gate tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^shadow_requests::web_search::/)'
+    - id: guardrail-tests
+      why: the guardrail mode, fingerprint, snapshot or post-guardrail kwargs tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^shadow_requests::guardrails::/)'
+    - id: sample-tests
+      why: the judgeable sample tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^shadow_requests::sample::/)'
+    - id: helper-python
+      why: the pinned Python adapter for the shadow request helper is absent or fails lint and type checks
+      run: test -f tools/oracle/helpers/b4082.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b4082.py && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: shadow-requests-oracle
+      why: shadow request normalization or snapshot checks differ from pinned LiteLLM
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/shadow-requests)" && cargo build --locked -p betterlite-oracle && target/debug/betterlite-oracle tools/oracle/cases/helpers/shadow-requests
+
+oracle_cases:
+  - tools/oracle/cases/helpers/shadow-requests/chat-messages-filtered.yaml
+  - tools/oracle/cases/helpers/shadow-requests/chat-params-forwarded.yaml
+  - tools/oracle/cases/helpers/shadow-requests/anthropic-system-from-wire-body.yaml
+  - tools/oracle/cases/helpers/shadow-requests/anthropic-system-from-kwargs.yaml
+  - tools/oracle/cases/helpers/shadow-requests/responses-input-and-instructions.yaml
+  - tools/oracle/cases/helpers/shadow-requests/responses-max-output-tokens.yaml
+  - tools/oracle/cases/helpers/shadow-requests/unknown-call-type.yaml
+  - tools/oracle/cases/helpers/shadow-requests/hosted-web-search-skipped.yaml
+  - tools/oracle/cases/helpers/shadow-requests/function-web-search-tool-sampled.yaml
+  - tools/oracle/cases/helpers/shadow-requests/empty-reply-skipped.yaml
+  - tools/oracle/cases/helpers/shadow-requests/mutating-guardrail-detected.yaml
+  - tools/oracle/cases/helpers/shadow-requests/non-mutating-guardrail-modes.yaml
+  - tools/oracle/cases/helpers/shadow-requests/fingerprint-key-order.yaml
+  - tools/oracle/cases/helpers/shadow-requests/fingerprint-logging-only-counts.yaml
+  - tools/oracle/cases/helpers/shadow-requests/snapshot-stale-fingerprint.yaml
+  - tools/oracle/cases/helpers/shadow-requests/snapshot-replaces-request-body.yaml
+
+deviations:
+  - what: The fingerprint is the SHA-256 of serde_json's compact sorted-key text, so its hex value differs from LiteLLM's (json.dumps with spaces after separators, default=str).
+    why: The fingerprint is only compared inside one process and never stored or shown, and docs/compatibility.md leaves json.dumps formatting out; the oracle cases compare whether two fingerprints are equal, not their text.
+  - what: Request shapes are checked as serde_json values, so a request that is not an object, or a messages value that is not an array of objects, is a rejected shape (sample skipped) before any translation.
+    why: Python's lenient Mapping and tuple adapters accept more container types; JSON input only has objects and arrays, and a rejected shape is skipped in both.
+  - what: LiteLLM's blanket `except Exception` around request normalization becomes the typed ShadowRequestError, and any such error gives None with a debug log.
+    why: Same skip behavior without catching panics; the cause stays visible in the log line.
+
+out_of_scope:
+  - "ShadowEvalLogger.async_log_success_event, which calls surface_ops, picks post_guardrail_kwargs for wire_params surfaces and calls judgeable_sample, has no owner yet; see the notes in the planner report."
+  - "The final-text readers (_chat_final_text, _responses_final_text), routing decision readers and result records: B4081."
+  - "Active jobs, _sampled_jobs, _direction_admits, _scope_admits, _sample_hits and the jobs cache: B4083."
+  - "Shadow call and blind judge execution (_call_router_shadow, _call_judge, the judge prompt and PairwiseVerdict): B4084."
+  - "Budget gates and the per-arm pipeline (_run_shadow_eval, _run_shadow_arm): B4085."
+  - "Storing the snapshot on the logging object and calling GuardrailRequestSnapshot.capture after the guardrails ran (litellm_pre_call_utils.py L1960-L1990, litellm_logging.py L723 and L3478-L3500): the proxy pre-call and logging tasks that own those files."
+  - "translate_anthropic_to_openai (B967), translatable_anthropic_params (B1117), transform_responses_api_request_to_chat_completion_request (B908), independent_snapshot (B2204) and is_web_search_tool_responses (B4111): used here, not rebuilt."
+
+pitfalls:
+  - 'A guardrail entry with no `guardrail_mode` is request-mutating (the mode list becomes `[None]`), so the sample fails closed and needs a matching snapshot; only an empty `guardrail_mode` array is non-mutating.'
+  - '`logging_only` is non-mutating for request_mutating_guardrail_ran but not for the fingerprint, so adding a logging_only entry changes the fingerprint and invalidates the snapshot.'
+  - 'The Anthropic row ignores `model_parameters` on purpose, and `system` falls back from kwargs to the wire body with an `or`, so an empty string in kwargs falls through to the wire body value.'
+  - 'For Responses, `kwargs["messages"]` is the raw `input` (a string, chat-shaped dicts or item dicts), not a chat conversation, and `previous_response_id` and other surface-only keys must still not reach the shadow call.'
+  - 'post_guardrail_kwargs overwrites `system` and `instructions` with null when the snapshot body lacks them, so a wire-body system prompt from before the guardrail cannot leak back in.'
+  - 'The hosted web search check skips tools with `type: "function"` first, so the standard `litellm_web_search` function tool is replayable even though is_web_search_tool_responses matches it.'
+  - 'Empty `{}` and "" param values are forwarded; only null and an empty array are dropped, and `web_search_options: {}` already counts as hosted search.'
+
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

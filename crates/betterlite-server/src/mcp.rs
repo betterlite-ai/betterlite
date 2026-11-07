@@ -1,5 +1,7 @@
+pub mod active_subjects;
 pub mod backfills;
 pub mod catalog_guard;
+pub mod live_admission;
 pub mod management_access;
 pub mod management_visibility;
 pub mod oauth_caches;
@@ -8,4 +10,6 @@ pub mod outbound_credentials;
 pub mod search_handlers;
 pub mod semantic_filter;
 pub mod server_writes;
+pub mod source_reads;
 pub mod tool_search;
+pub mod tool_session_reads;
