@@ -42,8 +42,8 @@ pub fn finish_reasons(choices: &[MetadataMap]) -> Vec<String> {
     reasons
 }
 
-pub(super) fn text_choice(content: Option<&str>, finish_reason: Option<&str>) -> MetadataMap {
-    let message = choice_message("assistant", content, None, None);
+pub(super) fn text_choice(content: &str, finish_reason: Option<&str>) -> MetadataMap {
+    let message = choice_message("assistant", Some(content), None, None);
     BTreeMap::from([
         ("finish_reason".to_owned(), optional_text(finish_reason)),
         ("message".to_owned(), OtelModelValue::Object(message)),
@@ -58,7 +58,7 @@ where
     if parts.is_empty() {
         return Vec::new();
     }
-    vec![text_choice(Some(&parts.join("\n\n")), None)]
+    vec![text_choice(&parts.join("\n\n"), None)]
 }
 
 pub(super) fn choice_message(

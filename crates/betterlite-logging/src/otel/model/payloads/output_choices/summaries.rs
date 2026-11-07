@@ -1,4 +1,4 @@
-use super::{choice_message, joined_choice, optional_text, text_choice};
+use super::{joined_choice, text_choice};
 use crate::otel::model::metadata::wire::MetadataMap;
 use crate::otel::model::payloads::helpers::{dicts, float_value};
 use crate::otel::model::utils::coercion::{OtelModelValue, as_int};
@@ -24,10 +24,10 @@ fn completion_choice(choice: MetadataMap) -> MetadataMap {
 fn text_completion_choice(choice: &MetadataMap, text: &str) -> MetadataMap {
     let mut rewritten = choice.clone();
     rewritten.remove("text");
-    let message = choice_message("assistant", Some(text), None, None);
-    rewritten.insert("message".to_owned(), OtelModelValue::Object(message));
     let finish_reason = choice.get("finish_reason").and_then(OtelModelValue::as_str);
-    rewritten.insert("finish_reason".to_owned(), optional_text(finish_reason));
+    for (key, value) in text_choice(text, finish_reason) {
+        rewritten.insert(key, value);
+    }
     rewritten
 }
 
@@ -46,7 +46,7 @@ fn page_markdown(page: &MetadataMap) -> Option<String> {
 
 pub(super) fn transcription_choices(response: &MetadataMap) -> Vec<MetadataMap> {
     match response.get("text").and_then(OtelModelValue::as_str) {
-        Some(text) if !text.is_empty() => vec![text_choice(Some(text), None)],
+        Some(text) if !text.is_empty() => vec![text_choice(text, None)],
         Some(_) | None => Vec::new(),
     }
 }
@@ -174,7 +174,7 @@ pub(super) fn binary_choices(response: &MetadataMap) -> Vec<MetadataMap> {
     let Some(size) = response.get("num_bytes").and_then(as_int) else {
         return Vec::new();
     };
-    vec![text_choice(Some(&binary_summary(response, size)), None)]
+    vec![text_choice(&binary_summary(response, size), None)]
 }
 
 fn binary_summary(response: &MetadataMap, size: i64) -> String {
