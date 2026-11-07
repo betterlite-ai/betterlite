@@ -1,5 +1,6 @@
 pub mod admitted_key;
 pub mod agent;
+pub mod agent_access;
 pub mod agent_access_groups;
 pub mod agent_caller;
 pub mod agent_identity;

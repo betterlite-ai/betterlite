@@ -15,6 +15,7 @@ betterlite-config = { path = "../betterlite-config" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-prompts = { path = "../betterlite-prompts" }
 betterlite-redact = { path = "../betterlite-redact" }
+chrono.workspace = true
 fancy-regex = "0.19.2"
 futures-util = { version = "0.3.34", default-features = false, features = ["alloc"] }
 hex.workspace = true

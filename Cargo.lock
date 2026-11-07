@@ -1509,6 +1509,7 @@ dependencies = [
  "betterlite-http",
  "betterlite-prompts",
  "betterlite-redact",
+ "chrono",
  "fancy-regex 0.19.2",
  "futures-util",
  "hex",
@@ -2255,10 +2256,14 @@ dependencies = [
 name = "betterlite-router"
 version = "0.1.0"
 dependencies = [
+ "betterlite-error",
+ "betterlite-redis",
  "indexmap 2.14.2",
+ "prometheus-client",
  "rand 0.10.3",
  "regex",
  "rstest",
+ "rust_decimal",
  "serde",
  "serde_json",
  "thiserror",

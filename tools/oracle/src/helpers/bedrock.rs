@@ -1,6 +1,6 @@
 helper_group! {
-    "agentcore_search_reply" => agentcore_search_reply, "b3726" => b3726, "b5840" => b5840,
-    "b5961" => b5961, "bedrock_assume_role" => assume_role,
+    "agentcore_search_reply" => agentcore_search_reply, "b3456" => b3456, "b3457" => b3457,
+    "b3726" => b3726, "b5840" => b5840, "b5961" => b5961, "bedrock_assume_role" => assume_role,
     "bedrock_aws_endpoints" => aws_endpoints, "bedrock_aws_settings" => aws_settings,
     "bedrock_claude_invoke" => claude_invoke, "bedrock_converse_call" => converse_call,
     "bedrock_converse_content" => converse_content, "bedrock_converse_events" => converse_events,

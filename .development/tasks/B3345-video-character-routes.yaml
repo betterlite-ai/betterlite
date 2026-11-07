@@ -19,7 +19,7 @@ description: >-
   field), and the literal "openai". The result is written to data["custom_llm_provider"]. B004's
   base_process_llm_request is called with the VideoCreateCharacter core entry (LiteLLM route_type "avideo_create_character"), model=None and the usual
   user_model, user_temperature, user_request_timeout, user_max_tokens, user_api_base and version values. The entry's
-  dispatch calls B3341's avideo_create_character; B004 owns the response headers and _handle_llm_api_exception; every
+  dispatch calls the SDK function B3341's avideo_create_character or the router wrapper, as the Dispatch paragraph says; B004 owns the response headers and _handle_llm_api_exception; every
   exception from the call goes through that handler.
   After a successful call, and only when target_model_names gave a name, the response id is encoded: provider is the
   response's _hidden_params custom_llm_provider, else the resolved provider, else "openai"; model id is _hidden_params
@@ -33,7 +33,7 @@ description: >-
   which reads the cached body and treats an empty GET body as {}), the provider decoded from the id, and "openai".
   When the decoded model id is truthy and a router exists, B844's resolve_model_name_from_model_id is asked for a
   model name, and a non-empty answer is stored as data["model"]; with no router or no answer, data has no model key.
-  B004 is called the same way with the VideoGetCharacter entry (route_type "avideo_get_character"), and its dispatch calls B3341's avideo_get_character. After success, only when the original path
+  B004 is called the same way with the VideoGetCharacter entry (route_type "avideo_get_character"), and its dispatch follows the same plan_video_route choice between B3341's avideo_get_character and the router wrapper. After success, only when the original path
   value began with the literal "character_", the response id is encoded again: provider is the decoded provider, else
   the resolved provider, else "openai"; the model id is the decoded model id. A path value that does not start with
   "character_" gets the provider's response back unchanged. B672's encoder returns an id unchanged when it already
@@ -41,7 +41,7 @@ description: >-
 
   Dispatch. Fill the two core entries B014 registers for these calls: operation/video_create_character.rs with
   dispatch/video_create_character.rs and operation/video_get_character.rs with dispatch/video_get_character.rs. Each
-  replaces its NotBuilt stub and stub test. Leave operation.rs and dispatch.rs as they are.
+  replaces its NotBuilt stub and stub test. Leave operation.rs and dispatch.rs as they are. Both LiteLLM handlers go through route_request, so each entry first calls B6460's plan_video_route (VideoCallKind CreateCharacter or GetCharacter). A Direct plan calls B3341's SDK function. A Router plan calls the matching VideoRouterCalls method (avideo_create_character or avideo_get_character). A NotFound plan returns the model-not-found error. VideoRouterCalls and VideoRouteView are injected into the entries, because betterlite-core cannot import sdk or router. At the pin a call with a model gets no SDK fallback: the Router.avideo_* wrapper is an async_wrapper, so route_llm_request.py L700-L706 gets an unawaited coroutine and a router error surfaces at the caller's await, outside the try. The router error reaches the client and the entry never retries the SDK function.
 
   No new byte decoder: the body and form decoding stay with B1100 and B1101, so there is no fuzz target. Count
   about 130 nonblank, non-comment LiteLLM lines (endpoints.py L516-L722); budget 220 implementation, 260 tests,

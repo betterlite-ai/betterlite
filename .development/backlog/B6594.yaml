@@ -1,0 +1,14 @@
+id: B6594
+milestone: M9 agents and mcp
+title: MCP server utils for tool names, env references and headers
+status: todo
+depends_on: [B6590]
+file: null
+covers:
+  - "litellm/proxy/_experimental/mcp_server/utils.py"
+parent: null
+split_from: B136
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
