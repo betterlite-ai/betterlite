@@ -215,6 +215,38 @@ fn a_call_that_swallows_a_health_failure_cannot_record_success() {
 }
 
 #[test]
+fn an_async_call_that_swallows_a_health_failure_cannot_record_success() {
+    let clock = || Duration::from_millis(10);
+    let policy = gate(3);
+    let first = ready(run_async(&policy, &clock, "get", |guard| async move {
+        let _event = guard.swallow(connection_failure());
+        Ok::<Option<u32>, TestError>(None)
+    }));
+    let second = ready(run_async(&policy, &clock, "get", |guard| async move {
+        let _event = guard.swallow(connection_failure());
+        Ok::<Option<u32>, TestError>(None)
+    }));
+    let third = ready(run_async(&policy, &clock, "get", |guard| async move {
+        let _event = guard.swallow(connection_failure());
+        Ok::<Option<u32>, TestError>(None)
+    }));
+    assert_eq!(first.expect("the breaker is closed").value, None);
+    assert_eq!(second.expect("the breaker is closed").value, None);
+    assert_eq!(third.expect("the breaker is closed").value, None);
+    assert_eq!(
+        policy_status(&policy),
+        Status {
+            state: State::Open,
+            generation: 1,
+            failure_count: 3,
+            hard_failure_count: 3,
+            timeout_count: 0,
+        },
+        "the guard clone shares the admission, so each swallowed failure survives the settle"
+    );
+}
+
+#[test]
 fn a_call_that_swallows_a_non_health_failure_still_records_success() {
     let clock = || Duration::from_millis(10);
     let policy = gate(3);
