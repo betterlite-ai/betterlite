@@ -336,5 +336,64 @@ call:
                 data: [DONE]
 
 
+        - arun_thread: false
+          stream: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - status: 200
+              headers: {content-type: text/event-stream}
+              body: |
+                event: x
+                event:
+
+                data: {"a":1}
+
+                id: 1
+                id:
+
+                data: {"a":2}
+
+                event: thread.foo
+                event:
+
+                data: {"a":3}
+
+                data: [DONE]
+
+
+        - arun_thread: false
+          stream: true
+          request: {thread_id: thread_a, assistant_id: asst_a, additional_instructions: extra, instructions: base, metadata: {tag: x}, model: gpt-4o-mini, tools: [{type: code_interpreter}]}
+          replies:
+            - status: 200
+              headers: {content-type: text/event-stream}
+              body: |
+                event: thread.run.step.created
+                data: {"id":"step_1","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"tool_calls","status":"in_progress","step_details":{"type":"tool_calls","tool_calls":[]}}
+
+                event: thread.run.step.delta
+                data: {"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"tool_calls","tool_calls":[{"index":0,"type":"function","id":"c"}]}}}
+
+                event: thread.run.step.delta
+                data: {"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"tool_calls","tool_calls":[{"index":0,"type":"code_interpreter","id":"c"}]}}}
+
+                event: thread.run.step.delta
+                data: {"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"message_creation","message_creation":{}}}}
+
+                event: thread.run.step.completed
+                data: {"id":"step_1","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"message_creation","status":"completed","step_details":{"type":"message_creation","message_creation":{}}}
+
+                event: thread.message.created
+                data: {"id":"msg_1","object":"thread.message","created_at":1700000000,"thread_id":"thread_a","role":"assistant","status":"in_progress","content":[]}
+
+                event: thread.message.delta
+                data: {"id":"msg_1","object":"thread.message.delta","delta":{"content":[{"index":0,"type":"text"},{"index":1,"type":"refusal"},{"index":2,"type":"text","text":{"value":"hi","annotations":[{"index":0,"type":"file_citation","file_citation":{"file_id":"f"}}]}}]}}
+
+                event: thread.created
+                data: {"id":"thread_a","object":"thread","created_at":1700000000,"metadata":{},"tool_resources":{"code_interpreter":{},"file_search":{}}}
+
+                data: [DONE]
+
+
 env: {}
 compare: {ignore: []}

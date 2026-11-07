@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::mem;
 use std::str;
 
 use serde_json::error::Category;
@@ -19,31 +18,25 @@ pub enum FrameOutcome {
 }
 // The SDK wraps thread.* events and yields other payloads bare, raising when one carries an error key.
 pub fn decode_run_event(bytes: &[u8]) -> Result<FrameOutcome, ThreadRunsError> {
-    let frame = event_and_data(bytes);
-    if frame.1.starts_with(b"[DONE]") {
+    let (event, data, present) = event_and_data(bytes);
+    if data.starts_with(b"[DONE]") {
         return Ok(FrameOutcome::End);
     }
-    if !frame.2 {
+    if !present {
         return Ok(FrameOutcome::Skip);
     }
-    let value = serde_json::from_slice::<Value>(&frame.1).map_err(classify)?;
-    if let Some(name) = frame
-        .0
-        .as_deref()
-        .filter(|name| name.starts_with("thread."))
-    {
+    let value = serde_json::from_slice::<Value>(&data).map_err(classify)?;
+    if let Some(name) = event.as_deref().filter(|name| name.starts_with("thread.")) {
         return Ok(FrameOutcome::Event(Box::new(typed_event(name, value)?)));
     }
     if let Some(error) = provider_error(&value) {
         return Err(error);
     }
-    match value.get("event").and_then(Value::as_str) {
-        Some(name) => {
-            let data = value.get("data").cloned().unwrap_or(Value::Null);
-            Ok(FrameOutcome::Event(Box::new(typed_event(name, data)?)))
-        }
-        None => Ok(FrameOutcome::Event(Box::new(RunEvent::Bare(value)))),
+    if let Some(name) = value.get("event").and_then(Value::as_str) {
+        let payload = value.get("data").cloned().unwrap_or(Value::Null);
+        return Ok(FrameOutcome::Event(Box::new(typed_event(name, payload)?)));
     }
+    Ok(FrameOutcome::Event(Box::new(RunEvent::Bare(value))))
 }
 const MESSAGE_KEYS: &str = "id assistant_id attachments completed_at content created_at \
     incomplete_at incomplete_details metadata object role run_id status thread_id";
@@ -60,12 +53,15 @@ fn typed_event(name: &str, mut value: Value) -> Result<RunEvent, ThreadRunsError
     }
     if name == "thread.created" {
         add_keys(&mut value, "id created_at metadata object tool_resources");
-        fill_object(&mut value, "tool_resources", "code_interpreter file_search");
-        let extra = BTreeMap::from([(String::from("enabled"), Value::Null)]);
+        if let Some(resources) = value.get_mut("tool_resources") {
+            add_keys(resources, "code_interpreter file_search");
+            fill_object(resources, "code_interpreter", "file_ids");
+            fill_object(resources, "file_search", "vector_store_ids");
+        }
         return Ok(RunEvent::Named {
             event: name.to_owned(),
             data: value,
-            extra,
+            extra: BTreeMap::from([(String::from("enabled"), Value::Null)]),
         });
     }
     fill_event(name, &mut value);
@@ -81,7 +77,7 @@ fn fill_event(name: &str, value: &mut Value) {
             if let Some(delta) = value.get_mut("delta") {
                 add_keys(delta, "content role");
                 if let Some(content) = delta.get_mut("content") {
-                    fill_parts(content);
+                    fill_parts(content, true);
                 }
             }
         }
@@ -89,14 +85,14 @@ fn fill_event(name: &str, value: &mut Value) {
             if let Some(delta) = value.get_mut("delta") {
                 add_keys(delta, "step_details");
                 if let Some(details) = delta.get_mut("step_details") {
-                    fill_calls(details, true);
+                    fill_step(details, true);
                 }
             }
         }
         _ if name.starts_with("thread.message.") => {
             add_keys(value, MESSAGE_KEYS);
             if let Some(content) = value.get_mut("content") {
-                fill_parts(content);
+                fill_parts(content, false);
             }
             if let Some(Value::Array(items)) = value.get_mut("attachments") {
                 for item in items {
@@ -107,23 +103,43 @@ fn fill_event(name: &str, value: &mut Value) {
         _ if name.starts_with("thread.run.step.") => {
             add_keys(value, STEP_KEYS);
             if let Some(details) = value.get_mut("step_details") {
-                fill_calls(details, false);
+                fill_step(details, false);
             }
         }
         _ => {}
     }
 }
-fn fill_parts(content: &mut Value) {
+fn fill_parts(content: &mut Value, delta: bool) {
     let Value::Array(parts) = content else {
         return;
     };
     for part in parts {
+        let kind = part.get("type").and_then(Value::as_str).unwrap_or_default();
+        if matches!(kind, "text" | "image_file" | "image_url" | "refusal") {
+            let key = kind.to_owned();
+            add_keys(part, &key);
+        }
         fill_object(part, "text", "annotations value");
         fill_object(part, "image_file", "file_id detail");
         fill_object(part, "image_url", "url detail");
+        if delta {
+            fill_annotations(part);
+        }
     }
 }
-fn fill_calls(details: &mut Value, delta: bool) {
+fn fill_annotations(part: &mut Value) {
+    let Some(Value::Array(annotations)) = part.pointer_mut("/text/annotations") else {
+        return;
+    };
+    for annotation in annotations {
+        if annotation.get("type").and_then(Value::as_str) == Some("file_citation") {
+            add_keys(annotation, "end_index file_citation start_index text");
+            fill_object(annotation, "file_citation", "file_id quote");
+        }
+    }
+}
+fn fill_step(details: &mut Value, delta: bool) {
+    fill_object(details, "message_creation", "message_id");
     let Value::Object(object) = details else {
         return;
     };
@@ -133,25 +149,32 @@ fn fill_calls(details: &mut Value, delta: bool) {
     for call in calls {
         add_keys(call, "id");
         match call.get("type").and_then(Value::as_str) {
-            Some("function") => fill_object(call, "function", "name arguments output"),
-            Some("code_interpreter") => fill_object(call, "code_interpreter", "input outputs"),
-            Some("file_search") if !delta => {
-                fill_object(call, "file_search", "ranking_options results");
-            }
+            Some("function") => fill_call(call, "function", "name arguments output"),
+            Some("code_interpreter") => fill_call(call, "code_interpreter", "input outputs"),
+            Some("file_search") if delta => add_keys(call, "file_search"),
+            Some("file_search") => fill_call(call, "file_search", "ranking_options results"),
             _ => {}
         }
     }
 }
-fn fill_object(value: &mut Value, key: &str, keys: &str) {
-    if let Some(Value::Object(inner)) = value.get_mut(key) {
-        insert_keys(inner, keys);
+fn fill_call(call: &mut Value, kind: &str, keys: &str) {
+    add_keys(call, kind);
+    fill_object(call, kind, keys);
+}
+pub(crate) fn fill_object(value: &mut Value, key: &str, keys: &str) {
+    if let Some(object) = value.as_object_mut() {
+        fill_map(object, key, keys);
     }
 }
-fn add_keys(target: &mut Value, keys: &str) {
-    let Value::Object(object) = target else {
-        return;
-    };
-    insert_keys(object, keys);
+pub(crate) fn add_keys(target: &mut Value, keys: &str) {
+    if let Some(object) = target.as_object_mut() {
+        insert_keys(object, keys);
+    }
+}
+pub(crate) fn fill_map(object: &mut Map<String, Value>, key: &str, keys: &str) {
+    if let Some(Value::Object(inner)) = object.get_mut(key) {
+        insert_keys(inner, keys);
+    }
 }
 pub(crate) fn insert_keys(object: &mut Map<String, Value>, keys: &str) {
     for key in keys.split(' ') {
@@ -172,12 +195,14 @@ fn lines(body: &[u8]) -> impl Iterator<Item = &[u8]> {
         .filter(|line| !line.is_empty())
 }
 type Frame = (Option<String>, Vec<u8>, bool);
-// Every data line and every usable event, id or retry field counts; a later field never clears data.
+// Each event and id line replaces the last one, as the SDK does, while retry stays set once a line parses.
 fn event_and_data(frame: &[u8]) -> Frame {
     let mut event = None;
     let mut data: Vec<u8> = Vec::new();
     let mut seen = false;
-    let mut usable = false;
+    let mut event_ok = false;
+    let mut id_ok = false;
+    let mut retry_ok = false;
     for line in lines(frame) {
         let at = line.iter().position(|byte| *byte == b':');
         let (name, rest) = at.map_or((line, &[][..]), |position| {
@@ -188,7 +213,7 @@ fn event_and_data(frame: &[u8]) -> Frame {
             b"event" => {
                 let field = rest.trim_ascii();
                 event = str::from_utf8(field).ok().map(str::to_owned);
-                usable |= !field.is_empty();
+                event_ok = !field.is_empty();
             }
             b"data" => {
                 if seen {
@@ -197,15 +222,15 @@ fn event_and_data(frame: &[u8]) -> Frame {
                 data.extend_from_slice(rest.strip_prefix(b" ").unwrap_or(rest));
                 seen = true;
             }
-            b"id" => usable |= !rest.trim_ascii().is_empty() && !rest.contains(&0),
+            b"id" if !rest.contains(&0) => id_ok = !rest.trim_ascii().is_empty(),
             b"retry" => {
-                usable |=
+                retry_ok |=
                     str::from_utf8(rest.trim_ascii()).is_ok_and(|text| text.parse::<i64>().is_ok());
             }
             _ => {}
         }
     }
-    (event, data, seen || usable)
+    (event, data, seen || event_ok || id_ok || retry_ok)
 }
 // Frames end at a blank line, so a tail the provider cut off before one is never dispatched.
 #[derive(Debug, Default)]
@@ -225,30 +250,25 @@ impl RunFrames {
 }
 fn frames_in(buffer: &[u8]) -> (Vec<Vec<u8>>, usize) {
     let mut frames = Vec::new();
-    let mut frame: Vec<u8> = Vec::new();
-    let (mut start, mut cursor, mut end) = (0_usize, 0_usize, 0_usize);
+    let (mut frame_start, mut line_start, mut cursor, mut end) =
+        (0_usize, 0_usize, 0_usize, 0_usize);
     while let Some(byte) = buffer.get(cursor) {
         if !matches!(*byte, b'\r' | b'\n') {
             cursor = cursor.saturating_add(1);
             continue;
         }
-        let line = buffer.get(start..cursor).unwrap_or_default();
         let next = cursor.saturating_add(1);
-        let after = if *byte == b'\r' && buffer.get(next) == Some(&b'\n') {
-            next.saturating_add(1)
-        } else {
-            next
-        };
-        if line.is_empty() {
-            frames.extend((!frame.is_empty()).then(|| mem::take(&mut frame)));
-            end = after;
-        } else {
-            if !frame.is_empty() {
-                frame.push(b'\n');
+        let after = next.saturating_add(usize::from(
+            *byte == b'\r' && buffer.get(next) == Some(&b'\n'),
+        ));
+        if line_start == cursor {
+            if let Some(frame) = buffer.get(frame_start..line_start) {
+                frames.extend((!frame.is_empty()).then(|| frame.to_vec()));
             }
-            frame.extend_from_slice(line);
+            frame_start = after;
+            end = after;
         }
-        start = after;
+        line_start = after;
         cursor = after;
     }
     (frames, end)

@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::thread_runs::decode::{classify, insert_keys};
+use crate::thread_runs::decode::{add_keys, classify, fill_map, fill_object, insert_keys};
 use crate::thread_runs::error::ThreadRunsError;
 use serde_json::{Number, Value};
 
@@ -82,7 +82,7 @@ pub(crate) fn reply_value(mut value: Value) -> Result<RunReply, ThreadRunsError>
     serde_json::from_value(value).map_err(classify)
 }
 fn normalise_reply(value: &mut Value) {
-    let Value::Object(object) = value else {
+    let Some(object) = value.as_object_mut() else {
         return;
     };
     if let Some(Value::Array(tools)) = object.get_mut("tools") {
@@ -91,40 +91,30 @@ fn normalise_reply(value: &mut Value) {
     if let Some(format) = object.get_mut("response_format") {
         normalise_format(format);
     }
-    if let Some(Value::Object(choice)) = object.get_mut("tool_choice") {
-        choice.entry("function").or_insert(Value::Null);
-    }
-    if let Some(Value::Object(details)) = object.get_mut("incomplete_details") {
-        details.entry("reason").or_insert(Value::Null);
-    }
-    if let Some(Value::Object(strategy)) = object.get_mut("truncation_strategy") {
-        strategy.entry("last_messages").or_insert(Value::Null);
+    for (key, inner) in [
+        ("tool_choice", "function"),
+        ("incomplete_details", "reason"),
+        ("truncation_strategy", "last_messages"),
+    ] {
+        fill_map(object, key, inner);
     }
 }
 fn normalise_tool(value: &mut Value) {
-    let Value::Object(object) = value else {
+    let Some(object) = value.as_object_mut() else {
         return;
     };
     match object.get("type").and_then(Value::as_str) {
         Some("file_search") => {
-            let entry = object.entry("file_search").or_insert(Value::Null);
-            if let Value::Object(list) = entry {
-                insert_keys(list, "max_num_results ranking_options");
-                if let Some(Value::Object(ranking)) = list.get_mut("ranking_options") {
-                    insert_keys(ranking, "ranker score_threshold");
-                }
-            }
+            let list = object.entry("file_search").or_insert(Value::Null);
+            add_keys(list, "max_num_results ranking_options");
+            fill_object(list, "ranking_options", "ranker score_threshold");
         }
-        Some("function") => {
-            if let Some(Value::Object(function)) = object.get_mut("function") {
-                insert_keys(function, "description parameters strict");
-            }
-        }
+        Some("function") => fill_map(object, "function", "description parameters strict"),
         _ => {}
     }
 }
 fn normalise_format(value: &mut Value) {
-    let Value::Object(object) = value else {
+    let Some(object) = value.as_object_mut() else {
         return;
     };
     if object.get("type").and_then(Value::as_str) != Some("json_schema") {

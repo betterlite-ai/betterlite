@@ -1,3 +1,4 @@
+use std::sync::LazyLock;
 use std::time::Duration;
 
 use betterlite_config::sections::openai_credentials::DEFAULT_API_BASE;
@@ -18,24 +19,12 @@ const OPENAI_ORGANIZATION: HeaderName = HeaderName::from_static("openai-organiza
 pub(crate) const DEFAULT_TIMEOUT: Duration = Duration::from_secs(600);
 const STREAM_DEADLINE: Duration = Duration::from_mins(100);
 // The SDK quotes a path id with Python's quote(safe="!$&'()*+,;=:@"), so "/" is encoded and the unreserved marks stay.
-const PATH_SEGMENT: &AsciiSet = &NON_ALPHANUMERIC
-    .remove(b'_')
-    .remove(b'.')
-    .remove(b'-')
-    .remove(b'~')
-    .remove(b'!')
-    .remove(b'$')
-    .remove(b'&')
-    .remove(b'\'')
-    .remove(b'(')
-    .remove(b')')
-    .remove(b'*')
-    .remove(b'+')
-    .remove(b',')
-    .remove(b';')
-    .remove(b'=')
-    .remove(b':')
-    .remove(b'@');
+const PATH_SAFE: &[u8] = b"_-.~!$&'()*+,;=:@";
+static PATH_SEGMENT: LazyLock<AsciiSet> = LazyLock::new(|| {
+    PATH_SAFE
+        .iter()
+        .fold(NON_ALPHANUMERIC.remove(b'_'), |set, byte| set.remove(*byte))
+});
 #[derive(Clone, Copy)]
 pub(crate) enum CallKind {
     Create,
@@ -68,7 +57,7 @@ fn run_url<T>(client: &SdkClient<T>, segments: &[&str]) -> Result<Url, ThreadRun
     let path = format!("{}/", url.path().trim_end_matches('/'));
     let quoted: Vec<String> = segments
         .iter()
-        .map(|segment| utf8_percent_encode(segment, PATH_SEGMENT).to_string())
+        .map(|segment| utf8_percent_encode(segment, &PATH_SEGMENT).to_string())
         .collect();
     url.set_path(&format!("{path}{}", quoted.join("/")));
     Ok(url)
