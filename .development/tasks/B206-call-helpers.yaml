@@ -120,7 +120,7 @@ out_of_scope:
 - max_retries_per_request_hit is B017; redact_nested_match_and_regex_keys is B104 guardrail compliance logging;
   is_codex_user_agent is B024 OpenAI client compatibility.
 - get_proxy_server_request_headers from llm_request_utils.py is implemented here as a typed request-header projection;
-  pick_cheapest_chat_models_from_llm_provider remains B019.
+  pick_cheapest_chat_models_from_llm_provider is B176.
 - Budget reservation helpers 369-406 and response cost setters 758-772 belong to B069; parent OpenTelemetry span
   extraction 429-450 is B110. remove_index_from_tool_calls, remove_items_at_indices, add_missing_spend_metadata_to_litellm_metadata,
   get_metadata_variable_name_from_kwargs, get_or_create_metadata_bucket, proxy_stamped_used_client_oauth_token,

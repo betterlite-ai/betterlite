@@ -253,6 +253,7 @@ pub mod responses_ws_managed;
 pub mod responses_ws_native;
 pub mod riva;
 pub mod runway;
+pub mod search_http;
 pub mod search_providers;
 pub mod skills;
 pub mod soniox;
