@@ -6,6 +6,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::ProxyTrust;
+use betterlite_http::error::HttpError;
+use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::rubrik_delivery::clock::Clock;
 use betterlite_logging::rubrik_delivery::config::RubrikInit;
 use betterlite_logging::rubrik_delivery::error::RubrikError;
@@ -213,10 +215,15 @@ impl Transport for ScriptedTransport {
                 status,
                 body: body.into_bytes(),
             }),
-            Outcome::Network => Err(TransportFailure::Unavailable {
-                reason: "the scripted transport failed".to_owned(),
-            }),
+            Outcome::Network => Err(scripted_failure()),
         }
+    }
+}
+
+// A reqwest error cannot be built in a test, so the scripted network failure reports a timeout through the typed HTTP error.
+fn scripted_failure() -> TransportFailure {
+    TransportFailure::Request {
+        source: TransportError::Rejected(HttpError::Timeout),
     }
 }
 

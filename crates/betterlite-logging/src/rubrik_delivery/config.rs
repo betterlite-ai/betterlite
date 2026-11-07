@@ -74,12 +74,13 @@ impl RubrikSettings {
         init: &RubrikInit,
         environment: &dyn EnvironmentLookup,
     ) -> Result<Self, RubrikError> {
-        let read = |name: &str| environment.lookup(name).filter(|value| !value.is_empty());
         let sampling_rate = parse_sampling_rate(environment);
-        let api_key = init
-            .api_key
-            .clone()
-            .or_else(|| read("RUBRIK_API_KEY").map(SecretString::from));
+        let api_key = init.api_key.clone().or_else(|| {
+            environment
+                .lookup("RUBRIK_API_KEY")
+                .filter(|value| !value.is_empty())
+                .map(SecretString::from)
+        });
         if api_key.is_none() {
             tracing::warn!("Rubrik: No API key configured. Requests will be unauthenticated.");
         }
@@ -150,6 +151,7 @@ fn parse_sampling_rate(environment: &dyn EnvironmentLookup) -> f64 {
     };
     let trimmed = text.trim();
     if trimmed.is_empty() {
+        tracing::warn!(value = %text, "Invalid RUBRIK_SAMPLING_RATE, using 1.0");
         return 1.0;
     }
     let Ok(parsed) = trimmed.parse::<f64>() else {

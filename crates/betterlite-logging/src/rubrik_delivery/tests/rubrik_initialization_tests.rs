@@ -118,6 +118,22 @@ fn invalid_sampling_rate_warns_and_uses_one() {
 }
 
 #[test]
+fn empty_sampling_rate_warns_and_uses_one() {
+    let values = environment(&[("RUBRIK_SAMPLING_RATE", "")]);
+    let (result, warnings) = capture(|| {
+        build(
+            &init("https://rubrik.test", "key"),
+            &values,
+            Arc::new(FixedClock(Duration::from_secs(1))),
+            Vec::new(),
+        )
+    });
+    let (logger, _transport) = result.expect("initialization succeeds");
+    assert_eq!(number(logger.settings.sampling_rate), number(1.0));
+    assert_eq!(warnings.count_containing("Invalid RUBRIK_SAMPLING_RATE"), 1);
+}
+
+#[test]
 fn out_of_range_sampling_rate_clamps_with_a_warning() {
     let values = environment(&[("RUBRIK_SAMPLING_RATE", "2")]);
     let (result, warnings) = capture(|| {

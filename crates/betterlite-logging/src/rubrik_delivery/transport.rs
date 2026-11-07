@@ -63,8 +63,6 @@ pub enum TransportFailure {
         #[source]
         source: TransportError,
     },
-    #[error("the request could not be completed: {reason}")]
-    Unavailable { reason: String },
 }
 
 #[async_trait]

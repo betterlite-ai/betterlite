@@ -4,6 +4,8 @@ use std::sync::{Arc, Mutex, PoisonError, Weak};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use betterlite_http::error::HttpError;
+use betterlite_http::proxy::transport_error::TransportError;
 use betterlite_logging::rubrik_delivery::clock::Clock;
 use betterlite_logging::rubrik_delivery::logger::RubrikLogger;
 use betterlite_logging::rubrik_delivery::queue::push_payload;
@@ -117,21 +119,22 @@ impl ScriptedTransport {
 impl Transport for ScriptedTransport {
     async fn post_json(&self, request: JsonPost) -> Result<TransportResponse, TransportFailure> {
         self.record(&request);
-        let reply = self
-            .next_reply()
-            .ok_or_else(|| TransportFailure::Unavailable {
-                reason: "no scripted reply".to_owned(),
-            })?;
+        let reply = self.next_reply().ok_or_else(scripted_failure)?;
         self.push_during_send(&reply);
         if reply.fail {
-            return Err(TransportFailure::Unavailable {
-                reason: "the scripted transport failed".to_owned(),
-            });
+            return Err(scripted_failure());
         }
         Ok(TransportResponse {
             status: reply.status,
             body: reply.body.into_bytes(),
         })
+    }
+}
+
+// A reqwest error cannot be built here, so a missing reply or a scripted failure reports a timeout through the typed HTTP error.
+const fn scripted_failure() -> TransportFailure {
+    TransportFailure::Request {
+        source: TransportError::Rejected(HttpError::Timeout),
     }
 }
 
