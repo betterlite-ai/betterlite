@@ -1,0 +1,198 @@
+id: B3900
+title: Langfuse settings and credential resolution
+description: >-
+  Build everything the Langfuse callback reads from its environment before it builds a logger: the
+  LANGFUSE_* settings, the credential, host and environment fallbacks, and the checks LiteLLM runs on them.
+  Two parts. First, a config section `langfuse_settings` in betterlite-config
+  (crates/betterlite-config/src/sections/langfuse_settings.rs) that reads the environment through
+  B002's EnvironmentLookup and keeps every value as the raw text it found, so a bad value fails where
+  LiteLLM fails it (at logger construction) and not when the gateway starts. The secret key is a SecretString.
+  Second, the module `langfuse_settings` in betterlite-logging that turns those raw values into typed answers.
+  It takes the section's settings by reference and never reads the environment itself (rules.yaml forbids it).
+
+  The functions in betterlite-logging, each with LiteLLM's rule. `resolve_credentials(public_key, secret,
+  secret_key, host, allow_env_credentials)`: when allow_env_credentials is false AND host is not None, the
+  secret is `secret or secret_key` and the public key is the argument, with no env lookup. In every other case
+  the secret is `secret or secret_key or LANGFUSE_SECRET_KEY` and the public key is `public_key or
+  LANGFUSE_PUBLIC_KEY`. An empty string counts as absent in the `or` chains, but an env value that is an empty
+  string is still returned as the empty string. `resolve_host(host)`: the first non-empty of the argument,
+  LANGFUSE_HOST, LANGFUSE_BASE_URL, else "https://cloud.langfuse.com"; a result that does not start with
+  "http://" or "https://" gets "http://" put in front of it (http, not https). `resolve_environment(explicit)`:
+  an explicit value is trimmed and, if not empty, checked with B188's `validate_environment`
+  (logging_privacy::callbacks), which fails with its error; an empty or missing explicit value falls to
+  LANGFUSE_TRACING_ENVIRONMENT, where an empty variable gives None, a valid trimmed value is returned, and an
+  invalid one logs a warning ("Ignoring invalid LANGFUSE_TRACING_ENVIRONMENT=... for the langfuse callback: ...
+  Traces will be sent to Langfuse's default environment.") and returns "default". `flush_interval(default)`:
+  LANGFUSE_FLUSH_INTERVAL when it is a trimmed all-digit number above 0, else the default (a missing or empty
+  variable silently, anything else with a warning). `debug()`: LANGFUSE_DEBUG trimmed and lowercased is "true" or
+  "1". `mock_mode()`: LANGFUSE_MOCK (default "false") parsed the way str_to_bool does, only "true" or "false"
+  after trim and lowercase, anything else is false; log the info line "LANGFUSE Mock Mode: ENABLED - API calls
+  will be mocked" when it is true. `warn_if_upstream_configured()`: when UPSTREAM_LANGFUSE_SECRET_KEY is set,
+  warn that UPSTREAM_LANGFUSE_* is no longer supported and its values are ignored.
+
+  The export knobs that LiteLLM reads in langfuse_sdk.py. `sample_rate()`: LANGFUSE_SAMPLE_RATE as a number
+  from 0.0 to 1.0, else 1.0 (a bad value warns). `timeout_seconds()`: LANGFUSE_TIMEOUT as a float, 20.0 when unset;
+  a value that is not a number is an error, never a fallback. `max_retries()`: LANGFUSE_MAX_RETRIES as digits,
+  default 3, a non-number warns and gives 3, a value above 1000 warns and is capped at 1000. `flush_at()`:
+  LANGFUSE_FLUSH_AT as digits from 1 to 100000, default 512, anything else warns and gives 512. `release()`:
+  LANGFUSE_RELEASE when non-empty, else the first of RENDER_GIT_COMMIT, CI_COMMIT_SHA, CIRCLE_SHA1,
+  SOURCE_VERSION, TRAVIS_COMMIT, GIT_COMMIT, GITHUB_SHA, BITBUCKET_COMMIT, BUILD_SOURCEVERSION,
+  DRONE_COMMIT_SHA that is set at all (an empty value counts as set), else None. `check_prompt_cache_ttl()`:
+  LANGFUSE_PROMPT_CACHE_DEFAULT_TTL_SECONDS, when present, must parse as a whole number or the call fails
+  naming the variable and the value. `prompt_cache_ttl_seconds()`: that number as seconds, 60.0 when unset,
+  and a value below 0 warns and gives 60.0.
+
+  Read the warning texts from the linked LiteLLM lines and keep their words, since operators grep logs for them.
+  Write the behavior tests as rstest functions in a module named langfuse_settings_tests_behavior inside the module, one named case per rule and failure above. They capture the warnings with the tracing subscriber setup the other betterlite-logging tests use.
+  Other tasks consume these through function arguments: B3907 and B3908 build loggers from them, B3903 takes
+  sample_rate, flush_at and flush_interval for the channel key, B3902 and B3904 take timeout, retries and TTL.
+scope:
+  paths:
+    - crates/betterlite-config/src/sections/langfuse_settings.rs
+    - crates/betterlite-config/src/sections/langfuse_settings/**
+    - crates/betterlite-logging/src/langfuse_settings.rs
+    - crates/betterlite-logging/src/langfuse_settings/**
+    - tools/oracle/cases/helpers/langfuse-settings/**
+    - tools/oracle/helpers/b3900.py
+    - tools/oracle/helpers/b3900/**
+    - tools/oracle/src/helpers/config/b3900.rs
+    - tools/oracle/src/helpers/config/b3900/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L175-L222
+    why: Version constants, PROMPT_CACHE_TTL_ENV, whole_number and the check that names an unusable prompt-cache TTL.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L237-L283
+    why: resolve_langfuse_credentials, resolve_langfuse_host, the upstream warning, parse_langfuse_debug and the deployment-environment warning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L288-L348
+    why: The order a logger applies these (version, TTL check, credentials, environment, release, debug, flush interval, mock); B3907 owns the constructor.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L1063-L1091
+    why: resolve_deployment_environment and the LANGFUSE_FLUSH_INTERVAL fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L92-L112
+    why: Queue, flush, timeout and retry constants and the CI commit variables for the release.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_sdk.py#L463-L558
+    why: Sample rate, timeout, max retries, release, prompt-cache TTL and flush-at readers with their fallbacks and warnings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_mock_client.py#L1-L45
+    why: LANGFUSE_MOCK is the switch; the monkey-patching client is Python-only.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/mock_client_factory.py#L266-L282
+    why: should_use_mock reads the env var with str_to_bool and logs the enabled line.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/initialize_dynamic_callback_params.py#L64-L77
+    why: The environment pattern B188 already implements; this task calls it, it does not copy it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/main.py#L115-L136
+    why: str_to_bool accepts only "true" and "false" after strip and lower.
+dod:
+  - text: >-
+      The langfuse_settings config section loads LANGFUSE_SECRET_KEY, LANGFUSE_PUBLIC_KEY, LANGFUSE_HOST,
+      LANGFUSE_BASE_URL, LANGFUSE_DEBUG, LANGFUSE_FLUSH_INTERVAL, LANGFUSE_FLUSH_AT, LANGFUSE_TIMEOUT,
+      LANGFUSE_MAX_RETRIES, LANGFUSE_RELEASE, the ten CI commit variables, LANGFUSE_SAMPLE_RATE,
+      LANGFUSE_PROMPT_CACHE_DEFAULT_TTL_SECONDS, LANGFUSE_TRACING_ENVIRONMENT, LANGFUSE_MOCK and
+      UPSTREAM_LANGFUSE_SECRET_KEY from the lookup, never fails the load on a bad value, and hides the secret key in Debug output.
+    proof: [settings-section-tests]
+  - text: >-
+      Credentials use the argument first and the env var second, skip the env var when allow_env_credentials is
+      false and a host was given, and treat an empty argument as absent while keeping an empty env value.
+    proof: [settings-resolution-tests, oracle, helper-python]
+  - text: >-
+      The host is the first non-empty of the argument, LANGFUSE_HOST, LANGFUSE_BASE_URL and the cloud default,
+      with "http://" put in front when no scheme is there.
+    proof: [settings-resolution-tests, oracle, helper-python]
+  - text: >-
+      The deployment environment trims an explicit value and rejects an invalid one with B188's error, falls to
+      LANGFUSE_TRACING_ENVIRONMENT when the explicit value is empty, and answers "default" with a warning when
+      that variable is invalid.
+    proof: [settings-resolution-tests, oracle, helper-python]
+  - text: >-
+      The flush interval, flush-at, sample rate and max retries readers return LiteLLM's defaults (the caller's
+      value, 512, 1.0, 3), apply the stated ranges and the 1000 retry cap, and warn with LiteLLM's wording.
+    proof: [settings-resolution-tests, oracle, helper-python]
+  - text: >-
+      The timeout reader returns 20.0 when unset, parses a float, and fails on a value that is not a number
+      instead of falling back.
+    proof: [settings-resolution-tests, oracle, helper-python]
+  - text: >-
+      The prompt-cache TTL check fails on a non-integer naming the variable, and the TTL reader gives 60.0 when
+      unset or below 0 and the whole number of seconds otherwise.
+    proof: [settings-resolution-tests, oracle, helper-python]
+  - text: >-
+      The release reader prefers a non-empty LANGFUSE_RELEASE, then walks the ten CI variables in LiteLLM's
+      order and takes the first one that is set, even when empty.
+    proof: [settings-resolution-tests, oracle, helper-python]
+  - text: >-
+      The debug flag is true only for "true" or "1" after trim and lowercase, the mock flag follows str_to_bool
+      with the info line when enabled, and the upstream warning fires only when UPSTREAM_LANGFUSE_SECRET_KEY is set.
+    proof: [settings-resolution-tests, oracle, helper-python]
+checks:
+  optional: [mutants]
+  commands:
+    - id: settings-section-tests
+      why: the config section tests fail or the filter selects no tests
+      run: INSTA_UPDATE=no cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::langfuse_settings::/)'
+    - id: settings-resolution-tests
+      why: the resolution tests in betterlite-logging fail or the filter selects no tests
+      run: INSTA_UPDATE=no cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/::langfuse_settings_tests_behavior($|::)/)'
+    - id: helper-python
+      why: the oracle adapter fails strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3900)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3900 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3900/pyrightconfig.json
+oracle_cases:
+  - tools/oracle/cases/helpers/langfuse-settings/credentials-precedence.yaml
+  - tools/oracle/cases/helpers/langfuse-settings/credentials-env-blocked.yaml
+  - tools/oracle/cases/helpers/langfuse-settings/host-fallbacks.yaml
+  - tools/oracle/cases/helpers/langfuse-settings/host-scheme.yaml
+  - tools/oracle/cases/helpers/langfuse-settings/deployment-environment.yaml
+  - tools/oracle/cases/helpers/langfuse-settings/flush-interval.yaml
+  - tools/oracle/cases/helpers/langfuse-settings/flush-at.yaml
+  - tools/oracle/cases/helpers/langfuse-settings/sample-rate.yaml
+  - tools/oracle/cases/helpers/langfuse-settings/max-retries.yaml
+  - tools/oracle/cases/helpers/langfuse-settings/timeout.yaml
+  - tools/oracle/cases/helpers/langfuse-settings/prompt-cache-ttl.yaml
+  - tools/oracle/cases/helpers/langfuse-settings/release-resolution.yaml
+  - tools/oracle/cases/helpers/langfuse-settings/debug-and-mock.yaml
+deviations:
+  - what: >-
+      The installed-SDK version check (installed_langfuse_version, raise_if_unsupported_langfuse_version, the
+      "langfuse>=4.7,<5" ImportError) is not built. betterlite links no Langfuse package.
+    why: The check guards a Python import that does not exist here. The OTLP traces route still needs a Langfuse server on 3.63.0 or newer, which is B3902's error hint.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L175-L206
+  - what: >-
+      The messages for an unusable LANGFUSE_PROMPT_CACHE_DEFAULT_TTL_SECONDS and a non-numeric LANGFUSE_TIMEOUT
+      carry no ANSI red escape codes, and the value is quoted with single quotes the way Python's repr does for a plain string.
+    why: The escape codes only colour a terminal and corrupt structured logs; the variable name and the value stay.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L216-L222
+  - what: >-
+      An invalid LANGFUSE_TRACING_ENVIRONMENT warns on every resolution. LiteLLM warns once per distinct
+      (value, error) pair through an lru_cache of 8.
+    why: The cache is module-level state, which rules.yaml forbids. A logger is built once per credential set and at most MAX_LANGFUSE_INITIALIZED_CLIENTS (50) are allowed, so the repeats are bounded.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L276-L283
+  - what: >-
+      LANGFUSE_MOCK only sets a flag the logger reads. The httpx monkey-patching mock client
+      (create_mock_langfuse_client, url matchers ".langfuse.com", 100 ms latency, {"status": "success"} body)
+      is not built.
+    why: B191 replaces the Python mock factories with injected transport fixtures in each exporter's tests, and the mock-mode exporter that drops spans is B3902's.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse_mock_client.py#L22-L45
+out_of_scope:
+  - "Version and TTL checks are called, credentials are resolved and the project id is exported by the LangFuseLogger constructor and safe_init_langfuse_client; B3907 owns them, and B3908 owns the same calls in the prompt-management logger."
+  - "validate_langfuse_environment_value and the langfuse_environment callback param check; B188 owns them, this task calls validate_environment."
+  - "LangfuseLoggingConfig and LangfuseLoggedEvent from types/integrations/langfuse.py belong to B3907, LangfuseUsageDetails to B3906."
+  - "MAX_LANGFUSE_INITIALIZED_CLIENTS and the litellm.initialized_langfuse_clients counter; B3907."
+  - "resolve_langfuse_host is also called by the Slack alert trace link (integrations/SlackAlerting/utils.py); the alerting task owns that caller and uses this task's resolve_host."
+  - "Observation ids, attributes and the sampler are B3901; the OTLP exporter, LANGFUSE_OTEL_TRACES_EXPORT_PATH, the auth and SDK headers, DiscardingSpanExporter and the 413 splitting are B3902; channel keys, leases, flush, OTEL_SDK_DISABLED and enable_langfuse_debug_logging are B3903; LangfuseApiClient, auth_check and prompt fetching are B3904."
+  - "Everything else in langfuse.py (content projections, generation assembly, masking, tags, guardrail spans, header metadata) is owned by B3905, B3906, B3907 and B3912."
+  - "LANGFUSE_OTEL_* and the langfuse_otel callback settings; B3909 and B3910."
+pitfalls:
+  - "Do not parse the numeric variables in the config section. A bad LANGFUSE_TIMEOUT must fail only when a logger asks for it, so the section keeps the raw text and betterlite-logging parses it."
+  - "resolve_credentials skips the env only when allow_env_credentials is false AND a host was passed. With allow_env_credentials false and no host, the env is still read."
+  - "The secret and public key chains use `or`, so an explicit empty string falls through to the env var, but an empty LANGFUSE_SECRET_KEY then comes back as the empty string and not None."
+  - "A host without a scheme gets http:// in front, so LANGFUSE_HOST=langfuse.internal:3000 becomes http://langfuse.internal:3000; do not default to https."
+  - "LANGFUSE_HOST wins over LANGFUSE_BASE_URL, and an empty LANGFUSE_HOST falls through to LANGFUSE_BASE_URL."
+  - "LANGFUSE_TRACING_ENVIRONMENT that is only spaces is not empty, so it is trimmed to nothing, fails the pattern and gives \"default\" with a warning. Only a truly empty variable gives None."
+  - "LANGFUSE_FLUSH_INTERVAL and LANGFUSE_FLUSH_AT accept digits only after trim, so \"-5\", \"1.5\" and \"0\" all fall back; flush-at also falls back above 100000."
+  - "A missing LANGFUSE_MAX_RETRIES is silent, an empty one is not a number and warns; 1001 warns and is capped, not reset to 3."
+  - "release() checks `name in os.environ` for the CI variables, so an empty GITHUB_SHA is returned as the empty string and stops the search; LANGFUSE_RELEASE itself needs to be non-empty."
+  - "LANGFUSE_SAMPLE_RATE of 0.0 and 1.0 are both valid; \"nan\", \"inf\" and \"1.5\" warn and give 1.0."
+  - "LANGFUSE_PROMPT_CACHE_DEFAULT_TTL_SECONDS of 0 is valid and disables caching; -1 warns and gives 60.0 even though it is a whole number."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

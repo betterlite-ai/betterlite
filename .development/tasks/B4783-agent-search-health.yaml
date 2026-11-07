@@ -1,0 +1,137 @@
+id: B4783
+title: Rank agent search results and probe agent health
+description: >-
+  Build two modules in betterlite-server, agent_endpoints::search and agent_endpoints::health, and one config section, agent_search, in betterlite-config. They hold everything GET /v1/agents does with `?query=` and `?health_check=true` and everything the MCP agent_search tool does to rank agents. No route is registered here. B4784 owns the GET /v1/agents handler and calls these functions, and B4686 owns handle_agent_search and calls search_agents and agent_search_result. Agent records are AgentResponse from betterlite_core::agents (B4770). Embedding vectors and the cached index are betterlite_semantic (B4261): `SemanticTextIndex::new(DEFAULT_MAX_CACHED_VECTORS)`, the `Embedder` trait, `EmbeddingFailed` and `SemanticError`.
+
+  1. Config section agent_search (crates/betterlite-config/src/sections/agent_search.rs). It parses its own view of the whole file and its settings reach other crates as config.sections.agent_search. Fields: `embedding_model: Option<String>` from `litellm_settings.agent_search_embedding_model` (default absent), `health_check_timeout_seconds: f64` from env `LITELLM_AGENT_HEALTH_CHECK_TIMEOUT` (default 5.0), `health_check_gather_timeout_seconds: f64` from env `LITELLM_AGENT_HEALTH_CHECK_GATHER_TIMEOUT` (default 30.0). LiteLLM reads both env vars with float() when endpoints.py is imported, so a value that is not a number is a startup error here too, with a typed config error that names the env var. Read the env through the injected environment map the loader already passes, never std::env. Nothing else in the repo reads these three settings.
+
+  2. Search records and text, in agent_endpoints/search.rs. `DEFAULT_AGENT_SEARCH_TOP_K: usize = 5`. `AgentSearchHit { agent: AgentResponse, score: f64 }`. `AgentSearchOutcome` is an enum: `Hits(Vec<AgentSearchHit>)`, `NotConfigured { reason: String }`, `EmbeddingFailed { reason: String }`. `agent_search_text(agent: &AgentResponse) -> String` joins with a newline, in this order, the parts that are non-empty strings: agent_name, the card description, then one line per card skill. A skill line joins with a single space its non-empty name, non-empty description and the tags joined with a single space (so a skill with no tags and no description is just its name, and a skill with nothing is an empty line that is then skipped). The card fields are Option in the B4770 record, and an absent field counts as an empty string. `AgentSearchResult { agent_id, agent_name, description, skills: Vec<SearchableSkill>, score: f64 }` derives Serialize; `SearchableSkill { name, description, tags }` carries only those three fields of a skill (examples, input_modes, output_modes and security are dropped). `agent_search_result(hit: &AgentSearchHit) -> AgentSearchResult` takes agent_id and agent_name from the agent and description and skills from the card. This is the only projection MCP clients see, so it never copies litellm_params, headers, keys, kill_switch or identity.
+
+  3. The index, in agent_endpoints/search/index.rs. `AgentSearchIndex` wraps a `tokio::sync::Mutex<SemanticTextIndex>` built with DEFAULT_MAX_CACHED_VECTORS and is created once by the server's constructor and passed in (no static; LiteLLM's `global_agent_search_index` becomes one instance in app state). `async fn search(&self, query: &str, agents: &[AgentResponse], top_k: usize, embedder: &dyn Embedder, embedding_model: &str) -> Result<AgentSearchOutcome, AgentSearchError>`: build agent_search_text for every agent, call `scores(query, &texts, embedder, embedding_model)`, and map `SemanticError::Failed(EmbeddingFailed { reason })` to `AgentSearchOutcome::EmbeddingFailed { reason }`. `SemanticError::Http { status_code, detail }` is LiteLLM's HTTPException from the embedding pre-call hooks and goes up unchanged as `AgentSearchError::Http { status_code, detail }`. On success pair each agent with its score, sort by score descending with a stable sort (equal scores keep the registry order), keep the first top_k and return Hits. With no agents the result is Hits with an empty list.
+
+  4. Entry point `search_agents(query, agents, top_k, embedding_model: Option<&str>, embedders: &dyn AgentEmbedders, index: &AgentSearchIndex, caller: &AuthContext) -> Result<AgentSearchOutcome, AgentSearchError>` in agent_endpoints/search.rs. `AgentEmbedders` is a trait defined here: `fn embedder_for(&self, embedding_model: &str, caller: &AuthContext) -> Option<Box<dyn Embedder>>`, returning None when the proxy has no model_list router. AuthContext is B732's, from crate::auth::auth_identity. Order of checks, the same as LiteLLM: embedding_model None gives NotConfigured with the reason `agent search needs litellm_settings.agent_search_embedding_model set to an embedding model from model_list`; then a None embedder gives NotConfigured with the reason `agent search needs a model_list so the embedding model can be called`; then index.search. The two reason strings are shown to clients, so copy them exactly. Building the real AgentEmbedders (LiteLLM's router_embedder, which runs the key rate-limit, budget and guardrail pre-call hooks with call type aembedding and then calls the router) is not this task; no task owns it at the pin and the trait is the seam (see notes in the planner report).
+
+  5. HTTP error mapping and ranking for the route, in agent_endpoints/search/rank.rs. `AgentSearchHttpError { status_code: u16, error: String, message: String }` renders as the JSON body `{"detail":{"error":<error>,"message":<message>}}`. `rank_agents_by_query(query, agents: &[AgentResponse], top_k, embedding_model, embedders, index, caller) -> Result<Vec<AgentResponse>, AgentSearchRouteError>` calls search_agents and maps the outcome: Hits become clones of the agents with `search_score` set to the hit score (a Decimal, built from the f64's shortest round-trip text), in rank order; NotConfigured gives status 400 with error `agent_search_not_configured`; EmbeddingFailed gives status 503 with error `agent_search_unavailable`; the message is the outcome's reason in both. `AgentSearchRouteError` is `Http(AgentSearchHttpError)` or `Embedding { status_code, detail }` for the passed-through embedding HTTP error. The input list is not changed. B4784 passes the already redacted and permission-filtered list.
+
+  6. Health probes, in agent_endpoints/health.rs. `AgentHealthResult { agent_id: String, healthy: bool, error: Option<String> }`. Trait `AgentHealthTransport` with `async fn get_status(&self, url: &str, timeout: Duration) -> Result<u16, String>`; the production implementation sends one GET through the pooled client from B173 (look in crates/betterlite-http/src/proxy.rs for its client type) with the timeout as the whole-request deadline, follows redirects (LiteLLM's AsyncHTTPHandler default) and reads no body. `check_agent_url_health(agent, transport, timeout) -> AgentHealthResult`: an agent whose card url is absent or an empty string is healthy with no error and no request; a status of 500 or more is unhealthy with error `HTTP <status>`; any other status, 404 and 401 included, is healthy; a transport Err(message) is unhealthy with that message as the error. The probe is a plain GET of the stored url, with no SSRF validation and no auth header, exactly like LiteLLM.
+
+  7. The filter the route runs, in agent_endpoints/health.rs. `async fn filter_healthy_agents(agents: Vec<AgentResponse>, transport, settings: &AgentSearchSettings) -> Vec<AgentResponse>`: split the agents into those with a non-empty card url and those without, probe all of the first group concurrently with `futures_util::future::join_all`, and wrap the whole group in `tokio::time::timeout(gather_timeout)`. When the gather timeout fires, log a warning `Agent health check gather timed out after <seconds> seconds` and treat every agent in the group as unhealthy with the error `Health check timed out`. Return the healthy agents of the first group in their input order, followed by the agents without a url in their input order. The route calls this after redaction and before ranking, so an unhealthy agent never reaches the ranker.
+scope:
+  paths:
+    - crates/betterlite-server/src/agent_endpoints/search.rs
+    - crates/betterlite-server/src/agent_endpoints/search/**
+    - crates/betterlite-server/src/agent_endpoints/health.rs
+    - crates/betterlite-server/src/agent_endpoints/health/**
+    - crates/betterlite-config/src/sections/agent_search.rs
+    - crates/betterlite-config/src/sections/agent_search/**
+    - tools/oracle/cases/helpers/agent-search/**
+    - "tools/oracle/fuzz/corpus/helper_case/agent_search-*"
+    - tools/oracle/helpers/b4783.py
+    - tools/oracle/helpers/b4783/**
+    - tools/oracle/src/helpers/server/b4783.rs
+    - tools/oracle/src/helpers/server/b4783/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_search.py#L24-L48
+    why: The default top_k of 5 and the three outcome records with their reason fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_search.py#L51-L101
+    why: The searchable card and skill views (extra fields ignored, empty defaults), the result record, and the text and projection functions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_search.py#L104-L125
+    why: AgentSearchIndex.search, the stable descending sort and the top_k slice, and the shared index instance.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/agent_search.py#L128-L145
+    why: search_agents, the model-then-router order of the NotConfigured checks and the exact reason strings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L231-L272
+    why: The two health timeout env vars and their defaults, the result record and _check_agent_url_health.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L275-L308
+    why: The search error detail shape and _rank_agents_by_query with its 400 and 503 mapping and search_score copy.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L475-L498
+    why: The health filter inside get_agents, the gather timeout fallback and the healthy-with-url then no-url ordering.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L378-L401
+    why: The GET /v1/agents decorator and the health_check, query (min length 1) and top_k (1 to 100) parameters that B4784 declares.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L608-L650
+    why: AsyncHTTPHandler defaults the health probe inherits, follow_redirects true.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/tool_search.py#L386-L415
+    why: The only other caller of search_agents and agent_search_result, to confirm what the MCP tool exposes.
+dod:
+  - text: Config section agent_search loads litellm_settings.agent_search_embedding_model (absent by default) and the two health env vars with defaults 5.0 and 30.0, and a non-numeric env value is a typed startup error naming the variable.
+    proof: [config-tests]
+  - text: agent_search_text joins the name, the card description and one line per skill with newlines, skips empty parts, and builds a skill line from its name, description and tags with single spaces.
+    proof: [search-tests, oracle, helper-python, helper-case-corpus]
+  - text: agent_search_result projects only agent_id, agent_name, description, the skills' name, description and tags, and the score.
+    proof: [search-tests, oracle, helper-python, helper-case-corpus]
+  - text: The index returns the top_k hits by descending score with ties in input order, and an empty agent list gives empty Hits.
+    proof: [search-tests, oracle, helper-python, helper-case-corpus]
+  - text: search_agents checks the embedding model before the router and returns the two exact NotConfigured reasons, without calling any embedder.
+    proof: [search-tests, oracle, helper-python, helper-case-corpus]
+  - text: A failed embedding is the EmbeddingFailed outcome with its reason, and an HTTP error from the embedder is passed up as AgentSearchError::Http and not turned into an outcome.
+    proof: [search-tests, oracle, helper-python, helper-case-corpus]
+  - text: rank_agents_by_query returns clones with search_score set in rank order, maps NotConfigured to 400 agent_search_not_configured and EmbeddingFailed to 503 agent_search_unavailable, and leaves its input unchanged.
+    proof: [search-tests]
+  - text: A repeated search embeds only the query, because unchanged agent texts come from the index cache, and two embedding models keep separate cached vectors.
+    proof: [search-tests]
+  - text: An agent with no card url or an empty one is healthy without a request, a status of 500 or more is unhealthy with `HTTP <status>`, any lower status is healthy, and a transport error is unhealthy with its message.
+    proof: [health-tests]
+  - text: filter_healthy_agents probes the agents with a url concurrently, returns the healthy ones in input order followed by the agents without a url, and marks every probed agent unhealthy with `Health check timed out` when the gather timeout fires.
+    proof: [health-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: config-tests
+      why: the agent_search config section is missing or does not load its key, env vars and defaults
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::agent_search::/)'
+    - id: search-tests
+      why: agent search text, projection, ranking, outcomes, error mapping or cache reuse is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_endpoints::search::/) - test(/replays_corpus$/)'
+    - id: health-tests
+      why: the agent health probe or the healthy-agent filter is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^agent_endpoints::health::/)'
+    - id: helper-python
+      why: the strict oracle adapter for agent search is missing or fails lint or type checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b4783)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b4783 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b4783/pyrightconfig.json
+    - id: helper-case-corpus
+      why: the agent search helper cases are absent or do not replay through the shared parser
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/agent_search-*")" &&
+        grep -lE '^[[:space:]]+b4783:' tools/oracle/fuzz/corpus/helper_case/agent_search-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/agent-search/search-text.yaml
+  - tools/oracle/cases/helpers/agent-search/result-projection.yaml
+  - tools/oracle/cases/helpers/agent-search/rank-ties-and-top-k.yaml
+  - tools/oracle/cases/helpers/agent-search/model-before-router.yaml
+  - tools/oracle/cases/helpers/agent-search/failed-embeddings.yaml
+deviations:
+  - what: The agent card is already a typed AgentCard (B4770), so LiteLLM's fallback to an empty searchable card when agent_card_params fails validation has no input in betterlite. A card that does not parse is rejected when the agent is stored or read.
+    why: The typed boundary; the fallback only hid a malformed dict.
+  - what: Concurrent searches take turns on one mutex around the index, so two requests do not embed at the same time. Results are the same.
+    why: SemanticTextIndex::scores takes &mut self, and LiteLLM's single-threaded event loop has no such lock.
+  - what: search_score is a Decimal built from the f64's shortest round-trip text. A score under 1e-4 in magnitude prints as plain digits here, where Python prints an exponent (1e-05). The JSON numbers are equal.
+    why: B4770 stores search_score as Decimal; the clients parse both forms to the same number.
+  - what: The health check error text for a transport failure is betterlite's own message, not httpx's str(exc).
+    why: The text is only used to mark the agent unhealthy and is never returned to a client.
+out_of_scope:
+  - "The GET /v1/agents handler, its query parameters, the spend and key attach, is_public injection and the redaction call (redact_sensitive_agent_fields from B4775) belong to B4784. It redacts first, then calls filter_healthy_agents, then rank_agents_by_query."
+  - "handle_agent_search and the agent_search virtual tool belong to B4686 and B4684. They call search_agents and agent_search_result."
+  - "router_embedder and embedding_spend_metadata in semantic_text_index.py build the real AgentEmbedders. No task at the pin owns them: B4261 injects the embedder, B4684 and B1505 name each other. The planner report lists this as an open owner."
+  - "SemanticTextIndex, Embedder, EmbeddingFailed and cosine_similarity are B4261. get_async_httpx_client and the pooled client are B173."
+  - "accessible_agents and agent permission checks are B4780. check_feature_access_for_user is B864."
+  - "A2A agent URL validation and SSRF checks for registered agents are not part of the health probe; LiteLLM does none here."
+pitfalls:
+  - search_agents tests the embedding model before the router, so with both missing the reason is the model one; the reason strings are returned to clients verbatim.
+  - The hits sort is stable and descending, so equal scores keep input order. An unstable sort or sorting ascending then reversing flips ties.
+  - top_k is applied after sorting. rank_agents_by_query copies each hit's score into search_score on a clone, so the stored agent never carries a score.
+  - An embedding HTTP error (budget, rate limit, guardrail) must not become EmbeddingFailed; only the Failed variant does, with status 503.
+  - The 503 body key is `agent_search_unavailable` and the 400 body key is `agent_search_not_configured`, both under `detail.error`, with the reason under `detail.message`.
+  - A skill with no tags adds no trailing space, and a card with no description adds no blank line, because empty parts are filtered before joining.
+  - Only a status of 500 or more is unhealthy. A 404 or 401 from the agent url still counts as healthy.
+  - An agent with an empty-string url is treated like one with no url, since LiteLLM tests the url for truthiness.
+  - The gather timeout covers the whole group of probes, not each probe, and the per-probe timeout is separate (5.0 and 30.0 seconds by default).
+  - health_check runs after redaction and before ranking in the route, so ranking only sees reachable agents. Do not move the order.
+  - agent_search_text must not read litellm_params or kill_switch, since those hold secrets that would go to the embedding provider.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

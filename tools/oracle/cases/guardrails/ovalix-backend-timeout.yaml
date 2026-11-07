@@ -1,0 +1,17 @@
+kind: helper
+name: ovalix-backend-timeout
+call:
+  b3784:
+    ovalix_call:
+      env:
+        OVALIX_TRACKER_API_BASE: https://tracker.example
+        OVALIX_TRACKER_API_KEY: oracle-tracker-key
+        OVALIX_APPLICATION_ID: app-123
+        OVALIX_PRE_CHECKPOINT_ID: pre-1
+      mode: pre_call
+      input_type: request
+      texts: ["hello"]
+      today: "2026-03-04"
+      timeout_ms: 200
+env: {}
+compare: {ignore: []}
