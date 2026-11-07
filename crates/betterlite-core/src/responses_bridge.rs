@@ -71,7 +71,8 @@ where
         );
         return BridgeCheck { model_info, model };
     }
-    let mut model_info = lookup_model_info(request, capabilities, &mut model);
+    let lookup = capabilities.model_info(request.model, request.custom_llm_provider);
+    let mut model_info = apply_lookup_rule(request.model, lookup, &mut model);
     if request.web_search_options.is_some() && request.custom_llm_provider == "xai" {
         model_info.insert(
             MODE.to_owned(),
@@ -89,11 +90,12 @@ where
     BridgeCheck { model_info, model }
 }
 
-fn lookup_model_info<C>(request: &BridgeRequest<'_>, capabilities: &C, model: &mut String) -> Object
-where
-    C: ResponsesBridgeCapabilities + ?Sized,
-{
-    let mut model_info = match capabilities.model_info(request.model, request.custom_llm_provider) {
+fn apply_lookup_rule(
+    original_model: &str,
+    lookup: Result<Object, ModelInfoError>,
+    model: &mut String,
+) -> Object {
+    let mut model_info = match lookup {
         Ok(model_info) => model_info,
         Err(error) => {
             tracing::debug!(error = %error, "model info lookup failed");
@@ -101,7 +103,7 @@ where
         }
     };
     let mode_missing = model_info.get(MODE).is_none_or(JsonValue::is_null);
-    if mode_missing && request.model.starts_with(RESPONSES_PREFIX) {
+    if mode_missing && original_model.starts_with(RESPONSES_PREFIX) {
         *model = model.replace(RESPONSES_PREFIX, "");
         model_info.insert(
             MODE.to_owned(),
