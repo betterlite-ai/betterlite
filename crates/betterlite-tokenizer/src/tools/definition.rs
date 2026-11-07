@@ -108,25 +108,18 @@ fn inline_function<'raw>(
     index: usize,
     fields: &ToolFields<'raw>,
 ) -> Result<Function<'raw>, ToolFormatError> {
-    let parameters = inline_parameters(index, fields)?;
+    let (field, source) = fields.input_schema.map_or_else(
+        || ("parameters", fields.parameters),
+        |raw| ("input_schema", Some(raw)),
+    );
+    let parameters = source
+        .map(|raw| parse_branch(index, field, raw))
+        .transpose()?;
     Ok(Function {
         name: text_field(index, fields.name, "name")?,
         description: text_field(index, fields.description, "description")?,
         parameters,
     })
-}
-
-fn inline_parameters<'raw>(
-    index: usize,
-    fields: &ToolFields<'raw>,
-) -> Result<Option<SchemaNode<'raw>>, ToolFormatError> {
-    if let Some(raw) = fields.input_schema {
-        return Ok(Some(parse_branch(index, "input_schema", raw)?));
-    }
-    let Some(raw) = fields.parameters else {
-        return Ok(None);
-    };
-    Ok(Some(parse_branch(index, "parameters", raw)?))
 }
 
 fn text_field(
