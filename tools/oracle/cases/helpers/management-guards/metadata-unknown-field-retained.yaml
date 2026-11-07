@@ -1,0 +1,9 @@
+kind: helper
+name: metadata-unknown-field-retained
+call:
+  management_guards:
+    calls:
+      - {function: update_metadata_fields, updated_kv: {unknown: 1, other: [a]}}
+      - {function: update_metadata_fields, updated_kv: {tags: [t], unknown: 1}}
+env: {}
+compare: {ignore: []}
