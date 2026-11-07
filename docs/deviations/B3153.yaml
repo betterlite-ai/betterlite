@@ -1,0 +1,8 @@
+task: B3153
+deviations:
+  - what: The GraphQL commit pagination limit raises "GitHub's pagination limit was reached. Narrow the date range." where LiteLLM raises "GitHub commit pagination limit was reached."
+    why: B3152 owns SourceError, and its pagination-limit variant carries the one message; a commit-specific variant is outside this task's scope.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/github.py#L564-L565
+  - what: A repository name without an owner/name separator is sent to GraphQL with an empty name, where LiteLLM's unpacking raises an unhandled ValueError.
+    why: settings validation rejects such a name before it reaches this code, and an unhandled ValueError is a 500 no working setup can rely on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/roi_calculator/github.py#L549

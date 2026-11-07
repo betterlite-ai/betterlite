@@ -1,0 +1,5 @@
+kind: helper
+name: tokenizer-engine-decode
+call: {tokenizer_engine: {operation: decode, engine: o200k_base, tokens: [24912, 2375]}}
+env: {}
+compare: {ignore: []}

@@ -168,7 +168,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^identity_descriptors::(tag_create|tag_create_dedup)/)'
     - id: precedence-cases
       why: Oracle cases verify agent resolution, session identification, MCP team charging and tag deduplication
-      run: cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/identity_descriptors -k 'b3039'
+      run: cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/identity_descriptors
 
 deviations:
   - what: Tag and agent policy resolution use injected registry and batch lookup services; when a service or registry is unavailable, tag limits return empty mapping and agent lookup returns None, causing those rate-limit descriptors to be absent.
