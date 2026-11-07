@@ -25,7 +25,7 @@ impl<Storage: ClickHouseStorage> ClickHouseSpendLogger<Storage> {
         }
     }
 
-    pub fn log(&self, kwargs: &CallbackKwargs, message_logging_disabled: bool) {
+    pub fn log(&self, kwargs: &CallbackKwargs, redact: bool) {
         let Some(payload) = kwargs.standard_logging_object.as_ref() else {
             return;
         };
@@ -36,28 +36,20 @@ impl<Storage: ClickHouseStorage> ClickHouseSpendLogger<Storage> {
         let projection = Projection {
             payload,
             kwargs,
-            message_logging_disabled,
+            message_logging_disabled: redact,
             lens: &self.lens,
         };
         let row = spend_log_row_from_payload(projection);
         self.batch.enqueue([row]);
     }
 
-    pub fn async_log_success_event(
-        &self,
-        kwargs: &CallbackKwargs,
-        message_logging_disabled: bool,
-    ) -> Ready<()> {
-        self.log(kwargs, message_logging_disabled);
+    pub fn async_log_success_event(&self, kwargs: &CallbackKwargs, redact: bool) -> Ready<()> {
+        self.log(kwargs, redact);
         ready(())
     }
 
-    pub fn async_log_failure_event(
-        &self,
-        kwargs: &CallbackKwargs,
-        message_logging_disabled: bool,
-    ) -> Ready<()> {
-        self.log(kwargs, message_logging_disabled);
+    pub fn async_log_failure_event(&self, kwargs: &CallbackKwargs, redact: bool) -> Ready<()> {
+        self.log(kwargs, redact);
         ready(())
     }
 }

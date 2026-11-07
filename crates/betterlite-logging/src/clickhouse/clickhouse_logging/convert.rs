@@ -79,9 +79,8 @@ pub fn int_value(value: Option<&Json>) -> i64 {
 #[must_use]
 pub fn json_value(value: Option<&Json>) -> String {
     match value {
-        None | Some(Json::Null) => String::new(),
-        Some(Json::Text(text)) if text.is_empty() => String::new(),
         Some(Json::Text(text)) => text.clone(),
+        Some(Json::Null) | None => String::new(),
         Some(other) => serde_json::to_string(other).unwrap_or_default(),
     }
 }
