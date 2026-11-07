@@ -25,35 +25,24 @@ mod scripted;
 
 use scripted::{Reply, ScriptedClock, ScriptedTransport, WarningCount};
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
 pub(crate) struct Input {
-    #[serde(default)]
     environment: BTreeMap<String, String>,
-    #[serde(default)]
     init: Init,
-    #[serde(default)]
     replies: Vec<Reply>,
-    #[serde(default)]
     clock: Vec<f64>,
-    #[serde(default)]
     actions: Vec<Action>,
 }
 
 #[derive(Deserialize, Default)]
-#[serde(deny_unknown_fields)]
+#[serde(default, deny_unknown_fields)]
 struct Init {
-    #[serde(default)]
     api_key: Option<String>,
-    #[serde(default)]
     api_base: Option<String>,
-    #[serde(default)]
     event_hook: Option<RubrikEventHook>,
-    #[serde(default)]
     default_on: Option<bool>,
-    #[serde(default)]
     guardrail_name: Option<String>,
-    #[serde(default)]
     timeout_seconds: Option<f64>,
 }
 

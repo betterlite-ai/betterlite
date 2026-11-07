@@ -17,15 +17,12 @@ use tracing::Level;
 use tracing::Subscriber;
 use tracing_subscriber::layer::{Context, Layer};
 
-#[derive(Clone, Deserialize)]
+#[derive(Clone, Default, Deserialize)]
+#[serde(default)]
 pub(super) struct Reply {
-    #[serde(default)]
     pub(super) status: u16,
-    #[serde(default)]
     pub(super) body: String,
-    #[serde(default)]
     pub(super) fail: bool,
-    #[serde(default)]
     pub(super) during_send: Option<Json>,
 }
 

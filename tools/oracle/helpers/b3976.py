@@ -54,12 +54,6 @@ def integer_value(value: Json, name: str) -> int:
     return value
 
 
-def boolean_value(value: Json, name: str) -> bool:
-    if not isinstance(value, bool):
-        raise InputError(f"{name} must be a boolean")
-    return value
-
-
 class Script:
     def __init__(self, replies: Sequence[Json]) -> None:
         self.replies = list(replies)
@@ -75,10 +69,9 @@ class Script:
         during = reply.get("during_send")
         if during is None:
             return
-        logger = self.logger
-        if logger is None:
+        if self.logger is None:
             raise InputError("the scripted transport is not attached")
-        cast("list[Json]", logger.log_queue).append(during)
+        cast("list[Json]", self.logger.log_queue).append(during)
 
 
 class ScriptedHandler:
@@ -248,7 +241,9 @@ def logger_options(init: Fields) -> dict[str, object]:
         options["event_hook"] = GuardrailEventHooks(string_value(event_hook, "init.event_hook"))
     default_on = init.get("default_on")
     if default_on is not None:
-        options["default_on"] = boolean_value(default_on, "init.default_on")
+        if not isinstance(default_on, bool):
+            raise InputError("init.default_on must be a boolean")
+        options["default_on"] = default_on
     timeout = init.get("timeout_seconds")
     if timeout is not None:
         options["timeout"] = number_value(timeout, "init.timeout_seconds")
@@ -260,13 +255,11 @@ def settings_json(logger: RubrikLogger, factory: ClientFactory) -> Fields:
     if client_timeout is None:
         raise InputError("the moderation client timeout is unknown")
     override = cast("float | None", logger.timeout)
-    if override is None:
-        moderation_timeout: Fields = {
-            "total": client_timeout.read,
-            "connect": client_timeout.connect,
-        }
-    else:
-        moderation_timeout = {"total": override, "connect": override}
+    moderation_timeout: Fields = (
+        {"total": client_timeout.read, "connect": client_timeout.connect}
+        if override is None
+        else {"total": override, "connect": override}
+    )
     logging_timeout = _default_cached_client_timeout()
     return {
         "guardrail_name": cast(str, logger.guardrail_name),
