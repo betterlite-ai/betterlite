@@ -517,6 +517,24 @@ fn case_policy_beats_generic_on_single_group() -> CooldownDecision {
 #[case::mid_stream_plain(case_mid_stream_plain(), true, None, None)]
 #[case::mid_stream_wrapped_connection(case_mid_stream_wrapped_connection(), false, None, None)]
 #[case::caller_timeout_with_another_status(case_timeout_status_not_408(), true, None, None)]
+#[case::local_count_at_threshold(
+    local_counter_decision(1, 10, 1),
+    false,
+    Some("deployment:dep-1:allowed_fails"),
+    Some(1)
+)]
+#[case::local_count_above_threshold(
+    local_counter_decision(1, 0, 2),
+    true,
+    Some("deployment:dep-1:allowed_fails"),
+    Some(2)
+)]
+#[case::local_count_zero(
+    local_counter_decision(1, 5, 0),
+    false,
+    Some("deployment:dep-1:allowed_fails"),
+    Some(0)
+)]
 fn cooldown_decisions_behaviors(
     #[case] decision: CooldownDecision,
     #[case] cooldown: bool,
@@ -853,20 +871,4 @@ fn local_counter_decision(
         local_fails: Some(local_fails),
         time_to_cooldown: None,
     })
-}
-
-#[rstest]
-#[case::local_at_threshold(1, 10, 1, false, 1)]
-#[case::local_above_threshold(1, 0, 2, true, 2)]
-#[case::local_zero(0, 5, 0, false, 0)]
-fn cooldown_decisions_local_count_fallbacks(
-    #[case] allowed_fails: u32,
-    #[case] allowed_fails_before: u64,
-    #[case] local_fails: u64,
-    #[case] cooldown: bool,
-    #[case] fails: u64,
-) {
-    let decision = local_counter_decision(allowed_fails, allowed_fails_before, local_fails);
-    assert_eq!(decision.cooldown, cooldown);
-    assert_eq!(counter_fails(&decision), Some(fails));
 }
