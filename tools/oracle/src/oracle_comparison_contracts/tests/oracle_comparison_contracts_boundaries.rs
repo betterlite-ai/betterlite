@@ -2,6 +2,7 @@ use rstest::rstest;
 use rust_decimal::Decimal;
 use serde_json::Value;
 
+use crate::case::load_sdk_http_cases;
 use crate::oracle_comparison_contracts::{
     ContractError, ExpectedDifference, NumericRule, compare_documents, validate,
 };
@@ -194,4 +195,20 @@ fn a_betterlite_value_that_differs_from_the_declared_rust_value_is_a_mismatch() 
     let error = compare_documents(&reference, &rust, &[], &differences, false).unwrap_err();
     assert_eq!(error.pointer, "/detail");
     assert!(error.message.contains("betterlite"));
+}
+
+#[rstest]
+#[case("numeric:\n    - {pointer: /score, absolute_tolerance: 0.1, why: float noise}")]
+#[case(
+    "expected_difference:\n    - {pointer: /detail, reference: 2, rust: 3, why: declared, link: \"\"}"
+)]
+fn an_sdk_http_case_cannot_declare_a_comparison_rule(#[case] rule: &str) {
+    let text = format!(
+        "kind: sdk_http\nname: rule\ncall:\n  openai_chat:\n    model: gpt-4o-mini\n    messages: [{{role: user, content: hello}}]\n    api_key: sk-test\n    timeout_seconds: 10\nupstream:\n  - status: 200\n    headers: {{content-type: application/json}}\n    body: {{}}\ncompare:\n  headers: []\n  headers_present: []\n  upstream_headers: []\n  ignore: []\n  {rule}\n"
+    );
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("case.yaml");
+    std::fs::write(&path, text).unwrap();
+    let error = load_sdk_http_cases(&[path]).unwrap_err();
+    assert!(error.to_string().contains("compare.numeric"), "{error}");
 }
