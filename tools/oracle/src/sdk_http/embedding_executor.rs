@@ -10,9 +10,11 @@ use betterlite_core::api::vector_store_contracts::executor::DirectEmbeddingExecu
 use betterlite_core::api::vector_store_contracts::router::{
     RouterEmbeddingExecutor, VectorStoreRouter,
 };
+use betterlite_core::mock::{chat::response as mock_chat, embedding::response as mock_embedding};
 use betterlite_http::proxy::ProxiedClient;
 use betterlite_models::catalog::BundledCatalog;
 use betterlite_models::decisions::Json;
+use betterlite_openai::chat::MockSettings;
 use betterlite_openai::chat::deployment::{ChatDeployment, OpenAiDefaults};
 use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::embedding::EmbeddingResponse;
@@ -28,6 +30,7 @@ use rand::rngs::StdRng;
 use serde::Serialize;
 use tokio::runtime::Builder;
 use tokio::time::timeout;
+use uuid::Uuid;
 
 use super::VectorStoreEmbeddingCall;
 use super::capture::{Execution, Stop};
@@ -219,6 +222,11 @@ fn chat_executor(client: &ProxiedClient, deployments: Vec<ChatDeployment>) -> Ch
             text_models: BTreeSet::new(),
         },
         random: Mutex::new(StdRng::seed_from_u64(0)),
+        clock: || 0,
+        next_id: Uuid::new_v4,
+        mock: MockSettings::default(),
+        mock_chat,
+        mock_embedding,
     }
 }
 

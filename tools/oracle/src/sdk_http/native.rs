@@ -28,7 +28,7 @@ use uuid::Uuid;
 use super::capture::{Execution, Stop};
 use super::error::SdkHttpError;
 use super::result::{ChatCompletion, Choice, Failure, Nullable, SdkResult};
-use super::{ChatMessage, OpenaiChat, SdkHttpCall};
+use super::{ChatMessage, OpenaiChat};
 
 const POLL: Duration = Duration::from_millis(10);
 
@@ -39,28 +39,19 @@ struct WireChat<'wire> {
 }
 
 pub(crate) fn execute(
-    call: &SdkHttpCall,
+    chat: &OpenaiChat,
     api_base: &str,
     env: &BTreeMap<String, String>,
     stop: &Stop<'_>,
 ) -> Execution {
-    match call {
-        SdkHttpCall::OpenaiChat(chat) => {
-            let result = Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .map_err(SdkHttpError::Io)
-                .and_then(|runtime| {
-                    runtime.block_on(send_until_stopped(chat, api_base, env, stop))
-                });
-            Execution {
-                result,
-                log: Vec::new(),
-            }
-        }
-        SdkHttpCall::VectorStoreEmbeddingExecutor(embedding) => {
-            super::embedding_executor::execute(embedding, api_base, env, stop)
-        }
+    let result = Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(SdkHttpError::Io)
+        .and_then(|runtime| runtime.block_on(send_until_stopped(chat, api_base, env, stop)));
+    Execution {
+        result,
+        log: Vec::new(),
     }
 }
 

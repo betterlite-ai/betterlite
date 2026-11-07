@@ -13,6 +13,7 @@ use betterlite_models::decisions::Json;
 use betterlite_openai::api::vector_store_records::records::vector::{
     VectorStoreCreateResponse, VectorStoreSearchResponse,
 };
+use betterlite_openai::chat::MockSettings;
 use betterlite_openai::chat::deployment::{ChatDeployment, OpenAiDefaults};
 use betterlite_openai::chat::execution::ChatExecutor;
 use betterlite_openai::embedding::EmbeddingResponse;
@@ -32,6 +33,9 @@ use thiserror::Error;
 use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tokio::time::timeout;
+use uuid::Uuid;
+
+use crate::mock::{chat::response as mock_chat, embedding::response as mock_embedding};
 
 use super::executor::DirectEmbeddingExecutor;
 use super::filters::{requested_create_params, requested_search_params};
@@ -333,6 +337,11 @@ fn executor_over(
                 text_models: BTreeSet::new(),
             },
             random: Mutex::new(StdRng::seed_from_u64(0)),
+            clock: || 0,
+            next_id: Uuid::new_v4,
+            mock: MockSettings::default(),
+            mock_chat,
+            mock_embedding,
         },
         deployments,
         defaults,
