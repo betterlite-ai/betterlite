@@ -1,1 +1,7 @@
-
+pub mod video_content;
+pub mod video_create_character;
+pub mod video_generation;
+pub mod video_get_character;
+pub mod video_list;
+pub mod video_remix;
+pub mod video_status;

@@ -16,5 +16,6 @@ pub mod unified_guardrail;
 pub mod unified_passthrough;
 pub mod unified_simple;
 pub mod unified_stream;
+pub mod unified_stream_hook;
 pub mod usage_projections;
 pub mod video_translation;

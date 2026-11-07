@@ -24,7 +24,7 @@ description: >-
 
 
   response_payload (base_passthrough_logging_handler.py, the two helpers the base class owns). end_user_from_request_body(request_body) returns B880's get_end_user_id_from_request_body(request_body) with no headers when the body is present and not empty, else none. It serves the Anthropic helper of the same name too; the two are the same code.
-  create_response_logging_payload(response, model, kwargs, start_time, end_time, call_log) returns the kwargs, which are a typed ResponseLoggingKwargs struct (response_cost, model, the end user under litellm_params.proxy_server_request.body.user, standard_logging_object, and the passthrough request body it reads). The steps run in this order and each one's effect stays when a later one fails: cost with B068's completion_cost on the response and model; store response_cost and model on the kwargs; store response_cost in the call log's "response_cost" (the pass-through success path reads spend from there); when the kwargs carry a passthrough request body, look up the end user and, when found, set litellm_params.proxy_server_request to {"body": {"user": user}} replacing whatever was there; build B190's standard logging object with status "success" and store it; log it at debug level as indented JSON; set the response id to the call log's litellm_call_id, the response model to the model and the call log's "model" to the model. Any error in these steps logs at error level "Error creating LLM passthrough response logging payload: {error}" and returns the kwargs as they stand at that point, never an Err.
+  create_response_logging_payload(response, model, kwargs, end_user, start_time, end_time, call_log) returns the kwargs, which are a typed ResponseLoggingKwargs struct (response_cost, model, the end user under litellm_params.proxy_server_request.body.user, standard_logging_object, and the passthrough request body it reads). The steps run in this order and each one's effect stays when a later one fails: cost with B068's completion_cost on the response and model; store response_cost and model on the kwargs; store response_cost in the call log's "response_cost" (the pass-through success path reads spend from there); when the kwargs carry a passthrough request body and the end_user argument (an optional string computed by the caller, not looked up here) is non-empty, set litellm_params.proxy_server_request to {"body": {"user": user}} replacing whatever was there; build B190's standard logging object with status "success" and store it; log it at debug level as indented JSON; set the response id to the call log's litellm_call_id, the response model to the model and the call log's "model" to the model. Any error in these steps logs at error level "Error creating LLM passthrough response logging payload: {error}" and returns the kwargs as they stand at that point, never an Err.
 
 
   Tests: module tests under pass_through_logging::batch_attribution::tests, ::stream_fields::tests, ::response_costing::tests and ::response_payload::tests, each test name starting with the group word the checks use (batch_, fields_, costing_, payload_). Fakes stand in for the cost service and the call log; the real B880 function runs where it is cheap.
@@ -80,6 +80,8 @@ dod:
   - text: compute_response_cost returns zero on an exact cache hit and adds the provider prefix once; cost_partial_stream_or_zero turns an error into a warning and 0.0.
     proof: [costing-tests]
   - text: create_response_logging_payload runs its steps in order, keeps the effects of finished steps when a later one fails, replaces proxy_server_request wholesale and never returns an error.
+    proof: [payload-tests]
+  - text: create_response_logging_payload uses the end_user argument as given and never looks the user up itself, tested by payload_uses_end_user_argument (the default callers pass end_user_from_request_body, the OpenAI caller passes request_body["user"]).
     proof: [payload-tests]
   - text: The helper adapter's Python passes the strict lint and type check.
     proof: [helper-python]
@@ -160,6 +162,7 @@ pitfalls:
   - resolve_costing_model strips "passthrough/" once from the front of model_group with removeprefix, not every occurrence, and returns the original model when no source gives a better one.
   - compute_response_cost checks cache_hit with `is True`, so the string "true" or the number 1 in the call log does not give zero cost.
   - The provider prefix is added only when custom_llm_provider is truthy and the model does not already start with "{provider}/".
+  - 'The OpenAI caller (B3637) passes request_body["user"] unchanged as end_user, while the default callers pass end_user_from_request_body(request_body); create_response_logging_payload must not look the user up itself.'
 review_level: security
 budget:
   max_changed_lines: 1500

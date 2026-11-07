@@ -5,7 +5,7 @@ description: >-
   endpoints. Implement model extraction from URLs, provider/publisher resolution, Interactions route detection, and
   the response logging payload factory. Preserve response-model-before-request-model selection and treat absent
   model or usage as unpriceable. The common payload helper writes model and custom_llm_provider but not
-  model_call_details.response_cost when costing fails, keeping that asymmetry from the source. The response logging payload factory takes completion_cost through an injected trait declared in vertex_relay_metadata, since betterlite-vertex is a leaf that core, provider and logging use and it can't import betterlite-core. B3640 passes B068's cost service. Tests use a fake for the trait. Dependencies: B1668 InteractionsUsageObjectTransformation.is_interactions_usage_object and
+  model_call_details.response_cost when costing fails, keeping that asymmetry from the source. The response logging payload factory takes completion_cost through an injected trait declared in vertex_relay_metadata. The trait method takes the response (chat, embedding or image), the model, the custom_llm_provider, an optional call type (B3642 passes "create_video" and "vector_store_search" among others) and the optional vertex location, as the completion_cost calls in vertex_passthrough_logging_handler.py do. It is injected because betterlite-vertex is a leaf that core, provider and logging use and it can't import betterlite-core. B3640 passes B068's cost service. Tests use a fake for the trait. Dependencies: B1668 InteractionsUsageObjectTransformation.is_interactions_usage_object and
   transform_interactions_usage_object (betterlite-models::cost_usage). Errors in costing or model resolution
   surface as warnings with zero cost, leaving the spend row intact for downstream subscribers.
 scope:
@@ -46,7 +46,7 @@ dod:
 - text: Vertex response logging payload sets model, custom_llm_provider and response_cost in kwargs, and enriches
     logging_obj.model and model_call_details.
   proof: [logging-payload]
-- text: Response cost calculation uses completion_cost, through the injected trait, with vertex_location when available, and missing cost does
+- text: Response cost calculation uses completion_cost, through the injected trait (it takes the call type, the vertex_location and a chat, embedding or image response) and passes the location when available, and missing cost does
     not populate model_call_details.response_cost.
   proof: [cost-calculation]
 - text: VertexPassThroughCredentials has nullable vertex_project, vertex_location and vertex_credentials fields.
