@@ -1,0 +1,1 @@
+{"kind": "helper", "name": "private-json-stage-discard-seed", "call": {"private_json": {"function": "stage_discard", "name": "cache.json", "data": {"secret": "sk-123"}}}, "env": {}, "compare": {"ignore": []}}

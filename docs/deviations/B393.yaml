@@ -1,0 +1,11 @@
+task: B393
+deviations:
+  - what: >-
+      A negative REDIS_CIRCUIT_BREAKER_FAILURE_THRESHOLD, REDIS_CIRCUIT_BREAKER_RECOVERY_TIMEOUT,
+      REDIS_CIRCUIT_BREAKER_TIMEOUT_MIN_DURATION or REDIS_TIMEOUT_LOG_INTERVAL is a config load
+      error that names the variable.
+    why: >-
+      The Rust fields are an unsigned failure count and Durations, which cannot hold a negative
+      value. LiteLLM parses them as int and float, where a negative threshold opens the breaker on
+      the first failure and a negative timeout recovers at once, so no working setup relies on it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L511-L517
