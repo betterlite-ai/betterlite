@@ -109,36 +109,36 @@ fn lift_object_item<'value>(
     }
 }
 
-fn lift_item(item: &GuardrailValue) -> Vec<LiftedMessage<'_>> {
-    if let GuardrailValue::Text(text) = item {
+fn lift_input(input: Option<&GuardrailValue>) -> Vec<LiftedMessage<'_>> {
+    let Some(value) = input else {
+        return Vec::new();
+    };
+    if let GuardrailValue::Text(text) = value {
         return vec![LiftedMessage {
             role: Some("user"),
             content: LiftedContent::Text(text),
         }];
     }
-    let GuardrailValue::Object(object) = item else {
+    let GuardrailValue::Array(items) = value else {
         return Vec::new();
     };
-    lift_object_item(item, object)
-}
-
-fn lift_input(input: Option<&GuardrailValue>) -> Vec<LiftedMessage<'_>> {
-    let Some(value) = input else {
-        return Vec::new();
-    };
-    match value {
-        GuardrailValue::Text(text) => vec![LiftedMessage {
-            role: Some("user"),
-            content: LiftedContent::Text(text),
-        }],
-        GuardrailValue::Array(items) => items.iter().flat_map(lift_item).collect(),
-        GuardrailValue::Null
-        | GuardrailValue::Boolean(_)
-        | GuardrailValue::SignedInteger(_)
-        | GuardrailValue::UnsignedInteger(_)
-        | GuardrailValue::Decimal(_)
-        | GuardrailValue::Object(_) => Vec::new(),
+    let mut messages = Vec::new();
+    for item in items {
+        match item {
+            GuardrailValue::Text(text) => messages.push(LiftedMessage {
+                role: Some("user"),
+                content: LiftedContent::Text(text),
+            }),
+            GuardrailValue::Object(object) => messages.extend(lift_object_item(item, object)),
+            GuardrailValue::Null
+            | GuardrailValue::Boolean(_)
+            | GuardrailValue::SignedInteger(_)
+            | GuardrailValue::UnsignedInteger(_)
+            | GuardrailValue::Decimal(_)
+            | GuardrailValue::Array(_) => {}
+        }
     }
+    messages
 }
 
 pub(super) fn inspected_messages(
