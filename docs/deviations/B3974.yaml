@@ -1,0 +1,43 @@
+task: B3974
+deviations:
+  - what: >-
+      The native Opik SDK client arrives as an injected NativeClientSource whose get_client_cached() returns
+      Option<Arc<dyn NativeOpikClient>>, instead of litellm importing opik.api_objects.opik_client and calling
+      get_client_cached() on that module. A source that returns None selects the HTTP batch path, and a source that
+      returns a client is read once at construction and cached on the logger.
+    why: >-
+      Rust has no opik package to import, so the embedding binary decides whether the SDK is available; the
+      constructor still calls get_client_cached() once and both delivery branches stay live.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/opik.py#L18-L22
+  - what: >-
+      A failed async context setup is the caller passing no TaskTracker. The constructor logs a warning and leaves
+      flush_lock unset, so flush_queue returns without sending and only the sync success callback delivers.
+      LiteLLM calls asyncio.create_task(periodic_flush()) and catches the RuntimeError a missing event loop raises.
+    why: >-
+      Rust has no implicit event loop inside a synchronous constructor and spawning without a runtime panics
+      instead of raising, so the task owner is injected; the warning, the unset flush lock and the sync-only
+      operation stay the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/opik.py#L92-L99
+  - what: >-
+      One injected pooled client from betterlite-http serves both callback paths. LiteLLM builds a separate sync
+      httpx client and async httpx client in __init__.
+    why: >-
+      betterlite's outbound transport is async only and the gateway keeps one HTTP client pool, so the sync
+      callback awaits the same pooled client instead of owning a second blocking client.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/opik.py#L54-L55
+  - what: >-
+      The in-memory log queue is capped at max_queue_size (default 50,000) on every enqueue and drops the oldest
+      events with a warning. LiteLLM's queue grows without a bound in the Opik path because CustomBatchLogger
+      applies max_queue_size only when async_send_batch raises, and Opik's _submit_batch swallows its errors.
+    why: >-
+      An unreachable Opik endpoint must not grow a gateway's memory without limit; the cap changes behavior only
+      past 50,000 queued events, which a working setup does not reach.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_batch_logger.py#L16-L93
+  - what: >-
+      An async batch response with status 300 or higher is logged at error level with its status and body and does
+      not raise. LiteLLM's response.raise_for_status() raises HTTPStatusError for any non-2xx answer, which its own
+      except block then logs as an exception, so its status-code branch is unreachable.
+    why: >-
+      Neither path propagates the failure and both clear the queue afterwards, so only the log line differs; the
+      task's lenient handling of 3xx and above is what betterlite implements.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/opik.py#L265-L279
