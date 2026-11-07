@@ -94,11 +94,13 @@ enum Fault {
     Write,
     WriteAndRemove,
     Replace,
+    Remove,
 }
 
 struct ScriptedFiles {
     fault: Fault,
     gate: Option<Arc<Gate>>,
+    set_mode_calls: Arc<AtomicUsize>,
 }
 
 impl ScriptedFiles {
@@ -106,6 +108,7 @@ impl ScriptedFiles {
         Self {
             fault: Fault::None,
             gate: Some(gate),
+            set_mode_calls: Arc::new(AtomicUsize::new(0)),
         }
     }
 }
@@ -127,6 +130,7 @@ impl FileAccess for ScriptedFiles {
     }
 
     fn set_mode(&self, path: &Path, mode: u32) -> io::Result<()> {
+        self.set_mode_calls.fetch_add(1, Ordering::SeqCst);
         LocalFiles.set_mode(path, mode)
     }
 
@@ -149,7 +153,7 @@ impl FileAccess for ScriptedFiles {
     }
 
     fn remove(&self, path: &Path) -> io::Result<()> {
-        if self.fault == Fault::WriteAndRemove {
+        if matches!(self.fault, Fault::WriteAndRemove | Fault::Remove) {
             return Err(io::Error::other("scripted remove failure"));
         }
         LocalFiles.remove(path)

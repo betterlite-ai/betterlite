@@ -1,8 +1,10 @@
+use std::ffi::OsStr;
 use std::fs;
 use std::io;
-use std::os::unix::fs::symlink;
+use std::os::unix::fs::{PermissionsExt as _, symlink};
 use std::path::Path;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use betterlite_redact::secret::{MINIMUM_CUSTOM_KEY_LENGTH, Redactor};
@@ -41,8 +43,23 @@ struct CacheRecord {
 }
 
 fn private_files_with(fault: Fault) -> PrivateFiles {
-    let access: Arc<dyn FileAccess> = Arc::new(ScriptedFiles { fault, gate: None });
+    let access: Arc<dyn FileAccess> = Arc::new(ScriptedFiles {
+        fault,
+        gate: None,
+        set_mode_calls: Arc::new(AtomicUsize::new(0)),
+    });
     PrivateFiles::from(access)
+}
+
+// The counter tells a test whether ensure_private_dir chmodded a directory the way it was found
+fn recording_files() -> (PrivateFiles, Arc<AtomicUsize>) {
+    let set_mode_calls = Arc::new(AtomicUsize::new(0));
+    let access: Arc<dyn FileAccess> = Arc::new(ScriptedFiles {
+        fault: Fault::None,
+        gate: None,
+        set_mode_calls: Arc::clone(&set_mode_calls),
+    });
+    (PrivateFiles::from(access), set_mode_calls)
 }
 
 fn document(text: &str) -> PrivateDocument {
@@ -124,6 +141,14 @@ fn passthrough_rejects_a_value_nested_past_the_depth_limit() {
 }
 
 #[test]
+fn passthrough_accepts_a_value_at_the_depth_and_size_limits() {
+    let at_depth = (0..MAX_JSON_DEPTH).fold(Value::Null, |inner, _| Value::Array(vec![inner]));
+    let at_size = Value::String("x".repeat(MAX_JSON_BYTES - 2));
+    Passthrough::try_from(at_depth).expect("accepts JSON at the depth limit");
+    Passthrough::try_from(at_size).expect("accepts JSON at the size limit");
+}
+
+#[test]
 fn safe_json_loads_keeps_the_serde_error_as_the_source() {
     let error = safe_json_loads(b"{\"model\": ").expect_err("rejects truncated json");
     let PrivateJsonError::Decode(source) = &error else {
@@ -141,6 +166,14 @@ fn safe_json_loads_rejects_a_payload_over_the_byte_limit() {
         PrivateJsonError::TooLarge(size, limit)
             if size == MAX_JSON_BYTES + 1 && limit == MAX_JSON_BYTES
     ));
+}
+
+#[test]
+fn safe_json_loads_accepts_a_payload_at_the_byte_limit() {
+    let payload = format!("\"{}\"", "x".repeat(MAX_JSON_BYTES - 2));
+    assert_eq!(payload.len(), MAX_JSON_BYTES);
+    let parsed = safe_json_loads(payload.as_bytes()).expect("accepts the payload at the limit");
+    assert_eq!(parsed, Value::String("x".repeat(MAX_JSON_BYTES - 2)));
 }
 
 #[rstest]
@@ -296,12 +329,93 @@ async fn discarding_a_staged_file_removes_it_and_ignores_a_missing_one() {
 }
 
 #[tokio::test]
+async fn a_failed_discard_reports_the_discard_error() {
+    let directory = TempDir::new().expect("temp dir");
+    let files = private_files_with(Fault::Remove);
+    let error = files
+        .discard_staged_json(&StagedFile {
+            path: directory.path().join("cache.json"),
+        })
+        .await
+        .expect_err("reports the remove failure");
+    assert!(matches!(error, PrivateJsonError::Discard(..)));
+}
+
+#[tokio::test]
 async fn ensure_private_dir_refuses_a_path_with_no_final_name() {
     let error = PrivateFiles::default()
         .ensure_private_dir(Path::new(""))
         .await
         .expect_err("refuses an empty path");
     assert!(matches!(error, PrivateJsonError::InvalidPath(_)));
+}
+
+#[tokio::test]
+async fn staging_refuses_a_target_with_no_final_name() {
+    let error = PrivateFiles::default()
+        .stage_private(Path::new("/"), document(r#"{"a": 1}"#))
+        .await
+        .expect_err("refuses a target with no final name");
+    assert!(matches!(error, PrivateJsonError::InvalidPath(_)));
+}
+
+#[tokio::test]
+async fn ensure_private_dir_creates_a_nested_owner_only_directory() {
+    let directory = TempDir::new().expect("temp dir");
+    let (files, set_mode_calls) = recording_files();
+    let nested = directory.path().join("state").join("private");
+    files
+        .ensure_private_dir(&nested)
+        .await
+        .expect("creates the nested directory");
+    assert_eq!(mode_of(&nested), 0o700);
+    assert_eq!(set_mode_calls.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn ensure_private_dir_tightens_a_wide_directory() {
+    let directory = TempDir::new().expect("temp dir");
+    let (files, set_mode_calls) = recording_files();
+    let wide = directory.path().join("wide");
+    fs::create_dir_all(&wide).expect("creates the directory");
+    fs::set_permissions(&wide, fs::Permissions::from_mode(0o755)).expect("widens the directory");
+    files
+        .ensure_private_dir(&wide)
+        .await
+        .expect("tightens the directory");
+    assert_eq!(mode_of(&wide), 0o700);
+    assert_eq!(set_mode_calls.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn ensure_private_dir_leaves_an_owner_only_directory_alone() {
+    let directory = TempDir::new().expect("temp dir");
+    let (files, set_mode_calls) = recording_files();
+    let private = directory.path().join("private");
+    fs::create_dir_all(&private).expect("creates the directory");
+    fs::set_permissions(&private, fs::Permissions::from_mode(0o700)).expect("keeps it private");
+    files
+        .ensure_private_dir(&private)
+        .await
+        .expect("accepts the directory");
+    files
+        .ensure_private_dir(&private)
+        .await
+        .expect("accepts the existing directory");
+    assert_eq!(set_mode_calls.load(Ordering::SeqCst), 0);
+    assert_eq!(mode_of(&private), 0o700);
+}
+
+#[tokio::test]
+async fn ensure_private_dir_refuses_a_path_that_is_a_file() {
+    let directory = TempDir::new().expect("temp dir");
+    let file = directory.path().join("not-a-directory");
+    fs::write(&file, "occupied").expect("writes the file");
+    let error = PrivateFiles::default()
+        .ensure_private_dir(&file)
+        .await
+        .expect_err("refuses a regular file");
+    assert!(matches!(error, PrivateJsonError::Directory(..)));
 }
 
 #[tokio::test]
@@ -323,6 +437,70 @@ async fn staging_follows_a_symlinked_parent_directory() {
             .file_type()
             .is_symlink()
     );
+}
+
+#[tokio::test]
+async fn staging_creates_missing_parent_directories_beside_the_target() {
+    let directory = TempDir::new().expect("temp dir");
+    let target = directory
+        .path()
+        .join("state")
+        .join("nested")
+        .join("cache.json");
+    let files = PrivateFiles::default();
+    let staged = files
+        .stage_private(&target, document(r#"{"fresh": 1}"#))
+        .await
+        .expect("stages into the missing directory");
+    assert_eq!(staged.path.parent(), target.parent());
+    files
+        .commit_staged_json(&staged, &target)
+        .await
+        .expect("commits the document");
+    assert_eq!(
+        value(&fs::read_to_string(&target).expect("reads")),
+        value(r#"{"fresh": 1}"#)
+    );
+}
+
+#[tokio::test]
+async fn json_documents_stage_under_the_lite_llm_json_suffix() {
+    let directory = TempDir::new().expect("temp dir");
+    let files = PrivateFiles::default();
+    let target = directory.path().join("state");
+    let json = files
+        .stage_private(&target, document(r#"{"a": 1}"#))
+        .await
+        .expect("stages the json document");
+    assert_eq!(json.path.extension().and_then(OsStr::to_str), Some("json"));
+    let raw = files
+        .stage_private(
+            &target,
+            PrivateDocument {
+                suffix: None,
+                bytes: b"raw".to_vec(),
+            },
+        )
+        .await
+        .expect("stages the raw bytes");
+    assert_eq!(raw.path.extension().and_then(OsStr::to_str), None);
+}
+
+#[tokio::test]
+async fn staging_a_bare_file_name_uses_the_current_directory() {
+    let target = Path::new("private-json-relative-cache.json");
+    let files = PrivateFiles::default();
+    let staged = files
+        .stage_private(target, document(r#"{"relative": true}"#))
+        .await
+        .expect("stages in the current directory");
+    assert!(staged.path.is_absolute());
+    files
+        .commit_staged_json(&staged, target)
+        .await
+        .expect("commits the document");
+    assert!(target.exists());
+    fs::remove_file(target).expect("removes the document");
 }
 
 #[tokio::test]

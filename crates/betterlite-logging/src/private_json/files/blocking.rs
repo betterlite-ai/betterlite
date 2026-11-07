@@ -62,13 +62,10 @@ pub(super) fn commit_blocking(
     Ok(())
 }
 
-// Path("file.json").parent is "" while Path("/").parent is "/", and only a path naming no file has nowhere to stage
+// Path("file.json").parent is "", which create_dir_all treats as the current directory and tempfile resolves against it
 fn stage_directory(target: &Path) -> Result<&Path, PrivateJsonError> {
     if target.file_name().is_none() {
         return Err(PrivateJsonError::InvalidPath(target.to_owned()));
     }
-    match target.parent() {
-        Some(parent) if !parent.as_os_str().is_empty() => Ok(parent),
-        _ => Ok(Path::new(".")),
-    }
+    Ok(target.parent().unwrap_or_else(|| Path::new(".")))
 }
