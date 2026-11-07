@@ -1,9 +1,14 @@
+use rstest::rstest;
 use rust_decimal::Decimal;
 use serde_json::Value;
 
 use crate::oracle_comparison_contracts::{
     ExpectedDifference, NumericRule, compare_documents, validate,
 };
+use crate::router_probes::comparison::{Documents, compare};
+use crate::router_probes::single_candidate::Output;
+use crate::router_probes::{ProbeOutput, Reply};
+use crate::routing_component_oracle::{ProbeCompare, compare_probe_replies};
 
 fn value(text: &str) -> Value {
     serde_json::from_str(text).unwrap()
@@ -118,4 +123,95 @@ fn an_https_link_and_an_empty_link_are_both_accepted() {
     with_empty_link.link = String::new();
     validate(&[], &[with_empty_link]).unwrap();
     validate(&[], &[expected("/detail", value("1"), value("2"))]).unwrap();
+}
+
+#[rstest]
+#[case::declared_difference(
+    r#"{"detail": "reference", "other": 1}"#,
+    r#"{"detail": "betterlite", "other": 1}"#,
+    true,
+    false,
+    None
+)]
+#[case::score_within_tolerance(
+    r#"{"score": 0.5, "other": 1}"#,
+    r#"{"score": 0.5000001, "other": 1}"#,
+    false,
+    true,
+    None
+)]
+#[case::third_field_after_a_declared_difference(
+    r#"{"detail": "reference", "other": 1}"#,
+    r#"{"detail": "betterlite", "other": 2}"#,
+    true,
+    false,
+    Some("/other")
+)]
+#[case::third_field_after_a_tolerated_score(
+    r#"{"score": 0.5, "other": 1}"#,
+    r#"{"score": 0.5000001, "other": 2}"#,
+    false,
+    true,
+    Some("/other")
+)]
+fn comparison_drops_each_asserted_pointer_before_the_structural_diff(
+    #[case] reference: &str,
+    #[case] rust: &str,
+    #[case] with_difference: bool,
+    #[case] with_numeric: bool,
+    #[case] pointer: Option<&str>,
+) {
+    let (reference, rust) = (value(reference), value(rust));
+    let differences = [expected(
+        "/detail",
+        value(r#""reference""#),
+        value(r#""betterlite""#),
+    )];
+    let scores = [numeric("/score", Decimal::new(1, 6), "float diagnostic")];
+    let outcome = compare(&Documents {
+        reference: &reference,
+        rust: &rust,
+        numeric: if with_numeric { &scores } else { &[] },
+        expected_difference: if with_difference { &differences } else { &[] },
+        ignore: &[],
+        self_check: false,
+        message: "documents differ",
+    });
+    assert_eq!(
+        outcome.as_ref().map(|found| found.pointer.as_str()),
+        pointer
+    );
+    if let Some(found) = outcome {
+        assert_eq!(found.message, "documents differ");
+    }
+}
+
+fn selected(id: &str) -> Reply {
+    Reply::Ok {
+        output: ProbeOutput::SingleCandidate(Output {
+            selected: id.to_owned(),
+        }),
+        warnings: Vec::new(),
+    }
+}
+
+#[rstest]
+#[case::native_first_python_second("native", "python", false, true)]
+#[case::sides_swapped("python", "native", false, false)]
+#[case::self_check_compares_litellm_twice("python", "python", true, true)]
+#[case::self_check_off_expects_the_betterlite_value("python", "python", false, false)]
+fn a_probe_declares_the_litellm_value_second_and_the_betterlite_value_first(
+    #[case] first: &str,
+    #[case] second: &str,
+    #[case] self_check: bool,
+    #[case] passes: bool,
+) {
+    let compare: ProbeCompare = serde_json::from_str(
+        r#"{"expected_difference": [{"pointer": "/output/single_candidate/selected",
+            "reference": "python", "rust": "native", "why": "the picks differ by design", "link": ""}]}"#,
+    )
+    .unwrap();
+    let outcome =
+        compare_probe_replies(&selected(first), &selected(second), &compare, self_check).unwrap();
+    assert_eq!(outcome.is_none(), passes);
 }

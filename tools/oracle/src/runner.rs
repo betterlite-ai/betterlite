@@ -203,7 +203,7 @@ fn run_group_capture(input: GroupCaptureInput<'_>) -> Result<Vec<bool>, OracleEr
     compare_group(root, &prepared_cases, &captures)
 }
 
-fn comparison_cases(cases: &[Case], self_check: bool) -> Vec<Case> {
+pub(crate) fn comparison_cases(cases: &[Case], self_check: bool) -> Vec<Case> {
     let mut owned = Vec::with_capacity(cases.len());
     for case in cases {
         owned.push(case.with_self_check(self_check));

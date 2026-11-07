@@ -41,7 +41,7 @@ struct ProbeStep {
 
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct ProbeCompare {
+pub(crate) struct ProbeCompare {
     #[serde(default)]
     ignore: Vec<Ignore>,
     #[serde(default)]
@@ -189,7 +189,7 @@ async fn run_probe(command: &ProbeCommand, bytes: &[u8]) -> Result<Reply, Oracle
     parse_message(&output.stdout.bytes)
 }
 
-fn compare_probe_replies(
+pub(crate) fn compare_probe_replies(
     first: &Reply,
     second: &Reply,
     compare: &ProbeCompare,

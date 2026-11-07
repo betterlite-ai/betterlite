@@ -1,13 +1,20 @@
+use std::collections::BTreeMap;
 use std::fs;
+use std::path::Path;
+use std::slice;
 
 use rstest::rstest;
 use rust_decimal::Decimal;
 use serde_json::Value;
 
-use crate::case::load_sdk_http_cases;
+use crate::case::{Compare, LoadedCase, load_sdk_http_cases, parse_case};
+use crate::compare::compare as compare_responses;
+use crate::http::Response;
 use crate::oracle_comparison_contracts::{
     ContractError, ExpectedDifference, NumericRule, compare_documents, validate,
 };
+use crate::routing_scenarios::compare::flatten;
+use crate::runner::comparison_cases;
 
 fn value(text: &str) -> Value {
     serde_json::from_str(text).unwrap()
@@ -197,6 +204,117 @@ fn a_betterlite_value_that_differs_from_the_declared_rust_value_is_a_mismatch() 
     let error = compare_documents(&reference, &rust, &[], &differences, false).unwrap_err();
     assert_eq!(error.pointer, "/detail");
     assert!(error.message.contains("betterlite"));
+}
+
+const HTTP_CASE: &str = r"
+name: declared
+config: |
+  model_list: []
+env: {}
+upstream: []
+request:
+  method: POST
+  path: /v1/chat/completions
+  headers: {content-type: application/json}
+  body: {model: m}
+compare:
+  headers: []
+  headers_present: []
+  upstream_headers: []
+  ignore: []
+  expected_difference:
+    - {pointer: /detail, reference: from-litellm, rust: from-betterlite, why: declared, link: ''}
+";
+
+const SCENARIO_CASE: &str = r"
+name: declared
+config: |
+  model_list: []
+env: {}
+upstream: []
+scenario:
+  steps:
+    - request:
+        method: POST
+        path: /v1/chat/completions
+        headers: {content-type: application/json}
+        body: {model: m}
+      compare:
+        headers: []
+        headers_present: []
+        upstream_headers: []
+        ignore: []
+        expected_difference:
+          - {pointer: /detail, reference: from-litellm, rust: from-betterlite, why: declared, link: ''}
+    - concurrent:
+        requests:
+          - request:
+              method: POST
+              path: /v1/chat/completions
+              headers: {content-type: application/json}
+              body: {model: m}
+            compare:
+              headers: []
+              headers_present: []
+              upstream_headers: []
+              ignore: []
+              expected_difference:
+                - {pointer: /detail, reference: from-litellm, rust: from-betterlite, why: declared, link: ''}
+          - request:
+              method: POST
+              path: /v1/chat/completions
+              headers: {content-type: application/json}
+              body: {model: m}
+            compare:
+              headers: []
+              headers_present: []
+              upstream_headers: []
+              ignore: []
+              expected_difference:
+                - {pointer: /detail, reference: from-litellm, rust: from-betterlite, why: declared, link: ''}
+    - join: {}
+";
+
+fn response(detail: &str) -> Response {
+    Response {
+        status: 200,
+        headers: BTreeMap::new(),
+        body: serde_json::json!({"detail": detail}),
+    }
+}
+
+fn assert_self_check_is_asserted(compare: &Compare, self_check: bool) {
+    let contracts = compare.contracts.as_deref().unwrap();
+    assert_eq!(contracts.self_check, self_check);
+    let litellm = response("from-litellm");
+    let outcome = compare_responses(&litellm, &litellm, &[], &[], compare);
+    assert_eq!(outcome.is_ok(), self_check);
+}
+
+#[test]
+fn self_check_reaches_the_compare_of_an_http_case() {
+    let LoadedCase::Http(case) = parse_case(Path::new("declared.yaml"), HTTP_CASE).unwrap() else {
+        panic!("an http case was expected");
+    };
+    assert_self_check_is_asserted(&case.with_self_check(true).compare, true);
+    assert_self_check_is_asserted(&case.with_self_check(false).compare, false);
+    let group = comparison_cases(slice::from_ref(&case), true);
+    assert_self_check_is_asserted(&group[0].compare, true);
+}
+
+#[rstest]
+#[case::http_step(0)]
+#[case::first_concurrent_request(1)]
+#[case::second_concurrent_request(2)]
+fn self_check_reaches_every_step_compare_of_a_scenario_case(#[case] index: usize) {
+    let LoadedCase::Scenario(case) = parse_case(Path::new("declared.yaml"), SCENARIO_CASE).unwrap()
+    else {
+        panic!("a scenario case was expected");
+    };
+    let marked = case.with_self_check(true);
+    let steps = flatten(&marked.scenario);
+    assert_eq!(steps.len(), 3);
+    assert_self_check_is_asserted(&steps[index].compare, true);
 }
 
 #[rstest]
