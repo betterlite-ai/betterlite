@@ -725,3 +725,51 @@ async fn network_mock_never_reaches_the_agent() {
     let accepted = timeout(Duration::from_millis(200), listener.accept()).await;
     assert!(matches!(accepted, Err(_elapsed)));
 }
+
+#[tokio::test]
+async fn closed_pool_tracker_stops_the_card_fetch() {
+    let (listener, base) = start_agent().await;
+    let state = AgentState {
+        card: card_json(&base, true),
+        reply: Reply::Json(buffered_message("hi")),
+        seen: Arc::default(),
+    };
+    let pool = pooled_client();
+    pool.tracker.close();
+    let settings = settings(&base, false, Duration::from_secs(2));
+    let (outcome, seen) = run_agent(
+        listener,
+        state,
+        Box::pin(async move { create_a2a_client(&pool, settings, &environment(None)).await }),
+    )
+    .await;
+    let Err(_failure) = outcome else {
+        panic!("a closed pool tracker must stop client creation");
+    };
+    assert!(seen.is_empty());
+}
+
+#[tokio::test]
+async fn invalid_ca_file_fails_before_any_request() {
+    let (listener, base) = start_agent().await;
+    let state = AgentState {
+        card: card_json(&base, true),
+        reply: Reply::Json(buffered_message("hi")),
+        seen: Arc::default(),
+    };
+    let pool = pooled_client();
+    let mut settings = settings(&base, false, Duration::from_secs(2));
+    settings.tls.ca_file = Some(format!("{}/Cargo.toml", env!("CARGO_MANIFEST_DIR")));
+    let (outcome, seen) = run_agent(
+        listener,
+        state,
+        Box::pin(async move { create_a2a_client(&pool, settings, &environment(None)).await }),
+    )
+    .await;
+    let Err(failure) = outcome else {
+        panic!("a CA file without certificates must fail client creation");
+    };
+    assert!(matches!(&failure, A2AError::Base { .. }));
+    assert_eq!(failure.status_code(), 500);
+    assert!(seen.is_empty());
+}
