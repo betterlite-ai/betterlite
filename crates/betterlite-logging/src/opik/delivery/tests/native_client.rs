@@ -3,6 +3,7 @@ use std::sync::Arc;
 use betterlite_models::decisions::Json;
 use rstest::rstest;
 use rust_decimal::Decimal;
+use tokio_util::task::TaskTracker;
 
 use super::support::{
     FixedSource, Fixture, NativeCall, NativeCallKind, RecordingNative, SPAN_URL, TRACE_URL, call,
@@ -34,10 +35,12 @@ async fn construction_caches_the_client_get_client_cached_returns() {
 #[case::async_callback(Callback::Async)]
 #[tokio::test]
 async fn native_success_calls_trace_then_span_with_the_payload_fields(#[case] callback: Callback) {
+    let tracker = TaskTracker::new();
     let native = Arc::new(RecordingNative::new());
     let mut fixture = Fixture::new();
+    fixture.options.batch_size = Some(1);
     fixture.source = FixedSource::with_client(Arc::clone(&native));
-    let logger = fixture.build(None);
+    let logger = fixture.build(Some(&tracker));
     let kwargs = sample_kwargs();
     let response = sample_response();
 
@@ -49,6 +52,8 @@ async fn native_success_calls_trace_then_span_with_the_payload_fields(#[case] ca
                 .await;
         }
     }
+    // a native branch that also queues would flush here and reach HTTP
+    logger.async_send_batch().await;
 
     assert!(fixture.delivery.requests().is_empty());
     let calls = native.calls();
@@ -192,10 +197,12 @@ async fn native_trace_failure_skips_the_span_and_logs() {
 #[tokio::test]
 async fn native_span_failure_is_logged_without_propagating(#[case] callback: Callback) {
     let (logs, _guard) = capture_logs();
+    let tracker = TaskTracker::new();
     let native = Arc::new(RecordingNative::failing(NativeCallKind::Span));
     let mut fixture = Fixture::new();
+    fixture.options.batch_size = Some(1);
     fixture.source = FixedSource::with_client(Arc::clone(&native));
-    let logger = fixture.build(None);
+    let logger = fixture.build(Some(&tracker));
     let kwargs = sample_kwargs();
     let response = sample_response();
 
@@ -207,6 +214,8 @@ async fn native_span_failure_is_logged_without_propagating(#[case] callback: Cal
                 .await;
         }
     }
+    // a native branch that also queues would flush here and reach HTTP
+    logger.async_send_batch().await;
 
     assert_eq!(native.calls().len(), 2);
     assert!(fixture.delivery.requests().is_empty());

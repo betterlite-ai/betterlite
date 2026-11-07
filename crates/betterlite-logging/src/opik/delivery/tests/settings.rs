@@ -74,6 +74,35 @@ fn settings_take_the_file_value_when_the_environment_is_silent() {
 }
 
 #[test]
+fn settings_treat_an_empty_url_override_as_unset() {
+    let environment = environment(&[("OPIK_URL_OVERRIDE", "")]);
+    let settings = resolve_settings(&LoggerOptions::default(), &environment, None).unwrap();
+    assert_eq!(settings.trace_url.as_str(), TRACE_URL);
+    assert_eq!(settings.span_url.as_str(), SPAN_URL);
+}
+
+#[test]
+fn settings_treat_an_empty_project_name_as_unset() {
+    let environment = environment(&[("OPIK_PROJECT_NAME", "")]);
+    let settings = resolve_settings(&LoggerOptions::default(), &environment, None).unwrap();
+    assert_eq!(settings.project_name, DEFAULT_PROJECT_NAME);
+
+    let file = "[opik]\nproject_name = file-project\n";
+    let from_file = resolve_settings(&LoggerOptions::default(), &environment, Some(file)).unwrap();
+    assert_eq!(from_file.project_name, "file-project");
+}
+
+#[test]
+fn settings_treat_an_empty_workspace_and_api_key_as_unset() {
+    let mut fixture = Fixture::new();
+    fixture.environment = environment(&[("OPIK_WORKSPACE", ""), ("OPIK_API_KEY", "")]);
+    let logger = fixture.build(None);
+    let headers = &logger.settings.headers;
+    assert!(headers.get("comet-workspace").is_none());
+    assert!(headers.get(AUTHORIZATION).is_none());
+}
+
+#[test]
 fn settings_keep_an_explicit_empty_project_name() {
     let mut options = options();
     options.project_name = Some("");

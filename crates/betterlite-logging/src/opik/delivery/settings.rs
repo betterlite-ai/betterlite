@@ -57,11 +57,38 @@ pub enum OpikSettingsError {
     },
 }
 
+struct ResolvedValues {
+    project_name: String,
+    base_url: String,
+    api_key: Option<SecretString>,
+    workspace: Option<String>,
+}
+
 pub(crate) fn resolve_settings(
     options: &LoggerOptions<'_>,
     environment: &BTreeMap<String, String>,
     config_file: Option<&str>,
 ) -> Result<OpikSettings, OpikSettingsError> {
+    let non_empty_environment = without_empty_values(environment);
+    let values = resolve_values(options, &non_empty_environment, config_file)?;
+    let trace_url = endpoint(&values.base_url, TRACE_PATH)?;
+    let span_url = endpoint(&values.base_url, SPAN_PATH)?;
+    let headers = opik_headers(values.workspace.as_deref(), values.api_key.as_ref())?;
+    let batch = batch_settings(options, &non_empty_environment)?;
+    Ok(OpikSettings {
+        project_name: values.project_name,
+        trace_url,
+        span_url,
+        headers,
+        batch,
+    })
+}
+
+fn resolve_values(
+    options: &LoggerOptions<'_>,
+    environment: &BTreeMap<String, String>,
+    config_file: Option<&str>,
+) -> Result<ResolvedValues, OpikSettingsError> {
     let project_name = get_config_variable(
         "project_name",
         options.project_name,
@@ -87,17 +114,21 @@ pub(crate) fn resolve_settings(
         config_file,
         None,
     )?;
-    let trace_url = endpoint(&base_url, TRACE_PATH)?;
-    let span_url = endpoint(&base_url, SPAN_PATH)?;
-    let headers = opik_headers(workspace.as_deref(), api_key.as_ref())?;
-    let batch = batch_settings(options, environment)?;
-    Ok(OpikSettings {
+    Ok(ResolvedValues {
         project_name,
-        trace_url,
-        span_url,
-        headers,
-        batch,
+        base_url,
+        api_key,
+        workspace,
     })
+}
+
+// docs/compatibility.md: an empty env var counts as unset, so the Opik config file and the default answer instead
+fn without_empty_values(environment: &BTreeMap<String, String>) -> BTreeMap<String, String> {
+    environment
+        .iter()
+        .filter(|(_, value)| !value.is_empty())
+        .map(|(name, value)| (name.clone(), value.clone()))
+        .collect()
 }
 
 fn endpoint(base: &str, path: &str) -> Result<Url, OpikSettingsError> {
