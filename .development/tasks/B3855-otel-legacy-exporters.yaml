@@ -1,0 +1,186 @@
+id: B3855
+title: Legacy OTel exporters and dynamic provider cache
+description: >-
+  Build the exporter side of LiteLLM's legacy OpenTelemetry logger: pick and build the span processor, the log exporter and the metric reader from the logger's settings, normalize the OTLP endpoint per signal, split the headers string, build the resource, and keep the bounded cache of per-credential tracer providers that the logger creates when a request carries its own headers or exporter settings.
+  The lifecycle (B3859) picks a tracer by calling the cache built here, and the provider assembly (B3868) calls the span processor, log exporter, metric reader and resource builders from `_init_tracing`, `_init_logs` and `_init_metrics`. Both depend on this task, so this task calls neither.
+  Everything goes in the module `otel::legacy_exporters` of betterlite-logging: `crates/betterlite-logging/src/otel/legacy_exporters.rs` declares the submodules `error`, `endpoint`, `headers`, `resource`, `selection`, `build` and `tracer_cache`, each in `legacy_exporters/<name>.rs` with its tests in `legacy_exporters/<name>/tests.rs`. The settings record is B3854's `OpenTelemetryConfig` in `otel::legacy_policy::config`, and this task only reads it. Environment values come from a `&BTreeMap<String, String>` snapshot the caller passes in, never from `std::env`.
+
+  Reuse what exists. `otel::plumbing::exporters` (B3848) already builds OTLP HTTP and gRPC exporters, console sinks and the SDK sinks `SpanSink`, `LogSink` and `MetricSink`, and `otel::plumbing::providers::build_metric_reader` builds the 5 second periodic reader. This task decides which exporter LiteLLM's legacy rules would pick, then calls those builders with an `ExporterSpec` or a `betterlite_config::sections::otel_settings::Settings` whose every field is written out (no `..Default::default()`) that holds the already normalized endpoint, the kind text `console`, `otlp_http` or `otlp_grpc`, and the headers re-joined as `name=value,name=value`. The existing endpoint rewrite `plumbing::endpoints::signal_endpoint` leaves an endpoint that already ends in the right signal path unchanged, so it does not undo the legacy result. Do not reuse `signal_endpoint` or `plumbing::headers::parse_headers` for the legacy rules themselves, because both differ from LiteLLM's legacy code (see pitfalls).
+
+  Errors (`error`). `LegacyExporterError` has two variants, `Headers(HeadersError)` and `Exporter(ExporterError)` (B3848's), both with `#[from]`. Nothing here panics and nothing is swallowed.
+
+  Endpoint (`endpoint`). `normalize_otel_endpoint(endpoint: Option<&str>, signal: Signal, callback_name: Option<&str>) -> Option<String>` follows `_normalize_otel_endpoint`; `Signal` is `crate::otel::config::Signal` (`Traces`, `Metrics`, `Logs`). A missing or empty endpoint comes back as given. Otherwise: strip every trailing "/"; for `Traces`, return it unchanged when it contains "/v2/trace/otlp" (Splunk); for `Traces` with `callback_name == Some("langtrace")` and an endpoint that ends with "/api/trace" (the constant `LANGTRACE_TRACE_PATH`, defined in this module), return it unchanged; return it unchanged when it already ends with "/v1/<signal>"; when it ends with the "/v1/<other signal>" path of another signal, swap the last path segment for the wanted signal; otherwise append "/v1/<signal>", or only "/<signal>" when it already ends with "/v1". The invalid-signal warning in LiteLLM cannot happen with a typed `Signal`, so it is not ported.
+
+  Headers (`headers`). `HeadersInput` is the enum `None`, `Text(&str)` or `Map(&BTreeMap<String, String>)`. `headers_dictionary(input) -> Result<BTreeMap<String, String>, HeadersError>` follows `_get_headers_dictionary`: `None`, empty text and an empty map give an empty map; a map is copied; text is split on "," and each part on its first "=" with no trimming, no percent decoding and no case change, and a later duplicate name wins. A part without "=" (including the empty part left by a trailing comma) is `HeadersError::MissingSeparator { position }` with the 1-based position of the part. The error never contains the header text, because it may hold a credential. This is the decoder of outside text, so it gets a cargo-fuzz target `crates/betterlite-logging/fuzz/fuzz_targets/legacy_headers_dictionary.rs` that feeds UTF-8 input to `headers_dictionary(HeadersInput::Text(..))`, and a corpus folder `crates/betterlite-logging/fuzz/corpus/legacy_headers_dictionary` with at least three seeds, replayed by the test `replays_the_legacy_headers_corpus` in the headers tests.
+
+  Resource (`resource`). `legacy_resource(config: &OpenTelemetryConfig, env: &BTreeMap<String, String>) -> opentelemetry_sdk::Resource` follows `_get_litellm_resource`. The base attributes are `service.name` from `config.service_name`, `deployment.environment` from `config.deployment_environment` and `model_id` from `config.model_id`, falling back to the service name when the model id is empty; empty or missing values are not written. Then the environment resource is merged over the base, so it wins: each "name=value" pair of `OTEL_RESOURCE_ATTRIBUTES` (split on ",", then on the first "=", name and value trimmed, value percent-decoded, a pair without "=" skipped with a `warn`), then `OTEL_SERVICE_NAME` replaces `service.name` when set. Start from `Resource::builder_empty()` so the SDK does not read the process environment on its own. LiteLLM freezes the resource at first use; here the caller builds it once and passes it to the cache.
+
+  Selection (`selection`). Three pure functions decide what to build and return plain records, so the choice is tested and compared with LiteLLM without opening a network connection. All three parse the headers first (so a bad headers string fails even for a console exporter) and compare exporter text exactly and case-sensitively. The mapping from `config.exporter`: `InMemory` is the shared exporter (LiteLLM's "has an export method" branch); `Console` and `Named("console")` are console; `Named("otlp_http")`, `Named("http/protobuf")` and `Named("http/json")` are OTLP HTTP; `Named("otlp_grpc")` and `Named("grpc")` are OTLP gRPC; any other text is unknown.
+  `span_processor_plan(base, dynamic_headers: Option<&BTreeMap<String, String>>, config_override: Option<&OpenTelemetryConfig>, callback_name) -> Result<SpanProcessorPlan, HeadersError>` follows `_get_span_processor`. The exporter, endpoint and headers come from `config_override` when given, else from `base`; headers come from `dynamic_headers` when that map is non-empty, else from the chosen config's headers text. The plan holds `kind` (`Shared`, `Console`, `OtlpHttp` or `OtlpGrpc`), `endpoint` (normalized for `Traces`, set only for the two OTLP kinds), `headers` and `processor` (`Simple` for `Shared`, `Batch` for everything else, console included). An unknown exporter text becomes `Console` with a `debug` line, as LiteLLM does.
+  `log_exporter_plan(config, callback_name, env) -> Result<LogExporterPlan, HeadersError>` follows `_get_log_exporter`: `InMemory` is `Shared`; else `Console` when the exporter is console or `env["OTEL_LOGS_EXPORTER"] == "console"` (this wins over an OTLP exporter); then OTLP HTTP and gRPC with the endpoint normalized for `Logs`; an unknown text is `Console` plus a `warn` line "OpenTelemetry: Unknown log exporter '<text>', defaulting to console. Supported: console, otlp_http, otlp_grpc".
+  `metric_reader_plan(config, callback_name) -> Result<MetricReaderPlan, HeadersError>` follows `_get_metric_reader`: console, OTLP HTTP and gRPC (endpoint normalized for `Metrics`) and everything else, `InMemory` included, is `Console` plus the matching `warn` line with "metric" in place of "log". The metric reader has no shared-exporter branch.
+
+  Build (`build`). `LegacyExporterBuilder::new(clients: HttpClients, shared_exporter: InMemorySpanExporter)` keeps an `ExporterFactories::new(clients.clone(), BTreeMap::new())` from B3848. `span_processor(&self, plan) -> Result<ExportProcessor, LegacyExporterError>` builds `SpanSink::InMemory(shared_exporter.clone())` for `Shared` (so spans land in the exporter the caller holds), otherwise calls `ExporterFactories::exporter_from_spec`, and wraps the sink with `processor_for(sink, Some(plan.processor == Simple))`. `log_exporter(&self, plan)` returns `LogSink` through `build_log_exporter`, and `metric_reader(&self, plan)` returns the `PeriodicReader<MetricSink>` through `build_metric_reader`. For `OtlpHttp` pass the kind text `otlp_http`, never `http/json`, because LiteLLM's legacy code builds the protobuf exporter for all three HTTP names. The OTLP TLS policy already sits in `HttpClients` (one client per signal), so nothing here reads certificate files.
+
+  Tracer cache (`tracer_cache`). `DynamicTracerCache` is constructed with the logger's `OpenTelemetryConfig`, the `callback_name`, a `LegacyExporterBuilder`, the `Resource` from `legacy_resource`, a tracer name, and a maximum size. `DEFAULT_MAX_DYNAMIC_TRACER_PROVIDERS` is 256 and a given maximum below 1 is raised to 1. `legacy_tracer_name(env) -> String` is `env["OTEL_TRACER_NAME"]` or "litellm"; B3868 calls it too. The cache is a `Mutex<IndexMap<CacheKey, CachedProvider>>` where the map order is the recency order (the first entry is the least recently used; a hit moves its entry to the end). `CachedProvider` holds the `SdkTracerProvider` and `owns_exporter`. `CacheKey` is `Config { exporter: String, endpoint: Option<String>, headers: Option<String> }` or `Headers(BTreeMap<String, String>)`, with the exporter as its text ("console", "in_memory" or the named text) and the endpoint and headers as given, not normalized.
+  `tracer_for_config(&self, dynamic_config: &OpenTelemetryConfig) -> Result<SdkTracer, LegacyExporterError>` and `tracer_for_headers(&self, dynamic_headers: &BTreeMap<String, String>) -> Result<SdkTracer, LegacyExporterError>` follow `_get_tracer_with_dynamic_config` and `_get_tracer_with_dynamic_headers`. The first builds the processor from `span_processor_plan` with `config_override` set; the second uses the logger's own exporter and endpoint with `dynamic_headers`. Both build a provider with the shared resource and that one processor, and both go through `cached_dynamic_tracer(&self, key, owns_exporter, build: F) -> Result<SdkTracer, LegacyExporterError>` with `F: FnOnce() -> Result<SdkTracerProvider, LegacyExporterError>` as a generic parameter (no `impl Trait` argument), which is public so tests can pass their own providers. `owns_exporter` is false only when the exporter is `InMemory` (LiteLLM's `_provider_owns_exporter`: the shared exporter must stay alive for the whole process).
+  `cached_dynamic_tracer` follows LiteLLM step by step. Under the lock: on a hit, move the entry to the end and return a tracer from it. On a miss, drop the lock and run `build`, since exporter construction can block; a build error is returned and nothing is cached. Then take the lock again: if another caller cached the same key meanwhile, move that entry to the end, use it, and drop the provider just built; otherwise insert the new one at the end and, when the map now holds more than the maximum, remove the first entry. A dropped provider is shut down only when its own `owns_exporter` is true (never by the flag of the request that evicted it), on a separate `std::thread` so the caller does not wait for the exporter flush, with a `debug` line if `shutdown()` returns an error. A poisoned lock is recovered with `PoisonError::into_inner`, because the map is valid after a panic elsewhere. The tracer comes from `provider.tracer(tracer_name)` with the configured name.
+
+  Helper cases (pure functions only). The skeleton adds the helper operation `b3855` with these functions, and every case calls one of them, with LiteLLM running the same call through its real code: `normalize_otel_endpoint` (endpoint, signal, callback_name), `headers_dictionary` (text or map), `span_processor_plan`, `log_exporter_plan` and `metric_reader_plan` (a config with exporter, endpoint and headers, plus dynamic headers, config override, callback name and env where they apply; the answer holds kind, normalized endpoint, headers and processor kind), `tracer_cache_sequence` (maximum size and a list of requests with key and owns_exporter; the answer holds, per request, whether it built, then the final key order and the keys whose provider was shut down) and `litellm_resource` (config and env; the answer holds the resource attributes except `telemetry.sdk.*`). An `InMemory` exporter is sent as the in-memory marker, which the Python side turns into an `InMemorySpanExporter`. No HTTP case exists: no proxy route reaches the OTel logger yet, and the umbrella that wires it adds those.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/otel/legacy_exporters.rs
+    - crates/betterlite-logging/src/otel/legacy_exporters/**
+    - crates/betterlite-logging/fuzz/fuzz_targets/legacy_headers_dictionary.rs
+    - crates/betterlite-logging/fuzz/corpus/legacy_headers_dictionary/**
+    - tools/oracle/cases/helpers/legacy-otel-exporters/**
+    - tools/oracle/fuzz/corpus/helper_case/legacy-otel-exporters-*
+    - tools/oracle/helpers/b3855.py
+    - tools/oracle/helpers/b3855/**
+    - tools/oracle/src/helpers/logging/b3855.rs
+    - tools/oracle/src/helpers/logging/b3855/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L96-L106
+    why: The cap of 256 dynamic providers, the shutdown executor and the OTEL_TRACER_NAME default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L263-L290
+    why: Provider shutdown, the cached-provider record and the rule for when a dropped provider may be shut down.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L447-L476
+    why: The resource attributes and the merge with the environment resource.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1129-L1216
+    why: The LRU insert with the race rule, the cached tracer lookup and the two dynamic tracer builders with their keys.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L3032-L3131
+    why: _get_span_processor, with the exact exporter text matches and the batch or simple choice.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L3133-L3217
+    why: _get_log_exporter, including the OTEL_LOGS_EXPORTER console override and the unknown-exporter warning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L3219-L3287
+    why: _get_metric_reader, with no shared-exporter branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L3289-L3380
+    why: _normalize_otel_endpoint and _get_headers_dictionary.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langtrace.py#L14-L19
+    why: LANGTRACE_TRACE_PATH, the path the endpoint rule leaves alone for the langtrace callback.
+  - url: https://opentelemetry.io/docs/specs/otel/resource/sdk/#specifying-resource-information-via-an-environment-variable
+    why: How OTEL_RESOURCE_ATTRIBUTES and OTEL_SERVICE_NAME are read and merged.
+
+dod:
+  - text: normalize_otel_endpoint appends "/v1/<signal>" (or "/<signal>" after "/v1"), swaps another signal's path, leaves a correct path, the Splunk "/v2/trace/otlp" path and the langtrace "/api/trace" path alone, strips trailing slashes, and returns a missing or empty endpoint as given.
+    proof: [endpoint-tests, oracle, helper-python]
+  - text: headers_dictionary splits text on commas and first equals signs without trimming or decoding, copies a map, returns an empty map for missing or empty input, and reports a part without an equals sign as an error that holds no header text.
+    proof: [headers-tests, oracle, helper-python]
+  - text: The headers decoder has a fuzz target and a corpus that replays without a panic.
+    proof: [headers-fuzz]
+  - text: legacy_resource writes service.name, deployment.environment and model_id (falling back to the service name), then lets OTEL_RESOURCE_ATTRIBUTES and OTEL_SERVICE_NAME from the env snapshot win.
+    proof: [resource-tests, oracle, helper-python]
+  - text: span_processor_plan picks the shared exporter with a simple processor, console and unknown text as console with a batch processor, and OTLP HTTP and gRPC by their exact names, taking dynamic headers over the config headers and a config override over the logger's exporter and endpoint.
+    proof: [selection-tests, oracle, helper-python]
+  - text: log_exporter_plan lets OTEL_LOGS_EXPORTER=console win over an OTLP exporter, normalizes the endpoint for logs, and falls back to console with a warning for unknown text; metric_reader_plan does the same for metrics and treats the in-memory exporter as unknown.
+    proof: [selection-tests, oracle, helper-python]
+  - text: A headers string that does not parse fails every plan function, console exporters included.
+    proof: [selection-tests]
+  - text: The builder returns a processor that exports into the caller's in-memory exporter for the shared plan, a batch processor for console, and OTLP exporters that send to the normalized endpoint with the plan's headers.
+    proof: [build-tests]
+  - text: The tracer cache builds once per key, moves a hit to the most recent place, removes the least recently used provider above the maximum, floors the maximum at 1, and keeps one provider when two callers race on a key.
+    proof: [tracer-cache-tests, oracle, helper-python]
+  - text: A dropped provider is shut down only when it owns its exporter, off the caller's thread, and a failed build is returned without caching anything.
+    proof: [tracer-cache-tests]
+  - text: Newly added helper corpus cases replay through the shared helper-case parser independently of the native behavior tests.
+    proof: [helper-case-corpus]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: endpoint-tests
+      why: the per-signal endpoint rewrite is missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::legacy_exporters::endpoint::/)'
+    - id: headers-tests
+      why: the headers string and map decoder is missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::legacy_exporters::headers::/) - test(replays_the_legacy_headers_corpus)'
+    - id: headers-fuzz
+      why: the headers fuzz target or its corpus is missing, or a corpus file makes the decoder panic
+      run: test -f crates/betterlite-logging/fuzz/fuzz_targets/legacy_headers_dictionary.rs && test -n "$(ls -A crates/betterlite-logging/fuzz/corpus/legacy_headers_dictionary)" && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(replays_the_legacy_headers_corpus)'
+    - id: resource-tests
+      why: the resource attributes or the environment merge are missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::legacy_exporters::resource::/)'
+    - id: selection-tests
+      why: the exporter choice for spans, logs or metrics is missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::legacy_exporters::selection::/)'
+    - id: build-tests
+      why: the span processor, log exporter or metric reader builders are missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::legacy_exporters::build::/)'
+    - id: tracer-cache-tests
+      why: the dynamic tracer provider cache, its eviction or its shutdown rule is missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::legacy_exporters::tracer_cache::/)'
+    - id: helper-python
+      why: the LiteLLM-side helper and the betterlite helper disagree on a case
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::b3855::/)'
+    - id: helper-case-corpus
+      why: newly added helper cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/legacy-otel-exporters/ "tools/oracle/fuzz/corpus/helper_case/legacy-otel-exporters-*")" &&
+        grep -rlE '^[[:space:]]+b3855:' tools/oracle/cases/helpers/legacy-otel-exporters &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/legacy-otel-exporters/endpoint-append-v1-path.yaml
+  - tools/oracle/cases/helpers/legacy-otel-exporters/endpoint-swap-sibling-signal.yaml
+  - tools/oracle/cases/helpers/legacy-otel-exporters/endpoint-v1-suffix-and-slashes.yaml
+  - tools/oracle/cases/helpers/legacy-otel-exporters/endpoint-splunk-and-langtrace.yaml
+  - tools/oracle/cases/helpers/legacy-otel-exporters/headers-text-first-equals.yaml
+  - tools/oracle/cases/helpers/legacy-otel-exporters/headers-map-and-empty.yaml
+  - tools/oracle/cases/helpers/legacy-otel-exporters/resource-env-overrides.yaml
+  - tools/oracle/cases/helpers/legacy-otel-exporters/span-plan-console-is-batch.yaml
+  - tools/oracle/cases/helpers/legacy-otel-exporters/span-plan-unknown-text-console.yaml
+  - tools/oracle/cases/helpers/legacy-otel-exporters/span-plan-shared-exporter-simple.yaml
+  - tools/oracle/cases/helpers/legacy-otel-exporters/span-plan-dynamic-headers-win.yaml
+  - tools/oracle/cases/helpers/legacy-otel-exporters/span-plan-config-override.yaml
+  - tools/oracle/cases/helpers/legacy-otel-exporters/log-plan-env-console-override.yaml
+  - tools/oracle/cases/helpers/legacy-otel-exporters/log-plan-grpc-endpoint.yaml
+  - tools/oracle/cases/helpers/legacy-otel-exporters/metric-plan-in-memory-is-console.yaml
+  - tools/oracle/cases/helpers/legacy-otel-exporters/metric-plan-http-endpoint.yaml
+  - tools/oracle/cases/helpers/legacy-otel-exporters/tracer-cache-reuse-and-lru.yaml
+  - tools/oracle/cases/helpers/legacy-otel-exporters/tracer-cache-shared-not-shut-down.yaml
+  - tools/oracle/cases/helpers/legacy-otel-exporters/tracer-cache-size-floor.yaml
+
+deviations:
+  - what: Header names sent by OTLP exporters are lower-cased, a percent-encoded value is decoded, and a header entry whose name or value is not valid HTTP text is dropped with a warning.
+    why: The exporters are built through B3848, which parses the headers text with its own W3C Baggage rules. `headers_dictionary` itself keeps LiteLLM's raw split, and the difference shows only for values that hold "%" escapes or characters HTTP does not allow.
+  - what: A dynamic header value that holds a comma is split in two when the exporter is built.
+    why: The map is joined back into "name=value,name=value" text for B3848's builder. Header values with commas are rare, and the alternative is a second copy of B3848's header client.
+  - what: When the legacy exporter is the in-memory one, the log exporter is a fresh `InMemoryLogExporter`.
+    why: LiteLLM hands the span exporter object to the log pipeline, which cannot take log records. The Rust SDK has a typed log exporter for this.
+  - what: A dropped provider is shut down on its own short-lived `std::thread`, not on a pool of 4 workers, and no provider registers an exit hook (`shutdown_on_exit`).
+    why: Evictions are rare (above 256 distinct credential sets) and the Rust SDK has no interpreter-exit hook. The shared-exporter provider that LiteLLM kept out of the hook is also never shut down here.
+  - what: The resource has no `telemetry.sdk.*` attributes.
+    why: It starts from an empty builder so the SDK cannot read the process environment, which this crate only receives as a snapshot.
+  - what: Debug lines do not print header values.
+    why: LiteLLM redacts them with `redact_string`; leaving them out is simpler and cannot leak a key.
+
+out_of_scope:
+  - "get_tracer_to_use_for_request, _get_dynamic_otel_headers_from_kwargs, _get_dynamic_otel_config_from_kwargs and the base construct_dynamic_otel_headers and construct_dynamic_otel_config (B3859); they call tracer_for_config and tracer_for_headers."
+  - "OpenTelemetry.__init__, _init_tracing, _init_metrics, _init_logs, the log processor choice and the global provider rules (B3868); they call the plan and build functions, legacy_resource and legacy_tracer_name."
+  - "OpenTelemetryConfig, from_env and normalize (B3854); this task only reads the record."
+  - "The V2 exporter registry, build_span_exporter and the OTLP builders themselves (B3848), and OTLP HTTP TLS resolution (B3842, already inside HttpClients)."
+  - "Subclass overrides of the dynamic header and config hooks for Arize, Langfuse and the other vendor callbacks (B3862, B3863)."
+
+pitfalls:
+  - "Exporter text is matched exactly and case-sensitively here: `OTLP_HTTP` or `GRPC` is unknown and falls back to console, while B3848's `classify` lower-cases first. Pass B3848 only the canonical lower-case kinds `console`, `otlp_http` and `otlp_grpc`."
+  - "LiteLLM wraps a console exporter in a batch processor; only the caller's shared exporter gets the simple one. B3848's `processor_for` picks simple for console when its flag is `None`, so always pass `Some(..)`."
+  - "`http/json` builds the protobuf exporter in the legacy code. Passing `http/json` to B3848 would switch the body to JSON."
+  - "The headers are parsed before the exporter is looked at, so `OTEL_HEADERS=oops` fails for a console exporter too, and a trailing comma in the text fails like a missing equals sign."
+  - "`dynamic_headers or otel_headers` means an empty dynamic map falls back to the logger's own headers text, so `tracer_for_headers` with an empty map uses the configured headers."
+  - "`_normalize_otel_endpoint` returns an empty endpoint as given and only swaps a sibling path at the very end of the URL, so `http://h/v1/logs/extra` becomes `http://h/v1/logs/extra/v1/traces` for traces."
+  - "An endpoint that ends in `/v1` gets only `/<signal>` appended, which `plumbing::endpoints::signal_endpoint` does not do (it would give `/v1/v1/traces`)."
+  - "The langtrace and Splunk exceptions apply to traces only; the metrics and logs endpoints of a Splunk host are rewritten like any other."
+  - "`OTEL_LOGS_EXPORTER=console` beats an OTLP exporter for logs only; spans and metrics ignore it. The variable is read from the env snapshot on each call."
+  - "The metric reader treats the in-memory exporter as unknown text, while the span processor and log exporter treat it as the shared exporter."
+  - "The cache key for a headers request is the whole header map, so two requests with the same credentials but different map order share one provider, and the key never includes the logger's endpoint."
+  - "The cache decides shutdown from the dropped entry's own `owns_exporter`. A request that evicts a provider which owns its exporter must not skip the shutdown just because the request itself uses the shared exporter."
+  - "Do not hold the cache lock while `build` runs. The race rule only works if the second lock section checks the key again."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

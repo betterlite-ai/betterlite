@@ -48,6 +48,10 @@ scope:
     - tools/oracle/cases/helpers/mcp-request-headers/**
     - tools/oracle/fuzz/corpus/helper_case/mcp-oauth-resource-*
     - tools/oracle/fuzz/corpus/helper_case/mcp-request-headers-*
+    - tools/oracle/helpers/b4654.py
+    - tools/oracle/helpers/b4654/**
+    - tools/oracle/src/helpers/mcp/b4654.rs
+    - tools/oracle/src/helpers/mcp/b4654/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/oauth_utils.py#L24-L57

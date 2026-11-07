@@ -1,0 +1,200 @@
+id: B3665
+title: Guardrail lifecycle selection and trusted opt-outs
+description: >-
+  Add the module `guardrail_selection` to betterlite-guardrails. Before any guardrail hook runs, LiteLLM asks `CustomGuardrail.should_run_guardrail` whether this guardrail applies to this request at this hook. This task builds that gate, the reads of request data behind it, and the read of a request's per-guardrail `extra_body`. Request data is `BTreeMap<String, GuardrailValue>`, called `data` below. The gate runs no hook and records nothing: B124 owns the dispatch and asks the gate first.
+
+
+  Files. `guardrail_selection.rs` declares the submodules and re-exports `GuardrailSelectionError`. `guardrail_selection/error.rs` holds that enum. `guardrail_selection/metadata.rs` holds the free functions that read `data`, all `pub(super)`. `guardrail_selection/gate.rs` holds an `impl GuardrailBase` block, so the provider tasks in this crate call `base.should_run_guardrail(...)`. `GuardrailBase` and `GuardrailFailure` come from `guardrail_base` (B5471), `GuardrailValue` from `sections::guardrail_identity` (B3660), and `LitellmParamsMode`, `Mode`, `ModeTarget` and `GuardrailEventHooks` from `sections::guardrail_params` (B3662). The guardrail's own values are `self.settings.guardrail_name`, `self.settings.event_hook` and `self.settings.default_on`.
+
+
+  Admin metadata, in `metadata.rs`. `admin_metadata(data) -> BTreeMap<&str, &GuardrailValue>` is `_get_admin_metadata`. Walk `metadata`, then `litellm_metadata`, and skip one that isn't an object. In each, a non-empty object under `user_api_key_team_metadata` becomes the team map and a non-empty object under `user_api_key_metadata` becomes the key map, replacing what an earlier pass found. Then start from the team map and lay the key map over it, key by key. `global_guardrails_disabled(data) -> bool` is true only when the merged `disable_global_guardrails` is the boolean true. `opted_out_global_guardrails(data) -> Vec<&str>` returns the text entries of the merged `opted_out_global_guardrails` when that value is a list, and an empty list otherwise. The proxy writes these two metadata objects after stripping what the caller sent (B1137), so this is the trusted source for both opt-outs, and nothing else in `data` may feed them.
+
+
+  Requested guardrails, in `metadata.rs`. `requested_guardrails(data) -> Result<&[GuardrailValue], GuardrailSelectionError>` is `get_guardrail_from_metadata`. A root key `guardrails` decides alone. Without one, the first of `metadata` and `litellm_metadata` that is an object holding the key `guardrails` decides. With no key anywhere the list is empty. The value that decides must be a list. Null reads as an empty list, and any other value is `GuardrailSelectionError::RequestedNotList`, since docs/compatibility.md rejects a value the declared type can't hold.
+
+
+  The gate, in `gate.rs`. `should_run_guardrail(&self, data, event_type: GuardrailEventHooks, suppressed: &BTreeSet<String>) -> Result<bool, GuardrailSelectionError>` takes these steps in this order, and the first step that answers ends the call. A guardrail whose name is in `suppressed` gives false. For a `default_on` guardrail, a name in the opted-out list gives false, then a true `global_guardrails_disabled` gives false, then the hook decides: no match gives false, a match on a `Tagged` hook gives `TagMode`, and any other match gives true. A guardrail that isn't `default_on` goes on. When its `event_hook` is set, it isn't in the requested list and `event_type` isn't `logging_only`, the answer is false. After that, no hook match gives false, a `Tagged` hook gives `TagMode`, and everything else gives true. Call `requested_guardrails` only in the step that uses it.
+
+
+  `suppressed` holds the names an auto router's compression policy turned off for this one request. LiteLLM keeps them in a ContextVar set by `arm_pre_call`. betterlite has no ambient per-request state, and B3546 depends on this task, so the caller reads them from B3546's `suppressed_guardrails` and passes them in. A caller with no auto router passes an empty set. A guardrail with no name is never suppressed.
+
+
+  `event_hook_is_event_type(&self, event_type: GuardrailEventHooks) -> bool` is public, because provider tasks call it too. No hook gives true. `One` compares the text, `Many` looks through the list, and `Tagged` looks through every value of `tags` and then `default`, each `ModeTarget` in either form. B3662 gives `GuardrailEventHooks` only its serde names, so add a private `hook_text(event_type: GuardrailEventHooks) -> &'static str` in `gate.rs` with one arm per hook and no wildcard. `is_requested_guardrail(&self, requested: &[GuardrailValue]) -> bool` is `_guardrail_is_in_requested_guardrails`: a `Text` entry equal to the name or an `Object` entry with the name as a key counts, and any other entry is skipped.
+
+
+  `dynamic_request_body_params(&self, data) -> Result<BTreeMap<String, GuardrailValue>, GuardrailSelectionError>` is `get_guardrail_dynamic_request_body_params`, called by Noma, GraySwan, Presidio, Bedrock and the other providers that forward caller options. Walk the requested list. The first `Object` entry with the guardrail's name as a key decides, and its value's `extra_body` is the answer. A guardrail with no name, no such entry, a null entry value, a missing `extra_body` or a null one gives an empty map. An entry value or an `extra_body` that is neither an object nor null is `DynamicParamsNotObject`. There is no premium check, see deviations, so `_validate_premium_user` isn't built.
+
+
+  `GuardrailSelectionError` has three variants: `TagMode { guardrail_name: Option<String> }`, `RequestedNotList` and `DynamicParamsNotObject { guardrail_name: String }`, with messages in betterlite's own words. `TagMode` is what open-source LiteLLM does for a tag-based hook: the tag logic lives in the enterprise package, so the import fails and the request ends in HTTP 500. betterlite doesn't build that logic. `impl From<GuardrailSelectionError> for GuardrailFailure` lets a hook use `?`: `TagMode` becomes `GuardrailFailure::Http` with status 500, the other two with status 400, and `detail` is the error's Display text.
+
+
+  Tests live in `guardrail_selection/tests.rs`. Test names start with `event_hook_`, `requested_`, `admin_`, `gate_`, `suppressed_`, `tag_`, `dynamic_` or `failure_`, because the checks filter on those prefixes.
+
+
+  Each oracle case calls one function through the task's helper operation. A case gives `function` (`should_run_guardrail`, `event_hook_is_event_type` or `dynamic_request_body_params`), `guardrail_name`, `event_hook` (absent, text, a list, or an object with `tags` and `default`), `default_on` and `data`. The first two functions also get `event_type`, and the gate gets `suppressed` as a list. Both sides answer `{result: <value>}`, and a `TagMode` error answers `{result: rejected}`. The Python side builds `CustomGuardrail(guardrail_name=..., event_hook=..., default_on=...)` with `Mode(**value)` for an object hook and `GuardrailEventHooks(value)` for `event_type`, and it calls `should_run_guardrail`, `_event_hook_is_event_type` or `get_guardrail_dynamic_request_body_params`. It sets `_suppressed_compression_guardrails` from `litellm.proxy.guardrails.auto_router_compression` to `frozenset(suppressed)` and resets it after the call, catches `ImportError` for the rejected answer, and sets `premium_user` to true on `litellm.proxy.proxy_server` before the dynamic call.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/guardrail_selection.rs
+    - crates/betterlite-guardrails/src/guardrail_selection/**
+    - tools/oracle/cases/helpers/guardrail-selection/**
+    - tools/oracle/helpers/b3665.py
+    - tools/oracle/helpers/b3665/**
+    - tools/oracle/src/helpers/guardrails/b3665.rs
+    - tools/oracle/src/helpers/guardrails/b3665/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L674-L712
+    why: _get_admin_metadata, get_disable_global_guardrail and get_opted_out_global_guardrails_from_metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L736-L767
+    why: get_guardrail_from_metadata with its lookup order, and _guardrail_is_in_requested_guardrails.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1041-L1056
+    why: Suppression reads request-scoped state and never metadata, and the docstring says why.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1058-L1127
+    why: should_run_guardrail, the order of its steps and the ImportError on a tag-based hook.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1129-L1154
+    why: _event_hook_is_event_type for a single hook, a list and a Mode.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1156-L1207
+    why: get_guardrail_dynamic_request_body_params and the _validate_premium_user check this task leaves out.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/auto_router_compression.py#L27-L36
+    why: The ContextVar holding the suppressed names and its accessor.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1187-L1189
+    why: Mode, with its tags and default fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/guardrails.py#L1305-L1317
+    why: GuardrailEventHooks and DynamicGuardrailParams.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L2207-L2231
+    why: Caller-sent user_api_key_* keys and control fields are stripped from both metadata objects before this gate reads them.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L2408-L2409
+    why: Where the proxy writes user_api_key_metadata and user_api_key_team_metadata.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L1925-L1933
+    why: A caller maps pre_call to pre_mcp_call before it asks the gate, so the gate compares the event it is given.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L2964-L2969
+    why: The during_call caller maps to during_mcp_call the same way.
+dod:
+  - text: event_hook_is_event_type gives true with no hook, compares a single hook, looks through a list, looks through every tag value and `default` of a `Tagged` hook in both their forms, and gives false when none holds the event.
+    proof: [event-hook-tests, oracle]
+  - text: A root `guardrails` key decides alone even when empty, the first metadata object holding the key decides next with `metadata` ahead of `litellm_metadata`, an object without the key or a non-object hides nothing, and null reads as an empty list.
+    proof: [requested-tests, oracle]
+  - text: A `guardrails` value that is neither a list nor null gives `RequestedNotList` at the root and in both metadata objects.
+    proof: [requested-tests]
+  - text: A guardrail counts as requested through a text entry equal to its name or an object entry with its name as a key, other entries never match, and a guardrail with no name is never requested.
+    proof: [requested-tests, oracle]
+  - text: Admin metadata takes the last non-empty `user_api_key_team_metadata` and `user_api_key_metadata` from `metadata` then `litellm_metadata`, skips a non-object metadata value, and lays key values over team values key by key.
+    proof: [admin-tests, oracle]
+  - text: Only a boolean true `disable_global_guardrails` in admin metadata disables global guardrails, and a non-list `opted_out_global_guardrails` reads as empty.
+    proof: [admin-tests]
+  - text: Neither opt-out counts at the root of `data`, directly in `metadata`, or under the singular name `disable_global_guardrail`.
+    proof: [admin-tests, oracle]
+  - text: A `default_on` guardrail gives false when opted out, false when disabled, false when the hook doesn't match and true when it matches, whatever the requested list holds.
+    proof: [gate-tests, oracle]
+  - text: A guardrail that isn't `default_on` and has an `event_hook` gives false when it isn't requested, unless `event_type` is `logging_only`, and gives false for a hook that doesn't match even when requested.
+    proof: [gate-tests, oracle]
+  - text: A guardrail with no `event_hook` and no `default_on` gives true for any event without being requested, and opt-outs never stop a guardrail that isn't `default_on`.
+    proof: [gate-tests, oracle]
+  - text: A name in `suppressed` gives false ahead of every other step, for a `default_on` guardrail and a requested one, a guardrail with no name is never suppressed, and names placed in `data` suppress nothing.
+    proof: [suppressed-tests, oracle]
+  - text: A matching `Tagged` hook gives `TagMode` for a `default_on` guardrail and for a requested one, a `Tagged` hook that doesn't match gives false, and an opt-out or a missing request gives false before the error can happen.
+    proof: [tag-tests, oracle]
+  - text: dynamic_request_body_params returns the `extra_body` of the first object entry naming the guardrail, skips text entries, and gives an empty map with no such entry, no name, a null entry value, or a missing or null `extra_body`.
+    proof: [dynamic-tests, oracle]
+  - text: An entry value or an `extra_body` that is neither an object nor null gives `DynamicParamsNotObject`.
+    proof: [dynamic-tests]
+  - text: Converting the error to `GuardrailFailure` gives `Http` with status 500 for `TagMode` and status 400 for the other two variants.
+    proof: [failure-tests]
+  - text: The helper cases for this task were added on this branch.
+    proof: [helper-cases-added]
+checks:
+  optional: [mutants]
+  commands:
+    - id: event-hook-tests
+      why: a hook form is compared wrongly or a Mode value is missed
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_selection::tests::event_hook_/)'
+    - id: requested-tests
+      why: the lookup order of requested guardrails or an entry match is wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_selection::tests::requested_/)'
+    - id: admin-tests
+      why: admin metadata merges in the wrong order or a caller-sent value counts as an opt-out
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_selection::tests::admin_/)'
+    - id: gate-tests
+      why: the steps of should_run_guardrail run in the wrong order or a branch gives the wrong answer
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_selection::tests::gate_/)'
+    - id: suppressed-tests
+      why: suppression comes too late or data can suppress a guardrail
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_selection::tests::suppressed_/)'
+    - id: tag-tests
+      why: a tag-based hook runs, is skipped silently, or fails before the opt-outs
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_selection::tests::tag_/)'
+    - id: dynamic-tests
+      why: the wrong entry's extra_body is returned or a bad value goes unnoticed
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_selection::tests::dynamic_/)'
+    - id: failure-tests
+      why: a selection error reaches the hook with the wrong status
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^guardrail_selection::tests::failure_/)'
+    - id: helper-cases-added
+      why: the helper cases for this task were not added on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/guardrail-selection)"
+oracle_cases:
+  - tools/oracle/cases/helpers/guardrail-selection/default-on-matching-hook.yaml
+  - tools/oracle/cases/helpers/guardrail-selection/default-on-other-hook.yaml
+  - tools/oracle/cases/helpers/guardrail-selection/default-on-empty-request-list.yaml
+  - tools/oracle/cases/helpers/guardrail-selection/opted-out-default-on.yaml
+  - tools/oracle/cases/helpers/guardrail-selection/opt-out-not-default-on.yaml
+  - tools/oracle/cases/helpers/guardrail-selection/team-disable-true.yaml
+  - tools/oracle/cases/helpers/guardrail-selection/key-disable-false-beats-team.yaml
+  - tools/oracle/cases/helpers/guardrail-selection/key-opt-out-list-replaces-team.yaml
+  - tools/oracle/cases/helpers/guardrail-selection/caller-disable-ignored.yaml
+  - tools/oracle/cases/helpers/guardrail-selection/singular-disable-ignored.yaml
+  - tools/oracle/cases/helpers/guardrail-selection/litellm-metadata-replaces-admin.yaml
+  - tools/oracle/cases/helpers/guardrail-selection/not-requested.yaml
+  - tools/oracle/cases/helpers/guardrail-selection/requested-text-entry.yaml
+  - tools/oracle/cases/helpers/guardrail-selection/requested-object-entry.yaml
+  - tools/oracle/cases/helpers/guardrail-selection/requested-wrong-hook.yaml
+  - tools/oracle/cases/helpers/guardrail-selection/no-event-hook-runs.yaml
+  - tools/oracle/cases/helpers/guardrail-selection/logging-only-unrequested.yaml
+  - tools/oracle/cases/helpers/guardrail-selection/root-guardrails-hide-metadata.yaml
+  - tools/oracle/cases/helpers/guardrail-selection/metadata-list-hides-litellm-metadata.yaml
+  - tools/oracle/cases/helpers/guardrail-selection/litellm-metadata-requested.yaml
+  - tools/oracle/cases/helpers/guardrail-selection/suppressed-default-on.yaml
+  - tools/oracle/cases/helpers/guardrail-selection/suppressed-requested.yaml
+  - tools/oracle/cases/helpers/guardrail-selection/tag-hook-match-rejected.yaml
+  - tools/oracle/cases/helpers/guardrail-selection/tag-hook-other-event.yaml
+  - tools/oracle/cases/helpers/guardrail-selection/tag-opted-out-before-error.yaml
+  - tools/oracle/cases/helpers/guardrail-selection/tag-default-event-hook.yaml
+  - tools/oracle/cases/helpers/guardrail-selection/hook-list-membership.yaml
+  - tools/oracle/cases/helpers/guardrail-selection/dynamic-first-object-entry.yaml
+  - tools/oracle/cases/helpers/guardrail-selection/dynamic-text-entry-skipped.yaml
+  - tools/oracle/cases/helpers/guardrail-selection/dynamic-missing-extra-body.yaml
+deviations:
+  - what: A request's per-guardrail `extra_body` always reaches the guardrail. LiteLLM without a license logs a warning and returns an empty map.
+    why: betterlite has no paid tier and every feature is on, so `premium_user` is true here and the check is left out.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L1156-L1207
+out_of_scope:
+  - Hook dispatch. B124 owns ProxyLogging in litellm/proxy/utils.py, with _execute_guardrail_hook, _process_guardrail_callback, pre_call_hook and during_call_hook. It maps pre_call and during_call to their MCP events, asks this gate, and calls GuardrailInvocation begin and finish from B3664 around each hook.
+  - In custom_guardrail.py, B5471 owns the class and its constructor, is_guardrail_intervention, _strict_guardrail_modes_enabled, get_session_id_from_request_data, render_violation_message, raise_passthrough_exception, inject_advisory_message, get_config_model, get_supported_event_hooks, _validate_event_hook, uses_apply_guardrail_interface, supports_scan_only_tool_results, structured_messages_cover_full_request, apply_guardrail, mask_content_in_string and update_in_memory_litellm_params, and it records the sensitive data functions with no caller at the pin.
+  - In custom_guardrail.py, B3664 owns add_standard_logging_guardrail_information_to_request_data, _process_response, _summarize_guardrail_response, _process_error, _inputs_were_modified, get_guardrails_messages_for_call_type, _append_slg_to_litellm_params, _sync_guardrail_info_to_logging_obj, _original_inputs_for and log_guardrail_information.
+  - In custom_guardrail.py, B3666 owns the scan cache, the pre-call markers, _deployment_hook_target, the deployment and logging hooks, _is_valid_response_type, _user_api_key_auth_from_request and _unified_hook_fields.
+  - B5470 owns every function of litellm/proxy/guardrails/_content_utils.py. The gate reads no message content.
+  - B3546 owns litellm/proxy/guardrails/auto_router_compression.py, with suppressed_compression_guardrails and arm_pre_call, and B3683 owns its startup policy. This module only takes the names as an argument.
+  - B1137 strips caller-sent user_api_key_* keys and control fields from both metadata objects and writes the admin metadata. This module reads the result and strips nothing.
+  - The should_run_guardrail overrides in panw_prisma_airs, grayswan, llm_as_a_judge and cisco_ai_defense_mcp stay with those provider tasks, B3772 for GraySwan.
+  - EnterpriseCustomGuardrailHelper._should_run_if_mode_by_tag is in the enterprise package and is not built.
+pitfalls:
+  - The gate compares the exact event it gets, so don't turn `pre_call` into `pre_mcp_call` here, because the caller already did.
+  - Read `self.settings.event_hook` and never `self.mode`, because a config update through B5471's `update_params` writes `mode` and leaves `event_hook` as the constructor set it.
+  - A guardrail with no `event_hook` that isn't `default_on` runs on every event without being requested, so a missing hook means all hooks and not none.
+  - "`logging_only` skips only the requested check, so a guardrail with `event_hook: pre_call` still gives false for it through the hook match."
+  - "`default_on` guardrails never look at the requested list, so `guardrails: []` can't stop one."
+  - Opt-outs apply only to `default_on` guardrails, so a requested guardrail named in `opted_out_global_guardrails` still runs.
+  - A key's `disable_global_guardrails` false beats a team's true, and a key's `opted_out_global_guardrails` list replaces the team's list and doesn't add to it, because the merge works key by key.
+  - A non-empty `user_api_key_metadata` in `litellm_metadata` replaces the whole object found in `metadata`, and an empty one leaves that object in place.
+  - LiteLLM tests `is True`, so the text `true` or the number 1 in `disable_global_guardrails` disables nothing, and only the plural key is read, so a value under the singular `disable_global_guardrail` changes nothing.
+  - A root `guardrails` key holding an empty list hides `metadata.guardrails`, and `metadata` holding `guardrails` hides `litellm_metadata.guardrails` even when empty or null, but a `metadata` object without the key hides nothing.
+  - Suppression must stay ahead of the opt-outs and must come only from the argument, because metadata reaches spend logs the caller can read, and a caller who replays a list there could turn off any guardrail.
+  - A `Tagged` hook that matches must return the error and never false, or a guardrail the admin configured stops running with nothing to show for it.
+  - In `dynamic_request_body_params`, a text entry `pii` followed by an object entry named `pii` returns that object's `extra_body`, because a text entry is skipped and is not a match, and only the first object naming the guardrail counts.
+  - The names `get_opted_out_global_guardrails_from_metadata` and `get_guardrail_dynamic_request_body_params` are over the 30-character limit, so use the names in the description.
+  - Pass `GuardrailEventHooks` by value only if B3662's enum derives Copy, and by reference if it doesn't.
+  - "`ibm_hooks/config.rs` has its own local `should_run_guardrail`, so leave it alone."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

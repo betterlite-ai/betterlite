@@ -74,6 +74,10 @@ scope:
     - crates/betterlite-logging/fuzz/corpus/passthrough_upstream_usage/**
     - tools/oracle/cases/logging/passthrough-logging-state/**
     - "tools/oracle/fuzz/corpus/helper_case/passthrough_logging_state-*"
+    - tools/oracle/helpers/b3605.py
+    - tools/oracle/helpers/b3605/**
+    - tools/oracle/src/helpers/logging/b3605.rs
+    - tools/oracle/src/helpers/logging/b3605/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/upstream_usage_headers.py#L19-L38
@@ -204,6 +208,7 @@ pitfalls:
   - "is_cursor_route is true for custom_llm_provider 'cursor' or any hostname containing 'api.cursor.com'. The tracked /v0/ routes only match when the provider is already 'cursor', so a bare /v0/agents URL with another provider is false."
   - "is_langfuse_route checks the parsed path only, while is_vertex_ai_live_route checks the whole route string and returns false for an empty string."
   - "is_openrouter_decisions_route needs both custom_llm_provider 'openrouter' and a path ending in '/alpha/decisions'; the query string is not part of the path."
+  - "The response object enum needs a video variant (Gemini predictLongRunning in B3640)."
 review_level: security
 budget:
   max_changed_lines: 1500

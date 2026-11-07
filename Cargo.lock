@@ -1227,7 +1227,6 @@ dependencies = [
  "betterlite-auth",
  "betterlite-env",
  "betterlite-models",
- "betterlite-rate-limit",
  "betterlite-secret-managers",
  "betterlite-secrets",
  "fancy-regex",
@@ -2108,6 +2107,7 @@ version = "0.1.0"
 name = "betterlite-rate-limit"
 version = "0.1.0"
 dependencies = [
+ "betterlite-config",
  "serde",
 ]
 

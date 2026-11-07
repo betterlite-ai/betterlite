@@ -89,6 +89,10 @@ scope:
     - crates/betterlite-policy/Cargo.toml
     - tools/oracle/cases/helpers/policy-values/**
     - "tools/oracle/fuzz/corpus/helper_case/policy-values-*"
+    - tools/oracle/helpers/b3240.py
+    - tools/oracle/helpers/b3240/**
+    - tools/oracle/src/helpers/policy/b3240.rs
+    - tools/oracle/src/helpers/policy/b3240/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/policy_engine/policy_types.py#L41-L130

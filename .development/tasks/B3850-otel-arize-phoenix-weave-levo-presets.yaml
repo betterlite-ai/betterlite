@@ -47,6 +47,10 @@ scope:
     - crates/betterlite-logging/src/otel/integrations/weave_settings/**
     - crates/betterlite-logging/Cargo.toml
     - tools/oracle/cases/helpers/otel-presets/**
+    - tools/oracle/helpers/b3850.py
+    - tools/oracle/helpers/b3850/**
+    - tools/oracle/src/helpers/logging/b3850.rs
+    - tools/oracle/src/helpers/logging/b3850/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/presets/base.py#L1-L35

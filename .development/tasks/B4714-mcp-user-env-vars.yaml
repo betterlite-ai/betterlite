@@ -82,6 +82,10 @@ scope:
     - crates/betterlite-db/fuzz/corpus/mcp_user_env_vars/**
     - tools/oracle/cases/helpers/mcp-user-env-vars/**
     - "tools/oracle/fuzz/corpus/helper_case/mcp-user-env-vars-*"
+    - tools/oracle/helpers/b4714.py
+    - tools/oracle/helpers/b4714/**
+    - tools/oracle/src/helpers/db/b4714.rs
+    - tools/oracle/src/helpers/db/b4714/**
   lint_tables: false
 
 references:

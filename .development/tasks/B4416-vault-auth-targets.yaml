@@ -124,6 +124,10 @@ scope:
     - crates/betterlite-secret-managers/fuzz/corpus/vault_response/**
     - tools/oracle/cases/helpers/vault-auth/**
     - tools/oracle/fuzz/corpus/helper_case/vault-auth-*
+    - tools/oracle/helpers/b4416.py
+    - tools/oracle/helpers/b4416/**
+    - tools/oracle/src/helpers/secret_managers/b4416.rs
+    - tools/oracle/src/helpers/secret_managers/b4416/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/hashicorp_secret_manager.py#L24-L91

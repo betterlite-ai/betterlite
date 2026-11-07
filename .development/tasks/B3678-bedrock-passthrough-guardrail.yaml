@@ -1,0 +1,199 @@
+id: B3678
+title: Bedrock passthrough guardrail translation and event streams
+description: >-
+  Build the guardrail handler for Bedrock Converse passthrough calls: scan the text of a Converse request, scan the text of a Converse response, and rewrite a buffered Converse event stream after the post call hook has run on it. LiteLLM's `BedrockPassthroughGuardrailHandler` does all three. Like the other translation handlers (B5820, B3677) the Rust version is a set of plain async functions in betterlite-server, not a trait impl, because `BaseTranslation` is not implemented in Rust. The provider table (`provider "bedrock"` to this handler) and `LlmPassthroughRouteHandler` belong to B3574. Nothing here is registered or reached from a route yet.
+
+  Types: request bodies are `BTreeMap<String, GuardrailValue>` and `GuardrailValue` comes from `betterlite_config::sections::guardrail_identity::item`. `GuardrailApiInputs`, `GuardrailContract`, `GuardrailFailure`, `GuardrailInputType` and `GuardrailLogTarget` come from B5471's `guardrail_base`, as in B5820. The guardrail is a generic `G: GuardrailContract`. Every module that can fail owns its error enum.
+
+  All files sit under crates/betterlite-server/src/guardrails/bedrock_passthrough/ (the parent file bedrock_passthrough.rs only declares them): `routing.rs`, `text_paths.rs`, `request.rs`, `output.rs`, `event_stream.rs` and, if event_stream.rs grows past 300 lines, a folder event_stream/ with `frames.rs`, `groups.rs` and `hook.rs`.
+
+  routing.rs. `is_converse_endpoint(endpoint: &str) -> bool` strips trailing `/` characters, splits on `/` and is true when the last part is exactly `converse` or `converse-stream`. `is_event_stream_content_type(content_type: &str) -> bool` is true when the text contains `vnd.amazon.eventstream` anywhere (substring, not equality). `EVENT_STREAM_MEDIA_TYPE` is the constant `application/vnd.amazon.eventstream`. `event_stream_endpoint_is_de_anonymizable(endpoint)` is `is_converse_endpoint`.
+
+  The generic fallback. For an endpoint that is not Converse (invoke, invoke-with-response-stream and the rest) LiteLLM hands the call to the generic `PassThroughEndpointHandler`, which B3573 builds in betterlite-core. This task does not call it. `request::process_input_messages` and `output::process_output_response` return `Routed::Generic` for those endpoints and change nothing, and the caller (B3574) runs B3573's handler. `Routed` is `enum Routed { Handled, Generic }`, defined in routing.rs.
+
+  text_paths.rs holds the one piece of shared mechanics. LiteLLM collects `(container, key)` references into the JSON and later writes through them. Rust has no such reference that survives a call, so collection records a path instead: `TextPath(Vec<PathStep>)` with `PathStep::Key(String)` and `PathStep::Index(usize)`. `collect_request_texts(body: &GuardrailValue, skip_system: bool, skip_tool: bool) -> Vec<(TextPath, String)>`, `collect_output_texts(content_blocks: &[GuardrailValue]) -> Vec<(TextPath, String)>` (paths start at the block index inside the list) and `write_back_texts(root: &mut GuardrailValue, holders: &[TextPath], returned: &[String])`. Write-back sets the text at `holders[i]` to `returned[i]` for every `i` below `returned.len()`. When `returned.len() < holders.len()` it first logs at warn `BedrockPassthroughGuardrailHandler: guardrail returned {} texts for {} extracted fields; the unreturned fields keep their original text` with the two counts, and the extra holders keep their text. A returned list longer than the holders drops the extras. A path that no longer reaches a text value (the guardrail changed the body) is skipped.
+
+  What the request collector gathers, in this order. (1) Unless `skip_system`, every element of `system` that is an object with a non-empty text `text`. (2) For each element of `messages` that is an object, each element of its `content` that is an object: when `skip_tool` is true and the block has a `toolUse` or `toolResult` key, skip the whole block. Otherwise its own non-empty `text`; then, when `toolUse` is an object, every non-empty string found anywhere under `toolUse.input` (the deep walk below); then, when `toolResult` is an object, for each object in `toolResult.content` its non-empty `text` and every non-empty string under its `json`. (3) Every non-empty string found anywhere under `additionalModelRequestFields`. `toolConfig.tools` is never scanned. Tool definitions are app configuration, and scanning them would send each schema word to the guardrail as its own text. `additionalModelRequestFields` is scanned on purpose, because it is free-form and a caller could route blocked content through it. An empty string is never collected, and a non-object where an object is expected is skipped.
+
+  The deep walk (`_collect_strings`) takes a node. A node that is a bare string yields nothing, so a plain-string `toolUse.input` is not scanned. For an object or array, the walk is iterative with a stack: the non-empty string children come first in their order, and the container children are pushed in order and popped last first, so the last child container is walked before earlier ones. Numbers, booleans and nulls are ignored. Do not recurse. Because `GuardrailValue::Object` is a `BTreeMap`, string siblings inside one JSON object come out in sorted key order, and the order of a multi-key object differs from LiteLLM, which keeps insertion order (see deviations).
+
+  What the output collector gathers, in block order, for each block that is an object: its non-empty `text`; the deep walk under `toolUse.input`; the non-empty `reasoningContent.reasoningText.text`; and the non-empty `text` of each object in `citationsContent.content`. Reasoning signatures, redacted content and citation sources are never collected.
+
+  request.rs. `process_input_messages(data: &mut BTreeMap<String, GuardrailValue>, guardrail: &G, skip_system: bool, skip_tool: bool, logging_obj: Option<&mut GuardrailLogTarget>) -> Result<Routed, RequestTranslationError>`. The caller computes `skip_system` and `skip_tool` with B3663's `effective_skip_system_message_for_guardrail` and `effective_skip_tool_message_for_guardrail`, so this task needs neither. `endpoint` is `data["endpoint"]` (empty text when absent). A non-Converse endpoint returns `Routed::Generic`. Otherwise, when `data["data"]` is not an object or its `messages` is not an array, return `Handled` with no call. Collect the texts; none means no call. Else call the guardrail once with `texts` and `model` (only when `data["model"]` is non-empty text), `request_data` the whole `data`, input type `Request`, and write the returned texts back into `data["data"]` when the returned `texts` is present and non-empty. Failures from the guardrail are returned in the error enum's one variant and never caught.
+
+  output.rs. `process_output_response(response: &mut GuardrailValue, guardrail: &G, logging_obj: Option<&mut GuardrailLogTarget>, user_metadata: BTreeMap<String, GuardrailValue>, request_data: Option<&BTreeMap<String, GuardrailValue>>) -> Result<Routed, OutputTranslationError>`. `endpoint` is `request_data["endpoint"]`, empty when there is no request data. A non-empty endpoint that is not Converse returns `Routed::Generic`; an empty endpoint is treated as Converse. A response that is not an object, or has no array at `output.message.content`, returns `Handled` with no call. No collected text means no call. Otherwise build the request data for the call as a copy of `request_data` (an empty map when `None`); when the copy has no `litellm_metadata` key and `user_metadata` is not empty, insert it as `litellm_metadata`. `user_metadata` is the result of B3661's `transform_user_api_key_dict_to_metadata`, which the caller computes (empty when there is no key). The caller's own request data is not changed. Call the guardrail once with `texts` and `model` (the request data's `model` when it is non-empty text, not the response's), input type `Response`, and write the returned texts back into the response content when present and non-empty.
+
+  event_stream.rs rewrites a whole buffered Bedrock event stream (`application/vnd.amazon.eventstream`) so masked tokens come back as the original text. It does not talk to a guardrail. It sends one synthetic response through the post call hook and puts the hook's answer back into the frames. The hook is injected: `trait PostCallSuccessHook: Sync { type Error: std::error::Error + Send + Sync + 'static; fn post_call_success_hook(&self, data: &BTreeMap<String, GuardrailValue>, user_api_key_dict: &BTreeMap<String, GuardrailValue>, response: GuardrailValue) -> impl Future<Output = Result<GuardrailValue, Self::Error>> + Send; }` stands in for `ProxyLogging.post_call_success_hook`, and the proxy wiring task implements it.
+
+  Frame reading is sync and pure. Decode frames with the `aws-smithy-eventstream` crate (`frame::read_message_from`, which checks both CRCs, the same job as botocore's `EventStreamBuffer`); add `aws-smithy-eventstream = "=0.61.6"`, `aws-smithy-types = "=1.9.1"`, `bytes` and `crc32fast` to crates/betterlite-server/Cargo.toml at the versions betterlite-bedrock already pins, if they are not there yet. `parse_event_stream(body: &[u8]) -> ParsedStream { frames: Vec<Frame>, trailing: Vec<u8> }` and `Frame { raw: Vec<u8>, texts: Vec<(GroupKey, String)> }`. Walk from offset 0 while `offset + 16 <= len`: read the big-endian u32 total length at the offset; stop when it is below 16 or runs past the end. Everything from the stopping offset is `trailing`. Each frame's `raw` is its exact bytes. A frame that fails to decode keeps `texts` empty and is forwarded as is (log at debug `could not decode event-stream frame, forwarding it unmodified`). Only a frame whose `:event-type` header is the string `contentBlockDelta` is read further: parse its payload as JSON, and when that fails or the payload is not an object, keep `texts` empty (debug log `could not parse contentBlockDelta payload, forwarding frame unmodified`). Otherwise `texts` comes from `delta_text_cells(payload["delta"])`, in order: `delta.text` (group `Text`), `delta.toolUse.input` (group `Tool`), `delta.reasoningContent.text` (group `Reasoning`), and for each element of `delta.citationsContent.content` at its position `i` the `text` of that element (group `Citation(i)`). Each is taken only when the value is a string; an empty string counts. `GroupKey` is `enum { Text, Tool, Reasoning, Citation(usize) }`. A delta that is not an object gives no cells.
+
+  Groups. Fragments of one logical text arrive split over many frames, so they are joined before the hook sees them. `group_texts(frames: &[Frame]) -> Groups` lists groups in order of first appearance, with each group's members as `(frame_index, cell_index)` pairs and its fragment strings. A group is active when its joined text is not empty. With no active group, `de_anonymize_event_stream` returns the input bytes unchanged. The synthetic response is `{"output": {"message": {"role": "assistant", "content": [{"text": <joined text of group>} ...one per active group, in order]}}, "stopReason": "end_turn"}`.
+
+  `de_anonymize_event_stream<H: PostCallSuccessHook>(body: &[u8], hook: &H, user_api_key_dict: &BTreeMap<String, GuardrailValue>, data: &BTreeMap<String, GuardrailValue>) -> Result<Vec<u8>, EventStreamError<H::Error>>` calls the hook once with `data`, `user_api_key_dict` and the synthetic response. A hook error is returned in the error enum's `Hook` variant. When the answer is not an object, return the input bytes unchanged (debug log `post_call_success_hook returned {type}, leaving event stream unmodified`). When `output.message.content[i].text` is missing or not text for any `i` below the active group count, return the input bytes unchanged. Otherwise take the returned text of each active group, in order.
+
+  `redistribute(groups: &Groups, returned: &[String]) -> BTreeMap<(usize, usize), String>` (`returned[j]` belongs to the j-th active group) splits a returned text back over the members of its group. With `orig` the fragment lengths and `total = max(sum(orig), 1)`, `new_len` the returned text's length, `pos = 0`: for every member except the last, `end = pos + round_half_even(new_len * orig[k] / total)`, the member gets `returned[pos..end]` and `pos = end`; the last member gets `returned[pos..]`. All lengths and slices count Unicode characters, never bytes, an `end` past the end is clamped, and the division is floating point. Python's `round` rounds halves to even, so use `f64::round_ties_even`; 2.5 gives 2 and 3.5 gives 4. A group of one member gets the whole returned text. Members of inactive groups get no entry and keep their text.
+
+  `rebuild_event_stream(parsed: &ParsedStream, new_texts: &BTreeMap<(usize, usize), String>) -> Vec<u8>` is the output. A frame with no texts is copied as is. For a frame with texts: take its header bytes and payload from the frame layout (headers start at byte 12 and are `headers_length` long, read from bytes 4 to 8; the payload runs to `total_length - 4`), parse the payload JSON again, set each cell `i` of `delta_text_cells` to `new_texts[(frame_index, i)]` when there is one, and re-serialize the payload compactly (no spaces). On any failure the original frame is copied. The new frame is: `new_total = 12 + headers_length + payload_len + 4` and `headers_length` as big-endian u32s, the CRC32 of those 8 bytes, the original header bytes, the new payload, and a last CRC32 over everything before it (prelude, prelude CRC, headers, payload). Use `crc32fast`. The `trailing` bytes are appended last. The frame's header bytes are never re-encoded.
+
+  The async path is `parse_event_stream`, then `group_texts`, the hook call, `redistribute`, `rebuild_event_stream`. Keep the first, `redistribute` and the last as sync pure functions, since the fuzz target and the helper cases call them without a hook.
+
+  Fuzz target: add `bedrock_event_stream` to crates/betterlite-server/fuzz (Cargo.toml bin entry, fuzz_targets/bedrock_event_stream.rs, corpus folder crates/betterlite-server/fuzz/corpus/bedrock_event_stream/). The decoder is `parse_event_stream` and its input is arbitrary bytes. The target also runs `group_texts`, `redistribute` with every group's text uppercased, and `rebuild_event_stream`, and must never panic. Seed the corpus with a valid multi-frame stream, a truncated frame, a frame with a bad CRC, a frame whose payload is not JSON, a contentBlockDelta with each of the four delta shapes, and a stream with trailing garbage. A native test `replays_the_bedrock_event_stream_corpus` in the event_stream tests replays every file in that corpus folder and asserts the folder is not empty.
+
+  Oracle. No route reaches this code yet, so there are no HTTP cases, and B3574 adds them. The helper operation `b3678` (skeleton creates it) runs the same input through LiteLLM's `BedrockPassthroughGuardrailHandler` and the Rust functions. The case input is `call: {b3678: {function: <name>, ...}}` with these functions. `input_texts`: `endpoint`, `data`, `skip_system`, `skip_tool`, `returned_texts` (what a scripted guardrail answers, absent for "no answer"); the output is the texts the guardrail received, the `model` it received and the resulting `data`. `output_texts`: `endpoint`, `response`, `request_data`, `returned_texts`; the same output shape. `stream`: `frames` (a list of `{event_type, payload}` that the adapter encodes as real event-stream frames), `replace` (a map from a text to its replacement, which the scripted hook applies to every synthetic content block) and `trailing_hex`; the output is the decoded frames (headers and payload) and the trailing bytes after rewriting, with CRCs checked. `routing`: `endpoint`, `content_type`. The Python adapter builds a `CustomGuardrail` subclass with a scripted `apply_guardrail` for the first two, and a fake `proxy_logging_obj` with a scripted `post_call_success_hook` for the third. Cases keep multi-key nested objects in alphabetical key order, so the key-order deviation does not show.
+
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-server/src/guardrails/bedrock_passthrough.rs
+    - crates/betterlite-server/src/guardrails/bedrock_passthrough/**
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/bedrock_event_stream.rs
+    - crates/betterlite-server/fuzz/corpus/bedrock_event_stream/**
+    - tools/oracle/cases/helpers/bedrock-passthrough-guardrail/**
+    - "tools/oracle/fuzz/corpus/helper_case/bedrock_passthrough_guardrail-*"
+    - tools/oracle/helpers/b3678.py
+    - tools/oracle/helpers/b3678/**
+    - tools/oracle/src/helpers/server/b3678.rs
+    - tools/oracle/src/helpers/server/b3678/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/guardrail_translation/handler.py#L23-L30
+    why: The Converse endpoint check and the event-stream content type and media type constants.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/guardrail_translation/handler.py#L46-L143
+    why: The iterative deep string walk and the Converse request collector, with the long comment on why toolConfig.tools is skipped and additionalModelRequestFields is not.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/guardrail_translation/handler.py#L146-L193
+    why: The output collector (text, toolUse.input, reasoning text, citations) and the write back with its short-reply warning.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/guardrail_translation/handler.py#L196-L251
+    why: Stream group keys and the contentBlockDelta text collector.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/guardrail_translation/handler.py#L254-L421
+    why: The static helpers and de_anonymize_event_stream, with frame parsing, grouping, the synthetic response, proportional redistribution and frame rebuilding.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/bedrock/passthrough/guardrail_translation/handler.py#L423-L527
+    why: process_input_messages and process_output_response, with the generic fallback for non-Converse endpoints.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/pass_through/guardrail_translation/handler.py#L196-L310
+    why: The provider table and the dispatcher that call this handler (owned by B3574).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3363-L3380
+    why: The one caller of de_anonymize_event_stream, so the hook and the data argument keep their meaning.
+  - url: https://smithy.io/2.0/aws/amazon-eventstream.html
+    why: The binary frame layout, with the prelude, header bytes, payload and the two CRC32 values.
+  - url: https://github.com/smithy-lang/smithy-rs/tree/main/rust-runtime/aws-smithy-eventstream
+    why: The frame reader crate to use instead of porting botocore.
+  - url: https://docs.aws.amazon.com/bedrock/latest/APIReference/API_runtime_ConverseStream.html
+    why: The ConverseStream event shapes, including the contentBlockDelta delta types.
+
+dod:
+  - text: is_converse_endpoint is true only when the last path part, after trailing slashes are removed, is converse or converse-stream. is_event_stream_content_type matches by substring, and the media type constant is application/vnd.amazon.eventstream.
+    proof: [routing-tests, oracle, helper-python]
+  - text: A non-Converse endpoint returns Routed::Generic from both process functions, with no guardrail call and no change to the data or response.
+    proof: [request-tests, output-tests]
+  - text: The request collector gathers system text (unless skipped), message text, toolUse.input strings, toolResult text and json strings, and additionalModelRequestFields strings, in LiteLLM's order, and never toolConfig.tools. skip_tool skips whole toolUse and toolResult blocks.
+    proof: [request-tests, oracle, helper-python]
+  - text: The deep walk visits direct strings first and then containers last to first, ignores empty strings and a bare string root, and does not recurse.
+    proof: [request-tests, oracle, helper-python]
+  - text: process_input_messages calls the guardrail once with texts, model only when non-empty text, input type Request, and the whole data as request_data; no texts or a body without a messages array means no call.
+    proof: [request-tests]
+  - text: Returned texts are written back by position. A shorter reply writes only the first holders and logs the warning, and a longer reply drops the extras.
+    proof: [request-tests, oracle, helper-python]
+  - text: The output collector gathers text, toolUse.input strings, reasoningContent.reasoningText.text and citationsContent.content[].text, and skips signatures and sources.
+    proof: [output-tests, oracle, helper-python]
+  - text: process_output_response adds user_metadata as litellm_metadata to a copy of the request data only when the key is absent and the metadata is not empty, takes model from the request data, and leaves the caller's request data unchanged.
+    proof: [output-tests]
+  - text: parse_event_stream stops at a bad length, keeps trailing bytes, forwards frames that fail to decode, and reads text cells only from contentBlockDelta frames whose payload is a JSON object, with the four delta shapes in order.
+    proof: [stream-tests, oracle, helper-python]
+  - text: Citation group keys use the position in the content list, and reasoning deltas read reasoningContent.text, not reasoningText.text.
+    proof: [stream-tests, oracle, helper-python]
+  - text: de_anonymize_event_stream joins fragments per group, sends one synthetic response to the hook, returns the input unchanged when no group has text, when the answer is not an object or when a block text is missing, and returns the hook's error otherwise.
+    proof: [stream-tests]
+  - text: redistribute splits a returned text over a group's frames in proportion to the original fragment lengths, with round-half-even, character counts, a floating point ratio and the whole remainder on the last member.
+    proof: [stream-tests, oracle, helper-python]
+  - text: Rebuilt frames keep the original header bytes, carry a compact payload, and have a correct total length, prelude CRC and message CRC. Frames without texts and the trailing bytes are copied as they were.
+    proof: [stream-tests, oracle, helper-python]
+  - text: The fuzz target and its committed corpus exist and the corpus replays without a panic.
+    proof: [stream-corpus]
+  - text: New helper cases replay through the shared helper-case parser, and the adapter passes its lint and type checks.
+    proof: [helper-case-corpus, helper-python]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: routing-tests
+      why: the endpoint and content type checks are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::bedrock_passthrough::routing::/)'
+    - id: request-tests
+      why: request collection, deep walk, write back or the input handler tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::bedrock_passthrough::(text_paths|request)::/)'
+    - id: output-tests
+      why: output collection or the output handler tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::bedrock_passthrough::output::/)'
+    - id: stream-tests
+      why: frame parsing, grouping, redistribution, rebuilding or the hook flow tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::bedrock_passthrough::event_stream::/) - test(replays_the_bedrock_event_stream_corpus)'
+    - id: stream-corpus
+      why: the event stream fuzz target or its fresh seeds are missing, or replay fails
+      run: >-
+        test -f crates/betterlite-server/fuzz/fuzz_targets/bedrock_event_stream.rs &&
+        grep -q 'name = "bedrock_event_stream"' crates/betterlite-server/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/bedrock_event_stream)" &&
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_bedrock_event_stream_corpus)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3678)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3678 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3678/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added Bedrock passthrough cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bedrock_passthrough_guardrail-*")" &&
+        grep -lE '^[[:space:]]+b3678:' tools/oracle/fuzz/corpus/helper_case/bedrock_passthrough_guardrail-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/bedrock-passthrough-guardrail/routing.yaml
+  - tools/oracle/cases/helpers/bedrock-passthrough-guardrail/input-texts-nested.yaml
+  - tools/oracle/cases/helpers/bedrock-passthrough-guardrail/input-skip-flags.yaml
+  - tools/oracle/cases/helpers/bedrock-passthrough-guardrail/input-short-reply.yaml
+  - tools/oracle/cases/helpers/bedrock-passthrough-guardrail/output-texts.yaml
+  - tools/oracle/cases/helpers/bedrock-passthrough-guardrail/stream-split-token.yaml
+  - tools/oracle/cases/helpers/bedrock-passthrough-guardrail/stream-citation-groups.yaml
+  - tools/oracle/cases/helpers/bedrock-passthrough-guardrail/stream-rounding.yaml
+  - tools/oracle/cases/helpers/bedrock-passthrough-guardrail/stream-trailing-and-bad-frame.yaml
+
+deviations:
+  - what: Texts that sit in one JSON object with several string keys (inside toolUse.input, toolResult json or additionalModelRequestFields) reach the guardrail in sorted key order, and a rewritten frame's payload keys are written in sorted order.
+    why: Request bodies are BTreeMap values in betterlite and keep no insertion order. The write back stays consistent with the order sent, so the result is the same except for the order of texts.
+  - what: Non-Converse endpoints return Routed::Generic instead of calling the generic passthrough handler inside this module.
+    why: The generic handler is B3573's, and B3574 owns the dispatcher that already depends on it. The caller makes the same call LiteLLM makes.
+  - what: The event-stream rewrite takes its frame reader from the aws-smithy-eventstream crate, not botocore.
+    why: Same CRC checks and header parsing, from a maintained crate that betterlite-bedrock already uses.
+
+out_of_scope:
+  - "litellm/proxy/guardrails/tool_name_extraction.py (extract_request_tool_names, the standalone Gemini and MCP extractors, TOOL_CAPABLE_CALL_TYPES) is not built here. B888 covers it and moves it into betterlite-auth, because the key allowlist check lives there and auth cannot depend on betterlite-server."
+  - "PassThroughEndpointHandler (the generic fallback) belongs to B3573. LlmPassthroughRouteHandler, the provider table and the is_event_stream_response, event_stream_media_type, supports_event_stream_de_anonymization and de_anonymize_event_stream dispatchers belong to B3574, which calls the statics in routing.rs and event_stream.rs."
+  - "The proxy side of the event stream (common_request_processing.py L2736, L3251-L3273, L3305-L3380) belongs to the passthrough route tasks. The PostCallSuccessHook implementation over the real post call hooks belongs to the hook wiring task."
+  - "effective_skip_system_message_for_guardrail and effective_skip_tool_message_for_guardrail belong to B3663, and transform_user_api_key_dict_to_metadata belongs to B3661. The caller computes all three inputs."
+  - "BaseTranslation and the provider mapping tables are not built. Handlers are plain functions chosen by the dispatcher (B3679, B3680)."
+  - "HTTP oracle cases for Bedrock passthrough routes come with B3574, since no route reaches this handler yet."
+
+pitfalls:
+  - A bare string root in the deep walk yields nothing, so a toolUse.input that is a plain string is never sent to the guardrail, and so is a string passed directly as additionalModelRequestFields.
+  - The deep walk pops its stack last in first out, so with two nested objects under one parent the second one is walked before the first. Direct string children always come before any nested container.
+  - skip_tool drops the whole block when it has a toolUse or toolResult key, including any text key the same block carries. The text of a plain block next to it is still scanned.
+  - Request text skips empty strings, but stream cells keep them. A stream group becomes active only when its joined text is not empty.
+  - A citation group key is the position in the content list including elements that are not objects, so a skipped element still advances the index.
+  - In streams the reasoning text is at delta.reasoningContent.text, one level shallower than the non-streaming reasoningContent.reasoningText.text.
+  - Python's round() rounds halves to even and Rust's f64::round rounds them away from zero. Use round_ties_even, or a 2.5 character share comes out one character off.
+  - The proportional split counts characters, not bytes, and the last member takes the remainder. If the returned text is shorter than the shares ask for, slices are clamped, not an error.
+  - The frame CRCs are plain CRC32. The message CRC covers the prelude, the prelude CRC, the headers and the payload, and the total length field changes with the new payload size.
+  - A frame is rewritten whenever it had text cells, even when no text changed, and its payload is re-serialized without spaces.
+  - process_output_response takes the model from the request data, not from the response, and builds litellm_metadata on a copy, so the caller's request data never gains the key.
+  - An empty endpoint on the output side counts as Converse, while on the input side an empty endpoint is not Converse and goes to the generic handler.
+  - toolConfig.tools stays unscanned on purpose. A change that adds it makes every schema word its own guardrail text.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

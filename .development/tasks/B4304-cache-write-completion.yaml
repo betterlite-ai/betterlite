@@ -76,6 +76,7 @@ scope:
     - tools/oracle/helpers/b4304/**
     - tools/oracle/src/helpers/cache/b4304.rs
     - tools/oracle/src/helpers/cache/b4304/**
+    - crates/betterlite-cache/Cargo.toml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching_handler.py#L145-L166
@@ -172,6 +173,7 @@ pitfalls:
   - The second run after cancellation re-calls the write factory, so a write must be safe to run twice; B4297's envelope write overwrites the same key.
   - The sync path never uses the dual cache and never reads `parent_otel_span`; only the async path adds it.
   - The wrap decision reads the handler's own `original_function` and `request_kwargs`, not the call's, so it can differ from the store check made later with merged kwargs.
+  - "Add tokio-util 0.7.20 (other crates already use that version) to betterlite-cache with the rt and sync features."
 review_level: standard
 budget:
   max_changed_lines: 1500

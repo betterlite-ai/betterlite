@@ -1,5 +1,6 @@
 pub mod azure_blob_cache;
 pub mod backend;
+pub mod batch_reads;
 pub mod cache_key;
 pub mod codec;
 pub mod configuration;
@@ -21,3 +22,4 @@ pub mod replay;
 )]
 pub mod s3_cache;
 pub mod types;
+pub mod write_completion;

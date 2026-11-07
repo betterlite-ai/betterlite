@@ -48,6 +48,10 @@ scope:
     - crates/betterlite-logging/src/otel/span_attributes/**
     - tools/oracle/cases/helpers/otel-span-payloads/**
     - tools/oracle/fuzz/corpus/helper_case/otel-span-payloads-*
+    - tools/oracle/helpers/b3844.py
+    - tools/oracle/helpers/b3844/**
+    - tools/oracle/src/helpers/logging/b3844.rs
+    - tools/oracle/src/helpers/logging/b3844/**
   lint_tables: false
 
 references:

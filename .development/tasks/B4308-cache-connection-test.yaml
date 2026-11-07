@@ -47,6 +47,10 @@ scope:
   - crates/betterlite-server/src/cache_settings_test.rs
   - crates/betterlite-server/src/cache_settings_test/**
   - tools/oracle/cases/cache_settings_test/**
+  - tools/oracle/helpers/b4308.py
+  - tools/oracle/helpers/b4308/**
+  - tools/oracle/src/helpers/server/b4308.rs
+  - tools/oracle/src/helpers/server/b4308/**
   lint_tables: false
 
 references:

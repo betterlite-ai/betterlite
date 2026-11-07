@@ -53,6 +53,10 @@ scope:
     - crates/betterlite-config/src/sections/semantic_embedding_inputs/**
     - tools/oracle/cases/helpers/semantic-embedding-inputs/**
     - "tools/oracle/fuzz/corpus/helper_case/semantic_embedding_inputs-*"
+    - tools/oracle/helpers/b4310.py
+    - tools/oracle/helpers/b4310/**
+    - tools/oracle/src/helpers/router/b4310.rs
+    - tools/oracle/src/helpers/router/b4310/**
   lint_tables: false
 
 references:

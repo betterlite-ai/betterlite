@@ -85,6 +85,10 @@ scope:
     - crates/betterlite-server/src/alerting/model_alerts/**
     - tools/oracle/cases/helpers/model-alerts/**
     - "tools/oracle/fuzz/corpus/helper_case/model_alerts-*"
+    - tools/oracle/helpers/b4030.py
+    - tools/oracle/helpers/b4030/**
+    - tools/oracle/src/helpers/server/b4030.rs
+    - tools/oracle/src/helpers/server/b4030/**
   lint_tables: false
 
 references:

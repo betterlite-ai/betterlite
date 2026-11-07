@@ -11,7 +11,6 @@ aws-sigv4 = "1.6.2"
 aws-smithy-runtime-api = "1.19.1"
 betterlite-env = { path = "../betterlite-env" }
 betterlite-models = { path = "../betterlite-models" }
-betterlite-rate-limit = { path = "../betterlite-rate-limit" }
 betterlite-secret-managers = { path = "../betterlite-secret-managers" }
 betterlite-secrets = { path = "../betterlite-secrets" }
 fancy-regex = "0.19.2"
