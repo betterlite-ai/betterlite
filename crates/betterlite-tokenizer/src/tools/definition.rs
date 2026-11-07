@@ -96,8 +96,8 @@ fn declaration_functions(index: usize, raw: &RawValue) -> Result<Vec<Function>, 
 fn inline_function(index: usize, fields: &ToolFields) -> Result<Function, ToolFormatError> {
     let parameters = inline_parameters(index, fields)?;
     Ok(Function {
-        name: text_field(fields.name.as_deref(), "name")?,
-        description: text_field(fields.description.as_deref(), "description")?,
+        name: text_field(index, fields.name.as_deref(), "name")?,
+        description: text_field(index, fields.description.as_deref(), "description")?,
         parameters,
     })
 }
@@ -116,15 +116,14 @@ fn inline_parameters(
 }
 
 fn text_field(
+    index: usize,
     value: Option<&RawValue>,
     field: &'static str,
 ) -> Result<Option<String>, ToolFormatError> {
     let Some(raw) = value else {
         return Ok(None);
     };
-    serde_json::from_str(raw.get())
-        .map(Some)
-        .map_err(|_error| ToolFormatError::NotText { field })
+    Ok(Some(parse_branch(index, field, raw)?))
 }
 
 fn parse_branch<T>(index: usize, field: &'static str, raw: &RawValue) -> Result<T, ToolFormatError>
