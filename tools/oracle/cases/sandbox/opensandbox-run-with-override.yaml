@@ -1,0 +1,24 @@
+kind: helper
+name: opensandbox-run-with-override
+call:
+  b3518:
+    operation: run
+    container:
+      id: sbx_1
+      provider: opensandbox
+      domain: http://stored.example
+      hidden_params:
+        api_base: http://stored.example
+        api_key: stored-key
+    code: "print(2)"
+    api_base: http://override.example
+    api_key: override-key
+    responses:
+      - status: 200
+        body: '{"endpoint":"http://execd.example","headers":{"X-Execd-Token":"abc"}}'
+      - status: 200
+        body: |
+          data: {"type":"stdout","text":"2\n"}
+env: {}
+compare:
+  ignore: []
