@@ -168,8 +168,15 @@ fn text_reads_a_string_input_as_one_message() {
 
 #[test]
 fn text_ignores_an_input_that_is_not_a_list_or_string() {
-    let data = body(&[("input", GuardrailValue::SignedInteger(5))]);
-    assert!(iter_message_text(&data).is_empty());
+    let integer = body(&[("input", GuardrailValue::SignedInteger(5))]);
+    let part_text = body(&[("input", object(&[("text", text("x"))]))]);
+    let reasoning = body(&[(
+        "input",
+        object(&[("type", text("reasoning")), ("content", text("x"))]),
+    )]);
+    assert!(iter_message_text(&integer).is_empty());
+    assert!(iter_message_text(&part_text).is_empty());
+    assert!(iter_message_text(&reasoning).is_empty());
 }
 
 #[test]
@@ -392,6 +399,26 @@ fn inspection_drops_content_that_is_not_a_string_or_list() {
         ])]),
     )]);
     assert!(build_inspection_messages(&data).is_empty());
+}
+
+#[test]
+fn inspection_ignores_an_object_input() {
+    let alone = body(&[("input", object(&[("text", text("x"))]))]);
+    let with_messages = body(&[
+        (
+            "messages",
+            list(&[object(&[("role", text("user")), ("content", text("chat"))])]),
+        ),
+        (
+            "input",
+            object(&[("type", text("reasoning")), ("content", text("x"))]),
+        ),
+    ]);
+    assert!(build_inspection_messages(&alone).is_empty());
+    assert_eq!(
+        build_inspection_messages(&with_messages),
+        [message("user", "chat")]
+    );
 }
 
 #[test]

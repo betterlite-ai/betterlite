@@ -126,10 +126,19 @@ fn lift_input(input: Option<&GuardrailValue>) -> Vec<LiftedMessage<'_>> {
     let Some(value) = input else {
         return Vec::new();
     };
-    let GuardrailValue::Array(items) = value else {
-        return lift_item(value);
-    };
-    items.iter().flat_map(lift_item).collect()
+    match value {
+        GuardrailValue::Text(text) => vec![LiftedMessage {
+            role: Some("user"),
+            content: LiftedContent::Text(text),
+        }],
+        GuardrailValue::Array(items) => items.iter().flat_map(lift_item).collect(),
+        GuardrailValue::Null
+        | GuardrailValue::Boolean(_)
+        | GuardrailValue::SignedInteger(_)
+        | GuardrailValue::UnsignedInteger(_)
+        | GuardrailValue::Decimal(_)
+        | GuardrailValue::Object(_) => Vec::new(),
+    }
 }
 
 pub(super) fn inspected_messages(

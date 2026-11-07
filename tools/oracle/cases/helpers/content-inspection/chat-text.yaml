@@ -16,6 +16,7 @@ call:
         - role: user
           content: {type: text, text: "object content is not a list"}
         - not an object
+      input: {type: reasoning, content: "object input is not a list"}
 env: {}
 compare:
   ignore: []
