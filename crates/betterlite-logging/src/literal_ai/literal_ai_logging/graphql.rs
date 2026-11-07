@@ -5,15 +5,33 @@ use indexmap::IndexMap;
 
 use super::step::Step;
 
+const STEP_VARIABLES: [(&str, &str); 16] = [
+    ("id", "String!"),
+    ("threadId", "String"),
+    ("rootRunId", "String"),
+    ("type", "StepType"),
+    ("startTime", "DateTime"),
+    ("endTime", "DateTime"),
+    ("error", "String"),
+    ("input", "Json"),
+    ("output", "Json"),
+    ("metadata", "Json"),
+    ("parentId", "String"),
+    ("name", "String"),
+    ("tags", "[String!]"),
+    ("generation", "GenerationPayloadInput"),
+    ("scores", "[ScorePayloadInput!]"),
+    ("attachments", "[AttachmentPayloadInput!]"),
+];
+
 // _steps_query_variables_builder: one block of variable declarations per step, in the step's index order.
 #[must_use]
 pub fn query_variables(steps: &[Step]) -> String {
     let mut generated = String::new();
     for index in 0..steps.len() {
-        let _ignored = write!(
-            generated,
-            "$id_{index}: String!\n            $threadId_{index}: String\n            $rootRunId_{index}: String\n            $type_{index}: StepType\n            $startTime_{index}: DateTime\n            $endTime_{index}: DateTime\n            $error_{index}: String\n            $input_{index}: Json\n            $output_{index}: Json\n            $metadata_{index}: Json\n            $parentId_{index}: String\n            $name_{index}: String\n            $tags_{index}: [String!]\n            $generation_{index}: GenerationPayloadInput\n            $scores_{index}: [ScorePayloadInput!]\n            $attachments_{index}: [AttachmentPayloadInput!]\n            "
-        );
+        for (name, kind) in STEP_VARIABLES {
+            let _ignored = write!(generated, "${name}_{index}: {kind}\n            ");
+        }
     }
     generated
 }
@@ -21,14 +39,13 @@ pub fn query_variables(steps: &[Step]) -> String {
 // _steps_ingest_steps_builder: one ingestStep call per step, each argument reading the step's variable.
 #[must_use]
 pub fn ingest_steps(steps: &[Step]) -> String {
-    let mut generated = String::new();
-    for index in 0..steps.len() {
-        let _ignored = write!(
-            generated,
-            "\n        step{index}: ingestStep(\n            id: $id_{index}\n            threadId: $threadId_{index}\n            rootRunId: $rootRunId_{index}\n            startTime: $startTime_{index}\n            endTime: $endTime_{index}\n            type: $type_{index}\n            error: $error_{index}\n            input: $input_{index}\n            output: $output_{index}\n            metadata: $metadata_{index}\n            parentId: $parentId_{index}\n            name: $name_{index}\n            tags: $tags_{index}\n            generation: $generation_{index}\n            scores: $scores_{index}\n            attachments: $attachments_{index}\n        ) {{\n            ok\n            message\n        }}\n    "
-        );
-    }
-    generated
+    steps
+        .iter()
+        .enumerate()
+        .fold(String::new(), |mut generated, (index, _)| {
+            let _ignored = write!(generated, "\n        step{index}: ingestStep(\n            id: $id_{index}\n            threadId: $threadId_{index}\n            rootRunId: $rootRunId_{index}\n            startTime: $startTime_{index}\n            endTime: $endTime_{index}\n            type: $type_{index}\n            error: $error_{index}\n            input: $input_{index}\n            output: $output_{index}\n            metadata: $metadata_{index}\n            parentId: $parentId_{index}\n            name: $name_{index}\n            tags: $tags_{index}\n            generation: $generation_{index}\n            scores: $scores_{index}\n            attachments: $attachments_{index}\n        ) {{\n            ok\n            message\n        }}\n    ");
+            generated
+        })
 }
 
 // _steps_query_builder: the AddStep mutation wrapping the declarations and the ingestStep calls.

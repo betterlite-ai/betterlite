@@ -40,40 +40,26 @@ pub struct Generation {
 impl Step {
     #[must_use]
     pub fn to_fields(&self) -> IndexMap<String, Json> {
-        let mut fields = IndexMap::new();
-        fields.insert("id".to_owned(), self.id.clone());
-        fields.insert(
-            "error".to_owned(),
-            self.error.clone().map_or(Json::Null, Json::Text),
-        );
-        fields.insert("name".to_owned(), Json::Text(self.name.clone()));
-        fields.insert(
-            "threadId".to_owned(),
-            self.thread_id.clone().unwrap_or(Json::Null),
-        );
-        fields.insert(
-            "parentId".to_owned(),
-            self.parent_id.clone().unwrap_or(Json::Null),
-        );
-        fields.insert(
-            "rootRunId".to_owned(),
-            self.root_run_id.clone().unwrap_or(Json::Null),
-        );
-        fields.insert("input".to_owned(), self.input.clone().unwrap_or(Json::Null));
-        fields.insert(
-            "output".to_owned(),
-            self.output.clone().unwrap_or(Json::Null),
-        );
-        fields.insert("type".to_owned(), Json::Text(self.step_type.clone()));
-        fields.insert("tags".to_owned(), self.tags.clone().unwrap_or(Json::Null));
-        fields.insert("startTime".to_owned(), Json::Text(self.start_time.clone()));
-        fields.insert("endTime".to_owned(), Json::Text(self.end_time.clone()));
-        fields.insert("metadata".to_owned(), self.metadata.clone());
-        fields.insert(
-            "generation".to_owned(),
-            Json::Object(self.generation.to_fields()),
-        );
+        let fields = [
+            ("id", self.id.clone()),
+            ("error", self.error.clone().map_or(Json::Null, Json::Text)),
+            ("name", Json::Text(self.name.clone())),
+            ("threadId", self.thread_id.clone().unwrap_or(Json::Null)),
+            ("parentId", self.parent_id.clone().unwrap_or(Json::Null)),
+            ("rootRunId", self.root_run_id.clone().unwrap_or(Json::Null)),
+            ("input", self.input.clone().unwrap_or(Json::Null)),
+            ("output", self.output.clone().unwrap_or(Json::Null)),
+            ("type", Json::Text(self.step_type.clone())),
+            ("tags", self.tags.clone().unwrap_or(Json::Null)),
+            ("startTime", Json::Text(self.start_time.clone())),
+            ("endTime", Json::Text(self.end_time.clone())),
+            ("metadata", self.metadata.clone()),
+            ("generation", Json::Object(self.generation.to_fields())),
+        ];
         fields
+            .into_iter()
+            .map(|(key, value)| (key.to_owned(), value))
+            .collect()
     }
 }
 
