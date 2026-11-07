@@ -167,14 +167,15 @@ async fn dotprompt_returns_the_request_unchanged_for_an_unknown_prompt_id() {
 async fn dotprompt_renders_non_text_prompt_variables() {
     let manager = manager(
         concat!(
-            "User: count {{ count }} big {{ big }} flag {{ flag }} ",
+            "User: count {{ count }} big {{ big }} bigger {{ big + 1 }} ",
+            "low {{ low }} lower {{ low + 1 }} flag {{ flag }} ",
             "name {{ profile.name }} second {{ items[1] }}",
         ),
         None,
     );
     let dynamic = json("{}");
     let variables = params(
-        r#"{"count":3,"big":18446744073709551616,"flag":true,"profile":{"name":"Ada"},"items":["one","two"]}"#,
+        r#"{"count":3,"big":18446744073709551616,"low":-18446744073709551616,"flag":true,"profile":{"name":"Ada"},"items":["one","two"]}"#,
     );
     let mut completion = request(Some("greeting"), "dotprompt/gpt-4", &dynamic);
     completion.prompt_variables = Some(&variables);
@@ -189,7 +190,11 @@ async fn dotprompt_renders_non_text_prompt_variables() {
         vec![
             message(
                 "user",
-                "count 3 big 18446744073709551616 flag True name Ada second two",
+                concat!(
+                    "count 3 big 18446744073709551616 bigger 18446744073709551617 ",
+                    "low -18446744073709551616 lower -18446744073709551615 ",
+                    "flag True name Ada second two",
+                ),
             ),
             message("user", "client question"),
         ]
