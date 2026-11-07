@@ -83,6 +83,10 @@ name = "opik"
 path = "src/opik/tests.rs"
 
 [[test]]
+name = "rubrik_delivery"
+path = "src/rubrik_delivery/tests.rs"
+
+[[test]]
 name = "rubrik_payloads"
 path = "src/rubrik/tests.rs"
 
