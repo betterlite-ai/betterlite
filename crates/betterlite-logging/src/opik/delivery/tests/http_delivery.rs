@@ -3,8 +3,8 @@ use rstest::rstest;
 use tokio_util::task::TaskTracker;
 
 use super::support::{
-    Fixture, Reply, SPAN_URL, TRACE_URL, call, capture_logs, minimal_kwargs, object, sample_kwargs,
-    sample_response,
+    Fixture, RecordingDelivery, Reply, SPAN_URL, TRACE_URL, call, capture_logs, minimal_kwargs,
+    object, sample_kwargs, sample_response,
 };
 use crate::opik::delivery::error::OpikError;
 
@@ -119,7 +119,7 @@ async fn async_batches_drop_the_null_optional_fields_on_their_way_to_the_wire() 
 #[case::server_error(500, false)]
 #[tokio::test]
 async fn sync_send_accepts_only_a_204_status(#[case] status: u16, #[case] accepted: bool) {
-    let fixture = Fixture::scripted([Reply::Status(status)]);
+    let fixture = Fixture::with_delivery(RecordingDelivery::scripted([Reply::Status(status)]));
     let logger = fixture.build(None);
 
     let outcome = logger
@@ -140,7 +140,7 @@ async fn sync_send_accepts_only_a_204_status(#[case] status: u16, #[case] accept
 
 #[tokio::test]
 async fn sync_send_reports_a_transport_failure() {
-    let fixture = Fixture::scripted([Reply::Transport]);
+    let fixture = Fixture::with_delivery(RecordingDelivery::scripted([Reply::Transport]));
     let logger = fixture.build(None);
 
     let outcome = logger
@@ -153,7 +153,10 @@ async fn sync_send_reports_a_transport_failure() {
 #[tokio::test]
 async fn sync_failure_on_the_trace_still_sends_the_span() {
     let (logs, _guard) = capture_logs();
-    let fixture = Fixture::scripted([Reply::Transport, Reply::Status(204)]);
+    let fixture = Fixture::with_delivery(RecordingDelivery::scripted([
+        Reply::Transport,
+        Reply::Status(204),
+    ]));
     let logger = fixture.build(None);
     let kwargs = sample_kwargs();
     let response = sample_response();
@@ -168,7 +171,10 @@ async fn sync_failure_on_the_trace_still_sends_the_span() {
 async fn async_submit_logs_a_rejected_status_without_raising() {
     let (logs, _guard) = capture_logs();
     let tracker = TaskTracker::new();
-    let mut fixture = Fixture::scripted([Reply::Status(302), Reply::Status(500)]);
+    let mut fixture = Fixture::with_delivery(RecordingDelivery::scripted([
+        Reply::Status(302),
+        Reply::Status(500),
+    ]));
     fixture.options.batch_size = Some(2);
     let logger = fixture.build(Some(&tracker));
     let kwargs = sample_kwargs();
@@ -191,7 +197,10 @@ async fn async_submit_logs_a_rejected_status_without_raising() {
 async fn async_submit_accepts_a_two_hundred_and_logs_the_event_count() {
     let (logs, _guard) = capture_logs();
     let tracker = TaskTracker::new();
-    let mut fixture = Fixture::scripted([Reply::Status(200), Reply::Status(204)]);
+    let mut fixture = Fixture::with_delivery(RecordingDelivery::scripted([
+        Reply::Status(200),
+        Reply::Status(204),
+    ]));
     fixture.options.batch_size = Some(2);
     let logger = fixture.build(Some(&tracker));
     let kwargs = sample_kwargs();

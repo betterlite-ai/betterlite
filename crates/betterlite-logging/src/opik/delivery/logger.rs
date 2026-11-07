@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::error::Error as StdError;
 use std::slice;
 use std::str;
 use std::sync::Arc;
@@ -16,10 +15,10 @@ use crate::http_analytics_loggers::delivery::{
 use crate::opik::payload::{build_opik_payload, classify_payload};
 
 use super::callback::{Call, should_skip_event};
-use super::error::OpikError;
+use super::error::{NativeDeliveryError, OpikError};
 use super::native::{NativeClientSource, NativeOpikClient};
 use super::queue::PayloadQueue;
-use super::record::{Payload, span_record, span_wire, trace_record, trace_wire};
+use super::record::{Payload, SpanRecord, TraceRecord, span_wire, trace_wire};
 use super::settings::{LoggerOptions, OpikSettings, OpikSettingsError, resolve_settings};
 
 pub struct LoggerDependencies<'context, D> {
@@ -34,6 +33,12 @@ pub struct OpikLogger<D> {
     native: Option<Arc<dyn NativeOpikClient>>,
     queue: PayloadQueue,
     flush_lock: Option<Arc<AsyncMutex<()>>>,
+}
+
+#[derive(Clone, Copy)]
+enum DeliveryMode {
+    Sync,
+    Async,
 }
 
 #[derive(Serialize)]
@@ -87,21 +92,17 @@ where
         if should_skip_event(call.kwargs) {
             return;
         }
-        if let Err(error) = self.async_deliver(call).await {
-            tracing::error!(%error, "OpikLogger failed to log success event");
-        }
+        self.deliver(call, DeliveryMode::Async).await;
     }
 
     pub async fn log_success_event(&self, call: Call<'_>) {
         if should_skip_event(call.kwargs) {
             return;
         }
-        if let Err(error) = self.sync_deliver(call).await {
-            tracing::error!(%error, "OpikLogger failed to log success event");
-        }
+        self.deliver(call, DeliveryMode::Sync).await;
     }
 
-    async fn async_deliver(&self, call: Call<'_>) -> Result<(), OpikError<D::Error>> {
+    async fn deliver(&self, call: Call<'_>, mode: DeliveryMode) {
         let (trace, span) = build_opik_payload(
             call.kwargs,
             call.response,
@@ -110,8 +111,18 @@ where
             &self.settings.project_name,
         );
         if let Some(native) = &self.native {
-            return native_deliver(native.as_ref(), trace.as_ref(), &span);
+            if let Err(error) = native_deliver(native.as_ref(), trace.as_ref(), &span) {
+                tracing::error!(%error, "OpikLogger failed to log success event");
+            }
+            return;
         }
+        match mode {
+            DeliveryMode::Async => self.queue_delivery(trace, span).await,
+            DeliveryMode::Sync => self.http_delivery(trace.as_ref(), &span).await,
+        }
+    }
+
+    async fn queue_delivery(&self, trace: Option<Payload>, span: Payload) {
         if let Some(trace_payload) = trace {
             self.queue.enqueue(trace_payload);
         }
@@ -123,33 +134,29 @@ where
         if depth >= self.settings.batch.batch_size {
             self.flush_queue().await;
         }
-        Ok(())
     }
 
-    async fn sync_deliver(&self, call: Call<'_>) -> Result<(), OpikError<D::Error>> {
-        let (trace, span) = build_opik_payload(
-            call.kwargs,
-            call.response,
-            call.start_time,
-            call.end_time,
-            &self.settings.project_name,
-        );
-        if let Some(native) = &self.native {
-            return native_deliver(native.as_ref(), trace.as_ref(), &span);
-        }
+    async fn http_delivery(&self, trace: Option<&Payload>, span: &Payload) {
         if let Some(trace_payload) = trace {
-            let wire = trace_wire(&trace_payload);
-            let batch = TraceBatch {
-                traces: slice::from_ref(&wire),
-            };
-            self.sync_send(&self.settings.trace_url, &batch).await;
+            self.send_trace(trace_payload).await;
         }
-        let wire = span_wire(&span);
+        self.send_span(span).await;
+    }
+
+    async fn send_trace(&self, trace: &Payload) {
+        let wire = trace_wire(trace);
+        let batch = TraceBatch {
+            traces: slice::from_ref(&wire),
+        };
+        self.sync_send(&self.settings.trace_url, &batch).await;
+    }
+
+    async fn send_span(&self, span: &Payload) {
+        let wire = span_wire(span);
         let batch = SpanBatch {
             spans: slice::from_ref(&wire),
         };
         self.sync_send(&self.settings.span_url, &batch).await;
-        Ok(())
     }
 
     async fn sync_send<B>(&self, url: &Url, batch: &B)
@@ -270,17 +277,14 @@ where
     }
 }
 
-fn native_deliver<E>(
+fn native_deliver(
     native: &dyn NativeOpikClient,
     trace_payload: Option<&Payload>,
     span: &Payload,
-) -> Result<(), OpikError<E>>
-where
-    E: StdError + 'static,
-{
+) -> Result<(), NativeDeliveryError> {
     if let Some(trace) = trace_payload {
-        native.trace(&trace_record(trace)?)?;
+        native.trace(&TraceRecord::try_from(trace)?)?;
     }
-    native.span(&span_record(span)?)?;
+    native.span(&SpanRecord::try_from(span)?)?;
     Ok(())
 }

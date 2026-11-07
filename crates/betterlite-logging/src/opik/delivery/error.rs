@@ -14,6 +14,10 @@ where
     Encode(#[source] serde_json::Error),
     #[error("the Opik API answered status {status} for a synchronous send, expected 204: {detail}")]
     UnexpectedStatus { status: u16, detail: String },
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum NativeDeliveryError {
     #[error(transparent)]
     Payload(#[from] RecordError),
     #[error(transparent)]

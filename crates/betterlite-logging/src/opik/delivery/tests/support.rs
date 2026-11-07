@@ -209,33 +209,28 @@ impl RecordingNative {
     pub(super) fn calls(&self) -> Vec<NativeCall> {
         self.calls.lock().unwrap().clone()
     }
-}
 
-impl NativeOpikClient for RecordingNative {
-    fn trace(&self, trace: &TraceRecord) -> Result<(), NativeClientError> {
+    fn record(&self, kind: NativeCallKind, call: NativeCall) -> Result<(), NativeClientError> {
         self.calls
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .push(NativeCall::Trace(trace.clone()));
-        if self.fail == Some(NativeCallKind::Trace) {
+            .push(call);
+        if self.fail == Some(kind) {
             return Err(NativeClientError {
-                message: "the native trace call failed".to_owned(),
+                message: format!("the native {kind:?} call failed"),
             });
         }
         Ok(())
     }
+}
+
+impl NativeOpikClient for RecordingNative {
+    fn trace(&self, trace: &TraceRecord) -> Result<(), NativeClientError> {
+        self.record(NativeCallKind::Trace, NativeCall::Trace(trace.clone()))
+    }
 
     fn span(&self, span: &SpanRecord) -> Result<(), NativeClientError> {
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(NativeCall::Span(span.clone()));
-        if self.fail == Some(NativeCallKind::Span) {
-            return Err(NativeClientError {
-                message: "the native span call failed".to_owned(),
-            });
-        }
-        Ok(())
+        self.record(NativeCallKind::Span, NativeCall::Span(span.clone()))
     }
 }
 
@@ -276,22 +271,17 @@ pub(super) struct Fixture<'values> {
 
 impl Fixture<'_> {
     pub(super) fn new() -> Self {
+        Self::with_delivery(RecordingDelivery::default())
+    }
+
+    pub(super) fn with_delivery(delivery: RecordingDelivery) -> Self {
         Self {
-            delivery: RecordingDelivery::default(),
+            delivery,
             source: FixedSource::default(),
             options: LoggerOptions::default(),
             environment: BTreeMap::new(),
             config_file: None,
         }
-    }
-
-    pub(super) fn scripted<R>(replies: R) -> Self
-    where
-        R: IntoIterator<Item = Reply>,
-    {
-        let mut fixture = Self::new();
-        fixture.delivery = RecordingDelivery::scripted(replies);
-        fixture
     }
 
     pub(super) fn try_build(
@@ -341,16 +331,11 @@ pub(super) fn sample_kwargs() -> IndexMap<String, Json> {
 }
 
 pub(super) fn minimal_kwargs() -> IndexMap<String, Json> {
-    object(
-        r#"{
-            "standard_logging_object": {
-                "messages": [{"role": "user", "content": "hi"}],
-                "response": {"answer": "ok"},
-                "model": "gpt-4o",
-                "status": "success"
-            }
-        }"#,
-    )
+    let mut kwargs = sample_kwargs();
+    kwargs.shift_remove("custom_llm_provider");
+    kwargs.shift_remove("response_cost");
+    kwargs.shift_remove("litellm_params");
+    kwargs
 }
 
 pub(super) fn sample_response() -> IndexMap<String, Json> {
