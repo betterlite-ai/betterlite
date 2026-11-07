@@ -11,6 +11,7 @@ base64 = "0.23.1"
 betterlite-auth = { path = "../betterlite-auth" }
 betterlite-billing = { path = "../betterlite-billing" }
 betterlite-config = { path = "../betterlite-config" }
+betterlite-core = { path = "../betterlite-core" }
 betterlite-db = { path = "../betterlite-db" }
 betterlite-env = { path = "../betterlite-env" }
 betterlite-error = { path = "../betterlite-error" }
@@ -33,6 +34,7 @@ hex.workspace = true
 hyper-util = { workspace = true, features = ["server-auto", "tokio", "service"] }
 icu_properties = "2.4.0"
 indexmap = { version = "2.14.2", features = ["serde"] }
+jiff = { version = "0.2.38", default-features = false, features = ["std", "tzdb-bundle-platform", "tzdb-zoneinfo"] }
 multipart-rs = "0.2.3"
 percent-encoding.workspace = true
 rand = { version = "0.10.3", default-features = false, features = ["std_rng"] }
@@ -50,7 +52,7 @@ speedate = "0.18.0"
 strum = { version = "0.28.0", features = ["derive"] }
 subtle.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
+tokio = { workspace = true, features = ["time"] }
 tower = { workspace = true, features = ["timeout"] }
 tracing.workspace = true
 url = "2.5.8"
@@ -66,6 +68,7 @@ rstest = "=0.27.0"
 rustls = { workspace = true, features = ["std", "tls12"] }
 signal-hook = { version = "0.4.6", default-features = false }
 tempfile = "3.27.0"
+tokio = { workspace = true, features = ["test-util"] }
 tokio-postgres = { workspace = true, features = ["with-chrono-0_4"] }
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "tls12"] }
 tower = { workspace = true, features = ["util"] }

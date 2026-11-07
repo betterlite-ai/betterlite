@@ -9,6 +9,7 @@ publish.workspace = true
 aws-credential-types = "1.3.1"
 aws-sigv4 = "1.6.2"
 aws-smithy-runtime-api = "1.19.1"
+betterlite-db = { path = "../betterlite-db" }
 betterlite-env = { path = "../betterlite-env" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-rate-limit = { path = "../betterlite-rate-limit" }
