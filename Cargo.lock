@@ -1691,6 +1691,7 @@ dependencies = [
  "chrono",
  "csv",
  "flate2",
+ "futures-util",
  "h2",
  "hex",
  "http 1.5.0",
