@@ -1,0 +1,260 @@
+id: B3844
+title: OTel inference and MCP payload projections
+description: >-
+  LiteLLM's OTel V2 logger builds one frozen record per span from the StandardLoggingPayload of a closed request, and its mappers only read those records. This task ports the records for an LLM call, an MCP tool call and an MCP tools/list call, plus the primitive attribute setter the vendor mappers write through. B3843 already gives `LLMRequestParams`, `LLMUsage`, `LLMCost`, `SpanError`, `ServerInfo` and the `helpers` module. B5240 gives `output_choices` and `finish_reasons`. Nothing calls the new records yet: B3852 wires them into the logger.
+
+
+  `crates/betterlite-logging/src/otel/model/payloads/tool_definition.rs` holds `ToolDefinition { name: String, description: Option<String>, parameters_json: Option<String> }`, deriving `serde::Serialize`, and `extract_tools(model_parameters: &MetadataMap) -> Vec<ToolDefinition>`. It reads `tools` when that is a list, else `functions` when that is a list, else returns nothing. For each object entry, the function object is `entry["function"]` when that key exists and the entry itself when it doesn't. The function must be an object with a non-empty string `name`, and an entry that fails this is skipped. `description` is the string value. `parameters_json` is `serde_json::to_string` of `parameters` unless that is null.
+
+
+  `payloads/llm_call.rs` holds `EmbeddingOutput { count: usize, dimensions: Option<usize> }`, deriving `serde::Serialize`, with `from_response(response: &MetadataMap) -> Option<Self>`. It looks at the object rows of `data`. No rows gives None. `count` is the number of rows, and `dimensions` is the length of the first row's `embedding` when that is an array and None otherwise (a base64 embedding is a string). LiteLLM's `as_json` gets no Rust method, because rule no-one-line-functions refuses it: B3845 runs `serde_json::to_string` on the struct and gets the same `{"count":..,"dimensions":..}` object.
+
+
+  The same file holds `LLMCallOptions { capture_content: bool, time_to_first_chunk_seconds: Option<Decimal>, request_route: Option<String>, trace: TraceControls, session_id: Option<String> }`, deriving `Default`, and `LLMCallSpanData`. LiteLLM's factory takes six arguments and `clippy.toml` sets `too-many-arguments-threshold = 5`, so the options travel in that struct. `LLMCallSpanData` has these public fields: `operation: GenAIOperation`, `provider: String`, `request_model: String`, `response_model: Option<String>`, `response_id: Option<String>`, `request_params: LLMRequestParams`, `usage: LLMUsage`, `finish_reasons: Vec<String>`, `error: Option<SpanError>`, `response_cost: Option<Decimal>`, `server: Option<ServerInfo>`, `identity: RequestIdentity`, `is_streaming: Option<bool>`, `cost: LLMCost`, `tools: Vec<ToolDefinition>`, `messages_in: Vec<MetadataMap>`, `choices_out: Vec<MetadataMap>`, `system_fingerprint: Option<String>`, `time_to_first_chunk_seconds: Option<Decimal>`, `output_type: Option<GenAIOutputType>`, `call_type: Option<String>`, `request_route: Option<String>`, `trace: TraceControls`, `session_id: Option<String>`, `embedding_output: Option<EmbeddingOutput>`. It derives `Clone` and `Debug`.
+
+
+  `LLMCallSpanData::from_standard_logging_payload(payload: &Payload, options: LLMCallOptions) -> Result<Self, MetadataError>` works like this. `RequestContext::from_standard_logging_payload(payload)?` gives `request_model`, `response_model`, `api_base` and `identity`. The payload converts once to a flat `MetadataMap` with `serde_json::from_value(serde_json::to_value(payload)?)?`, as `metadata/llm_call_event.rs` does, because `LLMUsage::from_payload` reads named `Payload` fields such as `prompt_tokens`. The response map is the `extra` of `Response::Object`, and an empty map for `Text`, `Items` and `Null`. `call_type` and `custom_llm_provider` are the string values, or "" when absent, passed to `resolve_operation`, `resolve_output_type` and `resolve_provider` from `otel::vocabulary::resolvers`. `response_id` and `system_fingerprint` are the response's `id` and `system_fingerprint` strings. `request_params` and `tools` both read the `model_parameters` object, or an empty map when it is absent. `usage` is `LLMUsage::from_payload`. `cost` is `LLMCost::from_breakdown` of the `cost_breakdown` object, or the default when it is absent. `error` is `SpanError::from_payload(&payload.extra)`. `response_cost` is `payload.response_cost`. `server` is `ServerInfo::from_api_base(context.api_base.as_deref())`. `is_streaming` is the bool `stream`. The `call_type` field keeps the text and is None when that text is empty. `request_route` is the option when non-empty, else `identity.request_route`. `session_id` is the option when non-empty, else None. `trace` and `time_to_first_chunk_seconds` come straight from the options.
+
+
+  Content capture decides three fields. `finish_reasons` and `tools` are always filled, with `finish_reasons` read from `output_choices(response)`. With `capture_content` on, `messages_in` is `helpers::dicts` of `messages`, `choices_out` is that `output_choices` result, and `embedding_output` is `EmbeddingOutput::from_response(response)` when the operation is `GenAIOperation::Embeddings`. With it off, the two lists are empty and `embedding_output` is None.
+
+
+  `payloads/mcp_call.rs` holds the MCP records. `MCPToolCallSpanData` has `operation: GenAIOperation`, `method: MCPMethod`, `tool_name: String`, `server_name: Option<String>`, `server_address: Option<String>`, `server_port: Option<u16>`, `session_id: Option<String>`, `arguments_json: Option<String>`, `result_json: Option<String>`, `error: Option<SpanError>`, `response_cost: Option<Decimal>`, `identity: RequestIdentity`. `from_standard_logging_payload(payload: &Payload, capture_content: bool) -> Result<Self, MetadataError>` reads the tool metadata from `payload.metadata.extra["mcp_tool_call_metadata"]`, an empty map unless that is an object. `method` is `MCPMethod::ToolsCall`, `operation` is `resolve_operation` of the call type, `tool_name` is `name` or "", `server_name` is `mcp_server_name` and `session_id` is `mcp_session_id`. With capture on and a value that isn't null, `arguments_json` and `result_json` are `helpers::json_or_none` of `arguments` and `result`. Otherwise they are None. `error`, `response_cost` and `identity` read as they do for an LLM call.
+
+
+  `server_address` and `server_port` split `mcp_server_resource`, a redacted `scheme://host[:port]` origin, the way Python's `urlsplit` does. Write this by hand on the text instead of using `url::Url`, as `ServerInfo::from_api_base` does. An absent or empty value, or a value without `://`, gives no address and no port. The scheme is the text before `://`, lowercased. The authority is the text after it up to the first `/`, `?` or `#`, with everything through the last `@` removed. With a `[`, the host sits between the brackets and the port follows `]:`, and an unmatched bracket gives neither value. Without one, the host is the text before the first `:` and the port the text after it. The host is lowercased. An empty port text counts as no port. A port text that isn't all ASCII digits, or that falls outside 0 to 65535, gives neither value, and an empty host gives neither value. A missing port or port 0 takes the default of 443 for `https`, 80 for `http`, and None for any other scheme.
+
+
+  `MCPListToolsSpanData` has `method: MCPMethod`, `session_id: Option<String>`, `error: Option<SpanError>`, `identity: RequestIdentity`, and `from_standard_logging_payload(payload: &Payload) -> Result<Self, MetadataError>`. `method` is `MCPMethod::ToolsList` and `session_id` is always None. LiteLLM's `capture_content` argument here is never read, so the Rust function doesn't take it.
+
+
+  LiteLLM's `is_mcp_tool_call` and `is_mcp_list_tools` would be one-line functions, and rule no-one-line-functions refuses those. The logger only ever asks them in sequence (logger.py L340-L342). Build one `PayloadKind` enum instead, with variants `McpToolCall`, `McpListTools` and `Inference`, and `PayloadKind::from_payload(payload: &Payload) -> Self`. A non-empty tool metadata map or a `call_type` of `call_mcp_tool` gives `McpToolCall`. Failing that, a `call_type` of `list_mcp_tools` gives `McpListTools`. Anything else gives `Inference`.
+
+
+  `crates/betterlite-logging/src/otel/span_attributes.rs` holds the setter. `primitive_value(value: &OtelModelValue) -> opentelemetry::Value` is LiteLLM's `cast_as_primitive_value_type`: null gives the empty string, a string or bool stays what it is, a number becomes `I64` when `Number::as_i64` holds it and `F64` otherwise, and an array or object becomes its `serde_json::to_string` text, or the empty string if that fails. `safe_set_attribute` is an extension trait, `SafeSetAttribute`, with one method `safe_set_attribute(&mut self, key: &str, value: &OtelModelValue)` and a blanket `impl<S: opentelemetry::trace::Span> SafeSetAttribute for S`. A trait implementation is exempt from rule no-one-line-functions, and the vendor mappers get the method call they expect. `LLMObsAttributes` is the Rust form of `BaseLLMObsOTELAttributes`: a trait with two associated functions that have empty default bodies, `set_messages<S: Span>(_span: &mut S, _kwargs: &MetadataMap)` and `set_response_output_messages<S: Span>(_span: &mut S, _response: &OtelModelValue)`. Tests read attributes back through `opentelemetry_sdk::trace::InMemorySpanExporter`, already available through the crate's `testing` feature.
+
+
+  Tests sit in each module's `tests.rs`, declared with `#[path]` as in `payloads/server.rs`. The oracle adapter is operation `b3844`, with these tagged inputs: `{"function": "primitive_value", "value": ...}`, `{"function": "tools", "value": {...}}`, `{"function": "embedding_output", "value": {...}}`, `{"function": "llm_call", "payload": {...}, "capture_content": true, "time_to_first_chunk_seconds": 1.5, "request_route": "...", "session_id": "..."}` with the last three optional, `{"function": "mcp_tool_call", "payload": {...}, "capture_content": true}`, `{"function": "mcp_list_tools", "payload": {...}}` and `{"function": "payload_kind", "payload": {...}}`. Both adapters answer `{"result": ...}` with one plain JSON object per record and the same keys on both sides: the record's fields, with `usage` spelled out field by field as `tools/oracle/src/helpers/logging/b3843.rs` does, `identity` reduced to `call_id` and `request_route`, enums as their text, and `trace` left out. `payload_kind` answers `mcp_tool_call`, `mcp_list_tools` or `inference`, and the Python side asks `is_mcp_tool_call` first, then `is_mcp_list_tools`. Every case gets a fuzz seed of the same content at `tools/oracle/fuzz/corpus/helper_case/otel-span-payloads-<case>.yaml`.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/otel/model/payloads/tool_definition.rs
+    - crates/betterlite-logging/src/otel/model/payloads/tool_definition/**
+    - crates/betterlite-logging/src/otel/model/payloads/llm_call.rs
+    - crates/betterlite-logging/src/otel/model/payloads/llm_call/**
+    - crates/betterlite-logging/src/otel/model/payloads/mcp_call.rs
+    - crates/betterlite-logging/src/otel/model/payloads/mcp_call/**
+    - crates/betterlite-logging/src/otel/span_attributes.rs
+    - crates/betterlite-logging/src/otel/span_attributes/**
+    - tools/oracle/cases/helpers/otel-span-payloads/**
+    - tools/oracle/fuzz/corpus/helper_case/otel-span-payloads-*
+    - tools/oracle/helpers/b3844.py
+    - tools/oracle/helpers/b3844/**
+    - tools/oracle/src/helpers/logging/b3844.rs
+    - tools/oracle/src/helpers/logging/b3844/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L371-L395
+    why: ToolDefinition and EmbeddingOutput.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L398-L491
+    why: LLMCallSpanData fields and its factory, including what capture_content gates.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L497-L522
+    why: _upstream_address_port, with the comment on zone-scoped addresses and the port default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L525-L589
+    why: MCPToolCallSpanData, _mcp_tool_call_metadata and is_mcp_tool_call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L592-L625
+    why: MCPListToolsSpanData and is_mcp_list_tools.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/model/payloads.py#L940-L992
+    why: _parse_error, already built as SpanError::from_payload, then _tool_from_entry and _extract_tools.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry_utils/base_otel_llm_obs_attributes.py#L8-L37
+    why: BaseLLMObsOTELAttributes, cast_as_primitive_value_type and safe_set_attribute.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L2736-L2758
+    why: The legacy logger's copy of the same cast and setter, ported once with the helpers above.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/otel/logger.py#L338-L344
+    why: The order the logger asks the two MCP predicates. PayloadKind keeps it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L2864-L2924
+    why: StandardLoggingMCPToolCall, the declared keys of mcp_tool_call_metadata.
+  - url: https://docs.python.org/3/library/urllib.parse.html#urllib.parse.urlsplit
+    why: The hostname and port attributes of urlsplit, including the ValueError on a bad port.
+
+dod:
+  - text: extract_tools reads tools, then functions, in both the wrapper and bare shapes, and skips unusable entries.
+    proof: [tool-definitions, oracle, helper-python]
+  - text: EmbeddingOutput counts the rows and reports dimensions from the first row only when it holds an array.
+    proof: [embedding-output, oracle, helper-python]
+  - text: LLMCallSpanData fills every metadata field from the payload as LiteLLM does.
+    proof: [llm-call-fields, oracle, helper-python]
+  - text: capture_content gates messages_in, choices_out and embedding_output only, and finish_reasons and tools stay filled with it off.
+    proof: [llm-call-capture, oracle, helper-python]
+  - text: LLMCallOptions passes the route, session, trace and time to first chunk through, with an empty route or session treated as absent.
+    proof: [llm-call-options, oracle, helper-python]
+  - text: MCPToolCallSpanData reads the tool metadata and gates arguments and result on capture, skipping null values.
+    proof: [mcp-tool-call, oracle, helper-python]
+  - text: mcp_server_resource splits into address and port as urlsplit does, with the scheme default and no address for an origin it can't read.
+    proof: [mcp-origin, oracle, helper-python]
+  - text: MCPListToolsSpanData carries the tools/list method, no session id, the error and the identity.
+    proof: [mcp-list-tools, oracle, helper-python]
+  - text: PayloadKind picks McpToolCall, then McpListTools, then Inference, in the logger's order.
+    proof: [payload-kind, oracle, helper-python]
+  - text: primitive_value casts null, strings, bools, whole numbers and floats as LiteLLM does, and turns arrays and objects into text.
+    proof: [primitive-values, oracle, helper-python]
+  - text: safe_set_attribute writes the primitive value on a real span under the given key.
+    proof: [safe-set-attribute]
+  - text: A type that implements LLMObsAttributes without overriding anything writes no attribute.
+    proof: [llm-obs-defaults]
+  - text: Every oracle case has a seed in the helper case corpus and the corpus replays.
+    proof: [helper-case-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: tool-definitions
+      why: the tool tests are missing or a shape, fallback or skipped entry differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::payloads::tool_definition::tests::/)'
+    - id: embedding-output
+      why: the embedding test is missing or the count or dimensions differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::payloads::llm_call::tests::embedding_output_matches_litellm($|::)/)'
+    - id: llm-call-fields
+      why: the field test is missing or a span field is read from the wrong place
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::payloads::llm_call::tests::span_fields_match_litellm($|::)/)'
+    - id: llm-call-capture
+      why: the capture test is missing or content leaks with capture off, or metadata goes missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::payloads::llm_call::tests::capture_gates_content_only($|::)/)'
+    - id: llm-call-options
+      why: the options test is missing or an option doesn't reach the span
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::payloads::llm_call::tests::call_options_reach_the_span($|::)/)'
+    - id: mcp-tool-call
+      why: the tool call test is missing or a field or capture gate differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::payloads::mcp_call::tests::tool_call_span_matches_litellm($|::)/)'
+    - id: mcp-origin
+      why: the origin test is missing or an address or port differs from urlsplit
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::payloads::mcp_call::tests::upstream_origin_splits_like_urlsplit($|::)/)'
+    - id: mcp-list-tools
+      why: the list tools test is missing or a field differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::payloads::mcp_call::tests::list_tools_span_matches_litellm($|::)/)'
+    - id: payload-kind
+      why: the kind test is missing or a payload lands on the wrong span
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::model::payloads::mcp_call::tests::payload_kind_picks_the_span($|::)/)'
+    - id: primitive-values
+      why: the cast test is missing or a value keeps the wrong type
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::span_attributes::tests::primitive_value_matches_litellm($|::)/)'
+    - id: safe-set-attribute
+      why: the setter test is missing or a span doesn't receive the attribute
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::span_attributes::tests::safe_set_attribute_writes_primitives($|::)/)'
+    - id: llm-obs-defaults
+      why: the default test is missing or a default function writes to the span
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::span_attributes::tests::llm_obs_defaults_write_nothing($|::)/)'
+    - id: helper-python
+      why: the oracle adapter is untouched or fails strict Python checks
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3844.py tools/oracle/helpers/b3844)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: the span payload seeds are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/otel-span-payloads-*")" && grep -lE '^[[:space:]]+"?b3844"?:' tools/oracle/fuzz/corpus/helper_case/otel-span-payloads-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/otel-span-payloads/primitive-null.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/primitive-string.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/primitive-bool.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/primitive-int.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/primitive-float.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/tools-function-wrapper.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/tools-bare-entry.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/tools-functions-fallback.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/tools-empty-list-no-fallback.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/tools-unusable-entries.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/tools-null-function.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/tools-no-parameters.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/embedding-float-vectors.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/embedding-base64-rows.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/embedding-row-without-vector.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/embedding-no-rows.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/llm-chat-content-captured.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/llm-chat-content-off.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/llm-tools-with-content-off.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/llm-failure-error.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/llm-embedding-captured.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/llm-embedding-content-off.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/llm-route-and-session-options.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/llm-empty-route-falls-back.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/llm-image-output-type.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/llm-text-response.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/llm-no-provider.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/mcp-call-captured.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/mcp-call-content-off.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/mcp-call-string-arguments.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/mcp-call-null-arguments.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/mcp-call-no-metadata.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/mcp-call-failure.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/mcp-origin-https-default.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/mcp-origin-http-default.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/mcp-origin-explicit-port.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/mcp-origin-port-zero.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/mcp-origin-other-scheme.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/mcp-origin-zone-scoped.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/mcp-origin-port-too-large.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/mcp-origin-bracket-ipv6.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/mcp-origin-uppercase-host.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/mcp-origin-no-scheme.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/mcp-list-tools.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/mcp-list-tools-failure.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/kind-metadata-wins.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/kind-call-type.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/kind-list-tools.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/kind-empty-metadata.yaml
+  - tools/oracle/cases/helpers/otel-span-payloads/kind-inference.yaml
+
+deviations:
+  - what: A whole number outside the signed 64-bit range reaches the span as a float attribute. LiteLLM hands the Python int to the OTel SDK unchanged and its exporter then fails on that value.
+    why: >-
+      `opentelemetry::Value` has no wider integer variant, and a float keeps the attribute instead of losing the export. No value LiteLLM's own spans set comes near this range.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry_utils/base_otel_llm_obs_attributes.py#L18-L37
+
+out_of_scope:
+  - _output_choices, _finish_reasons and every reader they call (payloads.py L728-L937) belong to B5240.
+  - _parse_error (payloads.py L940-L951) is already built as SpanError::from_payload under B3843. LLMRequestParams, LLMUsage, LLMCost, SpanError, ServerInfo, GuardrailSpanData, ServiceSpanData, ProxyRequestSpanData, sanitize_event_metadata and the helpers in payloads.py L67-L365 and L632-L725 are merged under B3843.
+  - Writing the records onto spans, including the _MCP_ATTRS tables and the output_messages projection, belongs to B3845 and B3846.
+  - Emitting spans, the MCP dispatch and the logger's use of these records belong to B3852.
+  - ArizeOTELAttributes and its set_messages belong to B3860. LangfuseLLMObsOTELAttributes belongs to B3909.
+  - OpenTelemetry.cast_as_primitive_value_type (opentelemetry.py L2335-L2350) has no caller at the pin, so it isn't built.
+  - In opentelemetry.py, set_tools_attributes L2302-L2333, _tool_calls_kv_pair L2352-L2370 and the transforms L2760-L2887 belong to B3845.
+  - In opentelemetry.py, get_traceparent_from_header and _get_span_context L2967-L3030 belong to B3847.
+  - In opentelemetry.py, L90-L95, L137-L226 and L1628-L1975 (metric filter, _record_metrics, _to_timestamp, _emit_semantic_logs) belong to B3857.
+  - In opentelemetry.py, L768-L1052, L3382-L3506 and L3560-L3580 (service hooks) belong to B3858.
+  - In opentelemetry.py, L756-L766, L1057-L1127, L1218-L1242, L1309-L1490, L1532-L1550 and L1977-L2208 (legacy lifecycle) belong to B3859.
+  - In opentelemetry.py, L381-L445 belongs to B3863 and B3868, and L80-L87, L105-L107, L447-L464, L478-L585 and L639-L754 belong to B3868.
+  - In opentelemetry.py, capture policy and span annotations (L587-L637, L1248-L1307, L1491-L1530, L1552-L1626, L2210-L2300, _to_ns and _get_span_name at L2946-L2965) belong to B3854.
+  - In opentelemetry.py, the dynamic provider cache and exporters (L1129-L1216 and L3032-L3380) belong to B3855.
+  - In opentelemetry.py, set_attributes and set_raw_request_attributes (L2372-L2734 and L2889-L2944) belong to B3856.
+
+pitfalls:
+  - The `tools` key wins whenever it holds a list, so `tools` set to `[]` with a full `functions` list gives no tools.
+  - 'An entry `{"function": null, "name": "x"}` is skipped, because LiteLLM tests that the key exists before it looks at the value, so never fall back to the entry on null.'
+  - Don't use `helpers::json_or_none` for `parameters`, since it passes a string through as is, where LiteLLM's `json.dumps` quotes it.
+  - '`helpers::json_or_none` turns `OtelModelValue::Null(())` into the text `null`, so `arguments: null` needs the null test first or the span gets a `null` attribute.'
+  - 'A row with no `embedding` key still counts, so `{"data": [{"object": "embedding"}]}` gives count 1 and dimensions None.'
+  - '`tools` is not gated by capture, even though `parameters_json` comes from the request.'
+  - Derive `finish_reasons` from the `output_choices` result before the capture gate, or a span with capture off loses its finish reasons.
+  - '`embedding_output` needs both capture on and `GenAIOperation::Embeddings`, so a chat response with a `data` list gets None.'
+  - '`LLMUsage::from_payload` needs `prompt_tokens`. `Payload` holds it as a named field and not in `extra`, so passing `&payload.extra` gives empty usage.'
+  - '`Response::Object` keeps `model` outside `extra`, and `RequestContext` already reads it, so the response map passed to `output_choices` has no `model` key.'
+  - Python `resolve_provider(None)` gives "" and Rust takes `&str`, so pass "" for an absent provider and don't error.
+  - The record has 25 fields and functions stop at 40 lines, so build the fields that don't depend on capture in one private function and apply the content fields with `Self { messages_in, choices_out, embedding_output, ..base }`.
+  - '`mcp_tool_call_metadata` sits at `payload.metadata.extra`, not `payload.extra`, so reading the top level always gives an empty map.'
+  - An empty metadata object `{}` is not a tool call unless `call_type` says so, and a stamped payload with `call_type` set to `list_mcp_tools` is a tool call, because the logger asks that question first.
+  - The redactor strips IPv6 brackets, so `http://fe80::1%25eth0` reaches this code, its host reads as `fe80` and its port text `:1%25eth0` fails, and that origin must give no address at all, not an address with no port.
+  - '`url::Url` is the wrong tool here: `port()` drops a port equal to the scheme default, `host_str()` keeps IPv6 brackets, and `port_or_known_default()` gives 21 for `ftp`, where LiteLLM gives None.'
+  - Port 0 takes the default because LiteLLM writes `port or default_port`, so `https://h:0` gives 443 and `ftp://h:0` gives no port.
+  - The scheme test is case-insensitive through `urlsplit`, so `HTTPS://Example.com` gives host `example.com` and port 443.
+  - A `bool` is an int subclass in Python, but `primitive_value` must keep `OtelModelValue::Bool` as `Value::Bool` and `1.0` as `F64`, and `Number::as_i64` returns None for the text `1.0`, so ask it first.
+  - The Rust adapter can't pass a `Decimal` to `json!`, since its default serde form is a string, so turn `response_cost` and `time_to_first_chunk_seconds` into numbers with `rust_decimal::prelude::ToPrimitive::to_f64` before comparing.
+  - '`LLMUsage` and `GenAIOperation` have no `serde::Serialize`, and `usage.rs` isn''t in this scope, so the adapter lists their fields and text by hand.'
+  - LiteLLM casts an array or object with `str()`, and docs/compatibility.md leaves that text out of the contract, so test those two in Rust only, with no oracle case.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

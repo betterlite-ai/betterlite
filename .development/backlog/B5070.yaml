@@ -3,7 +3,7 @@ milestone: M11 distribution
 title: Container command entrypoints and migration handoff
 status: todo
 depends_on: [B003, B1232]
-file: null
+file: tasks/B5070-container-entrypoints.yaml
 covers:
   - "docker/entrypoint.sh"
   - "docker/prod_entrypoint.sh"

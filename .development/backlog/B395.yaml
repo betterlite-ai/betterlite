@@ -1,14 +1,14 @@
 id: B395
 milestone: M2 routing
 title: Native routing strategy dispatch
-status: todo
+status: done
 depends_on: [B008, B301, B002]
 file: tasks/B395-strategy-dispatch.yaml
 covers:
   - "litellm/router.py"
 parent: B016
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 838

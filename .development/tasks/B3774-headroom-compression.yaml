@@ -10,13 +10,13 @@ description: >-
   Implement _resolve_call_id to unify call identity across pre-call and agentic-loop hooks by reading litellm_call_id from the logging object or request state, falling back to a generated UUID if neither is set, so hash scoping is per-call rather than trusting any hash-shaped string in message text.
 
 
-  Implement compression request _call_compress that sends flattened message payloads to /v1/compress, handles HTTP errors, timeouts and malformed responses by delegating to _handle_compress_failure (provided by B3773), and records compression statistics (tokens_before, tokens_after, compression_ratio, transforms_applied, tokens_saved) from the response. Derive tokens_saved from tokens_before - tokens_after when the service omits it and both token counts are present as numbers.
+  Implement compression request _call_compress that sends flattened message payloads to /v1/compress, handles HTTP errors, timeouts and malformed responses by delegating to handle_compress_failure (provided by B3773), and records compression statistics (tokens_before, tokens_after, compression_ratio, transforms_applied, tokens_saved) from the response. Derive tokens_saved from tokens_before - tokens_after when the service omits it and both token counts are present as numbers.
 
 
-  Implement _should_bypass to detect x-headroom-bypass headers with a value present (case-insensitive).
+  Implement _should_bypass following headroom.py L524-L531: read proxy_server_request.headers (both must be string-keyed objects, else no bypass), look up the exact key x-headroom-bypass, and bypass only when the value lowercases to "true". The value false, an empty string or any other text does not bypass.
 
 
-  Implement update_in_memory_litellm_params to re-resolve and re-clamp the timeout on parameter updates rather than nulling it, calling _resolve_timeout (provided by B3773).
+  Implement update_in_memory_litellm_params to re-resolve and re-clamp the timeout on parameter updates rather than nulling it, calling resolve_timeout (provided by B3773).
 
 
   Implement _prune_expired_hashes to remove entries from the per-call issued-hash map that are past their TTL (900 seconds) using monotonic time comparison.
@@ -28,7 +28,7 @@ description: >-
   Implement apply_guardrail to orchestrate compression: read bypass and background flags, validate message shape, resolve protected indices and compressible subsets, call compression service, restore protected rows, update logging and applied-guardrails header, and record issued hashes. Message identity is preserved when returning the caller's original inputs object for unchanged requests; a rebuilt copy is returned only when compression succeeded and the messages changed.
 
 
-  The apply hook calls _flatten_messages_for_compression (provided by B3773) on compressible rows, _restore_content_shapes (provided by B3773) on the service output, and _restore_protected_messages (provided by B3773) to interleave protected rows back. It calls _raw_retrieve_call_ids (provided by B3773) to determine which messages carry retrieval results, and _protected_indices (provided by B3773) to expand tool exchanges. Use the request_data adapter (a Pydantic RequestData model in scope) to read untranslated messages and recover long tool names before flattening.
+  The apply hook calls B3773 functions by their Rust names: flatten_for_compression on compressible rows, restore_content_shapes on the service output, and restore_protected_messages to interleave protected rows back. It calls retrieve_call_ids to read the retrieval call ids from the untranslated messages and protected_indices to expand tool exchanges. Failures go through build_compress_failure_detail and handle_compress_failure, the service reply goes through read_ccr_hashes, and the result is a CompressResult, all from B3773. The headers come from HeadroomSettings::request_headers and the timeout from resolve_timeout, also B3773. B3773 owns the three modules headroom_messages, headroom_failure and headroom_settings; this task writes none of their files. Use the request_data adapter (a Pydantic RequestData model in scope) to read untranslated messages and recover long tool names before flattening.
 scope:
   paths:
     - crates/betterlite-guardrails/src/headroom.rs
@@ -54,7 +54,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/headroom.py
     why: HeadroomGuardrailConfigModel configuration schema.
 dod:
-  - text: Bypass header x-headroom-bypass (case-sensitive, value required) skips compression and returns inputs unchanged.
+  - text: Bypass header x-headroom-bypass skips compression and returns inputs unchanged only when its value lowercases to "true" (True and TRUE count; false, empty and other text do not).
     proof: [headroom-compression-tests]
   - text: Background requests (request_data.get("background") is truthy) skip compression and return inputs unchanged.
     proof: [headroom-compression-tests]
@@ -130,11 +130,11 @@ deviations:
     why: httpx.Timeout's connect parameter allows precise control over connection establishment time, improving diagnostic signal when the service is slow to accept connections.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L556
 out_of_scope:
-  - Message flattening helpers (_flatten_messages_for_compression, _is_str_object_dict, _is_object_list) provided by B3773.
-  - Content shape restoration (_restore_content_shapes, _restore_protected_messages) provided by B3773.
-  - Protected indices calculation (_protected_indices, _raw_retrieve_call_ids, _retrieval_result_indices) provided by B3773.
-  - Compression failure detail building (_build_compress_failure_detail) provided by B3773.
-  - Compression failure handling and timeout resolution (_handle_compress_failure, _resolve_timeout, _request_headers) provided by B3773.
+  - Message flattening (flatten_for_compression) provided by B3773 in headroom_messages. The small _is_str_object_dict and _is_object_list type checks are plain serde_json matches here.
+  - Content shape restoration (restore_content_shapes, restore_protected_messages) provided by B3773 in headroom_messages.
+  - Protected indices calculation (protected_indices, retrieve_call_ids, retrieval_result_indices) provided by B3773 in headroom_messages.
+  - Compression failure detail building (build_compress_failure_detail) provided by B3773 in headroom_failure.
+  - Compression failure handling, timeout resolution and request headers (handle_compress_failure in headroom_failure, resolve_timeout and request_headers in headroom_settings) provided by B3773.
   - Tool call extraction (has_tool_with_name, get_tool_calls_from_response) provided by B226.
   - Retrieval hook implementation (_call_retrieve, async_should_run_agentic_loop, async_build_agentic_loop_plan) owned by B3775.
   - Initialization from guardrail registry (owned by B107).

@@ -1,0 +1,145 @@
+id: B3773
+title: Headroom protected messages and transport settings
+description: >-
+  Build the parts of LiteLLM's Headroom guardrail that B3774 (compression call and apply hook) and B3775 (retrieval) both stand on: which message rows are held back from compression, how rows are flattened before the call and put back after it, the failure policy, and the settings a guardrail instance is built from. Everything here is pure or takes its inputs as arguments. No HTTP call is made in this task.
+
+
+  Three new modules in betterlite-guardrails, each with its own error type where it can fail and its tests in a sibling `tests.rs`. Rows are `serde_json::Value` objects, the type `betterlite_compression::protected_indices::get_protected_indices` already takes. `group_tool_exchanges` from betterlite-prompts (B224) takes its own `Json` type, so convert the rows once at that call with serde and do not write a second converter.
+
+
+  Module `headroom_messages`. (1) `flatten_for_compression(rows) -> Vec<Value>`: a row whose `content` is a non-empty list with only `{"type": "text"}` parts (`is_all_text_parts`, B3663, in `betterlite_guardrails::content_text`) and whose joined text (`content_to_text`, B3663) is non-empty gets `content` replaced by that text string. Every other row is copied unchanged, so a row with an image part keeps its parts and its `cache_control` positions. (2) `restore_content_shapes(originals, returned) -> Vec<Value>`: if the counts differ, or any pair has a different `role`, return `returned` as is. Otherwise go pair by pair. When the original `content` is a list and the returned `content` is a string: if the string equals `content_to_text(original content)`, the row is the returned row with the original parts list put back (so per-part fields such as `cache_control` survive); if not, the row is the returned row with `content` set to `merge_rewritten_text_parts(original parts, returned text)` (B3663). Any other pair gives the returned row. (3) `restore_protected_messages(messages, compressed, protected) -> Vec<Value>`: the rows not in `protected` were the ones sent, in order; zip them with `compressed` by position and rebuild the full list, taking the original row at every protected index. B3774 guarantees one returned row per row sent, so a short `compressed` is a typed error, never a panic or a silent gap.
+
+
+  Protected indices in `headroom_messages`. `retrieve_call_ids(messages: Option<&Value>) -> BTreeSet<String>` reads the request's own untranslated messages (a list, else empty). Per message it collects two kinds of id. OpenAI: only when `role` is `assistant`, each `tool_calls` entry that is an object with a non-empty `id` and a `function.name` that is `headroom_retrieve` or ends with `__headroom_retrieve` (the `mcp__<server>__` form a client sees through the MCP gateway). Anthropic: each `content` list block of `type` `tool_use` whose `name` matches the same rule and whose `id` is present (an empty string id counts here, unlike the OpenAI branch). `retrieval_result_indices(messages, extra_ids)` returns the indices of rows whose `role` is `tool` or `function` and whose `tool_call_id` is in `extra_ids` united with the ids found by the OpenAI branch over `messages` themselves (not the Anthropic branch). It returns the empty set when there are no ids. `protected_indices(messages, extra_ids) -> BTreeSet<usize>` is the union of: `get_protected_indices(messages)` plus `retrieval_result_indices`, expanded so that any `group_tool_exchanges` group with a member in that set is wholly included, plus every index whose `role` is `assistant` (added after the expansion and not expanded, so tool results asked for by an assistant stay compressible).
+
+
+  Module `headroom_failure`. `build_compress_failure_detail(status, body) -> Map<String, Value>`: `{"status_code", "body"}`; for status 404 add `hint` with exactly "The Headroom compression endpoint returned HTTP 404. Verify that the configured Headroom endpoint is correct and that the compression endpoint is available. If you are using a self-hosted deployment, some deployments require enabling remote compression (for example, HEADROOM_COMPRESS_ALLOW_REMOTE=1)." `handle_compress_failure(fallback, rows, error, detail) -> Result<Vec<Value>, CompressFailure>`: with `fail_open` log at error level (tracing has no critical) "Headroom: {error}; fail_open configured, forwarding request uncompressed. detail={detail}" and return `rows` unchanged; with `fail_closed` return `CompressFailure { status: 502, body }` where body is `{"error": error, ...detail}`. B3774 turns that into the HTTP 502. Also define here `CompressResult { messages, succeeded, stats, ccr_hashes }` (the value `_call_compress` returns; B3774 fills it) and `read_ccr_hashes(body) -> BTreeSet<String>`: when `ccr_hashes` is a list, keep the string entries that, lowercased, fully match `[a-f0-9]{12,24}`, and store the lowercased form; any other `ccr_hashes` value gives the empty set.
+
+
+  Module `headroom_settings`. Constants: `BYPASS_HEADER` = `x-headroom-bypass`, `HEADROOM_RETRIEVE_TOOL_NAME` = `headroom_retrieve`, `HEADROOM_GUARDRAIL_PROVIDER` = `headroom`, the supported hooks `pre_call` and `post_call` (`GuardrailEventHooks` lives in betterlite-config, B3662), the default compress timeout 60 seconds and the connect cap 5 seconds (LiteLLM's HTTP_HANDLER_CONNECT_TIMEOUT_SECONDS). `HeadroomSettings::new(input, secrets)` builds the instance fields from `api_base`, `api_key`, `model`, `unreachable_fallback`, `timeout` and `ccr_retrieval` (default true). The API base is `api_base`, else the secret `HEADROOM_API_BASE`, else empty, with every trailing `/` removed; an empty result is the typed error `MissingApiBase` with the text "Headroom guardrail requires an API base URL. Set `api_base` in the guardrail config or HEADROOM_API_BASE env var." The key is `api_key`, else the secret `HEADROOM_API_KEY`, else none; an empty string counts as unset for both. `unreachable_fallback` is `FailOpen` only for the exact text `fail_open`, otherwise `FailClosed`. Secrets come in through a small injected trait so the unit tests need no environment. `resolve_timeout(Option<f64>) -> CompressTimeout { total, connect }`: none gives 60 seconds; zero, negative, NaN and infinite values are rejected with a warning "Headroom: ignoring unusable timeout {value}, using 60 seconds" and also give 60; otherwise the value is used; `connect` is the smaller of `total` and 5 seconds. `request_headers()` returns `Content-Type: application/json` and, when a key is set, `Authorization: Bearer <key>`. `HeadroomConfig` is the typed form of LiteLLM's `HeadroomGuardrailConfigModel`: `api_base`, `api_key`, `model` (all optional strings), `unreachable_fallback` (`fail_closed` default, or `fail_open`; any other value is a config error naming the field), `ccr_retrieval` (default true), UI name "Headroom". Per B3774, `update_in_memory_litellm_params` calls `resolve_timeout` again; this task only provides it.
+scope:
+  paths:
+    - crates/betterlite-guardrails/src/headroom_messages.rs
+    - crates/betterlite-guardrails/src/headroom_messages/**
+    - crates/betterlite-guardrails/src/headroom_failure.rs
+    - crates/betterlite-guardrails/src/headroom_failure/**
+    - crates/betterlite-guardrails/src/headroom_settings.rs
+    - crates/betterlite-guardrails/src/headroom_settings/**
+    - tools/oracle/cases/helpers/headroom-messages/**
+    - tools/oracle/helpers/b3773.py
+    - tools/oracle/helpers/b3773/**
+    - tools/oracle/src/helpers/guardrails/b3773.rs
+    - tools/oracle/src/helpers/guardrails/b3773/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L57-L70
+    why: Bypass header, retrieve tool name, hash pattern and the timeout default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L81-L132
+    why: Row flattening before the call and content shape restoration after it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L135-L229
+    why: Retrieve tool name matching, the OpenAI and Anthropic call id readers, and retrieval result row indices.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L232-L281
+    why: Protected index union with tool exchange expansion and the positional restore of protected rows.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L284-L321
+    why: Failure detail with the 404 hint, ccr hash reader and the compress result record.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L477-L538
+    why: Class constants, supported hooks, constructor defaults and env fallbacks, request headers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L540-L584
+    why: Timeout resolution and the fail_open or fail_closed handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/headroom.py
+    why: Config model fields, defaults and UI name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/content_text.py#L21-L58
+    why: The three text helpers B3663 builds, read here for the exact shapes this task passes in.
+dod:
+  - text: Protected indices are the union of the system rows, last user row, last assistant row and cached prefix from `get_protected_indices`, plus retrieval result rows, expanded over whole tool exchanges, plus every assistant row without expansion.
+    proof: [headroom-protected-tests, oracle]
+  - text: Retrieve call ids are read from OpenAI `tool_calls` (assistant rows, non-empty id) and Anthropic `tool_use` blocks (id present), matching `headroom_retrieve` and the `__headroom_retrieve` suffix, and ignoring other tools.
+    proof: [headroom-protected-tests, oracle]
+  - text: Tool and function rows whose `tool_call_id` is a retrieve call id are retrieval results, including ids that only the raw untranslated messages carry.
+    proof: [headroom-protected-tests, oracle]
+  - text: Flattening turns only non-empty all-text part lists into one string and leaves every other row unchanged.
+    proof: [headroom-shape-tests, oracle]
+  - text: Content shape restoration keeps the original parts for an untouched row, merges rewritten text into one part with the last cache_control, and adopts the returned rows when the count or any role differs.
+    proof: [headroom-shape-tests, oracle]
+  - text: Protected rows are put back at their original positions around the compressed rows, and a short compressed list is a typed error.
+    proof: [headroom-shape-tests, oracle]
+  - text: ccr hashes are lowercased, filtered to 12 to 24 hex characters and dropped when `ccr_hashes` is not a list.
+    proof: [headroom-failure-tests, oracle]
+  - text: Failure detail adds the 404 hint only for status 404, and fail_open returns the rows unchanged while fail_closed returns a 502 body with `error` and the detail keys.
+    proof: [headroom-failure-tests, oracle]
+  - text: Settings fall back to HEADROOM_API_BASE and HEADROOM_API_KEY, strip trailing slashes from the base, reject an empty base with the LiteLLM message, and default to fail_closed and ccr_retrieval true.
+    proof: [headroom-settings-tests]
+  - text: Timeouts that are none, zero, negative, NaN or infinite give 60 seconds, any other value is kept, and the connect timeout is the smaller of the total and 5 seconds.
+    proof: [headroom-settings-tests, oracle]
+  - text: Request headers carry the Bearer key only when a key is set, and the config model rejects an `unreachable_fallback` other than the two names.
+    proof: [headroom-settings-tests]
+checks:
+  optional: []
+  commands:
+    - id: headroom-protected-tests
+      why: protected index selection or retrieve call id reading is missing or wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^headroom_messages::tests::protected_/)'
+    - id: headroom-shape-tests
+      why: flattening, content shape restoration or protected row restore is missing or wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^headroom_messages::tests::(flatten|restore)_/)'
+    - id: headroom-failure-tests
+      why: failure detail, fallback handling or ccr hash reading is missing or wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^headroom_failure::tests::/)'
+    - id: headroom-settings-tests
+      why: instance settings, timeout clamping, request headers or the config model are missing or wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^headroom_settings::tests::/)'
+oracle_cases:
+  - tools/oracle/cases/helpers/headroom-messages/protected-system-last-user-last-assistant.yaml
+  - tools/oracle/cases/helpers/headroom-messages/protected-all-assistant-rows.yaml
+  - tools/oracle/cases/helpers/headroom-messages/protected-tool-exchange-expansion.yaml
+  - tools/oracle/cases/helpers/headroom-messages/protected-retrieval-result-row.yaml
+  - tools/oracle/cases/helpers/headroom-messages/retrieve-ids-openai-mcp-suffix.yaml
+  - tools/oracle/cases/helpers/headroom-messages/retrieve-ids-anthropic-empty-id.yaml
+  - tools/oracle/cases/helpers/headroom-messages/retrieve-ids-raw-long-tool-name.yaml
+  - tools/oracle/cases/helpers/headroom-messages/flatten-all-text-parts.yaml
+  - tools/oracle/cases/helpers/headroom-messages/flatten-keeps-image-row.yaml
+  - tools/oracle/cases/helpers/headroom-messages/restore-shapes-untouched-row.yaml
+  - tools/oracle/cases/helpers/headroom-messages/restore-shapes-rewritten-row.yaml
+  - tools/oracle/cases/helpers/headroom-messages/restore-shapes-count-mismatch.yaml
+  - tools/oracle/cases/helpers/headroom-messages/restore-shapes-role-mismatch.yaml
+  - tools/oracle/cases/helpers/headroom-messages/restore-protected-positions.yaml
+  - tools/oracle/cases/helpers/headroom-messages/ccr-hashes-filtered.yaml
+  - tools/oracle/cases/helpers/headroom-messages/ccr-hashes-not-a-list.yaml
+  - tools/oracle/cases/helpers/headroom-messages/failure-detail-404-hint.yaml
+  - tools/oracle/cases/helpers/headroom-messages/failure-detail-other-status.yaml
+  - tools/oracle/cases/helpers/headroom-messages/failure-fail-open-returns-rows.yaml
+  - tools/oracle/cases/helpers/headroom-messages/failure-fail-closed-502-body.yaml
+  - tools/oracle/cases/helpers/headroom-messages/timeout-default-and-rejected.yaml
+  - tools/oracle/cases/helpers/headroom-messages/timeout-connect-cap.yaml
+deviations:
+  - what: fail_open logs at error level instead of Python's critical level.
+    why: Rust's tracing has no critical level, and the message text is kept as LiteLLM writes it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L577-L583
+  - what: A `restore_protected_messages` call with fewer compressed rows than unprotected rows returns a typed error.
+    why: Python raises KeyError there, which would be a 500; B3774 already rejects a changed row count before this call, so the error only guards against a caller bug.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L277-L281
+  - what: A config `unreachable_fallback` other than `fail_closed` or `fail_open` is a config error naming the field.
+    why: LiteLLM's pydantic model rejects it the same way; the constructor's quiet fall back to fail_closed only applies to a caller that bypasses the model.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/headroom.py#L27-L34
+out_of_scope:
+  - "B3774 owns the HTTP call, `_call_compress`, `_should_bypass`, `_prune_expired_hashes`, `_resolve_call_id`, `_build_headroom_retrieve_tool`, `has_headroom_retrieve_tool`, `update_in_memory_litellm_params`, the issued hash map and `apply_guardrail`."
+  - "B3775 owns `_call_retrieve`, the agentic loop hooks, the follow-up message builders and `_extract_headroom_tool_calls`."
+  - "B3663 owns `content_to_text`, `is_all_text_parts` and `merge_rewritten_text_parts` in crates/betterlite-guardrails/src/content_text.rs; B3540 owns `get_protected_indices`; B224 owns `group_tool_exchanges`."
+  - "B3662 owns `GuardrailEventHooks` and the `LitellmParams` fields (`api_base`, `api_key`, `model`, `unreachable_fallback`, `timeout`, `ccr_retrieval`) the constructor arguments come from."
+  - "The registry entry `initialize_guardrail`, `guardrail_initializer_registry` and `guardrail_class_registry` in headroom/__init__.py belong to B107 (the umbrella that wires the guardrail in)."
+  - "B3775 owns `async_pre_call_deployment_hook` (turning a stream into a non-stream call when the retrieve tool is present). `get_config_model` is covered by `HeadroomConfig` here."
+  - "The CustomGuardrail base class and its logging helpers have no task file; this task only holds plain settings and does not subclass anything."
+pitfalls:
+  - The Anthropic branch accepts an empty-string `tool_use` id (`is not None`), but the OpenAI branch needs a non-empty `id`; do not unify the two checks.
+  - OpenAI ids are only read from rows whose `role` is `assistant`, while Anthropic `tool_use` blocks are read from any row with a list `content`.
+  - "`retrieval_result_indices` unites the extra ids with ids from the OpenAI branch of the same messages only, so an Anthropic `tool_use` id helps only when it arrives through `extra_ids`."
+  - Assistant rows are added to the protected set after the tool exchange expansion and do not expand it, so a tool result that an assistant row asked for stays compressible.
+  - The 404 hint is added only for status 404.
+  - "`read_ccr_hashes` lowercases before matching and stores the lowercased text, so `ABCDEF012345` is kept as `abcdef012345`, and an 11 or 25 character hash is dropped."
+  - "`restore_content_shapes` compares the returned string with `content_to_text(original parts)` (parts joined with a blank line) to decide a row is untouched, not with any single part."
+  - The connect timeout is `min(total, 5)`, so a configured timeout of 2 seconds gives 2 for both, and one of 90 gives 90 and 5.
+  - An empty `api_base` or `api_key` argument counts as unset and falls to the secret, the same as a missing one.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

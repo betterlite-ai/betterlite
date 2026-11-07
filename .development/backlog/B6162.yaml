@@ -1,0 +1,14 @@
+id: B6162
+milestone: M6 guardrails
+title: Registry adapters for pass-through and Bedrock pass-through guardrails
+status: todo
+depends_on: [B3661, B207, B3573, B3574, B3678]
+file: tasks/B6162-unified-passthrough-translations.yaml
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/unified_guardrail/unified_guardrail.py"
+parent: B104
+split_from: B3680
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

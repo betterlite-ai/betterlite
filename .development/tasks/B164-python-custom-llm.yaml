@@ -1,0 +1,104 @@
+id: B164
+title: Python CustomLLM, CustomLLMError, CustomLLMItem and BaseLLM
+description: >-
+  Users register a `CustomLLM` subclass in `litellm.custom_provider_map` to serve their own provider. After `import
+  betterlite as litellm`, the same subclass and the same `custom_provider_map` entry must work unchanged. This task ports
+  the class, its error type, the map item type and the small `BaseLLM` base. It is Python only: no Rust file changes. The
+  other parts of the original entry are B6030 to B6033, and this entry depends on them so a later task can depend on B164
+  for all the extension classes.
+
+
+  Put the code in `python/betterlite/_custom_llm/` (a package with an explicit `__all__`, files under 300 lines):
+  `custom_llm.py` for `CustomLLMError` and `CustomLLM`, `base.py` for `BaseLLM` and `custom_llm_types.py` for
+  `CustomLLMItem`. Add re-export modules at `python/betterlite/llms/custom_llm.py`, `python/betterlite/llms/base.py` and
+  `python/betterlite/types/llms/custom_llm.py`. Do not create `llms/__init__.py` or `types/llms/__init__.py`. The architect
+  writes those, and you stop and report a blocker if one is missing.
+
+
+  `CustomLLMError(Exception)` takes `status_code`, `message`, `headers` and `request`/`response` as the source does, and
+  keeps the same attributes. In LiteLLM those two are `httpx` objects. The wheel has no httpx, so annotate them with small
+  Protocols that name only the members used and build no httpx object here. `CustomLLM(BaseLLM)` has ten methods:
+  `completion`, `streaming`, `acompletion`, `astreaming`, `image_generation`, `aimage_generation`, `embedding`,
+  `aembedding`, `image_edit` and `aimage_edit`. Port each with the same parameter names, order and defaults, and the same
+  body, which raises `CustomLLMError(status_code=500, message="Not implemented yet!")`. Check the source for the exact
+  status and text of each method. Parameter types come from `betterlite.types.utils` (`ModelResponse`,
+  `EmbeddingResponse`, `ImageResponse`, `GenericStreamingChunk`, B5657 and B5658). The timeout argument and the
+  HTTP client arguments (`HTTPHandler`, `AsyncHTTPHandler`) are Protocols too. `CustomLLMItem` is a `TypedDict` with
+  `provider: str` and `custom_handler` typed as `CustomLLM`.
+
+
+  `BaseLLM` keeps `process_response`, `process_text_completion_response`, `validate_environment`, `completion`,
+  `embedding`, `__exit__` and `__aexit__` with LiteLLM's signatures and results. The two session creators
+  (`create_client_session`, `create_aclient_session`) are left out because they build httpx and aiohttp clients, and the
+  gateway does its own HTTP.
+
+
+  `custom_chat_llm_router` in the same file is B044's. Do not port it. `litellm.custom_provider_map` and the lazy
+  `litellm.CustomLLM` name at the top level belong to the settings and the star line the architect writes. Test that
+  `betterlite.custom_provider_map` exists and starts empty, and do not add it here if B157 already did.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/_custom_llm/**
+  - crates/betterlite-python/python/betterlite/llms/custom_llm.py
+  - crates/betterlite-python/python/betterlite/llms/base.py
+  - crates/betterlite-python/python/betterlite/types/llms/custom_llm.py
+  - crates/betterlite-python/tests/test_custom_llm.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_llm.py
+  why: The class, its error and the router that B044 owns.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/custom_llm.py
+  why: The map item type.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base.py
+  why: The base class.
+dod:
+- text: '`CustomLLMError` keeps the same attributes and string form as LiteLLM''s for the same arguments.'
+  proof: [custom-llm-error]
+- text: Each of the ten `CustomLLM` methods has the same parameter names, order and defaults, and raises the same error when not overridden.
+  proof: [custom-llm-surface]
+- text: A LiteLLM `CustomLLM` subclass with sync, async and streaming methods runs on both packages and returns the same values.
+  proof: [custom-llm-surface]
+- text: '`BaseLLM` methods give the same results as LiteLLM''s for the same inputs.'
+  proof: [base-llm]
+- text: The three re-export modules expose the same names as LiteLLM's modules, and `CustomLLMItem` has the same keys.
+  proof: [custom-llm-surface]
+- text: Python files pass ruff and basedpyright in strict mode.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: custom-llm-error
+    why: The error attributes or text differ.
+    run: >-
+      uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_custom_llm.py -k custom_llm_error
+  - id: custom-llm-surface
+    why: A method, default or re-export differs.
+    run: >-
+      uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_custom_llm.py -k custom_llm_surface
+  - id: base-llm
+    why: A BaseLLM method differs.
+    run: >-
+      uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_custom_llm.py -k base_llm
+  - id: python-lint
+    why: Strict typing has to hold for every new module.
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Request and response attributes on `CustomLLMError` are Protocols, and the two `BaseLLM` session creators are left out.
+  why: The wheel depends only on python-dotenv, so httpx and aiohttp are not available.
+- what: This task has no helper oracle cases.
+  why: The test imports both packages and compares them, and that covers more than a helper call would.
+out_of_scope:
+- '`custom_chat_llm_router`: B044 owns it.'
+- Dispatch of a completion call to a registered handler is the completion port, B158 and its parts.
+- The logger, guardrail, prompt management and secret manager classes are B6030 to B6033.
+- The `__init__.py` files of `betterlite/llms` and `betterlite/types/llms`, and any star line in `betterlite/__init__.py`, are written by the architect.
+pitfalls:
+- Check each method's default text and status in the source. Do not assume all ten raise the same message.
+- Do not import httpx or aiohttp, even under `TYPE_CHECKING`. The checker would fail on a missing package.
+- 'Do not use `Any`, `cast` or `type: ignore`. Use Protocols and `JsonValue`.'
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

@@ -1,0 +1,5 @@
+kind: helper
+name: repositories-list-user
+call: {"b3152": {"operation": "repositories", "query": "", "page": 1, "replies": [{"status": 200, "body": [{"full_name": "octo/one", "visibility": "private", "private": true, "archived": false}, {"full_name": "octo/two", "visibility": null, "private": false, "archived": true}]}]}}
+env: {}
+compare: {ignore: []}

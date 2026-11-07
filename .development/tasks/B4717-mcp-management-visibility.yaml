@@ -168,10 +168,10 @@ out_of_scope:
   - Credential storage and retrieval; owned by B4713, B4714, B4715
   - UserAPIKeyAuth type and LitellmUserRoles (PROXY_ADMIN, PROXY_ADMIN_VIEW_ONLY); owned by B2314
   - AuthContext type and interface; owned by B732
-  - Manager methods (is_mcp_server_public, get_mcp_server_by_id, resolve_mcp_server, authorize_mcp_server, get_all_mcp_servers_unfiltered, get_all_allowed_mcp_servers, registry reload); owned by B4731
+  - "Registry reads (is_mcp_server_public, get_mcp_server_by_id, resolve_mcp_server, authorize_mcp_server, get_all_mcp_servers_unfiltered); owned by B4731 as is_server_public, server_by_id, resolve_server and authorize_server; get_allowed_mcp_servers and get_all_allowed_mcp_servers: owned by B6591, as allowed_servers and allowed_tables. Registry reload: owned by B6592"
   - Config loading and proxy_general_settings access; owned by B002
   - MCP_ADMIN_CONFIG_CREDENTIAL_KEYS constant, NewMCPServerRequest, MCPCredentials type; Q1 per outline
-  - admitted_user_context, build_effective_auth_contexts, _user_has_admin_view functions; owned by B4731
+  - "admitted_user_context and build_effective_auth_contexts: owned by B4672 (admitted_user_context, build_effective_auth_contexts); _user_has_admin_view: owned by B2314 (user_api_key_has_admin_view)"
 
 pitfalls:
   - 'The _INHERITED_CREDENTIAL_FIELDS table maps server attributes to credentials dict keys for inheritance; a mismatch here breaks the draft form pre-fill. Non-matching fields are silently dropped (not inherited), matching LiteLLM''s behavior.'

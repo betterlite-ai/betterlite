@@ -1,0 +1,130 @@
+id: B5840
+title: SageMaker runtime calls with SigV4 signing
+description: >-
+  The module sagemaker_runtime in betterlite-bedrock (it already holds the AWS signing, credentials and region code) for
+  `completion/handler.py` and the AWS half of `chat/transformation.py`. It builds and signs the calls; B5960 and B5961 own
+  the bodies and the replies, and B042 wires the module in and owns the HTTP cases.
+
+
+  Endpoint. The name is the model with its `sagemaker/` or `sagemaker_chat/` prefix removed. The region comes from B591's
+  region rule with the caller's `aws_region_name` first. Completion and chat use B591's runtime endpoint for service
+  `sagemaker`: `https://runtime.sagemaker.<region>.<dns suffix>/endpoints/<name>/invocations` (B198 gives the suffix), and
+  `/invocations-response-stream` when streaming. Chat also reads `sagemaker_base_url` or `api_base`, which replaces the
+  whole URL, and then appends `/invocations-response-stream` or `/invocations` only when it is not already there.
+
+
+  Signing. The request is signed with B595's signer for service `sagemaker` over the exact body bytes, using B594's
+  credentials from the `aws_*` arguments that B590 pops (the same arguments Bedrock takes). Headers sent: B5960's
+  Content-Type, the signature headers and, for chat, `X-Amzn-SageMaker-Inference-Component` when `model_id` is given.
+  A `sagemaker_chat` call whose headers lack the signature is rebuilt before it is sent, so the body hash is that of the
+  final bytes.
+
+
+  Completion (`sagemaker`). Build the request with B5960's TGI transform and the prompt rule: a model that is Hugging Face
+  chat-templated takes `hf_model_name`'s template through B177's `prompt_factory`, else the plain prompt joiner. Stream
+  mode posts to the streaming endpoint and returns B5961's decoder over the bytes with the `is_messages_api` flag false,
+  and the Skip policy on the async path. Non-stream mode posts, parses the JSON and passes it to B5960's reply
+  transform with the logged prompt and the encoding. The logged call carries the signed URL, headers and body; the signature
+  headers are redacted by B249's hook order. A non-200 reply is `SagemakerError(status, body text)`.
+
+
+  Chat (`sagemaker_chat`, `sagemaker_nova`). The OpenAI-shaped body from B5960 is signed and posted. The reply goes through
+  the OpenAI reply reader (B004) and the stream through B5961's decoder with `is_messages_api` true and the model name
+  passed in, ending on the `[DONE]`-less buffer rule.
+
+
+  Embedding. LiteLLM calls boto3 `invoke_endpoint` for embeddings. betterlite signs and posts to
+  `/endpoints/<name>/invocations` with the same signer instead, so the body, the status handling and the usage match
+  B5961's transforms and no boto3 data is needed. Retries are off (boto3 retried on its own; this pin passes none).
+  The reply body is read fully and given to B5961's reader.
+
+
+  Errors. Credentials failing to resolve, a missing region, an unreadable key and transport failures map to
+  `SagemakerError` through B239's mapping (B011 base). The wire status is kept for HTTP replies.
+
+
+  The module takes credentials, region and base URL as plain arguments, adds no config section and reads no environment
+  directly; B590 and B682 supply the resolved values. The caller passes the transport (B173) and a clock in through the
+  constructor.
+scope:
+  paths:
+    - crates/betterlite-bedrock/src/sagemaker_runtime.rs
+    - crates/betterlite-bedrock/src/sagemaker_runtime/**
+    - tools/oracle/cases/helpers/providers/sagemaker-runtime/**
+    - "tools/oracle/fuzz/corpus/helper_case/b5840-*"
+    - tools/oracle/helpers/b5840.py
+    - tools/oracle/helpers/b5840/**
+    - tools/oracle/src/helpers/bedrock/b5840.rs
+    - tools/oracle/src/helpers/bedrock/b5840/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/completion/handler.py#L1-L420
+    why: Completion and embedding handler, endpoint and signing, stream wrapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/chat/transformation.py#L1-L190
+    why: The chat URL rule, the signed request and the streaming iterator.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/common_utils.py#L1-L52
+    why: The error class the runtime raises.
+  - url: https://docs.aws.amazon.com/sagemaker/latest/APIReference/API_runtime_InvokeEndpoint.html
+    why: The invocations path, headers and status codes.
+dod:
+  - text: Completion, chat and embedding URLs, region and dns suffix match for each endpoint form and base URL override.
+    proof: [runtime-tests, oracle-runtime, helper-python]
+  - text: Signed requests carry B595's signature headers over the final body bytes, and chat adds the component header only with a model_id.
+    proof: [runtime-tests, oracle-runtime]
+  - text: Stream and non-stream paths call B5960 and B5961 with the right flags and policies.
+    proof: [runtime-tests]
+  - text: Failures return SagemakerError with the wire status and the body text.
+    proof: [runtime-tests]
+  - text: The new helper seeds select the b5840 variant.
+    proof: [seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: runtime-tests
+      why: A URL, header or flag differs from the handler, or a failure is swallowed.
+      run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/^sagemaker_runtime::/)'
+    - id: oracle-runtime
+      why: The signed request differs from the one LiteLLM builds for the same input.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/providers/sagemaker-runtime)" &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: helper-python
+      why: The Python side of the helper fails type checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: seeds
+      why: A seed parses as another helper and tests nothing here.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/b5840-*")" &&
+        grep -lq 'b5840' tools/oracle/fuzz/corpus/helper_case/b5840-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/providers/sagemaker-runtime/completion-url-and-region.yaml
+  - tools/oracle/cases/helpers/providers/sagemaker-runtime/chat-base-url-suffix.yaml
+  - tools/oracle/cases/helpers/providers/sagemaker-runtime/chat-inference-component-header.yaml
+  - tools/oracle/cases/helpers/providers/sagemaker-runtime/signed-headers.yaml
+deviations:
+  - what: Embeddings are signed and posted natively instead of through boto3 `invoke_endpoint`.
+    why: betterlite has no boto3. The body, path and status match; only boto3's own `AWS_ENDPOINT_URL` override and shared-config lookups are lost.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/completion/handler.py#L300-L420
+  - what: A failing sync completion call returns SagemakerError with the upstream status.
+    why: LiteLLM raises AttributeError there because it calls `.get` on an `httpx.Response`; the intent is the error.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/completion/handler.py#L200-L260
+  - what: Sync and async paths share one async execution; the sync face is B158's.
+    why: One code path avoids the two iterators drifting, and the two error policies stay in B5961.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/completion/handler.py#L420-L560
+out_of_scope:
+  - The core and provider dispatch files, `operation.rs` and the HTTP cases are B042's. This task adds none of them.
+  - B5960 owns the TGI and chat request bodies and B5961 the embedding transforms and the stream decoder.
+  - Signing, credentials and region functions are B594, B595 and B591; only calls into them are here.
+  - Code with no caller at the pin (`chat/handler.py`) and the unused config merge are not built.
+pitfalls:
+  - The `sagemaker_base_url` rule appends the suffix only when the URL does not already end with it.
+  - Completion takes the region from the call arguments first, then the AWS region rule; chat and embedding follow the same order and the Bedrock default is not applied here.
+  - Sign the exact bytes sent; re-serialising the body after signing changes the hash.
+  - The streaming path uses `/invocations-response-stream`, the plain one `/invocations`; mixing them returns 404 from SageMaker.
+  - Do not log the signature headers or the credentials.
+review_level: standard
+budget: {max_changed_lines: 1500, max_new_expects: 0}

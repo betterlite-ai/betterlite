@@ -1,0 +1,23 @@
+kind: helper
+name: opensandbox-delete-success
+call:
+  b3518:
+    operation: delete
+    container:
+      id: sbx_1
+      provider: opensandbox
+      domain: http://stored.example
+      hidden_params:
+        api_base: http://stored.example
+        api_key: stored-key
+        execd_endpoint: http://execd.local
+        execd_headers:
+          X-Execd-Token: execd-token
+        use_server_proxy: false
+    api_base: http://override.example
+    responses:
+      - status: 200
+        body: '{"id":"sbx_1","status":{"state":"Terminated"}}'
+env: {}
+compare:
+  ignore: []

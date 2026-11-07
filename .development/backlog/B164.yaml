@@ -2,12 +2,12 @@ id: B164
 milestone: M12 python
 title: Python extension classes, CustomLogger, CustomGuardrail, CustomPromptManagement, CustomSecretManager and CustomLLM
 status: todo
-depends_on: [B158, B012]
-file: null
+depends_on: [B6030, B6031, B6032, B6033, B5657, B5658, B163]
+file: tasks/B164-python-custom-llm.yaml
 covers:
-  - "litellm/integrations/{custom_logger,custom_batch_logger,custom_guardrail,custom_prompt_management,custom_secret_manager,custom_sso_handler}.py"
   - "litellm/llms/custom_llm.py"
   - "litellm/types/llms/custom_llm.py"
+  - "litellm/llms/base.py"
 parent: null
 split_from: null
 resolution: null

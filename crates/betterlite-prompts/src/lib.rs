@@ -50,3 +50,4 @@ pub mod system;
 pub mod system_placement;
 mod tests;
 pub mod tool_spend;
+pub mod watsonx;

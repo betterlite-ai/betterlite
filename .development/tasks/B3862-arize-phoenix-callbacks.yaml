@@ -135,6 +135,7 @@ pitfalls:
     Phoenix project resolution prefers env var, then request metadata phoenix_project_name (only from auth_metadata when
     proxy mode, never from client request metadata directly), then defaults to 'default' to prevent clients from routing
     spans to arbitrary projects.
+  - "Call get_arize_config and get_arize_phoenix_config; do not build them. Pass redact_messages, computed with B188's PrivacyRequest::decide (Decision.content), to B3861's set_attributes."
 review_level: standard
 budget:
   max_changed_lines: 1500

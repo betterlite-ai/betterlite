@@ -1,0 +1,149 @@
+id: B5656
+title: Completion execution, call target and model probe
+description: >-
+  B5655 says what to call and this task calls it. Add `completion_call` to betterlite-sdk. It joins the prepared request, the
+  dispatch, the wrapper and the stream, and it gives the two seams earlier tasks left open a real implementation:
+  B5368's `CallTarget` and B5364's `ModelProbe`.
+
+
+  `CompletionTarget` implements `CallTarget` with the name `completion`. Its `call` takes the `serde_json::Map` of arguments,
+  builds `CompletionArgs`, runs `prepare_completion`, and matches on `PreparedCompletion`. `Dispatch` builds the `Chat`
+  request variant in operation.rs and calls B014's dispatch. A stream result becomes B5654's `ChatStream` inside
+  `CallOutcome`, and a finished response stays a finished response. `Fallbacks` goes to the loop described below, `ModelList` to
+  B201's `batch_completion_models`, `Mock` to B255's mock calls, `ResponsesBridge` to the bridge B5655 chose, and `McpLoop` to
+  the `McpLoopRunner` trait held as a constructor field, with `NoMcpLoop` as the form that fails by name. Keep the end of the
+  chain: the `palm` branch raises its `ValueError`, and a provider
+  nothing handles gives `LiteLLMUnknownProvider` (L5869-L6072). Every error leaves through `exception_type` from B011.
+
+
+  `AsyncCompletionTarget` is the same call for `acompletion`. It runs `prepare_acompletion` and adds the tail from L640-L740:
+  sleep for `mock_delay` through the injected sleeper, turn a text completion reply from `text-completion-openai`,
+  `text-completion-codestral` or `text-completion-inception` into a chat reply, run the agentic loop from B4122's
+  `maybe_run_chat_completion_agentic_loop`, and default the provider to `openai` in `exception_type`. A Rust future has
+  nothing to await later, so `_resolve_dispatched_chat_response`, `_resolve_pending_chat_response`,
+  `_model_response_from_cached_dict` and `_async_streaming` (L743-L771, L7385-L7386) fold into this match. The fallback result
+  message is "No response from fallbacks. Got none. Turn on `litellm.set_verbose=True` to see more details."
+
+
+  `run_fallbacks` is the SDK form of `async_completion_with_fallbacks` in litellm_core_utils/fallback_utils.py L17-L85, a plain
+  loop that needs nothing from the router. The list is the original model, then `fallbacks`. Every attempt uses one
+  `litellm_call_id`, and its arguments pass through `filter_internal_params` (B2204). A dict entry gives the model and
+  overrides the arguments, and a dict with no `model` keeps the original
+  one. A failed attempt logs and moves on, and the first non-empty answer carries the number of attempts as the
+  `x-litellm-attempted-fallbacks` header, as `add_fallback_headers_to_response` does. When all fail the error text is
+  "{last error}. All fallback attempts failed. Enable
+  verbose logging with `litellm.set_verbose=True` for details."
+
+
+  The retry entry stands for `completion_with_retries` (L6087-L6110) and `acompletion_with_retries` (L6113-L6136). `num_retries`
+  comes out of the arguments with default 3, and the inner call gets `num_retries` 0 and `max_retries` 0. `retry_strategy`
+  defaults to `constant_retry` with no wait. `exponential_backoff_retry` waits `2^(attempt-1)` seconds capped at 10, the
+  result of tenacity's `wait_exponential(multiplier=1, max=10)`. `num_retries` counts attempts and not extra tries, and the
+  last error is raised unchanged. This is a plain `for` loop with an injected sleeper. tenacity's retry would wrap the
+  error, so don't wrap it.
+
+
+  `CompletionProbe` implements `ModelProbe`, and this is the real completion B5364 waited for. The lookup method sends
+  `GET {api_base}/models/{model}` with the bearer key through `betterlite-http`, as `openai.models.retrieve` does. The
+  completion method calls `CompletionTarget` with the arguments B5364's `valid_model` and `check_valid_key` pass in, so a
+  key check uses the same path a caller would. Don't copy their rules here: B5364 owns the messages and the true or false
+  mapping.
+
+
+  `ModelBridgeFacts` implements B5651's `ResponsesBridgeCapabilities` over `_get_model_info_helper` (B2219),
+  `resolve_openai_api_base` and `is_openai_backed_api_base` (B500) and the GPT-5 checks (B502). The two Foundry questions go
+  to a `FoundryRules` trait held as a constructor field, because the task that owns those rules (B549) sits behind Azure
+  credentials that wait on the Python extension work. `NoFoundryRules` answers false to both, so an `azure_ai` request stays on
+  chat until the real rules are passed in.
+
+
+  `count_tokens` ports `acount_tokens` (L9277-L9372). `get_llm_provider` resolves the provider, and an explicit key or base
+  wins. A trait `ProviderTokenCounter` stands for `get_token_counter()`: when the counter exists, `should_use_token_counting_api`
+  is true and the result has no error, return it. A failure logs at debug level and falls back to B196's local count. The
+  system message is prepended only when both `system` and `messages` are given. The fallback answer is
+  `TokenCountResponse` with `total_tokens`, `request_model`, `model_used` and `tokenizer_type` `local_tokenizer`.
+
+
+  Test names sit in `completion_call::tests` and start with `target_`, `fallback_`, `async_`, `retry_`, `probe_`, `bridge_facts_` and
+  `tokens_`.
+scope:
+  paths:
+  - crates/betterlite-sdk/Cargo.toml
+  - crates/betterlite-sdk/src/completion_call.rs
+  - crates/betterlite-sdk/src/completion_call/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L640-L771
+  why: The tail of acompletion and its result helpers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5869-L6136
+  why: The end of the provider chain and both retry entries.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L9277-L9372
+  why: Provider token counting with its local fallback.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7135-L7165
+  why: What `valid_model` and `check_valid_key` ask the probe to do.
+dod:
+- text: A plain call reaches the provider through dispatch and returns a finished response, and a streaming call returns the chat stream.
+  proof: [target-dispatch]
+- text: Each prepared outcome goes to its owner, and an unknown provider fails as in LiteLLM.
+  proof: [target-dispatch]
+- text: The fallback loop tries each model with its overrides, records the attempts and fails with LiteLLM's text when all fail.
+  proof: [target-fallbacks]
+- text: The async entry sleeps for `mock_delay`, converts text completion replies, runs the agentic loop and defaults the error provider to `openai`.
+  proof: [target-async]
+- text: The retry entry makes `num_retries` attempts, passes zero retries inward, waits per strategy and raises the last error unchanged.
+  proof: [target-retry]
+- text: "`ModelProbe` runs a real lookup and a real completion against a local HTTP server, so `check_valid_key` and `valid_model` work end to end."
+  proof: [model-probe]
+- text: The bridge capability answers from model metadata and the OpenAI base rules, and passes the Foundry questions to its `FoundryRules` field.
+  proof: [bridge-facts]
+- text: Token counting uses the provider counter when it works and the local count otherwise, with the system message rule kept.
+  proof: [token-count]
+checks:
+  optional: []
+  commands:
+  - id: target-dispatch
+    why: A call misses dispatch, or a stream is read as a finished response.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^completion_call::tests::target_/)'
+  - id: target-fallbacks
+    why: One bad model ends the call, or a fallback loses its overrides.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^completion_call::tests::fallback_/)'
+  - id: target-async
+    why: The async tail differs from LiteLLM.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^completion_call::tests::async_/)'
+  - id: target-retry
+    why: Retries stack on the inner call, or the error changes type.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^completion_call::tests::retry_/)'
+  - id: model-probe
+    why: A key check reports a bad key as good.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^completion_call::tests::probe_/)'
+  - id: bridge-facts
+    why: The bridge policy gets wrong facts.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^completion_call::tests::bridge_facts_/)'
+  - id: token-count
+    why: A failed provider count fails the caller in place of the local count.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^completion_call::tests::tokens_/)'
+oracle_cases: []
+deviations:
+- what: An `azure_ai` Foundry request stays on chat where LiteLLM bridges it to the Responses API, as long as `NoFoundryRules` is the field passed in.
+  why: "`azure_ai_supports_native_responses` and `foundry_chat_rejects_function_tools_while_reasoning` are B549's, and depending on B549 here would make a cycle through B529, B165 and B164."
+- what: A request that the MCP gateway check sends to `acompletion_with_mcp` fails with a named error as long as `NoMcpLoop` is the field passed in.
+  why: B957 owns that loop and can't be a dependency here today, since its chain reaches B908 and B908 lists B158. Failing loudly beats sending MCP tools to a provider that can't run them.
+- what: The retry entries run without tenacity, so the "tenacity import failed" error never appears.
+  why: The retry is a Rust loop and needs no optional package.
+- what: A cached dict that `acompletion` receives is converted to a response object, where LiteLLM's `response = init_response` at L679 overwrites the conversion and leaves a dict.
+  why: The conversion on the line above shows the intent, and the Rust result is typed, so no dict exists to return.
+out_of_scope:
+- The Python names `completion`, `acompletion`, `acreate`, `completion_with_retries`, `acompletion_with_retries`, `check_valid_key` and `valid_model` are B158, with B5659 as the native step.
+- The rules inside `valid_model` and `check_valid_key` are B5364.
+- The router form of the fallback attempts is B310, and the real MCP loop is B957.
+- '`_CompletionDispatchContext` and per-provider `_complete_*` functions are B198 and the provider umbrellas.'
+- '`set_logging_event_loop` has no form here, as B5654 records.'
+pitfalls:
+- Both retry entries default `original_function` to `completion`, so the async entry with no override runs the blocking function.
+- The first attempt counts, so `num_retries` of 3 means three calls and two waits.
+- '`acount_tokens` passes `contents=None`, and a provider result counts only when its error field is empty.'
+- The model lookup path holds a model name from the caller, so percent-encode it.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

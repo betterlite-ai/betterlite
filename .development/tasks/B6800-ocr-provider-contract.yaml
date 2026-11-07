@@ -1,0 +1,116 @@
+id: B6800
+title: OCR provider contract, HTTP call handler and document intake
+description: >-
+  Build the shared layer every OCR provider part uses, inside crates/betterlite-ocr.
+  LiteLLM keeps it in litellm-rust base_llm/ocr (settings, error, document, transformation,
+  handler). Add six modules. `ocr_error` holds one error enum `OcrError` with every variant the
+  provider parts need (port error.rs whole, keep LiteLLM's status, type, param and code for each,
+  write betterlite's own message text). `ocr_settings` holds `OcrSettings` (poll timeout, Document
+  Intelligence DPI and API version, Azure AD token refresh flag, inline and download limits) read
+  from the environment through the config lookup the crate already has. `ocr_document` holds
+  `InlineDocument` (parse a data URI, expose the MIME type, decode with a byte cap, reject a bad
+  data URI as InvalidDataUri and an over-cap one as InlineDocumentTooLarge), `validate_inline_document`
+  and `inline_remote_document`, which downloads an http or https document through the SSRF-checked
+  fetcher from B5082 and returns it as a data URI. Map each fetch failure to its own OcrError variant
+  (blocked URL, download disabled, too large, too many redirects, missing or invalid redirect, timeout,
+  HTTP status). `ocr_auth` holds three small traits the server fills in later, so no provider part
+  imports a credential crate: `AzureTokenSource`, `AwsRequestSigner` and `VertexTokenSource`.
+  `ocr_config` holds the trait `OcrProviderConfig` (associated types OcrParams, ProviderRequest,
+  Environment; methods get_supported_ocr_params, get_api_key_env_var, secret_names,
+  get_health_check_document, resolve_connection_params, map_ocr_params, validate_environment,
+  get_complete_url, transform_ocr_request, async_transform_ocr_request, transform_ocr_response,
+  async_transform_ocr_response, validate_request_body, prepare_request and get_error_class, each with
+  the default body litellm-rust gives it) and the structs `OcrConnection`, `PreparedOcrRequest`,
+  `OcrRequestContext`, `OcrResponseContext`, `OcrCredentialInputs`, `ResolvedOcrCredentials` and
+  `DecodedOcrResponse`. `ocr_http` holds `OcrClient` (provider http client, no-redirect polling
+  client, document fetcher, settings, secret source, the three auth traits), the `CallHooks` trait
+  (before_provider_request and response_received), and the functions `ocr`, `read_json_response`,
+  `read_response_bytes`, `transform_request_body`, `build_http_request`, `guardrail_document` and
+  `body_document`. `ocr` runs one call in this order: prepare the request, send it, read at most
+  max_response_bytes, run the response hook, decode, normalize to the OCRResponse type B3300 owns.
+  A non-2xx answer becomes Transport Http with the status and the body text. For req_format native,
+  keep the provider JSON in the response's private native slot. Tests use rstest and a local mock
+  server, never a real provider.
+
+scope:
+  paths:
+    - Cargo.lock
+    - crates/betterlite-ocr/Cargo.toml
+    - crates/betterlite-ocr/src/ocr_error.rs
+    - crates/betterlite-ocr/src/ocr_error/**
+    - crates/betterlite-ocr/src/ocr_settings.rs
+    - crates/betterlite-ocr/src/ocr_settings/**
+    - crates/betterlite-ocr/src/ocr_document.rs
+    - crates/betterlite-ocr/src/ocr_document/**
+    - crates/betterlite-ocr/src/ocr_auth.rs
+    - crates/betterlite-ocr/src/ocr_config.rs
+    - crates/betterlite-ocr/src/ocr_config/**
+    - crates/betterlite-ocr/src/ocr_http.rs
+    - crates/betterlite-ocr/src/ocr_http/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/base_llm/ocr/transformation.rs#L1-L469
+    why: The provider trait, its defaults, connection and request structs, poll constants and shared decoding helpers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/base_llm/ocr/handler.rs#L1-L331
+    why: The call order, response size cap, HTTP error mapping, hooks and the OcrClient parts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/base_llm/ocr/document.rs#L1-L225
+    why: Data URI parsing, size cap and the remote download that turns a URL into inline bytes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/base_llm/ocr/error.rs#L1-L188
+    why: Every error variant with its status, type, param and code.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/base_llm/ocr/settings.rs#L1-L145
+    why: Setting names, defaults and the environment variables that override them.
+
+dod:
+  - text: A data URI document decodes to its bytes and MIME type, a malformed one is InvalidDataUri, and one over the byte cap is InlineDocumentTooLarge.
+    proof: [document-tests]
+  - text: A remote http or https document is fetched through the SSRF-checked fetcher and returned as a data URI, and each fetch failure maps to its own OcrError variant.
+    proof: [document-tests]
+  - text: The ocr function sends one request in the documented order, reads at most max_response_bytes (a longer body is TooLarge with the limit), and runs the response hook before decoding.
+    proof: [handler-tests]
+  - text: A non-2xx provider answer becomes Transport Http carrying the status and body text, and a native req_format keeps the provider JSON in the response's native slot.
+    proof: [handler-tests]
+  - text: OcrSettings defaults and environment overrides match settings.rs, and every OcrError variant carries LiteLLM's status, type, param and code.
+    proof: [settings-tests, error-tests]
+  - text: The trait defaults for resolve_connection_params, get_health_check_document and validate_request_body behave as in transformation.rs.
+    proof: [config-tests]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: document-tests
+      why: inline decoding, size cap or remote fetch mapping is missing
+      run: cargo nextest run --locked -p betterlite-ocr --no-tests=fail -E 'test(/^ocr_document::tests::/)'
+    - id: handler-tests
+      why: call order, response cap, error mapping or native slot is missing
+      run: cargo nextest run --locked -p betterlite-ocr --no-tests=fail -E 'test(/^ocr_http::tests::/)'
+    - id: settings-tests
+      why: settings defaults or overrides differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-ocr --no-tests=fail -E 'test(/^ocr_settings::tests::/)'
+    - id: error-tests
+      why: an error variant lost its status, type, param or code
+      run: cargo nextest run --locked -p betterlite-ocr --no-tests=fail -E 'test(/^ocr_error::tests::/)'
+    - id: config-tests
+      why: a trait default is missing or wrong
+      run: cargo nextest run --locked -p betterlite-ocr --no-tests=fail -E 'test(/^ocr_config::tests::/)'
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - Concrete providers are B6801 to B6807. This task defines the trait and ships no provider.
+  - Credential acquisition for Azure AD, AWS and Vertex belongs to the tasks that own those services. This task only defines the three injected traits.
+  - The OCRResponse types and request parsing are B3300. Provider selection and the aocr entry are B6808 and B6809.
+
+pitfalls:
+  - A request header named authorization (any case) replaces key lookup in every provider, so keep a case-insensitive header check in this layer and let providers call it.
+  - The polling client must not follow redirects, since Azure Document Intelligence checks the poll origin itself.
+  - Read the body with the cap while streaming. Reading it all and then checking the length lets one large answer use all memory.
+  - max_response_bytes comes from the request, so a caller can lower it. It must never raise the host limit.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
