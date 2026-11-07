@@ -37,6 +37,7 @@ pub mod finops;
 pub mod gateway_request_tracking;
 pub mod gateway_requests;
 pub mod guardrail_usage_rollups;
+pub mod health_check_rows;
 pub mod identity_budget_reset;
 pub mod identity_rows;
 pub mod key_attribution;

@@ -1,0 +1,53 @@
+id: B7954
+title: Python types for the ROI calculator, memory management and model insights
+description: >-
+  This task ports `roi_calculator.py` (434 lines), `memory_management.py` and `model_insights.py` into `crates/betterlite-python/python/betterlite/types/roi_calculator.py`,
+  `crates/betterlite-python/python/betterlite/types/memory_management.py` and `crates/betterlite-python/python/betterlite/types/model_insights.py`. It is Python only.
+
+
+  `roi_calculator.py` starts with the function `_normalize_login`, then pydantic settings, repository and sync status models and two
+  TypedDicts (`ROISpendRecord`, `ROIEstimate`) and more; read the whole file before listing names. `memory_management.py` has five
+  pydantic models (`LiteLLM_MemoryRow` and the create, update, list and delete classes). `model_insights.py` has seven pydantic models; the
+  daily metric extends `ModelInsightMetric` and the task summary extends `ModelInsightTask`.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/types/roi_calculator.py
+  - crates/betterlite-python/python/betterlite/types/memory_management.py
+  - crates/betterlite-python/python/betterlite/types/model_insights.py
+  - crates/betterlite-python/tests/test_types_roi_memory_insights.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/roi_calculator.py#L1-L434
+  why: ROI models, TypedDicts and the login normaliser.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/memory_management.py#L1-L42
+  why: Memory models.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/model_insights.py#L1-L40
+  why: Model insight models.
+out_of_scope:
+- >-
+  The ROI endpoints themselves belong to the proxy tasks.
+pitfalls:
+- >-
+  `_normalize_login` is the first definition in `roi_calculator.py`; port it and test it with mixed case, spaces and empty input.
+dod:
+- text: Every name in the covered LiteLLM files exists with the same keys, required keys, Literal values, Enum members and field defaults.
+  proof: [names]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A name, key or value differs from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_roi_memory_insights.py -k names
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: Names imported from the openai, httpx or pydantic packages are replaced by local equivalents or left out.
+  why: The wheel depends only on python-dotenv.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

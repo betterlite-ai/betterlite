@@ -1,0 +1,19 @@
+id: B7927
+milestone: M12 python
+title: Python types for Gemini live and images, Gemini transcription and Vertex speech (types/llms/gemini*, vertex_ai_*)
+status: todo
+depends_on: [B5657]
+file: tasks/B7927-types-gemini-and-speech.yaml
+covers:
+  - "litellm/types/llms/gemini.py"
+  - "litellm/types/llms/gemini_audio_transcription.py"
+  - "litellm/types/llms/vertex_ai_gemini_transcription.py"
+  - "litellm/types/llms/vertex_ai_speech_to_text.py"
+  - "litellm/types/llms/vertex_ai_text_to_speech.py"
+  - "litellm/types/passthrough_endpoints/vertex_ai.py"
+parent: B167
+split_from: B167
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

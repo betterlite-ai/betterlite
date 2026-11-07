@@ -2154,6 +2154,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "betterlite-pyhost"
+version = "0.1.0"
+
+[[package]]
 name = "betterlite-rag"
 version = "0.1.0"
 

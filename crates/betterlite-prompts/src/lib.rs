@@ -42,6 +42,7 @@ pub mod messages;
 pub mod orchestration;
 pub mod qdrant_semantic_cache;
 pub mod reasoning_fields;
+pub mod redis_semantic_cache;
 pub mod registry;
 pub mod response_tool_calls;
 pub mod schema;
