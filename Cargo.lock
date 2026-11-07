@@ -2081,6 +2081,7 @@ dependencies = [
  "serde",
  "serde-saphyr",
  "serde_json",
+ "serde_path_to_error",
  "serde_with",
  "tempfile",
  "thiserror",
