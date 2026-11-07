@@ -5,8 +5,7 @@ use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 use crate::fields::payload::records::{
-    ErrorInformation, GuardrailInformation, ModelInformation, StandardLoggingHiddenParams,
-    StandardLoggingMetadata,
+    ErrorInformation, GuardrailInformation, StandardLoggingHiddenParams, StandardLoggingMetadata,
 };
 use crate::fields::status::{LoggingStatus, StatusFields};
 
@@ -30,7 +29,7 @@ pub struct StandardLoggingPayload {
     #[serde(with = "rust_decimal::serde::arbitrary_precision")]
     pub response_cost: Decimal,
     pub cost_breakdown: Option<CostBreakdown>,
-    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
+    #[serde(default, with = "rust_decimal::serde::arbitrary_precision_option")]
     pub autorouter_savings: Option<Decimal>,
     pub autorouter_savings_estimate: Option<IndexMap<String, Json>>,
     #[serde(rename = "autorouter_baseline_observation")]
@@ -59,7 +58,7 @@ pub struct StandardLoggingPayload {
     pub completion_start_time: Decimal,
     #[serde(with = "rust_decimal::serde::arbitrary_precision")]
     pub response_time: Decimal,
-    pub model_map_information: ModelInformation,
+    pub model_map_information: IndexMap<String, Json>,
     pub model: String,
     pub model_id: Option<String>,
     pub model_group: Option<String>,

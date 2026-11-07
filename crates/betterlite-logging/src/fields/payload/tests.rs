@@ -139,17 +139,17 @@ fn optional_keys_are_written_when_present() {
 }
 
 #[test]
-fn an_error_information_record_keeps_every_declared_key() {
+fn an_error_information_record_keeps_only_the_keys_that_were_written() {
     let encoded = MINIMAL.replace(
         r#""model_parameters": {}"#,
-        r#""error_information": {"error_code": "500"}, "model_parameters": {}"#,
+        r#""error_information": {"error_code": "499", "error_message": "Client disconnected the request", "error_class": "ClientDisconnected"}, "model_parameters": {}"#,
     );
     let payload = round_trip(&encoded);
     let information = field(&payload, "error_information");
-    assert_eq!(object_len(information), 13);
+    assert_eq!(object_len(information), 3);
     assert_eq!(
         field(information, "error_message"),
-        &serde_json::from_str::<Json>("null").unwrap()
+        &serde_json::from_str::<Json>(r#""Client disconnected the request""#).unwrap()
     );
 }
 
@@ -178,10 +178,16 @@ fn a_zero_cost_diagnostic_keeps_its_three_keys() {
     assert_eq!(object_len(field(&payload, "zero_cost_diagnostic")), 3);
 }
 
+#[test]
+fn the_minimal_payload_parses() {
+    let _payload: StandardLoggingPayload = serde_json::from_str(MINIMAL).unwrap();
+}
+
 #[rstest]
-#[case::unknown_key(MINIMAL.replace(r#""model": "gpt-4o""#, r#""model": "gpt-4o", "nope": 1"#))]
-#[case::missing_required_key(MINIMAL.replace(r#""model": "gpt-4o","#, ""))]
-#[case::wrong_status(MINIMAL.replace(r#""status": "success""#, r#""status": "ok""#))]
-fn logging_fields_behavior_tests_behavior(#[case] encoded: String) {
-    let _error = serde_json::from_str::<StandardLoggingPayload>(&encoded).unwrap_err();
+#[case::unknown_key(MINIMAL.replace(r#""model": "gpt-4o""#, r#""model": "gpt-4o", "nope": 1"#), "unknown field `nope`")]
+#[case::missing_required_key(MINIMAL.replace(r#""model": "gpt-4o","#, ""), "missing field `model`")]
+#[case::wrong_status(MINIMAL.replace(r#""status": "success""#, r#""status": "ok""#), "unknown variant `ok`")]
+fn logging_fields_behavior_tests_behavior(#[case] encoded: String, #[case] cause: &str) {
+    let error = serde_json::from_str::<StandardLoggingPayload>(&encoded).unwrap_err();
+    assert!(error.to_string().contains(cause), "{error}");
 }

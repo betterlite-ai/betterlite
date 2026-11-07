@@ -1,28 +1,20 @@
-use betterlite_models::catalog_generalizations::ModelInfo;
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
-// StandardLoggingMetadata: every key is logged, and an absent auth or spend value stays null, never a fake zero.
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct StandardLoggingMetadata {
     pub user_api_key_hash: Option<String>,
     pub user_api_key_alias: Option<String>,
-    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
-    pub user_api_key_spend: Option<Decimal>,
-    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
-    pub user_api_key_max_budget: Option<Decimal>,
+    pub user_api_key_spend: Option<DecimalValue>,
+    pub user_api_key_max_budget: Option<DecimalValue>,
     pub user_api_key_budget_reset_at: Option<String>,
-    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
-    pub user_api_key_user_spend: Option<Decimal>,
-    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
-    pub user_api_key_user_max_budget: Option<Decimal>,
-    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
-    pub user_api_key_team_spend: Option<Decimal>,
-    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
-    pub user_api_key_team_max_budget: Option<Decimal>,
+    pub user_api_key_user_spend: Option<DecimalValue>,
+    pub user_api_key_user_max_budget: Option<DecimalValue>,
+    pub user_api_key_team_spend: Option<DecimalValue>,
+    pub user_api_key_team_max_budget: Option<DecimalValue>,
     pub user_api_key_org_id: Option<String>,
     pub user_api_key_org_alias: Option<String>,
     pub user_api_key_team_id: Option<String>,
@@ -57,9 +49,8 @@ pub struct StandardLoggingHiddenParams {
     pub model_id: Option<String>,
     pub cache_key: Option<String>,
     pub api_base: Option<String>,
-    pub response_cost: Option<ResponseCost>,
-    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
-    pub litellm_overhead_time_ms: Option<Decimal>,
+    pub response_cost: Option<Json>,
+    pub litellm_overhead_time_ms: Option<DecimalValue>,
     pub additional_headers: Option<AdditionalHeaders>,
     pub batch_models: Option<Vec<String>>,
     pub batch_successful_requests: Option<i64>,
@@ -68,59 +59,39 @@ pub struct StandardLoggingHiddenParams {
     pub usage_object: Option<Json>,
 }
 
-// The declared response_cost is str | float | None, so a text cost keeps its text.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-#[serde(untagged)]
-pub enum ResponseCost {
-    Text(String),
-    Number(#[serde(with = "rust_decimal::serde::arbitrary_precision")] Decimal),
-}
-
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
-pub struct AdditionalHeaders {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub x_ratelimit_limit_requests: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub x_ratelimit_limit_tokens: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub x_ratelimit_remaining_requests: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub x_ratelimit_remaining_tokens: Option<i64>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub x_ratelimit_reset_requests: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub x_ratelimit_reset_tokens: Option<String>,
-    #[serde(flatten)]
-    pub extra: IndexMap<String, Json>,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize)]
-pub struct ModelInformation {
-    pub model_map_key: String,
-    pub model_map_value: Option<ModelInfo>,
-}
+pub type AdditionalHeaders = IndexMap<String, Json>;
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ErrorInformation {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error_code: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error_class: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub llm_provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub traceback: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error_message: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error_provider_request_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error_rate_limit_category: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error_rate_limit_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error_budget_entity_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error_budget_entity_id: Option<String>,
-    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
-    pub error_budget_limit: Option<Decimal>,
-    #[serde(with = "rust_decimal::serde::arbitrary_precision_option")]
-    pub error_budget_spend: Option<Decimal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub normalized_error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_budget_limit: Option<DecimalValue>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub error_budget_spend: Option<DecimalValue>,
 }
 
-// StandardLoggingGuardrailInformation: a hook writes a partial record, and guardrail_status stays text for legacy values.
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct GuardrailInformation {
@@ -136,24 +107,12 @@ pub struct GuardrailInformation {
     pub guardrail_response: Option<Json>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub guardrail_status: Option<String>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "rust_decimal::serde::arbitrary_precision_option"
-    )]
-    pub start_time: Option<Decimal>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "rust_decimal::serde::arbitrary_precision_option"
-    )]
-    pub end_time: Option<Decimal>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "rust_decimal::serde::arbitrary_precision_option"
-    )]
-    pub duration: Option<Decimal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start_time: Option<DecimalValue>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end_time: Option<DecimalValue>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration: Option<DecimalValue>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub masked_entity_count: Option<IndexMap<String, i64>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -162,12 +121,8 @@ pub struct GuardrailInformation {
     pub policy_template: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub detection_method: Option<String>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "rust_decimal::serde::arbitrary_precision_option"
-    )]
-    pub confidence_score: Option<Decimal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confidence_score: Option<DecimalValue>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub classification: Option<Json>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -176,30 +131,22 @@ pub struct GuardrailInformation {
     pub patterns_checked: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub alert_recipients: Option<Vec<String>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "rust_decimal::serde::arbitrary_precision_option"
-    )]
-    pub risk_score: Option<Decimal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub risk_score: Option<DecimalValue>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub violation_categories: Option<Vec<String>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub guardrail_action: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub guardrail_usage: Option<IndexMap<String, i64>>,
-    #[serde(
-        default,
-        skip_serializing_if = "Option::is_none",
-        with = "rust_decimal::serde::arbitrary_precision_option"
-    )]
-    pub guardrail_cost: Option<Decimal>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub guardrail_cost_by_unit: Option<IndexMap<String, Option<Money>>>,
+    pub guardrail_cost: Option<DecimalValue>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub guardrail_cost_by_unit: Option<IndexMap<String, Option<DecimalValue>>>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub guardrail_cost_in_spend: Option<bool>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
 #[serde(transparent)]
-pub struct Money(#[serde(with = "rust_decimal::serde::arbitrary_precision")] pub Decimal);
+pub struct DecimalValue(#[serde(with = "rust_decimal::serde::arbitrary_precision")] pub Decimal);
