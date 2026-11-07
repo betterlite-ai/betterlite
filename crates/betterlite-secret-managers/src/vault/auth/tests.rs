@@ -10,7 +10,8 @@ use tokio::time::advance;
 use crate::cyberark::transport::ClientCertificate;
 use crate::vault::error::{LoginMethod, VaultError};
 use crate::vault::tests::{
-    APPROLE_ROUTE, LOGIN_BODY, Refused, Reply, SECOND_LOGIN_BODY, TLS_ROUTE, answered, scripted,
+    APPROLE_ROUTE, LOGIN_BODY, Refused, Reply, SECOND_LOGIN_BODY, TLS_ROUTE, answered,
+    capture_logs, scripted,
 };
 use crate::vault::transport::{MAX_RESPONSE_BYTES, VaultMethod};
 
@@ -302,6 +303,31 @@ where
     let text = format!("{error} {error:?}");
     assert!(!text.contains("hvs.leak"));
     assert!(!text.contains("permission denied"));
+}
+
+#[tokio::test]
+async fn the_approle_login_logs_each_cache_state() {
+    let (logs, _guard) = capture_logs();
+    let (manager, _transport) =
+        scripted(APPROLE, &[(APPROLE_ROUTE, vec![answered(200, LOGIN_BODY)])]);
+    manager.request_token().await.unwrap();
+    manager.request_token().await.unwrap();
+    let text = logs.text();
+    assert!(text.contains("Using AppRole auth for Hashicorp Vault"));
+    assert!(text.contains("Successfully obtained Vault token via AppRole auth"));
+    assert!(text.contains("Using cached Vault token from AppRole auth"));
+    assert!(!text.contains("hvs.first"));
+}
+
+#[tokio::test]
+async fn the_tls_login_logs_the_channel() {
+    let (logs, _guard) = capture_logs();
+    let (manager, _transport) = scripted(TLS, &[(TLS_ROUTE, vec![answered(200, LOGIN_BODY)])]);
+    manager.request_token().await.unwrap();
+    let text = logs.text();
+    assert!(text.contains("Using TLS cert auth for Hashicorp Vault"));
+    assert!(text.contains("Successfully obtained Vault token via TLS cert auth."));
+    assert!(!text.contains("hvs.first"));
 }
 
 #[test]
