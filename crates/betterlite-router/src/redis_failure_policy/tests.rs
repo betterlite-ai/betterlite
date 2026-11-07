@@ -1,6 +1,6 @@
 #![cfg(test)]
 
-use std::future::Future;
+use std::future::{Future, ready};
 use std::pin::Pin;
 use std::sync::Mutex;
 use std::task::{Context, Poll, Waker};
@@ -13,7 +13,7 @@ use rstest::rstest;
 
 use super::classify::{Failure, FailureClass, FailureKind, failure_kind, is_timeout_failure};
 use super::log::{LogDecision, TimeoutLogThrottle};
-use super::run::{RedisCallError, run_async};
+use super::run::{CallError, RedisCallError, run_async};
 use super::{BreakerEvent, RedisFailurePolicy, Settings, State, Status};
 
 const RECOVERY_SECS: u64 = 30;
@@ -366,6 +366,10 @@ fn metrics_record_states_failures_and_transitions() {
 )]
 #[case::a_repeated_failure_while_open_pins_the_timer(a_repeated_failure_pins_the_timer)]
 #[case::a_cancelled_call_records_no_success(a_cancelled_call_records_no_success)]
+#[case::a_released_probe_frees_the_half_open_slot(a_released_probe_frees_the_slot)]
+#[case::a_stale_release_keeps_the_probe_slot(a_stale_release_keeps_the_slot)]
+#[case::a_cancelled_probe_frees_the_half_open_slot(a_cancelled_probe_frees_the_slot)]
+#[case::a_non_health_probe_error_frees_the_half_open_slot(a_non_health_probe_error_frees_the_slot)]
 fn redis_failure_policy_boundaries(#[case] boundary: fn()) {
     boundary();
 }
@@ -575,6 +579,66 @@ fn a_cancelled_call_records_no_success() {
         status(State::Closed, 0, 1, 0, 1),
         "a cancelled call records neither a success nor a failure"
     );
+}
+
+fn a_released_probe_frees_the_slot() {
+    let mut policy = opened_policy(settings(1, true));
+    let probe = policy
+        .admit(millis(30_001), "get")
+        .expect("the designated probe is admitted");
+    policy
+        .admit(millis(30_002), "get")
+        .expect_err("a second call waits for the probe");
+    policy.release(probe);
+    assert_eq!(policy.status(), status(State::HalfOpen, 2, 1, 1, 0));
+    let next = policy
+        .admit(millis(30_003), "get")
+        .expect("the released slot admits the next probe");
+    assert_eq!(policy.finish(next), Some(BreakerEvent::Recovered));
+}
+
+fn a_stale_release_keeps_the_slot() {
+    let mut policy = policy(settings(1, true));
+    let stale = policy
+        .admit(millis(0), "get")
+        .expect("the breaker is closed");
+    fail(&mut policy, 1, FailureClass::Connection);
+    let _probe = policy
+        .admit(millis(30_002), "get")
+        .expect("the designated probe is admitted");
+    policy.release(stale);
+    policy
+        .admit(millis(30_003), "get")
+        .expect_err("a call admitted before the breaker opened cannot free the probe slot");
+}
+
+fn a_cancelled_probe_frees_the_slot() {
+    let clock = || millis(30_001);
+    let policy = Mutex::new(opened_policy(settings(1, true)));
+    cancel_after_one_poll(run_async(&policy, &clock, "get", |_guard| PendingCall));
+    let mut locked = policy.lock().expect("the policy lock is not poisoned");
+    assert_eq!(locked.status(), status(State::HalfOpen, 2, 1, 1, 0));
+    locked
+        .admit(millis(30_002), "get")
+        .expect("the cancelled probe freed its slot");
+}
+
+fn a_non_health_probe_error_frees_the_slot() {
+    let clock = || millis(30_001);
+    let policy = Mutex::new(opened_policy(settings(1, true)));
+    let mut call = Box::pin(run_async(&policy, &clock, "get", |_guard| {
+        ready(Err::<u32, NoFailure>(NoFailure))
+    }));
+    let mut context = Context::from_waker(Waker::noop());
+    assert!(matches!(
+        call.as_mut().poll(&mut context),
+        Poll::Ready(Err(CallError::Failed { warning: None, .. }))
+    ));
+    let mut locked = policy.lock().expect("the policy lock is not poisoned");
+    assert_eq!(locked.status(), status(State::HalfOpen, 2, 1, 1, 0));
+    locked
+        .admit(millis(30_002), "get")
+        .expect("an error that is not a health failure freed the probe slot");
 }
 
 #[rstest]

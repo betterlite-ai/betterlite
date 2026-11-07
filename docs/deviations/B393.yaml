@@ -9,3 +9,12 @@ deviations:
       value. LiteLLM parses them as int and float, where a negative threshold opens the breaker on
       the first failure and a negative timeout recovers at once, so no working setup relies on it.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L511-L517
+  - what: >-
+      A half-open probe that is cancelled, or that ends in an error that is not a Redis health
+      failure, frees the probe slot, so the next call becomes the probe.
+    why: >-
+      LiteLLM's is_open rejects every call while half-open, and only the admitted probe can leave
+      that state. A probe that is cancelled or raises a non-health error (redis_cache.py L548-L552)
+      records nothing, so Redis stays fast-failed until the process restarts. No working setup can
+      rely on that hang.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/redis_cache.py#L216-L220

@@ -33,8 +33,9 @@ description: >-
     -> Result<ResolvedScope, EntityScopeError>` is an exhaustive `match` on `Entity`. It does not check dates;
     B3096's `resolved_scope` does that first.
 
-  `EntityScopeContext<'a>` is a struct with the caller's `UserAPIKeyAuth` (B2314), the database handle the four
-  owner functions below take, and whatever extra dependency value B815's `resolve_team_daily_activity_scope`
+  `EntityScopeContext<'a>` is a struct with the caller's `UserAPIKeyAuth` (B2314), the database handle the tag, organization and customer
+  owner functions below take, a reference to B4787's built `AgentActivityResolver` (its database sits behind the
+  resolver's `AgentRows` port, so the agent branch gets no database handle), and whatever extra dependency value B815's `resolve_team_daily_activity_scope`
   needs through B3094's `resolve_team` (Python reads these from proxy_server inside `_resolve_team`; read
   nothing global here). Take the exact types from those functions' signatures; the context only bundles them.
   `EntityScopeError` is this module's error enum with these variants: `Denied(ScopeDenied)` (B3090, from
@@ -67,10 +68,12 @@ description: >-
   database, then `build_scope` with the CUSTOMER constant, the returned end_user_ids, exclude_entity_ids from
   the query, query.api_key as Single and end_user_metadata as `Some(map)`.
 
-  Agent, `resolve_agent`. Calls B4787's `resolve_agent_daily_activity_scope` with query.entity_ids, the caller
-  and the database. That function checks the "agents" feature gate and the caller's grants; errors pass
+  Agent, `resolve_agent`. Calls B4787's `AgentActivityResolver::resolve_scope(agent_ids, auth)` on the resolver in the context, with
+  query.entity_ids and the caller (a `&UserApiKeyAuth`). It returns `AgentActivityScope { agent_ids, agent_metadata }`
+  or `AgentActivityError`. That function checks the "agents" feature gate and the caller's grants; errors pass
   through. Then `build_scope` with the AGENT constant, the returned agent_ids as entity_ids, exclude_entity_ids
-  from the query, query.api_key as Single and agent_metadata as `Some(map)`.
+  from the query, query.api_key as Single and agent_metadata as `Some(map)`. B3095 maps each B4787 `AgentMetadata { agent_name }` into B3094's entity metadata
+  value type, `serde_json::Map<String, Value>` (the value in `ResolvedScope.entity_metadata`), as `{"agent_name": ...}`.
 
   Constants. `TAG_RESOLVER`, `ORGANIZATION_RESOLVER`, `CUSTOMER_RESOLVER` and `AGENT_RESOLVER` are
   `pub const EntityScopeResolver` values with the exact strings from L304-L355 and L397-L472. All four have
@@ -129,7 +132,7 @@ dod:
     proof: [organization-resolve-tests]
   - text: resolve_customer denies a non-admin with ScopeDenied 403 "Admin-only endpoint. Your user role=<role>" (None for no role) before any database call, and otherwise builds the scope from B059's ids and metadata.
     proof: [customer-resolve-tests, helper-case-corpus]
-  - text: resolve_agent passes the requested ids, the caller and the database to B4787, builds the scope from the returned ids and metadata and passes its error through.
+  - text: resolve_agent passes the requested ids and the caller to B4787's resolver, builds the scope from the returned ids and the metadata mapped into B3094's entity metadata map and passes its error through.
     proof: [agent-resolve-tests]
   - text: resolve_entity_scope sends each Entity to its own resolver, lifts every ScopeDenied (user and customer) into EntityScopeError::Denied and keeps other errors in their own variants.
     proof: [dispatch-tests]
@@ -184,7 +187,7 @@ deviations:
     why: One error type lets B3096 turn every failure into the same HTTP error through B3090's raise_public without catching exceptions.
 out_of_scope:
   - "B3094 owns EntityQuery, ResolvedScope, Entity, EntityScopeResolver, OperationNames, _query_ids, _query_excluded_ids, _build_scope, _resolve_user, _resolve_team, _user_query, _team_query and the USER and TEAM resolver constants (L23-L143, L219-L272, L358-L396)."
-  - "B1604 owns get_tag_daily_activity_api_key_filter, B058 owns resolve_organization_daily_activity_scope, B059 owns resolve_customer_daily_activity_scope and customer_daily_activity_is_admin, B4787 owns resolve_agent_daily_activity_scope; this task only calls them."
+  - "B1604 owns get_tag_daily_activity_api_key_filter, B058 owns resolve_organization_daily_activity_scope, B059 owns resolve_customer_daily_activity_scope and customer_daily_activity_is_admin, B4787 owns the agent scope resolver (AgentActivityResolver::resolve_scope); this task only calls them."
   - "B3096 to B3098 own the routes, the date range check and the HTTP oracle cases through the booted proxy; no route reaches this module yet, so the cases here are helper cases."
   - "Key filtering in SQL and the daily activity reads are B727 and B3091; this task only builds the scope."
 pitfalls:

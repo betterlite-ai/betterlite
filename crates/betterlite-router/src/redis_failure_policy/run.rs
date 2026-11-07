@@ -113,6 +113,21 @@ where
     }
 }
 
+// dropping the call mid-await, or ending it without a health outcome, frees a half-open probe slot
+struct ProbeSlot<'policy> {
+    policy: &'policy Mutex<RedisFailurePolicy>,
+    admission: Admission,
+}
+
+impl Drop for ProbeSlot<'_> {
+    fn drop(&mut self) {
+        self.policy
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .release(self.admission);
+    }
+}
+
 pub async fn run_async<'policy, T, E, F, Fut, C>(
     policy: &'policy Mutex<RedisFailurePolicy>,
     clock: &'policy C,
@@ -126,6 +141,11 @@ where
     C: Fn() -> Duration + Sync + ?Sized,
 {
     let guard = CallGuard::enter(policy, clock, operation).map_err(CallError::Open)?;
+    let admission = *guard
+        .admission
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner);
+    let _slot = ProbeSlot { policy, admission };
     let result = invoke(guard.clone()).await;
     guard.call(|_| result)
 }
