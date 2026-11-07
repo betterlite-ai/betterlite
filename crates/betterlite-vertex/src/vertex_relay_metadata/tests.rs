@@ -123,6 +123,10 @@ fn run_interactions(
     true
 )]
 #[case::plain_path("/v1/projects/proj/locations/us-central1/interactions", true)]
+#[case::last_segment_parameters(
+    "https://host/v1/projects/proj/locations/us-central1/interactions;x",
+    true
+)]
 #[case::extra_segment("/v1/projects/proj/locations/us-central1/interactions/extra", false)]
 #[case::missing_location("/v1/projects/proj/locations/interactions", false)]
 #[case::empty_location("/v1/projects/proj/locations//interactions", false)]
@@ -139,6 +143,7 @@ fn vertex_interactions_route_detection(#[case] route: &str, #[case] expected: bo
 #[case::trailing_slash("https://host/v1/interactions/", true)]
 #[case::many_trailing_slashes("https://host/v1/interactions///", true)]
 #[case::query_ignored("https://host/v1/interactions?alt=json", true)]
+#[case::last_segment_parameters("https://host/v1/interactions;x", true)]
 #[case::relative_path("/v1/interactions", true)]
 #[case::extra_segment("https://host/v1/interactions/extra", false)]
 #[case::similar_suffix("/v1/interactions2", false)]
@@ -262,12 +267,14 @@ fn model_extraction_prefers_response_then_request(
     assert_eq!(model, expected);
     if expected.is_none() {
         assert_eq!(outcome.kwargs, empty_kwargs());
-        assert_eq!(logging.model_call_details.model, None);
+        assert_eq!(logging.custom_llm_provider, None);
+        assert_eq!(logging.model_call_details, ModelCallDetails::default());
     }
 }
 
 #[rstest]
-#[case::array_body("[]")]
+#[case::empty_array_body("[]")]
+#[case::non_empty_array_body(r#"["m",{"total_input_tokens":3}]"#)]
 #[case::invalid_json("not json")]
 fn model_extraction_rejects_a_non_object_body(#[case] body: &str) {
     let cost = FakeCost {
@@ -308,7 +315,8 @@ fn interactions_usage_is_projected_for_a_valid_object() {
 )]
 #[case::no_total_counters(r#"{"model":"m","usage":{"total_tokens":3}}"#)]
 #[case::null_usage(r#"{"model":"m","usage":null}"#)]
-#[case::list_usage(r#"{"model":"m","usage":[]}"#)]
+#[case::empty_list_usage(r#"{"model":"m","usage":[]}"#)]
+#[case::list_usage(r#"{"model":"m","usage":[3,2]}"#)]
 #[case::missing_usage(r#"{"model":"m"}"#)]
 fn interactions_usage_rejects_a_non_interactions_object(#[case] body: &str) {
     let cost = FakeCost {
@@ -318,6 +326,8 @@ fn interactions_usage_rejects_a_non_interactions_object(#[case] body: &str) {
     assert_eq!(outcome.result, None);
     assert_eq!(outcome.kwargs, empty_kwargs());
     assert_eq!(logging.model, None);
+    assert_eq!(logging.custom_llm_provider, None);
+    assert_eq!(logging.model_call_details, ModelCallDetails::default());
 }
 
 #[test]

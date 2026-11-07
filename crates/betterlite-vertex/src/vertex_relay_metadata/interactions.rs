@@ -1,10 +1,10 @@
+use std::collections::BTreeMap;
+
 use betterlite_models::cost_usage::CostUsage;
 use betterlite_models::cost_usage::interactions::record::{
     InteractionsUsage, is_interactions_usage_object,
 };
 use betterlite_models::cost_usage::interactions::transform::transform_interactions_usage;
-use serde::Deserialize;
-use serde::de::IgnoredAny;
 use serde_json::value::RawValue;
 
 use super::error::VertexRelayError;
@@ -12,6 +12,8 @@ use super::payload::{ResponseLoggingPayloadInput, response_logging_payload};
 use super::types::{
     CompletionCost, CompletionResponse, CustomLlmProvider, LoggingObject, ResponseLoggingKwargs,
 };
+
+type ResponseBodyFields = BTreeMap<Box<str>, Box<RawValue>>;
 
 pub struct InteractionsPassthroughInput<'input> {
     pub response_body: &'input [u8],
@@ -26,50 +28,6 @@ pub struct InteractionsPassthroughInput<'input> {
 pub struct InteractionsPassthroughOutcome {
     pub result: Option<CompletionResponse>,
     pub kwargs: ResponseLoggingKwargs,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(default)]
-struct InteractionsResponseBody {
-    model: ModelName,
-    usage: Option<Box<RawValue>>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(from = "RawModelName")]
-struct ModelName(Option<String>);
-
-#[derive(Debug, Deserialize)]
-#[serde(untagged)]
-enum RawModelName {
-    Str(Box<str>),
-    Other(Box<IgnoredAny>),
-}
-
-impl From<RawModelName> for ModelName {
-    fn from(raw: RawModelName) -> Self {
-        match raw {
-            RawModelName::Str(model) => Self(Some(String::from(model))),
-            RawModelName::Other(_ignored) => Self(None),
-        }
-    }
-}
-
-impl InteractionsResponseBody {
-    fn interactions_model(&self, request_model: Option<&str>) -> Option<String> {
-        if let Some(model) = self.model.0.as_deref().filter(|model| !model.is_empty()) {
-            return Some(model.to_owned());
-        }
-        request_model
-            .filter(|model| !model.is_empty())
-            .map(str::to_owned)
-    }
-
-    fn interactions_usage(&self) -> Option<InteractionsUsage> {
-        let raw = self.usage.as_deref()?;
-        let usage: InteractionsUsage = serde_json::from_str(raw.get()).ok()?;
-        is_interactions_usage_object(&usage).then_some(usage)
-    }
 }
 
 pub fn interactions_handler(
@@ -107,22 +65,20 @@ pub fn interactions_handler(
     })
 }
 
-fn parse_interactions_body(
-    response_body: &[u8],
-) -> Result<InteractionsResponseBody, VertexRelayError> {
+fn parse_interactions_body(response_body: &[u8]) -> Result<ResponseBodyFields, VertexRelayError> {
     serde_json::from_slice(response_body).map_err(|source| VertexRelayError::ResponseBody {
         source: Box::new(source),
     })
 }
 
 fn project_interactions(
-    body: &InteractionsResponseBody,
+    fields: &ResponseBodyFields,
     request_model: Option<&str>,
 ) -> Result<Option<(String, CostUsage)>, VertexRelayError> {
-    let Some(model) = body.interactions_model(request_model) else {
+    let Some(model) = interactions_model(fields, request_model) else {
         return Ok(None);
     };
-    let Some(record) = body.interactions_usage() else {
+    let Some(record) = interactions_usage(fields) else {
         return Ok(None);
     };
     let usage =
@@ -130,4 +86,27 @@ fn project_interactions(
             source: Box::new(source),
         })?;
     Ok(Some((model, usage)))
+}
+
+fn interactions_model(fields: &ResponseBodyFields, request_model: Option<&str>) -> Option<String> {
+    let response_model = fields
+        .get("model")
+        .and_then(|raw| serde_json::from_str::<String>(raw.get()).ok())
+        .filter(|model| !model.is_empty());
+    if let Some(model) = response_model {
+        return Some(model);
+    }
+    request_model
+        .filter(|model| !model.is_empty())
+        .map(str::to_owned)
+}
+
+// A derived struct also accepts an array by position, while the Python contract requires an object.
+fn interactions_usage(fields: &ResponseBodyFields) -> Option<InteractionsUsage> {
+    let raw = fields.get("usage")?;
+    if !raw.get().trim_start().starts_with('{') {
+        return None;
+    }
+    let usage: InteractionsUsage = serde_json::from_str(raw.get()).ok()?;
+    is_interactions_usage_object(&usage).then_some(usage)
 }

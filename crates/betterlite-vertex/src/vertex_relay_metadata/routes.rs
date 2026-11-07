@@ -18,14 +18,21 @@ pub fn is_interactions_route(url_route: &str) -> bool {
         .ends_with("/interactions")
 }
 
-// Python urlparse keeps the raw text up to the query or fragment for a route without a scheme.
+// urlparse moves the last segment's ;parameters out of the path before LiteLLM tests the route.
 fn route_path(url_route: &str) -> String {
-    match Url::parse(url_route) {
-        Ok(url) => url.path().to_owned(),
-        Err(_error) => url_route
-            .split(['?', '#'])
-            .next()
-            .unwrap_or_default()
-            .to_owned(),
+    let parsed = Url::parse(url_route);
+    let path = match &parsed {
+        Ok(url) => url.path(),
+        Err(_error) => url_route.split(['?', '#']).next().unwrap_or_default(),
+    };
+    match path.rsplit_once('/') {
+        Some((head, segment)) => match segment.split_once(';') {
+            Some((last, _parameters)) => format!("{head}/{last}"),
+            None => path.to_owned(),
+        },
+        None => match path.split_once(';') {
+            Some((last, _parameters)) => last.to_owned(),
+            None => path.to_owned(),
+        },
     }
 }
