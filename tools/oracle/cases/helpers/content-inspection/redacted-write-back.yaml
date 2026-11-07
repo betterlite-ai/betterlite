@@ -1,0 +1,15 @@
+kind: helper
+name: content-inspection-redacted-write-back
+call:
+  b5470:
+    function: apply_redacted_messages_back
+    data:
+      input: ["first", "", "third"]
+    redacted_messages:
+      - {role: user, content: "FIRST"}
+      - role: user
+        content:
+          - {type: text, text: "THIRD"}
+env: {}
+compare:
+  ignore: []
