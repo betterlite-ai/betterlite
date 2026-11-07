@@ -74,6 +74,27 @@ async fn a_repeated_cursor_returns_the_pages_collected_so_far() {
 }
 
 #[tokio::test]
+async fn an_empty_cursor_ends_the_walk() {
+    let fetches = Arc::new(AtomicUsize::new(0));
+    let count = Arc::clone(&fetches);
+    let mut pages = VecDeque::from([page(&["one"], Some("")), page(&["two"], None)]);
+    let fetch = async move |cursor: Option<String>| {
+        assert!(cursor.is_none());
+        count.fetch_add(1, Ordering::Relaxed);
+        Ok::<_, SessionError<ScriptedFailure>>(pages.pop_front().expect("page"))
+    };
+    let items = list_optional_pages::<ScriptedFailure, PromptPage, Prompt, _, _>(
+        Duration::from_secs(30),
+        fetch,
+        |page: &PromptPage| page.prompts.as_slice(),
+    )
+    .await
+    .unwrap();
+    assert_eq!(prompt_names(&items), ["one"]);
+    assert_eq!(fetches.load(Ordering::Relaxed), 1);
+}
+
+#[tokio::test]
 async fn the_page_limit_returns_every_page_it_collected() {
     let (captured, _guard) = capture();
     let mut count = 0_usize;

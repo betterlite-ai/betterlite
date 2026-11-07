@@ -1,6 +1,7 @@
 use betterlite_mcp::client::sessions::client::SessionClient;
 use betterlite_mcp::client::sessions::error::SessionError;
 use betterlite_mcp::client::sessions::runtime::McpRuntime;
+use url::Url;
 
 use super::operations::run_detail_operation;
 use super::session::{ResourceSession, RuntimeSession, session_error};
@@ -34,4 +35,4 @@ detail_operation!(
     GetPromptResult,
     get_prompt
 );
-detail_operation!(read_resource, String, ReadResourceResult, read_resource);
+detail_operation!(read_resource, Url, ReadResourceResult, read_resource);

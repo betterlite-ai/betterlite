@@ -90,7 +90,20 @@ pub struct GetPromptRequestParams {
 pub struct GetPromptResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    pub messages: Vec<serde_json::Value>,
+    pub messages: Vec<PromptMessage>,
+}
+
+#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
+pub struct PromptMessage {
+    pub role: PromptRole,
+    pub content: serde_json::Value,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PromptRole {
+    User,
+    Assistant,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]

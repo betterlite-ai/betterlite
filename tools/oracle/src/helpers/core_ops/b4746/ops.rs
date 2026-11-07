@@ -8,6 +8,7 @@ use betterlite_core::api::mcp_client_resources::session::ResourceSession as _;
 use betterlite_core::api::mcp_client_resources::types::GetPromptRequestParams;
 use betterlite_mcp::client::sessions::error::McpFailure;
 use serde_json::json;
+use url::Url;
 
 use crate::helpers::{HelperError, HelperResult};
 
@@ -124,12 +125,12 @@ detail_operation!(
 detail_operation!(
     resource,
     read_resource,
-    |input: &Input| -> Result<String, Box<HelperError>> {
+    |input: &Input| -> Result<Url, Box<HelperError>> {
         let resource = input
             .resource
             .as_ref()
             .ok_or_else(|| failure("the case has no resource input"))?;
-        Ok(resource.uri.clone())
+        Url::parse(&resource.uri).map_err(failure)
     },
     resource_uris,
     "uris"

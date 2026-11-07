@@ -6,6 +6,7 @@ use betterlite_mcp::client::sessions::error::SessionError;
 use betterlite_mcp::client::sessions::run::run_with_session;
 use betterlite_mcp::client::sessions::runtime::McpRuntime;
 use tracing::info;
+use url::Url;
 
 use super::detail::{get_prompt, read_resource};
 use super::failure::{FailureMode, finish_failure};
@@ -38,7 +39,7 @@ macro_rules! resource_operations {
 
             fn read_resource(
                 &mut self,
-                uri: String,
+                url: Url,
             ) -> impl Future<Output = Result<ReadResourceResult, SessionError<Runtime::Error>>>;
         }
 
@@ -66,9 +67,9 @@ macro_rules! resource_operations {
 
             async fn read_resource(
                 &mut self,
-                uri: String,
+                url: Url,
             ) -> Result<ReadResourceResult, SessionError<Runtime::Error>> {
-                read_resource(self, uri).await
+                read_resource(self, url).await
             }
         }
     };

@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use betterlite_mcp::client::sessions::error::{McpFailure, SessionError};
 use betterlite_mcp::client::sessions::runtime::{McpRuntime, SessionContext};
+use url::Url;
 
 use super::types::{
     GetPromptRequestParams, GetPromptResult, PromptPage, ReadResourceResult, ResourcePage,
@@ -39,7 +40,7 @@ pub trait ResourceSession {
 
     fn read_resource(
         &mut self,
-        uri: String,
+        url: Url,
     ) -> impl Future<Output = Result<ReadResourceResult, Self::Error>> + Send;
 
     fn protocol_failure(error: &Self::Error) -> Option<McpFailure>;

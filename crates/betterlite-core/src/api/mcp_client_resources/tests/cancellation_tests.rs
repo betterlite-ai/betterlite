@@ -4,6 +4,7 @@ use std::collections::VecDeque;
 use std::time::Duration;
 
 use betterlite_mcp::client::sessions::error::SessionError;
+use url::Url;
 
 use super::fixture::{FakeRuntime, Script, ScriptedFailure, Step, capture, session_client};
 use crate::api::mcp_client_resources::operations::McpResourceOperations as _;
@@ -11,6 +12,10 @@ use crate::api::mcp_client_resources::settings::ResourceSettings;
 use crate::api::mcp_client_resources::types::{
     GetPromptRequestParams, PromptPage, ServerCapabilities,
 };
+
+fn url() -> Url {
+    Url::parse("test://one").unwrap()
+}
 
 fn settings() -> ResourceSettings {
     ResourceSettings {
@@ -68,10 +73,7 @@ async fn a_cancelled_resource_read_propagates_with_a_warning() {
     let runtime = FakeRuntime::<ScriptedFailure>::new(Script::default());
     let mut client = session_client(runtime, Duration::from_secs(60));
     client.caller_cancelled.cancel();
-    let error = client
-        .read_resource("test://one".to_owned())
-        .await
-        .unwrap_err();
+    let error = client.read_resource(url()).await.unwrap_err();
     assert!(matches!(error, SessionError::Cancelled));
     assert!(captured.text().contains("read_resource was cancelled"));
 }

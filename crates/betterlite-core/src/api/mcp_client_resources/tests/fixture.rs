@@ -28,6 +28,7 @@ use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 use tracing::subscriber::{DefaultGuard, set_default};
+use url::Url;
 
 use crate::api::mcp_client_resources::session::ResourceSession;
 use crate::api::mcp_client_resources::types::{
@@ -101,7 +102,7 @@ pub(crate) struct Script {
     pub(crate) resource_result: Option<Step<ReadResourceResult>>,
     pub(crate) cursors: Vec<Option<String>>,
     pub(crate) prompt_params: Vec<GetPromptRequestParams>,
-    pub(crate) resource_uris: Vec<String>,
+    pub(crate) resource_uris: Vec<Url>,
 }
 
 impl Script {
@@ -355,7 +356,7 @@ where
         Source,
         resource_result,
         resource_uris,
-        String,
+        Url,
         ReadResourceResult
     );
 

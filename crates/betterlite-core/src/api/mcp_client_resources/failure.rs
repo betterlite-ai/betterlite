@@ -20,7 +20,8 @@ where
     Source: Error + Send + Sync + 'static,
     Output: Default,
 {
-    if was_cancelled(&error, operation) {
+    if matches!(&error, SessionError::Cancelled) {
+        warn!("MCP client {operation} was cancelled");
         return Err(error);
     }
     match mode {
@@ -34,22 +35,18 @@ where
             Ok(Output::default())
         }
         FailureMode::Detail => {
-            debug!("MCP client {operation} traceback:\n{}", error_chain(&error));
+            let mut traceback = error.to_string();
+            let mut source = error.source();
+            while let Some(cause) = source {
+                traceback.push_str(": ");
+                traceback.push_str(&cause.to_string());
+                source = cause.source();
+            }
+            debug!("MCP client {operation} traceback:\n{traceback}");
             log_failure(&error, operation, server);
             Err(error)
         }
     }
-}
-
-fn was_cancelled<Source>(error: &SessionError<Source>, operation: &str) -> bool
-where
-    Source: Error + Send + Sync + 'static,
-{
-    if !matches!(error, SessionError::Cancelled) {
-        return false;
-    }
-    warn!("MCP client {operation} was cancelled");
-    true
 }
 
 fn log_failure<Source>(error: &SessionError<Source>, operation: &str, server: &str)
@@ -79,18 +76,4 @@ where
     ["BrokenResourceError", "Broken"]
         .iter()
         .any(|pattern| name.contains(pattern))
-}
-
-fn error_chain<Source>(error: &Source) -> String
-where
-    Source: Error,
-{
-    let mut text = error.to_string();
-    let mut source = error.source();
-    while let Some(cause) = source {
-        text.push_str(": ");
-        text.push_str(&cause.to_string());
-        source = cause.source();
-    }
-    text
 }

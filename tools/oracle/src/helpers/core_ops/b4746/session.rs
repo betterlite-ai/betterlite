@@ -10,6 +10,7 @@ use betterlite_core::api::mcp_client_resources::types::{
 use betterlite_mcp::client::sessions::error::McpFailure;
 use thiserror::Error;
 use tokio::time::sleep;
+use url::Url;
 
 use super::input::PageInput;
 
@@ -48,7 +49,7 @@ pub(crate) struct Script {
     pub(crate) resource_result: Option<Step<ReadResourceResult>>,
     pub(crate) cursors: Vec<Option<String>>,
     pub(crate) prompt_params: Vec<GetPromptRequestParams>,
-    pub(crate) resource_uris: Vec<String>,
+    pub(crate) resource_uris: Vec<Url>,
 }
 
 impl Script {
@@ -176,7 +177,7 @@ impl ResourceSession for FakeSession {
         read_resource,
         resource_result,
         resource_uris,
-        String,
+        Url,
         ReadResourceResult
     );
 

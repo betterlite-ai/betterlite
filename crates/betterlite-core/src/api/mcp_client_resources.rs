@@ -1,7 +1,4 @@
-#![expect(
-    clippy::disallowed_types,
-    reason = "MCP prompt content blocks are forwarded as given"
-)]
+#![expect(clippy::disallowed_types, reason = "MCP JSON passthrough")]
 
 pub mod detail;
 pub mod list;

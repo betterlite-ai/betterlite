@@ -1,6 +1,7 @@
 import asyncio
 import math
 from collections.abc import Awaitable, Callable, Iterator, Sequence
+from dataclasses import dataclass
 from functools import partial
 from types import TracebackType
 from typing import Literal, Self, TypeAlias, TypeVar, cast
@@ -103,18 +104,12 @@ class FailAfter:
         return False
 
 
+@dataclass
 class ScriptedPage:
-    def __init__(
-        self,
-        prompts: Sequence[Prompt] = (),
-        resources: Sequence[Resource] = (),
-        resource_templates: Sequence[ResourceTemplate] = (),
-        next_cursor: str | None = None,
-    ) -> None:
-        self.prompts = prompts
-        self.resources = resources
-        self.resource_templates = resource_templates
-        self.next_cursor = next_cursor
+    prompts: Sequence[Prompt] = ()
+    resources: Sequence[Resource] = ()
+    resource_templates: Sequence[ResourceTemplate] = ()
+    next_cursor: str | None = None
 
 
 class ScriptedSession:

@@ -3,12 +3,12 @@ use std::error::Error;
 use std::time::Duration;
 
 use betterlite_mcp::client::sessions::error::{McpFailure, SessionError};
+use betterlite_mcp::tools::pagination::MAX_PAGES;
 use tokio::time::{Instant, timeout};
 use tracing::warn;
 
 use super::types::PageCursor;
 
-pub(crate) const MAX_PAGES: usize = 1_000;
 pub(crate) const METHOD_NOT_FOUND: i32 = -32_601;
 
 #[derive(Debug)]
@@ -51,7 +51,11 @@ where
             }
         };
         items.extend_from_slice(items_of(&page));
-        let Some(next_cursor) = page.next_page().map(str::to_owned) else {
+        let Some(next_cursor) = page
+            .next_page()
+            .filter(|next| !next.is_empty())
+            .map(str::to_owned)
+        else {
             return Ok(items);
         };
         if !cursors.insert(next_cursor.clone()) {
