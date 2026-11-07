@@ -69,3 +69,6 @@ deviations:
       The task's DoD asks for the uuid4 fallback, and a string id keeps a trace LiteLLM would drop; using one
       id keeps the span inside the trace it arrives with.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/deepeval.py#L113-L117
+  - what: A failure span takes its output from the standard logging object's error_str, where LiteLLM's _create_base_api_span reads error_string.
+    why: StandardLoggingPayload declares the key as error_str and nothing in LiteLLM sets error_string, so every LiteLLM failure trace has an empty output; no working setup can rely on losing the error text.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/deepeval/deepeval.py#L111
