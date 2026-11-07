@@ -1,0 +1,111 @@
+id: B3684
+title: Guardrail list projections and provider form fields
+description: >-
+  Build the read side of the guardrail admin API in betterlite-server: the two list routes, the info route, the add-guardrail settings route and the provider form route, plus the masking and filtering they share. Everything goes in crates/betterlite-server/src/guardrails/admin_reads.rs and admin_reads/. The create, change and delete routes are B3685, submissions are B3686 and B3687 owns the catalog and apply routes; none of them lives here.
+
+  Routes, all behind the normal key check (any valid key, any role, no other permission). `GET /guardrails/list`, `GET /v2/guardrails/list`, `GET /guardrails/{guardrail_id}` and its alias `GET /guardrails/{guardrail_id}/info`, `GET /guardrails/ui/add_guardrail_settings` and `GET /guardrails/ui/provider_specific_params`. Expose `pub fn routes()` the way the sibling modules in crates/betterlite-server/src/guardrails/ do; the architect's skeleton mounts it, so do not touch app.rs. The response records `GuardrailInfoResponse`, `ListGuardrailsResponse` and `GuardrailUiAddSettings` are B3662's (betterlite-config, sections::guardrail_params); the registry reads and the in-memory handler are B3682's and B3683's.
+
+  Masking, in `masking.rs`: `mask_sensitive_values(values: &Map<String, Value>) -> Map<String, Value>` follows `_get_masked_values` (litellm_logging.py L4346-L4404) with `unmasked_length` 4 and `number_of_asterisks` 4. A key is sensitive when its lowercase text contains one of `authorization`, `token`, `key`, `secret`, `vertex_credentials`, `credentials`, `password`, `passwd`. A sensitive key with a string value becomes `*****` when the string has 4 characters or fewer, else the first 2 characters, `****` and the last 2 characters. A sensitive key with an object value is masked again inside, up to depth 20 (below that the object is returned as it is). Every other value, including lists and non-strings under a sensitive key, is kept. No task owns this helper in Rust yet (see the notes), so build it here as a private function of this module with its own tests.
+
+  `GET /guardrails/list` reads the raw `guardrails:` list from the loaded config file (the `general` config, not the database). No list gives `{"guardrails": []}`. Each item gives `guardrail_id` and `guardrail_name` as written (null when absent), `litellm_params` masked, and `guardrail_info` as written. An item without `litellm_params` still gets a `litellm_params` of the default `BaseLitellmParams` (every key null), not null.
+
+  `GET /v2/guardrails/list`. Admin view (`_user_has_admin_view`, B732's role predicate) sees everything. For other callers: team ids come from `_get_user_team_ids` (the user's `teams` from B736's `get_user_object` with `user_id_upsert` false, empty when the caller has no user id or the database is off, empty strings dropped). The database rows (`GuardrailRegistry.get_all_guardrails_from_db`, active rows only) are kept when `team_id` is null or in the caller's teams. The ids of removed rows are remembered. Each kept row becomes an entry with `guardrail_definition_location` "db", `created_at`, `updated_at`, `litellm_params` masked (null when the masked map is empty) and `guardrail_info` as stored (null stays null). Then the in-memory guardrails (`list_in_memory_guardrails`) are added as "config" entries when the id was not seen, when the entry's source is not "db" (a row deleted on another pod and not yet reconciled is skipped), and, for non-admins, when its `team_id` is null or in the caller's teams. A config entry has no timestamps and its `guardrail_info` is always an object (`{}` for null). With no database the db part is empty. Any error becomes 500 with the error text as `detail`, logged with the text "Error getting guardrails from db: {error}".
+
+  `GET /guardrails/{guardrail_id}`: read the database row (when there is a database), else the in-memory entry only when its source is "config", else 404 with detail "Guardrail with ID {guardrail_id} not found". The body is a `GuardrailInfoResponse` with `guardrail_definition_location` "db" or "config", timestamps, masked `litellm_params` (null when empty) and `guardrail_info` as an object. There is no team check on this route; a team-scoped guardrail is readable by any valid key (LiteLLM does the same, see the notes). Other errors give 500 with the text as `detail`; an HTTP error from inside passes through.
+
+  `GET /guardrails/ui/add_guardrail_settings` returns `GuardrailUiAddSettings`: `supported_entities` (every PiiEntityType value in declaration order), `supported_actions` (PiiAction values), `supported_modes` (every GuardrailEventHooks value), `supported_modes_by_provider`, `pii_entity_categories` (list of `{category, entities}` from PII_ENTITY_CATEGORIES_MAP), `decision_model_providers` (B3513's `supported_decisions_providers`) and `content_filter_settings` with `prebuilt_patterns` (B3691's `get_pattern_metadata`), `pattern_categories` (the keys of PATTERN_CATEGORIES), `supported_actions` fixed to `["BLOCK","MASK"]` and `content_categories` (`get_available_content_categories`). `supported_modes_by_provider` is a table in `provider_modes.rs`: for each registry key whose class returns a list from `get_supported_event_hooks` the hook names, plus `hide-secrets` with only `pre_call`. LiteLLM has 53 overrides of that method (grep `def get_supported_event_hooks` under litellm/); take each one's list and its registry key from the hook folder's `__init__.py`. A provider whose class returns nothing is absent.
+
+  `GET /guardrails/ui/provider_specific_params`: build the map from B6560's `core_tables()` in LiteLLM's order (bedrock, presidio, lakera_v2, tool_permission, hide-secrets), then B6561's `tables_a()` and B6562's `tables_b()`; a later entry with the same key replaces the earlier one. Each model is projected with `project_model(model, max_depth)` where `max_depth` is the env var `DEFAULT_MAX_RECURSE_DEPTH` (default 100), then `with_friendly_name`. `FormError::TooDeep` gives 400 with LiteLLM's detail text.
+
+  Oracle: the HTTP cases boot LiteLLM and betterlite with a config that has `guardrails:` entries and compare status, headers and body. No database cases are possible in this folder (no virtual keys), so the db branches and the non-admin team filter are covered by named Rust tests with a fake registry reader.
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/admin_reads.rs
+    - crates/betterlite-server/src/guardrails/admin_reads/**
+    - tools/oracle/cases/guardrails/admin-reads/**
+    - tools/oracle/helpers/b3684.py
+    - tools/oracle/helpers/b3684/**
+    - tools/oracle/src/helpers/server/b3684.rs
+    - tools/oracle/src/helpers/server/b3684/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L107-L186
+    why: The v1 list route, its helper and its masking call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L187-L329
+    why: The v2 list route with team filtering, the db pass, the config pass and the 500 path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L824-L846
+    why: _get_user_team_ids.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1296-L1391
+    why: The info route, with both paths (/guardrails/{guardrail_id} and /info), db first and config second.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1393-L1447
+    why: The add-guardrail settings route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L1910-L2003
+    why: The provider form route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4346-L4404
+    why: _get_masked_values, the masking rule every route here uses.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py#L611-L640
+    why: get_supported_event_hooks default and its role in the per-provider map.
+dod:
+  - text: Masking follows the rule exactly. A sensitive key keeps the first 2 and last 2 characters around four asterisks, a value of 4 characters or fewer becomes five asterisks, objects under a sensitive key are masked inside, other values and other keys stay.
+    proof: [admin-masking-tests]
+  - text: GET /guardrails/list returns the config file's guardrails with masked params, `[]` when the file has none, and the default all-null params for an item with no litellm_params.
+    proof: [admin-routes-tests, oracle]
+  - text: The v2 list returns admin everything, other callers only entries with no team or one of their teams, skips db-sourced in-memory entries, never repeats an id, labels each entry db or config, and answers 500 with the error text on failure.
+    proof: [admin-routes-tests, oracle]
+  - text: The info route finds a db row, then a config entry, never a db-sourced in-memory entry, answers 404 with the exact text otherwise, and serves both paths.
+    proof: [admin-routes-tests, oracle]
+  - text: The add-guardrail settings body, with the per-provider modes table, matches LiteLLM's.
+    proof: [admin-routes-tests, oracle]
+  - text: The provider form route returns the merged map in LiteLLM's key set, with a later registry entry replacing an earlier one, and turns a too-deep model into 400.
+    proof: [admin-routes-tests, oracle]
+  - text: Every route needs a valid key; a request without one gets the usual 401 body.
+    proof: [oracle]
+checks:
+  optional: []
+  commands:
+    - id: admin-masking-tests
+      why: the masking rule, its thresholds or its nesting are missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::admin_reads::tests::masking_/)'
+    - id: admin-routes-tests
+      why: a list, info, settings or provider-form behaviour is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::admin_reads::tests::(list_|team_|info_|settings_|forms_)/)'
+oracle_cases:
+  - tools/oracle/cases/guardrails/admin-reads/list-config-masked.yaml
+  - tools/oracle/cases/guardrails/admin-reads/list-config-empty.yaml
+  - tools/oracle/cases/guardrails/admin-reads/list-v2-config.yaml
+  - tools/oracle/cases/guardrails/admin-reads/list-v2-no-database.yaml
+  - tools/oracle/cases/guardrails/admin-reads/info-config-found.yaml
+  - tools/oracle/cases/guardrails/admin-reads/info-alias-found.yaml
+  - tools/oracle/cases/guardrails/admin-reads/info-not-found.yaml
+  - tools/oracle/cases/guardrails/admin-reads/add-settings-body.yaml
+  - tools/oracle/cases/guardrails/admin-reads/provider-params-body.yaml
+  - tools/oracle/cases/guardrails/admin-reads/auth-required.yaml
+deviations:
+  - what: Config guardrails get a stable `guardrail_id` in the v2 and info responses only if the registry gave them one when it started them; the v1 list shows the id as written in the file.
+    why: LiteLLM does the same, because v1 reads the raw file and v2 reads the handler.
+  - what: Masking is a private helper in this module, where LiteLLM shares one function with its logging code.
+    why: No Rust owner exists for that function at the pin; keep the rule identical and replace this copy if a shared one appears.
+out_of_scope:
+  - "Create, update, patch and delete routes and the mutation checks: B3685."
+  - "Submission routes and the custom-code test route: B3686."
+  - "category_yaml, major_airlines, validate_blocked_words_file and apply_guardrail routes (L1450-L1620 and L2337-L2457): B3687."
+  - "The usage routes mounted by `router.include_router(guardrails_usage_router)` (L2457): B3689 builds the projections, B104 mounts them."
+  - "get_all_guardrails_from_db and the in-memory handler methods: B3682. IN_MEMORY_GUARDRAIL_HANDLER and the reconcile pair: B3683."
+  - "Form types, projection and the core tables: B6560. The other tables: B6561 and B6562."
+  - "The module-level GUARDRAIL_REGISTRY object and the `_create_guardrail_row`, `_delete_guardrail_row` and `_find_team_guardrail_rows` helpers: used only by mutation and submission routes (B3685, B3686)."
+  - "_parse_json_field and _row_to_submission_item (L811-L870): used only by submission routes (B3686)."
+pitfalls:
+  - "The v1 list passes `litellm_params` as a dict even when empty, so the response holds all-null BaseLitellmParams keys, while v2 and info send null for an empty masked map."
+  - "v1 reads the raw config (`proxy_config.config.get('guardrails')`) and shows no timestamps and no `guardrail_definition_location` of its own: the field takes its default, `config`."
+  - "Masking tests the key name with a substring match on the lowercase key, so `aws_session_token`, `api_key`, `max_tokens` and `guardrail_secret_name` are all masked, and only string values change."
+  - "An object under `credentials` is masked inside by the same rule, so its non-sensitive keys (such as `client_email`) stay readable."
+  - "Masked strings use `v[:2] + '****' + v[-2:]` because unmasked_length 4 is halved; a 5-character value shows 2 and 2 characters."
+  - "v2 compares `team_id` with the caller's team ids only for non-admins, and `caller_team_ids` is not defined for admins, so the config pass must not touch it for them."
+  - "A db row hidden from a caller stays in the seen set, so a config entry with the same id is hidden too."
+  - "The info route is checked in this order: db row, then config-sourced memory entry. A memory entry whose source is db counts as not found."
+  - "`guardrail_info` is `dict(x or {})` on config and info paths but stored-as-is (null allowed) for db rows in v2."
+  - "`/guardrails/ui/provider_specific_params` puts the five fixed providers first and the registry loop after, so tool_permission from the registry replaces the fixed one."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
