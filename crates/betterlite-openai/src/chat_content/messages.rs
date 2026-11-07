@@ -52,10 +52,6 @@ pub(super) fn transform_user_content(
         message.content = Some(content);
         return Ok(message);
     };
-    if parts.is_empty() {
-        message.content = Some(Content::Parts(parts));
-        return Ok(message);
-    }
     let mut transformed = Vec::with_capacity(parts.len());
     for part in &parts {
         transformed.push(transform_content_item(part, downloads)?);

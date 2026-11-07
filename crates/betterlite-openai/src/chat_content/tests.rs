@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::io::Error;
 
 use betterlite_prompts::arguments::json::Object;
 use betterlite_prompts::media_fetch::error::ImageFetchError;
@@ -781,4 +782,141 @@ fn plain_content_and_empty_lists_survive(body: &Value) {
         body["messages"][5],
         value(r#"{"role": "user", "content": []}"#)
     );
+}
+
+#[test]
+fn download_seam_rewrites_a_url_file() {
+    let mut downloads = BTreeMap::new();
+    downloads.insert(
+        "https://example.com/report.pdf".to_owned(),
+        "data:application/pdf;base64,JVBERi0=".to_owned(),
+    );
+    let seamed = MapDownloads(&downloads);
+    let transformed = transform_content_item(
+        &content_part(value(
+            r#"{"type": "file", "file": {"file_id": "https://example.com/report.pdf", "filename": "supplied.pdf"}}"#,
+        )),
+        &seamed,
+    )
+    .unwrap();
+    assert_eq!(
+        serde_json::to_value(transformed).unwrap(),
+        value(
+            r#"{"type": "file", "file": {"file_data": "data:application/pdf;base64,JVBERi0=", "filename": "my_file.pdf"}}"#
+        )
+    );
+}
+
+#[test]
+fn null_file_fields_use_the_absent_rules() {
+    let empty_map = BTreeMap::new();
+    let downloads = MapDownloads(&empty_map);
+    let null_data = transform_content_item(
+        &content_part(value(r#"{"type": "file", "file": {"file_data": null}}"#)),
+        &downloads,
+    )
+    .unwrap();
+    assert_eq!(
+        serde_json::to_value(null_data).unwrap(),
+        value(r#"{"type": "file", "file": {"file_data": null}}"#)
+    );
+    let null_name = transform_content_item(
+        &content_part(value(
+            r#"{"type": "file", "file": {"file_data": "data:text/plain;base64,aGk=", "filename": null}}"#,
+        )),
+        &downloads,
+    )
+    .unwrap();
+    assert_eq!(
+        serde_json::to_value(null_name).unwrap()["file"]["filename"],
+        "my_file.pdf"
+    );
+}
+
+#[test]
+fn non_string_image_url_values_pass_through() {
+    let empty_map = BTreeMap::new();
+    let downloads = MapDownloads(&empty_map);
+    let transformed = transform_content_item(
+        &content_part(value(r#"{"type": "image_url", "image_url": 42}"#)),
+        &downloads,
+    )
+    .unwrap();
+    assert_eq!(
+        serde_json::to_value(transformed).unwrap(),
+        value(r#"{"type": "image_url", "image_url": 42}"#)
+    );
+}
+
+#[test]
+fn hosted_endpoint_resolution_edges() {
+    let mut empty_base = cached_fixture();
+    empty_base.api_base = Some(String::new());
+    empty_base.global_api_base = Some("http://localhost:4000/v1".to_owned());
+    assert!(cache_control_kept(&empty_base.body(Mode::Sync)));
+
+    let mut empty_env = cached_fixture();
+    empty_env
+        .environment
+        .insert("OPENAI_BASE_URL".to_owned(), String::new());
+    empty_env.environment.insert(
+        "OPENAI_API_BASE".to_owned(),
+        "http://localhost:7000/v1".to_owned(),
+    );
+    assert!(cache_control_kept(&empty_env.body(Mode::Sync)));
+
+    let exact_host = cached_fixture().with_api_base("https://openai.com/v1");
+    assert!(!cache_control_kept(&exact_host.body(Mode::Sync)));
+
+    let no_host = cached_fixture().with_api_base("mailto:user@example.com");
+    assert!(!cache_control_kept(&no_host.body(Mode::Sync)));
+}
+
+#[test]
+fn hosted_non_list_tools_are_untouched() {
+    let body = openai_user(value(r#""hi""#))
+        .with_tools(value(r#"{"type": "function"}"#))
+        .body(Mode::Sync);
+    assert_eq!(body["tools"], value(r#"{"type": "function"}"#));
+}
+
+#[test]
+fn messages_without_content_survive() {
+    let source = value(
+        r#"[{"role": "assistant", "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "read", "arguments": "{}"}}]}]"#,
+    );
+    let body = Fixture::new(&source).body(Mode::Sync);
+    assert_eq!(body["messages"][0], source[0]);
+}
+
+#[test]
+fn cache_control_stops_at_the_depth_limit() {
+    assert!(!body_has_cache_control_at_depth(100));
+    assert!(body_has_cache_control_at_depth(101));
+}
+
+fn body_has_cache_control_at_depth(depth: usize) -> bool {
+    let mut nested = value(r#"{"cache_control": {"type": "ephemeral"}}"#);
+    for _ in 0..depth {
+        let mut wrapper = Map::new();
+        wrapper.insert("nested".to_owned(), nested);
+        nested = Value::Object(wrapper);
+    }
+    let mut part = Map::new();
+    part.insert("type".to_owned(), Value::String("text".to_owned()));
+    part.insert("text".to_owned(), Value::String("hi".to_owned()));
+    part.insert("nested".to_owned(), nested);
+    let source = user_content(Value::Array(vec![Value::Object(part)]));
+    Fixture::new(&source)
+        .body(Mode::Sync)
+        .to_string()
+        .contains("cache_control")
+}
+
+#[test]
+fn internal_shape_errors_are_server_errors() {
+    let error = ChatContentError::MessageShape {
+        source: serde_json::Error::io(Error::other("shape")),
+    };
+    assert_eq!(error.status_code(), 500);
 }
