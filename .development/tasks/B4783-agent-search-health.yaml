@@ -113,7 +113,7 @@ deviations:
   - what: The health check error text for a transport failure is betterlite's own message, not httpx's str(exc).
     why: The text is only used to mark the agent unhealthy and is never returned to a client.
 out_of_scope:
-  - "The GET /v1/agents handler, its query parameters, the spend and key attach, is_public injection and the redaction call (redact_sensitive_agent_fields from B4775) belong to B4784. It redacts first, then calls filter_healthy_agents, then rank_agents_by_query."
+  - "The GET /v1/agents handler, its query parameters, the spend and key attach, is_public injection and the redaction call (redact_sensitive_agent_fields from B4775) belong to B4784. It calls filter_healthy_agents first, then rank_agents_by_query, and redacts the survivors last."
   - "handle_agent_search and the agent_search virtual tool belong to B4686 and B4684. They call search_agents and agent_search_result."
   - "router_embedder and embedding_spend_metadata in semantic_text_index.py build the real AgentEmbedders. No task at the pin owns them: B4261 injects the embedder, B4684 and B1505 name each other. The planner report lists this as an open owner."
   - "SemanticTextIndex, Embedder, EmbeddingFailed and cosine_similarity are B4261. get_async_httpx_client and the pooled client are B173."
@@ -129,7 +129,7 @@ pitfalls:
   - Only a status of 500 or more is unhealthy. A 404 or 401 from the agent url still counts as healthy.
   - An agent with an empty-string url is treated like one with no url, since LiteLLM tests the url for truthiness.
   - The gather timeout covers the whole group of probes, not each probe, and the per-probe timeout is separate (5.0 and 30.0 seconds by default).
-  - health_check runs after redaction and before ranking in the route, so ranking only sees reachable agents. Do not move the order.
+  - health_check runs before ranking and before redaction in the route, so ranking only sees reachable agents. Do not move the order.
   - agent_search_text must not read litellm_params or kill_switch, since those hold secrets that would go to the embedding provider.
 review_level: standard
 budget:

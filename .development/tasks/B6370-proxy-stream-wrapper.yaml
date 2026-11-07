@@ -25,8 +25,7 @@ description: >-
   `guardrail`, its name, and flags built from its `streaming_*` attributes). `PipelineSource` has `streamable_post_call_pipelines(request_data,
   user_api_key_dict)` (LiteLLM `_streamable_post_call_pipelines`), `gated_names(pipelines)` (`_pipeline_step_guardrail_names`),
   `merge_model_level_guardrails(request_data)` (`_check_and_merge_model_level_guardrails`) and `handle_pipeline_result(result,
-  request_data, policy_name, original_response)` (`_handle_pipeline_result`). `PipelineRunner` has `execute_steps(...)` (B3247's
-  `PipelineExecutor.execute_steps`, `mode = post_call`, with `streaming_chunks` and `endpoint_translation`). None of these functions has a
+  request_data, policy_name, original_response)` (`_handle_pipeline_result`). `PipelineRunner` has `execute_steps(&self, request: ExecuteSteps<'_, T>) -> Result<PipelineExecutionResult, PipelineExecError>`, a plain forward to B3247's `PipelineExecutor::execute_steps` with the same signature (`T` is B3661's `BaseTranslation` type; B6370 sets `mode = post_call`, `streaming_chunks` and `endpoint_translation` in the `ExecuteSteps` it builds). None of these functions has a
   task file at this commit. B124 owns them by its covers. Tests use fakes.
 
   `kind.rs`. `IteratorKind` is `Override` or `ApplyGuardrail`. `classify_iterator_kind(facts: CallbackFacts) -> Option<IteratorKind>` is the

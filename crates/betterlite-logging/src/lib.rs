@@ -28,6 +28,7 @@ pub mod dynamic_callbacks;
 pub mod dynamic_logger_cache;
 pub mod end_user;
 pub mod error;
+pub mod exporter_options;
 pub mod fields;
 pub mod finops;
 pub mod focus_records;

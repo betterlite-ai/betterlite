@@ -6,6 +6,7 @@ pub mod chat_guardrail_translation;
 pub mod completion_translation;
 pub mod embeddings_translation;
 pub mod image_translation;
+pub mod pipeline_executor;
 pub mod proxy_stream_wrapper;
 pub mod response_context;
 pub mod responses_translation;

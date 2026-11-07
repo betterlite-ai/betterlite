@@ -313,6 +313,7 @@ pub mod video_list_call;
 pub mod video_records;
 pub mod video_remix_call;
 pub mod video_remix_list_transport;
+pub mod video_router_calls;
 pub mod video_status_call;
 pub mod video_status_transport;
 pub mod videos_http_transport;
