@@ -1509,6 +1509,7 @@ dependencies = [
  "betterlite-http",
  "betterlite-prompts",
  "betterlite-redact",
+ "chrono",
  "fancy-regex 0.19.2",
  "futures-util",
  "hex",
