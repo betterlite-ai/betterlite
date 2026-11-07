@@ -72,7 +72,7 @@ fn seed_failure(policy: &Mutex<RedisFailurePolicy>, at_millis: u64) -> Option<Br
         .record_failure(Duration::from_millis(at_millis), connection_failure())
 }
 
-fn status(policy: &Mutex<RedisFailurePolicy>) -> Status {
+fn policy_status(policy: &Mutex<RedisFailurePolicy>) -> Status {
     policy
         .lock()
         .expect("the policy lock is not poisoned")
@@ -117,7 +117,7 @@ fn a_successful_call_returns_the_value_and_records_success() {
         .expect("the breaker is closed");
     assert_eq!(outcome.value, 7);
     assert_eq!(outcome.warning, None);
-    assert_eq!(status(&policy).failure_count, 0);
+    assert_eq!(policy_status(&policy).failure_count, 0);
 }
 
 #[test]
@@ -136,9 +136,9 @@ fn a_health_failure_is_counted_and_reraised() {
         }
         CallError::Open(_) => panic!("the breaker was closed"),
     }
-    let status = status(&policy);
-    assert_eq!(status.failure_count, 2);
-    assert_eq!(status.state, State::Closed);
+    let observed = policy_status(&policy);
+    assert_eq!(observed.failure_count, 2);
+    assert_eq!(observed.state, State::Closed);
 }
 
 #[test]
@@ -157,7 +157,7 @@ fn a_non_health_failure_is_reraised_without_counting() {
         }
         CallError::Open(_) => panic!("the breaker was closed"),
     }
-    assert_eq!(status(&policy).failure_count, 1);
+    assert_eq!(policy_status(&policy).failure_count, 1);
 }
 
 #[test]
@@ -171,9 +171,9 @@ fn an_async_call_returns_its_value_and_records_success() {
     .expect("the breaker is closed");
     assert_eq!(outcome.value, 7);
     assert_eq!(outcome.warning, None);
-    let status = status(&policy);
-    assert_eq!(status.failure_count, 0);
-    assert_eq!(status.state, State::Closed);
+    let observed = policy_status(&policy);
+    assert_eq!(observed.failure_count, 0);
+    assert_eq!(observed.state, State::Closed);
 }
 
 #[test]
@@ -202,7 +202,7 @@ fn a_call_that_swallows_a_health_failure_cannot_record_success() {
     assert_eq!(second.expect("the breaker is closed").value, None);
     assert_eq!(third.expect("the breaker is closed").value, None);
     assert_eq!(
-        status(&policy),
+        policy_status(&policy),
         Status {
             state: State::Open,
             generation: 1,
@@ -229,7 +229,7 @@ fn a_call_that_swallows_a_non_health_failure_still_records_success() {
     .expect("the breaker is closed");
     assert_eq!(outcome.value, 7);
     assert_eq!(
-        status(&policy).failure_count,
+        policy_status(&policy).failure_count,
         0,
         "a non-health swallow does not block the success"
     );
