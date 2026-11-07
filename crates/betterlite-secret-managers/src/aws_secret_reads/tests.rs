@@ -87,6 +87,7 @@ type Reply = Result<TransportResponse, TransportError<io::Error>>;
 struct FakeTransport {
     replies: Mutex<VecDeque<Reply>>,
     sent: Mutex<Vec<(String, String)>>,
+    targets: Mutex<Vec<Option<String>>>,
     posts: AtomicUsize,
     blocking_posts: AtomicUsize,
 }
@@ -96,6 +97,7 @@ impl FakeTransport {
         Arc::new(Self {
             replies: Mutex::new(VecDeque::from(replies)),
             sent: Mutex::new(Vec::new()),
+            targets: Mutex::new(Vec::new()),
             posts: AtomicUsize::new(0),
             blocking_posts: AtomicUsize::new(0),
         })
@@ -117,10 +119,27 @@ impl FakeTransport {
                 request.url.to_owned(),
                 String::from_utf8(request.body.to_vec()).unwrap(),
             ));
+        self.targets
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push(
+                request
+                    .headers
+                    .get("x-amz-target")
+                    .and_then(|value| value.to_str().ok())
+                    .map(str::to_owned),
+            );
     }
 
     fn sent(&self) -> Vec<(String, String)> {
         self.sent
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone()
+    }
+
+    fn targets(&self) -> Vec<Option<String>> {
+        self.targets
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .clone()
@@ -270,6 +289,7 @@ fn bootstrap_environment() -> BTreeMap<String, String> {
     BTreeMap::from([
         ("AWS_ACCESS_KEY_ID".to_owned(), "env-key".to_owned()),
         ("AWS_SECRET_ACCESS_KEY".to_owned(), "env-secret".to_owned()),
+        ("AWS_REGION".to_owned(), "eu-central-2".to_owned()),
         ("AWS_REGION_NAME".to_owned(), "us-east-1".to_owned()),
     ])
 }
@@ -348,6 +368,13 @@ async fn direct_reads_return_the_secret_string() {
         )
     );
     assert_eq!(sent[1], sent[0]);
+    assert_eq!(
+        transport.targets(),
+        [
+            Some("secretsmanager.GetSecretValue".to_owned()),
+            Some("secretsmanager.GetSecretValue".to_owned())
+        ]
+    );
 }
 
 #[tokio::test]
@@ -375,22 +402,46 @@ async fn optional_params_reach_the_direct_request() {
 
 #[tokio::test]
 async fn sync_reads_return_bootstrap_names_from_the_environment() {
+    let mut environment = bootstrap_environment();
+    environment.insert(
+        "AWS_BEDROCK_RUNTIME_ENDPOINT".to_owned(),
+        "https://bedrock-runtime.us-east-1.amazonaws.com".to_owned(),
+    );
     let transport = FakeTransport::with_replies(Vec::new());
-    let manager = manager(&transport, FakeResolver::working(), bootstrap_environment());
-    let access_key = manager
+    let configured = manager(&transport, FakeResolver::working(), environment);
+    let access_key = configured
         .sync_read_secret("AWS_ACCESS_KEY_ID", None, None, Some("gateway"))
         .unwrap();
-    let region = manager
+    let secret_key = configured
+        .sync_read_secret("AWS_SECRET_ACCESS_KEY", None, None, None)
+        .unwrap();
+    let region_name = configured
         .sync_read_secret("AWS_REGION_NAME", None, None, None)
         .unwrap();
-    let unset = manager
+    let region = configured
         .sync_read_secret("AWS_REGION", None, None, None)
         .unwrap();
+    let endpoint = configured
+        .sync_read_secret("AWS_BEDROCK_RUNTIME_ENDPOINT", None, None, None)
+        .unwrap();
     assert_eq!(access_key.unwrap().expose_secret(), "env-key");
-    assert_eq!(region.unwrap().expose_secret(), "us-east-1");
-    assert!(unset.is_none());
+    assert_eq!(secret_key.unwrap().expose_secret(), "env-secret");
+    assert_eq!(region_name.unwrap().expose_secret(), "us-east-1");
+    assert_eq!(region.unwrap().expose_secret(), "eu-central-2");
+    assert_eq!(
+        endpoint.unwrap().expose_secret(),
+        "https://bedrock-runtime.us-east-1.amazonaws.com"
+    );
     assert_eq!(transport.posts.load(Ordering::Relaxed), 0);
     assert_eq!(transport.blocking_posts.load(Ordering::Relaxed), 0);
+    let empty = FakeTransport::with_replies(vec![answer(200, br#"{"SecretString":"from-aws"}"#)]);
+    let unset = manager(&empty, FakeResolver::working(), BTreeMap::new());
+    assert!(
+        unset
+            .sync_read_secret("AWS_REGION", None, None, None)
+            .unwrap()
+            .is_none()
+    );
 }
 
 #[tokio::test]
@@ -567,6 +618,11 @@ fn primary_error_hides_the_value() {
     let secret = SecretString::from("\"sk-primary-value\"");
     let error = parse_primary_secret(Some(&secret)).unwrap_err();
     assert_eq!(error.category, Category::Data);
+    assert!(
+        error
+            .to_string()
+            .starts_with("the primary secret is not a JSON object")
+    );
     assert!(!error.to_string().contains("sk-primary-value"));
     assert!(!format!("{error:?}").contains("sk-primary-value"));
 }
@@ -582,6 +638,7 @@ async fn read_failure_log_hides_the_reply() {
         .unwrap();
     assert!(value.is_none());
     let text = logs.text();
+    assert!(text.contains("ERROR failed to read the secret"));
     assert!(text.contains("my/secret"));
     assert!(!text.contains("sk-reply-value"));
     assert_eq!(text.lines().filter(|line| !line.is_empty()).count(), 1);
@@ -634,6 +691,7 @@ async fn failed_reads_log_the_kind_of_failure(#[case] reply: PostReply, #[case] 
     assert!(value.is_none());
     let text = logs.text();
     assert_eq!(text.lines().filter(|line| !line.is_empty()).count(), 1);
+    assert!(text.contains("ERROR failed to read the secret"));
     assert!(text.contains(&format!("failure=\"{failure}\"")));
 }
 
