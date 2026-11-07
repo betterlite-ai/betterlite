@@ -146,44 +146,50 @@ pub(super) async fn stream_missing_variant_keys_match_the_sdk_dump() {
 }
 
 async fn missing_variant_events() -> Vec<RunEvent> {
-    let body = format!(
-        "{}{}{}{}{}{}{}{}data: [DONE]\n\n",
-        frame("thread.run.step.created", STEP_CREATED),
-        frame("thread.run.step.delta", STEP_DELTA_FUNCTION_MISSING),
-        frame("thread.run.step.delta", STEP_DELTA_CODE_MISSING),
-        frame("thread.run.step.delta", STEP_DELTA_MESSAGE_CREATION),
-        frame("thread.run.step.completed", STEP_MESSAGE_CREATION),
-        frame("thread.message.created", MESSAGE_CREATED),
-        frame("thread.message.delta", MESSAGE_DELTA_PARTIAL_BLOCKS),
-        frame("thread.created", THREAD_EMPTY_RESOURCES),
-    );
+    let frames = [
+        ("thread.run.step.created", STEP_CREATED),
+        ("thread.run.step.delta", STEP_DELTA_FUNCTION_MISSING),
+        ("thread.run.step.delta", STEP_DELTA_CODE_MISSING),
+        ("thread.run.step.delta", STEP_DELTA_MESSAGE_CREATION),
+        ("thread.run.step.completed", STEP_MESSAGE_CREATION),
+        ("thread.message.created", MESSAGE_CREATED),
+        ("thread.message.delta", MESSAGE_DELTA_PARTIAL_BLOCKS),
+        ("thread.created", THREAD_EMPTY_RESOURCES),
+    ];
+    let mut body = String::new();
+    for (name, data) in frames {
+        body.push_str(&frame(name, data));
+    }
+    body.push_str("data: [DONE]\n\n");
     let events = stream_result(&body).await.unwrap();
     assert_eq!(events.len(), 8);
     events
 }
 
+fn data_value(event: &RunEvent) -> Value {
+    let value = serde_json::to_value(event).unwrap();
+    let data = value.get("data").cloned();
+    data.unwrap_or_default()
+}
+
 fn assert_step_variants(events: &[RunEvent]) {
     assert!(events.len() > 4);
-    let function = serde_json::to_value(&events[1]).unwrap();
-    assert_eq!(
-        function.pointer("/data/delta/step_details/tool_calls/0/function"),
-        Some(&Value::Null)
+    let function = parse(
+        r#"{"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"tool_calls","tool_calls":[{"index":0,"type":"function","id":"c","function":null}]}}}"#,
     );
-    let code = serde_json::to_value(&events[2]).unwrap();
-    assert_eq!(
-        code.pointer("/data/delta/step_details/tool_calls/0/code_interpreter"),
-        Some(&Value::Null)
+    assert_eq!(data_value(&events[1]), function);
+    let code = parse(
+        r#"{"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"tool_calls","tool_calls":[{"index":0,"type":"code_interpreter","id":"c","code_interpreter":null}]}}}"#,
     );
-    let delta = serde_json::to_value(&events[3]).unwrap();
-    assert_eq!(
-        delta.pointer("/data/delta/step_details/message_creation/message_id"),
-        Some(&Value::Null)
+    assert_eq!(data_value(&events[2]), code);
+    let delta = parse(
+        r#"{"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"message_creation","message_creation":{"message_id":null}}}}"#,
     );
-    let step = serde_json::to_value(&events[4]).unwrap();
-    assert_eq!(
-        step.pointer("/data/step_details/message_creation/message_id"),
-        Some(&Value::Null)
+    assert_eq!(data_value(&events[3]), delta);
+    let step = parse(
+        r#"{"id":"step_1","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"message_creation","status":"completed","step_details":{"type":"message_creation","message_creation":{"message_id":null}},"cancelled_at":null,"completed_at":null,"expired_at":null,"failed_at":null,"last_error":null,"metadata":null,"usage":null}"#,
     );
+    assert_eq!(data_value(&events[4]), step);
 }
 
 fn assert_content_variants(events: &[RunEvent]) {
