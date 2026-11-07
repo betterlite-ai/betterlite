@@ -1,0 +1,15 @@
+kind: helper
+name: responses-bridge-gpt5-summary
+call:
+  b5651:
+    request:
+      model: gpt-5
+      custom_llm_provider: openai
+      reasoning_effort: medium
+      reasoning_summary: auto
+    capabilities:
+      resolved_openai_api_base: https://api.openai.com/v1
+      is_gpt_5_model: true
+env: {}
+compare:
+  ignore: []

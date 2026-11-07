@@ -1,0 +1,17 @@
+kind: helper
+name: responses-bridge-gpt5-tools
+call:
+  b5651:
+    request:
+      model: gpt-5.4
+      custom_llm_provider: openai
+      tools:
+        - type: function
+          function: {name: lookup, parameters: {}}
+    capabilities:
+      resolved_openai_api_base: https://api.openai.com/v1
+      is_gpt_5_model: true
+      is_gpt_5_4_plus_model: true
+env: {}
+compare:
+  ignore: []

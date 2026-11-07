@@ -1,0 +1,19 @@
+kind: helper
+name: responses-bridge-foundry
+call:
+  b5651:
+    request:
+      model: gpt-5.6
+      custom_llm_provider: azure_ai
+      tools:
+        - type: function
+          function: {name: lookup}
+    capabilities:
+      foundry_supports_native_responses: true
+      foundry_chat_rejects_function_tools: false
+      resolved_openai_api_base: https://example.invalid/openai/v1
+      is_gpt_5_model: true
+      is_gpt_5_4_plus_model: true
+env: {}
+compare:
+  ignore: []
