@@ -1,3 +1,5 @@
+use std::fs;
+
 use rstest::rstest;
 use rust_decimal::Decimal;
 use serde_json::Value;
@@ -208,7 +210,7 @@ fn an_sdk_http_case_cannot_declare_a_comparison_rule(#[case] rule: &str) {
     );
     let directory = tempfile::tempdir().unwrap();
     let path = directory.path().join("case.yaml");
-    std::fs::write(&path, text).unwrap();
+    fs::write(&path, text).unwrap();
     let error = load_sdk_http_cases(&[path]).unwrap_err();
     assert!(error.to_string().contains("compare.numeric"), "{error}");
 }
