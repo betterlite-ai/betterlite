@@ -1,0 +1,9 @@
+kind: helper
+name: invalid-id
+call:
+  tokenizer_engine:
+    operation: decode
+    engine: cl100k_base
+    tokens: [999999999]
+env: {}
+compare: {ignore: []}
