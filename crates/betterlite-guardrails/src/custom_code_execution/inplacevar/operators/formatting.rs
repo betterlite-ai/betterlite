@@ -85,6 +85,7 @@ fn render(text: &str, left: &Value, right: &Value, bytes: bool) -> Result<String
     let mut arguments = Arguments::new(right);
     let characters: Vec<char> = text.chars().collect();
     let mut output = String::new();
+    let mut padded = 0_usize;
     let mut index = 0_usize;
     while let Some(character) = characters.get(index).copied() {
         index = index.saturating_add(1);
@@ -100,15 +101,32 @@ fn render(text: &str, left: &Value, right: &Value, bytes: bool) -> Result<String
         let (spec, next) = parse_spec(&characters, index, left, right)?;
         index = next;
         let value = arguments.take(&spec, left, right)?;
-        let rendered = convert(&spec, value, bytes)
+        let body = convert(&spec, value, bytes)
             .ok_or_else(|| unsupported(InplaceOp::Modulo, left, right))?;
-        output.push_str(&rendered);
+        let padding = spec.width.saturating_sub(body.chars().count());
+        padded = padded.saturating_add(padding);
+        if padded > MAX_REPEATED_ITEMS {
+            return Err(InplaceError::RepetitionTooLong);
+        }
+        output.push_str(&" ".repeat(padding));
+        output.push_str(&body);
     }
-    let lenient = matches!(right, Value::Dict(_) | Value::List(_) | Value::Bytes(_));
-    if arguments.used < arguments.sequence.len() && !lenient {
+    if arguments.used < arguments.sequence.len() && !leftover_allowed(right, bytes) {
         return Err(unsupported(InplaceOp::Modulo, left, right));
     }
     Ok(output)
+}
+const fn leftover_allowed(right: &Value, bytes: bool) -> bool {
+    match right {
+        Value::Dict(_) | Value::List(_) => true,
+        Value::Bytes(_) => !bytes,
+        Value::None
+        | Value::Bool(_)
+        | Value::Int(_)
+        | Value::Float(_)
+        | Value::Str(_)
+        | Value::Tuple(_) => false,
+    }
 }
 fn parse_key(characters: &[char], index: usize) -> Option<(Option<String>, usize)> {
     if characters.get(index) != Some(&'(') {
@@ -152,26 +170,21 @@ fn parse_spec(
                 symbol: InplaceOp::Modulo.symbol(),
             })?
     };
-    if width > MAX_REPEATED_ITEMS {
-        return Err(InplaceError::RepetitionTooLong);
-    }
-    while matches!(characters.get(index), Some('h' | 'l' | 'L')) {
+    if matches!(characters.get(index), Some('h' | 'l' | 'L')) {
         index = index.saturating_add(1);
     }
     let kind = *characters.get(index).ok_or_else(unsupported_template)?;
     Ok((Spec { key, width, kind }, index.saturating_add(1)))
 }
 fn convert(spec: &Spec, value: &Value, bytes: bool) -> Option<String> {
-    let body = match spec.kind {
-        's' if bytes => return None,
-        's' => display(value, false)?,
-        'r' => display(value, true)?,
-        'd' | 'i' => integer(value)?.to_string(),
-        'x' => hex(integer(value)?),
-        _ => return None,
-    };
-    let padding = spec.width.saturating_sub(body.chars().count());
-    Some(format!("{}{body}", " ".repeat(padding)))
+    match spec.kind {
+        's' if bytes => None,
+        's' => display(value, false),
+        'r' => display(value, true),
+        'd' | 'i' => Some(integer(value)?.to_string()),
+        'x' => Some(hex(integer(value)?)),
+        _ => None,
+    }
 }
 fn hex(number: i64) -> String {
     if number < 0 {

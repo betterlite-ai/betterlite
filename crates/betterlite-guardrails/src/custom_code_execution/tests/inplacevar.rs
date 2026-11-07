@@ -604,6 +604,9 @@ fn a_format_width_too_big_for_usize_overflows() {
 }
 
 #[rstest]
+#[case::double_long("%lld", Value::Int(1))]
+#[case::double_short("%hhd", Value::Int(1))]
+#[case::mixed_modifiers("%lhd", Value::Int(1))]
 #[case::zero_flag("%05d", Value::Int(1))]
 #[case::zero_flag_hex("%03x", Value::Int(1))]
 #[case::star_width("%*d", Value::Tuple(vec![Value::Int(1), Value::Int(2)]))]
@@ -624,6 +627,7 @@ fn percent_flags_the_formatter_does_not_build_are_unsupported(
 #[rstest]
 #[case::percent_s(b"%s")]
 #[case::non_utf8(b"\xff%d")]
+#[case::double_long(b"%lld")]
 fn bytes_percent_s_and_non_utf8_templates_are_unsupported(#[case] template: &[u8]) {
     assert!(matches!(
         inplacevar(
@@ -662,6 +666,42 @@ fn a_list_or_bytes_operand_may_go_unused(#[case] template: Value, #[case] operan
 }
 
 #[test]
+fn a_bytes_operand_may_not_go_unused_by_a_bytes_template() {
+    assert!(matches!(
+        inplacevar(
+            InplaceOp::Modulo,
+            &Value::Bytes(b"plain".to_vec()),
+            &Value::Bytes(b"x".to_vec())
+        ),
+        Err(InplaceError::UnsupportedOperand { .. })
+    ));
+}
+
+#[test]
+fn padding_is_capped_across_all_conversions_of_a_template() {
+    let mapping = Value::Dict(IndexMap::from([(
+        "a".to_owned(),
+        Value::Str("x".to_owned()),
+    )]));
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Modulo,
+            &Value::Str("%(a)600000s".repeat(2)),
+            &mapping
+        ),
+        Err(InplaceError::RepetitionTooLong)
+    );
+    assert_eq!(
+        inplacevar(
+            InplaceOp::Modulo,
+            &Value::Str("%(a)3s%(a)3s".to_owned()),
+            &mapping
+        ),
+        Ok(Value::Str("  x  x".to_owned()))
+    );
+}
+
+#[test]
 fn a_true_division_rounds_to_nearest_even_and_keeps_the_sign_of_zero() {
     assert_eq!(
         inplacevar(
@@ -695,5 +735,19 @@ fn a_negative_power_rounds_a_large_base_to_a_double_first() {
             &Value::Int(-1)
         ),
         Ok(Value::Float(1.110_223_024_625_156_5e-16))
+    );
+}
+
+#[rstest]
+#[case::max(i64::MAX, 0x3c00_0000_0000_0000)]
+#[case::min(i64::MIN, 0xbc00_0000_0000_0000)]
+#[case::just_under_max(9_223_372_036_854_775_296, 0x3c00_0000_0000_0000)]
+fn a_negative_power_of_a_base_that_rounds_to_two_to_the_63_still_divides(
+    #[case] base: i64,
+    #[case] bits: u64,
+) {
+    assert_eq!(
+        inplacevar(InplaceOp::Power, &Value::Int(base), &Value::Int(-1)),
+        Ok(Value::Float(f64::from_bits(bits)))
     );
 }

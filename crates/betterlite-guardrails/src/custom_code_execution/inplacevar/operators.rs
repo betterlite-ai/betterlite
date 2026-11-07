@@ -78,12 +78,12 @@ fn double_bits(numerator: u128, denominator: u128) -> Option<u64> {
     let fraction = u64::try_from(mantissa.checked_sub(1_u128 << 52_u32)?).ok()?;
     Some(biased.checked_shl(52)? | fraction)
 }
-fn float_quotient(first: i64, second: i64) -> Result<Value, InplaceError> {
-    let sign = u64::from((first < 0) != (second < 0)) << 63_u32;
-    let magnitude = match (first.unsigned_abs(), second.unsigned_abs()) {
+fn float_quotient(negative: bool, numerator: u64, denominator: u64) -> Result<Value, InplaceError> {
+    let sign = u64::from(negative) << 63_u32;
+    let magnitude = match (numerator, denominator) {
         (_, 0) => return Err(InplaceError::DivideByZero),
         (0, _) => Some(0),
-        (numerator, divisor) => double_bits(u128::from(numerator), u128::from(divisor)),
+        (top, bottom) => double_bits(u128::from(top), u128::from(bottom)),
     };
     magnitude
         .map(|bits| Value::Float(f64::from_bits(sign | bits)))
@@ -91,23 +91,18 @@ fn float_quotient(first: i64, second: i64) -> Result<Value, InplaceError> {
             symbol: InplaceOp::TrueDivide.symbol(),
         })
 }
-fn nearest_double_integer(number: i64) -> Option<i64> {
+fn nearest_double_magnitude(number: i64) -> Option<u64> {
     let magnitude = number.unsigned_abs();
     let Some(log) = magnitude.checked_ilog2().filter(|log| *log > 52) else {
-        return Some(number);
+        return Some(magnitude);
     };
     let drop = log.checked_sub(52)?;
     let kept = magnitude.checked_shr(drop)?;
     let tail = magnitude.checked_sub(kept.checked_shl(drop)?)?;
     let half = 1_u64.checked_shl(drop.checked_sub(1)?)?;
     let round_up = tail > half || (tail == half && kept & 1 == 1);
-    let rounded = kept
-        .checked_add(u64::from(round_up))?
-        .checked_mul(1_u64.checked_shl(drop)?)?;
-    if number < 0 {
-        return 0_i64.checked_sub_unsigned(rounded);
-    }
-    i64::try_from(rounded).ok()
+    kept.checked_add(u64::from(round_up))?
+        .checked_mul(1_u64.checked_shl(drop)?)
 }
 fn power(op: InplaceOp, first: i64, second: i64) -> Result<Value, InplaceError> {
     if second >= 0 {
@@ -119,12 +114,13 @@ fn power(op: InplaceOp, first: i64, second: i64) -> Result<Value, InplaceError> 
     let magnitude = second.unsigned_abs();
     match u32::try_from(magnitude) {
         Ok(exponent) => {
-            let symbol = op.symbol();
-            let base = nearest_double_integer(first).ok_or(InplaceError::Overflow { symbol })?;
-            let denominator = base
-                .checked_pow(exponent)
-                .ok_or(InplaceError::Overflow { symbol })?;
-            float_quotient(1, denominator)
+            let overflow = || InplaceError::Overflow {
+                symbol: op.symbol(),
+            };
+            let base = nearest_double_magnitude(first).ok_or_else(overflow)?;
+            let denominator = base.checked_pow(exponent).ok_or_else(overflow)?;
+            let negative = first < 0 && !magnitude.is_multiple_of(2);
+            float_quotient(negative, 1, denominator)
         }
         Err(_error) => match first {
             0 => Err(InplaceError::DivideByZero),
@@ -169,7 +165,11 @@ pub(super) fn numeric(op: InplaceOp, left: &Value, right: &Value) -> Result<Valu
             floor_and_modulo(op, first, second).map(|(_, value)| Value::Int(value))
         }
         InplaceOp::Power => power(op, first, second),
-        InplaceOp::TrueDivide => float_quotient(first, second),
+        InplaceOp::TrueDivide => float_quotient(
+            (first < 0) != (second < 0),
+            first.unsigned_abs(),
+            second.unsigned_abs(),
+        ),
         InplaceOp::Add
         | InplaceOp::Subtract
         | InplaceOp::Multiply
