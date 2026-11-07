@@ -37,6 +37,7 @@ async fn project_resolution_posts_to_the_sync_endpoint_and_caches_the_id() {
         requests[0].headers["authorization"],
         format!("Bearer {KEY}")
     );
+    assert!(requests[0].sensitive.contains("authorization"));
     assert_eq!(requests[0].headers["content-type"], "application/json");
     assert_eq!(
         requests[1].url,

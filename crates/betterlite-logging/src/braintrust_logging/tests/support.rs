@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::future::{Future, ready};
 use std::sync::{Arc, Mutex};
 
@@ -67,6 +67,7 @@ pub(crate) enum ReplayError {
 pub(crate) struct RecordedRequest {
     pub(crate) url: String,
     pub(crate) headers: BTreeMap<String, String>,
+    pub(crate) sensitive: BTreeSet<String>,
     pub(crate) body: Json,
 }
 
@@ -110,11 +111,15 @@ impl Replay {
 
     fn record(&self, request: &PostRequest) -> Result<PostResponse, ReplayError> {
         let body = serde_json::from_slice::<Json>(&request.body).map_err(ReplayError::Body)?;
+        let mut sensitive = BTreeSet::new();
         let headers = request
             .headers
             .iter()
             .map(|(name, value)| {
                 let text = value.to_str().map_err(|_source| ReplayError::Header)?;
+                if value.is_sensitive() {
+                    sensitive.insert(name.as_str().to_owned());
+                }
                 Ok((name.as_str().to_owned(), text.to_owned()))
             })
             .collect::<Result<BTreeMap<String, String>, ReplayError>>()?;
@@ -124,6 +129,7 @@ impl Replay {
             .push(RecordedRequest {
                 url: request.url.to_string(),
                 headers,
+                sensitive,
                 body,
             });
         let replied = self
