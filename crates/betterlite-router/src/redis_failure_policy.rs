@@ -77,6 +77,7 @@ pub struct RedisFailurePolicy {
     timeout_count: u32,
     timeout_streak_started: Option<Duration>,
     opened_at: Duration,
+    probe_in_flight: bool,
     timeout_log: TimeoutLogThrottle,
 }
 
@@ -94,6 +95,7 @@ impl RedisFailurePolicy {
             timeout_count: 0,
             timeout_streak_started: None,
             opened_at: Duration::ZERO,
+            probe_in_flight: false,
             timeout_log: TimeoutLogThrottle {
                 interval: settings.timeout_log_interval,
                 last_logged_at: None,
@@ -122,11 +124,19 @@ impl RedisFailurePolicy {
         }
         let admitted = match self.state {
             State::Closed => true,
-            State::HalfOpen => false,
+            State::HalfOpen => {
+                if self.probe_in_flight {
+                    false
+                } else {
+                    self.probe_in_flight = true;
+                    true
+                }
+            }
             State::Open => {
                 let elapsed = now.saturating_sub(self.opened_at);
                 if elapsed > self.settings.recovery_timeout {
                     self.set_state(State::HalfOpen);
+                    self.probe_in_flight = true;
                     true
                 } else {
                     false
@@ -174,6 +184,12 @@ impl RedisFailurePolicy {
             return None;
         }
         self.record_success()
+    }
+
+    pub fn release(&mut self, admission: Admission) {
+        if self.state == State::HalfOpen && admission.generation == self.generation {
+            self.probe_in_flight = false;
+        }
     }
 
     #[must_use]
