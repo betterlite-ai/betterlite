@@ -48,17 +48,32 @@ fn keeps_explicit_step_values() {
     assert_eq!(step.modify_response_message.as_deref(), Some("masked"));
 }
 
+const INVALID_ACTION: &str =
+    "Invalid action 'deny'. Must be one of: ['allow', 'block', 'modify_response', 'next']";
+
 #[rstest]
 #[case::on_fail(r#"{"mode": "pre_call", "steps": [{"guardrail": "pii", "on_fail": "deny"}]}"#)]
 #[case::on_pass(r#"{"mode": "pre_call", "steps": [{"guardrail": "pii", "on_pass": "deny"}]}"#)]
 #[case::on_error(r#"{"mode": "pre_call", "steps": [{"guardrail": "pii", "on_error": "deny"}]}"#)]
 fn rejects_unknown_actions(#[case] source: &str) {
     let error = serde_json::from_str::<GuardrailPipeline>(source).unwrap_err();
-    assert_eq!(
-        error.to_string(),
-        "Invalid action 'deny'. Must be one of: ['allow', 'block', 'modify_response', 'next']"
+    assert!(
+        error.to_string().starts_with(INVALID_ACTION),
+        "unexpected error text: {error}"
     );
 }
+
+#[test]
+fn the_typed_action_error_carries_the_exact_litellm_text() {
+    assert_eq!(
+        PipelineAction::try_from("deny".to_owned())
+            .unwrap_err()
+            .to_string(),
+        INVALID_ACTION
+    );
+}
+
+const INVALID_MODE: &str = "Invalid mode 'during_call'. Must be one of: ['post_call', 'pre_call']";
 
 #[test]
 fn rejects_an_unknown_mode() {
@@ -66,9 +81,19 @@ fn rejects_an_unknown_mode() {
         r#"{"mode": "during_call", "steps": [{"guardrail": "pii"}]}"#,
     )
     .unwrap_err();
+    assert!(
+        error.to_string().starts_with(INVALID_MODE),
+        "unexpected error text: {error}"
+    );
+}
+
+#[test]
+fn the_typed_mode_error_carries_the_exact_litellm_text() {
     assert_eq!(
-        error.to_string(),
-        "Invalid mode 'during_call'. Must be one of: ['post_call', 'pre_call']"
+        PipelineMode::try_from("during_call".to_owned())
+            .unwrap_err()
+            .to_string(),
+        INVALID_MODE
     );
 }
 
