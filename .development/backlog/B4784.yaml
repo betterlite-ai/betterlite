@@ -2,7 +2,7 @@ id: B4784
 milestone: M9 agents and mcp
 title: List and inspect agents with spend, keys and model visibility
 status: todo
-depends_on: [B003, B052, B700, B720, B726, B732, B864, B2314, B4770, B4775, B4776, B4780, B4783]
+depends_on: [B003, B052, B700, B720, B726, B732, B864, B2314, B4770, B4775, B4776, B4777, B4780, B4783]
 file: tasks/B4784-agent-list-inspect.yaml
 covers:
   - "litellm/proxy/agent_endpoints/endpoints.py"

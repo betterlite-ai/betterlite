@@ -15,6 +15,7 @@ description: >-
   is a secret type, never logged or put into an error text. `HealthProbeBackend` is an async trait with one
   method per call below. `HealthProbeError` is this module's error enum and holds a source error from the
   backend without losing it.
+  `run_health_probe` returns `Result<HealthProbeReply, HealthProbeError>`; `HealthProbeReply` has one field, `hidden_headers: BTreeMap<String, String>`, the provider response headers from the reply's hidden_params.headers, and it is empty when hidden_params or its headers are missing or null. The wildcard probe still returns the empty `HealthCheckResponse` and leaves this field empty.
 
   Modes. `plan_health_probe(mode, model, custom_llm_provider, params, prompt, input) -> Option<HealthProbePlan>`
   is get_mode_handlers. It returns None for a mode outside the 14 names: chat, completion, embedding,
@@ -164,6 +165,8 @@ dod:
     proof: [image-edit-tests, oracle, helper-python]
   - text: The health response keeps only the three rate limit and region headers when they hold a value, and the health PNG decodes to a 512 by 512 PNG.
     proof: [response-tests, oracle, helper-python]
+  - text: run_health_probe returns a HealthProbeReply whose hidden_headers holds the reply's hidden_params.headers and is empty when they are missing or null.
+    proof: [response-tests]
   - text: Helper corpus cases replay through the shared helper-case parser.
     proof: [helper-case-corpus]
 
