@@ -21,7 +21,7 @@ use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
 use tokio::net::TcpListener;
 use tokio::sync::Notify;
 use tokio::task::JoinSet;
-use tokio::time::sleep;
+use tokio::time::{sleep, timeout};
 use tracing::subscriber::set_default;
 use uuid::Uuid;
 
@@ -131,7 +131,10 @@ fn executor(
 }
 
 async fn provider(listener: TcpListener, status: u16, body: &str, delay: Duration) -> String {
-    let (mut stream, _) = listener.accept().await.unwrap();
+    let (mut stream, _) = timeout(Duration::from_secs(5), listener.accept())
+        .await
+        .expect("no request reached the provider")
+        .unwrap();
     let mut received = Vec::new();
     while !received.ends_with(b"\r\n\r\n") {
         received.push(stream.read_u8().await.unwrap());

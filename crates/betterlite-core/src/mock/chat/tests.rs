@@ -320,6 +320,22 @@ fn a_choice_count_above_the_cap_is_a_typed_failure() {
 }
 
 #[test]
+fn a_choice_count_at_the_cap_is_answered() {
+    let value = MockResponse::Text(String::from("abc"));
+    let plan = MockPlan {
+        response: Some(&value),
+        tool_calls: None,
+        choice_count: Some(MAX_MOCK_CHOICES),
+        prompt_tokens: None,
+    };
+    let built = response(&plan, defaults(), "gpt-4o", "id", 1).unwrap();
+    assert_eq!(
+        u32::try_from(built.choices.len()).unwrap(),
+        MAX_MOCK_CHOICES
+    );
+}
+
+#[test]
 fn tool_calls_fill_litellm_defaults() {
     let value = MockResponse::Text(String::from("abc"));
     let calls = vec![MockToolCall {

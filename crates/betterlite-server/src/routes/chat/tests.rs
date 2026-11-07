@@ -134,6 +134,7 @@ fn header<'map>(headers: &'map HeaderMap, name: &str) -> Option<&'map str> {
 
 #[derive(Deserialize)]
 struct MockAnswer {
+    created: u64,
     model: String,
     choices: Vec<MockChoice>,
     usage: MockUsage,
@@ -204,6 +205,7 @@ async fn mock_calls_behavior_tests_behavior() {
     let answer: MockAnswer = serde_json::from_slice(&body).unwrap();
     // a body model restamps the answer, and the stripped deployment model is the fallback
     assert_eq!(answer.model, "g");
+    assert!(answer.created > 1_700_000_000, "{}", answer.created);
     assert_eq!(
         answer
             .choices

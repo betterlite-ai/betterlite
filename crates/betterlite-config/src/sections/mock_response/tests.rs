@@ -6,6 +6,7 @@ use rstest::rstest;
 
 use crate::loader::{ConfigError, ConfigLoader};
 
+use super::failure::MockError;
 use super::{
     MockChatChoice, MockChatMessage, MockChatObject, MockResponse, MockToolCall, MockUsage,
     Settings,
@@ -233,4 +234,20 @@ fn rejects_an_invalid_usage_token_count() {
         load("model_list: []\n", &environment),
         Err(ConfigError::Environment { .. })
     ));
+}
+
+#[rstest]
+#[case::rate_limit(MockError::RateLimit, Some(429))]
+#[case::context_window(MockError::ContextWindowExceeded, Some(400))]
+#[case::content_filter(MockError::ContentFilter, Some(400))]
+#[case::object_stream(MockError::ObjectStream, Some(400))]
+#[case::too_many_choices(MockError::TooManyChoices { count: 129, limit: 128 }, Some(400))]
+#[case::internal(MockError::InternalServerError, Some(500))]
+#[case::wrong_type(MockError::WrongType { field: "mock_response" }, Some(500))]
+#[case::tool_calls_without_choice(MockError::ToolCallsWithoutChoice, Some(500))]
+#[case::streaming(MockError::Streaming, Some(529))]
+#[case::timeout(MockError::Timeout, Some(408))]
+#[case::embedding(MockError::EmbeddingFailure, None)]
+fn a_mock_error_carries_the_litellm_status(#[case] error: MockError, #[case] status: Option<u16>) {
+    assert_eq!(error.status(), status);
 }

@@ -12,7 +12,10 @@ use rstest::rstest;
 use serde_json::Value;
 use tracing::subscriber::with_default;
 
-use super::{ChatRequest, MessageContent, RequestError, Role, Stop, ToolChoice, client_mock};
+use super::{
+    ChatRequest, MessageContent, RequestError, Role, Stop, ToolChoice, choice_finish_reason,
+    client_mock, mock_model,
+};
 
 #[test]
 fn parses_typed_fields_and_keeps_unknown_parameters_for_forwarding() {
@@ -178,4 +181,29 @@ fn refuses_bodies_that_are_not_chat_requests(#[case] body: &str) {
 fn replays_the_chat_request_corpus(#[files("fuzz/corpus/chat_request/*")] path: PathBuf) {
     let bytes = fs::read(path).unwrap();
     let _parsed = ChatRequest::parse(&bytes);
+}
+
+#[rstest]
+#[case::prefixed("openai/gpt-4o", "gpt-4o")]
+#[case::bare("gpt-4o", "gpt-4o")]
+#[case::nested("azure/eu/gpt-4o", "eu/gpt-4o")]
+fn mock_model_strips_the_provider_prefix(#[case] given: &str, #[case] expected: &str) {
+    assert_eq!(mock_model(given), expected);
+}
+
+#[rstest]
+#[case::absent(None, "stop", None)]
+#[case::kept(Some("stop"), "stop", None)]
+#[case::mapped(Some("max_tokens"), "length", Some("max_tokens"))]
+#[case::tool_use(Some("tool_use"), "tool_calls", Some("tool_use"))]
+fn choice_finish_reason_keeps_the_raw_value_when_mapped(
+    #[case] given: Option<&str>,
+    #[case] expected: &str,
+    #[case] native: Option<&str>,
+) {
+    let (reason, extra) = choice_finish_reason(given);
+    assert_eq!(reason, expected);
+    let kept = extra.get("native_finish_reason").and_then(Value::as_str);
+    assert_eq!(kept, native);
+    assert_eq!(extra.len(), usize::from(native.is_some()));
 }
