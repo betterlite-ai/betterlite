@@ -565,7 +565,7 @@ fn a_cancelled_call_records_no_success() {
         .expect("the policy lock is not poisoned")
         .record_failure(millis(0), failure(FailureClass::Timeout));
     assert_eq!(opened, None);
-    cancel_after_one_poll(run_async(&policy, &clock, "get", || PendingCall));
+    cancel_after_one_poll(run_async(&policy, &clock, "get", |_guard| PendingCall));
     let observed = policy
         .lock()
         .expect("the policy lock is not poisoned")

@@ -1,6 +1,5 @@
-use std::future::{Future, ready};
-use std::sync::{Mutex, PoisonError};
-use std::task::{Context, Poll, Waker};
+use std::future::Future;
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use super::classify::Failure;
@@ -28,38 +27,58 @@ pub struct CallOutcome<T> {
     pub warning: Option<BreakerEvent>,
 }
 
-// the lock is released around the call, so a concurrent caller and the call itself may use the policy
-struct CallScope<'policy, C: ?Sized> {
+// the policy lock is released around the call, so a concurrent caller and the call itself may use it
+pub struct CallGuard<'policy, C: ?Sized> {
     policy: &'policy Mutex<RedisFailurePolicy>,
     clock: &'policy C,
-    admission: Admission,
+    admission: Arc<Mutex<Admission>>,
 }
 
-impl<'policy, C> CallScope<'policy, C>
+impl<C: ?Sized> Clone for CallGuard<'_, C> {
+    fn clone(&self) -> Self {
+        Self {
+            policy: self.policy,
+            clock: self.clock,
+            admission: Arc::clone(&self.admission),
+        }
+    }
+}
+
+impl<'policy, C> CallGuard<'policy, C>
 where
     C: Fn() -> Duration + ?Sized,
 {
-    fn enter(
+    pub fn enter(
         policy: &'policy Mutex<RedisFailurePolicy>,
         clock: &'policy C,
         operation: &str,
     ) -> Result<Self, CircuitOpenError> {
-        let admission = {
-            let mut breaker = policy.lock().unwrap_or_else(PoisonError::into_inner);
-            breaker.admit(clock(), operation)?
-        };
+        let admission = policy
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .admit(clock(), operation)?;
         Ok(Self {
             policy,
             clock,
-            admission,
+            admission: Arc::new(Mutex::new(admission)),
         })
     }
 
-    fn settle<T, E>(&self, result: Result<T, E>) -> Result<CallOutcome<T>, CallError<E>>
+    pub fn swallow(&self, failure: Failure<'_>) -> Option<BreakerEvent> {
+        let mut admission = self
+            .admission
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let mut policy = self.policy.lock().unwrap_or_else(PoisonError::into_inner);
+        policy.record_swallowed_failure(&mut admission, (self.clock)(), failure)
+    }
+
+    pub fn call<T, E, F>(&self, call: F) -> Result<CallOutcome<T>, CallError<E>>
     where
+        F: FnOnce(&Self) -> Result<T, E>,
         E: RedisCallError,
     {
-        match result {
+        match call(self) {
             Ok(value) => Ok(CallOutcome {
                 value,
                 warning: self.finish(),
@@ -72,10 +91,14 @@ where
     }
 
     fn finish(&self) -> Option<BreakerEvent> {
+        let admission = *self
+            .admission
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
         self.policy
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .finish(self.admission)
+            .finish(admission)
     }
 
     fn record<E>(&self, error: &E) -> Option<BreakerEvent>
@@ -83,49 +106,26 @@ where
         E: RedisCallError,
     {
         let failure = error.failure()?;
-        let mut breaker = self.policy.lock().unwrap_or_else(PoisonError::into_inner);
-        breaker.record_failure((self.clock)(), failure)
+        self.policy
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .record_failure((self.clock)(), failure)
     }
 }
 
-pub fn run<T, E, F>(
-    policy: &Mutex<RedisFailurePolicy>,
-    clock: &(dyn Fn() -> Duration + Sync),
+pub async fn run_async<'policy, T, E, F, Fut, C>(
+    policy: &'policy Mutex<RedisFailurePolicy>,
+    clock: &'policy C,
     operation: &str,
-    call: F,
+    invoke: F,
 ) -> Result<CallOutcome<T>, CallError<E>>
 where
-    F: FnOnce() -> Result<T, E> + Send,
-    T: Send,
-    E: RedisCallError + Send,
-{
-    let mut future = Box::pin(run_async(policy, clock, operation, || ready(call())));
-    let waker = Waker::noop();
-    let mut context = Context::from_waker(waker);
-    // the sync call is ready on its first poll, so this loop ends after one pass
-    loop {
-        if let Poll::Ready(output) = future.as_mut().poll(&mut context) {
-            return output;
-        }
-    }
-}
-
-pub async fn run_async<T, E, F, Fut, C>(
-    policy: &Mutex<RedisFailurePolicy>,
-    clock: &C,
-    operation: &str,
-    call: F,
-) -> Result<CallOutcome<T>, CallError<E>>
-where
-    F: FnOnce() -> Fut + Send,
+    F: FnOnce(CallGuard<'policy, C>) -> Fut + Send,
     Fut: Future<Output = Result<T, E>> + Send,
     E: RedisCallError,
     C: Fn() -> Duration + Sync + ?Sized,
 {
-    let scope = match CallScope::enter(policy, clock, operation) {
-        Ok(scope) => scope,
-        Err(error) => return Err(CallError::Open(error)),
-    };
-    let result = call().await;
-    scope.settle(result)
+    let guard = CallGuard::enter(policy, clock, operation).map_err(CallError::Open)?;
+    let result = invoke(guard.clone()).await;
+    guard.call(|_| result)
 }
