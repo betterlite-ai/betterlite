@@ -1,0 +1,136 @@
+id: B039
+title: Maritalk, Nadir, OVHCloud and M to Z compatible provider execution
+description: >-
+  Compose the M to Z compatible provider leaves behind B010's closed Provider and B678's operation extension points, using
+  compatible_providers_m_z in betterlite-provider and betterlite-core. The leaves are B6410 (Maritalk, Meta Llama,
+  Moonshot, Morph, Nadir, Nebius, Novita, Nscale, v0, Wandb, Z.ai chat), B6411 (Sail chat and Responses), B6412 (OVHCloud
+  chat, embedding and transcription, Scaleway transcription), B6413 (SambaNova chat and embedding) and B6414 (Meta Muse
+  realtime). Register the arms through the extension point that B038's compatible_providers module leaves for further
+  providers, and bind the descriptors of B1424 that belong to M to Z (meta, nano-gpt, poe, publicai, sail, sarvam, scx-ai,
+  stima, synthetic, tensormesh, venice and the others in the table that start with m to z) through B038's JSON chat
+  execution without a second copy. Pass B1424's descriptor projection to B210 and B211 identity resolution and B2230 chat
+  selection. Standard compatible chat for Meta Llama, Moonshot, Morph, Nebius, Novita, Nscale, v0, Wandb, Z.ai and
+  SambaNova uses B004/B005 execution and B500 fallback credentials where the existing common path does. Do not add a
+  refresh scheduler.
+
+  Own these bodies in litellm/main.py. _complete_maritalk resolves the key as explicit key, litellm.maritalk_key,
+  MARITALK_API_KEY, then litellm.api_key, and the base as explicit base, litellm.api_base, MARITALK_API_BASE, then
+  "https://chat.maritaca.ai/api". It calls B1428's OpenAI-like chat execution with provider "maritalk", the custom prompt
+  dict, the logger function and the encoding, and runs no extra post_call. _complete_nadir resolves the base as explicit
+  base, litellm.api_base, NADIR_API_BASE, then "https://api.getnadir.com/v1" and uses the explicit key with no fallback. It
+  calls the HTTP handler with the context stream flag, shared_session, the context client as given, the timeout and
+  headers equal to the context headers or litellm.headers. After obtaining the handler result it always runs post_call
+  with the messages, the key and the result as original_response, including for async and stream results, then returns
+  the result. _complete_ovhcloud resolves the key as explicit key, litellm.ovhcloud_key, OVHCLOUD_API_KEY, then
+  litellm.api_key, and the base as explicit base, litellm.api_base, OVHCLOUD_API_BASE, then
+  "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1". It resolves the client through the dispatch client helper, passes
+  the context headers (not litellm.headers), the context provider name and B6412's OVHCloud chat config as the explicit
+  provider config, forwards no shared_session and runs no post_call. Preserve each dispatcher's forwarded fields in native
+  tests.
+
+  Own the embedding() branches for nebius, wandb, sambanova and ovhcloud. Nebius resolves the key as explicit key,
+  litellm.api_key, then NEBIUS_API_KEY and the base as explicit base, litellm.api_base, NEBIUS_API_BASE, then
+  "api.studio.nebius.ai/v1" (no scheme, kept as is). Wandb uses WANDB_API_KEY, WANDB_API_BASE and
+  "https://api.inference.wandb.ai/v1" in the same order. Both call B006's OpenAI embedding path with no provider name and
+  no extra headers. SambaNova uses SAMBANOVA_API_KEY, SAMBANOVA_API_BASE and "https://api.sambanova.ai/v1" in the same
+  order and calls the HTTP embedding handler with provider "sambanova" and B6413's embedding config. OVHCloud uses
+  OVHCLOUD_API_KEY (litellm.ovhcloud_key is not read here), OVHCLOUD_API_BASE and the OVHCloud default, calls the HTTP
+  embedding handler with provider "ovhcloud", B6412's embedding config and empty litellm_params. Selecting the embedding
+  config for each provider stays with B5363, and the OVHCloud and Scaleway transcription configs with B5360.
+
+  These unqualified settings denote litellm globals, absent by default. Add compatible_providers_m_z loader cases
+  for every listed global and env alias above (and litellm.drop_params for B6411's SailSettings). Keep existing typed
+  settings shared with the leaf loaders and B038's section.
+
+  Use booted HTTP oracle cases for chat through /v1/chat/completions and /chat/completions for each M to Z host in this
+  task (maritalk, nadir, ovhcloud, moonshot, morph, nebius, novita, nscale, v0, wandb, zai, meta_llama, sambanova, sail),
+  embeddings through /v1/embeddings for nebius, wandb, sambanova and ovhcloud, transcription through
+  /v1/audio/transcriptions for ovhcloud and scaleway, and Responses through /v1/responses for sail. Compare actual auth,
+  status, error type, param and code, selected response headers and captured upstream requests, ignoring only
+  error.message. Use explicit mock bases, and cover upstream 401, 429 and 5xx. The realtime route for Meta is not wired
+  here. The six existing routes are mounted by their owners and never registered again.
+
+  The three dispatchers and four embedding branches contain 122 nonblank, noncomment lines. Allow 160 binding and
+  orchestration lines, 220 test lines and 80 configuration lines, capped at 600. All wire parsing stays in the leaves.
+scope:
+  paths:
+    - crates/betterlite-provider/Cargo.toml
+    - crates/betterlite-provider/src/compatible_providers_m_z.rs
+    - crates/betterlite-provider/src/compatible_providers_m_z/**
+    - crates/betterlite-core/Cargo.toml
+    - crates/betterlite-core/src/compatible_providers_m_z.rs
+    - crates/betterlite-core/src/compatible_providers_m_z/**
+    - crates/betterlite-config/src/sections/compatible_providers_m_z.rs
+    - crates/betterlite-config/src/sections/compatible_providers_m_z/**
+    - crates/betterlite-config/tests/compatible_providers_m_z.rs
+    - Cargo.lock
+    - tools/oracle/cases/providers/compatible-m-z/**
+    - tools/oracle/helpers/b039.py
+    - tools/oracle/helpers/b039/**
+    - tools/oracle/src/helpers/provider/b039.rs
+    - tools/oracle/src/helpers/provider/b039/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L3112-L3142
+    why: Maritalk key and base fallbacks and the OpenAI-like chat call with no extra hook.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L3521-L3545
+    why: Nadir base fallback, forwarded fields and the unconditional post_call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L4862-L4906
+    why: OVHCloud fallbacks, the explicit provider config and the dispatch client.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7000-L7060
+    why: Nebius, Wandb and SambaNova embedding fallbacks and handlers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7233-L7254
+    why: OVHCloud embedding fallbacks and empty litellm_params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L348-L348
+    why: The Nadir default base.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11931-L11951
+    why: The four authenticated chat route decorators used by compatible hosts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L12275-L12300
+    why: Four embedding aliases exercise the embedding branches.
+dod:
+  - text: Maritalk, Nadir and OVHCloud dispatch with their own key and base precedence, forwarded fields and hooks.
+    proof: [compat-m-z-tests, compat-m-z-settings, compat-m-z-http, oracle]
+  - text: Nebius, Wandb, SambaNova and OVHCloud embeddings use their own key, base and handler.
+    proof: [compat-m-z-tests, compat-m-z-settings, compat-m-z-http, oracle]
+  - text: M to Z hosts select their own leaves through executable dispatch and preserve auth, error and upstream contracts.
+    proof: [compat-m-z-tests, compat-m-z-http, oracle]
+checks:
+  optional: []
+  commands:
+    - id: compat-m-z-tests
+      why: Dispatch tests must reach each leaf and capture hook order and forwarded client arguments
+      run: cargo nextest run --locked -p betterlite-provider -p betterlite-core --no-tests=fail -E 'test(/^compatible_providers_m_z::/)'
+    - id: compat-m-z-settings
+      why: Main-dispatch globals and env aliases need loader coverage beyond provider config identity methods
+      run: cargo nextest run --locked -p betterlite-config --test compatible_providers_m_z --no-tests=fail
+    - id: compat-m-z-http
+      why: Exercise booted gateways with fresh provider scenarios, never only a selector helper
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/providers/compatible-m-z)" && cargo run --locked -p betterlite-oracle -- tools/oracle/cases/providers/compatible-m-z
+oracle_cases:
+  - tools/oracle/cases/providers/compatible-m-z/small-host-chat-policies.yaml
+  - tools/oracle/cases/providers/compatible-m-z/maritalk-key-and-base.yaml
+  - tools/oracle/cases/providers/compatible-m-z/nadir-cost-and-headers.yaml
+  - tools/oracle/cases/providers/compatible-m-z/ovhcloud-chat-and-stream.yaml
+  - tools/oracle/cases/providers/compatible-m-z/moonshot-tool-choice-and-reasoning.yaml
+  - tools/oracle/cases/providers/compatible-m-z/sambanova-chat-and-embedding.yaml
+  - tools/oracle/cases/providers/compatible-m-z/nebius-wandb-embeddings.yaml
+  - tools/oracle/cases/providers/compatible-m-z/ovhcloud-embedding-and-transcription.yaml
+  - tools/oracle/cases/providers/compatible-m-z/scaleway-transcription.yaml
+  - tools/oracle/cases/providers/compatible-m-z/sail-chat-and-responses.yaml
+  - tools/oracle/cases/providers/compatible-m-z/auth-errors-and-upstream-failures.yaml
+deviations: []
+out_of_scope:
+  - B6410 to B6414 own the leaf source for the M to Z providers. B038 owns the A to L dispatchers, the JSON chat execution and the compatible_providers module this task extends.
+  - B210 and B211 own the identity defaults, B2230 the chat selector, B5360 the media selector and B5363 the embedding optional params.
+  - Other main.py functions keep the callable owners recorded by B500. The three dispatchers and four embedding branches named here are the only main.py bodies owned by this task.
+  - B004, B006, B202, B203 and B1428 keep route registration, wire parsing and the OpenAI-like chat execution. This task supplies operation bindings only.
+  - The Meta Muse realtime config (B6414) is reached by the realtime services under B1004, not by this task.
+pitfalls:
+  - Nadir runs post_call even for async and stream results, and OVHCloud and Maritalk never do.
+  - OVHCloud chat reads litellm.ovhcloud_key but OVHCloud embedding does not.
+  - Nebius' embedding default base has no scheme and must stay as written.
+  - Nadir forwards litellm.headers when the context has none, and OVHCloud forwards only the context headers.
+review_level: security
+budget:
+  max_changed_lines: 600
+  max_new_expects: 0

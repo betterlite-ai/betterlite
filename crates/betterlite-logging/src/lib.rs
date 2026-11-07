@@ -55,6 +55,7 @@ pub mod langfuse_otel_attributes;
 pub mod langfuse_projections;
 pub mod langfuse_prompt_management;
 pub mod langfuse_rest;
+pub mod langfuse_settings;
 pub mod langsmith_payloads;
 pub mod latency_alerts;
 pub mod legacy_dynamodb;

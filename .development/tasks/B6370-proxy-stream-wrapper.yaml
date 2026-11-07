@@ -1,0 +1,193 @@
+id: B6370
+title: ProxyLogging streaming guardrail wrapper
+description: >-
+  Port the part of `ProxyLogging` that wraps a streamed response in every callback's streaming hook before the client sees it:
+  `async_post_call_streaming_iterator_hook` (litellm/proxy/utils.py lines 3905-4021), `_pipeline_gated_stream` (4023-4086), the
+  kind choice for each callback (lines 2826-2836 and 3957-3981), `_wrap_streaming_iterator_with_enrichment` with `_UpstreamStreamBoundary`
+  and `_record_raising_guardrail` (484-522, 2756-2770), `_stream_requires_guardrail_translation` (2881-2888) and the three
+  stream-logging helpers `_record_served_stream_output`, `_fire_deferred_stream_logging` and `_discard_deferred_stream_logging_for_failure`
+  (4089-4132). Nothing here scans text. Each guardrail's own scan is B6260's unified hook or the guardrail's own iterator hook. This
+  task decides which one runs, in which order, and what happens around them.
+
+  Code goes in crates/betterlite-server/src/guardrails/proxy_stream_wrapper.rs and proxy_stream_wrapper/. Files: kind.rs, chain.rs,
+  pipeline_gate.rs, enrichment.rs, serve_log.rs, env.rs and error.rs. A file that can fail owns its error enum, and error.rs holds
+  `StreamWrapError`. Items are `serde_json::Value`, the same as B6260. The caller (the streaming response generator) owns the
+  `ProxyStreamWrapper` value and builds it once with the pieces it needs, so no module-level state is added.
+
+  `env.rs`: the inputs this task needs but does not own, as traits that the caller implements. `CallbackSet` has
+  `iterator_overrides(&self) -> Vec<IteratorEntry>` (LiteLLM's `_callback_capabilities().iterator_overrides`, B124 builds it).
+  `IteratorEntry` holds an `Arc<dyn StreamingCallback>` and an `IteratorKind`. `StreamingCallback` has: `guardrail_name() ->
+  Option<&str>` (None for a plain logger, which is not a guardrail), `should_run_post_call(&self, data) -> Result<bool, _>` (B3665's
+  `should_run_guardrail` with `GuardrailEventHooks::post_call` and an empty suppressed set, and true for a plain logger), `facts()
+  -> Option<GuardrailFacts>` (`uses_apply_guardrail_interface` from B3665, `use_native_lifecycle_hooks` and `mask_response_content`
+  from B5471), `own_iterator_hook(source, user_api_key_dict, request_data)` (the callback's override) and `unified_hook(source,
+  user_api_key_dict, request_data, buffer_until_moderated_default)` (B6260's `run_streaming_iterator_hook` with this callback as
+  `guardrail`, its name, and flags built from its `streaming_*` attributes). `PipelineSource` has `streamable_post_call_pipelines(request_data,
+  user_api_key_dict)` (LiteLLM `_streamable_post_call_pipelines`), `gated_names(pipelines)` (`_pipeline_step_guardrail_names`),
+  `merge_model_level_guardrails(request_data)` (`_check_and_merge_model_level_guardrails`) and `handle_pipeline_result(result,
+  request_data, policy_name, original_response)` (`_handle_pipeline_result`). `PipelineRunner` has `execute_steps(...)` (B3247's
+  `PipelineExecutor.execute_steps`, `mode = post_call`, with `streaming_chunks` and `endpoint_translation`). None of these functions has a
+  task file at this commit. B124 owns them by its covers. Tests use fakes.
+
+  `kind.rs`. `IteratorKind` is `Override` or `ApplyGuardrail`. `classify_iterator_kind(facts: CallbackFacts) -> Option<IteratorKind>` is the
+  branch at lines 2826-2836, and the order matters: when the callback's own type defines the iterator hook the kind is `Override`; else
+  when its own type defines `apply_guardrail` and `use_native_lifecycle_hooks` is not true the kind is `ApplyGuardrail`; else None and
+  the callback is not in the list. A type that defines both gets `Override`. `CallbackFacts` holds `defines_iterator_hook`, `defines_apply_guardrail`
+  and `use_native_lifecycle_hooks`. `effective_kind(kind, stream_needs_translation, facts) -> IteratorKind` is the `effective_kind`
+  expression at lines 3957-3968: `Override` becomes `ApplyGuardrail` only when `stream_needs_translation`, the callback is a guardrail,
+  it uses the apply_guardrail interface, `use_native_lifecycle_hooks` is not true and `mask_response_content` is false. Anything else keeps its kind.
+  `stream_requires_translation(request_route: Option<&str>) -> bool` is `_stream_requires_guardrail_translation`: false for no route
+  or a route with no call types, else true when the first call type from B207's `get_call_types_for_route` is `anthropic_messages`. The set
+  is `NON_OPENAI_STREAM_GUARDRAIL_TRANSLATION_CALL_TYPES`, one member at the pin.
+
+  `chain.rs`: `ProxyStreamWrapper::wrap(&self, response: impl Stream<Item = Result<Value, UpstreamError>>, user_api_key_dict,
+  request_data) -> impl Stream<Item = Result<Value, StreamWrapError>>`. In order:
+  1. Read the callback set and `streamable_post_call_pipelines`. With no iterator overrides and no pipelines, send every item as it
+     comes. On a cancel or drop, stop quietly. On an upstream error, call `discard_for_failure` and, when it returns false, `fire`, then end with the error.
+     After the last item call `fire` and end. Nothing else runs on this path.
+  2. Otherwise call `merge_model_level_guardrails` on the request data, then compute `stream_needs_translation`.
+  3. Walk the overrides in list order, wrapping the previous stream each time, so the last callback is the outermost. A guardrail
+     whose name is in the pipeline-gated names is skipped. A guardrail whose `should_run_post_call` is not true is skipped; an `Err` from it
+     ends the stream as the first item. A plain logger is never skipped. Pick `effective_kind`. `Override` runs `own_iterator_hook`; `ApplyGuardrail`
+     runs `unified_hook` with `buffer_until_moderated_default` true only when the original kind was `Override`. Wrap each result
+     with `enrichment.rs`.
+  4. With pipelines, resolve the translation once as `resolve_endpoint_translation(user_api_key_dict, None)` (B3679). When it exists,
+     wrap the stream with `pipeline_gate.rs`. When it is None the pipelines are not run on the stream.
+  5. Send each item and keep a copy in `served_chunks`. On a cancel or drop, or an error, call `serve_log::record_served` first. After an
+     error also call `discard_for_failure` and, when false, `fire`. After a clean end call `record_served`, then `fire`.
+
+  `pipeline_gate.rs`: `gate_with_pipelines(stream, ...)` is `_pipeline_gated_stream`. It reads the whole inner stream into a list, and an
+  empty list ends the stream with nothing sent. For each pipeline in order it calls `PipelineRunner::execute_steps` with `streaming_chunks`
+  as the buffered list, `call_type`, `policy_name` and `endpoint_translation`, then `handle_pipeline_result(result, ..., original_response =
+  buffered)`. A `ModifyResponse` failure sets `original_response` to the buffered list if unset, sends B3679's `handle_streaming_block(failure,
+  translation, stream_started = false, responses_so_far = empty)` output and ends. An HTTP failure sends B3679's `emit_streaming_http_error(error,
+  call_type, buffered, request_data)` output and ends. Any other error leaves the stream as an error item. If no pipeline stops the stream,
+  send the buffered items in order. The executor may rewrite the buffered items in place (B3246), so send what the list holds after the last pipeline.
+
+  `enrichment.rs`: `UpstreamBoundary` wraps the inner stream and stores the first error it yields. `enrich_stream(callback, stream,
+  hook, request_data)` forwards items, and on an error that is not the stored upstream error it calls B3663's `enrich_http_exception_with_guardrail_context`
+  with the callback and records the guardrail name in the applied guardrails header, only when the callback has a name and the request data is a map. An
+  upstream error passes through untouched, so a failing provider is never blamed on a guardrail.
+
+  `serve_log.rs`: `record_served(request_data, served_chunks)` does nothing when `litellm_logging_obj` is missing; else it calls `served_stream_output_texts` and
+  `record_served_output_texts` (B190). `fire(request_data)` takes the logging object's parked completion callback and its args, clears both,
+  then spawns the callback; it does nothing when either is missing. `discard_for_failure(request_data, error) -> bool` returns false when
+  there is no logging object, no parked args, the error is not one of HTTP, proxy or guardrail-raised errors (`_PROXY_ONLY_LLM_API_ERRORS`), or the
+  parked first arg is not a chat `ModelResponse`. Otherwise it clears the parked callback and args, calls `record_assembled_response_for_failure`
+  (B251) with the assembled response and returns true. The logging object reaches this file through a small trait, `ParkedStreamLogging`, that the
+  logging crate's object implements.
+
+  HTTP oracle cases go in tools/oracle/cases/guardrails/proxy-stream-wrapper/. They stream a chat request through the booted proxy
+  with two `generic_guardrail_api` guardrails (B3771), both `mode: post_call`. Copy the config and mock layout from the cases B6260 adds
+  in tools/oracle/cases/guardrails/unified-stream-hook/. Read tools/oracle/cases/chat/openai-stream.yaml for the stream shape.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/guardrails/proxy_stream_wrapper.rs
+    - crates/betterlite-server/src/guardrails/proxy_stream_wrapper/**
+    - tools/oracle/cases/guardrails/proxy-stream-wrapper/**
+    - tools/oracle/helpers/b6370.py
+    - tools/oracle/helpers/b6370/**
+    - tools/oracle/src/helpers/server/b6370.rs
+    - tools/oracle/src/helpers/server/b6370/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L3905-L4021
+    why: The iterator hook, with the fast path, the per-callback chain, the pipeline gate and the served-chunk logging.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4023-L4086
+    why: The pipeline gate that buffers the stream and runs each pipeline over it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L2822-L2836
+    why: The per-callback kind choice, with the elif that gives a type with both hooks the Override kind.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L484-L522
+    why: The raising-guardrail record and the upstream boundary that tells a provider error from a guardrail error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L2756-L2770
+    why: The enrichment wrapper.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L2881-L2888
+    why: The Anthropic route test behind effective_kind.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4089-L4132
+    why: The served-output record and the deferred stream logging fire and discard.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L2241-L2317
+    why: handle_pipeline_result, to see which errors the pipeline gate has to catch (owned by B124).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9859-L9880
+    why: The only caller, which wraps the upstream only when a callback needs the iterator wrap.
+
+dod:
+  - text: A callback type with its own iterator hook is Override, one with only apply_guardrail and no native lifecycle flag is ApplyGuardrail, a type with both is Override, and any other is left out.
+    proof: [kind-tests]
+  - text: Override becomes ApplyGuardrail only on an Anthropic messages route for a guardrail that uses apply_guardrail, has no native lifecycle flag and does not mask response content.
+    proof: [kind-tests]
+  - text: With no iterator override and no pipeline the stream passes through unchanged, and the deferred logging is fired after the last item or after an error that is not discarded.
+    proof: [passthrough-tests, serve-log-tests]
+  - text: Callbacks wrap in list order, a gated or not-applicable guardrail is skipped, a plain logger always runs, and the unified hook gets buffer_until_moderated_default true only for an Override kind.
+    proof: [chain-tests, oracle]
+  - text: A provider error passes through the enrichment untouched, and a guardrail error gets the guardrail context and the applied-guardrails header entry.
+    proof: [enrichment-tests]
+  - text: The pipeline gate buffers the stream, sends nothing for an empty stream, sends the block chunks or error items after a modify_response or HTTP result, and otherwise releases the buffered items.
+    proof: [pipeline-gate-tests]
+  - text: Served chunks are recorded on a clean end, an error and a cancel, and a discarded failure bills the assembled response on the failure row.
+    proof: [serve-log-tests]
+  - text: Streamed requests with two post_call guardrails through the booted proxy match LiteLLM for a clean stream and for a block by the second guardrail.
+    proof: [oracle, http-case-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: kind-tests
+      why: the kind choice, effective kind or route test is wrong or missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::proxy_stream_wrapper::tests::kind_/)'
+    - id: passthrough-tests
+      why: the fast path wraps, drops items or skips the deferred logging
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::proxy_stream_wrapper::tests::passthrough_/)'
+    - id: chain-tests
+      why: the wrap order, a skip rule or the buffering default is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::proxy_stream_wrapper::tests::chain_/)'
+    - id: enrichment-tests
+      why: an upstream error is blamed on a guardrail, or a guardrail error loses its context
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::proxy_stream_wrapper::tests::enrichment_/)'
+    - id: pipeline-gate-tests
+      why: the pipeline gate releases, blocks or buffers the wrong items
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::proxy_stream_wrapper::tests::pipeline_gate_/)'
+    - id: serve-log-tests
+      why: served output is not recorded, the deferred callback fires twice or a failure is not discarded
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::proxy_stream_wrapper::tests::serve_log_/)'
+    - id: http-case-corpus
+      why: the HTTP cases are not added in this change
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/guardrails/proxy-stream-wrapper)"
+
+oracle_cases:
+  - tools/oracle/cases/guardrails/proxy-stream-wrapper/two-guardrails-clean.yaml
+  - tools/oracle/cases/guardrails/proxy-stream-wrapper/second-guardrail-blocks.yaml
+
+deviations:
+  - what: The wrapper takes its callbacks, pipelines and logging object through traits and a typed `ProxyStreamWrapper`, not from `litellm.callbacks` and `request_data["litellm_logging_obj"]` globals.
+    why: Rust has no module-level callback list (rules.yaml); the order and the skip rules are unchanged.
+  - what: The cache that keys callback capabilities on the list's ids is not part of this task.
+    why: The caller builds the callback set once per change of the list; B124 owns it.
+
+out_of_scope:
+  - "B6260 owns the unified hook that runs one guardrail's scan; this task only calls it."
+  - "B3246 owns the stream rewrite observation inside a pipeline step, and B3247 owns PipelineExecutor.execute_steps and `_run_step`, including the `use_unified and streaming_chunks is None` choice near pipeline_executor.py line 522."
+  - "B3679 owns handle_streaming_block, emit_streaming_http_error and resolve_endpoint_translation."
+  - "B124 owns _callback_capabilities and _CallbackCapabilities, _streamable_post_call_pipelines, _pipeline_step_guardrail_names, _handle_pipeline_result, _check_and_merge_model_level_guardrails, needs_iterator_wrap and the other ProxyLogging helpers listed in B786's out_of_scope."
+  - "async_post_call_streaming_hook (the per-chunk hook, lines 3816-3903) is not this task and has no task file at this commit."
+  - "The proxy_server.py generator that calls this wrapper belongs to the streaming route tasks."
+
+pitfalls:
+  - The kind test is an elif on the type's own `__dict__`, so a guardrail class that defines both `async_post_call_streaming_iterator_hook` and `apply_guardrail` is Override, never ApplyGuardrail.
+  - Callbacks wrap one after another, so the first in the list is the innermost and sees the raw upstream; do not reverse the list.
+  - "`should_run_guardrail` returning anything but true skips the guardrail, but a plain logger skips no check and always wraps."
+  - A guardrail named by a pipeline step is skipped here, because the pipeline gate scans it on the buffered stream instead.
+  - Only the Override kind passes `buffer_until_moderated_default = true`; an ApplyGuardrail kind that came from an Override by `effective_kind` still counts as Override for this flag.
+  - The upstream boundary stores only the first error, and enrichment compares that error by identity, so an error a guardrail re-raises from the provider's failure must not be enriched.
+  - "`fire` clears the parked callback before it spawns it, so a second call (after a discard-false failure path) does nothing."
+  - On a cancel or drop the served chunks are recorded but the deferred logging is not fired.
+  - The pipeline gate sends `stream_started = false` and an empty `responses_so_far` to `handle_streaming_block`, since nothing has reached the client yet, unlike B6260's mid-stream block.
+  - When `resolve_endpoint_translation` gives None, pipelines are silently skipped for the stream and the fast path decision has already counted them.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
