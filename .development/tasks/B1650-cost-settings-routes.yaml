@@ -89,7 +89,7 @@ deviations:
 out_of_scope:
   - B1651 owns cost_tracking_settings.py pricing-resolution helpers L48-L189 and estimate_cost with its decorator L563-L699.
   - B1649 owns adjustment math and loaded discount/margin records; B754 owns unpriced-request enforcement, which this API only configures.
-  - B075 owns the included prompt-cache prediction router; B066 composes its routes without re-registering them here.
+  - B3125 owns POST /cost/predict-cache and GET /cost_optimization/prompt_caching/requests; B066 composes its routes without re-registering them here.
 pitfalls:
   - A nonempty margin object with no percentage or fixed_amount passes the source's validation and must retain its unknown numeric fields.
   - GET of the unpriced-model switch works without a database while GET of either adjustment map does not.

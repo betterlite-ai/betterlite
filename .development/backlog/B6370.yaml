@@ -1,0 +1,14 @@
+id: B6370
+milestone: M6 guardrails
+title: ProxyLogging streaming guardrail wrapper
+status: todo
+depends_on: [B6260, B3680, B3665, B3679, B6164, B5471, B3663, B207, B190, B251, B3240, B3247]
+file: tasks/B6370-proxy-stream-wrapper.yaml
+covers:
+  - "litellm/proxy/utils.py"
+parent: B104
+split_from: B3681
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

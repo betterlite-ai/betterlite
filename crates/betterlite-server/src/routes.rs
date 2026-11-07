@@ -6,6 +6,7 @@ pub(crate) mod prompts;
 pub(crate) mod video_character;
 pub(crate) mod video_content_remix;
 pub(crate) mod video_create;
+pub(crate) mod video_edit;
 
 use crate::auth::auth_route_patterns::{self, AuthSettings};
 use crate::auth::route_match::stage;

@@ -57,4 +57,5 @@ pub mod vector_search_routes;
 pub mod vector_store_routes;
 pub mod video_character_routes;
 pub mod video_content_remix_routes;
+pub mod video_edit_extension_routes;
 pub mod video_routes;
