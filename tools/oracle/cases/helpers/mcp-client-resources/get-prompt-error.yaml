@@ -1,0 +1,1 @@
+{"kind":"helper","name":"b4746_get_prompt_error","call":{"b4746":{"operation":"get_prompt","client_timeout_ms":60000,"listing_timeout_ms":30000,"raise_on_error":false,"capabilities":null,"pages":[],"prompt":{"name":"greet","arguments":null,"result":null,"error":{"code":-32603,"message":"prompt failed"}},"resource":null}},"env":{},"compare":{"ignore":[]}}
