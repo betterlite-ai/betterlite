@@ -1,32 +1,46 @@
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
-use tokio::time::Instant;
+use tokio::sync::Notify;
+use tokio::time::sleep;
+use tokio_util::sync::CancellationToken;
 
-pub(super) struct TimeoutSummary {
-    pub(super) window: Duration,
-    pub(super) burst: usize,
-    pub(super) last_callback: Option<String>,
-    pub(super) deadline: Option<Instant>,
+use super::counters::Counters;
+
+#[derive(Debug, Default)]
+pub(super) struct TimeoutBurst {
+    burst: AtomicUsize,
+    armed: AtomicBool,
+    last_callback: Mutex<String>,
+    notify: Notify,
 }
 
-impl TimeoutSummary {
-    pub(super) fn record(&mut self, callback: String) {
-        self.burst = self.burst.saturating_add(1);
-        self.last_callback = Some(callback);
-        if self.deadline.is_none() {
-            self.deadline = Instant::now()
-                .checked_add(self.window)
-                .or_else(|| Some(Instant::now()));
+impl TimeoutBurst {
+    pub(super) fn record(&self, callback: String) {
+        self.burst.fetch_add(1, Ordering::SeqCst);
+        *self
+            .last_callback
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner) = callback;
+        if !self.armed.swap(true, Ordering::SeqCst) {
+            self.notify.notify_one();
         }
     }
 
-    pub(super) fn emit(&mut self, timeout: Duration, total: usize) {
-        let callbacks = self.burst;
+    fn emit(&self, counters: &Counters, timeout: Duration) {
+        self.armed.store(false, Ordering::SeqCst);
+        let callbacks = self.burst.swap(0, Ordering::SeqCst);
         if callbacks == 0 {
             return;
         }
-        let callback = self.last_callback.take().unwrap_or_default();
+        let callback = self
+            .last_callback
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .clone();
         let timeout_milliseconds = u64::try_from(timeout.as_millis()).unwrap_or(u64::MAX);
+        let total = counters.timed_out.load(Ordering::SeqCst);
         tracing::warn!(
             callbacks,
             callback,
@@ -34,7 +48,25 @@ impl TimeoutSummary {
             total,
             "logging callbacks timed out and released their permits"
         );
-        self.burst = 0;
-        self.deadline = None;
+    }
+}
+
+pub(super) async fn summarize(
+    burst: Arc<TimeoutBurst>,
+    counters: Arc<Counters>,
+    window: Duration,
+    timeout: Duration,
+    shutdown: CancellationToken,
+) {
+    loop {
+        let Some(()) = shutdown.run_until_cancelled(burst.notify.notified()).await else {
+            burst.emit(&counters, timeout);
+            return;
+        };
+        let slept = shutdown.run_until_cancelled(sleep(window)).await;
+        burst.emit(&counters, timeout);
+        if slept.is_none() {
+            return;
+        }
     }
 }

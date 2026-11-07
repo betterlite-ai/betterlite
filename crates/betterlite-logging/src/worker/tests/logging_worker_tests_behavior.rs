@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::future::pending;
 use std::io::{Result as IoResult, Write};
 use std::sync::{Arc, Mutex, PoisonError};
@@ -6,9 +7,10 @@ use std::time::Duration;
 use rstest::rstest;
 use tokio::sync::Notify;
 use tokio::task::yield_now;
+use tokio::time::Instant as TokioInstant;
 use tokio::time::{sleep, timeout};
-use tracing::Level;
 use tracing::subscriber::set_default;
+use tracing::{Level, Span};
 use tracing_subscriber::fmt::MakeWriter;
 
 use crate::worker::{
@@ -30,17 +32,43 @@ enum Outcome {
 }
 
 #[derive(Debug, Default)]
+struct SpanContexts(Mutex<BTreeMap<u64, &'static str>>);
+
+impl SpanContexts {
+    fn bind(&self, span: &Span, context: &'static str) {
+        if let Some(id) = span.id() {
+            self.0
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .insert(id.into_u64(), context);
+        }
+    }
+
+    fn resolve(&self, span: &Span) -> String {
+        let context = span.id().and_then(|id| {
+            self.0
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .get(&id.into_u64())
+                .copied()
+        });
+        context.unwrap_or("missing").to_owned()
+    }
+}
+
+#[derive(Debug, Default)]
 struct Record {
     entered: Mutex<Vec<&'static str>>,
-    contexts: Mutex<Vec<(&'static str, &'static str)>>,
+    contexts: Mutex<Vec<(&'static str, String)>>,
 }
 
 impl Record {
-    fn enter(&self, name: &'static str, context: &'static str) {
+    fn enter(&self, name: &'static str, spans: &SpanContexts) {
         self.entered
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .push(name);
+        let context = spans.resolve(&Span::current());
         self.contexts
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -54,7 +82,7 @@ impl Record {
             .clone()
     }
 
-    fn contexts(&self) -> Vec<(&'static str, &'static str)> {
+    fn contexts(&self) -> Vec<(&'static str, String)> {
         self.contexts
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
@@ -65,8 +93,8 @@ impl Record {
 struct ScriptedCallback {
     name: &'static str,
     outcome: Outcome,
-    context: &'static str,
     record: Arc<Record>,
+    spans: Arc<SpanContexts>,
     release: Option<Arc<Notify>>,
 }
 
@@ -78,7 +106,8 @@ impl Callback for ScriptedCallback {
     }
 
     async fn call(self) -> Result<(), Self::Error> {
-        self.record.enter(self.name, self.context);
+        self.record.enter(self.name, &self.spans);
+        tracing::info!(callback = self.name, "the scripted callback ran");
         yield_now().await;
         if let Some(release) = self.release {
             release.notified().await;
@@ -91,24 +120,28 @@ impl Callback for ScriptedCallback {
     }
 }
 
-fn callback(record: &Arc<Record>, name: &'static str, outcome: Outcome) -> ScriptedCallback {
+fn callback(
+    record: &Arc<Record>,
+    name: &'static str,
+    outcome: Outcome,
+    spans: &Arc<SpanContexts>,
+) -> ScriptedCallback {
     ScriptedCallback {
         name,
         outcome,
-        context: "request-default",
         record: Arc::clone(record),
+        spans: Arc::clone(spans),
         release: None,
     }
 }
 
-fn contextual(record: &Arc<Record>, name: &'static str, context: &'static str) -> ScriptedCallback {
-    let mut callback = callback(record, name, Outcome::Success);
-    callback.context = context;
-    callback
-}
-
-fn blocked(record: &Arc<Record>, name: &'static str, release: Arc<Notify>) -> ScriptedCallback {
-    let mut callback = callback(record, name, Outcome::Blocked);
+fn blocked(
+    record: &Arc<Record>,
+    name: &'static str,
+    release: Arc<Notify>,
+    spans: &Arc<SpanContexts>,
+) -> ScriptedCallback {
+    let mut callback = callback(record, name, Outcome::Blocked, spans);
     callback.release = Some(release);
     callback
 }
@@ -136,6 +169,36 @@ fn timed_settings(
         shutdown_drain,
         timeout_summary_window: window,
     }
+}
+
+fn enqueue_in_span(
+    worker: &LoggingWorker<ScriptedCallback>,
+    record: &Arc<Record>,
+    spans: &Arc<SpanContexts>,
+    name: &'static str,
+    context: &'static str,
+) -> Admission {
+    let span = tracing::info_span!("request_span", request = context);
+    spans.bind(&span, context);
+    let entered = span.enter();
+    let admission = worker.enqueue(callback(record, name, Outcome::Success, spans));
+    drop(entered);
+    admission
+}
+
+fn respond_after_enqueue(
+    worker: &LoggingWorker<ScriptedCallback>,
+    callback: ScriptedCallback,
+) -> (Admission, String) {
+    let admission = worker.enqueue(callback);
+    (admission, String::from("the successful model response"))
+}
+
+fn line_with<'text>(contents: &'text str, needle: &str) -> &'text str {
+    contents
+        .lines()
+        .find(|line| line.contains(needle))
+        .unwrap_or("")
 }
 
 #[test]
@@ -192,19 +255,11 @@ fn invalid_limits_are_rejected(#[case] settings: WorkerSettings, #[case] expecte
 #[tokio::test]
 async fn successful_callbacks_run_and_flush_waits_for_them() {
     let record = Arc::new(Record::default());
+    let spans = Arc::new(SpanContexts::default());
     let worker = LoggingWorker::start(settings(8, 2)).unwrap();
-    assert_eq!(
-        worker.enqueue(callback(&record, "a", Outcome::Success)),
-        Admission::Accepted
-    );
-    assert_eq!(
-        worker.enqueue(callback(&record, "b", Outcome::Success)),
-        Admission::Accepted
-    );
-    assert_eq!(
-        worker.enqueue(callback(&record, "c", Outcome::Success)),
-        Admission::Accepted
-    );
+    let _a = worker.enqueue(callback(&record, "a", Outcome::Success, &spans));
+    let _b = worker.enqueue(callback(&record, "b", Outcome::Success, &spans));
+    let _c = worker.enqueue(callback(&record, "c", Outcome::Success, &spans));
     let flush = worker.flush().await;
     assert_eq!(flush.accepted, 3);
     assert_eq!(flush.completed, 3);
@@ -232,12 +287,12 @@ async fn a_failed_callback_is_isolated_from_the_model_response() {
         .finish();
     let _guard = set_default(subscriber);
     let record = Arc::new(Record::default());
-    let model_response = String::from("the successful model response");
+    let spans = Arc::new(SpanContexts::default());
     let worker = LoggingWorker::start(settings(8, 1)).unwrap();
-    let _accepted = worker.enqueue(callback(&record, "broken", Outcome::Failure));
+    let admission = worker.enqueue(callback(&record, "broken", Outcome::Failure, &spans));
+    assert_eq!(admission, Admission::Accepted);
     let flush = worker.flush().await;
     assert_eq!(flush.failed, 1);
-    assert_eq!(model_response, "the successful model response");
     assert!(buffer.contents().contains("the logging callback failed"));
     let shutdown = worker.stop().await;
     assert_eq!(shutdown.failed, 1);
@@ -246,21 +301,30 @@ async fn a_failed_callback_is_isolated_from_the_model_response() {
 
 #[tokio::test]
 async fn each_event_keeps_the_context_captured_before_enqueue() {
+    let buffer = Buffer::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_max_level(Level::INFO)
+        .with_writer(buffer.clone())
+        .finish();
+    let _guard = set_default(subscriber);
     let record = Arc::new(Record::default());
+    let spans = Arc::new(SpanContexts::default());
     let worker = LoggingWorker::start(settings(8, 3)).unwrap();
-    let _first = worker.enqueue(contextual(&record, "first", "request-a"));
-    let _second = worker.enqueue(contextual(&record, "second", "request-b"));
-    let _third = worker.enqueue(contextual(&record, "third", "request-c"));
+    let _first = enqueue_in_span(&worker, &record, &spans, "first", "request-a");
+    let _second = enqueue_in_span(&worker, &record, &spans, "second", "request-b");
+    let _third = enqueue_in_span(&worker, &record, &spans, "third", "request-c");
     let flush = worker.flush().await;
     assert_eq!(flush.completed, 3);
     let mut contexts = record.contexts();
     contexts.sort_unstable();
     assert_eq!(
         contexts,
-        [
-            ("first", "request-a"),
-            ("second", "request-b"),
-            ("third", "request-c")
+        vec![
+            ("first", String::from("request-a")),
+            ("second", String::from("request-b")),
+            ("third", String::from("request-c")),
         ]
     );
     let shutdown = worker.stop().await;
@@ -268,23 +332,47 @@ async fn each_event_keeps_the_context_captured_before_enqueue() {
 }
 
 #[tokio::test]
+async fn a_callback_logs_under_the_span_captured_at_enqueue() {
+    let buffer = Buffer::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_max_level(Level::INFO)
+        .with_writer(buffer.clone())
+        .finish();
+    let _guard = set_default(subscriber);
+    let record = Arc::new(Record::default());
+    let spans = Arc::new(SpanContexts::default());
+    let worker = LoggingWorker::start(settings(8, 2)).unwrap();
+    let _first = enqueue_in_span(&worker, &record, &spans, "first", "request-a");
+    let _second = enqueue_in_span(&worker, &record, &spans, "second", "request-b");
+    let flush = worker.flush().await;
+    assert_eq!(flush.completed, 2);
+    let contents = buffer.contents();
+    assert!(line_with(&contents, "callback=first").contains("request=request-a"));
+    assert!(line_with(&contents, "callback=second").contains("request=request-b"));
+    let shutdown = worker.stop().await;
+    assert!(shutdown.drained);
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_full_queue_rejects_only_the_new_event() {
     let record = Arc::new(Record::default());
+    let spans = Arc::new(SpanContexts::default());
     let release = Arc::new(Notify::new());
-    let model_response = String::from("the successful model response");
     let worker = LoggingWorker::start(settings(3, 1)).unwrap();
-    let _blocker = worker.enqueue(blocked(&record, "blocker", Arc::clone(&release)));
+    let _blocker = worker.enqueue(blocked(&record, "blocker", Arc::clone(&release), &spans));
     wait_for_names(&record, &["blocker"]).await;
-    let _queued = worker.enqueue(callback(&record, "first", Outcome::Success));
+    let _queued = worker.enqueue(callback(&record, "first", Outcome::Success, &spans));
     wait_for_dequeued(&worker, 2).await;
-    let _a = worker.enqueue(callback(&record, "fill-a", Outcome::Success));
-    let _b = worker.enqueue(callback(&record, "fill-b", Outcome::Success));
-    let _c = worker.enqueue(callback(&record, "fill-c", Outcome::Success));
-    let rejected = callback(&record, "rejected", Outcome::Success);
-    assert_eq!(
-        worker.enqueue(rejected),
-        Admission::Rejected(Rejection::QueueFull)
-    );
+    let _a = worker.enqueue(callback(&record, "fill-a", Outcome::Success, &spans));
+    let _b = worker.enqueue(callback(&record, "fill-b", Outcome::Success, &spans));
+    let _c = worker.enqueue(callback(&record, "fill-c", Outcome::Success, &spans));
+    let rejected = callback(&record, "rejected", Outcome::Success, &spans);
+    let before = TokioInstant::now();
+    let (admission, model_response) = respond_after_enqueue(&worker, rejected);
+    assert_eq!(TokioInstant::now(), before);
+    assert_eq!(admission, Admission::Rejected(Rejection::QueueFull));
     assert_eq!(worker.stats().rejected_full, 1);
     assert_eq!(model_response, "the successful model response");
     release.notify_one();
@@ -301,11 +389,22 @@ async fn a_full_queue_rejects_only_the_new_event() {
 #[tokio::test]
 async fn at_most_the_configured_callbacks_run_at_once() {
     let record = Arc::new(Record::default());
+    let spans = Arc::new(SpanContexts::default());
     let first_release = Arc::new(Notify::new());
     let second_release = Arc::new(Notify::new());
     let worker = LoggingWorker::start(settings(4, 1)).unwrap();
-    let _first = worker.enqueue(blocked(&record, "first", Arc::clone(&first_release)));
-    let _second = worker.enqueue(blocked(&record, "second", Arc::clone(&second_release)));
+    let _first = worker.enqueue(blocked(
+        &record,
+        "first",
+        Arc::clone(&first_release),
+        &spans,
+    ));
+    let _second = worker.enqueue(blocked(
+        &record,
+        "second",
+        Arc::clone(&second_release),
+        &spans,
+    ));
     wait_for_names(&record, &["first"]).await;
     wait_for_dequeued(&worker, 2).await;
     yield_now().await;
@@ -326,6 +425,7 @@ async fn at_most_the_configured_callbacks_run_at_once() {
 #[tokio::test(start_paused = true)]
 async fn a_timed_out_callback_releases_its_permit() {
     let record = Arc::new(Record::default());
+    let spans = Arc::new(SpanContexts::default());
     let settings = timed_settings(
         1,
         Duration::from_millis(20),
@@ -333,8 +433,8 @@ async fn a_timed_out_callback_releases_its_permit() {
         Duration::from_millis(20),
     );
     let worker = LoggingWorker::start(settings).unwrap();
-    let _hang = worker.enqueue(callback(&record, "hang", Outcome::Hang));
-    let _next = worker.enqueue(callback(&record, "next", Outcome::Success));
+    let _hang = worker.enqueue(callback(&record, "hang", Outcome::Hang, &spans));
+    let _next = worker.enqueue(callback(&record, "next", Outcome::Success, &spans));
     let flush = worker.flush().await;
     assert_eq!(flush.timed_out, 1);
     assert_eq!(flush.completed, 1);
@@ -348,9 +448,10 @@ async fn a_timed_out_callback_releases_its_permit() {
 #[tokio::test]
 async fn stop_drains_accepted_events_before_the_deadline() {
     let record = Arc::new(Record::default());
+    let spans = Arc::new(SpanContexts::default());
     let worker = LoggingWorker::start(settings(8, 2)).unwrap();
-    let _a = worker.enqueue(callback(&record, "a", Outcome::Success));
-    let _b = worker.enqueue(callback(&record, "b", Outcome::Success));
+    let _a = worker.enqueue(callback(&record, "a", Outcome::Success, &spans));
+    let _b = worker.enqueue(callback(&record, "b", Outcome::Success, &spans));
     let shutdown = worker.stop().await;
     assert!(shutdown.drained);
     assert_eq!(shutdown.accepted, 2);
@@ -369,6 +470,7 @@ async fn stop_drains_accepted_events_before_the_deadline() {
 #[tokio::test(start_paused = true)]
 async fn stop_accounts_for_events_left_at_the_deadline() {
     let record = Arc::new(Record::default());
+    let spans = Arc::new(SpanContexts::default());
     let settings = timed_settings(
         1,
         Duration::from_secs(5),
@@ -376,8 +478,8 @@ async fn stop_accounts_for_events_left_at_the_deadline() {
         Duration::from_millis(20),
     );
     let worker = LoggingWorker::start(settings).unwrap();
-    let _hang = worker.enqueue(callback(&record, "hang", Outcome::Hang));
-    let _waiting = worker.enqueue(callback(&record, "waiting", Outcome::Success));
+    let _hang = worker.enqueue(callback(&record, "hang", Outcome::Hang, &spans));
+    let _waiting = worker.enqueue(callback(&record, "waiting", Outcome::Success, &spans));
     wait_for_names(&record, &["hang"]).await;
     let shutdown = worker.stop().await;
     assert!(!shutdown.drained);
@@ -408,18 +510,22 @@ async fn a_timeout_burst_is_summarized_once() {
         .finish();
     let _guard = set_default(subscriber);
     let record = Arc::new(Record::default());
+    let spans = Arc::new(SpanContexts::default());
     let settings = timed_settings(
-        2,
+        1,
         Duration::from_millis(10),
         Duration::from_secs(1),
         Duration::from_millis(50),
     );
     let worker = LoggingWorker::start(settings).unwrap();
-    let _first = worker.enqueue(callback(&record, "first", Outcome::Hang));
-    let _second = worker.enqueue(callback(&record, "second", Outcome::Hang));
+    let _first = worker.enqueue(callback(&record, "first", Outcome::Hang, &spans));
+    let _second = worker.enqueue(callback(&record, "second", Outcome::Hang, &spans));
+    let _third = worker.enqueue(callback(&record, "third", Outcome::Hang, &spans));
+    let _fourth = worker.enqueue(callback(&record, "fourth", Outcome::Hang, &spans));
+    let _fifth = worker.enqueue(callback(&record, "fifth", Outcome::Hang, &spans));
     let flush = worker.flush().await;
-    assert_eq!(flush.timed_out, 2);
-    sleep(Duration::from_millis(60)).await;
+    assert_eq!(flush.timed_out, 5);
+    sleep(Duration::from_millis(20)).await;
     let contents = buffer.contents();
     assert_eq!(
         contents
@@ -427,14 +533,51 @@ async fn a_timeout_burst_is_summarized_once() {
             .count(),
         1
     );
-    assert!(contents.contains("callbacks=2"));
+    assert!(contents.contains("callbacks=5"));
     let shutdown = worker.stop().await;
-    assert_eq!(shutdown.timed_out, 2);
+    assert_eq!(shutdown.timed_out, 5);
+}
+
+#[tokio::test(start_paused = true)]
+async fn stop_emits_an_open_timeout_window_at_the_deadline() {
+    let buffer = Buffer::default();
+    let subscriber = tracing_subscriber::fmt()
+        .with_ansi(false)
+        .without_time()
+        .with_max_level(Level::WARN)
+        .with_writer(buffer.clone())
+        .finish();
+    let _guard = set_default(subscriber);
+    let record = Arc::new(Record::default());
+    let spans = Arc::new(SpanContexts::default());
+    let settings = timed_settings(
+        1,
+        Duration::from_millis(20),
+        Duration::from_millis(10),
+        Duration::from_millis(50),
+    );
+    let worker = LoggingWorker::start(settings).unwrap();
+    let _timed = worker.enqueue(callback(&record, "timed", Outcome::Hang, &spans));
+    let _running = worker.enqueue(callback(&record, "running", Outcome::Hang, &spans));
+    sleep(Duration::from_millis(15)).await;
+    let shutdown = worker.stop().await;
+    assert!(!shutdown.drained);
+    assert_eq!(shutdown.timed_out, 1);
+    assert_eq!(shutdown.cancelled, 1);
+    let contents = buffer.contents();
+    assert_eq!(
+        contents
+            .matches("timed out and released their permits")
+            .count(),
+        1
+    );
+    assert!(contents.contains("callbacks=1"));
 }
 
 #[tokio::test]
 async fn admission_reports_a_closed_worker() {
     let record = Arc::new(Record::default());
+    let spans = Arc::new(SpanContexts::default());
     let worker = LoggingWorker::start(settings(4, 1)).unwrap();
     let shutdown = worker.stop().await;
     assert!(shutdown.drained);
@@ -442,7 +585,7 @@ async fn admission_reports_a_closed_worker() {
     assert!(repeated.drained);
     assert_eq!(repeated.accepted, 0);
     assert_eq!(
-        worker.enqueue(callback(&record, "late", Outcome::Success)),
+        worker.enqueue(callback(&record, "late", Outcome::Success, &spans)),
         Admission::Rejected(Rejection::Closed)
     );
     assert_eq!(worker.stats().rejected_closed, 1);

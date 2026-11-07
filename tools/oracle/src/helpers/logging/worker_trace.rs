@@ -7,6 +7,8 @@ use betterlite_logging::worker::{
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
+use tracing::Span;
+use tracing_subscriber::registry;
 
 use crate::helpers::{Helper, HelperError, HelperResult};
 
@@ -82,7 +84,8 @@ impl Helper for Op {
             .enable_time()
             .build()
             .map_err(failure)?;
-        runtime.block_on(scenario(input)).map_err(failure)
+        tracing::subscriber::with_default(registry(), || runtime.block_on(scenario(input)))
+            .map_err(failure)
     }
 }
 
@@ -121,11 +124,36 @@ struct Record {
     contexts: Mutex<BTreeMap<String, String>>,
 }
 
+#[derive(Default)]
+struct SpanContexts(Mutex<BTreeMap<u64, String>>);
+
+impl SpanContexts {
+    fn bind(&self, span: &Span, context: &str) {
+        if let Some(id) = span.id() {
+            self.0
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .insert(id.into_u64(), context.to_owned());
+        }
+    }
+
+    fn resolve(&self, span: &Span) -> String {
+        let context = span.id().and_then(|id| {
+            self.0
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .get(&id.into_u64())
+                .cloned()
+        });
+        context.unwrap_or_else(|| "missing".to_owned())
+    }
+}
+
 struct ScriptedCallback {
     name: String,
     outcome: Outcome,
-    context: String,
     record: Arc<Record>,
+    spans: Arc<SpanContexts>,
 }
 
 impl Callback for ScriptedCallback {
@@ -136,11 +164,12 @@ impl Callback for ScriptedCallback {
     }
 
     async fn call(self) -> Result<(), Self::Error> {
+        let context = self.spans.resolve(&Span::current());
         self.record
             .contexts
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .insert(self.name.clone(), self.context);
+            .insert(self.name.clone(), context);
         tokio::task::yield_now().await;
         if matches!(self.outcome, Outcome::Failure) {
             self.record
@@ -162,9 +191,10 @@ impl Callback for ScriptedCallback {
 async fn scenario(input: &Input) -> Result<Value, TraceError> {
     let settings = input.settings.resolve();
     let record = Arc::new(Record::default());
+    let spans = Arc::new(SpanContexts::default());
     let mut worker = Some(LoggingWorker::start(settings)?);
     let mut flushes = Vec::new();
-    let shutdown = drive(&mut worker, &record, &input.steps, &mut flushes).await?;
+    let shutdown = drive(&mut worker, &record, &spans, &input.steps, &mut flushes).await?;
     let Some(report) = shutdown else {
         return Err(TraceError::Stopped);
     };
@@ -174,6 +204,7 @@ async fn scenario(input: &Input) -> Result<Value, TraceError> {
 async fn drive(
     worker: &mut Option<LoggingWorker<ScriptedCallback>>,
     record: &Arc<Record>,
+    spans: &Arc<SpanContexts>,
     steps: &[Step],
     flushes: &mut Vec<Value>,
 ) -> Result<Option<ShutdownReport>, TraceError> {
@@ -185,7 +216,7 @@ async fn drive(
                     return Err(TraceError::Stopped);
                 };
                 for event in events {
-                    enqueue(active, record, event)?;
+                    enqueue(active, record, spans, event)?;
                 }
             }
             Step::Flush => {
@@ -210,15 +241,21 @@ async fn drive(
 fn enqueue(
     worker: &LoggingWorker<ScriptedCallback>,
     record: &Arc<Record>,
+    spans: &Arc<SpanContexts>,
     event: &EventInput,
 ) -> Result<(), TraceError> {
     let callback = ScriptedCallback {
         name: event.name.clone(),
         outcome: event.outcome,
-        context: event.context.clone(),
         record: Arc::clone(record),
+        spans: Arc::clone(spans),
     };
-    match worker.enqueue(callback) {
+    let span = tracing::info_span!("worker_trace_request");
+    spans.bind(&span, &event.context);
+    let entered = span.enter();
+    let admission = worker.enqueue(callback);
+    drop(entered);
+    match admission {
         Admission::Accepted => Ok(()),
         rejected @ Admission::Rejected(_) => Err(TraceError::Rejected(rejected)),
     }

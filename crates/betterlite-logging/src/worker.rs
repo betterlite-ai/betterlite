@@ -11,8 +11,11 @@ use tokio::sync::mpsc::error::TrySendError;
 use tokio::sync::{Notify, mpsc};
 use tokio::task::JoinHandle;
 use tokio::time::timeout;
+use tokio_util::sync::CancellationToken;
+use tracing::Span;
 
 use counters::{Counters, shutdown_report};
+use timeouts::{TimeoutBurst, summarize};
 
 mod counters;
 mod runner;
@@ -110,14 +113,20 @@ pub struct ShutdownReport {
     pub drained: bool,
 }
 
+struct Queued<C> {
+    span: Span,
+    callback: C,
+}
+
 pub struct LoggingWorker<C>
 where
     C: Callback,
 {
     settings: WorkerSettings,
-    admission: Mutex<Option<mpsc::Sender<C>>>,
+    admission: Mutex<Option<mpsc::Sender<Queued<C>>>>,
     counters: Arc<Counters>,
     settled: Arc<Notify>,
+    shutdown: CancellationToken,
     runner: Mutex<Option<JoinHandle<()>>>,
 }
 
@@ -136,29 +145,48 @@ where
         let (admission, receiver) = mpsc::channel(settings.max_queue_size);
         let counters = Arc::new(Counters::default());
         let settled = Arc::new(Notify::new());
+        let burst = Arc::new(TimeoutBurst::default());
+        let shutdown = CancellationToken::new();
+        let summarizer = runtime.spawn(summarize(
+            Arc::clone(&burst),
+            Arc::clone(&counters),
+            settings.timeout_summary_window,
+            settings.event_timeout,
+            shutdown.clone(),
+        ));
         let runner = runtime.spawn(runner::run(
             receiver,
             settings,
-            Arc::clone(&counters),
-            Arc::clone(&settled),
+            runner::RunnerContext {
+                counters: Arc::clone(&counters),
+                settled: Arc::clone(&settled),
+                burst,
+                shutdown: shutdown.clone(),
+                summarizer,
+            },
         ));
         Ok(Self {
             settings,
             admission: Mutex::new(Some(admission)),
             counters,
             settled,
+            shutdown,
             runner: Mutex::new(Some(runner)),
         })
     }
 
     #[must_use]
     pub fn enqueue(&self, callback: C) -> Admission {
+        let queued = Queued {
+            span: Span::current(),
+            callback,
+        };
         let sent = {
             let admission = self
                 .admission
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner);
-            admission.as_ref().map(|sender| sender.try_send(callback))
+            admission.as_ref().map(|sender| sender.try_send(queued))
         };
         match sent {
             Some(Ok(())) => {
@@ -224,12 +252,14 @@ where
                 shutdown_report(self.stats(), false)
             }
             Err(_) => {
-                running.abort();
-                let stopped = timeout(Duration::from_secs(1), &mut running).await;
-                if stopped.is_err() {
-                    tracing::error!("the logging worker did not stop after its task was aborted");
+                self.shutdown.cancel();
+                match running.await {
+                    Ok(()) => shutdown_report(self.stats(), false),
+                    Err(error) => {
+                        tracing::error!(%error, "the logging worker task ended unexpectedly");
+                        shutdown_report(self.stats(), false)
+                    }
                 }
-                shutdown_report(self.stats(), false)
             }
         };
         self.settled.notify_waiters();

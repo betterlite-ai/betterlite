@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
@@ -5,63 +6,69 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use futures_util::future::select_all;
-use tokio::sync::{Notify, Semaphore, mpsc};
-use tokio::task::{JoinError, JoinSet};
-use tokio::time::{Instant, sleep_until, timeout};
+use tokio::sync::{Notify, OwnedSemaphorePermit, Semaphore, mpsc};
+use tokio::task::{Id, JoinError, JoinHandle, JoinSet};
+use tokio::time::timeout;
+use tokio_util::sync::CancellationToken;
+use tracing::{Instrument as _, Span};
 
+use super::Queued;
 use super::counters::Counters;
-use super::timeouts::TimeoutSummary;
+use super::timeouts::TimeoutBurst;
 use super::{Callback, WorkerSettings};
 
+pub(super) struct RunnerContext {
+    pub(super) counters: Arc<Counters>,
+    pub(super) settled: Arc<Notify>,
+    pub(super) burst: Arc<TimeoutBurst>,
+    pub(super) shutdown: CancellationToken,
+    pub(super) summarizer: JoinHandle<()>,
+}
+
 pub(super) async fn run<C>(
-    receiver: mpsc::Receiver<C>,
+    receiver: mpsc::Receiver<Queued<C>>,
     settings: WorkerSettings,
-    counters: Arc<Counters>,
-    settled: Arc<Notify>,
+    context: RunnerContext,
 ) where
     C: Callback,
 {
-    let (timeouts, timeout_receiver) = mpsc::channel(settings.concurrency);
     let runner = Runner {
         receiver,
-        timeout_receiver,
-        timeouts,
         semaphore: Arc::new(Semaphore::new(settings.concurrency)),
         tasks: JoinSet::new(),
-        counters,
-        settled,
-        summary: TimeoutSummary {
-            window: settings.timeout_summary_window,
-            burst: 0,
-            last_callback: None,
-            deadline: None,
-        },
+        spans: BTreeMap::new(),
+        counters: context.counters,
+        settled: context.settled,
+        burst: context.burst,
+        shutdown: context.shutdown,
+        summarizer: Some(context.summarizer),
         event_timeout: settings.event_timeout,
     };
     runner.run().await;
 }
 
 enum Event<C> {
-    Received(Option<C>),
-    Joined(Option<Result<(), JoinError>>),
-    TimedOut(Option<String>),
-    Summarize,
+    Received(Option<Queued<C>>),
+    Joined(Option<Result<(Id, ()), JoinError>>),
+    Shutdown,
 }
 
 type NextEvent<'runner, C> = Pin<Box<dyn Future<Output = Event<C>> + Send + 'runner>>;
+type PermitFuture = Pin<Box<dyn Future<Output = Option<OwnedSemaphorePermit>> + Send>>;
 
 struct Runner<C>
 where
     C: Callback,
 {
-    receiver: mpsc::Receiver<C>,
-    timeout_receiver: mpsc::Receiver<String>,
-    timeouts: mpsc::Sender<String>,
+    receiver: mpsc::Receiver<Queued<C>>,
     semaphore: Arc<Semaphore>,
     tasks: JoinSet<()>,
+    spans: BTreeMap<Id, Span>,
     counters: Arc<Counters>,
     settled: Arc<Notify>,
-    summary: TimeoutSummary,
+    burst: Arc<TimeoutBurst>,
+    shutdown: CancellationToken,
+    summarizer: Option<JoinHandle<()>>,
     event_timeout: Duration,
 }
 
@@ -70,102 +77,129 @@ where
     C: Callback,
 {
     async fn run(mut self) {
+        let mut closed = false;
         loop {
-            let event = self.next().await;
+            let event = self.next(closed).await;
             match event {
-                Event::Received(Some(callback)) => {
-                    self.spawn(callback).await;
+                Event::Received(Some(queued)) => {
+                    self.spawn(queued).await;
                     self.reap();
                 }
-                Event::Received(None) => break,
+                Event::Received(None) => closed = true,
                 Event::Joined(Some(joined)) => self.record_join(joined),
-                Event::TimedOut(Some(callback)) => self.summary.record(callback),
-                Event::Joined(None) | Event::TimedOut(None) => {}
-                Event::Summarize => {
-                    let total = self.counters.timed_out.load(Ordering::SeqCst);
-                    self.summary.emit(self.event_timeout, total);
+                Event::Joined(None) => {}
+                Event::Shutdown => {
+                    self.tasks.shutdown().await;
+                    self.finish().await;
+                    return;
                 }
             }
+            if closed && self.tasks.is_empty() {
+                break;
+            }
         }
-        while let Some(joined) = self.tasks.join_next().await {
-            self.record_join(joined);
-        }
-        while let Ok(callback) = self.timeout_receiver.try_recv() {
-            self.summary.record(callback);
-        }
-        let total = self.counters.timed_out.load(Ordering::SeqCst);
-        self.summary.emit(self.event_timeout, total);
+        self.finish().await;
     }
 
-    async fn next(&mut self) -> Event<C> {
+    async fn next(&mut self, closed: bool) -> Event<C> {
         let has_tasks = !self.tasks.is_empty();
-        let deadline = self.summary.deadline.unwrap_or_else(Instant::now);
-        let armed = self.summary.deadline.is_some();
-        // tokio::select! expands a percent operator the denied restriction lint rejects, so select_all polls the same sources
         let mut pending: Vec<NextEvent<'_, C>> = Vec::new();
-        pending.push(Box::pin(async {
-            Event::Received(self.receiver.recv().await)
-        }));
+        if !closed {
+            pending.push(Box::pin(async {
+                Event::Received(self.receiver.recv().await)
+            }));
+        }
         if has_tasks {
             pending.push(Box::pin(async {
-                Event::Joined(self.tasks.join_next().await)
+                Event::Joined(self.tasks.join_next_with_id().await)
             }));
         }
-        pending.push(Box::pin(async {
-            Event::TimedOut(self.timeout_receiver.recv().await)
+        let shutdown = self.shutdown.clone();
+        pending.push(Box::pin(async move {
+            shutdown.cancelled().await;
+            Event::Shutdown
         }));
-        if armed {
-            pending.push(Box::pin(async {
-                sleep_until(deadline).await;
-                Event::Summarize
-            }));
-        }
         let (event, _ready, remaining) = select_all(pending).await;
         drop(remaining);
         event
     }
 
-    async fn spawn(&mut self, callback: C) {
+    async fn acquire_permit(&self) -> Option<OwnedSemaphorePermit> {
+        let semaphore = Arc::clone(&self.semaphore);
+        let granted = async move { semaphore.acquire_owned().await.ok() };
+        let shutdown = self.shutdown.clone();
+        let stopped = async move {
+            shutdown.cancelled().await;
+            None
+        };
+        let mut pending: Vec<PermitFuture> = Vec::new();
+        pending.push(Box::pin(granted));
+        pending.push(Box::pin(stopped));
+        select_all(pending).await.0
+    }
+
+    async fn spawn(&mut self, queued: Queued<C>) {
         self.counters.dequeued.fetch_add(1, Ordering::SeqCst);
-        let Ok(permit) = Arc::clone(&self.semaphore).acquire_owned().await else {
+        let Some(permit) = self.acquire_permit().await else {
             self.counters.cancelled.fetch_add(1, Ordering::SeqCst);
             self.settled.notify_waiters();
             return;
         };
+        let Queued { span, callback } = queued;
         let counters = Arc::clone(&self.counters);
         let settled = Arc::clone(&self.settled);
-        let timeouts = self.timeouts.clone();
+        let burst = Arc::clone(&self.burst);
         let event_timeout = self.event_timeout;
-        self.tasks.spawn(async move {
-            let _permit = permit;
-            counters.started.fetch_add(1, Ordering::SeqCst);
-            run_callback(&counters, &settled, &timeouts, event_timeout, callback).await;
-        });
+        let handle = self.tasks.spawn(
+            async move {
+                let _permit = permit;
+                counters.started.fetch_add(1, Ordering::SeqCst);
+                run_callback(&counters, &settled, &burst, event_timeout, callback).await;
+            }
+            .instrument(span.clone()),
+        );
+        self.spans.insert(handle.id(), span);
     }
 
     fn reap(&mut self) {
-        while let Some(joined) = self.tasks.try_join_next() {
+        while let Some(joined) = self.tasks.try_join_next_with_id() {
             self.record_join(joined);
         }
     }
 
-    fn record_join(&self, joined: Result<(), JoinError>) {
+    fn record_join(&mut self, joined: Result<(Id, ()), JoinError>) {
+        let span = match &joined {
+            Ok((id, ())) => self.spans.remove(id),
+            Err(error) => self.spans.remove(&error.id()),
+        };
         let Err(error) = joined else {
             return;
         };
-        tracing::error!(
-            %error,
-            "a logging callback task failed; the model response is unaffected"
-        );
+        span.unwrap_or_else(Span::none).in_scope(|| {
+            tracing::error!(
+                %error,
+                "a logging callback task failed; the model response is unaffected"
+            );
+        });
         self.counters.failed.fetch_add(1, Ordering::SeqCst);
         self.settled.notify_waiters();
+    }
+
+    async fn finish(&mut self) {
+        self.shutdown.cancel();
+        let Some(summarizer) = self.summarizer.take() else {
+            return;
+        };
+        if summarizer.await.is_err() {
+            tracing::error!("the logging timeout summarizer failed");
+        }
     }
 }
 
 async fn run_callback<C>(
     counters: &Counters,
     settled: &Notify,
-    timeouts: &mpsc::Sender<String>,
+    burst: &TimeoutBurst,
     event_timeout: Duration,
     callback: C,
 ) where
@@ -186,14 +220,8 @@ async fn run_callback<C>(
         }
         Err(_) => {
             counters.timed_out.fetch_add(1, Ordering::SeqCst);
-            send_timeout(timeouts, name);
+            burst.record(name);
         }
     }
     settled.notify_waiters();
-}
-
-fn send_timeout(timeouts: &mpsc::Sender<String>, name: String) {
-    if timeouts.try_send(name).is_err() {
-        tracing::debug!("the logging timeout summary is behind; the timeout is still counted");
-    }
 }
