@@ -1,0 +1,138 @@
+id: B6071
+title: Fireworks AI chat settings, supported params, param mapping and extra_body translation
+description: >-
+  Build fireworks_ai_chat_params in betterlite-openai (crates/betterlite-openai/src/fireworks_ai_chat_params.rs and its folder).
+  It ports the option side of FireworksAIConfig in litellm/llms/fireworks_ai/chat/transformation.py: the module helpers
+  _map_reasoning_effort, _json_schema_response_format, _bool_from_kwargs, effort_from_chat_template_kwargs, the constants
+  EFFORT_KWARG_KEYS, NIM_VLLM_STRIP_PARAMS and _EXTRA_BODY_CONSUMED_PARAMS, and the methods __init__ and get_config,
+  get_supported_openai_params, map_openai_params, map_extra_body_params, _translate_truncate_prompt_tokens,
+  _translate_chat_template_kwargs and translate_guided_params. B2222 already built the capability lookups
+  (capability_exact, get_model_cost_capability) and B2221 the supports_function_calling, supports_tool_choice and
+  supports_reasoning predicates: call them, do not write them again. All functions are pure. The completion task
+  (B5832) reuses effort_from_chat_template_kwargs, translate_guided_params and NIM_VLLM_STRIP_PARAMS from here.
+
+
+  Settings. FireworksChatSettings holds tools, tool_choice, max_tokens, temperature, top_p, top_k, frequency_penalty,
+  presence_penalty, n, stop, response_format, user, logprobs, reasoning_effort, prompt_truncate_len and
+  context_length_exceeded_behavior ("error" or "truncate"), all default None. The constructor stores only non-None values
+  and get_config returns the stored non-None entries through B2202's get_config collection rule; Python class-attribute
+  assignment is B159's.
+
+
+  Supported params. get_supported_openai_params returns this exact ordered list: stream, max_completion_tokens, max_tokens,
+  temperature, top_p, top_k, frequency_penalty, presence_penalty, n, stop, response_format, user, logprobs,
+  prompt_truncate_len, context_length_exceeded_behavior, seed, top_logprobs, min_p, typical_p, repetition_penalty,
+  mirostat_target, mirostat_lr, logit_bias, echo, echo_last, ignore_eos, prompt_cache_key, prompt_cache_isolation_key,
+  raw_output, perf_metrics_in_response, return_token_ids, safe_tokenization, service_tier, speculation, prediction,
+  stream_options, sampling_mask. Then tools and parallel_tool_calls are appended when B2221 supports_function_calling is true
+  for the model with provider fireworks_ai; otherwise a debug log says tools will be dropped. Then tool_choice is appended when
+  B2222 capability_exact(model, supports_tool_choice) is true or B2221 supports_tool_choice is true. Then reasoning_effort,
+  reasoning_history and thinking are appended, in that order, when capability_exact(model, supports_reasoning) is true or
+  B2221 supports_reasoning is true. A False from the exact lookup falls through to the predicate.
+
+
+  Param mapping. map_openai_params raises a 400 BadRequestError (model, provider fireworks_ai) when both thinking and
+  reasoning_effort are non-None in non_default_params, with the text that Fireworks AI chat completions does not support both.
+  It then walks non_default_params in order. tool_choice "required" becomes "any", any other value passes through. response_format
+  with tools non-None in non_default_params goes through B2214 _add_response_format_to_tools (is_response_format_supported false,
+  enforce_tool_choice false) and replaces optional_params with its result; without tools it is copied as is. max_completion_tokens
+  writes max_tokens. reasoning_effort goes through _map_reasoning_effort: a map yields its "effort" entry, true yields "medium",
+  false yields "none", "auto" yields nothing, and any other value is kept; None results are not written. Any other key is copied
+  only when it is in the supported list and its value is not None. The tool_choice, response_format, max_completion_tokens and
+  reasoning_effort branches run even when the key is not in the supported list.
+
+
+  extra_body. map_extra_body_params returns a copy of optional_params unchanged when extra_body is not a map. Otherwise: keys of
+  extra_body in NIM_VLLM_STRIP_PARAMS (stop_token_ids, include_stop_str_in_output, skip_special_tokens, spaces_between_special_tokens,
+  best_of, use_beam_search, guided_decoding_backend, guided_regex, add_generation_prompt, continue_final_message,
+  add_special_tokens, detokenize, allowed_token_ids, bad_words, include_reasoning, nvext) are dropped with a debug log of the sorted
+  names. Three translators run in this order and their entries are merged in order into the top level. truncate_prompt_tokens (when
+  not None) becomes prompt_truncate_len unless prompt_truncate_len already exists in extra_body or optional_params. chat_template_kwargs
+  (when not None) must be a map or it is dropped with a log; keys outside enable_thinking, thinking, reasoning_budget, low_effort are
+  logged and dropped; it is ignored when reasoning_effort or thinking is in optional_params or extra_body; effort_from_chat_template_kwargs
+  gives "none" when the first boolean of enable_thinking or thinking is false, else the integer part of a positive non-bool
+  reasoning_budget, else "low" when low_effort is true, else nothing; the effort is dropped when B2221 supports_reasoning is false;
+  the result is reasoning_effort. guided_json, guided_grammar and guided_choice (the first non-None in that order) become a
+  response_format only when neither optional_params nor extra_body has response_format: guided_json gives
+  {type: json_schema, json_schema: {name: "response", schema}}, guided_grammar gives {type: grammar, grammar}, guided_choice gives
+  a json_schema named "choice" over {type: string, enum}. A top-level response_format in optional_params also removes extra_body's
+  response_format with a log. Every other extra_body entry stays in a new extra_body, which is left out when empty. The output is
+  optional_params without extra_body, then the promoted entries (later keys replace earlier ones), then the remaining extra_body.
+
+
+  Helper cases (helper b6071) call the pinned FireworksAIConfig methods with the local model map. Debug logs are emitted with
+  tracing at the same points; cases do not compare them. LiteLLM size: about 270 lines.
+scope:
+  paths:
+    - crates/betterlite-openai/src/fireworks_ai_chat_params.rs
+    - crates/betterlite-openai/src/fireworks_ai_chat_params/**
+    - tools/oracle/cases/helpers/fireworks-ai-chat-params/**
+    - "tools/oracle/fuzz/corpus/helper_case/fireworks_ai_chat_params-*"
+    - tools/oracle/helpers/b6071.py
+    - tools/oracle/helpers/b6071/**
+    - tools/oracle/src/helpers/openai/b6071.rs
+    - tools/oracle/src/helpers/openai/b6071/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/chat/transformation.py#L53-L135
+    why: Effort mapping, schema wrapper, chat_template_kwargs effort rule and the strip lists.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/chat/transformation.py#L138-L200
+    why: Settings fields and the constructor.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/chat/transformation.py#L227-L349
+    why: Supported list with capability gates and the param map.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/fireworks_ai/chat/transformation.py#L351-L462
+    why: extra_body translation, truncate, template kwargs and guided params.
+  - url: https://docs.fireworks.ai/api-reference/post-chatcompletions
+    why: The provider's chat parameters.
+dod:
+  - text: The supported list, its order and the tool, tool_choice and reasoning gates match LiteLLM.
+    proof: [fw-params-tests, oracle, helper-python]
+  - text: Param mapping covers tool_choice required, response_format with tools, max_completion_tokens, reasoning_effort forms and the thinking conflict.
+    proof: [fw-params-tests, oracle]
+  - text: extra_body translation covers strip, truncate, chat_template_kwargs and guided params with their precedence rules.
+    proof: [fw-params-tests, oracle]
+  - text: The new helper cases replay through the shared parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: fw-params-tests
+      why: A supported-list gate, a mapping branch or an extra_body rule is missing.
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^fireworks_ai_chat_params::/)'
+    - id: helper-python
+      why: The strict oracle adapter lint or type checks fail.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b6071.py)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: Newly added cases are absent or do not replay.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/fireworks_ai_chat_params-*")" &&
+        grep -lE '^[[:space:]]+b6071:' tools/oracle/fuzz/corpus/helper_case/fireworks_ai_chat_params-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/fireworks-ai-chat-params/supported-list-gates.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-chat-params/param-mapping.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-chat-params/reasoning-effort-forms.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-chat-params/thinking-conflict.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-chat-params/response-format-with-tools.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-chat-params/extra-body-strip-and-truncate.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-chat-params/chat-template-kwargs.yaml
+  - tools/oracle/cases/helpers/fireworks-ai-chat-params/guided-params.yaml
+deviations: []
+out_of_scope:
+  - B2222 owns the capability lookups and B2221 the supports_* predicates; this task only calls them.
+  - B6072 owns validate_environment, message and tool cleanup, request and response transforms, the stream handler and get_models.
+  - B159 owns Python class-attribute assignment for the settings constructor.
+  - B041 wires the config into dispatch and the HTTP cases.
+pitfalls:
+  - The tool_choice, response_format, max_completion_tokens and reasoning_effort branches of map_openai_params are not gated on the supported list, so they apply to models that do not list them.
+  - A reasoning_effort of "auto" is dropped and False becomes "none", while a map without an "effort" key becomes None and is dropped.
+  - capability_exact returning False does not stop the gate, because the source uses "or" with the predicate, so the predicate can still add tool_choice or reasoning params.
+  - is_tools_set reads non_default_params, not optional_params, so tools mapped earlier in the loop do not count.
+  - guided params are ignored when response_format is in either optional_params or extra_body, even when that value is null.
+  - truncate_prompt_tokens is skipped when prompt_truncate_len exists in extra_body, so the truncate value is then consumed and lost, not passed on.
+  - The promoted entries are spread after optional_params, so a promoted reasoning_effort or response_format can only be added when the checks above found none.
+budget: {max_changed_lines: 1500, max_new_expects: 0}
+review_level: standard

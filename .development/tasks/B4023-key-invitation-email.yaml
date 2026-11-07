@@ -1,0 +1,151 @@
+id: B4023
+title: Key creation and invitation email rendering
+description: >-
+  Build the legacy "email" alerting path that mails a new virtual key or an invitation to a new internal user.
+  LiteLLM does this in `SlackAlerting.send_key_created_or_user_invited_email`; callers (the key-created hook, the
+  new-user route) hand it a `WebhookEvent` and ignore the answer. Put the code in betterlite-logging as the module
+  `key_invitation_email`. The module owns its error enum `KeyInvitationEmailError`.
+
+  Rendering. `templates.py` has two templates this task uses, `KEY_CREATED_EMAIL_TEMPLATE` and
+  `USER_INVITED_EMAIL_TEMPLATE`. Keep their HTML text exactly, whitespace included, as Rust string constants, and
+  fill them with two plain functions: `render_key_created_email(&KeyCreatedEmail) -> String` (fields
+  `email_logo_url`, `recipient_email: Option<&str>`, `key_budget: Option<f64>`, `key_token: Option<&str>`,
+  `base_url`, `email_support_contact`) and `render_user_invited_email(&UserInvitedEmail) -> String` (fields
+  `email_logo_url`, `recipient_email: Option<&str>`, `team_name`, `base_url`, `email_support_contact`). Python's
+  `str.format` prints a missing value as `None` and a float with its shortest round-trip text and a `.0` for whole
+  numbers (`10.0`, `0.5`), so do the same. In the key template `{{base_url}}` and the doubled braces around the
+  sample request are escapes, so the output contains a single `{base_url}` and single braces, and `base_url` is
+  not substituted there. The key token appears twice (the `<pre>` block and `api_key=`).
+
+  Sending. `send_key_created_or_user_invited_email(&self, event: &WebhookEvent) -> bool` follows the source
+  order. (1) If alerting is not configured or does not contain `email`, log an error and return false. (2) Read
+  `SMTP_SENDER_LOGO`, then `EMAIL_LOGO_URL`, for the logo, and `EMAIL_SUPPORT_CONTACT`, and run B4022's email
+  customization check on them; when it rejects, the whole call returns false. (3) Fall back to B4020's
+  `LITELLM_LOGO_URL` and `LITELLM_SUPPORT_CONTACT` for anything unset. (4) `recipient_email` is
+  `event.user_email`; when it is absent and `event.user_id` is set and a database handle exists, look the user up
+  with B723's user repository `find_unique` and use `user_email`. (5) `base_url` is `PROXY_BASE_URL`, default
+  `http://0.0.0.0:4000`. (6) With no recipient, log an error that never prints the event (it holds the key token);
+  the call still goes on. (7) For `key_created`, render the key template with `event.max_budget` as the budget
+  and `event.token` as the key. For `internal_user_created`, take the team name (B724 team repository
+  `find_unique`; `team_alias`, or `-` when the alias is empty or null; `Default Team` when `team_id` is absent, the
+  database is absent or the row is missing) and build the invitation link, then render the invitation template
+  with that link as `base_url`. Any other event logs an error and the body stays `Alert from LiteLLM Server`.
+  (8) Send with subject `LiteLLM: <event_message>` and return true. Any error before or during the send is logged
+  and the call returns false; that includes a missing recipient, which the injected sender rejects.
+
+  Invitation link, `construct_user_invitation_link(user_id: Option<&str>, base_url: &str) -> String`. Without a
+  user id or a database handle, return `base_url` unchanged. Otherwise list the user's invitation rows through
+  B726's invitation link repository, newest `created_at` first, and use the first one; when there is none, ask
+  the injected `InvitationCreator` for a new one. The result is `<base_url without trailing slashes>/ui/onboarding?invitation_id=<id>`.
+  When the lookup or the creation fails, log the user id and the error and return `base_url`, as LiteLLM does.
+
+  Dependencies come in by constructor. The SMTP transport is the trait `EmailSender` with one async method
+  `send(receiver: Option<&str>, subject: &str, html: &str)`; B786 owns the real `send_email` in betterlite-server
+  and the server implements the trait. The invitation row is created through the trait `InvitationCreator` with
+  one async method `create_for_user(user_id: &str) -> Result<InvitationId, _>`; B797 owns
+  `create_invitation_for_user` (seven-day expiry, `created_by`) and implements it, and B797 depends on this task, so
+  this task must not call it directly. Environment values come from an injected env reader, never `std::env`.
+  The alerting list, `WebhookEvent`, the logo and contact constants and the database session come from B4020, B700
+  and B4022; do not redefine them.
+scope:
+  paths:
+    - crates/betterlite-logging/src/key_invitation_email.rs
+    - crates/betterlite-logging/src/key_invitation_email/**
+    - tools/oracle/cases/helpers/key-invitation-email/**
+    - "tools/oracle/fuzz/corpus/helper_case/key_invitation_email-*"
+    - tools/oracle/helpers/b4023.py
+    - tools/oracle/helpers/b4023/**
+    - tools/oracle/src/helpers/logging/b4023.rs
+    - tools/oracle/src/helpers/logging/b4023/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/email_templates/templates.py#L7-L47
+    why: Key created template, including the escaped braces and the doubled use of the key token.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/email_templates/templates.py#L50-L64
+    why: Invitation template with the accept button that links to base_url.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1236-L1272
+    why: Invitation link lookup, creation fallback and the base_url fallback on any failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1274-L1365
+    why: Send flow, env defaults, recipient and team lookups, per-event template choice, subject and the false return on any error.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1224-L1234
+    why: Customization check this task calls (B4022 owns it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/user_management_event_hooks.py#L164-L190
+    why: Call site for the invitation email; it starts the send as a background task and ignores the result.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_helpers/user_invitation.py#L11-L49
+    why: Shows what InvitationCreator has to do; B797 builds it.
+dod:
+  - text: render_key_created_email reproduces the key template, with a single `{base_url}` and single braces in the sample request, the token in both places and `None` for a missing recipient or budget.
+    proof: [render-tests, oracle-cases]
+  - text: render_user_invited_email reproduces the invitation template with the link in the Accept Invitation button and the team name in the sentence.
+    proof: [render-tests, oracle-cases]
+  - text: Float budgets print like Python (`10.0`, `0.5`, `100.25`).
+    proof: [render-tests, oracle-cases]
+  - text: The send flow returns false and sends nothing when alerting is unset or lacks `email`.
+    proof: [send-tests]
+  - text: Logo, support contact and base URL take SMTP_SENDER_LOGO, then EMAIL_LOGO_URL, EMAIL_SUPPORT_CONTACT and PROXY_BASE_URL (default `http://0.0.0.0:4000`), and fall back to the B4020 constants.
+    proof: [send-tests]
+  - text: A recipient missing from the event is read from the user row; the send still goes on when no recipient is found and the call returns false because the sender rejects it.
+    proof: [send-tests]
+  - text: "A `key_created` event sends the key template with subject `LiteLLM: <event_message>` and returns true."
+    proof: [send-tests]
+  - text: An `internal_user_created` event uses the team alias, `-` for an empty alias and `Default Team` without a team, and sends the invitation link as the button target.
+    proof: [send-tests]
+  - text: An unknown event sends `Alert from LiteLLM Server` and returns true.
+    proof: [send-tests]
+  - text: A rejected customization or a sender error is logged and returns false, and no log line contains the key token.
+    proof: [send-tests]
+  - text: The invitation link uses the newest existing invitation, creates one only when none exists, trims trailing slashes and returns base_url unchanged without a user id, a database or on any failure.
+    proof: [link-tests]
+checks:
+  optional: [mutants]
+  commands:
+    - id: render-tests
+      why: template text, escapes or float printing are missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^key_invitation_email::tests::render_/)'
+    - id: send-tests
+      why: the send flow, env defaults, recipient lookup, event choice or the false returns are missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^key_invitation_email::tests::send_/)'
+    - id: link-tests
+      why: invitation link lookup, creation or fallback is missing
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^key_invitation_email::tests::link_/)'
+    - id: oracle-cases
+      why: the helper cases that compare both renderers with LiteLLM are absent
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/key-invitation-email)" &&
+        grep -rlE '^[[:space:]]+b4023:' tools/oracle/cases/helpers/key-invitation-email
+oracle_cases:
+  - tools/oracle/cases/helpers/key-invitation-email/key-created.yaml
+  - tools/oracle/cases/helpers/key-invitation-email/key-created-missing-values.yaml
+  - tools/oracle/cases/helpers/key-invitation-email/user-invited.yaml
+deviations:
+  - what: Setting SMTP_SENDER_LOGO, EMAIL_LOGO_URL or EMAIL_SUPPORT_CONTACT makes every key and invitation email fail with a logged error and a false return.
+    why: betterlite has no paid tier, so B4022's customization check always rejects a customized logo or contact. LiteLLM only rejects it when premium_user is false.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1224-L1234
+  - what: The missing-recipient error log does not include the event.
+    why: LiteLLM passes the whole event as log extra, and it holds the key token. betterlite logs the event name and user id only.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1304-L1308
+  - what: The unknown-event error log prints the event name, not the dumped event.
+    why: Same reason, the dump carries the key token.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/SlackAlerting/slack_alerting.py#L1348-L1352
+out_of_scope:
+  - "send_email_alert_using_smtp, get_all_team_member_emails, send_team_budget_alert and _check_if_using_premium_email_feature: B4022 owns them; this task only calls the customization check."
+  - "SOFT_BUDGET_ALERT_EMAIL_TEMPLATE, TEAM_SOFT_BUDGET_ALERT_EMAIL_TEMPLATE, MAX_BUDGET_ALERT_EMAIL_TEMPLATE, TEAM_MEMBER_MAX_BUDGET_ALERT_EMAIL_TEMPLATE and email_footer.py: no caller at the pin (only the enterprise email loggers use them)."
+  - "key_created_email.py, key_rotated_email.py, user_invitation_email.py: no caller at the pin, only litellm_enterprise imports them."
+  - "The v2 enterprise email loggers (BaseEmailLogger) in the two event hooks: enterprise code, not built."
+  - "create_invitation_for_user and the invitation routes: B797 owns them and implements InvitationCreator."
+  - "The SMTP transport send_email in litellm/proxy/utils.py: B786 owns it; the server implements EmailSender."
+  - "Calling this flow from the key-created and new-user hooks: B898 and B797."
+pitfalls:
+  - "The key template has `{{base_url}}` and doubled braces, so Python prints `{base_url}` and single braces; a Rust `format!` with the same text would print the doubled braces, so build the string with plain replacement."
+  - "The key template gets `key_budget` from `event.max_budget`, not `spend`, and the budget prints as `None` when absent."
+  - "For internal_user_created the template's `base_url` slot receives the invitation link, not the proxy base URL."
+  - "The team name is `team_row.team_alias or \"-\"`, so an empty alias also gives `-`; `Default Team` is only for no team id, no database or no team row."
+  - "A missing recipient only logs; the send is still tried and fails inside the sender, so the call returns false rather than skipping early."
+  - "An unknown event still sends the mail `Alert from LiteLLM Server` and returns true."
+  - "Both env names for the logo count: SMTP_SENDER_LOGO wins over EMAIL_LOGO_URL; an empty value counts as unset in betterlite."
+  - "The invitation lookup orders by `created_at` descending, so the newest row wins; creation happens only when the list is empty."
+  - "construct_user_invitation_link catches every failure and returns base_url, so the email still goes out with a plain dashboard link."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

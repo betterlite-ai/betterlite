@@ -1,0 +1,5 @@
+kind: helper
+name: tokenizer-engine-encode
+call: {tokenizer_engine: {operation: encode, engine: cl100k_base, text: hello world}}
+env: {}
+compare: {ignore: []}

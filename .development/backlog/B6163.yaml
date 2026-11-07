@@ -1,0 +1,15 @@
+id: B6163
+milestone: M6 guardrails
+title: A2A guardrail translation handler
+status: todo
+depends_on: [B3661, B3663, B207, B2210]
+file: tasks/B6163-a2a-guardrail-translation.yaml
+covers:
+  - "litellm/llms/a2a/chat/guardrail_translation/handler.py"
+  - "litellm/llms/a2a/chat/guardrail_translation/__init__.py"
+parent: B104
+split_from: B3680
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

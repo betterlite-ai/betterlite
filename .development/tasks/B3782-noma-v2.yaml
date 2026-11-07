@@ -140,7 +140,7 @@ out_of_scope:
   - Configuration loading from config.yaml and environment resolution (B002).
   - Noma v2 legacy lifecycle and streaming hooks (B3781).
   - HTTP client pooling and connection handling (B173).
-  - GenericGuardrailAPIInputs type definition and GuardrailStatus enum (B3770).
+  - GenericGuardrailAPIInputs type definition (B5471) and GuardrailStatus enum (B3664).
 pitfalls:
   - "NOMA_API_BASE.rstrip('/') removes the trailing slash; the endpoint is always /litellm/guardrail appended to the base, so verify the final URL is correct."
   - "The _default handler in payload serialization calls model_dump() on any object with that method; Pydantic v1 and v2 have different signatures, so use getattr and catch exceptions."

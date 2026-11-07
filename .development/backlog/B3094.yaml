@@ -2,8 +2,8 @@ id: B3094
 milestone: M4 keys, spend and management
 title: Resolve user and team analytics query scopes
 status: todo
-depends_on: [B727, B732, B798, B815, B3090]
-file: null
+depends_on: [B798, B815, B2312, B2314, B3090]
+file: tasks/B3094-user-team-scopes.yaml
 covers:
   - "litellm/proxy/management_endpoints/daily_activity_scopes.py"
 parent: B074

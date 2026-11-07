@@ -1,0 +1,202 @@
+id: B3095
+title: Resolve tag, organization, customer and agent analytics scopes
+description: >-
+  Port the four remaining resolvers of daily_activity_scopes.py (tag, organization, customer, agent) plus the
+  dispatch that picks a resolver by entity, into betterlite-server as the module `daily_activity_entities`.
+  B3094 (module `daily_activity_scopes`) already holds the shared types and the user and team halves; this task
+  imports them (`EntityQuery`, `ResolvedScope`, `Entity`, `EntityScopeResolver`, `OperationNames`,
+  `ApiKeyFilter`, `build_scope`, `split_ids`, `split_excluded_ids`, `USER_RESOLVER`, `TEAM_RESOLVER`,
+  `ScopesError`, `UserQueryParams`, `TeamQueryParams`) and never edits that module. B3096 to B3098 call the
+  dispatch below, so keep its names and signatures exactly as written here.
+
+  Query shapes. Each is a plain params struct with every field optional, like B3094's `TeamQueryParams`, and a
+  function that turns it into an `EntityQuery`. `TagQueryParams`: start_date, end_date, model, api_key, tags,
+  timezone (Option<i64>). `OrganizationQueryParams`: organization_ids, start_date, end_date, model, api_key,
+  exclude_organization_ids, timezone. `CustomerQueryParams`: end_user_ids, start_date, end_date, model, api_key,
+  exclude_end_user_ids, timezone. `AgentQueryParams`: agent_ids, start_date, end_date, model, api_key,
+  exclude_agent_ids, timezone. The functions are `tag_entity_query`, `organization_entity_query`,
+  `customer_entity_query` and `agent_entity_query`. Each splits its id list with B3094's `split_ids` and its
+  exclusion list with `split_excluded_ids`, copies the other fields, and always sets include_current_utc_day to
+  false. The tag query has no exclusion parameter, so its exclude_entity_ids is always empty. The customer query
+  is the only one whose id parameters are named end_user_ids and exclude_end_user_ids; the routes
+  (B3096 to B3098) use those names for both /customer and /end_user.
+
+  Dispatch, the surface other tasks call. `EntityQueryParams` is an enum with one variant per entity, each
+  holding that entity's params struct: User(UserQueryParams), Team(TeamQueryParams), Tag, Organization,
+  Customer, Agent. These are the exact public signatures:
+
+  - `pub fn entity_resolver(entity: Entity) -> &'static EntityScopeResolver` is an exhaustive `match` on
+    `Entity` (no wildcard arm) returning the six constants. The user and team constants are B3094's.
+  - `pub fn parse_entity_query(params: EntityQueryParams) -> EntityQuery` is an exhaustive `match` on the
+    variant that calls `user_entity_query` and `team_entity_query` (B3094) or the four functions above.
+  - `pub async fn resolve_entity_scope(entity: Entity, context: &EntityScopeContext<'_>, query: &EntityQuery)
+    -> Result<ResolvedScope, EntityScopeError>` is an exhaustive `match` on `Entity`. It does not check dates;
+    B3096's `resolved_scope` does that first.
+
+  `EntityScopeContext<'a>` is a struct with the caller's `UserAPIKeyAuth` (B2314), the database handle the four
+  owner functions below take, and whatever extra dependency value B815's `resolve_team_daily_activity_scope`
+  needs through B3094's `resolve_team` (Python reads these from proxy_server inside `_resolve_team`; read
+  nothing global here). Take the exact types from those functions' signatures; the context only bundles them.
+  `EntityScopeError` is this module's error enum with these variants: `Denied(ScopeDenied)` (B3090, from
+  betterlite-analytics), `Scopes(#[from] ScopesError)`, and one #[from] variant per owner error type for the
+  tag, organization, customer and agent owner functions (HTTP-style errors pass through untranslated, as in
+  B3094). When B3094's `resolve_user` reports a ScopeDenied, lift it into `Denied` instead of `Scopes`, so a
+  route task matches one variant for every denial.
+
+  Resolvers (all four are plain async functions; the Python `_resolve_*` names in snake case):
+
+  Tag, `resolve_tag`. Calls B1604's `get_tag_daily_activity_api_key_filter` with the caller and
+  `query.api_key` as the requested key. Its result is a string, a list of strings, or none; map it onto
+  B3094's `ApiKeyFilter` (a list, even an empty one, becomes `Many`; a string becomes `Single`) wrapped in
+  Option. Then `build_scope` with the TAG constant, entity_ids = query.entity_ids as is (tags are not checked
+  for existence or ownership here), exclude_entity_ids from the query, that filter and no metadata
+  (entity_metadata None).
+
+  Organization, `resolve_organization`. Calls B058's `resolve_organization_daily_activity_scope` with the
+  requested ids (query.entity_ids), the database and the caller. It may raise HTTP 403 "User is not org_admin
+  for Organization= <id>."; pass that through. Then `build_scope` with the ORGANIZATION constant, the returned
+  organization_ids as entity_ids (this can be None for an admin or an empty list for a non-admin with no
+  memberships, and an empty list stays `Some(empty)`), exclude_entity_ids from the query, query.api_key as a
+  Single filter and the returned organization_metadata as `Some(map)`.
+
+  Customer, `resolve_customer`. First it calls B059's `customer_daily_activity_is_admin` on the caller. When
+  that is false it returns `Denied(ScopeDenied)` with status 403 and the message
+  `Admin-only endpoint. Your user role=<role>`, where <role> is the caller's user_role value as its plain
+  string (for example `internal_user`) and `None` when the caller has no role, and it does not touch the
+  database. Otherwise it calls B059's `resolve_customer_daily_activity_scope` with query.entity_ids and the
+  database, then `build_scope` with the CUSTOMER constant, the returned end_user_ids, exclude_entity_ids from
+  the query, query.api_key as Single and end_user_metadata as `Some(map)`.
+
+  Agent, `resolve_agent`. Calls B4787's `resolve_agent_daily_activity_scope` with query.entity_ids, the caller
+  and the database. That function checks the "agents" feature gate and the caller's grants; errors pass
+  through. Then `build_scope` with the AGENT constant, the returned agent_ids as entity_ids, exclude_entity_ids
+  from the query, query.api_key as Single and agent_metadata as `Some(map)`.
+
+  Constants. `TAG_RESOLVER`, `ORGANIZATION_RESOLVER`, `CUSTOMER_RESOLVER` and `AGENT_RESOLVER` are
+  `pub const EntityScopeResolver` values with the exact strings from L304-L355 and L397-L472. All four have
+  entity breakdown on and five operation names, none for cache_leakage_keys (`None`). Tag: table
+  litellm_dailytagspend, entity_id_field tag, route prefix /tag, tag "tag management", operation names
+  get_tag_daily_activity_aggregated, _aggregated_search, _aggregated_keys, get_tag_daily_activity_model_top_keys
+  and get_tag_daily_activity_export. Organization: litellm_dailyorganizationspend, organization_id, /organization,
+  "organization management", same pattern with get_organization_daily_activity_*. Customer:
+  litellm_dailyenduserspend, entity_id_field end_user_id, two route prefixes /customer and /end_user (in that
+  order), tag "Customer Management", get_customer_daily_activity_*. Agent: litellm_dailyagentspend, agent_id,
+  /agent, "Agent Management", get_agent_daily_activity_*. The five names per entity are, in order, aggregated
+  (`..._aggregated`), search (`..._aggregated_search`), key_page (`..._aggregated_keys`), model_top_keys
+  (`..._model_top_keys`) and export (`..._export`); copy them from the pinned file rather than building them
+  from a pattern, and use B2312's `DailyActivityTable` variants for the table.
+
+  Order matters for B3096: the context, query and caller arrive from the route; nothing in this task reads a
+  database for the tag, the user or the customer-denial paths before its check passes.
+scope:
+  paths:
+    - crates/betterlite-server/src/daily_activity_entities.rs
+    - crates/betterlite-server/src/daily_activity_entities/**
+    - tools/oracle/cases/helpers/daily-activity-entities/**
+    - "tools/oracle/fuzz/corpus/helper_case/daily-activity-entities-*"
+    - tools/oracle/helpers/b3095.py
+    - tools/oracle/helpers/b3095/**
+    - tools/oracle/src/helpers/server/b3095.rs
+    - tools/oracle/src/helpers/server/b3095/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_scopes.py#L23-L100
+    why: The shared types and build_scope that every resolver here ends in, built by B3094.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_scopes.py#L146-L216
+    why: _resolve_tag, _resolve_organization, _resolve_customer and _resolve_agent, including the customer admin denial before any lookup.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_scopes.py#L275-L355
+    why: _tag_query, _organization_query, _customer_query and _agent_query, the four query shapes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_scopes.py#L397-L472
+    why: TAG, ORGANIZATION, CUSTOMER and AGENT resolver constants with route prefixes, tags and operation names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/tag_management_endpoints.py#L193-L209
+    why: get_tag_daily_activity_api_key_filter, built by B1604; its three result shapes decide the ApiKeyFilter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/organization_endpoints.py#L616-L663
+    why: _OrganizationDailyActivityScope and resolve_organization_daily_activity_scope, built by B058.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L495-L519
+    why: _CustomerDailyActivityScope, resolve_customer_daily_activity_scope and customer_daily_activity_is_admin, built by B059.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/endpoints.py#L311-L375
+    why: _AgentDailyActivityScope and resolve_agent_daily_activity_scope, built by B4787.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/daily_activity_routes.py#L76-L95
+    why: How the routes run resolver.resolve and turn ScopeDenied into an HTTP error, which fixes the dispatch's call shape.
+dod:
+  - text: tag_entity_query, organization_entity_query, customer_entity_query and agent_entity_query split their id and exclusion lists on commas without trimming, give None for an empty id string and an empty Vec for an empty exclusion string, and always set include_current_utc_day to false; the tag query has no exclusions.
+    proof: [query-tests, helper-case-corpus]
+  - text: parse_entity_query and entity_resolver cover all six entities, and entity_resolver returns the resolver whose entity field equals the argument.
+    proof: [dispatch-tests, helper-case-corpus]
+  - text: resolve_tag passes the requested api key to B1604, maps a string, a list (even empty) and none onto the key filter, keeps entity ids as given and sets no metadata.
+    proof: [tag-resolve-tests]
+  - text: resolve_organization passes the requested ids to B058, builds the scope from the returned ids and metadata (an empty id list stays Some(empty), None stays None) and passes B058's error through.
+    proof: [organization-resolve-tests]
+  - text: resolve_customer denies a non-admin with ScopeDenied 403 "Admin-only endpoint. Your user role=<role>" (None for no role) before any database call, and otherwise builds the scope from B059's ids and metadata.
+    proof: [customer-resolve-tests, helper-case-corpus]
+  - text: resolve_agent passes the requested ids, the caller and the database to B4787, builds the scope from the returned ids and metadata and passes its error through.
+    proof: [agent-resolve-tests]
+  - text: resolve_entity_scope sends each Entity to its own resolver, lifts every ScopeDenied (user and customer) into EntityScopeError::Denied and keeps other errors in their own variants.
+    proof: [dispatch-tests]
+  - text: TAG_RESOLVER, ORGANIZATION_RESOLVER, CUSTOMER_RESOLVER and AGENT_RESOLVER carry the exact table, entity field, route prefixes (customer has /customer then /end_user), tags, breakdown flag and five operation names, with no cache leakage name.
+    proof: [resolver-const-tests, helper-case-corpus]
+checks:
+  optional: []
+  commands:
+    - id: query-tests
+      why: one of the four query shapes splits ids wrongly, sets include_current_utc_day, or gives the tag query exclusions
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_entities::tests::query_/)'
+    - id: dispatch-tests
+      why: the dispatch misses an entity, parse_entity_query picks the wrong shape, or a denial is not lifted into the Denied variant
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_entities::tests::dispatch_/)'
+    - id: tag-resolve-tests
+      why: the tag resolver mishandles the key filter result, the entity ids or the metadata
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_entities::tests::tag_resolve_/)'
+    - id: organization-resolve-tests
+      why: the organization resolver mishandles the returned ids, the metadata or B058's error
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_entities::tests::organization_resolve_/)'
+    - id: customer-resolve-tests
+      why: the customer resolver lets a non-admin through, words the denial wrongly or queries before the check
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_entities::tests::customer_resolve_/)'
+    - id: agent-resolve-tests
+      why: the agent resolver mishandles the returned ids, the metadata or B4787's error
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_entities::tests::agent_resolve_/)'
+    - id: resolver-const-tests
+      why: one of the four resolver constants differs from LiteLLM's
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^daily_activity_entities::tests::resolver_const_/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3095)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3095 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3095/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added entity cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/daily-activity-entities-*")" &&
+        grep -lE '^[[:space:]]+b3095:' tools/oracle/fuzz/corpus/helper_case/daily-activity-entities-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/daily-activity-entities/query-shapes.yaml
+  - tools/oracle/cases/helpers/daily-activity-entities/dispatch.yaml
+  - tools/oracle/cases/helpers/daily-activity-entities/customer-denial.yaml
+  - tools/oracle/cases/helpers/daily-activity-entities/resolver-constants.yaml
+deviations:
+  - what: The four Python resolver constants, their query callables and their resolve callables become plain data plus functions chosen by an exhaustive match on `Entity`. FastAPI Query parsing and 422 answers for a malformed timezone are done by the route tasks.
+    why: rules.yaml requires a build-time set to be an enum matched exhaustively, not a registry of callables, and HTTP parsing belongs to the routes.
+  - what: The resolvers return `EntityScopeError` (a Rust enum with a `Denied` variant) where Python returns a ScopeDenied value or raises an HTTPException.
+    why: One error type lets B3096 turn every failure into the same HTTP error through B3090's raise_public without catching exceptions.
+out_of_scope:
+  - "B3094 owns EntityQuery, ResolvedScope, Entity, EntityScopeResolver, OperationNames, _query_ids, _query_excluded_ids, _build_scope, _resolve_user, _resolve_team, _user_query, _team_query and the USER and TEAM resolver constants (L23-L143, L219-L272, L358-L396)."
+  - "B1604 owns get_tag_daily_activity_api_key_filter, B058 owns resolve_organization_daily_activity_scope, B059 owns resolve_customer_daily_activity_scope and customer_daily_activity_is_admin, B4787 owns resolve_agent_daily_activity_scope; this task only calls them."
+  - "B3096 to B3098 own the routes, the date range check and the HTTP oracle cases through the booted proxy; no route reaches this module yet, so the cases here are helper cases."
+  - "Key filtering in SQL and the daily activity reads are B727 and B3091; this task only builds the scope."
+pitfalls:
+  - An empty list from the tag key filter means "this caller sees no keys" and must become Many(empty), which B3094's build_scope keeps as Some(empty); only none or an empty string means no filter.
+  - The customer denial is a returned ScopeDenied with status 403, not B059's own route answer (that route answers 401 for the same text); the shared analytics routes report 403.
+  - The customer denial message prints the role value ("internal_user", "customer") and the word None when the role is absent, because LitellmUserRoles.__str__ returns its value.
+  - Customer ids are named end_user_ids and exclude_end_user_ids in the query, yet they land in the generic entity_ids and exclude_entity_ids of EntityQuery like every other entity.
+  - The organization scope for a non-admin with no memberships is an empty id list, which means "no organizations", never None (all organizations); do not collapse the two.
+  - Tag, organization, customer and agent queries all pass exclude_entity_ids through to the scope untouched; only the tag query has none, so its exclusions are always empty.
+  - Metadata is Some(map) for organization, customer and agent even when the map is empty, and None for tags (and users).
+  - 'The oracle helper for this task is b3095. Cases call it as `b3095:` under `call`; the Python adapter feeds real `_tag_query`-style inputs and `_resolve_customer` with a stub caller of a given role and no database, and prints plain JSON.'
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

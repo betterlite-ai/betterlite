@@ -1,0 +1,18 @@
+id: B6080
+milestone: M3 providers
+title: OpenRouter chat, embedding, Responses and decisions
+status: todo
+depends_on: [B668, B503, B504, B010, B2214, B3511, B506, B507]
+file: tasks/B6080-openrouter-chat-embedding-responses.yaml
+covers:
+  - "litellm/llms/openrouter/chat/**"
+  - "litellm/llms/openrouter/common_utils.py"
+  - "litellm/llms/openrouter/embedding/**"
+  - "litellm/llms/openrouter/responses/**"
+  - "litellm/llms/openrouter/decisions/**"
+parent: B041
+split_from: B5830
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

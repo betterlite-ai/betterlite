@@ -1,0 +1,14 @@
+id: B5971
+milestone: M3 providers
+title: Watsonx chat options and tool mapping
+status: todo
+depends_on: [B5970, B668, B1428, B1427]
+file: tasks/B5971-watsonx-chat.yaml
+covers:
+  - "litellm/llms/watsonx/chat/**"
+parent: B042
+split_from: B5842
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

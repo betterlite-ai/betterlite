@@ -2,9 +2,10 @@ id: B158
 milestone: M12 python
 title: Python completion and acompletion, streaming iterators and response objects
 status: todo
-depends_on: [B157, B005]
-file: null
+depends_on: [B157, B163, B5650, B5651, B5652, B5653, B5654, B5655, B5656, B5657, B5658, B5659]
+file: tasks/B158-python-completion.yaml
 covers:
+  - "litellm/utils.py"
   - "litellm/main.py"
   - "litellm/chat_completions/**"
   - "litellm/types/{utils,completion}.py"

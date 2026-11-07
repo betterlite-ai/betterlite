@@ -1,0 +1,193 @@
+id: B3854
+title: Legacy OTel capture policy and span annotations
+description: >-
+  Build the small, shared rules that LiteLLM's legacy OpenTelemetry logger applies before and after it writes a span: the logger's settings record, the content-capture mode, the once-per-request emit guard, the span name and timestamp rules, the team, identity and service-tier attributes, the exception stamp, and the GenAI experimental-semconv attribute helpers.
+  The lifecycle (B3859), the inference attributes (B3856), the metrics and events (B3857), the service hooks (B3858) and the provider assembly (B3868) all call these, so this task owns them and calls none of them back.
+  Everything goes in the module `otel::legacy_policy` of betterlite-logging: `crates/betterlite-logging/src/otel/legacy_policy.rs` declares the submodules `config`, `capture`, `dedupe`, `span_time`, `annotations`, `error_recording` and `semconv_attrs`, each in `legacy_policy/<name>.rs` with its tests in `legacy_policy/<name>/tests.rs`. Nothing here can fail, so there is no error enum. Do not add a catch-all: LiteLLM's blanket `except Exception` around `_record_exception_on_span` only guards Python attribute errors that typed input cannot produce.
+
+  Settings (`config`). `OpenTelemetryConfig` is a plain struct with LiteLLM's fields and defaults: `exporter` (enum `Console`, `InMemory` or `Named(String)`, default `Console`), `endpoint`, `headers`, `enable_metrics` (false), `enable_events` (false), `service_name`, `deployment_environment`, `model_id`, `ignore_context_propagation` (bool), `skip_set_global` (false), `capture_message_content: Option<String>`, `semconv_stability_opt_in: BTreeSet<OTELSemconvCategory>` (type from B3840, `crate::otel::vocabulary::semconv`), `baggage_team_metadata_keys: Vec<String>`, `baggage_metadata_keys: Vec<String>` and `attributes: Option<OtelModelValue>`. The last field keeps the raw `attributes` input untouched. B3857 owns the metric attribute filter type and parses this value, so this task must not name it.
+  Functions read the environment only from a `&BTreeMap<String, String>` snapshot the caller passes in, never from `std::env`. `OpenTelemetryConfig::from_env(env)` follows LiteLLM: `exporter` is `OTEL_EXPORTER_OTLP_PROTOCOL`, then `OTEL_EXPORTER`, then "console"; `endpoint` is `OTEL_EXPORTER_OTLP_ENDPOINT`, then `OTEL_ENDPOINT`; `headers` is `OTEL_EXPORTER_OTLP_HEADERS`, then `OTEL_HEADERS`; `enable_metrics` and `enable_events` are true only when `LITELLM_OTEL_INTEGRATION_ENABLE_METRICS` and `LITELLM_OTEL_INTEGRATION_ENABLE_EVENTS` equal "true" after lowercasing; `service_name` is `OTEL_SERVICE_NAME` (default "litellm"), `deployment_environment` is `OTEL_ENVIRONMENT_NAME` (default "production"), `model_id` is `OTEL_MODEL_ID` (default the service name). When the exporter text is exactly "in_memory", it returns the `InMemory` exporter with every other field at its default and no endpoint or headers.
+  `OpenTelemetryConfig::normalize(&mut self, env)` is LiteLLM's `__post_init__`: an endpoint with a `Console` exporter turns the exporter into `Named("otlp_http")`; an empty `service_name` becomes `OTEL_SERVICE_NAME` or "litellm"; an empty `deployment_environment` becomes `OTEL_ENVIRONMENT_NAME` or "production"; an empty `model_id` becomes `OTEL_MODEL_ID` or the service name; `ignore_context_propagation` is read from `OTEL_IGNORE_CONTEXT_PROPAGATION` when not set, where "true" and "false" (trimmed, any case) are the only recognized values and anything else, or unset, means false; the opt-in set is unioned with `parse_semconv_opt_in` of `OTEL_SEMCONV_STABILITY_OPT_IN` (B3840); `baggage_team_metadata_keys` falls back to `LITELLM_OTEL_BAGGAGE_TEAM_METADATA_KEYS` and `baggage_metadata_keys` to `LITELLM_OTEL_BAGGAGE_METADATA_KEYS` only when the field normalizes to an empty list. `normalize_metadata_keys` splits a comma-separated string, or takes a list, and returns the stripped, non-empty entries. These two functions are called from more than one place, so they are not single-use helpers.
+
+  Capture mode (`capture`). The four modes are the enum `CaptureMode` (`NoContent`, `SpanOnly`, `EventOnly`, `SpanAndEvent`) with the exact LiteLLM names "NO_CONTENT", "SPAN_ONLY", "EVENT_ONLY" and "SPAN_AND_EVENT" in `as_str`. `CapturePolicy::from_init_state(config, env)` samples once: it takes `config.capture_message_content` if that is non-empty, else `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`; empty or missing gives no explicit mode; uppercased "TRUE" or "1" gives `EventOnly`, "FALSE" or "0" gives `NoContent`, one of the four names gives that mode, and anything else gives no explicit mode. `CapturePolicy::resolve(&self, turn_off_message_logging: bool, message_logging: bool) -> CaptureMode` applies the order: the kill-switch forces `NoContent`; else the explicit mode; else `SpanAndEvent` when `message_logging` is true and `NoContent` when not. The caller passes the two flags in, so the kill-switch is read on every request while the explicit mode is fixed at init. `capture_in_span` is true for `SpanOnly` and `SpanAndEvent`, and `capture_in_event` for `EventOnly` and `SpanAndEvent`.
+
+  Emit guard (`dedupe`). `emit_once` stops a sync and an async callback from writing the same span twice, and stops one guardrail entry from being written from two lifecycle points. `EmittedSpans` is the per-request record; the request context owns one and passes it as `&mut`. `emit_once(&mut self, handler: &HandlerIdentity, scope: &[ScopeValue]) -> bool` returns true the first time a (handler, scope) pair is seen and false after. `HandlerIdentity` is the logger's type name plus an instance number, so two logger instances (for example the default one and a Langfuse subclass) each emit their own span for one request. `ScopeValue` is a closed enum (`Null`, `Bool`, `Int`, `Float`, `Text`, `List`, `Set`, `Map`) and `freeze_scope` turns it into an orderable `FrozenScope`: lists keep their order, sets and maps do not, and nesting deeper than 16 levels collapses to the compact JSON text of the remaining value.
+
+  Span names and times (`span_time`). `to_ns(time, now)` takes the enum `SpanTime` (`Missing`, `Seconds(f64)`, `DateTime(chrono::DateTime<chrono::Utc>)`) plus the caller's `now`, and returns `i64` nanoseconds: `Missing` uses `now`, and seconds or a datetime go through `f64` seconds times 1e9, truncated toward zero, exactly like `int(x * 1e9)`. `span_name(...)` returns the `generation_name` from `litellm_params.metadata` if it is non-empty; else, when the experimental semconv opt-in is on, "<operation> <model>" with the model defaulting to "unknown" when missing or empty; else "litellm_request".
+
+  Annotations (`annotations`). All of these write through B3844's `SafeSetAttribute` on any `opentelemetry::trace::Span`.
+  `set_team_attributes(span, team_id, team_alias)` writes "metadata.user_api_key_team_id" and "metadata.user_api_key_team_alias" and skips empty or missing values. `set_team_attributes_from_payload(span, payload)` reads both from the payload's `metadata` map, where the payload is `&BTreeMap<String, OtelModelValue>`.
+  `set_inference_identity_attributes(span, payload, litellm_params, baggage_team_metadata_keys, baggage_metadata_keys)` writes, in this order and each only when non-empty: "http.route" from payload `metadata.user_api_key_request_route`; "litellm.team.metadata" from the allowlisted sub-keys of `user_api_key_team_metadata`, read from `litellm_params.metadata` when that map is non-empty and from `litellm_params.litellm_metadata` otherwise, serialized with B3841's `filtered_team_metadata_json`; every promoted key from B3841's `flatten_metadata` of the payload metadata and `promoted_metadata` for the configured `baggage_metadata_keys`; "litellm.model_group" from payload `model_group`; "litellm.provider.model" from payload `hidden_params.litellm_model_name`, else payload `model`. Reuse the key constants in `crate::otel::vocabulary::constants::attribute_keys` (`http::ROUTE`, `litellm::TEAM_METADATA`, `litellm::PROVIDER_MODEL`).
+  `set_service_tier_attributes(span, payload)` writes "gen_ai.openai.request.service_tier" from B212's requested-tier rule and "gen_ai.openai.response.service_tier" from its served-tier rule, each only when present. Both keys carry every provider's tier, not only OpenAI's.
+
+  Exception stamp (`error_recording`). `record_exception_on_span(span, exception, payload)` does what LiteLLM does in this order. A present exception becomes an "exception" span event with `exception.type`, `exception.message` and `exception.stacktrace` (the input is a `RecordedException { type_name, message, stacktrace }`). Then, with the payload's `error_information` map: if the payload has no `error_information` key (or it is null), it writes `error.message` from `error_str` when `error_str` is non-empty and stops; otherwise it writes, each only when non-empty, `error.code` (text), and `http.response.status_code` as an integer when the code parses as one (a code like "bad_request" only gets `error.code`), `error.type` from `error_class`, `error.message` from `error_message`, `error.llm_provider` from `llm_provider`, and `error.stack_trace` from `traceback`. B3840 has `error::TYPE` and `error::MESSAGE`; define `error.code`, `error.llm_provider` and `error.stack_trace` as constants in this module, because nobody else uses them yet.
+
+  GenAI experimental attributes (`semconv_attrs`). `gen_ai_operation_name(call_type)` returns "embeddings" when the call type contains "embedding", else "text_completion" when it contains "text_completion", else "chat"; a missing call type is "chat". `set_semconv_request_attributes(span, optional_params)` writes `gen_ai.request.frequency_penalty`, `presence_penalty`, `top_k` and `seed` for every non-null value (so 0 is written), `gen_ai.request.stop_sequences` as a string array (a single stop value becomes a one-element array), `gen_ai.request.stream` = true only when `stream` is truthy, and `gen_ai.request.choice.count` only for an integer `n` greater than 1. The array is set straight on the span, not through `safe_set_attribute`, which would flatten it. `set_semconv_cache_token_attributes(span, payload)` writes `gen_ai.usage.cache_creation.input_tokens` and `gen_ai.usage.cache_read.input_tokens` from `metadata.usage_object` and skips zero, null and missing values. `semconv_latest_experimental(config)` is true when the opt-in set holds `GenAiLatestExperimental`.
+
+  The inference-details event builder in the same Python file (`_build_inference_details_attrs`, `_emit_inference_details_event`, `_INFERENCE_DETAILS_EVENT_NAME`) belongs to B3857. The OTel logger is not routed by any proxy route yet, so every behavior is proven by helper cases through the oracle, not by HTTP cases; the umbrella that wires the logger adds HTTP cases.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/otel/legacy_policy.rs
+    - crates/betterlite-logging/src/otel/legacy_policy/**
+    - tools/oracle/cases/helpers/legacy-otel-policy/**
+    - tools/oracle/fuzz/corpus/helper_case/legacy-otel-policy-*
+    - tools/oracle/helpers/b3854.py
+    - tools/oracle/helpers/b3854/**
+    - tools/oracle/src/helpers/logging/b3854.rs
+    - tools/oracle/src/helpers/logging/b3854/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L108-L135
+    why: Attribute-name constants (http.response.status_code, litellm.team.metadata, service-tier keys), the "litellm_request" span name and the four capture-mode names with the valid set.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L229-L262
+    why: _normalize_team_metadata_keys and _freeze_for_dedupe with its depth limit of 16.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L292-L378
+    why: OpenTelemetryConfig fields, __post_init__ defaults and env fallbacks, and from_env.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L587-L637
+    why: Capture mode sampling at init, the per-request resolve order and the span and event predicates.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1248-L1307
+    why: _otel_internal_state and _emit_once, keyed by class name, instance id and the frozen scope.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1491-L1530
+    why: Team id and alias stamping, with empty strings treated as absent.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L1552-L1626
+    why: Inference identity attributes, service-tier attributes and the allowlisted team metadata JSON.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L2210-L2300
+    why: _record_exception_on_span, including the error_str fallback and the integer status code.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry.py#L2946-L2965
+    why: _to_ns and _get_span_name.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry_utils/gen_ai_semconv.py#L60-L76
+    why: The request-attribute and cache-token attribute name tables.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opentelemetry_utils/gen_ai_semconv.py#L132-L196
+    why: The opt-in gate, operation-name mapping, request attributes and cache-token attributes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/service_tier_utils.py#L18-L47
+    why: The served and requested tier rules that B212 builds and this task calls.
+  - url: https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md
+    why: Meaning of the gen_ai.request.* and gen_ai.usage.cache_* attributes.
+
+dod:
+  - text: OpenTelemetryConfig::from_env reads the exporter, endpoint, headers, metrics and events switches, service name, environment and model id from the env snapshot with LiteLLM's defaults, and "in_memory" returns the in-memory exporter with all other fields at default.
+    proof: [config-tests, oracle, helper-python]
+  - text: normalize turns a console exporter with an endpoint into otlp_http, fills empty service name, environment and model id from env, reads the ignore-context flag and the semconv opt-in, and falls back to the two baggage key env vars only when the field is empty.
+    proof: [config-tests, oracle, helper-python]
+  - text: normalize_metadata_keys accepts a comma-separated string or a list and returns stripped, non-empty keys.
+    proof: [config-tests, oracle, helper-python]
+  - text: Capture mode resolves from the config value before the env var, maps "true"/"1" to EVENT_ONLY and "false"/"0" to NO_CONTENT, accepts the four names in any case and ignores unknown text.
+    proof: [capture-tests, oracle, helper-python]
+  - text: resolve applies the kill-switch first, then the sampled mode, then the message_logging flag, and the span and event predicates match the four modes.
+    proof: [capture-tests, oracle, helper-python]
+  - text: emit_once returns true once and false afterwards for the same handler and scope, treats different handlers and different scopes as separate, ignores set and map order and keeps list order.
+    proof: [dedupe-tests, oracle, helper-python]
+  - text: Scope values nested deeper than 16 levels are frozen to JSON text instead of recursing.
+    proof: [dedupe-tests]
+  - text: to_ns uses now for a missing time and truncates seconds times 1e9 like int(x * 1e9); span_name prefers generation_name, then the semconv "<operation> <model>" form with "unknown", then "litellm_request".
+    proof: [span-time-tests, oracle, helper-python]
+  - text: Team attributes are written for non-empty id and alias only, from arguments and from the payload metadata.
+    proof: [annotation-tests, oracle, helper-python]
+  - text: Inference identity attributes come out in LiteLLM's order with the metadata/litellm_metadata first-non-empty rule, the team metadata allowlist, promoted metadata keys, model group and the hidden_params-then-model provider model.
+    proof: [annotation-tests, oracle, helper-python]
+  - text: Service-tier attributes write the requested and served tier independently and skip absent ones.
+    proof: [annotation-tests, oracle, helper-python]
+  - text: record_exception_on_span stamps the exception event, falls back to error_str only when error_information is missing, and writes error.code, an integer http.response.status_code only for numeric codes, error.type, error.message, error.llm_provider and error.stack_trace.
+    proof: [error-recording-tests, oracle, helper-python]
+  - text: gen_ai_operation_name maps embedding, text_completion and everything else; the request attributes write zero values, the stop array, stream only when true and choice count only for n above 1; cache-token attributes skip zero.
+    proof: [semconv-attrs-tests, oracle, helper-python]
+  - text: Newly added helper corpus cases replay through the shared helper-case parser independently of the native behavior tests.
+    proof: [helper-case-corpus]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: config-tests
+      why: the settings record, env fallbacks or key normalization are missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::legacy_policy::config::/)'
+    - id: capture-tests
+      why: capture mode sampling, resolve order or the span and event predicates are missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::legacy_policy::capture::/)'
+    - id: dedupe-tests
+      why: the emit-once guard or scope freezing is missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::legacy_policy::dedupe::/)'
+    - id: span-time-tests
+      why: nanosecond conversion or span naming is missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::legacy_policy::span_time::/)'
+    - id: annotation-tests
+      why: team, identity or service-tier span attributes are missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::legacy_policy::annotations::/)'
+    - id: error-recording-tests
+      why: the exception event or the error attributes are missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::legacy_policy::error_recording::/)'
+    - id: semconv-attrs-tests
+      why: the GenAI experimental request, operation or cache-token attributes are missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^otel::legacy_policy::semconv_attrs::/)'
+    - id: helper-python
+      why: the LiteLLM-side helper and the betterlite helper disagree on a case
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::logging::b3854::/)'
+    - id: helper-case-corpus
+      why: newly added helper cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/legacy-otel-policy/ "tools/oracle/fuzz/corpus/helper_case/legacy-otel-policy-*")" &&
+        grep -rlE '^[[:space:]]+b3854:' tools/oracle/cases/helpers/legacy-otel-policy &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/legacy-otel-policy/config-from-env-defaults.yaml
+  - tools/oracle/cases/helpers/legacy-otel-policy/config-from-env-in-memory.yaml
+  - tools/oracle/cases/helpers/legacy-otel-policy/config-normalize-endpoint-console.yaml
+  - tools/oracle/cases/helpers/legacy-otel-policy/config-normalize-baggage-fallback.yaml
+  - tools/oracle/cases/helpers/legacy-otel-policy/metadata-keys-string-and-list.yaml
+  - tools/oracle/cases/helpers/legacy-otel-policy/capture-mode-aliases.yaml
+  - tools/oracle/cases/helpers/legacy-otel-policy/capture-mode-config-beats-env.yaml
+  - tools/oracle/cases/helpers/legacy-otel-policy/capture-resolve-kill-switch.yaml
+  - tools/oracle/cases/helpers/legacy-otel-policy/emit-once-scopes.yaml
+  - tools/oracle/cases/helpers/legacy-otel-policy/span-name-and-ns.yaml
+  - tools/oracle/cases/helpers/legacy-otel-policy/team-attributes-empty-skipped.yaml
+  - tools/oracle/cases/helpers/legacy-otel-policy/inference-identity-order.yaml
+  - tools/oracle/cases/helpers/legacy-otel-policy/service-tier-attributes.yaml
+  - tools/oracle/cases/helpers/legacy-otel-policy/exception-stamp-error-information.yaml
+  - tools/oracle/cases/helpers/legacy-otel-policy/exception-stamp-error-str-fallback.yaml
+  - tools/oracle/cases/helpers/legacy-otel-policy/semconv-request-attributes.yaml
+  - tools/oracle/cases/helpers/legacy-otel-policy/semconv-cache-tokens-and-operation.yaml
+
+deviations:
+  - what: "The emit-once record is a typed `EmittedSpans` value owned by the request context, not a hidden `_otel_internal.spans_logged` dict inside `litellm_params.metadata`."
+    why: The dict travels with the request metadata, so other callbacks and the spend log can see it. A typed field keeps the dedupe state private and needs no replacement of non-dict `litellm_params` or `metadata` values.
+  - what: "`OpenTelemetryConfig.attributes` is kept as the raw input value and not parsed here."
+    why: B3857 owns the metric attribute filter and depends on this task, so this task cannot name its type.
+  - what: Environment values come from a snapshot map the caller passes in, not from the process environment.
+    why: Rule no-module-state; the single place that snapshots the environment stays outside the logging crate.
+  - what: "A `datetime` in `SpanTime` is a UTC instant."
+    why: LiteLLM's naive datetimes use the host's local timezone, which gave different nanoseconds on hosts with different TZ settings. Typed timestamps in betterlite are already instants.
+
+out_of_scope:
+  - "_provider_label, the metric attribute filter, _record_metrics and the semantic log events (B3857). The inference-details event builders in gen_ai_semconv.py L78 and L199-L248 are also B3857."
+  - "OTELSemconvCategory and parse_semconv_opt_in (B3840); this task only calls them."
+  - "safe_set_attribute and the primitive casting (B3844); cast_as_primitive_value_type has no caller at the pin."
+  - "set_attributes and set_raw_request_attributes, which call the semconv attribute helpers (B3856)."
+  - "_end_proxy_span_from_kwargs, _set_team_attributes_on_proxy_span_from_kwargs, _handle_success, _handle_failure and the guardrail spans (B3859); they call the functions built here."
+  - "_get_span_context and get_traceparent_from_header (B3847)."
+  - "OpenTelemetry.__init__, the provider caches, _init_tracing/_init_metrics/_init_logs and _init_otel_logger_on_litellm_proxy (B3868); the dynamic tracer cache and exporters (B3855); service and management hooks (B3858)."
+  - "The service-tier rules themselves, get_served_service_tier and get_requested_service_tier (B212)."
+  - "flatten_metadata, promoted_metadata and filtered_team_metadata_json (B3841); this task only calls them."
+
+pitfalls:
+  - '`capture_message_content` wins over the env var whenever it is non-empty, even when its text is not a valid mode; the invalid text then yields no explicit mode and the env var is not tried.'
+  - '"true" and "1" map to EVENT_ONLY, not SPAN_AND_EVENT, so a user who sets `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=true` gets no content on the span.'
+  - "When no explicit mode exists, `message_logging` is read on every request, so the same logger flips between SPAN_AND_EVENT and NO_CONTENT with the flag; `turn_off_message_logging` beats both."
+  - "`from_env` reads `OTEL_EXPORTER_OTLP_PROTOCOL` before `OTEL_EXPORTER`, so a value like http/protobuf becomes the exporter text unchanged; do not validate it here."
+  - "The in_memory shortcut in `from_env` skips endpoint, headers and the two enable switches, but `normalize` still reads the service name, environment and baggage env vars."
+  - "`baggage_team_metadata_keys` and `baggage_metadata_keys` fall back to their env vars only when the given list normalizes to empty, so an explicit list never merges with the env var."
+  - "The emit guard key holds the handler's type name and instance, so a subclass logger and the base logger both emit for one request; only repeats from the same instance are dropped."
+  - "`error_information` set to `{}` is not missing, so the `error_str` fallback runs only when the key is absent or null."
+  - "`error.code` is written for any non-empty code, but `http.response.status_code` only when the code parses as an integer; a text code such as a provider error name gets the first only."
+  - "In `set_inference_identity_attributes`, an empty `litellm_params.metadata` map falls through to `litellm_metadata`, while a non-empty one that lacks `user_api_key_team_metadata` does not."
+  - "The team metadata attribute is dropped when the allowlist is empty or no allowlisted key is present, never written as `{}`."
+  - "`gen_ai.request.stop_sequences` must be a string array, so a numeric stop value is stringified, and `n` equal to 1 or a boolean writes no choice count."
+  - "Cache-token attributes skip a value of 0, while the sampling attributes (`seed`, `top_k`, penalties) are written for 0."
+  - "`gen_ai_operation_name` checks `embedding` before `text_completion`, so a call type that contains both reports `embeddings`."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

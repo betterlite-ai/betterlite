@@ -1,0 +1,15 @@
+id: B5840
+milestone: M3 providers
+title: SageMaker provider
+status: todo
+depends_on: [B004, B173, B198, B239, B249, B590, B591, B594, B595, B682, B5960, B5961]
+file: tasks/B5840-sagemaker-runtime.yaml
+covers:
+  - "litellm/llms/sagemaker/completion/handler.py"
+  - "litellm/llms/sagemaker/chat/handler.py"
+parent: B042
+split_from: B042
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,23 @@
+kind: helper
+name: team-budget-key-cap-duration-order
+call:
+  management_guards:
+    calls:
+      - {function: validate_team_model_max_budget, model_max_budget: {"  ": {max_budget: 10, budget_duration: 1d}}}
+      - {function: validate_team_model_max_budget, model_max_budget: {gpt-4: {budget_duration: 1d}}}
+      - {function: validate_team_model_max_budget, model_max_budget: {gpt-4: {max_budget: 10}}}
+      - {function: validate_team_model_max_budget, model_max_budget: {"\u001c": {max_budget: 1, budget_duration: 1d}}}
+      - {function: validate_team_model_max_budget, model_max_budget: {"\u001cgpt-4": {budget_duration: 1d}}}
+env: {}
+compare:
+  ignore:
+    - pointer: /value/0/detail
+      why: betterlite writes its own message
+    - pointer: /value/1/detail
+      why: betterlite writes its own message
+    - pointer: /value/2/detail
+      why: betterlite writes its own message
+    - pointer: /value/3/detail
+      why: betterlite writes its own message
+    - pointer: /value/4/detail
+      why: betterlite writes its own message
