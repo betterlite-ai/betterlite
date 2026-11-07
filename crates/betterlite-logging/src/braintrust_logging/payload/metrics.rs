@@ -2,43 +2,32 @@ use betterlite_models::decisions::Json;
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
 use rust_decimal::Decimal;
+use serde::Serialize;
 use serde_json::Number;
 
 use super::PayloadError;
 use super::object;
 use super::{CallbackPath, ResponseObject, SuccessEvent};
 
-pub(super) fn metrics(
-    event: &SuccessEvent<'_>,
+#[derive(Serialize)]
+pub(super) struct Metrics<'call> {
+    prompt_tokens: Number,
+    completion_tokens: Number,
+    total_tokens: Number,
+    total_cost: &'call Json,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    time_to_first_token: Option<Number>,
+    start: Number,
+    end: Number,
+}
+
+pub(super) fn metrics<'call>(
+    event: &SuccessEvent<'call>,
     path: CallbackPath,
-) -> Result<Option<Json>, PayloadError> {
+) -> Result<Option<Metrics<'call>>, PayloadError> {
     let Some(usage) = usage(event)? else {
         return Ok(None);
     };
-    let mut metrics = IndexMap::new();
-    metrics.insert("prompt_tokens".to_owned(), token(&usage, "prompt_tokens")?);
-    metrics.insert(
-        "completion_tokens".to_owned(),
-        token(&usage, "completion_tokens")?,
-    );
-    metrics.insert("total_tokens".to_owned(), token(&usage, "total_tokens")?);
-    metrics.insert(
-        "total_cost".to_owned(),
-        event.response_cost.cloned().unwrap_or(Json::Null),
-    );
-    insert_first_token(&mut metrics, event, path)?;
-    let start = Decimal::new(micros(event.start_time)?, 6);
-    let end = Decimal::new(micros(event.end_time)?, 6);
-    metrics.insert("start".to_owned(), text(start, "start")?);
-    metrics.insert("end".to_owned(), text(end, "end")?);
-    Ok(Some(Json::Object(metrics)))
-}
-
-fn insert_first_token(
-    metrics: &mut IndexMap<String, Json>,
-    event: &SuccessEvent<'_>,
-    path: CallbackPath,
-) -> Result<(), PayloadError> {
     let first_token = match path {
         CallbackPath::Sync => Some(difference(
             event.end_time,
@@ -52,10 +41,15 @@ fn insert_first_token(
             _ => None,
         },
     };
-    if let Some(value) = first_token {
-        metrics.insert("time_to_first_token".to_owned(), value);
-    }
-    Ok(())
+    Ok(Some(Metrics {
+        prompt_tokens: token(&usage, "prompt_tokens")?,
+        completion_tokens: token(&usage, "completion_tokens")?,
+        total_tokens: token(&usage, "total_tokens")?,
+        total_cost: event.response_cost.unwrap_or(&Json::Null),
+        time_to_first_token: first_token,
+        start: text(Decimal::new(micros(event.start_time)?, 6), "start")?,
+        end: text(Decimal::new(micros(event.end_time)?, 6), "end")?,
+    }))
 }
 
 fn usage(event: &SuccessEvent<'_>) -> Result<Option<IndexMap<String, Json>>, PayloadError> {
@@ -83,14 +77,14 @@ fn usage(event: &SuccessEvent<'_>) -> Result<Option<IndexMap<String, Json>>, Pay
     }
 }
 
-fn token(usage: &IndexMap<String, Json>, name: &'static str) -> Result<Json, PayloadError> {
+fn token(usage: &IndexMap<String, Json>, name: &'static str) -> Result<Number, PayloadError> {
     let Some(value) = usage.get(name) else {
-        return Ok(Json::Number(Number::from(0_u8)));
+        return Ok(Number::from(0_u8));
     };
     if let Json::Number(number) = value
         && (number.is_i64() || number.is_u64())
     {
-        return Ok(Json::Number(number.clone()));
+        return Ok(number.clone());
     }
     Err(PayloadError::UsageToken { name })
 }
@@ -110,21 +104,19 @@ pub(super) fn difference(
     later: DateTime<Utc>,
     earlier: DateTime<Utc>,
     field: &'static str,
-) -> Result<Json, PayloadError> {
+) -> Result<Number, PayloadError> {
     let elapsed = Decimal::new(micros(later)?, 6)
         .checked_sub(Decimal::new(micros(earlier)?, 6))
         .ok_or(PayloadError::WrongType(field, "a representable duration"))?;
     text(elapsed, field)
 }
 
-pub(super) fn text(seconds: Decimal, field: &'static str) -> Result<Json, PayloadError> {
+pub(super) fn text(seconds: Decimal, field: &'static str) -> Result<Number, PayloadError> {
     let normalized = seconds.normalize().to_string();
     let value = if normalized.contains('.') {
         normalized
     } else {
         format!("{normalized}.0")
     };
-    serde_json::from_str::<Number>(&value)
-        .map(Json::Number)
-        .map_err(|_source| PayloadError::WrongType(field, "a JSON number"))
+    serde_json::from_str::<Number>(&value).map_err(|source| PayloadError::Number { field, source })
 }

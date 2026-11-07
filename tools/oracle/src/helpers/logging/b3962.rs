@@ -47,46 +47,28 @@ pub(crate) struct ResponseInput {
     body: Json,
 }
 
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields)]
+#[derive(Default, Deserialize)]
+#[serde(default, deny_unknown_fields)]
 pub(crate) struct Scenario {
-    #[serde(default)]
     path: Option<Path>,
-    #[serde(default)]
     project_name: Option<String>,
-    #[serde(default)]
     start_time: Option<String>,
-    #[serde(default)]
     end_time: Option<String>,
     #[serde(default = "default_calls")]
     calls: u32,
-    #[serde(default)]
     environment: BTreeMap<String, String>,
-    #[serde(default)]
     api_key: Option<String>,
-    #[serde(default)]
     api_base: Option<String>,
-    #[serde(default)]
     default_tags: Vec<String>,
-    #[serde(default)]
     call_id: Option<Json>,
-    #[serde(default)]
     messages: Option<Json>,
-    #[serde(default)]
     standard_logging_object: Option<Json>,
-    #[serde(default)]
     metadata: Option<Json>,
-    #[serde(default)]
     response_cost: Option<Json>,
-    #[serde(default)]
     call_type: Option<String>,
-    #[serde(default)]
     response: Option<ResponseInput>,
-    #[serde(default)]
     api_call_start_time: Option<String>,
-    #[serde(default)]
     completion_start_time: Option<String>,
-    #[serde(default)]
     answers: Vec<Answer>,
 }
 

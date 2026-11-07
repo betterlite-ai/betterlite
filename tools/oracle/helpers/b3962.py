@@ -48,11 +48,6 @@ def apply_environment(scenario: dict[str, Json]) -> None:
             os.environ[name] = value
 
 
-def optional_string(scenario: dict[str, Json], name: str) -> str | None:
-    value = scenario.get(name)
-    return value if isinstance(value, str) else None
-
-
 class Recorder:
     def __init__(self, answers: list[Json]) -> None:
         self.requests: list[Json] = []
@@ -108,9 +103,11 @@ class FakeAsyncClient:
 
 def build_logger(scenario: dict[str, Json]) -> BraintrustLogger:
     apply_environment(scenario)
+    key = scenario.get("api_key")
+    base = scenario.get("api_base")
     return BraintrustLogger(
-        api_key=optional_string(scenario, "api_key"),
-        api_base=optional_string(scenario, "api_base"),
+        api_key=key if isinstance(key, str) else None,
+        api_base=base if isinstance(base, str) else None,
     )
 
 

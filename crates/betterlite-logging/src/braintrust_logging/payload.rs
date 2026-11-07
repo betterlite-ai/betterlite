@@ -1,9 +1,10 @@
 use betterlite_models::decisions::Json;
 use chrono::{DateTime, Utc};
 use indexmap::IndexMap;
+use serde::Serialize;
 use thiserror::Error;
 
-use self::metrics::metrics;
+use self::metrics::{Metrics, metrics};
 use self::output::output;
 
 mod finish_reason;
@@ -20,58 +21,89 @@ pub enum PayloadError {
     MetadataText { key: &'static str },
     #[error("response.usage.{name} must be an integer")]
     UsageToken { name: &'static str },
+    #[error("the {field} time is not a JSON number")]
+    Number {
+        field: &'static str,
+        #[source]
+        source: serde_json::Error,
+    },
+    #[error("the {key} tag value is not JSON")]
+    Tag {
+        key: String,
+        #[source]
+        source: serde_json::Error,
+    },
 }
 
-pub(super) fn request_data(
-    event: &SuccessEvent<'_>,
+#[derive(Serialize)]
+pub(super) struct Event<'call> {
+    id: &'call Json,
+    input: &'call Json,
+    metadata: IndexMap<String, Json>,
+    span_attributes: SpanAttributes,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tags: Option<Vec<String>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    span_id: Option<&'call str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    root_span_id: Option<&'call str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    span_parents: Option<Vec<String>>,
+    output: Json,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    metrics: Option<Metrics<'call>>,
+}
+
+#[derive(Serialize)]
+struct SpanAttributes {
+    name: String,
+    #[serde(rename = "type")]
+    kind: &'static str,
+}
+
+#[derive(Serialize)]
+pub(super) struct Events<'event, 'call> {
+    pub(super) events: [&'event Event<'call>; 1],
+}
+
+pub(super) fn request_data<'call>(
+    event: &SuccessEvent<'call>,
     default_tags: &[String],
     path: CallbackPath,
-) -> Result<Json, PayloadError> {
+) -> Result<Event<'call>, PayloadError> {
     let metadata = event
         .metadata
         .filter(|value| !matches!(value, Json::Null))
         .map(|value| object(value, "litellm_params.metadata"))
         .transpose()?;
-    let (logger_metadata, tags) =
-        logging_object(metadata, event.standard_logging_object, default_tags)?;
+    let (logging, tags) = logging_object(metadata, event.standard_logging_object, default_tags)?;
     let span_name = metadata_text(metadata, "span_name")?
         .map_or_else(|| DEFAULT_SPAN_NAME.to_owned(), str::to_owned);
-    let mut data = IndexMap::new();
-    data.insert(
-        "id".to_owned(),
-        event.call_id.cloned().unwrap_or(Json::Null),
-    );
-    data.insert(
-        "input".to_owned(),
-        event.messages.cloned().unwrap_or(Json::Null),
-    );
-    data.insert("metadata".to_owned(), Json::Object(logger_metadata));
-    data.insert(
-        "span_attributes".to_owned(),
-        Json::Object(IndexMap::from([
-            ("name".to_owned(), Json::Text(span_name)),
-            ("type".to_owned(), Json::Text("llm".to_owned())),
-        ])),
-    );
-    if metadata
+    let root = metadata
         .and_then(|fields| fields.get("root_span_id"))
-        .is_none_or(|value| matches!(value, Json::Null))
-    {
-        data.insert("tags".to_owned(), Json::List(tags));
-    }
-    span_keys(&mut data, metadata)?;
-    data.insert("output".to_owned(), output(event)?);
-    if let Some(metrics) = metrics(event, path)? {
-        data.insert("metrics".to_owned(), metrics);
-    }
-    Ok(Json::Object(data))
+        .is_none_or(|value| matches!(value, Json::Null));
+    Ok(Event {
+        id: event.call_id.unwrap_or(&Json::Null),
+        input: event.messages.unwrap_or(&Json::Null),
+        metadata: logging,
+        span_attributes: SpanAttributes {
+            name: span_name,
+            kind: "llm",
+        },
+        tags: root.then_some(tags),
+        span_id: metadata_text(metadata, "span_id")?.filter(|value| !value.is_empty()),
+        root_span_id: metadata_text(metadata, "root_span_id")?.filter(|value| !value.is_empty()),
+        span_parents: span_parents(metadata)?,
+        output: output(event)?,
+        metrics: metrics(event, path)?,
+    })
 }
 
 fn logging_object(
     metadata: Option<&IndexMap<String, Json>>,
     standard_logging_object: Option<&Json>,
     default_tags: &[String],
-) -> Result<(IndexMap<String, Json>, Vec<Json>), PayloadError> {
+) -> Result<(IndexMap<String, Json>, Vec<String>), PayloadError> {
     let standard = standard_logging_object.filter(|value| !matches!(value, Json::Null));
     let mut logging = standard
         .map(|value| object(value, "standard_logging_object"))
@@ -84,7 +116,7 @@ fn logging_object(
     };
     for (key, value) in fields {
         if default_tags.iter().any(|tag| tag == key) {
-            tags.push(Json::Text(format!("{key}:{}", tag_text(value))));
+            tags.push(format!("{key}:{}", tag_text(key, value)?));
         }
         if let Json::Text(text) = value
             && !logging.contains_key(key)
@@ -95,39 +127,36 @@ fn logging_object(
     Ok((logging, tags))
 }
 
-fn span_keys(
-    data: &mut IndexMap<String, Json>,
+fn span_parents(
     metadata: Option<&IndexMap<String, Json>>,
-) -> Result<(), PayloadError> {
-    for key in ["span_id", "root_span_id"] {
-        if let Some(value) = metadata_text(metadata, key)?
-            && !value.is_empty()
-        {
-            data.insert(key.to_owned(), Json::Text(value.to_owned()));
-        }
-    }
+) -> Result<Option<Vec<String>>, PayloadError> {
     let Some(parents) = metadata_text(metadata, "span_parents")? else {
-        return Ok(());
+        return Ok(None);
     };
-    let ids: Vec<Json> = parents
+    let ids: Vec<String> = parents
         .split(',')
         .map(str::trim)
         .filter(|parent| !parent.is_empty())
-        .map(|parent| Json::Text(parent.to_owned()))
+        .map(str::to_owned)
         .collect();
-    if !ids.is_empty() {
-        data.insert("span_parents".to_owned(), Json::List(ids));
+    if ids.is_empty() {
+        return Ok(None);
     }
-    Ok(())
+    Ok(Some(ids))
 }
 
-fn tag_text(value: &Json) -> String {
+fn tag_text(key: &str, value: &Json) -> Result<String, PayloadError> {
     match value {
-        Json::Text(text) => text.clone(),
-        Json::Number(number) => number.to_string(),
-        Json::Bool(flag) => flag.to_string(),
-        Json::Null => "null".to_owned(),
-        Json::List(_) | Json::Object(_) => serde_json::to_string(value).unwrap_or_default(),
+        Json::Text(text) => Ok(text.clone()),
+        Json::Number(number) => Ok(number.to_string()),
+        Json::Bool(flag) => Ok(flag.to_string()),
+        Json::Null => Ok("null".to_owned()),
+        Json::List(_) | Json::Object(_) => {
+            serde_json::to_string(value).map_err(|source| PayloadError::Tag {
+                key: key.to_owned(),
+                source,
+            })
+        }
     }
 }
 

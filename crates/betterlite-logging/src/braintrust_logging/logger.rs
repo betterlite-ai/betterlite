@@ -5,8 +5,8 @@ use std::sync::Mutex;
 
 use betterlite_models::decisions::Json;
 use http::header::{AUTHORIZATION, CONTENT_TYPE, HeaderMap, HeaderValue, InvalidHeaderValue};
-use indexmap::IndexMap;
 use secrecy::ExposeSecret as _;
+use serde::Serialize;
 use thiserror::Error;
 use url::Url;
 
@@ -43,12 +43,19 @@ where
         #[source]
         source: url::ParseError,
     },
+    #[error("the Braintrust API base {url} cannot carry a path")]
+    Base { url: String },
     #[error("the Braintrust Authorization header is not valid")]
     Header(#[source] InvalidHeaderValue),
     #[error("the Braintrust project cache is poisoned")]
     CachePoisoned,
     #[error(transparent)]
     Payload(#[from] PayloadError),
+}
+
+#[derive(Serialize)]
+struct ProjectRequest<'name> {
+    name: &'name str,
 }
 
 #[derive(Default)]
@@ -79,37 +86,45 @@ impl<D: Delivery> BraintrustLogger<D> {
     ) -> Result<(), BraintrustError<D::Error>> {
         let project_id = self.project_id(event, path).await?;
         let request = payload::request_data(event, &self.settings.default_tags, path)?;
-        let url = format!(
-            "{}/project_logs/{project_id}/insert",
-            self.settings.api_base
-        );
-        let body = Json::Object(IndexMap::from([(
-            "events".to_owned(),
-            Json::List(vec![request]),
-        )]));
-        let _response = self.send(&url, &body).await?;
+        let url = self.endpoint(&["project_logs", &project_id, "insert"])?;
+        let body = payload::Events { events: [&request] };
+        self.send(url, &body).await?;
         Ok(())
     }
 
     pub const fn log_failure_event(&self) {}
 
-    async fn send(&self, url: &str, body: &Json) -> Result<Vec<u8>, BraintrustError<D::Error>> {
+    fn endpoint(&self, segments: &[&str]) -> Result<Url, BraintrustError<D::Error>> {
+        let base = &self.settings.api_base;
+        let mut url = Url::parse(base).map_err(|source| BraintrustError::Url {
+            url: base.clone(),
+            source,
+        })?;
+        {
+            let mut path = url
+                .path_segments_mut()
+                .map_err(|()| BraintrustError::Base { url: base.clone() })?;
+            path.pop_if_empty();
+            path.extend(segments.iter().copied())
+        };
+        Ok(url)
+    }
+
+    async fn send<T>(&self, url: Url, body: &T) -> Result<Vec<u8>, BraintrustError<D::Error>>
+    where
+        T: Serialize + Sync + ?Sized,
+    {
         let encoded = serde_json::to_vec(body).map_err(BraintrustError::Encode)?;
         let mut headers = HeaderMap::new();
         headers.insert(CONTENT_TYPE, HeaderValue::from_static("application/json"));
-        let authorization = format!("Bearer {}", self.settings.api_key.expose_secret());
-        headers.insert(
-            AUTHORIZATION,
-            HeaderValue::from_str(&authorization).map_err(BraintrustError::Header)?,
-        );
-        let target = Url::parse(url).map_err(|source| BraintrustError::Url {
-            url: url.to_owned(),
-            source,
-        })?;
+        let token = format!("Bearer {}", self.settings.api_key.expose_secret());
+        let mut authorization = HeaderValue::from_str(&token).map_err(BraintrustError::Header)?;
+        authorization.set_sensitive(true);
+        headers.insert(AUTHORIZATION, authorization);
         let response = self
             .delivery
             .post(PostRequest {
-                url: target,
+                url,
                 headers,
                 body: encoded,
                 deadline: DELIVERY_DEADLINE,
@@ -153,39 +168,42 @@ impl<D: Delivery> BraintrustLogger<D> {
         name: &str,
         path: CallbackPath,
     ) -> Result<String, BraintrustError<D::Error>> {
-        if let Some(id) = self.cached(name)? {
+        if let Some(id) = self.with_projects(|projects| projects.names.get(name).cloned())? {
             return Ok(id);
         }
-        let endpoint = match path {
-            CallbackPath::Sync => "/project",
-            CallbackPath::Async => "/project/register",
+        let route: &[&str] = match path {
+            CallbackPath::Sync => &["project"],
+            CallbackPath::Async => &["project", "register"],
         };
-        let url = format!("{}{endpoint}", self.settings.api_base);
-        let id = self.request_project(&url, name).await?;
-        self.remember(name, &id)?;
+        let id = self.request_project(self.endpoint(route)?, name).await?;
+        self.with_projects(|projects| {
+            projects.names.insert(name.to_owned(), id.clone());
+        })?;
         Ok(id)
     }
 
     async fn default_project(&self) -> Result<String, BraintrustError<D::Error>> {
-        if let Some(id) = self.default_cached()? {
-            return Ok(id);
-        }
-        let url = format!("{}/project", self.settings.api_base);
-        let id = self.request_project(&url, DEFAULT_PROJECT_NAME).await?;
-        self.remember_default(&id)?;
+        let Some(id) = self.with_projects(|projects| projects.default_id.clone())? else {
+            return self.create_default_project().await;
+        };
+        Ok(id)
+    }
+
+    async fn create_default_project(&self) -> Result<String, BraintrustError<D::Error>> {
+        let url = self.endpoint(&["project"])?;
+        let id = self.request_project(url, DEFAULT_PROJECT_NAME).await?;
+        self.with_projects(|projects| {
+            projects.default_id = Some(id.clone());
+        })?;
         Ok(id)
     }
 
     async fn request_project(
         &self,
-        url: &str,
+        url: Url,
         name: &str,
     ) -> Result<String, BraintrustError<D::Error>> {
-        let body = Json::Object(IndexMap::from([(
-            "name".to_owned(),
-            Json::Text(name.to_owned()),
-        )]));
-        let response = self.send(url, &body).await?;
+        let response = self.send(url, &ProjectRequest { name }).await?;
         let parsed =
             serde_json::from_slice::<Json>(&response).map_err(BraintrustError::Response)?;
         if let Json::Object(fields) = &parsed
@@ -196,36 +214,14 @@ impl<D: Delivery> BraintrustLogger<D> {
         Err(BraintrustError::ProjectField { field: "id" })
     }
 
-    fn cached(&self, name: &str) -> Result<Option<String>, BraintrustError<D::Error>> {
-        let projects = self
+    fn with_projects<R, F>(&self, change: F) -> Result<R, BraintrustError<D::Error>>
+    where
+        F: FnOnce(&mut Projects) -> R,
+    {
+        let mut projects = self
             .projects
             .lock()
             .map_err(|_poisoned| BraintrustError::CachePoisoned)?;
-        Ok(projects.names.get(name).cloned())
-    }
-
-    fn remember(&self, name: &str, id: &str) -> Result<(), BraintrustError<D::Error>> {
-        self.projects
-            .lock()
-            .map_err(|_poisoned| BraintrustError::CachePoisoned)?
-            .names
-            .insert(name.to_owned(), id.to_owned());
-        Ok(())
-    }
-
-    fn default_cached(&self) -> Result<Option<String>, BraintrustError<D::Error>> {
-        let projects = self
-            .projects
-            .lock()
-            .map_err(|_poisoned| BraintrustError::CachePoisoned)?;
-        Ok(projects.default_id.clone())
-    }
-
-    fn remember_default(&self, id: &str) -> Result<(), BraintrustError<D::Error>> {
-        self.projects
-            .lock()
-            .map_err(|_poisoned| BraintrustError::CachePoisoned)?
-            .default_id = Some(id.to_owned());
-        Ok(())
+        Ok(change(&mut projects))
     }
 }
