@@ -190,6 +190,7 @@ pub mod guardrail_identity;
 pub mod guardrail_judge;
 pub mod guardrail_modes;
 pub mod guardrail_params;
+pub mod guardrail_scan_cache;
 pub mod guardrail_translation;
 pub mod headroom_compression;
 pub mod headroom_hiddenlayer_support;
@@ -519,7 +520,7 @@ sections! {
     file_upload_options, file_upload_routing, file_upload_validation, focus_export_schedule,
     foundry_credentials, foundry_image_edits, foundry_vector_stores, full_model_metadata,
     gdc_settings, gemini_cache_create, gemini_cache_prefix, generic_guardrail_api, grayswan,
-    guardrail_identity, guardrail_judge, guardrail_modes, guardrail_params, guardrail_translation,
+    guardrail_identity, guardrail_judge, guardrail_modes, guardrail_params, guardrail_scan_cache, guardrail_translation,
     headroom_compression, headroom_hiddenlayer_support, health_probe_policy,
     hiddenlayer_evaluation, host_identity_settings, hosted_chat_settings, huggingface_hub,
     huggingface_oidc, ibm_guardrails, image_edit_call, image_generation_call, image_url_download,

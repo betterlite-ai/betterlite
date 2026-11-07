@@ -5,6 +5,7 @@ pub mod access_group_sync;
 pub mod access_group_write;
 pub mod admin_setup;
 pub mod admission_control;
+pub mod agent_credentials;
 pub mod agent_endpoints;
 pub mod aggregate_activity_routes;
 pub mod alerting;

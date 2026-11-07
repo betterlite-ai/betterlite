@@ -27,11 +27,10 @@ description: >-
   on the route), FalAi (B3653's is_fal_ai_route). The OpenAi test needs both conditions, so an OpenAI-looking URL for an unsupported
   endpoint falls through to the later branches. The route and provider are the only inputs; the response body never changes the choice.
 
-  Handler call. Define `ProviderLogInput` with the logging object handle, the upstream response view (status code, request method,
-  request URL, headers, and B3605's UpstreamBodyText), `response_body: Option<PassThroughResponseBody>` (enum Object(serde_json::Map)
+  Handler call. Define `ProviderLogInput` with the logging object handle, the upstream response view (status code, response headers and B3605's UpstreamBodyText), the upstream request method, request URL (`url::Url`) and request headers (`http::HeaderMap`) as the proxy sent them (B3646's Transcribe handler reads x-amz-target from the request headers and the operation from the URL, so these are not the response headers), `call_log: &mut CallLog` (B247's per-call log; B3642's Vertex handler writes to it, so ProviderLogInput<'a> borrows it), `response_body: Option<PassThroughResponseBody>` (enum Object(serde_json::Map)
   or List(Vec<serde_json::Map>); LiteLLM's `dict | list[dict] | None`), request_body (serde_json::Map), url_route, result (&str),
   start_time, end_time, cache_hit, custom_llm_provider and the kwargs map. Define `ProviderLogOutcome { result: Option<response-object
-  enum from B3605>, kwargs }`, the trait `ProviderLogHandler { fn handle(&self, input: &ProviderLogInput) -> Result<ProviderLogOutcome,
+  enum from B3605>, kwargs }`, the trait `ProviderLogHandler { fn handle(&self, input: ProviderLogInput<'_>) -> Result<ProviderLogOutcome,
   ProviderLogError> }` and the struct `ProviderLogHandlers` with one `Arc<dyn ProviderLogHandler>` per ProviderBranch variant.
   `ProviderLogHandlers::production(...)` builds the real adapters. Each adapter is a short function that reshapes ProviderLogInput into
   the arguments of one leaf handler and calls it. The leaves are the merged tasks this one depends on: Gemini B3640, Vertex B3642,
@@ -41,7 +40,7 @@ description: >-
   checks the reshaped arguments with the leaf stubbed at its input.
 
   `ProviderLogDispatcher::new(handlers: ProviderLogHandlers)` has `normalize_llm_passthrough_logging_payload(&self, input:
-  ProviderLogInput) -> Result<NormalizedPassthroughPayload, ProviderLogError>`. `NormalizedPassthroughPayload { standard_logging_response_object:
+  ProviderLogInput<'_>) -> Result<NormalizedPassthroughPayload, ProviderLogError>`. `NormalizedPassthroughPayload { standard_logging_response_object:
   Option<response-object enum>, kwargs }`. With no branch selected it returns None and the input kwargs unchanged. With a branch it
   calls that handler once, and takes both the result and the kwargs from the outcome, so a handler's kwargs replace the input kwargs
   even when its result is None. A handler error goes back to the caller unchanged (LiteLLM has no try around the call here; B3607's caller
@@ -129,7 +128,7 @@ dod:
     proof: [normalize-tests]
   - text: A handler's kwargs replace the input kwargs even when its result is None, and a handler error is returned to the caller.
     proof: [normalize-tests]
-  - text: Each branch's adapter passes the leaf handler the arguments listed in the description, including the empty-object and None defaults for the response body.
+  - text: Each branch's adapter passes the leaf handler the arguments listed in the description, including the empty-object and None defaults for the response body. ProviderLogInput carries the logging object handle, the response status, headers and body text, the request method, URL and headers, call_log as &mut CallLog, response_body, request_body, url_route, result, start_time, end_time, cache_hit, custom_llm_provider and kwargs.
     proof: [adapter-shape-tests, dispatch-oracle]
   - text: Newly added helper cases replay through the shared helper-case parser and the strict Python adapter lints clean.
     proof: [helper-case-corpus, helper-python]
