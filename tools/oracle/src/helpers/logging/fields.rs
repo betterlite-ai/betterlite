@@ -1,3 +1,4 @@
+use betterlite_core::api::responses_usage::{UsageInput, normalize_and_project};
 use betterlite_logging::fields::messages::append_system_prompt_messages;
 use betterlite_logging::fields::payload::StandardLoggingPayload;
 use betterlite_logging::fields::payload::records::{AdditionalHeaders, GuardrailInformation};
@@ -5,7 +6,10 @@ use betterlite_logging::fields::response::{HiddenParams, InitResponseObject, ext
 use betterlite_logging::fields::status::{LoggingStatus, get_status_fields};
 use betterlite_logging::fields::timestamps::{Moment, cleanup_timestamps};
 use betterlite_logging::fields::usage::parse::usage_from_mapping;
-use betterlite_logging::fields::usage::{ResponseUsage, Usage, get_usage_as_dict};
+use betterlite_logging::fields::usage::project::usage_json;
+use betterlite_logging::fields::usage::{
+    ResponseUsage, Usage, UsageError, get_usage_as_dict, get_usage_from_response_obj,
+};
 use betterlite_models::decisions::Json;
 use chrono::DateTime;
 use indexmap::IndexMap;
@@ -25,7 +29,8 @@ impl crate::helpers::Helper for Op {
             Some("cleanup_timestamps") => cleanup(input),
             Some("system_messages") => messages(input),
             Some("status_fields") => status(input),
-            Some("usage_as_dict") => usage(input),
+            Some("usage_as_dict") => usage_as_dict(input),
+            Some("usage_from_response") => usage_from_response(input),
             Some("extract_response") => extracted(input),
             Some("payload_record") => round_trip::<StandardLoggingPayload>(input, "payload"),
             _ => Err(invalid("unknown logging_fields function")),
@@ -144,23 +149,50 @@ fn combined_usage(input: &Value) -> Result<Option<Usage>, Box<crate::helpers::He
         .transpose()
 }
 
-fn usage(input: &Value) -> crate::helpers::HelperResult {
+fn response_usage(input: &Value) -> Result<ResponseUsage<'_>, Box<crate::helpers::HelperError>> {
+    optional_value::<IndexMap<String, Json>>(input, "usage")
+        .map(|mapping| mapping.map_or(ResponseUsage::Absent, ResponseUsage::Mapping))
+}
+
+fn usage_as_dict(input: &Value) -> crate::helpers::HelperResult {
     let combined = combined_usage(input)?;
-    let response = optional_value::<IndexMap<String, Json>>(input, "usage")?
-        .map_or(ResponseUsage::Absent, ResponseUsage::Mapping);
-    encode(get_usage_as_dict(response, combined.as_ref()))
+    let projected = get_usage_as_dict(response_usage(input)?, combined.as_ref(), &responses_usage)
+        .map_err(|error| invalid(&error.to_string()))?;
+    encode(projected)
+}
+
+fn usage_from_response(input: &Value) -> crate::helpers::HelperResult {
+    let combined = combined_usage(input)?;
+    let usage =
+        get_usage_from_response_obj(response_usage(input)?, combined.as_ref(), &responses_usage)
+            .map_err(|error| invalid(&error.to_string()))?;
+    encode(usage_json(&usage))
+}
+
+// The B906 Responses API usage conversion, injected because betterlite-logging cannot depend on betterlite-core.
+fn responses_usage(mapping: &IndexMap<String, Json>) -> Result<Usage, UsageError> {
+    let value = serde_json::to_value(mapping).map_err(provider_error)?;
+    let projected = normalize_and_project(UsageInput::Mapping(&value)).map_err(provider_error)?;
+    let fields = serde_json::from_value(projected).map_err(provider_error)?;
+    usage_from_mapping(&fields)
+}
+
+fn provider_error<E>(error: E) -> UsageError
+where
+    E: std::fmt::Display,
+{
+    UsageError::ProviderConversion {
+        reason: error.to_string(),
+    }
 }
 
 fn decode_init(
     encoded: Option<&Value>,
 ) -> Result<InitResponseObject, Box<crate::helpers::HelperError>> {
-    let Some(value) = encoded else {
+    let Some(value) = encoded.filter(|value| !value.is_null()) else {
         return Ok(InitResponseObject::Absent);
     };
-    let Value::Object(fields) = value else {
-        return Ok(InitResponseObject::Other);
-    };
-    let Some(body) = fields.get("mapping") else {
+    let Some(body) = value.get("mapping") else {
         return Ok(InitResponseObject::Other);
     };
     let mapping =

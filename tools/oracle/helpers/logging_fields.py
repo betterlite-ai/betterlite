@@ -8,15 +8,11 @@ from litellm.types.utils import (
     StandardLoggingHiddenParams,
     StandardLoggingMetadata,
     StandardLoggingPayload,
-    StandardLoggingPayloadErrorInformation,
     StandardLoggingPayloadStatus,
     Usage,
 )
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
-
-
-_HANDLERS: dict[str, Callable[[dict[str, Json]], Json]] = {}
 
 
 def run(input_value: dict[str, Json]) -> Json:
@@ -71,6 +67,14 @@ def _usage_source(input_value: dict[str, Json]) -> tuple[dict[str, object] | Non
     combined_raw = input_value.get("combined")
     combined = None if combined_raw is None else Usage.model_validate(combined_raw)
     return response_obj, combined
+
+
+def _usage_from_response(input_value: dict[str, Json]) -> Json:
+    response_obj, combined = _usage_source(input_value)
+    result = litellm_logging.StandardLoggingPayloadSetup.get_usage_from_response_obj(  # pyright: ignore[reportUnknownMemberType]
+        response_obj, combined
+    )
+    return cast(Json, result.model_dump())
 
 
 def _usage_as_dict(input_value: dict[str, Json]) -> Json:
@@ -132,20 +136,15 @@ def _payload_record(input_value: dict[str, Json]) -> Json:
             payload[key] = raw.get(key)
     payload["metadata"] = metadata
     payload["hidden_params"] = hidden
-    if raw.get("error_information") is not None:
-        information = _null_record(StandardLoggingPayloadErrorInformation)
-        information.update(_object(raw.get("error_information")))
-        payload["error_information"] = information
     return payload
 
 
-_HANDLERS.update(
-    {
+_HANDLERS: dict[str, Callable[[dict[str, Json]], Json]] = {
         "cleanup_timestamps": _cleanup_timestamps,
         "system_messages": _system_messages,
         "status_fields": _status_fields,
         "usage_as_dict": _usage_as_dict,
+        "usage_from_response": _usage_from_response,
         "extract_response": _extract_response,
         "payload_record": _payload_record,
-    }
-)
+}

@@ -1,0 +1,8 @@
+kind: helper
+name: logging-fields-interactions-usage
+call:
+  logging_fields:
+    function: usage_as_dict
+    usage: {total_input_tokens: 2, total_output_tokens: 3}
+env: {}
+compare: {ignore: []}
