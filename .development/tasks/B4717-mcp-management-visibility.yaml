@@ -34,6 +34,8 @@ description: >-
   may query; sanitization is caller-applied. _get_user_mcp_management_mode loads
   the setting from proxy config.
 
+  Rust names for the callers (B4724 and B4729), all `pub(crate)` in module mcp::management_visibility. `pub(crate) async fn authorize_mcp_server(registry: &ServerRegistry, db: &impl DbLookup, auth: &UserApiKeyAuth, server_id: &str) -> Result<LiteLLM_MCPServerTable, VisibilityError>` is _authorize_and_fetch_mcp_server and returns the server table row it authorized. `pub(crate) async fn resolve_accessible_servers(registry: &ServerRegistry, auth: &UserApiKeyAuth, mode: ManagementMode) -> Vec<LiteLLM_MCPServerTable>` is _resolve_accessible_mcp_servers. `pub(crate) fn user_management_mode(settings: &GeneralSettings) -> ManagementMode` is _get_user_mcp_management_mode, with ManagementMode having the values Restricted and ViewAll. VisibilityError holds the HTTP status and the detail error text (404 "MCP Server {server_id} not found", 403 for a denied non-admin). ServerRegistry and DbLookup come from B4731, LiteLLM_MCPServerTable from B858 and UserApiKeyAuth from B2314.
+
 scope:
   paths:
     - crates/betterlite-server/src/mcp/management_visibility.rs
@@ -140,6 +142,9 @@ dod:
       _authorize_and_fetch_mcp_server resolves from DB then in-memory registry, returns the resolved
       server after authorization check; full admins see any server or get 404; non-admins get 403
       when server is not in their allowed set.
+    proof: [visibility-tests]
+  - text: >-
+      authorize_mcp_server, resolve_accessible_servers and user_management_mode are pub(crate) with the signatures in the description, and authorize_mcp_server returns the server table row it authorized.
     proof: [visibility-tests]
   - text: >-
       Every default, env var, config key, error code, and warn-and-drop path a user
