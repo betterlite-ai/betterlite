@@ -11,7 +11,7 @@ description: >-
   writing an audit log entry after the attempt completes, and returns 200 with the result
   when the webhook answered 2xx, or 502 with the same body when it answered non-2xx.
   Resolution prioritizes the DB row when present; config.yaml agents fall back to the
-  in-memory registry. The route calls _check_agent_management_permission for admin access.
+  in-memory registry. The route calls B4781's `crate::agent_endpoints::identity_admin::permission::check_agent_management_permission(&auth)` for admin access and turns its `IdentityAdminError` into the response with the status and detail that error already carries. It does not rebuild the check.
 
   The make_agent_public route adds a single agent's ID to the public_agent_groups list after
   checking the agent exists and is not already listed. It updates litellm_settings.public_agent_groups
@@ -201,7 +201,7 @@ oracle_cases:
   - tools/oracle/cases/management/agent-admin-actions/make-public-bulk-db-missing.yaml
 
 deviations:
-  - what: The kill_switch route uses the shared _check_agent_management_permission predicate from B4775,
+  - what: The kill_switch route uses the shared _check_agent_management_permission predicate, which is B4781's `crate::agent_endpoints::identity_admin::permission::check_agent_management_permission`,
       while make_agent_public and make_agents_public each perform their own inline user_role == PROXY_ADMIN
       check with the detail "Only proxy admins can update public model groups. Your role={user_api_key_dict.user_role}".
     why: LiteLLM implements the permission checks this way at the pinned commit. The kill_switch route
@@ -231,7 +231,7 @@ out_of_scope:
     owns check_feature_access_for_user.
 
 pitfalls:
-  - Only trigger_agent_kill_switch uses the _check_agent_management_permission predicate from B4775.
+  - Only trigger_agent_kill_switch uses the _check_agent_management_permission predicate (B4781's check_agent_management_permission, not a copy).
     make_agent_public and make_agents_public each implement their own inline PROXY_ADMIN role check
     with the literal error detail "Only proxy admins can update public model groups. Your role={user_api_key_dict.user_role}".
     Do not unify these three routes onto one permission check; the public-discovery routes have different

@@ -1,0 +1,14 @@
+id: B6803
+milestone: M5 api families
+title: Cohere Parse OCR provider
+status: todo
+depends_on: [B6800, B3300]
+file: tasks/B6803-cohere-parse-ocr-provider.yaml
+covers:
+  - "litellm/ocr/**"
+parent: B092
+split_from: B092
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

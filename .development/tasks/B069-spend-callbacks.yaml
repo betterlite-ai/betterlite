@@ -23,8 +23,8 @@ description: >-
   updates to an owned worker and await B116 customer_spend_alert. Ineligible cost releases
   an existing reservation. Missing-cost interactions with absent usage use B098's shared
   predicates: retain a reservation only for a pollable id-bearing queued/in_progress
-  response when BACKGROUND_INTERACTION_COST_POLLING_ENABLED is true. Load that env setting
-  with default true, lowercase comparison to true without trimming. Other expected-no-usage
+  response when BACKGROUND_INTERACTION_COST_POLLING_ENABLED is true. Read the flag from B3496's PollSettings (its enabled
+  field, loaded by PollSettings::from_env_map: default true, lowercase comparison to true without trimming); do not parse the env setting here. Other expected-no-usage
   interactions release and return; completed/requires_action without usage are failures.
   All other missing-cost paths release first, skip missing-model or websocket wrappers
   lacking a standard object, and report a tracking failure only for nonstreaming or a

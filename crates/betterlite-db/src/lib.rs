@@ -59,6 +59,7 @@ pub mod model_secrets;
 pub mod model_usage;
 pub mod oauth_token_resolution;
 pub mod policy_persistence;
+pub mod policy_versions;
 pub mod postgres_store;
 pub mod ptu;
 pub mod queues;
