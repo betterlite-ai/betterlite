@@ -9,7 +9,13 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+rust_decimal.workspace = true
 thiserror.workspace = true
+tracing.workspace = true
 
 [dev-dependencies]
 rstest = "=0.27.0"
+
+[[test]]
+name = "collector_factory"
+path = "src/collector_factory/tests/target.rs"

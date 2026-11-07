@@ -1,0 +1,8 @@
+kind: helper
+name: metadata-overwrite-and-field-order
+call:
+  management_guards:
+    calls:
+      - {function: update_metadata_fields, updated_kv: {metadata: {tags: [old], guardrails: [old]}, tags: [new], guardrails: [g], model_rpm_limit: {m: 1}, enable_prompt_caching: true, unknown: 1}}
+env: {}
+compare: {ignore: []}

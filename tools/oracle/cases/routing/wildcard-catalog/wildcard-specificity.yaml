@@ -1,0 +1,53 @@
+kind: probe
+name: wildcard-specificity
+probes:
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      wildcard_catalog:
+        steps:
+          - {action: add, pattern: "openai/*", model: "azure/*", model_id: "broad"}
+          - {action: add, pattern: "openai/gpt*", model: "bedrock/gpt*", model_id: "narrow"}
+          - {action: route, request: "openai/gpt-4"}
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      wildcard_catalog:
+        steps:
+          - {action: add, pattern: "openai/gpt*", model: "bedrock/gpt*", model_id: "narrow"}
+          - {action: add, pattern: "openai/*", model: "azure/*", model_id: "broad"}
+          - {action: route, request: "openai/gpt-4"}
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      wildcard_catalog:
+        steps:
+          - {action: add, pattern: "*abcd", model: "wild/*", model_id: "wild"}
+          - {action: add, pattern: "a b*", model: "space/*", model_id: "space"}
+          - {action: route, request: "a bxabcd"}
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      wildcard_catalog:
+        steps:
+          - {action: add, pattern: "*a", model: "first/*", model_id: "first"}
+          - {action: add, pattern: "a*", model: "second/*", model_id: "second"}
+          - {action: route, request: "ab"}
+          - {action: route, request: "ba"}
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      wildcard_catalog:
+        steps:
+          - {action: add, pattern: "openai/*", model: "azure/*", model_id: "open"}
+          - {action: add, pattern: "anthropic/*", model: "fixed", model_id: "anth"}
+          - {action: route, request: "openai/gpt-4", filtered_model_names: ["anthropic/*"]}
+          - {action: route, request: "anthropic/claude", filtered_model_names: ["anthropic/*"]}
+          - {action: route, request: "openai/gpt-4", filtered_model_names: []}
+  - clock: {unix_millis: 1700000000123, monotonic_millis: 42000}
+    samples: []
+    operation:
+      wildcard_catalog:
+        steps:
+          - {action: add, pattern: "openai/*", model: "azure/*", model_id: "anchor"}
+          - {action: route, request: "azure/openai/gpt-4"}
