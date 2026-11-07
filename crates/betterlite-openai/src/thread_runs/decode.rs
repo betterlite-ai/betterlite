@@ -29,8 +29,12 @@ pub fn decode_run_event(bytes: &[u8]) -> Result<FrameOutcome, ThreadRunsError> {
     if let Some(name) = event.as_deref().filter(|name| name.starts_with("thread.")) {
         return Ok(FrameOutcome::Event(Box::new(typed_event(name, value)?)));
     }
-    if let Some(error) = provider_error(&value) {
-        return Err(error);
+    if let Some(error) = value.get("error")
+        && !matches!(error, Value::Null | Value::Bool(false))
+    {
+        return Err(ThreadRunsError::ProviderError {
+            body: serde_json::to_vec(error).unwrap_or_default(),
+        });
     }
     if let Some(name) = value.get("event").and_then(Value::as_str) {
         let payload = value.get("data").cloned().unwrap_or(Value::Null);
@@ -114,11 +118,7 @@ fn fill_parts(content: &mut Value, delta: bool) {
         return;
     };
     for part in parts {
-        let kind = part.get("type").and_then(Value::as_str).unwrap_or_default();
-        if matches!(kind, "text" | "image_file" | "image_url" | "refusal") {
-            let key = kind.to_owned();
-            add_keys(part, &key);
-        }
+        add_kind(part, "text image_file image_url refusal");
         fill_object(part, "text", "annotations value");
         fill_object(part, "image_file", "file_id detail");
         fill_object(part, "image_url", "url detail");
@@ -132,13 +132,14 @@ fn fill_annotations(part: &mut Value) {
         return;
     };
     for annotation in annotations {
-        if annotation.get("type").and_then(Value::as_str) == Some("file_citation") {
-            add_keys(annotation, "end_index file_citation start_index text");
-            fill_object(annotation, "file_citation", "file_id quote");
-        }
+        add_kind(annotation, "file_citation file_path");
+        add_keys(annotation, "end_index start_index text");
+        fill_object(annotation, "file_citation", "file_id quote");
+        fill_object(annotation, "file_path", "file_id");
     }
 }
 fn fill_step(details: &mut Value, delta: bool) {
+    add_kind(details, "message_creation tool_calls");
     fill_object(details, "message_creation", "message_id");
     let Value::Object(object) = details else {
         return;
@@ -171,6 +172,17 @@ pub(crate) fn add_keys(target: &mut Value, keys: &str) {
         insert_keys(object, keys);
     }
 }
+// The SDK's union models name their variant field after the type, and dump it null when it is absent.
+fn add_kind(value: &mut Value, kinds: &str) {
+    let kind = value
+        .get("type")
+        .and_then(Value::as_str)
+        .unwrap_or_default();
+    if kinds.split(' ').any(|known| known == kind) {
+        let key = kind.to_owned();
+        add_keys(value, &key);
+    }
+}
 pub(crate) fn fill_map(object: &mut Map<String, Value>, key: &str, keys: &str) {
     if let Some(Value::Object(inner)) = object.get_mut(key) {
         insert_keys(inner, keys);
@@ -180,15 +192,6 @@ pub(crate) fn insert_keys(object: &mut Map<String, Value>, keys: &str) {
     for key in keys.split(' ') {
         object.entry(key).or_insert(Value::Null);
     }
-}
-fn provider_error(value: &Value) -> Option<ThreadRunsError> {
-    let error = value.get("error")?;
-    if matches!(error, Value::Null | Value::Bool(false)) {
-        return None;
-    }
-    Some(ThreadRunsError::ProviderError {
-        body: serde_json::to_vec(error).unwrap_or_default(),
-    })
 }
 fn lines(body: &[u8]) -> impl Iterator<Item = &[u8]> {
     body.split(|byte| matches!(*byte, b'\r' | b'\n'))

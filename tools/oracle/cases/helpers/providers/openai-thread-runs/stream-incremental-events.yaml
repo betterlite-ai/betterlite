@@ -380,6 +380,12 @@ call:
                 event: thread.run.step.delta
                 data: {"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"message_creation","message_creation":{}}}}
 
+                event: thread.run.step.delta
+                data: {"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"message_creation"}}}
+
+                event: thread.run.step.delta
+                data: {"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"tool_calls"}}}
+
                 event: thread.run.step.completed
                 data: {"id":"step_1","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"message_creation","status":"completed","step_details":{"type":"message_creation","message_creation":{}}}
 
@@ -387,7 +393,7 @@ call:
                 data: {"id":"msg_1","object":"thread.message","created_at":1700000000,"thread_id":"thread_a","role":"assistant","status":"in_progress","content":[]}
 
                 event: thread.message.delta
-                data: {"id":"msg_1","object":"thread.message.delta","delta":{"content":[{"index":0,"type":"text"},{"index":1,"type":"refusal"},{"index":2,"type":"text","text":{"value":"hi","annotations":[{"index":0,"type":"file_citation","file_citation":{"file_id":"f"}}]}}]}}
+                data: {"id":"msg_1","object":"thread.message.delta","delta":{"content":[{"index":0,"type":"text"},{"index":1,"type":"refusal"},{"index":2,"type":"text","text":{"value":"hi","annotations":[{"index":0,"type":"file_citation","file_citation":{"file_id":"f"}},{"index":1,"type":"file_path","file_path":{}}]}}]}}
 
                 event: thread.created
                 data: {"id":"thread_a","object":"thread","created_at":1700000000,"metadata":{},"tool_resources":{"code_interpreter":{},"file_search":{}}}

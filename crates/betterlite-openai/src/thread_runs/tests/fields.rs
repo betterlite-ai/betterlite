@@ -17,8 +17,10 @@ const THREAD_CREATED: &str = r#"{"id":"thread_a","object":"thread","created_at":
 const STEP_DELTA_FUNCTION_MISSING: &str = r#"{"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"tool_calls","tool_calls":[{"index":0,"type":"function","id":"c"}]}}}"#;
 const STEP_DELTA_CODE_MISSING: &str = r#"{"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"tool_calls","tool_calls":[{"index":0,"type":"code_interpreter","id":"c"}]}}}"#;
 const STEP_DELTA_MESSAGE_CREATION: &str = r#"{"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"message_creation","message_creation":{}}}}"#;
+const STEP_DELTA_MESSAGE_CREATION_KEYLESS: &str = r#"{"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"message_creation"}}}"#;
+const STEP_DELTA_TOOL_CALLS_KEYLESS: &str = r#"{"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"tool_calls"}}}"#;
 const STEP_MESSAGE_CREATION: &str = r#"{"id":"step_1","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"message_creation","status":"completed","step_details":{"type":"message_creation","message_creation":{}}}"#;
-const MESSAGE_DELTA_PARTIAL_BLOCKS: &str = r#"{"id":"msg_1","object":"thread.message.delta","delta":{"content":[{"index":0,"type":"text"},{"index":1,"type":"refusal"},{"index":2,"type":"text","text":{"value":"hi","annotations":[{"index":0,"type":"file_citation","file_citation":{"file_id":"f"}}]}}]}}"#;
+const MESSAGE_DELTA_PARTIAL_BLOCKS: &str = r#"{"id":"msg_1","object":"thread.message.delta","delta":{"content":[{"index":0,"type":"text"},{"index":1,"type":"refusal"},{"index":2,"type":"text","text":{"value":"hi","annotations":[{"index":0,"type":"file_citation","file_citation":{"file_id":"f"}},{"index":1,"type":"file_path","file_path":{}}]}}]}}"#;
 const THREAD_EMPTY_RESOURCES: &str = r#"{"id":"thread_a","object":"thread","created_at":1700000000,"metadata":{},"tool_resources":{"code_interpreter":{},"file_search":{}}}"#;
 
 // A field the SDK cannot use never clears a data line recorded before it.
@@ -57,6 +59,19 @@ pub(super) async fn stream_replaced_fields_do_not_hold_the_frame() {
     for (event, payload) in events.iter().zip(payloads) {
         assert_eq!(serde_json::to_value(event).unwrap(), parse(payload));
     }
+}
+
+// A comment-only frame after an id line is skipped; the SDK fails its empty-data JSON parse there.
+pub(super) async fn stream_comment_after_id_is_skipped() {
+    let body = "id: 1\ndata: {\"a\":1}\n\n: ping\n\ndata: {\"a\":2}\n\ndata: [DONE]\n\n";
+    let events = stream_result(body).await.unwrap();
+    assert_eq!(events.len(), 2);
+    let payloads = vec![parse(r#"{"a":1}"#), parse(r#"{"a":2}"#)];
+    let values: Vec<Value> = events
+        .iter()
+        .map(|event| serde_json::to_value(event).unwrap())
+        .collect();
+    assert_eq!(values, payloads);
 }
 
 // Nested step and message records keep every declared key the provider left out as null.
@@ -151,6 +166,8 @@ async fn missing_variant_events() -> Vec<RunEvent> {
         ("thread.run.step.delta", STEP_DELTA_FUNCTION_MISSING),
         ("thread.run.step.delta", STEP_DELTA_CODE_MISSING),
         ("thread.run.step.delta", STEP_DELTA_MESSAGE_CREATION),
+        ("thread.run.step.delta", STEP_DELTA_MESSAGE_CREATION_KEYLESS),
+        ("thread.run.step.delta", STEP_DELTA_TOOL_CALLS_KEYLESS),
         ("thread.run.step.completed", STEP_MESSAGE_CREATION),
         ("thread.message.created", MESSAGE_CREATED),
         ("thread.message.delta", MESSAGE_DELTA_PARTIAL_BLOCKS),
@@ -162,7 +179,7 @@ async fn missing_variant_events() -> Vec<RunEvent> {
     }
     body.push_str("data: [DONE]\n\n");
     let events = stream_result(&body).await.unwrap();
-    assert_eq!(events.len(), 8);
+    assert_eq!(events.len(), 10);
     events
 }
 
@@ -173,7 +190,7 @@ fn data_value(event: &RunEvent) -> Value {
 }
 
 fn assert_step_variants(events: &[RunEvent]) {
-    assert!(events.len() > 4);
+    assert!(events.len() > 6);
     let function = parse(
         r#"{"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"tool_calls","tool_calls":[{"index":0,"type":"function","id":"c","function":null}]}}}"#,
     );
@@ -186,24 +203,36 @@ fn assert_step_variants(events: &[RunEvent]) {
         r#"{"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"message_creation","message_creation":{"message_id":null}}}}"#,
     );
     assert_eq!(data_value(&events[3]), delta);
+    let creation = parse(
+        r#"{"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"message_creation","message_creation":null}}}"#,
+    );
+    assert_eq!(data_value(&events[4]), creation);
+    let calls = parse(
+        r#"{"id":"step_1","object":"thread.run.step.delta","delta":{"step_details":{"type":"tool_calls","tool_calls":null}}}"#,
+    );
+    assert_eq!(data_value(&events[5]), calls);
     let step = parse(
         r#"{"id":"step_1","object":"thread.run.step","created_at":1700000000,"run_id":"run_1","assistant_id":"asst_1","thread_id":"thread_a","type":"message_creation","status":"completed","step_details":{"type":"message_creation","message_creation":{"message_id":null}},"cancelled_at":null,"completed_at":null,"expired_at":null,"failed_at":null,"last_error":null,"metadata":null,"usage":null}"#,
     );
-    assert_eq!(data_value(&events[4]), step);
+    assert_eq!(data_value(&events[6]), step);
 }
 
 fn assert_content_variants(events: &[RunEvent]) {
-    assert!(events.len() > 7);
-    let blocks = serde_json::to_value(&events[6]).unwrap();
+    assert!(events.len() > 9);
+    let blocks = serde_json::to_value(&events[8]).unwrap();
     for pointer in [
         "/data/delta/content/0/text",
         "/data/delta/content/1/refusal",
         "/data/delta/content/2/text/annotations/0/end_index",
         "/data/delta/content/2/text/annotations/0/file_citation/quote",
+        "/data/delta/content/2/text/annotations/1/end_index",
+        "/data/delta/content/2/text/annotations/1/file_path/file_id",
+        "/data/delta/content/2/text/annotations/1/start_index",
+        "/data/delta/content/2/text/annotations/1/text",
     ] {
         assert_eq!(blocks.pointer(pointer), Some(&Value::Null), "{pointer}");
     }
-    let thread = serde_json::to_value(&events[7]).unwrap();
+    let thread = serde_json::to_value(&events[9]).unwrap();
     for pointer in [
         "/data/tool_resources/code_interpreter/file_ids",
         "/data/tool_resources/file_search/vector_store_ids",

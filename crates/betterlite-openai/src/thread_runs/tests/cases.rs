@@ -921,6 +921,7 @@ async fn thread_runs_cases(#[case] scenario: Scenario) {
             stream_unusable_fields_are_skipped().await;
             super::fields::stream_unusable_fields_after_data_keep_the_event().await;
             super::fields::stream_replaced_fields_do_not_hold_the_frame().await;
+            super::fields::stream_comment_after_id_is_skipped().await;
             super::fields::stream_nested_records_match_the_sdk_dump().await;
             super::fields::stream_missing_variant_keys_match_the_sdk_dump().await;
             stream_step_and_message_records().await;
