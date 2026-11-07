@@ -68,6 +68,25 @@ async fn text_completion_metrics_default_to_zero() {
 }
 
 #[tokio::test]
+async fn null_token_counts_are_logged_as_zero() {
+    let (logger, replay) = logger(vec![answer("{}")], &[]);
+    let response = json(
+        r#"{"id":"chatcmpl-1","object":"chat.completion","created":1700000000,"model":"m","choices":[{"index":0,"message":{"role":"assistant","content":"hello"},"finish_reason":"stop"}],"usage":{"prompt_tokens":null,"completion_tokens":5,"total_tokens":null}}"#,
+    );
+    logger
+        .log_success_event(
+            &scenario(ResponseKind::Model, response).event(),
+            CallbackPath::Sync,
+        )
+        .await
+        .unwrap();
+    let metrics = posted(&replay, 0, &["events", "0", "metrics"]);
+    assert_eq!(at_path(&metrics, &["prompt_tokens"]), &json("0"));
+    assert_eq!(at_path(&metrics, &["completion_tokens"]), &json("5"));
+    assert_eq!(at_path(&metrics, &["total_tokens"]), &json("0"));
+}
+
+#[tokio::test]
 async fn embedding_metrics_default_to_zero() {
     let (logger, replay) = logger(vec![answer("{}")], &[]);
     let response = json(r#"{"object":"list","data":[],"model":"m"}"#);
