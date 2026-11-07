@@ -53,6 +53,7 @@ pub mod guardrail_deployment;
 pub mod guardrail_initializers;
 pub mod guardrail_message_scope;
 pub mod guardrail_records;
+pub mod guardrail_registry;
 pub mod guardrail_scan_cache;
 pub mod guardrail_selection;
 pub mod guardrail_translation;

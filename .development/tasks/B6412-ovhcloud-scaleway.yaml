@@ -1,0 +1,158 @@
+id: B6412
+title: OVHCloud chat, embedding and transcription, and Scaleway transcription
+description: >-
+  Build the OVHCloud AI Endpoints provider (llms/ovhcloud) and the Scaleway transcription config (llms/scaleway). Both
+  are OpenAI-shaped hosts. All of it is pure transforms: nothing sends a request, reads the environment or registers a
+  route. B039 wires the configs into dispatch, B2230, B5360 and B5363 own choosing them, and B210 and B211 own identity
+  defaults.
+
+  Modules. In betterlite-openai: ovhcloud_chat, ovhcloud_embedding, ovhcloud_audio and scaleway_audio (each a file plus a
+  folder with tests.rs). Credentials are plain arguments: validate_environment takes the explicit api_key and an
+  env_api_key the caller read from OVHCLOUD_API_KEY (or SCW_SECRET_KEY for Scaleway). The default OVHCloud base is
+  "https://oai.endpoints.kepler.ai.cloud.ovh.net/v1". Every OVHCloud URL is the base plus a path, where a missing base
+  uses the default and a given base has its trailing slashes removed (an empty string stays empty).
+
+  ovhcloud_chat (chat/transformation.py, utils.py), over B668/B503/B504. OVHCloudException carries message, status_code
+  and headers (built on B2202's BaseLLMException projection). custom_llm_provider is "ovhcloud". The URL is the base plus
+  "/chat/completions". get_error_class returns OVHCloudException. map_openai_params is the parent's. transform_request
+  removes "extra_body" from optional_params (default empty), runs the parent, then overlays extra_body on the body, so an
+  extra_body key replaces any body key including model and messages. The stream chunk parser takes one decoded chunk: an
+  "error" key is an OVHCloudException "OVHCloud Error: <error.message or Unknown error>" with status error.code (default
+  400) and header Content-Type application/json. Otherwise each choice that has a delta gets delta.reasoning_content set
+  from delta.reasoning when reasoning is not null and reasoning_content is null, and the output chunk has the chunk id,
+  object "chat.completion.chunk", created, model, the choices and usage from chunk.usage (null when absent). A missing id,
+  created, model or choices key is an OVHCloudException with status 400 and the message "KeyError: <key>, Got unexpected
+  response from CometAPI: <chunk>" (the CometAPI wording is a copy slip in LiteLLM and is kept so messages match). It uses
+  B2214's base chunk iterator.
+
+  ovhcloud_embedding (embedding/transformation.py), over B006. The URL is the base plus "/embeddings". Headers: the key
+  is api_key, else env_api_key, and may stay missing; defaults are Authorization "Bearer <key>" (a missing key gives the
+  text "Bearer None"), accept "application/json" and Content-Type "application/json"; a caller Authorization replaces the
+  default one; the result is the defaults overlaid by all caller headers. Supported params are none, and
+  map_openai_params copies nothing. The request body is input, model, then every optional param in that order. The
+  response: a body that is not JSON is an OVHCloudException with the body text, the status and the headers. Otherwise
+  model, data and object are copied from the body (null when absent) and usage is prompt_tokens and total_tokens from
+  body.usage, each defaulting to 0. get_error_class returns OVHCloudException. The reply decoder is fuzzed.
+
+  ovhcloud_audio (audio_transcription/transformation.py), over B1122 and B1001. Supported params, in order: language,
+  prompt, response_format, timestamp_granularities, temperature. map_openai_params copies those present in
+  non_default_params. The URL is the base plus "/audio/transcriptions". Headers: key as above, defaults Authorization
+  "Bearer <key>" and accept "application/json", overlaid by caller headers (no Content-Type). The request is form fields
+  model, then each supported param whose value is not null in the order above, and the file from B1001's
+  process_audio_file as (filename, content, content_type). The response: not JSON is an OVHCloudException as above. The
+  text is body.text, else body.transcript, else "". The duration is body.seconds when that key exists and is not null,
+  otherwise body.duration; when it is not null it is written to body.duration. The response keeps the whole body as hidden
+  params. get_error_class returns OVHCloudException.
+
+  scaleway_audio (scaleway/audio_transcription/transformation.py). ScalewayAudioTranscriptionException carries message,
+  status_code and headers. Supported params, in order: language, prompt, response_format, temperature,
+  timestamp_granularities. The URL is "https://api.scaleway.ai/v1" (or the given base without trailing slashes) plus
+  "/audio/transcriptions". validate_environment uses api_key, else env_api_key; a missing or empty key is
+  ScalewayAudioTranscriptionException with status 401, empty headers and the message "Scaleway API key not found. Pass
+  api_key=... or set the SCW_SECRET_KEY environment variable." (backticks around api_key=..., copy from the source).
+  Headers are Authorization "Bearer <key>" and accept "application/json", overlaid by caller headers. The request is built
+  like OVHCloud's. The response: a content-type header (lowercased, empty when absent) without "application/json" gives a
+  response whose text is the raw body text. A JSON decode failure is the exception with the body text, status and headers.
+  Otherwise the text is body.text or "", segments and language are copied when those keys exist, and the whole body is
+  kept as hidden params. get_error_class returns the Scaleway exception.
+
+  Helper b6412 calls these functions with typed inputs (no network, no environment) and compares the pinned LiteLLM
+  classes. Source size is about 420 nonblank, noncomment lines. Plan about 480 production lines, 420 test lines, 200
+  adapter lines and 60 fuzz and wiring lines.
+scope:
+  paths:
+    - crates/betterlite-openai/src/ovhcloud_chat.rs
+    - crates/betterlite-openai/src/ovhcloud_chat/**
+    - crates/betterlite-openai/src/ovhcloud_embedding.rs
+    - crates/betterlite-openai/src/ovhcloud_embedding/**
+    - crates/betterlite-openai/src/ovhcloud_audio.rs
+    - crates/betterlite-openai/src/ovhcloud_audio/**
+    - crates/betterlite-openai/src/scaleway_audio.rs
+    - crates/betterlite-openai/src/scaleway_audio/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/ovhcloud_reply.rs
+    - crates/betterlite-openai/fuzz/corpus/ovhcloud_reply/**
+    - tools/oracle/cases/helpers/ovhcloud-wire/**
+    - "tools/oracle/fuzz/corpus/helper_case/ovhcloud_wire-*"
+    - tools/oracle/helpers/b6412.py
+    - tools/oracle/helpers/b6412/**
+    - tools/oracle/src/helpers/openai/b6412.rs
+    - tools/oracle/src/helpers/openai/b6412/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ovhcloud/chat/transformation.py#L1-L117
+    why: URL, error class, extra_body overlay and the stream chunk parser.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ovhcloud/embedding/transformation.py#L1-L119
+    why: Headers, request body order and the response copy.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ovhcloud/audio_transcription/transformation.py#L1-L164
+    why: Transcription params, form fields and the text and duration rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/ovhcloud/utils.py#L1-L5
+    why: The OVHCloud exception type.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/scaleway/audio_transcription/transformation.py#L1-L151
+    why: Scaleway key check, content-type branch and response fields.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L4862-L4906
+    why: The _complete_ovhcloud call site, owned by B039.
+dod:
+  - text: OVHCloud chat builds the URL, overlays extra_body, and normalizes stream chunks and error chunks like LiteLLM.
+    proof: [ovhcloud-chat-tests, ovhcloud-reply-corpus, helper-python, helper-case-corpus]
+  - text: OVHCloud embedding headers, request body order and reply copy match LiteLLM, and no byte input makes the reply decoder fail.
+    proof: [ovhcloud-embedding-tests, ovhcloud-reply-corpus, helper-python, helper-case-corpus]
+  - text: OVHCloud and Scaleway transcription params, URL, headers, form fields and reply fields match LiteLLM.
+    proof: [audio-transcription-tests, ovhcloud-reply-corpus, helper-python, helper-case-corpus]
+  - text: The new helper cases replay through the shared helper-case parser.
+    proof: [helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: ovhcloud-chat-tests
+      why: The OVHCloud chat config is missing or fails
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^ovhcloud_chat::/)'
+    - id: ovhcloud-embedding-tests
+      why: The OVHCloud embedding config is missing or fails
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^ovhcloud_embedding::/) - test(replays_the_ovhcloud_reply_corpus)'
+    - id: audio-transcription-tests
+      why: The OVHCloud or Scaleway transcription config is missing or fails
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^(ovhcloud_audio|scaleway_audio)::/)'
+    - id: ovhcloud-reply-corpus
+      why: The reply fuzz target or its fresh replay corpus is missing
+      run: >-
+        test -f crates/betterlite-openai/fuzz/fuzz_targets/ovhcloud_reply.rs &&
+        grep -q 'name = "ovhcloud_reply"' crates/betterlite-openai/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/ovhcloud_reply)" &&
+        cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_ovhcloud_reply_corpus)'
+    - id: helper-python
+      why: The strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b6412.py)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: Newly added OVHCloud and Scaleway helper cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/ovhcloud_wire-*")" &&
+        grep -lE '^[[:space:]]+b6412:' tools/oracle/fuzz/corpus/helper_case/ovhcloud_wire-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/ovhcloud-wire/chat-url-and-extra-body.yaml
+  - tools/oracle/cases/helpers/ovhcloud-wire/chat-stream-chunks.yaml
+  - tools/oracle/cases/helpers/ovhcloud-wire/embedding-headers-body-and-reply.yaml
+  - tools/oracle/cases/helpers/ovhcloud-wire/transcription-request-and-reply.yaml
+  - tools/oracle/cases/helpers/ovhcloud-wire/scaleway-key-and-reply.yaml
+deviations:
+  - what: A chunk whose choices value is not a list gives an OVHCloudException with status 400 and a message naming the field.
+    why: LiteLLM lets a TypeError from iterating the value escape the chunk parser, which the proxy reports as a generic 500.
+out_of_scope:
+  - B2230, B5360 and B5363 own choosing these configs, and B210 and B211 own the OVHCloud identity defaults.
+  - B668, B503 and B504 own the OpenAI chat parent methods, B006 the embedding contract and response type, B1122 the transcription contract and B1001 process_audio_file.
+  - B039 owns _complete_ovhcloud and the ovhcloud embedding() branch in litellm/main.py, reading OVHCLOUD_API_KEY and SCW_SECRET_KEY, and the HTTP oracle cases through the booted proxy.
+  - B2214 owns the base chunk iterator.
+pitfalls:
+  - The embedding header default uses the text "Bearer None" when no key exists, and OVHCloud never rejects a missing key.
+  - Scaleway rejects a missing key with 401 but OVHCloud transcription does not.
+  - The chat extra_body overlay runs after the parent, so it can replace model, messages and stream.
+  - Transcription duration prefers seconds only when that key is present and not null, even when it is 0.
+  - The chunk parser changes the delta of the input choice in place, and the same choice objects go into the output.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

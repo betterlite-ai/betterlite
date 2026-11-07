@@ -179,6 +179,7 @@ pub mod password_login;
 pub mod password_policy;
 pub mod prometheus_auth_middleware;
 pub mod prometheus_budget_refresh;
+pub mod prompt_cache_routes;
 pub mod public_endpoints;
 pub mod redis_cache_wiring;
 pub mod release_info;

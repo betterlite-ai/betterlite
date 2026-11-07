@@ -1,0 +1,15 @@
+id: B6460
+milestone: M5 api families
+title: Router video call wrappers
+status: todo
+depends_on: [B016, B6021, B3338, B3339, B3340, B3341, B3342]
+file: null
+covers:
+  - "litellm/router.py"
+  - "litellm/proxy/route_llm_request.py"
+parent: B093
+split_from: B093
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
