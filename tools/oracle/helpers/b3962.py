@@ -20,23 +20,6 @@ ResponseObject: TypeAlias = (
 )
 
 
-def object_value(value: Json, name: str) -> dict[str, Json]:
-    if not isinstance(value, dict):
-        raise ValueError(f"{name} must be an object")
-    return value
-
-
-def string_value(value: Json, name: str) -> str:
-    if not isinstance(value, str):
-        raise ValueError(f"{name} must be a string")
-    return value
-
-
-def answer_list(scenario: dict[str, Json]) -> list[Json]:
-    answers = scenario.get("answers")
-    return list(answers) if isinstance(answers, list) else []
-
-
 def apply_environment(scenario: dict[str, Json]) -> None:
     # every helper call is a fresh process, so the scenario replaces the inherited environment
     os.environ.clear()
@@ -121,8 +104,11 @@ async def resolve_async(logger: BraintrustLogger, name: str) -> str:
 
 def project_result(scenario: dict[str, Json]) -> Json:
     logger = build_logger(scenario)
-    recorder = Recorder(answer_list(scenario))
-    name = string_value(scenario.get("project_name"), "project_name")
+    answers = scenario.get("answers")
+    recorder = Recorder(list(answers) if isinstance(answers, list) else [])
+    name = scenario.get("project_name")
+    if not isinstance(name, str):
+        raise ValueError("project_name must be a string")
     calls = scenario.get("calls")
     count = calls if isinstance(calls, int) and not isinstance(calls, bool) else 1
     asynchronous = scenario.get("path") == "async"
@@ -142,7 +128,9 @@ def project_result(scenario: dict[str, Json]) -> Json:
 def build_response(value: Json) -> ResponseObject | None:
     if not isinstance(value, dict):
         return None
-    body = object_value(value.get("body"), "response.body")
+    body = value.get("body")
+    if not isinstance(body, dict):
+        raise ValueError("response.body must be an object")
     kind = value.get("kind")
     if kind == "model_response":
         return litellm.ModelResponse(**cast("dict[str, object]", body))
@@ -162,7 +150,9 @@ def build_response(value: Json) -> ResponseObject | None:
 
 
 def parse_time(value: Json, name: str) -> datetime:
-    return datetime.fromisoformat(string_value(value, name))
+    if not isinstance(value, str):
+        raise ValueError(f"{name} must be a string")
+    return datetime.fromisoformat(value)
 
 
 def optional_time(scenario: dict[str, Json], name: str) -> datetime | None:
@@ -204,7 +194,8 @@ def log_result(scenario: dict[str, Json]) -> Json:
     litellm.langfuse_default_tags = (
         [tag for tag in tags if isinstance(tag, str)] if isinstance(tags, list) else None
     )
-    recorder = Recorder(answer_list(scenario))
+    answers = scenario.get("answers")
+    recorder = Recorder(list(answers) if isinstance(answers, list) else [])
     kwargs = build_kwargs(scenario)
     response = build_response(scenario.get("response"))
     start = parse_time(scenario.get("start_time"), "start_time")
@@ -224,18 +215,13 @@ def log_result(scenario: dict[str, Json]) -> Json:
     return cast(Json, {"requests": recorder.requests})
 
 
-HANDLERS = {
-    "resolve_project": project_result,
-    "log": log_result,
-}
-
-
 def run(input_value: dict[str, Json]) -> Json:
     function = input_value.get("function")
     scenarios = input_value.get("scenarios")
     if not isinstance(scenarios, list):
         raise ValueError("scenarios must be a list")
-    handler = HANDLERS.get(function) if isinstance(function, str) else None
+    handlers = {"resolve_project": project_result, "log": log_result}
+    handler = handlers.get(function) if isinstance(function, str) else None
     if handler is None:
         raise ValueError(f"unknown function: {function}")
-    return {"results": [handler(object_value(value, "scenario")) for value in scenarios]}
+    return {"results": [handler(cast("dict[str, Json]", value)) for value in scenarios]}

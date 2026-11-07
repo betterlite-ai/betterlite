@@ -139,10 +139,7 @@ fn span_parents(
         .filter(|parent| !parent.is_empty())
         .map(str::to_owned)
         .collect();
-    if ids.is_empty() {
-        return Ok(None);
-    }
-    Ok(Some(ids))
+    Ok((!ids.is_empty()).then_some(ids))
 }
 
 fn tag_text(key: &str, value: &Json) -> Result<String, PayloadError> {

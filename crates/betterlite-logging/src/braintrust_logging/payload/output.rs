@@ -14,7 +14,6 @@ const MODEL_FIELDS: [&str; 5] = [
     "logprobs",
     "provider_specific_fields",
 ];
-const TEXT_FIELDS: [&str; 4] = ["finish_reason", "index", "text", "logprobs"];
 const DROPPED_WHEN_NULL: [&str; 6] = [
     "annotations",
     "audio",
@@ -86,7 +85,11 @@ fn choice(item: &Json, kind: ChoiceKind) -> Result<Json, PayloadError> {
                     fields.get(key).cloned().unwrap_or(Json::Null),
                 );
             }
-            copy_extra(fields, &TEXT_FIELDS, &mut choice);
+            copy_extra(
+                fields,
+                &["finish_reason", "index", "text", "logprobs"],
+                &mut choice,
+            );
         }
     }
     Ok(Json::Object(choice))

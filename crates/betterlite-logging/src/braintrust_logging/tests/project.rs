@@ -1,3 +1,5 @@
+use rstest::rstest;
+
 use super::support::{
     BASE, KEY, ResponseKind, Scenario, answer, failing, json, logger, model_completion,
 };
@@ -120,4 +122,20 @@ async fn project_resolution_keeps_the_response_text() {
     };
     assert_eq!(status, 400);
     assert_eq!(body, r#"{"error":"bad request"}"#);
+}
+
+#[rstest]
+#[case::dot(".")]
+#[case::dot_dot("..")]
+#[tokio::test]
+async fn dot_segment_project_ids_are_rejected(#[case] project_id: &str) {
+    let (logger, replay) = logger(Vec::new(), &[]);
+    let mut scenario = Scenario::empty();
+    scenario.metadata = json(&format!(r#"{{"project_id":"{project_id}"}}"#));
+    let failure = logger
+        .log_success_event(&scenario.event(), CallbackPath::Sync)
+        .await
+        .unwrap_err();
+    assert!(matches!(failure, BraintrustError::PathSegment));
+    assert!(replay.requests().is_empty());
 }

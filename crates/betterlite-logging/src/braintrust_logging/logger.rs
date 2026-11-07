@@ -45,6 +45,8 @@ where
     },
     #[error("the Braintrust API base {url} cannot carry a path")]
     Base { url: String },
+    #[error("a Braintrust request path segment cannot be '.' or '..'")]
+    PathSegment,
     #[error("the Braintrust Authorization header is not valid")]
     Header(#[source] InvalidHeaderValue),
     #[error("the Braintrust project cache is poisoned")]
@@ -95,6 +97,12 @@ impl<D: Delivery> BraintrustLogger<D> {
     pub const fn log_failure_event(&self) {}
 
     fn endpoint(&self, segments: &[&str]) -> Result<Url, BraintrustError<D::Error>> {
+        if segments
+            .iter()
+            .any(|segment| matches!(*segment, "." | ".."))
+        {
+            return Err(BraintrustError::PathSegment);
+        }
         let base = &self.settings.api_base;
         let mut url = Url::parse(base).map_err(|source| BraintrustError::Url {
             url: base.clone(),
