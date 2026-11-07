@@ -80,7 +80,9 @@ enum Scenario {
     Dummy,
     Preserved(&'static str),
     OversizedMessage,
+    MessageAtByteLimit,
     TooManyToolCalls,
+    MaxToolCalls,
 }
 
 fn parsed_json(text: &str) -> Json {
@@ -175,17 +177,32 @@ fn assert_message_too_large() {
     ));
 }
 
-fn assert_too_many_tool_calls() {
+fn assert_message_at_byte_limit() {
+    let mut bytes = br#"{"role":"assistant"}"#.to_vec();
+    bytes.resize(MAX_MESSAGE_BYTES, b' ');
+    let parsed = parse_tool_invoke_message(&bytes).expect("a message at the byte limit parses");
+    assert_eq!(parsed.role, "assistant");
+}
+
+fn tool_calls_message(count: usize) -> String {
     let tool = r#"{"id":"call","function":{"name":"tool","arguments":"{}"}}"#;
-    let calls = repeat_n(tool, MAX_TOOL_CALLS.saturating_add(1))
-        .collect::<Vec<_>>()
-        .join(",");
-    let text = format!(r#"{{"role":"assistant","tool_calls":[{calls}]}}"#);
+    let calls = repeat_n(tool, count).collect::<Vec<_>>().join(",");
+    format!(r#"{{"role":"assistant","tool_calls":[{calls}]}}"#)
+}
+
+fn assert_too_many_tool_calls() {
+    let text = tool_calls_message(MAX_TOOL_CALLS.saturating_add(1));
     let error = convert_tool_calls_to_gemini(&parse_message(&text), None, false).unwrap_err();
     assert!(matches!(
         error,
         GeminiToolInvokesError::TooManyToolCalls { limit } if limit == MAX_TOOL_CALLS
     ));
+}
+
+fn assert_max_tool_calls_are_accepted() {
+    let text = tool_calls_message(MAX_TOOL_CALLS);
+    let converted = convert_tool_calls_to_gemini(&parse_message(&text), None, false).unwrap();
+    assert_eq!(converted.len(), MAX_TOOL_CALLS);
 }
 
 fn run(scenario: Scenario) {
@@ -210,7 +227,9 @@ fn run(scenario: Scenario) {
         ),
         Scenario::Preserved(message) => assert_preserved(message),
         Scenario::OversizedMessage => assert_message_too_large(),
+        Scenario::MessageAtByteLimit => assert_message_at_byte_limit(),
         Scenario::TooManyToolCalls => assert_too_many_tool_calls(),
+        Scenario::MaxToolCalls => assert_max_tool_calls_are_accepted(),
     }
 }
 
@@ -327,6 +346,24 @@ fn run(scenario: Scenario) {
 #[case::vertex_prefixed_gemini_3_is_newer(Scenario::Convert(ConvertCase {
     message: r#"{"role":"assistant","tool_calls":[{"function":{"name":"first","arguments":"{}"}}]}"#,
     model: Some("vertex_ai/gemini-3.5-flash"),
+    forward: false,
+    expected: r#"[{"function_call":{"name":"first","args":{}},"thoughtSignature":"c2tpcF90aG91Z2h0X3NpZ25hdHVyZV92YWxpZGF0b3I="}]"#,
+}))]
+#[case::gemini_prefixed_gemini_3_is_newer(Scenario::Convert(ConvertCase {
+    message: r#"{"role":"assistant","tool_calls":[{"function":{"name":"first","arguments":"{}"}}]}"#,
+    model: Some("gemini/gemini-3-pro-preview"),
+    forward: false,
+    expected: r#"[{"function_call":{"name":"first","args":{}},"thoughtSignature":"c2tpcF90aG91Z2h0X3NpZ25hdHVyZV92YWxpZGF0b3I="}]"#,
+}))]
+#[case::prefixed_named_endpoint_is_older(Scenario::Convert(ConvertCase {
+    message: r#"{"role":"assistant","tool_calls":[{"function":{"name":"first","arguments":"{}"}}]}"#,
+    model: Some("gemini/my-endpoint"),
+    forward: false,
+    expected: r#"[{"function_call":{"name":"first","args":{}}}]"#,
+}))]
+#[case::fraction_without_digits_is_newer(Scenario::Convert(ConvertCase {
+    message: r#"{"role":"assistant","tool_calls":[{"function":{"name":"first","arguments":"{}"}}]}"#,
+    model: Some("gemini-2.-flash"),
     forward: false,
     expected: r#"[{"function_call":{"name":"first","args":{}},"thoughtSignature":"c2tpcF90aG91Z2h0X3NpZ25hdHVyZV92YWxpZGF0b3I="}]"#,
 }))]
@@ -499,7 +536,9 @@ fn run(scenario: Scenario) {
 #[case::protocol_bool(Scenario::Protocol(ProtocolCase { value: "true", expected: ProtocolValue::Bool }))]
 #[case::dummy_signature_is_the_documented_base64(Scenario::Dummy)]
 #[case::oversized_message_bytes_are_refused(Scenario::OversizedMessage)]
+#[case::message_at_the_byte_limit_parses(Scenario::MessageAtByteLimit)]
 #[case::too_many_tool_calls_are_refused(Scenario::TooManyToolCalls)]
+#[case::max_tool_calls_are_accepted(Scenario::MaxToolCalls)]
 #[case::tool_calls_must_be_a_list(Scenario::ConvertFailure(ConvertFailureCase {
     message: r#"{"role":"assistant","tool_calls":{}}"#,
     model: None,
