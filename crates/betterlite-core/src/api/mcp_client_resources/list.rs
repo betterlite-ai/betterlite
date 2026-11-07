@@ -5,10 +5,11 @@ use betterlite_mcp::client::sessions::client::SessionClient;
 use betterlite_mcp::client::sessions::error::SessionError;
 use betterlite_mcp::client::sessions::run::run_with_session;
 use betterlite_mcp::client::sessions::runtime::McpRuntime;
+use tracing::debug;
 
-use super::failure::{list_failure, unsupported_failure};
+use super::failure::list_failure;
 use super::operations::server_name;
-use super::pagination::{PageFailure, list_optional_pages};
+use super::pagination::{METHOD_NOT_FOUND, PageFailure, list_optional_pages};
 use super::session::{ResourceSession, RuntimeSession, session_error};
 use super::settings::ResourceSettings;
 use super::types::{
@@ -39,69 +40,73 @@ where
     fn items(page: &Self::Page) -> &[Self::Item];
 }
 
-impl<Session: ResourceSession> ListKind<Session> for Prompts {
-    type Item = Prompt;
-    type Page = PromptPage;
+macro_rules! list_kind {
+    ($kind:ident, $item:ty, $page:ty, $operation:literal, $capability:ident, $fetch:ident, $items:ident) => {
+        impl<Session: ResourceSession> ListKind<Session> for $kind {
+            type Item = $item;
+            type Page = $page;
 
-    const OPERATION: &'static str = "list_prompts";
+            const OPERATION: &'static str = $operation;
 
-    fn is_supported(capabilities: &ServerCapabilities) -> bool {
-        capabilities.prompts.is_some()
-    }
+            fn is_supported(capabilities: &ServerCapabilities) -> bool {
+                capabilities.$capability.is_some()
+            }
 
-    fn fetch(
-        session: &mut Session,
-        cursor: Option<String>,
-    ) -> impl Future<Output = Result<Self::Page, Session::Error>> + Send {
-        session.list_prompts(cursor)
-    }
+            fn fetch(
+                session: &mut Session,
+                cursor: Option<String>,
+            ) -> impl Future<Output = Result<Self::Page, Session::Error>> + Send {
+                session.$fetch(cursor)
+            }
 
-    fn items(page: &Self::Page) -> &[Self::Item] {
-        &page.prompts
-    }
+            fn items(page: &Self::Page) -> &[Self::Item] {
+                &page.$items
+            }
+        }
+    };
 }
 
-impl<Session: ResourceSession> ListKind<Session> for Resources {
-    type Item = Resource;
-    type Page = ResourcePage;
+list_kind!(
+    Prompts,
+    Prompt,
+    PromptPage,
+    "list_prompts",
+    prompts,
+    list_prompts,
+    prompts
+);
+list_kind!(
+    Resources,
+    Resource,
+    ResourcePage,
+    "list_resources",
+    resources,
+    list_resources,
+    resources
+);
+list_kind!(
+    Templates,
+    ResourceTemplate,
+    ResourceTemplatePage,
+    "list_resource_templates",
+    resources,
+    list_resource_templates,
+    resource_templates
+);
 
-    const OPERATION: &'static str = "list_resources";
-
-    fn is_supported(capabilities: &ServerCapabilities) -> bool {
-        capabilities.resources.is_some()
-    }
-
-    fn fetch(
-        session: &mut Session,
-        cursor: Option<String>,
-    ) -> impl Future<Output = Result<Self::Page, Session::Error>> + Send {
-        session.list_resources(cursor)
-    }
-
-    fn items(page: &Self::Page) -> &[Self::Item] {
-        &page.resources
-    }
-}
-
-impl<Session: ResourceSession> ListKind<Session> for Templates {
-    type Item = ResourceTemplate;
-    type Page = ResourceTemplatePage;
-
-    const OPERATION: &'static str = "list_resource_templates";
-
-    fn is_supported(capabilities: &ServerCapabilities) -> bool {
-        capabilities.resources.is_some()
-    }
-
-    fn fetch(
-        session: &mut Session,
-        cursor: Option<String>,
-    ) -> impl Future<Output = Result<Self::Page, Session::Error>> + Send {
-        session.list_resource_templates(cursor)
-    }
-
-    fn items(page: &Self::Page) -> &[Self::Item] {
-        &page.resource_templates
+pub async fn list_from_session<Session, Kind>(
+    session: &mut Session,
+    deadline: Duration,
+    raise_on_error: bool,
+    server: &str,
+) -> Result<Vec<Kind::Item>, SessionError<Session::Error>>
+where
+    Session: ResourceSession,
+    Kind: ListKind<Session>,
+{
+    match optional_list::<Session, Kind>(session, deadline, server).await {
+        Ok(items) => Ok(items),
+        Err(error) => list_failure(error, raise_on_error, Kind::OPERATION, server),
     }
 }
 
@@ -153,7 +158,18 @@ where
     .await;
     match pages {
         Ok(items) => Ok(items),
-        Err(PageFailure::Session(error)) => unsupported_failure(*error, Kind::OPERATION, server),
+        Err(PageFailure::Session(error)) => {
+            if let SessionError::Protocol(failure) = &*error
+                && failure.code == METHOD_NOT_FOUND
+            {
+                debug!(
+                    "MCP client {} is unsupported by {server}: {failure}",
+                    Kind::OPERATION
+                );
+                return Ok(Vec::new());
+            }
+            Err(*error)
+        }
         Err(PageFailure::Unavailable(failure)) => Err(SessionError::Protocol(failure)),
     }
 }

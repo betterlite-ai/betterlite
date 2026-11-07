@@ -1,12 +1,11 @@
 #![expect(
     clippy::disallowed_types,
-    reason = "MCP prompt message content is a union of content blocks that betterlite forwards as given"
+    reason = "MCP prompt content blocks are forwarded as given"
 )]
 
-pub mod get_prompt;
+pub mod detail;
 pub mod list;
 pub mod operations;
-pub mod read_resource;
 pub mod session;
 pub mod settings;
 pub mod types;

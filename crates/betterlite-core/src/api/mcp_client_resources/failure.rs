@@ -4,8 +4,6 @@ use std::error::Error;
 use betterlite_mcp::client::sessions::error::SessionError;
 use tracing::{debug, error, warn};
 
-use super::pagination::METHOD_NOT_FOUND;
-
 pub(crate) fn list_failure<Source, Item>(
     error: SessionError<Source>,
     raise_on_error: bool,
@@ -15,8 +13,7 @@ pub(crate) fn list_failure<Source, Item>(
 where
     Source: Error + Send + Sync + 'static,
 {
-    if matches!(&error, SessionError::Cancelled) {
-        warn!("MCP client {operation} was cancelled");
+    if was_cancelled(&error, operation) {
         return Err(error);
     }
     if raise_on_error {
@@ -34,8 +31,7 @@ pub(crate) fn detail_failure<Output, Source>(
 where
     Source: Error + Send + Sync + 'static,
 {
-    if matches!(&error, SessionError::Cancelled) {
-        warn!("MCP client {operation} was cancelled");
+    if was_cancelled(&error, operation) {
         return Err(error);
     }
     debug!("MCP client {operation} traceback:\n{}", error_chain(&error));
@@ -43,21 +39,15 @@ where
     Err(error)
 }
 
-pub(crate) fn unsupported_failure<Source, Item>(
-    error: SessionError<Source>,
-    operation: &str,
-    server: &str,
-) -> Result<Vec<Item>, SessionError<Source>>
+fn was_cancelled<Source>(error: &SessionError<Source>, operation: &str) -> bool
 where
     Source: Error + Send + Sync + 'static,
 {
-    if let SessionError::Protocol(failure) = &error
-        && failure.code == METHOD_NOT_FOUND
-    {
-        debug!("MCP client {operation} is unsupported by {server}: {failure}");
-        return Ok(Vec::new());
+    if !matches!(error, SessionError::Cancelled) {
+        return false;
     }
-    Err(error)
+    warn!("MCP client {operation} was cancelled");
+    true
 }
 
 fn log_failure<Source>(error: &SessionError<Source>, operation: &str, server: &str)

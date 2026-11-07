@@ -90,20 +90,7 @@ pub struct GetPromptRequestParams {
 pub struct GetPromptResult {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    pub messages: Vec<PromptMessage>,
-}
-
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq, Serialize)]
-pub struct PromptMessage {
-    pub role: PromptRole,
-    pub content: serde_json::Value,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum PromptRole {
-    User,
-    Assistant,
+    pub messages: Vec<serde_json::Value>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
@@ -127,20 +114,14 @@ pub trait PageCursor {
     fn next_page(&self) -> Option<&str>;
 }
 
-impl PageCursor for PromptPage {
-    fn next_page(&self) -> Option<&str> {
-        self.next_cursor.as_deref()
-    }
+macro_rules! page_cursor {
+    ($($page:ty),* $(,)?) => {
+        $(impl PageCursor for $page {
+            fn next_page(&self) -> Option<&str> {
+                self.next_cursor.as_deref()
+            }
+        })*
+    };
 }
 
-impl PageCursor for ResourcePage {
-    fn next_page(&self) -> Option<&str> {
-        self.next_cursor.as_deref()
-    }
-}
-
-impl PageCursor for ResourceTemplatePage {
-    fn next_page(&self) -> Option<&str> {
-        self.next_cursor.as_deref()
-    }
-}
+page_cursor!(PromptPage, ResourcePage, ResourceTemplatePage);

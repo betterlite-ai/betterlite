@@ -7,93 +7,78 @@ use betterlite_mcp::client::sessions::run::run_with_session;
 use betterlite_mcp::client::sessions::runtime::McpRuntime;
 use tracing::info;
 
+use super::detail::{get_prompt, read_resource};
 use super::failure::detail_failure;
-use super::get_prompt::get_prompt;
 use super::list::{Prompts, Resources, Templates, run_optional_list};
-use super::read_resource::read_resource;
 use super::session::{ResourceSession, RuntimeSession};
 use super::settings::ResourceSettings;
 use super::types::{
     GetPromptRequestParams, GetPromptResult, Prompt, ReadResourceResult, Resource, ResourceTemplate,
 };
 
-pub trait McpResourceOperations<Runtime>
-where
-    Runtime: McpRuntime,
-    RuntimeSession<Runtime>: ResourceSession<Error = Runtime::Error>,
-{
-    fn list_prompts(
-        &mut self,
-        settings: &ResourceSettings,
-        raise_on_error: bool,
-    ) -> impl Future<Output = Result<Vec<Prompt>, SessionError<Runtime::Error>>>;
+macro_rules! resource_operations {
+    ($($method:ident: $kind:ty => $item:ty),* $(,)?) => {
+        pub trait McpResourceOperations<Runtime>
+        where
+            Runtime: McpRuntime,
+            RuntimeSession<Runtime>: ResourceSession<Error = Runtime::Error>,
+        {
+            $(
+                fn $method(
+                    &mut self,
+                    settings: &ResourceSettings,
+                    raise_on_error: bool,
+                ) -> impl Future<Output = Result<Vec<$item>, SessionError<Runtime::Error>>>;
+            )*
 
-    fn list_resources(
-        &mut self,
-        settings: &ResourceSettings,
-        raise_on_error: bool,
-    ) -> impl Future<Output = Result<Vec<Resource>, SessionError<Runtime::Error>>>;
+            fn get_prompt(
+                &mut self,
+                params: GetPromptRequestParams,
+            ) -> impl Future<Output = Result<GetPromptResult, SessionError<Runtime::Error>>>;
 
-    fn list_resource_templates(
-        &mut self,
-        settings: &ResourceSettings,
-        raise_on_error: bool,
-    ) -> impl Future<Output = Result<Vec<ResourceTemplate>, SessionError<Runtime::Error>>>;
+            fn read_resource(
+                &mut self,
+                uri: String,
+            ) -> impl Future<Output = Result<ReadResourceResult, SessionError<Runtime::Error>>>;
+        }
 
-    fn get_prompt(
-        &mut self,
-        params: GetPromptRequestParams,
-    ) -> impl Future<Output = Result<GetPromptResult, SessionError<Runtime::Error>>>;
+        impl<Runtime> McpResourceOperations<Runtime> for SessionClient<Runtime>
+        where
+            Runtime: McpRuntime,
+            RuntimeSession<Runtime>: ResourceSession<Error = Runtime::Error>,
+        {
+            $(
+                async fn $method(
+                    &mut self,
+                    settings: &ResourceSettings,
+                    raise_on_error: bool,
+                ) -> Result<Vec<$item>, SessionError<Runtime::Error>> {
+                    run_optional_list::<Runtime, $kind>(self, settings, raise_on_error).await
+                }
+            )*
 
-    fn read_resource(
-        &mut self,
-        uri: String,
-    ) -> impl Future<Output = Result<ReadResourceResult, SessionError<Runtime::Error>>>;
+            async fn get_prompt(
+                &mut self,
+                params: GetPromptRequestParams,
+            ) -> Result<GetPromptResult, SessionError<Runtime::Error>> {
+                get_prompt(self, params).await
+            }
+
+            async fn read_resource(
+                &mut self,
+                uri: String,
+            ) -> Result<ReadResourceResult, SessionError<Runtime::Error>> {
+                read_resource(self, uri).await
+            }
+        }
+    };
 }
 
-impl<Runtime> McpResourceOperations<Runtime> for SessionClient<Runtime>
-where
-    Runtime: McpRuntime,
-    RuntimeSession<Runtime>: ResourceSession<Error = Runtime::Error>,
-{
-    async fn list_prompts(
-        &mut self,
-        settings: &ResourceSettings,
-        raise_on_error: bool,
-    ) -> Result<Vec<Prompt>, SessionError<Runtime::Error>> {
-        run_optional_list::<Runtime, Prompts>(self, settings, raise_on_error).await
-    }
-
-    async fn list_resources(
-        &mut self,
-        settings: &ResourceSettings,
-        raise_on_error: bool,
-    ) -> Result<Vec<Resource>, SessionError<Runtime::Error>> {
-        run_optional_list::<Runtime, Resources>(self, settings, raise_on_error).await
-    }
-
-    async fn list_resource_templates(
-        &mut self,
-        settings: &ResourceSettings,
-        raise_on_error: bool,
-    ) -> Result<Vec<ResourceTemplate>, SessionError<Runtime::Error>> {
-        run_optional_list::<Runtime, Templates>(self, settings, raise_on_error).await
-    }
-
-    async fn get_prompt(
-        &mut self,
-        params: GetPromptRequestParams,
-    ) -> Result<GetPromptResult, SessionError<Runtime::Error>> {
-        get_prompt(self, params).await
-    }
-
-    async fn read_resource(
-        &mut self,
-        uri: String,
-    ) -> Result<ReadResourceResult, SessionError<Runtime::Error>> {
-        read_resource(self, uri).await
-    }
-}
+resource_operations!(
+    list_prompts: Prompts => Prompt,
+    list_resources: Resources => Resource,
+    list_resource_templates: Templates => ResourceTemplate,
+);
 
 pub(crate) async fn run_detail_operation<Runtime, Output, Operation>(
     client: &mut SessionClient<Runtime>,
