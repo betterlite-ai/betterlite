@@ -1,0 +1,10 @@
+kind: helper
+name: parameter-projections-response-tier
+call:
+  parameter_projections:
+    steps:
+      - {function: resolved_service_tier, response_tier: default}
+      - {function: resolved_service_tier, response_tier: default, usage_tier: priority}
+      - {function: resolved_service_tier, response_tier: provider-tier, requested_tier: flex}
+env: {}
+compare: {ignore: []}

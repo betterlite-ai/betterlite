@@ -1,0 +1,10 @@
+kind: helper
+name: spend-sanitize-tool-content-seed
+call:
+  spend_sanitize:
+    operation: sanitize_request_body
+    bodies:
+      - body: {$py: mapping, id: 1, entries: {api_key: sk-seed, messages: [{type: tool_use, input: {api_key: sk-kept}}]}}
+        max_string_length: 4
+env: {}
+compare: {ignore: []}
