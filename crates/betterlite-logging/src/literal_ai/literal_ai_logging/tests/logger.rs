@@ -277,8 +277,13 @@ async fn a_prepare_failure_is_logged_and_leaves_the_queue_empty() {
 #[test]
 fn the_sync_queue_keeps_the_maximum_and_drops_the_oldest() {
     let (logger, _delivery) = batch_logger(Vec::new());
-    let step =
-        prepare_log_data(&kwargs(CALLBACK), at(START), at(END), &FixedIds::default()).unwrap();
+    let step = prepare_log_data(
+        &kwargs(r#"{"standard_logging_object": {"model_parameters": {}, "response": {}}}"#),
+        at(START),
+        at(END),
+        &FixedIds::default(),
+    )
+    .unwrap();
     let outcomes: Vec<_> = repeat_with(|| logger.queue.enqueue(step.clone()))
         .take(DEFAULT_MAX_QUEUE_SIZE.checked_add(1).unwrap())
         .collect();
