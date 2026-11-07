@@ -86,7 +86,7 @@ checks:
       run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^atomic_counter::in_memory(::|$)/)'
     - id: oracle-cases-tests
       why: Oracle cases verify consistent behavior across single-counter, multi-counter, over-limit, and window-reset scenarios
-      run: cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/atomic_counter -k 'b3033'
+      run: cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/atomic_counter
 
 oracle_cases:
   - tools/oracle/cases/atomic_counter/single-counter-ok.yaml
