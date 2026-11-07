@@ -498,6 +498,18 @@ fn write_back_accepts_an_empty_batch_of_empty_strings() {
 #[case::entry_without_content(vec![text("a")], vec![object(&[("role", text("user"))])])]
 #[case::entry_null_content(vec![text("a")], vec![object(&[("content", GuardrailValue::Null)])])]
 #[case::entry_not_an_object(vec![text("a")], vec![text("A")])]
+#[case::later_entry_without_content(
+    vec![text("a"), text("b")],
+    vec![object(&[("content", text("A"))]), object(&[("role", text("user"))])]
+)]
+#[case::later_entry_null_content(
+    vec![text("a"), text("b")],
+    vec![object(&[("content", text("A"))]), object(&[("content", GuardrailValue::Null)])]
+)]
+#[case::later_entry_not_an_object(
+    vec![text("a"), text("b")],
+    vec![object(&[("content", text("A"))]), text("B")]
+)]
 fn write_back_rejects_a_batch_answer_it_cannot_place(
     #[case] batch: Vec<GuardrailValue>,
     #[case] redacted: Vec<GuardrailValue>,
