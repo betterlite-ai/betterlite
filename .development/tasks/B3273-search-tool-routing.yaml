@@ -1,0 +1,183 @@
+id: B3273
+title: Search tool selection and fallback execution
+description: >-
+  Build `search_tool_routing` in betterlite-router: the part of LiteLLM's SearchAPIRouter that holds the router's
+  search tool list, picks one tool for each attempt and runs a search call through the shared retry and fallback engine.
+  It is a port of litellm/router_utils/search_api_router.py (about 150 lines of logic). The module is generic over the
+  search function: it never imports betterlite-openai or betterlite-core, because betterlite-router has no internal
+  dependencies and must stay that way. The caller passes the search function in as a trait object or generic parameter.
+
+  Types. `SearchToolEntry` has `search_tool_id: Option<String>`, `search_tool_name: Option<String>`,
+  `litellm_params: SearchToolParams` and `search_tool_info: Option<serde_json::Value>`. `SearchToolParams` has
+  `search_provider: Option<String>`, `api_key: Option<secrecy::SecretString>`, `api_base: Option<String>` and
+  `extra: IndexMap<String, serde_json::Value>` for every other key (`timeout`, `max_retries` and anything a database
+  row carries). Debug output of an entry never shows the key. `SearchToolList` owns the entries behind a
+  `std::sync::RwLock` holding an `Arc<Vec<SearchToolEntry>>`, so an attempt that is already reading sees the old list
+  or the new one, never a mix; no lock is held across an await. `SearchToolRoutingError` is a thiserror enum with
+  `NotFound { name }` (Display: `Search tool '<name>' not found in router.search_tools`), `NameRequired` (Display:
+  `search_tool_name or model parameter is required for search`) and `ProviderMissing { name }` (Display:
+  `search_provider not found in litellm_params for search tool '<name>'`). These texts are LiteLLM's ValueError messages.
+
+  `SearchToolList::replace(entries)` is update_router_search_tools: it swaps the whole list in one step and keeps only
+  the four fields above, logging at debug "Adding N search tools to router" and at info "Successfully updated router
+  with N search tool(s)". The proxy startup and the periodic database sync call it; those callers are not in this task.
+  `SearchToolList::matching(name)` is get_matching_search_tools: every entry whose `search_tool_name` equals the name
+  exactly, in list order, or `NotFound` when there are none.
+
+  `select_attempt(list, name, call_params, rng)` is async_search_with_fallbacks_helper without the call: take the
+  matching entries, pick one with a uniform random choice (no weights, no rpm or tpm, no cooldown; use the rand crate
+  already in Cargo.toml and an injected `Rng` so tests are deterministic), fail with `ProviderMissing` when the
+  picked entry has no non-empty `search_provider`, and return `SearchAttempt { search_provider, api_key, api_base,
+  params }`. The key and base come from the picked tool only (`_resolve_search_provider_credentials`). `params` is
+  built by walking the tool's `extra` map and then `call_params`, skipping the keys `search_provider`, `api_key` and
+  `api_base` and any JSON null value; a later map wins over an earlier one for the same key, and the first position of
+  a key is kept (insert into an IndexMap). So a caller's `timeout` replaces the tool's `timeout`, and a caller's
+  `api_key` or `api_base` is dropped and never reaches the provider. The picked tool is logged at debug as
+  "Selected search tool with provider: <provider>"; on any error the helper logs at error level
+  "Error in SearchAPIRouter.async_search_with_fallbacks_helper for <name>: <error>" and returns the error unchanged.
+
+  `run_search_with_fallbacks(...)` is async_search_with_fallbacks. Steps in order: read the name from the call
+  parameters key `search_tool_name`, and only when that key is absent read `model` (a present key with a null value
+  does not fall back to `model`); an empty or null name fails with `NameRequired`. Set `model` to the name. Call B310's
+  Router._update_kwargs_before_fallbacks port with model = name and metadata key `litellm_metadata`, so the trace id
+  and `model_group` metadata are set exactly as for other calls. Debug-log the name and the list of available tool
+  names. Hand the attempt closure (which calls `select_attempt` and then the injected search function with
+  `search_provider`, `api_key`, `api_base` and `params`) to the B310 fallback engine, and return what it returns.
+  When anything in these steps fails, start a background task through the injected `SearchFailureAlert` trait with the
+  call parameters, the error text and the error, then return the original error. The alert fires for `NameRequired`
+  too, because LiteLLM's try block covers the whole function. Do not implement the alert: B114 owns
+  send_llm_exception_alert, including its skip when the call carries `proxy_server_request`.
+
+  Read B310's `fallback_attempts.rs` and B017's retry executor on main before coding, and call their public
+  functions. Do not copy the traversal. If the engine needs a function no task owns, stop and say so in the report.
+
+scope:
+  paths:
+    - crates/betterlite-router/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-router/src/search_tool_routing.rs
+    - crates/betterlite-router/src/search_tool_routing/**
+    - tools/oracle/cases/helpers/search-tool-routing/**
+    - tools/oracle/helpers/b3273.py
+    - tools/oracle/helpers/b3273/**
+    - tools/oracle/src/helpers/router/b3273.rs
+    - tools/oracle/src/helpers/router/b3273/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/search_api_router.py#L19-L52
+    why: The one router attribute the helpers use (search_tools) and the credentials rule that reads the tool only.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/search_api_router.py#L54-L114
+    why: update_router_search_tools copies four fields and replaces the list; get_matching_search_tools and its ValueError text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/search_api_router.py#L116-L179
+    why: async_search_with_fallbacks name lookup, kwargs rewiring, metadata update, engine call and failure alert.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/search_api_router.py#L181-L249
+    why: Per-attempt helper with random pick, provider check, protected keys, None filtering and the call to the search function.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5156-L5181
+    why: Router._asearch_with_fallbacks and its helper are thin forwards to the two static methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L6845-L6858
+    why: The only call site, for call_type asearch and search in the router's generic wrapper.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L3837-L3859
+    why: _update_kwargs_before_fallbacks sets litellm_trace_id and the model_group metadata that this task asks B310 to apply.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L8997-L9033
+    why: Caller of update_router_search_tools at startup, merging config and database tools.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L825-L856
+    why: SearchToolLiteLLMParams and SearchToolTypedDict shapes (search_provider is required in the type, api_key and api_base optional).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/handle_error.py#L23-L68
+    why: send_llm_exception_alert, the function the alert trait stands in for.
+
+dod:
+  - text: matching returns every entry with an equal search_tool_name in list order and fails with NotFound carrying LiteLLM's text when none match.
+    proof: [search-routing-selection, oracle, helper-python]
+  - text: replace swaps the whole list, keeps only id, name, litellm_params and info, and a reader holding the old snapshot is not changed.
+    proof: [search-routing-selection, oracle, helper-python]
+  - text: select_attempt takes api_key and api_base from the picked tool only and drops a caller's api_key, api_base and search_provider.
+    proof: [search-routing-params, oracle, helper-python]
+  - text: Params merge tool extras then call parameters, skip JSON null, let the call parameter win and keep first-seen key order.
+    proof: [search-routing-params, oracle, helper-python]
+  - text: A picked tool without a search_provider (missing or empty) fails with ProviderMissing naming the tool.
+    proof: [search-routing-params, oracle, helper-python]
+  - text: The random pick is uniform over matching entries and uses the injected Rng.
+    proof: [search-routing-selection]
+  - text: run_search_with_fallbacks reads search_tool_name before model, fails with NameRequired on an empty or null name, and sets model to the name before the engine runs.
+    proof: [search-routing-fallbacks]
+  - text: Each engine attempt calls select_attempt again, so a retry can land on another tool with the same name, and the engine's result or error is returned unchanged.
+    proof: [search-routing-fallbacks]
+  - text: Any failure inside run_search_with_fallbacks starts one SearchFailureAlert call and still returns the original error.
+    proof: [search-routing-fallbacks]
+  - text: An entry's Debug output and every log line of this module never contain the api_key value.
+    proof: [search-routing-secrets]
+  - text: Helper adapters pass strict ruff and basedpyright and the helper cases replay.
+    proof: [helper-python, oracle]
+  - text: Mutants in the new router code are caught.
+    proof: [mutants]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: search-routing-selection
+      why: list replace, name matching or the random pick is missing or wrong
+      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^search_tool_routing::.*selection_/)'
+    - id: search-routing-params
+      why: credential source, protected keys, null filtering or merge order is missing or wrong
+      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^search_tool_routing::.*params_/)'
+    - id: search-routing-fallbacks
+      why: name lookup, engine hand-off, per-attempt reselection or the failure alert is missing or wrong
+      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^search_tool_routing::.*fallbacks_/)'
+    - id: search-routing-secrets
+      why: the api_key shows up in Debug output or logs
+      run: cargo nextest run --locked -p betterlite-router --no-tests=fail -E 'test(/^search_tool_routing::.*secrets_/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3273)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3273 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3273/pyrightconfig.json
+
+oracle_cases:
+  - tools/oracle/cases/helpers/search-tool-routing/matching-tools.yaml
+  - tools/oracle/cases/helpers/search-tool-routing/tool-not-found.yaml
+  - tools/oracle/cases/helpers/search-tool-routing/replace-copies-four-fields.yaml
+  - tools/oracle/cases/helpers/search-tool-routing/call-params-override-tool-params.yaml
+  - tools/oracle/cases/helpers/search-tool-routing/caller-credentials-dropped.yaml
+  - tools/oracle/cases/helpers/search-tool-routing/null-values-dropped.yaml
+  - tools/oracle/cases/helpers/search-tool-routing/provider-missing.yaml
+
+deviations:
+  - what: The failure alert goes through an injected SearchFailureAlert trait and carries the error text, not a Python traceback string.
+    why: Rust has no traceback string, and B114 owns the alert body and its proxy_server_request skip.
+  - what: An empty search_provider string is treated as missing, like a null one.
+    why: LiteLLM tests truthiness; the declared type is a provider name, and an empty name can never match a provider.
+  - what: A tool whose litellm_params is null in the database row is read as an empty params map and then fails with ProviderMissing.
+    why: LiteLLM raises an AttributeError (a 500) on None.get; no working setup relies on that.
+  - what: Params are typed entries and an IndexMap, not Python dicts and a MappingProxyType.
+    why: Typed records are the project rule; the observable key order and override rule are kept.
+
+out_of_scope:
+  - "The generic search function (asearch and search in litellm/search/main.py) that receives search_provider, api_key and api_base: B3272."
+  - "The server-credential and api_base trust check that runs when api_key is None: B3270."
+  - "Router._asearch_with_fallbacks and its helper, and the call_type dispatch around them: B016 and the router core tasks list them; here they are only the two forwards into this module."
+  - "Router._update_kwargs_before_fallbacks, the retry executor and fallback traversal: B310 and B017."
+  - "Per-target access and budget checks for fallback targets (_is_fallback_target_authorized and _is_fallback_target_within_budget): B310."
+  - "send_llm_exception_alert: B114."
+  - "Loading search tools from config and the database at startup and the periodic reload (_init_search_tools_in_db, reload_search_tools_from_db): proxy startup tasks and B3271."
+  - "The router constructor argument search_tools and the Router.search_tools field: B016 owns Router state; the umbrella B091 wires SearchToolList into it."
+  - "HTTP routes and their error mapping for ValueError from this module: B3274, B3275 and B091."
+
+pitfalls:
+  - "`kwargs.get('search_tool_name', kwargs.get('model'))` falls back to `model` only when the key is missing; `search_tool_name=None` is an error, not a fallback."
+  - "`search_tool_name` stays in the forwarded kwargs and reaches the search function as a parameter unless its value is null."
+  - "The tool's `api_key` can be None. It is passed on as None and the search function then reads the server key; a caller's `api_key` or `api_base` must never replace it."
+  - "A caller's `timeout` or `max_retries` replaces the tool's value because call parameters are walked last."
+  - "The list is replaced as a whole. Selection never sees a half-built list, and an attempt in flight keeps its snapshot."
+  - "Every retry and every fallback hop calls the helper again, so the random pick is repeated and two attempts can use different tools with the same name."
+  - "Search tools have no cooldown, rpm or tpm state; do not route them through the deployment health code."
+  - "The alert is fire and forget. It must not delay or replace the original error."
+  - "`litellm_metadata`, not `metadata`, is the metadata key for this call type."
+  - "Log lines print the provider and tool name, never `api_key`; the key is a SecretString from the moment it is read."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
