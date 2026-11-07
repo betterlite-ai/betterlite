@@ -29,6 +29,8 @@ impl ResponsePrivacy for RecordingPrivacy {
 #[case::response_object_wins(Some(r#"{"id":"x"}"#), r#""text""#, r#"{"id":"x"}"#)]
 #[case::text_init_is_kept(None, r#""text""#, r#""text""#)]
 #[case::list_init_is_kept(None, r#"["a"]"#, r#"["a"]"#)]
+#[case::empty_response_object_uses_a_text_init(Some("{}"), r#""text""#, r#""text""#)]
+#[case::empty_response_object_uses_a_list_init(Some("{}"), r#"["a"]"#, r#"["a"]"#)]
 #[case::other_init_becomes_an_empty_object(None, "7", "{}")]
 #[case::absent_init_becomes_an_empty_object(None, "null", "{}")]
 fn logging_fields_behavior_tests_behavior(

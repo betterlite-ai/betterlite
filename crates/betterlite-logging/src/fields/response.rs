@@ -3,7 +3,6 @@ use indexmap::IndexMap;
 
 use crate::fields::payload::records::{AdditionalHeaders, StandardLoggingHiddenParams};
 
-// The init_response_obj shapes extract distinguishes; a native response's type stays with its endpoint owner.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum InitResponseObject {
     Absent,
@@ -27,16 +26,13 @@ pub struct ExtractedResponse {
     pub hidden_params: Option<HiddenParams>,
 }
 
-// The text the client actually received, one entry per choice; B252 records it before logging.
 pub type ServedTexts = Vec<Option<String>>;
 
-// The two injected steps get_final_response_obj runs: the served-text overlay B252 owns and the redaction B188 owns.
 pub trait ResponsePrivacy {
     fn overlay(&self, response: Json, served_texts: Option<&ServedTexts>) -> Json;
     fn redact(&self, response: Json) -> Json;
 }
 
-// _extract_response_obj_and_hidden_params: a mapping logs as sent, a projected response supplies its dump and hidden params.
 #[must_use]
 pub fn extract(
     init: InitResponseObject,
@@ -75,7 +71,6 @@ pub fn extract(
     }
 }
 
-// StandardLoggingPayloadSetup.get_final_response_obj: the response body wins, then a text or list init response, then {}.
 #[must_use]
 pub fn get_final_response_obj(
     response_obj: Option<&IndexMap<String, Json>>,
@@ -89,12 +84,13 @@ pub fn get_final_response_obj(
             Json::Object(IndexMap::new())
         }
     };
-    let final_response_obj = response_obj.map_or(empty_body, |fields| Json::Object(fields.clone()));
+    let final_response_obj = response_obj
+        .filter(|fields| !fields.is_empty())
+        .map_or(empty_body, |fields| Json::Object(fields.clone()));
     let overlaid = privacy.overlay(final_response_obj, served_texts);
     privacy.redact(overlaid)
 }
 
-// _provider_response_id: a mapping's non-empty text id, and nothing for any other source shape.
 #[must_use]
 pub fn provider_response_id(source: &Json) -> Option<String> {
     let fields = match source {
