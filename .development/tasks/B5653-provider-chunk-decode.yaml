@@ -1,0 +1,120 @@
+id: B5653
+title: Provider stream chunk decoding
+description: >-
+  Each provider's stream reaches `CustomStreamWrapper` in its own shape, and `_dispatch_provider_chunk` picks the reader by
+  provider name. Build that reader in betterlite-streaming as `provider_chunk_decode`, on top of B5652's types. The bytes
+  come from outside, so the decoder returns errors and never panics.
+
+
+  `ProviderChunk` is the typed input: `Text(String)` for providers that send plain text lines, `Json(serde_json::Value)` for
+  a parsed provider object, `Generic(GenericChunk)` for a chunk already in the `GenericStreamingChunk` shape, and
+  `Bytes(Vec<u8>)` for a raw line. `decode_provider_chunk(provider, chunk, state)` ports `_dispatch_provider_chunk`
+  (L1103-L1401) with the same branch order: custom providers first, then the generic shape, `replicate`, `predibase`,
+  `vllm`, `aleph_alpha`, `nlp_cloud`, `vertex_ai`, `petals`, `triton`, `text-completion-openai`,
+  `text-completion-codestral`, `azure_text`, `cached_response`, and last the OpenAI shape used by `openai` and `azure`. It
+  returns `DecodedChunk` with `text`, `is_finished`, `finish_reason`, `usage`, `tool_use`, `provider_specific_fields` and the
+  original chunk.
+
+
+  Each `handle_*` method becomes a plain function of the same name: `handle_predibase_chunk` (L515-L550),
+  `handle_nlp_cloud_chunk` (L552-L573), `handle_aleph_alpha_chunk` (L575-L588), `handle_replicate_chunk` (L590-L609),
+  `handle_openai_chat_completion_chunk` (L611-L647), `handle_azure_text_completion_chunk` (L649-L667),
+  `handle_openai_text_completion_chunk` (L669-L690) and `handle_triton_stream` (L692-L725). `process_chunk` (L425-L438) adds
+  held text to `response_uptil_now`.
+
+
+  `chunk_creator(shaper, chunk)` ports L1403-L1534 and is the one call B5654 makes per provider chunk. It runs the decoder,
+  then fills the chunk from B5652's `ChunkShaper`. A null `role` becomes `assistant` for Mistral-style streams. A tool call
+  with a null `type` becomes `function`. With no choices, `send_stream_usage` gives a chunk with empty choices, and without
+  it `record_usage_only_chunk` stores the usage. `tool_use` becomes `function_call` when the request sent `functions`. It
+  ends in `return_processed_chunk_logic`. Errors leave as `ProviderChunkError` with the fields `exception_type` needs, so the
+  driver maps them once.
+
+
+  Add the fuzz target `provider_stream_chunk`. The input is arbitrary bytes split into a provider name byte and a chunk, and
+  it runs `decode_provider_chunk` on every branch. The replay test `replays_the_provider_stream_chunk_corpus` sits in
+  `provider_chunk_decode::tests`, and the other test names there start with `generic_`, `text_providers_`, `openai_`,
+  `errors_` and `creator_`.
+scope:
+  paths:
+  - crates/betterlite-streaming/src/provider_chunk_decode.rs
+  - crates/betterlite-streaming/src/provider_chunk_decode/**
+  - crates/betterlite-streaming/fuzz/Cargo.toml
+  - crates/betterlite-streaming/fuzz/fuzz_targets/provider_stream_chunk.rs
+  - crates/betterlite-streaming/fuzz/corpus/provider_stream_chunk/**
+  - tools/oracle/cases/helpers/provider-chunk-decode/**
+  - "tools/oracle/fuzz/corpus/helper_case/provider_chunk_decode-*"
+  - tools/oracle/helpers/b5653.py
+  - tools/oracle/helpers/b5653/**
+  - tools/oracle/src/helpers/streaming/b5653.rs
+  - tools/oracle/src/helpers/streaming/b5653/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L515-L725
+  why: The per-provider readers.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L1103-L1534
+  why: The branch order and the per-chunk flow.
+dod:
+- text: A generic chunk gives text, finish state, usage, tool use and provider fields as in LiteLLM.
+  proof: [decode-generic, oracle, helper-python]
+- text: Text providers (predibase, nlp_cloud, aleph_alpha, replicate, vllm, petals, triton and the text completion readers) give LiteLLM's text and finish reason.
+  proof: [decode-text-providers, oracle, helper-python]
+- text: The OpenAI shape keeps usage, and Azure takes the model from the chunk.
+  proof: [decode-openai, oracle, helper-python]
+- text: A provider error chunk gives LiteLLM's message for nlp_cloud, vertex_ai and a `finish_reason` of `error`.
+  proof: [decode-errors, oracle, helper-python]
+- text: The per-chunk flow fills roles, tool types and usage-only chunks and calls the send decision.
+  proof: [chunk-creator, oracle, helper-python]
+- text: Arbitrary bytes never panic the decoder, and the seed corpus replays.
+  proof: [decoder-fuzz]
+- text: Decoder helper seeds join the corpus and replay.
+  proof: [helper-case-corpus]
+checks:
+  optional: [mutants]
+  commands:
+  - id: decode-generic
+    why: A custom provider's chunk loses a field.
+    run: cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/^provider_chunk_decode::tests::generic_/) - test(replays_the_provider_stream_chunk_corpus)'
+  - id: decode-text-providers
+    why: One provider's text or finish reason is wrong.
+    run: cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/^provider_chunk_decode::tests::text_providers_/) - test(replays_the_provider_stream_chunk_corpus)'
+  - id: decode-openai
+    why: Usage is lost or Azure reports the wrong model.
+    run: cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/^provider_chunk_decode::tests::openai_/) - test(replays_the_provider_stream_chunk_corpus)'
+  - id: decode-errors
+    why: A provider failure looks like an empty success.
+    run: cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/^provider_chunk_decode::tests::errors_/) - test(replays_the_provider_stream_chunk_corpus)'
+  - id: chunk-creator
+    why: A null role, tool type or usage-only chunk reaches the caller unfilled.
+    run: cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(/^provider_chunk_decode::tests::creator_/) - test(replays_the_provider_stream_chunk_corpus)'
+  - id: decoder-fuzz
+    why: The outside-bytes decoder needs a fuzz target with seeds.
+    run: test -f crates/betterlite-streaming/fuzz/fuzz_targets/provider_stream_chunk.rs && grep -q 'name = "provider_stream_chunk"' crates/betterlite-streaming/fuzz/Cargo.toml && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-streaming/fuzz/corpus/provider_stream_chunk)" && cargo nextest run --locked -p betterlite-streaming --no-tests=fail -E 'test(replays_the_provider_stream_chunk_corpus)'
+  - id: helper-python
+    why: This proves a real b5653 adapter exists and type checks.
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5653)" && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b5653 && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5653/pyrightconfig.json
+  - id: helper-case-corpus
+    why: Parsing seeds for b5653 have to replay.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/provider_chunk_decode-*")" && grep -lE '^[[:space:]]+b5653:' tools/oracle/fuzz/corpus/helper_case/provider_chunk_decode-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/provider-chunk-decode/generic.yaml
+- tools/oracle/cases/helpers/provider-chunk-decode/text-providers.yaml
+- tools/oracle/cases/helpers/provider-chunk-decode/openai.yaml
+- tools/oracle/cases/helpers/provider-chunk-decode/errors.yaml
+- tools/oracle/cases/helpers/provider-chunk-decode/chunk-creator.yaml
+deviations:
+- what: A custom provider's stream reaches the decoder as a `ProviderChunk` value, so branches that test `isinstance` on Python SDK classes have no Rust form.
+  why: The provider crates hand over decoded lines, and each class in those branches has a matching JSON shape that takes the same path.
+out_of_scope:
+- Reading lines off the network and each provider's own iterator belong to that provider's umbrella.
+- The loop that pulls chunks and runs logging is B5654.
+pitfalls:
+- '`petals` sends 30-character slices of `completion_stream`, so slice by characters and not bytes, and remove what was sent.'
+- The nlp_cloud branch has its own fallback text "An unknown error occurred with the stream".
+- 'The vertex_ai block message is "The response was blocked by VertexAI." and it fires when a chunk has no usable text, so test the empty case.'
+- '`usage` read from a chunk uses `or None`, so an empty dict counts as no usage.'
+- Python `str` slicing never fails on a short string, and Rust `&s[..n]` panics on a short string or a split character.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

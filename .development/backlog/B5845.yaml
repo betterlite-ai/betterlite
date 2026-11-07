@@ -1,0 +1,16 @@
+id: B5845
+milestone: M3 providers
+title: SAP provider
+status: todo
+depends_on: [B004, B006, B171, B668, B5950, B5951, B5952]
+file: tasks/B5845-sap-chat-embedding.yaml
+covers:
+  - "litellm/llms/sap/__init__.py"
+  - "litellm/llms/sap/chat/{__init__,transformation}.py"
+  - "litellm/llms/sap/embed/**"
+parent: B042
+split_from: B042
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

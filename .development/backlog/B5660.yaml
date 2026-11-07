@@ -1,0 +1,14 @@
+id: B5660
+milestone: M4 keys, spend and management
+title: Assemble the shared limiter and choose batch admission
+status: todo
+depends_on: [B1045, B3030, B3031, B3032, B3033, B3034, B3035, B3036, B3037]
+file: tasks/B5660-limiter-assembly.yaml
+covers:
+  - "litellm/proxy/hooks/parallel_request_limiter_v3.py"
+parent: B072
+split_from: B3055
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

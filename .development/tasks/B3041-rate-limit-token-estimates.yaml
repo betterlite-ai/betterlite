@@ -50,8 +50,9 @@ description: >-
 
 scope:
   paths:
-    - crates/betterlite-core/src/token_estimation.rs
-    - crates/betterlite-core/src/token_estimation/**
+    - crates/betterlite-rate-limit/src/token_estimation.rs
+    - crates/betterlite-rate-limit/src/token_estimation/**
+    - crates/betterlite-rate-limit/Cargo.toml
   lint_tables: false
 
 references:
@@ -163,60 +164,60 @@ checks:
   commands:
     - id: parse-output-cap
       why: _parse_output_cap_value does not reject bool, does not handle ValueError, or returns wrong type
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::parse_output_cap/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_estimation::parse_output_cap/)'
     - id: no-max-tokens-floor
       why: no_max_tokens_output_floor does not apply fraction or clamp to 1
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::no_max_tokens_floor/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_estimation::no_max_tokens_floor/)'
     - id: embedding-detect
       why: _is_embedding_request does not detect call_type correctly or falls back wrong
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::(embedding_detect|is_embedding)/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_estimation::(embedding_detect|is_embedding)/)'
     - id: google-native-translate
       why: _translate_google_genai_native_request does not call GoogleGenAIAdapter or returns wrong type
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::(google_native|translate)/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_estimation::(google_native|translate)/)'
     - id: explicit-output-cap
       why: _get_explicit_output_cap does not handle field precedence, Responses minimum or embedding zero
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::explicit_output_cap/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_estimation::explicit_output_cap/)'
     - id: has-explicit-cap
       why: _has_explicit_output_cap does not check is not None or treats 0 as implicit
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::(has_explicit|explicit_zero)/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_estimation::(has_explicit|explicit_zero)/)'
     - id: candidate-count
       why: get_output_candidate_count does not accumulate max over aliases or does not fall back
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::candidate_count/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_estimation::candidate_count/)'
     - id: apply-implicit-cap
       why: _apply_implicit_output_cap does not modify data, does not skip embeddings, or does not clamp to floor
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::apply_implicit_cap/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_estimation::apply_implicit_cap/)'
     - id: apply-implicit-cap-skip
       why: _apply_implicit_output_cap does not skip when capped_floor >= baseline_floor or when configured TPM limit is unconstrained
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::apply_implicit_cap_skip/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_estimation::apply_implicit_cap_skip/)'
     - id: combined-tokens
       why: _estimate_tokens_for_request does not multiply by candidate count or does not add input+output
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::(combined_tokens|estimate_tokens)/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_estimation::(combined_tokens|estimate_tokens)/)'
     - id: input-output-tokens
       why: _estimate_input_and_output_tokens does not select field per call type or does not handle Google translation
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::(input_output|estimate_input_and_output)/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_estimation::(input_output|estimate_input_and_output)/)'
     - id: audio-block-tokens
       why: _estimate_audio_block_tokens does not decode base64 or does not use 1600 bytes-per-token
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::(audio_block|audio_estimate)/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_estimation::(audio_block|audio_estimate)/)'
     - id: audio-content-tokens
       why: _estimate_audio_content_tokens does not sum per-block or does not find input_audio blocks
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::audio_content/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_estimation::audio_content/)'
     - id: strip-audio-blocks
       why: _strip_audio_content_blocks does not remove input_audio or does not preserve other content
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::(strip_audio|audio_strip)/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_estimation::(strip_audio|audio_strip)/)'
     - id: responses-to-chat
       why: _responses_input_to_chat_messages does not call LiteLLMCompletionResponsesConfig or returns wrong type
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::(responses_to_chat|responses_input)/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_estimation::(responses_to_chat|responses_input)/)'
     - id: pretokenized-embedding
       why: _count_pretokenized_embedding_input does not detect flat/nested int lists or returns None wrong
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::(pretokenized|embedding_input)/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_estimation::(pretokenized|embedding_input)/)'
     - id: rerank-text
       why: _rerank_input_to_text does not join query and documents or does not handle missing fields
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::(rerank_text|rerank_input)/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_estimation::(rerank_text|rerank_input)/)'
     - id: precise-input-tokens
       why: _estimate_precise_input_tokens does not call token_counter, does not strip audio or falls back wrong
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::precise_input/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_estimation::precise_input/)'
     - id: candidate-multiplication
       why: _estimate_input_and_output_tokens does not multiply output by candidate count
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^token_estimation::(candidate_multiply|candidate_mult)/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^token_estimation::(candidate_multiply|candidate_mult)/)'
 
 oracle_cases: []

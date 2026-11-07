@@ -1,7 +1,7 @@
 id: B3047
 title: Legacy minute-counter limits and errors
 description: >-
-  Implement the legacy per-minute rate-limit checking path for `betterlite-core::rate_limiters`
+  Implement the legacy per-minute rate-limit checking path for `betterlite-rate-limit::rate_limiters`
   in `_PROXY_MaxParallelRequestsHandler`, building the original minute-key counter checks and
   cache-object batching. The handler stores an internal_usage_cache reference and checks
   five counter types (key, key-model, user, team, end-user) against their limits, retaining
@@ -17,11 +17,14 @@ description: >-
   apply local_only=True and ttl=60 for immediate local consistency without waiting on
   distributed storage.
 
+  Name the Rust type `LegacyRateLimitHandler`, public in `rate_limiters::legacy_rate_limit_counters`. B3048 and B3049 use it from other modules, so its `internal_usage_cache` field, `print_verbose`, `check_key_in_limits`, `get_all_cache_objects`, `raise_rate_limit_error` and the clock it holds are `pub(crate)`. It also has `pub(crate) fn precise_minute(&self) -> String`, the `%Y-%m-%d-%H-%M` text of the local wall clock read through that clock. B3049 does not depend on B3048, so that helper lives here.
+
 scope:
   paths:
-    - crates/betterlite-core/src/rate_limiters.rs
-    - crates/betterlite-core/src/rate_limiters/**
+    - crates/betterlite-rate-limit/src/rate_limiters.rs
+    - crates/betterlite-rate-limit/src/rate_limiters/**
     - tools/oracle/cases/legacy-rate-limit-counters/**
+    - crates/betterlite-rate-limit/Cargo.toml
   lint_tables: false
 
 references:
@@ -63,31 +66,31 @@ checks:
   commands:
     - id: constructor-tests
       why: Constructor is missing or does not store internal_usage_cache
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limiters::(.*::)?legacy_rate_limit_counters::constructor/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^rate_limiters::(.*::)?legacy_rate_limit_counters::constructor/)'
     - id: verbose-logging-tests
       why: Verbose logging does not log to logger or does not check litellm.set_verbose
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limiters::(.*::)?legacy_rate_limit_counters::verbose/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^rate_limiters::(.*::)?legacy_rate_limit_counters::verbose/)'
     - id: retry-interval-tests
       why: time_to_next_minute returns incorrect interval or does not align to minute boundary
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limiters::(.*::)?legacy_rate_limit_counters::retry_interval/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^rate_limiters::(.*::)?legacy_rate_limit_counters::retry_interval/)'
     - id: error-raising-tests
       why: raise_rate_limit_error does not raise ProxyRateLimitError, missing retry-after, or wrong status/type
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limiters::(.*::)?legacy_rate_limit_counters::error_raising/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^rate_limiters::(.*::)?legacy_rate_limit_counters::error_raising/)'
     - id: error-provider-tests
       why: raise_rate_limit_error does not resolve provider or model, or does not use B3030's resolve function
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limiters::(.*::)?legacy_rate_limit_counters::error_provider/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^rate_limiters::(.*::)?legacy_rate_limit_counters::error_provider/)'
     - id: dimension-precedence-tests
       why: Dimension precedence is wrong (should be max_parallel_requests, tpm, rpm) or current values not compared correctly
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limiters::(.*::)?legacy_rate_limit_counters::dimension_precedence/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^rate_limiters::(.*::)?legacy_rate_limit_counters::dimension_precedence/)'
     - id: all-zero-tests
       why: All-zero case does not raise error with correct rate_limit_type or precedence is wrong
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limiters::(.*::)?legacy_rate_limit_counters::all_zero/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^rate_limiters::(.*::)?legacy_rate_limit_counters::all_zero/)'
     - id: cache-update-tests
       why: Cache updates are not appended to values_to_update_in_cache, new_val missing keys, or format incorrect
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limiters::(.*::)?legacy_rate_limit_counters::cache_updates/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^rate_limiters::(.*::)?legacy_rate_limit_counters::cache_updates/)'
     - id: batch-object-tests
       why: get_all_cache_objects does not return CacheObject, handles None incorrectly, or field mapping is wrong
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limiters::(.*::)?legacy_rate_limit_counters::batch_object/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^rate_limiters::(.*::)?legacy_rate_limit_counters::batch_object/)'
 
 oracle_cases: []
 
@@ -95,7 +98,7 @@ deviations: []
 
 out_of_scope:
   - "`InternalUsageCache` async_batch_get_cache, async_batch_set_cache and async_increment_cache implementations; these are owned by a cache transport task and used by this task as they are."
-  - "The `async_pre_call_hook` and success/failure logging paths that call check_key_in_limits and get_all_cache_objects; those are owned by B3048 and B3049."
+  - "`async_pre_call_hook`, the only caller of check_key_in_limits, is owned by B3049. The success and failure logging hooks are owned by B3048."
   - "Request metadata parsing and throttled_limit fallback logic; those are owned by B002 (config) and B071 (budget throttling)."
 
 pitfalls:

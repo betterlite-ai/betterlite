@@ -1,0 +1,15 @@
+id: B5990
+milestone: M3 providers
+title: Hugging Face chat URL, headers, request and provider mapping
+status: todo
+depends_on: [B184, B2202, B503, B668]
+file: tasks/B5990-huggingface-chat.yaml
+covers:
+  - "litellm/llms/huggingface/chat/**"
+  - "litellm/llms/huggingface/common_utils.py"
+parent: B042
+split_from: B5848
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

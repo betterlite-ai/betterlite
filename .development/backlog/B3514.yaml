@@ -2,8 +2,8 @@ id: B3514
 milestone: M5 api families
 title: Send decision requests and format their responses
 status: todo
-depends_on: [B3510, B3511, B3512, B3513, B173, B184, B186, B249, B595, B2402]
-file: null
+depends_on: [B3510, B3511, B3513, B173, B184, B186, B249, B595, B2402, B2401]
+file: tasks/B3514-decisions-send.yaml
 covers:
   - "litellm/decisions/call.py"
   - "litellm/llms/custom_httpx/llm_http_handler.py"

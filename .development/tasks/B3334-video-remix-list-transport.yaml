@@ -1,0 +1,102 @@
+id: B3334
+title: Video remix and listing transport
+description: >-
+  Build the HTTP handlers for video remix and video list in betterlite-core, module `api::video_remix_list_transport`.
+  They are the four LiteLLM methods video_remix_handler, async_video_remix_handler, video_list_handler and async_video_list_handler.
+  Each handler takes a `BaseVideoConfig` (B3331), the provider name, the call's litellm params, the logging object (B249) and the optional
+  extra headers, extra body or extra query, timeout, client and api_key. Create the typed error enum `VideoRemixListTransportError` in this module;
+  it wraps B2402's transport error conversion, so a failure inside the try block is turned into the provider's error class the same way LiteLLM's `_handle_error` does.
+
+  Remix does these steps in order. Pick the client: use the supplied one only when it has the right mode (sync for the sync path, async for the async path),
+  otherwise take a pooled one from B173 built with `ssl_verify` from the litellm params (default none); the async pool is keyed by the provider name,
+  and an unknown provider name fails here, before the try block, so it is not converted by the provider error class. Call `validate_environment`
+  with api_key set to the argument or else the params' api_key, headers set to the extra headers or an empty map, and model set to the empty string.
+  Then update the returned headers with the extra headers again. Call `get_complete_url` with model empty, the params' api_base and the params.
+  Call `transform_video_remix_request` to get `(url, data)`. Call logging `pre_call` with input = the prompt, api_key empty,
+  and additional_args holding complete_input_dict = data, api_base = url, headers and video_id. Then POST `data` as JSON with the timeout argument,
+  and return `transform_video_remix_response` (raw response, logging object, provider name). The send and the response conversion are both inside the
+  try block, so a conversion error also goes through error conversion. The sync handler returns the async handler's future when `_is_async` is true.
+
+  List differs from remix in four ways that must stay. First, validate_environment gets only the api_key argument, never the params' api_key;
+  no caller passes the argument, so the provider config falls back to its own env lookup. Second, pre_call has input = the empty string and
+  additional_args holds only api_base = url, headers and params. Third, it sends a GET with the returned params as the query and no timeout, although
+  the public timeout argument exists. Fourth, the sync handler is not a separate implementation: it runs the async handler to completion
+  (LiteLLM uses asyncio.run), and it does not forward api_key and it ignores a supplied sync client; the async handler then takes the supplied client only
+  if it is an async one. The list response is whatever `transform_video_list_response` returns (a JSON object with the provider's page).
+
+  The delete handler `async_video_delete_handler` is in the same file and is not built, see out_of_scope.
+
+  Tests use a local mock server and a fake `BaseVideoConfig` with recording methods. Name the rstest functions `remix_transport_behavior`,
+  `list_transport_behavior` and `transport_error_behavior`, with one named case per DoD item. The task changes no wire format, so there is no fuzz target.
+scope:
+  paths:
+    - crates/betterlite-core/src/api/video_remix_list_transport.rs
+    - crates/betterlite-core/src/api/video_remix_list_transport/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7554-L7651
+    why: video_remix_handler, with the _is_async hand-off, client choice, header and URL steps, pre_call and the POST with timeout.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L7653-L7734
+    why: async_video_remix_handler, the same steps on the pooled async client.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8391-L8443
+    why: video_list_handler, which runs the async handler with asyncio.run and drops api_key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/llm_http_handler.py#L8445-L8526
+    why: async_video_list_handler, GET with query params and no timeout.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L628-L641
+    why: the only remix call site; it passes client from kwargs and never api_key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/videos/main.py#L841-L854
+    why: the only list call site; same, so api_key is always none.
+dod:
+  - text: The remix handler picks a matching client or a pooled one with ssl_verify, validates the environment with api_key or the params' api_key, re-applies extra headers, builds the URL, calls transform_video_remix_request and sends the JSON body with the timeout.
+    proof: [remix-transport-tests]
+  - text: Remix logs pre_call with input = the prompt, an empty api_key and additional_args complete_input_dict, api_base, headers and video_id before the POST.
+    proof: [remix-transport-tests]
+  - text: A remix response conversion error and a remix send error both reach error conversion; the result of transform_video_remix_response is returned unchanged.
+    proof: [remix-transport-tests, transport-error-tests]
+  - text: The sync remix handler hands back the async handler's future when `_is_async` is true, and an unknown provider name fails before error conversion.
+    proof: [remix-transport-tests]
+  - text: The list handler validates the environment with only the api_key argument, never the params' api_key.
+    proof: [list-transport-tests]
+  - text: The list handler sends a GET with the transformed params as the query and sends no timeout, and logs pre_call with an empty input and additional_args api_base, headers and params.
+    proof: [list-transport-tests]
+  - text: The sync list handler runs the async handler to completion, forwards no api_key, ignores a supplied sync client, and returns a typed error when called inside a running runtime.
+    proof: [list-transport-tests]
+  - text: Errors from the send or from transform_video_list_response become the provider's error class with the HTTP status, headers and body text.
+    proof: [transport-error-tests]
+checks:
+  optional: []
+  commands:
+    - id: remix-transport-tests
+      why: the remix handler tests are missing or the request order, timeout, logging or hand-off differ
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_remix_list_transport::(.*::)?remix_transport_behavior::/)'
+    - id: list-transport-tests
+      why: the list handler tests are missing or the api_key, no-timeout or sync behavior differ
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_remix_list_transport::(.*::)?list_transport_behavior::/)'
+    - id: transport-error-tests
+      why: send and conversion failures are not routed through the provider error class
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::video_remix_list_transport::(.*::)?transport_error_behavior::/)'
+oracle_cases: []
+deviations:
+  - what: The sync list handler called from inside a running async runtime returns a typed error with status 500 and message "video list sync handler cannot run inside a running runtime".
+    why: LiteLLM's asyncio.run raises RuntimeError there; Rust has no equivalent exception and blocking inside a runtime would deadlock.
+  - what: The sync list handler rejects a supplied sync client silently and uses a pooled async client, as LiteLLM does, but reads the supplied client's mode from its type instead of isinstance.
+    why: Rust clients are typed, so the mode check is a type match with the same outcome.
+out_of_scope:
+  - "async_video_delete_handler (llm_http_handler.py 8528-8602): no caller at the pin. B3331 also records that no public delete function, route or router registration exists."
+  - "Video generation and content handlers are owned by B3333; character handlers by B3335; status by B3337; edit and extension by B3336."
+  - "Shared _handle_error (6052-6111) is owned by B2402; this task calls it."
+  - "Pooled client construction and limits are owned by B173; pre_call logging by B249."
+  - "OpenAI, Vertex and Studio request and response transforms are owned by B525, B1361-B1364 and B547."
+  - "Remix and list call functions in litellm/videos/main.py (provider decoding, mock responses, defaults) are owned by B3340."
+pitfalls:
+  - Remix passes timeout to the POST; list sends GET with no timeout at all, so do not add one.
+  - List validate_environment gets `api_key=api_key` only, unlike remix which uses `api_key or litellm_params.get("api_key")`.
+  - The `get_async_httpx_client` call converts the provider name with LlmProviders(...) outside the try block, so a bad name raises ValueError and is not wrapped by the provider error class.
+  - video_remix_handler's extra headers are applied twice, once as validate_environment's input map and once by headers.update after it returns.
+  - The sync list path calls async_video_list_handler without api_key and without checking the client type for the sync class; a supplied HTTPHandler is dropped.
+  - The remix response transform sits inside the try block, so a bad provider body is converted to a provider error, not left as a raw decode error.
+  - Remix pre_call additional_args carries video_id; list carries params instead and has no video_id.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

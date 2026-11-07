@@ -1,0 +1,14 @@
+id: B5366
+milestone: M12 python
+title: Message trimming, validators, cache checks and fake stream iterators
+status: todo
+depends_on: [B011, B171, B174, B196, B2214, B2218]
+file: tasks/B5366-message-utilities.yaml
+covers:
+  - "litellm/utils.py"
+parent: B157
+split_from: B157
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

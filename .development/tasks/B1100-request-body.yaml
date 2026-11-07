@@ -355,6 +355,10 @@ checks:
       routes team_merge_patch
       routes debug_report
       routes mcp_byok_consent
+      routes video_create
+      routes video_content_remix
+      routes video_character
+      routes video_edit
       state virtual_key_auth
       state jwt_auth
       state custom_auth
@@ -440,13 +444,13 @@ pitfalls:
 - http_parsing_utils.py:327 emits the diagnostic 'Unexpected error reading request query params - %s'; retain its
   level and fallback instead of turning it into a hard error.
 - >-
-  The 560-line estimate covers the request body work only. The 109 route stubs, the 58 state slots, their registry
-  lines and the ServerState wiring add about 1900 lines outside it.
+  The 560-line estimate covers the request body work only. The 113 route stubs, the 58 state slots, their registry
+  lines and the ServerState wiring add about 1940 lines outside it.
 - >-
   A stub routes function or Slot constructor has a one-line body because it is a placeholder its owner replaces,
   not a wrapper to inline. Do not prefill a stub with its owner's paths, handlers or fields.
 - Router::merge panics when two routers register the same method and path, so an empty stub router registers nothing.
 review_level: security
 budget:
-  max_changed_lines: 3400
+  max_changed_lines: 3450
   max_new_expects: 1

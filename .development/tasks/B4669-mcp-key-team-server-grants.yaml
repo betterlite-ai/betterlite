@@ -1,0 +1,190 @@
+id: B4669
+title: MCP key and team server and toolset grants
+description: >-
+  Build the key level and team level MCP server grants that MCPRequestHandler resolves before any
+  end-user, agent, user or org ceiling is applied. The result of every function here is a plain list of
+  MCP server ids (or the literal `no-mcp-servers` for a key). Combining key and team, the require_key_mcp_access_defined
+  rule and all later ceilings belong to get_mcp_server_access (B4671), which calls this module.
+  Put the code in `crates/betterlite-mcp/src/server_grants.rs` and `server_grants/**`, with its own
+  `ServerGrantsError` enum. Reuse B4668's auth record, `ObjectPermission` row type (fields `mcp_servers`,
+  `mcp_access_groups`, `mcp_tool_permissions`, `mcp_toolsets`), `UnloadableEntitlementError`, the hydrated key
+  permission read (`_key_object_permission_hydrated`) and `_toolset_tool_permissions`. Do not rebuild them.
+
+  Everything that reads outside this module goes through one trait, `GrantReads`, that the struct `ServerGrants<R: GrantReads>`
+  receives in its constructor (generic, no trait object, no global). Its methods, all async and all returning
+  `Result<_, GrantReadError>`: `team(team_id, fresh) -> Option<TeamRecord>` (B737's team read: `blocked`, `access_group_ids`,
+  `object_permission`), `user_team_ids(user_id, fresh) -> Option<Vec<String>>` (B736's user read, `None` for a missing user),
+  `access_group_server_ids(access_group_ids, fresh) -> Vec<String>` (B737's unified access group read, the
+  `access_mcp_server_ids` of each group), `db_servers_with_any_access_group(groups, use_writer) -> Vec<String>` (rows of the
+  MCP server table whose `mcp_access_groups` overlap the groups, over B4711's table handle and B2305's server record),
+  `toolset_grants(toolset_ids, fresh) -> Map<server_id, Vec<tool>>`, `expand_permission_list(names) -> Vec<String>` and
+  `expand_tool_permissions(map) -> Map<server_id, Vec<tool>>` (the server manager's registry expansion), and
+  `registry_server_ids()` plus `config_servers_access_groups() -> Map<server_id, Vec<String>>`. Write `DbGrantReads`, the production
+  implementation, for the methods whose owners are named above, and keep the registry and toolset-resolver methods on a second small
+  trait that the server manager's task implements (no owner exists at the pin of this plan, see notes). Tests use an in-memory fake of `GrantReads`.
+
+  Functions to build (LiteLLM names in backticks, each one a method on `ServerGrants`):
+  1. `key_servers` (`_get_allowed_mcp_servers_for_key`). No auth gives an empty list. Take the key's hydrated permission; none gives an empty list.
+  If `mcp_servers` contains `no-mcp-servers`, return exactly `["no-mcp-servers"]` before any expansion. Otherwise the result is the de-duplicated
+  union of: `expand_permission_list(mcp_servers)`, `servers_from_access_groups(mcp_access_groups, fresh)`, the keys of `expand_tool_permissions(mcp_tool_permissions)`,
+  and the keys of `toolset_grants(mcp_toolsets, fresh)` (called only when `mcp_toolsets` is non-empty). Order is not part of the contract. Any error anywhere
+  in this function, including one raised because `requires_fresh_policy` is true, is logged as a warning and the function returns an empty list (an empty key
+  list means "the key does not restrict", so this fails open; keep that, it is LiteLLM's behavior). Key `access_group_ids` are not resolved here.
+  2. `key_access_group_servers` (`_get_key_access_group_mcp_server_extras`). No auth gives an empty list. Resolve the key's `access_group_ids` through
+  `access_group_server_ids`, return an empty list when nothing comes back, otherwise `expand_permission_list` of the ids. Any error is warned and gives an empty list.
+  3. `team_servers` (`_get_allowed_mcp_servers_for_team`) and `team_ids_for_grant` (`_team_ids_for_mcp_grant`). The caller's `team_id` alone counts: no auth, no
+  `team_id` or `team_id == "litellm-dashboard"` (UI_TEAM_ID) gives no team ids, otherwise a one-element list. Never fan out over the user's teams. With no team id the
+  result is an empty list, else `single_team_servers(team_ids[0])`.
+  4. `single_team_servers` (`_allowed_mcp_servers_for_single_team`). An empty id, UI_TEAM_ID, or a reader without a database gives an empty list. Read the team row
+  (a missing row gives an empty list), and a row with `blocked == true` grants nothing (empty list). Read the team's `access_group_ids` servers, then call `team_granted_servers`.
+  Error rule: an `UnloadableEntitlementError`, or any error while `requires_fresh_policy` is true, is returned to the caller; every other error is warned and gives an empty list.
+  5. `team_granted_servers` (`_team_granted_servers`), the pure part. Team permission absent: only the team's access group servers. `mcp_servers` containing
+  `all-proxy-mcpservers`: exactly the registry server ids and nothing else (the access group servers and tool grants are not added). Otherwise the set union of
+  `expand_permission_list(mcp_servers)`, `servers_from_access_groups(mcp_access_groups)`, the keys of `expand_tool_permissions(mcp_tool_permissions)`, the keys of B4668's
+  `_toolset_tool_permissions` (which fails with `UnloadableEntitlementError` when toolsets are declared but resolve to nothing) and the team's access group servers.
+  6. `user_team_ids` (`_resolve_user_team_ids`). No database, a read error, a missing user or a user without teams gives an empty list (a read error is warned).
+  Otherwise the user's teams in first-seen order, without duplicates, without empty strings and without UI_TEAM_ID.
+  7. `servers_from_access_groups` (`_get_mcp_servers_from_access_groups`) with its two helpers `config_server_ids_for_access_groups`
+  (`_get_config_server_ids_for_access_groups`) and `db_server_ids_for_access_groups` (`_get_db_server_ids_for_access_groups`). The config helper returns the id of every config server
+  that has a non-empty `access_groups` list sharing at least one name with the request. The database helper returns an empty set for an empty group list or no database;
+  otherwise it asks `db_servers_with_any_access_group`. Its read error is re-raised when `use_writer` is true and logged at debug level and swallowed (empty set)
+  otherwise. The combined function unions config and database ids; `requires_fresh_policy` becomes `use_writer` and, on any error, is re-raised when true and warned
+  with an empty list when false. B817's resolver, B3815's permission filter and the object-permission helper call this function, so keep it public.
+
+  All names, sentinels and defaults are LiteLLM's: `no-mcp-servers` (SpecialMCPServerNames.no_mcp_servers), `all-proxy-mcpservers` (SpecialMCPServerName.all_proxy_servers),
+  `litellm-dashboard` (UI_TEAM_ID). There is no config key or env var in these functions. They run on every MCP request, so keep reads to what the list above names.
+
+scope:
+  paths:
+    - crates/betterlite-mcp/src/server_grants.rs
+    - crates/betterlite-mcp/src/server_grants/**
+    - tools/oracle/cases/helpers/mcp-server-grants/**
+    - "tools/oracle/fuzz/corpus/helper_case/mcp-server-grants-*"
+    - tools/oracle/helpers/b4669.py
+    - tools/oracle/helpers/b4669/**
+    - tools/oracle/src/helpers/mcp/b4669.rs
+    - tools/oracle/src/helpers/mcp/b4669/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L2502-L2542
+    why: Key access_group_ids resolved to server ids as additive grants, with the warn-and-empty fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L2545-L2629
+    why: Key ceiling, including the no-mcp-servers early return, the four-way union and the catch-all that returns an empty list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L2632-L2661
+    why: Team entry point and the single-team id rule with UI_TEAM_ID.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L2663-L2692
+    why: User team ids from the live user record, de-duplicated, with failures narrowing to an empty list.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L2694-L2794
+    why: Team raw grant (all-proxy-mcpservers shortcut, union) and the single-team read with blocked-team and error rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L3595-L3664
+    why: Access group to server id lookup over config servers and the MCP server table, with the use_writer error rules.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/auth/user_api_key_auth_mcp.py#L1597-L1625
+    why: How get_mcp_server_access calls the key, team and key access group functions (the caller, owned by B4671).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L6986-L7059
+    why: expand_permission_list and expand_tool_permissions, the registry expansion the reads trait stands for.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3600-L3660
+    why: resolve_toolset_tool_permissions, which swallows read errors unless requires_fresh_policy is set.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1531-L1534
+    why: The all-proxy-mcpservers literal.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3934-L3935
+    why: The no-mcp-servers literal.
+
+dod:
+  - text: A key whose mcp_servers contains no-mcp-servers returns exactly that one literal, unexpanded, even when it also lists other servers, groups or toolsets.
+    proof: [key-tests, oracle]
+  - text: >-
+      A key's list is the de-duplicated union of its expanded mcp_servers, mcp_access_groups servers, mcp_tool_permissions keys and mcp_toolsets server keys;
+      a name or alias in mcp_servers becomes server ids and an unknown entry passes through.
+    proof: [key-tests, oracle]
+  - text: A key with no auth, no permission, or any read error (also when requires_fresh_policy is true) returns an empty list and never an error.
+    proof: [key-tests]
+  - text: Key access_group_ids resolve to expanded server ids; no auth, no result, or a read error returns an empty list.
+    proof: [key-tests]
+  - text: Team grants use only the caller's own team_id; a missing team_id or the dashboard team id gives an empty list and the user's other teams are never added.
+    proof: [team-tests]
+  - text: A blocked team, a missing team row and a reader without a database all give an empty team list.
+    proof: [team-tests]
+  - text: all-proxy-mcpservers in a team's mcp_servers returns exactly the registry server ids and ignores the team's access group servers and tool grants.
+    proof: [team-tests, oracle]
+  - text: A team's grant is the union of expanded mcp_servers, access group servers, tool permission keys, toolset server keys and the team's access_group_ids servers; a team without a permission row gets only the last of these.
+    proof: [team-tests, oracle]
+  - text: A team that declares toolsets that resolve to nothing makes team_servers return UnloadableEntitlementError, and so does any error while requires_fresh_policy is true; other errors give an empty list.
+    proof: [team-error-tests]
+  - text: user_team_ids returns the user's teams in first-seen order without duplicates, empty strings or the dashboard team id, and an empty list for a missing user, no teams, no database or a read error.
+    proof: [user-team-tests, oracle]
+  - text: >-
+      Config access group lookup returns the ids of servers whose access_groups share a name with the request; the database lookup is skipped for no groups or no database,
+      its error is swallowed without use_writer and returned with it; the combined lookup returns an empty list on error unless requires_fresh_policy is true.
+    proof: [access-group-tests, oracle]
+  - text: Helper cases for the key and team pure compositions are present, replay through the shared parser and agree with LiteLLM.
+    proof: [helper-case-corpus, helper-python, helper-tests, oracle]
+
+checks:
+  optional: []
+  commands:
+    - id: key-tests
+      why: key server resolution (sentinel, union, expansion, fail-open, access group extras) is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^server_grants::tests::key_/)'
+    - id: team-tests
+      why: team id rule, blocked team, all-proxy shortcut or the team union is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^server_grants::tests::team_/) - test(/^server_grants::tests::team_error_/)'
+    - id: team-error-tests
+      why: unloadable toolsets or fresh-policy read errors in the team path are swallowed instead of returned
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^server_grants::tests::team_error_/)'
+    - id: user-team-tests
+      why: user team id resolution is missing or does not filter, de-duplicate or narrow on failure
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^server_grants::tests::user_teams_/)'
+    - id: access-group-tests
+      why: access group lookup over config and database servers or its writer error rule is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^server_grants::tests::access_group_/)'
+    - id: helper-tests
+      why: the helper adapter does not agree with LiteLLM on the pure compositions
+      run: cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::mcp::b4669::/) - test(/replays_the_/)'
+    - id: helper-python
+      why: the Python helper adapter is missing or fails the strict checks
+      run: test -f tools/oracle/helpers/b4669.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: no newly added mcp-server-grants helper case reaches the shared parser
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mcp-server-grants-*')" && grep -rlq b4669 tools/oracle/fuzz/corpus/helper_case/mcp-server-grants-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-server-grants/key-no-mcp-servers-sentinel.yaml
+  - tools/oracle/cases/helpers/mcp-server-grants/key-union-of-four-sources.yaml
+  - tools/oracle/cases/helpers/mcp-server-grants/team-all-proxy-servers.yaml
+  - tools/oracle/cases/helpers/mcp-server-grants/team-union-with-access-groups.yaml
+  - tools/oracle/cases/helpers/mcp-server-grants/user-team-ids-filtered.yaml
+  - tools/oracle/cases/helpers/mcp-server-grants/config-access-group-match.yaml
+
+deviations:
+  - what: Reads go through a typed `GrantReads` trait instead of importing proxy_server globals (prisma_client, user_api_key_cache, global_mcp_server_manager).
+    why: betterlite has no module-level state; the observable results are the same.
+  - what: Lists that LiteLLM builds from a Python set come back de-duplicated in first-seen order.
+    why: Python's set order is not stable, so no client can rely on it; tests and cases compare as sets.
+
+out_of_scope:
+  - "get_mcp_server_access, get_allowed_mcp_servers and the key/team intersection, require_key_mcp_access_defined and all later ceilings: B4671."
+  - "_get_key_object_permission, _get_team_object_permission, _key_object_permission_hydrated, _key_or_team_declares_toolsets, _toolset_tool_permissions, _toolset_tools_for_server, _union_tool_grants, _load_named_object_permission and UnloadableEntitlementError: B4668. This task calls them."
+  - "The org, end-user, user and agent levels (_get_allowed_mcp_servers_for_org, _for_end_user, _for_user, get_allowed_mcp_servers_for_agent): B4670 and B4668 per their covers."
+  - "Tool-level grants (get_allowed_tools_for_server, tool_is_granted): B4672."
+  - "admitted_subject_sources and resolve_admitted_subject_servers, the callers of user_team_ids: B4671."
+  - "get_mcp_access_groups, _get_mcp_access_groups_for_key, _get_mcp_access_groups_for_team, get_mcp_access_groups_from_headers and get_mcp_access_groups_from_scope (L3667-L3795): no caller at the pin outside their own file, so no code and no cases. The x-mcp-access-groups header is only forwarded by the header parsing in B4654."
+  - "MCPServerManager.expand_permission_list, expand_tool_permissions, get_registry and resolve_toolset_tool_permissions bodies: the server manager task that covers mcp_server_manager.py. This task only declares the reads it needs."
+
+pitfalls:
+  - The key function turns every failure into an empty list, and an empty key list means the key does not restrict, so a database fault while requires_fresh_policy is true widens the key rather than denying it. Do not add the raise the team path has.
+  - The no-mcp-servers check on a key looks at the raw mcp_servers before expansion and returns the literal alone, so a key with ["no-mcp-servers", "github"] gets no github.
+  - all-proxy-mcpservers is special only for a team; a key listing it just passes the literal through expand_permission_list as an unknown name.
+  - A team with all-proxy-mcpservers returns the registry keys and skips its own access group servers, but a team with no permission row still returns its access_group_ids servers.
+  - team_servers never unions the user's teams. Only user_team_ids (for the admitted-subject fan-out in B4671) reads them, so a keyless user with no team_id gets nothing from the team level.
+  - The blocked flag is checked only on the team row read here, because a keyless admitted subject has no key whose policy gate would catch a blocked team.
+  - resolve_toolset_tool_permissions swallows a read fault into an empty map when requires_fresh_policy is false, so the key path then adds no toolset servers, while the team path's _toolset_tool_permissions raises on that same empty map when toolsets were declared.
+  - The database lookup of access groups swallows its own error without use_writer, so a key on a read replica outage loses its access group servers silently; with use_writer it re-raises and the combined function either re-raises (fresh policy) or warns and returns an empty list.
+  - mcp_tool_permissions keys are names, aliases or ids, so the server ids must come from expand_tool_permissions, not from the raw keys.
+  - Config servers with an empty or missing access_groups list never match, even for an empty group request.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

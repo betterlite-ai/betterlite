@@ -13,9 +13,10 @@ description: >-
 
 scope:
   paths:
-    - crates/betterlite-core/src/rate_limit_window_store.rs
-    - crates/betterlite-core/src/rate_limit_window_store/**
+    - crates/betterlite-rate-limit/src/rate_limit_window_store.rs
+    - crates/betterlite-rate-limit/src/rate_limit_window_store/**
     - Cargo.toml
+    - crates/betterlite-rate-limit/Cargo.toml
   lint_tables: false
 
 references:
@@ -69,6 +70,7 @@ pitfalls:
   - "The in-memory sliding window does not persist to Redis; it is a degraded in-memory replica when Redis fails, not a source of truth. In-memory increments can race if concurrent requests hit the same counter during the failure window."
   - "The storage functions call the B3031-owned _reject_if_rate_limit_unverifiable rejection helper inline when a Redis failure occurs and fail-closed is enabled; the helper raises directly without returning, so callers cannot decide anything after catching the exception."
   - "When _pipeline_scripts returns None (no batch open), the caller (B3036) runs the Lua script directly with batch_rate_limiter_script.script(...) or batch_counter_read_script(...). The return type and error handling must be identical to the batch case."
+  - "group_keys_by_hash_tag returns ordered (tag, keys) pairs. Keep the Python names for the batch read (local_only flag), read_counter_values_without_incrementing, the batch script runner, pipeline_scripts and in_memory_cache_sliding_window, since B3036 calls them."
 
 out_of_scope:
   - "_pipeline_scripts (parallel_request_limiter_v3.py:1348-1361) calls active_request_redis_batch from litellm/caching/redis_batch.py, owned by B4331 (not a B3032 dependency, since B3032 only consumes its None-batch fallback path). _pipeline_scripts is built here and returns None when no batch is open, allowing callers to run scripts directly."
@@ -89,33 +91,33 @@ checks:
   commands:
     - id: lua-batch-script
       why: BATCH_RATE_LIMITER_SCRIPT does not reset windows or fix TTL on INCR
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limit_window_store::(batch_rate_limiter_script|window_reset|ttl_fix)/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^rate_limit_window_store::(batch_rate_limiter_script|window_reset|ttl_fix)/)'
     - id: lua-read-script
       why: BATCH_COUNTER_READ_SCRIPT does not exist or returns wrong type
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limit_window_store::batch_counter_read_script/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^rate_limit_window_store::batch_counter_read_script/)'
     - id: cluster-detect
       why: _is_redis_cluster detection is missing or contradicts the enabled flag
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limit_window_store::cluster_detect/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^rate_limit_window_store::cluster_detect/)'
     - id: in-memory-window
       why: in_memory_cache_sliding_window does not reset or increment correctly
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limit_window_store::(in_memory_window|sliding_window)/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^rate_limit_window_store::(in_memory_window|sliding_window)/)'
     - id: slot-compute
       why: keyslot_for_redis_cluster CRC16 computation is missing or wrong, or hash tags are not extracted
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limit_window_store::(slot_compute|hash_tag|crc16)/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^rate_limit_window_store::(slot_compute|hash_tag|crc16)/)'
     - id: hash-tag-group
       why: _group_keys_by_hash_tag does not partition keys by slot or fails for standalone Redis
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limit_window_store::(hash_tag_group|key_grouping)/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^rate_limit_window_store::(hash_tag_group|key_grouping)/)'
     - id: batch-get
       why: _batch_get_counter_values does not return a typed sequence or handles errors wrong
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limit_window_store::batch_get/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^rate_limit_window_store::batch_get/)'
     - id: redis-read-order
       why: _read_counter_values_from_redis does not return values in key order or groups are scrambled
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limit_window_store::redis_read_order/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^rate_limit_window_store::redis_read_order/)'
     - id: read-fallback
       why: _read_counter_values_without_incrementing does not fall back to local cache on error or does not call fail-closed
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limit_window_store::(read_fallback|fail_closed)/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^rate_limit_window_store::(read_fallback|fail_closed)/)'
     - id: no-retry-policy
       why: Failed window resets are retried, or caller does not handle refunds
-      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^rate_limit_window_store::no_retry/)'
+      run: cargo nextest run --locked -p betterlite-rate-limit --no-tests=fail -E 'test(/^rate_limit_window_store::no_retry/)'
 
 oracle_cases: []

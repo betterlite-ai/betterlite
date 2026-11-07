@@ -1,0 +1,107 @@
+id: B6031
+title: Native guardrail calls in the Python crate
+description: >-
+  A Python `CustomGuardrail` has to reach the guardrail Rust code that B5471 (base behaviors), B3665 (selection) and B3664
+  (invocation records) build. This task adds that bridge to crates/betterlite-python as the `guardrail_call` family, with
+  the same shape as B5659's `completion` family. It holds no guardrail logic. It moves JSON text across the language
+  boundary.
+
+
+  Family files, as B5659 describes them: `src/guardrail_call.rs` has one `pub(crate) fn register(module: &Bound<'_,
+  PyModule>) -> PyResult<()>`, `src/guardrail_call/**` holds the rest, and `python/betterlite/_native_guardrail_call.pyi`
+  types it all. `lib.rs` and `_native.pyi` get their one `mod` line, one `register` call and one star import written by the
+  architect. If those lines are missing when you start, stop and report a blocker, since you can't add them. Conversions
+  between JSON text and the Rust types go in `src/guardrail_call/convert.rs` and need no interpreter, so `cargo nextest`
+  covers them. Add `betterlite-guardrails` to this crate's Cargo.toml and leave the lines other families added alone.
+
+
+  `NativeGuardrail` is a `#[pyclass]` built from one JSON text with the constructor arguments of `GuardrailSettings`
+  (`guardrail_name`, `supported_event_hooks`, `event_hook`, `default_on` and the rest B5471 lists) and a `strict_modes`
+  flag. It wraps `GuardrailBase`. A bad combination from `GuardrailBase::new` raises `NativeGuardrailError`. Methods, each
+  taking and giving JSON text or plain scalars:
+
+
+  - `mode()` gives the validated mode as JSON text.
+  - `update_params(litellm_params)` calls `GuardrailBase::update_params` and returns nothing.
+  - `settings()` gives the current settings as JSON text, so the Python class can read `default_on`, `mask_request_content`
+    and the other attributes after an update.
+  - `render_violation_message(default, context)` takes the context as a JSON object of text values.
+  - `inject_advisory_message(data, message)` gives a pair: the bool B5471 returns and the changed data as JSON text.
+  - `should_run_guardrail(data, event_type, suppressed)` calls B3665's gate with the suppressed names as a JSON list. It
+    returns a bool. On `GuardrailSelectionError` it raises `NativeGuardrailError` with the variant name as `kind`.
+  - `event_hook_is_event_type(event_type)` and `dynamic_request_body_params(data)` call B3665's functions the same way.
+
+
+  Free functions: `sanitize_guardrail_response(response)`, `add_guardrail_record(data, input, context)`,
+  `sync_log_target(data, target)`, `summarize_guardrail_response(response, baseline, event_type)` and
+  `messages_for_call_type(call_type, data)`. They map one to one to the B3664 functions of the same name. The tool-message
+  cache that `messages_for_call_type` takes is built inside the call and thrown away, since Python keeps its own session
+  cache. `NativeGuardrailInvocation` is a `#[pyclass]` over B3664's `GuardrailInvocation` with `begin`, `record_own` and
+  `finish_success`, so a hook wrapper keeps one object for the length of a call. Where B3664 takes a clock, use the system
+  clock. The span sink B3664 defines is not connected here.
+
+
+  `NativeGuardrailError` comes from `pyo3::create_exception!` with `Exception` as its base. Its one argument is JSON text
+  with the keys `kind`, `message` and `guardrail_name`. Python turns it into LiteLLM's exceptions. The `GuardrailFailure`
+  enum is not exposed. The Python class raises its own exceptions where it needs them.
+scope:
+  paths:
+  - crates/betterlite-python/Cargo.toml
+  - crates/betterlite-python/src/guardrail_call*
+  - crates/betterlite-python/src/guardrail_call/**
+  - crates/betterlite-python/python/betterlite/_native_guardrail_call.pyi
+  - crates/betterlite-python/tests/test_native_guardrail_call.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/custom_guardrail.py
+  why: The methods this bridge carries are the ones B5471, B3665 and B3664 already ported.
+dod:
+- text: A JSON settings text builds a `NativeGuardrail`, and a bad text or a rejected mode combination gives `NativeGuardrailError` with no panic.
+  proof: [guardrail-convert]
+- text: '`should_run_guardrail`, `event_hook_is_event_type` and `dynamic_request_body_params` give the same answers as the Rust functions, and a selection error reaches Python with its `kind`.'
+  proof: [guardrail-select]
+- text: '`update_params`, `settings`, `render_violation_message` and `inject_advisory_message` follow B5471.'
+  proof: [guardrail-base]
+- text: The record functions and `NativeGuardrailInvocation` follow B3664, including a response with nulls and a long nested value.
+  proof: [guardrail-records]
+- text: The stubs pass strict basedpyright, and the Python test file passes ruff.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: guardrail-convert
+    why: Settings or error text changes on the way across.
+    run: cargo nextest run --locked -p betterlite-python --no-tests=fail -E 'test(/^guardrail_call::convert::tests::settings_/)'
+  - id: guardrail-select
+    why: A gate answer or an error kind is lost on the way.
+    run: >-
+      uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_native_guardrail_call.py -k native_select
+  - id: guardrail-base
+    why: A base behavior is not wired.
+    run: >-
+      uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_native_guardrail_call.py -k native_base
+  - id: guardrail-records
+    why: A record function or the invocation object is not wired.
+    run: >-
+      uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_native_guardrail_call.py -k native_records
+  - id: python-lint
+    why: Strict typing has to hold for every new module.
+    run: >-
+      uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations: []
+out_of_scope:
+- The Python class that calls these functions, its exceptions and its pre-call markers are B6032.
+- The Rust logic itself belongs to B5471, B3665 and B3664. This task adds no guardrail rule.
+- The span sink in B3664 and the provider guardrails that use these types are other entries.
+- Writing the `guardrail_call` lines in `src/lib.rs` and `_native.pyi` belongs to the architect.
+pitfalls:
+- '`crates/betterlite-python/Cargo.toml` keeps `unsafe_code = "forbid"`, so report a blocker if a PyO3 macro fails under it and do not relax the lint.'
+- 'The workspace turns on serde_json `arbitrary_precision`. Convert with `to_value` and `from_value`, not through bytes, as B3664 says.'
+- '`cargo nextest` links the interpreter, so tests in `convert.rs` must not need a running module.'
+- Cargo.toml is shared with other families. Add only this family's dependency and do not reorder the other lines.
+- A panic inside a pyo3 method becomes a Python exception with no payload, so return errors and never unwrap.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
