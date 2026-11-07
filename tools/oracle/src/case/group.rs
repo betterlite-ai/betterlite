@@ -5,7 +5,9 @@ use std::path::Path;
 use betterlite_postgres_fixture::seed::DatabaseFixture;
 use serde::Deserialize;
 
-use super::{Case, Compare, HelperCase, Request, UpstreamAnswer};
+use super::{
+    Case, Compare, HelperCase, Request, UpstreamAnswer, mark_compare_self_check, validate_contracts,
+};
 use crate::OracleError;
 use crate::multipart_oracle::request::answer_body;
 use crate::routing_scenarios;
@@ -38,6 +40,14 @@ impl ScenarioCase {
         }
     }
 
+    pub(crate) fn with_self_check(&self, self_check: bool) -> Self {
+        let mut owned = self.clone();
+        for step in &mut owned.scenario.steps {
+            mark_step_self_check(step, self_check);
+        }
+        owned
+    }
+
     // Bridges to Case only where out-of-scope code (artifacts::prepare/write) requires the concrete type.
     pub(crate) fn as_case(&self) -> Case {
         Case {
@@ -54,6 +64,20 @@ impl ScenarioCase {
     }
 }
 
+fn mark_step_self_check(step: &mut routing_scenarios::ScenarioStep, self_check: bool) {
+    match step {
+        routing_scenarios::ScenarioStep::Http(http_step) => {
+            mark_compare_self_check(&mut http_step.compare, self_check);
+        }
+        routing_scenarios::ScenarioStep::Concurrent(concurrent) => {
+            for request in &mut concurrent.requests {
+                mark_compare_self_check(&mut request.compare, self_check);
+            }
+        }
+        routing_scenarios::ScenarioStep::Join(_join) => {}
+    }
+}
+
 #[derive(Debug, Clone)]
 pub(crate) enum LoadedCase {
     Http(Case),
@@ -64,6 +88,9 @@ pub(crate) enum LoadedCase {
 
 pub(super) fn validate_scenario_case(path: &Path, case: &ScenarioCase) -> Result<(), OracleError> {
     validate_common(path, &case.common())?;
+    for step in routing_scenarios::compare::flatten(&case.scenario) {
+        validate_contracts(path, &step.compare)?;
+    }
     routing_scenarios::validate_in_case(path, &case.scenario)
 }
 
