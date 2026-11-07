@@ -6,6 +6,7 @@ use rstest::rstest;
 
 use super::parse::usage_from_mapping;
 use super::project::usage_json;
+use super::{Usage, UsageError};
 
 mod errors;
 mod from_response;
@@ -21,6 +22,33 @@ fn decode_object(encoded: &str) -> IndexMap<String, Json> {
 
 fn decode(encoded: &str) -> Json {
     serde_json::from_str(encoded).unwrap()
+}
+
+// A stand-in for the injected B906 conversion: it reads the Responses API token keys the way pydantic does.
+fn convert(mapping: &IndexMap<String, Json>) -> Result<Usage, UsageError> {
+    let input = token_count(mapping.get("input_tokens"));
+    let output = token_count(mapping.get("output_tokens"));
+    match (input, output) {
+        (Some(prompt), Some(completion)) => Ok(Usage {
+            prompt_tokens: prompt,
+            completion_tokens: completion,
+            total_tokens: prompt.checked_add(completion).unwrap_or(0),
+            prompt_tokens_details: None,
+            completion_tokens_details: None,
+            server_tool_use: None,
+            cost: None,
+            extras: IndexMap::new(),
+        }),
+        _ => usage_from_mapping(mapping),
+    }
+}
+
+fn token_count(value: Option<&Json>) -> Option<i64> {
+    match value {
+        Some(Json::Number(number)) => number.as_i64(),
+        Some(Json::Null | Json::Bool(_) | Json::Text(_) | Json::List(_) | Json::Object(_))
+        | None => None,
+    }
 }
 
 #[rstest]
