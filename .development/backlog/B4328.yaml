@@ -2,8 +2,8 @@ id: B4328
 milestone: M8 platform
 title: Read Redis counters and execute namespaced Lua operations
 status: todo
-depends_on: [B393, B4324, B4325]
-file: null
+depends_on: [B4324, B4325, B5220]
+file: tasks/B4328-redis-counters-and-scripts.yaml
 covers:
   - "litellm/caching/redis_cache.py"
 parent: B126

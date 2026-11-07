@@ -1,0 +1,252 @@
+id: B3881
+title: Prometheus deployment outcomes and fallbacks
+description: >-
+  Port the PrometheusLogger methods that record what happened to one deployment or one fallback. Everything goes in
+  crates/betterlite-logging/src/prometheus_deployment.rs. It writes through the collector handles B3874 builds, builds
+  labels with the label factory B3873 supplies, increments counters through inc_labeled_counter from B3876, and reads
+  no config. The module has one error enum, PrometheusDeploymentError, that wraps the error of the counter and gauge
+  interface. Time comes from the typed instants in the payload, never from the system clock.
+
+  Deployment state, from set_litellm_deployment_state, set_deployment_healthy, set_deployment_partial_outage and
+  set_deployment_complete_outage. A DeploymentState enum has Healthy = 0, PartialOutage = 1 and CompleteOutage = 2.
+  set_litellm_deployment_state(state, litellm_model_name, model_id: Option, api_base: Option, api_provider) builds labels
+  with prometheus_label_factory from the label list of litellm_deployment_state and a UserAPIKeyLabelValues holding only
+  those four fields, with no label context, and sets the gauge litellm_deployment_state to the state number. The three
+  named setters call it with 0, 1 and 2. The router cooldown code (B308) calls the complete outage setter.
+
+  Cooldown and callback counters. increment_deployment_cooled_down(litellm_model_name, model_id, api_base, api_provider,
+  exception_status) sanitizes each of the five strings with B3870's sanitize function for label values and increments
+  litellm_deployment_cooled_down by 1 with the five values as positional label values, in the order litellm_model_name,
+  model_id, api_base, api_provider, exception_status. It does not use the label factory, so custom metadata and tag labels
+  never reach it. increment_callback_logging_failure(callback_name) increments litellm_callback_logging_failures_metric by
+  1 with the single label callback_name, unsanitized and without the factory. record_managed_batch_created(model, api_provider,
+  user, user_email, api_key_alias: all Option<String>) increments litellm_managed_batch_created_total by 1 with those five fixed
+  labels. It catches any collector error and logs it at warning as "Error recording batch created metric: <error>".
+
+  Fallback events, from log_success_fallback_event and log_failure_fallback_event. Both take original_model_group, the
+  request kwargs (with an optional model, an optional tags list and a metadata bucket) and a typed view of the original
+  exception. Pick the bucket with B206's get_metadata_variable_name_from_kwargs ("litellm_metadata" when the kwargs have that
+  key, else "metadata"), read it as the metadata map (empty when absent or null), and call B253's get_standard_logging_metadata
+  on it. Build UserAPIKeyLabelValues with requested_model = the bounded requested model label of original_model_group with
+  router_originated = true (B3880), fallback_model = kwargs model, hashed_api_key = user_api_key_hash, api_key_alias =
+  user_api_key_alias, team = user_api_key_team_id, team_alias = user_api_key_team_alias, exception_status = str of the
+  exception status_code, exception_class = B3880's get_exception_class_name of the exception, and tags = the kwargs tags (empty
+  when absent). Make a fresh label context from it. The success event increments litellm_deployment_successful_fallbacks and the
+  failure event litellm_deployment_failed_fallbacks, each by 1 through inc_labeled_counter. Both write one debug log line first
+  ("Prometheus: log_success_fallback_event, original_model_group: ..." and the failure twin). Errors go back to the caller.
+
+  Deployment failure, from set_llm_deployment_failure_metrics. The input is the request kwargs (model, exception, stream
+  unused, litellm_params with custom_llm_provider, litellm_metadata, metadata and the flag proxy_rejected_before_routing, and
+  the standard_logging_object). Steps in order, all inside one catch-all that logs at debug "Prometheus Error:
+  set_llm_deployment_failure_metrics. Exception occured - <error>" and returns nothing.
+  1. Read model_group, api_base and model_id from the payload. When model_id is absent, take it from litellm_params
+  litellm_metadata.model_info.id, then from litellm_params metadata.model_info.id. When model_group is absent, take it from
+  litellm_params litellm_metadata.model_group, then from metadata.model_group. llm_provider is litellm_params custom_llm_provider.
+  2. Return when B3880's should_skip_metrics_for_invalid_key says so for these kwargs and payload.
+  3. Call B3880's extract_deployment_failure_label_values. hashed_api_key, api_key_alias, team, team_alias, client_ip and
+  user_agent are that result, and when it is falsy the payload metadata value (user_api_key_hash, user_api_key_alias,
+  user_api_key_team_id, user_api_key_team_alias, requester_ip_address, user_agent). user_email is that result only.
+  4. exception_status: when an exception exists, it is the text of the exception status_code, and when that text is "None" or empty
+  and the exception has a code that is not null, the text of the code. An exception whose status_code and code are both missing
+  therefore gives the literal text "None".
+  5. deployment_selected is true when model_id is nonempty and litellm_params has no true proxy_rejected_before_routing. When
+  selected: litellm_model_name = kwargs model, model_id, api_base and api_provider (= llm_provider) as read, requested_model =
+  model_group or the kwargs model, model_group as read. When not selected: litellm_model_name, model_id, api_base and api_provider
+  are all the empty string, requested_model = the bounded label (router_originated = true) of the kwargs model or, if that is
+  empty, model_group, or "" when the label is None, and model_group = the bounded label of model_group (router_originated = true).
+  6. Build UserAPIKeyLabelValues with those fields plus exception_status, exception_class (B3880's get_exception_class_name, only
+  when an exception exists), the identity fields from step 3, tags = payload request_tags (empty when absent), client_ip and
+  user_agent. Make one label context from it.
+  7. Only when selected, call set_deployment_partial_outage with the kwargs model (or ""), model_id, api_base and llm_provider (or "").
+  8. When an exception exists, increment litellm_deployment_failure_responses by 1 through inc_labeled_counter with the context.
+  9. Always increment litellm_deployment_total_requests by 1 the same way.
+
+  Deployment success, from set_llm_deployment_success_metrics. The input is the request kwargs, start_time, end_time, the request's
+  UserAPIKeyLabelValues, output_tokens (default 1.0) and the request's label context. It sits inside one catch-all that logs the
+  error at error level with "Prometheus Error: set_llm_deployment_success_metrics. Exception occured - <error>" and returns nothing.
+  Steps in order.
+  1. Return when the payload (standard_logging_object) is absent. Return when should_skip_metrics_for_invalid_key (B3880) is true for
+  the kwargs, enum values and payload.
+  2. api_base is the payload api_base. litellm_params is kwargs litellm_params (empty when absent). The metadata comes from B206's
+  get_litellm_metadata_from_kwargs, model_info from its model_info (empty when absent), model_id from model_info id, llm_provider
+  from litellm_params custom_llm_provider, litellm_model_name from the kwargs model.
+  3. When model_info or litellm_params is nonempty, call B3879's set_deployment_tpm_rpm_limit_metrics with model_info, litellm_params,
+  the model name, model_id, api_base, llm_provider and the enum values model_group.
+  4. Read x_ratelimit_remaining_requests and x_ratelimit_remaining_tokens from payload hidden_params additional_headers when that map
+  is nonempty. Read hidden_params litellm_overhead_time_ms.
+  5. When the overhead is present and nonzero, observe litellm_overhead_latency_metric with overhead_ms / 1000, labels from the label factory
+  with the metric's own label list and the context. Then call B3878's set_overhead_with_guardrails_metric, always.
+  6. When the remaining requests value is present and nonzero, set litellm_remaining_requests_metric to it; same for tokens and
+  litellm_remaining_tokens_metric. Both use the factory with their own label lists and the context. A header value may be a number or a
+  numeric string; a string that is not a number is the failure that the catch-all logs.
+  7. set_deployment_healthy with kwargs model (or ""), model_id (or ""), api_base (or "") and llm_provider (or "").
+  8. Increment litellm_deployment_success_responses, then litellm_deployment_total_requests, each by 1 through inc_labeled_counter with
+  the enum values and the context.
+  9. Latency: response time is end_time minus start_time. When the kwargs stream flag is exactly true, the first-token time is the kwargs
+  completion_start_time (end_time when absent) minus start_time. The latency is the first-token time unless it is absent or exactly zero,
+  and then the response time. When output_tokens is present and above 0, observe litellm_deployment_latency_per_output_token with
+  latency_seconds / output_tokens, labels from the factory with the metric's own list and the context.
+
+  Tests live under prometheus_deployment/tests/ with the module names deployment_state, callback_counters, fallback_events,
+  failure_outcome and success_outcome. Use a recording fake of the counter, gauge and histogram interface, so a test checks the metric
+  name, labels, amount and call order, and a fake of the B3880, B3878 and B3879 functions that records its calls.
+
+  Oracle helper cases call the helper operation b3881. Its Python adapter patches PrometheusLogger._inc_labeled_counter and the
+  collector attributes with recorders, calls the real unbound LiteLLM methods on a bare stand-in object, and returns the recorded
+  (metric, labels, value) list. B111 adds the scrape cases through the booted proxy.
+
+scope:
+  paths:
+    - crates/betterlite-logging/src/prometheus_deployment.rs
+    - crates/betterlite-logging/src/prometheus_deployment/**
+    - tools/oracle/cases/helpers/prometheus-deployment/**
+    - tools/oracle/helpers/b3881.py
+    - tools/oracle/helpers/b3881/**
+    - tools/oracle/src/helpers/logging/b3881.rs
+    - tools/oracle/src/helpers/logging/b3881/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L2794-L2936
+    why: set_llm_deployment_failure_metrics, the model id and group fallbacks, the selected and rejected label branches and the exception status text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3066-L3208
+    why: set_llm_deployment_success_metrics, the order of its writes and the latency choice.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3434-L3517
+    why: Success and failure fallback events and their label values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3519-L3595
+    why: Deployment state setters, the cooled down counter with positional sanitized labels, and the callback logging failure counter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L3259-L3277
+    why: record_managed_batch_created and its warning on failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1329-L1343
+    why: inc_labeled_counter, which B3876 ports and this task calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L1503-L1512
+    why: The success hook call site of set_llm_deployment_success_metrics.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus.py#L643-L710
+    why: Collector names and label lists for the state, success, failure, total, cooled down, fallback and callback failure series.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/cooldown_callbacks.py#L56-L79
+    why: The cooldown caller of the complete outage setter and the cooled down counter, which shows the argument types.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router_utils/fallback_event_handlers.py#L732-L775
+    why: The only callers of the two fallback events.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L3585-L3601
+    why: The only caller of increment_callback_logging_failure.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/batches_endpoints/litellm_executed_batches.py#L702-L713
+    why: The only caller of record_managed_batch_created.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L260
+    why: PROXY_REJECTED_BEFORE_ROUTING_KEY, the string proxy_rejected_before_routing.
+
+dod:
+  - text: set_litellm_deployment_state sets litellm_deployment_state to 0, 1 or 2 through the three setters, with only the four deployment labels and no label context.
+    proof: [deployment-state-tests, outcome-oracle-cases]
+  - text: increment_deployment_cooled_down increments litellm_deployment_cooled_down by 1 with five sanitized positional values in schema order, and never calls the label factory.
+    proof: [callback-counter-tests]
+  - text: increment_callback_logging_failure increments litellm_callback_logging_failures_metric with the label callback_name only.
+    proof: [callback-counter-tests]
+  - text: record_managed_batch_created increments its counter with the five fixed labels, and a collector error is caught and logged at warning, not returned.
+    proof: [callback-counter-tests]
+  - text: Success and failure fallback events increment litellm_deployment_successful_fallbacks and litellm_deployment_failed_fallbacks once, with the bounded requested model, fallback model, key and team identity, exception status and class, and tags.
+    proof: [fallback-event-tests, outcome-oracle-cases]
+  - text: A fallback event reads its metadata from litellm_metadata when the kwargs have that key and from metadata otherwise, and an exception without a status_code gives the exception_status text "None".
+    proof: [fallback-event-tests, outcome-oracle-cases]
+  - text: A failure with a selected deployment sets the partial outage state, increments the failure counter when an exception exists, and always increments the total counter, in that order.
+    proof: [failure-outcome-tests, outcome-oracle-cases]
+  - text: A failure with no model_id, or with proxy_rejected_before_routing true, leaves the deployment labels empty, bounds requested_model and model_group, and does not set an outage state.
+    proof: [failure-outcome-tests, outcome-oracle-cases]
+  - text: Failure model_id and model_group fall back to litellm_metadata and then metadata, and identity labels fall back from the B3880 result to the payload metadata.
+    proof: [failure-outcome-tests, outcome-oracle-cases]
+  - text: Failure exception_status uses status_code, then code, and ends as the text "None" when neither exists.
+    proof: [failure-outcome-tests, outcome-oracle-cases]
+  - text: A failure for an invalid-key request records nothing, and any error inside the failure function is logged at debug and never returned.
+    proof: [failure-outcome-tests]
+  - text: A success with no payload, or for an invalid-key request, records nothing and returns.
+    proof: [success-outcome-tests]
+  - text: "A success writes in this order: deployment limits (B3879), overhead histogram, guardrail overhead (B3878), remaining requests, remaining tokens, healthy state, success counter, total counter, latency per output token."
+    proof: [success-outcome-tests, outcome-oracle-cases]
+  - text: Remaining requests and tokens gauges and the overhead histogram are skipped for absent or zero values, and set for nonzero ones.
+    proof: [success-outcome-tests]
+  - text: A streaming success measures latency from completion_start_time, falling back to the response time when the first-token time is exactly zero; a non-streaming success uses the response time.
+    proof: [success-outcome-tests]
+  - text: Latency per output token is observed only when output_tokens is above 0, and equals latency seconds divided by output_tokens.
+    proof: [success-outcome-tests]
+  - text: An error inside the success function is logged at error level and never returned, and the writes after the failing one do not happen.
+    proof: [success-outcome-tests]
+  - text: Oracle helper cases for the failure, fallback and success labels and amounts run against LiteLLM and betterlite with equal output.
+    proof: [outcome-oracle-cases, helper-python]
+
+checks:
+  optional: []
+  commands:
+    - id: deployment-state-tests
+      why: the deployment state setters or their labels are missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_deployment::deployment_state::/)'
+    - id: callback-counter-tests
+      why: the cooled down, callback failure or managed batch counters are missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_deployment::callback_counters::/)'
+    - id: fallback-event-tests
+      why: the fallback event counters or their label values are missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_deployment::fallback_events::/)'
+    - id: failure-outcome-tests
+      why: the deployment failure labels, fallbacks or write order are missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_deployment::failure_outcome::/)'
+    - id: success-outcome-tests
+      why: the deployment success writes, order or latency choice are missing or wrong
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^prometheus_deployment::success_outcome::/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3881)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3881 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3881/pyrightconfig.json
+    - id: outcome-oracle-cases
+      why: the oracle helper cases are absent or differ from LiteLLM
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/prometheus-deployment)" &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/prometheus-deployment
+
+oracle_cases:
+  - tools/oracle/cases/helpers/prometheus-deployment/failure-selected-deployment.yaml
+  - tools/oracle/cases/helpers/prometheus-deployment/failure-rejected-before-routing.yaml
+  - tools/oracle/cases/helpers/prometheus-deployment/failure-exception-status.yaml
+  - tools/oracle/cases/helpers/prometheus-deployment/failure-metadata-fallbacks.yaml
+  - tools/oracle/cases/helpers/prometheus-deployment/fallback-events.yaml
+  - tools/oracle/cases/helpers/prometheus-deployment/success-write-order.yaml
+  - tools/oracle/cases/helpers/prometheus-deployment/success-latency-choice.yaml
+
+deviations:
+  - what: Timestamps are one typed instant, and the latency math cannot fail on a mix of naive and timezone-aware datetimes.
+    why: Python only fails there because datetimes carry two kinds; the typed payload from B254 has one, as B3878 also records.
+  - what: A collector or label error comes back as PrometheusDeploymentError where LiteLLM raises, and the failure and success functions catch it and log, as LiteLLM's catch-all does.
+    why: Errors are typed values; the visible result (the request is unaffected, later writes skipped) is the same.
+  - what: A remaining-requests or remaining-tokens header that is a numeric string is parsed as a number and set; any other string is the logged failure.
+    why: prometheus_client converts the value with float(), so "10" works in LiteLLM; the typed payload keeps header values as JSON values.
+  - what: The router view and the metadata bucket come in as arguments, not from proxy_server globals.
+    why: Dependencies come in through constructors and module-level state is forbidden.
+
+out_of_scope:
+  - "async_log_success_event orchestration, the order of its calls, the invalid-key skip around the whole hook and the construction of UserAPIKeyLabelValues from the payload: B111 owns them."
+  - "async_log_failure_event, async_post_call_failure_hook and the proxy failure counters: B3880 owns the label helpers and B111 the hooks. This task only covers set_llm_deployment_failure_metrics."
+  - "_set_deployment_tpm_rpm_limit_metrics and _async_set_router_remaining_metrics: B3879. set_overhead_with_guardrails_metric and record_guardrail_metrics: B3878."
+  - "extract_status_code, should_skip_metrics_for_invalid_key, extract_deployment_failure_label_values, get_exception_class_name, bounded_requested_model_label: B3880."
+  - "get_labels_for_metric, the collectors and _ExcludedLabelMetric: B3874. Registration of every metric used here: B3875. inc_labeled_counter and the end-user series cap: B3876."
+  - "track_provider_remaining_budget and _safe_get_remaining_budget: B3882. Budget gauges and their refresh: B3882, B3883 and B3884."
+  - "record_managed_file_size, record_managed_batch_duration, record_managed_file_created, record_managed_file_deleted, record_check_batch_cost_run and record_check_batch_cost_error: no caller at the pin (only tests call them), so they are not built and their collectors stay registered by B3875 with no writer."
+  - "Callers of the state setters and counters in router_utils/cooldown_callbacks.py (B308), router_utils/fallback_event_handlers.py (B309), litellm_logging.py _handle_callback_failure and the batch executor: they call this module's functions."
+  - "get_metadata_variable_name_from_kwargs and get_litellm_metadata_from_kwargs: B206. get_standard_logging_metadata: B253. Payload types and hidden_params: B254."
+
+pitfalls:
+  - "The failure exception_status is built with str(), so a missing status_code gives the text 'None', and when there is no code either it stays 'None' instead of being empty."
+  - "A rejected-before-routing failure puts the kwargs model in requested_model and leaves litellm_model_name, model_id, api_base and api_provider as empty strings, not None, and sets no outage state."
+  - "The failure label identity falls through falsy values (or), so an empty string from the B3880 result moves on to the payload metadata."
+  - "The overhead and remaining gauge checks are truthiness checks, so an overhead of 0 or a remaining value of 0 records nothing."
+  - "A zero-length first-token time is falsy in LiteLLM, so a streaming request with completion_start_time equal to start_time uses the response time."
+  - "kwargs stream is compared with true exactly; a missing flag or null keeps the response time."
+  - "set_overhead_with_guardrails_metric (B3878) is called even when the plain overhead histogram was skipped."
+  - "The success path catches with an error-level log and the failure path with a debug log; swapping them changes what operators see."
+  - "increment_deployment_cooled_down passes positional values that pair with the metric's full label list, so a prometheus_metrics_config include list for that metric changes the pairing exactly as in LiteLLM; keep the zip with the original names and drop only the excluded ones."
+  - "Both fallback events build a fresh label context from their own values; the requested_model there is bounded with router_originated = true, so an unknown group name passes through unchanged."
+  - "The success enum values already carry model_group, so the B3879 call reads it from there and not from the payload."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

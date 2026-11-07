@@ -2,8 +2,8 @@ id: B3630
 milestone: M5 api families
 title: Passthrough response cost and attribution primitives
 status: todo
-depends_on: [B068, B190, B880, B1717]
-file: null
+depends_on: [B068, B190, B247, B253, B880, B1717]
+file: tasks/B3630-passthrough-cost-attribution.yaml
 covers:
   - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/base_passthrough_logging_handler.py"
   - "litellm/proxy/pass_through_endpoints/llm_provider_handlers/batch_attribution.py"

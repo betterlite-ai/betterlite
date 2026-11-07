@@ -1,0 +1,143 @@
+id: B5655
+title: Completion request preparation
+description: >-
+  `completion` in litellm/main.py spends about 700 lines turning the caller's arguments into one provider call, and it can
+  leave early for fallbacks, a model list, a mock, the Responses API or MCP. Build everything before the provider chain as
+  one ordered function in betterlite-sdk's new `completion_request` module, so B5656 only has to run what comes out.
+
+
+  `CompletionArgs` holds the named parameters of `completion` as typed fields plus `kwargs` as a `serde_json::Map`, since a
+  caller may pass any provider parameter. `CompletionSettings` is a snapshot of the LiteLLM settings the path reads:
+  `drop_params`, `model_fallbacks`, `model_alias_map`, `num_retries`, `request_timeout`, `api_key`, `api_base`,
+  `route_all_chat_openai_to_responses`, `proxy_headers`, and the rest as you meet them. The Python layer fills it from
+  `_settings` and the gateway fills it from config, so this module reads no global and no env.
+  `prepare_completion(args, settings, ports)` returns `PreparedCompletion`, an enum: `Dispatch(PreparedCall)`,
+  `Fallbacks(FallbackCall)`, `ModelList(ModelListCall)`, `Mock(MockCall)`, `ResponsesBridge(PreparedCall)` and
+  `McpLoop(PreparedCall)`. `ports` holds the traits for what isn't pure: model metadata, the prompt management hook, and
+  B5651's `ResponsesBridgeCapabilities`.
+
+
+  Keep LiteLLM's order, since a later step reads what an earlier one changed. Fail with "model param not passed in." when
+  the model is missing. Pop `_skip_responses_api_bridge` and `_skip_mcp_handler` (L5263) first: they stop the bridge and the
+  MCP handler from calling each other forever. Then validate messages, tools, tool choice, optional params and thinking
+  through B5366, run `get_completion_messages`, split params through B5362's `get_non_default_completion_params` and
+  `pre_process_non_default_params`, seed cache control, run prompt hooks, and apply `litellm_system_prompt` with
+  `add_system_prompt_to_messages` and `merge_with_first_system` true. `base_url` becomes `api_base`. A router call sets
+  `max_retries` to 0, and otherwise `num_retries` applies.
+
+
+  The early exits come next: `fallbacks` gives `Fallbacks`, and `model_list` gives `ModelList` for `batch_completion_models`.
+  Then apply `model_alias_map`, force provider `azure` for the `azure` flag or a `deployment_id`, and resolve the provider
+  with `OPTIONAL_KWARGS_KEYS`. After that come `update_messages_with_model_file_ids`, the developer role translation from
+  B502, `map_system_message_pt` for a provider whose `supports_system_message` is false, and the dynamic API key.
+
+
+  B5650's `merge_request_headers` runs at L5343, then provider specific headers after the first bridge check at L5496. That
+  check is B5651's `responses_api_bridge_check` with no tools and no effort. `drop_anthropic_only_tool_keys` runs when
+  `is_claude_tool_target` is false. Hidden params get `custom_llm_provider` and `region_name`. B305's
+  `CompletionTimeout::resolve` runs next. The pricing gate at L5531-L5541 calls `register_custom_pricing_for_request`, and the
+  custom prompt dict follows at the `initial_prompt_value` check. L5588 adds `reasoning_effort` to the allowed params when
+  the first check gave mode `responses` and the skip flag is off. Then run `get_optional_params`, `add_function_to_prompt`,
+  `get_litellm_params` with `with_control_options`, the provider affinity header (its `ValueError` becomes a bad request),
+  and the logging environment update through a port.
+
+
+  The mock path gives `Mock` when `should_run_mock_completion` says so. The second bridge check at L5776 runs only when the
+  mode isn't `responses`, this time with tools, effort, `peek_reasoning_summary_aliases(optional_params)` and `api_base`. The
+  bridge path at L5790 runs `strip_reasoning_summary_aliases_from_optional_params`, keeps an object effort that has
+  `summary`, and otherwise merges the alias value into the effort object. A GPT-5 model that stays on chat loses the
+  aliases as well. An MCP gateway request gives `McpLoop`.
+
+
+  `prepare_acompletion(args, settings, ports)` ports the head of `acompletion` (L420-L640): `mock_timeout`, control options,
+  cache control, prompt hooks with empty tools turned to `None`, `acompletion` true, the provider lookup when the caller
+  gave none, and `fallbacks` or `settings.model_fallbacks` giving the async fallback call. It hands the rest to
+  `prepare_completion`.
+
+
+  Test names sit in `completion_request::tests` and start with `order_`, `model_`, `early_exit_`, `provider_`, `headers_`,
+  `bridge_`, `pricing_`, `mock_`, `async_` and `router_`.
+scope:
+  paths:
+  - crates/betterlite-sdk/Cargo.toml
+  - crates/betterlite-sdk/src/completion_request.rs
+  - crates/betterlite-sdk/src/completion_request/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L420-L640
+  why: The head of acompletion.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5160-L5868
+  why: Every step of completion before the provider chain.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/get_provider_specific_headers.py#L7-L30
+  why: The provider header rule called after the first bridge check.
+dod:
+- text: A call with no model fails with "model param not passed in." and a valid call passes each step in LiteLLM's order.
+  proof: [prep-order, prep-model]
+- text: Fallbacks and a model list leave early with the arguments LiteLLM passes on.
+  proof: [prep-early-exit]
+- text: The alias map, the azure flag, `deployment_id`, developer role and system message rules give LiteLLM's provider and messages.
+  proof: [prep-provider]
+- text: Merged and provider specific headers reach the prepared call, with proxy auth headers winning.
+  proof: [prep-headers]
+- text: Both bridge checks run at their own points with their own arguments, reasoning summary aliases are handled on each path, and the skip flag stops a loop.
+  proof: [prep-bridge]
+- text: Per-request prices register only when the gate holds.
+  proof: [prep-pricing]
+- text: A mock request gives the mock outcome with no provider call.
+  proof: [prep-mock]
+- text: The acompletion head handles `mock_timeout`, empty tools and global model fallbacks.
+  proof: [prep-async]
+- text: A router call sets retries to 0, and a direct call keeps `num_retries`.
+  proof: [prep-router]
+checks:
+  optional: []
+  commands:
+  - id: prep-order
+    why: A step reads a value before the step that sets it.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^completion_request::tests::order_/)'
+  - id: prep-model
+    why: A call with no model gets past the first check.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^completion_request::tests::model_/)'
+  - id: prep-early-exit
+    why: A fallback or model list call reaches the provider.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^completion_request::tests::early_exit_/)'
+  - id: prep-provider
+    why: A request reaches the wrong provider or a message role the provider rejects.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^completion_request::tests::provider_/)'
+  - id: prep-headers
+    why: An auth header is lost or replaced.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^completion_request::tests::headers_/)'
+  - id: prep-bridge
+    why: A request takes the wrong API, or the bridge and completion call each other forever.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^completion_request::tests::bridge_/)'
+  - id: prep-pricing
+    why: Spend uses the wrong price.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^completion_request::tests::pricing_/)'
+  - id: prep-mock
+    why: A test call reaches a real provider.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^completion_request::tests::mock_/)'
+  - id: prep-async
+    why: The async entry drops a setting the blocking entry keeps.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^completion_request::tests::async_/)'
+  - id: prep-router
+    why: Router retries stack on provider retries.
+    run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^completion_request::tests::router_/)'
+oracle_cases: []
+deviations:
+- what: A `litellm_logging_obj` or `custom_prompt_dict` object passed by a Python caller is not accepted as a live object, and only its JSON fields reach this function.
+  why: This layer takes data, and the Python layer owns the object boundary as B158 describes.
+out_of_scope:
+- The provider chain at L5869-L6072 and the real call are B5656 over B014.
+- '`get_optional_params` is B175, `get_litellm_params` and `with_control_options` are B176, `CompletionTimeout` is B305.'
+- The Python argument list and its settings snapshot are B158.
+- The mock response body is B255.
+pitfalls:
+- '`headers` and `extra_headers` merge before the first bridge check, but `provider_specific_header` applies after it.'
+- The first bridge check passes no tools or effort, so a GPT-5 tool request only bridges at the second check.
+- '`supports_system_message` is checked only when the caller set it, so None leaves system messages alone.'
+- Empty tools become `None` after the prompt hooks in `acompletion`, and only there.
+- 'A router call ends with `max_retries` 0 even when the caller passed `num_retries`, because the `elif` never runs.'
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

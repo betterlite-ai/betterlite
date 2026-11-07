@@ -1,0 +1,197 @@
+id: B4143
+title: Read bucket configs and download configured Python modules
+description: >-
+  Build crates/betterlite-server/src/bucket_config.rs and its folder: the code that reads a config.yaml out of an S3 or GCS bucket, resolves its `include` entries inside the same bucket, and downloads a module object from a bucket into a local file.
+  LiteLLM does this in litellm/proxy/common_utils/load_config_utils.py. Nothing in betterlite reads a bucket yet, and this task does not wire it into the startup path.
+
+
+  Bucket source. Define BucketConfigSource { bucket_type: BucketType, bucket_name: String, object_key: String } and BucketType { S3, Gcs }.
+  BucketConfigSource::from_environment is generic over the EnvironmentLookup trait of betterlite-config and returns Result<Option<BucketConfigSource>, BucketConfigError>.
+  It reads LITELLM_CONFIG_BUCKET_NAME, LITELLM_CONFIG_BUCKET_OBJECT_KEY and LITELLM_CONFIG_BUCKET_TYPE.
+  No bucket name gives Ok(None). A bucket name without an object key is the error "LITELLM_CONFIG_BUCKET_OBJECT_KEY must be set to load the config from a bucket.".
+  The type is Gcs only for the exact text "gcs"; unset, "s3" and any other text mean S3, as in LiteLLM's `bucket_type != "gcs"` test.
+
+
+  Object readers. One reader is built per config load, so an include tree costs one client. A reader returns Ok(None) for a missing or unreadable object and logs the cause, as LiteLLM does.
+  The S3 reader resolves AWS credentials once through B594 (the same default resolution LiteLLM gets from bedrock_converse_chat_completion.get_credentials(): no explicit keys, so the fixed AWS_* env names, profile and ambient sources apply) and signs each GET with aws-sigv4 over the B173 pooled client.
+  If the credentials cannot be resolved, the reader is still returned and every read gives None after one logged error, which is what LiteLLM does when boto3 cannot build its client.
+  The URL is https://{bucket}.s3.{region}.amazonaws.com/{key} with the key percent-encoded per path segment, or https://s3.{region}.amazonaws.com/{bucket}/{key} when the bucket name contains a dot (boto3 does the same, since a dotted name breaks the wildcard certificate).
+  The region is AWS_DEFAULT_REGION, else us-east-1.
+  The GCS reader builds one B3997 bucket client for the bucket name and calls its download_gcs_object. If the client cannot be built it logs and every read gives None.
+  Bytes that are None or not UTF-8 give None after a logged error. Text that is not valid YAML gives None after a logged error naming the object key. An empty YAML document reads as an empty mapping.
+
+
+  Config loading. load_config_from_bucket(source) reads the root object. A root that is not a YAML mapping is the error "Config object in bucket is not a YAML mapping: {key}". A root that is missing, unreadable or an empty mapping gives Ok(None), and the caller raises "Unable to load config from given source." (that caller is not in this task).
+  A non-empty root then goes through include resolution.
+
+
+  Includes. resolve_include_object_key(config_object_key, include_entry) works on POSIX paths with normpath rules.
+  An entry starting with "/" is normalized and its leading slashes are removed, so it names a key from the bucket root.
+  Any other entry is joined to the directory part of the declaring object's key and normalized. A leading ".." is kept (normpath does not drop it above the root).
+  Unlike the file loader of B4142, there is no fallback to a root-relative key.
+  resolve_bucket_includes walks the entries in order, the same way as B4142's resolve_includes: it reads each object once (a key already loaded is skipped, and the root's own key counts as loaded), merges it so lists are extended and every other value replaces, queues the included object's own includes after the existing queue, and drops the `include` key at the end.
+  An included object that reads as None is the error "Included config could not be read from bucket: {key}. The underlying bucket error is logged above.".
+  An included object that is not a mapping is the same "not a YAML mapping" error as the root. An `include` value that is not a list of strings is B4142's IncludeError.
+  Reuse B4142's merge and include-entry code: edit crates/betterlite-config/src/sections/includes.rs only to make `merge` and `without_include` pub and to split the entry validation out of queue_includes into a pub function that returns the validated entries. Keep the file under 300 lines and keep B4142's behavior and tests unchanged.
+
+
+  Module download. download_python_module(source_type, bucket_name, object_key, local_file_path) fetches the object with the same S3 or GCS client code, decodes it as UTF-8, creates the parent directories of local_file_path and writes the text there.
+  Unlike the config readers, this path resolves credentials per call (LiteLLM builds a fresh BaseAWSLLM() each time) and a GCS client per call.
+  LiteLLM returns True or False and logs the cause. betterlite returns Result<(), ModuleDownloadError>, with the cause kept as #[source], so its caller (B124's get_instance_fn work) can raise the same "Failed to download {object_key} from {storage_type} bucket {bucket_name}" ImportError text from the Err.
+  The download must write nothing when the fetch or decode fails.
+
+
+  Errors: BucketConfigError for the source, mapping and include failures, ModuleDownloadError for the download, each in the module's own files with #[source] causes.
+  Add Cargo.toml dependencies in crates/betterlite-server for betterlite-bedrock, betterlite-logging and aws-sigv4 (same version as betterlite-config), and a serde-saphyr use already in the workspace for YAML.
+  Fuzz target bucket_config_yaml in crates/betterlite-server/fuzz decodes arbitrary bytes through the function that turns an object body into a config value (parse_bucket_object(object_key, bytes)); it must never panic.
+scope:
+  paths:
+    - crates/betterlite-server/src/bucket_config.rs
+    - crates/betterlite-server/src/bucket_config/**
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/bucket_config_yaml.rs
+    - crates/betterlite-server/fuzz/corpus/bucket_config_yaml/**
+    - crates/betterlite-config/src/sections/includes.rs
+    - crates/betterlite-config/src/sections/includes/**
+    - tools/oracle/cases/helpers/bucket-config/**
+    - "tools/oracle/fuzz/corpus/helper_case/bucket_config-*"
+    - tools/oracle/helpers/b4143.py
+    - tools/oracle/helpers/b4143/**
+    - tools/oracle/src/helpers/server/b4143.rs
+    - tools/oracle/src/helpers/server/b4143/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/load_config_utils.py#L17-L38
+    why: Bucket config adapter, the three reader protocols and _parsed_config, which turns an empty YAML document into an empty mapping and a YAML error into None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/load_config_utils.py#L41-L82
+    why: s3_object_reader and get_file_contents_from_s3; client built once, every read error becomes None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/load_config_utils.py#L85-L119
+    why: gcs_config_bucket and get_config_file_contents_from_gcs, including the None-contents error that is logged and returned as None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/load_config_utils.py#L122-L152
+    why: resolve_include_object_key (normpath rules, leading slash) and resolve_bucket_includes with the missing-include error text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/load_config_utils.py#L155-L198
+    why: bucket_object_reader picks GCS only for the exact text "gcs"; get_config_from_bucket validates mappings, returns None for an empty root and resolves includes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/load_config_utils.py#L201-L297
+    why: download_python_file_from_s3 and download_python_file_from_gcs; both create parent directories, write text and return a bool.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6031-L6048
+    why: The only caller of get_config_from_bucket; shows the three LITELLM_CONFIG_BUCKET_* env vars and the missing-key and unreadable-config errors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/types_utils/utils.py#L68-L201
+    why: The only callers of the two download functions (_load_instance_from_remote_storage and _download_gcs_file_wrapper); they show the s3:// and gcs:// URL split and the ImportError text built from a False result.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/config_includes.py#L1-L140
+    why: The shared include walker that resolve_bucket_includes plugs into; B4142 already ported it for files.
+dod:
+  - text: BucketConfigSource::from_environment returns None without a bucket name, the missing-object-key error with a name and no key, and Gcs only for the exact type text "gcs".
+    proof: [source-tests]
+  - text: An object body becomes a mapping; empty YAML becomes an empty mapping; invalid YAML and non-UTF-8 bytes read as missing.
+    proof: [object-parse-tests, bucket-decoder-corpus]
+  - text: resolve_include_object_key matches posixpath.normpath for relative entries, a leading "/" (bucket root), "..", "." and doubled slashes, with no root fallback.
+    proof: [include-key-tests, helper-case-corpus]
+  - text: resolve_bucket_includes extends lists, replaces other values, skips a key already loaded, handles a cycle, queues nested includes after the existing queue and strips `include`.
+    proof: [bucket-include-tests, helper-case-corpus]
+  - text: A missing included object gives the exact "Included config could not be read from bucket" message, and a non-mapping object gives the "not a YAML mapping" message.
+    proof: [bucket-include-tests]
+  - text: The S3 reader signs each GET with credentials resolved once by B594, uses virtual-hosted or path-style URLs by bucket name, and reads a non-200 answer or a transport error as a missing object.
+    proof: [s3-reader-tests]
+  - text: The GCS reader builds its client once and reads a missing object or a client that cannot be built as a missing object.
+    proof: [gcs-reader-tests]
+  - text: load_config_from_bucket returns None for a missing or empty root, errors for a root that is not a mapping, and returns the merged config for a root with includes.
+    proof: [bucket-include-tests]
+  - text: download_python_module writes the object text to the local path after creating parent folders, leaves no file when the fetch or decode fails, and returns a typed error with the cause for both S3 and GCS.
+    proof: [module-download-tests]
+  - text: B4142's merge and include-entry code is reused from betterlite-config and its own tests still pass.
+    proof: [config-includes-regression]
+  - text: The decoder fuzz target exists and its corpus replays.
+    proof: [bucket-decoder-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: source-tests
+      why: the env var source, its error or the exact "gcs" type test is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^bucket_config::source::/)'
+    - id: object-parse-tests
+      why: object body parsing tests are missing or fail
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^bucket_config::object::/) - test(replays_the_bucket_config_yaml_corpus)'
+    - id: include-key-tests
+      why: include key resolution tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^bucket_config::include_key::/)'
+    - id: bucket-include-tests
+      why: bucket include walking or load_config_from_bucket tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^bucket_config::includes::/)'
+    - id: s3-reader-tests
+      why: S3 reader tests against a local test server are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^bucket_config::s3_reader::/)'
+    - id: gcs-reader-tests
+      why: GCS reader tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^bucket_config::gcs_reader::/)'
+    - id: module-download-tests
+      why: module download tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^bucket_config::module_download::/)'
+    - id: config-includes-regression
+      why: B4142's include tests fail after the merge helpers were made public, or the helpers are not public
+      run: >-
+        grep -q "pub fn merge" crates/betterlite-config/src/sections/includes.rs &&
+        grep -q "pub fn without_include" crates/betterlite-config/src/sections/includes.rs &&
+        INSTA_UPDATE=no cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::includes::/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b4143)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b4143 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b4143/pyrightconfig.json
+    - id: helper-case-corpus
+      why: bucket-config helper cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/bucket_config-*")" &&
+        grep -lE '^[[:space:]]+b4143:' tools/oracle/fuzz/corpus/helper_case/bucket_config-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: bucket-decoder-corpus
+      why: the object-body fuzz target or its replay corpus is missing or fails
+      run: >-
+        test -f crates/betterlite-server/fuzz/fuzz_targets/bucket_config_yaml.rs &&
+        grep -q 'name = "bucket_config_yaml"' crates/betterlite-server/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/bucket_config_yaml)" &&
+        cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_bucket_config_yaml_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/bucket-config/include-relative-key.yaml
+  - tools/oracle/cases/helpers/bucket-config/include-root-key.yaml
+  - tools/oracle/cases/helpers/bucket-config/include-dotdot-key.yaml
+  - tools/oracle/cases/helpers/bucket-config/includes-merge-lists.yaml
+  - tools/oracle/cases/helpers/bucket-config/includes-cycle.yaml
+  - tools/oracle/cases/helpers/bucket-config/include-missing-object.yaml
+  - tools/oracle/cases/helpers/bucket-config/include-not-mapping.yaml
+deviations:
+  - what: betterlite downloads a Python module from s3:// or gcs:// and writes it to the local path, but does not run it.
+    why: betterlite has no Python interpreter. LiteLLM's exec_module step is in get_instance_fn, which B124's remaining work owns; a callback given as an s3:// or gcs:// module URL needs the architect's decision (see notes).
+  - what: The S3 region is AWS_DEFAULT_REGION, else us-east-1; boto3 also reads the shared config file and the SDK profile region.
+    why: betterlite has no botocore config loader, and the region only picks the signing scope and the host for reading a bucket. A bucket in another region answers with a redirect error, which reads as a missing object.
+  - what: A dotted bucket name is read with a path-style URL.
+    why: boto3 switches to path style for such names so that the wildcard certificate still matches; the sent request differs in the host only.
+  - what: A failed module download is a typed Rust error, not a False result.
+    why: Rust rules forbid dropping the cause. The caller turns it into the same ImportError text.
+out_of_scope:
+  - "Calling this module at startup (the LITELLM_CONFIG_BUCKET_* branch in ProxyConfig.get_config, proxy_server.py L6031-L6048) and raising 'Unable to load config from given source.'; B124's remaining proxy_server.py work owns the call."
+  - "get_instance_fn and _load_instance_from_remote_storage in litellm/proxy/types_utils/utils.py (URL splitting, temp file, exec_module, getattr of the instance); B124 owns them and calls download_python_module."
+  - "GCSBucketBase and download_gcs_object; B3997 owns them."
+  - "AWS credential resolution; B594 owns it."
+  - "S3 log upload signing (s3_v2.py); B3993 owns it."
+  - "get_file_contents_from_s3 and get_config_file_contents_from_gcs as separate public functions: nothing calls them at the pin outside this file, so only their reader code is built."
+  - "Recursive include merging for files on disk; B4142 owns it and is only reused."
+pitfalls:
+  - The bucket type test is `bucket_type != "gcs"`, so "GCS", "Gcs" and "s3" and an unset LITELLM_CONFIG_BUCKET_TYPE all read from S3.
+  - resolve_include_object_key must follow posixpath.normpath, not a path library for files; an entry such as "../shared/models.yaml" from "team/a.yaml" gives "shared/models.yaml", but from "a.yaml" it stays "../shared/models.yaml".
+  - A leading "/" entry is the bucket root, and all leading slashes are stripped after normalizing, so "//x.yaml" is "x.yaml".
+  - The root object's own key counts as already loaded, so a config that includes itself is skipped silently.
+  - get_config_from_bucket returns None for an empty mapping, but a root that is a list or a string is an error, not None. Do not merge the two cases.
+  - An included object that is an empty YAML document reads as an empty mapping and merges nothing; only a read failure is the FileNotFoundError text.
+  - The S3 config reader reuses one client, but download_python_file_from_s3 builds credentials on every call; do not share the config reader's cached credentials with the module download.
+  - download_python_file_from_s3 logs the full file text at debug level in LiteLLM; do not log module text, since it can hold secrets.
+  - The GCS download sets bucket names that contain a folder path through B3997's own folder split; pass the LITELLM_CONFIG_BUCKET_NAME text through unchanged.
+  - A key containing spaces, plus signs or non-ASCII characters must be percent-encoded per segment before signing, and the slash stays a slash.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

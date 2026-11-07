@@ -1,0 +1,14 @@
+id: B5951
+milestone: M3 providers
+title: SAP orchestration request models
+status: todo
+depends_on: [B171]
+file: tasks/B5951-sap-orchestration-models.yaml
+covers:
+  - "litellm/llms/sap/chat/models.py"
+parent: B5845
+split_from: B5845
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

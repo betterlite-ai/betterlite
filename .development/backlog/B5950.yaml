@@ -1,0 +1,14 @@
+id: B5950
+milestone: M3 providers
+title: SAP AI Core credentials, OAuth token and orchestration deployment lookup
+status: todo
+depends_on: [B171]
+file: tasks/B5950-sap-credentials.yaml
+covers:
+  - "litellm/llms/sap/credentials.py"
+parent: B5845
+split_from: B5845
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

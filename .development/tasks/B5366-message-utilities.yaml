@@ -1,0 +1,164 @@
+id: B5366
+title: Message trimming, validators, cache checks and fake stream iterators
+description: >-
+  This task builds the helpers in litellm/utils.py that look at raw request messages or wrap a finished response.
+  Everything goes in betterlite-core under `message_utilities`, with one submodule per group. These functions see messages
+  before any typed parse, and some exist to reject bad shapes, so messages are `serde_json::Value`.
+
+
+  Thought signatures (L731-L823): `_is_gemini_model`, `_remove_thought_signature_from_id`,
+  `_process_assistant_message_tool_calls`, `_process_tool_message_id` and `_remove_thought_signatures_from_messages`.
+  Gemini returns tool call ids with a signature attached; these strip it when the same messages go to a non-Gemini target.
+
+
+  Trimming (L7494-L7718): `process_system_message`, `process_messages`, `attempt_message_addition`, `can_add_message`,
+  `get_token_count`, `shorten_message_to_fit_limit` and `trim_messages`. Token counts come from B196 and model limits
+  from B2218. `trim_messages` takes `trim_ratio`, keeps the tool tail, joins system messages with a newline, returns early
+  when `current_tokens < max_tokens`, returns the original messages on any internal error and honors
+  `return_response_tokens`.
+
+
+  Validators (L8228-L8415): `convert_to_dict`, `convert_list_message_to_dict`, `validate_and_fix_openai_messages`,
+  `validate_and_fix_openai_tools`, `validate_and_fix_thinking_param`, `cleanup_none_field_in_message`,
+  `validate_chat_completion_user_messages` (checks content against `ValidUserMessageContentTypes`, messages
+  "Invalid message at index" and "Invalid user message at index"), `validate_chat_completion_tool_choice` (`None` and strings pass, a
+  dict of type auto, none or required with no function key collapses to that string, a dict missing `type` or `function`
+  raises BadRequestError, and any other type raises it with LiteLLM's second text)
+  and `validate_openai_optional_params` (truncates `stop` to 4 unless `disable_stop_sequence_limit` is set). Errors are the
+  B011 types.
+
+
+  Prompt cache checks: `is_cached_message` (L8055-L8101), `get_prompt_cache_min_tokens` (L10108-L10129: an override passed as an
+  argument, then the model info's `prompt_cache_min_tokens`, then the default, and it never fails) and `is_prompt_caching_valid_prompt` (L10132-L10165: no messages and
+  no tools gives false, the provider is prefixed when the model doesn't start with it, the token counter runs with
+  `use_default_image_token_count=True`, a passed `min_token_count` beats the lookup, and any error gives false).
+
+
+  Streams over a finished response: `TextCompletionStreamWrapper` (L7326-L7400) turns chat chunks into text completion
+  chunks, `ModelResponseIterator` (L7987-L8014) yields one finished response once, and `ModelResponseListIterator`
+  (L8018-L8047) yields a list of them. Each is a plain `Iterator`, and the async form uses `futures::Stream`.
+
+
+  Small pieces: `register_prompt_template` (L7258-L7322) stores a template under the full name and, when B174 resolves
+  one, the bare model. A tokenizer config goes in the known tokenizer map, and anything else goes in the custom prompt
+  map. Both maps sit in a `PromptTemplateRegistry` the caller owns. `get_first_chars_messages` (L5374-L5380),
+  `get_empty_usage` (L10409-L10414) and `should_run_mock_completion` (L10417-L10424, Python truthiness over three values).
+
+
+  The oracle operation is `b5366`. Its Python adapter calls the `litellm.utils` function on fixture messages. A stream
+  case reports the list of chunks after running the iterator to the end.
+scope:
+  paths:
+  - crates/betterlite-core/Cargo.toml
+  - crates/betterlite-core/src/message_utilities.rs
+  - crates/betterlite-core/src/message_utilities/**
+  - tools/oracle/cases/helpers/message-utilities/**
+  - "tools/oracle/fuzz/corpus/helper_case/message_utilities-*"
+  - tools/oracle/helpers/b5366.py
+  - tools/oracle/helpers/b5366/**
+  - tools/oracle/src/helpers/core_ops/b5366.rs
+  - tools/oracle/src/helpers/core_ops/b5366/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L731-L823
+  why: Thought signature removal.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7258-L7400
+  why: Prompt template registration and the text completion stream wrapper.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7494-L7718
+  why: The trimming helpers and trim_messages.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L7987-L8101
+  why: The response iterators and is_cached_message.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L8228-L8415
+  why: The validators.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L10108-L10165
+  why: Prompt cache minimum and the valid prompt check.
+dod:
+- text: Thought signatures are removed from tool call ids and tool message ids exactly where LiteLLM removes them.
+  proof: [thought-signatures, oracle, helper-python]
+- text: >-
+    `trim_messages` gives LiteLLM's output for system merging, a tool tail, a message shortened to fit, an under-limit
+    input and `return_response_tokens`.
+  proof: [trim-messages, oracle, helper-python]
+- text: >-
+    The validators accept what LiteLLM accepts, fix what it fixes and raise the same error type and message for a bad user
+    message and a bad tool choice.
+  proof: [validators, oracle, helper-python]
+- text: '`stop` is truncated to 4 unless `disable_stop_sequence_limit` is set.'
+  proof: [validators, oracle, helper-python]
+- text: The three prompt cache checks match LiteLLM, and a token counter error gives false.
+  proof: [prompt-cache-checks, oracle, helper-python]
+- text: >-
+    The three stream types yield the same chunks as LiteLLM in sync and async form, and end with the same stop behavior.
+  proof: [response-streams, oracle, helper-python]
+- text: >-
+    `register_prompt_template` stores under the same names, and `should_run_mock_completion` and `get_empty_usage` give
+    LiteLLM's answers.
+  proof: [small-helpers, oracle, helper-python]
+- text: New helper corpus seeds call `b5366` and replay through the shared parser.
+  proof: [helper-case-corpus]
+checks:
+  optional: []
+  commands:
+  - id: thought-signatures
+    why: A signature stays on an id or a clean id changes.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^message_utilities::.*thought_signature/)'
+  - id: trim-messages
+    why: Trimming keeps or drops the wrong messages.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^message_utilities::.*trim/)'
+  - id: validators
+    why: A validator accepts bad input or the error text differs.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^message_utilities::.*validat/)'
+  - id: prompt-cache-checks
+    why: The cache threshold order or the error result differs.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^message_utilities::.*prompt_cache/)'
+  - id: response-streams
+    why: A wrapper drops a chunk or never ends.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^message_utilities::.*stream/)'
+  - id: small-helpers
+    why: One of the small helpers is absent or wrong.
+    run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^message_utilities::.*(prompt_template|mock_completion|empty_usage|first_chars)/)'
+  - id: helper-python
+    why: Oracle cases need a clean b5366 adapter to call.
+    run: test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b5366)" && uv run --locked --project tools/oracle/litellm
+      ruff check tools/oracle/helpers/b5366 && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b5366/pyrightconfig.json
+  - id: helper-case-corpus
+    why: At least one new seed must exercise b5366.
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/message_utilities-*")"
+      && grep -lE '^[[:space:]]+b5366:' tools/oracle/fuzz/corpus/helper_case/message_utilities-* && test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs
+      && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+- tools/oracle/cases/helpers/message-utilities/thought-signatures.yaml
+- tools/oracle/cases/helpers/message-utilities/trim-messages.yaml
+- tools/oracle/cases/helpers/message-utilities/trim-with-tools.yaml
+- tools/oracle/cases/helpers/message-utilities/fix-messages-and-tools.yaml
+- tools/oracle/cases/helpers/message-utilities/user-message-validation.yaml
+- tools/oracle/cases/helpers/message-utilities/tool-choice-validation.yaml
+- tools/oracle/cases/helpers/message-utilities/prompt-cache-checks.yaml
+- tools/oracle/cases/helpers/message-utilities/response-streams.yaml
+- tools/oracle/cases/helpers/message-utilities/prompt-template.yaml
+deviations:
+- what: '`get_first_chars_messages` returns the first 100 characters of the JSON text, where LiteLLM uses Python `str()` on the list.'
+  why: The text only goes into an error message, and a Python repr printer in Rust would add code for no use.
+out_of_scope:
+- >-
+  `_count_characters` L5383-L5386 and `get_response_string` L5389-L5432 belong to B1688, and the mock streams
+  L7403-L7473 to B255. Retry helpers next to them are B5364.
+- >-
+  `CustomModelResponseIterator` L8051-L8052 and `json_schema_type` L6504-L6527 are not built: no caller at the pin.
+  `jsonify_tools` L10392-L10406 only converts pydantic objects, and messages reach Rust as JSON already.
+- >-
+  `get_utc_datetime` L5435-L5436 is one line over the clock, so callers use the clock they already hold. Other functions
+  in litellm/utils.py are listed with their owners in the B157 task file.
+pitfalls:
+- >-
+  `trim_messages` compares with `<`, not `<=`, and a catch-all on the error path returns the input. A token error must
+  not reach the caller.
+- >-
+  `validate_chat_completion_tool_choice` collapses auto, none and required only without a function key. A dict with the
+  key stays a dict.
+- '`should_run_mock_completion` uses Python truthiness: 0, false, an empty string and an empty list count as absent.'
+- A provider prefix check in `is_prompt_caching_valid_prompt` is a `startswith` on the model, so a model that only contains the provider name still gets the prefix.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: standard

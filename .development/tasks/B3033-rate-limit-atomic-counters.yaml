@@ -3,7 +3,7 @@ title: Atomic rate-limit counter evaluation
 description: >-
   Build one descriptor's Lua arguments and status decoding, plus the locked local all-or-nothing counter algorithm.
   Redis uses server time and promises atomicity only within each script invocation; the next part (B3034) owns cross-descriptor rollback.
-  The Lua script CHECK_AND_INCREMENT_BY_N_SCRIPT (owned by B3031) validates all descriptors against their limits before modifying any counter (all-or-nothing semantics).
+  The Lua script CHECK_AND_INCREMENT_BY_N_SCRIPT validates all descriptors against their limits before modifying any counter (all-or-nothing semantics).
   When Redis is unavailable, the in-memory fallback executes the same validation locally using the DualCache mirror, accepting eventual window/counter divergence until TTL expiry.
   _build_descriptor_atomic_payload constructs the KEYS and ARGV arrays for one descriptor, handling optional requests and tokens limits separately.
   _build_atomic_response decodes the Lua return value into RateLimitResponse (OK with updated counts and reservation windows, or OVER_LIMIT with the first blocked counter's details).

@@ -1,0 +1,165 @@
+id: B5961
+title: SageMaker embedding configs and the response-stream decoder
+description: >-
+  Two modules in betterlite-bedrock (it imports betterlite-openai and has the AWS event framing, so Cohere's Bedrock
+  request builder and the frame decoder are both below it): sagemaker_embedding for `embedding/transformation.py` and
+  `embedding/cohere_transformation.py`, and sagemaker_stream for `AWSEventStreamDecoder` and the stream-shape loader in
+  `common_utils.py`. `SagemakerError` comes from B5960.
+
+
+  sagemaker_embedding. `get_model_config(model)` lowercases the model: a name holding `voyage` gets B1420's Voyage config
+  (checked first), else one holding `cohere` gets the Cohere config below, else the Hugging Face config. The supported
+  options are Voyage's list for Voyage, `encoding_format`, `dimensions`, `input_type` for Cohere and none for Hugging Face.
+  Hugging Face: `map_openai_params` returns the options as they are, the request is `{"inputs": input, **options}` (an
+  option named `inputs` replaces the input), and the headers are exactly `Content-Type: application/json`. Its reply
+  reader: an unparseable body is `SagemakerError` with the HTTP status and `Failed to parse response: <error>`. A list is
+  the embeddings, an object takes its `embedding` field, anything else is status 500 `Unexpected response format. Expected
+  list or dict with 'embedding' key, got: <Python type name>`, and a non-list embeddings value is status 422 `HF response
+  not in expected format - <value>`. Rows are `{"object": "embedding", "index": i, "embedding": e}` in a response with
+  object `list` and the request model. Usage is the whitespace-split word count of every string in the request's `inputs`
+  for prompt and total tokens, completion 0. The error type is B5960's.
+
+
+  Cohere (self-hosted Cohere containers): `map_openai_params` calls B627's `BedrockCohereEmbeddingConfig` mapper and then
+  copies `input_type` from the caller's options when present. The request turns a string into one item, keeps a list of
+  strings, fails with `Input must be a list of strings` when the first item is a list or an integer, and turns any other
+  value into `[str(value)]`; B627's `_transform_request` builds the body from that list and the options. The reply goes
+  through B1418's `populate_embedding_response` on the decoded JSON (it does not log post_call again). Its input is the
+  logged call input when truthy, else the body's `texts`, else its `images`, else empty, and a single string becomes a
+  one-item list. The caller passes the logged input in as an argument. Headers are exactly `Content-Type: application/json`.
+
+
+  sagemaker_stream. `SagemakerStreamDecoder::new(model, is_messages_api)` reads the byte chunks of a
+  `/invocations-response-stream` reply through B599's `decode_aws_event_frame`. Per event: a status other than 200 (an
+  exception frame) is an error `Bad response code, expected 200: <frame>`. Otherwise the text is the frame's payload
+  decoded as UTF-8; an empty payload yields nothing. The text loses one leading `data: ` or `data:` through B005's SSE strip
+  rule and every `\n\n`, and is appended to a buffer. When the whole buffer parses as JSON it is projected and the buffer
+  is cleared; when it does not, the next event extends it. When the bytes end, a non-empty buffer is parsed once more: it
+  yields a chunk if it parses, else logs `Warning: Unparseable JSON data remained: <buffer>` and yields a None item. Projection
+  for `is_messages_api` true is an OpenAI stream chunk of the object with `model` set to the decoder's model (empty for
+  chat) unless the object has its own `model`. Projection for false reads `token.text` (missing or null token is empty,
+  text defaults to empty) and `index` (missing, null or 0 is 0): text `<|endoftext|>` gives text empty,
+  is_finished true, finish_reason `stop`; any other text gives is_finished false and an empty finish_reason; usage is
+  always null. The decoder has two error policies. Propagate (the sync iterator) lets a bad frame status, invalid UTF-8
+  and a non-object chunk end the stream with an error. Skip (the async iterator) logs the error and goes on to the next event:
+  invalid UTF-8 at warning level, every other failure at error level, and the same swallow applies to the final buffer
+  parse. The caller picks the policy, and B158 provides the blocking face over the async path.
+
+
+  The stream shape loader (`get_sagemaker_response_stream_shape`, cached once, warns on failure) is not built: no key
+  named `chunk` can appear for the shape that is loaded, so the text is always the raw frame payload and no model data is
+  needed. The helper confirms that against botocore on frames with and without exception headers.
+
+
+  Decoder input is bytes from outside, so add the cargo-fuzz target `sagemaker_stream` in betterlite-bedrock: the input is
+  a list of chunks fed to the decoder under both policies, with no panic allowed. Seed its corpus with valid frames, a
+  frame split across two chunks, a JSON object split across two events, an exception frame and a truncated prelude, and add
+  the test `replays_the_sagemaker_stream_corpus` in the module's tests. Test modules: `sagemaker_embedding::hf`,
+  `sagemaker_embedding::cohere`, `sagemaker_stream::project` and `sagemaker_stream::events`.
+scope:
+  paths:
+    - crates/betterlite-bedrock/src/sagemaker_embedding.rs
+    - crates/betterlite-bedrock/src/sagemaker_embedding/**
+    - crates/betterlite-bedrock/src/sagemaker_stream.rs
+    - crates/betterlite-bedrock/src/sagemaker_stream/**
+    - crates/betterlite-bedrock/fuzz/Cargo.toml
+    - crates/betterlite-bedrock/fuzz/fuzz_targets/sagemaker_stream.rs
+    - crates/betterlite-bedrock/fuzz/corpus/sagemaker_stream/**
+    - tools/oracle/cases/helpers/providers/sagemaker-embedding/**
+    - tools/oracle/cases/helpers/providers/sagemaker-stream/**
+    - "tools/oracle/fuzz/corpus/helper_case/b5961-*"
+    - tools/oracle/helpers/b5961.py
+    - tools/oracle/helpers/b5961/**
+    - tools/oracle/src/helpers/bedrock/b5961.rs
+    - tools/oracle/src/helpers/bedrock/b5961/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/embedding/transformation.py#L24-L159
+    why: Model selection, the Hugging Face request and reply reader, word-count usage.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/embedding/cohere_transformation.py#L33-L135
+    why: Cohere input rules, Bedrock mapper reuse and the reply input choice.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/common_utils.py#L53-L219
+    why: Both iterators, the chunk projections and the frame text rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L2328-L2362
+    why: The data prefix strip the decoder relies on.
+  - url: https://docs.aws.amazon.com/sagemaker/latest/APIReference/API_runtime_InvokeEndpointWithResponseStream.html
+    why: The stream the decoder reads.
+dod:
+  - text: Model names choose the Voyage, Cohere or Hugging Face config in LiteLLM's order, with the matching option lists.
+    proof: [embedding-tests, oracle-embedding, helper-python]
+  - text: Hugging Face and Cohere requests and replies match, including the error statuses and word-count usage.
+    proof: [embedding-tests, oracle-embedding, helper-python]
+  - text: The decoder joins split JSON, strips the data prefix, projects both chunk shapes and ends with the leftover rule.
+    proof: [stream-tests, oracle-stream, helper-python]
+  - text: The two error policies differ on bad frames and bad UTF-8 as the sync and async iterators do.
+    proof: [stream-tests, oracle-stream]
+  - text: The frame decoder has a fuzz target and its corpus replays.
+    proof: [stream-corpus]
+  - text: The new helper seeds select the b5961 variant.
+    proof: [seeds]
+checks:
+  optional: [mutants]
+  commands:
+    - id: embedding-tests
+      why: Voyage and Cohere names fall through to the Hugging Face shape, or a bad reply panics.
+      run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/^sagemaker_embedding::/)'
+    - id: stream-tests
+      why: Split JSON events are lost or an exception frame is read as text.
+      run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/^sagemaker_stream::/) - test(replays_the_sagemaker_stream_corpus)'
+    - id: stream-corpus
+      why: The decoder has no fuzz target or the corpus is empty.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-bedrock/fuzz/corpus/sagemaker_stream)" &&
+        test -f crates/betterlite-bedrock/fuzz/fuzz_targets/sagemaker_stream.rs &&
+        cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(replays_the_sagemaker_stream_corpus)'
+    - id: oracle-embedding
+      why: The embedding transforms differ from the pinned classes.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/providers/sagemaker-embedding)" &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: oracle-stream
+      why: The decoder output differs from the pinned decoder.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/providers/sagemaker-stream)" &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: helper-python
+      why: The Python side of the helper fails type checks.
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: seeds
+      why: A seed parses as another helper and tests nothing here.
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/b5961-*")" &&
+        grep -lq 'b5961' tools/oracle/fuzz/corpus/helper_case/b5961-* &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+oracle_cases:
+  - tools/oracle/cases/helpers/providers/sagemaker-embedding/model-config-selection.yaml
+  - tools/oracle/cases/helpers/providers/sagemaker-embedding/hf-request-and-reply.yaml
+  - tools/oracle/cases/helpers/providers/sagemaker-embedding/hf-reply-errors.yaml
+  - tools/oracle/cases/helpers/providers/sagemaker-embedding/cohere-request-input-forms.yaml
+  - tools/oracle/cases/helpers/providers/sagemaker-embedding/cohere-reply-input.yaml
+  - tools/oracle/cases/helpers/providers/sagemaker-stream/split-json-events.yaml
+  - tools/oracle/cases/helpers/providers/sagemaker-stream/endoftext-and-data-prefix.yaml
+  - tools/oracle/cases/helpers/providers/sagemaker-stream/messages-api-chunks.yaml
+  - tools/oracle/cases/helpers/providers/sagemaker-stream/leftover-buffer.yaml
+  - tools/oracle/cases/helpers/providers/sagemaker-stream/exception-frame-sync-vs-async.yaml
+deviations:
+  - what: The stream-shape loader and its 500 `SageMaker event-stream shape could not be loaded from botocore` error are not built.
+    why: The shape never changes the text the decoder reads, and betterlite needs no botocore data file, so the error cannot occur.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/sagemaker/common_utils.py#L15-L40
+out_of_scope:
+  - "`SagemakerError` is B5960's. The HTTP call, signing, the `boto3` embedding call and wrapping the decoder in CustomStreamWrapper are B5840."
+  - The Voyage config is B1420, Cohere's legacy reply projection is B1418, and Bedrock's Cohere request builder is B627; only calls into them are here.
+  - B005 owns the data-prefix strip function and the stream wrapper; B599 owns frame decoding.
+  - The provider-config lookups in `utils.py` (`get_provider_embedding_config`, supported-parameter lists) that call `get_model_config` belong to B042.
+pitfalls:
+  - The `data:` strip removes only the first prefix, with or without a space, and `\n\n` is removed from the whole text, so a payload with a blank line in a string value loses it.
+  - A partial JSON object stays in the buffer across events, and a later event that completes it yields one chunk; a buffer that never parses yields None only at the end.
+  - "Non-messages mode treats `token: null` as an empty token and `index: null` as 0."
+  - The Voyage check comes before the Cohere check, so `cohere-voyage-x` is a Voyage model.
+  - Hugging Face usage counts words of the request `inputs`, not of the reply, and sums every item.
+  - The Cohere reply input prefers the logged input over `texts`, and `texts` over `images`, by truthiness, so an empty list falls to the next one.
+review_level: standard
+budget: {max_changed_lines: 1500, max_new_expects: 0}

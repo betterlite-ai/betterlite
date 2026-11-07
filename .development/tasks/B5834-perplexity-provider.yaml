@@ -1,0 +1,165 @@
+id: B5834
+title: Perplexity embeddings, Responses, search and decisions
+description: >-
+  Build perplexity_embedding, perplexity_responses, perplexity_search and perplexity_decisions in betterlite-openai. They
+  cover the embedding, responses, search and decisions folders of litellm/llms/perplexity. Chat and cost are B6120. Keys and
+  bases come in as plain arguments plus the injected secret lookup, with no config section.
+
+  perplexity_embedding. Supported options are dimensions and encoding_format, copied through unchanged; drop_params does not
+  matter. URL: with a truthy api_base, append /v1/embeddings unless the base already ends in /embeddings, with no slash
+  trimming; with no api_base use https://api.perplexity.ai/v1/embeddings. There is no PERPLEXITY_API_BASE lookup in this
+  config. Headers: the key is the explicit key, then PERPLEXITYAI_API_KEY, then PERPLEXITY_API_KEY; the result has only
+  Authorization: Bearer <key> and Content-Type: application/json, and every caller header is dropped. With no key the value
+  is the text "Bearer None". The body is model, input, then every optional param, so an optional param named model or input
+  replaces it. Reply decode (this is the external-bytes decoder, fuzzed): non-JSON raises PerplexityEmbeddingError with the
+  upstream status and the body text. The reply model is its model field or the request model; object is its object field
+  or "list". Each data item is copied with all its keys, and only embedding is rewritten: a list stays as it is, a string is
+  base64-decoded into signed 8-bit values and each becomes value / 127.0 as an f64, anything else stays as it is. Usage has
+  prompt_tokens = usage.prompt_tokens, or usage.total_tokens when that is 0 or missing, and total_tokens = usage.total_tokens
+  (0 when missing). The error class keeps the status, message and headers; its synthetic request is POST
+  https://api.perplexity.ai/v1/embeddings and its response carries the status.
+
+  perplexity_responses. Supported options are exactly max_output_tokens, stream, temperature, top_p, tools, reasoning,
+  instructions, models. Headers: the key is litellm_params.api_key, then PERPLEXITYAI_API_KEY, then PERPLEXITY_API_KEY; when
+  truthy it sets Authorization: Bearer <key>; no Content-Type is added and other headers stay. URL: api_base, then
+  PERPLEXITY_API_BASE, then https://api.perplexity.ai, trailing slashes trimmed, then /v1/responses appended even when the
+  base ends in /v1. Request: a list input gets "type": "message" added (on a copy) to each object that has no type key at
+  all, a string or a non-object entry is untouched. When the model starts with preset/, the body is {"preset": <name without
+  the prefix>, "input": <input after B507's input validation>} and then every optional param is merged over it, with no model
+  key; otherwise B507's ordinary request transform runs on the adjusted input. Reply: if the body parses as an object whose
+  status is "failed", raise an error with the HTTP status (200 stays 200) and message error.message, or "Unknown Perplexity
+  error"; unreadable JSON is ignored; anything else goes to B508's reply decoder. Native websocket support is false.
+
+  perplexity_search. Implement the SearchProvider trait from B3270. Display name is Perplexity and the request is a POST.
+  Credentials follow B3270's server key policy with the key variable PERPLEXITYAI_API_KEY only (PERPLEXITY_API_KEY is not
+  read here), base variable PERPLEXITY_API_BASE and default https://api.perplexity.ai. A missing key is an error whose text is
+  "PERPLEXITYAI_API_KEY is not set. Set `PERPLEXITYAI_API_KEY` environment variable." Success sets Authorization: Bearer <key>
+  and Content-Type: application/json on the caller headers. URL: api_base, then PERPLEXITY_API_BASE, then the default, plus
+  /search unless the base already ends in /search. Request: query as given (string or list) plus max_results,
+  search_domain_filter, max_tokens_per_page and country, each only when not null; every other optional param is dropped.
+  Reply (fuzzed with the embedding reply): results become title, url and snippet (each "" when missing), date and
+  last_updated (null when missing), other result fields are dropped, and the response object is "search". The error class is
+  the base one.
+
+  perplexity_decisions. Implement DecisionsProviderConfig (B3511) with PATH /v1/decisions, API_KEY_ENV
+  PERPLEXITYAI_API_KEY then PERPLEXITY_API_KEY, API_BASE_ENV PERPLEXITY_API_BASE, and default base
+  https://api.perplexity.ai. Everything else is the trait default.
+
+  The five source files hold about 407 nonblank, non-comment lines. Add fuzz target perplexity_replies in
+  crates/betterlite-openai/fuzz that feeds bytes to the embedding reply decoder and the search reply decoder, with a
+  corpus and a replay test replays_the_perplexity_replies_corpus.
+scope:
+  paths:
+    - crates/betterlite-openai/src/perplexity_embedding.rs
+    - crates/betterlite-openai/src/perplexity_embedding/**
+    - crates/betterlite-openai/src/perplexity_responses.rs
+    - crates/betterlite-openai/src/perplexity_responses/**
+    - crates/betterlite-openai/src/perplexity_search.rs
+    - crates/betterlite-openai/src/perplexity_search/**
+    - crates/betterlite-openai/src/perplexity_decisions.rs
+    - crates/betterlite-openai/src/perplexity_decisions/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/perplexity_replies.rs
+    - crates/betterlite-openai/fuzz/corpus/perplexity_replies/**
+    - tools/oracle/cases/helpers/perplexity-wire/**
+    - tools/oracle/helpers/b5834.py
+    - tools/oracle/helpers/b5834/**
+    - tools/oracle/src/helpers/openai/b5834.rs
+    - tools/oracle/src/helpers/openai/b5834/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/perplexity/embedding/transformation.py#L28-L118
+    why: Error class, URL rule, headers that drop caller headers, and the request body merge order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/perplexity/embedding/transformation.py#L119-L178
+    why: Base64 int8 decode, usage fallback and the error class.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/perplexity/responses/transformation.py#L25-L96
+    why: Supported options, auth headers, URL, type repair and the preset model body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/perplexity/responses/transformation.py#L98-L125
+    why: Failed-status raise on HTTP 200 and the websocket flag.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/perplexity/search/transformation.py#L36-L162
+    why: Search credentials, URL, request fields and reply mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/perplexity/decisions/transformation.py#L1-L10
+    why: The decisions path, environment names and default base.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/decisions/transformation.py#L299-L345
+    why: The base attributes and URL rule the Perplexity decisions config inherits.
+  - url: https://docs.perplexity.ai/api-reference/embeddings-post
+    why: Embedding request and the base64 int8 reply format.
+  - url: https://docs.perplexity.ai/api-reference/responses-post
+    why: Responses body, presets and the failed status.
+dod:
+  - text: Embedding URL, headers and body follow the pinned rules, including the dropped caller headers and Bearer None.
+    proof: [perplexity-embedding-tests, oracle]
+  - text: Embedding replies decode base64 int8 strings to floats, keep lists, fall back to total_tokens and keep the Perplexity error shape.
+    proof: [perplexity-embedding-tests, perplexity-replies-corpus, oracle]
+  - text: Responses auth, URL, type repair and preset bodies match, and a failed status on HTTP 200 raises with the provider message.
+    proof: [perplexity-responses-tests, oracle]
+  - text: Search credentials, URL, request fields and reply mapping match, including the PERPLEXITYAI_API_KEY-only lookup and missing-key text.
+    proof: [perplexity-search-tests, perplexity-replies-corpus, oracle]
+  - text: The decisions config reports the path, key names, base name and default base.
+    proof: [perplexity-decisions-tests, oracle]
+  - text: The new oracle cases call the task's helper.
+    proof: [perplexity-wire-cases]
+checks:
+  optional: [mutants]
+  commands:
+    - id: perplexity-embedding-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^perplexity_embedding::/)'
+      why: The generic OpenAI embedding path keeps caller headers, trims bases differently and never decodes base64 int8.
+    - id: perplexity-responses-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^perplexity_responses::/)'
+      why: The OpenAI Responses base has no preset body, no type repair, no failed-status raise and a true websocket flag.
+    - id: perplexity-search-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^perplexity_search::/) - test(replays_the_perplexity_replies_corpus)'
+      why: Search needs its own key lookup, URL suffix rule and four-field request filter.
+    - id: perplexity-decisions-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^perplexity_decisions::/)'
+      why: The trait defaults give /v1/systemone and no environment names.
+    - id: perplexity-replies-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/perplexity_replies.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/perplexity_replies)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_perplexity_replies_corpus)'
+      why: Malformed base64 and truncated reply JSON reach the production decoders only through new corpus inputs.
+    - id: perplexity-wire-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/perplexity-wire)" && /usr/bin/grep -rlE '^  b5834:' tools/oracle/cases/helpers/perplexity-wire
+      why: Without cases that call the B5834 helper nothing compares these transforms with LiteLLM.
+oracle_cases:
+  - tools/oracle/cases/helpers/perplexity-wire/embedding-url-rules.yaml
+  - tools/oracle/cases/helpers/perplexity-wire/embedding-headers-drop-caller.yaml
+  - tools/oracle/cases/helpers/perplexity-wire/embedding-body-merge-order.yaml
+  - tools/oracle/cases/helpers/perplexity-wire/embedding-base64-int8.yaml
+  - tools/oracle/cases/helpers/perplexity-wire/embedding-list-passthrough-and-usage.yaml
+  - tools/oracle/cases/helpers/perplexity-wire/responses-supported-and-auth.yaml
+  - tools/oracle/cases/helpers/perplexity-wire/responses-url.yaml
+  - tools/oracle/cases/helpers/perplexity-wire/responses-type-repair.yaml
+  - tools/oracle/cases/helpers/perplexity-wire/responses-preset-body.yaml
+  - tools/oracle/cases/helpers/perplexity-wire/responses-failed-status.yaml
+  - tools/oracle/cases/helpers/perplexity-wire/search-credentials.yaml
+  - tools/oracle/cases/helpers/perplexity-wire/search-url.yaml
+  - tools/oracle/cases/helpers/perplexity-wire/search-request-fields.yaml
+  - tools/oracle/cases/helpers/perplexity-wire/search-reply-defaults.yaml
+  - tools/oracle/cases/helpers/perplexity-wire/decisions-config.yaml
+deviations:
+  - what: A malformed base64 embedding string returns a 500 error with the decode message.
+    why: LiteLLM lets the binascii exception escape, which the proxy reports as an internal error; betterlite names the failure instead of a bare panic path.
+  - what: A Responses body whose status is failed and whose error is missing or not an object raises the Unknown Perplexity error message with the HTTP status.
+    why: LiteLLM raises AttributeError for a null error, and that is Python runtime behaviour (docs/compatibility.md), so the declared-type case is the one matched.
+  - what: Embedding values are f64 computed as value / 127.0 and serialized with the repo's JSON float writer.
+    why: Python repr of the same double can print differently; oracle cases compare numbers, not text.
+out_of_scope:
+  - B6120 owns chat/transformation.py and cost_calculator.py.
+  - B506, B507 and B508 own the OpenAI Responses base transforms this config extends, including _validate_input_param and the ordinary request and reply decode.
+  - B2202 owns BaseLLMException, B006 owns EmbeddingResponse and the base embedding path, B3270 owns the search trait, records and server key policy, and B3511 owns the DecisionsProviderConfig trait.
+  - B041 wires Perplexity into dispatch.rs and adds the HTTP cases for chat, embeddings, Responses, search and decisions. This task touches no dispatch file.
+  - Search execution, search tool registry and search pricing belong to B3272, B3271 and B3274.
+  - PerplexitySearchRequest is only a typed request body here; the LiteLLM TypedDict has no other caller.
+pitfalls:
+  - An api_base that already ends in /v1 becomes /v1/v1/embeddings for embeddings and /v1/v1/responses for Responses, since both rules append the full suffix.
+  - Embedding validate_environment returns a fresh two-header map, so a caller Authorization or extra header never reaches the wire.
+  - Embedding usage.prompt_tokens falls back to total_tokens when it is 0 as well as missing.
+  - The Responses validate_environment adds no Content-Type, unlike the OpenAI base.
+  - In the preset body optional params are merged last, so an optional input replaces the repaired input.
+  - Search reads PERPLEXITYAI_API_KEY only, while embeddings, Responses and decisions also read PERPLEXITY_API_KEY.
+  - Search drops unknown optional params such as search_recency_filter even though they are valid for chat.
+  - The decisions config inherits the base URL rule that removes a trailing /v1 before adding /v1/decisions.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
