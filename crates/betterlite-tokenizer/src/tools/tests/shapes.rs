@@ -39,6 +39,30 @@ use super::{format, wrapper};
     r#"[{"input_schema":{},"name":"empty_schema","parameters":{"type":"object","properties":{"a":{"type":"string"}}}}]"#,
     &["type empty_schema = () => any;", ""]
 )]
+#[case::function_is_not_an_object_falls_through_to_the_inline_shape(
+    r#"[{"function":"get_weather","name":"tool"}]"#,
+    &["type tool = () => any;", ""]
+)]
+#[case::non_array_declarations_fall_through_to_the_inline_shape(
+    r#"[{"functionDeclarations":"nope","name":"tool"}]"#,
+    &["type tool = () => any;", ""]
+)]
+#[case::non_object_declarations_are_skipped(
+    r#"[{"functionDeclarations":["nope"]}]"#,
+    &[]
+)]
+#[case::unused_inline_parameters_do_not_break_the_function_branch(
+    r#"[{"function":{"name":"kept"},"parameters":"x"}]"#,
+    &["type kept = () => any;", ""]
+)]
+#[case::unused_inline_name_does_not_break_the_function_branch(
+    r#"[{"function":{"name":"kept"},"name":7}]"#,
+    &["type kept = () => any;", ""]
+)]
+#[case::unused_input_schema_does_not_break_the_declarations_branch(
+    r#"[{"functionDeclarations":[{"name":"declared"}],"input_schema":5}]"#,
+    &["type declared = () => any;", ""]
+)]
 #[case::non_object_tools_are_skipped(
     r#"["text",42,null,[],{"type":"web_search"}]"#,
     &[]

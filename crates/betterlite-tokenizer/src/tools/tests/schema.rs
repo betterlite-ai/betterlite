@@ -79,6 +79,18 @@ use super::{format, wrapper};
     r#"[{"type":"function","function":{"name":"nulled","parameters":null}}]"#,
     &["type nulled = () => any;", ""]
 )]
+#[case::string_properties_ignore_a_required_flag(
+    r#"[{"type":"function","function":{"name":"text","parameters":{"type":"object","properties":{"field":{"type":"string","required":true}}}}}]"#,
+    &["type text = (_: {", "field?: string,", "}) => any;", ""]
+)]
+#[case::object_nodes_ignore_items(
+    r#"[{"type":"function","function":{"name":"shaped","parameters":{"type":"object","properties":{"obj":{"type":"object","properties":{"id":{"type":"integer"}},"items":5}}}}}]"#,
+    &["type shaped = (_: {", "obj?: {", "  id?: number,", "},", "}) => any;", ""]
+)]
+#[case::boolean_nodes_ignore_enum(
+    r#"[{"type":"function","function":{"name":"flags","parameters":{"type":"object","properties":{"flag":{"type":"boolean","enum":"x"}}}}}]"#,
+    &["type flags = (_: {", "flag?: boolean,", "}) => any;", ""]
+)]
 fn token_formatting_behavior_tests_behavior(#[case] tools: &str, #[case] expected: &[&str]) {
     assert_eq!(format(tools).unwrap(), wrapper(expected));
 }
