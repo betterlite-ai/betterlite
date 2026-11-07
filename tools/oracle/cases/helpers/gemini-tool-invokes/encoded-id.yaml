@@ -9,6 +9,8 @@ call:
       - tool_call_id: call_def
         thought_signature: null
       - tool_call_id: call_ghi
+      - tool_call_id: call_empty
+        thought_signature: ''
 env: {}
 compare:
   ignore: []

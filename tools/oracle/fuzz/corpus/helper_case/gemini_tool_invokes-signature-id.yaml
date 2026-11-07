@@ -1,5 +1,5 @@
 kind: helper
 name: gemini-tool-invokes-corpus-signature-id
-call: {gemini_tool_invokes: {operation: thought_signature_from_tool, tools: [{id: call_plain, function: {name: plain, arguments: '{}'}}, {id: call_id__thought__from-id, function: {name: from_id, arguments: '{}'}}, {id: __thought__only-sig, function: {name: only_sig, arguments: '{}'}}]}}
+call: {gemini_tool_invokes: {operation: thought_signature_from_tool, tools: [{id: call_plain, function: {name: plain, arguments: '{}'}}, {id: call_id__thought__from-id, function: {name: from_id, arguments: '{}'}}, {id: __thought__only-sig, function: {name: only_sig, arguments: '{}'}}, {id: call_empty_tool, provider_specific_fields: {thought_signature: ''}, function: {name: empty_tool, arguments: '{}', provider_specific_fields: {thought_signature: function-fallback}}}, {id: call_empty_only, provider_specific_fields: {thought_signature: ''}, function: {name: empty_only, arguments: '{}'}}]}}
 env: {}
 compare: {ignore: []}

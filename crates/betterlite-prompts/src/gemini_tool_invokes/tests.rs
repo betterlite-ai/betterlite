@@ -219,14 +219,18 @@ fn run(scenario: Scenario) {
     message: r#"{"role":"assistant","content":null,"tool_calls":[
         {"id":"call_0__thought__sig-zero","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"Paris\"}"}},
         {"id":"call_1","type":"function","function":{"name":"get_time","arguments":""}},
-        {"id":"call_2","type":"function","function":{"name":"get_stock","arguments":"{\"symbol\":\"ACME\"}","provider_specific_fields":{"thought_signature":"sig-two"}}}
+        {"id":"call_2","type":"function","function":{"name":"get_stock","arguments":"{\"symbol\":\"ACME\"}","provider_specific_fields":{"thought_signature":"sig-two"}}},
+        {"id":"","type":"function","function":{"name":"empty_id","arguments":"{}"}},
+        {"id":"__thought__only-signature","type":"function","function":{"name":"signature_only_id","arguments":"{}"}}
     ]}"#,
     model: Some("gemini-3-pro-preview"),
     forward: true,
     expected: r#"[
         {"function_call":{"name":"get_weather","args":{"city":"Paris"},"id":"call_0"},"thoughtSignature":"sig-zero"},
         {"function_call":{"name":"get_time","args":{"type":"object"},"id":"call_1"}},
-        {"function_call":{"name":"get_stock","args":{"symbol":"ACME"},"id":"call_2"},"thoughtSignature":"sig-two"}
+        {"function_call":{"name":"get_stock","args":{"symbol":"ACME"},"id":"call_2"},"thoughtSignature":"sig-two"},
+        {"function_call":{"name":"empty_id","args":{}}},
+        {"function_call":{"name":"signature_only_id","args":{}},"thoughtSignature":"only-signature"}
     ]"#,
 }))]
 #[case::tool_level_signature_beats_function_level(Scenario::Convert(ConvertCase {
@@ -283,6 +287,24 @@ fn run(scenario: Scenario) {
     model: Some("gemini-3-pro-preview"),
     forward: true,
     expected: r#"[{"function_call":{"name":"fn","args":{}},"thoughtSignature":"fn-sig"}]"#,
+}))]
+#[case::empty_tool_signature_falls_back_to_the_dummy(Scenario::Convert(ConvertCase {
+    message: r#"{"role":"assistant","tool_calls":[{"id":"call_a","function":{"name":"first","arguments":"{}","provider_specific_fields":{"thought_signature":""}}}]}"#,
+    model: Some("gemini-3-pro-preview"),
+    forward: false,
+    expected: r#"[{"function_call":{"name":"first","args":{}},"thoughtSignature":"c2tpcF90aG91Z2h0X3NpZ25hdHVyZV92YWxpZGF0b3I="}]"#,
+}))]
+#[case::empty_function_call_signature_falls_back_to_the_dummy(Scenario::Convert(ConvertCase {
+    message: r#"{"role":"assistant","function_call":{"name":"fn","arguments":"{}","provider_specific_fields":{"thought_signature":""}}}"#,
+    model: Some("gemini-3-pro-preview"),
+    forward: false,
+    expected: r#"[{"function_call":{"name":"fn","args":{}},"thoughtSignature":"c2tpcF90aG91Z2h0X3NpZ25hdHVyZV92YWxpZGF0b3I="}]"#,
+}))]
+#[case::empty_signature_is_omitted_for_older_models(Scenario::Convert(ConvertCase {
+    message: r#"{"role":"assistant","tool_calls":[{"id":"call_a","function":{"name":"first","arguments":"{}","provider_specific_fields":{"thought_signature":""}}}]}"#,
+    model: Some("gemini-2.5-flash"),
+    forward: false,
+    expected: r#"[{"function_call":{"name":"first","args":{}}}]"#,
 }))]
 #[case::older_models_get_no_dummy_signature(Scenario::Convert(ConvertCase {
     message: r#"{"role":"assistant","tool_calls":[{"id":"call_a","function":{"name":"first","arguments":"{}"}}]}"#,
@@ -382,15 +404,15 @@ fn run(scenario: Scenario) {
     tool_call_id: Some("call_abc__thought__sig"),
     expected: r#"{"name":"get_weather","args":{"city":"Paris"},"id":"call_abc"}"#,
 }))]
-#[case::helper_keeps_an_explicit_empty_id(Scenario::Helper(HelperCase {
+#[case::helper_omits_an_explicit_empty_id(Scenario::Helper(HelperCase {
     params: r#"{"name":"a","arguments":""}"#,
     tool_call_id: Some(""),
-    expected: r#"{"name":"a","args":{"type":"object"},"id":""}"#,
+    expected: r#"{"name":"a","args":{"type":"object"}}"#,
 }))]
-#[case::helper_keeps_the_empty_head_of_a_signature_only_id(Scenario::Helper(HelperCase {
+#[case::helper_omits_the_empty_head_of_a_signature_only_id(Scenario::Helper(HelperCase {
     params: r#"{"name":"a","arguments":"{}"}"#,
     tool_call_id: Some("__thought__sig"),
-    expected: r#"{"name":"a","args":{},"id":""}"#,
+    expected: r#"{"name":"a","args":{}}"#,
 }))]
 #[case::helper_defaults_an_absent_name_to_empty(Scenario::Helper(HelperCase {
     params: r#"{"arguments":"{}"}"#,
@@ -432,10 +454,10 @@ fn run(scenario: Scenario) {
     thought_signature: None,
     expected: "call_abc",
 }))]
-#[case::encode_with_an_empty_signature_appends_the_separator(Scenario::Encode(EncodeCase {
+#[case::encode_with_an_empty_signature_returns_the_id(Scenario::Encode(EncodeCase {
     tool_call_id: "call_abc",
     thought_signature: Some(""),
-    expected: "call_abc__thought__",
+    expected: "call_abc",
 }))]
 #[case::signature_prefers_tool_provider_fields(Scenario::Signature(SignatureCase {
     tool: r#"{"id":"call_x__thought__id-sig","provider_specific_fields":{"thought_signature":"tool-sig"},"function":{"name":"n","provider_specific_fields":{"thought_signature":"function-sig"}}}"#,
@@ -457,13 +479,17 @@ fn run(scenario: Scenario) {
     tool: r#"{"id":"call_plain"}"#,
     expected: None,
 }))]
-#[case::signature_empty_provider_value_is_present(Scenario::Signature(SignatureCase {
-    tool: r#"{"id":"call_x__thought__id-sig","provider_specific_fields":{"thought_signature":""}}"#,
-    expected: Some(""),
+#[case::signature_ignores_an_empty_tool_value(Scenario::Signature(SignatureCase {
+    tool: r#"{"id":"call_x","provider_specific_fields":{"thought_signature":""},"function":{"name":"n","provider_specific_fields":{"thought_signature":"function-fallback"}}}"#,
+    expected: Some("function-fallback"),
 }))]
-#[case::signature_empty_id_part_is_present(Scenario::Signature(SignatureCase {
+#[case::signature_ignores_an_empty_function_value(Scenario::Signature(SignatureCase {
+    tool: r#"{"id":"call_x__thought__id-fallback","function":{"name":"n","provider_specific_fields":{"thought_signature":""}}}"#,
+    expected: Some("id-fallback"),
+}))]
+#[case::signature_empty_id_part_is_none(Scenario::Signature(SignatureCase {
     tool: r#"{"id":"call_x__thought__"}"#,
-    expected: Some(""),
+    expected: None,
 }))]
 #[case::protocol_null(Scenario::Protocol(ProtocolCase { value: "null", expected: ProtocolValue::Null }))]
 #[case::protocol_number(Scenario::Protocol(ProtocolCase { value: "1.5", expected: ProtocolValue::Number }))]

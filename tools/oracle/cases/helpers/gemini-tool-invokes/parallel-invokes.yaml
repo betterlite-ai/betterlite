@@ -26,6 +26,16 @@ call:
             arguments: '{"symbol":"ACME"}'
             provider_specific_fields:
               thought_signature: sig-two
+        - id: ''
+          type: function
+          function:
+            name: empty_id
+            arguments: '{}'
+        - id: __thought__only-signature
+          type: function
+          function:
+            name: signature_only_id
+            arguments: '{}'
 env: {}
 compare:
   ignore: []

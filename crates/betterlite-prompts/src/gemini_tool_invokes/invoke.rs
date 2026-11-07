@@ -39,10 +39,15 @@ pub fn gemini_tool_call_invoke_helper(
         Some(arguments) => serde_json::from_str::<Json>(arguments)
             .map_err(|source| GeminiToolInvokesError::Arguments { source })?,
     };
-    let id = tool_call_id.map(|raw| {
-        raw.split_once(THOUGHT_SIGNATURE_SEPARATOR)
-            .map_or(raw, |(clean, _signature)| clean)
-            .to_owned()
+    let id = tool_call_id.and_then(|raw| {
+        let clean = raw
+            .split_once(THOUGHT_SIGNATURE_SEPARATOR)
+            .map_or(raw, |(clean, _signature)| clean);
+        if clean.is_empty() {
+            None
+        } else {
+            Some(clean.to_owned())
+        }
     });
     Ok(GeminiFunctionCall { name, args, id })
 }
@@ -106,8 +111,9 @@ fn tool_call_parts(
 }
 
 fn signature_for_part(signature: Option<String>, needs_dummy_signature: bool) -> Option<String> {
-    if signature.is_some() || !needs_dummy_signature {
-        return signature;
+    let present = signature.filter(|value| !value.is_empty());
+    if present.is_some() || !needs_dummy_signature {
+        return present;
     }
     Some(DUMMY_THOUGHT_SIGNATURE.to_owned())
 }
