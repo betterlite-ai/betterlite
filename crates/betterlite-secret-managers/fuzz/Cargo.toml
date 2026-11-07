@@ -15,6 +15,14 @@ cargo-fuzz = true
 base64 = "0.23.1"
 betterlite-secret-managers = { path = ".." }
 libfuzzer-sys = "0.4.9"
+secrecy.workspace = true
+
+[[bin]]
+name = "aws_primary_secret"
+path = "fuzz_targets/aws_primary_secret.rs"
+test = false
+doc = false
+bench = false
 
 [[bin]]
 name = "oidc_jwt_payload"

@@ -2325,6 +2325,7 @@ dependencies = [
  "base64 0.23.1",
  "betterlite-secret-managers",
  "libfuzzer-sys",
+ "secrecy",
 ]
 
 [[package]]
