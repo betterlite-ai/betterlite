@@ -125,9 +125,19 @@ async fn async_log_success_event_flushes_the_queue_at_the_batch_size() {
     let (logger, delivery) = batch_logger(Vec::new());
     let kwargs = kwargs(CALLBACK);
     logger.async_log_success_event(call(&kwargs)).await;
+    assert!(delivery.requests().is_empty());
+    assert_eq!(logger.queue.pending().len(), 1);
     logger.async_log_success_event(call(&kwargs)).await;
     assert_eq!(delivery.requests().len(), 1);
     assert!(logger.queue.pending().is_empty());
+}
+
+#[tokio::test]
+async fn an_empty_queue_sends_no_request() {
+    let (logger, delivery) = batch_logger(Vec::new());
+    logger.send_batch().await.unwrap();
+    logger.flush_queue().await;
+    assert!(delivery.requests().is_empty());
 }
 
 #[tokio::test]
