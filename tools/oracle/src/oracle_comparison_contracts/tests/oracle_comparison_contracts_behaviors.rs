@@ -155,13 +155,13 @@ fn an_https_link_and_an_empty_link_are_both_accepted() {
     Some("/other")
 )]
 fn comparison_drops_each_asserted_pointer_before_the_structural_diff(
-    #[case] reference: &str,
-    #[case] rust: &str,
+    #[case] reference_text: &str,
+    #[case] rust_text: &str,
     #[case] with_difference: bool,
     #[case] with_numeric: bool,
     #[case] pointer: Option<&str>,
 ) {
-    let (reference, rust) = (value(reference), value(rust));
+    let (reference, rust) = (value(reference_text), value(rust_text));
     let differences = [expected(
         "/detail",
         value(r#""reference""#),

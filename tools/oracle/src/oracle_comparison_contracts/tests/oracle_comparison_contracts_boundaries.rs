@@ -206,7 +206,7 @@ fn a_betterlite_value_that_differs_from_the_declared_rust_value_is_a_mismatch() 
     assert!(error.message.contains("betterlite"));
 }
 
-const HTTP_CASE: &str = r"
+const HTTP_CASE: &str = "
 name: declared
 config: |
   model_list: []
@@ -226,7 +226,7 @@ compare:
     - {pointer: /detail, reference: from-litellm, rust: from-betterlite, why: declared, link: ''}
 ";
 
-const SCENARIO_CASE: &str = r"
+const SCENARIO_CASE: &str = "
 name: declared
 config: |
   model_list: []
@@ -279,7 +279,7 @@ fn response(detail: &str) -> Response {
     Response {
         status: 200,
         headers: BTreeMap::new(),
-        body: serde_json::json!({"detail": detail}),
+        body: value(&format!(r#"{{"detail": "{detail}"}}"#)),
     }
 }
 
