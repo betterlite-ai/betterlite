@@ -5,6 +5,7 @@ pub mod live_admission;
 pub mod management_access;
 pub mod management_visibility;
 pub mod oauth_caches;
+pub mod oauth_sessions;
 pub mod openapi_registry;
 pub mod outbound_credentials;
 pub mod rest_reads;

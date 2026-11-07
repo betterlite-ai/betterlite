@@ -44,6 +44,7 @@ mod lens;
 mod logging;
 mod mcp;
 mod models;
+mod ocr;
 mod openai;
 mod openapi;
 mod oracle;
@@ -125,7 +126,7 @@ struct Group {
     check: fn(&str, &serde_json::Value) -> Option<Result<(), String>>,
 }
 
-const GROUPS: [Group; 44] = [
+const GROUPS: [Group; 45] = [
     a2a::GROUP,
     anthropic::GROUP,
     auth::GROUP,
@@ -147,6 +148,7 @@ const GROUPS: [Group; 44] = [
     logging::GROUP,
     mcp::GROUP,
     models::GROUP,
+    ocr::GROUP,
     openai::GROUP,
     openapi::GROUP,
     oracle::GROUP,
