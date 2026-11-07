@@ -102,22 +102,22 @@ where
     Resolver: CredentialResolver + Sync,
     Transport: AwsBlockingTransport,
 {
-    pub fn blocking_post_action<Body, Reply>(
+    pub fn blocking_post_action<Payload, Answer>(
         &self,
-        request: &ActionRequest<'_, Body>,
+        request: &ActionRequest<'_, Payload>,
         optional_params: Option<&mut AwsOptionalParams>,
         timeout: Option<SecretTimeout>,
-    ) -> Result<Reply, AwsRequestError<Resolver::Error, Transport::Error>>
+    ) -> Result<Answer, AwsRequestError<Resolver::Error, Transport::Error>>
     where
-        Body: Serialize + Sync,
-        Reply: DeserializeOwned,
+        Payload: Serialize,
+        Answer: DeserializeOwned,
     {
-        let now = (self.dependencies.clock)();
-        let prepared = self.prepare_request(request, None, optional_params, now)?;
-        let response = self
-            .dependencies
-            .transport
-            .post_blocking(transport_request(&prepared, request_timeout(timeout)));
-        checked_reply(response)
+        let signed =
+            self.prepare_request(request, None, optional_params, (self.dependencies.clock)())?;
+        checked_reply(
+            self.dependencies
+                .transport
+                .post_blocking(transport_request(&signed, request_timeout(timeout))),
+        )
     }
 }
