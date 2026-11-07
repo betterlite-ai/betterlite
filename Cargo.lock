@@ -1920,6 +1920,7 @@ dependencies = [
  "betterlite-openai",
  "betterlite-openapi",
  "betterlite-paths",
+ "betterlite-policy",
  "betterlite-postgres-fixture",
  "betterlite-prompts",
  "betterlite-provider",

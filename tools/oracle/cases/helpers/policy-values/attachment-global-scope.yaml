@@ -1,0 +1,8 @@
+kind: helper
+name: attachment-global-scope
+call:
+  b3240:
+    function: attachment_scope
+    attachment: {policy: baseline, scope: "*"}
+env: {}
+compare: {ignore: []}
