@@ -50,6 +50,25 @@ struct ProbeCompare {
     expected_difference: Vec<ExpectedDifference>,
 }
 
+impl ProbeCompare {
+    fn documents<'input>(
+        &'input self,
+        reference: &'input Value,
+        rust: &'input Value,
+        self_check: bool,
+    ) -> comparison::Documents<'input> {
+        comparison::Documents {
+            reference,
+            rust,
+            numeric: &self.numeric,
+            expected_difference: &self.expected_difference,
+            ignore: &self.ignore,
+            self_check,
+            message: "probe results differ",
+        }
+    }
+}
+
 pub(crate) fn validate_probe_case(path: &Path, case: &ProbeCase) -> Result<(), OracleError> {
     let invalid = |message: &str| OracleError::CaseInvalid {
         path: path.to_owned(),
@@ -180,15 +199,11 @@ fn compare_probe_replies(
         return compare_replies(first, second, &compare.ignore);
     }
     let (first_value, second_value) = reply_values(first, second)?;
-    Ok(comparison::compare(&comparison::Documents {
-        reference: &second_value,
-        rust: &first_value,
-        numeric: &compare.numeric,
-        expected_difference: &compare.expected_difference,
-        ignore: &compare.ignore,
+    Ok(comparison::compare(&compare.documents(
+        &second_value,
+        &first_value,
         self_check,
-        message: "probe results differ",
-    }))
+    )))
 }
 
 fn reply_values(first: &Reply, second: &Reply) -> Result<(Value, Value), OracleError> {
