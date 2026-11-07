@@ -2053,7 +2053,9 @@ name = "betterlite-prometheus"
 version = "0.1.0"
 dependencies = [
  "rstest",
+ "rust_decimal",
  "thiserror",
+ "tracing",
 ]
 
 [[package]]
@@ -2248,6 +2250,7 @@ version = "0.1.0"
 dependencies = [
  "indexmap 2.14.2",
  "rand 0.10.3",
+ "regex",
  "rstest",
  "serde",
  "serde_json",
@@ -2400,6 +2403,7 @@ dependencies = [
  "hyper-util",
  "icu_properties",
  "indexmap 2.14.2",
+ "jiff",
  "multipart-rs",
  "percent-encoding",
  "rand 0.10.3",
