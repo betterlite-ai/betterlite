@@ -13,7 +13,7 @@ use serde::Deserialize;
 #[derive(Debug, Clone, Deserialize)]
 #[serde(untagged)]
 pub(crate) enum VertexCredentials {
-    Text(String),
+    Text(SecretString),
     Fields(BTreeMap<String, SecretString>),
 }
 
