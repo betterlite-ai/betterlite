@@ -1,0 +1,91 @@
+id: B6590
+title: MCP server runtime record
+description: >-
+  Build the in-memory MCP server record that the registry, the access code and the transports all read. In LiteLLM it is the MCPServer model, with MCPOAuthMetadata and MCPOAuthIdentityBinding beside it, in types/mcp_server/mcp_server_manager.py. B2305 already owns MCPInfo, PinnedMCPTool, parse_pinned_tools, MCPTransport, MCPAuth, MCPUpstreamProtocol and MCPTokenEndpointAuthMethod in betterlite-db, so use those and do not copy them. B4731 builds the registry on this record and B6591 reads it.
+
+
+  Put the code in the new module server_record of betterlite-mcp: crates/betterlite-mcp/src/server_record.rs with a tests.rs beside it. betterlite-mcp does not depend on betterlite-db yet, so add betterlite-db = { path = "../betterlite-db" } to crates/betterlite-mcp/Cargo.toml. betterlite-db depends only on env, roi and secrets, and nothing it depends on depends on betterlite-mcp, so this makes no cycle.
+
+
+  Types, spelled as in LiteLLM. MCPOAuthMetadata has scopes (Option<Vec<String>>), authorization_url, token_url, registration_url, discovered_issuer (all Option<String>) and from_origin_fallback (bool, default false). MCPOAuthIdentityBinding has mode (Disabled, Audit or Enforce, default Disabled, serialized as "disabled", "audit", "enforce"), issuer: String, jwks_url: Option<String>, audiences: Vec<String> (at least one entry, else the error below), principal_claim (default "email"), caller_field (UserEmail or UserId, serialized "user_email" and "user_id", default UserEmail) and require_email_verified (default true).
+
+
+  MCPServer has these fields. Read the class at the pinned commit (lines 88 to 243 of the file) for the exact defaults and any field this list misses, and keep LiteLLM's names. Identity: server_id: String and name: String (required), alias, server_name, url, spec_path, instructions. transport: MCPTransport (required) and protocol_version: Option<MCPUpstreamProtocol> (see the validators). auth_type: Option<MCPAuth>, authentication_token. mcp_info: Option<MCPInfo>, extra_headers, allowed_tools, disallowed_tools, tool_name_to_display_name, tool_name_to_description, pinned_tools: Option<BTreeMap<String, PinnedMCPTool>>, allowed_params (tool name to allowed parameter names), static_headers, env_vars (the stored env var entries as B858's MCPEnvVar rows if B858 is merged, else Vec<serde_json::Value>). OAuth: client_id, client_secret, issuer, issuer_is_anchored (false), scopes, authorization_url, token_url, registration_url, configured_authorization_url, configured_token_url, configured_registration_url, configured_scopes (Option<Vec<String>>), oauth2_flow (client_credentials or authorization_code, optional), token_endpoint_auth_method, upstream_resource, upstream_token_header. AWS: aws_access_key_id, aws_secret_access_key, aws_session_token, aws_region_name, aws_service_name, aws_role_name, aws_session_name. Token exchange: token_exchange_endpoint, audience, subject_token_type (default the DEFAULT_SUBJECT_TOKEN_TYPE constant in credential_contracts::auth_config::oauth), id_jag_resource_token_endpoint, id_jag_resource, client_private_key, client_private_key_id, client_assertion_signing_alg (default "RS256"), token_exchange_profile (default "rfc8693"). Stdio: command, args, env. Flags and limits: access_groups, allow_all_keys (false), available_on_public_internet (true), delegate_auth_to_upstream (false), oauth_passthrough (false), dcr_bridge: Option<bool>, per_server_oauth_discovery (false), is_byok (false), byok_description (empty list), byok_api_key_help_url, source_url, created_at and updated_at (Option<DateTime<Utc>>), token_validation (Option<serde_json::Value>), oauth_identity_binding: Option<MCPOAuthIdentityBinding>, token_storage_ttl_seconds: Option<i64>, timeout: Option<f64>, max_concurrent_requests: Option<i64>, short_prefix, allow_sampling (false), allow_elicitation (false). Every field LiteLLM types as a secret string credential (authentication_token, client_secret, the aws secrets and session token, client_private_key) uses the betterlite-secrets secret string wrapper that B2305 uses for MCPCredentials.
+
+
+  Derive Clone, PartialEq and Deserialize. Implement Debug by hand so it prints only server_id, name, transport and auth_type, like LiteLLM's __repr__ and __str__ (Display prints the same text). A secret must never reach a log through Debug.
+
+
+  Validators. A single constructor MCPServer::checked(self) -> Result<MCPServer, ServerRecordError> runs them in this order and stops at the first failure. First, upstream_token_header when set must pass validate_header_name from credential_contracts::header_carrier (a failure is ServerRecordError::Header with its message). Second, protocol version: when protocol_version is None, it becomes mcp_info["protocol_version"] checked against MCPUpstreamProtocol (absent key means auto), or auto when there is no mcp_info; an invalid value fails with ServerRecordError::Protocol. An explicit protocol_version is kept even when mcp_info disagrees. After checked, protocol_version is always Some. Third, identity binding: when oauth_identity_binding is set and its mode is not Disabled, the server must have needs_user_oauth_token true and delegate_auth_to_upstream false, else ServerRecordError::Binding("oauth_identity_binding requires gateway-managed per-user OAuth2 credentials"). A binding with an empty audiences list fails with ServerRecordError::Binding("audiences must not be empty") whenever it is built from JSON. Deserialize runs checked, so a record read from JSON is always validated.
+
+
+  Methods, one per LiteLLM property, all taking &self and returning bool unless noted. effective_authorization_url, effective_token_url, effective_registration_url -> Option<&str>: the live value, else the configured one (an empty string counts as unset, like Python's "or"). has_client_credentials: oauth2_flow is client_credentials. needs_user_oauth_token: auth_type is oauth2 and not has_client_credentials. is_gateway_managed_oauth2: auth_type is oauth2 and not delegate_auth_to_upstream. uses_per_server_oauth_relay: per_server_oauth_discovery and auth_type oauth2 and not has_client_credentials. advertises_gateway_authorization_server: for oauth2 it is is_gateway_managed_oauth2 and not uses_per_server_oauth_relay; for any auth type outside {none, null, api_key, bearer_token, basic, authorization, token, aws_sigv4} it is false; otherwise it is true unless some extra_headers entry equals (case-insensitive) authorization, x-api-key, api-key or apikey. is_true_passthrough, is_oauth_delegate: auth_type equals true_passthrough, oauth_delegate. is_client_forwarded_token: either of those two. is_dcr_bridge: dcr_bridge is Some(true) and is_client_forwarded_token. requires_per_user_auth: needs_user_oauth_token, or is_client_forwarded_token, or (auth_type is the explicit none and extra_headers is non-empty and some entry is, case-insensitively, authorization, x-api-key, api-key or apikey). is_oauth_passthrough: auth_type is null or none, extra_headers non-empty, oauth_passthrough true, and some extra_headers entry equals authorization case-insensitively.
+
+
+  Tests name the cases above one by one (every property gets a true and a false case, including the auth_type null versus none difference), plus the three validators, the Debug text without any secret, and a JSON round trip of a record with defaults. No route uses this record yet, so there are no oracle cases.
+
+scope:
+  paths:
+    - crates/betterlite-mcp/Cargo.toml
+    - crates/betterlite-mcp/src/server_record.rs
+    - crates/betterlite-mcp/src/server_record/**
+    - Cargo.lock
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp_server/mcp_server_manager.py#L29-L69
+    why: MCPOAuthMetadata and MCPOAuthIdentityBinding, the fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp_server/mcp_server_manager.py#L88-L243
+    why: The MCPServer field list with defaults and the field validator for upstream_token_header.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp_server/mcp_server_manager.py#L244-L424
+    why: The repr, the two model validators and every derived property.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/mcp.py#L27-L91
+    why: The auth and transport enums the record uses, already owned by B2305.
+
+dod:
+  - text: MCPOAuthMetadata, MCPOAuthIdentityBinding and MCPServer exist with LiteLLM's field names and defaults, secret fields use the secret wrapper, and a record with only server_id, name and transport has every default from the description.
+    proof: [record-tests]
+  - text: Debug and Display print only server_id, name, transport and auth_type, and never a secret value.
+    proof: [record-tests]
+  - text: checked() validates the upstream token header, resolves protocol_version from mcp_info only when it was not given, and rejects a non-disabled identity binding unless the server needs a user OAuth token and does not delegate to upstream; Deserialize runs it.
+    proof: [validator-tests]
+  - text: Every derived property returns LiteLLM's answer for each auth type, flow and extra_headers case, including that a null auth_type is not the explicit none for requires_per_user_auth.
+    proof: [property-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: record-tests
+      why: the record fields, defaults, secret wrappers or Debug text are missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^server_record::tests::record_/)'
+    - id: validator-tests
+      why: a model validator is missing or runs in the wrong order
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^server_record::tests::validate_/)'
+    - id: property-tests
+      why: a derived property gives a different answer from LiteLLM
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^server_record::tests::prop_/)'
+
+oracle_cases: []
+
+deviations:
+  - what: protocol_version is Option on input and always Some after checked(), where LiteLLM tracks model_fields_set.
+    why: Rust has no set-field tracking, and the only reader of the difference is the validator.
+  - what: Deserialize runs the validators, where Pydantic runs them in model_validate and the constructor.
+    why: a record must not exist unvalidated; the observable results are the same.
+
+out_of_scope:
+  - "Building a record from a LiteLLM_MCPServerTable row or from config (build_mcp_server_from_table, load_servers_from_config) and the OAuth endpoint discovery. Discovery fills the discovered fields: B6592, the server manager mutation entry."
+  - "The registry that holds these records: B4731."
+  - "MCPInfo, PinnedMCPTool, parse_pinned_tools and the auth and transport enums: B2305."
+
+pitfalls:
+  - "requires_per_user_auth treats auth_type null differently from the explicit none: only the explicit none with an auth-looking extra header counts, while is_oauth_passthrough accepts both."
+  - "The three effective URL getters use Python's 'or': an empty string falls through to the configured value."
+  - "configured_scopes is a tuple in LiteLLM and scopes a list; both serialize as JSON arrays."
+  - "Do not log the record with {:?} anywhere else expecting fields; Debug is deliberately short."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

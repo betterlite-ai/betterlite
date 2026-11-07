@@ -1,0 +1,269 @@
+id: B4440
+title: Health probe payloads, mode handlers and tracking metadata
+description: >-
+  Build `health_probe_modes` in betterlite-server. It is the Rust form of LiteLLM's HealthCheckHelpers class
+  and the two small functions in health_check_utils.py. It turns the model parameters of one deployment plus a
+  health mode into the exact call a probe makes, runs that call through an injected backend, and shapes the
+  result. B4449 later wires the backend to the real call operations and owns `ahealth_check` itself (mode
+  lookup, the `no-cache` flag, the try/except that turns failures into the error dict). B4443 calls the
+  entry point B4449 builds. Nothing here talks to a provider.
+
+  Types. `HealthProbeParams` is the model_params dict: typed fields for the keys this module reads (`model`,
+  `api_base`, `api_key`, `api_version`, `max_tokens`, `voice`, `messages`, `fallbacks`, `litellm_metadata`,
+  `cache`) and one passthrough map of `serde_json::Value` for every other key, behind an `#[expect]` that says
+  these are provider parameters betterlite does not model. Key order of the passthrough map is kept. `api_key`
+  is a secret type, never logged or put into an error text. `HealthProbeBackend` is an async trait with one
+  method per call below. `HealthProbeError` is this module's error enum and holds a source error from the
+  backend without losing it.
+
+  Modes. `plan_health_probe(mode, model, custom_llm_provider, params, prompt, input) -> Option<HealthProbePlan>`
+  is get_mode_handlers. It returns None for a mode outside the 14 names: chat, completion, embedding,
+  audio_speech, audio_transcription, image_generation, image_edit, video_generation, rerank, realtime, batch,
+  responses, ocr, evaluation. B4449 turns None into "Mode {mode} not supported. See modes here:
+  https://docs.litellm.ai/docs/proxy/health". The plan only records inputs. Like the Python lambdas, nothing
+  is built or validated until `run_health_probe(plan, backend, ...)` runs it, so failures from a bad evaluation
+  payload or a missing OCR document surface at run time, inside the caller's error handling.
+
+  Call arguments per mode, with `filtered` meaning the params without the `messages` key (health_check_utils
+  `_filter_model_params`). chat: the full params, `messages` included. completion: filtered plus
+  prompt = `prompt` or "test". embedding: filtered plus input = `input` or ["test"]. audio_speech: filtered, with
+  voice "alloy" added only when filtered has no `voice` key, plus input = `prompt` or "test". audio_transcription:
+  filtered plus the bundled health wav from B1001. image_generation: filtered plus prompt = `prompt` as given
+  (None stays None). image_edit: filtered plus image = the decoded health PNG and prompt = IMAGE_EDIT_HEALTH_CHECK_PROMPT.
+  video_generation: filtered plus prompt = `prompt` or "test video generation". rerank: filtered plus
+  query = `prompt` or "" and documents = ["my sample text"]. realtime: `model`, `custom_llm_provider`,
+  `api_base`, `api_key`, `api_version` read from params (None when absent) and the whole params as model_params.
+  batch: see below. responses: filtered plus input = `prompt` or "test". ocr: filtered plus document from an
+  injected `OcrHealthDocuments` trait (model, custom_llm_provider). evaluation: see below. Empty strings and empty
+  lists count as missing for every `or` above, as in Python. When filtered already holds a key the mode adds
+  (`prompt`, `input`, `file`, `image`, `query`, `documents`, `document`), Python raises TypeError for a repeated
+  keyword, so `run_health_probe` returns a `HealthProbeError` naming the key and sends nothing. The audio_speech
+  `input` and the chat mode (no added keys) follow the same rule.
+
+  Evaluation mode. Questions come from `evaluation_questions(custom_llm_provider)`: provider "hosted_vllm" gets
+  one question `reachable` of type choice, instructions "Is the service reachable?", criteria {"yes": null,
+  "no": null}. Every other provider, including unknown ones and providers with their own decisions config,
+  gets one question `reachable` of type noul with instructions "Is the service reachable?". The payload is
+  {state: `prompt` or "health check", questions, then every filtered key}; a filtered `state` or `questions`
+  key therefore overrides the built value. It is then validated as DecisionsCallParams: `model` a string,
+  `state` a string, mapping or list, `questions` a valid DecisionQuestionMap (1 to 128 questions, rules from
+  B3510's betterlite-models records), `api_key`, `api_base`, `custom_llm_provider` strings or null, `timeout`
+  a number or null, `extra_headers` a string-to-string map or null, any other key allowed. Validation failure is
+  a `HealthProbeError`.
+
+  Wildcard models. `probe_wildcard_model` is ahealth_check_wildcard_models. It asks an injected
+  `CheapestChatModels` trait for the 3 cheapest chat models of the provider. B176 owns the function behind that trait (pick_cheapest_chat_models_from_llm_provider). With none, it fails with exactly
+  "Unable to health check wildcard model for provider {provider}. Add a model on your config.yaml or contribute here - https://github.com/BerriAI/litellm/blob/main/model_prices_and_context_window.json".
+  Otherwise it sets `model` to the first, `fallbacks` to the rest (None when only one), and `max_tokens` to
+  the existing value or 16 (a key present with null stays null). It then sends the chat call with the full params
+  and the logging object and returns an empty `HealthCheckResponse`, whatever the provider returned.
+
+  Tracking metadata. `add_tracking_information(params)` is
+  _update_model_params_with_health_check_tracking_information. It replaces `litellm_metadata` with
+  {"tags": ["litellm-internal-health-check"]}, discarding any earlier value, then applies B1106's
+  add_user_api_key_auth_to_request_metadata to it with the internal health principal. The principal is B770's
+  get_litellm_internal_health_check_user_api_key_auth: api_key, team_id, key_alias and team_alias all equal to
+  "litellm-internal-health-check". The metadata variable name is "litellm_metadata". Return the updated params.
+
+  Batch probe. `probe_batch_mode` is _batch_health_check. When the filtered params hold a logging object, call
+  B247's update_from_kwargs on it with kwargs = filtered, model = filtered `model`, user = None,
+  optional_params = {} and litellm_params = {"api_base": value} when `api_base` is truthy, else None. Then, if
+  the provider is not one of openai, azure, hosted_vllm, litellm_proxy, vertex_ai, xai (this module owns that
+  list, from LIST_BATCHES_SUPPORTED_PROVIDERS), send the chat call with the full params. Otherwise send
+  list_batches with filtered plus custom_llm_provider = the provider, replacing any value filtered had.
+
+  Image edit probe. `probe_image_edit` runs the edit call. If it fails with an error B184 classifies as bad
+  request (or any subtype, content policy violation included) and either the class is content policy violation or
+  the message contains "moderation_blocked", it returns an empty image response instead. Every other error is
+  returned unchanged. The health PNG is LiteLLM's TEST_IMAGE_BASE64 string, copied exactly and decoded with the
+  base64 crate when asked for (512 by 512, blue circle on white). IMAGE_EDIT_HEALTH_CHECK_PROMPT is "Add a small yellow star in the top right corner of this simple drawing of a blue circle on a white background".
+
+  Response shape. `health_check_response(headers)` is _create_health_check_response: copy only
+  `x-ratelimit-remaining-requests`, `x-ratelimit-remaining-tokens` and `x-ms-region`, each only when the key is
+  present with a non-null value (an empty string is kept). Lookups are exact lowercase keys. Insertion order is
+  those three. The result serializes as a JSON object and is `{}` when none are present.
+
+  Tests live in `health_probe_modes::tests` with these name prefixes so the checks below can filter them:
+  `mode_` (one case per mode, defaults, falsy fallbacks, duplicate keys, unknown mode, lazy failure), `tracking_`,
+  `wildcard_`, `batch_`, `image_edit_`, `evaluation_`, `response_` (header filter, image bytes, filtered params).
+  Native tests use a recording fake backend, and the oracle helper cases below drive the real Python functions
+  with recording stubs in place of the litellm a* calls.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/health_probe_modes.rs
+    - crates/betterlite-server/src/health_probe_modes/**
+    - tools/oracle/cases/helpers/health-probe-modes/**
+    - "tools/oracle/fuzz/corpus/helper_case/health_probe_modes-*"
+    - tools/oracle/helpers/b4440.py
+    - tools/oracle/helpers/b4440/**
+    - tools/oracle/src/helpers/server/b4440.rs
+    - tools/oracle/src/helpers/server/b4440/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L19-L30
+    why: TEST_IMAGE_BASE64, IMAGE_EDIT_HEALTH_CHECK_PROMPT and get_image_file_for_health_check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L33-L54
+    why: Decisions question lookup per provider and the OCR document lookup that needs the native extension.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L57-L85
+    why: Wildcard probe, fallbacks and the max_tokens default of 16.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L87-L121
+    why: Tracking metadata and tags for health calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L123-L162
+    why: Batch probe with the acompletion fallback, and the image edit moderation swallow.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_helpers.py#L164-L287
+    why: get_mode_handlers, the 14 modes and their keyword arguments.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/health_check_utils.py#L1-L30
+    why: DECISIONS_CALL_PARAMS, _filter_model_params and _create_health_check_response.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8725-L8831
+    why: The only caller; shows when tracking, wildcard and mode handlers run and what is done with the response headers (B4449).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1693
+    why: LITTELM_INTERNAL_HEALTH_SERVICE_ACCOUNT_NAME is "litellm-internal-health-check".
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L3494-L3508
+    why: The internal health principal passed to the metadata step.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/litellm_pre_call_utils.py#L1653-L1703
+    why: add_user_api_key_auth_to_request_metadata, the step tracking metadata ends with (B1106).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/utils.py#L4197-L4199
+    why: LIST_BATCHES_SUPPORTED_PROVIDERS, the six providers that have list_batches.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/base_llm/decisions/transformation.py#L305-L307
+    why: Default health_check_questions (noul "reachable").
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/hosted_vllm/decisions/transformation.py#L12-L21
+    why: The one override, a choice question with yes and no criteria.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L8911-L8928
+    why: Only these providers have a decisions config; every other provider falls to the default questions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/decisions.py#L87-L96
+    why: DecisionsCallParams fields and the extra="allow" rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/audio_utils/utils.py#L247-L255
+    why: The bundled health wav used by audio_transcription (B1001 owns the file access).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_request_utils.py#L136-L170
+    why: pick_cheapest_chat_models_from_llm_provider, the function behind the CheapestChatModels trait.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm-rust/crates/llms/src/base_llm/ocr/transformation.rs#L302-L307
+    why: Default OCR health document (a PDF data URI) behind the native binding.
+
+dod:
+  - text: plan_health_probe returns the exact call arguments for each of the 14 modes, with the messages key removed for every mode except chat.
+    proof: [mode-tests, oracle, helper-python]
+  - text: The prompt and input fallbacks use the Python defaults and treat empty strings and empty lists as missing; image_generation passes a missing prompt as null.
+    proof: [mode-tests, oracle, helper-python]
+  - text: audio_speech adds voice "alloy" only when the params have no voice key, and a mode that would repeat a key already in the params fails without sending a call.
+    proof: [mode-tests, oracle, helper-python]
+  - text: A mode outside the 14 names gives None, and failures from evaluation validation or the OCR document appear only when the plan runs.
+    proof: [mode-tests]
+  - text: Evaluation questions are the choice question for hosted_vllm and the noul question for every other provider, and filtered state or questions keys override the built ones.
+    proof: [evaluation-tests, oracle, helper-python]
+  - text: The evaluation payload is rejected when model, state, questions or the typed optional fields have the wrong type or the question map has 0 or more than 128 questions.
+    proof: [evaluation-tests]
+  - text: The wildcard probe uses the cheapest model, passes the remaining ones as fallbacks, defaults max_tokens to 16, returns an empty response and fails with the exact message when no model is found.
+    proof: [wildcard-tests, oracle, helper-python]
+  - text: Tracking metadata replaces litellm_metadata with the single health tag and then applies the internal health principal through the metadata step.
+    proof: [tracking-tests, oracle, helper-python]
+  - text: The batch probe updates the logging object, then calls list_batches for the six supported providers with the provider name forced, and the chat call for all others.
+    proof: [batch-tests, oracle, helper-python]
+  - text: The image edit probe returns an empty image response for content policy errors and "moderation_blocked" messages and returns every other error unchanged.
+    proof: [image-edit-tests, oracle, helper-python]
+  - text: The health response keeps only the three rate limit and region headers when they hold a value, and the health PNG decodes to a 512 by 512 PNG.
+    proof: [response-tests, oracle, helper-python]
+  - text: Helper corpus cases replay through the shared helper-case parser.
+    proof: [helper-case-corpus]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: mode-tests
+      why: a mode's call arguments, defaults, duplicate-key failure, unknown-mode result or lazy failure is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_probe_modes::tests::mode_/)'
+    - id: evaluation-tests
+      why: evaluation questions, key override or payload validation is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_probe_modes::tests::evaluation_/)'
+    - id: wildcard-tests
+      why: wildcard model choice, fallbacks, max_tokens default or the no-model error is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_probe_modes::tests::wildcard_/)'
+    - id: tracking-tests
+      why: health tag, metadata replacement or the internal principal is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_probe_modes::tests::tracking_/)'
+    - id: batch-tests
+      why: batch logging update, supported-provider list_batches or the chat fallback is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_probe_modes::tests::batch_/)'
+    - id: image-edit-tests
+      why: the moderation swallow or the pass-through of other errors is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_probe_modes::tests::image_edit_/)'
+    - id: response-tests
+      why: header filtering, filtered params or the health image bytes are missing
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^health_probe_modes::tests::response_/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b4440)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b4440 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b4440/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added health probe cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/health_probe_modes-*")" &&
+        grep -lE '^[[:space:]]+b4440:' tools/oracle/fuzz/corpus/helper_case/health_probe_modes-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/health-probe-modes/mode-arguments.yaml
+  - tools/oracle/cases/helpers/health-probe-modes/mode-fallbacks.yaml
+  - tools/oracle/cases/helpers/health-probe-modes/duplicate-keys.yaml
+  - tools/oracle/cases/helpers/health-probe-modes/evaluation-payload.yaml
+  - tools/oracle/cases/helpers/health-probe-modes/wildcard-probe.yaml
+  - tools/oracle/cases/helpers/health-probe-modes/tracking-metadata.yaml
+  - tools/oracle/cases/helpers/health-probe-modes/batch-probe.yaml
+  - tools/oracle/cases/helpers/health-probe-modes/image-edit-moderation.yaml
+  - tools/oracle/cases/helpers/health-probe-modes/response-headers.yaml
+
+deviations:
+  - what: The OCR document comes from an injected OcrHealthDocuments trait that betterlite-ocr implements, not from a native extension binding. A provider without a document gives a HealthProbeError.
+    why: Rust has no Python bridge to ask. LiteLLM at the pin raises NoPythonImplementationError only when the extension is missing, so a shipped build behaves the same.
+  - what: Evaluation payload validation reports betterlite's typed error text, not pydantic's.
+    why: pydantic error text is Python library output; the accepted and rejected inputs are the same.
+  - what: Header values in the health response are strings.
+    why: The headers come from HTTP responses, where Python also sees strings; the declared type is dict.
+
+out_of_scope:
+  - "ahealth_check in litellm/main.py L8725-L8831 (mode lookup, `no-cache`, the logging object, error dict, stack trace trimming): B4449 owns it and calls this module."
+  - "The call operations the backend trait stands for (acompletion, atext_completion, aembedding, aspeech, atranscription, aimage_generation, aimage_edit, avideo_generation, arerank, aresponses, aocr, asystemone, alist_batches): their own tasks own them; B4449 implements the trait with them."
+  - "_realtime_health_check in litellm/realtime_api/main.py L631: B1127 owns it; this module only passes the arguments."
+  - "pick_cheapest_chat_models_from_llm_provider: llm_request_utils.py is in B176's covers; this module only defines the CheapestChatModels trait for it."
+  - "UserAPIKeyAuth.get_litellm_internal_health_check_user_api_key_auth: B770 owns the principal; add_user_api_key_auth_to_request_metadata: B1106 owns it."
+  - "Logging.update_from_kwargs: B247 owns it; this module calls it through a narrow trait."
+  - "Audio file access for audio_transcription: B1001 owns it. Decisions record types: B3510 owns them."
+  - "_run_model_health_check in litellm/proxy/health_check.py L514-L536: not in this entry's covers. B4442 names B4440 as owner and B4443 builds it; see notes."
+  - "OCR provider health documents (get_health_check_document in litellm-rust): no task owns them yet; see notes."
+
+pitfalls:
+  - "`**model_params` plus an added keyword raises TypeError in Python when model_params already has that key; health_check_params from config can carry `input` or `prompt`, so check each added key against the filtered params."
+  - "Only chat keeps `messages`; every other mode strips it, including batch's list_batches call but not the batch acompletion fallback, which gets the unfiltered params."
+  - "The batch fallback to acompletion applies to every provider outside the six, bedrock among them; list_batches for the six gets `custom_llm_provider` forced over any value in the params."
+  - "In evaluation mode the filtered keys come last in the dict, so `state` or `questions` in model_params wins over the built values."
+  - "`prompt or \"test\"` replaces an empty string, but image_generation uses `prompt=prompt` with no fallback, so an empty string stays an empty string and None stays null."
+  - "The wildcard probe returns {} and ignores the provider response headers, unlike every other mode."
+  - "`fallbacks` is null, not an empty list, when the provider has exactly one cheap model."
+  - "Setting `litellm_metadata` overwrites an earlier value; tags from health_check_params do not survive."
+  - "The moderation check is a substring test on the error text (`moderation_blocked`) and applies to any bad request subtype, not only content policy errors."
+  - "No oracle case for the ocr mode: the pinned Python needs the native extension, which the oracle environment may not load. Cover it in native tests with a fake OcrHealthDocuments."
+  - "The health PNG string is about 4 KB on one line; copy it with a script-free copy of the file text and verify the decoded size and PNG signature in a test."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 1

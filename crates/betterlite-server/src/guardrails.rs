@@ -1,12 +1,16 @@
 pub mod a2a_translation;
+pub mod admin_reads;
 pub mod anthropic_sse;
 pub mod anthropic_translation;
 pub mod bedrock_passthrough;
 pub mod chat_guardrail_translation;
 pub mod completion_translation;
 pub mod embeddings_translation;
+pub mod form_tables_a;
+pub mod form_tables_b;
 pub mod image_translation;
 pub mod pipeline_executor;
+pub mod provider_forms;
 pub mod proxy_stream_wrapper;
 pub mod response_context;
 pub mod responses_translation;
