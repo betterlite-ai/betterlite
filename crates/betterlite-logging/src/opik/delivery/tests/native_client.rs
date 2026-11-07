@@ -64,11 +64,11 @@ async fn native_success_calls_trace_then_span_with_the_payload_fields(#[case] ca
     assert_eq!(trace.end_time, millis(2_000));
     assert_eq!(
         trace.input,
-        serde_json::from_str::<Json>(r#"[{"role": "user", "content": "hi"}]"#).unwrap()
+        Some(serde_json::from_str::<Json>(r#"[{"role": "user", "content": "hi"}]"#).unwrap())
     );
     assert_eq!(
         trace.output,
-        serde_json::from_str::<Json>(r#"{"answer": "ok"}"#).unwrap()
+        Some(serde_json::from_str::<Json>(r#"{"answer": "ok"}"#).unwrap())
     );
     assert_eq!(trace.thread_id.as_deref(), Some("thread-1"));
     assert_eq!(trace.project_name, "Default Project");
@@ -129,6 +129,39 @@ async fn native_attaches_the_span_to_an_existing_trace() {
     };
     assert_eq!(span.trace_id, "trace-existing");
     assert_eq!(span.parent_span_id.as_deref(), Some("parent-span"));
+}
+
+#[tokio::test]
+async fn native_receives_null_input_and_output_when_the_logging_object_has_nulls() {
+    let native = Arc::new(RecordingNative::new());
+    let mut fixture = Fixture::new();
+    fixture.source = FixedSource::with_client(Arc::clone(&native));
+    let logger = fixture.build(None);
+    let kwargs = object(
+        r#"{
+            "standard_logging_object": {
+                "messages": null,
+                "response": null,
+                "model": "gpt-4o"
+            }
+        }"#,
+    );
+    let response = sample_response();
+
+    logger.log_success_event(call(&kwargs, &response)).await;
+
+    let calls = native.calls();
+    assert_eq!(calls.len(), 2);
+    let NativeCall::Trace(trace) = &calls[0] else {
+        panic!("trace must be called before span")
+    };
+    assert_eq!(trace.input, None);
+    assert_eq!(trace.output, None);
+    let NativeCall::Span(span) = &calls[1] else {
+        panic!("span must be called second")
+    };
+    assert_eq!(span.input, None);
+    assert_eq!(span.output, None);
 }
 
 #[tokio::test]

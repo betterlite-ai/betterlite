@@ -4,11 +4,11 @@ use std::str;
 use std::sync::Arc;
 
 use serde::Serialize;
-use tokio::sync::Mutex as AsyncMutex;
 use tokio::time::sleep;
 use tokio_util::task::TaskTracker;
 use url::Url;
 
+use crate::batch::logger::BatchQueue;
 use crate::http_analytics_loggers::delivery::{
     DELIVERY_DEADLINE, Delivery, PostRequest, PostResponse,
 };
@@ -17,8 +17,10 @@ use crate::opik::payload::{build_opik_payload, classify_payload};
 use super::callback::{Call, should_skip_event};
 use super::error::{NativeDeliveryError, OpikError};
 use super::native::{NativeClientSource, NativeOpikClient};
-use super::queue::PayloadQueue;
-use super::record::{Payload, SpanRecord, TraceRecord, span_wire, trace_wire};
+use super::queue::OpikBatch;
+use super::record::{
+    Payload, SPAN_OPTIONAL_FIELDS, SpanRecord, TRACE_OPTIONAL_FIELDS, TraceRecord, wire_payload,
+};
 use super::settings::{LoggerOptions, OpikSettings, OpikSettingsError, resolve_settings};
 
 pub struct LoggerDependencies<'context, D> {
@@ -31,8 +33,8 @@ pub struct OpikLogger<D> {
     pub(crate) settings: OpikSettings,
     pub(crate) delivery: D,
     native: Option<Arc<dyn NativeOpikClient>>,
-    queue: PayloadQueue,
-    flush_lock: Option<Arc<AsyncMutex<()>>>,
+    queue: BatchQueue<Payload>,
+    flush_enabled: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -62,17 +64,14 @@ where
         dependencies: LoggerDependencies<'_, D>,
     ) -> Result<Arc<Self>, OpikSettingsError> {
         let settings = resolve_settings(options, environment, config_file)?;
-        let max_queue_size = settings.batch.max_queue_size;
         let native = dependencies.native.get_client_cached();
-        let flush_lock = dependencies
-            .tasks
-            .map(|_tasks| Arc::new(AsyncMutex::new(())));
+        let flush_enabled = dependencies.tasks.is_some();
         let logger = Arc::new(Self {
-            queue: PayloadQueue::new(max_queue_size),
+            queue: BatchQueue::new(settings.batch),
             settings,
             delivery: dependencies.delivery,
             native,
-            flush_lock,
+            flush_enabled,
         });
         let Some(tasks) = dependencies.tasks else {
             tracing::warn!(
@@ -124,14 +123,14 @@ where
 
     async fn queue_delivery(&self, trace: Option<Payload>, span: Payload) {
         if let Some(trace_payload) = trace {
-            self.queue.enqueue(trace_payload);
+            let _trace_enqueued = self.queue.enqueue(trace_payload);
         }
-        let depth = self.queue.enqueue(span);
+        let enqueued = self.queue.enqueue(span);
         tracing::debug!(
             flush_interval = ?self.settings.batch.flush_interval,
             "OpikLogger added event to log_queue - it will flush on the flush interval"
         );
-        if depth >= self.settings.batch.batch_size {
+        if enqueued.depth >= self.settings.batch.batch_size {
             self.flush_queue().await;
         }
     }
@@ -144,7 +143,7 @@ where
     }
 
     async fn send_trace(&self, trace: &Payload) {
-        let wire = trace_wire(trace);
+        let wire = wire_payload(trace, &TRACE_OPTIONAL_FIELDS);
         let batch = TraceBatch {
             traces: slice::from_ref(&wire),
         };
@@ -152,7 +151,7 @@ where
     }
 
     async fn send_span(&self, span: &Payload) {
-        let wire = span_wire(span);
+        let wire = wire_payload(span, &SPAN_OPTIONAL_FIELDS);
         let batch = SpanBatch {
             spans: slice::from_ref(&wire),
         };
@@ -228,12 +227,16 @@ where
 
     pub async fn async_send_batch(&self) {
         tracing::info!("Calling async_send_batch");
-        let entries = self.queue.snapshot();
+        let entries = self.queue.pending();
         if entries.is_empty() {
             return;
         }
+        self.submit_entries(&entries).await;
+    }
+
+    pub(super) async fn submit_entries(&self, entries: &[Payload]) {
         let events = entries.len();
-        let (traces, spans) = classify_payload(&entries);
+        let (traces, spans) = classify_payload(entries);
         if !traces.is_empty() {
             let batch = TraceBatch { traces: &traces };
             self.submit_batch(&self.settings.trace_url, &batch, events)
@@ -249,20 +252,19 @@ where
     }
 
     pub async fn flush_queue(&self) {
-        let Some(lock) = &self.flush_lock else {
+        if !self.flush_enabled {
             return;
-        };
-        let _guard = lock.lock().await;
-        let entries = self.queue.snapshot();
-        if entries.is_empty() {
+        }
+        let pending = self.queue.pending();
+        if pending.is_empty() {
             return;
         }
         tracing::debug!(
-            events = entries.len(),
+            events = pending.len(),
             "CustomLogger: Flushing batch of events"
         );
-        self.async_send_batch().await;
-        self.queue.clear();
+        let batcher = OpikBatch { logger: self };
+        self.queue.flush(&batcher).await;
     }
 
     async fn periodic_flush(self: Arc<Self>, tasks: &TaskTracker) {

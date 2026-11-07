@@ -10,12 +10,13 @@ deviations:
       constructor still calls get_client_cached() once and both delivery branches stay live.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/opik.py#L23-L26
   - what: >-
-      A failed async context setup is the caller passing no TaskTracker. The constructor logs a warning and leaves
-      flush_lock unset, so flush_queue returns without sending and only the sync success callback delivers.
-      LiteLLM calls asyncio.create_task(periodic_flush()) and catches the RuntimeError a missing event loop raises.
+      A failed async context setup is the caller passing no TaskTracker. The constructor logs a warning and marks
+      flushing unavailable, so flush_queue returns without draining the queue and only the sync success callback
+      delivers. LiteLLM calls asyncio.create_task(periodic_flush()) and catches the RuntimeError a missing event
+      loop raises, leaving flush_lock None.
     why: >-
       Rust has no implicit event loop inside a synchronous constructor and spawning without a runtime panics
-      instead of raising, so the task owner is injected; the warning, the unset flush lock and the sync-only
+      instead of raising, so the task owner is injected; the warning, the disabled flush and the sync-only
       operation stay the same.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/opik/opik.py#L94-L101
   - what: >-

@@ -88,6 +88,28 @@ async fn sync_success_sends_the_null_optional_fields_litellm_puts_in_dict() {
 }
 
 #[tokio::test]
+async fn sync_success_sends_null_input_and_output_when_the_logging_object_has_nulls() {
+    let fixture = Fixture::new();
+    let logger = fixture.build(None);
+    let kwargs = object(
+        r#"{
+            "standard_logging_object": {"messages": null, "response": null, "model": "gpt-4o"}
+        }"#,
+    );
+    let response = sample_response();
+
+    logger.log_success_event(call(&kwargs, &response)).await;
+
+    let requests = fixture.delivery.requests();
+    let traces = requests[0].batch("traces");
+    assert_eq!(traces[0]["input"], Json::Null);
+    assert_eq!(traces[0]["output"], Json::Null);
+    let spans = requests[1].batch("spans");
+    assert_eq!(spans[0]["input"], Json::Null);
+    assert_eq!(spans[0]["output"], Json::Null);
+}
+
+#[tokio::test]
 async fn async_batches_drop_the_null_optional_fields_on_their_way_to_the_wire() {
     let tracker = TaskTracker::new();
     let mut fixture = Fixture::new();

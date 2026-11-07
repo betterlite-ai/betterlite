@@ -6,6 +6,16 @@ use serde::Deserialize;
 
 pub type Payload = IndexMap<String, Json>;
 
+// The dataclass fields whose value can be null; __dict__ keeps them, get_traces_and_spans_from_payload strips them.
+pub const TRACE_OPTIONAL_FIELDS: [&str; 3] = ["thread_id", "input", "output"];
+pub const SPAN_OPTIONAL_FIELDS: [&str; 5] = [
+    "parent_span_id",
+    "provider",
+    "total_cost",
+    "input",
+    "output",
+];
+
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum SpanType {
@@ -18,8 +28,10 @@ pub struct TraceRecord {
     pub name: String,
     pub start_time: DateTime<Utc>,
     pub end_time: DateTime<Utc>,
-    pub input: Json,
-    pub output: Json,
+    #[serde(default)]
+    pub input: Option<Json>,
+    #[serde(default)]
+    pub output: Option<Json>,
     pub metadata: IndexMap<String, Json>,
     pub tags: Vec<Json>,
     #[serde(default)]
@@ -39,8 +51,10 @@ pub struct SpanRecord {
     pub model: String,
     pub start_time: DateTime<Utc>,
     pub end_time: DateTime<Utc>,
-    pub input: Json,
-    pub output: Json,
+    #[serde(default)]
+    pub input: Option<Json>,
+    #[serde(default)]
+    pub output: Option<Json>,
     pub metadata: IndexMap<String, Json>,
     pub tags: Vec<Json>,
     pub usage: IndexMap<String, Json>,
@@ -79,20 +93,11 @@ impl TryFrom<&Payload> for SpanRecord {
 
 // The sync send posts TracePayload.__dict__ and SpanPayload.__dict__, whose optional fields are present as null.
 #[must_use]
-pub fn trace_wire(payload: &Payload) -> Payload {
+pub fn wire_payload(payload: &Payload, optional_fields: &[&str]) -> Payload {
     let mut wire = payload.clone();
-    if !wire.contains_key("thread_id") {
-        wire.insert("thread_id".to_owned(), Json::Null);
-    }
-    wire
-}
-
-#[must_use]
-pub fn span_wire(payload: &Payload) -> Payload {
-    let mut wire = payload.clone();
-    for field in ["parent_span_id", "provider", "total_cost"] {
-        if !wire.contains_key(field) {
-            wire.insert(field.to_owned(), Json::Null);
+    for field in optional_fields {
+        if !wire.contains_key(*field) {
+            wire.insert((*field).to_owned(), Json::Null);
         }
     }
     wire
