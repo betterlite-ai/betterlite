@@ -190,12 +190,8 @@ async def failure_code(operation: Awaitable[object]) -> Json:
     return None
 
 
-def queue_length(logger: RubrikLogger) -> int:
-    return len(cast("list[Json]", logger.log_queue))
-
-
 def result(logger: RubrikLogger, error: Json) -> Json:
-    return {"queue_length": queue_length(logger), "error": error}
+    return {"queue_length": len(cast("list[Json]", logger.log_queue)), "error": error}
 
 
 async def perform(logger: RubrikLogger, action: Fields) -> Json:
@@ -243,21 +239,16 @@ async def perform_all(logger: RubrikLogger, actions: Sequence[Json]) -> list[Jso
 
 def logger_options(init: Fields) -> dict[str, object]:
     options: dict[str, object] = {}
-    api_key = init.get("api_key")
-    if api_key is not None:
-        options["api_key"] = string_value(api_key, "init.api_key")
-    api_base = init.get("api_base")
-    if api_base is not None:
-        options["api_base"] = string_value(api_base, "init.api_base")
+    for name in ("api_key", "api_base", "guardrail_name"):
+        value = init.get(name)
+        if value is not None:
+            options[name] = string_value(value, f"init.{name}")
     event_hook = init.get("event_hook")
     if event_hook is not None:
         options["event_hook"] = GuardrailEventHooks(string_value(event_hook, "init.event_hook"))
     default_on = init.get("default_on")
     if default_on is not None:
         options["default_on"] = boolean_value(default_on, "init.default_on")
-    guardrail_name = init.get("guardrail_name")
-    if guardrail_name is not None:
-        options["guardrail_name"] = string_value(guardrail_name, "init.guardrail_name")
     timeout = init.get("timeout_seconds")
     if timeout is not None:
         options["timeout"] = number_value(timeout, "init.timeout_seconds")

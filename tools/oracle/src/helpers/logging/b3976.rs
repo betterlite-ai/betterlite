@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use betterlite_logging::rubrik_delivery::config::{RubrikEventHook, RubrikInit, RubrikSettings};
 use betterlite_logging::rubrik_delivery::error::RubrikError;
-use betterlite_logging::rubrik_delivery::logger::{QueueState, RubrikLogger};
+use betterlite_logging::rubrik_delivery::logger::RubrikLogger;
 use betterlite_logging::rubrik_delivery::post::{post_prompt_moderation, post_response_moderation};
 use betterlite_logging::rubrik_delivery::queue::{
     append_and_maybe_flush, async_send_batch, flush_queue, queue_snapshot,
@@ -170,14 +170,13 @@ async fn perform(logger: &RubrikLogger, action: &Action) -> Value {
     }
 }
 
-fn timeout_value(timeout: Timeout) -> Value {
-    json!({
-        "total": timeout.total.as_secs_f64(),
-        "connect": timeout.connect.as_secs_f64(),
-    })
-}
-
 fn settings_value(settings: &RubrikSettings) -> Value {
+    let timeout = |value: Timeout| {
+        json!({
+            "total": value.total.as_secs_f64(),
+            "connect": value.connect.as_secs_f64(),
+        })
+    };
     json!({
         "guardrail_name": settings.guardrail_name,
         "event_hook": settings.event_hook.as_str(),
@@ -191,16 +190,9 @@ fn settings_value(settings: &RubrikSettings) -> Value {
         "response_moderation_endpoint": settings.response_moderation_endpoint,
         "prompt_moderation_endpoint": settings.prompt_moderation_endpoint,
         "logging_endpoint": settings.logging_endpoint,
-        "moderation_timeout": timeout_value(settings.moderation_timeout),
-        "logging_timeout": timeout_value(settings.logging_timeout),
+        "moderation_timeout": timeout(settings.moderation_timeout),
+        "logging_timeout": timeout(settings.logging_timeout),
     })
-}
-
-fn queue_value(logger: &RubrikLogger, state: &QueueState) -> Value {
-    let queue = queue_snapshot(logger);
-    let head: Vec<Json> = queue.iter().take(3).cloned().collect();
-    let tail: Vec<Json> = queue.iter().rev().take(3).rev().cloned().collect();
-    json!({"length": state.length, "head": head, "tail": tail})
 }
 
 impl Helper for Op {
@@ -257,11 +249,14 @@ fn report(
     results: &[Value],
 ) -> Value {
     let state = logger.state();
+    let queue = queue_snapshot(logger);
+    let head: Vec<Json> = queue.iter().take(3).cloned().collect();
+    let tail: Vec<Json> = queue.iter().rev().take(3).rev().cloned().collect();
     json!({
         "settings": settings_value(&logger.settings),
         "results": results,
         "calls": transport.calls(),
-        "queue": queue_value(logger, &state),
+        "queue": {"length": state.length, "head": head, "tail": tail},
         "dropped_since_warning": state.dropped_since_warning,
         "last_drop_warning_time": state.last_drop_warning_time.as_secs_f64(),
         "last_flush_time": state.last_flush_time.as_secs_f64(),
