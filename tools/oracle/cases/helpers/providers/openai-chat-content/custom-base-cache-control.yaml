@@ -1,0 +1,96 @@
+kind: helper
+name: openai-chat-content-custom-base-cache-control
+call:
+  openai_chat_content:
+    transform_requests:
+      requests:
+        - model: claude-sonnet-4
+          provider: openai
+          api_base: http://localhost:4000/v1
+          messages:
+            - {role: system, content: You are helpful., cache_control: {type: ephemeral}}
+          optional_params:
+            tools:
+              - {type: function, function: {name: f, parameters: {}}, cache_control: {type: ephemeral}}
+        - model: claude-sonnet-4
+          provider: openai
+          global_api_base: http://localhost:5000/v1
+          messages:
+            - {role: system, content: You are helpful., cache_control: {type: ephemeral}}
+          optional_params:
+            tools:
+              - {type: function, function: {name: f, parameters: {}}, cache_control: {type: ephemeral}}
+        - model: claude-sonnet-4
+          provider: openai
+          environment: {OPENAI_BASE_URL: http://localhost:6000/v1}
+          messages:
+            - {role: system, content: You are helpful., cache_control: {type: ephemeral}}
+          optional_params:
+            tools:
+              - {type: function, function: {name: f, parameters: {}}, cache_control: {type: ephemeral}}
+        - model: claude-sonnet-4
+          provider: openai
+          environment: {OPENAI_API_BASE: http://localhost:7000/v1}
+          messages:
+            - {role: system, content: You are helpful., cache_control: {type: ephemeral}}
+          optional_params:
+            tools:
+              - {type: function, function: {name: f, parameters: {}}, cache_control: {type: ephemeral}}
+        - model: gpt-4o
+          provider: openai
+          api_base: https://api.openai.com/v1
+          messages:
+            - {role: system, content: You are helpful., cache_control: {type: ephemeral}}
+          optional_params:
+            tools:
+              - {type: function, function: {name: f, parameters: {}}, cache_control: {type: ephemeral}}
+        - model: gpt-4o
+          provider: openai
+          messages:
+            - {role: system, content: You are helpful., cache_control: {type: ephemeral}}
+          optional_params:
+            tools:
+              - {type: function, function: {name: f, parameters: {}}, cache_control: {type: ephemeral}}
+        - model: gpt-4o
+          provider: openai
+          api_base: https://eu.api.openai.com/v1
+          messages:
+            - {role: system, content: You are helpful., cache_control: {type: ephemeral}}
+          optional_params:
+            tools:
+              - {type: function, function: {name: f, parameters: {}}, cache_control: {type: ephemeral}}
+        - model: gpt-4o
+          provider: openai
+          api_base: https://api.openai.com.evil.example/v1
+          messages:
+            - {role: system, content: You are helpful., cache_control: {type: ephemeral}}
+          optional_params:
+            tools:
+              - {type: function, function: {name: f, parameters: {}}, cache_control: {type: ephemeral}}
+        - model: some-oss-model
+          provider: fireworks_ai
+          api_base: https://api.fireworks.ai/inference/v1
+          messages:
+            - {role: system, content: You are helpful., cache_control: {type: ephemeral}}
+          optional_params:
+            tools:
+              - {type: function, function: {name: f, parameters: {}}, cache_control: {type: ephemeral}}
+        - model: gpt-4o
+          provider: openai
+          api_base: https://api.openai.com/v1
+          global_api_base: http://localhost:4000/v1
+          messages:
+            - {role: system, content: You are helpful., cache_control: {type: ephemeral}}
+          optional_params:
+            tools:
+              - {type: function, function: {name: f, parameters: {}}, cache_control: {type: ephemeral}}
+        - model: gpt-4o
+          provider: openai
+          api_base: not-a-url
+          messages:
+            - {role: system, content: You are helpful., cache_control: {type: ephemeral}}
+          optional_params:
+            tools:
+              - {type: function, function: {name: f, parameters: {}}, cache_control: {type: ephemeral}}
+env: {}
+compare: {ignore: []}
