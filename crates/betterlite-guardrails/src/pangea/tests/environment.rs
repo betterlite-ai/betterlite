@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 
 use secrecy::{ExposeSecret as _, SecretString};
 
-use crate::pangea::config::{DEFAULT_API_BASE, PangeaGuardrailConfigModel};
+use crate::pangea::config::{DEFAULT_API_BASE, PangeaGuardrailParams};
 use crate::pangea::error::PangeaGuardrailError;
 use crate::pangea::hooks::PangeaGuardrail;
 use crate::pangea::tests::support::GUARDRAIL_NAME;
@@ -14,14 +14,15 @@ fn resolve(
     api_key: Option<&str>,
     api_base: Option<&str>,
 ) -> Result<PangeaGuardrail, PangeaGuardrailError> {
-    let config = PangeaGuardrailConfigModel {
+    let params = PangeaGuardrailParams {
         api_key: api_key.map(|key| SecretString::from(key.to_owned())),
         api_base: api_base.map(str::to_owned),
-        optional_params: None,
+        pangea_input_recipe: None,
+        pangea_output_recipe: None,
     };
     PangeaGuardrail::new(
         Some(GUARDRAIL_NAME.to_owned()),
-        config,
+        params,
         lookup,
         reqwest::Client::default(),
     )

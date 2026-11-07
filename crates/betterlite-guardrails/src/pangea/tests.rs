@@ -11,15 +11,15 @@ use secrecy::SecretString;
 
 pub(crate) mod support;
 
-use crate::pangea::config::{PangeaGuardrailConfigModel, PangeaOptionalParams};
+use crate::pangea::config::PangeaGuardrailParams;
 use crate::pangea::error::PangeaGuardrailError;
 use crate::pangea::hooks::{
     CallbackRegistry, GuardrailResponse, PangeaGuardrail, RequestData, SUPPORTED_EVENT_HOOKS,
     initialize_guardrail,
 };
 use crate::pangea::tests::support::{
-    GUARDRAIL_NAME, Recorder, config, data_with_messages, guardrail, payload, serve, serve_hanging,
-    user,
+    GUARDRAIL_NAME, Recorder, data_with_messages, guardrail, input_object, params, payload,
+    payload_object, serve, serve_hanging, user,
 };
 
 const ALLOWED: &str = r#"{"result":{"blocked":false,"transformed":false}}"#;
@@ -91,8 +91,8 @@ async fn pre_call_sends_chat_messages_tools_and_the_input_event_type() {
     assert_eq!(sent.event_type, "input");
     assert_eq!(sent.input.messages, Some(messages));
     assert_eq!(sent.input.tools, Some(tool_definition()));
-    assert_eq!(sent.input.choices, None);
-    assert_eq!(sent.recipe, None);
+    assert!(!input_object(&captured).contains_key("choices"));
+    assert!(!payload_object(&captured).contains_key("recipe"));
     assert_eq!(recorder.names, [GUARDRAIL_NAME]);
     assert_eq!(data.messages, Some(vec![user("hello")]));
 }
@@ -380,7 +380,7 @@ fn initialize_guardrail_registers_the_callback_it_returns() {
     let mut registry = Registry::default();
     let guardrail = initialize_guardrail(
         Some(GUARDRAIL_NAME.to_owned()),
-        config(),
+        params(),
         &lookup,
         reqwest::Client::default(),
         &mut registry,
@@ -396,7 +396,7 @@ fn initialize_guardrail_requires_a_guardrail_name() {
     let mut registry = Registry::default();
     let error = initialize_guardrail(
         None,
-        config(),
+        params(),
         &lookup,
         reqwest::Client::default(),
         &mut registry,
@@ -409,17 +409,15 @@ fn initialize_guardrail_requires_a_guardrail_name() {
 
 #[test]
 fn guardrail_fields_are_built_from_the_parameters() {
-    let config = PangeaGuardrailConfigModel {
+    let params = PangeaGuardrailParams {
         api_key: Some(SecretString::from("config-key".to_owned())),
         api_base: Some("https://pangea.test".to_owned()),
-        optional_params: Some(PangeaOptionalParams {
-            pangea_input_recipe: Some("in".to_owned()),
-            pangea_output_recipe: Some("out".to_owned()),
-        }),
+        pangea_input_recipe: Some("in".to_owned()),
+        pangea_output_recipe: Some("out".to_owned()),
     };
     let instance = PangeaGuardrail::new(
         Some(GUARDRAIL_NAME.to_owned()),
-        config,
+        params,
         &BTreeMap::new(),
         reqwest::Client::default(),
     )
@@ -427,4 +425,33 @@ fn guardrail_fields_are_built_from_the_parameters() {
     assert_eq!(instance.input_recipe.as_deref(), Some("in"));
     assert_eq!(instance.output_recipe.as_deref(), Some("out"));
     assert_eq!(instance.api_base, "https://pangea.test");
+}
+
+#[tokio::test]
+async fn initialize_guardrail_sends_the_flat_litellm_params_recipe() {
+    let server = serve(StatusCode::OK, ALLOWED.to_owned()).await;
+    let wire = format!(
+        r#"{{"api_key":"test-key","api_base":"{}","pangea_input_recipe":"guard_llm_request"}}"#,
+        server.base
+    );
+    let params: PangeaGuardrailParams = serde_json::from_str(&wire).unwrap();
+    let mut registry = Registry::default();
+    let instance = initialize_guardrail(
+        Some(GUARDRAIL_NAME.to_owned()),
+        params,
+        &BTreeMap::new(),
+        reqwest::Client::default(),
+        &mut registry,
+    )
+    .unwrap();
+    let mut data = data_with_messages(vec![user("hello")]);
+    let mut recorder = Recorder::default();
+    instance
+        .async_pre_call_hook(&mut data, "completion", &mut recorder)
+        .await
+        .unwrap();
+    assert_eq!(
+        payload(&server.captured()).recipe.as_deref(),
+        Some("guard_llm_request")
+    );
 }

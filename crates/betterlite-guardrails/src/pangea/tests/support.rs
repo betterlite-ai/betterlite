@@ -16,7 +16,7 @@ use tokio::time::sleep;
 
 use crate::generic_guardrail_contracts::GuardrailMessage;
 use crate::javelin::AppliedGuardrailsHeader;
-use crate::pangea::config::PangeaGuardrailConfigModel;
+use crate::pangea::config::PangeaGuardrailParams;
 use crate::pangea::hooks::{PangeaGuardrail, RequestData};
 
 pub(crate) const GUARDRAIL_NAME: &str = "pangea-ai-guard";
@@ -107,8 +107,8 @@ pub(crate) fn guardrail(base: &str) -> PangeaGuardrail {
     }
 }
 
-pub(crate) fn config() -> PangeaGuardrailConfigModel {
-    PangeaGuardrailConfigModel::default()
+pub(crate) fn params() -> PangeaGuardrailParams {
+    PangeaGuardrailParams::default()
 }
 
 pub(crate) fn user(content: &str) -> GuardrailMessage {
@@ -161,4 +161,16 @@ pub(crate) struct CapturedInput {
 
 pub(crate) fn payload(captured: &Captured) -> CapturedPayload {
     serde_json::from_slice(&captured.body).unwrap()
+}
+
+pub(crate) fn payload_object(captured: &Captured) -> BTreeMap<String, GuardrailValue> {
+    serde_json::from_slice(&captured.body).unwrap()
+}
+
+pub(crate) fn input_object(captured: &Captured) -> BTreeMap<String, GuardrailValue> {
+    let payload = payload_object(captured);
+    let Some(GuardrailValue::Object(fields)) = payload.get("input") else {
+        panic!("the payload has an input object");
+    };
+    fields.clone()
 }

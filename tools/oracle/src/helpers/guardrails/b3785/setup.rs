@@ -4,7 +4,7 @@ use std::time::Duration;
 use betterlite_config::sections::guardrail_identity::item::GuardrailValue;
 use betterlite_guardrails::generic_guardrail_contracts::GuardrailMessage;
 use betterlite_guardrails::javelin::AppliedGuardrailsHeader;
-use betterlite_guardrails::pangea::config::{PangeaGuardrailConfigModel, PangeaOptionalParams};
+use betterlite_guardrails::pangea::config::PangeaGuardrailParams;
 use betterlite_guardrails::pangea::hooks::{PangeaGuardrail, RequestData};
 use betterlite_http::proxy::base_builder;
 use secrecy::SecretString;
@@ -54,13 +54,11 @@ struct Endpoint<'call> {
 
 impl Endpoint<'_> {
     fn guardrail(&self) -> Result<PangeaGuardrail, Box<HelperError>> {
-        let config = PangeaGuardrailConfigModel {
+        let params = PangeaGuardrailParams {
             api_key: Some(SecretString::from(self.api_key.to_owned())),
             api_base: Some(self.base.to_owned()),
-            optional_params: Some(PangeaOptionalParams {
-                pangea_input_recipe: self.input_recipe.cloned(),
-                pangea_output_recipe: self.output_recipe.cloned(),
-            }),
+            pangea_input_recipe: self.input_recipe.cloned(),
+            pangea_output_recipe: self.output_recipe.cloned(),
         };
         let builder = base_builder();
         let configured = if self.hanging {
@@ -73,7 +71,7 @@ impl Endpoint<'_> {
             .map_err(|error| fail("RequestError", error.to_string(), None))?;
         PangeaGuardrail::new(
             Some(self.guardrail_name.to_owned()),
-            config,
+            params,
             &BTreeMap::new(),
             client,
         )

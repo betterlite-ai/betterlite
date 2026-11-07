@@ -9,7 +9,7 @@ use serde::Serialize;
 
 use crate::generic_guardrail_contracts::GuardrailMessage;
 use crate::javelin::AppliedGuardrailsHeader;
-use crate::pangea::config::PangeaGuardrailConfigModel;
+use crate::pangea::config::PangeaGuardrailParams;
 use crate::pangea::error::PangeaGuardrailError;
 use crate::pangea::wire::{
     AiGuardInput, AiGuardOutput, AiGuardRequest, AiGuardResponse, AiGuardResult,
@@ -53,7 +53,7 @@ pub struct PangeaGuardrail {
 impl PangeaGuardrail {
     pub fn new<L>(
         guardrail_name: Option<String>,
-        config: PangeaGuardrailConfigModel,
+        params: PangeaGuardrailParams,
         lookup: &L,
         client: reqwest::Client,
     ) -> Result<Self, PangeaGuardrailError>
@@ -61,7 +61,7 @@ impl PangeaGuardrail {
         L: EnvironmentLookup,
     {
         let name = guardrail_name.ok_or(PangeaGuardrailError::MissingGuardrailName)?;
-        let settings = config.resolve(lookup)?;
+        let settings = params.resolve(lookup)?;
         Ok(Self {
             guardrail_name: name,
             api_key: settings.api_key,
@@ -258,7 +258,7 @@ pub trait CallbackRegistry {
 
 pub fn initialize_guardrail<R, L>(
     guardrail_name: Option<String>,
-    config: PangeaGuardrailConfigModel,
+    params: PangeaGuardrailParams,
     lookup: &L,
     client: reqwest::Client,
     registry: &mut R,
@@ -269,7 +269,7 @@ where
 {
     let guardrail = Arc::new(PangeaGuardrail::new(
         guardrail_name,
-        config,
+        params,
         lookup,
         client,
     )?);

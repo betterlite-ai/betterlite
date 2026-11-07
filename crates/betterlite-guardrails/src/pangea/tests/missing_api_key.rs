@@ -2,7 +2,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::pangea::config::PangeaGuardrailConfigModel;
+use crate::pangea::config::PangeaGuardrailParams;
 use crate::pangea::error::PangeaGuardrailError;
 use crate::pangea::hooks::PangeaGuardrail;
 use crate::pangea::tests::support::GUARDRAIL_NAME;
@@ -13,7 +13,7 @@ const MISSING_KEY_MESSAGE: &str = "Pangea API Key not found. Set PANGEA_API_KEY 
 fn missing_api_key_raises_the_pangea_missing_secrets_error() {
     let error = PangeaGuardrail::new(
         Some(GUARDRAIL_NAME.to_owned()),
-        PangeaGuardrailConfigModel::default(),
+        PangeaGuardrailParams::default(),
         &BTreeMap::new(),
         reqwest::Client::default(),
     )

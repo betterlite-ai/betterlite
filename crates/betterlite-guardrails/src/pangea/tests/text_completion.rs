@@ -8,7 +8,7 @@ use reqwest::StatusCode;
 use crate::pangea::error::PangeaGuardrailError;
 use crate::pangea::hooks::{GuardrailResponse, RequestData};
 use crate::pangea::tests::support::{
-    GUARDRAIL_NAME, Recorder, data_with_messages, guardrail, payload, serve, user,
+    GUARDRAIL_NAME, Recorder, data_with_messages, guardrail, input_object, payload, serve, user,
 };
 
 const ALLOWED: &str = r#"{"result":{"blocked":false,"transformed":false}}"#;
@@ -45,7 +45,7 @@ async fn text_completion_pre_call_wraps_the_prompt_in_one_user_message() {
     assert!(!sent.debug);
     assert_eq!(sent.input.messages, Some(vec![user(PROMPT)]));
     assert_eq!(sent.input.tools, None);
-    assert_eq!(sent.input.choices, None);
+    assert!(!input_object(&captured).contains_key("choices"));
     assert_eq!(recorder.names, [GUARDRAIL_NAME]);
 }
 
