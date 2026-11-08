@@ -1880,6 +1880,7 @@ version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
  "betterlite-config",
+ "betterlite-context",
  "betterlite-http",
  "betterlite-models",
  "betterlite-prompts",
@@ -2558,9 +2559,13 @@ version = "0.1.0"
 dependencies = [
  "base64 0.23.1",
  "rstest",
+ "rust_decimal",
  "serde",
  "serde_json",
  "thiserror",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
