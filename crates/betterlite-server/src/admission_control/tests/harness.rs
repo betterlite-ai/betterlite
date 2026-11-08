@@ -160,8 +160,14 @@ where
     (routed, gates)
 }
 
-async fn call(router: Router, path: String) -> Answer {
-    let request = Request::builder().uri(path).body(Body::empty()).unwrap();
+async fn call(router: Router, path: String, upgrade: bool) -> Answer {
+    let mut builder = Request::builder().uri(path);
+    if upgrade {
+        builder = builder
+            .header(header::UPGRADE, "websocket")
+            .header(header::CONNECTION, "upgrade");
+    }
+    let request = builder.body(Body::empty()).unwrap();
     let response = router.oneshot(request).await.unwrap();
     let status = response.status();
     let headers = response.headers().clone();
@@ -169,27 +175,8 @@ async fn call(router: Router, path: String) -> Answer {
     (status, headers, body)
 }
 
-async fn call_upgrade(router: Router, path: String) -> Answer {
-    let request = Request::builder()
-        .uri(path)
-        .header(header::UPGRADE, "websocket")
-        .header(header::CONNECTION, "upgrade")
-        .body(Body::empty())
-        .unwrap();
-    let response = router.oneshot(request).await.unwrap();
-    let status = response.status();
-    let headers = response.headers().clone();
-    let body = to_bytes(response.into_body(), 1 << 20).await.unwrap();
-    (status, headers, body)
-}
-
-async fn call_later(router: Router, path: String) -> (String, Answer) {
-    let answer = call(router, path.clone()).await;
-    (path, answer)
-}
-
-async fn call_upgrade_later(router: Router, path: String) -> (String, Answer) {
-    let answer = call_upgrade(router, path.clone()).await;
+async fn call_later(router: Router, path: String, upgrade: bool) -> (String, Answer) {
+    let answer = call(router, path.clone(), upgrade).await;
     (path, answer)
 }
 
@@ -197,14 +184,14 @@ impl Requests {
     pub(super) fn start(&mut self, router: &Router, path: &str) {
         let abort = self
             .tasks
-            .spawn(call_later(router.clone(), path.to_owned()));
+            .spawn(call_later(router.clone(), path.to_owned(), false));
         self.aborts.insert(path.to_owned(), abort);
     }
 
     pub(super) fn start_upgrade(&mut self, router: &Router, path: &str) {
         let abort = self
             .tasks
-            .spawn(call_upgrade_later(router.clone(), path.to_owned()));
+            .spawn(call_later(router.clone(), path.to_owned(), true));
         self.aborts.insert(path.to_owned(), abort);
     }
 
