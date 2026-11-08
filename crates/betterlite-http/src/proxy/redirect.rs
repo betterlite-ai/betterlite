@@ -62,7 +62,7 @@ fn next_target(current: &HttpxUrl, target_location: &str) -> Result<HttpxUrl, Tr
     }
     if target.scheme != "http" && target.scheme != "https" {
         return Err(TransportError::RedirectScheme {
-            scheme: target.scheme,
+            scheme: target.scheme.into_boxed_str(),
         });
     }
     Ok(target)

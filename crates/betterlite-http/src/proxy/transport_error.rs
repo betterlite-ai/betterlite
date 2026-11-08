@@ -69,7 +69,7 @@ pub enum TransportError {
     #[error("the redirect target carries a user name or password")]
     RedirectUserinfo,
     #[error("the redirect target scheme {scheme:?} is not http or https")]
-    RedirectScheme { scheme: String },
+    RedirectScheme { scheme: Box<str> },
     #[error("the provider redirected an HTTPS request to HTTP")]
     InsecureRedirect,
     #[error("the redirect cannot replay a request body that streams")]

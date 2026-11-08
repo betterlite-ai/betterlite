@@ -170,7 +170,8 @@ impl ProxiedClient {
         let response = if self.network_mock {
             mock::respond(&built).map_err(TransportError::Mock)?
         } else {
-            redirect::send(self, built).await?
+            // boxed so the hop state machine does not ride inside every caller's future
+            Box::pin(redirect::send(self, built)).await?
         };
         check_headers(response.headers(), self.limits.header_bytes)?;
         Ok(StreamResponse {
