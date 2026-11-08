@@ -1,0 +1,9 @@
+kind: helper
+name: condition-exact-and-regex
+call:
+  b3240:
+    function: evaluate_condition
+    condition: {model: [gpt-4, "gpt-4o.*"]}
+    context: {model: gpt-4o-mini}
+env: {}
+compare: {ignore: []}

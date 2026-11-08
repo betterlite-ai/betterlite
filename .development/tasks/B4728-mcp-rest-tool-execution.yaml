@@ -37,6 +37,8 @@ description: >-
   instead), allowed_mcp_servers result, per-user OAuth headers and caller headers. The result is
   converted through complete_call_tool_result(executed, WireCompat.LEGACY) before logging.
 
+  The plan registers helper operation b4728 as a not_built stub in tools/oracle/src/helpers/mcp.rs and tools/oracle/helpers/dispatch.py. Fill tools/oracle/src/helpers/mcp/b4728.rs, write tools/oracle/helpers/b4728.py, and leave both registries as they are.
+
 scope:
   paths:
     - crates/betterlite-server/src/api/mcp_rest_tool_execution.rs
@@ -45,6 +47,10 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/mcp-rest-tool-execution/**
     - tools/oracle/fuzz/corpus/helper_case/mcp-rest-tool-execution-*
+    - tools/oracle/helpers/b4728.py
+    - tools/oracle/helpers/b4728/**
+    - tools/oracle/src/helpers/mcp/b4728.rs
+    - tools/oracle/src/helpers/mcp/b4728/**
   lint_tables: false
 
 references:

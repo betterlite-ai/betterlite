@@ -1,0 +1,15 @@
+kind: probe
+name: clean-streak-adds-one
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_concurrency:
+        initial: 2
+        floor: 1
+        ceiling: 8
+        steps:
+          - {action: snapshot}
+          - {action: record, throttled: false}
+          - {action: record, throttled: false}
+          - {action: record, throttled: false}
