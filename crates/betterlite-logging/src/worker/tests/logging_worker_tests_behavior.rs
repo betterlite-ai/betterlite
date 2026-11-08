@@ -362,8 +362,8 @@ async fn a_callback_logs_under_the_span_captured_at_enqueue() {
     let flush = worker.flush().await;
     assert_eq!(flush.completed, 2);
     let contents = buffer.contents();
-    assert!(line_with(&contents, "callback=first").contains("request=request-a"));
-    assert!(line_with(&contents, "callback=second").contains("request=request-b"));
+    assert!(line_with(&contents, r#"callback="first""#).contains(r#"request="request-a""#));
+    assert!(line_with(&contents, r#"callback="second""#).contains(r#"request="request-b""#));
     let shutdown = worker.stop().await;
     assert!(shutdown.drained);
 }
