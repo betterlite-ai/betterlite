@@ -1,0 +1,12 @@
+kind: helper
+name: mock-calls-stream-error
+call:
+  mock_calls:
+    model: gpt-4o
+    mode: stream
+    clock: 1700000000
+    uuid: "12345678-1234-4234-8234-123456789012"
+    operator_mock_response: "Exception: mock_streaming_error"
+env: {}
+compare:
+  ignore: []

@@ -6,11 +6,13 @@ use betterlite_config::loader::ConfigLoader;
 use betterlite_config::proxy::ProxyPolicy;
 use betterlite_config::types::Config as LoadedConfig;
 use betterlite_config::types::ProxyTrust;
+use betterlite_core::mock::{chat::response as mock_chat, embedding::response as mock_embedding};
 use betterlite_error::envelope::WireField;
 use betterlite_error::error::ErrorClass;
 use betterlite_error::openai::{OpenaiExceptionInput, body::OpenaiErrorBody, map_openai_exception};
 use betterlite_http::proxy::{ProxiedClient, UpstreamResponse};
 use betterlite_openai::chat::ChatRequest;
+use betterlite_openai::chat::MockSettings;
 use betterlite_openai::chat::deployment::{ChatDeployment, OpenAiDefaults};
 use betterlite_openai::chat::execution::{ChatError, ChatExecutor};
 use betterlite_openai::chat::response::ChatResponse;
@@ -21,11 +23,12 @@ use serde::Serialize;
 use serde_json::Value;
 use tokio::runtime::Builder;
 use tokio::time::timeout;
+use uuid::Uuid;
 
 use super::capture::{Execution, Stop};
 use super::error::SdkHttpError;
 use super::result::{ChatCompletion, Choice, Failure, Nullable, SdkResult};
-use super::{ChatMessage, OpenaiChat, SdkHttpCall};
+use super::{ChatMessage, OpenaiChat};
 
 const POLL: Duration = Duration::from_millis(10);
 
@@ -36,12 +39,11 @@ struct WireChat<'wire> {
 }
 
 pub(crate) fn execute(
-    call: &SdkHttpCall,
+    chat: &OpenaiChat,
     api_base: &str,
     env: &BTreeMap<String, String>,
     stop: &Stop<'_>,
 ) -> Execution {
-    let SdkHttpCall::OpenaiChat(chat) = call;
     let result = Builder::new_current_thread()
         .enable_all()
         .build()
@@ -130,7 +132,7 @@ fn deployments(
 }
 
 // the same defaults the server builds, so proxy-wide base URLs, keys and the organization resolve from the case env
-fn openai_defaults(config: &LoadedConfig) -> OpenAiDefaults {
+pub(crate) fn openai_defaults(config: &LoadedConfig) -> OpenAiDefaults {
     let settings = &config.sections.resource_sdk_settings;
     let bases = [
         &settings.api_base,
@@ -170,6 +172,11 @@ async fn send(
             text_models: BTreeSet::new(),
         },
         random: Mutex::new(StdRng::seed_from_u64(0)),
+        clock: || 0,
+        next_id: Uuid::new_v4,
+        mock: MockSettings::default(),
+        mock_chat,
+        mock_embedding,
     };
     let wire = WireChat {
         model: &chat.model,

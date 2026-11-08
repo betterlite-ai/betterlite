@@ -40,6 +40,7 @@ exceptions = [
   # MPL-2.0 section 3.2(a) is answered in THIRD_PARTY_NOTICES.md; both crates are used unmodified
   { allow = ["MPL-2.0"], crate = "colored" },
   { allow = ["MPL-2.0"], crate = "option-ext" },
+  { allow = ["BSL-1.0"], crate = "xxhash-rust" },
 ]
 [bans]
 multiple-versions = "deny"
