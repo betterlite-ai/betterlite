@@ -317,6 +317,30 @@ fn custom_base_cache_control() {
     assert!(cache_control_kept(&api_base.body(Mode::Sync)));
     custom_base_is_not_mistaken_for_hosted();
     other_provider_does_not_preserve_cache_control();
+    later_sources_do_not_override_earlier_ones();
+}
+
+fn later_sources_do_not_override_earlier_ones() {
+    let mut global_over_env = cached_fixture();
+    global_over_env.global_api_base = Some("https://api.openai.com/v1".to_owned());
+    global_over_env.environment.insert(
+        "OPENAI_BASE_URL".to_owned(),
+        "http://localhost:6000/v1".to_owned(),
+    );
+    assert!(!cache_control_kept(&global_over_env.body(Mode::Sync)));
+
+    let mut base_url_over_api_base = cached_fixture();
+    base_url_over_api_base.environment.insert(
+        "OPENAI_BASE_URL".to_owned(),
+        "https://api.openai.com/v1".to_owned(),
+    );
+    base_url_over_api_base.environment.insert(
+        "OPENAI_API_BASE".to_owned(),
+        "http://localhost:7000/v1".to_owned(),
+    );
+    assert!(!cache_control_kept(
+        &base_url_over_api_base.body(Mode::Sync)
+    ));
 }
 
 fn custom_base_is_not_mistaken_for_hosted() {

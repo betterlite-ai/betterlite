@@ -13,7 +13,7 @@ pub struct Raw {
 #[derive(Debug, Default, serde::Deserialize)]
 pub struct RawSettings {
     #[serde(default)]
-    pub openai_system_messages_first: bool,
+    pub openai_system_messages_first: Option<bool>,
 }
 
 // LiteLLM reads this module-level flag from litellm_settings only; no environment variable sets it
@@ -30,7 +30,10 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         Ok(Settings {
-            openai_system_messages_first: self.settings.openai_system_messages_first,
+            openai_system_messages_first: self
+                .settings
+                .openai_system_messages_first
+                .unwrap_or_default(),
         })
     }
 }

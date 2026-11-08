@@ -92,5 +92,22 @@ call:
           optional_params:
             tools:
               - {type: function, function: {name: f, parameters: {}}, cache_control: {type: ephemeral}}
+        - model: gpt-4o
+          provider: openai
+          global_api_base: https://api.openai.com/v1
+          environment: {OPENAI_BASE_URL: http://localhost:6000/v1}
+          messages:
+            - {role: system, content: You are helpful., cache_control: {type: ephemeral}}
+          optional_params:
+            tools:
+              - {type: function, function: {name: f, parameters: {}}, cache_control: {type: ephemeral}}
+        - model: gpt-4o
+          provider: openai
+          environment: {OPENAI_BASE_URL: https://api.openai.com/v1, OPENAI_API_BASE: http://localhost:7000/v1}
+          messages:
+            - {role: system, content: You are helpful., cache_control: {type: ephemeral}}
+          optional_params:
+            tools:
+              - {type: function, function: {name: f, parameters: {}}, cache_control: {type: ephemeral}}
 env: {}
 compare: {ignore: []}
