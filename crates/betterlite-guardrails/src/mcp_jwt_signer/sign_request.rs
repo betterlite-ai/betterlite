@@ -150,7 +150,7 @@ fn log_signed(
         exp = %claims.get("exp").map_or_else(String::new, claim_text),
         verified,
         channel = signer.settings.channel_token_audience.is_some(),
-        call_type = call_type_name(call_type),
+        call_type = %call_type_name(call_type),
         "MCPJWTSigner: signed JWT"
     );
 }
