@@ -1,3 +1,5 @@
+use rstest::rstest;
+
 use crate::tools::error::ToolFormatError;
 use crate::tools::schema::MAX_SCHEMA_DEPTH;
 use crate::tools::{ToolLimits, format_function_definitions, parse_tool_definitions};
@@ -27,7 +29,7 @@ fn leaf_with(properties: usize) -> String {
     leaf
 }
 
-#[test]
+#[rstest]
 fn token_formatting_behavior_tests_behavior() {
     let too_deep = nested_arrays(MAX_SCHEMA_DEPTH + 8, r#"{"type":"string"}"#);
     let error = format(&tool_with(&too_deep)).expect_err("a schema past the depth cap is rejected");
