@@ -1,0 +1,11 @@
+kind: helper
+name: request-unsupported-provider
+call:
+  b5990:
+    steps:
+      - kind: transform_request
+        model: "novita/org/model"
+        messages: [{role: user, content: "hi"}]
+        mapping: {other: {status: live, providerId: "org/mapped"}}
+env: {}
+compare: {ignore: []}
