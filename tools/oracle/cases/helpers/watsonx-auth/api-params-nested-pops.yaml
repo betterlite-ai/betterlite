@@ -1,0 +1,44 @@
+kind: helper
+name: watsonx-auth-api-params-nested-pops
+env: {}
+compare: {ignore: []}
+call:
+  b5970:
+    env:
+      WX_PROJECT_ID: wx-project-env
+      PROJECT_ID: project-env
+      WX_REGION: wx-region-env
+      REGION: region-env
+      WX_SPACE_ID: wx-space-env
+      SPACE_ID: space-env
+    routes: []
+    steps:
+      - op: api_params
+        model: granite
+        params:
+          project_id: outer-project
+          watsonx_project: inner-project
+          space_id: space
+          region_name: outer-region
+          region: inner-region
+          watsonx_region_name: third-region
+          watsonx_region: fourth-region
+          unrelated: kept
+      - op: api_params
+        model: deployment/abc
+        params: {watsonx_project: inner-project, region: inner-region}
+      - op: api_params
+        model: granite
+        params:
+          project_id: null
+          watsonx_project: inner-project
+          region_name: null
+          region: inner-region
+          watsonx_region_name: third-region
+          watsonx_region: fourth-region
+      - op: api_params
+        model: granite
+        params: {project_id: "", space_id: space}
+      - op: api_params
+        model: granite
+        params: {}

@@ -1,0 +1,25 @@
+{
+  "kind": "helper",
+  "name": "otel-span-payloads-llm-empty-route-falls-back",
+  "call": {
+    "b3844": {
+      "function": "llm_call",
+      "payload": {
+        "model": "gpt-4o",
+        "metadata": {
+          "user_api_key_request_route": "/v1/chat/completions"
+        },
+        "response": {
+          "choices": []
+        }
+      },
+      "capture_content": false,
+      "request_route": "",
+      "session_id": ""
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

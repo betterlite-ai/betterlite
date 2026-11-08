@@ -14,6 +14,8 @@ permissions: {}
 env:
   # three runners take main's whole suite from 13.5 to 10 minutes
   TEST_SHARDS: 3
+  # cargo mutants tests one mutant at a time, so a task pull request splits them over three runners
+  MUTANTS_SHARDS: 3
 
 concurrency:
   group: gate-${{ github.event.pull_request.number || github.event.merge_group.head_ref || github.ref }}
@@ -68,7 +70,7 @@ jobs:
           if [[ $EVENT == pull_request ]]; then
             parts='["lint"]'
             if [[ -n $task ]]; then
-              parts='["lint","task","mutants"]'
+              parts=$(jq -cn --argjson shards "$MUTANTS_SHARDS" '["lint","task"] + [range(1; $shards + 1) | "mutants-\(.)"]')
             fi
           elif [[ $EVENT == merge_group && -n $task ]]; then
             parts='["lint","task"]'
@@ -83,10 +85,12 @@ jobs:
     needs: find
     runs-on: ubuntu-24.04
     # the longest local mutants run took 130 minutes
-    timeout-minutes: ${{ matrix.part == 'mutants' && 300 || 120 }}
+    timeout-minutes: ${{ startsWith(matrix.part, 'mutants-') && 300 || 120 }}
     permissions:
       contents: read
     strategy:
+      # one red part must not cancel the others, or their failures only show in the next fix round
+      fail-fast: false
       matrix:
         part: ${{ fromJSON(needs.find.outputs.parts) }}
     container:
@@ -110,13 +114,24 @@ jobs:
       CARGO_PROFILE_DEV_DEBUG: line-tables-only
       CARGO_PROFILE_TEST_DEBUG: line-tables-only
       # the tools check reads the cargo-shear version from .crates.toml, since cargo shear --version prints "dev"
-      SOURCE_TOOLS: |
+      TOOLS: |
+        /usr/local/cargo/bin/cargo-nextest
+        /usr/local/cargo/bin/cargo-deny
+        /usr/local/cargo/bin/cargo-llvm-cov
+        /usr/local/cargo/bin/cargo-mutants
+        /usr/local/cargo/bin/typos
+        /usr/local/cargo/bin/prek
+        /usr/local/cargo/bin/zizmor
+        /usr/local/cargo/bin/uv
+        /usr/local/cargo/bin/uvx
         /usr/local/cargo/bin/cargo-shear
         /usr/local/cargo/bin/ast-grep
         /usr/local/cargo/bin/sg
         /usr/local/cargo/bin/similarity-rs
         /usr/local/cargo/.crates.toml
         /usr/local/cargo/.crates2.json
+      # names every version the two install steps pin, so a bump misses the cache and installs fresh
+      TOOLS_KEY: tools-nextest-0.9.140-deny-0.20.2-llvm-cov-0.8.7-mutants-27.1.0-typos-1.48.0-prek-0.4.9-zizmor-1.26.1-uv-0.11.14-shear-1.13.1-ast-grep-0.45.3-similarity-rs-0.5.0
       POSTGRES_TEST_URL: postgresql://betterlite:betterlite@postgres:5432/betterlite
       BETTERLITE_ORACLE_CACHE: ${{ github.event_name == 'push' && 'shared' || 'own' }}
     steps:
@@ -178,30 +193,31 @@ jobs:
           # one thread: a child process spawned by one test holds another test's seat lock until it execs
           cargo test --locked --manifest-path .development/gate/Cargo.toml -- --test-threads=1
 
-      - name: Install the pinned tools
-        if: github.event_name != 'pull_request' || needs.find.outputs.task != ''
-        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
-        with:
-          tool: cargo-nextest@0.9.140,cargo-deny@0.20.2,cargo-llvm-cov@0.8.7,cargo-mutants@27.1.0,typos@1.48.0,prek@0.4.9,zizmor@1.26.1,uv@0.11.14
-
-      - name: Restore the tools built from source
+      # one prebuilt download took 3.5 minutes (run 42477832070), so every tool comes from one cache that main's lint job fills
+      - name: Restore the tools
         if: github.event_name != 'pull_request' || needs.find.outputs.task != ''
         id: tools
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ env.SOURCE_TOOLS }}
-          key: source-tools-cargo-shear-1.13.1-ast-grep-0.45.3-similarity-rs-0.5.0
+          path: ${{ env.TOOLS }}
+          key: ${{ env.TOOLS_KEY }}
+
+      - name: Install the pinned tools
+        if: (github.event_name != 'pull_request' || needs.find.outputs.task != '') && steps.tools.outputs.cache-hit != 'true'
+        uses: taiki-e/install-action@8cca0918f8471c33515202b73f56ab27f2bed283 # v2.87.29
+        with:
+          tool: cargo-nextest@0.9.140,cargo-deny@0.20.2,cargo-llvm-cov@0.8.7,cargo-mutants@27.1.0,typos@1.48.0,prek@0.4.9,zizmor@1.26.1,uv@0.11.14
 
       - name: Install the tools without prebuilt binaries
         if: (github.event_name != 'pull_request' || needs.find.outputs.task != '') && steps.tools.outputs.cache-hit != 'true'
         run: cargo install --locked --force cargo-shear@1.13.1 ast-grep@0.45.3 similarity-rs@0.5.0
 
-      - name: Save the tools built from source
+      - name: Save the tools
         if: github.ref == 'refs/heads/main' && matrix.part == 'lint' && steps.tools.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ env.SOURCE_TOOLS }}
-          key: source-tools-cargo-shear-1.13.1-ast-grep-0.45.3-similarity-rs-0.5.0
+          path: ${{ env.TOOLS }}
+          key: ${{ env.TOOLS_KEY }}
 
       # cargo gate affected reads the package graph offline, and a cold cache lacks the crates no Linux build downloads.
       - name: Download every crate the lockfile names
@@ -243,9 +259,11 @@ jobs:
               # the tests use LiteLLM but not its dev tools, about 330 MB
               UV_NO_DEV=1 exec cargo nextest run --locked --no-tests=warn --partition "hash:${PART#tests-}/$TEST_SHARDS" $packages ;;
             task) for id in "${lint[@]}" "${later[@]}"; do selection+=(--skip "$id"); done ;;
-            mutants)
+            mutants-*)
               if ! cargo gate list "$TASK" | awk '$1 == "mutants" {found = 1} END {exit !found}'; then echo "the task has no mutants check"; exit 0; fi
               export UV_NO_DEV=1
+              # cargo mutants numbers its shards from 0
+              export MUTANTS_SHARD="$(( ${PART#mutants-} - 1 ))/$MUTANTS_SHARDS"
               selection=(--only mutants) ;;
           esac
           if [[ $PART == task ]]; then

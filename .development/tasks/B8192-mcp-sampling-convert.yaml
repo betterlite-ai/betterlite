@@ -14,6 +14,8 @@ description: >-
   Python's message. Read lines 67 to 730 of the file; the scoring formula and the stop reason
   mapping are exact.
 
+  The plan registers helper operation b8192 as a not_built stub in tools/oracle/src/helpers/mcp.rs and tools/oracle/helpers/dispatch.py. Fill tools/oracle/src/helpers/mcp/b8192.rs, write tools/oracle/helpers/b8192.py, and leave both registries as they are.
+
 scope:
   paths:
     - crates/betterlite-mcp/src/sampling_convert.rs
@@ -22,6 +24,10 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/mcp-sampling-convert/**
     - tools/oracle/fuzz/corpus/helper_case/mcp-sampling-convert-*
+    - tools/oracle/helpers/b8192.py
+    - tools/oracle/helpers/b8192/**
+    - tools/oracle/src/helpers/mcp/b8192.rs
+    - tools/oracle/src/helpers/mcp/b8192/**
   lint_tables: false
 
 references:
