@@ -187,12 +187,13 @@ impl<D: Delivery> BraintrustLogger<D> {
         };
         let id = self.request_project(self.endpoint(route)?, name).await?;
         self.with_projects(|projects| {
-            if projects.names.len() >= MAX_PROJECT_NAMES {
+            if projects.names.insert(name.to_owned(), id.clone()).is_none() {
+                projects.order.push_back(name.to_owned());
+            }
+            if projects.names.len() > MAX_PROJECT_NAMES {
                 let oldest = projects.order.pop_front().unwrap_or_default();
                 projects.names.remove(&oldest);
             }
-            projects.order.push_back(name.to_owned());
-            projects.names.insert(name.to_owned(), id.clone());
         })?;
         Ok(id)
     }

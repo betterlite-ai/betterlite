@@ -1,11 +1,12 @@
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
-use std::future::{Future, ready};
+use std::future::Future;
 use std::sync::{Arc, Mutex};
 
 use betterlite_models::decisions::Json;
 use chrono::{DateTime, Utc};
 use secrecy::SecretString;
 use thiserror::Error;
+use tokio::task::yield_now;
 
 use crate::braintrust_logging::logger::{BraintrustError, BraintrustLogger};
 use crate::braintrust_logging::payload::{CallbackPath, ResponseObject, SuccessEvent};
@@ -75,12 +76,22 @@ pub(crate) struct RecordedRequest {
 pub(crate) struct Answer {
     status: u16,
     body: Option<Json>,
+    yields: bool,
 }
 
 pub(crate) fn answer(body: &str) -> Answer {
     Answer {
         status: 200,
         body: Some(json(body)),
+        yields: false,
+    }
+}
+
+pub(crate) fn slow_answer(body: &str) -> Answer {
+    Answer {
+        status: 200,
+        body: Some(json(body)),
+        yields: true,
     }
 }
 
@@ -88,6 +99,7 @@ pub(crate) fn failing(status: u16, body: &str) -> Answer {
     Answer {
         status,
         body: Some(json(body)),
+        yields: false,
     }
 }
 
@@ -140,6 +152,7 @@ impl Replay {
             .unwrap_or(Answer {
                 status: 200,
                 body: None,
+                yields: false,
             });
         let response_body = replied.body.map_or_else(
             || b"null".to_vec(),
@@ -159,7 +172,19 @@ impl Delivery for Replay {
         &self,
         request: PostRequest,
     ) -> impl Future<Output = Result<PostResponse, Self::Error>> + Send {
-        ready(self.record(&request))
+        let yields = self
+            .answers
+            .lock()
+            .unwrap()
+            .front()
+            .is_some_and(|answer| answer.yields);
+        let response = self.record(&request);
+        async move {
+            if yields {
+                yield_now().await;
+            }
+            response
+        }
     }
 }
 

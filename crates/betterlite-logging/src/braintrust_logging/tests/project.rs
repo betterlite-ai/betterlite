@@ -2,7 +2,7 @@ use rstest::rstest;
 
 use super::support::{
     BASE, KEY, ResponseKind, Scenario, answer, failing, json, log_named_projects, logger,
-    model_completion,
+    model_completion, slow_answer,
 };
 use crate::braintrust_logging::logger::BraintrustError;
 use crate::braintrust_logging::payload::CallbackPath;
@@ -146,7 +146,9 @@ async fn dot_segment_project_ids_are_rejected(#[case] project_id: &str) {
 async fn project_cache_keeps_1024_names_and_evicts_the_oldest() {
     let answers = (0..1025_u32)
         .flat_map(|index| [answer(&format!(r#"{{"id":"p{index}"}}"#)), answer("{}")])
-        .chain([answer(r#"{"id":"p0"}"#), answer("{}"), answer("{}")])
+        .chain([answer(r#"{"id":"p0"}"#), answer("{}")])
+        .chain([answer(r#"{"id":"p1"}"#), answer("{}")])
+        .chain([answer("{}")])
         .collect::<Vec<_>>();
     let (logger, replay) = logger(answers, &[]);
     let names = (0..1025_u32)
@@ -155,13 +157,65 @@ async fn project_cache_keeps_1024_names_and_evicts_the_oldest() {
     log_named_projects(&logger, &names).await.unwrap();
     assert_eq!(replay.requests().len(), 2050);
     log_named_projects(&logger, &names[..1]).await.unwrap();
-    let requests = replay.requests();
-    assert_eq!(requests.len(), 2052);
-    assert_eq!(requests[2050].url, format!("{BASE}/project"));
-    assert_eq!(requests[2050].body, json(r#"{"name":"p0"}"#));
-    assert_eq!(requests[2051].url, format!("{BASE}/project_logs/p0/insert"));
+    let after_evicting_p0 = replay.requests();
+    assert_eq!(after_evicting_p0.len(), 2052);
+    assert_eq!(after_evicting_p0[2050].url, format!("{BASE}/project"));
+    assert_eq!(after_evicting_p0[2050].body, json(r#"{"name":"p0"}"#));
+    assert_eq!(
+        after_evicting_p0[2051].url,
+        format!("{BASE}/project_logs/p0/insert")
+    );
     log_named_projects(&logger, &names[1..2]).await.unwrap();
-    let latest = replay.requests();
-    assert_eq!(latest.len(), 2053);
-    assert_eq!(latest[2052].url, format!("{BASE}/project_logs/p1/insert"));
+    let after_evicting_p1 = replay.requests();
+    assert_eq!(after_evicting_p1.len(), 2054);
+    assert_eq!(after_evicting_p1[2052].url, format!("{BASE}/project"));
+    assert_eq!(after_evicting_p1[2052].body, json(r#"{"name":"p1"}"#));
+    assert_eq!(
+        after_evicting_p1[2053].url,
+        format!("{BASE}/project_logs/p1/insert")
+    );
+    log_named_projects(&logger, &names[3..4]).await.unwrap();
+    let after_cached_lookup = replay.requests();
+    assert_eq!(after_cached_lookup.len(), 2055);
+    assert_eq!(
+        after_cached_lookup[2054].url,
+        format!("{BASE}/project_logs/p3/insert")
+    );
+}
+
+#[tokio::test]
+async fn duplicate_project_inserts_do_not_grow_the_cache_past_1024() {
+    let mut answers = vec![
+        slow_answer(r#"{"id":"dup-a"}"#),
+        slow_answer(r#"{"id":"dup-b"}"#),
+        answer("{}"),
+        answer("{}"),
+    ];
+    answers.extend(
+        (0..1025_u32).flat_map(|index| [answer(&format!(r#"{{"id":"n{index}"}}"#)), answer("{}")]),
+    );
+    answers.extend([answer(r#"{"id":"n0"}"#), answer("{}")]);
+    let (logger, replay) = logger(answers, &[]);
+    let first = named_project();
+    let second = named_project();
+    let first_event = first.event();
+    let second_event = second.event();
+    let (left, right) = tokio::join!(
+        logger.log_success_event(&first_event, CallbackPath::Sync),
+        logger.log_success_event(&second_event, CallbackPath::Sync),
+    );
+    left.unwrap();
+    right.unwrap();
+    assert_eq!(replay.requests().len(), 4);
+    let names = (0..1025_u32)
+        .map(|index| format!("n{index}"))
+        .collect::<Vec<_>>();
+    log_named_projects(&logger, &names).await.unwrap();
+    assert_eq!(replay.requests().len(), 2054);
+    log_named_projects(&logger, &names[..1]).await.unwrap();
+    let requests = replay.requests();
+    assert_eq!(requests.len(), 2056);
+    assert_eq!(requests[2054].url, format!("{BASE}/project"));
+    assert_eq!(requests[2054].body, json(r#"{"name":"n0"}"#));
+    assert_eq!(requests[2055].url, format!("{BASE}/project_logs/n0/insert"));
 }
