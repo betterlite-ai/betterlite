@@ -1,0 +1,13 @@
+id: B8682
+milestone: M8 platform
+title: Mount the Lens admin and worker routes with their production ports
+status: todo
+depends_on: [B8610, B8611, B4500, B4501, B4503, B4504, B4505, B052, B870, B844, B5102, B3003, B743, B2225]
+file: tasks/B8682-lens-mount.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

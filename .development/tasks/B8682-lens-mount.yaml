@@ -1,0 +1,136 @@
+id: B8682
+title: Mount the Lens admin and worker routes with their production ports
+description: >-
+  B4503 builds `lens_admin_routes::router(state)` (16 routes under /lens) and B4505 builds `lens_worker_routes::router(state)`
+  (7 routes under /lens/worker). Both take state structs whose ports have fakes only, and both leave the mount to this
+  task. This task builds the production state and mounts both routers. Code goes in crates/betterlite-server/src/app/edge.rs
+  and crates/betterlite-server/src/app/edge/lens.rs with app/edge/lens/ (declared by the skeleton). It never edits
+  routes.rs, server.rs, app.rs or B4503 and B4505's modules.
+
+
+  Auth placement. LiteLLM's admin Lens routes depend on user_api_key_auth and are listed in litellm_native_routes, so
+  `edge::mount` merges the admin router, inside the key auth layers. The worker routes have no user_api_key_auth
+  dependency and are not in litellm_native_routes (B742 says so); they check the worker's own bearer token in
+  worker_auth. So `edge::mount_public` merges the worker router, outside the key auth layers, and a worker token never
+  meets the master key check.
+
+
+  State, built once in the mount function that needs it, from `state.config` and `state.shared`. Read B4503's
+  lens_access::state and B4505's state module for the exact fields.
+
+  `LensRoutesState` (B4503): the repository is B4501's LensRepository over `shared.db`, absent when db is None; the
+  storage is None (no task builds the ClickHouse Lens queries yet, see out_of_scope; LiteLLM's answer without tracing is
+  then the same: availability and agents answer empty, preview and sample need storage and answer 501); ModelNames is
+  `lens::RouterModelNames`, which takes `shared.router.get()` per call, answers B844's get_model_names(team_id) on that
+  router's catalog (read proxy_router.rs for how ProxyRouter exposes B844's indexes) and is absent from the state when
+  the handle holds no router, as LiteLLM passes None when llm_router is None; KeyResolver is B4504's port backed by the
+  B870 IdentityStore that B052's virtual key auth slot builds (read state/virtual_key_auth.rs and reuse its constructor
+  and inputs: `shared.db` and `shared.auth_cache`); Clock is `lens::SystemClock` (now in UTC); IdSource is
+  `lens::RandomIds` (uuid v4 text and the operating system's random bytes for the worker token).
+
+  `WorkerRoutesState` (B4505): the same LensRoutesState and the bundle B4504 exports for lens_inference::analyze, built
+  with one production adapter per port its constructor takes. At the pin of this plan those ports are: KeyResolver as
+  above; InternalAuthorizer over B052's authorize_internal_virtual_key; ChatRunner, which runs one chat completion the way
+  POST /v1/chat/completions does for an already authorized key (read crates/betterlite-server/src/routes/chat.rs and
+  B014's dispatch for the call it makes) with the identity InternalAuthorizer returned, maps a failure through B5102's
+  status mapping, and returns the validated completion with the value the chat route writes into the
+  x-litellm-response-cost header; ReservationReleaser over B3003's release_unbound_budget_reservation; ClientIp over
+  B743's get_mcp_client_ip; ModelCatalog over B844's get_model_list(model_name, team_id) on the router as above, empty
+  without a router; ModelPrices over B2225's get_model_info. If the merged constructor takes a port not named here,
+  back it with the function its trait doc names, and report it. Each adapter is a plain struct holding Arcs, forwarding
+  one call and mapping the owner's error into the error type the trait declares.
+
+
+  Tests in app/edge/lens/tests.rs (names start with `lens_`) boot a Router through mount and mount_public with fakes
+  where a database or a model call is needed: every admin path answers 401 without a key and something other than 401 or
+  404 with the master key; every worker path answers worker_auth's 401 without a bearer and is not stopped by the key
+  layer when a bearer is sent; RouterModelNames and ModelCatalog answer empty without a router and forward with one; and
+  each adapter forwards its arguments unchanged.
+
+
+  HTTP oracle cases through the booted proxy. They move here from B4503 and B4505, which could not pass them before this
+  mount; write each from that task's text, master key set, no database, no tracing store. From B4503, in
+  tools/oracle/cases/http/lens-admin-routes/: list-without-database-503, list-without-auth-401, create-empty-body-422,
+  create-unknown-model-400, create-bad-execution-id-422, create-known-model-without-database-503,
+  read-without-database-503, runs-negative-offset-422, availability-without-tracing-200, agents-without-tracing-200,
+  preview-without-tracing-501, preview-naive-as-of-422, register-bad-key-id-422, billing-key-without-database-503,
+  revoke-without-database-503 and evidence-without-database-503. From B4505, in
+  tools/oracle/cases/http/lens-worker-routes/: claim-without-bearer, claim-basic-scheme, claim-without-database-503,
+  claim-bad-query-without-database-503, progress-without-database-503, heartbeat-without-database-503,
+  sample-without-database-503, content-without-database-503, model-without-database-503 and
+  result-without-database-503.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/edge.rs
+    - crates/betterlite-server/src/app/edge/lens.rs
+    - crates/betterlite-server/src/app/edge/lens/**
+    - tools/oracle/cases/http/lens-admin-routes/**
+    - tools/oracle/cases/http/lens-worker-routes/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/endpoints.py
+    why: The admin routes with user_api_key_auth and the worker routes with worker_auth only.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/state.py
+    why: How LiteLLM builds the Lens repository, model names and storage from the proxy globals.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/inference.py
+    why: The calls the analyze ports stand for.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19996
+    why: lens_router included on the app.
+dod:
+  - text: edge::mount merges the admin Lens router inside the key auth layers and edge::mount_public the worker router outside them, each once.
+    proof: [lens-tests, oracle]
+  - text: The Lens states use the shared database, the live router and production adapters for every port, with no storage and no router handled as LiteLLM does.
+    proof: [lens-tests, oracle]
+  - text: The 26 Lens cases moved from B4503 and B4505 match LiteLLM through the booted proxy.
+    proof: [lens-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: lens-tests
+      why: a Lens router is missing, mounted on the wrong side of the key layer, or a port forwards to the wrong owner
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::edge::lens::/)'
+    - id: lens-cases
+      why: without the moved case files the oracle proof compares nothing for the Lens mount
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/lens-admin-routes tools/oracle/cases/http/lens-worker-routes)"
+oracle_cases:
+  - tools/oracle/cases/http/lens-admin-routes/list-without-database-503.yaml
+  - tools/oracle/cases/http/lens-admin-routes/list-without-auth-401.yaml
+  - tools/oracle/cases/http/lens-admin-routes/create-empty-body-422.yaml
+  - tools/oracle/cases/http/lens-admin-routes/create-unknown-model-400.yaml
+  - tools/oracle/cases/http/lens-admin-routes/create-bad-execution-id-422.yaml
+  - tools/oracle/cases/http/lens-admin-routes/create-known-model-without-database-503.yaml
+  - tools/oracle/cases/http/lens-admin-routes/read-without-database-503.yaml
+  - tools/oracle/cases/http/lens-admin-routes/runs-negative-offset-422.yaml
+  - tools/oracle/cases/http/lens-admin-routes/availability-without-tracing-200.yaml
+  - tools/oracle/cases/http/lens-admin-routes/agents-without-tracing-200.yaml
+  - tools/oracle/cases/http/lens-admin-routes/preview-without-tracing-501.yaml
+  - tools/oracle/cases/http/lens-admin-routes/preview-naive-as-of-422.yaml
+  - tools/oracle/cases/http/lens-admin-routes/register-bad-key-id-422.yaml
+  - tools/oracle/cases/http/lens-admin-routes/billing-key-without-database-503.yaml
+  - tools/oracle/cases/http/lens-admin-routes/revoke-without-database-503.yaml
+  - tools/oracle/cases/http/lens-admin-routes/evidence-without-database-503.yaml
+  - tools/oracle/cases/http/lens-worker-routes/claim-without-bearer.yaml
+  - tools/oracle/cases/http/lens-worker-routes/claim-basic-scheme.yaml
+  - tools/oracle/cases/http/lens-worker-routes/claim-without-database-503.yaml
+  - tools/oracle/cases/http/lens-worker-routes/claim-bad-query-without-database-503.yaml
+  - tools/oracle/cases/http/lens-worker-routes/progress-without-database-503.yaml
+  - tools/oracle/cases/http/lens-worker-routes/heartbeat-without-database-503.yaml
+  - tools/oracle/cases/http/lens-worker-routes/sample-without-database-503.yaml
+  - tools/oracle/cases/http/lens-worker-routes/content-without-database-503.yaml
+  - tools/oracle/cases/http/lens-worker-routes/model-without-database-503.yaml
+  - tools/oracle/cases/http/lens-worker-routes/result-without-database-503.yaml
+deviations:
+  - what: With CLICKHOUSE_URL and general_settings.tracing set, the Lens routes still behave as if tracing were off.
+    why: No task builds the ClickHouse trace storage or its Lens queries yet (LiteLLM's litellm-rust traces crate); see the report notes.
+out_of_scope:
+  - "The routes and their checks: B4503 and B4505. The repository: B4501. The analyze flow and its ports: B4504."
+  - "The ClickHouse Lens storage queries (lens_availability, lens_agents, lens_sample, lens_content, lens_evidence) and the trace receiver that provides them: no owner; see the report notes."
+  - "The edge layers: B8680. Public and docs routes: B8681."
+pitfalls:
+  - The worker routes must stay outside the key layer; merged through mount, every worker request without a virtual key gets 401 before worker_auth runs.
+  - Read shared.router once per call, not once at mount; the router is installed after the response cache at startup and B8381 can install one later from the database.
+  - LiteLLM passes no ModelNames when llm_router is None, so create and update answer 400 "Choose a model configured on this LiteLLM instance" without a router; an empty list from a fake router hides that branch.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

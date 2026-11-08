@@ -17,7 +17,7 @@ description: >-
   2. referenced = B6594's collect_env_var_references over the values of the server's static_headers (a missing map is empty; LiteLLM also accepts a JSON string there, but the record types it as a map, so that form is not built).
   3. blocking = names that are in referenced, are a user spec name, and are not a key of the remaining globals.
   4. Walk user_specs in order. Skip a spec whose name is not in blocking. For the others, is_set = the stored value for that name is present and non-empty; when not set, add one to missing_count. Push MCPUserEnvVarSpec { name, description, is_set }.
-  5. Answer server_id, server_name, alias, required, missing_count, and setup_url = B6594's build_env_var_setup_url(proxy_base_url, server_id) when required is non-empty, else null. proxy_base_url is a constructor field of the route state, filled at the composition root from PROXY_BASE_URL.
+  5. Answer server_id, server_name, alias, required, missing_count, and setup_url = B6594's build_env_var_setup_url(proxy_base_url, server_id) when required is non-empty, else null. proxy_base_url is a constructor field of the route state, filled by B8700 from PROXY_BASE_URL.
   A user variable that no static header references is never listed, even though the admin declared it.
 
   Routes, in the order LiteLLM declares them. Take the database handle, the stores and the caches as fields of the route state, never from globals.
@@ -49,7 +49,6 @@ scope:
     - crates/betterlite-server/src/mcp_user_env_routes/**
     - crates/betterlite-server/Cargo.toml
     - Cargo.lock
-    - tools/oracle/cases/http/mcp-user-env-vars/**
     - tools/oracle/helpers/b4724.py
     - tools/oracle/helpers/b4724/**
     - tools/oracle/src/helpers/server/b4724.rs
@@ -75,32 +74,34 @@ references:
     why: invalidate_user_env_vars_cache, the single pop that routes 2 and 3 call.
 
 dod:
+  - text: The handlers are tested with tower's oneshot over this module's own Router and fake ports; B8700 mounts the routes and proves the items below over HTTP with the cases that moved there.
+    proof: [route-tests]
   - text: >-
       compute_user_env_status lists only user variables that a static header references and no non-empty global covers,
       reports is_set from a non-empty stored value, counts the unset ones in missing_count, and sets setup_url only when the list is non-empty.
-    proof: [status-tests, oracle]
+    proof: [status-tests]
   - text: >-
       An empty-valued global does not cover a user variable, and a non-empty global does.
-    proof: [status-tests, oracle]
+    proof: [status-tests]
   - text: >-
       Route 1 answers the caller's status with the checks in order (no database 500, empty user id 400, authorization 404 or 403) and reads only the caller's row.
-    proof: [route-tests, oracle]
+    proof: [route-tests]
   - text: >-
       Route 2 keeps only declared names with non-empty values, merges them over the stored values, drops the cache entry after the write and answers the merged status.
       A name the server does not declare is never stored, and an empty value keeps the stored one.
-    proof: [route-tests, oracle]
+    proof: [route-tests]
   - text: >-
       Route 3 deletes the caller's row, drops the cache entry, answers every blocking variable as unset, and treats a missing row as success.
-    proof: [route-tests, oracle]
+    proof: [route-tests]
   - text: >-
       Route 4 answers [] for a caller without a user id or without accessible servers, uses one bulk read, and lists only servers with at least one required variable.
-    proof: [route-tests, oracle]
+    proof: [route-tests]
   - text: >-
       No response body and no log line contains a stored value, and the cache is left alone when the store call fails.
     proof: [route-tests, status-tests]
   - text: >-
       The four routes are registered under /v1/mcp with the methods and paths in the description, and the three wire types serialize with LiteLLM's field names and defaults.
-    proof: [route-tests, oracle]
+    proof: [route-tests]
 
 checks:
   optional: []
@@ -112,22 +113,7 @@ checks:
       why: the route module's tests are missing or fail, so a check order, an error text, a cache drop or a response shape is untested
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp_user_env_routes::/) - test(/^mcp_user_env_routes::status::/)'
 
-oracle_cases:
-  - tools/oracle/cases/http/mcp-user-env-vars/status-no-database-500.yaml
-  - tools/oracle/cases/http/mcp-user-env-vars/status-unknown-server-admin-404.yaml
-  - tools/oracle/cases/http/mcp-user-env-vars/status-forbidden-server-403.yaml
-  - tools/oracle/cases/http/mcp-user-env-vars/status-lists-referenced-user-var.yaml
-  - tools/oracle/cases/http/mcp-user-env-vars/status-unreferenced-user-var-hidden.yaml
-  - tools/oracle/cases/http/mcp-user-env-vars/status-empty-global-does-not-cover.yaml
-  - tools/oracle/cases/http/mcp-user-env-vars/status-global-covers-user-var.yaml
-  - tools/oracle/cases/http/mcp-user-env-vars/store-then-status-is-set.yaml
-  - tools/oracle/cases/http/mcp-user-env-vars/store-undeclared-name-dropped.yaml
-  - tools/oracle/cases/http/mcp-user-env-vars/store-empty-value-keeps-stored.yaml
-  - tools/oracle/cases/http/mcp-user-env-vars/store-non-string-value-422.yaml
-  - tools/oracle/cases/http/mcp-user-env-vars/clear-resets-status.yaml
-  - tools/oracle/cases/http/mcp-user-env-vars/clear-missing-row-ok.yaml
-  - tools/oracle/cases/http/mcp-user-env-vars/list-skips-servers-without-required.yaml
-  - tools/oracle/cases/http/mcp-user-env-vars/list-no-accessible-servers-empty.yaml
+oracle_cases: []
 
 deviations: []
 

@@ -112,7 +112,6 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/policy_version_request.rs
     - crates/betterlite-server/fuzz/corpus/policy_version_request/**
-    - tools/oracle/cases/policies/versions/**
     - tools/oracle/helpers/b3244.py
     - tools/oracle/helpers/b3244/**
     - tools/oracle/src/helpers/db/b3244.rs
@@ -174,11 +173,13 @@ dod:
   - text: >-
       The five routes return the documented bodies and map errors to 400, 404 or 500 as the variant table says; every route answers 500
       `Database not connected` without a database and 422 for a bad body or query.
-    proof: [route-tests, oracle]
+    proof: [route-tests]
   - text: >-
       The two body decoders reject malformed bytes and wrong shapes without panicking and have committed corpus inputs.
     proof: [request-corpus]
 
+  - text: The handlers are tested with tower's oneshot over the module's own Router and fake ports. B8669 mounts the routes and owns their HTTP oracle cases, so write no HTTP case here.
+    proof: [route-tests]
 checks:
   optional: []
   commands:
@@ -204,16 +205,7 @@ checks:
       why: the body decoders have no committed malformed-input regressions or no replay test
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/policy_version_request)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_policy_version_request_corpus)'
 
-oracle_cases:
-  - tools/oracle/cases/policies/versions/list-versions-no-database-500.yaml
-  - tools/oracle/cases/policies/versions/create-version-no-database-500.yaml
-  - tools/oracle/cases/policies/versions/create-version-missing-body-422.yaml
-  - tools/oracle/cases/policies/versions/status-no-database-500.yaml
-  - tools/oracle/cases/policies/versions/status-missing-field-422.yaml
-  - tools/oracle/cases/policies/versions/compare-no-database-500.yaml
-  - tools/oracle/cases/policies/versions/compare-missing-query-422.yaml
-  - tools/oracle/cases/policies/versions/delete-all-no-database-500.yaml
-  - tools/oracle/cases/policies/versions/list-versions-no-auth-401.yaml
+oracle_cases: []
 
 deviations:
   - what: Route errors are mapped from typed `PolicyVersionError` variants, not by searching the message for "not found", "no production", "invalid status", "only draft" or "cannot promote". A database error whose text happens to contain one of those words is 500 here and 404 or 400 in LiteLLM.

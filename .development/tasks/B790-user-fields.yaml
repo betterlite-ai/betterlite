@@ -1,6 +1,9 @@
 id: B790
 title: User mutation fields and role scope
 description: >-
+  Breach checks. routes(state) builds one BreachChecker the way B899 does (config.sections.password_policy, HIBP_RANGE_API_BASE, HIBP_TIMEOUT, ProxiedClient::outbound) and passes it to B786's breach check. A route task cannot read Shared.
+
+
   Implement user mutation preparation, duplicate checks, membership dispatch and available-role
   projection. B2334 owns the split bulk records and user-info query decoder; B1226 owns default-team
   enrollment and mixed-entry validation. No owned branch checks premium_user, and the membership

@@ -1,0 +1,64 @@
+id: B8691
+title: Router passthrough executor and router trait
+description: >-
+  LiteLLM builds `Router.allm_passthrough_route` with factory_function (router.py L1953-L1955). Its async wrapper drops `custom_llm_provider`, puts `client` back when one is given, and runs `_ageneric_api_call_with_fallbacks` with `passthrough_on_no_deployment=True` and `litellm.allm_passthrough_route` as the function (L6935-L6941). B8354 builds that branch (`CallRoute::Passthrough`) and B6021 the generic engine with its endpoint rewrite. What is missing is the function the engine calls for this call type and a typed way for the proxy to reach the router. This task adds both, in betterlite-sdk, module `router_passthrough` (crates/betterlite-sdk/src/router_passthrough.rs and router_passthrough/**). betterlite-sdk may not depend on betterlite-router or betterlite-server, so it uses B6021's and B8354's types only. Every name stays at 30 characters or fewer.
+
+  Executor. `PassthroughExecutor` implements B6021's `GenericCallExecutor`. It reads the `GenericRequest` map into B8690's `PassthroughCallArgs`: `method`, `endpoint`, `model` (the deployment's model, which B6021 has set), `custom_llm_provider` (the deployment's provider, which B6021's attempt sets when it has one), `api_base`, `api_key`, `request_query_params`, `request_headers`, `data`, `json`, `params` and `cookies` by name; `content` from a JSON object `{"data_base64"}` and each `files` entry from `{"field", "filename", "content_type", "data_base64"}`, the same upload shape B6460 uses; `client` from `{"timeout_seconds", "connect_timeout_seconds"}`. Every other key goes to `extra` unchanged, so the deployment's own litellm_params (aws_region_name, api_version and the like) and the kwargs (stream, litellm_metadata, litellm_call_id, model_id) reach B8690's call. A key whose value has the wrong JSON type is a `GenericError` naming the key, never a panic.
+  The executor makes B247's per-call logging state for the hop the way LiteLLM's @client function_setup does when the kwargs carry no logging object (call type `allm_passthrough_route`, the call id from `litellm_call_id`, metadata from `litellm_metadata`; read B247's constructor), and calls B8690's `allm_passthrough_route` with it and the shared pooled client it was built with.
+  It returns the reply as B6021's `GenericOutcome::Http` with status, headers and a body that is either full bytes or the byte stream (see notes: the architect adds that variant to B6021). A `PassthroughCallError` from the call goes back inside B6021's error unchanged, so the caller can still tell an upstream status error from the rest (read how the merged `GenericError` carries an executor error).
+  `passthrough_executors(http, ...) -> Vec<(String, Arc<dyn GenericCallExecutor>)>` returns the one pair `("allm_passthrough_route", executor)` for the code that builds `RouterGeneric` (B8631).
+
+  Router trait. `RouterPassthroughCalls` implements B8690's `PassthroughRouterCalls` over B8354's `RouterCallTypes`. It turns `PassthroughCallArgs` back into a `GenericRequest` map with the same key names and shapes as above, putting `extra` keys in as they are, and calls `call("allm_passthrough_route", request)`. B8354's branch then drops `custom_llm_provider`, keeps `client`, and runs the generic call with `passthrough_on_no_deployment` true. The answer maps back: `GenericOutcome::Http` to `PassthroughReply`; an executor's `PassthroughCallError` comes back as it was; any other `GenericError` (no deployment when the flag is off, cooldown, unknown call type) becomes `PassthroughCallError::Routing` with the status and message the router error reports.
+
+  Tests in router_passthrough/tests.rs (`router_passthrough::tests`), rstest, with fakes for B8690's call (a recording function injected into the executor's constructor), for the generic engine and for `RouterCallTypes` where the merged types allow it. Prefixes: `executor_` (map reading, upload decoding, extra keys, wrong types, the logging state), `trait_` (map building, reply and error mapping) and `roundtrip_` (args to map and back give the same args).
+scope:
+  paths:
+    - crates/betterlite-sdk/src/router_passthrough.rs
+    - crates/betterlite-sdk/src/router_passthrough/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L1953-L1955
+    why: The router method built from litellm.allm_passthrough_route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L6835-L6839
+    why: The async wrapper swallows custom_llm_provider and client as named parameters.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L6935-L6941
+    why: The passthrough branch, client put back and passthrough_on_no_deployment set.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L5305-L5414
+    why: The endpoint rewrite and the generic attempt that build the executor's arguments (B401 and B6021 own them).
+dod:
+  - text: The executor reads every named argument, the base64 content and uploads, the client timeouts and the extra keys from the request map, and calls the SDK call with them and a fresh logging state.
+    proof: [executor-tests]
+  - text: A wrong JSON type for a named key gives an error naming the key.
+    proof: [executor-tests]
+  - text: passthrough_executors returns exactly one executor under allm_passthrough_route.
+    proof: [executor-tests]
+  - text: RouterPassthroughCalls sends call type allm_passthrough_route with the same map the executor reads, returns the Http outcome as a reply, keeps an executor's upstream status error, and maps other router errors to Routing with their status.
+    proof: [trait-tests, roundtrip-tests]
+checks:
+  optional: []
+  commands:
+    - id: executor-tests
+      why: the executor misreads the request map or calls the SDK call with the wrong arguments
+      run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_passthrough::tests::executor_/)'
+    - id: trait-tests
+      why: the router trait builds the wrong request or maps a reply or error wrongly
+      run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_passthrough::tests::trait_/)'
+    - id: roundtrip-tests
+      why: the map written by the trait and read by the executor disagree on a key or shape
+      run: cargo nextest run --locked -p betterlite-sdk --no-tests=fail -E 'test(/^router_passthrough::tests::roundtrip_/)'
+oracle_cases: []
+deviations:
+  - what: Request bytes (content and uploads) cross the generic engine as base64 text in the request map.
+    why: B6021's GenericRequest is a JSON map; the bytes sent upstream are the same.
+out_of_scope:
+  - "The factory branch (client put back, passthrough_on_no_deployment): B8354. The generic attempt, selection, endpoint rewrite and fallbacks: B6021, B016, B401 and B310."
+  - "Adding the executor to RouterGeneric's list: B8631 builds that list."
+  - "Implementing B3618's RouterPassthrough and B8692's router port over this trait in the server: B8694."
+pitfalls:
+  - "The wrapper drops the caller's custom_llm_provider; the provider the SDK call sees is the deployment's, which B6021 sets from the deployment params."
+  - "The deployment's litellm_params come first in the map and the request's keys override them, so a request api_base would beat the deployment's; keep the map order B6021 builds."
+  - "passthrough_on_no_deployment true means a model with no deployment still reaches the executor with the request as it came, provider prefix included."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

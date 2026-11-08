@@ -1,7 +1,7 @@
 id: B3686
 title: Guardrail team submissions
 description: >-
-  Build the team side of the guardrail submission flow in betterlite-server: a team registers a Generic Guardrail API guardrail, which waits as `pending_review`, and callers list and read the submissions. Three routes, the response records they share and the database seam behind them. Approving and rejecting a submission is B3685's. Everything goes in crates/betterlite-server/src/guardrails/submissions.rs and submissions/. Read B3685's `MutationState` and `routes` first and shape this module's the same way; the architect's skeleton mounts it, so do not touch app.rs. The read routes are B3684, create, change, delete, approve and reject are B3685, the catalog and apply routes are B3687 and the custom-code test route is B6670.
+  Build the team side of the guardrail submission flow in betterlite-server: a team registers a Generic Guardrail API guardrail, which waits as `pending_review`, and callers list and read the submissions. Three routes, the response records they share and the database seam behind them. Approving and rejecting a submission is B3685's. Everything goes in crates/betterlite-server/src/guardrails/submissions.rs and submissions/. Read B3685's `MutationState` and `routes` first and shape this module's the same way; B8668 mounts it, so do not touch app.rs. The read routes are B3684, create, change, delete, approve and reject are B3685, the catalog and apply routes are B3687 and the custom-code test route is B6670.
 
   Routes, all behind the normal key check:
   - `POST /guardrails/register`
@@ -47,7 +47,6 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/guardrail_register.rs
     - crates/betterlite-server/fuzz/corpus/guardrail_register/**
-    - tools/oracle/cases/guardrails/submissions/**
     - tools/oracle/helpers/b3686.py
     - tools/oracle/helpers/b3686/**
     - tools/oracle/src/helpers/server/b3686.rs
@@ -76,15 +75,17 @@ dod:
   - text: parse_json_field returns an object column as it is, parses JSON text into an object, and gives none for null, bad text and non-objects.
     proof: [submissions-item-tests]
   - text: Register checks team_id, membership, the guardrail type, api_base, mode and name uniqueness in LiteLLM's order with its exact status and detail texts, and stores a pending_review row with the three timestamps, the team and the guardrail_info additions.
-    proof: [submissions-register-tests, oracle]
+    proof: [submissions-register-tests]
   - text: The register body decoder ignores unknown keys, rejects a body without `guardrail_name` or `litellm_params` as 422, survives arbitrary bytes and its seed corpus replays.
-    proof: [submissions-register-tests, submissions-corpus, oracle]
+    proof: [submissions-register-tests, submissions-corpus]
   - text: The list route gives admins every team row and others only their teams, refuses a team filter outside them with 403, returns the empty answer for a non-admin without teams, counts the summary before the filters and applies status, team and search as LiteLLM does.
     proof: [submissions-read-tests]
   - text: The single read returns the masked item, 404 for a missing row and 403 for a non-admin outside the owning team, and the literal submissions path wins over the `/guardrails/{guardrail_id}` route.
     proof: [submissions-read-tests]
   - text: Without a database register, list and single read answer 500 "Prisma client not initialized", and every route needs a valid key.
-    proof: [submissions-read-tests, oracle]
+    proof: [submissions-read-tests]
+  - text: The handlers are tested with tower's oneshot over the module's own Router and fake ports. B8668 mounts the routes and owns their HTTP oracle cases, so write no HTTP case here.
+    proof: [submissions-read-tests]
 checks:
   optional: []
   commands:
@@ -103,12 +104,7 @@ checks:
         test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/guardrail_register)"
         && test -f crates/betterlite-server/fuzz/fuzz_targets/guardrail_register.rs
         && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_guardrail_register_corpus)'
-oracle_cases:
-  - tools/oracle/cases/guardrails/submissions/register-no-database.yaml
-  - tools/oracle/cases/guardrails/submissions/register-body-missing-name.yaml
-  - tools/oracle/cases/guardrails/submissions/list-no-database.yaml
-  - tools/oracle/cases/guardrails/submissions/get-no-database.yaml
-  - tools/oracle/cases/guardrails/submissions/auth-required.yaml
+oracle_cases: []
 deviations:
   - what: The guardrail params are stored as plain JSON text of the body's map, without LiteLLM's `safe_dumps` depth marker ("MaxDepthExceeded" past depth 100).
     why: The JSON decoder already refuses nesting past 128 levels with a 422, so the marker cannot be reached.
