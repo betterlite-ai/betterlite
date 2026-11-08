@@ -99,6 +99,24 @@ fn exceeds_semaphore_maximum(max_in_flight_requests: usize) -> bool {
         .contains("exceeds the semaphore maximum")
 }
 
+#[test]
+fn absent_settings_do_not_warn() {
+    let log = NamedTempFile::new().unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_writer(Arc::new(log.reopen().unwrap()))
+        .finish();
+    let guard = set_default(subscriber);
+    let _harness = harness("general_settings: {}", "", gates(&[]));
+    drop(guard);
+    assert!(
+        !read_to_string(log.path())
+            .unwrap()
+            .contains("invalid admission control setting")
+    );
+}
+
 async fn disabled_admission() {
     let gates = gates(&[("/a", Behavior::Hold), ("/b", Behavior::Hold)]);
     let harness = harness("general_settings: {}", "", gates);
