@@ -48,6 +48,7 @@ description: >-
   finished, finish_reason "stop", no usage. The line framing comes from B1427's line stream and B2214's iterator.
 scope:
   paths:
+    - crates/betterlite-prompts/src/factory.rs
     - crates/betterlite-prompts/src/watsonx.rs
     - crates/betterlite-prompts/src/watsonx/**
     - crates/betterlite-provider/src/watsonx_text.rs
