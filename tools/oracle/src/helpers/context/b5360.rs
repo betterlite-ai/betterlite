@@ -57,32 +57,32 @@ struct Call {
     facts: Value,
 }
 
-fn invalid(message: String) -> Box<HelperError> {
+fn invalid(message: &str) -> Box<HelperError> {
     Box::new(HelperError {
         class: "InvalidInput".to_owned(),
         status: None,
         error_type: None,
         param: None,
         code: None,
-        message,
+        message: message.to_owned(),
     })
 }
 
 fn catalog(entries: &Map<String, Value>) -> Result<ModelCatalog, Box<HelperError>> {
-    let bytes = serde_json::to_vec(entries).map_err(|error| invalid(error.to_string()))?;
+    let bytes = serde_json::to_vec(entries).map_err(|error| invalid(&error.to_string()))?;
     let parsed = ModelCatalog::parse(&bytes, UnknownFields::Warn);
-    parsed.map_err(|error| invalid(error.to_string()))
+    parsed.map_err(|error| invalid(&error.to_string()))
 }
 
 fn provider_of(call: &Call) -> Result<ProviderId, Box<HelperError>> {
     call.provider
-        .ok_or_else(|| invalid("a call needs a provider".to_owned()))
+        .ok_or_else(|| invalid("a call needs a provider"))
 }
 
 fn model_of(call: &Call) -> Result<&str, Box<HelperError>> {
     call.model
         .as_deref()
-        .ok_or_else(|| invalid("a call needs a model".to_owned()))
+        .ok_or_else(|| invalid("a call needs a model"))
 }
 
 fn flag(fields: Option<&Value>, name: &str) -> bool {

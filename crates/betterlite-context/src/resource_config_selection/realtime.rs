@@ -6,15 +6,16 @@ pub enum RealtimeConfigTag {
     Meta,
 }
 
+const REALTIME_TAGS: &[(ProviderId, RealtimeConfigTag)] = &[
+    (ProviderId::Gemini, RealtimeConfigTag::Gemini),
+    (ProviderId::Meta, RealtimeConfigTag::Meta),
+];
+
 #[must_use]
 pub fn select_realtime_config(_model: &str, provider: ProviderId) -> Option<RealtimeConfigTag> {
-    if provider == ProviderId::Gemini {
-        Some(RealtimeConfigTag::Gemini)
-    } else if provider == ProviderId::Meta {
-        Some(RealtimeConfigTag::Meta)
-    } else {
-        None
-    }
+    REALTIME_TAGS
+        .iter()
+        .find_map(|(row, tag)| (*row == provider).then_some(*tag))
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

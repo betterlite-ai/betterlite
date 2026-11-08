@@ -115,91 +115,89 @@ fn responses_no_provider() {
 }
 
 #[rstest]
-#[case::azure_o_series(Some("o_series-preview"), NO_FACTS, ResponsesConfigTag::AzureOSeries)]
-#[case::azure_reasoning_non_gpt(Some("o1"), REASONING, ResponsesConfigTag::AzureOSeries)]
-#[case::azure_gpt_ignores_reasoning(Some("GPT-4o"), REASONING, ResponsesConfigTag::Azure)]
-#[case::azure_plain(Some("o1"), NO_FACTS, ResponsesConfigTag::Azure)]
-#[case::azure_no_model(None, REASONING, ResponsesConfigTag::Azure)]
-fn responses_azure(
+#[case::azure_o_series(
+    ProviderId::Azure,
+    Some("o_series-preview"),
+    NO_FACTS,
+    Some(ResponsesConfigTag::AzureOSeries)
+)]
+#[case::azure_reasoning_non_gpt(
+    ProviderId::Azure,
+    Some("o1"),
+    REASONING,
+    Some(ResponsesConfigTag::AzureOSeries)
+)]
+#[case::azure_gpt_ignores_reasoning(
+    ProviderId::Azure,
+    Some("GPT-4o"),
+    REASONING,
+    Some(ResponsesConfigTag::Azure)
+)]
+#[case::azure_plain(
+    ProviderId::Azure,
+    Some("o1"),
+    NO_FACTS,
+    Some(ResponsesConfigTag::Azure)
+)]
+#[case::azure_no_model(ProviderId::Azure, None, REASONING, Some(ResponsesConfigTag::Azure))]
+#[case::azure_ai_native(
+    ProviderId::AzureAi,
+    Some("m"),
+    NATIVE,
+    Some(ResponsesConfigTag::AzureAi)
+)]
+#[case::azure_ai_not_native(ProviderId::AzureAi, Some("m"), NO_FACTS, None)]
+#[case::github_copilot_no_model(
+    ProviderId::GithubCopilot,
+    None,
+    NO_FACTS,
+    Some(ResponsesConfigTag::GithubCopilot)
+)]
+#[case::github_copilot_supported(
+    ProviderId::GithubCopilot,
+    Some("gpt-5.3-codex"),
+    NATIVE,
+    Some(ResponsesConfigTag::GithubCopilot)
+)]
+#[case::github_copilot_not_supported(
+    ProviderId::GithubCopilot,
+    Some("gpt-5.3-codex"),
+    NO_FACTS,
+    None
+)]
+#[case::databricks_gpt(
+    ProviderId::Databricks,
+    Some("databricks-gpt-4"),
+    NO_FACTS,
+    Some(ResponsesConfigTag::Databricks)
+)]
+#[case::databricks_other(ProviderId::Databricks, Some("llama-3"), NO_FACTS, None)]
+#[case::databricks_no_model(ProviderId::Databricks, None, NO_FACTS, None)]
+#[case::bedrock_with_model(ProviderId::Bedrock, Some("openai.gpt-5"), NO_FACTS, Some(ResponsesConfigTag::Bedrock(Some("openai.gpt-5".to_owned()))))]
+#[case::bedrock_no_model(
+    ProviderId::Bedrock,
+    None,
+    NO_FACTS,
+    Some(ResponsesConfigTag::Bedrock(None))
+)]
+#[case::bedrock_mantle_supported(
+    ProviderId::BedrockMantle,
+    Some("gpt-5"),
+    NATIVE,
+    Some(ResponsesConfigTag::BedrockMantle(true))
+)]
+#[case::bedrock_mantle_unsupported(ProviderId::BedrockMantle, Some("gpt-5"), NO_FACTS, None)]
+#[case::bedrock_mantle_no_model(ProviderId::BedrockMantle, None, NATIVE, None)]
+#[case::outside_list(ProviderId::Groq, Some("m"), NO_FACTS, None)]
+fn responses_fact_selection(
+    #[case] provider: ProviderId,
     #[case] model: Option<&str>,
-    #[case] facts: ResponsesModelFacts,
-    #[case] expected: ResponsesConfigTag,
-) {
-    assert_eq!(
-        select_responses_config(Some(ProviderId::Azure), model, &facts),
-        Some(expected)
-    );
-}
-
-#[rstest]
-#[case::native(NATIVE, Some(ResponsesConfigTag::AzureAi))]
-#[case::not_native(NO_FACTS, None)]
-fn responses_azure_ai(
     #[case] facts: ResponsesModelFacts,
     #[case] expected: Option<ResponsesConfigTag>,
 ) {
     assert_eq!(
-        select_responses_config(Some(ProviderId::AzureAi), Some("m"), &facts),
+        select_responses_config(Some(provider), model, &facts),
         expected
-    );
-}
-
-#[rstest]
-#[case::no_model(NO_FACTS, None, Some(ResponsesConfigTag::GithubCopilot))]
-#[case::supported(NATIVE, Some("gpt-5.3-codex"), Some(ResponsesConfigTag::GithubCopilot))]
-#[case::not_supported(NO_FACTS, Some("gpt-5.3-codex"), None)]
-fn responses_github_copilot(
-    #[case] facts: ResponsesModelFacts,
-    #[case] model: Option<&str>,
-    #[case] expected: Option<ResponsesConfigTag>,
-) {
-    assert_eq!(
-        select_responses_config(Some(ProviderId::GithubCopilot), model, &facts),
-        expected
-    );
-}
-
-#[rstest]
-#[case::gpt(Some("databricks-gpt-4"), Some(ResponsesConfigTag::Databricks))]
-#[case::other(Some("llama-3"), None)]
-#[case::no_model(None, None)]
-fn responses_databricks(#[case] model: Option<&str>, #[case] expected: Option<ResponsesConfigTag>) {
-    assert_eq!(
-        select_responses_config(Some(ProviderId::Databricks), model, &NO_FACTS),
-        expected
-    );
-}
-
-#[rstest]
-#[case::with_model(Some("openai.gpt-5"), Some(ResponsesConfigTag::Bedrock(Some("openai.gpt-5".to_owned()))))]
-#[case::no_model(None, Some(ResponsesConfigTag::Bedrock(None)))]
-fn responses_bedrock(#[case] model: Option<&str>, #[case] expected: Option<ResponsesConfigTag>) {
-    assert_eq!(
-        select_responses_config(Some(ProviderId::Bedrock), model, &NO_FACTS),
-        expected
-    );
-}
-
-#[rstest]
-#[case::supported(NATIVE, Some("gpt-5"), Some(ResponsesConfigTag::BedrockMantle(true)))]
-#[case::unsupported(NO_FACTS, Some("gpt-5"), None)]
-#[case::no_model(NATIVE, None, None)]
-fn responses_bedrock_mantle(
-    #[case] facts: ResponsesModelFacts,
-    #[case] model: Option<&str>,
-    #[case] expected: Option<ResponsesConfigTag>,
-) {
-    assert_eq!(
-        select_responses_config(Some(ProviderId::BedrockMantle), model, &facts),
-        expected
-    );
-}
-
-#[test]
-fn responses_outside_list() {
-    assert_eq!(
-        select_responses_config(Some(ProviderId::Groq), Some("m"), &NO_FACTS),
-        None
     );
 }
 

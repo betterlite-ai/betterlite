@@ -9,6 +9,8 @@ use serde_json::{Value, json};
 use super::{BatchInput, Call, catalog, facts_of, invalid, model_of, provider_of};
 use crate::helpers::HelperError;
 
+pub(crate) type CallResult = Result<Value, Box<HelperError>>;
+
 fn arguments_of<T>(tag: &T) -> Value
 where
     T: serde::Serialize,
@@ -32,7 +34,7 @@ where
     )
 }
 
-pub(crate) fn transcription(input: &BatchInput, call: &Call) -> Result<Value, Box<HelperError>> {
+pub(crate) fn transcription(input: &BatchInput, call: &Call) -> CallResult {
     let live = catalog(&input.model_cost)?;
     let bundled = catalog(&input.bundled_model_cost)?;
     let selected = audio_transcription::select_transcription_config(
@@ -44,7 +46,7 @@ pub(crate) fn transcription(input: &BatchInput, call: &Call) -> Result<Value, Bo
     Ok(unit_report(selected, "AudioTranscriptionConfig"))
 }
 
-pub(crate) fn text_to_speech(_input: &BatchInput, call: &Call) -> Result<Value, Box<HelperError>> {
+pub(crate) fn text_to_speech(_input: &BatchInput, call: &Call) -> CallResult {
     Ok(unit_report(
         text_to_speech::select_text_to_speech(model_of(call)?, provider_of(call)?, call.is_lyria),
         "TextToSpeechConfig",
@@ -59,113 +61,101 @@ pub(crate) fn responses(_input: &BatchInput, call: &Call) -> Value {
     )
 }
 
-pub(crate) fn vector_stores(_input: &BatchInput, call: &Call) -> Result<Value, Box<HelperError>> {
+pub(crate) fn vector_stores(_input: &BatchInput, call: &Call) -> CallResult {
     Ok(unit_report(
         vector_stores::select_vector_stores_config(provider_of(call)?, call.api_type.as_deref()),
         "VectorStoreConfig",
     ))
 }
 
-pub(crate) fn search(_input: &BatchInput, call: &Call) -> Result<Value, Box<HelperError>> {
+pub(crate) fn search(_input: &BatchInput, call: &Call) -> CallResult {
     let provider = call
         .search_provider
-        .ok_or_else(|| invalid("a search call needs a search_provider".to_owned()))?;
+        .ok_or_else(|| invalid("search needs a provider"))?;
     let tag = search_harness::select_search_config(provider);
-    let suffix = if tag == search_harness::SearchConfigTag::SearchAPI {
-        "APIConfig"
-    } else {
-        "SearchConfig"
-    };
+    let api = tag == search_harness::SearchConfigTag::SearchAPI;
+    let suffix = if api { "APIConfig" } else { "SearchConfig" };
     Ok(json!({"class": format!("{tag:?}{suffix}"), "arguments": []}))
 }
 
-pub(crate) fn harness(_input: &BatchInput, call: &Call) -> Result<Value, Box<HelperError>> {
-    let harness = call
-        .harness
-        .ok_or_else(|| invalid("a harness call needs a harness".to_owned()))?;
+pub(crate) fn harness(_input: &BatchInput, call: &Call) -> CallResult {
+    let harness = call.harness.ok_or_else(|| invalid("harness is missing"))?;
     let tag = search_harness::select_harness_config(harness);
     Ok(json!({"class": format!("{tag:?}HarnessConfig"), "arguments": []}))
 }
 
-pub(crate) fn image_generation(
-    _input: &BatchInput,
-    call: &Call,
-) -> Result<Value, Box<HelperError>> {
+pub(crate) fn image_generation(_input: &BatchInput, call: &Call) -> CallResult {
     let selected = image_generation::select_image_generation(model_of(call)?, provider_of(call)?);
-    Ok(selected.map_or(
-        Value::Null,
-        |tag| json!({"class": tag.class_name(), "arguments": arguments_of(&tag)}),
-    ))
+    if let Some(tag) = selected {
+        return Ok(json!({"class": tag.class_name(), "arguments": arguments_of(&tag)}));
+    }
+    Ok(Value::Null)
 }
 
-pub(crate) fn image_edit(_input: &BatchInput, call: &Call) -> Result<Value, Box<HelperError>> {
+pub(crate) fn image_edit(_input: &BatchInput, call: &Call) -> CallResult {
     let selected = image_edit::select_image_edit(model_of(call)?, provider_of(call)?);
-    Ok(selected.map_or(
-        Value::Null,
-        |tag| json!({"class": tag.class_name(), "arguments": arguments_of(&tag)}),
-    ))
+    if let Some(tag) = selected {
+        return Ok(json!({"class": tag.class_name(), "arguments": arguments_of(&tag)}));
+    }
+    Ok(Value::Null)
 }
 
-pub(crate) fn messages(_input: &BatchInput, call: &Call) -> Result<Value, Box<HelperError>> {
+pub(crate) fn messages(_input: &BatchInput, call: &Call) -> CallResult {
     let selected = messages::select_messages_config(model_of(call)?, provider_of(call)?);
-    Ok(selected.map_or(
-        Value::Null,
-        |tag| json!({"class": tag.class_name(), "arguments": arguments_of(&tag)}),
-    ))
+    if let Some(tag) = selected {
+        return Ok(json!({"class": tag.class_name(), "arguments": arguments_of(&tag)}));
+    }
+    Ok(Value::Null)
 }
 
-pub(crate) fn passthrough(_input: &BatchInput, call: &Call) -> Result<Value, Box<HelperError>> {
+pub(crate) fn passthrough(_input: &BatchInput, call: &Call) -> CallResult {
     Ok(unit_report(
         passthrough::select_passthrough_config(model_of(call)?, provider_of(call)?),
         "PassthroughConfig",
     ))
 }
 
-pub(crate) fn batches(_input: &BatchInput, call: &Call) -> Result<Value, Box<HelperError>> {
+pub(crate) fn batches(_input: &BatchInput, call: &Call) -> CallResult {
     Ok(unit_report(
         passthrough::select_batches_config(model_of(call)?, provider_of(call)?),
         "BatchesConfig",
     ))
 }
 
-pub(crate) fn vector_store(_input: &BatchInput, call: &Call) -> Result<Value, Box<HelperError>> {
+pub(crate) fn vector_store(_input: &BatchInput, call: &Call) -> CallResult {
     Ok(unit_report(
         vector_stores::select_vector_store_config(provider_of(call)?),
         "VectorStore",
     ))
 }
 
-pub(crate) fn vector_store_files(
-    _input: &BatchInput,
-    call: &Call,
-) -> Result<Value, Box<HelperError>> {
-    Ok(unit_report(
-        vector_stores::select_store_files_config(provider_of(call)?),
-        "VectorStoreFilesConfig",
-    ))
+pub(crate) fn vector_store_files(_input: &BatchInput, call: &Call) -> CallResult {
+    let provider = provider_of(call)?;
+    let selected = vector_stores::select_store_files_config(provider);
+    Ok(unit_report(selected, "VectorStoreFilesConfig"))
 }
 
-pub(crate) fn realtime(_input: &BatchInput, call: &Call) -> Result<Value, Box<HelperError>> {
+pub(crate) fn realtime(_input: &BatchInput, call: &Call) -> CallResult {
     Ok(unit_report(
         realtime::select_realtime_config(model_of(call)?, provider_of(call)?),
         "RealtimeConfig",
     ))
 }
 
-pub(crate) fn realtime_http(_input: &BatchInput, call: &Call) -> Result<Value, Box<HelperError>> {
+pub(crate) fn realtime_http(_input: &BatchInput, call: &Call) -> CallResult {
     Ok(unit_report(
         realtime::select_realtime_http_config(model_of(call)?, provider_of(call)?),
         "RealtimeHTTPConfig",
     ))
 }
 
-pub(crate) fn skills(_input: &BatchInput, call: &Call) -> Result<Value, Box<HelperError>> {
+pub(crate) fn skills(_input: &BatchInput, call: &Call) -> CallResult {
     let provider = provider_of(call)?;
     let selected = skills_evals::select_skills_config(provider);
     Ok(unit_report(selected, "SkillsConfig"))
 }
 
-pub(crate) fn evals(_input: &BatchInput, call: &Call) -> Result<Value, Box<HelperError>> {
+pub(crate) fn evals(_input: &BatchInput, call: &Call) -> CallResult {
     let provider = provider_of(call)?;
     let selected = skills_evals::select_evals_config(provider);
     Ok(unit_report(selected, "EvalsConfig"))

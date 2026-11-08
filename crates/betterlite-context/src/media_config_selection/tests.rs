@@ -206,24 +206,21 @@ fn image_generation_outside_list() {
 }
 
 #[rstest]
-#[case::openai("gpt-image-1", ProviderId::Openai, ImageEditConfigTag::OpenAi)]
-#[case::hosted_vllm("flux", ProviderId::HostedVllm, ImageEditConfigTag::HostedVllm)]
-#[case::fal_ai("flux", ProviderId::FalAi, ImageEditConfigTag::FalAi)]
-#[case::azure_ai("gpt-image-1", ProviderId::AzureAi, ImageEditConfigTag::AzureAi)]
-#[case::gemini("imagen-3", ProviderId::Gemini, ImageEditConfigTag::Gemini)]
-#[case::vertex_ai("imagen-3", ProviderId::VertexAi, ImageEditConfigTag::VertexAi)]
-#[case::stability("sd3", ProviderId::Stability, ImageEditConfigTag::Stability)]
-#[case::bedrock("stability.sd3", ProviderId::Bedrock, ImageEditConfigTag::Bedrock)]
-#[case::open_router("flux", ProviderId::Openrouter, ImageEditConfigTag::OpenRouter)]
+#[case::openai("gpt-image-1", ProviderId::Openai, ImageEditConfigTag::OpenAi("gpt-image-1".to_owned()))]
+#[case::hosted_vllm("flux", ProviderId::HostedVllm, ImageEditConfigTag::HostedVllm("flux".to_owned()))]
+#[case::fal_ai("flux", ProviderId::FalAi, ImageEditConfigTag::FalAi("flux".to_owned()))]
+#[case::azure_ai("gpt-image-1", ProviderId::AzureAi, ImageEditConfigTag::AzureAi("gpt-image-1".to_owned()))]
+#[case::gemini("imagen-3", ProviderId::Gemini, ImageEditConfigTag::Gemini("imagen-3".to_owned()))]
+#[case::vertex_ai("imagen-3", ProviderId::VertexAi, ImageEditConfigTag::VertexAi("imagen-3".to_owned()))]
+#[case::stability("sd3", ProviderId::Stability, ImageEditConfigTag::Stability("sd3".to_owned()))]
+#[case::bedrock("stability.sd3", ProviderId::Bedrock, ImageEditConfigTag::Bedrock("stability.sd3".to_owned()))]
+#[case::open_router("flux", ProviderId::Openrouter, ImageEditConfigTag::OpenRouter("flux".to_owned()))]
 fn image_edit_model_selection(
     #[case] model: &str,
     #[case] provider: ProviderId,
-    #[case] build: fn(String) -> ImageEditConfigTag,
+    #[case] expected: ImageEditConfigTag,
 ) {
-    assert_eq!(
-        select_image_edit(model, provider),
-        Some(build(model.to_owned()))
-    );
+    assert_eq!(select_image_edit(model, provider), Some(expected));
 }
 
 #[rstest]
