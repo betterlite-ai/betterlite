@@ -88,23 +88,6 @@ fn a_json_outcome_keeps_structured_content_when_the_revision_allows_it(
 }
 
 #[rstest]
-fn a_legacy_result_keeps_an_object_structured_content_unchanged() {
-    let original = complete_result(
-        vec![text_block("raw")],
-        Some(Json::Object(Object::from([(
-            "a".to_owned(),
-            Json::Number(Number::from(1_i32)),
-        )]))),
-    );
-    let ToolCallResult::Complete(converted) =
-        to_call_tool_result(ToolOutcome::Complete(original.clone()), WireCompat::Legacy)
-    else {
-        panic!("an existing result converts to a complete result");
-    };
-    assert_eq!(converted, original);
-}
-
-#[rstest]
 fn a_legacy_result_downgrades_scalar_structured_content_to_text() {
     let original = complete_result(
         vec![text_block("raw")],
@@ -121,24 +104,16 @@ fn a_legacy_result_downgrades_scalar_structured_content_to_text() {
 }
 
 #[rstest]
-fn a_modern_result_is_returned_unchanged() {
-    let original = complete_result(
-        vec![text_block("raw")],
-        Some(Json::Number(Number::from(7_i32))),
-    );
+#[case::modern_scalar(WireCompat::Modern, Some(Json::Number(Number::from(7_i32))))]
+#[case::legacy_object(WireCompat::Legacy, Some(Json::Object(Object::new())))]
+#[case::legacy_none(WireCompat::Legacy, None)]
+fn a_result_the_revision_can_carry_is_returned_unchanged(
+    #[case] compat: WireCompat,
+    #[case] structured: Option<Json>,
+) {
+    let original = complete_result(vec![text_block("raw")], structured);
     let ToolCallResult::Complete(converted) =
-        to_call_tool_result(ToolOutcome::Complete(original.clone()), WireCompat::Modern)
-    else {
-        panic!("an existing result converts to a complete result");
-    };
-    assert_eq!(converted, original);
-}
-
-#[rstest]
-fn a_result_without_structured_content_is_unchanged() {
-    let original = complete_result(vec![text_block("raw")], None);
-    let ToolCallResult::Complete(converted) =
-        to_call_tool_result(ToolOutcome::Complete(original.clone()), WireCompat::Legacy)
+        to_call_tool_result(ToolOutcome::Complete(original.clone()), compat)
     else {
         panic!("an existing result converts to a complete result");
     };

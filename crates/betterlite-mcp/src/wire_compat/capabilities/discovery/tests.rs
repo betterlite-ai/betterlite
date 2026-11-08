@@ -131,24 +131,12 @@ fn a_configuration_of_only_the_modern_revision_advertises_nothing() {
 }
 
 #[rstest]
-fn a_revision_outside_the_configuration_gains_no_capabilities() {
+#[case::outside_the_configuration(Some(SpecVersion::Nov2024))]
+#[case::unknown(None)]
+fn an_unconfigured_revision_gains_no_capabilities(#[case] revision: Option<SpecVersion>) {
     let result = discovery(
         &[SpecVersion::Nov2025],
-        Some(SpecVersion::Nov2024),
-        MCPTransport::Http,
-        capabilities(),
-    );
-    assert_eq!(result.supported_versions, ["2025-11-25".to_owned()]);
-    assert!(result.capabilities.tools.is_none());
-    assert!(result.capabilities.prompts.is_none());
-    assert!(result.capabilities.resources.is_none());
-}
-
-#[rstest]
-fn an_unknown_revision_gains_no_capabilities() {
-    let result = discovery(
-        &[SpecVersion::Nov2025],
-        None,
+        revision,
         MCPTransport::Http,
         capabilities(),
     );
@@ -182,36 +170,28 @@ fn translation_needs_a_completed_upstream_revision(#[case] upstream: &[SpecVersi
 }
 
 #[rstest]
-fn tools_need_both_list_and_call_authorized() {
-    let list_only = discovery_for_operations(&["tools/list"]);
-    assert!(list_only.capabilities.tools.is_none());
-    let call_only = discovery_for_operations(&["tools/call"]);
-    assert!(call_only.capabilities.tools.is_none());
-    let both = discovery_for_operations(&["tools/list", "tools/call"]);
-    assert!(both.capabilities.tools.is_some());
-    assert!(both.capabilities.prompts.is_none());
-}
-
-#[rstest]
-fn prompts_need_both_list_and_get_authorized() {
-    let list_only = discovery_for_operations(&["prompts/list"]);
-    assert!(list_only.capabilities.prompts.is_none());
-    let get_only = discovery_for_operations(&["prompts/get"]);
-    assert!(get_only.capabilities.prompts.is_none());
-    let both = discovery_for_operations(&["prompts/list", "prompts/get"]);
-    assert!(both.capabilities.prompts.is_some());
-    assert!(both.capabilities.tools.is_none());
-}
-
-#[rstest]
-fn resources_need_both_list_and_read_authorized() {
-    let list_only = discovery_for_operations(&["resources/list"]);
-    assert!(list_only.capabilities.resources.is_none());
-    let read_only = discovery_for_operations(&["resources/read"]);
-    assert!(read_only.capabilities.resources.is_none());
-    let both = discovery_for_operations(&["resources/list", "resources/read"]);
-    assert!(both.capabilities.resources.is_some());
-    assert!(both.capabilities.tools.is_none());
+#[case::tools_list_only(&["tools/list"], [false, false, false])]
+#[case::tools_call_only(&["tools/call"], [false, false, false])]
+#[case::tools_both(&["tools/list", "tools/call"], [true, false, false])]
+#[case::prompts_list_only(&["prompts/list"], [false, false, false])]
+#[case::prompts_get_only(&["prompts/get"], [false, false, false])]
+#[case::prompts_both(&["prompts/list", "prompts/get"], [false, true, false])]
+#[case::resources_list_only(&["resources/list"], [false, false, false])]
+#[case::resources_read_only(&["resources/read"], [false, false, false])]
+#[case::resources_both(&["resources/list", "resources/read"], [false, false, true])]
+fn a_capability_needs_both_of_its_operations_authorized(
+    #[case] operations: &[&str],
+    #[case] granted: [bool; 3],
+) {
+    let result = discovery_for_operations(operations);
+    assert_eq!(
+        [
+            result.capabilities.tools.is_some(),
+            result.capabilities.prompts.is_some(),
+            result.capabilities.resources.is_some(),
+        ],
+        granted
+    );
 }
 
 #[rstest]

@@ -111,23 +111,12 @@ fn a_session_keeps_a_configured_revision(#[case] version: &str) {
 }
 
 #[rstest]
-fn a_session_revision_outside_the_configuration_is_rejected() {
+#[case::outside_the_configuration(Some("2026-07-28"))]
+#[case::missing(None)]
+fn a_session_without_a_configured_revision_is_rejected(#[case] protocol_version: Option<&str>) {
     let policy = policy(&[SpecVersion::Nov2024]);
     let error = policy
-        .negotiate(VersionRequest::Session {
-            protocol_version: Some("2026-07-28"),
-        })
-        .unwrap_err();
-    assert_eq!(error.code(), -32_022_i32);
-}
-
-#[rstest]
-fn a_session_without_a_revision_is_rejected() {
-    let policy = policy(&[SpecVersion::Nov2025]);
-    let error = policy
-        .negotiate(VersionRequest::Session {
-            protocol_version: None,
-        })
+        .negotiate(VersionRequest::Session { protocol_version })
         .unwrap_err();
     assert_eq!(error.code(), -32_022_i32);
 }
@@ -174,25 +163,19 @@ fn an_unadvertised_initialize_revision_loses_every_capability() {
 }
 
 #[rstest]
-fn a_missing_setting_advertises_the_four_legacy_revisions() {
-    assert_eq!(
-        advertised_versions(None).unwrap(),
-        [
-            SpecVersion::Nov2024,
-            SpecVersion::Mar2025,
-            SpecVersion::Jun2025,
-            SpecVersion::Nov2025
-        ]
-    );
-}
-
-#[rstest]
-fn a_configured_list_is_read_in_order() {
-    let configured = ["2025-11-25".to_owned(), "2024-11-05".to_owned()];
-    assert_eq!(
-        advertised_versions(Some(&configured)).unwrap(),
-        [SpecVersion::Nov2025, SpecVersion::Nov2024]
-    );
+#[case::missing(None, &[SpecVersion::Nov2024, SpecVersion::Mar2025, SpecVersion::Jun2025, SpecVersion::Nov2025])]
+#[case::configured(Some(&["2025-11-25", "2024-11-05"][..]), &[SpecVersion::Nov2025, SpecVersion::Nov2024])]
+fn the_advertised_revisions_come_from_the_setting_in_order(
+    #[case] configured: Option<&[&str]>,
+    #[case] expected: &[SpecVersion],
+) {
+    let owned = configured.map(|names| {
+        names
+            .iter()
+            .map(|name| (*name).to_owned())
+            .collect::<Vec<_>>()
+    });
+    assert_eq!(advertised_versions(owned.as_deref()).unwrap(), expected);
 }
 
 #[rstest]

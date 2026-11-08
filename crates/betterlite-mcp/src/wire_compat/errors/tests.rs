@@ -39,24 +39,14 @@ fn the_upstream_auth_message_names_the_server_and_status() {
 }
 
 #[rstest]
-fn a_401_without_a_challenge_fabricates_the_standard_resource_metadata_challenge() {
-    let exception = auth_error(401, None).to_http_exception(Some("https://gateway.example"), None);
+#[case::plain("https://gateway.example")]
+#[case::trailing_slash("https://gateway.example/")]
+fn a_401_without_a_challenge_fabricates_the_standard_resource_metadata_challenge(
+    #[case] origin: &str,
+) {
+    let exception = auth_error(401, None).to_http_exception(Some(origin), None);
     assert_eq!(exception.status_code, 401);
     assert_eq!(exception.detail, "Unauthorized");
-    assert_eq!(
-        exception
-            .headers
-            .get("www-authenticate")
-            .map(String::as_str),
-        Some(
-            "Bearer resource_metadata=\"https://gateway.example/.well-known/oauth-protected-resource/mcp/github\""
-        )
-    );
-}
-
-#[rstest]
-fn a_trailing_slash_on_the_origin_is_stripped_from_the_challenge() {
-    let exception = auth_error(401, None).to_http_exception(Some("https://gateway.example/"), None);
     assert_eq!(
         exception
             .headers
@@ -115,15 +105,11 @@ fn an_existing_challenge_is_forwarded_unchanged() {
 }
 
 #[rstest]
-fn a_missing_origin_fabricates_no_challenge() {
-    let exception = auth_error(401, None).to_http_exception(None, None);
+#[case::missing(None)]
+#[case::empty(Some(""))]
+fn an_absent_origin_fabricates_no_challenge(#[case] origin: Option<&str>) {
+    let exception = auth_error(401, None).to_http_exception(origin, None);
     assert_eq!(exception.status_code, 401);
-    assert!(exception.headers.is_empty());
-}
-
-#[rstest]
-fn an_empty_origin_fabricates_no_challenge() {
-    let exception = auth_error(401, None).to_http_exception(Some(""), None);
     assert!(exception.headers.is_empty());
 }
 
