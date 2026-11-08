@@ -1,0 +1,11 @@
+kind: helper
+name: retry-after
+call:
+  catalog_fetch_policy:
+    operation: next_retry_wait
+    retry_after: "45"
+    attempt: 1
+    max_attempts: 3
+    jitter: []
+compare: {ignore: []}
+env: {}
