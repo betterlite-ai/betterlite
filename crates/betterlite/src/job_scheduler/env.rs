@@ -21,6 +21,17 @@ impl JobDefaults {
         let misfire_grace_seconds =
             env_number::<u64>(env, "APSCHEDULER_MISFIRE_GRACE_TIME")?.unwrap_or(3600);
         let max_instances = env_number::<u32>(env, "APSCHEDULER_MAX_INSTANCES")?.unwrap_or(1);
+        // APScheduler's Job rejects both zero values with a TypeError, so LiteLLM stops at startup.
+        if misfire_grace_seconds == 0 {
+            return Err(SchedulerError::InvalidEnv {
+                name: "APSCHEDULER_MISFIRE_GRACE_TIME".to_owned(),
+            });
+        }
+        if max_instances == 0 {
+            return Err(SchedulerError::InvalidEnv {
+                name: "APSCHEDULER_MAX_INSTANCES".to_owned(),
+            });
+        }
         Ok(Self {
             coalesce,
             misfire_grace_seconds,
@@ -62,6 +73,10 @@ fn env_duration(
     default: f64,
 ) -> Result<Duration, SchedulerError> {
     let seconds = env_number::<f64>(env, name)?.unwrap_or(default);
+    // LiteLLM passes a negative float to asyncio.wait, which returns at once; betterlite treats it as zero.
+    if seconds < 0.0_f64 {
+        return Ok(Duration::ZERO);
+    }
     Duration::try_from_secs_f64(seconds).map_err(|_source| SchedulerError::InvalidEnv {
         name: name.to_owned(),
     })

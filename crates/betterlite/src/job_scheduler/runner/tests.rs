@@ -103,6 +103,13 @@ async fn a_run_past_its_misfire_grace_is_skipped_with_the_warning() {
 async fn coalesced_missed_runs_fire_once() {
     let mut scheduler = scheduler_with(defaults());
     let runs = Arc::new(AtomicUsize::new(0));
+    let seen_times: Arc<Mutex<Vec<DateTime<Utc>>>> = Arc::new(Mutex::new(Vec::new()));
+    let sink = Arc::clone(&seen_times);
+    scheduler.add_submission_listener(Box::new(move |event: &dyn JobSubmission| {
+        sink.lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .extend(event.scheduled_run_times().iter().copied());
+    }));
     scheduler
         .add_job(interval_spec("coalesced_job", 10, counting_run(&runs)))
         .unwrap();
@@ -110,6 +117,13 @@ async fn coalesced_missed_runs_fire_once() {
     scheduler.start();
     settle().await;
     assert_eq!(runs.load(Ordering::SeqCst), 1);
+    let times = seen_times.lock().unwrap_or_else(PoisonError::into_inner);
+    assert_eq!(times.len(), 1);
+    assert_eq!(
+        times.first().copied(),
+        Some(origin() + TimeDelta::seconds(50))
+    );
+    drop(times);
     scheduler.shutdown();
 }
 

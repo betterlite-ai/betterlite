@@ -13,6 +13,7 @@ use crate::scheduled_job_stagger::{NextRunTime, Trigger};
 
 mod dispatch;
 pub mod env;
+mod fields;
 pub mod jobs;
 pub mod runner;
 pub mod shutdown;
@@ -48,10 +49,41 @@ pub enum SchedulerState {
 pub enum SchedulerError {
     #[error("Wrong number of fields; got {got}, expected 5")]
     Crontab { got: usize },
-    #[error("day_of_week value {value} is higher than the maximum value (6)")]
-    DayOfWeek { value: u64 },
-    #[error("the step value ({step}) is higher than the total range of the expression ({range})")]
-    CronStep { step: u64, range: u64 },
+    #[error(
+        "Error validating expression '{expression}': the step value ({step}) is higher than the total range of the expression ({range})"
+    )]
+    CronStep {
+        expression: String,
+        step: u64,
+        range: u64,
+    },
+    #[error(
+        "Error validating expression '{expression}': the first value ({value}) is lower than the minimum value ({minimum})"
+    )]
+    CronBelowMin {
+        expression: String,
+        value: u64,
+        minimum: u64,
+    },
+    #[error(
+        "Error validating expression '{expression}': the last value ({value}) is higher than the maximum value ({maximum})"
+    )]
+    CronAboveMax {
+        expression: String,
+        value: u64,
+        maximum: u64,
+    },
+    #[error("The minimum value in a range must not be higher than the maximum")]
+    CronRangeOrder,
+    #[error("Increment must be higher than 0")]
+    CronStepZero,
+    #[error("Unrecognized expression \"{expression}\" for field \"{field}\"")]
+    CronExpression {
+        field: &'static str,
+        expression: String,
+    },
+    #[error("Invalid {field} name \"{name}\"")]
+    CronName { field: &'static str, name: String },
     #[error(transparent)]
     Cron(#[from] CronError),
     #[error("environment variable {name} has an invalid value")]

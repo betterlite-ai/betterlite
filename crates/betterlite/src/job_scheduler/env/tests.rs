@@ -54,6 +54,8 @@ fn job_defaults_read_coalesce_as_a_bool(#[case] text: &str, #[case] expected: bo
 #[rstest]
 #[case::grace("APSCHEDULER_MISFIRE_GRACE_TIME", "soon")]
 #[case::instances("APSCHEDULER_MAX_INSTANCES", "many")]
+#[case::grace_zero("APSCHEDULER_MISFIRE_GRACE_TIME", "0")]
+#[case::instances_zero("APSCHEDULER_MAX_INSTANCES", "0")]
 fn job_defaults_reject_an_invalid_value(#[case] name: &str, #[case] value: &str) {
     let error = JobDefaults::from_env(&env(&[(name, value)])).unwrap_err();
     assert!(matches!(error, SchedulerError::InvalidEnv { .. }));
@@ -78,9 +80,20 @@ fn shutdown_timeouts_read_the_environment() {
     assert_eq!(timeouts.cancel, Duration::from_secs(1));
 }
 
+#[test]
+fn shutdown_timeouts_treat_a_negative_value_as_zero() {
+    let timeouts = ShutdownTimeouts::from_env(&env(&[
+        ("SCHEDULED_JOB_SHUTDOWN_FINISH_TIMEOUT_SECONDS", "-3"),
+        ("SCHEDULED_JOB_SHUTDOWN_CANCEL_TIMEOUT_SECONDS", "-1.5"),
+    ]))
+    .unwrap();
+    assert_eq!(timeouts.finish, Duration::ZERO);
+    assert_eq!(timeouts.cancel, Duration::ZERO);
+}
+
 #[rstest]
 #[case::finish("SCHEDULED_JOB_SHUTDOWN_FINISH_TIMEOUT_SECONDS", "later")]
-#[case::cancel("SCHEDULED_JOB_SHUTDOWN_CANCEL_TIMEOUT_SECONDS", "-3")]
+#[case::cancel("SCHEDULED_JOB_SHUTDOWN_CANCEL_TIMEOUT_SECONDS", "soon")]
 fn shutdown_timeouts_reject_an_invalid_value(#[case] name: &str, #[case] value: &str) {
     let error = ShutdownTimeouts::from_env(&env(&[(name, value)])).unwrap_err();
     assert!(matches!(error, SchedulerError::InvalidEnv { .. }));

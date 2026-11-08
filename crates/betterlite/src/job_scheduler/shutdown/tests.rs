@@ -12,9 +12,7 @@ use tokio::time::sleep;
 use crate::job_scheduler::runner::InFlightRecord;
 use crate::job_scheduler::tests::{TokioClock, capture_logs, defaults, origin};
 use crate::job_scheduler::triggers::IntervalTrigger;
-use crate::job_scheduler::{
-    BoxFuture, InFlightJob, JobFn, JobSpec, ProxyScheduler, SchedulerState,
-};
+use crate::job_scheduler::{BoxFuture, JobFn, JobSpec, ProxyScheduler, SchedulerState};
 use crate::scheduled_job_stagger::{JobScheduler as _, NextRunTime};
 
 use super::{pause_scheduled_jobs, stop_in_flight_jobs};
@@ -49,15 +47,15 @@ fn insert_stuck_run(scheduler: &ProxyScheduler, receiver: watch::Receiver<()>) {
     );
 }
 
-async fn wait_for_in_flight(scheduler: &mut ProxyScheduler) -> Vec<InFlightJob> {
+async fn wait_for_in_flight(scheduler: &mut ProxyScheduler, expected: usize) -> usize {
     for _ in 0_u32..200 {
-        let running = scheduler.in_flight();
-        if !running.is_empty() {
+        let running = scheduler.in_flight().len();
+        if running >= expected {
             return running;
         }
         sleep(Duration::from_millis(2)).await;
     }
-    Vec::new()
+    0
 }
 
 #[tokio::test]
@@ -99,7 +97,7 @@ async fn stop_in_flight_jobs_waits_for_a_job_that_finishes() {
     });
     scheduler.add_job(immediate_spec("slow_job", run)).unwrap();
     scheduler.start();
-    assert!(!wait_for_in_flight(&mut scheduler).await.is_empty());
+    assert!(wait_for_in_flight(&mut scheduler, 1).await >= 1);
     let (logs, _guard) = capture_logs();
     stop_in_flight_jobs(
         &mut scheduler,
@@ -116,6 +114,76 @@ async fn stop_in_flight_jobs_waits_for_a_job_that_finishes() {
 }
 
 #[tokio::test]
+async fn stop_in_flight_jobs_counts_only_the_jobs_it_cancels() {
+    let mut scheduler = scheduler();
+    let finished = Arc::new(AtomicUsize::new(0));
+    let shared = Arc::clone(&finished);
+    let slow: JobFn = Arc::new(move || {
+        let slow_counter = Arc::clone(&shared);
+        let future: BoxFuture<'static, ()> = Box::pin(async move {
+            sleep(Duration::from_millis(50)).await;
+            slow_counter.fetch_add(1, Ordering::SeqCst);
+        });
+        future
+    });
+    let hanging: JobFn = Arc::new(|| {
+        let future: BoxFuture<'static, ()> = Box::pin(pending());
+        future
+    });
+    scheduler.add_job(immediate_spec("slow_job", slow)).unwrap();
+    scheduler
+        .add_job(immediate_spec("hanging_job", hanging))
+        .unwrap();
+    scheduler.start();
+    assert!(wait_for_in_flight(&mut scheduler, 2).await >= 2);
+    let (logs, _guard) = capture_logs();
+    stop_in_flight_jobs(
+        &mut scheduler,
+        Duration::from_secs(2),
+        Duration::from_secs(2),
+    )
+    .await;
+    let text = logs.contents();
+    assert!(text.contains("Waiting up to 2s for 2 in-flight scheduled job(s) to finish"));
+    assert!(text.contains("Cancelling 1 in-flight scheduled job(s) for shutdown"));
+    assert_eq!(finished.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn stop_in_flight_jobs_waits_while_the_scheduler_is_paused() {
+    let mut scheduler = scheduler();
+    let finished = Arc::new(AtomicUsize::new(0));
+    let shared = Arc::clone(&finished);
+    let slow: JobFn = Arc::new(move || {
+        let slow_counter = Arc::clone(&shared);
+        let future: BoxFuture<'static, ()> = Box::pin(async move {
+            sleep(Duration::from_millis(100)).await;
+            slow_counter.fetch_add(1, Ordering::SeqCst);
+        });
+        future
+    });
+    scheduler
+        .add_job(immediate_spec("paused_job", slow))
+        .unwrap();
+    scheduler.start();
+    assert!(wait_for_in_flight(&mut scheduler, 1).await >= 1);
+    scheduler.pause();
+    assert_eq!(scheduler.state(), SchedulerState::Paused);
+    let (logs, _guard) = capture_logs();
+    stop_in_flight_jobs(
+        &mut scheduler,
+        Duration::from_secs(2),
+        Duration::from_secs(1),
+    )
+    .await;
+    assert!(
+        logs.contents()
+            .contains("Waiting up to 2s for 1 in-flight scheduled job(s) to finish")
+    );
+    assert_eq!(finished.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
 async fn stop_in_flight_jobs_cancels_a_hanging_job() {
     let mut scheduler = scheduler();
     let run: JobFn = Arc::new(|| {
@@ -126,7 +194,7 @@ async fn stop_in_flight_jobs_cancels_a_hanging_job() {
         .add_job(immediate_spec("hanging_job", run))
         .unwrap();
     scheduler.start();
-    assert!(!wait_for_in_flight(&mut scheduler).await.is_empty());
+    assert!(wait_for_in_flight(&mut scheduler, 1).await >= 1);
     let (logs, _guard) = capture_logs();
     stop_in_flight_jobs(
         &mut scheduler,

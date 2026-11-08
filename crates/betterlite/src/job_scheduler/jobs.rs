@@ -38,12 +38,10 @@ impl JobScheduler for ProxyScheduler {
             );
             return;
         };
-        // A job an explicit next_run_time paused stays paused across a trigger swap.
+        // APScheduler's modify_job leaves an explicit next_run_time alone and computes one only for pending jobs.
         let next_fire = match job.origin {
-            NextRunTime::Explicit(None) => None,
-            NextRunTime::Unset | NextRunTime::Explicit(Some(_)) => {
-                trigger.next_fire_time(None, now)
-            }
+            NextRunTime::Explicit(_) => job.next_fire,
+            NextRunTime::Unset => trigger.next_fire_time(None, now),
         };
         let period_seconds = triggers::interval_seconds(trigger.as_ref(), now);
         let stored_trigger: Arc<dyn Trigger> = Arc::from(trigger);

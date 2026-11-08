@@ -27,6 +27,12 @@ pub(crate) fn origin() -> DateTime<Utc> {
     DateTime::from_timestamp(1_767_225_600, 0).unwrap()
 }
 
+fn instant(text: &str) -> DateTime<Utc> {
+    DateTime::parse_from_rfc3339(text)
+        .unwrap()
+        .with_timezone(&Utc)
+}
+
 pub(crate) fn defaults() -> JobDefaults {
     JobDefaults {
         coalesce: true,
@@ -233,6 +239,19 @@ async fn apply_scheduled_job_stagger_shifts_a_cron_job_through_modify_job() {
     assert_eq!(applied.get(MONTHLY_SPEND_REPORT_JOB_ID), Some(&120));
     let view = scheduler.get_job(MONTHLY_SPEND_REPORT_JOB_ID).unwrap();
     assert_eq!(view.scheduled_for, Some(start + TimeDelta::seconds(120)));
+}
+
+#[tokio::test]
+async fn modify_job_keeps_an_explicit_next_run_time() {
+    let pinned = instant("2030-01-01T00:00:00Z");
+    let mut scheduler = ProxyScheduler::new(defaults(), Arc::new(super::SystemClock));
+    let mut spec = interval_spec("anchored_job", 60);
+    spec.next_run_time = NextRunTime::Explicit(Some(pinned));
+    scheduler.add_job(spec).unwrap();
+    scheduler.modify_job("anchored_job", Box::new(FixedTrigger(origin())));
+    let view = scheduler.get_job("anchored_job").unwrap();
+    assert_eq!(view.scheduled_for, Some(pinned));
+    assert_eq!(view.next_run_time, NextRunTime::Explicit(Some(pinned)));
 }
 
 #[tokio::test(start_paused = true)]

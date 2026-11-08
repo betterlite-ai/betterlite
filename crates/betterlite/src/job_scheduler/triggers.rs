@@ -1,11 +1,10 @@
-use chrono::{DateTime, Local, TimeDelta, Utc};
+use chrono::{DateTime, Local, LocalResult, NaiveDateTime, TimeDelta, TimeZone, Utc};
 use croner::Cron;
 
 use crate::scheduled_job_stagger::Trigger;
 
 use super::SchedulerError;
-
-const WEEKDAY_NAMES: [&str; 7] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+use super::fields::{CronField, normalize_field};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct IntervalTrigger {
@@ -53,9 +52,19 @@ impl CronTrigger {
         if count != 5 {
             return Err(SchedulerError::Crontab { got: count });
         }
-        let [minute, hour, day, month, day_of_week_text] = <[&str; 5]>::try_from(fields.as_slice())
+        let [
+            minute_text,
+            hour_text,
+            day_text,
+            month_text,
+            day_of_week_text,
+        ] = <[&str; 5]>::try_from(fields.as_slice())
             .map_err(|_source| SchedulerError::Crontab { got: count })?;
-        let day_of_week = translate_day_of_week(day_of_week_text)?;
+        let minute = normalize_field(CronField::Minute, minute_text)?;
+        let hour = normalize_field(CronField::Hour, hour_text)?;
+        let day = normalize_field(CronField::DayOfMonth, day_text)?;
+        let month = normalize_field(CronField::Month, month_text)?;
+        let day_of_week = normalize_field(CronField::DayOfWeek, day_of_week_text)?;
         let pattern = format!("{minute} {hour} {day} {month} {day_of_week}");
         let mut cron = Cron::new(&pattern);
         cron.with_dom_and_dow();
@@ -70,7 +79,6 @@ impl Trigger for CronTrigger {
         previous_fire_time: Option<DateTime<Utc>>,
         now: DateTime<Utc>,
     ) -> Option<DateTime<Utc>> {
-        // APScheduler searches from one microsecond past the previous fire, or from now when that is later.
         let start = match previous_fire_time {
             Some(previous) => {
                 let bumped = previous.checked_add_signed(TimeDelta::microseconds(1))?;
@@ -84,23 +92,8 @@ impl Trigger for CronTrigger {
         };
         let rounded = ceil_to_second(start)?;
         match self.zone {
-            CronZone::Utc => match self.cron.find_next_occurrence(&rounded, true) {
-                Ok(next) => Some(next),
-                Err(error) => {
-                    tracing::debug!(%error, "cron trigger has no next fire time");
-                    None
-                }
-            },
-            CronZone::Local => {
-                let local = rounded.with_timezone(&Local);
-                match self.cron.find_next_occurrence(&local, true) {
-                    Ok(next) => Some(next.with_timezone(&Utc)),
-                    Err(error) => {
-                        tracing::debug!(%error, "cron trigger has no next fire time");
-                        None
-                    }
-                }
-            }
+            CronZone::Utc => search(&self.cron, &rounded),
+            CronZone::Local => local_search(&self.cron, rounded),
         }
     }
 }
@@ -113,6 +106,84 @@ fn ceil_to_second(time: DateTime<Utc>) -> Option<DateTime<Utc>> {
     }
     let rest = 1_000_000_000_u32.checked_sub(nanos)?;
     time.checked_add_signed(TimeDelta::nanoseconds(i64::from(rest)))
+}
+
+fn search<Tz>(cron: &Cron, start: &DateTime<Tz>) -> Option<DateTime<Tz>>
+where
+    Tz: TimeZone,
+{
+    match cron.find_next_occurrence(start, true) {
+        Ok(found) => Some(found),
+        Err(error) => {
+            tracing::debug!(%error, "cron trigger has no next fire time");
+            None
+        }
+    }
+}
+
+// A search from the first pass of a repeated hour is also run from the second, and the earlier answer wins.
+fn local_search(cron: &Cron, start: DateTime<Utc>) -> Option<DateTime<Utc>> {
+    let local_start = start.with_timezone(&Local);
+    let first_found = search(cron, &local_start)?;
+    let first = resolve_local(first_found.naive_local(), start)
+        .unwrap_or_else(|| first_found.with_timezone(&Utc));
+    let LocalResult::Ambiguous(early, late) = Local.from_local_datetime(&local_start.naive_local())
+    else {
+        return Some(first);
+    };
+    let early_instant = early.with_timezone(&Utc);
+    if start != early_instant {
+        return Some(first);
+    }
+    let transition = fold_transition(start, late.with_timezone(&Utc))?;
+    let second_found = search(cron, &transition.with_timezone(&Local))?;
+    let second = resolve_local(second_found.naive_local(), transition)
+        .unwrap_or_else(|| second_found.with_timezone(&Utc));
+    Some(first.min(second))
+}
+
+fn resolve_local(naive: NaiveDateTime, floor: DateTime<Utc>) -> Option<DateTime<Utc>> {
+    match Local.from_local_datetime(&naive) {
+        LocalResult::Single(value) => Some(value.with_timezone(&Utc)),
+        LocalResult::Ambiguous(early, late) => {
+            let early_instant = early.with_timezone(&Utc);
+            let late_instant = late.with_timezone(&Utc);
+            if early_instant >= floor {
+                Some(early_instant)
+            } else if late_instant >= floor {
+                Some(late_instant)
+            } else {
+                None
+            }
+        }
+        LocalResult::None => None,
+    }
+}
+
+// The first instant in (start, end] whose UTC offset differs from the start's: where a repeated hour begins.
+fn fold_transition(start: DateTime<Utc>, end: DateTime<Utc>) -> Option<DateTime<Utc>> {
+    let initial = local_offset_seconds(start);
+    if local_offset_seconds(end) == initial {
+        return None;
+    }
+    let mut low = start.timestamp();
+    let mut high = end.timestamp();
+    while high.saturating_sub(low) > 1 {
+        let span = high.saturating_sub(low);
+        let middle = DateTime::from_timestamp(low.saturating_add(span.div_euclid(2)), 0)?;
+        if local_offset_seconds(middle) == initial {
+            low = middle.timestamp();
+        } else {
+            high = middle.timestamp();
+        }
+    }
+    DateTime::from_timestamp(high, 0)
+}
+
+fn local_offset_seconds(time: DateTime<Utc>) -> i32 {
+    Local
+        .offset_from_utc_datetime(&time.naive_utc())
+        .local_minus_utc()
 }
 
 // A boxed Trigger hides its type, so an interval is recognized by both its answers landing one fixed step out.
@@ -128,100 +199,6 @@ pub(crate) fn interval_seconds(trigger: &dyn Trigger, now: DateTime<Utc>) -> Opt
         return None;
     }
     u32::try_from(period.num_seconds()).ok()
-}
-
-// APScheduler numbers day_of_week 0=Monday; croner reads 0 as Sunday, so numbers become weekday names.
-fn translate_day_of_week(field: &str) -> Result<String, SchedulerError> {
-    let mut translated = Vec::new();
-    for element in field.split(',') {
-        translated.push(translate_day_element(element)?);
-    }
-    Ok(translated.join(","))
-}
-
-fn translate_day_element(element: &str) -> Result<String, SchedulerError> {
-    let (base, step_text) = match element.split_once('/') {
-        Some((base, step_part)) => (base, Some(step_part)),
-        None => (element, None),
-    };
-    let step = match step_text {
-        Some(text) => match text.parse::<u32>() {
-            Ok(width) => Some(width),
-            Err(_source) => return Ok(element.to_owned()),
-        },
-        None => None,
-    };
-    // croner rejects a zero step itself, with its own message.
-    if step == Some(0) {
-        return Ok(element.to_owned());
-    }
-    if base == "*" {
-        return step.map_or_else(|| Ok("*".to_owned()), |width| weekday_list(0, 6, width));
-    }
-    if let Some((first_text, last_text)) = base.split_once('-') {
-        return match (weekday_number(first_text)?, weekday_number(last_text)?) {
-            (Some(first), Some(last)) => translate_day_range(element, first, last, step),
-            _ => Ok(element.to_owned()),
-        };
-    }
-    match (weekday_number(base)?, step) {
-        (Some(value), None) => Ok(weekday_name(value)?.to_owned()),
-        (Some(value), Some(width)) => weekday_list(value, 6, width),
-        (None, _) => Ok(element.to_owned()),
-    }
-}
-
-fn translate_day_range(
-    element: &str,
-    first: u32,
-    last: u32,
-    step: Option<u32>,
-) -> Result<String, SchedulerError> {
-    match step {
-        Some(width) if first <= last => weekday_list(first, last, width),
-        Some(_width) => Ok(element.to_owned()),
-        None if first == last => Ok(weekday_name(first)?.to_owned()),
-        None => Ok(format!("{}-{}", weekday_name(first)?, weekday_name(last)?)),
-    }
-}
-
-fn weekday_number(text: &str) -> Result<Option<u32>, SchedulerError> {
-    match text.parse::<u32>() {
-        Ok(value) if value <= 6 => Ok(Some(value)),
-        Ok(value) => Err(SchedulerError::DayOfWeek {
-            value: u64::from(value),
-        }),
-        Err(_source) => Ok(None),
-    }
-}
-
-fn weekday_name(value: u32) -> Result<&'static str, SchedulerError> {
-    let index = usize::try_from(value).map_err(|_source| SchedulerError::DayOfWeek {
-        value: u64::from(value),
-    })?;
-    WEEKDAY_NAMES
-        .get(index)
-        .copied()
-        .ok_or_else(|| SchedulerError::DayOfWeek {
-            value: u64::from(value),
-        })
-}
-
-fn weekday_list(start: u32, end: u32, step: u32) -> Result<String, SchedulerError> {
-    let range = end.saturating_sub(start);
-    if step > range {
-        return Err(SchedulerError::CronStep {
-            step: u64::from(step),
-            range: u64::from(range),
-        });
-    }
-    let mut names = Vec::new();
-    let mut value = start;
-    while value <= end {
-        names.push(weekday_name(value)?);
-        value = value.saturating_add(step);
-    }
-    Ok(names.join(","))
 }
 
 mod tests;
