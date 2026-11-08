@@ -1,5 +1,6 @@
 use betterlite_openai::embedding::EmbeddingResponse;
 use serde::{Deserialize, Serialize};
+use serde_json::Number;
 use serde_with::rust::double_option;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -7,6 +8,7 @@ use serde_with::rust::double_option;
 pub enum SdkResult {
     Success { value: ChatCompletion },
     Embedding { value: EmbeddingOutcomes },
+    Vectors { value: QueryVectors },
     Failure(Failure),
 }
 
@@ -16,6 +18,14 @@ pub struct EmbeddingOutcomes {
     pub sync: EmbeddingResponse,
     #[serde(rename = "async")]
     pub asynchronous: EmbeddingResponse,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct QueryVectors {
+    pub sync: Vec<Number>,
+    #[serde(rename = "async")]
+    pub asynchronous: Vec<Number>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

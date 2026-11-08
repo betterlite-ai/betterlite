@@ -1,0 +1,5 @@
+kind: helper
+name: "litellm-api-key"
+call: {"b4654":{"function":"litellm_key","raw":[["X-Litellm-Api-Key","k1"],["Authorization","Bearer t"]]}}
+env: {}
+compare: {"ignore":[]}

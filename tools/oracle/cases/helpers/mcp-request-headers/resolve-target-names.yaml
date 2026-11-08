@@ -1,0 +1,5 @@
+kind: helper
+name: "resolve-target-names"
+call: {"b4654":{"function":"target_selection","path":"/foo/mcp","header_servers":["other"]}}
+env: {}
+compare: {"ignore":[]}

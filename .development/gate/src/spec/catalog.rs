@@ -89,4 +89,6 @@ pub(crate) enum BuiltinId {
     ExpectBudget,
     FileSize,
     Crates,
+    ModuleTree,
+    CaseIgnores,
 }
