@@ -15,3 +15,6 @@ deviations:
   - what: There are no get_policy_registry or get_attachment_registry singletons. The registries are values passed to the matcher and resolver functions.
     why: Rule inject-dependencies forbids module-level state; the registry handle comes from the caller and tests build their own.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L1071-L1081
+  - what: PolicyRegistry.get_policy_by_id_for_request is not a function. The in-memory version cache is the public policies_by_id map, which callers read directly; load_policies clears it, and B3243's DB sync fills it.
+    why: Rule no-one-line-functions rejects a getter whose body is only a map lookup, and no code in this task reads the cache on a request path yet.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/policy_engine/policy_registry.py#L590-L604

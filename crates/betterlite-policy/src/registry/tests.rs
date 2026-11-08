@@ -398,18 +398,3 @@ fn remove_policy_returns_false_for_an_unknown_name() {
     assert!(!registry.remove_policy("ghost"));
     assert!(registry.policies.contains_key("baseline"));
 }
-
-#[test]
-fn policies_by_id_holds_request_versions() {
-    let mut registry = PolicyRegistry::default();
-    let versioned = runtime_policy(None, &["pii"]);
-    registry.policies_by_id.insert(
-        "2f7c".to_owned(),
-        ("baseline".to_owned(), versioned.clone()),
-    );
-    assert_eq!(
-        registry.policies_by_id.get("2f7c"),
-        Some(&("baseline".to_owned(), versioned))
-    );
-    assert_eq!(registry.policies_by_id.get("missing"), None);
-}
