@@ -1,0 +1,12 @@
+kind: helper
+name: valid-remote
+call:
+  catalog_fetch_policy:
+    operation: classify_response
+    status: 200
+    headers:
+      ETag: abc123
+    body: "\uFEFF{\"model\":{\"litellm_provider\":\"openai\"},\"sample_spec\":{}}"
+    url: https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json
+compare: {ignore: []}
+env: {}
