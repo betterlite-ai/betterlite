@@ -97,9 +97,9 @@ fn chunk_slices(text: &str, chunk: NonZeroUsize) -> Result<Vec<&str>, CountError
         }
         count = count.saturating_add(1);
     }
-    if start < text.len() {
-        let slice = text.get(start..text.len()).ok_or(CountError::Boundary)?;
-        slices.push(slice);
+    let tail = text.get(start..).ok_or(CountError::Boundary)?;
+    if !tail.is_empty() {
+        slices.push(tail);
     }
     Ok(slices)
 }
@@ -169,11 +169,17 @@ fn boundary_bytes(
             }
             current = positions.next();
         }
-        let byte = match current {
-            Some((index, byte)) if index == *boundary => byte,
-            None if *boundary == chars => text.len(),
-            _ => return Err(CountError::Boundary),
+        let Some((index, byte)) = current else {
+            // the final sample ends one past the last scalar, where the text itself ends
+            if *boundary != chars {
+                return Err(CountError::Boundary);
+            }
+            bytes.push(text.len());
+            continue;
         };
+        if index != *boundary {
+            return Err(CountError::Boundary);
+        }
         bytes.push(byte);
     }
     Ok(bytes)
