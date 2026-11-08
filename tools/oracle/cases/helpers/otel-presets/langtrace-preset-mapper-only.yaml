@@ -3,7 +3,6 @@ name: langtrace-preset-mapper-only
 call:
   b3850:
     function: langtrace_preset
-    environment: {}
     base:
       exporters:
         - kind: otlp_http
