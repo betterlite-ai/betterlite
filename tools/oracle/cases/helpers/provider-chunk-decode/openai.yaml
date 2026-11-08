@@ -1,0 +1,46 @@
+kind: helper
+name: provider-chunk-decode-openai
+call:
+  b5653:
+    state:
+      model: gpt-4
+      provider: openai
+      response_id: chatcmpl-fixed
+      created: 1700000000
+      repeated_chunk_limit: 100
+    steps:
+      - op: decode
+        chunk:
+          kind: json
+          value: {id: chatcmpl-1, model: gpt-4, choices: [{index: 0, delta: {content: hi}, finish_reason: stop}], usage: {prompt_tokens: 2, completion_tokens: 3, total_tokens: 5}}
+      - op: decode
+        provider: azure
+        chunk:
+          kind: json
+          value: {id: chatcmpl-2, model: azure-deployment, choices: [{index: 0, delta: {content: yo}}]}
+      - op: decode
+        provider: openai
+        chunk:
+          kind: json
+          value: {id: chatcmpl-3, choices: [{index: 0, delta: {content: again}, finish_reason: stop}], hidden_params: {is_finished: false}}
+      - op: decode
+        chunk:
+          kind: json
+          value: {id: chatcmpl-4, choices: [{index: 0, delta: {content: plain}}]}
+      - op: decode
+        chunk:
+          kind: json
+          value: {id: chatcmpl-5}
+      - op: decode
+        provider: cached_response
+        chunk:
+          kind: json
+          value: {id: chatcmpl-6, model: gpt-4, created: 1700000002, choices: [{index: 0, delta: {content: cached}, finish_reason: stop}]}
+      - op: decode
+        provider: cached_response
+        chunk:
+          kind: json
+          value: {id: chatcmpl-7, choices: [{index: 0, delta: {content: counted}}], usage: {prompt_tokens: 1, completion_tokens: 2, total_tokens: 3}}
+env: {}
+compare:
+  ignore: []

@@ -309,11 +309,11 @@ fn text_providers_nlp_cloud_done_ends_the_stream() {
 #[test]
 fn text_providers_nlp_cloud_dolphin_strips_the_complete_response() {
     let mut decode_state = state("dolphin-2.2");
-    let first = decode("nlp_cloud", &text(r#""Hello""#), &mut decode_state);
-    assert_eq!(first.text, "\"Hello\"");
-    assert_eq!(decode_state.complete_response, "\"Hello\"");
+    let first = decode("nlp_cloud", &text(r#""Hello"#), &mut decode_state);
+    assert_eq!(first.text, "\"Hello");
+    assert_eq!(decode_state.complete_response, "\"Hello");
     let second = decode("nlp_cloud", &text(r#""Hello world""#), &mut decode_state);
-    assert_eq!(second.text, " world");
+    assert_eq!(second.text, " world\"");
     assert_eq!(decode_state.complete_response, "\"Hello world\"");
 }
 

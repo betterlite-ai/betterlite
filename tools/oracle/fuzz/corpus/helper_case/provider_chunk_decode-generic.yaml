@@ -1,0 +1,10 @@
+kind: helper
+name: provider-chunk-decode-generic-seed
+call:
+  b5653:
+    state: {model: seed-model, provider: seed-provider, custom_provider: true}
+    steps:
+      - op: decode
+        chunk: {kind: generic, value: {text: seeded, is_finished: true, finish_reason: stop, usage: null}}
+env: {}
+compare: {ignore: []}

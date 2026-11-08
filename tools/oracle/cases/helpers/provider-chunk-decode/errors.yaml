@@ -1,0 +1,30 @@
+kind: helper
+name: provider-chunk-decode-errors
+call:
+  b5653:
+    state:
+      model: gpt-4
+      provider: nlp_cloud
+      sent_first_chunk: false
+      repeated_chunk_limit: 100
+    steps:
+      - op: decode
+        chunk: {kind: text, value: not json}
+      - op: decode
+        chunk: {kind: text, value: '{"generated_text": "x [DONE]"}'}
+      - op: decode
+        chunk: {kind: text, value: not json}
+      - op: decode
+        provider: predibase
+        chunk: {kind: text, value: 'data:{"error": "boom"}'}
+      - op: decode
+        provider: replicate
+        chunk: {kind: json, value: {error: bad}}
+      - op: decode
+        provider: text-completion-codestral
+        chunk: {kind: json, value: {choices: []}}
+env: {}
+compare:
+  ignore:
+    - {pointer: /value/4/raised/message, why: LiteLLM appends the dict's repr, which betterlite does not port}
+    - {pointer: /value/5/raised/message, why: LiteLLM appends the dict's repr, which betterlite does not port}

@@ -413,7 +413,6 @@ fn fill_cached(
         .unwrap_or_default();
     decoded.is_finished = finish_reason.is_some();
     decoded.finish_reason.clone_from(&finish_reason);
-    decoded.usage.clone_from(&stream.usage);
     decoded.tool_calls = choice.and_then(|first| first.delta.tool_calls.clone());
     decoded.original = Some(stream.clone());
     decoded.system_fingerprint = Some(stream.system_fingerprint.clone());

@@ -1,0 +1,14 @@
+task: B5653
+deviations:
+  - what: A custom provider's stream reaches the decoder as a ProviderChunk value, so branches that test isinstance on Python SDK classes have no Rust form.
+    why: The provider crates hand over decoded lines, and each class in those branches has a matching JSON shape that takes the same path.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L1103-L1135
+  - what: A text-completion-codestral chunk decodes without usage instead of raising KeyError. LiteLLM's `if "usage" in response_obj is not None` always evaluates to true and then reads a key the Codestral parser never writes, so every chunk fails before it reaches the caller.
+    why: No working setup relies on a KeyError that fails every Codestral text-completion stream; betterlite reads the usage the parser actually returns, which is none.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L1310-L1321
+  - what: The vertex ai blocked-stream error message is "The response was blocked by VertexAI." without the proto object's repr that LiteLLM appends.
+    why: The suffix is Python's repr of a protobuf message, which docs/compatibility.md excludes from parity; the prefix is the part a caller can act on.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L1258-L1263
+  - what: A chunk whose finish_reason is "error" fails the stream. LiteLLM's ModelResponseStream coerces an unknown finish reason to "stop" while it validates the chunk, so its own error branch never runs for a provider that sends the field.
+    why: The branch is what the dispatch reads and what docs/compatibility.md keeps as the declared value; betterlite reads the chunk as the provider sent it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L1362-L1368

@@ -1,0 +1,41 @@
+kind: helper
+name: provider-chunk-decode-chunk-creator
+call:
+  b5653:
+    state:
+      model: gpt-4
+      provider: openai
+      response_id: chatcmpl-fixed
+      created: 1700000000
+      base_hidden_params: {model_id: m1, api_base: "https://example.test", additional_headers: {}, response_cost: null}
+      repeated_chunk_limit: 100
+    steps:
+      - op: creator
+        chunk:
+          kind: json
+          value: {id: chatcmpl-1, choices: [{index: 0, delta: {content: hi}}]}
+      - op: creator
+        chunk:
+          kind: json
+          value: {id: chatcmpl-1, choices: [{index: 0, delta: {content: more}}]}
+      - op: creator
+        chunk:
+          kind: json
+          value: {id: chatcmpl-1, choices: [{index: 0, delta: {}, finish_reason: length}]}
+      - op: creator
+        send_stream_usage: true
+        chunk:
+          kind: json
+          value: {id: chatcmpl-1, choices: [], usage: {prompt_tokens: 2, completion_tokens: 3, total_tokens: 5}}
+      - op: creator
+        is_function_call: true
+        chunk:
+          kind: generic
+          value: {text: "", tool_use: {id: call_1, type: function, function: {name: f, arguments: "{}"}}, is_finished: false, finish_reason: "", usage: null}
+      - op: creator
+        chunk:
+          kind: generic
+          value: {text: provided, is_finished: false, finish_reason: "", usage: null, provider_specific_fields: {provider_specific_fields: {x: 1}}}
+env: {}
+compare:
+  ignore: []

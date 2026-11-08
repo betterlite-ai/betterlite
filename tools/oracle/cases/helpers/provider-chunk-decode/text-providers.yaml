@@ -1,0 +1,65 @@
+kind: helper
+name: provider-chunk-decode-text-providers
+call:
+  b5653:
+    state:
+      model: base-model
+      provider: predibase
+      response_id: chatcmpl-fixed
+      created: 1700000000
+      completion_stream: abcdefghijklmnopqrstuvwxyzabcdef
+      repeated_chunk_limit: 100
+    steps:
+      - op: decode
+        chunk: {kind: text, value: 'data:{"token": {"text": "hi"}}'}
+      - op: decode
+        chunk: {kind: text, value: 'data:{"details": {"finish_reason": "length"}}'}
+      - op: decode
+        chunk: {kind: text, value: 'data:{"generated_text": "full"}'}
+      - op: decode
+        provider: nlp_cloud
+        model: dolphin-x
+        chunk: {kind: text, value: '"Hello'}
+      - op: decode
+        provider: nlp_cloud
+        model: dolphin-x
+        chunk: {kind: text, value: '"Hello world"'}
+      - op: decode
+        provider: nlp_cloud
+        model: base-model
+        chunk: {kind: text, value: '{"generated_text": "hello [DONE]"}'}
+      - op: decode
+        provider: aleph_alpha
+        chunk: {kind: bytes, value: [123, 34, 99, 111, 109, 112, 108, 101, 116, 105, 111, 110, 115, 34, 58, 32, 91, 123, 34, 99, 111, 109, 112, 108, 101, 116, 105, 111, 110, 34, 58, 32, 34, 104, 105, 34, 125, 93, 125]}
+      - op: decode
+        provider: replicate
+        chunk: {kind: json, value: {output: hi}}
+      - op: decode
+        provider: replicate
+        chunk: {kind: json, value: {status: succeeded}}
+      - op: decode
+        provider: vllm
+        chunk: {kind: json, value: [{outputs: [{text: hi}]}]}
+      - op: decode
+        provider: petals
+        chunk: {kind: text, value: 'ignored'}
+      - op: decode
+        provider: triton
+        chunk: {kind: json, value: {text_output: hi, is_finished: true, stop_reason: stop}}
+      - op: decode
+        provider: text-completion-openai
+        chunk:
+          kind: json
+          value: {choices: [{text: hi, finish_reason: stop}], usage: {prompt_tokens: 2, completion_tokens: 3, total_tokens: 5, cost: 1.5}}
+      - op: decode
+        provider: text-completion-codestral
+        chunk: {kind: text, value: 'data: {"id": "c1", "choices": [{"index": 0, "delta": {"content": "hi"}, "finish_reason": null}]}'}
+      - op: decode
+        provider: azure_text
+        chunk: {kind: json, value: {choices: [{text: hi, finish_reason: stop}]}}
+      - op: decode
+        provider: azure_text
+        chunk: {kind: json, value: {id: x}}
+env: {}
+compare:
+  ignore: []

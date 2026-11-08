@@ -29,7 +29,7 @@ pub fn chunk_creator(
     if decoded.early_return {
         return Ok(decoded.original);
     }
-    fill_decoded(state, shaper, &decoded, &mut model_response);
+    fill_decoded(chunk, state, shaper, &decoded, &mut model_response);
     let response_obj = ChunkResponseObject {
         original_chunk: decoded.original.clone(),
         provider_specific_fields: decoded.provider_specific_fields.clone(),
@@ -100,6 +100,7 @@ fn sync_finish(shaper: &mut ChunkShaper, state: &DecodeState) {
 }
 
 fn fill_decoded(
+    chunk: &ProviderChunk,
     state: &DecodeState,
     shaper: &mut ChunkShaper,
     decoded: &DecodedChunk,
@@ -114,6 +115,9 @@ fn fill_decoded(
         model_response.system_fingerprint.clone_from(fingerprint);
     }
     model_response.usage.clone_from(&decoded.usage);
+    if model_response.usage.is_none() && chunk.is_openai_chunk() {
+        model_response.usage = chunk.openai_chunk().ok().and_then(|stream| stream.usage);
+    }
     if let Some(logprobs) = &decoded.logprobs
         && let Some(choice) = model_response.choices.first_mut()
     {
