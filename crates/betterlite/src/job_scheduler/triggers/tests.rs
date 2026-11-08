@@ -245,6 +245,17 @@ fn cron_local_zone_fires_on_apscheduler_instants() {
     let gap = CronTrigger::from_crontab("30 2 * * *", CronZone::Local).unwrap();
     let gap_fires = first_fires(&gap, instant("2026-03-08T00:00:00Z"), 1);
     assert_eq!(gap_fires, [instant("2026-03-08T07:00:00Z")]);
+    let daily = CronTrigger::from_crontab("15 0 * * *", CronZone::Local).unwrap();
+    let daily_fires = first_fires(&daily, instant("2026-03-06T00:00:00Z"), 4);
+    assert_eq!(
+        daily_fires,
+        [
+            instant("2026-03-06T05:15:00Z"),
+            instant("2026-03-07T05:15:00Z"),
+            instant("2026-03-08T05:15:00Z"),
+            instant("2026-03-09T04:15:00Z"),
+        ]
+    );
     println!("{LOCAL_ZONE_MARKER}");
 }
 
