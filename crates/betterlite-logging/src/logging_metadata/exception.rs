@@ -45,16 +45,13 @@ pub struct ExceptionFacts {
 }
 
 pub(crate) fn exception_code(exception: &ExceptionFacts) -> String {
-    exception
-        .code
-        .as_deref()
-        .filter(|code| !code.is_empty() && *code != "None")
-        .map(str::to_owned)
-        .or_else(|| {
-            let status = exception.status_code.or(exception.response_status_code);
-            status.map(|code| code.to_string())
-        })
-        .unwrap_or_default()
+    match exception.code.as_deref() {
+        Some(code) if !code.is_empty() && code != "None" => code.to_owned(),
+        Some(_) | None => exception
+            .status_code
+            .or(exception.response_status_code)
+            .map_or_else(String::new, |status| status.to_string()),
+    }
 }
 
 pub(crate) fn budget_fields(
@@ -83,12 +80,10 @@ pub(crate) fn provider_request_id(exception: &ExceptionFacts) -> Option<String> 
         exception.litellm_response_headers.as_ref(),
     ];
     PROVIDER_REQUEST_ID_HEADERS.iter().find_map(|expected| {
-        sources.iter().flatten().find_map(|headers| {
-            let named = headers
-                .iter()
-                .find(|(name, value)| name.eq_ignore_ascii_case(expected) && !value.is_empty());
-            named.map(|(_name, value)| value.clone())
-        })
+        let mut entries = sources.iter().flatten().flat_map(|headers| headers.iter());
+        entries
+            .find(|(name, value)| name.eq_ignore_ascii_case(expected) && !value.is_empty())
+            .map(|(_name, value)| value.clone())
     })
 }
 
