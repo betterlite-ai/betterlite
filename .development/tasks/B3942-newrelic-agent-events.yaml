@@ -46,6 +46,8 @@ references:
     why: New Relic agent API contract for register_application, application(), record_custom_event and record_custom_metric.
 oracle_cases: []
 dod:
+  - text: "The New Relic agent logger implements CallbackLogger, with the success and failure events it records as AI events, so the newrelic arm of B8746 returns it when V2 is off (tests named callback_logger_* in newrelic_agent)."
+    proof: [callback-logger]
   - text: Missing newrelic module import falls back to None without crashing; integration disables with diagnostic warning.
     proof: [agent-init-tests]
   - text: NEW_RELIC_LICENSE_KEY and NEW_RELIC_APP_NAME resolve from environment variables through injected configuration, missing either disables integration with warning.
@@ -85,6 +87,9 @@ dod:
 checks:
   optional: [mutants]
   commands:
+    - id: callback-logger
+      why: the agent logger cannot serve the global newrelic name
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_agent::(.*::)?callback_logger_/)'
     - id: agent-init-tests
       why: agent initialization, credential resolution, registration and backoff state tests fail or do not exist
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^newrelic_agent::(.*::)?newrelic_agent_init_behavior($|::)/)'

@@ -1,0 +1,11 @@
+kind: helper
+name: chain-root-first
+call:
+  b3240:
+    function: inheritance_chain
+    policy_name: child
+    policies:
+      base: {guardrails: {add: [pii]}}
+      child: {inherit: base, guardrails: {add: [hipaa]}}
+env: {}
+compare: {ignore: []}

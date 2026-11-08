@@ -1,7 +1,7 @@
 id: B8271
 title: Serve the usage AI chat route
 description: >-
-  Register `POST /usage/ai/chat` (no `/v1` or other alias) in betterlite-server, the route LiteLLM's usage_endpoints/endpoints.py defines. B3103 built the engine behind it (`stream_usage_ai_chat` and the `UsageChatParts` it takes); this task builds the request body, the caller checks, the keep-alive wrapper and the response. Put it in `crates/betterlite-server/src/usage_ai_chat_route.rs` and its folder, with `pub fn routes()` in the way the sibling route modules in crates/betterlite-server/src/ do; the architect's skeleton mounts it, so do not touch app.rs. `usage_endpoints/__init__.py` only re-exports `router`, so the Rust module needs nothing for it.
+  Register `POST /usage/ai/chat` (no `/v1` or other alias) in betterlite-server, the route LiteLLM's usage_endpoints/endpoints.py defines. B3103 built the engine behind it (`stream_usage_ai_chat` and the `UsageChatParts` it takes); this task builds the request body, the caller checks, the keep-alive wrapper and the response. Put it in `crates/betterlite-server/src/usage_ai_chat_route.rs` and its folder, with `pub fn routes()` in the way the sibling route modules in crates/betterlite-server/src/ do; B8673 mounts it, so do not touch app.rs. `usage_endpoints/__init__.py` only re-exports `router`, so the Rust module needs nothing for it.
 
   Request body. A JSON object `{"messages": [{"role": "user" | "assistant", "content": str}, ...], "model": str | null}`. `messages` is required and may be empty; `model` is optional with default null. Any other role or a missing `content` gives the usual FastAPI 422 detail list (type, loc, msg, input), before any handler code runs. Extra keys are ignored. The route needs a valid key; a missing or bad key gets the usual 401 body from the auth layer (B756), and the 401 comes before the 422.
 
@@ -9,14 +9,13 @@ description: >-
 
   Response. Build the message list as plain `{"role", "content"}` maps and call B3103's `stream_usage_ai_chat(messages, model, user_id, is_admin)`. Wrap its frames with B005's keep-alive wrapper (`wrap_sse_stream_with_keepalive_pings`) using `litellm_settings.sse_keepalive_ping_interval_seconds` (B005 owns the setting and its coercion; default null means no pings) and the ping text `: ping\n\n` (`SSE_COMMENT_PING`). Answer 200 with content type `text/event-stream` and exactly these extra headers: `Cache-Control: no-cache` and `X-Accel-Buffering: no`. Starlette adds `charset=utf-8` to a text media type, so the header value is `text/event-stream; charset=utf-8`. No other header (no x-litellm-* headers) is set by the handler.
 
-  Wiring. The route state struct takes the collaborators by constructor: a `UsageChatFactory` trait that returns the `UsageChatParts` for one request (the model client, the data source and the clock; the architect wires the real ones), the ping interval, and B861's caller-id check. Tests use fakes of each.
+  Wiring. The route state struct takes the collaborators by constructor: a `UsageChatFactory` trait that returns the `UsageChatParts` for one request (the model client, the data source and the clock; B8673 wires the real ones), the ping interval, and B861's caller-id check. Tests use fakes of each.
 
   Tests live in tests.rs under `usage_ai_chat_route::tests`, with names starting `body_`, `caller_`, `stream_` and `headers_`.
 scope:
   paths:
     - crates/betterlite-server/src/usage_ai_chat_route.rs
     - crates/betterlite-server/src/usage_ai_chat_route/**
-    - tools/oracle/cases/usage-ai-chat/**
     - tools/oracle/helpers/b8271.py
     - tools/oracle/helpers/b8271/**
     - tools/oracle/src/helpers/server/b8271.rs
@@ -30,18 +29,18 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/sse_keepalive.py#L12-L60
     why: The ping text and the wrapper the route passes the stream through.
 dod:
-  - text: POST /usage/ai/chat is the only path and POST the only method, and a request without a valid key gets the usual 401 body.
-    proof: [route-tests, oracle]
-  - text: A body with a role other than user or assistant, a missing messages list or a missing content gets the 422 detail list before the handler runs.
-    proof: [body-tests, oracle]
+  - text: POST /usage/ai/chat is the only path and POST the only method, and a request without a valid key gets the usual 401 body. B8673 proves it over HTTP.
+    proof: [route-tests]
+  - text: A body with a role other than user or assistant, a missing messages list or a missing content gets the 422 detail list before the handler runs. B8673 proves it over HTTP.
+    proof: [body-tests]
   - text: An admin caller streams with its own user_id (null allowed) and is_admin true; a non-admin streams with the id B861 returns and is_admin false, and a non-admin without a user id gets B861's error and no stream.
     proof: [caller-tests]
   - text: The answer is 200 text/event-stream with Cache-Control no-cache and X-Accel-Buffering no, and the frames of the B3103 stream pass through unchanged and in order.
     proof: [stream-tests, headers-tests]
   - text: "With a ping interval set, the wrapper adds ': ping' comment frames on an idle stream; with the default (null) it adds none."
     proof: [stream-tests]
-  - text: The oracle cases for the 401 and the two 422 bodies exist and match LiteLLM.
-    proof: [new-cases, oracle]
+  - text: "The handlers are tested with tower's oneshot over the module's own Router and fake ports; B8673 runs the HTTP oracle cases through the booted proxy."
+    proof: [new-cases]
 checks:
   optional: [mutants]
   commands:
@@ -61,12 +60,9 @@ checks:
       why: the content type or the two extra headers are missing or different
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^usage_ai_chat_route::tests::headers_/)'
     - id: new-cases
-      why: the usage chat route has no HTTP parity case on this branch
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/usage-ai-chat)"
-oracle_cases:
-  - tools/oracle/cases/usage-ai-chat/auth-required.yaml
-  - tools/oracle/cases/usage-ai-chat/invalid-role.yaml
-  - tools/oracle/cases/usage-ai-chat/missing-messages.yaml
+      why: the handlers are not tested with tower's oneshot over the module's own Router and fake ports
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^usage_ai_chat_route::tests::oneshot_/)'
+oracle_cases: []
 deviations: []
 out_of_scope:
   - "stream_usage_ai_chat, the tools, the system prompt and the data fetchers: B3103."

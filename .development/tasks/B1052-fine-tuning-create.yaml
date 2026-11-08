@@ -21,7 +21,7 @@ scope:
   - crates/betterlite-core/src/api/fine_tuning_create.rs
   - crates/betterlite-core/src/api/fine_tuning_create/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/fine_tuning_create.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/fine_tuning_create.py
   - tools/oracle/cases/sdk-http/fine-tuning-create/**

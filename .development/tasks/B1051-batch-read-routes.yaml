@@ -3,7 +3,7 @@ title: Batch retrieval route
 description: >-
   Implement the complete retrieve_batch handler and its three GET aliases. List registration belongs to B1133.
   Run B1021 validate_managed_id_requirement before decoding the model or preparing the request. B004's
-  common_processing_pre_call_logic uses route_type=aretrieve_batch. When a unified id contains a model id,
+  common_processing_pre_call_logic (B8801's PreCall step; keep `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state, built with `PreCallStep::standalone` in routes(state), which B8804 swaps for the production step) uses route_type=aretrieve_batch. When a unified id contains a model id,
   resolve it through B844 and call B1020 authorize_model_for_key before any credentials or provider request.
   Fall back to the id itself if the catalog cannot resolve its model name.
 

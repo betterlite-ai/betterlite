@@ -1,0 +1,13 @@
+id: B8611
+milestone: M8 platform
+title: Proxy router from config.yaml and the shared router views
+status: todo
+depends_on: [B002, B016, B302, B323, B367, B368, B844, B846, B847, B8351, B3001, B3880, B940, B3269, B8603, B7324]
+file: tasks/B8611-proxy-router-views.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

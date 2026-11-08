@@ -2,7 +2,7 @@ id: B3372
 title: Container file route registration and JSON requests
 description: >-
   Register the five container file routes and build the JSON request processor behind them, in betterlite-server as module api::container_file_routes (crates/betterlite-server/src/api/container_file_routes.rs
-  and container_file_routes/**), mounted once from a route stub module routes/container_files.rs that the architect registers. LiteLLM builds these routes at import from endpoints.json
+  and container_file_routes/**), mounted once from a route stub module routes/container_files.rs that B8635 fills and mounts. LiteLLM builds these routes at import from endpoints.json
   (register_container_file_endpoints, handler_factory.py L449-L506), each at the `/v1` prefix and the bare path. Every route sits behind B756 authentication and its handler also reads the
   authenticated caller (LiteLLM uses the user_api_key_auth dependency twice; it runs once). The five entries come from B3360's catalog (`container_endpoints()`), in file order.
 
@@ -39,7 +39,7 @@ description: >-
   common request processing, which reaches the container route types through B7430's ContainerCall dispatch entry; this task passes the route type string and the data map and nothing else.
   `get_all_route_types` and `_get_container_provider_config` are not built (see out_of_scope).
 
-  HTTP oracle cases. The routes are new behavior a client sees, so the branch adds cases under tools/oracle/cases/api/container-file-routes, run against LiteLLM and betterlite with master_key=sk-test
+  HTTP oracle cases. The routes are new behavior a client sees, so B8635, which mounts them, adds cases under tools/oracle/cases/api/container-file-routes, run against LiteLLM and betterlite with master_key=sk-test
   and the OpenAI mock provider's container endpoints (B3363 owns the provider side). They check: the list, retrieve and delete routes on `/v1` and the bare paths with the data the provider received
   (limit, order and after reach the provider as strings, an unknown query name does not); GET content on both prefixes with the bytes and the content-type header for an id ending in .png, .csv and with
   no extension; a key that does not own the container getting 403 {"detail": "Forbidden"} on all five routes with zero provider requests; a multipart upload with no `file` part answering 400
@@ -55,8 +55,6 @@ scope:
     - crates/betterlite-server/src/api/container_file_routes/**
     - crates/betterlite-server/src/routes/container_files.rs
     - crates/betterlite-server/src/routes/container_files/**
-    - tools/oracle/cases/api/container-file-routes/**
-    - tools/oracle/fixtures/container-file-routes/**
     - tools/oracle/helpers/b3372.py
     - tools/oracle/helpers/b3372/**
     - tools/oracle/src/helpers/server/b3372.rs
@@ -82,26 +80,26 @@ references:
 dod:
   - text: >-
       The five entries are registered once each at the /v1 prefix and the bare path with their catalog methods, the other methods on those paths answer 405, and a request without a valid key gets 401 from B756 with no provider request, on all ten paths.
-    proof: [route-aliases, auth-failures, oracle]
+    proof: [route-aliases, auth-failures]
   - text: >-
       handler_kind picks Binary, Multipart, ContainerId, ContainerFile and NoParams in that order, so the content entry is Binary, upload is Multipart, list is ContainerId, retrieve and delete are ContainerFile, and a returns_binary entry with other path params is not Binary.
     proof: [handler-kind]
   - text: >-
       The JSON data map holds the full query map under "query_params", then only the declared query params that the request has, then the path params; a repeated query key keeps its last value and an undeclared name reaches data only inside "query_params".
-    proof: [json-data, oracle]
+    proof: [json-data]
   - text: >-
       The JSON processor checks ownership before processing with the picked provider, overwrites data with the forwarding result, sets custom_llm_provider itself when there is no container_id, passes no model, and returns the processing result unchanged; ownership failures are 403 {"detail": "Forbidden"} and skip exception handling.
-    proof: [json-access, error-bodies, oracle]
+    proof: [json-access, error-bodies]
   - text: >-
       The content route answers 200 with the bytes, the headers B004 set and a content type from the file id, with "; charset=utf-8" appended to text/* types only.
-    proof: [binary-response, oracle]
+    proof: [binary-response]
   - text: >-
       The upload route passes the entry's async_name as the route type, answers 400 {"detail": "Missing required 'file' field"} with no file part, and lets the container_id and custom_llm_provider values from the path and the checks win over form fields of the same name.
-    proof: [upload-response, error-bodies, oracle]
+    proof: [upload-response, error-bodies]
   - text: "A non-owner key gets 403 with the body {\"detail\": \"Forbidden\"} on every container file route with zero provider requests."
-    proof: [json-access, error-bodies, oracle]
-  - text: The branch adds HTTP oracle cases for the container file routes.
-    proof: [new-cases, oracle]
+    proof: [json-access, error-bodies]
+  - text: Tests drive the handlers with tower's oneshot over the module's own Router and fake ports; B8635 mounts the routes and proves them over HTTP.
+    proof: [route-aliases, auth-failures]
 checks:
   optional: []
   commands:
@@ -129,17 +127,7 @@ checks:
     - id: auth-failures
       why: a route is reachable without a valid key or reaches the provider first
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::container_file_routes::tests::auth_failures($|::)/)'
-    - id: new-cases
-      why: the branch adds no HTTP oracle cases for the container file routes
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/container-file-routes)"
-oracle_cases:
-  - tools/oracle/cases/api/container-file-routes/container-file-json-routes.yaml
-  - tools/oracle/cases/api/container-file-routes/container-file-content.yaml
-  - tools/oracle/cases/api/container-file-routes/container-file-forbidden.yaml
-  - tools/oracle/cases/api/container-file-routes/container-file-upload.yaml
-  - tools/oracle/cases/api/container-file-routes/container-file-upload-errors.yaml
-  - tools/oracle/cases/api/container-file-routes/container-file-form-overwrite.yaml
-  - tools/oracle/cases/api/container-file-routes/container-file-auth.yaml
+oracle_cases: []
 deviations:
   - what: The catalog is read from B3360's embedded copy of endpoints.json, not from a file path at startup.
     why: LiteLLM opens containers/endpoints.json relative to its source tree; a compiled gateway has no source tree, and the embedded copy is the pinned file byte for byte.
@@ -150,7 +138,7 @@ out_of_scope:
   - "_load_endpoints_config (L30-L34): replaced by B3360's embedded catalog, see deviations; no separate function is built."
   - "_get_container_provider_config (L43-L53): no caller at the pin (grep finds only its definition). Provider config lookup is B3361's."
   - "_process_binary_request and _process_multipart_upload_request (L164-L357) and `pick_provider`: B3371. The ownership service and its 403: B3362. Request form reading: B1101. The header and query provider accessors: B2400."
-  - "ProxyBaseLLMRequestProcessing.base_process_llm_request and _handle_llm_api_exception: B004. Authentication: B756 and B732."
+  - "common_processing_pre_call_logic: B8801 (keep `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state, built with `PreCallStep::standalone` in routes(state), which B8804 swaps for the production step). ProxyBaseLLMRequestProcessing.base_process_llm_request and _handle_llm_api_exception: B004. Authentication: B756 and B732."
   - "The core dispatch that maps the container route types (aupload_container_file, aretrieve_container_file_content and the others) to B3368's acontainer_file_call, the router wrappers and route_llm_request's container branch: B7430."
   - "The generated container file operations that the route type finally reaches: B3368. Container create, list, retrieve and delete routes in proxy/container_endpoints/endpoints.py: B7326."
 pitfalls:

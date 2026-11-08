@@ -94,7 +94,7 @@ description: >-
   is a list, else 0) and litellm.request_timeout. Also public here: `callback_name(callback) -> String`, which B4447 calls;
   it returns the callback's registered name.
 
-  Existing code. B003 already registers GET /health/readiness in crates/betterlite-server/src/routes.rs, and axum panics on a duplicate route. B4448 removes B003's readiness handler and mounts its own router there. The master-key check in crates/betterlite-server/src/auth.rs and the route admission in crates/betterlite-server/src/auth/route_match.rs both skip a short list of paths now (liveliness, liveness, readiness). B4448 extends both lists so the drain route, the three OPTIONS paths and /health/readiness skip master-key auth as in LiteLLM.
+  Existing code. B003 already registers GET /health/readiness in crates/betterlite-server/src/routes.rs, and axum panics on a duplicate route. This task registers its router nowhere: B8610 moves B003's readiness handler out of routes.rs into the app/health.rs stub, and B8540 mounts readiness_routes through app::health in its place. The master-key check in crates/betterlite-server/src/auth.rs and the route admission in crates/betterlite-server/src/auth/route_match.rs both skip a short list of paths now (liveliness, liveness, readiness). B4448 extends both lists so the drain route, the three OPTIONS paths and /health/readiness skip master-key auth as in LiteLLM.
 
   Tests live in `health_readiness::tests` (any submodule below it), with these prefixes: `shutdown_`, `drain_wait_`,
   `db_`, `stall_`, `no_redis_`, `public_`, `details_`, `backlog_`, `drain_route_`, `options_`, `license_`, `callbacks_`,
@@ -106,29 +106,11 @@ scope:
   paths:
     - crates/betterlite-server/src/health_readiness.rs
     - crates/betterlite-server/src/health_readiness/**
-    - crates/betterlite-server/src/routes.rs
     - crates/betterlite-server/src/auth.rs
     - crates/betterlite-server/src/auth/route_match.rs
     - crates/betterlite-config/src/sections/health_readiness.rs
     - crates/betterlite-config/src/sections/health_readiness/**
     - "crates/betterlite-config/fuzz/corpus/config_yaml/health-readiness-*"
-    - tools/oracle/cases/health/readiness-public.yaml
-    - tools/oracle/cases/health/readiness-public-details-flag.yaml
-    - tools/oracle/cases/health/readiness-details-no-key.yaml
-    - tools/oracle/cases/health/readiness-details-with-key.yaml
-    - tools/oracle/cases/health/backlog-no-key.yaml
-    - tools/oracle/cases/health/backlog-with-key.yaml
-    - tools/oracle/cases/health/drain-disabled.yaml
-    - tools/oracle/cases/health/drain-token-missing.yaml
-    - tools/oracle/cases/health/drain-token-wrong.yaml
-    - tools/oracle/cases/health/drain-ok-no-token.yaml
-    - tools/oracle/cases/health/drain-ok-with-token.yaml
-    - tools/oracle/cases/health/options-readiness.yaml
-    - tools/oracle/cases/health/options-liveliness.yaml
-    - tools/oracle/cases/health/options-liveness.yaml
-    - tools/oracle/cases/health/license-community.yaml
-    - tools/oracle/cases/health/settings-callbacks.yaml
-    - tools/oracle/cases/health/active-callbacks.yaml
     - tools/oracle/helpers/b4448.py
     - tools/oracle/helpers/b4448/**
     - tools/oracle/src/helpers/server/b4448.rs
@@ -168,21 +150,23 @@ dod:
     proof: [db-readiness-tests]
   - text: show_no_redis_warning follows Redis presence, the LITELLM_DISABLE_NO_REDIS_WARNING flag, a missing database and a worker count other than exactly one.
     proof: [db-readiness-tests]
-  - text: The public GET /health/readiness answers 503 shutting_down first, then the detailed body when allow_public_health_readiness_details is true, else status and db with a 503 for an unreachable database unless requests are allowed on unavailability. B003's old readiness handler in routes.rs is gone so the router builds without a duplicate route, and the drain route, the three OPTIONS paths and /health/readiness pass master-key auth and route admission without a key.
-    proof: [route-tests, oracle]
+  - text: The public GET /health/readiness answers 503 shutting_down first, then the detailed body when allow_public_health_readiness_details is true, else status and db with a 503 for an unreachable database unless requests are allowed on unavailability. the drain route, the three OPTIONS paths and /health/readiness pass master-key auth and route admission without a key.
+    proof: [route-tests]
   - text: GET /health/readiness/details needs a key, returns every documented field, and returns 503 with "Service Unhealthy (...)" when building the body fails.
-    proof: [details-tests, oracle]
+    proof: [details-tests]
   - text: GET /health/backlog needs a key and returns the four counters from the in-flight count and admission stats.
-    proof: [route-tests, oracle]
+    proof: [route-tests]
   - text: GET /health/drain returns 404 when disabled, 401 on a missing or wrong X-Drain-Token, and otherwise starts shutdown and returns the drained count.
-    proof: [route-tests, oracle]
+    proof: [route-tests]
   - text: The three OPTIONS routes answer 200 with the Allow and Access-Control headers.
-    proof: [route-tests, oracle]
+    proof: [route-tests]
   - text: GET /health/license answers the community body, and /settings and /active/callbacks return the listing with the concatenated list, counts and request_timeout.
-    proof: [route-tests, oracle]
+    proof: [route-tests]
   - text: The health_readiness section loads every key and env var above with its default, and the config corpus has the new seeds.
     proof: [health-readiness-config-tests, config-corpus]
 
+  - text: The handlers are tested with tower's oneshot over readiness_routes and fake ports; B8540 mounts the router and proves the HTTP answers with the oracle cases moved there.
+    proof: [route-tests]
 checks:
   optional: [mutants]
   commands:
@@ -219,24 +203,7 @@ checks:
         test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs &&
         cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
 
-oracle_cases:
-  - tools/oracle/cases/health/readiness-public.yaml
-  - tools/oracle/cases/health/readiness-public-details-flag.yaml
-  - tools/oracle/cases/health/readiness-details-no-key.yaml
-  - tools/oracle/cases/health/readiness-details-with-key.yaml
-  - tools/oracle/cases/health/backlog-no-key.yaml
-  - tools/oracle/cases/health/backlog-with-key.yaml
-  - tools/oracle/cases/health/drain-disabled.yaml
-  - tools/oracle/cases/health/drain-token-missing.yaml
-  - tools/oracle/cases/health/drain-token-wrong.yaml
-  - tools/oracle/cases/health/drain-ok-no-token.yaml
-  - tools/oracle/cases/health/drain-ok-with-token.yaml
-  - tools/oracle/cases/health/options-readiness.yaml
-  - tools/oracle/cases/health/options-liveliness.yaml
-  - tools/oracle/cases/health/options-liveness.yaml
-  - tools/oracle/cases/health/license-community.yaml
-  - tools/oracle/cases/health/settings-callbacks.yaml
-  - tools/oracle/cases/health/active-callbacks.yaml
+oracle_cases: []
 
 deviations:
   - what: /health/license always answers the community body, with has_license false.

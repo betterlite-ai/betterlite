@@ -1,6 +1,9 @@
 id: B8370
 title: In-process job scheduler and shutdown stop
 description: >-
+  The skeleton already declares this task's fuzz [[bin]] with an empty target file; fill that target and add the crate dependency it needs, without a second [[bin]] entry.
+
+
   LiteLLM runs every periodic proxy job (budget reset, spend flush, cleanup, reports, heartbeats) on one APScheduler 3.11
   AsyncIOScheduler that ProxyStartupEvent.initialize_scheduled_background_jobs builds, and stops it on shutdown through
   litellm/proxy/shutdown/scheduled_jobs.py. betterlite has no scheduler yet, so nothing that later tasks register can

@@ -1,0 +1,8 @@
+kind: helper
+name: common-request-processing-coerce-text-and-numbers
+call:
+  b7324:
+    function: coerce
+    settings: [5, "5", " 2.5 ", "1e1", "1_0", "+0.5", ".25"]
+env: {}
+compare: {ignore: []}

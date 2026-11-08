@@ -1,0 +1,108 @@
+id: B8700
+title: Mount the /v1/mcp per-user credential and env var routes
+description: >-
+  B4723 (seven per-user credential routes: user-credential, oauth-user-credential and its status, user-credentials
+  lists) and B4724 (four per-user env var routes) build their routers under /v1/mcp and stop; no B1100 entry merges
+  them. This task builds their states, implements the ports each module declares and mounts both through
+  app::mcp::mount, inside the auth layers, since every route takes a key.
+
+
+  Code goes in crates/betterlite-server/src/app/mcp/user_routes.rs and app/mcp/user_routes/ (credentials.rs, env.rs,
+  a tests.rs beside each), plus one line in app::mcp::mount (crates/betterlite-server/src/app/mcp.rs).
+
+
+  credentials.rs. B4723's state with each port its module declares, over the tasks its text names: B4713 for the
+  stored per-user credentials, the registry in `shared.mcp_registry` for server lookups, and McpState's
+  tokens.user_caches (B4715's UserTokenCaches, built by B8622) for the cache drop after a write or delete, so a
+  revoked token is not served from the per-user token cache afterwards.
+
+
+  env.rs. B4724's state: B4714's merge_user_env_vars and delete for the stored values, the registry for each server's
+  declared names, proxy_base_url from McpCore's normalized PROXY_BASE_URL, and a UserEnvVarsCache whose invalidate
+  drops the gateway's per-user env var cache entry for (user_id, server_id) (LiteLLM's
+  invalidate_user_env_vars_cache; read B4714 and B4715 for which one holds that cache).
+
+
+  Read each module's state struct for the exact port list; every port gets a production implementation and none is
+  left as a fake. Tests in app::mcp::user_routes:: : both routers build merged with the other MCP routers, one path
+  of each answers something other than 404 through tower's oneshot, and a credential delete reaches
+  UserTokenCaches.invalidate_oauth_store.
+
+
+  HTTP oracle cases. The cases B4723 and B4724 planned through the booted proxy move here, because their routes only
+  answer once this task mounts them. Write each listed case from its route task's description, DoD and case names
+  (.development/tasks/B4723-mcp-user-credential-routes.yaml and B4724-mcp-user-env-routes.yaml), with the config, key
+  and ignore rules each describes.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/mcp.rs
+    - crates/betterlite-server/src/app/mcp/user_routes.rs
+    - crates/betterlite-server/src/app/mcp/user_routes/**
+    - tools/oracle/cases/http/mcp-user-credentials/**
+    - tools/oracle/cases/http/mcp-user-env-vars/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2420-L2940
+    why: The per-user credential and env var routes and the cache drops after each write.
+dod:
+  - text: The B4723 and B4724 routers are merged once each inside the auth layers.
+    proof: [user-route-tests, oracle]
+  - text: Every port of the two modules forwards to its owning crate, and credential writes drop the per-user token cache.
+    proof: [user-route-tests]
+  - text: The moved B4723 and B4724 cases match LiteLLM through the booted proxy.
+    proof: [user-route-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: user-route-tests
+      why: a router is not merged, a path is missing, or a port is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::mcp::user_routes::/)'
+    - id: user-route-cases
+      why: without the case files the oracle proof compares nothing for these routes
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/mcp-user-credentials tools/oracle/cases/http/mcp-user-env-vars)"
+oracle_cases:
+  - tools/oracle/cases/http/mcp-user-credentials/byok-store-no-database-500.yaml
+  - tools/oracle/cases/http/mcp-user-credentials/byok-delete-no-database-500.yaml
+  - tools/oracle/cases/http/mcp-user-credentials/byok-store-server-not-byok-400.yaml
+  - tools/oracle/cases/http/mcp-user-credentials/byok-store-save-false-no-write.yaml
+  - tools/oracle/cases/http/mcp-user-credentials/byok-store-forbidden-server-403.yaml
+  - tools/oracle/cases/http/mcp-user-credentials/byok-store-unknown-server-admin-404.yaml
+  - tools/oracle/cases/http/mcp-user-credentials/byok-store-then-admin-list.yaml
+  - tools/oracle/cases/http/mcp-user-credentials/delete-other-user-regular-403.yaml
+  - tools/oracle/cases/http/mcp-user-credentials/delete-other-user-view-only-403.yaml
+  - tools/oracle/cases/http/mcp-user-credentials/delete-other-user-admin-ok.yaml
+  - tools/oracle/cases/http/mcp-user-credentials/delete-empty-user-id-422.yaml
+  - tools/oracle/cases/http/mcp-user-credentials/oauth-store-then-status.yaml
+  - tools/oracle/cases/http/mcp-user-credentials/oauth-store-over-byok-refused.yaml
+  - tools/oracle/cases/http/mcp-user-credentials/oauth-delete-keeps-byok-row.yaml
+  - tools/oracle/cases/http/mcp-user-credentials/oauth-status-expired.yaml
+  - tools/oracle/cases/http/mcp-user-credentials/oauth-status-no-user-id-400.yaml
+  - tools/oracle/cases/http/mcp-user-credentials/user-credentials-hides-unseen-server-names.yaml
+  - tools/oracle/cases/http/mcp-user-credentials/server-user-credentials-regular-403.yaml
+  - tools/oracle/cases/http/mcp-user-credentials/server-user-credentials-view-only-ok.yaml
+  - tools/oracle/cases/http/mcp-user-env-vars/status-no-database-500.yaml
+  - tools/oracle/cases/http/mcp-user-env-vars/status-unknown-server-admin-404.yaml
+  - tools/oracle/cases/http/mcp-user-env-vars/status-forbidden-server-403.yaml
+  - tools/oracle/cases/http/mcp-user-env-vars/status-lists-referenced-user-var.yaml
+  - tools/oracle/cases/http/mcp-user-env-vars/status-unreferenced-user-var-hidden.yaml
+  - tools/oracle/cases/http/mcp-user-env-vars/status-empty-global-does-not-cover.yaml
+  - tools/oracle/cases/http/mcp-user-env-vars/status-global-covers-user-var.yaml
+  - tools/oracle/cases/http/mcp-user-env-vars/store-then-status-is-set.yaml
+  - tools/oracle/cases/http/mcp-user-env-vars/store-undeclared-name-dropped.yaml
+  - tools/oracle/cases/http/mcp-user-env-vars/store-empty-value-keeps-stored.yaml
+  - tools/oracle/cases/http/mcp-user-env-vars/store-non-string-value-422.yaml
+  - tools/oracle/cases/http/mcp-user-env-vars/clear-resets-status.yaml
+  - tools/oracle/cases/http/mcp-user-env-vars/clear-missing-row-ok.yaml
+  - tools/oracle/cases/http/mcp-user-env-vars/list-skips-servers-without-required.yaml
+  - tools/oracle/cases/http/mcp-user-env-vars/list-no-accessible-servers-empty.yaml
+deviations: []
+out_of_scope:
+  - "Route behavior: B4723 and B4724. Storage: B4713 and B4714."
+  - "The other /v1/mcp routes: B8625, B8627, B8701 and B8702."
+pitfalls:
+  - The env var cache drop happens only after a successful write or delete; dropping it on a failed write changes what the next tool call sees.
+  - Use the UserTokenCaches in McpState, not a new one, or the cache drop misses the store the tool calls read.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

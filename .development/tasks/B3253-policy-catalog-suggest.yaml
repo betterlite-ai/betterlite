@@ -86,8 +86,7 @@ description: >-
   `select_templates(&self, request: &SuggestModelRequest) -> Result<SuggestModelReply, SuggestModelError>`. `SuggestModelRequest` holds `model`, `system_prompt`, `user_prompt`,
   the tool JSON, `temperature`. `SuggestModelReply` holds `tool_arguments: Option<String>` (the first choice's first tool call arguments, none when there is no tool call).
   `SuggestModelError` carries a message string. Production wiring: `supported_params` is B175's supported-OpenAI-parameter query (read its signature in crates/betterlite-models/src/params
-  and use it unchanged), and `select_templates` is one OpenAI-style chat call through the provider dispatcher using environment keys. That wiring needs the dispatcher handle and belongs to the
-  task that builds the handle (see notes); tests use a fake client.
+  and use it unchanged), and `select_templates` is one OpenAI-style chat call through the provider dispatcher using environment keys. That wiring is B8665's `SdkSuggestModel`, built over the outbound client; tests use a fake client.
 
 
   Tests. Native tests named for the filters in the checks: `policy_suggester::tests::` in betterlite-policy (`tool_` for the exact tool JSON, `system_` and `user_` for the prompt
@@ -123,8 +122,6 @@ scope:
     - crates/betterlite-server/fuzz/fuzz_targets/suggest_request.rs
     - crates/betterlite-server/fuzz/corpus/suggest_request/**
     - tools/oracle/cases/helpers/policy-suggester/**
-    - tools/oracle/cases/policies/templates-catalog/**
-    - tools/oracle/cases/policies/templates-suggest/**
     - "tools/oracle/fuzz/corpus/helper_case/policy-suggester-*"
     - tools/oracle/helpers/b3253.py
     - tools/oracle/helpers/b3253/**
@@ -150,7 +147,7 @@ dod:
   - text: >-
       GET /policy/templates with LITELLM_LOCAL_POLICY_TEMPLATES set to true, 1 or yes (any case, spaces trimmed) returns the 18 local records in order without a network call,
       and a false or unset value does not.
-    proof: [catalog-route-tests, oracle]
+    proof: [catalog-route-tests]
   - text: >-
       GET /policy/templates returns a 200 remote body as served (an empty array included) and returns the local records on a transport error, a deadline, a non-200 status,
       invalid JSON or a body that is not an array.
@@ -167,10 +164,12 @@ dod:
   - text: >-
       POST /policy/templates/suggest answers 400 validation_error for a model whose supported parameters lack tools, answers the fixed no-match body when the reply has no tool call,
       answers the filtered selection otherwise, and returns a logged internal error on a model failure or bad arguments.
-    proof: [catalog-route-tests, oracle]
+    proof: [catalog-route-tests]
   - text: >-
       The suggest body decoder applies the defaults, rejects wrong shapes with the shared 422 without panicking and has committed corpus inputs.
     proof: [suggest-corpus, catalog-route-tests]
+  - text: The handlers are tested with tower's oneshot over the module's own Router and fake ports. B8790 mounts the routes and owns their HTTP oracle cases, so write no HTTP case here.
+    proof: [catalog-route-tests]
 checks:
   optional: []
   commands:
@@ -198,16 +197,6 @@ oracle_cases:
   - tools/oracle/cases/helpers/policy-suggester/user-prompt-empty.yaml
   - tools/oracle/cases/helpers/policy-suggester/filter-drops-unknown-id.yaml
   - tools/oracle/cases/helpers/policy-suggester/filter-missing-selection.yaml
-  - tools/oracle/cases/policies/templates-catalog/local-true.yaml
-  - tools/oracle/cases/policies/templates-catalog/local-one.yaml
-  - tools/oracle/cases/policies/templates-catalog/local-yes.yaml
-  - tools/oracle/cases/policies/templates-catalog/local-padded-upper.yaml
-  - tools/oracle/cases/policies/templates-catalog/no-auth-401.yaml
-  - tools/oracle/cases/policies/templates-suggest/valid-and-unknown-id.yaml
-  - tools/oracle/cases/policies/templates-suggest/no-tool-calls.yaml
-  - tools/oracle/cases/policies/templates-suggest/empty-body.yaml
-  - tools/oracle/cases/policies/templates-suggest/bad-body-422.yaml
-  - tools/oracle/cases/policies/templates-suggest/no-auth-401.yaml
 
 deviations:
   - what: A remote body that is valid JSON but not an array (an object, a string) falls back to the local records.
@@ -225,7 +214,7 @@ out_of_scope:
   - "The enrich routes, _build_refinement_prompt and the competitor builders (L667-L1084) are B3252's."
   - "test_policy_template and _test_guardrail_definitions (L1123-L1265) are B3249's."
   - "ai_policy_suggester.py has no other function than the three ported here (suggest, _build_system_prompt, _build_user_prompt)."
-  - "The production implementation of PolicySuggestModel (the dispatcher call behind litellm.acompletion) is not built here; see notes."
+  - "The production implementation of PolicySuggestModel (the dispatcher call behind litellm.acompletion) is B8665's `SdkSuggestModel`."
 
 pitfalls:
   - "A 200 answer from GitHub is returned as it is, so an empty array `[]` reaches the client; only failures fall back, not emptiness."

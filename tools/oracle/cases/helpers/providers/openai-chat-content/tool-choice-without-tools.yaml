@@ -1,0 +1,52 @@
+kind: helper
+name: openai-chat-content-tool-choice-without-tools
+call:
+  openai_chat_content:
+    transform_requests:
+      requests:
+        - model: gpt-5.6-sol
+          provider: openai
+          messages:
+            - {role: user, content: summarize}
+          optional_params:
+            tool_choice: auto
+        - model: gpt-5.6-sol
+          provider: openai
+          messages:
+            - {role: user, content: summarize}
+          optional_params:
+            tools: []
+            tool_choice: none
+        - model: gpt-5.6-sol
+          provider: openai
+          messages:
+            - {role: user, content: summarize}
+          optional_params:
+            functions:
+              - {name: get_weather, parameters: {}}
+            tool_choice: auto
+        - model: gpt-5.6-sol
+          provider: openai
+          messages:
+            - {role: user, content: summarize}
+          optional_params:
+            tools:
+              - type: function
+                function: {name: get_weather, parameters: {}}
+            tool_choice: required
+        - model: gpt-5.6-sol
+          provider: openai
+          mode: async_base_class
+          messages:
+            - {role: user, content: summarize}
+          optional_params:
+            tool_choice: auto
+        - model: gpt-5.6-sol
+          provider: openai
+          mode: async_subclass
+          messages:
+            - {role: user, content: summarize}
+          optional_params:
+            tool_choice: auto
+env: {}
+compare: {ignore: []}

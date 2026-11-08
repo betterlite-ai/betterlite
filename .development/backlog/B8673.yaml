@@ -1,0 +1,13 @@
+id: B8673
+milestone: M8 platform
+title: Mount the search tool and usage AI chat routes with their production ports
+status: todo
+depends_on: [B8610, B8611, B3275, B8271, B8384, B737, B2202, B3272, B5656, B3103, B861, B005]
+file: tasks/B8673-search-usage-mount.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -25,7 +25,6 @@ scope:
     - crates/betterlite-server/src/cli_poll_grants.rs
     - crates/betterlite-server/src/cli_poll_grants/**
     - crates/betterlite-server/fuzz/corpus/cli_login_input/team-grants-*
-    - tools/oracle/cases/sso/cli-poll/**
     - tools/oracle/helpers/b1614.py
     - tools/oracle/helpers/b1614/**
     - tools/oracle/src/helpers/server/b1614.rs
@@ -39,8 +38,10 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L2466-L2595
     why: Poll route, secret header, selection response and mint-before-delete sequence.
 dod:
+  - text: The handlers are tested with tower's oneshot over this task's own Router and fake ports; B8770 mounts them through B063 and B8771 proves them over HTTP.
+    proof: [poll-tests]
   - text: The polling HTTP boundary rejects invalid credentials and returns pending without issuing a JWT.
-    proof: [poll-tests, oracle]
+    proof: [poll-tests]
   - text: Team selection distinguishes unknown, empty and deleted grants and issues the selected model constraints before consuming the flow.
     proof: [poll-tests]
   - text: Corrupt cached team snapshots are covered by the existing flow decoder's replay.
@@ -54,11 +55,7 @@ checks:
     - id: grant-corpus
       why: CLI grant records were not added to the flow decoder corpus.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-server/fuzz/corpus/cli_login_input/team-grants-*')" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_cli_login_input_corpus)'
-oracle_cases:
-  - tools/oracle/cases/sso/cli-poll/missing-poll-secret.yaml
-  - tools/oracle/cases/sso/cli-poll/wrong-poll-secret.yaml
-  - tools/oracle/cases/sso/cli-poll/started-but-unverified.yaml
-  - tools/oracle/cases/sso/cli-poll/expired-login-id.yaml
+oracle_cases: []
 deviations: []
 out_of_scope:
   - B1615 gathers user/session attributes and B1613 implements browser-code confirmation; neither is repeated in the poll handler.

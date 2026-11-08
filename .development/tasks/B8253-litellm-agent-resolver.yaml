@@ -57,7 +57,7 @@ deviations:
     why: The Python signature carries ten unused inputs that exist for the shared hook interface; Rust passes only what is used.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/litellm_agent/litellm_agent_model_resolver.py#L25-L47
 out_of_scope:
-  - "Registering the resolver under the name litellm_agent (custom_logger_registry.py L72 and the litellm_agent arms of _init_custom_logger_compatible_class): B189 is merged without it, so the wave 17 callbacks wiring part adds the arm to the callback registry catalog and to B8560's CompatibleLoggerFactory."
+  - "Registering the resolver under the name litellm_agent (custom_logger_registry.py L72 and the litellm_agent arms of _init_custom_logger_compatible_class): B189 is merged without it, so B8655 adds the arm to its callback logger catalog and implements B8560's CompatibleLoggerFactory over it."
   - "Calling the hook from the completion path and the router: B4058 and the router tasks own the call sites. They should use is_litellm_agent_model for the gate."
 pitfalls:
   - >-

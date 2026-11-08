@@ -1,0 +1,48 @@
+{
+  "kind": "helper",
+  "name": "otel-span-payloads-llm-tools-with-content-off",
+  "call": {
+    "b3844": {
+      "function": "llm_call",
+      "payload": {
+        "model": "gpt-4o",
+        "call_type": "completion",
+        "model_parameters": {
+          "tools": [
+            {
+              "type": "function",
+              "function": {
+                "name": "get_weather",
+                "parameters": {
+                  "type": "object"
+                }
+              }
+            }
+          ]
+        },
+        "messages": [
+          {
+            "role": "user",
+            "content": "hi"
+          }
+        ],
+        "response": {
+          "choices": [
+            {
+              "message": {
+                "role": "assistant",
+                "content": "hello"
+              },
+              "finish_reason": "stop"
+            }
+          ]
+        }
+      },
+      "capture_content": false
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

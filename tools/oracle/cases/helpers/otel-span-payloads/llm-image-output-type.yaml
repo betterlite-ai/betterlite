@@ -1,0 +1,25 @@
+{
+  "kind": "helper",
+  "name": "otel-span-payloads-llm-image-output-type",
+  "call": {
+    "b3844": {
+      "function": "llm_call",
+      "payload": {
+        "call_type": "image_generation",
+        "response": {
+          "data": [
+            {
+              "b64_json": "AAAA",
+              "revised_prompt": "a cat"
+            }
+          ]
+        }
+      },
+      "capture_content": true
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}

@@ -12,20 +12,18 @@ workspace = true
 cargo-fuzz = true
 
 [dependencies]
-betterlite = { path = ".." }
-betterlite-config = { path = "../../betterlite-config" }
 libfuzzer-sys = "0.4.9"
 
 [[bin]]
-name = "blocked_words_yaml"
-path = "fuzz_targets/blocked_words_yaml.rs"
+name = "crontab_trigger"
+path = "fuzz_targets/crontab_trigger.rs"
 test = false
 doc = false
 bench = false
 
 [[bin]]
-name = "content_regex"
-path = "fuzz_targets/content_regex.rs"
+name = "startup_input_json"
+path = "fuzz_targets/startup_input_json.rs"
 test = false
 doc = false
 bench = false

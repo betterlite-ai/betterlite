@@ -132,7 +132,7 @@ out_of_scope:
   - "Provider choice, the GCP token cache, the Azure provider and ElastiCache signing; B4320 built them."
   - "RedisCredentialSource, its streaming adapter and LiveClientFactory; B5220 owns them."
   - "The Azure grants and the default chain (B673, B676, B677) and Google application default credentials (B1301)."
-  - "Passing cloud_redis_auth's source to LiveClientFactory::new where a cache is built: the wave 17 cache and secrets wiring part mounts it."
+  - "Passing cloud_redis_auth's source to LiveClientFactory::new where a cache is built: B8610, which builds the one LiveClientFactory behind Shared.redis."
   - "_generate_azure_ad_redis_token and get_redis_url_from_environment; no caller at the pin (B4320)."
 
 pitfalls:

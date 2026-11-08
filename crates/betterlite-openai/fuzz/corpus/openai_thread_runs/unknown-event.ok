@@ -1,0 +1,3 @@
+event: thread.future.thing
+data: {"thing":true}
+
