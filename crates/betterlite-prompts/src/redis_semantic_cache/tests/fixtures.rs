@@ -60,18 +60,15 @@ pub(crate) struct FakeEmbedder {
 
 impl FakeEmbedder {
     pub(crate) fn new() -> Self {
-        Self {
-            vector: VECTOR.to_vec(),
-            probe: PROBE.to_vec(),
-            failure: None,
-            calls: Mutex::new(Vec::new()),
-        }
+        Self::with_vector(VECTOR.to_vec())
     }
 
     pub(crate) fn with_vector(vector: Vec<f32>) -> Self {
         Self {
             vector,
-            ..Self::new()
+            probe: PROBE.to_vec(),
+            failure: None,
+            calls: Mutex::default(),
         }
     }
 
