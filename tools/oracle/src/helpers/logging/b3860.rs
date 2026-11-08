@@ -61,9 +61,16 @@ where
     let mut span = provider.tracer("arize-messages").start("test");
     record(&mut span);
     span.end();
-    let spans = exporter
-        .get_finished_spans()
-        .map_err(|error| internal_error(error.to_string()))?;
+    let spans = exporter.get_finished_spans().map_err(|error| {
+        Box::new(crate::helpers::HelperError {
+            class: "InternalError".to_owned(),
+            status: None,
+            error_type: None,
+            param: None,
+            code: None,
+            message: error.to_string(),
+        })
+    })?;
     let Some(finished) = spans.first() else {
         return Ok(Map::new());
     };
@@ -72,17 +79,6 @@ where
         .iter()
         .map(|pair| (pair.key.to_string(), attribute_json(&pair.value)))
         .collect())
-}
-
-fn internal_error(message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
-        class: "InternalError".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message,
-    })
 }
 
 fn attribute_json(value: &Value) -> Json {

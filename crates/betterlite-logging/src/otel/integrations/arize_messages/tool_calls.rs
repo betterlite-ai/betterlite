@@ -10,7 +10,7 @@ use super::keys;
 pub struct NormalizedToolCall {
     pub id: Option<OtelModelValue>,
     #[serde(rename = "type")]
-    pub kind: Option<OtelModelValue>,
+    pub kind: OtelModelValue,
     pub function: NormalizedToolCallFunction,
 }
 
@@ -47,12 +47,10 @@ pub fn normalize_tool_call(raw: &OtelModelValue) -> Option<NormalizedToolCall> {
         });
     Some(NormalizedToolCall {
         id: fields.get("id").cloned(),
-        kind: Some(
-            fields
-                .get("type")
-                .cloned()
-                .unwrap_or_else(|| OtelModelValue::String("function".to_owned())),
-        ),
+        kind: fields
+            .get("type")
+            .cloned()
+            .unwrap_or_else(|| OtelModelValue::String("function".to_owned())),
         function: NormalizedToolCallFunction { name, arguments },
     })
 }
