@@ -989,22 +989,17 @@ dependencies = [
  "betterlite-server",
  "chrono",
  "clap",
- "fancy-regex 0.19.2",
  "nix",
  "rand 0.10.3",
  "regex",
  "rstest",
  "serde",
- "serde-saphyr",
  "serde_json",
  "sha2 0.11.1",
- "strfmt",
- "tempfile",
  "thiserror",
  "tokio",
  "tracing",
  "tracing-subscriber",
- "unicode-general-category",
  "uuid",
  "whoami",
 ]
@@ -1035,6 +1030,7 @@ dependencies = [
  "strum",
  "thiserror",
  "tokio",
+ "tracing",
  "url",
  "uuid",
 ]
@@ -1513,8 +1509,6 @@ version = "0.1.0"
 name = "betterlite-fuzz"
 version = "0.0.0"
 dependencies = [
- "betterlite",
- "betterlite-config",
  "libfuzzer-sys",
 ]
 
@@ -1549,11 +1543,13 @@ dependencies = [
  "rustls",
  "secrecy",
  "serde",
+ "serde-saphyr",
  "serde_json",
  "serde_with",
  "sha2 0.11.1",
  "strfmt",
  "temp-env",
+ "tempfile",
  "thiserror",
  "tokio",
  "tokio-rustls",
@@ -1562,6 +1558,7 @@ dependencies = [
  "tree-sitter",
  "tree-sitter-python",
  "ulid",
+ "unicode-general-category",
  "unicode-normalization",
  "url",
  "uuid",
@@ -1571,6 +1568,7 @@ dependencies = [
 name = "betterlite-guardrails-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-config",
  "betterlite-guardrails",
  "libfuzzer-sys",
  "serde_json",
@@ -1727,6 +1725,7 @@ dependencies = [
  "chrono",
  "csv",
  "flate2",
+ "futures-util",
  "h2",
  "hex",
  "http 1.5.0",
@@ -1939,7 +1938,6 @@ dependencies = [
  "aws-types",
  "axum",
  "base64 0.23.1",
- "betterlite",
  "betterlite-a2a",
  "betterlite-anthropic",
  "betterlite-auth",
@@ -2388,6 +2386,7 @@ dependencies = [
  "base64 0.23.1",
  "betterlite-secret-managers",
  "libfuzzer-sys",
+ "secrecy",
 ]
 
 [[package]]
@@ -2541,10 +2540,12 @@ dependencies = [
  "hex",
  "hf-hub",
  "http 1.5.0",
+ "indexmap 2.14.2",
  "kitoken",
  "lru",
  "rstest",
  "secrecy",
+ "serde",
  "serde_json",
  "sha1",
  "sha2 0.11.1",

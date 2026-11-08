@@ -41,7 +41,7 @@ description: >-
   Take the environment through B4321's EnvironmentLookup trait (betterlite-redis) so a test passes a BTreeMap and the server passes
   the process environment; if betterlite-server cannot depend on that crate, say so in a blocker and do not copy the trait.
 
-  The route handler lives in cache_settings_read/route.rs and exposes pub fn router(state) -> axum::Router for the architect to
+  The route handler lives in cache_settings_read/route.rs and exposes pub fn router(state) -> axum::Router for B8650 to
   merge. Do not register the route anywhere else and do not touch lib.rs.
 scope:
   paths:
@@ -77,14 +77,16 @@ references:
   why: _decrypt_db_variables, the per-key loop the route calls.
 
 dod:
+- text: The handler tests call tower's oneshot on cache_settings_read's own Router with fake ports; B8650 runs the HTTP cases through the booted proxy.
+  proof: [route-tests]
 - text: The catalog has every field of CACHE_SETTINGS_FIELDS in the same order with the same names, types, defaults, options, descriptions and redis_type, and REDIS_TYPE_DESCRIPTIONS has its three texts.
   proof: [fields-tests]
 - text: Each catalog field serializes all nine keys, null when unset, and two calls return independent catalogs.
   proof: [fields-tests]
-- text: With no stored row and none of the 17 REDIS_ variables set, current_values is empty and no field has a field_value.
-  proof: [overlay-tests, oracle]
-- text: Set REDIS_ variables among the 17 names fill current_values as raw strings and add type "redis"; REDIS_ variables outside the 17 (such as REDIS_SOCKET_TIMEOUT) change nothing.
-  proof: [overlay-tests, oracle]
+- text: With no stored row and none of the 17 REDIS_ variables set, current_values is empty and no field has a field_value. B8650 proves it over HTTP.
+  proof: [overlay-tests]
+- text: Set REDIS_ variables among the 17 names fill current_values as raw strings and add type "redis"; REDIS_ variables outside the 17 (such as REDIS_SOCKET_TIMEOUT) change nothing. B8650 proves it over HTTP.
+  proof: [overlay-tests]
 - text: A stored key, including one holding null, wins over the environment, and a stored "type" is kept.
   proof: [overlay-tests, oracle, helper-python]
 - text: A non-empty url (stored or from the environment) drops host, port, db, password and username from current_values unless redis_startup_nodes is set.
@@ -98,8 +100,8 @@ dod:
 - text: >-
     A repository error, invalid stored JSON or a decrypt failure answers 500 with a detail that starts with "Error fetching cache settings: " and no partial body.
   proof: [stored-read-tests]
-- text: GET /cache/settings answers 401 without a valid key, the admin-only route error for a non-admin key, and 200 for a proxy admin key, with fields, current_values and redis_type_descriptions in the body.
-  proof: [route-tests, oracle]
+- text: GET /cache/settings answers 401 without a valid key, the admin-only route error for a non-admin key, and 200 for a proxy admin key, with fields, current_values and redis_type_descriptions in the body. B8650 proves it over HTTP.
+  proof: [route-tests]
 - text: Settings are read at request time, so a changed environment shows on the next call.
   proof: [route-tests]
 - text: The oracle adapter for the helper cases passes ruff and basedpyright.
@@ -133,12 +135,6 @@ checks:
       uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b4307/pyrightconfig.json
 
 oracle_cases:
-- tools/oracle/cases/cache_settings_read/get-empty.yaml
-- tools/oracle/cases/cache_settings_read/get-env-host-port.yaml
-- tools/oracle/cases/cache_settings_read/get-env-password.yaml
-- tools/oracle/cases/cache_settings_read/get-env-url-wins.yaml
-- tools/oracle/cases/cache_settings_read/get-env-not-in-catalog.yaml
-- tools/oracle/cases/cache_settings_read/get-without-key.yaml
 - tools/oracle/cases/cache_settings_read/view-stored-wins.yaml
 - tools/oracle/cases/cache_settings_read/view-stored-null-wins.yaml
 - tools/oracle/cases/cache_settings_read/view-redis-type-cluster.yaml

@@ -37,7 +37,7 @@ description: >-
   sends the batch. The payload is the event's `standard_logging_object`, which stays JSON `null` when the event has none.
   With the global setting `generic_api_use_v1` true it is the v1 payload instead (below). An internal error is logged
   and never reaches the caller. Use B256's batch size (512) and flush interval (5 seconds) values and its rule that the
-  caller owns the timer; the periodic flush is the composition root's.
+  caller owns the timer; the periodic flush is B8655's.
   `send_batch` does nothing for an empty queue. For `json_array` it posts one body, the JSON array of the queue. For
   `ndjson` it posts the JSON text of each entry joined with a newline and no trailing newline. For `single` it posts one
   request per entry, all at the same time, and logs each failure with its index without stopping the others. Serialize
@@ -76,6 +76,8 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L799-L840
     why: The post call raises on a non-2xx status, which the retry rule relies on.
 dod:
+  - text: "GenericApiLogger implements CallbackLogger by queueing on async success and failure, so the generic_api names B8655 resolves receive calls (tests named callback_logger_* in generic_api_logger)."
+    proof: [callback-logger]
   - text: >-
       The embedded json parses into the five named configs, and substitute_env_variables replaces only upper-case NAME
       patterns, with an unset variable becoming empty.
@@ -105,6 +107,9 @@ dod:
 checks:
   optional: []
   commands:
+    - id: callback-logger
+      why: GenericApiLogger never receives a logger event
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^generic_api_logger::(.*::)?callback_logger_/)'
     - id: compat-tests
       why: fails while the embedded json or the placeholder substitution is missing
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^generic_api_logger::compat_callbacks::/)'
@@ -123,7 +128,7 @@ checks:
 oracle_cases: []
 deviations: []
 out_of_scope:
-  - "The callback_settings route in logging_callback_manager.py that builds a GenericAPILogger from a config entry with `callback_type: generic_api` and caches it by name: B189 is merged without it, so the wave 17 callbacks wiring part builds that route and calls GenericApiSettings::resolve."
+  - "The callback_settings route in logging_callback_manager.py that builds a GenericAPILogger from a config entry with `callback_type: generic_api` and caches it by name: B189 is merged without it, so B8655 builds that lookup and calls GenericApiSettings::resolve."
   - "CustomBatchLogger's timer, worker and generic batch delivery: B256 and B191 own them; this task only uses their constants and the no-timer rule."
   - "Rubrik's own logger and moderation in litellm/integrations/rubrik.py: B3975 to B3978 own them. The `rubrik` entry in the json file is only a config for this logger."
 pitfalls:

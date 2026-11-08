@@ -23,7 +23,7 @@ description: >-
   holds. Then B8373's check_transaction_buffer, the B3853
   OTel V2 provider publish (errors at debug), B8373's mock testing warning, JWT setup, prompt injection attach, the proxy
   budget seeding and spend warm-up when a database and max_budget > 0, the two warnings, B8372's register_background_jobs
-  when a database is connected, then default team budgets and the UI settings sync, B8372's model info refresh and ROI sync job (register_roi_sync), and B5075's
+  when a database is connected, then default team budgets and the UI settings sync, B8372's model info refresh, and B5075's
   tracing receiver when general_settings.tracing.store is "clickhouse". The gateway auth cache is created here with B733's
   settings: memory TTL 60 seconds unless general_settings.user_api_key_cache_ttl is set, which then sets both memory and Redis
   TTLs.
@@ -44,7 +44,7 @@ description: >-
   `PluginRegistry::replace_from_settings(general_settings)` (register_plugins_from_config, L6689). The database pass-through
   load (L9076-L9079) runs inside B8384's non-LLM object sync, and the database settings reload calls (L7894, L7911) are B8379's
   apply_general_settings_row. B8520's GeneralSettingsStore impl and the config field update route's plugin reload (L18367)
-  belong to route mounts: the wave 17 config wiring part mounts them.
+  belong elsewhere: B8612 builds the one GeneralSettingsStore impl, and the plugin reload is a step of B8595's route.
 
   initialize() (L9145-L9276) for worker-config and CLI starts: print B4175's banner, then the feedback box unless
   LITELLM_DONT_SHOW_FEEDBACK_BOX is "true" in any case (port of generate_feedback_box at L236-L260 with its exact text), apply
@@ -59,7 +59,7 @@ description: >-
   through B1748's db_update_spend_transaction_handler with 3 retries (log and continue on error), drain the spend logs queue
   through B1747 (log and continue), stop B8381's config sync and auth cache invalidation subscribers when they were started,
   then proxy_shutdown_event: deregister the B731 heartbeat, flush B3102's gateway request counts before disconnecting the
-  database, drain B4331's post-call Redis batches, disconnect the response cache, close the JWT handler and the writer
+  database, drain B4331's post-call Redis batches, fire B4304's cache write token and await CacheWriteTracker::wait_idle, disconnect the response cache, close the JWT handler and the writer
   client, run B3078's billing metrics shutdown hook, flush B3903's Langfuse channels (with LiteLLM's two log lines), and
   finally B3887's mark_worker_exit when PROMETHEUS_MULTIPROC_DIR was set.
 

@@ -1,0 +1,173 @@
+id: B8650
+title: Mount the cache settings and cache admin routes
+description: >-
+  Four tasks build LiteLLM's cache management routes and stop at a router function. B4307 serves GET /cache/settings
+  from `cache_settings_read::route::router`, B4308 serves POST /cache/settings/test from
+  `cache_settings_test::route::router`, B8502 serves POST /cache/settings from `cache_settings_update::route::router`,
+  and B4309 serves GET /cache/ping, POST /cache/delete, GET /cache/redis/info and POST /cache/flushall from
+  `cache_routes::router`. None of these modules is on B1100's stub list, so router() never merges them and every one of
+  the seven paths answers 404 today. This task builds the state each router takes from the server's shared values and
+  merges the four routers. LiteLLM mounts the same two routers with app.include_router (caching_routes.py under the
+  /cache prefix and cache_settings_endpoints.py).
+
+
+  Where the code goes. crates/betterlite-server/src/app/cache_secrets.rs holds the area's
+  `pub(crate) fn mount(router: Router, state: &Arc<ServerState>) -> Router`, which the skeleton stubs to return the
+  router unchanged. Make it merge `routes::cache_routes(state)`. Build that function in
+  crates/betterlite-server/src/app/cache_secrets/routes.rs: it builds each router's state once and merges the four
+  routers, each called exactly once.
+
+
+  The state each router gets, all read from `state.shared` and `state.config`:
+
+  The database. B726's cache config repository over `state.shared.db` when the server has a database, and none
+  without one. The routes answer the no-database case themselves (B8502's 500 with "Database not connected. Please
+  connect a database.", B4308's empty saved map, B4307's environment-only view), so do not answer it here.
+
+  The cipher. B1600's encrypt and decrypt helpers in betterlite-secrets with the salt key every other B1600 caller in
+  the server uses. B4307, B4308 and B8502 decrypt the "cache_config" row with it and B8502 encrypts it.
+
+  The reload. B8502's route takes a `CacheReinit`. Pass `state.shared.cache_reinit`, the production one, so a saved
+  setting rebuilds the live response cache and switches on Router response caching. B8502's `CacheSettingsManager`
+  must be the same value that B8384's database reload calls init_from_db on, or a reload right after a save would
+  rebuild the cache a second time. Read it from `state.shared.cache_settings`.
+
+  The audit. B2330's audit sink over the same database, and its is_audit_logging_enabled from the loaded config.
+
+  The live response cache. B4309's routes read `state.shared.response_cache` on every request, not a copy taken at
+  mount time, because POST /cache/settings replaces the cache while the server runs. Without a cache they answer
+  LiteLLM's "Cache not initialized. litellm.cache is None" errors themselves.
+
+  The test connection. B4308 builds a temporary Redis cache through B4299's Cache constructor. Give it the
+  LiveClientFactory from `state.shared.redis`, so a target with cloud credential settings connects the same way the
+  live cache does.
+
+  store_model_in_db for B8502 comes from the same general settings value B1653's routes read
+  (`state.shared.general_settings`).
+
+
+  Auth. The routers are merged inside router() through app::mount, so the key auth layer covers them like every
+  other management route. Add no auth layer and no exemption here; the admin-only check for /cache/settings lives in
+  the route check the auth layer runs.
+
+
+  Tests in `app::cache_secrets::tests` (put them in crates/betterlite-server/src/app/cache_secrets/tests.rs). Building
+  the router succeeds, so no path is registered twice. With the master key and no database each of the seven paths
+  answers something other than 404 and 405. A POST /cache/settings with a fake database and a recording CacheReinit in
+  Shared reaches that recorder in B8502's order (init_cache, then switch_on_response_caching) and updates the shared
+  CacheSettingsManager. GET /cache/ping reports the type of the cache Shared.response_cache holds at request time:
+  swap the cache between two requests and the second answer shows the new type.
+
+
+  HTTP oracle cases. The route tasks test their handlers with tower's oneshot only, because their routes answer 404
+  until this task merges them. This task writes their 32 HTTP cases and runs them through the booted proxy, which has
+  no database. The master key authenticates every case unless the case says "no key". The proxy answers come from
+  LiteLLM; each line below says what the case sends and which members to ignore.
+
+  tools/oracle/cases/cache_settings_read (GET /cache/settings, B4307): get-empty (no REDIS_ variable set),
+  get-env-host-port (REDIS_HOST and REDIS_PORT set, so current_values holds both as strings with type "redis" and
+  redis_type "node"), get-env-password (REDIS_HOST and REDIS_PASSWORD, the password comes back as ***REDACTED***),
+  get-env-url-wins (REDIS_URL and REDIS_HOST, the url is redacted and host is dropped), get-env-not-in-catalog (only
+  REDIS_SOCKET_TIMEOUT, current_values stays empty) and get-without-key (no key, 401). B4307's view-* files in the
+  same folder are its helper cases; leave them alone.
+
+  tools/oracle/cases/cache_settings_test (POST /cache/settings/test, B4308): post-without-key (no key, 401),
+  post-missing-cache-settings (body {}, 422), post-type-absent ({"cache_settings": {"host": "localhost"}}) and
+  post-type-local (type "local"), both answering status "failed" with "Only Redis cache type is currently supported
+  for testing" and error null, post-redis-unreachable (type "redis", host 127.0.0.1, port 1; status "failed", ignore
+  message and error since their text is the client's) and post-redis-redacted-password-no-saved (the same target with
+  password "***REDACTED***"; status "failed", ignore message and error).
+
+  tools/oracle/cases/cache_settings_update (POST /cache/settings, B8502): post-without-database (body {"cache_settings":
+  {"type": "local"}}, 500 with {"detail": {"error": "Database not connected. Please connect a database."}}) and
+  post-without-key (no key, 401).
+
+  tools/oracle/cases/cache (B4309). Without a cache in the config: ping-uninitialized (GET /cache/ping, 503 with error
+  type cache_ping_error and param cache_ping), delete-uninitialized (POST /cache/delete with {"keys": ["k1"]}, 500),
+  redis-info-uninitialized (GET /cache/redis/info, 503) and flushall-uninitialized (POST /cache/flushall, 503). With
+  `litellm_settings: {cache: true, cache_params: {type: local}}`: ping-non-redis-success (200 status "healthy",
+  cache_type "local", ignore litellm_cache_params), delete-non-redis (500), redis-info-non-redis (503) and
+  flushall-non-redis (503). With cache_params type "redis" at 127.0.0.1 port 1: ping-redis-failure (503),
+  delete-redis-failure (500), redis-info-failure (503) and flushall-redis-failure (503); ignore the text after "Cache
+  Delete Failed(" and "Service Unhealthy (". routes-require-auth sends GET /cache/ping with no key and gets 401. The
+  oracle starts no Redis, so the live Redis answers of these four routes stay with B4309's Rust tests.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/cache_secrets.rs
+    - crates/betterlite-server/src/app/cache_secrets/routes.rs
+    - crates/betterlite-server/src/app/cache_secrets/routes/**
+    - crates/betterlite-server/src/app/cache_secrets/tests.rs
+    - "tools/oracle/cases/cache_settings_read/get-*.yaml"
+    - tools/oracle/cases/cache_settings_test/**
+    - tools/oracle/cases/cache_settings_update/**
+    - tools/oracle/cases/cache/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/caching_routes.py#L1-L60
+    why: The /cache router with its user_api_key_auth dependency and the start of /cache/ping, which reads litellm.cache at request time.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cache_settings_endpoints.py#L331-L419
+    why: CacheSettingsManager keeps _last_cache_params as one class variable that the POST route and init_cache_settings_in_db share.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L8282-L8290
+    why: The database reload calls init_cache_settings_in_db with the same ProxyConfig the POST route reinitialises through.
+dod:
+  - text: app::mount merges the four cache routers once each and all seven paths answer through the booted proxy.
+    proof: [wiring-tests, oracle]
+  - text: Each router reads the shared database, cipher, CacheReinit, CacheSettingsManager, audit sink, Redis factory and live response cache.
+    proof: [wiring-tests]
+  - text: The 32 HTTP cases for the routes of B4307, B4308, B4309 and B8502 exist and match LiteLLM through the booted proxy.
+    proof: [route-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: wiring-tests
+      why: a cache router is not merged, is merged twice, or reads a private copy instead of the shared value
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::cache_secrets::/)'
+    - id: route-cases
+      why: the HTTP case files for one of the four cache route families were not added
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/cases/cache_settings_read/get-*.yaml')" &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/cache_settings_test)" &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/cache_settings_update)" &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/cache)"
+oracle_cases:
+  - tools/oracle/cases/cache_settings_read/get-empty.yaml
+  - tools/oracle/cases/cache_settings_read/get-env-host-port.yaml
+  - tools/oracle/cases/cache_settings_read/get-env-password.yaml
+  - tools/oracle/cases/cache_settings_read/get-env-url-wins.yaml
+  - tools/oracle/cases/cache_settings_read/get-env-not-in-catalog.yaml
+  - tools/oracle/cases/cache_settings_read/get-without-key.yaml
+  - tools/oracle/cases/cache_settings_test/post-without-key.yaml
+  - tools/oracle/cases/cache_settings_test/post-missing-cache-settings.yaml
+  - tools/oracle/cases/cache_settings_test/post-type-absent.yaml
+  - tools/oracle/cases/cache_settings_test/post-type-local.yaml
+  - tools/oracle/cases/cache_settings_test/post-redis-unreachable.yaml
+  - tools/oracle/cases/cache_settings_test/post-redis-redacted-password-no-saved.yaml
+  - tools/oracle/cases/cache_settings_update/post-without-database.yaml
+  - tools/oracle/cases/cache_settings_update/post-without-key.yaml
+  - tools/oracle/cases/cache/ping-uninitialized.yaml
+  - tools/oracle/cases/cache/ping-redis-failure.yaml
+  - tools/oracle/cases/cache/ping-non-redis-success.yaml
+  - tools/oracle/cases/cache/delete-uninitialized.yaml
+  - tools/oracle/cases/cache/delete-non-redis.yaml
+  - tools/oracle/cases/cache/delete-redis-failure.yaml
+  - tools/oracle/cases/cache/redis-info-uninitialized.yaml
+  - tools/oracle/cases/cache/redis-info-non-redis.yaml
+  - tools/oracle/cases/cache/redis-info-failure.yaml
+  - tools/oracle/cases/cache/flushall-uninitialized.yaml
+  - tools/oracle/cases/cache/flushall-non-redis.yaml
+  - tools/oracle/cases/cache/flushall-redis-failure.yaml
+  - tools/oracle/cases/cache/routes-require-auth.yaml
+deviations: []
+out_of_scope:
+  - "Route behavior: B4307 (GET /cache/settings), B4308 (POST /cache/settings/test), B8502 (POST /cache/settings) and B4309 (/cache/ping, /cache/delete, /cache/redis/info, /cache/flushall)."
+  - "The production CacheReinit (ProxyConfig._init_cache and switch_on_llm_response_caching) and the Shared values this task reads: B8610 and B8612."
+  - "Calling init_from_db at startup and on each database reload: B8384's sync_non_llm_objects (cache_settings object type)."
+  - "Building the semantic cache backends: B8651."
+pitfalls:
+  - "B4309's routes must read Shared.response_cache per request. A clone of the cache taken in mount keeps answering for the old cache after POST /cache/settings replaces it."
+  - "A second CacheSettingsManager for the route would make params_equal compare against the wrong last params, so the next database reload rebuilds a cache the route just built."
+  - "B4307's view-* cases are helper cases that pass at B4307's own gate, so only its get-* cases are listed here."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

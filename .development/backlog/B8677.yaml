@@ -1,0 +1,13 @@
+id: B8677
+milestone: M8 platform
+title: Mount the ROI calculator routes and run its scheduled sync on one SyncManager
+status: todo
+depends_on: [B8610, B8611, B3158, B3161, B8588, B3157, B3155]
+file: tasks/B8677-roi-routes-mount.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

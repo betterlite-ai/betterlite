@@ -1,0 +1,22 @@
+kind: helper
+name: token-formatting-tool-schema
+call:
+  token_formatting:
+    function: format_tools
+    tools:
+      - type: function
+        function:
+          name: get_weather
+          description: Get the current weather
+          parameters:
+            type: object
+            properties:
+              location:
+                type: string
+                description: The city and state
+              unit:
+                type: string
+                enum: [celsius, fahrenheit]
+            required: [location]
+env: {}
+compare: {ignore: []}

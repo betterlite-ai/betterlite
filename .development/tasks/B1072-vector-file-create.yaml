@@ -25,7 +25,7 @@ scope:
   - crates/betterlite-config/src/api/vector_file_create/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/vector-file-create-*
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/vector_file_create_list.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/vector_file_create_list.py
   - tools/oracle/cases/sdk-http/vector-file-create-list/**

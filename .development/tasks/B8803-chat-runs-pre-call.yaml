@@ -1,0 +1,59 @@
+id: B8803
+title: Chat and embeddings routes run the shared pre-call step
+description: >-
+  LiteLLM's chat_completion hands every request to base_process_llm_request with route_type acompletion, so it runs common_processing_pre_call_logic before routing. The merged chat route in crates/betterlite-server/src/routes/chat.rs does not: chat_completion parses the body, makes the call id inline and execute_chat sends it. B1103 later installs add_litellm_data_to_request there and B8633 adds the fallback errors flag. This task makes the chat route run B8801's shared step instead, with B8802's production ports, so chat gets the same aliases, router settings, hooks, stream usage and fallbacks as every other route. Every name stays at 30 characters or fewer.
+
+  Edits in routes/chat.rs and routes/chat/**. Keep `Arc<dyn PreCall<UserAPIKeyAuth>>` in the chat route state, taken from `app::inference::pre_call_step(state)` (B8802) where the chat routes are built from the server state; read how B1103 reaches its request_setup slot there and do the same, without editing routes.rs. In chat_completion, after the body is parsed and the request data is built, call `pre_call` with route type acompletion, the request parts, the caller's key, the path model (`/engines/{model}/...` and `/openai/deployments/{model}/...`) as the input model, no version and skip_guardrails false. Pick the deployment from the returned data's model, and pass the returned data to the send and stream paths in place of the data they built before. Remove the inline call id code and MAX_CALL_ID_LENGTH; the call id is the returned data's `litellm_call_id` (B8800's resolve_call_id made it). Remove B1103's direct preparation call and B8633's drop_fallback_errors_flag call, which the step now runs. A `PreCallError` becomes the chat failure response: `Proxy` and `RateLimited` keep their message, type, param and code, `Http` uses its status and detail, and the failure headers carry the call id from the error data when it has one.
+
+  Embeddings. The merged embeddings route (crates/betterlite-server/src/routes/embeddings.rs, the `embeddings` handler) gets the same change: keep the step in its route state the same way, run it with route type aembedding before the deployment is picked, route on the returned data's model, and map a `PreCallError` through the embeddings failure function the same way.
+
+  HTTP oracle cases in tools/oracle/cases/chat/pre-call/ against the mock provider, plus an embeddings request whose model litellm_settings.model_alias_map aliases, which reaches the provider under the target name: a body whose `model` is a number gets 400 "'model' must be a string." with param model; litellm_settings.model_alias_map sends the aliased model to the provider; an `x-litellm-call-id` header comes back as the call id header; general_settings.always_include_stream_usage true adds `stream_options.include_usage` to the upstream request of a stream.
+scope:
+  paths:
+    - crates/betterlite-server/src/routes/chat.rs
+    - crates/betterlite-server/src/routes/chat/**
+    - crates/betterlite-server/src/routes/embeddings.rs
+    - crates/betterlite-server/src/routes/embeddings/**
+    - tools/oracle/cases/chat/pre-call/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1913-L2241
+    why: The pre-call the chat route now runs with route type acompletion.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2526-L2564
+    why: _process_llm_request runs the pre-call before the during-call hook and the route call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18213
+    why: always_include_stream_usage.
+dod:
+  - text: Every chat request runs the shared pre-call with route type acompletion before a deployment is picked, and routing uses the data it returns.
+    proof: [chat-tests, oracle]
+  - text: Every embeddings request runs the shared pre-call with route type aembedding before a deployment is picked, and a pre-call failure uses the embeddings failure response.
+    proof: [embeddings-tests, oracle]
+  - text: A pre-call failure answers with its status, type, param and code, and the call id comes from the step.
+    proof: [chat-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: chat-tests
+      why: the chat route skips the pre-call, routes on the old data or maps a pre-call failure wrongly
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::chat::/)'
+    - id: embeddings-tests
+      why: the embeddings route skips the pre-call or routes on the old data
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::embeddings::/)'
+oracle_cases:
+  - tools/oracle/cases/chat/pre-call/model-not-a-string.yaml
+  - tools/oracle/cases/chat/pre-call/model-alias-map.yaml
+  - tools/oracle/cases/chat/pre-call/call-id-header.yaml
+  - tools/oracle/cases/chat/pre-call/always-include-stream-usage.yaml
+  - tools/oracle/cases/chat/pre-call/embeddings-model-alias.yaml
+deviations: []
+out_of_scope:
+  - "The step and its ports: B8800, B8801 and B8802. The preparation itself: B1103."
+  - "The rest of _process_llm_request on the chat path (the during-call hook, the post-call hooks, the headers and the stream generator): the merged chat code, B8633 and the hook tasks."
+pitfalls:
+  - "The path model of /engines/{model}/chat/completions is the input model, not a body field, so resolve_inference_model must see it."
+  - "Picking the deployment before the pre-call routes on the client's model and misses aliases and the router settings override."
+  - "The x-litellm-call-id header is honored only for 1 to 256 characters, as the inline code did."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,11 @@
+task: B4414
+deviations:
+  - what: A GetSecretValue reply past 1 MiB logs a failure and reads as None.
+    why: B4413's post path caps every reply (rule bounded-inputs), and AWS limits SecretString to 65,536 bytes, so a real reply stays far below the cap. LiteLLM has no size limit and would parse it.
+    link: https://docs.aws.amazon.com/secretsmanager/latest/apireference/API_GetSecretValue.html
+  - what: Primary text that json.loads accepts and serde_json refuses raises PrimarySecretError. That covers NaN, Infinity, numbers past the f64 range, lone surrogates and nesting deeper than 128.
+    why: None of these is valid JSON a secret map needs, and serde_json's depth limit keeps a stored secret from exhausting the stack.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/aws_secret_manager_v2.py#L234-L244
+  - what: A failed read logs the secret name and the kind of failure.
+    why: LiteLLM also logs the exception text, and on the sync path the reply text and status. Reply text and serde messages can repeat the secret, so they stay out of logs (rule secrets-stay-secret).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/secret_managers/aws_secret_manager_v2.py#L219-L231

@@ -28,7 +28,7 @@ scope:
   - crates/betterlite-core/src/api/responses_agentic_execution.rs
   - crates/betterlite-core/src/api/responses_agentic_execution/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/responses_agentic_continuation.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/responses_agentic_continuation.py
   - tools/oracle/cases/sdk-http/responses-agentic-continuation/**
