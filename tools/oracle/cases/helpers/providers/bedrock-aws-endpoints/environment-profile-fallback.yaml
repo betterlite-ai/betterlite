@@ -279,5 +279,28 @@ call:
           aws_config: |
             [profile "a\`b"]
             region = eu-west-1
+        - optional_params: {}
+          environment: {AWS_PROFILE: 'my prod'}
+          aws_config: |
+            [profile 'my prod']
+            region = eu-west-1
+        - optional_params: {}
+          environment: {AWS_PROFILE: 'a\b'}
+          aws_config: |
+            [profile 'a\b']
+            region = eu-west-1
+        - optional_params: {}
+          environment: {AWS_PROFILE: 'a\"b'}
+          aws_config: |
+            [profile 'a\"b']
+            region = eu-west-1
+        - optional_params: {}
+          environment: {AWS_PROFILE: 'a b'}
+          aws_config: |
+            [profile a\ b]
+            region = eu-west-1
+        - optional_params: {}
+          environment: {AWS_PROFILE: prod}
+          aws_config: "[profile\tprod]\nregion = eu-west-1\n"
 env: {}
 compare: {ignore: []}

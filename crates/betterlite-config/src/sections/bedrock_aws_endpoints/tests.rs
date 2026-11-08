@@ -408,6 +408,14 @@ fn invalid_utf8_cases() {
     );
 }
 
+fn check_split(source: &str, profile: &str) {
+    assert_eq!(
+        file_region(source, Some(profile)).as_deref(),
+        Some("eu-west-1"),
+        "{source:?}"
+    );
+}
+
 fn check_splits(cases: &[(&str, Option<&str>, Option<&str>)]) {
     for &(source, profile, expected) in cases {
         assert_eq!(
@@ -419,6 +427,11 @@ fn check_splits(cases: &[(&str, Option<&str>, Option<&str>)]) {
 }
 
 fn profile_name_splitting() {
+    check_split("[profile 'my prod']\nregion = eu-west-1\n", "my prod");
+    check_split("[profile 'a\\b']\nregion = eu-west-1\n", "a\\b");
+    check_split("[profile 'a\\\"b']\nregion = eu-west-1\n", "a\\\"b");
+    check_split("[profile a\\ b]\nregion = eu-west-1\n", "a b");
+    check_split("[profile\tprod]\nregion = eu-west-1\n", "prod");
     check_splits(&[
         (
             "[profile prod #x]\nregion = eu-west-1\n",
