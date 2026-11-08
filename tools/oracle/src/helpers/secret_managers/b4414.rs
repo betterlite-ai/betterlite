@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 use std::sync::{Arc, PoisonError};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use betterlite_context::aws_partition::get_aws_partition;
 use betterlite_secret_managers::aws::request_signing::AwsOptionalParams;
 use betterlite_secret_managers::aws::{AwsDependencies, AwsSecretsManager};
 use betterlite_secret_managers::aws_secret_reads::AwsReadError;
@@ -76,7 +77,26 @@ impl Helper for Op {
 async fn execute(input: &Input) -> Value {
     let requests = Requests::default();
     let script = Script::new(&input.routes, Arc::clone(&requests));
-    let manager = manager(input, script);
+    let manager = AwsSecretsManager {
+        aws_region_name: None,
+        aws_role_name: None,
+        aws_session_name: None,
+        aws_external_id: None,
+        aws_profile_name: None,
+        aws_web_identity_token: None,
+        aws_sts_endpoint: None,
+        replica_regions: Vec::new(),
+        kms_key_id: None,
+        dependencies: AwsDependencies {
+            environment: input.env.clone(),
+            transport: Arc::new(script),
+            resolver: Resolver {
+                environment: input.env.clone(),
+            },
+            dns_suffix: |region: &str| get_aws_partition(Some(region)).dns_suffix,
+            clock: signing_time,
+        },
+    };
     let mut steps = Vec::new();
     for step in &input.steps {
         let result = run_step(&manager, step).await;
@@ -112,7 +132,19 @@ async fn run_read(
     primary: Option<&str>,
     params: Option<&Params>,
 ) -> Value {
-    let mut optional = params.map(optional_params);
+    let mut optional = params.map(|settings| AwsOptionalParams {
+        aws_role_name: None,
+        aws_session_name: None,
+        aws_region_name: settings.aws_region_name.clone(),
+        aws_external_id: None,
+        aws_profile_name: None,
+        aws_web_identity_token: None,
+        aws_sts_endpoint: None,
+        aws_access_key_id: None,
+        aws_secret_access_key: None,
+        aws_session_token: None,
+        aws_bedrock_runtime_endpoint: None,
+    });
     match path {
         Path::Async => read_value(
             manager
@@ -132,59 +164,6 @@ fn read_value(
         Ok(Some(secret)) => json!({"value": secret.expose_secret()}),
         Ok(None) => json!({"value": null}),
         Err(_) => json!({"raised": true}),
-    }
-}
-
-fn optional_params(params: &Params) -> AwsOptionalParams {
-    AwsOptionalParams {
-        aws_role_name: None,
-        aws_session_name: None,
-        aws_region_name: params.aws_region_name.clone(),
-        aws_external_id: None,
-        aws_profile_name: None,
-        aws_web_identity_token: None,
-        aws_sts_endpoint: None,
-        aws_access_key_id: None,
-        aws_secret_access_key: None,
-        aws_session_token: None,
-        aws_bedrock_runtime_endpoint: None,
-    }
-}
-
-fn manager(input: &Input, script: Script) -> AwsSecretsManager<Resolver, Script> {
-    AwsSecretsManager {
-        aws_region_name: None,
-        aws_role_name: None,
-        aws_session_name: None,
-        aws_external_id: None,
-        aws_profile_name: None,
-        aws_web_identity_token: None,
-        aws_sts_endpoint: None,
-        replica_regions: Vec::new(),
-        kms_key_id: None,
-        dependencies: AwsDependencies {
-            environment: input.env.clone(),
-            transport: Arc::new(script),
-            resolver: Resolver::new(&input.env),
-            dns_suffix,
-            clock: signing_time,
-        },
-    }
-}
-
-fn dns_suffix(region: &str) -> &'static str {
-    if region.starts_with("cn-") {
-        "amazonaws.com.cn"
-    } else if region.starts_with("us-isob-") {
-        "sc2s.sgov.gov"
-    } else if region.starts_with("us-isof-") {
-        "csp.hci.ic.gov"
-    } else if region.starts_with("us-iso-") {
-        "c2s.ic.gov"
-    } else if region.starts_with("eu-isoe-") {
-        "cloud.adc-e.uk"
-    } else {
-        "amazonaws.com"
     }
 }
 

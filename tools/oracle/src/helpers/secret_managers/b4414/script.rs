@@ -45,15 +45,7 @@ pub(super) enum CredentialFailure {
 }
 
 pub(super) struct Resolver {
-    environment: BTreeMap<String, String>,
-}
-
-impl Resolver {
-    pub(super) fn new(environment: &BTreeMap<String, String>) -> Self {
-        Self {
-            environment: environment.clone(),
-        }
-    }
+    pub(super) environment: BTreeMap<String, String>,
 }
 
 impl CredentialResolver for Resolver {
