@@ -7,11 +7,22 @@ import litellm
 from litellm.litellm_core_utils import streaming_handler as shaping
 from litellm.litellm_core_utils.redact_messages import LiteLLMLoggingObject
 from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
-from litellm.types.utils import BaseModel, ModelResponse, ModelResponseStream, Usage
+from litellm.types.utils import (
+    BaseModel,
+    Delta,
+    ModelResponse,
+    ModelResponseStream,
+    StreamingChoices,
+    Usage,
+)
 
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 Step: TypeAlias = dict[str, Json]
 
+DELTA_FIELDS = [
+    "content", "role", "function_call", "tool_calls", "audio", "images", "annotations",
+    "reasoning_content", "thinking_blocks", "provider_specific_fields",
+]
 DETAIL_FIELDS = [
     "cached_tokens", "cache_write_tokens", "cache_creation_tokens", "cache_creation_token_details",
 ]
@@ -61,6 +72,23 @@ def _dump(value: BaseModel) -> dict[str, Json]:
     return cast("dict[str, Json]", value.model_dump())
 
 
+def _delta(delta: Delta) -> dict[str, Json]:
+    dumped: dict[str, Json] = {}
+    for key in DELTA_FIELDS:
+        item: object = getattr(delta, key, None)
+        dumped[key] = _raw(item)
+    for key, item in _dump(delta).items():
+        if key not in DELTA_FIELDS:
+            dumped[key] = _raw(item)
+    return dumped
+
+
+def _choice(choice: StreamingChoices) -> dict[str, Json]:
+    dumped = _dump(choice)
+    dumped["delta"] = _delta(choice.delta)
+    return dumped
+
+
 def _details(details: BaseModel) -> dict[str, Json]:
     return {key: _raw(item) for key, item in _dump(details).items() if item is not None}
 
@@ -79,6 +107,7 @@ def _chunk(value: ModelResponseStream) -> dict[str, Json]:
     if isinstance(usage, dict):
         usage = Usage(**cast("dict[str, object]", usage))  # pyright: ignore[reportArgumentType]
     dumped = _dump(value)
+    dumped["choices"] = [_choice(choice) for choice in value.choices]
     if isinstance(usage, Usage):
         dumped["usage"] = _usage(usage)
     dumped["hidden_params"] = _raw(_attr(value, "_hidden_params"))

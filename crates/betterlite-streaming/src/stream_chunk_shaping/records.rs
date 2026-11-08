@@ -103,13 +103,9 @@ pub struct StreamDelta {
     pub function_call: Option<JsonValue>,
     pub tool_calls: Option<JsonValue>,
     pub audio: Option<JsonValue>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub images: Option<JsonValue>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub annotations: Option<JsonValue>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub reasoning_content: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub thinking_blocks: Option<JsonValue>,
     pub provider_specific_fields: Option<JsonObject>,
     #[serde(flatten)]
