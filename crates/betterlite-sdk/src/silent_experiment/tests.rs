@@ -240,6 +240,7 @@ fn invocation<C>(
 
 #[tokio::test]
 async fn start_runs_the_mirror_with_the_target_and_the_stream_flag() {
+    let (captured, _guard) = capture();
     let experiments = experiments_on(Handle::current());
     let fake = fake_mirror(false);
     let original = request("{\"stream\": true, \"model\": \"gpt-4o\", \"metadata\": {}}");
@@ -270,6 +271,13 @@ async fn start_runs_the_mirror_with_the_target_and_the_stream_flag() {
     assert_eq!(
         caller_request,
         request("{\"stream\": true, \"model\": \"gpt-4o\", \"metadata\": {}}")
+    );
+    assert!(
+        captured
+            .text()
+            .contains("Starting silent experiment for model gpt-4o-mini"),
+        "{}",
+        captured.text()
     );
 }
 
@@ -331,6 +339,11 @@ fn blocking_runs_the_mirror_on_its_own_thread() {
     let calls = fake.calls();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].model, "gpt-4o-mini");
+    assert!(!calls[0].stream);
+    assert_eq!(
+        calls[0].request["metadata"]["is_silent_experiment"],
+        value("true")
+    );
     let threads = fake.threads();
     assert_ne!(threads[0], current().id());
 }
