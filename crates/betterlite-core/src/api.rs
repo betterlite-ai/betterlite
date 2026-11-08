@@ -49,6 +49,7 @@ pub mod compression_interception;
 pub mod compression_retrieval_loop;
 pub mod container_collection_http;
 pub mod container_create_list;
+pub mod container_file_endpoints;
 pub mod container_file_list;
 pub mod container_file_upload;
 pub mod container_ownership;

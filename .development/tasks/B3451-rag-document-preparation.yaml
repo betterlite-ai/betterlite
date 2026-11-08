@@ -16,7 +16,7 @@ description: >-
   precedence: file_data tuple, file_url fetched through the RAG HTTP client, or existing
   file_id. File URL is the configured source when no file_data is present; an absent
   configured source raises ValueError. Fetched URL responses provide headers for content-type
-  and generate default filename from the last path segment.
+  and generate default filename from the last path segment. The file_url fetch goes through `UserUrlFetcher::fetch` in betterlite-http (B5082), which checks the URL against the SSRF rules; B3462 passes file_url through to it, so nothing rejects it at the HTTP boundary.
 
   ocr method performs OCR on file content when ocr_config is present and file_content is
   not None. Reads ocr model from config (default mistral/mistral-ocr-latest), detects
@@ -173,17 +173,6 @@ oracle_cases:
   - tools/oracle/cases/ingestion_state/chunk-config-invalid.yaml
 
 deviations:
-  - what: >-
-      File URL downloads are rejected at the HTTP boundary with a 400 error before reaching
-      BaseRAGIngestion.upload. The proposal in the outline records that B009 explicitly withholds
-      downloads under bounded-inputs, and betterlite enforces this as a pre-dispatch check in the
-      ingestion route handler rather than in the base class.
-    why: >-
-      The configured source precedence (inline file_data wins, URL downloads are the fallback)
-      is preserved in the type layer: callers can still configure a URL source and pass it to
-      the pipeline. Native code validates at the HTTP boundary that URLs from request bodies are
-      forbidden, matching the repository's existing security posture for download sources.
-    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L122-L129
   - what: >-
       Chunk configuration validation (rejecting chunk_size<=0, chunk_overlap<0, or
       chunk_overlap>=chunk_size) is typed and returns before splitting. LiteLLM can hang or fail
