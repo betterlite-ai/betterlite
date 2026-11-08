@@ -179,8 +179,14 @@ pub(crate) fn store_command(key: &str, fields: &CacheEntryFields) -> redis::Cmd 
     command
 }
 
-fn is_missing_index_error(error: &redis::RedisError) -> bool {
-    let message = error.to_string().to_lowercase();
+pub(crate) fn is_missing_index_error(error: &redis::RedisError) -> bool {
+    // redis-rs splits the first word of a server error into the code, so rebuild the text.
+    let message = [error.code(), error.detail()]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .to_lowercase();
     MISSING_INDEX_FRAGMENTS
         .iter()
         .any(|fragment| message.contains(fragment))

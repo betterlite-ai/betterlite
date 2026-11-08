@@ -9,9 +9,9 @@ use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Number;
 
 use self::fixtures::{
-    FakeConnector, FakeEmbedder, FakeIndex, PROBE, TIMESTAMP, VECTOR, alternative_error,
-    cache_with, command_args, empty_env, hit, info_reply, kwargs_with_message, options,
-    stored_cache, text_args,
+    FakeConnector, FakeEmbedder, FakeIndex, InfoShape, PROBE, TIMESTAMP, VECTOR, alternative_error,
+    cache_with, cache_with_shared, command_args, empty_env, hit, info_reply, info_reply_shaped,
+    kwargs_with_message, options, stored_cache, text_args, words,
 };
 use crate::arguments::json::{Json, Object};
 use crate::redis_semantic_cache::options::RedisEnv;
@@ -112,6 +112,25 @@ fn options_explicit_and_empty_values_lose_to_a_non_empty_environment_value() {
 }
 
 #[test]
+fn options_an_empty_environment_password_still_builds_the_url() {
+    let mut settings = options();
+    settings.password = None;
+    let env = RedisEnv {
+        redis_host: None,
+        redis_port: None,
+        redis_password: Some(SecretString::from("")),
+    };
+    let cache = RedisSemanticCache::new(
+        settings,
+        env,
+        Arc::new(FakeEmbedder::new()),
+        Arc::new(FakeConnector::new(Arc::new(FakeIndex::default()))),
+    )
+    .expect("an empty password is set");
+    assert_eq!(cache.redis_url.expose_secret(), "redis://:@localhost:6379");
+}
+
+#[test]
 fn options_redis_url_wins_over_host_port_and_password() {
     let mut settings = options();
     settings.redis_url = Some(SecretString::from("redis://:urlpw@elsewhere:6390"));
@@ -190,7 +209,8 @@ fn filter_key_match_requires_the_same_scope(#[case] stored: Option<&str>, #[case
 #[tokio::test]
 async fn index_create_uses_the_base_name_and_the_probed_dimension() {
     let index = Arc::new(FakeIndex::default());
-    let (cache, _connector) = cache_with(FakeEmbedder::new(), Arc::clone(&index));
+    let embedder = Arc::new(FakeEmbedder::with_vector(vec![0.5; PROBE.len() + 2]));
+    let (cache, _connector) = cache_with_shared(Arc::clone(&embedder), Arc::clone(&index));
     cache
         .async_set_cache("scope-1", &Json::Null, &kwargs_with_message("hi"))
         .await;
@@ -199,6 +219,129 @@ async fn index_create_uses_the_base_name_and_the_probed_dimension() {
     assert_eq!(creates[0].name, "litellm_semantic_cache_index");
     assert_eq!(creates[0].prefix, "litellm_semantic_cache_index");
     assert_eq!(creates[0].dimension, PROBE.len());
+    let probes: Vec<_> = embedder
+        .calls()
+        .into_iter()
+        .filter(|(prompt, _)| prompt == "dimension test")
+        .collect();
+    assert_eq!(probes, [("dimension test".to_owned(), None)]);
+}
+
+#[tokio::test]
+async fn index_is_built_once_and_the_constructor_opens_nothing() {
+    let index = Arc::new(FakeIndex::default());
+    let embedder = Arc::new(FakeEmbedder::new());
+    let (cache, connector) = cache_with_shared(Arc::clone(&embedder), Arc::clone(&index));
+    assert_eq!(connector.connects(), 0);
+    assert!(embedder.calls().is_empty());
+    cache
+        .async_set_cache("scope-1", &Json::Null, &kwargs_with_message("hi"))
+        .await;
+    cache
+        .async_set_cache("scope-2", &Json::Null, &kwargs_with_message("hello"))
+        .await;
+    assert_eq!(connector.connects(), 1);
+    assert_eq!(index.creates().len(), 1);
+    let probes = embedder
+        .calls()
+        .into_iter()
+        .filter(|(prompt, _)| prompt == "dimension test")
+        .count();
+    assert_eq!(probes, 1);
+    assert_eq!(index.stores().len(), 2);
+}
+
+#[tokio::test]
+async fn index_distance_outside_zero_to_two_fails_the_build_without_creating() {
+    let index = Arc::new(FakeIndex::default());
+    index.set_hits(vec![hit(0.9, Some("scope-1"), "{}")]);
+    let mut settings = options();
+    settings.similarity_threshold = Some(-1.5_f64);
+    let cache = RedisSemanticCache::new(
+        settings,
+        empty_env(),
+        Arc::new(FakeEmbedder::new()),
+        Arc::new(FakeConnector::new(Arc::clone(&index))),
+    )
+    .expect("the constructor has no range check");
+    let error = cache.index_info().await.expect_err("the build fails");
+    assert_eq!(
+        error.to_string(),
+        "Distance must be between 0 and 2, got 2.5"
+    );
+    let mut metadata = Object::new();
+    let found = cache
+        .async_get_cache("scope-1", &kwargs_with_message("hi"), Some(&mut metadata))
+        .await
+        .expect("a miss");
+    assert_eq!(found, None);
+    assert!(index.creates().is_empty());
+    assert!(index.searches().is_empty());
+    assert_eq!(
+        metadata.get(SIMILARITY_FIELD),
+        Some(&Json::Number(Number::from_f64(0.0).expect("a number")))
+    );
+}
+
+fn matching_shape() -> InfoShape {
+    InfoShape::matching("litellm_semantic_cache_index", PROBE.len())
+}
+
+fn vector_tail(algorithm: &str, datatype: &str, metric: &str) -> Vec<String> {
+    words(&[
+        "algorithm",
+        algorithm,
+        "data_type",
+        datatype,
+        "dim",
+        "3",
+        "distance_metric",
+        metric,
+    ])
+}
+
+#[rstest]
+#[case::matching(matching_shape(), true)]
+#[case::prefix(InfoShape { prefix: "other".to_owned(), ..matching_shape() }, false)]
+#[case::dimension(InfoShape::matching("litellm_semantic_cache_index", 9), false)]
+#[case::algorithm(InfoShape { vector_tail: vector_tail("HNSW", "FLOAT32", "COSINE"), ..matching_shape() }, false)]
+#[case::metric(InfoShape { vector_tail: vector_tail("FLAT", "FLOAT32", "L2"), ..matching_shape() }, false)]
+#[case::datatype(InfoShape { vector_tail: vector_tail("FLAT", "FLOAT64", "COSINE"), ..matching_shape() }, false)]
+#[case::vector_name(InfoShape { vector_name: "other_vector".to_owned(), ..matching_shape() }, false)]
+#[case::field_type(InfoShape { response_kind: "NUMERIC".to_owned(), ..matching_shape() }, false)]
+fn index_schema_compare_flags_every_difference(#[case] shape: InfoShape, #[case] expected: bool) {
+    let schema = IndexSchema {
+        name: "litellm_semantic_cache_index".to_owned(),
+        prefix: "litellm_semantic_cache_index".to_owned(),
+        dimension: PROBE.len(),
+    };
+    let reply = info_reply_shaped("litellm_semantic_cache_index", &shape);
+    assert_eq!(super::schema::schema_matches(&reply, &schema), expected);
+}
+
+#[rstest]
+#[case::older_positional_layout(&["FLAT", "6", "TYPE", "FLOAT32", "DIM", "3", "DISTANCE_METRIC", "COSINE"])]
+#[case::uppercase_names_with_defaults(&["ALGORITHM", "FLAT", "TYPE", "FLOAT32", "DIM", "3"])]
+#[case::only_the_dimension(&["DIM", "3"])]
+#[tokio::test]
+async fn index_older_and_defaulted_vector_layouts_reuse_the_base_index(#[case] tail: &[&str]) {
+    let shape = InfoShape {
+        vector_tail: words(tail),
+        ..matching_shape()
+    };
+    let index = Arc::new(FakeIndex::default().with_info(
+        "litellm_semantic_cache_index",
+        info_reply_shaped("litellm_semantic_cache_index", &shape),
+    ));
+    let (cache, _connector) = cache_with(FakeEmbedder::new(), Arc::clone(&index));
+    cache
+        .async_set_cache("scope-1", &Json::Null, &kwargs_with_message("hi"))
+        .await;
+    assert!(index.creates().is_empty());
+    assert!(index.drops().is_empty());
+    let stores = index.stores();
+    assert_eq!(stores.len(), 1);
+    assert!(stores[0].0.starts_with("litellm_semantic_cache_index:"));
 }
 
 #[tokio::test]
@@ -324,6 +467,18 @@ async fn store_passes_the_ttl_through_and_zero_means_no_expiry() {
     cache.async_set_cache("scope-1", &Json::Null, &zero).await;
     let ttls: Vec<Option<i64>> = index.stores().into_iter().map(|(_, _, ttl)| ttl).collect();
     assert_eq!(ttls, [Some(60), None]);
+}
+
+#[tokio::test]
+async fn store_a_vector_of_the_wrong_size_is_not_stored() {
+    let index = Arc::new(FakeIndex::default());
+    let embedder = Arc::new(FakeEmbedder::with_vector(vec![0.5; PROBE.len() + 2]));
+    let (cache, _connector) = cache_with_shared(embedder, Arc::clone(&index));
+    cache
+        .async_set_cache("scope-1", &Json::Null, &kwargs_with_message("hi"))
+        .await;
+    assert_eq!(index.creates().len(), 1);
+    assert!(index.stores().is_empty());
 }
 
 #[tokio::test]
@@ -563,7 +718,7 @@ fn info_reply_with_options() -> Json {
 }
 
 #[test]
-fn info_reply_becomes_ordered_objects_and_plain_lists() {
+fn info_reply_pairs_only_the_top_level_and_keeps_nested_lists() {
     let converted =
         super::schema::info_object(&info_reply_with_options()).expect("an FT.INFO reply");
     let Json::Object(info) = converted else {
@@ -591,12 +746,14 @@ fn info_reply_becomes_ordered_objects_and_plain_lists() {
         info.get("index_options"),
         Some(&Json::List(vec![Json::Text("NOFIELDS".to_owned())]))
     );
-    let Some(Json::Object(definition)) = info.get("index_definition") else {
-        panic!("the index definition converts to an object");
-    };
     assert_eq!(
-        definition.get("prefixes"),
-        Some(&Json::List(vec![Json::Text("the-index".to_owned())]))
+        info.get("index_definition"),
+        Some(&Json::List(vec![
+            Json::Text("key_type".to_owned()),
+            Json::Text("HASH".to_owned()),
+            Json::Text("prefixes".to_owned()),
+            Json::List(vec![Json::Text("the-index".to_owned())]),
+        ]))
     );
 }
 
@@ -754,6 +911,48 @@ fn lookup_parses_the_search_reply_into_hits() {
     assert_eq!(hits[0].litellm_cache_key.as_deref(), Some("scope"));
     let distance = hits[0].vector_distance.expect("a distance");
     assert!(distance.total_cmp(&0.25_f64).is_eq());
+}
+
+#[rstest]
+#[case::total_above_the_returned_count(2)]
+#[case::total_equal(1)]
+fn lookup_total_count_may_exceed_the_returned_documents(#[case] total: i64) {
+    let reply = Json::List(vec![
+        Json::Number(Number::from(total)),
+        Json::Text("idx:entry".to_owned()),
+        Json::List(vec![
+            Json::Text("response".to_owned()),
+            Json::Text("{}".to_owned()),
+            Json::Text("vector_distance".to_owned()),
+            Json::Text("0.1".to_owned()),
+        ]),
+    ]);
+    let hits = super::query::parse_search_reply(&reply).expect("a search reply");
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].response.as_deref(), Some("{}"));
+}
+
+#[test]
+fn lookup_rejects_a_search_reply_with_a_key_and_no_document() {
+    let reply = Json::List(vec![
+        Json::Number(Number::from(1_i64)),
+        Json::Text("idx:entry".to_owned()),
+    ]);
+    super::query::parse_search_reply(&reply).expect_err("an odd remainder");
+}
+
+#[rstest]
+#[case::unknown_index_name(b"-Unknown index name\r\n".as_slice(), true)]
+#[case::no_such_index(b"-no such index\r\n".as_slice(), true)]
+#[case::err_prefixed(b"-ERR unknown index name\r\n".as_slice(), true)]
+#[case::other_error(b"-ERR syntax error\r\n".as_slice(), false)]
+fn lookup_server_replies_for_a_missing_index_are_recognised(
+    #[case] wire: &[u8],
+    #[case] missing: bool,
+) {
+    let parsed = redis::parse_redis_value(wire).expect("a parsed reply");
+    let error = parsed.extract_error().expect_err("a server error");
+    assert_eq!(super::live::is_missing_index_error(&error), missing);
 }
 
 #[test]

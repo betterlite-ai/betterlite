@@ -33,30 +33,26 @@ pub(crate) fn resolve_redis_url(
     if let Some(url) = configured_url {
         return Ok(url);
     }
-    let host = present(configured_host, env.redis_host, String::is_empty).ok_or(
-        RedisSemanticError::MissingConfiguration {
+    let host = configured_host
+        .filter(|value| !value.is_empty())
+        .or(env.redis_host)
+        .ok_or(RedisSemanticError::MissingConfiguration {
             variable: "REDIS_HOST",
-        },
-    )?;
-    let port = present(configured_port, env.redis_port, String::is_empty).ok_or(
-        RedisSemanticError::MissingConfiguration {
+        })?;
+    let port = configured_port
+        .filter(|value| !value.is_empty())
+        .or(env.redis_port)
+        .ok_or(RedisSemanticError::MissingConfiguration {
             variable: "REDIS_PORT",
-        },
-    )?;
-    let password = present(configured_password, env.redis_password, |value| {
-        value.expose_secret().is_empty()
-    })
-    .ok_or(RedisSemanticError::MissingConfiguration {
-        variable: "REDIS_PASSWORD",
-    })?;
+        })?;
+    let password = configured_password
+        .filter(|value| !value.expose_secret().is_empty())
+        .or(env.redis_password)
+        .ok_or(RedisSemanticError::MissingConfiguration {
+            variable: "REDIS_PASSWORD",
+        })?;
     Ok(SecretString::from(format!(
         "redis://:{}@{host}:{port}",
         password.expose_secret()
     )))
-}
-
-fn present<T>(explicit: Option<T>, environment: Option<T>, is_empty: fn(&T) -> bool) -> Option<T> {
-    explicit
-        .filter(|value| !is_empty(value))
-        .or_else(|| environment.filter(|value| !is_empty(value)))
 }

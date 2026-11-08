@@ -18,23 +18,18 @@ pub(crate) fn parse_search_reply(reply: &Json) -> Result<Vec<Hit>, RedisSemantic
     let Json::List(items) = reply else {
         return Err(RedisSemanticError::MalformedSearchReply);
     };
-    let Some(Json::Number(count)) = items.first() else {
-        return Err(RedisSemanticError::MalformedSearchReply);
-    };
-    let Some(document_count) = count.as_u64().and_then(|value| usize::try_from(value).ok()) else {
+    let Some(Json::Number(_)) = items.first() else {
         return Err(RedisSemanticError::MalformedSearchReply);
     };
     let Some(documents) = items.get(1..) else {
         return Err(RedisSemanticError::MalformedSearchReply);
     };
-    let Some(expected) = document_count.checked_mul(2) else {
-        return Err(RedisSemanticError::MalformedSearchReply);
-    };
-    if documents.len() != expected {
+    let (entries, remainder) = documents.as_chunks::<2>();
+    if !remainder.is_empty() {
         return Err(RedisSemanticError::MalformedSearchReply);
     }
     let mut hits = Vec::new();
-    for [key, document] in documents.as_chunks::<2>().0 {
+    for [key, document] in entries {
         let Json::Text(_key) = key else {
             return Err(RedisSemanticError::MalformedSearchReply);
         };

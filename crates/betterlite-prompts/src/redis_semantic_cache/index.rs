@@ -27,6 +27,11 @@ pub(crate) async fn build_index(
 
 async fn build_index_once(cache: &RedisSemanticCache) -> Result<SemanticIndex, RedisSemanticError> {
     let probe = cache.embedder.embed("dimension test", None).await?;
+    if !(0.0_f64..=2.0_f64).contains(&cache.distance_threshold) {
+        return Err(RedisSemanticError::InvalidDistanceThreshold {
+            distance: cache.distance_threshold,
+        });
+    }
     let backend = cache
         .connector
         .connect(cache.redis_url.expose_secret())

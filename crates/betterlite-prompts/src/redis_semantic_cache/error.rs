@@ -20,6 +20,8 @@ pub enum RedisSemanticError {
     Backend(#[from] LiveClientError),
     #[error("the existing index {index} schema does not match the semantic cache schema")]
     SchemaMismatch { index: String },
+    #[error("Distance must be between 0 and 2, got {distance}")]
+    InvalidDistanceThreshold { distance: f64 },
     #[error("embedding vector has {actual} dimensions; the index expects {expected}")]
     DimensionMismatch { actual: usize, expected: usize },
     #[error("the FT.INFO reply from Redis is malformed")]

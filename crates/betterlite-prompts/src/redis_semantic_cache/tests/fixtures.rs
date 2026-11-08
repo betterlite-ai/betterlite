@@ -55,6 +55,7 @@ pub(crate) struct FakeEmbedder {
     pub(crate) vector: Vec<f32>,
     probe: Vec<f32>,
     failure: Option<String>,
+    calls: Mutex<Vec<(String, Option<Object>)>>,
 }
 
 impl FakeEmbedder {
@@ -63,14 +64,25 @@ impl FakeEmbedder {
             vector: VECTOR.to_vec(),
             probe: PROBE.to_vec(),
             failure: None,
+            calls: Mutex::new(Vec::new()),
         }
+    }
+
+    pub(crate) fn with_vector(vector: Vec<f32>) -> Self {
+        Self {
+            vector,
+            ..Self::new()
+        }
+    }
+
+    pub(crate) fn calls(&self) -> Vec<(String, Option<Object>)> {
+        self.calls.lock().expect("the embed log").clone()
     }
 
     pub(crate) fn failing() -> Self {
         Self {
-            vector: VECTOR.to_vec(),
-            probe: PROBE.to_vec(),
             failure: Some("the embedding provider failed".to_owned()),
+            ..Self::new()
         }
     }
 }
@@ -80,8 +92,12 @@ impl SemanticEmbedder for FakeEmbedder {
     async fn embed(
         &self,
         prompt: &str,
-        _metadata: Option<&Object>,
+        metadata: Option<&Object>,
     ) -> Result<Vec<f32>, SemanticEmbedError> {
+        self.calls
+            .lock()
+            .expect("the embed log")
+            .push((prompt.to_owned(), metadata.cloned()));
         if let Some(message) = &self.failure {
             return Err(SemanticEmbedError::Failed {
                 message: message.clone(),
@@ -257,8 +273,15 @@ pub(crate) fn cache_with(
     embedder: FakeEmbedder,
     index: Arc<FakeIndex>,
 ) -> (RedisSemanticCache, Arc<FakeConnector>) {
+    cache_with_shared(Arc::new(embedder), index)
+}
+
+pub(crate) fn cache_with_shared(
+    embedder: Arc<FakeEmbedder>,
+    index: Arc<FakeIndex>,
+) -> (RedisSemanticCache, Arc<FakeConnector>) {
     let connector = Arc::new(FakeConnector::new(index));
-    let embedder_handle: Arc<dyn SemanticEmbedder> = Arc::new(embedder);
+    let embedder_handle: Arc<dyn SemanticEmbedder> = embedder;
     let index_handle = Arc::clone(&connector);
     let mut cache = RedisSemanticCache::new(options(), empty_env(), embedder_handle, index_handle)
         .expect("the cache settings");
@@ -294,7 +317,7 @@ pub(crate) fn alternative_error() -> RedisSemanticError {
     RedisSemanticError::Backend(LiveClientError::InvalidSetting { field: "info" })
 }
 
-fn attribute(name: &str, kind: &str, extra: &[(&str, String)]) -> Json {
+fn attribute(name: &str, kind: &str, tail: &[String]) -> Json {
     let mut fields = vec![
         Json::Text("identifier".to_owned()),
         Json::Text(name.to_owned()),
@@ -303,14 +326,46 @@ fn attribute(name: &str, kind: &str, extra: &[(&str, String)]) -> Json {
         Json::Text("type".to_owned()),
         Json::Text(kind.to_owned()),
     ];
-    for (key, value) in extra {
-        fields.push(Json::Text((*key).to_owned()));
-        fields.push(Json::Text(value.clone()));
-    }
+    fields.extend(tail.iter().cloned().map(Json::Text));
     Json::List(fields)
 }
 
+pub(crate) struct InfoShape {
+    pub(crate) prefix: String,
+    pub(crate) vector_name: String,
+    pub(crate) response_kind: String,
+    pub(crate) vector_tail: Vec<String>,
+}
+
+impl InfoShape {
+    pub(crate) fn matching(prefix: &str, dimension: usize) -> Self {
+        Self {
+            prefix: prefix.to_owned(),
+            vector_name: "prompt_vector".to_owned(),
+            response_kind: "TEXT".to_owned(),
+            vector_tail: words(&[
+                "algorithm",
+                "FLAT",
+                "data_type",
+                "FLOAT32",
+                "dim",
+                &dimension.to_string(),
+                "distance_metric",
+                "COSINE",
+            ]),
+        }
+    }
+}
+
+pub(crate) fn words(items: &[&str]) -> Vec<String> {
+    items.iter().map(|item| (*item).to_owned()).collect()
+}
+
 pub(crate) fn info_reply(name: &str, dimension: usize) -> Json {
+    info_reply_shaped(name, &InfoShape::matching(name, dimension))
+}
+
+pub(crate) fn info_reply_shaped(name: &str, shape: &InfoShape) -> Json {
     Json::List(vec![
         Json::Text("index_name".to_owned()),
         Json::Text(name.to_owned()),
@@ -319,24 +374,15 @@ pub(crate) fn info_reply(name: &str, dimension: usize) -> Json {
             Json::Text("key_type".to_owned()),
             Json::Text("HASH".to_owned()),
             Json::Text("prefixes".to_owned()),
-            Json::List(vec![Json::Text(name.to_owned())]),
+            Json::List(vec![Json::Text(shape.prefix.clone())]),
         ]),
         Json::Text("attributes".to_owned()),
         Json::List(vec![
             attribute("prompt", "TEXT", &[]),
-            attribute("response", "TEXT", &[]),
+            attribute("response", &shape.response_kind, &[]),
             attribute("inserted_at", "NUMERIC", &[]),
             attribute("updated_at", "NUMERIC", &[]),
-            attribute(
-                "prompt_vector",
-                "VECTOR",
-                &[
-                    ("algorithm", "FLAT".to_owned()),
-                    ("data_type", "FLOAT32".to_owned()),
-                    ("dim", dimension.to_string()),
-                    ("distance_metric", "COSINE".to_owned()),
-                ],
-            ),
+            attribute(&shape.vector_name, "VECTOR", &shape.vector_tail),
             attribute(CACHE_KEY_FIELD_NAME, "TAG", &[]),
         ]),
         Json::Text("num_docs".to_owned()),
