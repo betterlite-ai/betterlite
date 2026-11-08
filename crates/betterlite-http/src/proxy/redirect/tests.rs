@@ -16,7 +16,7 @@ use tokio::task::JoinSet;
 use crate::proxy::limits::TransportLimits;
 use crate::proxy::outbound::{OutboundRequest, RequestBody};
 use crate::proxy::transport_error::TransportError;
-use crate::proxy::{ProxiedClient, base_builder};
+use crate::proxy::{ProxiedClient, UpstreamResponse, base_builder};
 use crate::user_url::httpx_url::HttpxUrl;
 
 use super::{MAX_REDIRECTS, next_target, send};
@@ -105,6 +105,15 @@ fn client() -> ProxiedClient {
     ProxiedClient::build(base_builder(), &policy, TransportLimits::DEFAULT).unwrap()
 }
 
+async fn exchange(request: OutboundRequest) -> Result<UpstreamResponse, TransportError> {
+    let client = client();
+    client
+        .send_following(request)
+        .await?
+        .buffered(client.limits.body_bytes)
+        .await
+}
+
 fn post(url: Url) -> OutboundRequest {
     let mut headers = HeaderMap::new();
     headers.insert(AUTHORIZATION, HeaderValue::from_static("Bearer key"));
@@ -147,9 +156,7 @@ fn described(head: &str) -> String {
 
 async fn chain(status: u16) -> String {
     let server = scripted(vec![moved(status, "/next"), done("ok")]).await;
-    let _answer = client()
-        .send_buffered(post(server.base.join("start").unwrap()))
-        .await;
+    let _answer = exchange(post(server.base.join("start").unwrap())).await;
     let heads = server.heads.lock().unwrap().clone();
     heads
         .iter()
@@ -160,9 +167,7 @@ async fn chain(status: u16) -> String {
 
 async fn second_hop(location: &str, path: &str) -> String {
     let server = scripted(vec![moved(302, location), done("ok")]).await;
-    let _answer = client()
-        .send_buffered(post(server.base.join(path).unwrap()))
-        .await;
+    let _answer = exchange(post(server.base.join(path).unwrap())).await;
     let heads = server.heads.lock().unwrap().clone();
     heads
         .get(1)
@@ -171,8 +176,7 @@ async fn second_hop(location: &str, path: &str) -> String {
 
 async fn hop_bound() -> String {
     let server = scripted(vec![moved(302, "/loop"); MAX_REDIRECTS + 2]).await;
-    let error = client()
-        .send_buffered(post(server.base.clone()))
+    let error = exchange(post(server.base.clone()))
         .await
         .expect_err("the hop bound must end the chain");
     format!("{error} requests={}", server.heads.lock().unwrap().len())
@@ -200,7 +204,7 @@ async fn cross_origin() -> String {
     request
         .headers
         .insert("x-provider-trace", HeaderValue::from_static("trace"));
-    let _answer = client().send_buffered(request).await;
+    let _answer = exchange(request).await;
     let heads = target.heads.lock().unwrap().clone();
     let Some(head) = heads.first() else {
         return "nothing reached the target".to_owned();
@@ -231,7 +235,7 @@ async fn streamed_answer() -> String {
         body: RequestBody::Empty,
         deadline: Duration::from_secs(5),
     };
-    let answer = client().send_buffered(request).await.unwrap();
+    let answer = exchange(request).await.unwrap();
     String::from_utf8(answer.body).unwrap()
 }
 

@@ -107,12 +107,14 @@ impl ChatExecutor {
         }
         let outbound = self.outbound(deployment, request, "application/json")?;
         let started = Instant::now();
-        let client = self
-            .client
-            .deployments
-            .get(&deployment.model_id)
-            .unwrap_or(&self.client);
-        let upstream = client.send_buffered(outbound).await.map_err(http_failure)?;
+        let client = self.client_for(deployment);
+        let upstream = client
+            .send_following(outbound)
+            .await
+            .map_err(http_failure)?
+            .buffered(client.limits.body_bytes)
+            .await
+            .map_err(http_failure)?;
         let upstream_time = started.elapsed();
         if upstream.status >= 400 {
             return Err(ChatError::Provider {
@@ -160,12 +162,11 @@ impl ChatExecutor {
         request: &ChatRequest,
     ) -> Result<StreamResponse, ChatError> {
         let outbound = self.outbound(deployment, request, "text/event-stream")?;
-        let client = self
-            .client
-            .deployments
-            .get(&deployment.model_id)
-            .unwrap_or(&self.client);
-        let response = client.send(outbound).await.map_err(http_failure)?;
+        let client = self.client_for(deployment);
+        let response = client
+            .send_following(outbound)
+            .await
+            .map_err(http_failure)?;
         if !response.response.status().is_success() {
             let upstream = response
                 .buffered(client.limits.body_bytes)
@@ -176,6 +177,13 @@ impl ChatExecutor {
             });
         }
         Ok(response)
+    }
+
+    fn client_for(&self, deployment: &ChatDeployment) -> &ProxiedClient {
+        self.client
+            .deployments
+            .get(&deployment.model_id)
+            .unwrap_or(&self.client)
     }
 
     fn outbound(

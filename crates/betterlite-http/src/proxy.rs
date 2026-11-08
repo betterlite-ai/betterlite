@@ -161,26 +161,56 @@ impl ProxiedClient {
             })
     }
 
-    pub async fn send(&self, request: OutboundRequest) -> Result<StreamResponse, TransportError> {
+    fn lease(&self, request: OutboundRequest) -> Result<(Request, stream::Lease), TransportError> {
         if self.tracker.is_closed() {
             return Err(TransportError::Closed);
         }
         let token = self.tracker.token();
         let built = request.build(&self.client)?;
+        Ok((
+            built,
+            stream::Lease {
+                _client: self.client.clone(),
+                _token: token,
+            },
+        ))
+    }
+
+    fn finish(
+        &self,
+        response: Response,
+        lease: stream::Lease,
+    ) -> Result<StreamResponse, TransportError> {
+        check_headers(response.headers(), self.limits.header_bytes)?;
+        Ok(StreamResponse { response, lease })
+    }
+
+    pub async fn send(&self, request: OutboundRequest) -> Result<StreamResponse, TransportError> {
+        let (built, lease) = self.lease(request)?;
+        let response = if self.network_mock {
+            mock::respond(&built).map_err(TransportError::Mock)?
+        } else {
+            self.client
+                .execute(built)
+                .await
+                .map_err(TransportError::sending)?
+        };
+        self.finish(response, lease)
+    }
+
+    // provider calls follow redirects the way LiteLLM's httpx clients do, with each hop re-checked
+    pub async fn send_following(
+        &self,
+        request: OutboundRequest,
+    ) -> Result<StreamResponse, TransportError> {
+        let (built, lease) = self.lease(request)?;
         let response = if self.network_mock {
             mock::respond(&built).map_err(TransportError::Mock)?
         } else {
             // boxed so the hop state machine does not ride inside every caller's future
             Box::pin(redirect::send(self, built)).await?
         };
-        check_headers(response.headers(), self.limits.header_bytes)?;
-        Ok(StreamResponse {
-            response,
-            lease: stream::Lease {
-                _client: self.client.clone(),
-                _token: token,
-            },
-        })
+        self.finish(response, lease)
     }
 
     pub async fn send_buffered(

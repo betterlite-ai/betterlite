@@ -640,55 +640,101 @@ async fn boundary_observation(base: Base, api_key: Option<&str>, body: &str) -> 
     )
 }
 
+async fn redirecting(listener: TcpListener, location: String) {
+    let (mut stream, _) = timeout(Duration::from_secs(5), listener.accept())
+        .await
+        .expect("no request reached the redirecting provider")
+        .unwrap();
+    let mut received = Vec::new();
+    while !received.ends_with(b"\r\n\r\n") {
+        received.push(stream.read_u8().await.unwrap());
+    }
+    let head = String::from_utf8(received).unwrap();
+    let length: usize = head
+        .lines()
+        .find_map(|line| line.strip_prefix("content-length: "))
+        .map_or(0, |value| value.parse().unwrap());
+    let mut sent = vec![0_u8; length];
+    stream.read_exact(&mut sent).await.unwrap();
+    let reply = format!(
+        "HTTP/1.1 302 Found\r\nlocation: {location}\r\ncontent-length: 0\r\nconnection: close\r\n\r\n"
+    );
+    let _written = stream.write_all(reply.as_bytes()).await;
+}
+
+async fn redirect_observation() -> String {
+    let (source_listener, source_base) = listen().await;
+    let target_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let target_base = format!("http://{}/v1", target_listener.local_addr().unwrap());
+    let entries = format!(
+        "[{{model_name: g, litellm_params: {{model: openai/up, api_base: '{source_base}', api_key: k}}}}]"
+    );
+    let chat = executor(&entries, 1, None, MockPermission::default());
+    let request = ChatRequest::parse(CALL.as_bytes()).unwrap();
+    let deployment = chat.deployments.first().unwrap();
+    let mut target_task = JoinSet::new();
+    target_task.spawn(provider(target_listener, 200, ANSWER, Duration::ZERO));
+    let redirect = redirecting(source_listener, format!("{target_base}/chat/completions"));
+    let (answered, _redirected) = tokio::join!(chat.send(deployment, &request), redirect);
+    let sent = target_task.join_next().await.unwrap().unwrap();
+    format!(
+        "ok={}|auth={}|{}",
+        answered.is_ok(),
+        authorization(&sent),
+        sent.lines().next().unwrap_or_default()
+    )
+}
+
+#[derive(Clone, Copy)]
+enum Scenario {
+    Wire(Base, Option<&'static str>, &'static str),
+    Redirect,
+}
+
+async fn observation(scenario: Scenario) -> String {
+    match scenario {
+        Scenario::Wire(base, api_key, body) => boundary_observation(base, api_key, body).await,
+        Scenario::Redirect => redirect_observation().await,
+    }
+}
+
 #[rstest]
 #[case::userinfo_becomes_basic_auth_over_the_api_key(
-    Base::Userinfo("user:pass@"),
-    Some("k"),
-    CALL,
+    Scenario::Wire(Base::Userinfo("user:pass@"), Some("k"), CALL),
     "POST /v1/chat/completions HTTP/1.1|auth=Basic dXNlcjpwYXNz|leak=false"
 )]
 #[case::percent_encoded_userinfo_is_decoded(
-    Base::PercentEncoded,
-    Some("k"),
-    CALL,
+    Scenario::Wire(Base::PercentEncoded, Some("k"), CALL),
     "POST /v1/chat/completions HTTP/1.1|auth=Basic dXNAZXI6cEBzcw==|leak=false"
 )]
 #[case::userinfo_alone_authenticates_a_loopback_provider(
-    Base::Userinfo("user:pass@"),
-    None,
-    CALL,
+    Scenario::Wire(Base::Userinfo("user:pass@"), None, CALL),
     "POST /v1/chat/completions HTTP/1.1|auth=Basic dXNlcjpwYXNz|leak=false"
 )]
 #[case::the_api_key_bearer_is_used_without_userinfo(
-    Base::Plain,
-    Some("k"),
-    CALL,
+    Scenario::Wire(Base::Plain, Some("k"), CALL),
     "POST /v1/chat/completions HTTP/1.1|auth=Bearer k|leak=false"
 )]
 #[case::request_fields_cannot_change_the_destination(
-    Base::Plain,
-    Some("k"),
-    HIJACK,
+    Scenario::Wire(Base::Plain, Some("k"), HIJACK),
     "POST /v1/chat/completions HTTP/1.1|auth=Bearer k|leak=true"
 )]
 #[case::no_credentials_is_an_error(
-    Base::Plain,
-    None,
-    CALL,
+    Scenario::Wire(Base::Plain, None, CALL),
     "no API key is set for this deployment, in litellm_settings or in OPENAI_API_KEY"
 )]
 #[case::an_ftp_base_is_refused_by_key(
-    Base::Ftp,
-    Some("k"),
-    CALL,
+    Scenario::Wire(Base::Ftp, Some("k"), CALL),
     "the provider could not be reached: the configured api_base cannot be used: litellm_params.api_base uses the ftp scheme, and only http and https are supported"
+)]
+#[case::a_provider_redirect_does_not_forward_credentials(
+    Scenario::Redirect,
+    "ok=true|auth=-|GET /v1/chat/completions HTTP/1.1"
 )]
 #[tokio::test]
 async fn http_boundaries_url_boundary_tests_behavior(
-    #[case] base: Base,
-    #[case] api_key: Option<&str>,
-    #[case] body: &str,
+    #[case] scenario: Scenario,
     #[case] expected: &str,
 ) {
-    assert_eq!(boundary_observation(base, api_key, body).await, expected);
+    assert_eq!(observation(scenario).await, expected);
 }
