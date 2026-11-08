@@ -7,7 +7,7 @@ use betterlite_openai::huggingface_chat::headers::validate_environment;
 use betterlite_openai::huggingface_chat::mapping::{ProviderMapping, ProviderMappingSource};
 use betterlite_openai::huggingface_chat::request::transform_request;
 use betterlite_openai::huggingface_chat::url::get_complete_url;
-use betterlite_openai::openai_base_config::{Headers, Object};
+use betterlite_openai::openai_base_config::Object;
 use secrecy::SecretString;
 use serde_json::{Value, json};
 

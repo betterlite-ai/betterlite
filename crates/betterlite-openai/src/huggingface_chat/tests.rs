@@ -2,6 +2,7 @@
 
 use std::collections::VecDeque;
 use std::fs::{read, read_dir, read_to_string};
+use std::iter::repeat_n;
 use std::path::Path;
 use std::sync::{Arc, Mutex, PoisonError};
 
@@ -614,7 +615,7 @@ fn mapping_cache_keeps_failures_out() {
 
 #[test]
 fn mapping_cache_evicts_the_least_recently_used_entry() {
-    let hub = ScriptedHub::with((0_u32..200_u32).map(|_| Reply::EchoModel).collect());
+    let hub = ScriptedHub::with(repeat_n(Reply::EchoModel, 200_usize).collect());
     let calls = Arc::clone(&hub.calls);
     let cache = ProviderMappingCache::new(None, hub);
     (0_u32..128_u32).for_each(|index| drop(cache.mapping(&format!("org/m{index}")).unwrap()));
