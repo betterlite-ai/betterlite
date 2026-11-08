@@ -1,0 +1,12 @@
+[Unit]
+Description=betterlite watchdog
+
+[Service]
+Environment=PATH=@PATH@
+ExecStart=/bin/bash @FLOW@/watchdog.sh
+Restart=on-failure
+RestartSec=30
+LimitNOFILE=524288
+
+[Install]
+WantedBy=default.target

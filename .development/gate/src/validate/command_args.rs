@@ -79,6 +79,11 @@ fn option_values<'words>(before: &'words [ShellWord], options: &[&str]) -> Vec<&
 fn filterset_problems(before: &[ShellWord]) -> Vec<String> {
     let mut problems = Vec::new();
     for filterset in option_values(before, &FILTERSET_OPTIONS) {
+        if filterset.contains("::(::|$)") {
+            problems.push(format!(
+                "passes the filterset {filterset} but no test path can match ::(::|$)"
+            ));
+        }
         for error in ParsedExpr::parse(filterset).err().unwrap_or_default() {
             let detail = if let ParseSingleError::InvalidRegex { message, .. } = &error {
                 format!("{error}: {message}")
