@@ -1,5 +1,4 @@
 use betterlite_logging::otel::mappers::base::AttributeMap;
-use betterlite_logging::otel::model::metadata::wire::MetadataError;
 use opentelemetry::{Array, StringValue, Value as OtelValue};
 use serde_json::{Value, json};
 
@@ -12,20 +11,9 @@ pub(super) fn attributes_record(attributes: &AttributeMap) -> Value {
     )
 }
 
-pub(super) fn metadata_error(error: &MetadataError) -> Box<crate::helpers::HelperError> {
+pub(super) fn helper_error(class: &str, message: String) -> Box<crate::helpers::HelperError> {
     Box::new(crate::helpers::HelperError {
-        class: "MetadataError".to_owned(),
-        status: None,
-        error_type: None,
-        param: None,
-        code: None,
-        message: error.to_string(),
-    })
-}
-
-pub(super) fn invalid_input(message: String) -> Box<crate::helpers::HelperError> {
-    Box::new(crate::helpers::HelperError {
-        class: "InvalidInput".to_owned(),
+        class: class.to_owned(),
         status: None,
         error_type: None,
         param: None,

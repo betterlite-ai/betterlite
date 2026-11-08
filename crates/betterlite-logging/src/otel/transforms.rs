@@ -5,66 +5,70 @@ use crate::otel::model::utils::coercion::OtelModelValue;
 pub mod tools;
 
 pub fn transform_messages(messages: &OtelModelValue) -> Vec<OtelModelValue> {
-    if let Some(instructions) = messages.as_str() {
-        return vec![text_message("system", vec![content_part(instructions)])];
+    match messages {
+        OtelModelValue::String(instructions) => {
+            vec![text_message("system", vec![content_part(instructions)])]
+        }
+        OtelModelValue::Array(items) => items.iter().filter_map(transformed_message).collect(),
+        OtelModelValue::Null(())
+        | OtelModelValue::Bool(_)
+        | OtelModelValue::Number(_)
+        | OtelModelValue::Object(_) => Vec::new(),
     }
-    let Some(items) = messages.as_array() else {
-        return Vec::new();
-    };
-    items.iter().filter_map(transformed_message).collect()
 }
 
 pub fn transform_choices(choices: &[OtelModelValue]) -> Vec<OtelModelValue> {
-    let mut transformed = Vec::new();
-    for choice in choices {
-        let Some(fields) = choice.as_object() else {
-            continue;
-        };
-        let message = fields
-            .get("message")
-            .and_then(OtelModelValue::as_object)
-            .cloned()
-            .unwrap_or_default();
-        let mut messages =
-            transform_messages(&OtelModelValue::Array(vec![OtelModelValue::Object(
-                message,
-            )]));
-        let Some(OtelModelValue::Object(mut parts_message)) = messages.pop() else {
-            continue;
-        };
-        if let Some(reason) = fields
-            .get("finish_reason")
-            .filter(|reason| !matches!(reason, OtelModelValue::Null(())))
-        {
-            parts_message.insert("finish_reason".to_owned(), reason.clone());
-        }
-        transformed.push(OtelModelValue::Object(parts_message));
-    }
-    transformed
+    choices
+        .iter()
+        .filter_map(transformed_choice_message)
+        .collect()
 }
 
 pub fn transform_responses_output(output: &[OtelModelValue]) -> Vec<OtelModelValue> {
-    let mut transformed = Vec::new();
-    for item in output {
-        let Some(fields) = item.as_object() else {
-            continue;
-        };
-        match fields.get("type").and_then(OtelModelValue::as_str) {
-            Some("message") => {
-                let role = fields
-                    .get("role")
-                    .and_then(OtelModelValue::as_str)
-                    .unwrap_or("assistant");
-                let parts = output_text_parts(fields.get("content"));
-                if !parts.is_empty() {
-                    transformed.push(text_message(role, parts));
-                }
-            }
-            Some("function_call") => transformed.push(function_call_message(fields)),
-            Some(_) | None => {}
-        }
+    output
+        .iter()
+        .filter_map(transformed_response_item)
+        .collect()
+}
+
+fn transformed_choice_message(choice: &OtelModelValue) -> Option<OtelModelValue> {
+    let fields = choice.as_object()?;
+    let message = fields
+        .get("message")
+        .and_then(OtelModelValue::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let mut messages = transform_messages(&OtelModelValue::Array(vec![OtelModelValue::Object(
+        message,
+    )]));
+    let OtelModelValue::Object(mut parts_message) = messages.pop()? else {
+        return None;
+    };
+    let reason = fields
+        .get("finish_reason")
+        .filter(|reason| !matches!(reason, OtelModelValue::Null(())));
+    if let Some(text) = reason {
+        parts_message.insert("finish_reason".to_owned(), text.clone());
     }
-    transformed
+    Some(OtelModelValue::Object(parts_message))
+}
+
+fn transformed_response_item(item: &OtelModelValue) -> Option<OtelModelValue> {
+    let fields = item.as_object()?;
+    match fields.get("type").and_then(OtelModelValue::as_str) {
+        Some("message") => response_message(fields),
+        Some("function_call") => Some(function_call_message(fields)),
+        Some(_) | None => None,
+    }
+}
+
+fn response_message(fields: &BTreeMap<String, OtelModelValue>) -> Option<OtelModelValue> {
+    let role = fields
+        .get("role")
+        .and_then(OtelModelValue::as_str)
+        .unwrap_or("assistant");
+    let parts = output_text_parts(fields.get("content"));
+    (!parts.is_empty()).then(|| text_message(role, parts))
 }
 
 fn output_text_parts(content: Option<&OtelModelValue>) -> Vec<OtelModelValue> {

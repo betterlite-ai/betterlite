@@ -1,7 +1,7 @@
 mod tests;
 mod values;
 
-use betterlite_logging::otel::mappers::base::{AttributeMapper as _, SpanData};
+use betterlite_logging::otel::mappers::base::{AttributeMap, AttributeMapper as _, SpanData};
 use betterlite_logging::otel::mappers::genai::GenAIMapper;
 use betterlite_logging::otel::mappers::legacy::LegacyMapper;
 use betterlite_logging::otel::mappers::utils::{
@@ -24,7 +24,7 @@ use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::{Value, json};
 use std::collections::BTreeMap;
-use values::{attributes_record, invalid_input, metadata_error};
+use values::{attributes_record, helper_error};
 
 pub(crate) struct Op;
 
@@ -38,9 +38,9 @@ pub(crate) enum Input {
     #[serde(rename = "genai_service")]
     GenaiService(ServiceInput),
     #[serde(rename = "genai_mcp_tool_call")]
-    GenaiMcpToolCall(ToolCallInput),
+    GenaiMcpToolCall(McpInput),
     #[serde(rename = "genai_mcp_list_tools")]
-    GenaiMcpListTools(ListToolsInput),
+    GenaiMcpListTools(McpInput),
     #[serde(rename = "legacy_llm_call")]
     LegacyLlmCall(LlmCallInput),
     #[serde(rename = "tool_definition_budget")]
@@ -80,15 +80,22 @@ pub(crate) struct ServiceInput {
 }
 
 #[derive(Deserialize)]
-pub(crate) struct ToolCallInput {
+pub(crate) struct McpInput {
     payload: Box<Payload>,
     #[serde(default)]
     capture_content: bool,
 }
 
-#[derive(Deserialize)]
-pub(crate) struct ListToolsInput {
-    payload: Box<Payload>,
+#[derive(Clone, Copy)]
+enum McpMethod {
+    ToolCall,
+    ListTools,
+}
+
+#[derive(Clone, Copy)]
+enum Vocabulary {
+    Genai,
+    Legacy,
 }
 
 #[derive(Deserialize)]
@@ -112,12 +119,12 @@ impl crate::helpers::Helper for Op {
 
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         let value = match input {
-            Input::GenaiLlmCall(call) => genai_llm_call(call)?,
+            Input::GenaiLlmCall(call) => llm_call_record(call, Vocabulary::Genai)?,
             Input::GenaiGuardrail(guardrail) => guardrail_record(&guardrail.entry),
             Input::GenaiService(service) => service_record(service)?,
-            Input::GenaiMcpToolCall(call) => tool_call_record(call)?,
-            Input::GenaiMcpListTools(list) => list_tools_record(&list.payload)?,
-            Input::LegacyLlmCall(call) => legacy_llm_call(call)?,
+            Input::GenaiMcpToolCall(call) => mcp_record(call, McpMethod::ToolCall)?,
+            Input::GenaiMcpListTools(list) => mcp_record(list, McpMethod::ListTools)?,
+            Input::LegacyLlmCall(call) => llm_call_record(call, Vocabulary::Legacy)?,
             Input::ToolDefinitionBudget(budget_input) => budget_record(budget_input)?,
             Input::Messages(messages) => messages_record(&messages.messages),
             Input::ResponsesApiOutput(responses) => {
@@ -140,36 +147,36 @@ fn llm_call_span(
     options: LLMCallOptions,
 ) -> Result<LLMCallSpanData, Box<crate::helpers::HelperError>> {
     LLMCallSpanData::from_standard_logging_payload(payload, options)
-        .map_err(|error| metadata_error(&error))
+        .map_err(|error| helper_error("MetadataError", error.to_string()))
 }
 
-fn genai_llm_call(input: &LlmCallInput) -> Result<Value, Box<crate::helpers::HelperError>> {
-    let span = llm_call_span(
-        &input.payload,
-        LLMCallOptions {
-            capture_content: input.capture_content,
-            time_to_first_chunk_seconds: input.time_to_first_chunk_seconds,
-            request_route: input.request_route.clone(),
-            trace: TraceControls::default(),
-            session_id: input.session_id.clone(),
-        },
-    )?;
-    let mapper = GenAIMapper {
-        tool_attr_budget: budget(input.tool_attr_budget),
-    };
-    Ok(attributes_record(
-        &mapper.map(&SpanData::LLMCall(&span), &BTreeMap::new()),
-    ))
+fn llm_call_options(input: &LlmCallInput) -> LLMCallOptions {
+    LLMCallOptions {
+        capture_content: input.capture_content,
+        time_to_first_chunk_seconds: input.time_to_first_chunk_seconds,
+        request_route: input.request_route.clone(),
+        trace: TraceControls::default(),
+        session_id: input.session_id.clone(),
+    }
 }
 
-fn legacy_llm_call(input: &LlmCallInput) -> Result<Value, Box<crate::helpers::HelperError>> {
-    let span = llm_call_span(&input.payload, LLMCallOptions::default())?;
-    let mapper = LegacyMapper {
-        tool_attr_budget: budget(input.tool_attr_budget),
-    };
-    Ok(attributes_record(
-        &mapper.map(&SpanData::LLMCall(&span), &BTreeMap::new()),
-    ))
+impl Vocabulary {
+    fn attributes(self, data: &SpanData<'_>, tool_attr_budget: usize) -> AttributeMap {
+        match self {
+            Self::Genai => GenAIMapper { tool_attr_budget }.map(data, &BTreeMap::new()),
+            Self::Legacy => LegacyMapper { tool_attr_budget }.map(data, &BTreeMap::new()),
+        }
+    }
+}
+
+fn llm_call_record(
+    input: &LlmCallInput,
+    vocabulary: Vocabulary,
+) -> Result<Value, Box<crate::helpers::HelperError>> {
+    let span = llm_call_span(&input.payload, llm_call_options(input))?;
+    let attributes =
+        vocabulary.attributes(&SpanData::LLMCall(&span), budget(input.tool_attr_budget));
+    Ok(attributes_record(&attributes))
 }
 
 fn guardrail_record(entry: &MetadataMap) -> Value {
@@ -177,23 +184,29 @@ fn guardrail_record(entry: &MetadataMap) -> Value {
     let mapper = GenAIMapper {
         tool_attr_budget: MAX_TOOL_ATTRS_PER_SPAN,
     };
-    attributes_record(&mapper.map(&SpanData::Guardrail(&span), &BTreeMap::new()))
+    let attributes = mapper.map(&SpanData::Guardrail(&span), &BTreeMap::new());
+    attributes_record(&attributes)
 }
 
-fn service_record(input: &ServiceInput) -> Result<Value, Box<crate::helpers::HelperError>> {
-    let payload = ServiceLoggerPayload {
+fn service_payload(
+    input: &ServiceInput,
+) -> Result<ServiceLoggerPayload, Box<crate::helpers::HelperError>> {
+    Ok(ServiceLoggerPayload {
         service: service_type(&input.service)?,
         call_type: input.call_type.clone(),
         caller: input.caller.clone(),
         error: input.error.clone(),
-    };
+    })
+}
+
+fn service_record(input: &ServiceInput) -> Result<Value, Box<crate::helpers::HelperError>> {
+    let payload = service_payload(input)?;
     let span = ServiceSpanData::from_payload(&payload, &input.event_metadata);
     let mapper = GenAIMapper {
         tool_attr_budget: MAX_TOOL_ATTRS_PER_SPAN,
     };
-    Ok(attributes_record(
-        &mapper.map(&SpanData::Service(&span), &input.environment),
-    ))
+    let attributes = mapper.map(&SpanData::Service(&span), &input.environment);
+    Ok(attributes_record(&attributes))
 }
 
 fn service_type(name: &str) -> Result<ServiceType, Box<crate::helpers::HelperError>> {
@@ -217,31 +230,39 @@ fn service_type(name: &str) -> Result<ServiceType, Box<crate::helpers::HelperErr
         "in_memory_spend_update_queue" => Ok(ServiceType::InMemorySpendUpdateQueue),
         "redis_spend_update_queue" => Ok(ServiceType::RedisSpendUpdateQueue),
         "redis_window_spend_update_queue" => Ok(ServiceType::RedisWindowSpendUpdateQueue),
-        other => Err(invalid_input(format!("unknown service {other}"))),
+        other => Err(helper_error(
+            "InvalidInput",
+            format!("unknown service {other}"),
+        )),
     }
 }
 
-fn tool_call_record(input: &ToolCallInput) -> Result<Value, Box<crate::helpers::HelperError>> {
-    let span =
-        MCPToolCallSpanData::from_standard_logging_payload(&input.payload, input.capture_content)
-            .map_err(|error| metadata_error(&error))?;
-    let mapper = GenAIMapper {
-        tool_attr_budget: MAX_TOOL_ATTRS_PER_SPAN,
+fn mcp_record(
+    input: &McpInput,
+    method: McpMethod,
+) -> Result<Value, Box<crate::helpers::HelperError>> {
+    let attributes = match method {
+        McpMethod::ToolCall => {
+            let span = MCPToolCallSpanData::from_standard_logging_payload(
+                &input.payload,
+                input.capture_content,
+            )
+            .map_err(|error| helper_error("MetadataError", error.to_string()))?;
+            GenAIMapper {
+                tool_attr_budget: MAX_TOOL_ATTRS_PER_SPAN,
+            }
+            .map(&SpanData::MCPToolCall(&span), &BTreeMap::new())
+        }
+        McpMethod::ListTools => {
+            let span = MCPListToolsSpanData::from_standard_logging_payload(&input.payload)
+                .map_err(|error| helper_error("MetadataError", error.to_string()))?;
+            GenAIMapper {
+                tool_attr_budget: MAX_TOOL_ATTRS_PER_SPAN,
+            }
+            .map(&SpanData::MCPListTools(&span), &BTreeMap::new())
+        }
     };
-    Ok(attributes_record(
-        &mapper.map(&SpanData::MCPToolCall(&span), &BTreeMap::new()),
-    ))
-}
-
-fn list_tools_record(payload: &Payload) -> Result<Value, Box<crate::helpers::HelperError>> {
-    let span = MCPListToolsSpanData::from_standard_logging_payload(payload)
-        .map_err(|error| metadata_error(&error))?;
-    let mapper = GenAIMapper {
-        tool_attr_budget: MAX_TOOL_ATTRS_PER_SPAN,
-    };
-    Ok(attributes_record(
-        &mapper.map(&SpanData::MCPListTools(&span), &BTreeMap::new()),
-    ))
+    Ok(attributes_record(&attributes))
 }
 
 fn budget_record(input: &BudgetInput) -> Result<Value, Box<crate::helpers::HelperError>> {
@@ -253,11 +274,25 @@ fn budget_record(input: &BudgetInput) -> Result<Value, Box<crate::helpers::Helpe
     let legacy = LegacyMapper {
         tool_attr_budget: share,
     };
-    Ok(json!({
+    Ok(budget_map(
+        &genai,
+        &legacy,
+        &SpanData::LLMCall(&span),
+        share,
+    ))
+}
+
+fn budget_map(
+    genai: &GenAIMapper,
+    legacy: &LegacyMapper,
+    data: &SpanData<'_>,
+    share: usize,
+) -> Value {
+    json!({
         "budget": share,
-        "genai": attributes_record(&genai.map(&SpanData::LLMCall(&span), &BTreeMap::new())),
-        "legacy": attributes_record(&legacy.map(&SpanData::LLMCall(&span), &BTreeMap::new())),
-    }))
+        "genai": attributes_record(&genai.map(data, &BTreeMap::new())),
+        "legacy": attributes_record(&legacy.map(data, &BTreeMap::new())),
+    })
 }
 
 fn messages_record(messages: &[OtelModelValue]) -> Value {
