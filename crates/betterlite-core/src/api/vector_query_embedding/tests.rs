@@ -104,20 +104,19 @@ impl VectorStoreRouter for FakeRouter {
 
     async fn embedding(
         &self,
-        _entry: EmbeddingEntry,
+        entry: EmbeddingEntry,
         model: &str,
         input: &[String],
         configuration: Params,
     ) -> Result<EmbeddingResponse, BaseLlmException> {
-        Err(BaseLlmException {
-            status_code: 404,
-            message: format!(
-                "no deployment for {model} ({} inputs, {} options)",
-                input.len(),
-                configuration.len()
-            ),
-            headers: BTreeMap::new(),
-        })
+        ScriptedExecutor(None)
+            .embed(entry, model, &input.join(" "), &configuration)
+            .await
+            .map_err(|error| BaseLlmException {
+                status_code: 404,
+                message: error.to_string(),
+                headers: BTreeMap::new(),
+            })
     }
 }
 
