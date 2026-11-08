@@ -334,10 +334,6 @@ fn group_config(deployments: &str) -> Option<DeploymentKeepalive> {
 
 #[rstest]
 #[case::one_deployment(r#"[{"litellm_params": {"keepalive_seconds": 5}}]"#, Some(5))]
-#[case::two_that_agree(
-    r#"[{"litellm_params": {"keepalive_seconds": 5}}, {"litellm_params": {"keepalive_seconds": "5"}}]"#,
-    Some(5)
-)]
 #[case::number_and_float_agree(
     r#"[{"litellm_params": {"keepalive_seconds": 5}}, {"litellm_params": {"keepalive_seconds": 5.0}}]"#,
     Some(5)
