@@ -11,7 +11,7 @@ use tokio::sync::mpsc;
 
 use super::CallbackLogger;
 use super::error::LoggerError;
-use super::event::LoggerEvent;
+use super::event::{GuardrailRequestSnapshot, LoggerEvent};
 use super::resolver::LoggerResolver;
 use crate::fields::payload::StandardLoggingPayload;
 use crate::registry::CallbackRegistry;
@@ -110,6 +110,27 @@ impl CallbackLogger for SuccessOnlyLogger {
     }
 }
 
+struct SnapshotLogger {
+    name: String,
+    fingerprints: Arc<Mutex<Vec<Option<String>>>>,
+}
+
+#[async_trait]
+impl CallbackLogger for SnapshotLogger {
+    fn callback_name(&self) -> &str {
+        &self.name
+    }
+
+    async fn async_log_success_event(&self, event: Arc<LoggerEvent>) -> Result<(), LoggerError> {
+        let fingerprint = event
+            .guardrail_snapshot
+            .as_ref()
+            .map(|snapshot| snapshot.fingerprint.clone());
+        self.fingerprints.lock().unwrap().push(fingerprint);
+        Ok(())
+    }
+}
+
 struct RecordingLogger {
     name: String,
     calls: Calls,
@@ -175,6 +196,7 @@ fn event(stream: bool) -> Arc<LoggerEvent> {
         payload: Arc::new(payload),
         dynamic_params: Arc::new(Json::Object(IndexMap::new())),
         stream,
+        guardrail_snapshot: None,
     })
 }
 
@@ -287,10 +309,40 @@ fn logger_event_carries_the_payload_dynamic_params_and_stream_flag() {
         payload: Arc::new(payload),
         dynamic_params: Arc::new(params.clone()),
         stream: true,
+        guardrail_snapshot: None,
     };
     assert_eq!(event.payload.model, "gpt-4o");
     assert_eq!(*event.dynamic_params, params);
     assert!(event.stream);
+    assert!(event.guardrail_snapshot.is_none());
+}
+
+#[tokio::test]
+async fn a_logger_reads_the_guardrail_snapshot_from_the_event() {
+    let fingerprints = Arc::new(Mutex::new(Vec::new()));
+    let logger = SnapshotLogger {
+        name: "shadow".to_owned(),
+        fingerprints: Arc::clone(&fingerprints),
+    };
+    let snapshot = GuardrailRequestSnapshot {
+        body: IndexMap::from([(
+            "messages".to_owned(),
+            Json::List(vec![Json::Object(IndexMap::new())]),
+        )]),
+        fingerprint: "6f1c".to_owned(),
+    };
+    let payload: StandardLoggingPayload = serde_json::from_str(PAYLOAD).unwrap();
+    let event = Arc::new(LoggerEvent {
+        payload: Arc::new(payload),
+        dynamic_params: Arc::new(Json::Object(IndexMap::new())),
+        stream: false,
+        guardrail_snapshot: Some(Arc::new(snapshot)),
+    });
+    logger.async_log_success_event(event).await.unwrap();
+    assert_eq!(
+        fingerprints.lock().unwrap().clone(),
+        [Some("6f1c".to_owned())]
+    );
 }
 
 #[test]
