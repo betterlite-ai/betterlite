@@ -18,114 +18,62 @@ use super::records::{
 
 struct FixtureConfig;
 
-impl BaseContainerConfig for FixtureConfig {
-    fn get_supported_openai_params(&self) -> Vec<String> {
-        Vec::new()
-    }
+type Prepared = (String, Map<String, Value>);
+type Reply<T> = Result<T, ContainerError>;
 
-    fn map_openai_params(
-        &self,
-        _container_create_optional_params: &Map<String, Value>,
-        _drop_params: bool,
-    ) -> Map<String, Value> {
+#[rustfmt::skip]
+impl BaseContainerConfig for FixtureConfig {
+    fn get_supported_openai_params(&self) -> Vec<String> { Vec::new() }
+
+    fn map_openai_params(&self, _params: &Map<String, Value>, _drop_params: bool) -> Map<String, Value> {
         Map::new()
     }
 
     fn transform_container_create_request(
-        &self,
-        _name: &str,
-        _container_create_optional_request_params: &Map<String, Value>,
-        _context: ContainerRequestContext<'_>,
-    ) -> Map<String, Value> {
-        Map::new()
-    }
+        &self, _name: &str, _params: &Map<String, Value>, _context: ContainerRequestContext<'_>,
+    ) -> Map<String, Value> { Map::new() }
 
-    fn transform_container_create_response(
-        &self,
-        _raw_response: &[u8],
-    ) -> Result<ContainerObject, ContainerError> {
+    fn transform_container_create_response(&self, _raw: &[u8]) -> Reply<ContainerObject> {
         Err(ContainerError::ApiBaseRequired)
     }
 
     fn transform_container_list_request(
-        &self,
-        _api_base: &str,
-        _context: ContainerRequestContext<'_>,
-        _query: &ContainerListQuery<'_>,
-    ) -> (String, Map<String, Value>) {
-        (String::new(), Map::new())
-    }
+        &self, _base: &str, _context: ContainerRequestContext<'_>, _query: &ContainerListQuery<'_>,
+    ) -> Prepared { (String::new(), Map::new()) }
 
-    fn transform_container_list_response(
-        &self,
-        _raw_response: &[u8],
-    ) -> Result<ContainerListResponse, ContainerError> {
+    fn transform_container_list_response(&self, _raw: &[u8]) -> Reply<ContainerListResponse> {
         Err(ContainerError::ApiBaseRequired)
     }
 
     fn transform_container_retrieve_request(
-        &self,
-        _container_id: &str,
-        _api_base: &str,
-        _context: ContainerRequestContext<'_>,
-    ) -> (String, Map<String, Value>) {
-        (String::new(), Map::new())
-    }
+        &self, _id: &str, _base: &str, _context: ContainerRequestContext<'_>,
+    ) -> Prepared { (String::new(), Map::new()) }
 
-    fn transform_container_retrieve_response(
-        &self,
-        _raw_response: &[u8],
-    ) -> Result<ContainerObject, ContainerError> {
+    fn transform_container_retrieve_response(&self, _raw: &[u8]) -> Reply<ContainerObject> {
         Err(ContainerError::ApiBaseRequired)
     }
 
     fn transform_container_delete_request(
-        &self,
-        _container_id: &str,
-        _api_base: &str,
-        _context: ContainerRequestContext<'_>,
-    ) -> (String, Map<String, Value>) {
-        (String::new(), Map::new())
-    }
+        &self, _id: &str, _base: &str, _context: ContainerRequestContext<'_>,
+    ) -> Prepared { (String::new(), Map::new()) }
 
-    fn transform_container_delete_response(
-        &self,
-        _raw_response: &[u8],
-    ) -> Result<DeleteContainerResult, ContainerError> {
+    fn transform_container_delete_response(&self, _raw: &[u8]) -> Reply<DeleteContainerResult> {
         Err(ContainerError::ApiBaseRequired)
     }
 
     fn transform_container_file_list_request(
-        &self,
-        _container_id: &str,
-        _api_base: &str,
-        _context: ContainerRequestContext<'_>,
-        _query: &ContainerListQuery<'_>,
-    ) -> (String, Map<String, Value>) {
-        (String::new(), Map::new())
-    }
+        &self, _id: &str, _base: &str, _context: ContainerRequestContext<'_>, _query: &ContainerListQuery<'_>,
+    ) -> Prepared { (String::new(), Map::new()) }
 
-    fn transform_container_file_list_response(
-        &self,
-        _raw_response: &[u8],
-    ) -> Result<ContainerFileListResponse, ContainerError> {
+    fn transform_container_file_list_response(&self, _raw: &[u8]) -> Reply<ContainerFileListResponse> {
         Err(ContainerError::ApiBaseRequired)
     }
 
     fn transform_container_file_content_request(
-        &self,
-        _container_id: &str,
-        _file_id: &str,
-        _api_base: &str,
-        _context: ContainerRequestContext<'_>,
-    ) -> (String, Map<String, Value>) {
-        (String::new(), Map::new())
-    }
+        &self, _id: &str, _file: &str, _base: &str, _context: ContainerRequestContext<'_>,
+    ) -> Prepared { (String::new(), Map::new()) }
 
-    fn transform_container_file_content_response(
-        &self,
-        _raw_response: &[u8],
-    ) -> Result<Vec<u8>, ContainerError> {
+    fn transform_container_file_content_response(&self, _raw: &[u8]) -> Reply<Vec<u8>> {
         Err(ContainerError::ApiBaseRequired)
     }
 }
@@ -492,75 +440,63 @@ fn params_list_optional_keeps_declared_key_names() {
     );
 }
 
-fn list_container_files_endpoint() -> ContainerEndpoint {
-    ContainerEndpoint {
-        name: "list_container_files".to_owned(),
-        async_name: "alist_container_files".to_owned(),
-        path: "/containers/{container_id}/files".to_owned(),
-        method: "GET".to_owned(),
-        path_params: vec!["container_id".to_owned()],
-        query_params: vec!["after".to_owned(), "limit".to_owned(), "order".to_owned()],
-        response_type: "ContainerFileListResponse".to_owned(),
-        is_multipart: false,
-        returns_binary: false,
+const PINNED_CATALOG: &str = r#"[
+    {
+        "name": "list_container_files",
+        "async_name": "alist_container_files",
+        "path": "/containers/{container_id}/files",
+        "method": "GET",
+        "path_params": ["container_id"],
+        "query_params": ["after", "limit", "order"],
+        "response_type": "ContainerFileListResponse",
+        "is_multipart": false,
+        "returns_binary": false
+    },
+    {
+        "name": "upload_container_file",
+        "async_name": "aupload_container_file",
+        "path": "/containers/{container_id}/files",
+        "method": "POST",
+        "path_params": ["container_id"],
+        "query_params": [],
+        "response_type": "ContainerFileObject",
+        "is_multipart": true,
+        "returns_binary": false
+    },
+    {
+        "name": "retrieve_container_file",
+        "async_name": "aretrieve_container_file",
+        "path": "/containers/{container_id}/files/{file_id}",
+        "method": "GET",
+        "path_params": ["container_id", "file_id"],
+        "query_params": [],
+        "response_type": "ContainerFileObject",
+        "is_multipart": false,
+        "returns_binary": false
+    },
+    {
+        "name": "delete_container_file",
+        "async_name": "adelete_container_file",
+        "path": "/containers/{container_id}/files/{file_id}",
+        "method": "DELETE",
+        "path_params": ["container_id", "file_id"],
+        "query_params": [],
+        "response_type": "DeleteContainerFileResponse",
+        "is_multipart": false,
+        "returns_binary": false
+    },
+    {
+        "name": "retrieve_container_file_content",
+        "async_name": "aretrieve_container_file_content",
+        "path": "/containers/{container_id}/files/{file_id}/content",
+        "method": "GET",
+        "path_params": ["container_id", "file_id"],
+        "query_params": [],
+        "response_type": "raw",
+        "is_multipart": false,
+        "returns_binary": true
     }
-}
-
-fn upload_container_file_endpoint() -> ContainerEndpoint {
-    ContainerEndpoint {
-        name: "upload_container_file".to_owned(),
-        async_name: "aupload_container_file".to_owned(),
-        path: "/containers/{container_id}/files".to_owned(),
-        method: "POST".to_owned(),
-        path_params: vec!["container_id".to_owned()],
-        query_params: Vec::new(),
-        response_type: "ContainerFileObject".to_owned(),
-        is_multipart: true,
-        returns_binary: false,
-    }
-}
-
-fn retrieve_container_file_endpoint() -> ContainerEndpoint {
-    ContainerEndpoint {
-        name: "retrieve_container_file".to_owned(),
-        async_name: "aretrieve_container_file".to_owned(),
-        path: "/containers/{container_id}/files/{file_id}".to_owned(),
-        method: "GET".to_owned(),
-        path_params: vec!["container_id".to_owned(), "file_id".to_owned()],
-        query_params: Vec::new(),
-        response_type: "ContainerFileObject".to_owned(),
-        is_multipart: false,
-        returns_binary: false,
-    }
-}
-
-fn delete_container_file_endpoint() -> ContainerEndpoint {
-    ContainerEndpoint {
-        name: "delete_container_file".to_owned(),
-        async_name: "adelete_container_file".to_owned(),
-        path: "/containers/{container_id}/files/{file_id}".to_owned(),
-        method: "DELETE".to_owned(),
-        path_params: vec!["container_id".to_owned(), "file_id".to_owned()],
-        query_params: Vec::new(),
-        response_type: "DeleteContainerFileResponse".to_owned(),
-        is_multipart: false,
-        returns_binary: false,
-    }
-}
-
-fn retrieve_container_file_content_endpoint() -> ContainerEndpoint {
-    ContainerEndpoint {
-        name: "retrieve_container_file_content".to_owned(),
-        async_name: "aretrieve_container_file_content".to_owned(),
-        path: "/containers/{container_id}/files/{file_id}/content".to_owned(),
-        method: "GET".to_owned(),
-        path_params: vec!["container_id".to_owned(), "file_id".to_owned()],
-        query_params: Vec::new(),
-        response_type: "raw".to_owned(),
-        is_multipart: false,
-        returns_binary: true,
-    }
-}
+]"#;
 
 #[test]
 fn catalog_contains_the_five_pinned_endpoints_in_order() {
@@ -597,16 +533,8 @@ fn catalog_contains_the_five_pinned_endpoints_in_order() {
 
 #[test]
 fn catalog_entries_carry_every_pinned_field() {
-    assert_eq!(
-        container_endpoints(),
-        vec![
-            list_container_files_endpoint(),
-            upload_container_file_endpoint(),
-            retrieve_container_file_endpoint(),
-            delete_container_file_endpoint(),
-            retrieve_container_file_content_endpoint(),
-        ]
-    );
+    let expected: Vec<ContainerEndpoint> = serde_json::from_str(PINNED_CATALOG).unwrap();
+    assert_eq!(container_endpoints(), expected);
 }
 
 #[test]

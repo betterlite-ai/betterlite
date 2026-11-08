@@ -16,6 +16,8 @@ use serde_json::{Map, Value, json};
 use crate::helpers::{Helper, HelperError, HelperResult};
 
 type Object = Map<String, Value>;
+type Prepared = (String, Object);
+type Reply<T> = Result<T, ContainerError>;
 
 #[derive(Debug, Clone, Copy, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -68,122 +70,70 @@ pub(crate) enum Input {
 
 struct FixtureConfig;
 
+// The cases only reach the BaseContainerConfig defaults, so the required methods stay unimplemented stubs
+#[rustfmt::skip]
 impl BaseContainerConfig for FixtureConfig {
-    fn get_supported_openai_params(&self) -> Vec<String> {
-        Vec::new()
-    }
+    fn get_supported_openai_params(&self) -> Vec<String> { Vec::new() }
 
-    fn map_openai_params(&self, _params: &Object, _drop_params: bool) -> Object {
-        Object::new()
-    }
+    fn map_openai_params(&self, _params: &Object, _drop_params: bool) -> Object { Object::new() }
 
     // ast-grep-ignore: no-long-names
     fn transform_container_create_request(
-        &self,
-        _name: &str,
-        _params: &Object,
-        _context: ContainerRequestContext<'_>,
-    ) -> Object {
-        Object::new()
-    }
+        &self, _name: &str, _params: &Object, _context: ContainerRequestContext<'_>,
+    ) -> Object { Object::new() }
 
     // ast-grep-ignore: no-long-names
-    fn transform_container_create_response(
-        &self,
-        _raw_response: &[u8],
-    ) -> Result<ContainerObject, ContainerError> {
+    fn transform_container_create_response(&self, _raw: &[u8]) -> Reply<ContainerObject> {
         Err(ContainerError::ApiBaseRequired)
     }
 
     // ast-grep-ignore: no-long-names
     fn transform_container_list_request(
-        &self,
-        _api_base: &str,
-        _context: ContainerRequestContext<'_>,
-        _query: &ContainerListQuery<'_>,
-    ) -> (String, Object) {
-        (String::new(), Object::new())
-    }
+        &self, _base: &str, _context: ContainerRequestContext<'_>, _query: &ContainerListQuery<'_>,
+    ) -> Prepared { (String::new(), Object::new()) }
 
     // ast-grep-ignore: no-long-names
-    fn transform_container_list_response(
-        &self,
-        _raw_response: &[u8],
-    ) -> Result<ContainerListResponse, ContainerError> {
+    fn transform_container_list_response(&self, _raw: &[u8]) -> Reply<ContainerListResponse> {
         Err(ContainerError::ApiBaseRequired)
     }
 
     // ast-grep-ignore: no-long-names
     fn transform_container_retrieve_request(
-        &self,
-        _container_id: &str,
-        _api_base: &str,
-        _context: ContainerRequestContext<'_>,
-    ) -> (String, Object) {
-        (String::new(), Object::new())
-    }
+        &self, _id: &str, _base: &str, _context: ContainerRequestContext<'_>,
+    ) -> Prepared { (String::new(), Object::new()) }
 
     // ast-grep-ignore: no-long-names
-    fn transform_container_retrieve_response(
-        &self,
-        _raw_response: &[u8],
-    ) -> Result<ContainerObject, ContainerError> {
+    fn transform_container_retrieve_response(&self, _raw: &[u8]) -> Reply<ContainerObject> {
         Err(ContainerError::ApiBaseRequired)
     }
 
     // ast-grep-ignore: no-long-names
     fn transform_container_delete_request(
-        &self,
-        _container_id: &str,
-        _api_base: &str,
-        _context: ContainerRequestContext<'_>,
-    ) -> (String, Object) {
-        (String::new(), Object::new())
-    }
+        &self, _id: &str, _base: &str, _context: ContainerRequestContext<'_>,
+    ) -> Prepared { (String::new(), Object::new()) }
 
     // ast-grep-ignore: no-long-names
-    fn transform_container_delete_response(
-        &self,
-        _raw_response: &[u8],
-    ) -> Result<DeleteContainerResult, ContainerError> {
+    fn transform_container_delete_response(&self, _raw: &[u8]) -> Reply<DeleteContainerResult> {
         Err(ContainerError::ApiBaseRequired)
     }
 
     // ast-grep-ignore: no-long-names
     fn transform_container_file_list_request(
-        &self,
-        _container_id: &str,
-        _api_base: &str,
-        _context: ContainerRequestContext<'_>,
-        _query: &ContainerListQuery<'_>,
-    ) -> (String, Object) {
-        (String::new(), Object::new())
-    }
+        &self, _id: &str, _base: &str, _context: ContainerRequestContext<'_>, _query: &ContainerListQuery<'_>,
+    ) -> Prepared { (String::new(), Object::new()) }
 
     // ast-grep-ignore: no-long-names
-    fn transform_container_file_list_response(
-        &self,
-        _raw_response: &[u8],
-    ) -> Result<ContainerFileListResponse, ContainerError> {
+    fn transform_container_file_list_response(&self, _raw: &[u8]) -> Reply<ContainerFileListResponse> {
         Err(ContainerError::ApiBaseRequired)
     }
 
     // ast-grep-ignore: no-long-names
     fn transform_container_file_content_request(
-        &self,
-        _container_id: &str,
-        _file_id: &str,
-        _api_base: &str,
-        _context: ContainerRequestContext<'_>,
-    ) -> (String, Object) {
-        (String::new(), Object::new())
-    }
+        &self, _id: &str, _file: &str, _base: &str, _context: ContainerRequestContext<'_>,
+    ) -> Prepared { (String::new(), Object::new()) }
 
     // ast-grep-ignore: no-long-names
-    fn transform_container_file_content_response(
-        &self,
-        _raw_response: &[u8],
-    ) -> Result<Vec<u8>, ContainerError> {
+    fn transform_container_file_content_response(&self, _raw: &[u8]) -> Reply<Vec<u8>> {
         Err(ContainerError::ApiBaseRequired)
     }
 }
@@ -205,57 +155,44 @@ impl From<serde_json::Error> for Box<HelperError> {
     }
 }
 
-fn round_trip<T>(value: &Value) -> HelperResult
+enum Action<'names> {
+    Decode,
+    Fields(&'names [String]),
+}
+
+fn apply_to<T>(
+    value: &Value,
+    action: &Action<'_>,
+    field: fn(&T, &str) -> Option<Value>,
+) -> HelperResult
 where
     T: DeserializeOwned + serde::Serialize,
 {
     match serde_json::from_value::<T>(value.clone()) {
-        Ok(record) => Ok(serde_json::to_value(record)?),
+        Ok(record) => match action {
+            Action::Decode => Ok(serde_json::to_value(record)?),
+            Action::Fields(names) => Ok(Value::Array(
+                names
+                    .iter()
+                    .map(|name| field(&record, name).unwrap_or(Value::Null))
+                    .collect(),
+            )),
+        },
         Err(error) => Err(validation_error(error.to_string())),
     }
 }
 
-fn decode_record(entry: &RecordEntry) -> HelperResult {
+fn apply(entry: &RecordEntry, action: &Action<'_>) -> HelperResult {
     match entry.kind {
-        RecordName::ContainerObject => round_trip::<ContainerObject>(&entry.value),
-        RecordName::DeleteResult => round_trip::<DeleteContainerResult>(&entry.value),
-        RecordName::ListResponse => round_trip::<ContainerListResponse>(&entry.value),
-        RecordName::FileObject => round_trip::<ContainerFileObject>(&entry.value),
-        RecordName::FileListResponse => round_trip::<ContainerFileListResponse>(&entry.value),
-        RecordName::DeleteFileResponse => round_trip::<DeleteContainerFileResponse>(&entry.value),
-    }
-}
-
-fn field_list<T>(
-    value: &Value,
-    names: &[String],
-    field: fn(&T, &str) -> Option<Value>,
-) -> HelperResult
-where
-    T: DeserializeOwned,
-{
-    match serde_json::from_value::<T>(value.clone()) {
-        Ok(record) => Ok(Value::Array(
-            names
-                .iter()
-                .map(|name| field(&record, name).unwrap_or(Value::Null))
-                .collect(),
-        )),
-        Err(error) => Err(validation_error(error.to_string())),
-    }
-}
-
-fn field_values(entry: &RecordEntry, names: &[String]) -> HelperResult {
-    match entry.kind {
-        RecordName::ContainerObject => field_list(&entry.value, names, ContainerObject::field),
-        RecordName::DeleteResult => field_list(&entry.value, names, DeleteContainerResult::field),
-        RecordName::ListResponse => field_list(&entry.value, names, ContainerListResponse::field),
-        RecordName::FileObject => field_list(&entry.value, names, ContainerFileObject::field),
+        RecordName::ContainerObject => apply_to(&entry.value, action, ContainerObject::field),
+        RecordName::DeleteResult => apply_to(&entry.value, action, DeleteContainerResult::field),
+        RecordName::ListResponse => apply_to(&entry.value, action, ContainerListResponse::field),
+        RecordName::FileObject => apply_to(&entry.value, action, ContainerFileObject::field),
         RecordName::FileListResponse => {
-            field_list(&entry.value, names, ContainerFileListResponse::field)
+            apply_to(&entry.value, action, ContainerFileListResponse::field)
         }
         RecordName::DeleteFileResponse => {
-            field_list(&entry.value, names, DeleteContainerFileResponse::field)
+            apply_to(&entry.value, action, DeleteContainerFileResponse::field)
         }
     }
 }
@@ -297,10 +234,10 @@ impl Helper for Op {
         match input {
             Input::RecordDecode { records } => records
                 .iter()
-                .map(decode_record)
+                .map(|record| apply(record, &Action::Decode))
                 .collect::<Result<Vec<Value>, _>>()
                 .map(Value::Array),
-            Input::RecordField { record, names } => field_values(record, names),
+            Input::RecordField { record, names } => apply(record, &Action::Fields(names)),
             Input::EndpointCatalog => {
                 serde_json::to_value(container_endpoints()).map_err(Box::<HelperError>::from)
             }
