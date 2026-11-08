@@ -4,7 +4,6 @@ use crate::version_convert::JsonObject;
 
 use crate::version_convert::version_conversion::error::ConvertError;
 use crate::version_convert::version_conversion::json::encode;
-use crate::version_convert::version_conversion::request::original;
 
 use super::records::{
     AuthenticationRequest, PushConfigAuthentication, PushConfigEnvelope, PushNotificationConfig,
@@ -15,7 +14,7 @@ pub(super) fn lower_set(request: &AgentJson) -> Result<JsonObject, ConvertError>
     let envelope: PushConfigEnvelope =
         serde_json::from_value(request.clone()).map_err(ConvertError::Decode)?;
     let Some(params) = flatten(envelope) else {
-        return original(request);
+        return serde_json::from_value(request.clone()).map_err(ConvertError::Decode);
     };
     encode(&params)
 }

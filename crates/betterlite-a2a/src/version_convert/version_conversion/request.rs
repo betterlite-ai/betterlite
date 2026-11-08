@@ -48,7 +48,7 @@ pub(super) fn lower(request: &AgentJson, method: &str) -> Result<JsonObject, Con
         "tasks/pushNotificationConfig/list" => lower_list_push_configs(request),
         "tasks/pushNotificationConfig/delete" => lower_delete_push_config(request),
         "tasks/list" => lower_list_tasks(request),
-        _ => original(request),
+        _ => serde_json::from_value(request.clone()).map_err(ConvertError::Decode),
     }
 }
 
@@ -61,12 +61,6 @@ pub(super) fn map_task_state(name: &str) -> Option<String> {
     V0_3_TASK_STATES
         .contains(&candidate.as_str())
         .then_some(candidate)
-}
-
-pub(super) fn original(request: &AgentJson) -> Result<JsonObject, ConvertError> {
-    let decoded: JsonObject =
-        serde_json::from_value(request.clone()).map_err(ConvertError::Decode)?;
-    Ok(decoded)
 }
 
 #[rustfmt::skip]
