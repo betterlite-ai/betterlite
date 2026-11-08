@@ -1,0 +1,13 @@
+kind: helper
+name: rubrik-delivery-queue-overflow-drop-oldest
+call:
+  b3976:
+    environment: {RUBRIK_BATCH_SIZE: "20000", RUBRIK_API_KEY: test-key}
+    init: {api_base: "https://rubrik.test"}
+    replies: []
+    clock: [0.0, 100.0]
+    actions:
+      - {do: append_sequence, count: 10003}
+      - {do: append_sequence, count: 4}
+env: {}
+compare: {ignore: []}
