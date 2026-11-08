@@ -1,6 +1,7 @@
 from typing import TypeAlias, cast
 from unittest.mock import patch
 
+from litellm.exceptions import ImageFetchError
 from litellm.litellm_core_utils.prompt_templates import factory
 from litellm.litellm_core_utils.prompt_templates.factory import (
     _anthropic_content_element_factory,  # pyright: ignore[reportPrivateUsage]
@@ -25,6 +26,12 @@ class _MappedConvert:
         self.mapping = mapping
 
     def __call__(self, url: str) -> str:
+        if url not in self.mapping:
+            raise ImageFetchError(
+                message=f"Error: Unable to fetch image from URL after 3 attempts. url={url}",
+                model=None,
+                llm_provider="anthropic",
+            )
         return self.mapping[url]
 
 

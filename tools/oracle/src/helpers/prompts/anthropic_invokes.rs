@@ -13,7 +13,11 @@ use betterlite_prompts::media::inline::RemoteMediaFetcher;
 use betterlite_prompts::media_fetch::error::ImageFetchError;
 use serde::Deserialize;
 
-use crate::helpers::{Helper, HelperError, HelperResult};
+use crate::helpers::{Helper, HelperResult};
+
+mod failures;
+
+use self::failures::{file_failure, helper_failure};
 
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -74,14 +78,15 @@ impl Helper for Op {
                     &call.web_search_results,
                     &call.tool_results,
                 )
-                .map_err(|error| helper_error("InvokeError", None, error))?,
+                // LiteLLM's argument ValueError escapes without a status code
+                .map_err(|error| helper_failure(None, error.to_string()))?,
             )
-            .map_err(|error| helper_error("SerializationError", None, error)),
+            .map_err(|error| helper_failure(None, error.to_string())),
             Input::CacheControl(call) => serde_json::to_value(add_cache_control_to_content(
                 call.element.clone(),
                 &call.original,
             ))
-            .map_err(|error| helper_error("SerializationError", None, error)),
+            .map_err(|error| helper_failure(None, error.to_string())),
             Input::DocumentType(call) => document_type(call),
             Input::ProcessFileMessage(call) => process_file_messages(call),
         }
@@ -132,7 +137,7 @@ fn document_type(call: &DocumentTypeCall) -> HelperResult {
         "infer": inferred,
         "factory": content_element_factory(&call.chunk),
     }))
-    .map_err(|error| helper_error("SerializationError", None, error))
+    .map_err(|error| helper_failure(None, error.to_string()))
 }
 
 fn process_file_messages(call: &FileMessageCall) -> HelperResult {
@@ -141,27 +146,13 @@ fn process_file_messages(call: &FileMessageCall) -> HelperResult {
     };
     let runtime = tokio::runtime::Builder::new_current_thread()
         .build()
-        .map_err(|error| helper_error("RuntimeError", None, error))?;
+        .map_err(|error| helper_failure(None, error.to_string()))?;
     let mut blocks = Vec::with_capacity(call.messages.len());
     for message in &call.messages {
         let block = runtime
             .block_on(process_openai_file_message(message, &source))
-            .map_err(|error| helper_error("FileMessageError", Some(400), error))?;
+            .map_err(|error| file_failure(&error))?;
         blocks.push(block);
     }
-    serde_json::to_value(blocks).map_err(|error| helper_error("SerializationError", None, error))
-}
-
-fn helper_error<Message>(class: &str, status: Option<u16>, message: Message) -> Box<HelperError>
-where
-    Message: std::fmt::Display,
-{
-    Box::new(HelperError {
-        class: class.to_owned(),
-        status,
-        error_type: None,
-        param: None,
-        code: None,
-        message: message.to_string(),
-    })
+    serde_json::to_value(blocks).map_err(|error| helper_failure(None, error.to_string()))
 }
