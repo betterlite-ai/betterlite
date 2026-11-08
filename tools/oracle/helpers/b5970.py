@@ -2,7 +2,7 @@ import json
 import os
 from collections.abc import Generator
 from contextlib import ExitStack, contextmanager
-from typing import TYPE_CHECKING, TypedDict, cast
+from typing import Protocol, TypeAlias, TypedDict, cast
 from unittest.mock import patch
 from urllib.parse import urlencode
 
@@ -11,18 +11,17 @@ import litellm
 from litellm.caching.in_memory_cache import InMemoryCache
 from litellm.llms.watsonx import common_utils
 from litellm.llms.watsonx.chat.transformation import IBMWatsonXChatConfig
-from litellm.llms.watsonx.common_utils import (  # pyright: ignore[reportPrivateUsage]
+from litellm.llms.watsonx.common_utils import (
     WatsonXAIError,
-    _generate_watsonx_token,
-    _get_api_params,
+    _generate_watsonx_token,  # pyright: ignore[reportPrivateUsage, reportUnknownVariableType]
+    _get_api_params,  # pyright: ignore[reportPrivateUsage, reportUnknownVariableType]
 )
+from litellm.types.llms.watsonx import WatsonXAPIParams
 
-if TYPE_CHECKING:
-    from litellm.types.llms.watsonx import WatsonXAPIParams
-    from pydantic import JsonValue
-
-Json = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
-Object = dict[str, Json]
+Json: TypeAlias = (
+    bool | int | float | str | list["Json"] | dict[str, "Json"] | None
+)
+Object: TypeAlias = dict[str, Json]
 FIELDS = {"env", "routes", "steps"}
 VARIABLES = (
     "WATSONX_IAM_URL",
@@ -46,8 +45,50 @@ VARIABLES = (
     "WX_SPACE_ID",
     "SPACE_ID",
 )
-CONFIG = IBMWatsonXChatConfig()
 DEFAULT_FAILURE_STATUS = 500
+
+
+class ApiParamsResolver(Protocol):
+    def __call__(
+        self, params: Object, model: str | None = None
+    ) -> WatsonXAPIParams: ...
+
+
+class TokenGenerator(Protocol):
+    def __call__(self, api_key: str | None, token: str | None) -> str: ...
+
+
+class CredentialResolver(Protocol):
+    def __call__(
+        self, optional_params: Object, api_key: str | None, api_base: str | None
+    ) -> Object: ...
+
+
+class WatsonxConfig(Protocol):
+    def _get_base_url(self, api_base: str | None) -> str: ...
+
+    def _add_api_version_to_url(self, url: str, api_version: str | None) -> str: ...
+
+    def _prepare_payload(self, model: str, api_params: WatsonXAPIParams) -> Object: ...
+
+    def validate_environment(  # noqa: PLR0913, PLR0917
+        self,
+        headers: dict[str, str],
+        model: str,
+        messages: list[Json],
+        optional_params: Object,
+        litellm_params: Object,
+        api_key: str | None = None,
+        api_base: str | None = None,
+    ) -> Object: ...
+
+
+GET_API_PARAMS = cast("ApiParamsResolver", _get_api_params)
+GENERATE_WATSONX_TOKEN = cast("TokenGenerator", _generate_watsonx_token)
+GET_WATSONX_CREDENTIALS = cast(
+    "CredentialResolver", common_utils.IBMWatsonXMixin.get_watsonx_credentials
+)
+CONFIG = cast("WatsonxConfig", IBMWatsonXChatConfig())
 
 
 class Clock:
@@ -77,16 +118,13 @@ class Transport:
 
     def answer(self, call: Call) -> httpx.Response:
         route = f"{call['method']} {call['url']}"
-        self.requests.append(
-            {
-                "method": call["method"],
-                "url": call["url"],
-                "headers": {
-                    name.lower(): value for name, value in call["headers"].items()
-                },
-                "body": urlencode(call["data"]),
-            }
-        )
+        sent: Object = {
+            "method": call["method"],
+            "url": call["url"],
+            "headers": {name.lower(): value for name, value in call["headers"].items()},
+            "body": urlencode(call["data"]),
+        }
+        self.requests.append(sent)
         replies = self.replies.get(route, [])
         reply = (
             replies.pop(0)
@@ -119,34 +157,19 @@ class Client:
         data: dict[str, str] | None = None,
         **_options: object,
     ) -> httpx.Response:
-        return self.transport.answer(
-            {
-                "method": "POST",
-                "url": url,
-                "headers": dict(headers or {}),
-                "data": dict(data or {}),
-            }
-        )
+        call: Call = {
+            "method": "POST",
+            "url": url,
+            "headers": dict(headers or {}),
+            "data": dict(data or {}),
+        }
+        return self.transport.answer(call)
 
 
 class Input(TypedDict):
     env: Object
     routes: list[Json]
     steps: list[Json]
-
-
-class Step(TypedDict, total=False):
-    op: str
-    params: Object
-    model: str | None
-    api_key: str | None
-    api_base: str | None
-    url: str
-    api_version: str | None
-    api_params: Object
-    headers: Object
-    token: str | None
-    seconds: float
 
 
 def expect_object(value: Json) -> Object:
@@ -192,7 +215,7 @@ def error_tag(error: Exception) -> Json:
         return {"error": "iam_status", "status": error.response.status_code}
     if isinstance(error, httpx.TransportError):
         return {"error": "iam_transport"}
-    if isinstance(error, json.JSONDecodeError | KeyError | TypeError):
+    if isinstance(error, (json.JSONDecodeError, KeyError, TypeError)):
         return {"error": "iam_reply"}
     if isinstance(error, ValueError) and str(error) == "API key is required":
         return {"error": "api_key_required"}
@@ -201,27 +224,32 @@ def error_tag(error: Exception) -> Json:
 
 def api_params_result(params: Object, model: Json) -> Json:
     try:
-        found = _get_api_params(params=params, model=expect_text_or_none(model))
+        found = GET_API_PARAMS(params=params, model=expect_text_or_none(model))
     except WatsonXAIError as error:
         return error_tag(error)
-    return {"api_params": dict(found), "params": params}
+    result: Object = {
+        "api_params": cast("Json", dict(found)),
+        "params": params,
+    }
+    return result
 
 
 def credentials_result(params: Object, api_key: Json, api_base: Json) -> Json:
     try:
-        found = common_utils.IBMWatsonXMixin.get_watsonx_credentials(
+        found = GET_WATSONX_CREDENTIALS(
             optional_params=params,
             api_key=expect_text_or_none(api_key),
             api_base=expect_text_or_none(api_base),
         )
     except WatsonXAIError as error:
         return error_tag(error)
-    return {
+    result: Object = {
         "api_key": found["api_key"],
         "api_base": found["api_base"],
         "token": found["token"],
         "params": params,
     }
+    return result
 
 
 def base_url_result(api_base: Json) -> Json:
@@ -243,10 +271,9 @@ def api_version_result(url: str, api_version: Json) -> Json:
 
 
 def payload_result(model: str, api_params: Object) -> Json:
-    found = CONFIG._prepare_payload(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    return CONFIG._prepare_payload(  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
         model=model, api_params=cast("WatsonXAPIParams", api_params)
     )
-    return cast("JsonValue", found)
 
 
 def authorization_result(headers: Object, params: Object, api_key: Json) -> Json:
@@ -270,15 +297,16 @@ def authorization_result(headers: Object, params: Object, api_key: Json) -> Json
         json.JSONDecodeError,
     ) as error:
         return error_tag(error)
-    return {
+    result: Object = {
         "headers": {name.lower(): value for name, value in resolved.items()},
         "params": params,
     }
+    return result
 
 
 def generate_result(api_key: Json, token: Json) -> Json:
     try:
-        found = _generate_watsonx_token(
+        found = GENERATE_WATSONX_TOKEN(
             api_key=expect_text_or_none(api_key),
             token=expect_text_or_none(token),
         )
@@ -298,6 +326,7 @@ def generate_result(api_key: Json, token: Json) -> Json:
 
 def run_step(step: Object, clock: Clock) -> Json:
     operation = expect_text(step["op"])
+    result: Json = None
     match operation:
         case "api_params":
             result = api_params_result(expect_object(step["params"]), step.get("model"))
@@ -325,7 +354,6 @@ def run_step(step: Object, clock: Clock) -> Json:
             result = generate_result(step.get("api_key"), step.get("token"))
         case "advance":
             clock.now += expect_number(step["seconds"])
-            result = None
         case _:
             raise ValueError(f"unknown b5970 step: {operation}")
     return result
@@ -356,7 +384,9 @@ def patched_world(env: Object, transport: Transport, clock: Clock) -> Generator[
     try:
         with ExitStack() as stack:
             stack.enter_context(patch.object(common_utils, "iam_token_cache", cache))
-            stack.enter_context(patch.object(litellm, "module_level_client", Client(transport)))
+            stack.enter_context(
+                patch.object(litellm, "module_level_client", Client(transport))
+            )
             yield
     finally:
         for name in VARIABLES:
