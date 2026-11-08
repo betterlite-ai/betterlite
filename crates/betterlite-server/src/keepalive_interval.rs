@@ -84,7 +84,7 @@ pub fn ttft_interval_for(
         (Some(resolver), Some(JsonValue::String(model))) => resolver.deployments_for(model),
         _ => Vec::new(),
     };
-    agreed_keepalive_interval(&deployments, global_interval)
+    ttft_keepalive_interval(request_data, &deployments, global_interval)
 }
 
 // Python's float() ignores surrounding whitespace and accepts single underscores between digits
