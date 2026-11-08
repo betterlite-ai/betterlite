@@ -3,12 +3,19 @@
 use std::collections::BTreeMap;
 
 use rstest::rstest;
+use secrecy::{ExposeSecret, SecretString};
 
 use super::{
-    LitellmApiKey, get_litellm_api_key, mcp_auth_header, oauth2_headers,
-    parse_mcp_access_groups_header, parse_mcp_servers_header, server_auth_headers,
+    get_litellm_api_key, mcp_auth_header, oauth2_headers, parse_mcp_access_groups_header,
+    parse_mcp_servers_header, server_auth_headers,
 };
 use crate::request_headers::raw_headers::RawHeaders;
+
+fn exposed(map: BTreeMap<String, SecretString>) -> BTreeMap<String, String> {
+    map.into_iter()
+        .map(|(name, value)| (name, value.expose_secret().to_owned()))
+        .collect()
+}
 
 fn raw_headers(pairs: &[(&str, &str)]) -> RawHeaders {
     let bytes: Vec<(&[u8], &[u8])> = pairs
@@ -28,48 +35,33 @@ fn litellm_api_key_prefers_the_explicit_header() {
         ("x-litellm-api-key", "k1"),
         ("Authorization", "Bearer token"),
     ]);
-    assert_eq!(
-        get_litellm_api_key(&headers),
-        LitellmApiKey {
-            value: Some("k1"),
-            explicit_header_present: true,
-        }
-    );
+    let key = get_litellm_api_key(&headers);
+    assert_eq!(key.value, Some("k1"));
+    assert!(key.explicit_header_present);
 }
 
 #[test]
 fn litellm_api_key_falls_back_to_authorization() {
     let headers = raw_headers(&[("Authorization", "Bearer token")]);
-    assert_eq!(
-        get_litellm_api_key(&headers),
-        LitellmApiKey {
-            value: Some("Bearer token"),
-            explicit_header_present: false,
-        }
-    );
+    let key = get_litellm_api_key(&headers);
+    assert_eq!(key.value, Some("Bearer token"));
+    assert!(!key.explicit_header_present);
 }
 
 #[test]
 fn litellm_api_key_reports_an_empty_explicit_header() {
     let headers = raw_headers(&[("x-litellm-api-key", ""), ("Authorization", "Bearer z")]);
-    assert_eq!(
-        get_litellm_api_key(&headers),
-        LitellmApiKey {
-            value: Some("Bearer z"),
-            explicit_header_present: true,
-        }
-    );
+    let key = get_litellm_api_key(&headers);
+    assert_eq!(key.value, Some("Bearer z"));
+    assert!(key.explicit_header_present);
 }
 
 #[test]
 fn litellm_api_key_is_absent_without_either_header() {
-    assert_eq!(
-        get_litellm_api_key(&raw_headers(&[])),
-        LitellmApiKey {
-            value: None,
-            explicit_header_present: false,
-        }
-    );
+    let headers = raw_headers(&[]);
+    let key = get_litellm_api_key(&headers);
+    assert_eq!(key.value, None);
+    assert!(!key.explicit_header_present);
 }
 
 #[rstest]
@@ -82,7 +74,8 @@ fn mcp_auth_header_uses_the_configured_name(
     #[case] expected: Option<&str>,
 ) {
     let headers = raw_headers(&[("X-Mcp-Auth", "v")]);
-    assert_eq!(mcp_auth_header(&headers, configured_name), expected);
+    let value = mcp_auth_header(&headers, configured_name);
+    assert_eq!(value.as_ref().map(ExposeSecret::expose_secret), expected);
 }
 
 #[test]
@@ -108,7 +101,11 @@ fn server_auth_headers_parse_the_alias_and_header_name() {
         "my".to_owned(),
         BTreeMap::from([("server-authorization".to_owned(), "B".to_owned())]),
     );
-    assert_eq!(server_auth_headers(&headers), expected);
+    let actual: BTreeMap<String, BTreeMap<String, String>> = server_auth_headers(&headers)
+        .into_iter()
+        .map(|(alias, names)| (alias, exposed(names)))
+        .collect();
+    assert_eq!(actual, expected);
 }
 
 #[test]
@@ -121,7 +118,7 @@ fn server_auth_headers_overwrite_the_same_alias_and_name() {
         server_auth_headers(&headers)
             .get("github")
             .and_then(|names| names.get("Authorization"))
-            .map(String::as_str),
+            .map(ExposeSecret::expose_secret),
         Some("second")
     );
 }
@@ -133,7 +130,7 @@ fn oauth2_headers_keep_the_last_authorization_prefixed_header() {
         ("authorization-foo", "last"),
     ]);
     assert_eq!(
-        oauth2_headers(&headers),
+        exposed(oauth2_headers(&headers)),
         BTreeMap::from([("Authorization".to_owned(), "last".to_owned())])
     );
 }

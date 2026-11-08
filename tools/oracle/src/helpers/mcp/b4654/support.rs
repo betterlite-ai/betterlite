@@ -64,11 +64,19 @@ pub(super) fn string<'input>(
         .ok_or_else(|| invalid("InvalidInput", None, format!("{name} must be a string")))
 }
 
-pub(super) fn optional<'input>(input: &'input Value, name: &str) -> Option<&'input str> {
-    if let Some(value) = input.get(name) {
-        return value.as_str();
+pub(super) fn optional<'input>(
+    input: &'input Value,
+    name: &str,
+) -> Result<Option<&'input str>, Box<HelperError>> {
+    match input.get(name) {
+        Some(Value::String(text)) => Ok(Some(text)),
+        None | Some(Value::Null) => Ok(None),
+        Some(_) => Err(invalid(
+            "ValueError",
+            None,
+            format!("{name} must be a string"),
+        )),
     }
-    None
 }
 
 pub(super) fn boolean(input: &Value, name: &str) -> Result<bool, Box<HelperError>> {
@@ -102,4 +110,12 @@ pub(super) fn expose(map: BTreeMap<String, SecretString>) -> BTreeMap<String, St
         exposed.insert(name, value.expose_secret().to_owned());
     }
     exposed
+}
+
+pub(super) fn expose_nested(
+    map: BTreeMap<String, BTreeMap<String, SecretString>>,
+) -> BTreeMap<String, BTreeMap<String, String>> {
+    map.into_iter()
+        .map(|(alias, headers)| (alias, expose(headers)))
+        .collect()
 }

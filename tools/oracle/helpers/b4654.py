@@ -170,6 +170,10 @@ def _header_probe(data: dict[str, Json]) -> object:
         present = headers.get(MCPRequestHandler.LITELLM_API_KEY_HEADER_NAME_PRIMARY) is not None
         value = MCPRequestHandler.get_litellm_api_key_from_headers(headers)
         return {"value": value, "explicit_header_present": present}
+    if function == "server_auth":
+        return {"value": MCPRequestHandler._get_mcp_server_auth_headers_from_headers(headers)}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
+    if function == "oauth2":
+        return {"value": MCPRequestHandler._get_oauth2_headers_from_headers(headers)}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
     raw_lookups = data.get("lookups") or []
     if not isinstance(raw_lookups, list):
         raise ValueError("lookups must be a list of strings")
@@ -179,13 +183,6 @@ def _header_probe(data: dict[str, Json]) -> object:
             raise ValueError("every lookup is a string")
         lookups[entry] = headers.get(entry)
     return {"items": [[name, value] for name, value in headers.items()], "lookups": lookups}
-
-
-def _header_views(data: dict[str, Json]) -> object:
-    headers = _headers(data)
-    if data.get("function") == "server_auth":
-        return {"value": MCPRequestHandler._get_mcp_server_auth_headers_from_headers(headers)}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-    return {"value": MCPRequestHandler._get_oauth2_headers_from_headers(headers)}  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
 
 
 def _list_header(data: dict[str, Json]) -> object:
@@ -240,8 +237,8 @@ _HANDLERS: dict[str, Callable[[dict[str, Json]], object]] = {
     "safe_headers": _header_probe,
     "litellm_key": _header_probe,
     "mcp_auth_header": _header_probe,
-    "server_auth": _header_views,
-    "oauth2": _header_views,
+    "server_auth": _header_probe,
+    "oauth2": _header_probe,
     "list_header": _list_header,
     "target_names": _targets,
     "target_selection": _targets,
