@@ -1,0 +1,6 @@
+kind: helper
+name: dynamic-callbacks-dynamic-input
+call:
+  dynamic_callbacks: {"action": "params", "request": {"langsmith_project": "direct", "turn_off_message_logging": false, "dd_api_key": "blocked", "unknown_field": "x", "metadata": {"langsmith_project": "metadata", "langfuse_public_key": "pk"}, "litellm_metadata": {"langsmith_project": "litellm_metadata", "langsmith_api_key": "key"}, "litellm_params": {"metadata": {"langsmith_project": "params", "arize_api_key": "arize"}}}, "trusted": {"newrelic_api_key": "nrk", "newrelic_region": "eu", "signoz_ingestion_key": "sk", "other": "x"}, "inherited": true}
+env: {}
+compare: {ignore: []}

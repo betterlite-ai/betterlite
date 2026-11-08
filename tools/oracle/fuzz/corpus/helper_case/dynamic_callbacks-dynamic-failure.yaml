@@ -1,0 +1,6 @@
+kind: helper
+name: dynamic-callbacks-dynamic-failure
+call:
+  dynamic_callbacks: {"action": "add_process", "lists": {"failure": ["langfuse", {"logger": "otel"}], "async_failure": ["langfuse"]}, "add": [{"logger": "s3_v2"}], "process": true, "resolver": {"langfuse": {"label": "langfuse"}}}
+env: {}
+compare: {ignore: []}

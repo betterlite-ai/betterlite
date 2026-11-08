@@ -1,0 +1,6 @@
+kind: helper
+name: dynamic-callbacks-dynamic-success
+call:
+  dynamic_callbacks: {"action": "add_process", "lists": {"success": ["newrelic", "datadog", "langfuse", {"logger": "otel"}], "async_success": ["langfuse"]}, "add": [{"logger": "otel"}], "process": true, "trusted": {"newrelic_api_key": "key", "newrelic_region": "eu", "dd_api_key": "dd", "dd_site": "site", "langfuse_public_key": "pk"}, "resolver": {"newrelic": {"label": "newrelic-metrics", "empty_label": "newrelic-trace"}, "datadog": {"label": "datadog"}, "langfuse": {"label": "langfuse"}}}
+env: {}
+compare: {ignore: []}

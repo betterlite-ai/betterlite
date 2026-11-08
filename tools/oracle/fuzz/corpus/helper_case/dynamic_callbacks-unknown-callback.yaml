@@ -1,0 +1,6 @@
+kind: helper
+name: dynamic-callbacks-unknown-callback
+call:
+  dynamic_callbacks: {"action": "resolve", "names": ["gitlab", "prometheus"], "resolver": {"gitlab": {}, "prometheus": {"error": true}}}
+env: {}
+compare: {ignore: []}
