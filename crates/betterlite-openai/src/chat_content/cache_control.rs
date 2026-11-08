@@ -7,9 +7,10 @@ const MAX_DEPTH: usize = 100;
 
 pub(super) fn strip_message(message: &mut Message) {
     strip_object(&mut message.provider_specific_fields, 0);
+    // LiteLLM counts the message at depth 0 and each content part, an item of its content list, at depth 1
     if let Some(Content::Parts(parts)) = &mut message.content {
         for part in parts {
-            strip_object(&mut part.fields, 0);
+            strip_object(&mut part.fields, 1);
         }
     }
 }
@@ -40,10 +41,11 @@ fn strip_object(object: &mut Object, depth: usize) {
 fn strip_value(value: &mut Json, depth: usize) {
     match value {
         Json::Object(object) => strip_object(object, depth),
+        // LiteLLM recurses a dict inside a list at the list owner's depth plus one, with no extra step for the list
         Json::List(items) => {
             for item in items {
                 if let Json::Object(object) = item {
-                    strip_object(object, depth.saturating_add(1));
+                    strip_object(object, depth);
                 }
             }
         }

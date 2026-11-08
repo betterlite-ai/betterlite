@@ -891,8 +891,9 @@ fn messages_without_content_survive() {
 
 #[test]
 fn cache_control_stops_at_the_depth_limit() {
-    assert!(!body_has_cache_control_at_depth(100));
-    assert!(body_has_cache_control_at_depth(101));
+    // the part sits at LiteLLM depth 1 and its first nested dict at depth 2, so d wrappers reach depth 2 + d
+    assert!(!body_has_cache_control_at_depth(98));
+    assert!(body_has_cache_control_at_depth(99));
 }
 
 fn body_has_cache_control_at_depth(depth: usize) -> bool {
