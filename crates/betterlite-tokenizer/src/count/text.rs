@@ -36,7 +36,7 @@ impl Texter<'_> {
             return Ok(self.counter.count(&self.counted.engine, text).await?);
         };
         let mut total = 0_usize;
-        for slice in chunk_slices(text, chunk) {
+        for slice in chunk_slices(text, chunk)? {
             total = total
                 .checked_add(self.counter.count(&self.counted.engine, slice).await?)
                 .ok_or(CountError::Overflow)?;
@@ -84,26 +84,24 @@ impl Tally {
 }
 
 // Python slices the text by code points and tiktoken then encodes each slice on its own, so the chunk bounds are scalar indices
-fn chunk_slices(text: &str, chunk: NonZeroUsize) -> Vec<&str> {
+fn chunk_slices(text: &str, chunk: NonZeroUsize) -> Result<Vec<&str>, CountError> {
     let mut slices = Vec::new();
     let mut start = 0;
     let mut count = 0;
     for (index, _) in text.char_indices() {
         if count == chunk.get() {
-            if let Some(slice) = text.get(start..index) {
-                slices.push(slice);
-            }
+            let slice = text.get(start..index).ok_or(CountError::Boundary)?;
+            slices.push(slice);
             start = index;
             count = 0;
         }
         count = count.saturating_add(1);
     }
-    if start < text.len()
-        && let Some(slice) = text.get(start..text.len())
-    {
+    if start < text.len() {
+        let slice = text.get(start..text.len()).ok_or(CountError::Boundary)?;
         slices.push(slice);
     }
-    slices
+    Ok(slices)
 }
 
 fn sample_ranges(

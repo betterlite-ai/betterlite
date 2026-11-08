@@ -2,6 +2,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use rstest::rstest;
+use tokio::runtime::Builder;
 
 use crate::count::settings::Settings;
 use crate::count::wire::TokenRequestWire;
@@ -9,8 +10,7 @@ use crate::count::wire::TokenRequestWire;
 use super::support;
 
 #[rstest]
-#[tokio::test]
-async fn replays_the_token_request_corpus(#[files("fuzz/corpus/token_request/*")] path: PathBuf) {
+fn replays_the_token_request_corpus(#[files("fuzz/corpus/token_request/*")] path: PathBuf) {
     let bytes = fs::read(path).unwrap();
     let Ok(wire) = TokenRequestWire::try_from(bytes.as_slice()) else {
         return;
@@ -20,5 +20,6 @@ async fn replays_the_token_request_corpus(#[files("fuzz/corpus/token_request/*")
     let Ok(selected) = wire.selected() else {
         return;
     };
-    let _counted = counter.count(&wire.request(selected.as_ref())).await;
+    let runtime = Builder::new_current_thread().enable_all().build().unwrap();
+    let _counted = runtime.block_on(counter.count(&wire.request(selected.as_ref())));
 }
