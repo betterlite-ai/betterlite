@@ -118,6 +118,8 @@ fn a_failed_tool_call_carries_the_span_error() {
 )]
 #[case::bracketed_ipv6("https://[2001:db8::1]:9443/x", Some("2001:db8::1"), Some(9443))]
 #[case::bracketed_ipv6_default("http://[2001:db8::1]", Some("2001:db8::1"), Some(80))]
+#[case::percent_escaped_host("http://foo%2F.example:8080", Some("foo%2F.example"), Some(8080))]
+#[case::bracketed_zone_host("http://[fe80::1%25ETH0]:8080", Some("fe80::1%25ETH0"), Some(8080))]
 #[case::zone_scoped_without_brackets("http://fe80::1%25eth0", None, None)]
 #[case::port_too_large("https://weather.example:70000", None, None)]
 #[case::port_not_a_number("https://weather.example:http", None, None)]

@@ -9,7 +9,7 @@
         "metadata": {
           "mcp_tool_call_metadata": {
             "name": "weather",
-            "mcp_server_resource": "HTTPS://Weather.Example"
+            "mcp_server_resource": "HTTPS://Weather.Example%2FPath"
           }
         }
       },

@@ -115,7 +115,15 @@ fn upstream_address_port(resource: Option<&str>) -> (Option<String>, Option<u16>
             Err(_) => return (None, None),
         },
     };
-    (Some(host.to_lowercase()), port)
+    (Some(lowercase_host(host)), port)
+}
+
+// urlsplit lowercases a host only up to its first %, so a zone or escape keeps its case
+fn lowercase_host(host: &str) -> String {
+    host.split_once('%').map_or_else(
+        || host.to_lowercase(),
+        |(name, suffix)| format!("{}%{suffix}", name.to_lowercase()),
+    )
 }
 
 fn default_port(scheme: &str) -> Option<u16> {
