@@ -200,6 +200,50 @@ fn hidden_set_model_id_ignores_a_blank_id() {
 }
 
 #[test]
+fn hidden_set_model_id_keeps_the_first_id_when_a_later_one_arrives() {
+    let mut shaper = shaper("gpt-4", Some("openai"));
+    let mut first = chunk("c", 1);
+    set_model_id(&mut shaper, "chatcmpl-first", &mut first);
+    let mut second = chunk("c", 1);
+    set_model_id(&mut shaper, "chatcmpl-second", &mut second);
+    assert_eq!(shaper.response_id.as_deref(), Some("chatcmpl-first"));
+    assert_eq!(second.id, "chatcmpl-first");
+    assert_eq!(
+        second.hidden_params.get("received_model_id"),
+        Some(&JsonValue::String("chatcmpl-second".to_owned()))
+    );
+}
+
+#[test]
+fn hidden_set_model_id_does_not_adopt_a_blank_id_first() {
+    let mut shaper = shaper("gpt-4", Some("openai"));
+    let mut response = chunk("c", 1);
+    set_model_id(&mut shaper, "  ", &mut response);
+    assert_eq!(shaper.response_id, None);
+    assert_eq!(response.id, "c");
+}
+
+#[test]
+fn creator_does_not_adopt_an_empty_chunk_id() {
+    let mut shaper = shaper("gpt-4", Some("openai"));
+    let response = creator(&mut shaper, r#"{"id": "", "created": 1}"#, None);
+    assert_eq!(response.id, "");
+    assert_eq!(shaper.response_id, None);
+}
+
+#[test]
+fn records_default_the_object_to_a_chat_completion_chunk() {
+    let parsed: StreamChunk = parse(r#"{"id": "x"}"#);
+    assert_eq!(parsed.object, "chat.completion.chunk");
+    assert_eq!(StreamChunk::default().object, "chat.completion.chunk");
+}
+
+#[test]
+fn hidden_no_special_attributes_on_a_plain_delta() {
+    assert!(!has_any_special_attributes(&empty_delta()));
+}
+
+#[test]
 fn hidden_copy_provider_fields_lands_on_both_levels() {
     let mut original = chunk("c", 1);
     original.provider_specific_fields = Some(json_object(r#"{"a": 1}"#));

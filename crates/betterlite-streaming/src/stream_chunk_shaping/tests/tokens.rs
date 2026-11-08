@@ -73,6 +73,30 @@ fn repetition_skips_chunks_without_choices() {
 }
 
 #[test]
+fn repetition_skips_when_only_the_last_chunk_has_no_choices() {
+    let mut shaper = shaper("gpt-4", Some("openai"));
+    shaper.repeated_messages_count = 5;
+    shaper.chunks.push(chunk_with_content("c", "abc"));
+    let mut last = chunk_with_content("c", "abc");
+    last.choices.clear();
+    shaper.chunks.push(last);
+    raise_on_model_repetition(&mut shaper, 2).expect("a chunk without choices is not compared");
+    assert_eq!(shaper.repeated_messages_count, 5);
+}
+
+#[test]
+fn repetition_skips_when_only_the_previous_chunk_has_no_choices() {
+    let mut shaper = shaper("gpt-4", Some("openai"));
+    shaper.repeated_messages_count = 5;
+    let mut first = chunk_with_content("c", "abc");
+    first.choices.clear();
+    shaper.chunks.push(first);
+    shaper.chunks.push(chunk_with_content("c", "abc"));
+    raise_on_model_repetition(&mut shaper, 100).expect("a chunk without choices is not compared");
+    assert_eq!(shaper.repeated_messages_count, 5);
+}
+
+#[test]
 fn repetition_with_one_chunk_never_raises() {
     let mut shaper = shaper("gpt-4", Some("openai"));
     shaper.chunks.push(chunk_with_content("c", "abc"));

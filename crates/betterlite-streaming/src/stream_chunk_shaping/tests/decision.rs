@@ -369,6 +369,48 @@ fn processed_finish_branch_keeps_a_bedrock_trace_after_the_last_one() {
     assert!(sent.extra.contains_key("trace"));
 }
 
+#[rstest]
+#[case::other_provider_with_a_trace("openai", true)]
+#[case::bedrock_without_a_trace("bedrock", false)]
+fn processed_finish_branch_drops_a_chunk_after_the_last_one_unless_it_is_a_bedrock_trace(
+    #[case] provider: &str,
+    #[case] with_trace: bool,
+) {
+    let mut shaper = shaper(provider, Some(provider));
+    shaper.received_finish_reason = Some("stop".to_owned());
+    shaper.progress.sent_last_chunk = true;
+    let mut response =
+        model_response_creator(&mut shaper, None, None).expect("no chunk cannot fail");
+    if with_trace {
+        response.extra.insert(
+            "trace".to_owned(),
+            JsonValue::Object(json_object(r#"{"guardrail": 1}"#)),
+        );
+    }
+    let sent = return_processed_chunk_logic(
+        &mut shaper,
+        &mut empty_delta(),
+        response,
+        &ChunkResponseObject::default(),
+        5,
+    )
+    .expect("no repetition here");
+    assert!(sent.is_none());
+}
+
+#[test]
+fn non_empty_reads_tool_calls_from_the_response_delta_alone() {
+    let shaper = shaper("gpt-4", Some("openai"));
+    let mut response = chunk("c", 1);
+    response.choices = vec![choice(parse(r#"{"tool_calls": [{"id": "t"}]}"#))];
+    assert!(is_chunk_non_empty(
+        &shaper,
+        &empty_delta(),
+        &response,
+        &ChunkResponseObject::default()
+    ));
+}
+
 #[test]
 fn processed_finish_branch_drops_everything_else_after_the_last_one() {
     let mut shaper = shaper("gpt-4", Some("openai"));
