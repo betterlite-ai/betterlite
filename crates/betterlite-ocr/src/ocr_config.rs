@@ -68,6 +68,13 @@ pub struct OcrResponseContext<'call> {
     pub url: &'call str,
     pub headers: &'call [(String, String)],
 }
+// a supplied authorization header in any case replaces the provider key lookup
+#[must_use]
+pub fn has_header(headers: &[(String, String)], name: &str) -> bool {
+    headers
+        .iter()
+        .any(|(present, _)| present.eq_ignore_ascii_case(name))
+}
 #[derive(Debug)]
 pub struct DecodedOcrResponse<T> {
     pub data: T,

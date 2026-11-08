@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 use std::time::Duration;
 
+use rstest::rstest;
 use secrecy::{ExposeSecret as _, SecretString};
 
 use crate::json::{Json, Object};
@@ -13,7 +14,7 @@ use crate::ocr_config::connection::{
 use crate::ocr_config::decode::{OcrFieldKind, compose_body, decode_response, decode_value};
 use crate::ocr_config::{
     DecodedOcrResponse, OCR_RESPONSE_MAX_BYTES, OcrProviderConfig as _, OcrRequestContext,
-    OcrTransform, Secrets,
+    OcrTransform, Secrets, has_header,
 };
 use crate::ocr_document::{OcrDocument, validate_inline_document};
 use crate::ocr_error::OcrError;
@@ -27,6 +28,20 @@ fn document() -> OcrDocument {
         document_url: "data:application/pdf;base64,YWJj".to_owned(),
         extra: BTreeMap::new(),
     }
+}
+
+#[rstest]
+#[case::exact("authorization", true)]
+#[case::upper_case("AUTHORIZATION", true)]
+#[case::mixed_case("Authorization", true)]
+#[case::other_header("x-api-key", true)]
+#[case::absent("api-key", false)]
+fn header_lookup_ignores_case(#[case] name: &str, #[case] present: bool) {
+    let headers = vec![
+        ("Authorization".to_owned(), "Bearer request-key".to_owned()),
+        ("x-api-key".to_owned(), "request-key".to_owned()),
+    ];
+    assert_eq!(has_header(&headers, name), present);
 }
 
 fn settings_with_request_timeout(request_timeout: Duration) -> OcrSettings {
