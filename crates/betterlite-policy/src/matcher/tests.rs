@@ -120,7 +120,9 @@ fn get_matching_policies_keeps_attached_policies_whose_conditions_apply() {
         ("guardrail-y", policy(None, &["y"], None)),
         ("guardrail-x", policy(None, &["x"], Some("claude.*"))),
     ]);
-    let attachments = attachments(vec![tagged("guardrail-x", "opt-in"), global("guardrail-y")]);
+    let mut fallback = global("guardrail-y");
+    fallback.default = true;
+    let attachments = attachments(vec![tagged("guardrail-x", "opt-in"), fallback]);
     let registry = registry(policies);
     let mut request = context("claude-haiku");
     request.tags = Some(names(&["opt-in"]));
