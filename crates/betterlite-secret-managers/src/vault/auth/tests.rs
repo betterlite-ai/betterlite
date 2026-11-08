@@ -7,7 +7,7 @@ use rstest::rstest;
 use secrecy::ExposeSecret as _;
 use tokio::time::advance;
 
-use crate::cyberark::transport::ClientCertificate;
+use crate::vault::auth::PendingLogin;
 use crate::vault::error::{LoginMethod, VaultError};
 use crate::vault::tests::{
     APPROLE_ROUTE, LOGIN_BODY, Refused, Reply, SECOND_LOGIN_BODY, TLS_ROUTE, answered,
@@ -256,33 +256,35 @@ async fn an_oversized_login_response_is_refused() {
 
 #[test]
 fn the_approle_request_debug_hides_the_secrets() {
-    let (manager, _transport) = scripted(APPROLE, &[]);
-    let role_id = secrecy::SecretString::from("role-hidden");
-    let secret_id = secrecy::SecretString::from("secret-hidden");
-    let channel = super::LoginChannel::AppRole {
-        role_id: &role_id,
-        secret_id: &secret_id,
-        mount_path: "approle",
+    let (manager, _transport) = scripted(
+        &[
+            ("HCP_VAULT_APPROLE_ROLE_ID", "role-hidden"),
+            ("HCP_VAULT_APPROLE_SECRET_ID", "secret-hidden"),
+        ],
+        &[],
+    );
+    let PendingLogin::Send(plan) = super::pending_login(&manager).unwrap() else {
+        panic!("an AppRole manager without a cached token must send a login");
     };
-    let request = super::login_request(&manager, channel).unwrap();
-    let debug = format!("{request:?}");
+    let debug = format!("{:?}", plan.request);
     assert!(!debug.contains("role-hidden"));
     assert!(!debug.contains("secret-hidden"));
 }
 
 #[test]
 fn the_tls_request_debug_hides_the_body() {
-    let (manager, _transport) = scripted(TLS, &[]);
-    let certificate = ClientCertificate {
-        certificate_path: "/certs/client.crt".to_owned(),
-        key_path: "/certs/client.key".to_owned(),
+    let (manager, _transport) = scripted(
+        &[
+            ("HCP_VAULT_CLIENT_CERT", "/certs/client.crt"),
+            ("HCP_VAULT_CLIENT_KEY", "/certs/client.key"),
+            ("HCP_VAULT_CERT_ROLE", "role-hidden"),
+        ],
+        &[],
+    );
+    let PendingLogin::Send(plan) = super::pending_login(&manager).unwrap() else {
+        panic!("a TLS manager must send a login");
     };
-    let channel = super::LoginChannel::TlsCert {
-        client_certificate: &certificate,
-        role: Some("role-hidden"),
-    };
-    let request = super::login_request(&manager, channel).unwrap();
-    let debug = format!("{request:?}");
+    let debug = format!("{:?}", plan.request);
     assert!(!debug.contains("role-hidden"));
 }
 

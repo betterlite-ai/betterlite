@@ -39,64 +39,6 @@ struct TlsCertLoginBody<'borrowed> {
     name: Option<&'borrowed str>,
 }
 
-#[derive(Clone, Copy)]
-enum LoginChannel<'borrowed> {
-    AppRole {
-        role_id: &'borrowed SecretString,
-        secret_id: &'borrowed SecretString,
-        mount_path: &'borrowed str,
-    },
-    TlsCert {
-        client_certificate: &'borrowed ClientCertificate,
-        role: Option<&'borrowed str>,
-    },
-}
-
-fn login_request<T>(
-    manager: &HashicorpSecretManager<T>,
-    channel: LoginChannel<'_>,
-) -> Result<VaultRequest, VaultError<T::Error>>
-where
-    T: VaultTransport,
-{
-    match channel {
-        LoginChannel::AppRole {
-            role_id,
-            secret_id,
-            mount_path,
-        } => {
-            let body = serde_json::to_string(&AppRoleLoginBody {
-                role_id: role_id.expose_secret(),
-                secret_id: secret_id.expose_secret(),
-            })
-            .map_err(|_source| VaultError::InvalidLogin {
-                method: LoginMethod::AppRole,
-            })?;
-            let url = format!("{}/v1/auth/{mount_path}/login", manager.vault_addr());
-            Ok(request_for(manager, LoginMethod::AppRole, url, body, None))
-        }
-        LoginChannel::TlsCert {
-            client_certificate,
-            role,
-        } => {
-            let body =
-                serde_json::to_string(&TlsCertLoginBody { name: role }).map_err(|_source| {
-                    VaultError::InvalidLogin {
-                        method: LoginMethod::TlsCert,
-                    }
-                })?;
-            let url = format!("{}/v1/auth/cert/login", manager.vault_addr());
-            Ok(request_for(
-                manager,
-                LoginMethod::TlsCert,
-                url,
-                body,
-                Some(client_certificate.clone()),
-            ))
-        }
-    }
-}
-
 fn request_for<T>(
     manager: &HashicorpSecretManager<T>,
     method: LoginMethod,
@@ -161,39 +103,48 @@ where
             role_id,
             secret_id,
             mount_path,
-        } => {
-            tracing::debug!("Using AppRole auth for Hashicorp Vault");
-            if let Some(token) = cached_token(manager) {
-                tracing::debug!("Using cached Vault token from AppRole auth");
-                return Ok(PendingLogin::Ready(token));
-            }
-            let channel = LoginChannel::AppRole {
-                role_id,
-                secret_id,
-                mount_path,
-            };
-            let request = login_request(manager, channel)?;
-            Ok(PendingLogin::Send(LoginPlan {
-                method: LoginMethod::AppRole,
-                request,
-            }))
-        }
+        } => approle_login(manager, role_id, secret_id, mount_path),
         VaultAuth::TlsCert {
             client_certificate,
             role,
         } => {
             tracing::debug!("Using TLS cert auth for Hashicorp Vault");
-            let channel = LoginChannel::TlsCert {
-                client_certificate,
-                role: role.as_deref(),
-            };
-            let request = login_request(manager, channel)?;
-            Ok(PendingLogin::Send(LoginPlan {
-                method: LoginMethod::TlsCert,
-                request,
-            }))
+            let method = LoginMethod::TlsCert;
+            let body = serde_json::to_string(&TlsCertLoginBody {
+                name: role.as_deref(),
+            })
+            .map_err(|_source| VaultError::InvalidLogin { method })?;
+            let url = format!("{}/v1/auth/cert/login", manager.vault_addr());
+            let certificate = Some(client_certificate.clone());
+            let request = request_for(manager, method, url, body, certificate);
+            Ok(PendingLogin::Send(LoginPlan { method, request }))
         }
     }
+}
+
+fn approle_login<T>(
+    manager: &HashicorpSecretManager<T>,
+    role_id: &SecretString,
+    secret_id: &SecretString,
+    mount_path: &str,
+) -> Result<PendingLogin, VaultError<T::Error>>
+where
+    T: VaultTransport,
+{
+    tracing::debug!("Using AppRole auth for Hashicorp Vault");
+    if let Some(token) = cached_token(manager) {
+        tracing::debug!("Using cached Vault token from AppRole auth");
+        return Ok(PendingLogin::Ready(token));
+    }
+    let method = LoginMethod::AppRole;
+    let body = serde_json::to_string(&AppRoleLoginBody {
+        role_id: role_id.expose_secret(),
+        secret_id: secret_id.expose_secret(),
+    })
+    .map_err(|_source| VaultError::InvalidLogin { method })?;
+    let url = format!("{}/v1/auth/{mount_path}/login", manager.vault_addr());
+    let request = request_for(manager, method, url, body, None);
+    Ok(PendingLogin::Send(LoginPlan { method, request }))
 }
 
 pub(super) fn login_outcome<T>(
