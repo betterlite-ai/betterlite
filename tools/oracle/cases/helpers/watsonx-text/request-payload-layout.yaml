@@ -1,0 +1,39 @@
+kind: helper
+name: watsonx-text-request-payload-layout
+env: {}
+compare: {ignore: []}
+call:
+  b5972:
+    op: payload
+    env:
+      WATSONX_PROJECT_ID: project
+      WATSONX_API_BASE: https://env-host
+    requests:
+      - model: watsonx/granite-chat-13b
+        messages: [{role: user, content: hi}]
+        options:
+          max_tokens: 5
+          stream: true
+          temperature: 0.2
+          watsonx_token: t
+      - model: watsonx/granite-chat-13b
+        messages: [{role: user, content: hi}]
+        options:
+          temperature: 0.2
+          extra_body: {top_k: 3, temperature: 0.9}
+          moderations: {hap: true}
+      - model: deployment/deployment-id
+        messages: [{role: user, content: hi}]
+        options: {}
+      - model: granite
+        messages: [{role: user, content: hi}]
+        options: {}
+      - model: watsonx/unknown
+        messages: [{role: user, content: hi}]
+        options: {}
+      - model: watsonx/meta-llama/llama-3-instruct-8b
+        messages:
+          - {role: system, content: be brief}
+          - {role: user, content: hi}
+        options:
+          top_p: 0.5

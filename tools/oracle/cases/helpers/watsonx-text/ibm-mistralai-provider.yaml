@@ -1,0 +1,20 @@
+kind: helper
+name: watsonx-text-ibm-mistralai-provider
+env: {}
+compare: {ignore: []}
+call:
+  b5972:
+    op: convert
+    cases:
+      - {model: ibm-mistralai/mixtral, provider: ibm-mistralai}
+      - {model: watsonx/ibm-mistralai/mixtral, provider: ibm-mistralai}
+      - {model: some-other-model, provider: ibm-mistralai}
+      - {model: some-other-model, provider: watsonx}
+      - {model: watsonx/granite-chat-13b, provider: watsonx}
+      - {model: WATSONX/Granite-Chat, provider: watsonx}
+      - {model: watsonx/openai/gpt-oss-120b, provider: watsonx}
+      - {model: unknown-model, provider: watsonx}
+    messages:
+      - {role: user, content: hi}
+    templates:
+      openai/gpt-oss-120b: "{% for message in messages %}<{{ message['role'] }}>{{ message['content'] }}</{{ message['role'] }}>{% endfor %}"

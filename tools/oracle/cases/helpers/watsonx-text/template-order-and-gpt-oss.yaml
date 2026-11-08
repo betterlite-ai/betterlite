@@ -1,0 +1,25 @@
+kind: helper
+name: watsonx-text-template-order-and-gpt-oss
+env: {}
+compare: {ignore: []}
+call:
+  b5972:
+    op: apply_template
+    models:
+      - watsonx/granite-chat-13b
+      - watsonx/ibm-mistral-8x7b
+      - watsonx/ibm-mistralai/mixtral
+      - watsonx/granite-chat-openai/gpt-oss-120b
+      - watsonx/meta-llama/llama-3-instruct-8b
+      - watsonx/openai/gpt-oss-120b
+      - watsonx_text/openai/gpt-oss-120b
+      - openai/gpt-oss-120b
+      - watsonx/openai/gpt-oss-broken
+      - watsonx/openai/gpt-oss-missing
+      - unknown-model
+      - ""
+    messages:
+      - {role: user, content: hi}
+    templates:
+      openai/gpt-oss-120b: "{% for message in messages %}<{{ message['role'] }}>{{ message['content'] }}</{{ message['role'] }}>{% endfor %}"
+      openai/gpt-oss-broken: "{% if %}"

@@ -1,0 +1,19 @@
+kind: helper
+name: watsonx-text-stream-chunks
+env: {}
+compare: {ignore: []}
+call:
+  b5972:
+    op: stream_line
+    lines:
+      - 'data: {"results":[{"generated_text":"a","stop_reason":"not_finished","input_token_count":2,"generated_token_count":1}]}'
+      - 'data: {"results":[{"generated_text":"b","stop_reason":"stop","input_token_count":1,"generated_token_count":2}]}'
+      - 'data: {"results":[{"generated_text":"c"}]}'
+      - 'data: {"results":[{"stop_reason":"stop","input_token_count":4,"generated_token_count":5}]}'
+      - 'data:{"results":[{"generated_text":"d","stop_reason":"stop"}]}'
+      - 'data: {"results":[]}'
+      - 'data: {"model_id":"granite"}'
+      - 'data: [DONE]'
+      - 'data: {"results":'
+      - 'data: []'
+      - ''

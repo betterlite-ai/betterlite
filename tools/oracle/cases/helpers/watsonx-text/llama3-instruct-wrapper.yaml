@@ -1,0 +1,15 @@
+kind: helper
+name: watsonx-text-llama3-instruct-wrapper
+env: {}
+compare: {ignore: []}
+call:
+  b5972:
+    op: apply_template
+    models:
+      - watsonx/meta-llama/llama-3-instruct-8b
+      - meta-llama/llama-3-instruct
+    messages:
+      - {role: system, content: be brief}
+      - {role: user, content: hi}
+      - {role: assistant, content: hello}
+      - {role: user, content: bye}

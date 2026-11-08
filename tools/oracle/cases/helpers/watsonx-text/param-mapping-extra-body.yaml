@@ -1,0 +1,50 @@
+kind: helper
+name: watsonx-text-param-mapping-extra-body
+env: {}
+compare: {ignore: []}
+call:
+  b5972:
+    op: map_params
+    probe:
+      - decoding_method
+      - max_new_tokens
+      - min_new_tokens
+      - length_penalty
+      - stop_sequences
+      - top_k
+      - repetition_penalty
+      - truncate_input_tokens
+      - include_stop_sequences
+      - return_options
+      - random_seed
+      - moderations
+      - min_tokens
+      - temperature
+      - max_tokens
+      - ""
+    cases:
+      - non_default:
+          max_tokens: 5
+          stream: true
+          temperature: 0.2
+          top_p: 0.9
+          frequency_penalty: 0.5
+          seed: 42
+          stop: ["x"]
+          decoding_method: greedy
+          min_tokens: 2
+          top_k: 3
+          truncate_input_tokens: 8
+          length_penalty: {decay_factor: 2.5}
+          time_limit: 1000
+          return_options: {input_text: true}
+          moderations: {hap: true}
+          project: p
+          region_name: r
+          token: t
+          unmapped: 1
+        optional:
+          frequency_penalty: 0.1
+          extra_body: {time_limit: 5}
+      - non_default: {temperature: 0.2}
+      - non_default: {}
