@@ -118,7 +118,8 @@ fn fill_parts(content: &mut Value, delta: bool) {
         return;
     };
     for part in parts {
-        add_kind(part, "text image_file image_url refusal");
+        let fallback = if delta { "image_file" } else { "" };
+        add_kind(part, "text image_file image_url refusal", fallback);
         fill_object(part, "text", "annotations value");
         fill_object(part, "image_file", "file_id detail");
         fill_object(part, "image_url", "url detail");
@@ -132,14 +133,14 @@ fn fill_annotations(part: &mut Value) {
         return;
     };
     for annotation in annotations {
-        add_kind(annotation, "file_citation file_path");
+        add_kind(annotation, "file_citation file_path", "");
         add_keys(annotation, "end_index start_index text");
         fill_object(annotation, "file_citation", "file_id quote");
         fill_object(annotation, "file_path", "file_id");
     }
 }
 fn fill_step(details: &mut Value, delta: bool) {
-    add_kind(details, "message_creation tool_calls");
+    add_kind(details, "message_creation tool_calls", "");
     fill_object(details, "message_creation", "message_id");
     let Value::Object(object) = details else {
         return;
@@ -172,15 +173,17 @@ pub(crate) fn add_keys(target: &mut Value, keys: &str) {
         insert_keys(object, keys);
     }
 }
-// The SDK's union models name their variant field after the type, and dump it null when it is absent.
-fn add_kind(value: &mut Value, kinds: &str) {
+// A union names its variant field after the type; an unlisted type falls back to the first variant's field.
+fn add_kind(value: &mut Value, kinds: &str, fallback: &str) {
     let kind = value
         .get("type")
         .and_then(Value::as_str)
         .unwrap_or_default();
-    if kinds.split(' ').any(|known| known == kind) {
-        let key = kind.to_owned();
-        add_keys(value, &key);
+    let known = kinds.split(' ').any(|known| known == kind);
+    let key = if known { kind } else { fallback };
+    if !key.is_empty() {
+        let owned = key.to_owned();
+        add_keys(value, &owned);
     }
 }
 pub(crate) fn fill_map(object: &mut Map<String, Value>, key: &str, keys: &str) {

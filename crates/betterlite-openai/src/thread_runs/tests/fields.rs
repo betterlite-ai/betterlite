@@ -254,7 +254,7 @@ fn assert_content_variants(events: &[RunEvent]) {
         assert_eq!(thread.pointer(pointer), Some(&Value::Null), "{pointer}");
     }
     let unknown = parse(
-        r#"{"id":"msg_1","object":"thread.message.delta","delta":{"content":[{"index":0,"type":"audio"}],"role":null}}"#,
+        r#"{"id":"msg_1","object":"thread.message.delta","delta":{"content":[{"index":0,"type":"audio","image_file":null}],"role":null}}"#,
     );
     assert_eq!(data_value(&events[12]), unknown);
 }
