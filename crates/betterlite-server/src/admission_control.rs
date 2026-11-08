@@ -9,9 +9,11 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use axum::Router;
 use axum::body::Body;
 use axum::extract::State;
-use axum::http::{Method, Request, header};
+use axum::http::{HeaderMap, HeaderName, Method, Request, header};
 use axum::middleware::{Next, from_fn_with_state};
 use axum::response::Response;
+use base64::Engine as _;
+use base64::engine::general_purpose::STANDARD;
 use betterlite_config::sections::admission_control::{Limits, Settings};
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
 use tokio::time::timeout;
@@ -161,17 +163,9 @@ pub struct AdmissionStack {
     pub scalar_root: String,
 }
 
-struct AdmissionGate {
-    control: Arc<AdmissionControl>,
-    scalar_root: String,
-}
-
 impl AdmissionStack {
     pub fn wrap(&self, application: Router) -> Router {
-        let gate = Arc::new(AdmissionGate {
-            control: Arc::clone(&self.admission),
-            scalar_root: self.scalar_root.clone(),
-        });
+        let gate = (Arc::clone(&self.admission), Arc::from(&*self.scalar_root));
         // the root path layer must wrap this stack so an exemption check sees the route path
         application
             .layer(from_fn_with_state(
@@ -182,19 +176,27 @@ impl AdmissionStack {
     }
 }
 
-// uvicorn reads the last Upgrade and Connection header, and its handshake takes only a GET with a key and a version
+fn single(headers: &HeaderMap, name: HeaderName) -> Option<&[u8]> {
+    let mut values = headers.get_all(name).iter();
+    let value = values.next()?;
+    values.next().is_none().then_some(value.as_bytes())
+}
+
+// uvicorn reads the last Connection; the websockets handshake needs one Upgrade, a 16 byte key and version 13
 fn is_websocket_upgrade(request: &Request<Body>) -> bool {
     let headers = request.headers();
-    let upgrade = headers.get_all(header::UPGRADE).iter().next_back();
     let connection = headers.get_all(header::CONNECTION).iter().next_back();
+    let key =
+        single(headers, header::SEC_WEBSOCKET_KEY).and_then(|text| STANDARD.decode(text).ok());
     request.method() == Method::GET
-        && upgrade.is_some_and(|value| value.as_bytes().eq_ignore_ascii_case(b"websocket"))
+        && single(headers, header::UPGRADE)
+            .is_some_and(|name| name.eq_ignore_ascii_case(b"websocket"))
         && connection.is_some_and(|value| {
             let mut tokens = value.as_bytes().split(|byte| *byte == b',');
             tokens.any(|token| token.trim_ascii().eq_ignore_ascii_case(b"upgrade"))
         })
-        && headers.contains_key(header::SEC_WEBSOCKET_KEY)
-        && headers.contains_key(header::SEC_WEBSOCKET_VERSION)
+        && key.is_some_and(|bytes| bytes.len() == 16)
+        && single(headers, header::SEC_WEBSOCKET_VERSION).is_some_and(|version| version == b"13")
 }
 
 // LiteLLM strips the scope root_path itself, and a scalar SERVER_ROOT_PATH has no middleware to do it here
@@ -211,26 +213,21 @@ fn scalar_route_path<'path>(request: &'path Request<Body>, scalar_root: &str) ->
 }
 
 async fn admit_request(
-    State(gate): State<Arc<AdmissionGate>>,
+    State((control, scalar_root)): State<(Arc<AdmissionControl>, Arc<str>)>,
     request: Request<Body>,
     next: Next,
 ) -> Response {
-    if is_websocket_upgrade(&request) {
-        return next.run(request).await;
-    }
-    let control = &gate.control;
-    let Some(limits) = control.limits else {
+    let exempt = is_websocket_upgrade(&request)
+        || EXEMPT_PATHS.contains(&scalar_route_path(&request, &scalar_root));
+    let (Some(limits), false) = (control.limits, exempt) else {
         return next.run(request).await;
     };
-    if EXEMPT_PATHS.contains(&scalar_route_path(&request, &gate.scalar_root)) {
-        return next.run(request).await;
-    }
     let Some(permit) = control.admit(&limits).await else {
         return overloaded(&control.stats());
     };
     control.admitted.fetch_add(1, Ordering::AcqRel);
     let slot = AdmissionSlot {
-        control: Arc::clone(control),
+        control: Arc::clone(&control),
         permit: Some(permit),
     };
     let response = next.run(request).await;

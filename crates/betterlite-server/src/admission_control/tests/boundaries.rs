@@ -26,9 +26,14 @@ use crate::server::{application, configure_connection_builder, serve_connection}
 
 const RESERVATION_THREADS: usize = 8;
 const RESERVATION_ROUNDS: u32 = 200;
+const UPGRADE: (&str, &str) = ("upgrade", "websocket");
+const CONNECTION: (&str, &str) = ("connection", "upgrade");
+const KEY: (&str, &str) = ("sec-websocket-key", "dGhlIHNhbXBsZSBub25jZQ==");
+const VERSION: (&str, &str) = ("sec-websocket-version", "13");
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Boundary {
+    UpgradeLookalike(&'static str, &'static [(&'static str, &'static str)]),
     QueueFullAtCapacity,
     QueueTimeoutAtTheLimit,
     CancelQueuedDecrements,
@@ -41,6 +46,14 @@ enum Boundary {
 }
 
 #[rstest]
+#[case::no_connection(Boundary::UpgradeLookalike("GET", &[UPGRADE, KEY, VERSION]))]
+#[case::post(Boundary::UpgradeLookalike("POST", &[UPGRADE, CONNECTION, KEY, VERSION]))]
+#[case::no_key(Boundary::UpgradeLookalike("GET", &[UPGRADE, CONNECTION, VERSION]))]
+#[case::no_version(Boundary::UpgradeLookalike("GET", &[UPGRADE, CONNECTION, KEY]))]
+#[case::junk_key(Boundary::UpgradeLookalike("GET", &[UPGRADE, CONNECTION, ("sec-websocket-key", "k"), VERSION]))]
+#[case::version_12(Boundary::UpgradeLookalike("GET", &[UPGRADE, CONNECTION, KEY, ("sec-websocket-version", "12")]))]
+#[case::last_connection_wins(Boundary::UpgradeLookalike("GET", &[UPGRADE, CONNECTION, ("connection", "close"), KEY, VERSION]))]
+#[case::h2c_then_websocket(Boundary::UpgradeLookalike("GET", &[("upgrade", "h2c"), UPGRADE, CONNECTION, KEY, VERSION]))]
 #[case::queue_full_at_capacity(Boundary::QueueFullAtCapacity)]
 #[case::queue_timeout_at_the_limit(Boundary::QueueTimeoutAtTheLimit)]
 #[case::cancel_queued_decrements(Boundary::CancelQueuedDecrements)]
@@ -53,6 +66,9 @@ enum Boundary {
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn admission_control_boundaries(#[case] boundary: Boundary) {
     match boundary {
+        Boundary::UpgradeLookalike(method, headers) => {
+            upgrade_lookalike_is_http(method, headers).await;
+        }
         Boundary::QueueFullAtCapacity => queue_full_at_capacity().await,
         Boundary::QueueTimeoutAtTheLimit => queue_timeout_at_the_limit().await,
         Boundary::CancelQueuedDecrements => cancel_queued_decrements().await,
@@ -264,25 +280,14 @@ async fn content_length_survives_the_stack() {
     }
 }
 
-#[rstest]
-#[case::no_connection(Method::GET, &[("upgrade", "websocket"), ("sec-websocket-key", "k"), ("sec-websocket-version", "13")])]
-#[case::post(Method::POST, &[("upgrade", "websocket"), ("connection", "upgrade"), ("sec-websocket-key", "k"), ("sec-websocket-version", "13")])]
-#[case::no_key(Method::GET, &[("upgrade", "websocket"), ("connection", "upgrade"), ("sec-websocket-version", "13")])]
-#[case::no_version(Method::GET, &[("upgrade", "websocket"), ("connection", "upgrade"), ("sec-websocket-key", "k")])]
-#[case::last_connection_wins(Method::GET, &[("upgrade", "websocket"), ("connection", "upgrade"), ("connection", "close"), ("sec-websocket-key", "k"), ("sec-websocket-version", "13")])]
-#[case::last_upgrade_wins(Method::GET, &[("upgrade", "websocket"), ("upgrade", "h2c"), ("connection", "upgrade"), ("sec-websocket-key", "k"), ("sec-websocket-version", "13")])]
-#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
-async fn upgrade_lookalikes_are_http(
-    #[case] method: Method,
-    #[case] headers: &'static [(&'static str, &'static str)],
-) {
+async fn upgrade_lookalike_is_http(method: &str, headers: &'static [(&'static str, &'static str)]) {
     let gates = gates(&[("/a", Behavior::Hold), ("/ws", Behavior::Immediate)]);
     let harness = harness(SATURATED, "", gates);
     let mut requests = Requests::default();
     requests.start(&harness.router, "/a");
     await_started(&harness.gates, "/a").await;
     let mut request = Request::builder()
-        .method(method)
+        .method(method.parse::<Method>().unwrap())
         .uri("/ws")
         .body(Body::empty())
         .unwrap();

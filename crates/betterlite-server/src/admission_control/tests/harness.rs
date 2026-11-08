@@ -164,7 +164,7 @@ async fn call(router: Router, path: String, upgrade: bool) -> Answer {
     let mut builder = Request::builder().uri(path);
     if upgrade {
         builder = builder
-            .header(header::UPGRADE, "websocket")
+            .header(header::UPGRADE, "WebSocket")
             .header(header::CONNECTION, "keep-alive, Upgrade")
             .header(header::SEC_WEBSOCKET_KEY, "dGhlIHNhbXBsZSBub25jZQ==")
             .header(header::SEC_WEBSOCKET_VERSION, "13");
