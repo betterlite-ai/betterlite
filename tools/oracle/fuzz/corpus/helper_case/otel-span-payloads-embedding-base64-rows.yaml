@@ -1,0 +1,23 @@
+{
+  "kind": "helper",
+  "name": "otel-span-payloads-embedding-base64-rows",
+  "call": {
+    "b3844": {
+      "function": "embedding_output",
+      "value": {
+        "data": [
+          {
+            "embedding": "AAAA"
+          },
+          {
+            "embedding": "BBBB"
+          }
+        ]
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
