@@ -485,12 +485,12 @@ fn genai_failure_writes_the_error_class_as_error_type() {
 }
 
 #[rstest::rstest]
-#[case("original", 0.5)]
-#[case("discount_amount", 0.25)]
-#[case("discount_percent", 0.125)]
-#[case("margin_fixed_amount", 0.75)]
-#[case("margin_percent", 0.375)]
-#[case("margin_total_amount", 0.625)]
+#[case("original", 0.5_f64)]
+#[case("discount_amount", 0.25_f64)]
+#[case("discount_percent", 0.125_f64)]
+#[case("margin_fixed_amount", 0.75_f64)]
+#[case("margin_percent", 0.375_f64)]
+#[case("margin_total_amount", 0.625_f64)]
 fn genai_llm_call_writes_the_cost_breakdown_component(#[case] key: &str, #[case] expected: f64) {
     let attributes = attributes_of_json(
         r#"{"id": "call-1", "model": "gpt-4o", "cost_breakdown": {
