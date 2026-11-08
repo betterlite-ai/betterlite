@@ -144,6 +144,9 @@ impl TimeoutPlan {
         if self.cancellation.is_cancelled() {
             return Err(TimeoutError::Cancelled);
         }
+        if now >= self.deadline {
+            return Err(TimeoutError::DeadlineExpired);
+        }
         self.deadline
             .checked_duration_since(now)
             .ok_or(TimeoutError::DeadlineExpired)
