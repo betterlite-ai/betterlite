@@ -1,0 +1,14 @@
+kind: helper
+name: capture-mode-config-beats-env
+call:
+  b3854:
+    function: capture_sample
+    environment:
+      OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: SPAN_AND_EVENT
+    configs:
+      - {capture_message_content: NO_CONTENT}
+      - {capture_message_content: bogus}
+      - {}
+env:
+  OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT: SPAN_AND_EVENT
+compare: {ignore: []}

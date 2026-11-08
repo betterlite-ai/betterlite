@@ -1,0 +1,24 @@
+kind: helper
+name: config-normalize-baggage-fallback
+call:
+  b3854:
+    function: config_normalize
+    environment:
+      OTEL_SERVICE_NAME: svc
+      OTEL_ENVIRONMENT_NAME: staging
+      OTEL_MODEL_ID: served-model
+      LITELLM_OTEL_BAGGAGE_TEAM_METADATA_KEYS: " region , ,owner "
+      LITELLM_OTEL_BAGGAGE_METADATA_KEYS: team,trace_id
+      OTEL_SEMCONV_STABILITY_OPT_IN: "http, gen_ai_latest_experimental"
+    config:
+      service_name: ""
+      deployment_environment: ""
+      model_id: ""
+env:
+  OTEL_SERVICE_NAME: svc
+  OTEL_ENVIRONMENT_NAME: staging
+  OTEL_MODEL_ID: served-model
+  LITELLM_OTEL_BAGGAGE_TEAM_METADATA_KEYS: " region , ,owner "
+  LITELLM_OTEL_BAGGAGE_METADATA_KEYS: team,trace_id
+  OTEL_SEMCONV_STABILITY_OPT_IN: "http, gen_ai_latest_experimental"
+compare: {ignore: []}
