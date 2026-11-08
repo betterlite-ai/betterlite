@@ -1,0 +1,11 @@
+kind: helper
+name: destination-allowlist
+call:
+  url_destination:
+    url: "https://api.example.com:8443/v1/jobs"
+    allowed_hosts:
+      - other.example.com
+      - "https://api.example.com:8443"
+env: {}
+compare:
+  ignore: []
