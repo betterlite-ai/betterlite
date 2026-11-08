@@ -3,7 +3,7 @@ use std::iter::repeat_with;
 use crate::anthropic_history::tools::MAX_HISTORY_MESSAGES;
 use crate::anthropic_user_blocks::prelude::{PrepareError, prepare};
 use crate::arguments::json::{Json, Object};
-use crate::media::limits::MAX_MESSAGE_PARTS;
+use crate::media::limits::{MAX_MESSAGE_PARTS, MAX_REMOTE_URLS};
 
 use super::{messages, object};
 
@@ -82,6 +82,42 @@ fn anthropic_user_blocks_behavior_tests_behavior_another_provider_keeps_image_ur
 }
 
 #[test]
+fn anthropic_user_blocks_behavior_tests_behavior_an_uppercase_invoke_model_forces_base64() {
+    let prepared = prepare(&[], "INVOKE/anthropic.claude-v2", "bedrock", true).unwrap();
+    assert!(prepared.force_base64);
+}
+
+#[test]
+fn anthropic_user_blocks_behavior_tests_behavior_a_remote_download_at_the_limit_is_allowed() {
+    let input = vec![user_image_message(MAX_REMOTE_URLS)];
+    let prepared = prepare(&input, "invoke/anthropic.claude-v2", "bedrock", false).unwrap();
+    assert!(prepared.force_base64);
+}
+
+#[test]
+fn anthropic_user_blocks_behavior_tests_behavior_a_remote_download_past_the_limit_is_refused() {
+    let input = vec![user_image_message(MAX_REMOTE_URLS), user_image_message(1)];
+    let error = prepare(&input, "invoke/anthropic.claude-v2", "bedrock", false).unwrap_err();
+    assert!(matches!(
+        error,
+        PrepareError::TooManyRemoteUrls {
+            limit: MAX_REMOTE_URLS
+        }
+    ));
+}
+
+#[test]
+fn anthropic_user_blocks_behavior_tests_behavior_https_images_without_force_base64_are_not_downloads()
+ {
+    let input = vec![
+        user_image_message(MAX_REMOTE_URLS),
+        user_image_message(MAX_REMOTE_URLS),
+    ];
+    let prepared = prepare(&input, "claude-sonnet-4-5", "anthropic", false).unwrap();
+    assert!(!prepared.force_base64);
+}
+
+#[test]
 fn anthropic_user_blocks_behavior_tests_behavior_too_many_messages_are_refused() {
     let input = repeat_with(|| user_message("go"))
         .take(MAX_HISTORY_MESSAGES + 1)
@@ -127,4 +163,18 @@ fn anthropic_user_blocks_behavior_tests_behavior_a_non_object_message_is_refused
 
 fn user_message(text: &str) -> Json {
     Json::Object(object(&format!(r#"{{"role":"user","content":"{text}"}}"#)))
+}
+
+fn user_image_message(images: usize) -> Json {
+    let parts = repeat_with(|| {
+        Json::Object(object(
+            r#"{"type":"image_url","image_url":"https://example.test/a.png"}"#,
+        ))
+    })
+    .take(images)
+    .collect::<Vec<_>>();
+    Json::Object(Object::from_iter([
+        ("role".to_owned(), Json::Text("user".to_owned())),
+        ("content".to_owned(), Json::List(parts)),
+    ]))
 }

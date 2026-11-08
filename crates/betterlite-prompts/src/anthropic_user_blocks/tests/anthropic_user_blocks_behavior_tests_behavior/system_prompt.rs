@@ -1,7 +1,10 @@
+use std::iter::repeat_with;
+
+use crate::anthropic_history::tools::MAX_HISTORY_MESSAGES;
 use crate::anthropic_user_blocks::system_prompt::{SystemPromptError, get_system_prompt};
 use crate::arguments::json::Json;
 
-use super::messages;
+use super::{messages, object};
 
 #[test]
 fn anthropic_user_blocks_behavior_tests_behavior_system_prompts_are_concatenated_in_order() {
@@ -53,5 +56,19 @@ fn anthropic_user_blocks_behavior_tests_behavior_a_non_object_message_is_refused
     assert!(matches!(
         error,
         SystemPromptError::MessageNotObject { index: 0 }
+    ));
+}
+
+#[test]
+fn anthropic_user_blocks_behavior_tests_behavior_too_many_messages_are_refused() {
+    let input = repeat_with(|| Json::Object(object(r#"{"role":"system","content":"a"}"#)))
+        .take(MAX_HISTORY_MESSAGES + 1)
+        .collect::<Vec<_>>();
+    let error = get_system_prompt(&input).unwrap_err();
+    assert!(matches!(
+        error,
+        SystemPromptError::TooManyMessages {
+            limit: MAX_HISTORY_MESSAGES
+        }
     ));
 }

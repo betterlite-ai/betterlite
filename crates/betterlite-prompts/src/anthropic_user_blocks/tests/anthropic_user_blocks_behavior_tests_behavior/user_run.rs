@@ -1,6 +1,8 @@
 use std::collections::BTreeMap;
 use std::iter::repeat_with;
 
+use crate::anthropic_invokes::documents::FileMessageError;
+use crate::anthropic_results::images::ImageError;
 use crate::anthropic_results::tool_result::ToolResultError;
 use crate::anthropic_user_blocks::error::UserBlocksError;
 use crate::anthropic_user_blocks::user_run::{UserBlockBuilder, UserRun};
@@ -16,7 +18,14 @@ async fn convert_with(
     force_base64: bool,
     urls: &BTreeMap<String, String>,
 ) -> Result<UserRun, UserBlocksError<NoFileBlocks>> {
-    let input = messages(raw);
+    convert_messages(&messages(raw), force_base64, urls).await
+}
+
+async fn convert_messages(
+    input: &[Json],
+    force_base64: bool,
+    urls: &BTreeMap<String, String>,
+) -> Result<UserRun, UserBlocksError<NoFileBlocks>> {
     let fetcher = UrlMap {
         data_urls: urls.clone(),
     };
@@ -28,7 +37,7 @@ async fn convert_with(
         blocks: &blocks,
         new_id: &new_id,
     };
-    builder.convert(&input, 0).await
+    builder.convert(input, 0).await
 }
 
 async fn run(raw: &str) -> UserRun {
@@ -37,6 +46,12 @@ async fn run(raw: &str) -> UserRun {
 
 async fn failure(raw: &str) -> UserBlocksError<NoFileBlocks> {
     convert_with(raw, false, &BTreeMap::new())
+        .await
+        .unwrap_err()
+}
+
+async fn failure_with(raw: &str, force_base64: bool) -> UserBlocksError<NoFileBlocks> {
+    convert_with(raw, force_base64, &BTreeMap::new())
         .await
         .unwrap_err()
 }
@@ -246,6 +261,37 @@ async fn anthropic_user_blocks_behavior_tests_behavior_a_function_message_become
 }
 
 #[tokio::test]
+async fn anthropic_user_blocks_behavior_tests_behavior_a_function_message_without_an_id_uses_the_generated_id()
+ {
+    let run = run(r#"[{"role":"function","name":"weather","content":"hi"}]"#).await;
+    assert_eq!(
+        run.blocks,
+        vec![object(
+            r#"{"type":"tool_result","tool_use_id":"generated-id","content":"hi"}"#
+        )]
+    );
+}
+
+#[tokio::test]
+async fn anthropic_user_blocks_behavior_tests_behavior_a_tool_image_downloads_when_force_base64_is_set()
+ {
+    let urls = url_map(&[("https://example.test/a.png", "data:image/png;base64,QUJD")]);
+    let run = convert_with(
+        r#"[{"role":"tool","tool_call_id":"call","content":[{"type":"image_url","image_url":{"url":"https://example.test/a.png"}}]}]"#,
+        true,
+        &urls,
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        run.blocks,
+        vec![object(
+            r#"{"type":"tool_result","tool_use_id":"call","content":[{"type":"image","source":{"type":"base64","media_type":"image/png","data":"QUJD"}}]}"#
+        )]
+    );
+}
+
+#[tokio::test]
 async fn anthropic_user_blocks_behavior_tests_behavior_a_tool_result_file_reaches_the_policy() {
     let input = messages(
         r#"[{"role":"tool","tool_call_id":"call","content":[{"type":"image_url","image_url":{"url":"data:application/pdf;base64,QQ=="}}]}]"#,
@@ -323,6 +369,62 @@ async fn anthropic_user_blocks_behavior_tests_behavior_a_message_without_a_role_
 }
 
 #[tokio::test]
+async fn anthropic_user_blocks_behavior_tests_behavior_a_non_object_message_in_the_run_is_refused()
+{
+    let input = [Json::Text("not a message".to_owned())];
+    let error = convert_messages(&input, false, &BTreeMap::new())
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        UserBlocksError::MessageNotObject { index: 0 }
+    ));
+}
+
+#[tokio::test]
+async fn anthropic_user_blocks_behavior_tests_behavior_a_file_block_without_a_file_is_a_typed_failure()
+ {
+    let error = failure(r#"[{"role":"user","content":[{"type":"file"}]}]"#).await;
+    assert!(matches!(
+        error,
+        UserBlocksError::File(FileMessageError::MissingFile)
+    ));
+}
+
+#[tokio::test]
+async fn anthropic_user_blocks_behavior_tests_behavior_an_unmapped_image_download_is_a_typed_failure()
+ {
+    let error = failure_with(
+        r#"[{"role":"user","content":[{"type":"image_url","image_url":"https://example.test/a.png"}]}]"#,
+        true,
+    )
+    .await;
+    assert!(matches!(
+        error,
+        UserBlocksError::Image(ImageError::Fetch(_))
+    ));
+}
+
+#[tokio::test]
+async fn anthropic_user_blocks_behavior_tests_behavior_a_malformed_data_url_is_a_typed_failure() {
+    let error = failure(
+        r#"[{"role":"user","content":[{"type":"image_url","image_url":"not-a-data-url"}]}]"#,
+    )
+    .await;
+    assert!(matches!(error, UserBlocksError::Image(ImageError::DataUrl)));
+}
+
+#[tokio::test]
+async fn anthropic_user_blocks_behavior_tests_behavior_an_undecodable_tool_message_is_a_typed_failure()
+ {
+    let error = failure(r#"[{"role":"tool","tool_call_id":"call","content":{"a":1}}]"#).await;
+    assert!(matches!(
+        error,
+        UserBlocksError::MessageDecode { index: 0, .. }
+    ));
+}
+
+#[tokio::test]
 async fn anthropic_user_blocks_behavior_tests_behavior_an_assistant_message_ends_the_user_run() {
     let run = run(r#"[{"role":"assistant","content":"hi"}]"#).await;
     assert!(run.blocks.is_empty());
@@ -371,24 +473,17 @@ async fn anthropic_user_blocks_behavior_tests_behavior_a_run_starting_past_the_e
 }
 
 #[tokio::test]
-async fn anthropic_user_blocks_behavior_tests_behavior_the_source_messages_are_unchanged() {
-    let input = messages(
-        r#"[{"role":"user","content":[{"type":"text","text":"a"},{"type":"image_url","image_url":"data:image/png;base64,QUJD"}]}]"#,
+async fn anthropic_user_blocks_behavior_tests_behavior_a_document_block_keeps_unknown_fields() {
+    let run = run(
+        r#"[{"role":"user","content":[{"type":"document","source":{"type":"text","media_type":"text/plain","data":"aGk="},"title":"notes","extra":{"kept":true},"cache_control":"ephemeral"}]}]"#,
+    )
+    .await;
+    assert_eq!(
+        run.blocks,
+        vec![object(
+            r#"{"type":"document","source":{"type":"text","media_type":"text/plain","data":"aGk="},"title":"notes","extra":{"kept":true},"cache_control":"ephemeral"}"#
+        )]
     );
-    let original = input.clone();
-    let fetcher = UrlMap {
-        data_urls: BTreeMap::new(),
-    };
-    let blocks = NoFileBlocks;
-    let new_id = || GENERATED_ID.to_owned();
-    let builder = UserBlockBuilder {
-        force_base64: false,
-        fetcher: &fetcher,
-        blocks: &blocks,
-        new_id: &new_id,
-    };
-    builder.convert(&input, 0).await.unwrap();
-    assert_eq!(input, original);
 }
 
 #[tokio::test]
