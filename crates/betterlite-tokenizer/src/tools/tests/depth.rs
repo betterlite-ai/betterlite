@@ -19,6 +19,14 @@ fn padded_leaf() -> String {
     format!(r#"{{"type":"boolean","enum":[{values}]}}"#)
 }
 
+fn array_chain(levels: usize, leaf: &str) -> String {
+    let mut inner = leaf.to_owned();
+    for _ in 0..levels {
+        inner = format!(r#"{{"type":"array","items":{inner}}}"#);
+    }
+    inner
+}
+
 fn object_chain(levels: usize, root_extra: &str, leaf: &str) -> String {
     let mut inner = leaf.to_owned();
     for _ in 0..levels {
@@ -52,6 +60,22 @@ fn token_formatting_behavior_tests_behavior() {
     let error = format(&too_deep).expect_err("70 object levels pass the depth cap");
     assert!(matches!(
         error,
+        ToolFormatError::TooDeep {
+            limit: MAX_SCHEMA_DEPTH
+        }
+    ));
+
+    let deepest = formatted_tool(&array_chain(MAX_SCHEMA_DEPTH, r#"{"type":"string"}"#));
+    assert!(deepest.contains("type deep = () => any;"));
+
+    let too_many_arrays = tool_with(&array_chain(
+        MAX_SCHEMA_DEPTH.saturating_add(8),
+        r#"{"type":"string"}"#,
+    ));
+    let too_deep_array =
+        format(&too_many_arrays).expect_err("array levels past the depth cap are rejected");
+    assert!(matches!(
+        too_deep_array,
         ToolFormatError::TooDeep {
             limit: MAX_SCHEMA_DEPTH
         }
