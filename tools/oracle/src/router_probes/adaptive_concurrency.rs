@@ -164,6 +164,7 @@ fn poll<'limiter>(
             (Acquired::Finished, PollOutcome::TimedOut)
         }
         Poll::Ready(Err(AcquireError::Overloaded)) => {
+            drop(acquisitions.insert(id, Acquired::Finished));
             return Err(OperationError::InvalidRequest {
                 message: "a queued acquisition cannot become overloaded".to_owned(),
             });
