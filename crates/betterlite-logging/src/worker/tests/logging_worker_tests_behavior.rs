@@ -1,5 +1,5 @@
 use std::collections::BTreeMap;
-use std::future::pending;
+use std::future::{Future, pending};
 use std::io::{Result as IoResult, Write};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
@@ -119,6 +119,27 @@ impl Callback for ScriptedCallback {
             Outcome::Hang => pending().await,
             Outcome::Panic => panic!("the scripted logging callback panicked"),
         }
+    }
+}
+
+struct EagerPanicCallback {
+    name: &'static str,
+    panic_before_future: bool,
+}
+
+impl Callback for EagerPanicCallback {
+    type Error = ScriptedFailure;
+
+    fn name(&self) -> &str {
+        self.name
+    }
+
+    fn call(self) -> impl Future<Output = Result<(), Self::Error>> + Send + 'static {
+        assert!(
+            !self.panic_before_future,
+            "the scripted logging callback panicked before returning its future"
+        );
+        async { Ok(()) }
     }
 }
 
@@ -337,6 +358,20 @@ async fn a_panicking_callback_is_counted_under_its_span() {
     let shutdown = worker.stop().await;
     assert_eq!(shutdown.failed, 1);
     assert_eq!(shutdown.completed, 1);
+}
+
+#[tokio::test]
+async fn a_callback_that_panics_before_its_future_is_counted() {
+    let worker = LoggingWorker::start(settings(4, 1)).unwrap();
+    let admission = worker.enqueue(EagerPanicCallback {
+        name: "eager",
+        panic_before_future: true,
+    });
+    assert_eq!(admission, Admission::Accepted);
+    let flush = worker.flush().await;
+    assert_eq!(flush.failed, 1);
+    let shutdown = worker.stop().await;
+    assert_eq!(shutdown.failed, 1);
 }
 
 #[tokio::test]

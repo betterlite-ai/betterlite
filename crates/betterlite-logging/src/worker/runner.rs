@@ -1,5 +1,5 @@
 use std::future::Future;
-use std::panic::AssertUnwindSafe;
+use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
@@ -182,10 +182,10 @@ async fn run_callback<C>(
 ) where
     C: Callback,
 {
-    let name = callback.name().to_owned();
+    let name = catch_unwind(AssertUnwindSafe(|| callback.name().to_owned())).unwrap_or_default();
     let outcome = timeout(
         event_timeout,
-        AssertUnwindSafe(callback.call()).catch_unwind(),
+        AssertUnwindSafe(async move { callback.call().await }).catch_unwind(),
     )
     .await;
     match outcome {
