@@ -2,6 +2,6 @@ kind: helper
 name: stream-keepalive-not-a-disable
 call:
   b8603:
-    values: [5, 5.5, "5", "abc", "nan", "NaN", "inf", "Infinity", null, "1__0", "_10", "10_", "1_.5"]
+    values: [5, 5.5, "5", "abc", "nan", "NaN", "inf", "Infinity", null, "0__0", "_0", "0_", "-1__0", "-_1", "-1_", "0_.0", "0._0", "0e_0"]
 env: {}
 compare: {ignore: []}

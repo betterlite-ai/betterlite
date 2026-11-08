@@ -202,12 +202,15 @@ fn a_missing_value_does_not_disable() {
 }
 
 #[rstest]
-#[case::double_underscore(r#""1__0""#)]
-#[case::leading_underscore(r#""_10""#)]
-#[case::trailing_underscore(r#""10_""#)]
-#[case::underscore_before_dot(r#""1_.5""#)]
-#[case::underscore_after_dot(r#""1._5""#)]
-#[case::underscore_around_exponent(r#""1e_5""#)]
+#[case::double_underscore(r#""0__0""#)]
+#[case::leading_underscore(r#""_0""#)]
+#[case::trailing_underscore(r#""0_""#)]
+#[case::negative_double_underscore(r#""-1__0""#)]
+#[case::negative_leading_underscore(r#""-_1""#)]
+#[case::negative_trailing_underscore(r#""-1_""#)]
+#[case::underscore_before_dot(r#""0_.0""#)]
+#[case::underscore_after_dot(r#""0._0""#)]
+#[case::underscore_around_exponent(r#""0e_0""#)]
 #[case::space_inside(r#""1 0""#)]
 #[case::word(r#""info""#)]
 fn bad_number_text_does_not_disable(#[case] raw: &str) {
@@ -304,6 +307,28 @@ fn a_non_string_model_asks_for_the_group_without_a_name() {
     assert_eq!(fake.requested_groups(), vec![None]);
 }
 
+#[test]
+fn an_empty_model_id_falls_back_to_the_group() {
+    let fake = fake_router(
+        FakeRouter::default().group("gpt", r#"[{"litellm_params": {"keepalive_seconds": 5}}]"#),
+    );
+    let router = dyn_router(Arc::clone(&fake));
+    let config = deployment_keepalive(
+        Some(router.as_ref()),
+        &map(r#"{"model": "gpt"}"#),
+        &map(r#"{"model_id": ""}"#),
+    );
+    assert_eq!(
+        config,
+        Some(DeploymentKeepalive {
+            seconds: Some(JsonValue::from(5_i64)),
+            allow_client_override: false,
+        })
+    );
+    assert_eq!(fake.deployment_calls(), 0);
+    assert_eq!(fake.group_calls(), 1);
+}
+
 #[rstest]
 #[case::bool_true(r#"{"allow_client_keepalive_override": true}"#, true)]
 #[case::bool_false(r#"{"allow_client_keepalive_override": false}"#, false)]
@@ -370,6 +395,9 @@ fn group_deployments_agree_only_on_one_pair(#[case] list: &str, #[case] expected
 
 #[rstest]
 #[case::neither_has_params(r#"[{}, {"litellm_params": {}}]"#)]
+#[case::null_matches_a_missing_key(
+    r#"[{"litellm_params": {"keepalive_seconds": null}}, {"litellm_params": {}}]"#
+)]
 #[case::params_is_not_an_object(r#"[{"litellm_params": "text"}, {}]"#)]
 fn deployments_without_params_agree_on_no_value(#[case] list: &str) {
     assert_eq!(
@@ -597,6 +625,48 @@ async fn the_resolver_always_resolves_a_chunk_without_a_model_id() {
 }
 
 #[tokio::test(start_paused = true)]
+async fn a_chunk_without_a_model_id_leaves_the_memo_alone() {
+    let fake = fake_router(
+        FakeRouter::default()
+            .deployment("dep-1", r#"{"keepalive_seconds": 5}"#)
+            .group("gpt", r#"[{"litellm_params": {"keepalive_seconds": 5}}]"#),
+    );
+    let mut resolver = resolver_for(&fake, r#"{"model": "gpt"}"#, None);
+    let hidden = map(r#"{"model_id": "dep-1"}"#);
+    assert_seconds(resolver.resolve(&hidden), 5.0);
+    assert_seconds(resolver.resolve(&JsonObject::new()), 5.0);
+    assert_seconds(resolver.resolve(&hidden), 5.0);
+    assert_eq!(fake.deployment_calls(), 1);
+}
+
+#[tokio::test(start_paused = true)]
+async fn an_empty_model_id_never_uses_the_memo() {
+    let fake = fake_router(
+        FakeRouter::default().group("gpt", r#"[{"litellm_params": {"keepalive_seconds": 5}}]"#),
+    );
+    let mut resolver = resolver_for(&fake, r#"{"model": "gpt"}"#, None);
+    let hidden = map(r#"{"model_id": ""}"#);
+    assert_seconds(resolver.resolve(&hidden), 5.0);
+    assert_seconds(resolver.resolve(&hidden), 5.0);
+    assert_eq!(fake.group_calls(), 2);
+    assert_eq!(fake.deployment_calls(), 0);
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_memo_ttl_counts_from_the_last_real_resolution() {
+    let fake =
+        fake_router(FakeRouter::default().deployment("dep-1", r#"{"keepalive_seconds": 5}"#));
+    let mut resolver = resolver_for(&fake, r#"{"model": "gpt"}"#, None);
+    let hidden = map(r#"{"model_id": "dep-1"}"#);
+    assert_seconds(resolver.resolve(&hidden), 5.0);
+    advance(Duration::from_secs(3)).await;
+    assert_seconds(resolver.resolve(&hidden), 5.0);
+    advance(Duration::from_secs(3)).await;
+    assert_seconds(resolver.resolve(&hidden), 5.0);
+    assert_eq!(fake.deployment_calls(), 2);
+}
+
+#[tokio::test(start_paused = true)]
 async fn a_zero_interval_forwards_items_as_they_arrive() {
     let fake = fake_router(FakeRouter::default());
     let resolver = resolver_for(&fake, r#"{"model": "gpt"}"#, None);
@@ -692,5 +762,24 @@ async fn the_wrapper_ends_when_the_items_end() {
     let items = stream::iter(vec![chunk()]);
     let mut beats = Box::pin(with_keepalive(items, resolver, 1.0));
     assert_eq!(beats.next().await, Some(Beat::Item(chunk())));
+    assert_eq!(beats.next().await, None);
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_wrapper_ends_the_wait_when_the_items_end() {
+    let fake = fake_router(FakeRouter::default());
+    let resolver = resolver_for(&fake, r#"{"model": "gpt"}"#, None);
+    let items = stream::empty::<FakeChunk>();
+    let mut beats = Box::pin(with_keepalive(items, resolver, 1.0));
+    assert_eq!(beats.next().await, None);
+}
+
+#[tokio::test(start_paused = true)]
+async fn the_wrapper_ends_after_an_item_with_a_positive_interval() {
+    let fake = fake_router(FakeRouter::default().deployment("slow", r#"{"keepalive_seconds": 4}"#));
+    let resolver = resolver_for(&fake, r#"{"model": "gpt"}"#, None);
+    let items = stream::iter(vec![hidden_chunk("slow")]);
+    let mut beats = Box::pin(with_keepalive(items, resolver, 1.0));
+    assert_eq!(beats.next().await, Some(Beat::Item(hidden_chunk("slow"))));
     assert_eq!(beats.next().await, None);
 }
