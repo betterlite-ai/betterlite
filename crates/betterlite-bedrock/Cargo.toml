@@ -39,11 +39,13 @@ sha2.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tracing.workspace = true
+url = "2.5.8"
 uuid.workspace = true
 
 [dev-dependencies]
 futures-util = { version = "0.3.34", default-features = false }
 rstest = "=0.27.0"
+tempfile = "3.27.0"
 tracing-subscriber.workspace = true
 
 [lints]
