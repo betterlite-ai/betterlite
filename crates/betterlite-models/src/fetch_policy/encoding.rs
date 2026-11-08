@@ -45,11 +45,9 @@ pub(crate) fn decode_json_bytes(body: &[u8]) -> Result<String, DecodeError> {
     }
     match body {
         [0, 0, _, _, ..] => utf32(body, Endian::Big),
-        [0, second, _, _, ..] if *second != 0 => utf16(body, Endian::Big),
-        [_, 0, third, fourth, ..] if *third != 0 || *fourth != 0 => utf16(body, Endian::Little),
+        [0, _, _, _, ..] => utf16(body, Endian::Big),
         [_, 0, 0, 0, ..] => utf32(body, Endian::Little),
-        [0, _] => utf16(body, Endian::Big),
-        [_, 0] => utf16(body, Endian::Little),
+        [_, 0, _, _, ..] => utf16(body, Endian::Little),
         _ => utf8(body),
     }
 }
