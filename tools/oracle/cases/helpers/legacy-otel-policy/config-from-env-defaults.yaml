@@ -1,0 +1,8 @@
+kind: helper
+name: config-from-env-defaults
+call:
+  b3854:
+    function: config_from_env
+    environment: {}
+env: {}
+compare: {ignore: []}
