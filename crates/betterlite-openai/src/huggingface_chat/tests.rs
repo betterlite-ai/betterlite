@@ -393,6 +393,23 @@ fn request_keeps_a_tool_call_turn_content_null(
     assert_eq!(turn.get("content"), Some(&Value::Null));
 }
 
+#[rstest]
+#[case::assistant_without_calls(r#"{"role":"assistant","name":"lookup"}"#)]
+#[case::user_without_content(r#"{"role":"user"}"#)]
+fn request_keeps_absent_content_absent(#[case] message: &str) {
+    let messages = chat_messages(&format!("[{message}]"));
+    let body = transform_request(
+        "org/model",
+        &messages,
+        &Object::new(),
+        None,
+        &RefusingSource,
+    )
+    .unwrap();
+    let turn = body["messages"][0].as_object().unwrap();
+    assert_eq!(turn.get("content"), None);
+}
+
 #[test]
 fn request_staging_warns_and_still_sends_the_provider_id() {
     let mapping = source(r#"{"novita": {"status": "staging", "providerId": "org/mapped"}}"#);
@@ -812,6 +829,14 @@ fn mapping_decode_rejects_over_one_mebibyte() {
         matches!(error, HuggingfaceChatError::MappingTooLarge { .. }),
         "{error}"
     );
+}
+
+#[test]
+fn mapping_decode_accepts_a_body_of_exactly_one_mebibyte() {
+    let mut bytes = mapping_body("novita", "live", "org/model").into_bytes();
+    bytes.resize(1024 * 1024, b' ');
+    let mapping = decode_provider_mapping(&bytes).unwrap();
+    assert_eq!(mapping["novita"].provider_id.as_deref(), Some("org/model"));
 }
 
 #[test]
