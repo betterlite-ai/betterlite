@@ -113,14 +113,7 @@ async fn index_fallback(input: &Input) -> HelperResult {
 
 async fn run_lookup(input: &Input) -> HelperResult {
     let key = required(&input.key, "key")?;
-    let vector = required(&input.vector, "vector")?;
-    let index = Arc::new(HelperIndex::with_hits(
-        input.hits.iter().map(to_hit).collect(),
-    ));
-    let embedder = ConstantEmbedder { vector };
-    let concrete = Arc::clone(&index);
-    let backend: Arc<dyn SemanticRedisIndex> = concrete;
-    let cache = helper_cache(Arc::new(embedder), backend, None)?;
+    let (cache, index) = scripted_cache(input, input.hits.iter().map(to_hit).collect())?;
     let mut metadata = input.metadata.as_ref().and_then(Json::as_object).cloned();
     let kwargs = helper_kwargs(
         input.messages.as_deref(),
@@ -151,13 +144,8 @@ async fn run_lookup(input: &Input) -> HelperResult {
 
 async fn run_store(input: &Input) -> HelperResult {
     let key = required(&input.key, "key")?;
-    let vector = required(&input.vector, "vector")?;
     let value = required(&input.value, "value")?;
-    let index = Arc::new(HelperIndex::default());
-    let embedder = ConstantEmbedder { vector };
-    let concrete = Arc::clone(&index);
-    let backend: Arc<dyn SemanticRedisIndex> = concrete;
-    let cache = helper_cache(Arc::new(embedder), backend, None)?;
+    let (cache, index) = scripted_cache(input, Vec::new())?;
     let kwargs = helper_kwargs(
         input.messages.as_deref(),
         input.input.as_ref(),
@@ -182,6 +170,18 @@ async fn run_store(input: &Input) -> HelperResult {
         })
     });
     Ok(json!({ "store": store }))
+}
+
+fn scripted_cache(
+    input: &Input,
+    hits: Vec<Hit>,
+) -> Result<(RedisSemanticCache, Arc<HelperIndex>), Box<HelperError>> {
+    let vector = required(&input.vector, "vector")?;
+    let index = Arc::new(HelperIndex::with_hits(hits));
+    let embedder = ConstantEmbedder { vector };
+    let concrete = Arc::clone(&index);
+    let backend: Arc<dyn SemanticRedisIndex> = concrete;
+    Ok((helper_cache(Arc::new(embedder), backend, None)?, index))
 }
 
 fn similarity_of(metadata: Option<&Object>) -> Result<Option<Value>, Box<HelperError>> {
