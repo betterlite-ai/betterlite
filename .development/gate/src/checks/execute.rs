@@ -13,18 +13,40 @@ use crate::git::coordinator;
 use crate::process::check_command;
 use crate::spec::command::{Command, Turn};
 
-const HINT_WORDS: [&str; 6] = ["error", "fail", "panicked", "denied", "banned", "mismatch"];
+const HINT_WORDS: [&str; 11] = [
+    "error",
+    "errors",
+    "fail",
+    "failed",
+    "failure",
+    "failures",
+    "panicked",
+    "denied",
+    "banned",
+    "mismatch",
+    "mismatched",
+];
 
 fn hints(output: &str) -> Vec<String> {
-    let flagged: Vec<String> = output
-        .lines()
-        .filter(|line| {
-            let lower = line.to_ascii_lowercase();
-            HINT_WORDS.iter().any(|word| lower.contains(word))
-        })
-        .take(3)
-        .map(|line| line.trim().to_owned())
-        .collect();
+    let mut flagged: Vec<String> = Vec::new();
+    let mut worded: Vec<String> = Vec::new();
+    for line in output.lines() {
+        let trimmed = line.trim();
+        let lower = trimmed.to_ascii_lowercase();
+        // an underscore stays inside the word, so a test named ..._fails is not a failure
+        let has_word = lower
+            .split(|letter: char| !(letter.is_ascii_alphanumeric() || letter == '_'))
+            .any(|word| HINT_WORDS.contains(&word));
+        let failing = trimmed.starts_with("FAIL [") || trimmed.contains("panicked at");
+        if failing && !flagged.iter().any(|seen| seen == trimmed) {
+            flagged.push(trimmed.to_owned());
+        }
+        if !failing && has_word {
+            worded.push(trimmed.to_owned());
+        }
+    }
+    flagged.append(&mut worded);
+    flagged.truncate(3);
     if !flagged.is_empty() {
         return flagged;
     }
