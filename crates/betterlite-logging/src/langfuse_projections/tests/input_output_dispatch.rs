@@ -91,6 +91,18 @@ fn dispatch_pass_through_without_a_response_field_is_an_empty_string() {
 }
 
 #[test]
+fn dispatch_pass_through_with_a_null_response_field_has_no_output() {
+    let body = value(r#"{"response": null}"#);
+    let response = ResponseObj::Dict(&body);
+    let (_, output) = get_input_output_content(
+        &prompt(),
+        Some(&response),
+        &content_request("pass_through_endpoint"),
+    );
+    assert_eq!(output, None);
+}
+
+#[test]
 fn dispatch_pass_through_requires_the_call_type() {
     let body = value(r#"{"response": {"ok": true}}"#);
     let response = ResponseObj::Dict(&body);

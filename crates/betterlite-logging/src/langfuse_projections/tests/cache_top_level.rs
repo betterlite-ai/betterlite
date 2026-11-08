@@ -40,6 +40,12 @@ fn cache_openai_details_override_a_zero_top_level() {
 }
 
 #[test]
+fn cache_openai_details_override_a_positive_top_level() {
+    let usage = with_cached_tokens(usage_with_top_level("9"), value("4"));
+    assert_eq!(cache_read_tokens(&usage), 4);
+}
+
+#[test]
 fn cache_fallback_keeps_the_top_level_when_details_are_not_positive() {
     let zero = with_cached_tokens(usage_with_top_level("9"), value("0"));
     assert_eq!(cache_read_tokens(&zero), 9);

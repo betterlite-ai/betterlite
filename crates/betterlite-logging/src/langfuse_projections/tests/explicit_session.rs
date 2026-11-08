@@ -1,6 +1,7 @@
 #![cfg(test)]
 
 use betterlite_models::decisions::Json;
+use rstest::rstest;
 
 use super::session_header::is_session_header_trace;
 use super::support::value;
@@ -26,10 +27,31 @@ fn explicit_session_header_matches_the_session_and_trace_ids() {
 
 #[test]
 fn explicit_session_header_mismatch_is_not_a_session_trace() {
-    let proxy = request(r#"{"langfuse_session_id": "another-session"}"#);
+    let proxy =
+        request(r#"{"langfuse_session_id": "another-session", "x-session-id": "trace-12345678"}"#);
     assert!(!is_session_header_trace(
         Some(&text("trace-12345678")),
         Some(&text("sess-999")),
+        Some(&proxy)
+    ));
+}
+
+#[test]
+fn x_litellm_session_id_matches_before_the_trace_id_shape_check() {
+    let proxy = request(r#"{"x-litellm-session-id": "abc"}"#);
+    assert!(is_session_header_trace(
+        Some(&text("abc")),
+        Some(&text("abc")),
+        Some(&proxy)
+    ));
+}
+
+#[test]
+fn trace_ids_with_a_disallowed_character_are_not_session_headers() {
+    let proxy = request(r#"{"x-session-id": "trace.12345678"}"#);
+    assert!(!is_session_header_trace(
+        Some(&text("trace.12345678")),
+        Some(&text("trace.12345678")),
         Some(&proxy)
     ));
 }
@@ -64,20 +86,38 @@ fn pattern_session_header_needs_a_middle_segment() {
     ));
 }
 
-#[test]
-fn codex_session_header_matches_with_the_codex_user_agent() {
-    let proxy = request(r#"{"session-id": "trace-12345678", "user-agent": "codex-cli/0.1.0"}"#);
-    assert!(is_session_header_trace(
-        Some(&text("trace-12345678")),
-        Some(&text("trace-12345678")),
-        Some(&proxy)
+#[rstest]
+#[case::lowercase_agent("codex-cli/0.1.0", true)]
+#[case::uppercase_agent("Codex/1.0", true)]
+#[case::prefix_without_a_separator("codexfoo/1.0", false)]
+#[case::another_agent("betterlite/0.1.0", false)]
+fn codex_session_header_matches_with_the_codex_user_agent(
+    #[case] user_agent: &str,
+    #[case] expected: bool,
+) {
+    let proxy = request(&format!(
+        r#"{{"session-id": "trace-12345678", "user-agent": "{user_agent}"}}"#
     ));
+    assert_eq!(
+        is_session_header_trace(
+            Some(&text("trace-12345678")),
+            Some(&text("trace-12345678")),
+            Some(&proxy)
+        ),
+        expected
+    );
 }
 
-#[test]
-fn codex_session_header_is_ignored_for_another_user_agent() {
-    let proxy = request(r#"{"session-id": "trace-12345678", "user-agent": "betterlite/0.1.0"}"#);
-    assert!(!is_session_header_trace(
+#[rstest]
+#[case::session_id("session-id")]
+#[case::session_id_underscore("session_id")]
+#[case::thread_id("thread-id")]
+#[case::conversation_id("conversation_id")]
+fn codex_session_keys_mark_the_trace_as_a_session_header(#[case] header: &str) {
+    let proxy = request(&format!(
+        r#"{{"{header}": "trace-12345678", "user-agent": "codex-cli/0.1.0"}}"#
+    ));
+    assert!(is_session_header_trace(
         Some(&text("trace-12345678")),
         Some(&text("trace-12345678")),
         Some(&proxy)

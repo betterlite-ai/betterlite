@@ -66,6 +66,7 @@ fn steering_key_accepts_a_list() {
 #[test]
 fn steering_flag_trace_public_flag_keeps_absence_apart_from_false() {
     assert_eq!(trace_public_flag(None), None);
+    assert_eq!(trace_public_flag(Some(&Json::Null)), None);
     assert_eq!(trace_public_flag(Some(&Json::Bool(false))), Some(false));
     assert_eq!(
         trace_public_flag(Some(&Json::Text("true".to_owned()))),

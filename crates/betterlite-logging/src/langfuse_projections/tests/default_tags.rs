@@ -49,12 +49,22 @@ fn default_tags_come_from_the_standard_logging_payload() {
 #[test]
 fn cache_hit_tag_appends_the_flag_when_configured() {
     assert_eq!(
-        add_default_langfuse_tags(Vec::new(), &configured("cache_hit"), true, None, None),
+        add_default_langfuse_tags(Vec::new(), &configured("cache_hit"), Some(true), None, None),
         vec!["cache_hit:True".to_owned()]
     );
     assert_eq!(
-        add_default_langfuse_tags(Vec::new(), &configured("cache_hit"), false, None, None),
+        add_default_langfuse_tags(
+            Vec::new(),
+            &configured("cache_hit"),
+            Some(false),
+            None,
+            None
+        ),
         vec!["cache_hit:False".to_owned()]
+    );
+    assert_eq!(
+        add_default_langfuse_tags(Vec::new(), &configured("cache_hit"), None, None, None),
+        vec!["cache_hit:None".to_owned()]
     );
 }
 
@@ -64,7 +74,7 @@ fn cache_key_tag_prefers_the_hidden_params_key() {
         add_default_langfuse_tags(
             Vec::new(),
             &configured("cache_key"),
-            false,
+            Some(false),
             Some("hidden-key"),
             Some("preset-key")
         ),
@@ -78,14 +88,20 @@ fn cache_key_tag_falls_back_to_the_preset_cache_key() {
         add_default_langfuse_tags(
             Vec::new(),
             &configured("cache_key"),
-            false,
+            Some(false),
             None,
             Some("preset-key")
         ),
         vec!["cache_key:preset-key".to_owned()]
     );
     assert_eq!(
-        add_default_langfuse_tags(Vec::new(), &configured("cache_key"), false, None, None),
+        add_default_langfuse_tags(
+            Vec::new(),
+            &configured("cache_key"),
+            Some(false),
+            None,
+            None
+        ),
         vec!["cache_key:None".to_owned()]
     );
 }
@@ -94,14 +110,14 @@ fn cache_key_tag_falls_back_to_the_preset_cache_key() {
 fn default_tags_are_left_alone_without_the_setting() {
     let tags = vec!["existing".to_owned()];
     assert_eq!(
-        add_default_langfuse_tags(tags.clone(), &[], true, Some("key"), None),
+        add_default_langfuse_tags(tags.clone(), &[], Some(true), Some("key"), None),
         tags
     );
     assert_eq!(
         add_default_langfuse_tags(
             tags.clone(),
             &configured("another_tag"),
-            true,
+            Some(true),
             Some("key"),
             None
         ),

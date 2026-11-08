@@ -19,12 +19,16 @@ pub fn get_langfuse_tags(payload: Option<&StandardLoggingPayload>) -> Vec<String
 pub fn add_default_langfuse_tags(
     mut tags: Vec<String>,
     default_tags: &[String],
-    cache_hit: bool,
+    cache_hit: Option<bool>,
     hidden_cache_key: Option<&str>,
     preset_cache_key: Option<&str>,
 ) -> Vec<String> {
     if default_tags.iter().any(|tag| tag == "cache_hit") {
-        let value = if cache_hit { "True" } else { "False" };
+        let value = match cache_hit {
+            Some(true) => "True",
+            Some(false) => "False",
+            None => "None",
+        };
         tags.push(format!("cache_hit:{value}"));
     }
     if default_tags.iter().any(|tag| tag == "cache_key") {
