@@ -1,0 +1,9 @@
+kind: helper
+name: condition-empty-list
+call:
+  b3240:
+    function: evaluate_condition
+    condition: {model: []}
+    context: {model: gpt-4}
+env: {}
+compare: {ignore: []}

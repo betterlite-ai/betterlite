@@ -1,0 +1,17 @@
+kind: probe
+name: fixed-width-mode
+probes:
+  - clock: {unix_millis: 1700000000000, monotonic_millis: 0}
+    samples: []
+    operation:
+      adaptive_concurrency:
+        initial: 5
+        floor: 3
+        ceiling: 3
+        steps:
+          - {action: snapshot}
+          - {action: record, throttled: false}
+          - {action: record, throttled: false}
+          - {action: record, throttled: false}
+          - {action: record, throttled: false}
+          - {action: record, throttled: true}

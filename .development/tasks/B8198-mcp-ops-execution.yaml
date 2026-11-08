@@ -11,6 +11,8 @@ description: >-
   _McpDeniedDetail type. Success logging fires once, and a failure logs a failure row. A
   guardrail rejection and a cancellation propagate. Other logging errors are warnings.
 
+  The plan registers helper operation b8198 as a not_built stub in tools/oracle/src/helpers/mcp.rs and tools/oracle/helpers/dispatch.py. Fill tools/oracle/src/helpers/mcp/b8198.rs, write tools/oracle/helpers/b8198.py, and leave both registries as they are.
+
 scope:
   paths:
     - crates/betterlite-server/src/mcp/ops_execution.rs
@@ -19,6 +21,10 @@ scope:
     - tools/oracle/Cargo.toml
     - tools/oracle/cases/helpers/mcp-ops-execution/**
     - tools/oracle/fuzz/corpus/helper_case/mcp-ops-execution-*
+    - tools/oracle/helpers/b8198.py
+    - tools/oracle/helpers/b8198/**
+    - tools/oracle/src/helpers/mcp/b8198.rs
+    - tools/oracle/src/helpers/mcp/b8198/**
   lint_tables: false
 
 references:

@@ -1,0 +1,12 @@
+kind: helper
+name: limit_out_of_range
+call:
+  b7813:
+    calls:
+      - {call: knn, input: {optional_params: {max_num_results: 0}}}
+      - {call: knn, input: {optional_params: {max_num_results: 51}}}
+      - {call: knn, input: {optional_params: {max_num_results: -1}}}
+      - {call: knn, input: {optional_params: {max_num_results: 1}}}
+      - {call: knn, input: {optional_params: {max_num_results: 50}}}
+env: {}
+compare: {ignore: []}
