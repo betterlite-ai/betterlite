@@ -1,7 +1,11 @@
 use betterlite_config::tls::Verification;
+use fancy_regex::Regex;
 use url::{ParseError, Url};
 
 use super::error::AwsEndpointError;
+
+const STS_REGION_PATTERN: &str =
+    r"(?:^|\.)sts(?:-fips)?\.([a-z0-9-]+)\.(?:amazonaws\.com(?:\.cn)?|vpce\.amazonaws\.com)";
 
 #[derive(Debug, Clone, Copy)]
 pub struct StsSettings<'text> {
@@ -25,7 +29,7 @@ pub fn sts_region_from_endpoint(
         return Ok(None);
     };
     let host = hostname(value)?;
-    Ok(sts_region_in_host(&host))
+    sts_region_in_host(&host)
 }
 
 pub fn resolve_sts_region(settings: &StsSettings<'_>) -> Result<Option<String>, AwsEndpointError> {
@@ -64,39 +68,12 @@ fn hostname(endpoint: &str) -> Result<String, AwsEndpointError> {
     }
 }
 
-// LiteLLM's _STS_REGION_FROM_ENDPOINT_PATTERN, matched anywhere in the lowercase host
-fn sts_region_in_host(host: &str) -> Option<String> {
-    for (start, _) in host.match_indices("sts") {
-        let boundary = start == 0
-            || host
-                .get(..start)
-                .is_some_and(|prefix| prefix.ends_with('.'));
-        if !boundary {
-            continue;
-        }
-        let Some(raw_tail) = host.get(start..).and_then(|rest| rest.strip_prefix("sts")) else {
-            continue;
-        };
-        let tail = raw_tail.strip_prefix("-fips").unwrap_or(raw_tail);
-        let Some(after_dot) = tail.strip_prefix('.') else {
-            continue;
-        };
-        let length = after_dot
-            .bytes()
-            .take_while(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || *byte == b'-')
-            .count();
-        if length == 0 {
-            continue;
-        }
-        let Some(region) = after_dot.get(..length) else {
-            continue;
-        };
-        let Some(suffix) = after_dot.get(length..) else {
-            continue;
-        };
-        if suffix.starts_with(".amazonaws.com") || suffix.starts_with(".vpce.amazonaws.com") {
-            return Some(region.to_owned());
-        }
-    }
-    None
+// LiteLLM's _STS_REGION_FROM_ENDPOINT_PATTERN searches the lowercased host without an end anchor
+fn sts_region_in_host(host: &str) -> Result<Option<String>, AwsEndpointError> {
+    let pattern = Regex::new(STS_REGION_PATTERN)?;
+    let captures = pattern.captures(host)?;
+    let Some(matched) = captures else {
+        return Ok(None);
+    };
+    Ok(matched.get(1).map(|region| region.as_str().to_owned()))
 }

@@ -7,6 +7,8 @@ pub enum AwsEndpointError {
         #[source]
         source: url::ParseError,
     },
+    #[error("invalid STS region pattern")]
+    Pattern(#[from] fancy_regex::Error),
     #[error("invalid field {field}")]
     Field {
         field: &'static str,

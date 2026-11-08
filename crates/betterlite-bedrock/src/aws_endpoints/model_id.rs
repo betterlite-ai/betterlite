@@ -8,17 +8,11 @@ use super::error::AwsEndpointError;
 use super::provider::BedrockInvokeProvider;
 
 // Python's urllib.parse.quote(model_id, safe="") leaves only letters, digits and _.-~ alone
-const MODEL_ID_SAFE: AsciiSet = NON_ALPHANUMERIC
+pub const MODEL_ID_SAFE: AsciiSet = NON_ALPHANUMERIC
     .remove(b'_')
     .remove(b'.')
     .remove(b'-')
     .remove(b'~');
-
-#[must_use]
-pub fn encode_model_id(model_id: &str) -> String {
-    // urllib.parse.quote's safe="" leaves only letters, digits and _.-~ alone; the crate encodes the rest
-    utf8_percent_encode(model_id, &MODEL_ID_SAFE).to_string()
-}
 
 pub fn bedrock_model_id(
     optional_params: &mut BTreeMap<String, Box<RawValue>>,
@@ -32,12 +26,12 @@ pub fn bedrock_model_id(
                 source,
             })?;
         if let Some(model_id) = override_id {
-            return Ok(encode_model_id(&model_id));
+            return Ok(utf8_percent_encode(&model_id, &MODEL_ID_SAFE).to_string());
         }
     }
     let stripped = strip_bedrock_routing_prefix(model);
     if stripped.starts_with("arn:") {
-        return Ok(encode_model_id(&stripped));
+        return Ok(utf8_percent_encode(&stripped, &MODEL_ID_SAFE).to_string());
     }
     let model_id = stripped.replacen("invoke/", "", 1);
     let specification = match provider {
@@ -57,7 +51,11 @@ pub fn bedrock_model_id(
         _ => None,
     };
     match specification {
-        Some(spec) => Ok(encode_model_id(&model_id.replace(&format!("{spec}/"), ""))),
+        Some(spec) => Ok(utf8_percent_encode(
+            &model_id.replace(&format!("{spec}/"), ""),
+            &MODEL_ID_SAFE,
+        )
+        .to_string()),
         None => Ok(model_id),
     }
 }

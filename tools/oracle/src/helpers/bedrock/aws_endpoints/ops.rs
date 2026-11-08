@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::fmt::Display;
 
-use betterlite_bedrock::aws_endpoints::model_id::{bedrock_model_id, encode_model_id};
+use betterlite_bedrock::aws_endpoints::model_id::{MODEL_ID_SAFE, bedrock_model_id};
 use betterlite_bedrock::aws_endpoints::provider::{
     BedrockEmbeddingProvider, BedrockInvokeProvider, embedding_provider, invoke_provider,
 };
@@ -16,6 +16,7 @@ use betterlite_bedrock::aws_settings::tls::resolve_tls;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::tls::{Verification, VerifySetting};
 use betterlite_config::types::Config;
+use percent_encoding::utf8_percent_encode;
 use serde_json::{Value, json};
 
 use super::input::{
@@ -125,8 +126,7 @@ fn invalid_region(values: &[Option<String>]) -> Value {
 fn model_id_encoding(model_ids: &[String]) -> Value {
     let encoded: Vec<String> = model_ids
         .iter()
-        .map(String::as_str)
-        .map(encode_model_id)
+        .map(|model_id| utf8_percent_encode(model_id, &MODEL_ID_SAFE).to_string())
         .collect();
     json!({"encoded": encoded})
 }
