@@ -33,6 +33,26 @@ fn usage(mapping: &str) -> Usage {
     None,
     r#"{"prompt_tokens":2,"completion_tokens":3,"total_tokens":5,"completion_tokens_details":null,"prompt_tokens_details":null,"cache_read_input_tokens":null}"#
 )]
+#[case::a_lone_input_tokens_key_is_not_provider_usage(
+    Some(r#"{"input_tokens":2}"#),
+    None,
+    r#"{"input_tokens":2}"#
+)]
+#[case::a_lone_output_tokens_key_is_not_provider_usage(
+    Some(r#"{"output_tokens":3}"#),
+    None,
+    r#"{"output_tokens":3}"#
+)]
+#[case::interactions_with_a_lone_output_tokens_key_stay_interactions(
+    Some(r#"{"total_input_tokens":2,"output_tokens":3}"#),
+    None,
+    r#"{"prompt_tokens":2,"completion_tokens":0,"total_tokens":2,"completion_tokens_details":null,"prompt_tokens_details":null,"cache_read_input_tokens":null}"#
+)]
+#[case::interactions_reasoning_fills_the_completion_details(
+    Some(r#"{"total_input_tokens":2,"total_output_tokens":3,"total_reasoning_tokens":1}"#),
+    None,
+    r#"{"prompt_tokens":2,"completion_tokens":4,"total_tokens":6,"completion_tokens_details":{"accepted_prediction_tokens":null,"audio_tokens":null,"reasoning_tokens":1,"rejected_prediction_tokens":null,"text_tokens":null,"image_tokens":null,"video_tokens":null},"prompt_tokens_details":null,"cache_read_input_tokens":null}"#
+)]
 fn logging_fields_behavior_tests_behavior(
     #[case] mapping: Option<&str>,
     #[case] combined: Option<&str>,

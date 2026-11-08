@@ -8,6 +8,7 @@ use super::parse::usage_from_mapping;
 use super::project::usage_json;
 use super::{Usage, UsageError};
 
+mod details;
 mod errors;
 mod from_response;
 mod native;

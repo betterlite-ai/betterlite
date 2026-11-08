@@ -31,16 +31,13 @@ pub fn get_status_fields(
     status: LoggingStatus,
     guardrail_information: Option<&[GuardrailInformation]>,
 ) -> StatusFields {
-    let mut guardrail_status = GuardrailStatus::NotRun;
-    for entry in guardrail_information.unwrap_or_default() {
-        let Some(raw) = entry.guardrail_status.as_ref().and_then(Option::as_deref) else {
-            continue;
-        };
-        let mapped = map_status(raw);
-        if severity(mapped) > severity(guardrail_status) {
-            guardrail_status = mapped;
-        }
-    }
+    let guardrail_status = guardrail_information
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|entry| entry.guardrail_status.as_ref().and_then(Option::as_deref))
+        .map(map_status)
+        .max_by_key(|mapped| severity(*mapped))
+        .unwrap_or(GuardrailStatus::NotRun);
     StatusFields {
         llm_api_status: status,
         guardrail_status,

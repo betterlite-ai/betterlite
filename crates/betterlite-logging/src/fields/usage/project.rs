@@ -72,13 +72,7 @@ fn insert_prompt_base(record: &mut IndexMap<String, Json>, found: &IndexMap<Stri
 fn insert_prompt_fields(record: &mut IndexMap<String, Json>, found: &IndexMap<String, Json>) {
     for (key, value) in found {
         match key.as_str() {
-            "audio_tokens"
-            | "cached_tokens"
-            | "text_tokens"
-            | "image_tokens"
-            | "video_tokens"
-            | "cache_write_tokens"
-            | "cache_creation_tokens" => {}
+            "cache_write_tokens" | "cache_creation_tokens" => {}
             "cached_tokens_details" => insert_nested(
                 record,
                 key,
