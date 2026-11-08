@@ -28,7 +28,7 @@ use uuid::Uuid;
 use super::capture::{Execution, Stop};
 use super::error::SdkHttpError;
 use super::result::{ChatCompletion, Choice, Failure, Nullable, SdkResult};
-use super::{ChatMessage, OpenaiChat, SdkHttpCall};
+use super::{ChatMessage, OpenaiChat};
 
 const POLL: Duration = Duration::from_millis(10);
 
@@ -39,12 +39,11 @@ struct WireChat<'wire> {
 }
 
 pub(crate) fn execute(
-    call: &SdkHttpCall,
+    chat: &OpenaiChat,
     api_base: &str,
     env: &BTreeMap<String, String>,
     stop: &Stop<'_>,
 ) -> Execution {
-    let SdkHttpCall::OpenaiChat(chat) = call;
     let result = Builder::new_current_thread()
         .enable_all()
         .build()
@@ -133,7 +132,7 @@ fn deployments(
 }
 
 // the same defaults the server builds, so proxy-wide base URLs, keys and the organization resolve from the case env
-fn openai_defaults(config: &LoadedConfig) -> OpenAiDefaults {
+pub(crate) fn openai_defaults(config: &LoadedConfig) -> OpenAiDefaults {
     let settings = &config.sections.resource_sdk_settings;
     let bases = [
         &settings.api_base,

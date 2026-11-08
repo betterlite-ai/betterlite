@@ -3,6 +3,7 @@ pub(crate) mod chat;
 pub(crate) mod completions;
 pub(crate) mod embeddings;
 pub(crate) mod moderations;
+pub(crate) mod ocr;
 pub(crate) mod prompts;
 pub(crate) mod video_character;
 pub(crate) mod video_content_remix;

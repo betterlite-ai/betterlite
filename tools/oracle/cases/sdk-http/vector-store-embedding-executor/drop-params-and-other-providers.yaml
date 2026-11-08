@@ -1,0 +1,16 @@
+kind: sdk_http
+name: vector-store-embedding-executor-drop-params
+env: {OPENAI_API_KEY: sk-env}
+call:
+  vector_store_embedding_executor:
+    model: text-embedding-3-small
+    query: hello
+    configuration: {api_key: sk-direct, timeout: 20, additional_drop_params: [dimensions, input_type, encoding_format], dimensions: 2, input_type: x, encoding_format: float, aws_secret_access_key: k, aws_region_name: r, vertex_project: p, vertex_credentials: c}
+upstream:
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [{object: embedding, index: 0, embedding: [0.25, 0.5]}], model: text-embedding-3-small, usage: {prompt_tokens: 1, total_tokens: 1}}
+  - status: 200
+    headers: {content-type: application/json}
+    body: {object: list, data: [{object: embedding, index: 0, embedding: [0.25, 0.5]}], model: text-embedding-3-small, usage: {prompt_tokens: 1, total_tokens: 1}}
+compare: {headers: [], headers_present: [], upstream_headers: [authorization], ignore: []}

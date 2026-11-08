@@ -16,7 +16,7 @@ description: >-
   OAuth2Flow is a public enum in module server_record with the two values LiteLLM's Literal allows, ClientCredentials ("client_credentials") and AuthorizationCode ("authorization_code"); it derives Clone, Copy, PartialEq, Eq, Debug, Serialize and Deserialize with those snake_case names, and any other text is a parse error. B4716 uses this type.
 
 
-  Derive Clone, PartialEq and Deserialize. Implement Debug by hand so it prints only server_id, name, transport and auth_type, like LiteLLM's __repr__ and __str__ (Display prints the same text). A secret must never reach a log through Debug.
+  Derive Clone, PartialEq, Serialize and Deserialize. B4718 stores a serialized MCPServer copy in Redis (encrypted before it is stored), so secret fields serialize their plain value; use serialize_with on a field whose wrapper has no Serialize. Implement Debug by hand so it prints only server_id, name, transport and auth_type, like LiteLLM's __repr__ and __str__ (Display prints the same text). A secret must never reach a log through Debug.
 
 
   Validators. A single constructor MCPServer::checked(self) -> Result<MCPServer, ServerRecordError> runs them in this order and stops at the first failure. First, upstream_token_header when set must pass validate_header_name from credential_contracts::header_carrier (a failure is ServerRecordError::Header with its message). Second, protocol version: when protocol_version is None, it becomes mcp_info["protocol_version"] checked against MCPUpstreamProtocol (absent key means auto), or auto when there is no mcp_info; an invalid value fails with ServerRecordError::Protocol. An explicit protocol_version is kept even when mcp_info disagrees. After checked, protocol_version is always Some. Third, identity binding: when oauth_identity_binding is set and its mode is not Disabled, the server must have needs_user_oauth_token true and delegate_auth_to_upstream false, else ServerRecordError::Binding("oauth_identity_binding requires gateway-managed per-user OAuth2 credentials"). A binding with an empty audiences list fails with ServerRecordError::Binding("audiences must not be empty") whenever it is built from JSON. Deserialize runs checked, so a record read from JSON is always validated.
@@ -49,6 +49,8 @@ dod:
   - text: MCPOAuthMetadata, MCPOAuthIdentityBinding and MCPServer exist with LiteLLM's field names and defaults, secret fields use the secret wrapper, and a record with only server_id, name and transport has every default from the description.
     proof: [record-tests]
   - text: OAuth2Flow parses only client_credentials and authorization_code, serializes back to the same text, and MCPServer.oauth2_flow uses it.
+    proof: [record-tests]
+  - text: MCPServer serializes with every field, secrets included, and the JSON deserializes back to an equal record.
     proof: [record-tests]
   - text: Debug and Display print only server_id, name, transport and auth_type, and never a secret value.
     proof: [record-tests]
