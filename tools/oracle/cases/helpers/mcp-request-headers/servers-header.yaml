@@ -1,0 +1,5 @@
+kind: helper
+name: "servers-header"
+call: {"b4654":{"function":"list_header","header":"servers","raw":[["X-Mcp-Servers"," s1 , ,s2 "]]}}
+env: {}
+compare: {"ignore":[]}

@@ -18,6 +18,7 @@ pub(crate) mod native;
 pub(crate) mod python;
 pub mod result;
 mod tests;
+pub(crate) mod vector_query_embedding;
 
 #[derive(Debug, Clone)]
 pub struct OracleLimits {
@@ -58,6 +59,7 @@ pub struct SdkHttpCase {
 pub enum SdkHttpCall {
     OpenaiChat(OpenaiChat),
     VectorStoreEmbeddingExecutor(VectorStoreEmbeddingCall),
+    VectorQueryEmbedding(VectorQueryEmbeddingCall),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -80,6 +82,14 @@ pub struct VectorStoreEmbeddingCall {
     pub(crate) metadata: Params,
     #[serde(default)]
     pub(crate) router: Option<Vec<RouterDeploymentSpec>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct VectorQueryEmbeddingCall {
+    pub(crate) query_text: String,
+    #[serde(default)]
+    pub(crate) litellm_params: Params,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -182,6 +192,7 @@ fn validate_call(call: &SdkHttpCall, limits: &OracleLimits) -> Result<(), SdkHtt
                 }
             }
         }
+        SdkHttpCall::VectorQueryEmbedding(_) => {}
     }
     Ok(())
 }

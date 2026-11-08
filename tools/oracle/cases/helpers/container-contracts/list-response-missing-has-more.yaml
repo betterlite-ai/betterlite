@@ -1,0 +1,9 @@
+kind: helper
+name: list-response-missing-has-more
+call:
+  b3360:
+    operation: record_decode
+    records:
+      - {kind: list_response, value: {object: list, data: []}}
+env: {}
+compare: {ignore: []}

@@ -31,7 +31,7 @@ scope:
   - tools/oracle/helpers/vector_query_embedding.py
   - tools/oracle/helpers/vector_query_embedding/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/vector_query_embedding.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/vector_query_embedding.py
   - tools/oracle/cases/helpers/vector-query-embedding/**

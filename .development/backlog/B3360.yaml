@@ -1,7 +1,7 @@
 id: B3360
 milestone: M5 api families
 title: Container contracts and endpoint catalog
-status: todo
+status: done
 depends_on: []
 file: tasks/B3360-container-contracts.yaml
 covers:
@@ -10,7 +10,7 @@ covers:
   - "litellm/containers/endpoints.json"
 parent: B094
 split_from: B094
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 908

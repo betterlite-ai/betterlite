@@ -1,0 +1,5 @@
+kind: helper
+name: "strip-default-port"
+call: {"b4654":{"function":"strip_default_port","scheme":"https","netloc":"LLM.Example.com:443"}}
+env: {}
+compare: {"ignore":[]}

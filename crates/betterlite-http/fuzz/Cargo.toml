@@ -58,3 +58,10 @@ path = "fuzz_targets/user_url.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "url_policy"
+path = "fuzz_targets/url_policy.rs"
+test = false
+doc = false
+bench = false
