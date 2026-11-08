@@ -15,7 +15,8 @@ use tracing::subscriber::{DefaultGuard, set_default};
 use tracing::{Event, Metadata, Subscriber};
 
 use super::{
-    MirrorArgs, MirrorCall, SilentExperimentError, SilentExperiments, silent_kwargs, silent_targets,
+    MirrorArgs, MirrorCall, MirrorInvocation, SilentExperimentError, SilentExperiments,
+    silent_kwargs, silent_targets,
 };
 
 fn value(text: &str) -> Value {
@@ -223,18 +224,32 @@ fn experiments_on(handle: Handle) -> SilentExperiments {
     SilentExperiments { runtime: handle }
 }
 
+fn invocation<C>(
+    call: Arc<C>,
+    target: &str,
+    messages: Vec<Message>,
+    request: Map<String, Value>,
+) -> MirrorInvocation<C, Message> {
+    MirrorInvocation {
+        call,
+        target: target.to_owned(),
+        messages,
+        request,
+    }
+}
+
 #[tokio::test]
 async fn start_runs_the_mirror_with_the_target_and_the_stream_flag() {
     let experiments = experiments_on(Handle::current());
     let fake = fake_mirror(false);
     let original = request("{\"stream\": true, \"model\": \"gpt-4o\", \"metadata\": {}}");
     let caller_request = original.clone();
-    let handle = experiments.start(
+    let handle = experiments.start(invocation(
         Arc::clone(&fake),
-        "gpt-4o-mini".to_owned(),
+        "gpt-4o-mini",
         vec![Message("hi".to_owned())],
         original,
-    );
+    ));
     handle.await.unwrap();
     let calls = fake.calls();
     assert_eq!(calls.len(), 1);
@@ -264,12 +279,12 @@ async fn start_skips_a_mirror_marked_as_a_silent_experiment() {
     let fake = fake_mirror(false);
     let original = request("{\"metadata\": {\"is_silent_experiment\": true}}");
     experiments
-        .start(
+        .start(invocation(
             Arc::clone(&fake),
-            "gpt-4o-mini".to_owned(),
+            "gpt-4o-mini",
             vec![Message("hi".to_owned())],
             original,
-        )
+        ))
         .await
         .unwrap();
     assert!(fake.calls().is_empty());
@@ -281,12 +296,12 @@ async fn start_logs_a_failure_and_keeps_it_from_the_caller() {
     let experiments = experiments_on(Handle::current());
     let fake = fake_mirror(true);
     experiments
-        .start(
+        .start(invocation(
             Arc::clone(&fake),
-            "gpt-4o-mini".to_owned(),
+            "gpt-4o-mini",
             Vec::new(),
             Map::new(),
-        )
+        ))
         .await
         .unwrap();
     assert_eq!(fake.calls().len(), 1);
@@ -305,12 +320,12 @@ fn blocking_runs_the_mirror_on_its_own_thread() {
     let experiments = experiments_on(runtime.handle().clone());
     let fake = fake_mirror(false);
     experiments
-        .start_blocking(
+        .start_blocking(invocation(
             Arc::clone(&fake),
-            "gpt-4o-mini".to_owned(),
+            "gpt-4o-mini",
             vec![Message("hi".to_owned())],
             Map::new(),
-        )
+        ))
         .join()
         .unwrap();
     let calls = fake.calls();
@@ -326,12 +341,12 @@ fn blocking_keeps_a_failing_mirror_from_the_caller() {
     let experiments = experiments_on(runtime.handle().clone());
     let fake = fake_mirror(true);
     experiments
-        .start_blocking(
+        .start_blocking(invocation(
             Arc::clone(&fake),
-            "gpt-4o-mini".to_owned(),
+            "gpt-4o-mini",
             Vec::new(),
             Map::new(),
-        )
+        ))
         .join()
         .unwrap();
     assert_eq!(fake.calls().len(), 1);

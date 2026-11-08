@@ -54,40 +54,35 @@ pub struct SilentExperiments {
     pub runtime: Handle,
 }
 
+pub struct MirrorInvocation<C, M> {
+    pub call: Arc<C>,
+    pub target: String,
+    pub messages: Vec<M>,
+    pub request: Map<String, Value>,
+}
+
 impl SilentExperiments {
     // B6020 starts one mirror per target and drops the handle, so the spawn is the whole entry point
     #[must_use]
     // ast-grep-ignore: no-one-line-functions
-    pub fn start<C, M>(
-        &self,
-        call: Arc<C>,
-        target: String,
-        messages: Vec<M>,
-        request: Map<String, Value>,
-    ) -> TaskJoinHandle<()>
+    pub fn start<C, M>(&self, invocation: MirrorInvocation<C, M>) -> TaskJoinHandle<()>
     where
         C: MirrorCall<M> + Send + Sync + 'static,
         M: Clone + Send + 'static,
     {
-        self.runtime.spawn(mirror(call, target, messages, request))
+        self.runtime.spawn(mirror(invocation))
     }
 
-    // the thread owns its own handle, and the mirrored call is its whole body
+    // the thread owns its own runtime handle, and the mirrored call is its whole body
     #[must_use]
     // ast-grep-ignore: no-padded-one-line-functions
-    pub fn start_blocking<C, M>(
-        &self,
-        call: Arc<C>,
-        target: String,
-        messages: Vec<M>,
-        request: Map<String, Value>,
-    ) -> ThreadJoinHandle<()>
+    pub fn start_blocking<C, M>(&self, invocation: MirrorInvocation<C, M>) -> ThreadJoinHandle<()>
     where
         C: MirrorCall<M> + Send + Sync + 'static,
         M: Clone + Send + 'static,
     {
         let runtime = self.runtime.clone();
-        spawn_thread(move || runtime.block_on(mirror(call, target, messages, request)))
+        spawn_thread(move || runtime.block_on(mirror(invocation)))
     }
 }
 
@@ -134,6 +129,14 @@ pub fn silent_kwargs(
     Ok(silent)
 }
 
+fn already_a_silent_experiment(request: &Map<String, Value>) -> bool {
+    request
+        .get("metadata")
+        .and_then(Value::as_object)
+        .and_then(|metadata| metadata.get(SILENT_FLAG))
+        .is_some_and(|flag| *flag == Value::Bool(true))
+}
+
 fn skip_shadow_traffic(value: &Value) -> Vec<String> {
     tracing::warn!(
         "silent_model must be a model name or a list of model names, got {value}; skipping shadow traffic"
@@ -141,17 +144,18 @@ fn skip_shadow_traffic(value: &Value) -> Vec<String> {
     Vec::new()
 }
 
-async fn mirror<C, M>(call: Arc<C>, target: String, messages: Vec<M>, request: Map<String, Value>)
+async fn mirror<C, M>(invocation: MirrorInvocation<C, M>)
 where
     C: MirrorCall<M> + Send + Sync + 'static,
     M: Clone + Send + 'static,
 {
-    if request
-        .get("metadata")
-        .and_then(Value::as_object)
-        .and_then(|metadata| metadata.get(SILENT_FLAG))
-        .is_some_and(|flag| *flag == Value::Bool(true))
-    {
+    let MirrorInvocation {
+        call,
+        target,
+        messages,
+        request,
+    } = invocation;
+    if already_a_silent_experiment(&request) {
         return;
     }
     tracing::info!("Starting silent experiment for model {target}");
