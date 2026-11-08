@@ -32,7 +32,7 @@ scope:
   - crates/betterlite-core/src/api/image_edit_call/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/image-edit-call-*
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/image_edit_call.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/image_edit_call.py
   - tools/oracle/cases/sdk-http/image-edit-call/**

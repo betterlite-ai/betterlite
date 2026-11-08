@@ -28,7 +28,7 @@ scope:
   - crates/betterlite-provider/src/api/transcription_http.rs
   - crates/betterlite-provider/src/api/transcription_http/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/transcription_http.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/transcription_http.py
   - tools/oracle/cases/sdk-http/transcription-http/**
