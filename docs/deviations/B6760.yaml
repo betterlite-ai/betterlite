@@ -1,0 +1,11 @@
+task: B6760
+deviations:
+  - what: flow_for_request returns a Cow of the server and extract_scopes takes a typed ScopesInput, not a Python value.
+    why: Rust has no model_copy or duck typing, and docs/compatibility.md leaves Python runtime typing out of scope.
+    link: ""
+  - what: An unparsable url keeps its literal text as its identity in comparisons and log lines. LiteLLM's urlparse raises ValueError for an unmatched bracket, and the exception escapes _issuer_matches and _endpoints_corroborate_authorization_url as an unhandled build or discovery failure.
+    why: An issuer or endpoint of the declared type must not crash a build; the literal identity still differs from every other well-formed url, so the match stays false and the rule fails closed.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L703-L720
+  - what: resolve_oauth2_flow takes the parsed OAuth2Flow and cannot see an unknown flow text. A row or config whose oauth2_flow is outside client_credentials and authorization_code is rejected when the record is deserialized, where LiteLLM resolves the unknown text to None and treats the server as interactive.
+    why: The flow is a closed set and the record deserializer is the boundary that names a bad field, as docs/compatibility.md requires for a value the declared type cannot hold.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L1832-L1866
