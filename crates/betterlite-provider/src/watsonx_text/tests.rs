@@ -477,9 +477,11 @@ async fn request_converts_the_messages_with_the_model_provider() {
 fn replays_the_watsonx_text_reply_corpus() {
     let seen = fs::read_dir("fuzz/corpus/watsonx_text_reply")
         .unwrap()
-        .map(|entry| fs::read(entry.unwrap().path()).unwrap())
-        .inspect(|bytes| {
-            let _replayed = decode_text_generation_reply(bytes);
+        .map(|entry| entry.unwrap().path())
+        .filter(|path| path.is_file())
+        .inspect(|path| {
+            let bytes = fs::read(path).unwrap();
+            let _replayed = decode_text_generation_reply(&bytes);
         })
         .count();
     assert!(seen > 0_usize);
