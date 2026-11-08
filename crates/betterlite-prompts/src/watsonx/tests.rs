@@ -1,10 +1,20 @@
 #![cfg(test)]
 
+use std::collections::BTreeMap;
 use std::fmt::Debug;
+use std::future::Future;
+use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 
+use betterlite_config::proxy::ProxyPolicy;
+use betterlite_config::types::ProxyTrust;
+use betterlite_http::proxy::ProxiedClient;
 use chrono::{DateTime, Utc};
 use rstest::rstest;
+use tokio::io::{AsyncReadExt as _, AsyncWriteExt as _};
+use tokio::net::{TcpListener, TcpStream};
+use tokio::time::timeout;
 use tracing::field::{Field, Visit};
 use tracing::subscriber::set_default;
 use tracing::{Event, Subscriber};
@@ -13,7 +23,9 @@ use tracing_subscriber::layer::{Context, Layer, SubscriberExt as _};
 use super::{apply_prompt_template, messages_to_prompt};
 use crate::builtin::Message;
 use crate::factory::PromptFactory;
-use crate::factory::hub::{ChatTemplate, Hub, TokenizerConfig, TokenizerDocument, builtin_entries};
+use crate::factory::hub::{
+    ChatTemplate, Hub, HubClient, TokenizerConfig, TokenizerDocument, builtin_entries,
+};
 
 const ROLE_TEMPLATE: &str = "{% for message in messages %}<{{ message['role'] }}>{{ message['content'] }}</{{ message['role'] }}>{% endfor %}";
 
@@ -239,4 +251,95 @@ async fn prompt_templates_log_a_failed_hugging_face_render() {
     assert!(captured.iter().any(|line| {
         line.contains("Failed to apply HuggingFace template for model openai/gpt-oss-broken:")
     }));
+}
+
+const EXCHANGE_TIMEOUT: Duration = Duration::from_secs(3);
+
+fn http_factory(address: SocketAddr) -> PromptFactory {
+    let policy = ProxyPolicy::resolve(&ProxyTrust::default(), &BTreeMap::new()).unwrap();
+    let hub = HubClient {
+        base_url: format!("http://{address}"),
+        client: ProxiedClient::outbound(&Arc::new(policy)).unwrap(),
+    };
+    PromptFactory {
+        cache: Mutex::new(builtin_entries()),
+        hub: Hub::Http(hub),
+    }
+}
+
+async fn read_request(stream: &mut TcpStream) -> String {
+    let mut request = Vec::new();
+    loop {
+        let mut chunk = [0_u8; 4096];
+        let count = stream.read(&mut chunk).await.unwrap();
+        request.extend_from_slice(&chunk[..count]);
+        if request.windows(4).any(|window| window == b"\r\n\r\n") {
+            return String::from_utf8(request).unwrap();
+        }
+    }
+}
+
+async fn serve(listener: TcpListener, answers: Vec<&'static str>) {
+    for body in answers {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let _request = read_request(&mut stream).await;
+        let head = format!(
+            "HTTP/1.1 200 OK\r\ncontent-length: {}\r\nconnection: close\r\n\r\n",
+            body.len()
+        );
+        stream.write_all(head.as_bytes()).await.unwrap();
+        stream.write_all(body.as_bytes()).await.unwrap();
+    }
+}
+
+async fn exchange<T, Call>(listener: TcpListener, answers: Vec<&'static str>, call: Call) -> T
+where
+    Call: Future<Output = T>,
+{
+    let exchange = async { tokio::join!(call, serve(listener, answers)) };
+    let (result, ()) = timeout(EXCHANGE_TIMEOUT, exchange)
+        .await
+        .expect("the fetch makes every request it scripts");
+    result
+}
+
+#[tokio::test]
+async fn prompt_templates_fetch_an_inline_hugging_face_template() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let factory = http_factory(listener.local_addr().unwrap());
+    let prompt = exchange(
+        listener,
+        vec![r#"{"chat_template":"<{{ messages[0]['content'] }}>"}"#],
+        apply_prompt_template(
+            &factory,
+            "watsonx/openai/gpt-oss-120b",
+            &messages(r#"[{"role":"user","content":"hi"}]"#),
+            now(),
+        ),
+    )
+    .await
+    .unwrap();
+    assert_eq!(prompt.as_deref(), Some("<hi>"));
+}
+
+#[tokio::test]
+async fn prompt_templates_fetch_the_separate_chat_template_file() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let factory = http_factory(listener.local_addr().unwrap());
+    let prompt = exchange(
+        listener,
+        vec![
+            r#"{"add_bos_token":true}"#,
+            "jinja:{{ messages[0]['role'] }}",
+        ],
+        apply_prompt_template(
+            &factory,
+            "watsonx/openai/gpt-oss-120b",
+            &messages(r#"[{"role":"user","content":"hi"}]"#),
+            now(),
+        ),
+    )
+    .await
+    .unwrap();
+    assert_eq!(prompt.as_deref(), Some("jinja:user"));
 }
