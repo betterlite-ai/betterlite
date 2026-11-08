@@ -1,0 +1,9 @@
+kind: helper
+name: ocr-empty-markdown
+call:
+  b5240:
+    function: "output_choices"
+    response: {"pages": [{"markdown": ""}]}
+env: {}
+compare:
+  ignore: []

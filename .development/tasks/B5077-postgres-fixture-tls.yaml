@@ -1,0 +1,122 @@
+id: B5077
+title: Postgres fixture TLS connections
+description: >-
+  B860 left the fixture's TLS test, verifies_tls_server in tools/postgres-fixture/src/tests.rs, in a state that proves
+  little. It starts a TLS Postgres through docker only (tls_postgres), and its first line is skip_without_docker!, which
+  returns early when no docker binary is on PATH. CI has no docker binary and gives the tests a plain Postgres service
+  through POSTGRES_TEST_URL, so on CI the test passes without running. The "untrusted CA" case also passes the server's
+  own leaf certificate as the root file instead of a different CA, and the private key sits in the repo as
+  fixtures/tls/server.key. This task replaces that test so the three TLS cases really run wherever the other
+  Postgres-backed fixture tests run, and keeps verification strict.
+
+  Delete verifies_tls_server, ca_path, server_path and tls_postgres from tools/postgres-fixture/src/tests.rs, and delete
+  tools/postgres-fixture/fixtures/tls/ca.pem, server.pem and server.key. Put the new tests in
+  tools/postgres-fixture/src/connection/tls/tests.rs (the existing file, which already holds
+  missing_sslmode_disables_tls and explicit_sslmode_prefer_is_rejected; keep those) and a helper module
+  tools/postgres-fixture/src/connection/tls/tests/front.rs.
+
+  The helper is a TLS front for any plain Postgres, written in the test module only. Generate the certificates at test
+  time with rcgen: a CA, and a server leaf signed by it whose only subject alternative name is DNS "localhost". Generate a
+  second, unrelated CA for the untrusted case. Write the CA that the client should trust to a file in a tempfile
+  directory, because the fixture reads its trust anchor from the sslrootcert path in the URL (ConnectionOptions.root_certificate,
+  trusted_roots in tls.rs). The front binds 127.0.0.1 on port 0 and, for each accepted socket, reads the 8-byte Postgres
+  SSLRequest (length 8, code 80877103), answers the single byte 'S', runs a tokio-rustls server handshake with the leaf,
+  opens a plain TCP connection to the real server's host and port taken from the plain URL, and copies bytes both ways
+  with tokio::io::copy_bidirectional. Any other first message, or an 'S' handshake failure, drops the socket. The real
+  server is whatever postgres_server() in src/tests.rs returns (POSTGRES_TEST_URL when set, else a testcontainers Postgres
+  17), so the tests need a Postgres but never need docker when the URL is set.
+
+  The three tests are plain #[tokio::test] functions with these names. trusted_ca_matching_hostname: URL host
+  localhost and the front's port, sslmode=verify-full, sslrootcert the front's CA; provision a database with
+  PostgresFixture::provision_with_name_generator, assert it resolves, run SELECT 1 through the fixture's options, and
+  close it. untrusted_ca_rejected: same URL but sslrootcert the unrelated CA; resolve() returns FixtureError::Connect.
+  wrong_hostname_rejected: the right CA but host 127.0.0.1, which the leaf's DNS-only name does not cover; resolve()
+  returns FixtureError::Connect. In both rejection cases also assert that the front accepted at least one TLS handshake
+  attempt, so a connection that never reached the front cannot pass the test. Assert no database named betterlite_fixture_%
+  that the test created is left behind.
+
+  Do not weaken verification: add no dangerous() client config, no custom ServerCertVerifier and no ignore of
+  hostname or chain errors anywhere in tools/postgres-fixture. Dev-dependencies to add to
+  tools/postgres-fixture/Cargo.toml: rcgen 0.14.10 with default-features = false and features aws_lc_rs and pem,
+  tokio-rustls 0.26.6 with default-features = false and features aws_lc_rs and tls12, and tempfile 3.27.0, the versions
+  other crates in this workspace already use. Update the README paragraph in tools/postgres-fixture/README.md with one
+  sentence saying TLS tests generate their certificates and front the configured server.
+
+  Keep each test module below 300 lines. This is test infrastructure with no LiteLLM function port; budget 150 front
+  helper, 120 tests, 40 removed-and-moved lines, 20 manifest and README.
+scope:
+  paths:
+    - tools/postgres-fixture/Cargo.toml
+    - tools/postgres-fixture/README.md
+    - tools/postgres-fixture/src/tests.rs
+    - tools/postgres-fixture/src/connection/tls/tests.rs
+    - tools/postgres-fixture/src/connection/tls/tests/**
+    - tools/postgres-fixture/fixtures/tls/**
+    - Cargo.lock
+  lint_tables: false
+references:
+  - url: https://github.com/betterlite-ai/betterlite/blob/8cfd77c19fb189d2b4eee91142d6d4fe0c8228d1/tools/postgres-fixture/src/tests.rs#L28-L35
+    why: postgres_image and the Postgres 17 container the tests use when POSTGRES_TEST_URL is unset.
+  - url: https://github.com/betterlite-ai/betterlite/blob/8cfd77c19fb189d2b4eee91142d6d4fe0c8228d1/tools/postgres-fixture/src/tests.rs#L60-L78
+    why: docker_available and the skip_without_docker! macro that makes the current TLS test return early on CI.
+  - url: https://github.com/betterlite-ai/betterlite/blob/8cfd77c19fb189d2b4eee91142d6d4fe0c8228d1/tools/postgres-fixture/src/tests.rs#L500-L563
+    why: The test, certificate paths and docker TLS server this task removes.
+  - url: https://github.com/betterlite-ai/betterlite/blob/8cfd77c19fb189d2b4eee91142d6d4fe0c8228d1/tools/postgres-fixture/src/connection/tls.rs#L55-L103
+    why: tls_connector and trusted_roots, the production code under test; it builds a rustls ClientConfig from the sslrootcert file, or from native roots when absent.
+  - url: https://github.com/betterlite-ai/betterlite/blob/8cfd77c19fb189d2b4eee91142d6d4fe0c8228d1/.github/workflows/gate.yml#L95-L121
+    why: CI runs a plain postgres:16.6 service with no docker binary and sets POSTGRES_TEST_URL.
+  - url: https://www.postgresql.org/docs/current/protocol-message-formats.html
+    why: SSLRequest is length 8 and code 80877103; the server answers one byte, S to continue with TLS or N to refuse.
+dod:
+  - text: With a CA the client trusts and the hostname localhost, the fixture connects over TLS with sslmode=verify-full, provisions a database and runs a query.
+    proof: [tls-tests]
+  - text: A server certificate from an unrelated CA is rejected with FixtureError::Connect after a real TLS handshake attempt.
+    proof: [tls-tests]
+  - text: A server certificate that lacks the dialled hostname is rejected with FixtureError::Connect after a real TLS handshake attempt.
+    proof: [tls-tests]
+  - text: The TLS tests no longer skip on a missing docker binary, and no certificate or private key is checked in.
+    proof: [tls-assets-gone]
+  - text: Existing fixture tests still pass after verifies_tls_server and its helpers were removed from src/tests.rs.
+    proof: [fixture-tests]
+checks:
+  optional: []
+  commands:
+    - id: tls-tests
+      why: A TLS case is missing, never reaches the TLS front, or accepts a bad certificate or hostname.
+      run: >-
+        list=$(cargo nextest list --locked -p betterlite-postgres-fixture -E 'test(/^connection::tls::tests::/)' --message-format oneline) &&
+        for name in trusted_ca_matching_hostname untrusted_ca_rejected wrong_hostname_rejected; do grep -q "::$name$" <<< "$list" || { echo "missing test $name"; exit 1; }; done &&
+        cargo nextest run --locked -p betterlite-postgres-fixture --no-tests=fail -E 'test(/^connection::tls::tests::/)'
+    - id: tls-assets-gone
+      why: The docker-only TLS test, its skip, the checked-in key, or a weakened verifier is still present.
+      run: >-
+        test ! -e tools/postgres-fixture/fixtures/tls/server.key &&
+        ! grep -q verifies_tls_server tools/postgres-fixture/src/tests.rs &&
+        ! grep -rq -E 'dangerous|danger_accept|ServerCertVerifier' tools/postgres-fixture/src &&
+        grep -q untrusted_ca_rejected tools/postgres-fixture/src/connection/tls/tests.rs &&
+        grep -q rcgen tools/postgres-fixture/Cargo.toml
+    - id: fixture-tests
+      why: Removing the old TLS test from src/tests.rs broke a fixture test or its shared helpers.
+      run: >-
+        cargo nextest run --locked -p betterlite-postgres-fixture --no-tests=fail -E 'test(/^tests::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - Fixture selection, cleanup and seeding tests stay as B860 left them; only the TLS test and its helpers move.
+  - A Postgres server that speaks TLS itself. The front terminates TLS in front of a plain server, which exercises the fixture's client verification but not Postgres's own ssl settings; see notes.
+  - sslmode=require and verify-ca semantics. tls.rs rewrites every non-disable sslmode to require and always verifies chain and hostname, which is stricter than libpq; this task does not change it.
+  - The CI workflow and gate configuration.
+pitfalls:
+  - The worker sandbox cannot reach docker.sock and has no POSTGRES_TEST_URL, so every Postgres-backed test, these three included, fails locally with a connection or container error. That is not a code defect; only CI runs them, and the checks still name them so the gate lists them and fails on a missing one. Do not add a skip to make them pass locally.
+  - Do not put skip_without_postgres! or skip_without_docker! in the new tests; a silent early return is what made the old TLS test pass on CI without running.
+  - The leaf certificate needs DNS "localhost" as a subject alternative name; rustls ignores the common name, so a certificate with only CN=localhost fails the trusted case.
+  - A leaf marked as a CA, or a CA without key-cert-sign, is refused by rustls; build the CA with IsCa::Ca and KeyUsagePurpose::KeyCertSign and the leaf as an end-entity.
+  - The IP address 127.0.0.1 never matches a DNS-only certificate, which is why it makes the wrong-hostname case; do not give the leaf an IP SAN.
+  - The front must answer 'S' as a single byte before the TLS handshake and then speak plain Postgres to the real server; sending any other bytes first breaks tokio-postgres's startup.
+  - The front's accept loop and its copy tasks must end when the test ends, or the tokio runtime of a tokio test hangs on shutdown; hold the tasks in a JoinSet and abort it at the end.
+  - The sslrootcert value is a file path inside a URL; use the tempfile path as is and do not percent-encode a path that has no special characters.
+  - Docker's Postgres only listens on a mapped host port; build the real-server address from the URL's host and port, not from a hard-coded 5432.
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+review_level: security

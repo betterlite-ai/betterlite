@@ -3,7 +3,7 @@ milestone: M8 platform
 title: Request middleware, root path, size limits and security headers
 status: todo
 depends_on: [B001, B002, B003, B4200]
-file: null
+file: tasks/B122-request-middleware.yaml
 covers:
   - "litellm/proxy/middleware/{gzip_middleware,request_size_limit_middleware,security_headers_middleware}.py"
 parent: null

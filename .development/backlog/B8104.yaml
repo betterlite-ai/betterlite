@@ -1,0 +1,15 @@
+id: B8104
+milestone: M3 providers
+title: Manus Responses API config
+status: todo
+depends_on: [B171, B507, B508, B509, B1114]
+file: tasks/B8104-manus-responses.yaml
+covers:
+  - "litellm/llms/manus/responses/**"
+  - "litellm/llms/manus/__init__.py"
+parent: B050
+split_from: B050
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

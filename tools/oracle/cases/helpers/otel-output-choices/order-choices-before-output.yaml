@@ -1,0 +1,9 @@
+kind: helper
+name: order-choices-before-output
+call:
+  b5240:
+    function: "output_choices"
+    response: {"choices": [{"text": "completed"}], "output": [{"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "from output"}]}]}
+env: {}
+compare:
+  ignore: []

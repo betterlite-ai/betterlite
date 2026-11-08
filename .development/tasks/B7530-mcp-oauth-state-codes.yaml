@@ -1,0 +1,115 @@
+id: B7530
+title: MCP OAuth state, sealed codes, state cookie and token rules
+description: >-
+  Build the pure helpers that the MCP gateway's authorize, token, register and callback flows share. In LiteLLM they are the module-level helpers at the top of discoverable_endpoints.py. Nothing here does I/O, reads a clock or holds state. The flows (B7531, B7532) and the callback route (no owner yet) call them.
+
+
+  Code goes in betterlite-mcp, new module oauth_state: crates/betterlite-mcp/src/oauth_state.rs plus the submodules state, sealed, redirect_uris, state_cookie, token_rules and query, each with a tests.rs beside it. Encryption comes in through a trait declared in oauth_state.rs: `SealCipher` with `fn encrypt(&self, plain: &str) -> String` and `fn decrypt(&self, value: &str, field: &str) -> Option<String>`. The composition root implements it over B1600's StoredCipher (LiteLLM's encrypt_value_helper and decrypt_value_helper). The `field` argument is a diagnostic label only, never a key. `decrypt` returns None on any failure (LiteLLM calls it with return_original_value false for state and codes).
+
+
+  1. state (`encode_state_with_base_url`, L192-L247, `decode_state_hash`, L250-L270). Rust names: encode_state and decode_state. `OauthState` is a serde struct with the eleven keys oauth_nonce, base_url, original_state, code_challenge, code_challenge_method, client_redirect_uri, litellm_user_id, mcp_server_id, dcr_client_id, dcr_client_secret and dcr_token_endpoint_auth_method. All except base_url and original_state are Option and are written as JSON null when absent (never omitted). encode_state serializes with the keys in alphabetical order (LiteLLM uses sort_keys=True) and returns cipher.encrypt(json). decode_state returns Result<OauthState, StateError>: a decrypt failure is StateError::Undecryptable (message "Failed to decrypt state parameter"), a JSON failure is StateError::Malformed. The decrypt field label is "oauth_state". dcr_client_secret is a SecretString that serializes its value into the state JSON.
+
+
+  2. sealed (L274-L417). Two sealed codes, each is a fixed prefix plus cipher.encrypt(json with sorted keys). BridgeAuthorizationCode: prefix "llm_bcode_", fields upstream_code, litellm_user_id and mcp_server_id (all non-empty strings) and oauth_nonce (Option). PassthroughAuthorizationCode: prefix "llm_ptcode_", fields upstream_code and client_id and mcp_server_id (non-empty), client_secret (Option, SecretString) and token_endpoint_auth_method (Option of the enum B4650 calls the token endpoint auth method; any other text fails validation). Functions: is_bridge_code(code) is a prefix test; seal_bridge_code(upstream_code, litellm_user_id, mcp_server_id, oauth_nonce); open_bridge_code(code) -> Option; seal_passthrough_code(upstream_code, client_id, client_secret, mcp_server_id, auth_method); open_passthrough_code(code) -> Option. An open function returns None for a wrong prefix, a decrypt failure, bad JSON, a missing or empty required field or a field of the wrong type, and it never panics. The decrypt labels are "bridge_authorization_code" and "passthrough_authorization_code". Unknown JSON keys are ignored.
+
+
+  `redeem_passthrough_code(code: Option<&str>, server_id: &str, code_verifier: Option<&str>, cipher) -> Result<Option<PassthroughAuthorizationCode>, RedeemError>` (`redeem_passthrough_authorization_code`, L394-L417). Order: an absent or empty code is Ok(None); open_passthrough_code giving None is Ok(None) (a raw upstream code keeps the old behavior); a sealed mcp_server_id different from server_id is RedeemError::WrongServer, text "Authorization code was issued for a different MCP server"; an absent or empty code_verifier is RedeemError::VerifierRequired, text "code_verifier is required to redeem this authorization code". The flow layer (B7321) turns both into 400 with the text as a plain string `detail`.
+
+
+  3. redirect_uris: `client_supplied_redirect_uris(value: Option<&serde_json::Value>) -> Option<Vec<String>>` (L1675-L1684). Some only when the value is a non-empty JSON array in which every element is a non-empty string; every other shape is None.
+
+
+  4. state_cookie (L441-L504). Constants: cookie name prefix "mcp_oauth_state_", TTL 600 seconds, handle length 32 bytes. `state_cookie_name(relay_state)` is the prefix plus the handle. `cookie_path_and_secure(base_url: &str) -> (String, bool)`: the path of the parsed base URL, or "/" when the path is empty, and secure true only for scheme https. `StateCookie { name, value, max_age 600, path, secure, http_only true, same_site Lax }` is built by `set_state_cookie(base_url, relay_state, encoded_state)`. `resolve_encoded_state(cookies: &dyn Fn(&str) -> Option<String>, state: &str) -> String` returns the cookie value named for the handle when it is present and non-empty, else state itself. `clear_state_cookie(base_url, cookie_present: bool, state) -> Option<ClearCookie>` returns None when the cookie was not sent, else a delete spec with the same name, path, secure true or false, http_only and Lax. The random handle is made by the caller (B7532), not here.
+
+
+  5. token_rules (L557-L615): `validate_token_response(token_response: &serde_json::Value, rules: &serde_json::Map<String, serde_json::Value>, server_id: &str) -> Result<(), TokenValidationFailure>` (`_validate_token_response`) with `normalize_for_comparison` (`_normalize_for_token_comparison`). For each rule in order: actual is token_response[key] (null counts as absent); when absent and the key contains ".", walk the dot-split parts through nested objects only (a non-object step ends the walk with absent). An absent actual fails with field key and message "OAuth token rejected: required field '<key>' is absent". Otherwise both sides are normalized (bool to "true" or "false", everything else to its Python str form: strings as is, integers plain, floats with a ".0" when whole) and a mismatch fails with message "OAuth token rejected: '<key>' = '<actual>', expected '<expected>'". TokenValidationFailure carries server_id, field and message, and B7532 returns it as 403 with detail {"error": "token_validation_failed", "server_id", "field", "message"}. A token_response that is not an object has every key absent.
+
+
+  6. query: `append_query_params(url: &str, params: &[(String, String)]) -> String` (`_append_query_params`, L518-L522): keeps the existing query pairs in order including blank values, appends the new pairs and re-encodes the whole query with form encoding.
+
+
+  The sealed-code openers parse text from outside (the `code` form field of the token endpoint), so they are the fuzzed decoders. Add a cargo-fuzz target `mcp_sealed_code` that feeds the input text, as UTF-8 lossy, to open_bridge_code and open_passthrough_code through a fixed test cipher (decrypt returns the input after a fixed marker, else None), and a corpus replay test. The fuzz Cargo.toml gets the [[bin]] entry.
+
+
+scope:
+  paths:
+    - crates/betterlite-mcp/src/oauth_state.rs
+    - crates/betterlite-mcp/src/oauth_state/**
+    - crates/betterlite-mcp/fuzz/fuzz_targets/mcp_sealed_code.rs
+    - crates/betterlite-mcp/fuzz/Cargo.toml
+    - crates/betterlite-mcp/fuzz/corpus/mcp_sealed_code/**
+    - tools/oracle/cases/helpers/mcp-oauth-state/**
+    - tools/oracle/helpers/b7530.py
+    - tools/oracle/helpers/b7530/**
+    - tools/oracle/src/helpers/mcp/b7530.rs
+    - tools/oracle/src/helpers/mcp/b7530/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L192-L270
+    why: encode_state_with_base_url and decode_state_hash, the eleven state keys and the sorted JSON.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L274-L417
+    why: Both sealed codes, their prefixes and models, and the redemption gate.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L441-L522
+    why: The state cookie constants and helpers, and _append_query_params.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L557-L615
+    why: Token response validation rules with dot paths.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L1675-L1684
+    why: client_supplied_redirect_uris.
+
+dod:
+  - text: encode_state writes all eleven keys sorted with nulls kept, and decode_state returns them, with Undecryptable and Malformed errors.
+    proof: [state-tests]
+  - text: Both sealed codes round trip, and each opener returns None for a wrong prefix, a failed decrypt, bad JSON, a missing or empty required field and a bad auth method.
+    proof: [state-tests]
+  - text: redeem_passthrough_code gives Ok(None) for no code or a raw code, WrongServer for another server, VerifierRequired without a verifier, and the sealed value otherwise.
+    proof: [state-tests]
+  - text: client_supplied_redirect_uris, validate_token_response and the dot path walk match LiteLLM on the oracle helper cases.
+    proof: [state-tests, oracle]
+  - text: The state cookie helpers give the name, path, secure flag, resolve and clear results LiteLLM gives.
+    proof: [state-tests]
+  - text: The sealed-code openers have a fuzz target, a committed seed corpus and a replay test.
+    proof: [sealed-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: state-tests
+      why: the state, sealed code, cookie, redirect uri, token rule or query helpers have no passing behavior tests
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^oauth_state::/) - test(/::replays_sealed_corpus$/)'
+    - id: sealed-corpus
+      why: the sealed code openers have no fuzz target or new seed, or the replay fails
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-mcp/fuzz/corpus/mcp_sealed_code)" && test -f crates/betterlite-mcp/fuzz/fuzz_targets/mcp_sealed_code.rs && grep -qF "open_passthrough_code" crates/betterlite-mcp/fuzz/fuzz_targets/mcp_sealed_code.rs && cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^oauth_state::sealed::tests::replays_sealed_corpus$/)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-oauth-state/redirect-uris-valid.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-state/redirect-uris-bad-shapes.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-state/token-rules-match.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-state/token-rules-dot-path.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-state/token-rules-absent-and-mismatch.yaml
+  - tools/oracle/cases/helpers/mcp-oauth-state/append-query-params.yaml
+
+deviations:
+  - what: Sealed values are produced by betterlite's cipher, so a code or state sealed by LiteLLM does not open in betterlite and the other way round.
+    why: Both sides encrypt with their own master key derivation; in-flight flows across a switch must restart. Oracle cases cover only the pure helpers.
+
+out_of_scope:
+  - "The callback route that opens the state and seals the codes, and _get_validated_client_redirect_uri: no owner found, see the architect notes."
+  - "validate_trusted_redirect_uri and get_request_base_url: B4654 and B4655."
+  - "The flows that call these helpers: B7531 (register and ephemeral client) and B7532 (authorize and token)."
+  - "The StoredCipher implementation: B1600."
+
+pitfalls:
+  - State and sealed JSON use sorted keys and keep null values, so a missing optional is written as null and not left out.
+  - A sealed passthrough code with an auth method outside the known enum fails validation and opens to None, it is not passed on as text.
+  - redeem returns Ok(None) for a raw upstream code even when a verifier is missing; the verifier check applies only to a genuine sealed code.
+  - Rule keys with a dot are tried as a whole key first and the dot walk starts only when that value is absent or null.
+  - A boolean rule value "true" matches a JSON true, and a number 12345 matches the string "12345", but the string "True" does not match a JSON true.
+  - The cookie delete spec is returned only when the request carried that cookie.
+  - decode_state label is "oauth_state", but the label is never a key, so tests must not depend on it.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

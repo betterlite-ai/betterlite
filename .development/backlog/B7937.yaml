@@ -1,0 +1,14 @@
+id: B7937
+milestone: M12 python
+title: Python types for Prometheus part one, constants, label validation and UserAPIKeyLabelNames (types/integrations/prometheus L1-L410)
+status: todo
+depends_on: [B5657]
+file: tasks/B7937-types-prometheus-labels-a.yaml
+covers:
+  - "litellm/types/integrations/prometheus.py"
+parent: B167
+split_from: B167
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

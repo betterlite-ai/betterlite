@@ -1,0 +1,14 @@
+id: B8024
+milestone: M3 providers
+title: Map Google PSE and SearchAPI.io GET searches with keys in the URL
+status: todo
+depends_on: [B002, B3270, B171]
+file: tasks/B8024-google-searchapi-search.yaml
+covers:
+  - "litellm/llms/{google_pse,searchapi}/**"
+parent: B048
+split_from: B048
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

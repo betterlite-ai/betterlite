@@ -1,0 +1,13 @@
+id: B8040
+milestone: M12 python
+title: Embedded interpreter host, tracked blocking work and owned temporary files
+status: todo
+depends_on: [B5369]
+file: tasks/B8040-pyhost-interpreter.yaml
+covers: []
+parent: B165
+split_from: B165
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

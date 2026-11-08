@@ -1,0 +1,14 @@
+id: B7740
+milestone: M8 platform
+title: Swagger UI, ReDoc and OAuth2 redirect pages with the bundled swagger assets
+status: todo
+depends_on: []
+file: tasks/B7740-docs-pages-and-swagger-assets.yaml
+covers:
+  - "litellm/proxy/swagger/**"
+parent: B123
+split_from: B123
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null
