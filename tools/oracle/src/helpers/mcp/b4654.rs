@@ -61,17 +61,9 @@ impl Helper for Op {
 }
 
 fn strip_value(input: &Value) -> Result<String, Box<HelperError>> {
-    if let (Ok(scheme), Ok(netloc)) = (
-        support::string(input, "scheme"),
-        support::string(input, "netloc"),
-    ) {
-        return Ok(base_url::strip_default_port(scheme, netloc));
-    }
-    Err(support::invalid(
-        "InvalidInput",
-        None,
-        "scheme and netloc must be strings".to_owned(),
-    ))
+    let scheme = support::string(input, "scheme")?;
+    let netloc = support::string(input, "netloc")?;
+    Ok(base_url::strip_default_port(scheme, netloc))
 }
 
 fn well_known_value(input: &Value) -> &str {
@@ -94,16 +86,9 @@ fn route_value(input: &Value) -> String {
 }
 
 fn byok_value(input: &Value) -> String {
-    if let (Some(proxy), Some(root)) = (
-        support::optional(input, "proxy_base_url"),
-        support::optional(input, "request_root_path"),
-    ) {
-        return challenge::byok_www_authenticate(proxy, root);
-    }
-    challenge::byok_www_authenticate(
-        support::optional(input, "proxy_base_url").unwrap_or_default(),
-        support::optional(input, "request_root_path").unwrap_or_default(),
-    )
+    let proxy = support::optional(input, "proxy_base_url").unwrap_or_default();
+    let root = support::optional(input, "request_root_path").unwrap_or_default();
+    challenge::byok_www_authenticate(proxy, root)
 }
 
 fn request_base(input: &Value) -> Result<String, Box<HelperError>> {

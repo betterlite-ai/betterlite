@@ -58,14 +58,10 @@ pub(super) fn string<'input>(
     input: &'input Value,
     name: &str,
 ) -> Result<&'input str, Box<HelperError>> {
-    let Some(value) = input.get(name).and_then(Value::as_str) else {
-        return Err(invalid(
-            "InvalidInput",
-            None,
-            format!("{name} must be a string"),
-        ));
-    };
-    Ok(value)
+    input
+        .get(name)
+        .and_then(Value::as_str)
+        .ok_or_else(|| invalid("InvalidInput", None, format!("{name} must be a string")))
 }
 
 pub(super) fn optional<'input>(input: &'input Value, name: &str) -> Option<&'input str> {
