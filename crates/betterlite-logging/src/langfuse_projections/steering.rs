@@ -32,12 +32,10 @@ pub fn truthiness(value: &Json) -> bool {
 
 #[must_use]
 pub fn as_steering_flag(value: &Json) -> bool {
-    match value {
-        Json::Text(text) => recognized_bool(text).unwrap_or(!text.is_empty()),
-        Json::Null | Json::Bool(_) | Json::Number(_) | Json::List(_) | Json::Object(_) => {
-            truthiness(value)
-        }
+    if let Json::Text(text) = value {
+        return recognized_bool(text).unwrap_or(!text.is_empty());
     }
+    truthiness(value)
 }
 
 #[must_use]
