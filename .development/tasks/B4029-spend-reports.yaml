@@ -192,11 +192,11 @@ oracle_cases:
   - tools/oracle/cases/helpers/user-spend-alerts/types-disabled.yaml
 deviations:
   - what: Cache, sender, report source, user spend source, pod lock, clock and the random first-run offsets are injected traits, not the proxy logging object's internal_usage_cache, send_alert, proxy_server's prisma_client and the module level scheduler.
-    why: betterlite has no module state, and the real implementations are wired by the architect from B4293, B4024, B1725, B700 and B1690.
+    why: betterlite has no module state, and B8656 wires the real implementations from ProxyLogging's internal usage cache (B4293), B4024, B1725, B700 and B1690.
   - what: send_user_spend_alerts takes a has_database flag, and the real query source is built only when a database is connected.
     why: LiteLLM reads the global prisma_client from proxy_server, which betterlite does not have.
   - what: Job rules are returned as plain job settings by plan_spend_jobs and the runners, with no scheduler started in this task.
-    why: LiteLLM registers them on APScheduler inside proxy_server.py, and betterlite's startup wiring owns scheduling.
+    why: LiteLLM registers them on APScheduler inside proxy_server.py, and B8656 starts the jobs on the server task tracker.
   - what: HOURS_IN_A_DAY is a constructor value that defaults to 24, not read here from the environment.
     why: No backlog task owns that constant, so the caller reads the env var.
 out_of_scope:
@@ -206,7 +206,7 @@ out_of_scope:
   - duration_in_seconds belongs to B199, PodLockManager to B1690 and the internal usage cache to B4293.
   - The health endpoint test alert, which also starts both reports once (_health_endpoints.py L524-L525), belongs to the health route task.
   - send_fallback_stats_from_prometheus and its scheduled job (proxy_server.py L11311-L11325) are not part of the spend entry and belong to the fallback reports task.
-  - Registering the scheduler and the startup call to _initialize_slack_alerting_jobs (proxy_server.py L10804) belong to the proxy startup wiring.
+  - Registering the scheduler and the startup call to _initialize_slack_alerting_jobs (proxy_server.py L10804) belong to B8656's start.
 pitfalls:
   - The weekly report returns early without spend_reports in the alert types, but the monthly report has no such check, so a monthly report is still built and queried when the type is off.
   - Weekly dates use the local date (datetime.now().date()) and the user spend pass uses the UTC date, so the two clocks must stay separate.

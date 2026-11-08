@@ -1,7 +1,7 @@
 id: B8272
 title: Serve model insights and task insights routes
 description: >-
-  Register `GET /model-insights` and `GET /model-insights/tasks` (no aliases) in betterlite-server and read their numbers from the `LiteLLM_DailyModelUsage` table. These two routes are the admin UI's Model Insights page backend. Files: `crates/betterlite-server/src/model_insights_routes.rs` and its folder for the routes and the shaping, and `crates/betterlite-db/src/model_usage_reads.rs` for the three grouped reads. B1734 owns the write side (`model_usage_rollup`) and the `ModelInsightTask` record plus `load_model_insight_tasks` with the twenty-entry task catalog; call those, do not rebuild them. The response records are this task's: `ModelInsightMetric`, `ModelInsightDailyMetric`, `ModelInsightDailyTotal`, `ModelInsightTaskSummary`, `ModelInsightsResponse` and `ModelInsightTasksResponse` (litellm/types/model_insights.py), with the field order LiteLLM prints. `pub fn routes()` is built like the sibling route modules; the architect mounts it.
+  Register `GET /model-insights` and `GET /model-insights/tasks` (no aliases) in betterlite-server and read their numbers from the `LiteLLM_DailyModelUsage` table. These two routes are the admin UI's Model Insights page backend. Files: `crates/betterlite-server/src/model_insights_routes.rs` and its folder for the routes and the shaping, and `crates/betterlite-db/src/model_usage_reads.rs` for the three grouped reads. B1734 owns the write side (`model_usage_rollup`) and the `ModelInsightTask` record plus `load_model_insight_tasks` with the twenty-entry task catalog; call those, do not rebuild them. The response records are this task's: `ModelInsightMetric`, `ModelInsightDailyMetric`, `ModelInsightDailyTotal`, `ModelInsightTaskSummary`, `ModelInsightsResponse` and `ModelInsightTasksResponse` (litellm/types/model_insights.py), with the field order LiteLLM prints. `pub fn routes()` is built like the sibling route modules; B8676 mounts it.
 
   Constants (litellm/constants.py L1796-L1799): top models 10, max range 365 days, default task `uncategorized`.
 
@@ -20,7 +20,6 @@ scope:
     - crates/betterlite-server/src/model_insights_routes/**
     - crates/betterlite-db/src/model_usage_reads.rs
     - crates/betterlite-db/src/model_usage_reads/**
-    - tools/oracle/cases/model-insights/**
     - tools/oracle/helpers/b8272.py
     - tools/oracle/helpers/b8272/**
     - tools/oracle/src/helpers/server/b8272.rs
@@ -38,14 +37,16 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/model_insights_tasks.json#L1-L22
     why: The task catalog B1734 loads; unknown task types are the case this task adds.
 dod:
-  - text: Both routes answer on exactly their paths for GET, need a valid key, and answer 403 for any role other than proxy_admin and proxy_admin_viewer.
-    proof: [route-tests, oracle]
-  - text: With no database the routes answer 500 with the db-not-connected text; the 403 check comes first.
-    proof: [window-tests, oracle]
+  - text: "The handlers are tested with tower's oneshot over the module's own Router and fake ports; B8676 runs the HTTP oracle cases through the booted proxy."
+    proof: [new-cases]
+  - text: Both routes answer on exactly their paths for GET, need a valid key, and answer 403 for any role other than proxy_admin and proxy_admin_viewer. B8676 proves it over HTTP.
+    proof: [route-tests]
+  - text: With no database the routes answer 500 with the db-not-connected text; the 403 check comes first. B8676 proves it over HTTP.
+    proof: [window-tests]
   - text: A bad date gives 400 "Dates must use YYYY-MM-DD", a reversed or 365-day-or-longer range gives 400 "Date range must be between 1 and 365 days", and the defaults are today in UTC and 364 days before.
     proof: [window-tests]
-  - text: An unknown metric value gives the usual 422, and the metric defaults are tokens and spend for the two routes.
-    proof: [window-tests, oracle]
+  - text: An unknown metric value gives the usual 422, and the metric defaults are tokens and spend for the two routes. B8676 proves it over HTTP.
+    proof: [window-tests]
   - text: The top 10 models are ranked by the chosen metric, daily rows cover only those models and are empty when there are none, and daily_totals cover the whole window.
     proof: [insights-tests]
   - text: Task summaries are ordered by total, carry share, leader and provider as described, and an unknown task type shows as Uncategorized / General with its own task_type.
@@ -71,13 +72,9 @@ checks:
       why: the grouped database reads are missing or wrong
       run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^model_usage_reads::/)'
     - id: new-cases
-      why: the model insights routes have no HTTP parity case on this branch
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/model-insights)"
-oracle_cases:
-  - tools/oracle/cases/model-insights/auth-required.yaml
-  - tools/oracle/cases/model-insights/no-database.yaml
-  - tools/oracle/cases/model-insights/tasks-no-database.yaml
-  - tools/oracle/cases/model-insights/invalid-metric.yaml
+      why: the handlers are not tested with tower's oneshot over the module's own Router and fake ports
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^model_insights_routes::tests::oneshot_/)'
+oracle_cases: []
 deviations: []
 out_of_scope:
   - "ModelInsightTask, load_model_insight_tasks and the JSON catalog: B1734. The daily model usage upsert: B1734."

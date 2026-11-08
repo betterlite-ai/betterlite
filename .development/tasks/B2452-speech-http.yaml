@@ -27,7 +27,7 @@ scope:
   - crates/betterlite-provider/src/api/speech_http.rs
   - crates/betterlite-provider/src/api/speech_http/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/speech_http.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/speech_http.py
   - tools/oracle/cases/sdk-http/speech-http/**

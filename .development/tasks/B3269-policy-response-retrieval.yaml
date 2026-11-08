@@ -27,7 +27,7 @@ description: >-
   functions read the router through the `PolicyRouterView` port, a trait in this module with
   `deployment_model_name(model_id)` (the deployment's model_name, none when absent) and
   `model_group_aliases()` (each alias name with the group it resolves to), passed as an
-  optional trait object (none is the "no router" case). The wave 17 policy wiring part
+  optional trait object (none is the "no router" case). B8611's RouterView
   implements it in betterlite-server over B844's Router.get_deployment and model_group_alias
   and B302's resolve_model_group_alias.
 

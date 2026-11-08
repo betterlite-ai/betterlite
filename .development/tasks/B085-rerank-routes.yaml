@@ -25,7 +25,7 @@ description: >-
   with a configured master key and B1139/B856 virtual-key fixtures where required. No helper adapter.
   Own 98 nonblank/non-comment lines including decorators, excluding imports. Budget 125 handler,
   130 tests,125 HTTP fixtures,60 fuzz/replay and 30 wiring =470 lines.
-  B1100 registers routes/rerank.rs as a stub, so fill only crates/betterlite-server/src/routes/rerank.rs and leave routes.rs and state.rs as they are.
+  B1100 registers routes/rerank.rs as a stub, so fill only crates/betterlite-server/src/routes/rerank.rs and leave routes.rs and state.rs as they are. The router side of the arerank dispatch (B8352's RouterSingleCalls) is an Option port in the route state: routes/rerank.rs passes None, so every call takes the no-router branch, until B8636 fills it from app::inference::router_calls(state).
 scope:
   paths:
   - crates/betterlite-server/src/api.rs

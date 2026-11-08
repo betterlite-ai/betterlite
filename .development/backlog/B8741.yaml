@@ -1,0 +1,13 @@
+id: B8741
+milestone: M8 platform
+title: Callback name list and the logger catalog
+status: todo
+depends_on: [B8740, B189]
+file: tasks/B8741-callback-catalog.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

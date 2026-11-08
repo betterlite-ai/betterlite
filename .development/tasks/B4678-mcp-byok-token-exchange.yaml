@@ -4,7 +4,7 @@ description: >-
   Build the second half of LiteLLM's BYOK (bring your own key) OAuth flow for MCP servers: the discovery documents that tell an MCP client where to authorize, and the token endpoint that swaps the one-time code from B4677's consent page for a signed session token while saving the user's API key. B4677 owns the authorization-code store and the GET and POST /v1/mcp/oauth/authorize routes. B4655 owns the session cookie. This task never touches either, it only reads and removes codes through a port.
 
 
-  Code goes in two places. betterlite-mcp gets two modules: byok_oauth_metadata (the JSON documents) and byok_token_exchange (everything the token endpoint decides). betterlite-server gets routes/mcp_byok_oauth, a thin axum layer. Nothing reads a global or an environment variable here: the master key, the normalized PROXY_BASE_URL, the root path list and the clock all arrive as arguments or as fields of one state struct built by the composition root.
+  Code goes in two places. betterlite-mcp gets two modules: byok_oauth_metadata (the JSON documents) and byok_token_exchange (everything the token endpoint decides). betterlite-server gets routes/mcp_byok_oauth, a thin axum layer. Nothing reads a global or an environment variable here: the master key, the normalized PROXY_BASE_URL, the root path list and the clock all arrive as arguments or as fields of one state struct built by B8624.
 
 
   byok_oauth_metadata (crates/betterlite-mcp/src/byok_oauth_metadata.rs, tests.rs beside it).
@@ -16,7 +16,7 @@ description: >-
 
   pkce::verify_pkce(code_verifier: &str, code_challenge: &str) -> bool is _verify_pkce: SHA-256 of the verifier's UTF-8 bytes, base64url with the URL-safe alphabet and no padding, then equal to the challenge text. Compare in constant time with the subtle crate (it is already a workspace dependency; add it to crates/betterlite-mcp/Cargo.toml). The answer is the same as LiteLLM's plain ==.
 
-  ports::AuthCodeLookup is the port to B4677's store. Native async-free methods: purge_expired(&self, now: f64), get(&self, code: &str) -> Option<AuthCodeRecord>, remove(&self, code: &str). AuthCodeRecord has api_key: SecretString, server_id: String, code_challenge: String, redirect_uri: String, client_id: String, user_id: String and expires_at: f64 (Unix seconds, as LiteLLM's time.time()). B4677 is merged before this task starts: read crates/betterlite-mcp/src/byok_consent/** first. B4677 names its store `AuthCodeStore` (byok_consent/store.rs) with a public `AuthCodeRecord` and these three methods. If its store already has its own record type and methods that do these three things, implement AuthCodeLookup for that store type in byok_token_exchange/ports.rs and build AuthCodeRecord from its record; if the store lacks one of the three, say so in your final report (do not edit B4677's files). ports::ByokCredentialSink has `async fn store_credential(&self, user_id: &str, server_id: &str, credential: &SecretString) -> Result<(), SinkError>` (LiteLLM store_user_credential from B4713) and `async fn invalidate_cache(&self, user_id: &str, server_id: &str) -> Result<(), SinkError>` (LiteLLM _invalidate_byok_cred_cache: local BYOK cache delete plus the peer publish). The composition root implements it with B4713, B5121 and B878. Tests use a fake that records calls and can be told to fail either method.
+  ports::AuthCodeLookup is the port to B4677's store. Native async-free methods: purge_expired(&self, now: f64), get(&self, code: &str) -> Option<AuthCodeRecord>, remove(&self, code: &str). AuthCodeRecord has api_key: SecretString, server_id: String, code_challenge: String, redirect_uri: String, client_id: String, user_id: String and expires_at: f64 (Unix seconds, as LiteLLM's time.time()). B4677 is merged before this task starts: read crates/betterlite-mcp/src/byok_consent/** first. B4677 names its store `AuthCodeStore` (byok_consent/store.rs) with a public `AuthCodeRecord` and these three methods. If its store already has its own record type and methods that do these three things, implement AuthCodeLookup for that store type in byok_token_exchange/ports.rs and build AuthCodeRecord from its record; if the store lacks one of the three, say so in your final report (do not edit B4677's files). ports::ByokCredentialSink has `async fn store_credential(&self, user_id: &str, server_id: &str, credential: &SecretString) -> Result<(), SinkError>` (LiteLLM store_user_credential from B4713) and `async fn invalidate_cache(&self, user_id: &str, server_id: &str) -> Result<(), SinkError>` (LiteLLM _invalidate_byok_cred_cache: local BYOK cache delete plus the peer publish). The wave 17 part B8624 implements it (ByokCredentialSink) with B4713, B5121 and B878. Tests use a fake that records calls and can be told to fail either method.
 
   exchange::exchange_authorization_code is _byok_token's body. Signature: `async fn exchange_authorization_code(form: &TokenForm, codes: &impl AuthCodeLookup, credentials: Option<&impl ByokCredentialSink>, master_key: Option<&SecretString>, now: f64) -> Result<TokenGrant, TokenError>`. TokenForm has grant_type, code, code_verifier (all required) and redirect_uri and client_id (default ""). Order, and every step matters:
 
@@ -47,7 +47,7 @@ description: >-
   TokenGrant is access_token, token_type "bearer" and expires_in 3600 (an integer). TokenError has three variants (thiserror): UnsupportedGrantType (400, {"error": "unsupported_grant_type"}), InvalidGrant (400, {"error": "invalid_grant"}) and ServerError (500, {"error": "server_error"}). Each maps to its status and body through one method, and the server layer adds the no-cache headers. A failed check in steps 5 to 8 leaves the code in the store so the client can retry; only an expired code (step 4) and a successful run remove it.
 
 
-  routes/mcp_byok_oauth (crates/betterlite-server/src/routes/mcp_byok_oauth.rs with metadata.rs and token.rs under mcp_byok_oauth/, tests.rs beside each). The state struct ByokOauthRoutes<C, S, B> holds codes: C (AuthCodeLookup), credentials: Option<S> (ByokCredentialSink), master_key: Option<SecretString>, a base-URL port B and root_prefixes: Vec<String>. The base-URL port is `trait RequestBaseUrl { fn base_url(&self, parts: &http::request::Parts) -> String; }` and the composition root implements it with B4654's get_request_base_url, the normalized PROXY_BASE_URL and B743's trusted-proxy decision, so this task never decides trust. LiteLLM mounts these routes with no prefix and no /mcp or /openai/v1 alias, and none is in the OpenAPI document. The router builder takes well_known_suffix (B4654's well_known_root_suffix applied once at startup) because LiteLLM builds the decorator path from it:
+  routes/mcp_byok_oauth (crates/betterlite-server/src/routes/mcp_byok_oauth.rs with metadata.rs and token.rs under mcp_byok_oauth/, tests.rs beside each). The state struct ByokOauthRoutes<C, S, B> holds codes: C (AuthCodeLookup), credentials: Option<S> (ByokCredentialSink), master_key: Option<SecretString>, a base-URL port B and root_prefixes: Vec<String>. The base-URL port is `trait RequestBaseUrl { fn base_url(&self, parts: &http::request::Parts) -> String; }` and B8624 implements it with B4654's get_request_base_url, the normalized PROXY_BASE_URL and B743's trusted-proxy decision, so this task never decides trust. LiteLLM mounts these routes with no prefix and no /mcp or /openai/v1 alias, and none is in the OpenAPI document. The router builder takes well_known_suffix (B4654's well_known_root_suffix applied once at startup) because LiteLLM builds the decorator path from it:
 
   - GET /.well-known/oauth-authorization-server answers authorization_server_document(base, base).
   - GET /.well-known/oauth-authorization-server{suffix}/v1/mcp/oauth answers authorization_server_document(base, "{base}/v1/mcp/oauth").
@@ -68,7 +68,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/cases/helpers/mcp-byok-pkce/**
     - tools/oracle/fuzz/corpus/helper_case/mcp-byok-pkce-*
-    - tools/oracle/cases/mcp/byok-oauth/**
     - tools/oracle/helpers/b4678.py
     - tools/oracle/helpers/b4678/**
     - tools/oracle/src/helpers/mcp/b4678.rs
@@ -95,12 +94,14 @@ references:
   - url: https://github.com/jsonwebtoken-rs/jsonwebtoken
     why: The crate for the HS256 session token.
 dod:
+  - text: The handlers are tested with tower's oneshot over this module's own Router and fake ports; B8624 mounts the routes and proves the items below over HTTP with the cases that moved there.
+    proof: [route-tests]
   - text: >-
       verify_pkce matches LiteLLM for the RFC 7636 example, a wrong verifier, a challenge with padding, an empty verifier and a non-ASCII verifier.
     proof: [pkce-tests, helper-python, helper-case-corpus, oracle]
   - text: >-
       The metadata documents have LiteLLM's keys in order and its values for the bare base, the oauth issuer, a prefixed base and the protected resource (path dropped from resource, authorization_servers as an array).
-    proof: [metadata-tests, oracle]
+    proof: [metadata-tests]
   - text: >-
       exchange_authorization_code runs the twelve steps in the listed order: each failing step gives its exact TokenError, steps 5 to 8 leave the code stored, step 4 removes it, and step 9 fails before the code is removed.
     proof: [exchange-tests]
@@ -112,7 +113,7 @@ dod:
     proof: [session-jwt-tests]
   - text: >-
       The routes answer the discovery documents and the token endpoint on the listed paths with the listed status codes and no-cache headers, register each root prefix once, and answer a missing form field with the 422 body.
-    proof: [route-tests, oracle]
+    proof: [route-tests]
 checks:
   optional: [mutants]
   commands:
@@ -143,14 +144,6 @@ oracle_cases:
   - tools/oracle/cases/helpers/mcp-byok-pkce/padded-challenge.yaml
   - tools/oracle/cases/helpers/mcp-byok-pkce/empty-verifier.yaml
   - tools/oracle/cases/helpers/mcp-byok-pkce/non-ascii-verifier.yaml
-  - tools/oracle/cases/mcp/byok-oauth/metadata-bare.yaml
-  - tools/oracle/cases/mcp/byok-oauth/metadata-oauth-issuer.yaml
-  - tools/oracle/cases/mcp/byok-oauth/metadata-proxy-base-url.yaml
-  - tools/oracle/cases/mcp/byok-oauth/metadata-root-prefix.yaml
-  - tools/oracle/cases/mcp/byok-oauth/protected-resource.yaml
-  - tools/oracle/cases/mcp/byok-oauth/token-unsupported-grant.yaml
-  - tools/oracle/cases/mcp/byok-oauth/token-unknown-code.yaml
-  - tools/oracle/cases/mcp/byok-oauth/token-missing-fields.yaml
 deviations:
   - what: >-
       A request under /.well-known/oauth-authorization-server/<prefix>/v1/mcp/oauth whose prefix is not in SERVER_ROOT_PATHS gets the router's generic 404 body, not {"detail": "Unknown proxy root path"}. The prefix list is read once at startup.
@@ -168,8 +161,8 @@ out_of_scope:
   - "_byok_auth_codes, _AUTH_CODE_TTL_SECONDS, _AUTH_CODES_MAX_SIZE, _purge_expired_codes and the two /v1/mcp/oauth/authorize routes: B4677. This task reaches the store only through AuthCodeLookup."
   - "_build_authorize_html: B4687."
   - "_user_id_from_session_cookie, _session_identity_from_cookie, _session_key_is_live and _byok_session_auth: B4655 (its description lists them). Nothing in this task calls them."
-  - "store_user_credential: B4713. _invalidate_byok_cred_cache (operations.py) and the cache removal it calls: B136 and B5121, with the peer publish in B878. The composition root wires them into ByokCredentialSink."
-  - "get_request_base_url, well_known_root_suffix, BYOK_RESOURCE_METADATA_PATH, TOKEN_NO_CACHE_HEADERS: B4654. The trusted-proxy decision: B743. get_server_root_paths: B4200. The composition root passes all three in."
+  - "store_user_credential: B4713. _invalidate_byok_cred_cache (operations.py) and the cache removal it calls: B136 and B5121, with the peer publish in B878. B8624 wires them into ByokCredentialSink."
+  - "get_request_base_url, well_known_root_suffix, BYOK_RESOURCE_METADATA_PATH, TOKEN_NO_CACHE_HEADERS: B4654. The trusted-proxy decision: B743. get_server_root_paths: B4200. B8624 passes all three in."
   - "oauth_authorization_server_mcp and the other well-known routes in discoverable_endpoints.py: B7321. This task never calls them."
   - "Success-path HTTP oracle cases for POST /v1/mcp/oauth/token: a valid code only exists after a session-cookie POST to /authorize, and one oracle case sends one request, so the success path is covered by the exchange tests."
 pitfalls:

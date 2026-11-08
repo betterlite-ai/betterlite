@@ -1,0 +1,20 @@
+kind: helper
+name: aws-secret-reads-primary-map-hit-and-miss
+env: {}
+compare: {ignore: []}
+call:
+  b4414:
+    env:
+      AWS_ACCESS_KEY_ID: AKIAORACLEEXAMPLE
+      AWS_SECRET_ACCESS_KEY: oracle-secret-key
+      AWS_REGION_NAME: us-east-1
+    routes:
+      - route: "POST https://secretsmanager.us-east-1.amazonaws.com"
+        replies:
+          - {status: 200, body: '{"SecretString":"{\"db\":\"pw-one\",\"api\":\"pw-two\"}"}'}
+    steps:
+      - {op: read, path: sync, secret: db, primary: gateway}
+      - {op: read, path: async, secret: api, primary: gateway}
+      - {op: read, path: sync, secret: missing, primary: gateway}
+      - {op: read_primary, path: async, secret: db, primary: gateway}
+      - {op: read_primary, path: sync, secret: missing, primary: gateway}

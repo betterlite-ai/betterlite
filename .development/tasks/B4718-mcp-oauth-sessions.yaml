@@ -4,7 +4,7 @@ description: >-
   Build the short-lived MCP server session that the admin "Authorize and fetch token" flow runs on, the lookup that finds it again, and the one route that creates it: POST /v1/mcp/server/oauth/session (add_session_mcp_server). A session is a server the admin has not saved yet. The browser then calls /register, /authorize and /token for it, and those calls can land on any worker or replica, so the session has to be findable from all of them. B4719 builds those three routes on top of the lookup from this task.
 
 
-  Code goes in betterlite-server, module mcp::oauth_sessions: crates/betterlite-server/src/mcp/oauth_sessions.rs, oauth_sessions/store.rs, oauth_sessions/redis_copy.rs, oauth_sessions/record.rs, oauth_sessions/route.rs and a tests.rs beside each file. The skeleton adds the dependencies on betterlite-mcp and betterlite-cache to betterlite-server; this task does not edit Cargo.toml. Nothing here keeps global state: the process-local table, the clock, the cipher, the optional Redis backend and the database port are all fields of one struct, SessionStore, built by the composition root and shared behind the caller's own pointer. LiteLLM's module-level dict _temporary_mcp_servers becomes the private field `local: Mutex<HashMap<String, LocalEntry>>`, where LocalEntry { server: MCPServer, expires_at: DateTime<Utc> } is LiteLLM's _TemporaryMCPServerEntry.
+  Code goes in betterlite-server, module mcp::oauth_sessions: crates/betterlite-server/src/mcp/oauth_sessions.rs, oauth_sessions/store.rs, oauth_sessions/redis_copy.rs, oauth_sessions/record.rs, oauth_sessions/route.rs and a tests.rs beside each file. The skeleton adds the dependencies on betterlite-mcp and betterlite-cache to betterlite-server; this task does not edit Cargo.toml. Nothing here keeps global state: the process-local table, the clock, the cipher, the optional Redis backend and the database port are all fields of one struct, SessionStore, built by B8622 and shared behind the caller's own pointer. LiteLLM's module-level dict _temporary_mcp_servers becomes the private field `local: Mutex<HashMap<String, LocalEntry>>`, where LocalEntry { server: MCPServer, expires_at: DateTime<Utc> } is LiteLLM's _TemporaryMCPServerEntry.
 
 
   Constants, spelled as in LiteLLM: TEMPORARY_MCP_SERVER_TTL_SECONDS = 300 and TEMPORARY_MCP_SERVER_REDIS_KEY_PREFIX = "litellm:mcp:temporary_server". Neither is configurable.
@@ -149,7 +149,7 @@ out_of_scope:
   - "B4719 owns _mcp_oauth_user_api_key_auth (cookie and delegate_auth_to_upstream fallbacks) and the three routes mcp_authorize, mcp_token and mcp_register that call cached_temporary_server_or_404."
   - "B4729 and B4730 own the connection preview and test routes; they use their own staging, not this store."
   - "B865 owns management_endpoint_wrapper, B743 owns IPAddressUtils.get_mcp_client_ip, B2314 owns UserAPIKeyAuth and user_api_key_has_admin_view, B1600 owns encrypt_value_helper and decrypt_value_helper."
-  - "The response cache instance (litellm.cache) and its backends are owned by B4290 and B4299; the composition root hands this store the backend or None."
+  - "The response cache instance (litellm.cache) and its backends are owned by B4290 and B4299; B8622 hands this store the backend or None."
 
 pitfalls:
   - The admin check comes after validate_and_normalize_mcp_server_payload and stamp_omitted_oauth2_flow, so a non-admin sending a bad server name gets 400 and only a valid payload reaches the 403.

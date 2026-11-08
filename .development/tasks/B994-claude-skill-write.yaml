@@ -88,7 +88,7 @@ description: >-
   still uses FastAPI detail, while explicit JSONResponse helpers keep their own code/null fields; do not coerce
   those into ProxyException semantics. The constructor inventory above is not a claim that the raw HTTPException
   reaches the client unchanged.
-  B1100 registers routes/claude_skill_write.rs as a stub, so fill only crates/betterlite-server/src/routes/claude_skill_write.rs and leave routes.rs and state.rs as they are.
+  B1100 registers routes/claude_skill_write.rs as a stub, so fill only crates/betterlite-server/src/routes/claude_skill_write.rs and leave routes.rs and state.rs as they are. _search_skills calls B1505's search_hosted_skills with B1505's shared index and the embedder from app::inference::router_embedder(state) (B8631), built once in routes(state), and skill_search_embedding_model from the settings.
 scope:
   paths:
   - crates/betterlite-server/Cargo.toml

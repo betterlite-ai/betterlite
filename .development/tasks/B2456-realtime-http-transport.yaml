@@ -27,7 +27,7 @@ scope:
   - crates/betterlite-provider/fuzz/fuzz_targets/realtime_sdp.rs
   - crates/betterlite-provider/fuzz/corpus/realtime_sdp/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/realtime_http_transport.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/realtime_http_transport.py
   - tools/oracle/cases/sdk-http/realtime-http-transport/**

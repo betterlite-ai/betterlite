@@ -1,0 +1,100 @@
+id: B8775
+title: Mount the eval routes with the production pre-call step and prove eval create, read and mutation over HTTP
+description: >-
+  Three route tasks build the OpenAI evals API in betterlite-server and nothing mounts them, since no B1100 entry
+  merges them, so every /v1/evals path answers 404. B3426 (crates/betterlite-server/src/api/eval_read_create_routes)
+  serves POST and GET /v1/evals and GET /v1/evals/{eval_id}. B3427 (api/eval_mutation_routes) serves POST and DELETE
+  /v1/evals/{eval_id} and POST /v1/evals/{eval_id}/cancel. B3428 (api/eval_run_create_list_routes) serves POST and GET
+  /v1/evals/{eval_id}/runs. Each keeps an `Arc<dyn PreCall<UserAPIKeyAuth>>` in its route state, B8801's shared
+  pre-call step, and leaves the production value to the part that mounts it. This task mounts the three routers inside
+  the auth layers with B8802's production step and takes the HTTP cases of B3426 and B3427; B8776 takes B3428's.
+
+
+  Where. Module `app::inference::evals` (crates/betterlite-server/src/app/inference/evals.rs and evals/tests.rs). In
+  crates/betterlite-server/src/app/inference.rs add one line to `mount` that calls `evals::mount(router, state)`,
+  after the lines B8634, B8635 and B8774 wrote, and the `mod evals;` line. evals::mount builds
+  `app::inference::pre_call_step(state)` (B8802) once and merges, each once and in this order,
+  `api::eval_read_create_routes::routes(..)`, `api::eval_mutation_routes::routes(..)` and
+  `api::eval_run_create_list_routes::routes(..)`, handing each the same pre-call Arc and whatever else its task's
+  routes function takes. Register no path here. LiteLLM declares POST /v1/evals/{eval_id} (update) and DELETE
+  /v1/evals/{eval_id} on one path and POST /v1/evals/{eval_id}/runs beside it, so merge the routers as they are and let
+  axum combine the methods; never nest one under a prefix.
+
+
+  Tests in app::inference::evals::tests build a ServerState from a config.yaml with a blocking pre_call
+  `generic_guardrail_api` guardrail, call mount on an empty Router and, with tower's oneshot, check that POST /v1/evals
+  without a key is the auth 401, that POST /v1/evals with the master key is blocked by the guardrail (only the
+  production step runs hooks), and that DELETE /v1/evals/{eval_id} and GET /v1/evals/{eval_id}/runs reach their
+  handlers.
+
+
+  HTTP oracle cases through the booted proxy. The cases below moved here from B3426 and B3427, whose tasks now test
+  their handlers with tower's oneshot over their own routers only. Write each from that task's text, with the mock
+  OpenAI upstream those tasks name. When a case shows a product bug, the fix goes to the owning task's module in a
+  follow-up.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/inference.rs
+    - crates/betterlite-server/src/app/inference/evals.rs
+    - crates/betterlite-server/src/app/inference/evals/**
+    - tools/oracle/cases/evals/create-list-get/**
+    - tools/oracle/cases/evals/mutation/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19979
+    why: The evals router is included with the other API routers, inside the key check.
+dod:
+  - text: The three eval routers answer inside the auth layers, each registered once, with the production pre-call step.
+    proof: [eval-mount-tests, oracle]
+  - text: Over HTTP, the eval create, list, get, update, delete and cancel cases answer as LiteLLM does.
+    proof: [eval-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: eval-mount-tests
+      why: an eval router is missing, mounted twice or outside the key check, or runs the standalone pre-call step
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::evals::/)'
+    - id: eval-cases
+      why: a moved eval family has no booted-proxy case on this branch
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/evals/create-list-get)" &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/evals/mutation)"
+oracle_cases:
+  - tools/oracle/cases/evals/create-list-get/create-eval-basic.yaml
+  - tools/oracle/cases/evals/create-list-get/create-eval-model-body.yaml
+  - tools/oracle/cases/evals/create-list-get/create-eval-model-query.yaml
+  - tools/oracle/cases/evals/create-list-get/create-eval-model-header.yaml
+  - tools/oracle/cases/evals/create-list-get/list-evals-basic.yaml
+  - tools/oracle/cases/evals/create-list-get/list-evals-limit-default.yaml
+  - tools/oracle/cases/evals/create-list-get/list-evals-body-params.yaml
+  - tools/oracle/cases/evals/create-list-get/list-evals-query-override.yaml
+  - tools/oracle/cases/evals/create-list-get/get-eval-basic.yaml
+  - tools/oracle/cases/evals/create-list-get/get-eval-path-override.yaml
+  - tools/oracle/cases/evals/create-list-get/get-eval-model-header.yaml
+  - tools/oracle/cases/evals/create-list-get/create-eval-provider-body.yaml
+  - tools/oracle/cases/evals/create-list-get/create-eval-provider-null.yaml
+  - tools/oracle/cases/evals/create-list-get/malformed-json-body.yaml
+  - tools/oracle/cases/evals/mutation/update-eval-basic.yaml
+  - tools/oracle/cases/evals/mutation/update-eval-model-body.yaml
+  - tools/oracle/cases/evals/mutation/update-eval-model-query.yaml
+  - tools/oracle/cases/evals/mutation/update-eval-model-header.yaml
+  - tools/oracle/cases/evals/mutation/update-eval-provider-body.yaml
+  - tools/oracle/cases/evals/mutation/update-eval-provider-null.yaml
+  - tools/oracle/cases/evals/mutation/delete-eval-basic.yaml
+  - tools/oracle/cases/evals/mutation/delete-eval-model-body.yaml
+  - tools/oracle/cases/evals/mutation/delete-eval-path-override.yaml
+  - tools/oracle/cases/evals/mutation/delete-eval-provider-null.yaml
+  - tools/oracle/cases/evals/mutation/cancel-eval-basic.yaml
+  - tools/oracle/cases/evals/mutation/cancel-eval-model-header.yaml
+  - tools/oracle/cases/evals/mutation/cancel-eval-provider-default.yaml
+  - tools/oracle/cases/evals/mutation/malformed-json-body.yaml
+deviations: []
+out_of_scope:
+  - "The handlers: B3426, B3427 and B3428. The pre-call step: B8801 and B8802. The eval run cases: B8776."
+pitfalls:
+  - "GET /v1/evals/{eval_id}, POST /v1/evals/{eval_id} and DELETE /v1/evals/{eval_id} come from two routers on one path, so a router built with `route` twice for that path panics at startup; merge whole routers."
+  - "Each router needs the same production pre-call Arc; a router left with PreCallStep::standalone skips the guardrail and alias hooks without any error."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

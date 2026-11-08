@@ -19,7 +19,7 @@ scope:
   - crates/betterlite-core/src/api/responses_chat_call.rs
   - crates/betterlite-core/src/api/responses_chat_call/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/responses_chat_call.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/responses_chat_call.py
   - tools/oracle/cases/sdk-http/responses-chat-call/**

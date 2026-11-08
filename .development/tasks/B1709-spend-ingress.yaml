@@ -3,7 +3,7 @@ title: Receive collector lines and replay trusted callback payloads
 description: >-
   Implement the two external spend ingestion surfaces in betterlite-server::collector and
   ::callback_replay. The collector runs the ordinary B051 and proxy startup/shutdown lifecycle
-  without an HTTP listener, with an injected owned event handler installed by B069. It reaches proxy startup and shutdown only through a CollectorLifecycle trait (startup, shutdown) that this task defines in crates/betterlite/src/collector.rs. The wave 17 lifespan wiring part backs that port with B8374's startup and shutdown steps and hands it to the collector subcommand in main.rs. Tests use a recording fake. Expose
+  without an HTTP listener, with an injected owned event handler installed by B069. It reaches proxy startup and shutdown only through a CollectorLifecycle trait (startup, shutdown) that this task defines in crates/betterlite/src/collector.rs. B8613 backs that port with B8374's startup and shutdown steps and hands it to the collector subcommand in main.rs. Tests use a recording fake. Expose
   a collector binary subcommand accepting only an optional --address value; retain
   LITELLM_JOB_ROLE's configured value or default it to collector in the settings snapshot.
   Apply recognized LITELLM_LOG levels, resolve database URLs through B710/B712 and use

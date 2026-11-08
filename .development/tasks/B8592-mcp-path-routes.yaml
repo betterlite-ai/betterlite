@@ -9,7 +9,7 @@ description: >-
 
   The streamable handler is a port `McpStreamHandler` with one async method taking the request, the rewritten path,
   the original path and a `McpForwardScope` (none, proxy mode, or one toolset id) and returning a streaming response;
-  the wave 17 MCP wiring part supplies the implementation over the MCP server's handle_streamable_http_mcp (B136's transport handlers). `relay_mcp_response` ports _stream_mcp_asgi_response: wait at most 30 seconds
+  B8727 builds the production handler, McpTransport in mcp::transport_handler, whose handle method takes these same arguments; implement McpStreamHandler for McpTransport here by calling it, since B8727 cannot depend on this task. `relay_mcp_response` ports _stream_mcp_asgi_response: wait at most 30 seconds
   for the status and headers, answer 504 {"detail": "MCP handler did not respond in time"} on timeout, then stream the
   body chunks and stop the handler when the client goes away.
 
@@ -64,7 +64,7 @@ deviations:
   - what: A missing MCP feature never answers 404 "Not Found" on /mcp and /mcp/proxy.
     why: betterlite always compiles MCP in, so LiteLLM's is_mcp_available gate is always true.
 out_of_scope:
-  - "Mounting these routes and their HTTP oracle cases: the wave 17 MCP wiring part, which also plugs the MCP server's streamable handler into McpStreamHandler."
+  - "Mounting these routes with B8727's mcp_app_routes, the production TransportPorts and their HTTP oracle cases: B8728. The streamable handler behind McpStreamHandler: B8727."
   - "The toolset scope check inside the handler: B6593. Server lookups: B4731. Access group lookup: B4669. Client ip: B743."
 pitfalls:
   - The csv branch runs before any toolset lookup, so a comma name never reaches the database.

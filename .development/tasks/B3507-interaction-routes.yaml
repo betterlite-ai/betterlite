@@ -1,14 +1,14 @@
 id: B3507
 title: Serve interaction create retrieve delete and cancel routes
 description: >-
-  Register HTTP routes for interaction create, retrieve, delete, and cancel operations in betterlite-server.
+  Register HTTP routes for interaction create, retrieve, delete, and cancel operations in betterlite-server, returned by `pub fn routes(release)` in api::interaction_routes, which B8774 mounts.
   Serve POST /v1beta/interactions, POST /interactions, GET /v1beta/interactions/{interaction_id}, GET /interactions/{interaction_id},
   DELETE /v1beta/interactions/{interaction_id}, DELETE /interactions/{interaction_id},
   POST /v1beta/interactions/{interaction_id}/cancel, and POST /interactions/{interaction_id}/cancel.
   Each route receives requests from LiteLLM API clients using the Google Interactions API.
   Parse the JSON body (using B1100's request decoder for create; no body for get/delete/cancel),
   authenticate via B052's virtual key auth, extract the interaction_id from the path where needed,
-  set custom_llm_provider to "gemini" as default when not provided, and dispatch to B3499's create,
+  set custom_llm_provider to "gemini" as default when not provided, and dispatch to B3499's create (routes(release) takes B3499's ReservationRelease port and hands it to acreate on the create path; B8774 passes B8660's interaction_release),
   B3495's get, B3500's delete, and B3500's cancel handlers via B014's base_process_llm_request.
   Return the same error status, type, param and code LiteLLM returns on provider errors (rule
   errors-match-litellm), with betterlite's own message. On exceptions during dispatch, extract
@@ -20,7 +20,6 @@ scope:
   paths:
     - crates/betterlite-server/src/api/interaction_routes.rs
     - crates/betterlite-server/src/api/interaction_routes/**
-    - tools/oracle/cases/interactions/**
     - tools/oracle/fuzz/corpus/http_case/interaction-*
     - tools/oracle/helpers/b3507.py
     - tools/oracle/helpers/b3507/**
@@ -55,8 +54,8 @@ dod:
     proof: [interaction-routes-http]
   - text: "All routes return ORJSONResponse and include user_api_key_auth as a dependency."
     proof: [interaction-routes-http]
-  - text: "Every listed create, get, delete and cancel case matches LiteLLM on the client response and request sent upstream."
-    proof: [interaction-routes-http]
+  - text: "The handlers are tested with tower's oneshot over this module's own Router and a fake release port; B8774 mounts them and proves the listed cases over HTTP."
+    proof: [interaction-route-tests]
   - text: "Every x-litellm-* header LiteLLM sends on the listed cases is present with the same value unless the case lists it in headers_present."
     proof: [interaction-routes-http]
   - text: "On provider error, the client receives the same status, type, param and code as LiteLLM with betterlite's own message."
@@ -64,18 +63,13 @@ dod:
 checks:
   optional: []
   commands:
+    - id: interaction-route-tests
+      why: the route handlers are absent, differ when called with tower's oneshot over this module's own Router, or drop the release port
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::interaction_routes::/)'
     - id: interaction-routes-http
       why: HTTP routes, auth, interaction_id extraction, custom_llm_provider default, or response format are missing or incorrect
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/fuzz/corpus/http_case/interaction-*)" && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_http_case_corpus)'
-oracle_cases:
-  - tools/oracle/cases/interactions/create-basic.yaml
-  - tools/oracle/cases/interactions/create-with-body-data.yaml
-  - tools/oracle/cases/interactions/get-basic.yaml
-  - tools/oracle/cases/interactions/get-with-path-param.yaml
-  - tools/oracle/cases/interactions/delete-basic.yaml
-  - tools/oracle/cases/interactions/delete-with-path-param.yaml
-  - tools/oracle/cases/interactions/cancel-basic.yaml
-  - tools/oracle/cases/interactions/cancel-with-path-param.yaml
+oracle_cases: []
 deviations:
   - what: All routes default custom_llm_provider to "gemini" when not provided in the request data, applying a fixed default before dispatching to base_process_llm_request.
     why: The create, get, delete and cancel handlers in LiteLLM all set this default at lines 275, 343, 411, and 479 respectively; betterlite preserves this behavior for consistency with LiteLLM's provider selection.
@@ -91,7 +85,7 @@ out_of_scope:
   - Interaction retrieval logic and request parameter handling; B3495 owns the aget_interaction call entry point.
   - Interaction deletion and cancellation logic and request parameter handling; B3500 owns both adelete_interaction and acancel_interaction call entry points.
   - Streaming response assembly and logging; B252 and B2227 handle buffered chunk assembly and completion callbacks.
-  - Request/response transformation and provider dispatch; B014 owns base_process_llm_request and exception handling.
+  - Request/response transformation and provider dispatch; B8801 owns the pre-call step (take `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state constructor; the part that mounts these routes passes B8802's pre_call_step(state)) and B014 the rest of base_process_llm_request and exception handling.
   - Cost tracking headers (x-litellm-response-cost) and key-limit headers; they need spend tracking (B069) and virtual keys (B052).
 pitfalls:
   - >-

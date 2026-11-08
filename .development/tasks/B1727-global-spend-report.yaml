@@ -36,7 +36,6 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/global_report_query.rs
     - crates/betterlite-server/fuzz/corpus/global_report_query/**
-    - tools/oracle/cases/http/global-spend-report/**
     - tools/oracle/helpers/b1727.py
     - tools/oracle/helpers/b1727/**
     - tools/oracle/src/helpers/server/b1727.rs
@@ -48,10 +47,12 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L1002-L1076
     why: Day/team/customer breakdown with two mandatory bound filters.
 dod:
-  - text: The global report preserves presence-based filter priority and its team/customer/api-key result shapes.
-    proof: [global-report-tests, global-report-corpus, oracle]
-  - text: Date failures and SQL errors keep their source boundaries while paid eligibility no longer blocks authorized users.
-    proof: [global-report-tests, oracle]
+  - text: The global report preserves presence-based filter priority and its team/customer/api-key result shapes. B8662 proves it over HTTP.
+    proof: [global-report-tests, global-report-corpus]
+  - text: Date failures and SQL errors keep their source boundaries while paid eligibility no longer blocks authorized users. B8662 proves it over HTTP.
+    proof: [global-report-tests]
+  - text: The handlers answer through tower's oneshot over the module's own Router with fake ports; B8662 merges them through B069's spend routes and proves them over HTTP.
+    proof: [global-report-tests]
 checks:
   optional: []
   commands:
@@ -61,11 +62,7 @@ checks:
     - id: global-report-corpus
       why: Presence-sensitive report queries have no new fuzz replay samples.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/global_report_query)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_global_report_query_corpus)'
-oracle_cases:
-  - tools/oracle/cases/http/global-spend-report/key-before-user-before-team-customer.yaml
-  - tools/oracle/cases/http/global-spend-report/team-null-alias-and-customer-metadata.yaml
-  - tools/oracle/cases/http/global-spend-report/customer-alone-and-api-key-group-filters.yaml
-  - tools/oracle/cases/http/global-spend-report/null-group-and-reversed-dates.yaml
+oracle_cases: []
 deviations:
   - what: The global spend report works for an authorized caller without a license; stock LiteLLM's false premium flag makes this handler return 400.
     why: MIT reporting follows the README's no-paid-tier decision, retaining the surrounding global-route authorization.
