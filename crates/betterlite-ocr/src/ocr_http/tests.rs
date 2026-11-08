@@ -1,0 +1,248 @@
+#![cfg(test)]
+
+pub(crate) mod support;
+
+use std::time::Duration;
+
+use async_trait::async_trait;
+use betterlite_http::proxy::StreamResponse;
+use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
+use http::{HeaderMap, Method};
+use url::Url;
+
+use crate::json::{Json, Object};
+use crate::ocr_config::DecodedOcrResponse;
+use crate::ocr_config::decode::response_format;
+use crate::ocr_error::{OcrError, OcrTransportError};
+use crate::ocr_http::{CallHooks, OcrWireRequest, ocr, read_json_response, read_response_bytes};
+use crate::ocr_settings::OcrSettings;
+use crate::request_format::RequestFormat;
+
+use support::{
+    MockServer, TestConfig, TestPayload, chunked, delayed, http_client, object, ocr_client,
+    prepared_request, reply,
+};
+
+struct AssertingHooks;
+
+#[async_trait]
+impl CallHooks for AssertingHooks {
+    async fn before_provider_request(
+        &self,
+        request: OcrWireRequest,
+    ) -> Result<OcrWireRequest, OcrError> {
+        let Json::Object(body) = &request.body else {
+            panic!("the hook sees the composed object body");
+        };
+        assert!(body.contains_key("model"));
+        assert!(body.contains_key("document"));
+        let mut headers = request.headers;
+        headers.push(("x-hook".to_owned(), "seen".to_owned()));
+        Ok(OcrWireRequest { headers, ..request })
+    }
+
+    async fn response_received(&self, body: &[u8]) -> Result<(), OcrError> {
+        assert!(body.windows(5).any(|window| window == b"hello"));
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn sends_one_request_in_order_and_runs_the_hooks_before_decoding() {
+    let body = br#"{"pages":[{"index":0,"markdown":"hello"}],"model":"served-model"}"#;
+    let server = MockServer::start(vec![reply("200 OK", &[], body)]).await;
+    let client = ocr_client(OcrSettings::default(), Duration::from_secs(5));
+    let params = object(&[
+        ("req_format", Json::Text("litellm".to_owned())),
+        ("future_option", Json::Bool(true)),
+    ]);
+    let request = prepared_request(format!("{}/base", server.base), params);
+    let response = ocr(&TestConfig, &client, &request, &AssertingHooks)
+        .await
+        .expect("the call succeeds");
+    assert_eq!(response.model, "requested-model");
+    assert_eq!(response.pages.len(), 1);
+    assert_eq!(response.pages[0].markdown, "hello");
+    assert_eq!(response.provider_native_response, None);
+    let requests = server.requests().await;
+    assert_eq!(requests.len(), 1);
+    let sent = &requests[0];
+    assert!(sent.starts_with("POST /base/v1/ocr HTTP/1.1"), "{sent}");
+    let lowered = sent.to_ascii_lowercase();
+    assert!(lowered.contains("authorization: bearer test-key"), "{sent}");
+    assert!(lowered.contains("x-hook: seen"), "{sent}");
+    assert!(sent.contains("\"future_option\":true"), "{sent}");
+    assert!(!sent.contains("req_format"), "{sent}");
+}
+
+#[tokio::test]
+async fn reads_at_most_max_response_bytes() {
+    let declared = MockServer::start(vec![reply("200 OK", &[], b"0123456789")]).await;
+    let client = ocr_client(OcrSettings::default(), Duration::from_secs(5));
+    let mut request = prepared_request(declared.base.clone(), Object::new());
+    request.connection.max_response_bytes = 6;
+    let error = ocr(&TestConfig, &client, &request, &NoHooks)
+        .await
+        .expect_err("a declared body over the cap fails");
+    assert!(matches!(error, OcrError::TooLarge { limit: 6 }));
+
+    let streamed = MockServer::start(vec![chunked(&[b"01234", b"56789"])]).await;
+    let mut streamed_request = prepared_request(streamed.base.clone(), Object::new());
+    streamed_request.connection.max_response_bytes = 6;
+    let streamed_error = ocr(&TestConfig, &client, &streamed_request, &NoHooks)
+        .await
+        .expect_err("a streamed body over the cap fails");
+    assert!(matches!(streamed_error, OcrError::TooLarge { limit: 6 }));
+}
+
+struct NoHooks;
+
+#[async_trait]
+impl CallHooks for NoHooks {
+    async fn before_provider_request(
+        &self,
+        request: OcrWireRequest,
+    ) -> Result<OcrWireRequest, OcrError> {
+        Ok(request)
+    }
+
+    async fn response_received(&self, _body: &[u8]) -> Result<(), OcrError> {
+        Ok(())
+    }
+}
+
+#[tokio::test]
+async fn non_2xx_becomes_the_provider_error_with_the_response_headers() {
+    let server = MockServer::start(vec![reply(
+        "500 Internal Server Error",
+        &[("retry-after", "1")],
+        b"boom",
+    )])
+    .await;
+    let client = ocr_client(OcrSettings::default(), Duration::from_secs(5));
+    let request = prepared_request(format!("{}/base", server.base), Object::new());
+    let error = ocr(&TestConfig, &client, &request, &NoHooks)
+        .await
+        .expect_err("a provider failure is an error");
+    let OcrError::Provider {
+        status,
+        body,
+        headers,
+    } = error
+    else {
+        panic!("the default error class is the provider error");
+    };
+    assert_eq!(status, 500);
+    assert_eq!(body, "boom");
+    assert!(
+        headers
+            .iter()
+            .any(|(name, value)| name.eq_ignore_ascii_case("retry-after") && value == "1"),
+        "{headers:?}"
+    );
+}
+
+#[tokio::test]
+async fn native_format_keeps_the_provider_json_in_the_native_slot() {
+    let body =
+        br#"{"pages":[{"index":0,"markdown":"hello"}],"model":"served-model","extra":"kept"}"#;
+    let server =
+        MockServer::start(vec![reply("200 OK", &[], body), reply("200 OK", &[], body)]).await;
+    let client = ocr_client(OcrSettings::default(), Duration::from_secs(5));
+    let params = object(&[("req_format", Json::Text("native".to_owned()))]);
+    let request = prepared_request(format!("{}/base", server.base), params);
+    let response = ocr(&TestConfig, &client, &request, &NoHooks)
+        .await
+        .expect("the native call succeeds");
+    let expected: Json = serde_json::from_slice(body).expect("the mock body is JSON");
+    assert_eq!(response.provider_native_response, Some(expected));
+    assert_eq!(response.model, "requested-model");
+
+    let litellm_request = prepared_request(format!("{}/base", server.base), Object::new());
+    let litellm_response = ocr(&TestConfig, &client, &litellm_request, &NoHooks)
+        .await
+        .expect("the litellm call succeeds");
+    assert_eq!(litellm_response.provider_native_response, None);
+    assert_eq!(server.requests().await.len(), 2);
+}
+
+async fn send_to(base: &str) -> StreamResponse {
+    let client = http_client(Duration::from_secs(5));
+    let url = Url::parse(&format!("{base}/document")).expect("the test URL parses");
+    let request = OutboundRequest {
+        method: Method::POST,
+        url,
+        query: Vec::new(),
+        headers: HeaderMap::new(),
+        body: RequestBody::Json(Vec::new()),
+        deadline: Duration::from_secs(5),
+    };
+    client.send(request).await.expect("the mock server answers")
+}
+
+#[tokio::test]
+async fn read_helpers_decode_success_and_report_failed_statuses() {
+    let server = MockServer::start(vec![reply(
+        "200 OK",
+        &[],
+        br#"{"pages":[{"index":0,"markdown":"hello"}]}"#,
+    )])
+    .await;
+    let response = send_to(&server.base).await;
+    let decoded: DecodedOcrResponse<TestPayload> = read_json_response(response, true, 1024)
+        .await
+        .expect("the success body decodes");
+    assert_eq!(decoded.data.pages.len(), 1);
+    assert_eq!(decoded.data.pages[0].markdown, "hello");
+    assert!(decoded.native.is_some());
+    assert!(decoded.text.contains("hello"));
+
+    let failed_server = MockServer::start(vec![reply("404 Not Found", &[], b"missing")]).await;
+    let failed_response = send_to(&failed_server.base).await;
+    let error = read_response_bytes(failed_response, 1024)
+        .await
+        .expect_err("a failed status is an error");
+    let OcrError::Transport(OcrTransportError::Http { status, body }) = error else {
+        panic!("the failed status is carried on the transport error");
+    };
+    assert_eq!(status, 404);
+    assert_eq!(body, "missing");
+}
+
+#[test]
+fn response_format_defaults_and_rejects_unknown_values() {
+    assert_eq!(
+        response_format(&Object::new()).expect("absent defaults"),
+        RequestFormat::Litellm
+    );
+    let null = object(&[("req_format", Json::Null)]);
+    assert_eq!(
+        response_format(&null).expect("null defaults"),
+        RequestFormat::Litellm
+    );
+    let native = object(&[("req_format", Json::Text("native".to_owned()))]);
+    assert_eq!(
+        response_format(&native).expect("native parses"),
+        RequestFormat::Native
+    );
+    let invalid = object(&[("req_format", Json::Text("Native".to_owned()))]);
+    assert!(matches!(
+        response_format(&invalid),
+        Err(OcrError::RequestFormat)
+    ));
+}
+
+#[tokio::test]
+async fn a_stalled_provider_times_out() {
+    let server = MockServer::start(vec![delayed(
+        reply("200 OK", &[], b"abc"),
+        Duration::from_millis(300),
+    )])
+    .await;
+    let client = ocr_client(OcrSettings::default(), Duration::from_millis(50));
+    let request = prepared_request(format!("{}/base", server.base), Object::new());
+    let error = ocr(&TestConfig, &client, &request, &NoHooks)
+        .await
+        .expect_err("the stalled server times out");
+    assert_eq!(error.http_status_code(), Some(408));
+}
