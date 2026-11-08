@@ -1,0 +1,19 @@
+kind: helper
+name: response-structured-reasoning-and-message
+call:
+  b3860:
+    function: set_response
+    response:
+      output:
+        - type: reasoning
+          summary:
+            - {type: summary_text, text: first}
+            - {type: summary_text, text: second}
+        - type: message
+          role: assistant
+          content:
+            - {type: output_text, text: answer}
+        - type: function_call
+          name: ignored
+env: {}
+compare: {ignore: []}

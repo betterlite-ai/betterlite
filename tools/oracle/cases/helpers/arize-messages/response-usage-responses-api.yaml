@@ -1,0 +1,14 @@
+kind: helper
+name: response-usage-responses-api
+call:
+  b3860:
+    function: set_response
+    response:
+      usage:
+        total_tokens: 30
+        output_tokens: 20
+        input_tokens: 10
+        output_tokens_details: {reasoning_tokens: 5}
+        input_tokens_details: {cached_tokens: 3, audio_tokens: 2}
+env: {}
+compare: {ignore: []}

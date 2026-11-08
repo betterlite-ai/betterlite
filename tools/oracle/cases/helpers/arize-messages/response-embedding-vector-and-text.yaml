@@ -1,0 +1,12 @@
+kind: helper
+name: response-embedding-vector-and-text
+call:
+  b3860:
+    function: set_response
+    response:
+      data:
+        - {embedding: [0.1, 0.2, 0.5], text: first}
+        - {embedding: [1, 2]}
+        - {embedding: [], text: ""}
+env: {}
+compare: {ignore: []}
