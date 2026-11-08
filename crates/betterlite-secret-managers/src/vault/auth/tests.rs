@@ -258,9 +258,9 @@ async fn an_oversized_login_response_is_refused() {
 async fn a_login_response_of_exactly_one_mebibyte_is_accepted() {
     let head = "{\"auth\":{\"client_token\":\"hvs.first\",\"lease_duration\":60},\"pad\":\"";
     let tail = "\"}";
-    let padding = "a".repeat(1_048_576 - head.len() - tail.len());
+    let padding = "a".repeat(0x0010_0000 - head.len() - tail.len());
     let body = format!("{head}{padding}{tail}");
-    assert_eq!(body.len(), 1_048_576);
+    assert_eq!(body.len(), 0x0010_0000);
     let (manager, _transport) = scripted(APPROLE, &[(APPROLE_ROUTE, vec![answered(200, &body)])]);
     let token = manager.request_token().await.unwrap();
     assert_eq!(token.expose_secret(), "hvs.first");
@@ -268,7 +268,7 @@ async fn a_login_response_of_exactly_one_mebibyte_is_accepted() {
 
 #[test]
 fn the_response_limit_is_one_mebibyte() {
-    assert_eq!(MAX_RESPONSE_BYTES, 1_048_576);
+    assert_eq!(MAX_RESPONSE_BYTES, 0x0010_0000);
 }
 
 #[test]
