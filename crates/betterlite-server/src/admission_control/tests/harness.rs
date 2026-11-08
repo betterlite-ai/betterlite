@@ -11,7 +11,7 @@ use axum::response::Response;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::request_root_paths;
 use futures_util::stream;
-use tokio::sync::Notify;
+use tokio::sync::{Barrier, Notify};
 use tokio::task::{AbortHandle, JoinSet};
 use tokio::time::{sleep, timeout};
 use tower::ServiceExt as _;
@@ -163,15 +163,30 @@ async fn call(router: Router, path: String) -> Answer {
     (status, headers, body)
 }
 
+async fn call_later(
+    router: Router,
+    path: String,
+    barrier: Option<Arc<Barrier>>,
+) -> (String, Answer) {
+    if let Some(notifier) = barrier {
+        notifier.wait().await;
+    }
+    let answer = call(router, path.clone()).await;
+    (path, answer)
+}
+
 impl Requests {
     pub(super) fn start(&mut self, router: &Router, path: &str) {
-        let shared = router.clone();
-        let named = path.to_owned();
-        let requested = named.clone();
-        let abort = self.tasks.spawn(async move {
-            let answer = call(shared, requested).await;
-            (named, answer)
-        });
+        let abort = self
+            .tasks
+            .spawn(call_later(router.clone(), path.to_owned(), None));
+        self.aborts.insert(path.to_owned(), abort);
+    }
+
+    pub(super) fn start_at(&mut self, router: &Router, path: &str, barrier: Arc<Barrier>) {
+        let abort = self
+            .tasks
+            .spawn(call_later(router.clone(), path.to_owned(), Some(barrier)));
         self.aborts.insert(path.to_owned(), abort);
     }
 

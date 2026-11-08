@@ -6,6 +6,7 @@ use std::time::Duration;
 use axum::http::StatusCode;
 use betterlite_config::loader::ConfigLoader;
 use rstest::rstest;
+use tokio::sync::Barrier;
 use tokio::time::{sleep, timeout};
 
 use super::harness::{
@@ -33,7 +34,7 @@ enum Boundary {
 #[case::huge_limit_disables(Boundary::HugeLimitDisables)]
 #[case::hot_routes_first(Boundary::HotRoutesFirst)]
 #[case::install_wires_the_stack(Boundary::InstallWiresTheStack)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn admission_control_boundaries(#[case] boundary: Boundary) {
     match boundary {
         Boundary::QueueFullAtCapacity => queue_full_at_capacity().await,
@@ -121,51 +122,64 @@ async fn cancel_queued_decrements() {
 }
 
 async fn queue_bound_holds_under_concurrency() {
-    let gates = gates(&[
-        ("/a", Behavior::Hold),
-        ("/b", Behavior::Immediate),
-        ("/c", Behavior::Immediate),
-        ("/d", Behavior::Immediate),
-    ]);
+    let waiters = 64_u16;
     let harness = harness(
         "general_settings:\n  max_in_flight_requests_per_worker: 1\n  max_queued_requests_per_worker: 1\n  admission_queue_timeout_seconds: 2.0",
         "",
-        gates,
+        gates(&[("/a", Behavior::Hold)]),
     );
     let mut requests = Requests::default();
     requests.start(&harness.router, "/a");
     await_started(&harness.gates, "/a").await;
-    requests.start(&harness.router, "/b");
-    requests.start(&harness.router, "/c");
-    requests.start(&harness.router, "/d");
-    await_one_queued_and_two_rejected(&harness.stack).await;
-    harness.gates.get("/a").unwrap().release.notify_one();
-    let statuses = [
-        requests.complete("/b").await.0,
-        requests.complete("/c").await.0,
-        requests.complete("/d").await.0,
-    ];
-    let admitted = statuses
-        .iter()
-        .filter(|status| **status == StatusCode::OK)
-        .count();
-    let rejected = statuses
-        .iter()
-        .filter(|status| **status == StatusCode::SERVICE_UNAVAILABLE)
-        .count();
-    assert_eq!((admitted, rejected), (1, 2), "{statuses:?}");
-    assert_eq!(requests.complete("/a").await.0, StatusCode::OK);
+    let paths = waiter_paths(waiters);
+    let barrier = Arc::new(Barrier::new(usize::from(waiters)));
+    for path in &paths {
+        requests.start_at(&harness.router, path, Arc::clone(&barrier));
+    }
+    await_admission_settled(&harness.stack, u64::from(waiters)).await;
     let snapshot = harness.stack.admission.stats();
-    assert_eq!(snapshot.rejected_queue_full, 2);
-    assert_eq!(snapshot.rejected_queue_timeout, 0);
-    assert_eq!(snapshot.queued, 0);
+    assert_eq!(snapshot.queued, 1, "{snapshot:?}");
+    assert_eq!(
+        snapshot.rejected_queue_full,
+        u64::from(waiters).saturating_sub(1)
+    );
+    harness.gates.get("/a").unwrap().release.notify_one();
+    let (admitted, rejected) = complete_waiters(&mut requests, &paths).await;
+    assert_eq!((admitted, rejected), (1_u16, waiters.saturating_sub(1)));
+    assert_eq!(requests.complete("/a").await.0, StatusCode::OK);
+    let final_snapshot = harness.stack.admission.stats();
+    assert_eq!(
+        final_snapshot.rejected_queue_full,
+        u64::from(waiters).saturating_sub(1)
+    );
+    assert_eq!(final_snapshot.rejected_queue_timeout, 0);
+    assert_eq!(final_snapshot.queued, 0);
 }
 
-async fn await_one_queued_and_two_rejected(stack: &AdmissionStack) {
+fn waiter_paths(waiters: u16) -> Vec<String> {
+    (0..waiters)
+        .map(|index| format!("/waiter-{index}"))
+        .collect()
+}
+
+async fn complete_waiters(requests: &mut Requests, paths: &[String]) -> (u16, u16) {
+    let mut admitted = 0_u16;
+    let mut rejected = 0_u16;
+    for path in paths {
+        match requests.complete(path).await.0 {
+            StatusCode::OK => admitted = admitted.saturating_add(1),
+            StatusCode::SERVICE_UNAVAILABLE => rejected = rejected.saturating_add(1),
+            other => panic!("unexpected status {other} for {path}"),
+        }
+    }
+    (admitted, rejected)
+}
+
+async fn await_admission_settled(stack: &AdmissionStack, waiters: u64) {
     timeout(WAIT, async {
         loop {
             let snapshot = stack.admission.stats();
-            if snapshot.queued == 1 && snapshot.rejected_queue_full == 2 {
+            if snapshot.queued.saturating_add(snapshot.rejected_queue_full) == waiters {
                 break;
             }
             sleep(Duration::from_millis(1)).await;
