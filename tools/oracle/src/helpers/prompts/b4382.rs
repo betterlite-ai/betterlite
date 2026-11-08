@@ -52,7 +52,7 @@ fn constructor(input: &Input) -> HelperResult {
         index_name: input.index_name.clone(),
         embedding_max_input_tokens: input.embedding_max_input_tokens,
         // B4310's resolve_embedding_timeout default, which the Python adapter applies too.
-        embedding_timeout: input.embedding_timeout.unwrap_or(5.0),
+        embedding_timeout: input.embedding_timeout.unwrap_or(5.0_f64),
     };
     let env = RedisEnv {
         redis_host: input.redis_host.clone(),
@@ -60,7 +60,7 @@ fn constructor(input: &Input) -> HelperResult {
         redis_password: input.redis_password.clone(),
     };
     let embedder = ConstantEmbedder { vector: Vec::new() };
-    let backend: Arc<dyn SemanticRedisIndex> = Arc::new(HelperIndex::default());
+    let backend: Arc<dyn SemanticRedisIndex> = Arc::new(HelperIndex::with_hits(Vec::new()));
     let cache = RedisSemanticCache::new(
         options,
         env,
@@ -79,7 +79,7 @@ fn constructor(input: &Input) -> HelperResult {
 }
 
 fn key_scope(input: &Input) -> HelperResult {
-    let key = required(&input.key, "key")?;
+    let key = required(input.key.as_ref(), "key")?;
     let candidate = Hit {
         prompt: None,
         response: None,
@@ -90,8 +90,8 @@ fn key_scope(input: &Input) -> HelperResult {
 }
 
 async fn index_fallback(input: &Input) -> HelperResult {
-    let index_name = required(&input.index_name, "index_name")?;
-    let dimension = required(&input.dimension, "dimension")?;
+    let index_name = required(input.index_name.as_ref(), "index_name")?;
+    let dimension = required(input.dimension.as_ref(), "dimension")?;
     let index = Arc::new(HelperIndex::scripted(
         dimension,
         input.mismatch_attempts.clone(),
@@ -123,8 +123,8 @@ fn scripted_call(
     hits: Vec<Hit>,
     ttl: Option<i64>,
 ) -> Result<ScriptedCall, Box<HelperError>> {
-    let key = required(&input.key, "key")?;
-    let vector = required(&input.vector, "vector")?;
+    let key = required(input.key.as_ref(), "key")?;
+    let vector = required(input.vector.as_ref(), "vector")?;
     let index = Arc::new(HelperIndex::with_hits(hits));
     let embedder = ConstantEmbedder { vector };
     let concrete = Arc::clone(&index);
@@ -132,7 +132,7 @@ fn scripted_call(
     let cache = helper_cache(Arc::new(embedder), backend, None)?;
     let kwargs = helper_kwargs(
         input.messages.as_deref(),
-        input.input.as_ref(),
+        input.responses.as_ref(),
         input.metadata.as_ref(),
         ttl,
     );
@@ -152,14 +152,14 @@ async fn run_lookup(input: &Input) -> HelperResult {
         .async_get_cache(&call.key, &call.kwargs, metadata.as_mut())
         .await
         .map_err(|error| helper_error("ValueError", error))?;
-    let value = value
+    let decoded = value
         .map(to_value)
         .transpose()
         .map_err(|error| helper_error("SerializationError", error))?;
     let similarity = similarity_of(metadata.as_ref())?;
     let search = call.index.searches().into_iter().next();
     Ok(json!({
-        "value": value,
+        "value": decoded,
         "similarity": similarity,
         "search": search.map(|(_, query)| json!({
             "cache_key": query.cache_key,
@@ -171,7 +171,7 @@ async fn run_lookup(input: &Input) -> HelperResult {
 
 async fn run_store(input: &Input) -> HelperResult {
     let call = scripted_call(input, Vec::new(), input.ttl)?;
-    let value = required(&input.value, "value")?;
+    let value = required(input.value.as_ref(), "value")?;
     call.cache
         .async_set_cache(&call.key, &value, &call.kwargs)
         .await;
@@ -229,7 +229,7 @@ fn helper_cache(
         port: Some("6379".to_owned()),
         password: Some("pw".to_owned()),
         redis_url: None,
-        similarity_threshold: Some(0.25),
+        similarity_threshold: Some(0.25_f64),
         embedding_model: None,
         index_name,
         embedding_max_input_tokens: None,
@@ -262,9 +262,12 @@ fn to_hit(input: &HitInput) -> Hit {
     }
 }
 
-fn required<T: Clone>(value: &Option<T>, name: &str) -> Result<T, Box<HelperError>> {
+fn required<T>(value: Option<&T>, name: &str) -> Result<T, Box<HelperError>>
+where
+    T: Clone,
+{
     value
-        .clone()
+        .cloned()
         .ok_or_else(|| helper_error("InvalidInput", format!("{name} is required")))
 }
 

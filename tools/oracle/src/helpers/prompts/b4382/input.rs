@@ -35,7 +35,8 @@ pub(crate) struct Input {
     pub(crate) dimension: Option<usize>,
     pub(crate) mismatch_attempts: Vec<usize>,
     pub(crate) messages: Option<Vec<Message>>,
-    pub(crate) input: Option<Json>,
+    #[serde(rename = "input")]
+    pub(crate) responses: Option<Json>,
     pub(crate) metadata: Option<Json>,
     pub(crate) vector: Option<Vec<f32>>,
     pub(crate) hits: Vec<HitInput>,

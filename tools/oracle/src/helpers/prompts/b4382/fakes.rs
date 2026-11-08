@@ -53,7 +53,6 @@ enum FallbackOp {
     Drop(String),
 }
 
-#[derive(Default)]
 pub(crate) struct HelperIndex {
     pub(crate) hits: Vec<Hit>,
     pub(crate) dimension: usize,
@@ -65,14 +64,26 @@ pub(crate) struct HelperIndex {
 }
 
 impl HelperIndex {
+    const fn base() -> Self {
+        Self {
+            hits: Vec::new(),
+            dimension: 0,
+            behavior: Behavior::Recording,
+            info_calls: Mutex::new(0),
+            searches: Mutex::new(Vec::new()),
+            stores: Mutex::new(Vec::new()),
+            operations: Mutex::new(Vec::new()),
+        }
+    }
+
     pub(crate) fn with_hits(hits: Vec<Hit>) -> Self {
-        let mut index = Self::default();
+        let mut index = Self::base();
         index.hits = hits;
         index
     }
 
     pub(crate) fn scripted(dimension: usize, mismatches: Vec<usize>) -> Self {
-        let mut index = Self::default();
+        let mut index = Self::base();
         index.dimension = dimension;
         index.behavior = Behavior::Scripted { mismatches };
         index
@@ -117,7 +128,7 @@ impl SemanticRedisIndex for HelperIndex {
                 .lock()
                 .unwrap_or_else(PoisonError::into_inner);
             let call = *calls;
-            *calls += 1;
+            *calls = calls.saturating_add(1);
             call
         };
         self.operations
