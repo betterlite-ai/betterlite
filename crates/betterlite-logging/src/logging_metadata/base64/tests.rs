@@ -31,6 +31,14 @@ fn nested(levels: usize, leaf: Json) -> Json {
     value
 }
 
+fn nested_lists(levels: usize, leaf: Json) -> Json {
+    let mut value = leaf;
+    for _level in 0..levels {
+        value = Json::List(vec![value]);
+    }
+    value
+}
+
 fn text_of(value: &Json) -> &str {
     match value {
         Json::Text(text) => text,
@@ -130,6 +138,15 @@ fn a_payload_below_the_depth_bound_keeps_its_text() {
     let truncated = truncator(64)
         .truncate_messages(&original)
         .expect("truncated");
+    let encoded = serde_json::to_string(&truncated).expect("encodes");
+    assert!(encoded.contains(&payload(2000)));
+    assert!(!encoded.contains("truncated"));
+}
+
+#[test]
+fn a_list_below_the_depth_bound_keeps_its_text() {
+    let value = nested_lists(22, Json::Text(data_uri(2000)));
+    let truncated = truncator(64).truncate_messages(&value).expect("truncated");
     let encoded = serde_json::to_string(&truncated).expect("encodes");
     assert!(encoded.contains(&payload(2000)));
     assert!(!encoded.contains("truncated"));

@@ -178,6 +178,30 @@ fn a_numeric_metadata_id_is_used_as_its_decimal_text() {
 }
 
 #[test]
+fn a_record_drops_entries_that_reached_the_ttl_and_keeps_younger_ones() {
+    let start = Instant::now();
+    let mut cache = bounded(5);
+    cache.record("old", TraceService::Langfuse, "trace-old".to_owned(), start);
+    let middle = start + Duration::from_secs(300);
+    cache.record(
+        "young",
+        TraceService::Langfuse,
+        "trace-young".to_owned(),
+        middle,
+    );
+    let edge = start + Duration::from_secs(600);
+    cache.record("new", TraceService::Langfuse, "trace-new".to_owned(), edge);
+    assert_eq!(
+        cache.logged_trace_id("old", TraceService::Langfuse, edge),
+        None
+    );
+    assert_eq!(
+        cache.logged_trace_id("young", TraceService::Langfuse, edge),
+        Some("trace-young")
+    );
+}
+
+#[test]
 fn a_boolean_or_list_metadata_id_is_ignored() {
     let record = params("{\"metadata\": {\"trace_id\": true, \"session_id\": [1]}}");
     assert_eq!(

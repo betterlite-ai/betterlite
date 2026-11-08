@@ -59,6 +59,18 @@ fn logging_metadata_behavior_tests_behavior(#[case] encoded: &str, #[case] expec
     assert_eq!(converted.get("x_ratelimit_limit_tokens"), Some(&expected));
 }
 
+#[test]
+fn integers_beyond_float_precision_are_kept_exactly() {
+    let converted = get_additional_headers(Some(&headers(
+        r#"{"x-ratelimit-limit-tokens": 9007199254740993}"#,
+    )))
+    .expect("headers convert");
+    assert_eq!(
+        converted.get("x_ratelimit_limit_tokens"),
+        Some(&number(9_007_199_254_740_993))
+    );
+}
+
 #[rstest]
 #[case::word("abc")]
 #[case::decimal_text("1.5")]

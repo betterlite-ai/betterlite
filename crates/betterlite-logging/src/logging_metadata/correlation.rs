@@ -5,24 +5,16 @@ use indexmap::IndexMap;
 
 use crate::logging_metadata::params::LitellmParams;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum TraceService {
     Langfuse,
-}
-
-impl TraceService {
-    const fn cache_prefix(self) -> &'static str {
-        match self {
-            Self::Langfuse => "langfuse",
-        }
-    }
 }
 
 #[derive(Debug)]
 pub struct TraceIdCache {
     capacity: usize,
     ttl: Duration,
-    entries: IndexMap<String, (String, Instant)>, // value and the instant it was first stored
+    entries: IndexMap<(TraceService, String), (String, Instant)>, // value and the instant it was first stored
 }
 
 impl TraceIdCache {
@@ -46,8 +38,10 @@ impl TraceIdCache {
         for _ in 0..excess {
             self.entries.shift_remove_index(0);
         }
-        let key = format!("{}:{call_id}", service.cache_prefix());
-        let slot = self.entries.entry(key).or_insert((String::new(), now));
+        let slot = self
+            .entries
+            .entry((service, call_id.to_owned()))
+            .or_insert((String::new(), now));
         slot.0 = trace_id;
     }
 
@@ -58,9 +52,7 @@ impl TraceIdCache {
         service: TraceService,
         now: Instant,
     ) -> Option<&str> {
-        let (value, stored) = self
-            .entries
-            .get(&format!("{}:{call_id}", service.cache_prefix()))?;
+        let (value, stored) = self.entries.get(&(service, call_id.to_owned()))?;
         (now.saturating_duration_since(*stored) <= self.ttl).then_some(value.as_str())
     }
 }
