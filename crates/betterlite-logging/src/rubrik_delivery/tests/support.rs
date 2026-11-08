@@ -84,7 +84,7 @@ pub(super) enum Outcome {
 #[derive(Clone, Debug)]
 pub(super) struct ScriptedReply {
     pub(super) outcome: Outcome,
-    pub(super) during_send: Option<Json>,
+    pub(super) during_send: Vec<Json>,
 }
 
 impl ScriptedReply {
@@ -94,7 +94,7 @@ impl ScriptedReply {
                 status: 200,
                 body: body.to_owned(),
             },
-            during_send: None,
+            during_send: Vec::new(),
         }
     }
 
@@ -104,19 +104,19 @@ impl ScriptedReply {
                 status,
                 body: String::new(),
             },
-            during_send: None,
+            during_send: Vec::new(),
         }
     }
 
     pub(super) fn network() -> Self {
         Self {
             outcome: Outcome::Network,
-            during_send: None,
+            during_send: Vec::new(),
         }
     }
 
     pub(super) fn pushing(mut self, payload: Json) -> Self {
-        self.during_send = Some(payload);
+        self.during_send.push(payload);
         self
     }
 }
@@ -192,9 +192,9 @@ fn next_reply(transport: &ScriptedTransport) -> ScriptedReply {
 }
 
 fn push_during_send(transport: &ScriptedTransport, reply: &ScriptedReply) {
-    let Some(queued) = reply.during_send.clone() else {
+    if reply.during_send.is_empty() {
         return;
-    };
+    }
     let logger = transport
         .logger
         .lock()
@@ -202,7 +202,9 @@ fn push_during_send(transport: &ScriptedTransport, reply: &ScriptedReply) {
         .as_ref()
         .and_then(Weak::upgrade)
         .expect("the scripted transport is attached to the logger");
-    push_payload(&logger, queued);
+    for queued in &reply.during_send {
+        push_payload(&logger, queued.clone());
+    }
 }
 
 #[async_trait]

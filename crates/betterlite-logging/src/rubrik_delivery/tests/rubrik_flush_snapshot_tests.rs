@@ -7,8 +7,8 @@ use betterlite_logging::rubrik_delivery::transport::ClientTier;
 use betterlite_models::decisions::Json;
 
 use super::support::{
-    ScriptedReply, SequenceClock, index_of, init, integer, last_flush_time, logger,
-    logger_with_clock, object,
+    ScriptedReply, SequenceClock, dropped_since_warning, environment, fill, index_of, init,
+    integer, last_flush_time, logger, logger_with_clock, logger_with_environment, object,
 };
 
 fn payload_at(index: u64) -> Json {
@@ -71,6 +71,39 @@ async fn payloads_appended_during_send_survive_the_prefix_drain() {
     assert_eq!(queue.len(), 1);
     assert_eq!(queue.first().and_then(index_of), Some(2));
     assert_eq!(queue_length(&logger), 1);
+}
+
+#[tokio::test]
+async fn events_appended_during_an_overflowing_send_all_survive() {
+    let values = environment(&[("RUBRIK_BATCH_SIZE", "20000")]);
+    let (logger, transport) = logger_with_environment(
+        &init("https://rubrik.test", "key"),
+        &values,
+        vec![
+            ScriptedReply::ok("{}")
+                .pushing(payload_at(10_000))
+                .pushing(payload_at(10_001))
+                .pushing(payload_at(10_002)),
+        ],
+    );
+    fill(&logger, 0, 10_000);
+    flush_queue(&logger).await;
+    let calls = transport.calls();
+    assert_eq!(calls.len(), 1);
+    match &calls[0].payload {
+        Json::List(sent) => {
+            assert_eq!(sent.len(), 10_000);
+            assert_eq!(sent.first().and_then(index_of), Some(0));
+            assert_eq!(sent.last().and_then(index_of), Some(9_999));
+        }
+        Json::Null | Json::Bool(_) | Json::Number(_) | Json::Text(_) | Json::Object(_) => {
+            panic!("the batch payload is a JSON array")
+        }
+    }
+    assert_eq!(dropped_since_warning(&logger), 3);
+    let queue = queue_snapshot(&logger);
+    let indices: Vec<Option<u64>> = queue.iter().map(index_of).collect();
+    assert_eq!(indices, vec![Some(10_000), Some(10_001), Some(10_002)]);
 }
 
 #[tokio::test]

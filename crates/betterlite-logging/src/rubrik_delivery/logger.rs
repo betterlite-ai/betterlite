@@ -21,6 +21,7 @@ pub struct RubrikLogger {
     pub transport: Arc<dyn Transport>,
     pub clock: Arc<dyn Clock>,
     pub dropped_since_warning: AtomicU64,
+    pub dropped_during_flush: AtomicU64,
     pub last_drop_warning_time: Mutex<Duration>,
     pub last_flush_time: Mutex<Duration>,
 }
@@ -43,6 +44,7 @@ impl RubrikLogger {
             transport,
             clock,
             dropped_since_warning: AtomicU64::new(0),
+            dropped_during_flush: AtomicU64::new(0),
             last_drop_warning_time: Mutex::new(Duration::ZERO),
             last_flush_time: Mutex::new(last_flush_time),
         })

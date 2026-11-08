@@ -9,3 +9,6 @@ deviations:
   - what: A connection that fails before an answer is not retried. LiteLLM's AsyncHTTPHandler.post creates a second client and repeats the request once on ConnectError or RemoteProtocolError.
     why: betterlite's shared outbound client attempts each request once, so a retry is the caller's decision rather than a hidden second delivery.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/custom_httpx/http_handler.py#L836-L851
+  - what: A successful flush drains only the snapshot events still at the front of the queue. Events appended while the POST is in flight stay queued even when their arrival overflows the queue and drops older snapshot events. LiteLLM's RubrikLogger.flush_queue deletes len(snapshot) events after the send, which removes events appended during the send without delivering them.
+    why: Deleting events another task appended during a successful send loses log records that were never delivered; no working setup can rely on that data loss.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/rubrik.py#L1106
