@@ -1,0 +1,12 @@
+kind: helper
+name: anthropic-user-blocks-empty-user
+call:
+  anthropic_user_blocks:
+    function: user_blocks
+    model: claude-sonnet-4-5
+    llm_provider: anthropic
+    modify_params: false
+    messages: []
+env: {}
+compare:
+  ignore: []

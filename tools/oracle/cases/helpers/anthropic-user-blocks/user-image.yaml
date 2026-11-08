@@ -1,0 +1,21 @@
+kind: helper
+name: anthropic-user-blocks-user-image
+call:
+  anthropic_user_blocks:
+    function: user_blocks
+    model: invoke/anthropic.claude-3-5-sonnet
+    llm_provider: bedrock
+    modify_params: false
+    data_urls:
+      https://example.test/pic.png: "data:image/png;base64,QUJD"
+    messages:
+      - role: user
+        content:
+          - type: image_url
+            image_url: "data:image/webp;base64,QQ=="
+            cache_control: {type: ephemeral}
+          - type: image_url
+            image_url: {url: "https://example.test/pic.png", format: image/png}
+env: {}
+compare:
+  ignore: []

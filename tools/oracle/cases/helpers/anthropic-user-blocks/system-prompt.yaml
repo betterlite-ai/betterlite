@@ -1,0 +1,13 @@
+kind: helper
+name: anthropic-user-blocks-system-prompt
+call:
+  anthropic_user_blocks:
+    function: system_prompt
+    messages:
+      - {role: system, content: first}
+      - {role: user, content: hi}
+      - {role: system, content: " second"}
+      - {role: assistant, content: ok}
+env: {}
+compare:
+  ignore: []
