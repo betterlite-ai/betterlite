@@ -7,8 +7,9 @@ description: >-
 
   Add `crates/betterlite-python/Cargo.toml` with `crate-type = ["cdylib", "rlib"]` and pyo3 0.30.1 with the `abi3-py310`
   feature. Add `crates/betterlite-python/pyproject.toml`: name `betterlite`, `requires-python = ">=3.10"`,
-  `[build-system] requires = ["maturin==1.16.0"]`, `python-source = "python"`, `module-name = "betterlite._native"`, and a
-  dependency on python-dotenv at the version in `tools/oracle/litellm/uv.lock`, since B157 loads `.env` at import.
+  `[build-system] requires = ["maturin==1.16.0"]`, `python-source = "python"`, `module-name = "betterlite._native"`, and
+  two runtime dependencies at the versions in `tools/oracle/litellm/uv.lock`: python-dotenv, since B157 loads `.env` at import,
+  and typing_extensions, since LiteLLM's type modules import `NotRequired`, `ReadOnly` and `Required` from it at run time.
 
 
   The native module `betterlite._native` exposes three functions. `core_version` returns the crate version.
@@ -21,6 +22,18 @@ description: >-
   `python/betterlite/_version.py` follows litellm/_version.py: it reads the installed version through `importlib.metadata`
   for the distribution "betterlite" and gives "unknown" when the lookup fails. Add `python/betterlite/py.typed` and
   `pyrightconfig.json`. B157 fills in the settings.
+
+
+  Native families join the crate through one explicit list that this task writes, as B5659 describes. `src/lib.rs` declares
+  every family with one `mod <family>;` line and one `<family>::register(module)?;` line, and each `src/<family>.rs` is the stub
+  `pub(crate) fn register(_module: &Bound<'_, PyModule>) -> PyResult<()> { Ok(()) }`. `python/betterlite/_native.pyi` holds one
+  `from betterlite._native_<family> import *` line per family, and each `python/betterlite/_native_<family>.pyi` starts empty. The
+  families, alphabetically, are `a2a`, `assistant_calls`, `assistant_runs`, `audio`, `batch_calls`, `batch_listing`, `cache`, `cache_backends`, `completion`, `container_calls`, `container_files`, `cost`, `cost_extra`, `decision_calls`, `embeddings`, `eval_calls`, `eval_runs`, `file_calls`, `file_content`, `genai`, `guardrail_call`, `images`, `interactions`, `mcp`, `messages`, `model_info`, `moderation`, `passthrough_calls`, `provider`, `proxy_client`, `rag_calls`, `realtime_calls`, `rerank`, `response_lifecycle`, `responses`, `router_call`, `search_ocr`, `skill_calls`, `tokens`, `tuning_calls`, `vector_files`, `vector_manage`, `vector_search`, `video_calls`, `video_edits`. A family task fills its stub and never edits the lists.
+
+
+  The package `__init__.py` also has one star line per Python module that a later task fills: `_tokens`, `_model_info`,
+  `_provider`, `_cost`, `_cost_extra`, `_cache_ops`, `caching`, `budget_manager` and `utils`. Each is created here as an empty
+  stub (an empty `__init__.py` for a package), and the later task fills it and never edits `betterlite/__init__.py`.
 
 
   Tests run with LiteLLM and betterlite installed side by side, so the same test can read `litellm.model_cost` and compare
@@ -49,8 +62,13 @@ dod:
   proof: [package-import]
 - text: '`provider_model_sets` equals the sets in LiteLLM for every name B5361 owns.'
   proof: [package-import]
+- text: >-
+    `src/lib.rs`, `_native.pyi` and `betterlite/__init__.py` list every native family and Python module named in the description with empty stubs, and the wheel imports.
+  proof: [package-import]
 - text: The Rust functions behind the wrappers have unit tests in `native_api`, and those run with no wheel installed.
   proof: [native-api]
+- text: The wheel METADATA lists python-dotenv and typing-extensions as its only `Requires-Dist` entries, at the lock versions.
+  proof: [package-import]
 - text: Python files pass ruff and basedpyright in strict mode.
   proof: [python-lint]
 checks:
@@ -79,13 +97,12 @@ deviations:
 out_of_scope:
 - >-
   LiteLLM's extras, console scripts and Python dependencies are not carried. The gateway binary comes from
-  `crates/betterlite`, and the wheel depends only on python-dotenv.
+  `crates/betterlite`, and the wheel depends only on python-dotenv and typing_extensions.
 - The module settings are B157. SDK functions such as `completion` are B158 and helpers such as `token_counter` are B166.
 - '`litellm/_lazy_imports.py`, `litellm/_lazy_imports_registry.py` and `litellm/rust_bridge/**` are excluded in litellm.yaml.'
 pitfalls:
 - >-
-  Don't put `extension-module` in default features. `cargo nextest` still has to link the crate against libpython for
-  the unit tests.
+  Never enable the `extension-module` feature, in default features or anywhere else. PyO3 0.30 deprecates it, and it turns off libpython linking for every target, so `cargo nextest` and a workspace `cargo clippy` would fail beside betterlite-pyhost, which embeds Python with `auto-initialize`. maturin 1.16.0 (at least 1.9.4) sets `PYO3_BUILD_EXTENSION_MODULE` during the wheel build only, which is the supported way (https://pyo3.rs/v0.30.1/building-and-distribution.html, https://pyo3.rs/v0.30.1/features.html).
 - >-
   `unsafe_code = "forbid"` stays. If a PyO3 macro fails under it, stop and report a blocker with the exact error. Don't
   relax the lint.

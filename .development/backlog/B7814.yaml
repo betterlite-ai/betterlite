@@ -1,0 +1,14 @@
+id: B7814
+milestone: M3 providers
+title: RAGFlow dataset vector store
+status: todo
+depends_on: [B1131]
+file: tasks/B7814-ragflow-dataset-store.yaml
+covers:
+  - "litellm/llms/ragflow/vector_stores/**"
+parent: B049
+split_from: B049
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

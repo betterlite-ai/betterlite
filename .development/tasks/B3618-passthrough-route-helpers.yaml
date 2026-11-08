@@ -1,0 +1,148 @@
+id: B3618
+title: Pass-through provider route composition helpers
+description: >-
+  Build the helpers that LiteLLM's provider pass-through routes share, as the module passthrough_route_helpers in crates/betterlite-server.
+  The route tasks that follow (B3619 to B3629) call them and register no route here, so this task adds no HTTP route and no HTTP oracle case.
+  Every name below is at most 30 characters; LiteLLM's longer names are renamed on purpose.
+
+  Request facts. `RequestCopy` holds method, url, headers (a copy, never the shared cached map), cookies and query_params as a plain string map. `create_request_copy` fills it from the incoming request; headers come from B1100's cached header read.
+  `uses_router_model(body, router)` replaces is_passthrough_request_using_router_model. It is true only when the body's `model` is a JSON string and B2400's is_known_model finds it in the router's model names. A missing router, a missing model, a non-string model and any lookup failure give false and never an error.
+  `is_streaming_body(body)` replaces is_passthrough_request_streaming. It is true only for a JSON object whose `stream` field is true. A list, a scalar and a missing field give false.
+  `request_is_streaming(request)` replaces is_streaming_request_fn. For any method but POST it returns false without reading the body. For a POST with a multipart/form-data content type it reads the form through B1101, otherwise it reads the body through B1100's body read, and it returns is_streaming_body of the result.
+
+  Model groups. `deployment_model_name(litellm_params)` returns the model name that B174's provider resolution gives for the deployment's `model` (default empty string) and its `custom_llm_provider`. Only the resolution's bad-request error is swallowed, and then the raw `model` string is returned. `models_served_by_group(router, group)` returns the set of those names over B844's get_model_list(model_name=group), empty when the list is empty or missing. `RelayRejection` is the record `{error: String}` that routes put in a 400 detail.
+
+  Router metadata. `router_request_metadata(auth)` builds an empty `litellm_metadata` map and calls B1106's add_user_api_key_auth_to_request_metadata for it with the bucket name `litellm_metadata`, then returns that map. It must be that bucket and never `metadata`, because the router hop reads spend attribution only from `litellm_metadata` and `agent_id` and `user_api_end_user_max_budget` would be lost.
+
+  Target URL. `provider_target_url(base, endpoint)` is the block that LiteLLM repeats in the gemini, cohere, mistral and generic routes. Take the path of the endpoint as httpx does: the query and fragment are dropped, and a leading `/` is added when missing. Then join it to the path of the base with B3600's join_base_and_endpoint_path and return the base with that path. The base keeps its scheme, host, port and query. The other route tasks call this function instead of copying the block.
+
+  Generic provider route. `provider_factory_route` replaces llm_passthrough_factory_proxy_route and takes custom_llm_provider, endpoint, the request, the response and the authenticated key. Steps in order:
+  1. Get the provider's model info from B2220's factory with model None. A provider with no model info gives HTTP 404 with detail "Provider {custom_llm_provider} not found". A provider name that is not a known provider is an internal error (500), as in LiteLLM.
+  2. Call its get_api_base with no argument, so the provider's own env var or default applies. None gives 404 "Provider {custom_llm_provider} api base not found".
+  3. Build the target with provider_target_url.
+  4. Read the credential with B3602's get_credentials(custom_llm_provider, region_name None).
+  5. Call the provider's validate_environment with empty headers, model "", no messages, empty optional_params and litellm_params, that api key and that api base. The returned headers are the custom headers of the call.
+  6. For POST only: a body that is not multipart/form-data is read as JSON (B1100), a multipart one through B1101's form read. If the body's `stream` is truthy, the call is streaming. GET, PUT, DELETE and PATCH are never streaming.
+  7. Build B3615's create_pass_through_route handler with endpoint, the target, those custom headers and the streaming flag, call it with the request, response and key, and return its result.
+
+  Router relay. `relay_upstream_response` reads the whole upstream body and returns a response with the upstream status and B3600's get_response_headers(headers, custom_headers None). `relay_upstream_bytes` yields the upstream chunks unchanged and always closes the upstream stream afterwards, also when the client goes away or an error stops the loop.
+  `relay_router_model` takes the router, the model group, the endpoint, the request, the request body, the streaming flag and the authenticated key. It calls the router's passthrough route with: model, the request method, endpoint, the request query params, the request headers (B1100's cached read), stream flag, content/data/files/params/headers/cookies all None, `json` set to the body only when the request content type is JSON (else None), and litellm_metadata from router_request_metadata. Then:
+  - an upstream HTTP status error (the router raises it for 4xx and 5xx) is turned into relay_upstream_response of the error's response, with the upstream status;
+  - a non-streaming result goes through relay_upstream_response;
+  - a streaming result that is a bare byte stream (no status and no headers) becomes a status 200 streaming response with the single header `content-type: text/event-stream`;
+  - any other streaming result carries its own status and headers: the response uses that status and B3600's get_response_headers of its headers.
+  Both streaming forms are wrapped in the SSE keepalive wrapper (the SseKeepalive trait that B3613's HandlerDeps already holds; read where it is declared) with ping_interval_seconds from the setting `sse_keepalive_ping_interval_seconds` (B002, default None, which means no pings) and, as upstream headers, the single content-type header or the result's own headers.
+  The router is reached through a small trait this module declares, `RouterPassthrough`, with one async method that takes a `RouterPassthroughCall` (the arguments above) and returns `RouterPassthroughReply` (Buffered, ByteStream, or StatusStream with status, headers and byte stream) or `RouterPassthroughError` (UpstreamStatus carrying the upstream response, or Other). The architect wires the real router to it later; tests use a recording fake.
+scope:
+  paths:
+    - crates/betterlite-server/src/passthrough_route_helpers.rs
+    - crates/betterlite-server/src/passthrough_route_helpers/**
+    - tools/oracle/cases/server/passthrough-route-helpers/**
+    - tools/oracle/helpers/b3618.py
+    - tools/oracle/helpers/b3618/**
+    - tools/oracle/src/helpers/server/b3618.rs
+    - tools/oracle/src/helpers/server/b3618/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L136-L199
+    why: create_request_copy, the router-model test, RelayRejection, the model-group helpers, the streaming flag and the two small type guards.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L201-L228
+    why: get_passthrough_router_request_metadata and why it uses the litellm_metadata bucket.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L231-L310
+    why: llm_passthrough_factory_proxy_route, the only generic provider route; vllm is its one caller (L541).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L807-L815
+    why: is_streaming_request_fn, called by the mistral, anthropic, vertex and gigachat routes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L1972-L2072
+    why: "The relay helpers: bytes, response, and _relay_router_model with its three result shapes."
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/pass_through_endpoints.py#L708-L732
+    why: join_base_and_endpoint_path, which B3600 owns and this task calls.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8260-L8274
+    why: is_known_model, which B2400 owns; None model or router gives false.
+dod:
+  - text: create_request_copy returns method, url, a copied header map, cookies and the query params as a string map, and changing the copy does not change the request.
+    proof: [request-copy-tests]
+  - text: uses_router_model is true only for a string model that is in the router's model names, and false for a missing router, a missing model, a non-string model and a failing lookup.
+    proof: [router-model-tests]
+  - text: is_streaming_body is true only for an object with `stream` true, and request_is_streaming reads no body for GET, reads a form for multipart POST and the body for other POSTs.
+    proof: [streaming-flag-tests, oracle]
+  - text: deployment_model_name strips the provider prefix, falls back to the raw model on a bad-request resolution error and lets other errors through; models_served_by_group collects these names for the group.
+    proof: [served-models-tests]
+  - text: router_request_metadata returns the user-key attribution inside the litellm_metadata bucket, including agent_id and user_api_end_user_max_budget when the key has them.
+    proof: [router-metadata-tests]
+  - text: provider_target_url drops the endpoint's query, adds a leading slash, keeps the base path prefix, and falls back to the base path plus a slash when `..` climbs out of it.
+    proof: [target-url-tests, oracle]
+  - text: provider_factory_route answers 404 for a provider without model info or without an api base, builds the target and auth headers from the provider config and credential, sets streaming only for a POST body with `stream` truthy, and calls B3615's factory handler.
+    proof: [factory-route-tests]
+  - text: relay_router_model sends the exact router arguments (json only for a JSON content type, metadata from router_request_metadata) and returns the right response for an upstream status error, a buffered result, a bare byte stream and a status-carrying stream.
+    proof: [router-relay-tests]
+  - text: relay_upstream_bytes closes the upstream stream after the last chunk, after an error and when the consumer drops it, and the SSE keepalive wrapper receives the configured ping interval.
+    proof: [upstream-close-tests]
+checks:
+  optional: []
+  commands:
+    - id: request-copy-tests
+      why: the request copy is missing, shares state with the request, or drops a field
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_route_helpers::tests::request_copy(::|$)/)'
+    - id: router-model-tests
+      why: uses_router_model accepts a non-string model, errors on a missing router, or misses a known model
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_route_helpers::tests::router_model(::|$)/)'
+    - id: streaming-flag-tests
+      why: the streaming flag or the POST-only body read is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_route_helpers::tests::streaming_flag(::|$)/)'
+    - id: served-models-tests
+      why: model-group name resolution or its bad-request fallback is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_route_helpers::tests::served_models(::|$)/)'
+    - id: router-metadata-tests
+      why: the router metadata is built in the wrong bucket or misses the attribution fields
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_route_helpers::tests::router_metadata(::|$)/)'
+    - id: target-url-tests
+      why: the provider target URL keeps the query, loses the base path or leaves the base path
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_route_helpers::tests::target_url(::|$)/)'
+    - id: factory-route-tests
+      why: the generic provider route returns the wrong 404, the wrong headers or the wrong streaming flag
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_route_helpers::tests::factory_route(::|$)/)'
+    - id: router-relay-tests
+      why: the router relay sends wrong arguments or builds the wrong response for one of the result shapes
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_route_helpers::tests::router_relay(::|$)/)'
+    - id: upstream-close-tests
+      why: the upstream stream is left open or the keepalive interval is not passed
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^passthrough_route_helpers::tests::upstream_close(::|$)/)'
+oracle_cases:
+  - tools/oracle/cases/server/passthrough-route-helpers/streaming-object-true.yaml
+  - tools/oracle/cases/server/passthrough-route-helpers/streaming-list-body-false.yaml
+  - tools/oracle/cases/server/passthrough-route-helpers/streaming-field-missing-false.yaml
+  - tools/oracle/cases/server/passthrough-route-helpers/target-url-base-path-kept.yaml
+  - tools/oracle/cases/server/passthrough-route-helpers/target-url-query-dropped.yaml
+  - tools/oracle/cases/server/passthrough-route-helpers/target-url-dotdot-climbs-out.yaml
+deviations:
+  - what: A POST body that is not valid JSON on the generic provider route gets B1100's 400 invalid_request_error for the request body, not FastAPI's plain 500 "Internal Server Error".
+    why: LiteLLM calls request.json() with no handler, so a bad body is an unhandled JSONDecodeError. betterlite has one body decoder and a 400 tells the client what is wrong. Open question in the notes.
+  - what: LiteLLM's helpers _optional_str, _string_keyed_mapping and _json_request_body are not built.
+    why: On serde_json values they are as_str, as_object and the B1100 body read, so the route tasks use those directly. Callers are listed in out_of_scope.
+  - what: The router is reached through the RouterPassthrough trait, and the three router result shapes are one enum.
+    why: Python tells them apart with inspect.isasyncgen and a cast; Rust needs a closed type. What a client sees is the same.
+out_of_scope:
+  - "Every @router.api_route and @router.websocket in llm_passthrough_endpoints.py, and the module singletons `router`, `vertex_llm_base`, `default_vertex_config`: B3619 to B3629 each register their own provider routes with axum, and B3616 registers only the endpoints configured in pass_through_endpoints."
+  - "The vllm route's own router-model branch (L486-L548) builds its response without relay_router_model; B3627 owns it and calls provider_factory_route for the fallback."
+  - "_relay_azure_router_model, _relay_azure_body_model_group, get_azure_ai_search_index_from_endpoint and is_azure_ai_search_service_level_index_create: B3624 owns them and calls models_served_by_group and relay_router_model."
+  - "relay_nvidia_nim_request and nvidia_nim_proxy_route: B3628 owns them and calls relay_router_model."
+  - "_resolve_vertex_model_from_router and _override_vertex_params_from_router_credentials: B3622 and B3623 own them; they use no helper from this task."
+  - "_is_bedrock_agent_runtime_route, _is_bedrock_agent_runtime_passthrough_disabled and the Bedrock model helpers: B3620 and B3621 own them."
+  - "_join_url_paths (used only by the OpenAI routes at L3144 and L3253): B3628 owns it."
+  - "_proxy_general_settings, _resolve_aws_passthrough_region and _get_llm_router: single-route readers of proxy globals; B3621, B3625 and B3629 own them."
+  - "The streaming type of Router.allm_passthrough_route (AsyncPassthroughStreamingResponse): B3572 owns it. The Router method itself has no owning task I could find; see the notes."
+  - "create_pass_through_route, join_base_and_endpoint_path and get_response_headers: B3615 and B3600 own them; this task only calls them."
+pitfalls:
+  - "httpx.URL(endpoint).path drops everything after `?` and `#`, so a query string inside `endpoint` never reaches the target; the route's own query forwarding is B3615's job."
+  - "provider_factory_route does not pass custom_llm_provider to create_pass_through_route, so a call through it is typed as a generic endpoint for logging and cost."
+  - "uses_router_model must not panic on `model` set to a list or an object; Python's set lookup raises TypeError there and the except turns it into false."
+  - "The router relay sends `json` only when the request content type is JSON, so a multipart or text body reaches the router as data None and json None."
+  - "The bare byte stream branch hard-codes status 200 and `content-type: text/event-stream`; only the other stream branch reads the router's real status and headers."
+  - "relay_upstream_bytes must close the upstream in a finally path; a client disconnect stops the loop without an error."
+  - "A router 4xx or 5xx arrives as an HTTP status error, not as a result; relay it with the upstream status and body, never as a 500."
+  - "provider_factory_route reads the stream flag with truthiness of the body's `stream` while is_streaming_body wants true; for a bool field both agree, so cases use bool."
+  - "router_request_metadata starts from `{litellm_metadata: {}}`; B1106's function reads `agent_id` from that same map, so do not seed `metadata`."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

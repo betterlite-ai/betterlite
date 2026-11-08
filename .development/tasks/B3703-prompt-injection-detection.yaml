@@ -1,0 +1,274 @@
+id: B3703
+title: Prompt injection heuristics and model moderation
+description: >-
+  Build LiteLLM's `detect_prompt_injection` callback (`_OPTIONAL_PromptInjectionDetection`) as a typed hook in
+  betterlite-guardrails, plus the `litellm_settings.prompt_injection_params` section in betterlite-config. The hook
+  rejects a request in two ways. The pre-call hook runs a fuzzy keyword check (heuristics) on the prompt text. The
+  during-call moderation hook asks a configured model whether the prompt is unsafe. Nothing else in LiteLLM calls this
+  code except the callback registration, so this task is helper-case tested, not HTTP tested.
+
+  Config section. Add `crates/betterlite-config/src/sections/prompt_injection.rs` with the usual `Raw` and `Settings`
+  pair and `impl Section for Raw`, like `aiohttp_transport_toggle.rs`. `Raw` reads `litellm_settings.prompt_injection_params`
+  into `Settings.params: Option<PromptInjectionParams>`. `PromptInjectionParams` has `heuristics_check: bool` (false),
+  `vector_db_check: bool` (false), `llm_api_check: bool` (false), `llm_api_name: Option<String>`,
+  `llm_api_system_prompt: Option<String>`, `llm_api_fail_call_string: Option<String>` and
+  `reject_as_response: Option<bool>` (default Some(false)). Unknown keys are ignored. When `llm_api_check` is true,
+  each of the three `llm_api_*` strings must be present and non-empty, else the config fails with exactly
+  "If llm_api_check is set to True, llm_api_name must be provided", "If llm_api_check is set to True,
+  llm_api_system_prompt must be provided" or "If llm_api_check is set to True, llm_api_fail_call_string must be
+  provided" (checked in that order, first failure wins). A missing `prompt_injection_params` key gives `params: None`,
+  which is a different behavior from all-false params (see the hook below). The section also reads two environment
+  values through the `EnvironmentLookup` passed to `convert`: `PROMPT_INJECTION_HEURISTICS_MAX_THREADS` into
+  `heuristics_max_threads: usize` using `crate::env_integer::get_env_int` with default 1, then raised to at least 1
+  (zero and negatives become 1), and `DEFAULT_PROMPT_INJECTION_SIMILARITY_THRESHOLD` into
+  `similarity_threshold: rust_decimal::Decimal` with default 0.7. Trim the text, parse it as a decimal (plain or
+  scientific notation), and fail the config with a typed error naming the variable when it does not parse. Floats are
+  denied in this repo, so the threshold stays a Decimal end to end.
+
+  Hook module. Add `crates/betterlite-guardrails/src/prompt_injection.rs` declaring these submodules, each with an
+  adjacent tests.rs. The test module paths are what the checks filter on.
+  `keywords.rs`: `generate_injection_keywords() -> Vec<String>`. Verbs are Ignore, Disregard, Skip, Forget, Neglect,
+  Overlook, Omit, Bypass, "Pay no attention to", "Do not follow", "Do not obey". Adjectives are "" , prior, previous,
+  preceding, above, foregoing, earlier, initial. Prepositions are "", "and start over", "and start anew", "and begin
+  afresh", "and start from scratch". Loop verb, then adjective, then preposition in that order, join the non-empty
+  parts with one space, strip, and keep the phrase only when it has more than 2 whitespace-separated words, lowercased.
+  That gives 376 keywords in a fixed order. Build the list once when the hook is constructed, not per call.
+  `matcher.rs`: a port of Python `difflib.SequenceMatcher(None, a, b).ratio()` for two `&[char]` slices:
+  `ratio = 2 * M / (len(a) + len(b))`, where M is the sum of the sizes of the matching blocks from the recursive
+  longest-match split. Longest match ties go to the earliest start in `a`, then the earliest start in `b`. There is no
+  junk function, and autojunk never applies because the longest keyword is 52 characters (under 200). Keep it to the
+  exact algorithm, since a different diff algorithm gives different ratios. Check whether a maintained crates.io
+  crate gives identical ratios and passes `cargo deny`; the `difflib` crate is old and unmaintained, so expect to port
+  the roughly 100 lines. Say which you chose in the report.
+  `similarity.rs`: `check_user_input_similarity(keywords: &[String], user_input: &str, threshold: Decimal) -> bool`.
+  Lowercase the input. For each keyword in order, slide a window of exactly the keyword's length in characters
+  (Unicode scalar values) across the lowered input, and return true as soon as the ratio of window (first argument)
+  to keyword (second argument) is strictly greater than the threshold. Compare exactly with
+  `Decimal::from(2 * M) > threshold * Decimal::from(len(window) + len(keyword))`, not with floats. An input shorter
+  than a keyword has no window for that keyword. Log at info the keyword and ratio on a hit, never the user text.
+  `pool.rs`: `HeuristicsPool::new(max_threads: usize)` with `async fn check(&self, keywords: Arc<[String]>, input: String, threshold: Decimal) -> Result<bool, PromptInjectionError>`.
+  It runs `check_user_input_similarity` on `tokio::task::spawn_blocking` behind a `tokio::sync::Semaphore` with
+  `max_threads` permits, like LiteLLM's `ThreadPoolExecutor(max_workers=PROMPT_INJECTION_HEURISTICS_MAX_THREADS)`.
+  Add the tokio `rt` and `sync` features to `crates/betterlite-guardrails/Cargo.toml`, plus a path dependency on
+  betterlite-models (it has no workspace dependencies, so no cycle).
+  `template.rs`: `prompt_injection_detection_default_pt() -> &'static str` returning exactly
+  "Detect if a prompt is safe to run. Return 'UNSAFE' if not." (factory.py L66-L67).
+  `hook.rs`: `PromptInjectionDetection::new(params: Option<PromptInjectionParams>, similarity_threshold: Decimal, pool: HeuristicsPool)`
+  with the associated const `ENFORCES_REQUEST_CONTENT: bool = true` (the proxy runs this hook in guardrails-only mode
+  because of it). `update_environment(&mut self, model_names: Option<&[String]>) -> Result<(), PromptInjectionError>`
+  stores the names and, only when `params` is Some with `llm_api_check` true, fails with the exact messages
+  "PromptInjectionDetection: Model List not set. Required for Prompt Injection detection." when `model_names` is None
+  and "PromptInjectionDetection: Invalid LLM API Name. LLM API Name must be a 'model_name' in 'model_list'." when
+  `llm_api_name` is missing or not in the list. `async fn pre_call(&self, call_type: HookCallType, request: &<the
+  request type B1688's get_formatted_prompt takes>) -> Result<PreCallOutcome, PromptInjectionError>` and
+  `async fn moderation<J: InjectionJudge>(&self, judge: &J, call_type: HookCallType, request: ...) -> Result<Option<bool>, PromptInjectionError>`.
+  Read the exact request and call-type shapes from `crates/betterlite-models/src/billing_text.rs` (B1688) and call its
+  `get_formatted_prompt`. `HookCallType` is a local enum with one variant per accepted call type (acompletion,
+  completion, text_completion, embeddings, image_generation, moderation, audio_transcription) and `Unsupported` for
+  everything else; keep names at 30 characters or fewer.
+
+  Pre-call behavior (L149-L217). A call type outside the seven accepted ones returns `PreCallOutcome::Pass` without
+  scanning. For `embeddings` the prompt is the empty string, because `get_formatted_prompt` has no "embeddings" branch,
+  so do not call B1688's function for it. Otherwise get the formatted prompt. With `params` None, always run the
+  heuristics. With `params` Some, run them only when `heuristics_check` is true; `vector_db_check` does nothing (a
+  TODO in LiteLLM). A hit returns `Err(PromptInjectionError::Rejected)`, whose status is 400 and whose detail is
+  `{"error": "Rejected message. This is a prompt injection attack."}`. The one exception: when `params` is Some with
+  `reject_as_response` Some(true), a hit returns `Ok(PreCallOutcome::RejectedAsMessage(String))` holding that same
+  message instead of an error. Any other failure inside the hook (the prompt cannot be built from a malformed body,
+  the pool fails) is logged with `tracing::error!` and returns `Pass`, so the request goes on.
+
+  Moderation behavior (L219-L280). Return `Ok(None)` when `params` is None. Build the formatted prompt for the call
+  type (errors propagate here, unlike pre-call; `embeddings` is again the empty string) and return `Ok(None)` when it
+  is empty. Otherwise, when `llm_api_check` is true and `llm_api_name` is set and `update_environment` stored model
+  names (the stand-in for "router is not None"), call `judge.complete(model, system_prompt, user_prompt)` with the
+  `llm_api_name`, `llm_api_system_prompt` and the formatted prompt. `InjectionJudge` is a trait defined in this module:
+  `async fn complete(&self, model: &str, system_prompt: &str, user_prompt: &str) -> Result<Option<String>, PromptInjectionError>`
+  where `Ok(None)` stands for "the answer was not a chat completion with a text first choice" (LiteLLM checks
+  `isinstance(response, ModelResponse)` and `Choices`). The server wires the real router into this trait later. The
+  prompt is an attack when the first choice's text contains `llm_api_fail_call_string` as a case-sensitive substring.
+  An attack returns `Err(PromptInjectionError::Rejected)` (same 400 and detail as above, and `reject_as_response` is
+  ignored here). No attack returns `Ok(Some(false))`, including when `llm_api_check` is false.
+
+  Errors: `PromptInjectionError` is a thiserror enum in `prompt_injection/error.rs` with variants for rejection, model
+  list problems and judge or pool failures, and a method returning the HTTP status and the detail JSON for the
+  rejection. Native tests and oracle cases below pin all of it.
+
+scope:
+  paths:
+    - crates/betterlite-guardrails/Cargo.toml
+    - crates/betterlite-guardrails/src/prompt_injection.rs
+    - crates/betterlite-guardrails/src/prompt_injection/**
+    - crates/betterlite-config/src/sections/prompt_injection.rs
+    - crates/betterlite-config/src/sections/prompt_injection/**
+    - "crates/betterlite-config/fuzz/corpus/config_yaml/prompt-injection-*"
+    - tools/oracle/cases/helpers/prompt-injection/**
+    - tools/oracle/helpers/b3703.py
+    - tools/oracle/helpers/b3703/**
+    - tools/oracle/src/helpers/guardrails/b3703.rs
+    - tools/oracle/src/helpers/guardrails/b3703/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_injection_detection.py#L32-L106
+    why: Executor sized by PROMPT_INJECTION_HEURISTICS_MAX_THREADS, the three keyword word lists, print_verbose, and update_environment with its two exact error messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_injection_detection.py#L108-L147
+    why: Keyword generation (word count over 2, lowercased), the off-loop wrapper, and the sliding-window SequenceMatcher check with a strict greater-than threshold.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_injection_detection.py#L149-L217
+    why: Pre-call hook, its accepted call-type list, params None versus params set, the 400 detail, reject_as_response, and the catch-all that lets the request through.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/prompt_injection_detection.py#L219-L280
+    why: Moderation hook, the llm_api_system_prompt lookup, the router call, the fail-string substring test and the return values.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L1132-L1156
+    why: LiteLLMPromptInjectionParams fields, defaults and the before-validator with its three messages.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L649
+    why: PROMPT_INJECTION_HEURISTICS_MAX_THREADS read with get_env_int, default 1, floor of 1.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1886
+    why: DEFAULT_PROMPT_INJECTION_SIMILARITY_THRESHOLD read with float(os.getenv(...)), default 0.7.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/prompt_templates/factory.py#L66-L67
+    why: prompt_injection_detection_default_pt, the only part of factory.py this task owns.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L325-L338
+    why: How the detect_prompt_injection callback name builds the hook from litellm_settings.prompt_injection_params (registration is B189's).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L1768-L1783
+    why: What the proxy does with a string returned from a pre-call hook, RejectedRequestError for completion and text_completion, else HTTP 400.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L2925-L2950
+    why: during_call_hook runs async_moderation_hook only for callbacks that override it and only when user_api_key_dict is set.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/llm_response_utils/get_formatted_prompt.py#L4-L50
+    why: The prompt builder both hooks call; it has an "embedding" branch but no "embeddings" branch.
+  - url: https://docs.python.org/3/library/difflib.html#difflib.SequenceMatcher.ratio
+    why: Definition of ratio() and the longest-match tie rule the matcher port must follow.
+
+dod:
+  - text: >-
+      The keyword generator returns the 376 lowercased phrases in verb, adjective, preposition order, keeping only
+      phrases of more than 2 words, so "ignore previous" is absent and "do not follow" is present.
+    proof: [keywords-tests, oracle]
+  - text: >-
+      The matcher ratio equals Python SequenceMatcher(None, a, b).ratio() for identical strings, disjoint strings,
+      repeated characters where longest-match ties matter, and non-ASCII text.
+    proof: [matcher-tests, oracle]
+  - text: >-
+      check_user_input_similarity lowercases the input, uses windows of the keyword's character length, needs a ratio
+      strictly above the threshold (a ratio exactly equal to it does not match), and finds nothing in an input shorter
+      than every keyword.
+    proof: [similarity-tests, oracle]
+  - text: >-
+      The heuristics pool runs at most heuristics_max_threads checks at the same time and rejects a zero size by
+      treating it as 1 in the config section, not in the pool.
+    proof: [pool-tests]
+  - text: >-
+      pre_call passes untouched any call type outside the seven accepted ones, treats embeddings as an empty prompt,
+      scans when params is None, scans only when heuristics_check is true when params is set, and does nothing for
+      vector_db_check.
+    proof: [pre-call-tests]
+  - text: >-
+      pre_call rejects a detected attack with status 400 and detail {"error": "Rejected message. This is a prompt
+      injection attack."}, returns that message as RejectedAsMessage when reject_as_response is true, and logs and
+      passes the request when the prompt cannot be built.
+    proof: [pre-call-tests]
+  - text: >-
+      moderation returns None without params or with an empty prompt, never runs heuristics, calls the judge only
+      when llm_api_check, llm_api_name and stored model names are all present, rejects on a case-sensitive substring
+      of llm_api_fail_call_string in the first choice, returns Some(false) otherwise, and propagates prompt-building
+      and judge errors.
+    proof: [moderation-tests]
+  - text: >-
+      update_environment fails with the exact "Model List not set" and "Invalid LLM API Name" messages only when
+      llm_api_check is true, and accepts anything otherwise.
+    proof: [environment-tests]
+  - text: prompt_injection_detection_default_pt returns the exact LiteLLM string.
+    proof: [template-tests]
+  - text: >-
+      The config section loads prompt_injection_params with LiteLLM's defaults, applies the three llm_api_check
+      validation messages in order (empty strings count as missing), keeps None distinct from all-false params, and
+      resolves PROMPT_INJECTION_HEURISTICS_MAX_THREADS (default 1, floor 1) and
+      DEFAULT_PROMPT_INJECTION_SIMILARITY_THRESHOLD (default 0.7, typed error when unparseable).
+    proof: [config-tests]
+  - text: Fresh prompt_injection_params YAML corpus entries replay through the config decoder without a panic.
+    proof: [config-corpus]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: keywords-tests
+      why: the keyword list differs from LiteLLM's in content, order or the word-count filter
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_injection::keywords::/)'
+    - id: matcher-tests
+      why: the SequenceMatcher port gives a ratio that differs from difflib
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_injection::matcher::/)'
+    - id: similarity-tests
+      why: the sliding-window check, the lowercasing or the strict threshold comparison is wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_injection::similarity::/)'
+    - id: pool-tests
+      why: the heuristics pool does not bound concurrent checks
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_injection::pool::/)'
+    - id: pre-call-tests
+      why: the pre-call hook gates call types, params or rejection output differently from LiteLLM
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_injection::pre_call::/)'
+    - id: moderation-tests
+      why: the moderation hook, its judge call or its fail-string test is missing or wrong
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_injection::moderation::/)'
+    - id: environment-tests
+      why: update_environment does not validate the model list or the model name
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_injection::environment::/)'
+    - id: template-tests
+      why: the default system prompt string is missing or changed
+      run: cargo nextest run --locked -p betterlite-guardrails --no-tests=fail -E 'test(/^prompt_injection::template::/)'
+    - id: config-tests
+      why: the prompt_injection section does not load params, validate them or resolve its two environment values
+      run: >-
+        cargo nextest run --locked -p betterlite-config --no-tests=fail
+        -E 'test(/^sections::prompt_injection::/) - test(replays_the_config_yaml_corpus)'
+    - id: config-corpus
+      why: no new prompt_injection_params corpus entries were added, or the config decoder fails on one
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/prompt-injection-*')"
+        && grep -rlq 'prompt_injection_params' crates/betterlite-config/fuzz/corpus/config_yaml
+        && test -f crates/betterlite-config/fuzz/fuzz_targets/config_yaml.rs
+        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/prompt-injection/keywords.yaml
+  - tools/oracle/cases/helpers/prompt-injection/similarity-hits.yaml
+  - tools/oracle/cases/helpers/prompt-injection/similarity-clean.yaml
+  - tools/oracle/cases/helpers/prompt-injection/similarity-unicode.yaml
+
+deviations:
+  - what: The info log line on a heuristics hit names the keyword and the ratio but leaves out the user's text.
+    why: LiteLLM logs "Rejected user input - {user_input}", which copies a possibly sensitive prompt into the proxy log.
+  - what: A DEFAULT_PROMPT_INJECTION_SIMILARITY_THRESHOLD value that is not a finite decimal (text, nan, inf) fails config loading with an error that names the variable.
+    why: Python fails at import with a ValueError for text, and accepts nan and inf, which make every comparison false or true; a finite Decimal keeps the strict comparison exact.
+  - what: Verbose output has no `print` to stdout when `litellm.set_verbose` is on; only tracing log lines are written.
+    why: betterlite has no global verbose flag, and the repo rules forbid global state.
+  - what: The model call goes through an injected `InjectionJudge` trait instead of `llm_router.acompletion`.
+    why: betterlite-guardrails cannot depend on the router or server crates; the server implements the trait over its router.
+
+out_of_scope:
+  - "get_formatted_prompt: B1688 builds it in betterlite-models::billing_text; this task only calls it."
+  - "Registering the detect_prompt_injection callback name (callback_utils.py L325-L338, a branch of initialize_callbacks_on_proxy): no owner. B189 covers the file but merged without that function, and B3683 ports only the part the legacy default_on guardrails need. This task gives it PromptInjectionDetection::new and the config section."
+  - "ProxyStartupEvent._attach_router_to_prompt_injection_detectors (proxy_server.py L10145-L10151): B124 (the proxy_server umbrella, no task file yet) calls update_environment; this task only provides it."
+  - "Router.acompletion and its ModelResponse: the server implements InjectionJudge over its router."
+  - "Pre-call and during-call dispatch, the guardrails-only gate on enforces_request_content, and the mapping of a returned string to RejectedRequestError or HTTP 400 (proxy/utils.py): B124 (it lists ProxyLogging.pre_call_hook and during_call_hook, no task file yet). RejectedRequestError itself: B163. The string mapping has no task of its own."
+  - "LiteLLMPromptInjectionParams as a pydantic class in proxy/_types.py: built here only as the config section; the rest of _types.py is owned by its own tasks."
+  - "Every other function in factory.py: owned by B177 and B222 to B229; this task owns only prompt_injection_detection_default_pt."
+  - "vector_db_check: LiteLLM leaves it a TODO that does nothing at the pin, so it is parsed and ignored."
+  - "SkillPromptInjectionHandler (llms/litellm_proxy/skills/prompt_injection.py), Lakera and Aporia prompt injection hooks: different features, owned by B1504 and the vendor guardrail tasks."
+
+pitfalls:
+  - The accepted call-type list says "embeddings" (plural) but get_formatted_prompt only has an "embedding" branch, so an embeddings request passes the gate and is scanned as an empty string and never rejected.
+  - Call types outside acompletion, completion, text_completion, embeddings, image_generation, moderation and audio_transcription (responses, rerank and the like) return the data untouched with no scan.
+  - Params None means heuristics always run in pre-call, while params present with heuristics_check false means pre-call never scans; do not collapse the two.
+  - Pre-call swallows every non-HTTP error (a request with no "messages", a moderation input list holding a non-string) by logging and returning None, so the request goes through; the moderation hook has no such guard.
+  - reject_as_response only matters in pre-call, where it returns the message string; the moderation hook always raises the 400.
+  - llm_api_system_prompt is read with getattr on a field that always exists, so the default template never applies; with llm_api_check true the validator already required a non-empty prompt.
+  - The fail-string test looks at the first choice content only, is case-sensitive, and treats None content or a non-chat answer as safe.
+  - A keyword needs more than 2 words after joining, so "ignore previous" (2 words) is dropped while "ignore and start over" stays.
+  - The window is cut from the lowered input to the keyword's length in characters, not bytes, and SequenceMatcher gets the window first and the keyword second, which matters for tie-breaking.
+  - The threshold test is strictly greater, so a ratio of exactly 0.7 (14 matched characters over a 20-character window and keyword, for example) is not a hit.
+  - The pool default is 1 worker, so heuristics checks run one at a time unless PROMPT_INJECTION_HEURISTICS_MAX_THREADS is raised, and each check does about 376 matcher runs per input position, so keep test inputs short.
+  - The pydantic validator runs before type coercion and tests `llm_api_check is True`, and an empty string for any llm_api_* field counts as missing.
+  - update_environment stores the router even when llm_api_check is false and only validates when it is true.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

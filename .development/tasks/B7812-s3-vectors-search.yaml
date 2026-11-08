@@ -1,0 +1,90 @@
+id: B7812
+title: S3 Vectors search provider
+description: >-
+  Build the S3 Vectors query side of s3_vectors/vector_stores/transformation.py (lines 76-261) as the module s3_vectors_search
+  in betterlite-rag, over B1131 wire records. Ingestion helpers in the same Python file (split_s3_vectors_store_id,
+  s3_vectors_ingest_target, s3_vectors_ingest_embedding_options) are B3458 and this task calls its split function. The caller
+  (B1064 and B2484) embeds the query and sends the request; this task prepares and signs the request and decodes the reply.
+
+  Static parts. get_auth_credentials returns an empty record. Endpoints: read POST /QueryVectors, write none. Supported
+  OpenAI params are only max_num_results, and map_openai_params stores it as optional_params["maxResults"] (the request below
+  does not read that key). validate_environment returns the headers with Content-Type application/json set only when absent.
+  The base URL ignores api_base: it is https://s3vectors.{region}.api.aws, where the region comes from B591's
+  get_aws_region_name_for_non_llm_api_calls applied to litellm_params["aws_region_name"]. Create-store is unsupported.
+
+  Query side. query_embedding_model returns the first non-empty string of litellm_embedding_model and embedding_model in
+  litellm_params, else "text-embedding-3-small" (B3458 reads the same two keys for ingestion; keep a small separate copy here).
+  The target comes from B3458's split of the store id, with litellm_params["vector_bucket_name"] as the fallback bucket. The
+  caller passes the joined query text (B1059) and the vector. The request is POST {api_base}/QueryVectors with the body
+  vectorBucketName, indexName, queryVector {"float32": [..]}, topK (max_num_results, default 5), returnDistance true and
+  returnMetadata true. The query text is returned so the caller keeps it for the response. sign_search_request signs that
+  request with B595 using service name "s3vectors" and the JSON body, and returns the signed headers and body bytes.
+
+  Response. decode_s3_vectors_search reads vectors (null or missing means none). For each item take metadata (null means
+  empty) and skip the item when source_text is missing or empty. chunk_index defaults to the string "0" and file_id is
+  "s3-vectors-chunk-<chunk_index>". filename is metadata.filename or "document-<chunk_index>". Score is null when distance is
+  null, else clamp(1 - distance, 0, 1). The content is one text part with the source text and attributes is the whole metadata
+  map. search_query is the query text that the request step saw, else "". A body that cannot be read becomes a provider error
+  carrying the response status and headers. Add the fuzz target s3_vectors_search for the decoder. About 178 LiteLLM lines.
+scope:
+  paths:
+    - crates/betterlite-rag/src/s3_vectors_search.rs
+    - crates/betterlite-rag/src/s3_vectors_search/**
+    - crates/betterlite-rag/fuzz/Cargo.toml
+    - crates/betterlite-rag/fuzz/fuzz_targets/s3_vectors_search.rs
+    - crates/betterlite-rag/fuzz/corpus/s3_vectors_search/**
+    - tools/oracle/cases/helpers/s3-vectors-search/**
+    - tools/oracle/helpers/b7812.py
+    - tools/oracle/helpers/b7812/**
+    - tools/oracle/src/helpers/bedrock/b7812.rs
+    - tools/oracle/src/helpers/bedrock/b7812/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/s3_vectors/vector_stores/transformation.py#L28-L33
+    why: Default embedding model, default top K and the store id error text.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/s3_vectors/vector_stores/transformation.py#L76-L189
+    why: Static config, base URL, query target, request body and the two search entry points.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/s3_vectors/vector_stores/transformation.py#L191-L261
+    why: Signing with service s3vectors, the response projection and the unsupported create calls.
+dod:
+  - text: The request goes to https://s3vectors.{region}.api.aws/QueryVectors with the exact body keys and a default topK of 5.
+    proof: [s3-search-tests, oracle]
+  - text: The embedding model, bucket fallback and store id error follow LiteLLM.
+    proof: [s3-search-tests, oracle]
+  - text: Results skip items without source_text, build the chunk file id and filename, and clamp the score into 0 to 1.
+    proof: [s3-search-tests, oracle]
+  - text: The request is signed for service s3vectors through B595.
+    proof: [s3-search-tests]
+  - text: Query response bytes replay through decode_s3_vectors_search without a panic.
+    proof: [s3-search-corpus]
+checks:
+  optional: []
+  commands:
+    - id: s3-search-tests
+      run: cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(/^s3_vectors_search::/) - test(replays_the_s3_vectors_search_corpus)'
+      why: Fixtures cover URL, body, signing service, result projection and score clamping.
+    - id: s3-search-corpus
+      run: test -f crates/betterlite-rag/fuzz/fuzz_targets/s3_vectors_search.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-rag/fuzz/corpus/s3_vectors_search)" && cargo nextest run --locked -p betterlite-rag --no-tests=fail -E 'test(replays_the_s3_vectors_search_corpus)'
+      why: Added corpus files replay through the response decoder.
+oracle_cases:
+  - tools/oracle/cases/helpers/s3-vectors-search/default-top-k.yaml
+  - tools/oracle/cases/helpers/s3-vectors-search/bucket-fallback.yaml
+  - tools/oracle/cases/helpers/s3-vectors-search/store-id-error.yaml
+  - tools/oracle/cases/helpers/s3-vectors-search/embedding-model-default.yaml
+  - tools/oracle/cases/helpers/s3-vectors-search/skip-empty-source-text.yaml
+  - tools/oracle/cases/helpers/s3-vectors-search/score-clamp.yaml
+  - tools/oracle/cases/helpers/s3-vectors-search/null-distance.yaml
+  - tools/oracle/cases/helpers/s3-vectors-search/chunk-index-default.yaml
+deviations: []
+out_of_scope:
+  - B3458 owns split_s3_vectors_store_id, s3_vectors_ingest_target, s3_vectors_ingest_embedding_options and the signed ingestion calls.
+  - B1064 and B2484 resolve credentials, embed the query and send the request.
+  - Embedding the query and joining a list query are B1059.
+pitfalls:
+  - maxResults from map_openai_params is never sent. topK comes from max_num_results in the search params.
+  - api_base is ignored for the URL. The region alone decides the host.
+  - A distance above 1 gives score 0.0 and a negative distance gives 1.0, and a null distance gives a null score.
+  - attributes is the full metadata including source_text, not a filtered copy.
+  - chunk_index can be a number in the metadata JSON, and file_id then prints that number.
+budget: {max_changed_lines: 1500, max_new_expects: 1}
+review_level: standard

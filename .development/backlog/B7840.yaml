@@ -1,0 +1,15 @@
+id: B7840
+milestone: M12 python
+title: Python Responses types, the mock response and the response-format class helper
+status: todo
+depends_on: [B5657]
+file: tasks/B7840-python-responses-types.yaml
+covers:
+  - "litellm/types/responses/**"
+  - "litellm/llms/base_llm/base_utils.py"
+parent: B160
+split_from: B160
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

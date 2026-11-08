@@ -6,15 +6,18 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+async-trait = "0.1.92"
 base64 = "0.23.1"
 betterlite-auth = { path = "../betterlite-auth" }
 betterlite-config = { path = "../betterlite-config" }
+betterlite-context = { path = "../betterlite-context" }
 betterlite-env = { path = "../betterlite-env" }
 betterlite-error = { path = "../betterlite-error" }
 betterlite-http = { path = "../betterlite-http" }
 betterlite-logging = { path = "../betterlite-logging" }
 betterlite-models = { path = "../betterlite-models" }
 betterlite-openai = { path = "../betterlite-openai" }
+betterlite-provider = { path = "../betterlite-provider" }
 chrono = { version = "0.4.45", default-features = false, features = ["serde"] }
 futures-util = { version = "0.3.34", default-features = false, features = ["std"] }
 http = "1.5.0"
@@ -37,7 +40,7 @@ uuid.workspace = true
 [lints]
 workspace = true
 [dev-dependencies]
-betterlite-context = { path = "../betterlite-context" }
+rand = { version = "0.10.3", default-features = false, features = ["std", "std_rng"] }
 rstest = "=0.27.0"
 tokio = { workspace = true, features = ["test-util"] }
 tracing-subscriber.workspace = true

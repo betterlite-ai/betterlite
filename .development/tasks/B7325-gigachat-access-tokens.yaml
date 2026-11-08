@@ -1,0 +1,132 @@
+id: B7325
+title: GigaChat access tokens
+description: >-
+  Build GigaChat's OAuth access token source in crates/betterlite-http as the module gigachat_tokens. It replaces get_access_token and get_access_token_async from litellm/llms/gigachat/authenticator.py (they share one body, so betterlite has one async method) together with the token cache and the reply parser. Every GigaChat call that needs a bearer token (the pass-through route in B3627, and later the chat, embedding and file calls) goes through it. The module name and every type name below stay at 30 characters or fewer.
+
+  Public items, each in its own file under crates/betterlite-http/src/gigachat_tokens/ and re-exported from gigachat_tokens.rs:
+  1. `GigachatTokenRequest { access_token: Option<SecretString>, credentials: Option<SecretString>, scope: Option<String>, auth_url: Option<String> }`. It is the typed form of get_access_token's arguments: `access_token`, `scope` and `auth_url` stand for the `gigachat_access_token`, `gigachat_scope` and `gigachat_auth_url` keys of litellm_params, and `credentials` is the credentials argument. A caller with nothing to override sets all four to None.
+  2. The trait `GigachatTokens`, declared with `#[async_trait]`, with one method `async fn access_token(&self, request: &GigachatTokenRequest) -> Result<SecretString, GigachatAuthError>`. B3627 imports this trait and calls it with all four fields None, and its tests use a fake.
+  3. `GigachatAuthError`, one thiserror enum in gigachat_tokens/error.rs with the variants `MissingCredentials` (status 401), `Rejected { status: StatusCode, body: String }` (the OAuth server answered a non-2xx status, kept as is), `Transport { source: reqwest::Error }` (status 500, the request failed before a status arrived or timed out) and `InvalidReply` (status 500, the 2xx reply was unusable). `pub fn status_code(&self) -> StatusCode` returns the status shown. Display texts are betterlite's own and never contain a token or the credentials.
+  4. `GigachatRuntime`, a trait with `fn now_millis(&self) -> i64` (wall clock, milliseconds since the Unix epoch) and `fn request_uid(&self) -> Uuid`. The production implementation is `SystemRuntime` in the same file (SystemTime for the clock, Uuid::new_v4 for the id, converted without `as`). Tests use a scripted one.
+  5. `GigachatAuthenticator<R: GigachatRuntime>`, built with `new(settings, client, runtime)` where settings is `config.sections.gigachat_auth` (below), client is a `reqwest::Client` the caller built (the module never builds one and reads no environment) and runtime is the runtime above. It implements `GigachatTokens`.
+
+  Order of `access_token`, copied from LiteLLM:
+  1. Take `request.access_token` when it is non-empty, else `settings.access_token` (env GIGACHAT_ACCESS_TOKEN). When either is set, return it at once with no network call and no cache use.
+  2. Take `request.credentials` when non-empty, else `settings.credentials`. With neither, return `MissingCredentials`.
+  3. scope is `request.scope`, else `settings.scope`. auth_url is `request.auth_url`, else `settings.auth_url`. Empty strings count as unset everywhere.
+  4. Cache key is `gigachat_token:` followed by the first 16 characters (chars, not bytes) of the credentials. A cache entry holds the token and the expires_at value (milliseconds). It is a hit only when `now_millis < expires_at - 60000`. On a hit log debug "Using cached GigaChat access token" and return the token.
+  5. On a miss POST the form `scope=<scope>` to auth_url with headers `Authorization: Basic <credentials>`, `RqUID: <request_uid>` and `Content-Type: application/x-www-form-urlencoded`, with a 30 second timeout. Log debug "Requesting GigaChat access token from <auth_url>" first. A 2xx reply is parsed as below. Any other status, including 3xx, is `Rejected` with the status and the reply text (at most 1024 bytes). A failure with no status (connect, TLS, timeout) is `Transport`.
+  6. After a successful parse, when expires_at is non-zero compute `ttl = max(0, (expires_at - 60000 - now_millis) / 1000)` seconds using a fresh `now_millis`. Store the entry only when ttl is above 0. Log debug "GigaChat access token obtained successfully" when the parse succeeds. Return the token.
+
+  Reply parser, `decode_token_reply(bytes: &[u8]) -> Result<TokenReply, GigachatAuthError>` in gigachat_tokens/reply.rs (the decoder the fuzz target drives; input is the raw OAuth reply body, read up to 64 KiB, a longer reply is `InvalidReply`). The body must be a JSON object. The token is `tok` when it is a non-empty string, else `access_token` when it is a non-empty string; with neither it is `InvalidReply`. expires_at is `exp` when truthy, else `expires_at`. A truthy value is a non-zero integer or a non-empty string. A string is trimmed and parsed as a decimal i64. `TokenReply` holds the token as SecretString and `expires_at: Option<i64>` (None when both keys are absent, null, 0 or an empty string). A float, a bool, a list, an object or an unparsable string in an exp key is `InvalidReply`.
+
+  Token cache in gigachat_tokens/cache.rs: a bounded map behind a tokio Mutex that is never held across an await (lock, look up, unlock, fetch, lock, insert). It copies LiteLLM's InMemoryCache as used here: at most 200 entries. An insert first drops expired entries, then, while the map has 200 or more entries, drops the one that expires first. Inserting a key that already exists and has not expired replaces the stored token but keeps the old expiry time. Concurrent callers on a miss each fetch their own token; there is no single-flight.
+
+  Config section: crates/betterlite-config/src/sections/gigachat_auth.rs, environment only, modelled on sections/chatgpt_headers.rs (a Raw struct with a skipped marker field, a Settings type, a Section impl whose convert reads the EnvironmentLookup). Settings: `access_token: Option<SecretString>` from GIGACHAT_ACCESS_TOKEN, `credentials: Option<SecretString>` from GIGACHAT_CREDENTIALS and, when that is unset or empty, GIGACHAT_API_KEY, `auth_url: String` from GIGACHAT_AUTH_URL defaulting to https://ngw.devices.sberbank.ru:9443/api/v2/oauth, `scope: String` from GIGACHAT_SCOPE defaulting to GIGACHAT_API_PERS. An empty value counts as unset. The section is a stub the skeleton creates; this task fills it.
+
+  Tests. Rust tests live in gigachat_tokens/tests.rs under the groups source_order, oauth_request, token_cache and reply_decoding, plus `replays_token_reply` for the fuzz corpus. The oauth_request and token_cache groups run against a local tokio TcpListener that answers canned HTTP/1.1 replies and records the request (method, headers, body); the client is built with redirects turned off. A `Basic` header value or token never appears in any Debug or Display output; one test checks that.
+scope:
+  paths:
+    - crates/betterlite-http/src/gigachat_tokens.rs
+    - crates/betterlite-http/src/gigachat_tokens/**
+    - crates/betterlite-http/fuzz/Cargo.toml
+    - crates/betterlite-http/fuzz/fuzz_targets/gigachat_token_reply.rs
+    - crates/betterlite-http/fuzz/corpus/gigachat_token_reply/**
+    - crates/betterlite-config/src/sections/gigachat_auth.rs
+    - crates/betterlite-config/src/sections/gigachat_auth/**
+    - tools/oracle/cases/helpers/gigachat-tokens/**
+    - tools/oracle/helpers/b7325.py
+    - tools/oracle/helpers/b7325/**
+    - tools/oracle/src/helpers/http/b7325.rs
+    - tools/oracle/src/helpers/http/b7325/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/authenticator.py#L1-L62
+    why: Constants (OAuth URL, scope, 60000 ms buffer), the 200-entry cache instance and the env helpers for credentials, auth URL and scope.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/authenticator.py#L64-L110
+    why: get_access_token, the lookup order, cache key and ttl; the async twin at L113-L152 is the same body.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/authenticator.py#L155-L229
+    why: The sync and async OAuth requests, with the headers, the 30 second timeout and the two error mappings.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gigachat/authenticator.py#L232-L253
+    why: _parse_token_response, the tok/exp and access_token/expires_at key pairs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/in_memory_cache.py#L106-L206
+    why: evict_cache and set_cache, the eviction order and the kept expiry on an unexpired key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L3867-L3891
+    why: The one proxy call site, get_access_token() with no arguments, which B3627 reproduces through the trait.
+  - url: https://docs.litellm.ai/docs/providers/gigachat
+    why: User-facing description of the GigaChat env vars and OAuth scopes.
+dod:
+  - text: A token from the request or from GIGACHAT_ACCESS_TOKEN is returned with no network call, the request value first, and a missing token and missing credentials give MissingCredentials with status 401.
+    proof: [source-order-tests, oracle]
+  - text: The OAuth call posts scope as a form to the auth URL with Basic credentials, an RqUID header and a 30 second timeout, picks scope and auth URL from the request before the settings, and maps a non-2xx status to Rejected with that status and a connection failure to Transport.
+    proof: [oauth-request-tests]
+  - text: The token cache is keyed on the first 16 credential characters, serves a token until 60 seconds before its expiry, stores nothing when the remaining ttl is 0 or the expiry is missing, holds at most 200 entries and keeps the old expiry when a live key is replaced.
+    proof: [token-cache-tests]
+  - text: The reply parser takes tok/exp before access_token/expires_at, skips empty values, reads a numeric string expiry, and rejects a missing token, a non-object body, an unparsable expiry and an oversized body as InvalidReply.
+    proof: [reply-decoding-tests, oracle]
+  - text: The gigachat_auth section loads the four environment variables, falls back from GIGACHAT_CREDENTIALS to GIGACHAT_API_KEY, applies both defaults for unset or empty values and does not print the secrets.
+    proof: [auth-config-tests, mutants]
+  - text: Corrupt OAuth reply bytes stay bounded and the added fuzz corpus is replayed in ordinary tests.
+    proof: [token-reply-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: source-order-tests
+      why: the token source skips the override order, calls the network when a token is given, or returns the wrong error for missing credentials
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^gigachat_tokens::tests::source_order(::|$)/)'
+    - id: oauth-request-tests
+      why: the OAuth request has the wrong headers, form, timeout or error mapping
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^gigachat_tokens::tests::oauth_request(::|$)/)'
+    - id: token-cache-tests
+      why: the cache key, the 60 second buffer, the ttl rule, the 200 entry bound or the kept expiry is wrong
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^gigachat_tokens::tests::token_cache(::|$)/)'
+    - id: reply-decoding-tests
+      why: the reply parser reads the wrong key pair, accepts a bad expiry or takes an oversized body
+      run: cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(/^gigachat_tokens::tests::reply_decoding(::|$)/)'
+    - id: auth-config-tests
+      why: the gigachat_auth section does not load the variables, the fallback or the defaults
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::gigachat_auth::/)'
+    - id: token-reply-corpus
+      why: the token reply decoder has no fuzz target or its seeds are not replayed
+      run: test -f crates/betterlite-http/fuzz/fuzz_targets/gigachat_token_reply.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-http/fuzz/corpus/gigachat_token_reply)" && cargo nextest run --locked -p betterlite-http --no-tests=fail -E 'test(replays_token_reply)'
+oracle_cases:
+  - tools/oracle/cases/helpers/gigachat-tokens/request-token-wins.yaml
+  - tools/oracle/cases/helpers/gigachat-tokens/env-token-no-network.yaml
+  - tools/oracle/cases/helpers/gigachat-tokens/missing-credentials.yaml
+  - tools/oracle/cases/helpers/gigachat-tokens/reply-tok-exp.yaml
+  - tools/oracle/cases/helpers/gigachat-tokens/reply-access-token-expires-at.yaml
+  - tools/oracle/cases/helpers/gigachat-tokens/reply-tok-before-access-token.yaml
+  - tools/oracle/cases/helpers/gigachat-tokens/reply-empty-tok-falls-through.yaml
+  - tools/oracle/cases/helpers/gigachat-tokens/reply-string-expiry.yaml
+  - tools/oracle/cases/helpers/gigachat-tokens/reply-no-token.yaml
+deviations:
+  - what: GIGACHAT_ACCESS_TOKEN, GIGACHAT_CREDENTIALS, GIGACHAT_API_KEY, GIGACHAT_AUTH_URL and GIGACHAT_SCOPE are read from the environment only.
+    why: LiteLLM's get_secret_str also asks the configured secret manager. Secret manager lookups belong to the secret-managers crate; open question in the notes.
+  - what: A 2xx reply that is not a JSON object, has a float or non-numeric expiry, or is larger than 64 KiB gives GigachatAuthError::InvalidReply (status 500); the message does not echo the reply.
+    why: LiteLLM lets JSONDecodeError, AttributeError or ValueError escape from the parser, which the proxy answers as a plain 500. The status is the same and the message is betterlite's own.
+  - what: The Rejected error keeps at most 1024 bytes of the OAuth server's reply text.
+    why: LiteLLM puts the whole text in the message; betterlite bounds it.
+  - what: The task does not turn certificate checks off. LiteLLM's OAuth client uses ssl_verify=False, and here the caller passes the reqwest::Client, so the TLS policy is its choice.
+    why: Turning verification off belongs to the shared TLS policy (B173), not to a provider module. Open question in the notes.
+  - what: The token comes back as a SecretString and is never logged.
+    why: rules.yaml secrets-stay-secret; LiteLLM returns a plain str.
+out_of_scope:
+  - "GigaChatPassthroughConfig, GigaChatConfig, the embedding transformation and file_handler.py call get_access_token: the rest of B043's gigachat parts own them and call GigachatTokens. file_handler.py's two call sites (L125 and L191) use the sync and async forms, which are one method here."
+  - "GIGACHAT_BASE_URL and get_api_base in gigachat/utils.py: B3627 owns the pass-through gigachat_route.api_base setting, and the chat part owns get_api_base."
+  - "Building the reqwest::Client (pooling, redirects off, TLS policy) and the production wiring of GigachatAuthenticator into the server: B173 and the architect's skeleton."
+  - "The proxy route that calls the trait: B3627 imports GigachatTokens from this module and declares no token type of its own."
+pitfalls:
+  - "`gigachat_access_token` in litellm_params and GIGACHAT_ACCESS_TOKEN switch OAuth off, so the credentials, the cache and the network are all skipped, and an empty string counts as unset."
+  - "The cache key uses only the first 16 characters of the credentials, so two credential strings that share a 16 character start share one cached token, and a different scope or auth_url under the same credentials returns the first token."
+  - "The cache hit test is `now < expires_at - 60000` in milliseconds, while the stored ttl is in seconds; mixing the units caches a token for 1000 times too long or too short."
+  - "A reply whose exp is 0, \"\" or null is not cached but the token is still returned; a reply with no exp at all behaves the same."
+  - "`exp` wins over `expires_at` only when it is truthy, so `exp: 0` with a real `expires_at` uses `expires_at`."
+  - "A string expiry such as \"1735689600000\" is parsed as an integer, so a quoted number is valid and a quoted float is not."
+  - "reqwest follows redirects by default and httpx does not, so a 302 from the OAuth server must reach the code as Rejected(302); the tests build the client with redirects off."
+  - "The Basic header carries the credentials exactly as given, already base64 in the `client_id:secret` form; never re-encode them."
+  - "The RqUID value is a fresh UUID for every OAuth request, taken through GigachatRuntime so tests can fix it."
+  - "Replacing a live cache key keeps the first expiry time, so a second concurrent fetch can leave a newer token under an earlier expiry; the stored expires_at still decides a hit."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
