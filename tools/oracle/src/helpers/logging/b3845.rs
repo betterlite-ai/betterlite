@@ -1,3 +1,4 @@
+mod services;
 mod tests;
 mod values;
 
@@ -14,15 +15,14 @@ use betterlite_logging::otel::model::payloads::llm_call::{LLMCallOptions, LLMCal
 use betterlite_logging::otel::model::payloads::mcp_call::{
     MCPListToolsSpanData, MCPToolCallSpanData,
 };
-use betterlite_logging::otel::model::payloads::service::{
-    ServiceLoggerPayload, ServiceSpanData, ServiceType,
-};
+use betterlite_logging::otel::model::payloads::service::ServiceSpanData;
 use betterlite_logging::otel::model::trace_controls::TraceControls;
 use betterlite_logging::otel::model::utils::coercion::OtelModelValue;
 use betterlite_logging::otel::transforms::{transform_messages, transform_responses_output};
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde_json::{Value, json};
+use services::service_payload;
 use std::collections::BTreeMap;
 use values::{attributes_record, helper_error};
 
@@ -188,17 +188,6 @@ fn guardrail_record(entry: &MetadataMap) -> Value {
     attributes_record(&attributes)
 }
 
-fn service_payload(
-    input: &ServiceInput,
-) -> Result<ServiceLoggerPayload, Box<crate::helpers::HelperError>> {
-    Ok(ServiceLoggerPayload {
-        service: service_type(&input.service)?,
-        call_type: input.call_type.clone(),
-        caller: input.caller.clone(),
-        error: input.error.clone(),
-    })
-}
-
 fn service_record(input: &ServiceInput) -> Result<Value, Box<crate::helpers::HelperError>> {
     let payload = service_payload(input)?;
     let span = ServiceSpanData::from_payload(&payload, &input.event_metadata);
@@ -207,34 +196,6 @@ fn service_record(input: &ServiceInput) -> Result<Value, Box<crate::helpers::Hel
     };
     let attributes = mapper.map(&SpanData::Service(&span), &input.environment);
     Ok(attributes_record(&attributes))
-}
-
-fn service_type(name: &str) -> Result<ServiceType, Box<crate::helpers::HelperError>> {
-    match name {
-        "redis" => Ok(ServiceType::Redis),
-        "postgres" => Ok(ServiceType::Postgres),
-        "batch_write_to_db" => Ok(ServiceType::BatchWriteToDb),
-        "reset_budget_job" => Ok(ServiceType::ResetBudgetJob),
-        "self" => Ok(ServiceType::SelfService),
-        "router" => Ok(ServiceType::Router),
-        "auth" => Ok(ServiceType::Auth),
-        "proxy_pre_call" => Ok(ServiceType::ProxyPreCall),
-        "pod_lock_manager" => Ok(ServiceType::PodLockManager),
-        "in_memory_daily_spend_update_queue" => Ok(ServiceType::InMemoryDailySpendUpdateQueue),
-        "redis_daily_spend_update_queue" => Ok(ServiceType::RedisDailySpendUpdateQueue),
-        "redis_daily_end_user_spend_update_queue" => Ok(ServiceType::RedisDailyEndUserQueue),
-        "redis_daily_org_spend_update_queue" => Ok(ServiceType::RedisDailyOrgSpendUpdateQueue),
-        "redis_daily_team_spend_update_queue" => Ok(ServiceType::RedisDailyTeamSpendUpdateQueue),
-        "redis_daily_agent_spend_update_queue" => Ok(ServiceType::RedisDailyAgentQueue),
-        "redis_daily_tag_spend_update_queue" => Ok(ServiceType::RedisDailyTagSpendUpdateQueue),
-        "in_memory_spend_update_queue" => Ok(ServiceType::InMemorySpendUpdateQueue),
-        "redis_spend_update_queue" => Ok(ServiceType::RedisSpendUpdateQueue),
-        "redis_window_spend_update_queue" => Ok(ServiceType::RedisWindowSpendUpdateQueue),
-        other => Err(helper_error(
-            "InvalidInput",
-            format!("unknown service {other}"),
-        )),
-    }
 }
 
 fn mcp_record(
