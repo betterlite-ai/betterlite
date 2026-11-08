@@ -36,6 +36,10 @@ pub(super) fn response(status: u16, body: &str) -> FetchResponse {
     FetchResponse::new(status, Vec::new(), body.as_bytes().to_vec())
 }
 
+pub(super) fn response_bytes(status: u16, body: Vec<u8>) -> FetchResponse {
+    FetchResponse::new(status, Vec::new(), body)
+}
+
 pub(super) fn response_with_headers(
     status: u16,
     headers: &[(&str, &str)],

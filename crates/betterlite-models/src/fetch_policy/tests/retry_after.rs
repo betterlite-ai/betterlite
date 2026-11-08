@@ -13,6 +13,7 @@ use crate::fetch_policy::retry::parse_retry_after_seconds;
 #[case::padded(Some(" 7 "), Some("7"))]
 #[case::scientific(Some("1e3"), Some("1000"))]
 #[case::fraction(Some("0.5"), Some("0.5"))]
+#[case::underflowing_exponent(Some("1e-40"), Some("0"))]
 #[case::overflowing_scientific(Some("1e30"), Some("30"))]
 #[case::overflowing_exponent(Some("1e400"), Some("30"))]
 #[case::overflowing_integer(Some("999999999999999999999999999999"), Some("30"))]

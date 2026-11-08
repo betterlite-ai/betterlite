@@ -5,6 +5,7 @@ use crate::decisions::Json;
 use crate::fetch_policy::client::{
     CatalogClient, CatalogClientError, CatalogRequest, FetchErrorKind,
 };
+use crate::fetch_policy::encoding;
 use crate::fetch_policy::response::FetchResponse;
 use crate::fetch_policy::retry::parse_retry_after_seconds;
 use crate::fetch_policy::revision::git_blob_id;
@@ -56,19 +57,25 @@ pub fn classify_fetch_response(response: FetchResponse, url: &str) -> AttemptOut
             reason: format!("HTTP {} from {url}", response.status),
         });
     }
-    match serde_json::from_slice::<Json>(&response.body) {
-        Ok(Json::Object(models)) => AttemptOutcome::Reloaded(FetchedCatalog {
-            revision: git_blob_id(&response.body),
-            etag: response.header("etag"),
-            body: response.body,
-            models,
-        }),
-        Ok(_) => AttemptOutcome::Unavailable(Unavailable {
-            reason: format!("expected a JSON object from {url}"),
-        }),
+    let decoded = encoding::decode_json_bytes(&response.body);
+    match decoded {
         Err(source) => AttemptOutcome::Unavailable(Unavailable {
             reason: format!("invalid JSON from {url}: {source}"),
         }),
+        Ok(text) => match serde_json::from_str::<Json>(&text) {
+            Ok(Json::Object(models)) => AttemptOutcome::Reloaded(FetchedCatalog {
+                revision: git_blob_id(&response.body),
+                etag: response.header("etag"),
+                body: response.body,
+                models,
+            }),
+            Ok(_) => AttemptOutcome::Unavailable(Unavailable {
+                reason: format!("expected a JSON object from {url}"),
+            }),
+            Err(source) => AttemptOutcome::Unavailable(Unavailable {
+                reason: format!("invalid JSON from {url}: {source}"),
+            }),
+        },
     }
 }
 
