@@ -7,7 +7,6 @@ use tokio::time::Instant;
 
 mod tests;
 
-// one integration callback's limiter, and the longest wait its uploads may take for a permit
 #[derive(Clone)]
 pub struct IntegrationConcurrency {
     pub limiter: Arc<AdaptiveConcurrencyLimiter>,
