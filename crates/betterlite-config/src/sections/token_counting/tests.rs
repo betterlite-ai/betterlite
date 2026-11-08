@@ -72,6 +72,16 @@ fn settings_follow_litellm(
 }
 
 #[test]
+fn the_loader_accepts_the_disable_key() {
+    let config = ConfigLoader {
+        lookup: BTreeMap::new(),
+    }
+    .load("litellm_settings: {disable_token_counter: true}")
+    .unwrap();
+    assert!(config.sections.token_counting.disable_token_counter);
+}
+
+#[test]
 fn unset_settings_match_defaults() {
     assert_eq!(
         Settings::default(),

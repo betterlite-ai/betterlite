@@ -4,7 +4,7 @@ call:
   token_count:
     function: token_counter
     model: gpt-3.5-turbo
-    text: abababababababababababababababababababababababababababababababababa
+    text: abababababababababababababababababa
     max_exact_chars: 32
 env:
   TOKEN_COUNTER_MAX_EXACT_CHARS: "32"

@@ -153,8 +153,18 @@ enum Expected {
     1,
     Expected::Tokens(14)
 )]
-#[case::sampled_tie_rounds_down_to_even(r#"{"model":"gpt-3.5-turbo","text":"abababababababababababababababababababababababababababababababababa"}"#, 32, 1024, Expected::Tokens(16))]
-#[case::sampled_tie_rounds_up_to_even(r#"{"model":"gpt-3.5-turbo","text":"ababababababababababababababababababababababababababababababababababa"}"#, 32, 1024, Expected::Tokens(18))]
+#[case::sampled_tie_rounds_down_to_even(
+    r#"{"model":"gpt-3.5-turbo","text":"ababababababababababababababababa"}"#,
+    32,
+    1024,
+    Expected::Tokens(16)
+)]
+#[case::sampled_tie_rounds_up_to_even(
+    r#"{"model":"gpt-3.5-turbo","text":"abababababababababababababababababa"}"#,
+    32,
+    1024,
+    Expected::Tokens(18)
+)]
 #[case::sampled_long_text(r#"{"model":"gpt-3.5-turbo","text":"hello world hello world hello world hello world hello world hello world hello world hello world hello world hello world "}"#, 32, 1024, Expected::Tokens(71))]
 #[case::exact_at_threshold(
     "{\"model\":\"gpt-3.5-turbo\",\"text\":\"H\u{e9}llo, \u{4e16}\u{754c}! \u{1f44b} the\"}",
