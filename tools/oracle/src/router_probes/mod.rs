@@ -65,6 +65,7 @@ pub mod classifier_context;
 pub mod classifier_message_text;
 pub mod classifier_verdict;
 pub mod compaction_history;
+pub(crate) mod comparison;
 pub mod complexity_adaptive_placement;
 pub mod complexity_config;
 pub mod complexity_evaluation;
