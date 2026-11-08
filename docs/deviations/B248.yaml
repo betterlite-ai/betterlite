@@ -1,0 +1,8 @@
+task: B248
+deviations:
+  - what: A dynamic callback name that no resolver knows stops the request with an error naming the callback; LiteLLM keeps the unknown string in the processed list and its dispatch silently skips it.
+    why: betterlite has no Python import machinery, and a callback that is dropped without a word looks like working logging.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L796
+  - what: Standard callback dynamic params omit request-supplied exporter destinations such as langfuse_host and langsmith_base_url.
+    why: Inherited from B188's documented destination block; a request must not replace an operator-configured exporter destination.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/initialize_dynamic_callback_params.py#L85-L121
