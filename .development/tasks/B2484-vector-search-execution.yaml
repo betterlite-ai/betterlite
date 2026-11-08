@@ -24,7 +24,7 @@ scope:
   - crates/betterlite-core/src/api/vector_search_execution.rs
   - crates/betterlite-core/src/api/vector_search_execution/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/vector_search_transport.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/vector_search_transport.py
   - tools/oracle/cases/sdk-http/vector-search-transport/**

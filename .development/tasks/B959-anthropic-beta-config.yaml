@@ -42,7 +42,7 @@ scope:
   - tools/oracle/helpers/anthropic_beta_config/**
   - tools/oracle/fuzz/corpus/helper_case/anthropic_beta_config-*
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/anthropic_beta_config.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/anthropic_beta_config.py
   - tools/oracle/cases/helpers/anthropic-beta-config/**
