@@ -132,18 +132,22 @@ fn dependencies_outcome() -> String {
 }
 
 fn debug_outcome() -> String {
-    let fixture = LoggingInit {
-        litellm_params: params(&[("api_key", text("sk-param"))]),
-        callback_dynamic_params: params(&[("langfuse_secret_key", text("lf-param"))]),
-        trusted_callback_vars: vec![("dd_api_key".to_owned(), SecretString::from("dd-trusted"))],
-        ..init()
-    };
-    let printed_init = format!("{fixture:?}");
-    let printed_state = format!("{:?}", build(fixture));
-    let leaked = ["sk-param", "lf-param", "dd-trusted"]
+    let secrets = ["sk-param", "lf-param", "dd-trusted"];
+    let mut fixture = init();
+    fixture
+        .litellm_params
+        .insert("api_key".to_owned(), text(secrets[0]));
+    fixture
+        .callback_dynamic_params
+        .insert("langfuse_secret_key".to_owned(), text(secrets[1]));
+    fixture
+        .trusted_callback_vars
+        .push(("dd_api_key".to_owned(), SecretString::from(secrets[2])));
+    let printed = format!("{fixture:?} {:?}", build(fixture.clone()));
+    secrets
         .iter()
-        .any(|secret| printed_init.contains(secret) || printed_state.contains(secret));
-    leaked.to_string()
+        .any(|secret| printed.contains(secret))
+        .to_string()
 }
 
 fn correlation_outcome(settings: CorrelationSettings) -> String {
