@@ -1,0 +1,10 @@
+kind: helper
+name: exception-stamp-error-str-fallback
+call:
+  b3854:
+    function: exception_stamp
+    exception: {type_name: ValueError, message: boom, stacktrace: ""}
+    payload:
+      error_str: upstream failed
+env: {}
+compare: {ignore: []}

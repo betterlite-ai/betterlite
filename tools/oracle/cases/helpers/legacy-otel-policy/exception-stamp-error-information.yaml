@@ -1,0 +1,15 @@
+kind: helper
+name: exception-stamp-error-information
+call:
+  b3854:
+    function: exception_stamp
+    exception: {type_name: ValueError, message: boom, stacktrace: ""}
+    payload:
+      error_information:
+        error_code: "429"
+        error_class: RateLimitError
+        error_message: slow down
+        llm_provider: openai
+        traceback: traceback text
+env: {}
+compare: {ignore: []}
