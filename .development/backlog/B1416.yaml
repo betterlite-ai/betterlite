@@ -1,7 +1,7 @@
 id: B1416
 milestone: M3 providers
 title: Cohere v2 chat replies and document citations
-status: todo
+status: done
 depends_on: [B004, B503, B668, B1414, B171]
 file: tasks/B1416-cohere-chat-v2.yaml
 covers:
@@ -9,7 +9,7 @@ covers:
   - "litellm/types/llms/cohere.py"
 parent: B037
 split_from: null
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 943
