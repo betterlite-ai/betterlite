@@ -3,6 +3,9 @@
     reason = "a LiteLLM request map carries provider parameters the router does not model"
 )]
 
+use std::collections::HashSet;
+
+use indexmap::IndexSet;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -50,36 +53,35 @@ pub fn plan_weighted_failover(
         return None;
     };
     let mut excluded = earlier_exclusions(fields);
-    if !excluded.iter().any(|excluded_id| excluded_id == failed_id) {
-        excluded.push(failed_id.to_owned());
-    }
+    excluded.insert(failed_id.to_owned());
+    let cooling: HashSet<&str> = inputs.cooldown_ids.iter().map(String::as_str).collect();
     let remaining = inputs.deployment_ids.iter().any(|deployment_id| {
-        !inputs.cooldown_ids.contains(deployment_id) && !excluded.contains(deployment_id)
+        !cooling.contains(deployment_id.as_str()) && !excluded.contains(deployment_id)
     });
     if !remaining {
         return None;
     }
-    fields.insert(EXCLUDED_IDS.to_owned(), excluded_values(&excluded));
+    let excluded_deployment_ids: Vec<String> = excluded.into_iter().collect();
+    fields.insert(
+        EXCLUDED_IDS.to_owned(),
+        excluded_values(&excluded_deployment_ids),
+    );
     Some(FailoverEntry {
         model: inputs.model_group.to_owned(),
-        excluded_deployment_ids: excluded,
+        excluded_deployment_ids,
     })
 }
 
 // LiteLLM rebuilds this list from a set on every hop, so the first-seen order here is deliberate
-fn earlier_exclusions(metadata: &Map<String, Value>) -> Vec<String> {
+fn earlier_exclusions(metadata: &Map<String, Value>) -> IndexSet<String> {
     let Some(Value::Array(entries)) = metadata.get(EXCLUDED_IDS) else {
-        return Vec::new();
+        return IndexSet::new();
     };
-    let mut excluded: Vec<String> = Vec::new();
-    for entry in entries {
-        if let Value::String(deployment_id) = entry
-            && !excluded.contains(deployment_id)
-        {
-            excluded.push(deployment_id.clone());
-        }
-    }
-    excluded
+    entries
+        .iter()
+        .filter_map(Value::as_str)
+        .map(str::to_owned)
+        .collect()
 }
 
 fn excluded_values(excluded: &[String]) -> Value {
@@ -99,14 +101,11 @@ where
     if excluded.is_empty() {
         return deployments;
     }
+    let dropped: HashSet<&str> = excluded.iter().map(String::as_str).collect();
     deployments
         .into_iter()
         .filter(|deployment| {
-            id_of(deployment).is_none_or(|deployment_id| {
-                !excluded
-                    .iter()
-                    .any(|excluded_id| excluded_id == deployment_id)
-            })
+            id_of(deployment).is_none_or(|deployment_id| !dropped.contains(deployment_id))
         })
         .collect()
 }

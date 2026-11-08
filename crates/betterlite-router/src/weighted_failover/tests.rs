@@ -109,9 +109,9 @@ fn plan_keeps_each_exclusion_once_in_first_seen_order() {
 }
 
 #[test]
-fn plan_subtracts_cooldowns_before_exclusions() {
+fn plan_counts_a_cooling_deployment_as_unavailable() {
     let deployments = ids(&["a", "b", "c"]);
-    let cooling = ids(&["b"]);
+    let cooling = ids(&["b", "c"]);
     let mut request = Map::new();
     let failing = FailoverInputs {
         strategy: "simple-shuffle",
@@ -120,12 +120,22 @@ fn plan_subtracts_cooldowns_before_exclusions() {
         deployment_ids: &deployments,
         cooldown_ids: &cooling,
     };
-    let entry = plan(&failing, &mut request).unwrap();
-    assert_eq!(entry.excluded_deployment_ids, ids(&["a"]));
-    assert_eq!(
-        request["metadata"]["_failover_excluded_ids"],
-        value("[\"a\"]")
+    assert_eq!(plan(&failing, &mut request), None);
+    assert!(request["metadata"].get("_failover_excluded_ids").is_none());
+}
+
+#[rstest]
+#[case::null("null", &["b"])]
+#[case::bare_string("\"a\"", &["b"])]
+#[case::non_string_entry("[\"a\", 1]", &["a", "b"])]
+fn plan_reads_earlier_exclusions_leniently(#[case] earlier: &str, #[case] expected: &[&str]) {
+    let deployments = ids(&["a", "b", "c"]);
+    let mut request = keyed(
+        value(&format!("{{\"_failover_excluded_ids\": {earlier}}}")),
+        "metadata",
     );
+    let entry = plan(&inputs(Some("b"), &deployments), &mut request).unwrap();
+    assert_eq!(entry.excluded_deployment_ids, ids(expected));
 }
 
 #[rstest]

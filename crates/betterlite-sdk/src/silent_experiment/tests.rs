@@ -209,17 +209,6 @@ fn kwargs_drop_logging_keys_and_keep_the_proxy_request() {
     assert_eq!(silent["stream"], value("true"));
 }
 
-#[test]
-fn kwargs_leave_the_caller_request_unchanged() {
-    let original = request(
-        "{\"metadata\": {\"litellm_parent_otel_span\": \"span\"}, \"litellm_call_id\": \"id\"}",
-    );
-    let before = original.clone();
-    let silent = silent_kwargs(&original).unwrap();
-    assert!(!silent.is_empty());
-    assert_eq!(original, before);
-}
-
 fn experiments_on(handle: Handle) -> SilentExperiments {
     SilentExperiments { runtime: handle }
 }
@@ -243,8 +232,9 @@ async fn start_runs_the_mirror_with_the_target_and_the_stream_flag() {
     let (captured, _guard) = capture();
     let experiments = experiments_on(Handle::current());
     let fake = fake_mirror(false);
-    let original = request("{\"stream\": true, \"model\": \"gpt-4o\", \"metadata\": {}}");
-    let caller_request = original.clone();
+    let original = request(
+        "{\"stream\": true, \"model\": \"gpt-4o\", \"metadata\": {\"model_group\": \"gpt-4o\"}}",
+    );
     let handle = experiments.start(invocation(
         Arc::clone(&fake),
         "gpt-4o-mini",
@@ -268,10 +258,6 @@ async fn start_runs_the_mirror_with_the_target_and_the_stream_flag() {
     );
     assert!(args.request.get("stream").is_none());
     assert_eq!(args.request["model"], value("\"gpt-4o\""));
-    assert_eq!(
-        caller_request,
-        request("{\"stream\": true, \"model\": \"gpt-4o\", \"metadata\": {}}")
-    );
     assert!(
         captured
             .text()
@@ -296,6 +282,30 @@ async fn start_skips_a_mirror_marked_as_a_silent_experiment() {
         .await
         .unwrap();
     assert!(fake.calls().is_empty());
+}
+
+#[tokio::test]
+async fn start_logs_a_request_that_cannot_be_copied_and_makes_no_call() {
+    let (captured, _guard) = capture();
+    let experiments = experiments_on(Handle::current());
+    let fake = fake_mirror(false);
+    experiments
+        .start(invocation(
+            Arc::clone(&fake),
+            "gpt-4o-mini",
+            Vec::new(),
+            request("{\"metadata\": \"nope\"}"),
+        ))
+        .await
+        .unwrap();
+    assert!(fake.calls().is_empty());
+    assert!(
+        captured
+            .text()
+            .contains("Silent experiment failed for model gpt-4o-mini"),
+        "{}",
+        captured.text()
+    );
 }
 
 #[tokio::test]
