@@ -1,5 +1,5 @@
 use betterlite_mcp::wire_compat::errors::{
-    OpenApiUpstreamError, ServerListError, UpstreamAuthError, url_credentials_exception,
+    ServerListError, UpstreamAuthError, url_credentials_exception,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -20,8 +20,8 @@ pub(crate) struct UpstreamAuthFields {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct OpenApiFields {
-    status_code: u16,
-    server_name: String,
+    pub(super) status_code: u16,
+    pub(super) server_name: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -53,18 +53,6 @@ pub(crate) fn run_upstream_auth(fields: &UpstreamAuthFields) -> Value {
         "status_code": exception.status_code,
         "detail": exception.detail,
         "headers": exception.headers,
-    })
-}
-
-pub(crate) fn run_openapi_upstream(fields: &OpenApiFields) -> Value {
-    let error = OpenApiUpstreamError {
-        status_code: fields.status_code,
-        server_name: fields.server_name.clone(),
-    };
-    json!({
-        "message": error.to_string(),
-        "status_code": error.status_code,
-        "server_name": error.server_name,
     })
 }
 

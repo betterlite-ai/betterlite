@@ -1,4 +1,4 @@
-use betterlite_mcp::wire_compat::errors::ToolResultError;
+use betterlite_mcp::wire_compat::errors::{OpenApiUpstreamError, ToolResultError};
 use betterlite_mcp::wire_compat::result_conversion::to_gateway_tool;
 use serde::Deserialize;
 use serde_json::json;
@@ -35,7 +35,17 @@ impl Helper for Op {
             Input::ToGatewayTool(fields) => Ok(json!(to_gateway_tool(&fields.tool, &fields.name))),
             Input::UrlCredentials => Ok(errors::run_url_credentials()),
             Input::UpstreamAuth(fields) => Ok(errors::run_upstream_auth(fields)),
-            Input::OpenapiUpstream(fields) => Ok(errors::run_openapi_upstream(fields)),
+            Input::OpenapiUpstream(fields) => {
+                let error = OpenApiUpstreamError {
+                    status_code: fields.status_code,
+                    server_name: fields.server_name.clone(),
+                };
+                Ok(json!({
+                    "message": error.to_string(),
+                    "status_code": error.status_code,
+                    "server_name": error.server_name,
+                }))
+            }
             Input::ToolResultError => Ok(json!({ "message": ToolResultError.to_string() })),
             Input::ServerListError(fields) => Ok(errors::run_server_list(fields)),
         }
