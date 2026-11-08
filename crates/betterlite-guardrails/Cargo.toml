@@ -9,6 +9,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+aws-lc-rs = "1.19.0"
 base64 = "0.23.1"
 betterlite-compression = { path = "../betterlite-compression" }
 betterlite-config = { path = "../betterlite-config" }
@@ -22,10 +23,13 @@ futures-util = { version = "0.3.34", default-features = false, features = ["allo
 hex.workspace = true
 hyper = { version = "1.12.0", features = ["client", "http1"] }
 indexmap = { version = "2.14.2", features = ["serde"] }
+jsonwebtoken = { version = "11.1.0", default-features = false, features = ["aws_lc_rs"] }
 lru = "0.18.4"
 mime_guess = { version = "2.0.5", default-features = false }
+pem = "4.0.0"
+pkcs8 = { version = "0.11.0", default-features = false }
 regex.workspace = true
-reqwest = { version = "0.13.5", default-features = false, features = ["json", "multipart", "query"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["form", "json", "multipart", "query"] }
 rust_decimal.workspace = true
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
