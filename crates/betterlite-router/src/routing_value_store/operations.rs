@@ -3,6 +3,7 @@ use std::slice;
 use std::sync::{Mutex, PoisonError};
 
 use betterlite_context::local_ttl_cache::{CacheValue, LocalTtlCache};
+use rust_decimal::Decimal;
 
 use super::codec::{from_cache_value, to_cache_value};
 use super::{
@@ -77,19 +78,15 @@ impl RoutingValueStore {
         values: &[String],
         ttl_seconds: Option<f64>,
     ) -> Result<Vec<String>, StoreError> {
-        let mut members = match self.get(key)? {
-            StoreRead::Missing => BTreeSet::new(),
-            StoreRead::Value(RouteValue::Members(members)) => members,
-            StoreRead::Value(_) => {
-                return Err(StoreError::NotMembers {
-                    key: key.as_ref().to_owned(),
-                });
-            }
-        };
+        let mut cache = self.cache.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut members = members(&mut cache, key)?;
         for value in values {
             members.insert(value.clone());
         }
-        self.set(key, &RouteValue::Members(members), ttl_seconds)?;
+        if let Some(encoded) = to_cache_value(&RouteValue::Members(members))? {
+            cache.set(key.as_ref(), encoded, ttl_seconds)?;
+        }
+        drop(cache);
         Ok(values.to_vec())
     }
 
@@ -124,6 +121,22 @@ impl RoutingValueStore {
                         .ok_or_else(|| StoreError::SpendOverflow {
                             key: key.as_ref().to_owned(),
                         })?;
+                RouteValue::Spend(sum)
+            }
+            (StoreRead::Value(RouteValue::Counter(current)), RouteIncrement::Spend(increment)) => {
+                let sum = Decimal::from(current)
+                    .checked_add(*increment)
+                    .ok_or_else(|| StoreError::SpendOverflow {
+                        key: key.as_ref().to_owned(),
+                    })?;
+                RouteValue::Spend(sum)
+            }
+            (StoreRead::Value(RouteValue::Spend(current)), RouteIncrement::Counter(increment)) => {
+                let sum = current
+                    .checked_add(Decimal::from(*increment))
+                    .ok_or_else(|| StoreError::SpendOverflow {
+                        key: key.as_ref().to_owned(),
+                    })?;
                 RouteValue::Spend(sum)
             }
             (StoreRead::Value(_), RouteIncrement::Counter(_) | RouteIncrement::Spend(_)) => {
@@ -181,5 +194,15 @@ fn read(cache: &mut LocalTtlCache, key: &RouteKey) -> Result<StoreRead, StoreErr
     match cache.get(key.as_ref())? {
         None => Ok(StoreRead::Missing),
         Some(value) => Ok(StoreRead::Value(from_cache_value(&value)?)),
+    }
+}
+
+fn members(cache: &mut LocalTtlCache, key: &RouteKey) -> Result<BTreeSet<String>, StoreError> {
+    match read(cache, key)? {
+        StoreRead::Missing => Ok(BTreeSet::new()),
+        StoreRead::Value(RouteValue::Members(members)) => Ok(members),
+        StoreRead::Value(_) => Err(StoreError::NotMembers {
+            key: key.as_ref().to_owned(),
+        }),
     }
 }

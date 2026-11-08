@@ -32,25 +32,9 @@ fn store(item_kib: i64, test_clock: &TestClock) -> RoutingValueStore {
 }
 
 #[test]
-fn local_store_uses_the_configured_item_limit() {
+fn local_store_uses_the_in_memory_constructor_item_default() {
+    // router.py builds InMemoryCache() with no arguments, so the 1024 KiB default holds whatever the env says
     let store = store(1, &clock());
-    let small = RouteKey::parse("small").unwrap();
-    store.set(&small, &RouteValue::Counter(1), None).unwrap();
-    assert_eq!(
-        store.get(&small).unwrap(),
-        StoreRead::Value(RouteValue::Counter(1))
-    );
-    let large = RouteKey::parse("large").unwrap();
-    let value = RouteValue::Pin(PinValue {
-        model_id: "a".repeat(2048),
-    });
-    store.set(&large, &value, None).unwrap();
-    assert_eq!(store.get(&large).unwrap(), StoreRead::Missing);
-}
-
-#[test]
-fn local_store_keeps_values_under_a_mebibyte() {
-    let store = store(1024, &clock());
     let key = RouteKey::parse("large").unwrap();
     let value = RouteValue::Pin(PinValue {
         model_id: "a".repeat(2048),

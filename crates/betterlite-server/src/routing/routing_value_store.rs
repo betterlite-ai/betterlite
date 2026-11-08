@@ -11,7 +11,7 @@ pub fn local_store(
         StoreSettings {
             max_size_in_memory: None,
             default_ttl_seconds: None,
-            max_size_per_item: None,
+            max_size_per_item: Some(1024),
             loaded_max_size_per_item_kib: section.global_max_item_kib,
         },
         clock,

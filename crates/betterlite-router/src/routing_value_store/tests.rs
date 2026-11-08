@@ -66,10 +66,13 @@ fn pin_with_serialized_len(total: usize) -> RouteValue {
 #[case::members_round_trip("members_round_trip")]
 #[case::pipeline_writes_every_entry("pipeline_writes_every_entry")]
 #[case::set_add_accumulates_members("set_add_accumulates_members")]
+#[case::concurrent_set_add_keeps_every_member("concurrent_set_add_keeps_every_member")]
 #[case::increment_counter_from_missing("increment_counter_from_missing")]
 #[case::increment_counter_existing("increment_counter_existing")]
 #[case::increment_spend_from_missing("increment_spend_from_missing")]
 #[case::increment_spend_existing("increment_spend_existing")]
+#[case::increment_counter_by_spend("increment_counter_by_spend")]
+#[case::increment_spend_by_counter("increment_spend_by_counter")]
 #[case::increment_keeps_live_expiry("increment_keeps_live_expiry")]
 #[case::compare_and_set_first_writer("compare_and_set_first_writer")]
 #[case::compare_and_set_keeps_winner("compare_and_set_keeps_winner")]
@@ -158,6 +161,26 @@ fn routing_value_store_behaviors(#[case] name: &str) {
             );
             assert_eq!(store.get(&key).unwrap(), StoreRead::Value(expected));
         }
+        "concurrent_set_add_keeps_every_member" => {
+            let store = Arc::new(store_with(None, &clock()));
+            let key = route_key("dynamic_rate:00-00:model");
+            std::thread::scope(|scope| {
+                for index in 0..16 {
+                    let shared = Arc::clone(&store);
+                    let route_key = key.clone();
+                    scope.spawn(move || {
+                        shared
+                            .set_add(&route_key, &[format!("team-{index}")], None)
+                            .unwrap();
+                    });
+                }
+            });
+            let expected = (0..16).map(|index| format!("team-{index}")).collect();
+            assert_eq!(
+                store.get(&key).unwrap(),
+                StoreRead::Value(RouteValue::Members(expected))
+            );
+        }
         "increment_counter_from_missing" => {
             let store = store_with(None, &clock());
             let key = route_key("in-flight");
@@ -194,6 +217,26 @@ fn routing_value_store_behaviors(#[case] name: &str) {
                 .increment(&key, &RouteIncrement::Spend(Decimal::new(5, 1)), None)
                 .unwrap();
             assert_eq!(value, RouteValue::Spend(Decimal::new(75, 2)));
+        }
+        "increment_counter_by_spend" => {
+            let store = store_with(None, &clock());
+            let key = route_key("mixed-counter");
+            store.set(&key, &counter(2), None).unwrap();
+            let value = store
+                .increment(&key, &RouteIncrement::Spend(Decimal::new(5, 1)), None)
+                .unwrap();
+            assert_eq!(value, RouteValue::Spend(Decimal::new(25, 1)));
+        }
+        "increment_spend_by_counter" => {
+            let store = store_with(None, &clock());
+            let key = route_key("mixed-spend");
+            store
+                .set(&key, &RouteValue::Spend(Decimal::new(25, 2)), None)
+                .unwrap();
+            let value = store
+                .increment(&key, &RouteIncrement::Counter(2), None)
+                .unwrap();
+            assert_eq!(value, RouteValue::Spend(Decimal::new(225, 2)));
         }
         "increment_keeps_live_expiry" => {
             let clock = clock();

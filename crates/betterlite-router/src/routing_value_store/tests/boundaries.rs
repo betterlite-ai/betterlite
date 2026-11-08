@@ -22,6 +22,7 @@ use super::{at, clock, counter, pin_with_serialized_len, route_key, store_with};
 #[case::counter_overflow_is_reported("counter_overflow_is_reported")]
 #[case::spend_overflow_is_reported("spend_overflow_is_reported")]
 #[case::increment_mismatch_keeps_value("increment_mismatch_keeps_value")]
+#[case::set_add_refuses_a_non_member_value("set_add_refuses_a_non_member_value")]
 #[case::compare_and_set_mismatch_keeps_value("compare_and_set_mismatch_keeps_value")]
 #[case::capacity_evicts_earliest_expiry("capacity_evicts_earliest_expiry")]
 #[case::expired_entries_are_pruned_before_eviction("expired_entries_are_pruned_before_eviction")]
@@ -136,6 +137,17 @@ fn routing_value_store_boundaries(#[case] name: &str) {
                 store.get(&key).unwrap(),
                 StoreRead::Value(RouteValue::Spend(Decimal::MAX))
             );
+        }
+        "set_add_refuses_a_non_member_value" => {
+            let store = store_with(None, &clock());
+            let key = route_key("dynamic_rate:00-00:model");
+            store.set(&key, &counter(3), None).unwrap();
+            assert!(matches!(
+                store.set_add(&key, &["team-a".to_owned()], None),
+                Err(StoreError::NotMembers { key: reported })
+                    if reported == "dynamic_rate:00-00:model"
+            ));
+            assert_eq!(store.get(&key).unwrap(), StoreRead::Value(counter(3)));
         }
         "increment_mismatch_keeps_value" => {
             let store = store_with(None, &clock());
