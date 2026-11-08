@@ -159,7 +159,7 @@ optional:
       mkdir -p "$scratch"
       trap 'rm -rf "$scratch"' EXIT
       git diff "$GATE_BASE" -- '*.rs' ':(exclude)tools/oracle' ':(exclude,glob)**/fuzz/**' > "$GATE_LOG_DIR/mutants.diff"
-      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER='prlimit --as=4294967296 --' CARGO_INCREMENTAL=1 RUSTC_WRAPPER= TMPDIR="$scratch" cargo mutants --in-diff "$GATE_LOG_DIR/mutants.diff" --test-tool nextest --no-shuffle --in-place --output "$GATE_LOG_DIR"
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_RUNNER='prlimit --as=4294967296 --' CARGO_INCREMENTAL=1 RUSTC_WRAPPER= TMPDIR="$scratch" cargo mutants --in-diff "$GATE_LOG_DIR/mutants.diff" --test-tool nextest --no-shuffle --in-place --output "$GATE_LOG_DIR" ${MUTANTS_SHARD:+--shard "$MUTANTS_SHARD" --sharding round-robin}
   - id: oracle
     why: betterlite answers the oracle cases the same way the pinned LiteLLM does
     run: cargo build --locked --quiet -p betterlite && cargo run --locked --quiet -p betterlite-oracle -- $GATE_ORACLE_CASES

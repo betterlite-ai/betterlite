@@ -1,0 +1,17 @@
+kind: helper
+name: stream-chunk-shaping-special-tokens
+call:
+  b5652:
+    state:
+      model: gpt-4
+      provider: sagemaker
+    repeated_chunk_limit: 100
+    steps:
+      - {op: special_tokens, chunk: "<"}
+      - {op: special_tokens, chunk: "|im_end|>"}
+      - {op: special_tokens, chunk: hello}
+      - {op: special_tokens, chunk: "bye<|assistant|>", finish_reason: stop}
+      - {op: special_tokens, chunk: "<s>"}
+env: {}
+compare:
+  ignore: []

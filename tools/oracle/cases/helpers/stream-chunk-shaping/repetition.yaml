@@ -1,0 +1,16 @@
+kind: helper
+name: stream-chunk-shaping-repetition
+call:
+  b5652:
+    state:
+      model: gpt-4
+      provider: openai
+      chunks:
+        - {id: c, created: 1, choices: [{index: 0, delta: {content: abc}}]}
+        - {id: c, created: 1, choices: [{index: 0, delta: {content: abc}}]}
+    repeated_chunk_limit: 2
+    steps:
+      - op: repetition
+env: {}
+compare:
+  ignore: []
