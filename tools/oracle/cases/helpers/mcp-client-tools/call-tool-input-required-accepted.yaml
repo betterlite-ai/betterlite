@@ -1,0 +1,1 @@
+{"kind":"helper","name":"b4745_call_tool_input_required_accepted","call":{"b4745":{"operation":"call_tool","settings":{"server_url":"https://mcp.example.com/mcp","timeout_ms":60000,"listing_ms":30000},"scenarios":[{"tool":"echo","input_required":"accept","request_state":"state-1"}]}},"env":{},"compare":{"ignore":[]}}
