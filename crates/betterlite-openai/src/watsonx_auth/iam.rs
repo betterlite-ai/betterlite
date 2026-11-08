@@ -1,9 +1,9 @@
 use std::collections::BTreeMap;
-use std::sync::Arc;
+use std::sync::{Arc, MutexGuard};
 use std::time::Duration;
 
 use betterlite_context::local_ttl_cache::credential::{Credential, CredentialHandle};
-use betterlite_context::local_ttl_cache::{CacheError, CacheValue};
+use betterlite_context::local_ttl_cache::{CacheError, CacheValue, LocalTtlCache};
 use betterlite_http::proxy::outbound::{OutboundRequest, RequestBody};
 use http::Method;
 use http::header::{ACCEPT, CONTENT_TYPE, HeaderMap, HeaderValue};
@@ -120,30 +120,36 @@ pub(super) fn resolve_api_key(
     )
 }
 
+fn lock_cache<T>(auth: &WatsonxAuth<T>) -> Result<MutexGuard<'_, LocalTtlCache>, WatsonxError> {
+    match auth.cache.lock() {
+        Ok(cache) => Ok(cache),
+        Err(_poisoned) => Err(WatsonxError::Cache(CacheError::Unavailable)),
+    }
+}
+
+fn cached_value<T>(auth: &WatsonxAuth<T>, key: &str) -> Result<Option<CacheValue>, WatsonxError> {
+    lock_cache(auth)?.get(key).map_err(WatsonxError::Cache)
+}
+
+fn token_from_cache(cached: CacheValue) -> Option<SecretString> {
+    match cached {
+        CacheValue::Credential(handle) => Some(handle.0.token.clone()),
+        CacheValue::Bytes(_)
+        | CacheValue::Null
+        | CacheValue::Boolean(_)
+        | CacheValue::Integer(_)
+        | CacheValue::Float(_)
+        | CacheValue::Text(_)
+        | CacheValue::Array(_)
+        | CacheValue::Object(_) => None,
+    }
+}
+
 pub(super) fn cached_token<T>(
     auth: &WatsonxAuth<T>,
     key: &str,
 ) -> Result<Option<SecretString>, WatsonxError> {
-    let cached = auth
-        .cache
-        .lock()
-        .map_err(|_poisoned| WatsonxError::Cache(CacheError::Unavailable))?
-        .get(key)
-        .map_err(WatsonxError::Cache)?;
-    Ok(match cached {
-        Some(CacheValue::Credential(handle)) => Some(handle.0.token.clone()),
-        Some(
-            CacheValue::Bytes(_)
-            | CacheValue::Null
-            | CacheValue::Boolean(_)
-            | CacheValue::Integer(_)
-            | CacheValue::Float(_)
-            | CacheValue::Text(_)
-            | CacheValue::Array(_)
-            | CacheValue::Object(_),
-        )
-        | None => None,
-    })
+    Ok(cached_value(auth, key)?.and_then(token_from_cache))
 }
 
 pub(super) fn store_token<T>(
@@ -157,11 +163,7 @@ pub(super) fn store_token<T>(
         headers: BTreeMap::new(),
     };
     let handle = CredentialHandle(Arc::new(credential));
-    let mut cache = auth
-        .cache
-        .lock()
-        .map_err(|_poisoned| WatsonxError::Cache(CacheError::Unavailable))?;
-    cache
+    lock_cache(auth)?
         .set(key, CacheValue::Credential(handle), Some(ttl))
         .map_err(WatsonxError::Cache)
 }

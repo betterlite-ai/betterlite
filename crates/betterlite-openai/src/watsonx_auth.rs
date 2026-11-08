@@ -6,7 +6,7 @@ use secrecy::{ExposeSecret as _, SecretString};
 
 use self::environment::WatsonxEnvironment;
 use self::error::WatsonxError;
-use self::headers::{token_from_params, zen_api_key_from_params};
+use self::headers::secret_from_params;
 use self::iam::{
     EXPIRY_BUFFER_OFFSET, cached_token, decode_iam_token_response, get_watsonx_iam_url,
     iam_request, resolve_api_key, store_token,
@@ -107,8 +107,18 @@ impl<T: WatsonxTransport> WatsonxAuth<T> {
             }
             return Ok(resolved);
         }
-        let requested_token = token_from_params(optional_params, &self.environment)?;
-        let requested_zen = zen_api_key_from_params(optional_params, &self.environment)?;
+        let requested_token = secret_from_params(
+            optional_params,
+            "token",
+            false,
+            self.environment.watsonx_token.as_ref(),
+        )?;
+        let requested_zen = secret_from_params(
+            optional_params,
+            "zen_api_key",
+            true,
+            self.environment.watsonx_zenapikey.as_ref(),
+        )?;
         let authorization = if let Some(token_value) = requested_token {
             format!("Bearer {}", token_value.expose_secret())
         } else if let Some(zen_value) = requested_zen {

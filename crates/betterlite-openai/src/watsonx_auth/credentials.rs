@@ -1,4 +1,4 @@
-use secrecy::{ExposeSecret, SecretString};
+use secrecy::{ExposeSecret as _, SecretString};
 use serde_json::Value;
 
 use super::environment::{WatsonxEnvironment, first_set};
@@ -29,14 +29,15 @@ fn pop_pair(
     inner: &'static str,
 ) -> Result<Option<String>, WatsonxError> {
     let inner_value = take_text(params, inner)?;
-    match params.remove(outer) {
-        Some(Value::Null) => Ok(None),
-        Some(Value::String(text)) => Ok(Some(text)),
-        Some(Value::Bool(_) | Value::Number(_) | Value::Array(_) | Value::Object(_)) => {
-            Err(WatsonxError::InvalidField { field: outer })
-        }
-        None => Ok(inner_value),
-    }
+    params
+        .remove(outer)
+        .map_or(Ok(inner_value), |value| match value {
+            Value::Null => Ok(None),
+            Value::String(text) => Ok(Some(text)),
+            Value::Bool(_) | Value::Number(_) | Value::Array(_) | Value::Object(_) => {
+                Err(WatsonxError::InvalidField { field: outer })
+            }
+        })
 }
 
 fn require_ids(
@@ -55,18 +56,12 @@ fn require_ids(
     Ok(())
 }
 
-pub fn get_api_params(
-    params: &mut WatsonxParams,
-    model: Option<&str>,
+fn api_params_from_environment(
+    project_param: Option<String>,
+    space_param: Option<String>,
+    region_param: Option<String>,
     environment: &WatsonxEnvironment,
-) -> Result<WatsonxApiParams, WatsonxError> {
-    let project_param = pop_pair(params, "project_id", "watsonx_project")?;
-    let space_param = take_text(params, "space_id")?;
-    let region_param = match pop_pair(params, "region_name", "region")? {
-        Some(region) => Some(region),
-        None => pop_pair(params, "watsonx_region_name", "watsonx_region")?,
-    };
-
+) -> WatsonxApiParams {
     let project_id = project_param.or_else(|| {
         first_set(&[
             environment.watsonx_project_id.as_deref(),
@@ -92,13 +87,47 @@ pub fn get_api_params(
         ])
         .map(str::to_owned)
     });
-
-    require_ids(project_id.as_deref(), space_id.as_deref(), model)?;
-    Ok(WatsonxApiParams {
+    WatsonxApiParams {
         project_id,
         space_id,
         region_name,
-    })
+    }
+}
+
+pub fn get_api_params(
+    params: &mut WatsonxParams,
+    model: Option<&str>,
+    environment: &WatsonxEnvironment,
+) -> Result<WatsonxApiParams, WatsonxError> {
+    let project_param = pop_pair(params, "project_id", "watsonx_project")?;
+    let space_param = take_text(params, "space_id")?;
+    let region_param = match pop_pair(params, "region_name", "region")? {
+        Some(region) => Some(region),
+        None => pop_pair(params, "watsonx_region_name", "watsonx_region")?,
+    };
+    let found = api_params_from_environment(project_param, space_param, region_param, environment);
+    require_ids(
+        found.project_id.as_deref(),
+        found.space_id.as_deref(),
+        model,
+    )?;
+    Ok(found)
+}
+
+fn environment_api_key(environment: &WatsonxEnvironment) -> Option<Value> {
+    let candidates = [
+        environment.watsonx_apikey.as_ref(),
+        environment.watsonx_api_key.as_ref(),
+        environment.wx_api_key.as_ref(),
+        environment.watsonx_zenapikey.as_ref(),
+    ];
+    for candidate in candidates.into_iter().flatten() {
+        let text = candidate.expose_secret();
+        if !text.is_empty() {
+            return Some(Value::String(text.to_owned()));
+        }
+    }
+    None
 }
 
 fn credential_key(
@@ -106,36 +135,15 @@ fn credential_key(
     api_key: Option<&SecretString>,
     environment: &WatsonxEnvironment,
 ) -> Option<Value> {
-    let mut key = api_key
+    api_key
         .filter(|candidate| !candidate.expose_secret().is_empty())
-        .map(|candidate| Value::String(candidate.expose_secret().to_owned()));
-    if key.is_none() {
-        key = params
-            .remove("apikey")
-            .filter(|value| !matches!(value, Value::String(text) if text.is_empty()));
-    }
-    if key.is_none() {
-        key = first_set(&[
-            environment
-                .watsonx_apikey
-                .as_ref()
-                .map(ExposeSecret::expose_secret),
-            environment
-                .watsonx_api_key
-                .as_ref()
-                .map(ExposeSecret::expose_secret),
-            environment
-                .wx_api_key
-                .as_ref()
-                .map(ExposeSecret::expose_secret),
-            environment
-                .watsonx_zenapikey
-                .as_ref()
-                .map(ExposeSecret::expose_secret),
-        ])
-        .map(|text| Value::String(text.to_owned()));
-    }
-    key
+        .map(|candidate| Value::String(candidate.expose_secret().to_owned()))
+        .or_else(|| {
+            params
+                .remove("apikey")
+                .filter(|value| !matches!(value, Value::String(text) if text.is_empty()))
+        })
+        .or_else(|| environment_api_key(environment))
 }
 
 fn credential_base(
@@ -143,23 +151,20 @@ fn credential_base(
     api_base: Option<&str>,
     environment: &WatsonxEnvironment,
 ) -> Option<Value> {
-    let mut base = api_base
-        .filter(|candidate| !candidate.is_empty())
-        .map(|candidate| Value::String(candidate.to_owned()));
-    if base.is_none() {
-        let base_url = params.remove("base_url");
-        let legacy = params.remove("api_base").or(base_url);
-        base = params
-            .remove("url")
-            .or(legacy)
-            .filter(|value| !matches!(value, Value::String(text) if text.is_empty()));
+    if let Some(candidate) = api_base.filter(|candidate| !candidate.is_empty()) {
+        return Some(Value::String(candidate.to_owned()));
     }
-    if base.is_none() {
-        base = environment
-            .api_base()
-            .map(|url| Value::String(url.to_owned()));
-    }
-    base
+    let base_url = params.remove("base_url");
+    let legacy = params.remove("api_base").or(base_url);
+    params
+        .remove("url")
+        .or(legacy)
+        .filter(|value| !matches!(value, Value::String(text) if text.is_empty()))
+        .or_else(|| {
+            environment
+                .api_base()
+                .map(|url| Value::String(url.to_owned()))
+        })
 }
 
 struct CredentialOverrides {
