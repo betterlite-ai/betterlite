@@ -1,19 +1,23 @@
 use std::collections::BTreeMap;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Barrier};
 use std::thread;
 use std::time::Duration;
 
-use axum::http::StatusCode;
+use axum::body::Body;
+use axum::http::{Request, StatusCode};
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::sections::admission_control::{Limits, Settings};
+use rand::SeedableRng as _;
+use rand::rngs::StdRng;
 use rstest::rstest;
+use tower::ServiceExt as _;
 
-use super::harness::{
-    Behavior, Requests, application, await_queued, await_started, gates, harness,
-};
-use crate::admission_control::{AdmissionControl, AdmissionStack, InFlightRequests};
+use super::harness::{Behavior, Requests, await_queued, await_started, gates, harness};
+use crate::admission_control::AdmissionControl;
 use crate::routing::admission_control::hot_routes_first;
+use crate::server::application;
+use crate::server::chat_setup::chat_executor;
 
 const RESERVATION_THREADS: usize = 8;
 const RESERVATION_ROUNDS: u32 = 200;
@@ -215,31 +219,23 @@ fn hot_routes_first_audit() {
 
 async fn install_wires_the_stack() {
     let source = "general_settings:\n  max_in_flight_requests_per_worker: 1\n  max_queued_requests_per_worker: 0";
+    let environment = BTreeMap::new();
     let config = ConfigLoader {
-        lookup: BTreeMap::new(),
+        lookup: environment.clone(),
     }
     .load(source)
     .unwrap();
-    let settings = config.sections.admission_control;
-    let stack = AdmissionStack {
-        admission: Arc::new(AdmissionControl::from_settings(&settings)),
-        in_flight: Arc::new(InFlightRequests::default()),
-        scalar_root: String::new(),
-    };
-    let (router, gates) = application(
-        &config.sections.request_root_paths,
-        "",
-        gates(&[("/a", Behavior::Hold)]),
-        |inner| stack.wrap(inner),
-    );
-    let mut requests = Requests::default();
-    requests.start(&router, "/a");
-    await_started(&gates, "/a").await;
-    requests.start(&router, "/b");
-    let (status, _headers, _body) = requests.complete("/b").await;
-    assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
-    gates.get("/a").unwrap().release.notify_one();
-    assert_eq!(requests.complete("/a").await.0, StatusCode::OK);
+    let executor = chat_executor(&config, &environment, StdRng::seed_from_u64(1)).unwrap();
+    let router = application(&config, executor, Arc::new(AtomicBool::new(false))).unwrap();
+    let get = |path: &str| Request::builder().uri(path).body(Body::empty()).unwrap();
+    let held = router.clone().oneshot(get("/models")).await.unwrap();
+    let saturated = router.clone().oneshot(get("/models")).await.unwrap();
+    assert_eq!(saturated.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let probe = router.clone().oneshot(get("/health/liveliness")).await;
+    assert_eq!(probe.unwrap().status(), StatusCode::OK);
+    drop(held);
+    let released = router.oneshot(get("/models")).await.unwrap();
+    assert_ne!(released.status(), StatusCode::SERVICE_UNAVAILABLE);
 }
 
 async fn upgrade_bypasses_saturation() {

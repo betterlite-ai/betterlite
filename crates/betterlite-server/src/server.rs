@@ -1,5 +1,7 @@
 pub mod chat_setup;
 
+use crate::admission_control::in_flight::InFlightRequests;
+use crate::admission_control::{AdmissionControl, AdmissionStack};
 use crate::auth::auth_route_patterns::AuthSettings;
 use crate::middleware::request_root_paths::RootPaths;
 use crate::routes::chat::chat_routes_with_call_id;
@@ -100,7 +102,7 @@ pub(crate) fn application(
     shutting_down: Arc<AtomicBool>,
 ) -> Result<Router, ServerError> {
     let executor = Arc::new(chat);
-    let application = router(
+    let routed = router(
         AuthSettings {
             master_key: config.general_settings.master_key.clone(),
             routes: config.sections.auth_route_patterns.clone(),
@@ -116,6 +118,14 @@ pub(crate) fn application(
         )?,
         embedding_routes(executor),
     );
+    let stack = AdmissionStack {
+        admission: Arc::new(AdmissionControl::from_settings(
+            &config.sections.admission_control,
+        )),
+        in_flight: Arc::new(InFlightRequests::default()),
+        scalar_root: config.sections.request_root_paths.server_root_path.clone(),
+    };
+    let application = stack.wrap(routed);
     Ok(
         match RootPaths::from_settings(&config.sections.request_root_paths) {
             Some(paths) => paths.wrap(application),
