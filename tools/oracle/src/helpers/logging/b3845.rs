@@ -121,7 +121,10 @@ impl crate::helpers::Helper for Op {
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         let value = match input {
             Input::GenaiLlmCall(call) => llm_call_record(call, Vocabulary::Genai)?,
-            Input::GenaiGuardrail(guardrail) => guardrail_record(&guardrail.entry),
+            Input::GenaiGuardrail(guardrail) => {
+                let span = GuardrailSpanData::from_logging_entry(&guardrail.entry);
+                genai_record(&SpanData::Guardrail(&span), &BTreeMap::new())
+            }
             Input::GenaiService(service) => service_record(service)?,
             Input::GenaiMcpToolCall(call) => mcp_record(call, McpMethod::ToolCall)?,
             Input::GenaiMcpListTools(list) => mcp_record(list, McpMethod::ListTools)?,
@@ -173,48 +176,44 @@ fn llm_call_record(
     Ok(attributes_record(&attributes))
 }
 
-fn guardrail_record(entry: &MetadataMap) -> Value {
-    let span = GuardrailSpanData::from_logging_entry(entry);
+fn genai_record(data: &SpanData<'_>, environment: &BTreeMap<String, String>) -> Value {
     let mapper = GenAIMapper {
         tool_attr_budget: MAX_TOOL_ATTRS_PER_SPAN,
     };
-    let attributes = mapper.map(&SpanData::Guardrail(&span), &BTreeMap::new());
-    attributes_record(&attributes)
+    attributes_record(&mapper.map(data, environment))
 }
 
 fn service_record(input: &ServiceInput) -> Result<Value, Box<crate::helpers::HelperError>> {
     let payload = service_payload(input)?;
     let span = ServiceSpanData::from_payload(&payload, &input.event_metadata);
-    let mapper = GenAIMapper {
-        tool_attr_budget: MAX_TOOL_ATTRS_PER_SPAN,
-    };
-    let attributes = mapper.map(&SpanData::Service(&span), &input.environment);
-    Ok(attributes_record(&attributes))
+    Ok(genai_record(&SpanData::Service(&span), &input.environment))
 }
 
 fn mcp_record(
     input: &McpInput,
     method: McpMethod,
 ) -> Result<Value, Box<crate::helpers::HelperError>> {
-    let mapper = GenAIMapper {
-        tool_attr_budget: MAX_TOOL_ATTRS_PER_SPAN,
-    };
-    let attributes = match method {
+    match method {
         McpMethod::ToolCall => {
             let span = MCPToolCallSpanData::from_standard_logging_payload(
                 &input.payload,
                 input.capture_content,
             )
             .map_err(|error| helper_error("MetadataError", error.to_string()))?;
-            mapper.map(&SpanData::MCPToolCall(&span), &BTreeMap::new())
+            Ok(genai_record(
+                &SpanData::MCPToolCall(&span),
+                &BTreeMap::new(),
+            ))
         }
         McpMethod::ListTools => {
             let span = MCPListToolsSpanData::from_standard_logging_payload(&input.payload)
                 .map_err(|error| helper_error("MetadataError", error.to_string()))?;
-            mapper.map(&SpanData::MCPListTools(&span), &BTreeMap::new())
+            Ok(genai_record(
+                &SpanData::MCPListTools(&span),
+                &BTreeMap::new(),
+            ))
         }
-    };
-    Ok(attributes_record(&attributes))
+    }
 }
 
 fn budget_record(input: &BudgetInput) -> Result<Value, Box<crate::helpers::HelperError>> {
