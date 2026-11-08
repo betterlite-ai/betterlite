@@ -26,17 +26,12 @@ const ACCEPT_JSON: &str = "application/json";
 pub struct IdpClient {
     pub(crate) client: Client,
     pub(crate) timeout: Option<Duration>,
-    pub(crate) jwks_cache: Mutex<BTreeMap<String, CachedJwks>>,
-    pub(crate) discovery_cache: Mutex<BTreeMap<String, CachedDiscovery>>,
+    pub(crate) jwks_cache: Mutex<BTreeMap<String, Cached<Vec<Jwk>>>>,
+    pub(crate) discovery_cache: Mutex<BTreeMap<String, Cached<DiscoveryDocument>>>,
 }
 
-pub(crate) struct CachedJwks {
-    keys: Vec<Jwk>,
-    fetched_at: i64,
-}
-
-pub(crate) struct CachedDiscovery {
-    document: DiscoveryDocument,
+pub(crate) struct Cached<T> {
+    value: T,
     fetched_at: i64,
 }
 
@@ -74,7 +69,7 @@ pub enum IdpError {
 
 impl IdpClient {
     pub async fn fetch_jwks(&self, uri: &str, now: i64) -> Result<Vec<Jwk>, IdpError> {
-        if let Some(keys) = self.cached_jwks(uri, now) {
+        if let Some(keys) = cached(&self.jwks_cache, uri, now, JWKS_CACHE_SECONDS) {
             return Ok(keys);
         }
         let body = self.get_bytes(uri).await?;
@@ -89,8 +84,8 @@ impl IdpClient {
             .unwrap_or_else(PoisonError::into_inner)
             .insert(
                 uri.to_owned(),
-                CachedJwks {
-                    keys: keys.clone(),
+                Cached {
+                    value: keys.clone(),
                     fetched_at: now,
                 },
             );
@@ -115,7 +110,12 @@ impl IdpClient {
         let Some(discovery_uri) = uri else {
             return Ok(DiscoveryDocument { jwks_uri: None });
         };
-        if let Some(document) = self.cached_discovery(discovery_uri, now) {
+        if let Some(document) = cached(
+            &self.discovery_cache,
+            discovery_uri,
+            now,
+            DISCOVERY_CACHE_SECONDS,
+        ) {
             return Ok(document);
         }
         let document = self.fetch_oidc_discovery(discovery_uri).await?;
@@ -129,8 +129,8 @@ impl IdpClient {
                 .unwrap_or_else(PoisonError::into_inner)
                 .insert(
                     discovery_uri.to_owned(),
-                    CachedDiscovery {
-                        document: document.clone(),
+                    Cached {
+                        value: document.clone(),
                         fetched_at: now,
                     },
                 );
@@ -180,32 +180,6 @@ impl IdpClient {
         Ok(document.into_claims())
     }
 
-    fn cached_jwks(&self, uri: &str, now: i64) -> Option<Vec<Jwk>> {
-        let cached = self
-            .jwks_cache
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get(uri)
-            .map(|cached| (cached.keys.clone(), cached.fetched_at));
-        let (keys, fetched_at) = cached?;
-        now.checked_sub(fetched_at)
-            .is_some_and(|age| age < JWKS_CACHE_SECONDS)
-            .then_some(keys)
-    }
-
-    fn cached_discovery(&self, uri: &str, now: i64) -> Option<DiscoveryDocument> {
-        let cached = self
-            .discovery_cache
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get(uri)
-            .map(|cached| (cached.document.clone(), cached.fetched_at));
-        let (document, fetched_at) = cached?;
-        now.checked_sub(fetched_at)
-            .is_some_and(|age| age < DISCOVERY_CACHE_SECONDS)
-            .then_some(document)
-    }
-
     async fn get_bytes(&self, uri: &str) -> Result<Vec<u8>, IdpError> {
         let mut request = self.client.get(uri).header(ACCEPT, ACCEPT_JSON);
         if let Some(timeout) = self.timeout {
@@ -227,6 +201,26 @@ impl IdpClient {
             .await
             .map_err(|source| read_error(uri, source))
     }
+}
+
+fn cached<T>(
+    cache: &Mutex<BTreeMap<String, Cached<T>>>,
+    uri: &str,
+    now: i64,
+    ttl_seconds: i64,
+) -> Option<T>
+where
+    T: Clone,
+{
+    let entry = cache
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get(uri)
+        .map(|entry| (entry.value.clone(), entry.fetched_at));
+    let (value, fetched_at) = entry?;
+    now.checked_sub(fetched_at)
+        .is_some_and(|age| age < ttl_seconds)
+        .then_some(value)
 }
 
 fn read_error(uri: &str, failure: ReadError) -> IdpError {
