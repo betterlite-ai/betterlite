@@ -208,6 +208,12 @@ impl Visit for CapturedFields {
             self.0.push(format!("{value:?}"));
         }
     }
+
+    fn record_str(&mut self, field: &Field, value: &str) {
+        if field.name() == "message" {
+            self.0.push(value.to_owned());
+        }
+    }
 }
 
 #[test]
@@ -217,10 +223,8 @@ fn finish_reason_unknown_value_warns_and_falls_back_to_stop() {
     let mapped = with_default(subscriber, || mapped_finish_reason("weird"));
     assert_eq!(mapped, "stop");
     let captured = events.lock().expect("the capture lock is free");
-    assert_eq!(
-        captured.as_slice(),
-        ["\"Unmapped finish_reason 'weird', defaulting to 'stop'\""]
-    );
+    assert_eq!(captured.len(), 1);
+    assert!(captured[0].contains("Unmapped finish_reason 'weird', defaulting to 'stop'"));
 }
 
 #[rstest]
