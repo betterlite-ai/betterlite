@@ -1,0 +1,10 @@
+kind: helper
+name: rubrik-delivery-endpoint-url-trailing-slashes
+call:
+  b3976:
+    environment: {RUBRIK_WEBHOOK_URL: "https://rubrik.example///"}
+    init: {api_key: test-key}
+    replies: []
+    actions: []
+env: {}
+compare: {ignore: []}

@@ -1,0 +1,13 @@
+id: B8740
+milestone: M8 platform
+title: CallbackLogger trait, logger event and logger sink
+status: todo
+depends_on: [B254, B189]
+file: tasks/B8740-callback-logger-trait.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

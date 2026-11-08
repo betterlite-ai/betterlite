@@ -17,7 +17,7 @@ description: >-
   to that name. The provider is the first truthy of: B2400's header reader (custom-llm-provider), B2400's query
   reader (custom_llm_provider), B3330's get_custom_provider_from_data(data) (the body field, then the extra_body
   field), and the literal "openai". The result is written to data["custom_llm_provider"]. B004's
-  base_process_llm_request is called with the VideoCreateCharacter core entry (LiteLLM route_type "avideo_create_character"), model=None and the usual
+  B8801's PreCall step runs first (keep `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state, built with `PreCallStep::standalone` in routes(state), which B8804 swaps for the production step), then base_process_llm_request is called with the VideoCreateCharacter core entry (LiteLLM route_type "avideo_create_character"), model=None and the usual
   user_model, user_temperature, user_request_timeout, user_max_tokens, user_api_base and version values. The entry's
   dispatch calls the SDK function B3341's avideo_create_character or the router wrapper, as the Dispatch paragraph says; B004 owns the response headers and _handle_llm_api_exception; every
   exception from the call goes through that handler.
@@ -175,7 +175,7 @@ deviations:
 out_of_scope:
   - B3341 owns avideo_create_character and avideo_get_character and their call-level defaults; this task supplies data to B004 and fills the two core entries that call them.
   - B3330 owns extract_model_from_target_model_names, get_custom_provider_from_data, encode_character_id_in_response and the CharacterObject record; B672 owns the id codec.
-  - B004 owns base_process_llm_request and _handle_llm_api_exception with their error envelopes and headers; B1100 owns _read_request_body; B1101 owns multipart parsing; B2400 owns the three provider readers; B844 owns resolve_model_name_from_model_id; B052 owns authentication.
+  - B8801 owns common_processing_pre_call_logic; B004 owns base_process_llm_request and _handle_llm_api_exception with their error envelopes and headers; B1100 owns _read_request_body; B1101 owns multipart parsing; B2400 owns the three provider readers; B844 owns resolve_model_name_from_model_id; B052 owns authentication.
   - B082 owns uploadfile_to_bytesio and batch_to_bytesio in image_endpoints/endpoints.py.
   - B3343 and B3344 own video_generation, video_list, video_status, video_content and video_remix in the same file; video_edit and video_extension (L725-L923) belong to B6360 and are not built here.
 

@@ -141,8 +141,6 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/preview_request.rs
     - crates/betterlite-server/fuzz/corpus/preview_request/**
-    - tools/oracle/cases/policies/attachment-impact/**
-    - tools/oracle/cases/policies/template-test/**
     - tools/oracle/helpers/b3249.py
     - tools/oracle/helpers/b3249/**
     - tools/oracle/src/helpers/server/b3249.rs
@@ -198,11 +196,11 @@ dod:
   - text: >-
       The estimate-impact route answers 422 for a bad body, 500 `Database not connected` with no database (also for scope `*`), and 500
       with the error text for a database failure.
-    proof: [impact-route-tests, oracle]
+    proof: [impact-route-tests]
   - text: >-
       The preview gives `unsupported` with LiteLLM's text for any guardrail type other than litellm_content_filter, including a missing
       type, and keeps definition order.
-    proof: [preview-tests, oracle]
+    proof: [preview-tests]
   - text: >-
       The preview maps a runner result to `passed`, `masked`, `blocked` (empty output text, the detail's `error` member as details) or
       `error` (input text, the message), one definition at a time, and passes only the five content filter params.
@@ -213,11 +211,13 @@ dod:
   - text: >-
       POST /policy/templates/test answers with overall_action and results in LiteLLM's key order, needs no database, and answers 422 for a
       missing `text` or a non-array `guardrail_definitions`.
-    proof: [template-route-tests, oracle]
+    proof: [template-route-tests]
   - text: >-
       Both request decoders reject malformed bytes and wrong shapes without panicking and have committed corpus inputs.
     proof: [request-corpus]
 
+  - text: The handlers are tested with tower's oneshot over the module's own Router and fake ports. B8790 mounts the routes and owns their HTTP oracle cases, so write no HTTP case here.
+    proof: [impact-route-tests]
 checks:
   optional: []
   commands:
@@ -243,17 +243,7 @@ checks:
       why: the request decoders have no committed malformed-input regressions or no replay test
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/preview_request)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_preview_request_corpus)'
 
-oracle_cases:
-  - tools/oracle/cases/policies/attachment-impact/no-database-500.yaml
-  - tools/oracle/cases/policies/attachment-impact/global-scope-no-database-500.yaml
-  - tools/oracle/cases/policies/attachment-impact/missing-policy-name-422.yaml
-  - tools/oracle/cases/policies/attachment-impact/no-auth-401.yaml
-  - tools/oracle/cases/policies/template-test/empty-definitions.yaml
-  - tools/oracle/cases/policies/template-test/unsupported-type.yaml
-  - tools/oracle/cases/policies/template-test/missing-litellm-params.yaml
-  - tools/oracle/cases/policies/template-test/two-unsupported-in-order.yaml
-  - tools/oracle/cases/policies/template-test/missing-text-422.yaml
-  - tools/oracle/cases/policies/template-test/no-auth-401.yaml
+oracle_cases: []
 
 deviations:
   - what: The 422 body for a bad request body uses the server's shared validation response and wording, not FastAPI's `loc` and `msg` strings. Status 422 matches.
@@ -269,7 +259,7 @@ out_of_scope:
   - "B3250 owns resolve_policies_for_context, POST /policies/resolve (policy_resolve_endpoints.py L215-L320) and the module's router and imports."
   - "B3252 owns POST /policy/templates/enrich and its stream; B3253 owns GET /policy/templates and POST /policy/templates/suggest; B3251 and B3250 own the other endpoints.py routes (apply_policies, validate, list, info, match)."
   - "B3242 owns PolicyAttachmentCreateRequest and AttachmentImpactResponse; B722 and B724 own the key and team table handles; B700 owns find_many; B882 owns route_matches_wildcard_pattern."
-  - "The ContentFilterGuardrail constructor (content_filter.py L210-L330) and apply_guardrail (L1874-L1955) have no owner at the time of writing; B3695 owns _filter_single_text only. The production ContentFilterRunner adapter belongs to whoever takes them."
+  - "The ContentFilterGuardrail constructor (content_filter.py L210-L330) and apply_guardrail (L1874-L1955) have no owner at the time of writing; B3695 owns _filter_single_text only. B8666 implements the production ContentFilterRunner over them."
   - "B865 owns management_endpoint_wrapper and B2400 owns handle_exception_on_proxy; this task calls them."
   - "PolicyAttachmentCreateRequest validation of `policy_name` existence is not done by this route: LiteLLM never looks the policy up when estimating."
 

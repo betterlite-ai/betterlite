@@ -92,7 +92,7 @@ deviations:
   - what: The UI static folders (/ui, /_next, /litellm-asset-prefix/_next) are served by tower-http ServeDir.
     why: Same files and paths as Starlette's StaticFiles with html=True; directory index behavior follows ServeDir.
 out_of_scope:
-  - "Installing the handlers, the CORS layer and the static UI mounts on the app, and the HTTP oracle cases for them: the wave 17 middleware wiring part."
+  - "Installing the handlers, the CORS layer and the static UI mounts on the app, and the HTTP oracle cases for them: B8680 (app/edge layers and UI mounts)."
   - "The other middlewares (security headers, gzip, in-flight, Redis batch, budget release, billing, Prometheus auth): B122 and their own tasks."
   - "close_error_span and log_model_access_denial: B8389. otlp_error_response: B3867. ProxyException: B8410. Bug reports: B4171."
 pitfalls:

@@ -7,7 +7,7 @@ description: >-
   Both routes sit behind the virtual key authentication of B052, and a missing or wrong key answers 401 before any route code runs.
   The calls behind them are B3339 (video_content, avideo_content) and B3340 (video_remix, avideo_remix) in betterlite-core. Fill the two core dispatch entries B014 registers for them,
   operation/video_content.rs with dispatch/video_content.rs and operation/video_remix.rs with dispatch/video_remix.rs. Both LiteLLM handlers go through route_request, so each entry first calls B6460's plan_video_route (VideoCallKind Content or Remix). A Direct plan calls the B3339 or B3340 SDK function. A Router plan calls the matching VideoRouterCalls method (avideo_content or avideo_remix). A NotFound plan returns the model-not-found error. VideoRouterCalls and VideoRouteView are injected into the entries, because betterlite-core cannot import sdk or router. The content entry sends route type avideo_content and its result is the raw bytes. The remix entry sends route type avideo_remix and its result is the video object as JSON.
-  B004 owns the common request processing and the exception handling (LiteLLM's ProxyBaseLLMRequestProcessing and _handle_llm_api_exception). These routes only build the data map and hand it over.
+  B8801 owns the pre-call step of the common request processing (these routes run its PreCall step; keep `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state, built with `PreCallStep::standalone` in routes(state), which B8804 swaps for the production step); B004 owns the rest of it and the exception handling (LiteLLM's ProxyBaseLLMRequestProcessing and _handle_llm_api_exception). These routes only build the data map and hand it over.
 
   Content route steps, in order. (1) Start data as {video_id}. The video_id is the whole path segment. (2) Call B672 decode_video_id_with_provider(video_id) and keep its custom_llm_provider and model_id.
   (3) Pick custom_llm_provider as the first truthy value of: the custom-llm-provider header, the custom_llm_provider query parameter (both from B2400), the custom_llm_provider key of the JSON body (B2400, which reads the body through B1100), the provider from the decoded id. The body is only read when the header and the query are both empty, and a malformed body then fails with the 400 invalid_request_error from B1100 before the processing try block.
@@ -117,7 +117,7 @@ deviations: []
 out_of_scope:
   - "B3343 owns POST/GET /videos and GET /videos/{video_id}, with their cases. B3345 owns the character routes. The edits and extensions routes in the same file have no task yet, see the planner notes."
   - "B3339 and B3340 own the call functions, B3334 the remix transport and B3333 the content transport; B672 owns the id codec; B844 owns resolve_model_name_from_model_id."
-  - "B004 owns the common request processing, response headers and exception handling; B2400 the provider accessors; B1100 the body read; B052 authentication."
+  - "B8801 owns the pre-call step, B004 the rest of the common request processing, response headers and exception handling; B2400 the provider accessors; B1100 the body read; B052 authentication."
   - "video_reference_to_id, extract_model_from_target_model_names, get_custom_provider_from_data and encode_character_id_in_response in video_endpoints/utils.py are not used by these two routes."
 pitfalls:
   - The content route returns a new response, so custom headers set by the common processing are lost and only Content-Disposition is added.

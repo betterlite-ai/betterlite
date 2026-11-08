@@ -74,6 +74,8 @@ scope:
     - tools/oracle/cases/helpers/s3-log-batches-s3-batch/overflow-trims-oldest.yaml
     - tools/oracle/cases/helpers/s3-log-batches-s3-batch/partial-success-drops-stale.yaml
     - tools/oracle/cases/helpers/s3-log-batches-s3-batch/requeued-preserved-on-total-failure.yaml
+    - crates/betterlite-logging/src/registry/catalog/s3_v2.rs
+    - crates/betterlite-logging/src/registry/catalog/s3_v2/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L104-L105
@@ -95,6 +97,8 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/s3_v2.py#L760-L773
     why: Own _build_batch_file_element to create NDJSON batch objects from grouped elements.
 dod:
+  - text: "The S3 v2 batch logger queues records from the async success and failure events of CallbackLogger, and registry/catalog/s3_v2.rs builds it with its flush loop on CatalogInputs.tracker, stopped by CatalogInputs.shutdown (tests named callback_logger_* in s3_batch and registry/catalog/s3_v2/tests.rs)."
+    proof: [callback-logger]
   - text: >-
       Batch outcomes fresh_work_ordered, requeued_preserved_on_total_failure,
       partial_success_drops_stale_and_terminal, overflow_trims_oldest,
@@ -119,6 +123,9 @@ checks:
   optional:
     - mutants
   commands:
+    - id: callback-logger
+      why: s3_v2 resolves to nothing or its queue never fills from logger events
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^registry::catalog::s3_v2::/)' && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^s3_batch::(.*::)?callback_logger_/)'
     - id: batch-behavior-tests
       why: The batch queue reconciliation tests are absent or the pinned behavior fails.
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^s3_batch::.*::tests::/) - test(/replays_the_/)'

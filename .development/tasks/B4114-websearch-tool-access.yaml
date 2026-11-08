@@ -98,7 +98,7 @@ out_of_scope:
   - "_execute_search, the litellm.asearch call and the Perplexity fallback (B4115 owns them and calls this module)."
   - "can_key_call_search_tool, can_team_call_search_tool and the ProxyException they raise (B749); get_team_object (B737); get_logged_api_key and get_sanitized_user_information_from_key (B1106)."
   - "The logger constructor, from_config_yaml and where search_tool_name comes from (B4116)."
-  - "Writing the server wiring that implements SearchToolGrants and SearchMetadataSource; no entry owns it yet."
+  - "Writing the server wiring that implements SearchToolGrants and SearchMetadataSource; B8634 writes it (KeySearchGrants and KeySearchMetadata)."
 pitfalls:
   - A configured search_tool_name that matches nothing is not an error. The selection logs a debug line and returns the first tool, the same as when no name is set.
   - parent_correlation returns all None for empty kwargs without reading the caller, so the caller's parent_otel_span is not used in that case.

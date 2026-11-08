@@ -40,7 +40,6 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/spend_totals_query.rs
     - crates/betterlite-server/fuzz/corpus/spend_totals_query/**
-    - tools/oracle/cases/http/spend-totals/**
     - tools/oracle/helpers/b1724.py
     - tools/oracle/helpers/b1724/**
     - tools/oracle/src/helpers/server/b1724.rs
@@ -54,10 +53,12 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/prometheus_helpers/prometheus_api.py#L119-L173
     why: B111's escaped daily-spend query contract consumed by the logs endpoint.
 dod:
-  - text: Monthly reports select the correct database/Prometheus source and preserve user scope, null sums and distinct limit rules.
-    proof: [total-tests, totals-corpus, oracle]
-  - text: Team totals sum rounded daily amounts and the configured global max_budget reaches the response.
-    proof: [total-tests, summary-budget-test, summary-budget-corpus, oracle]
+  - text: Monthly reports select the correct database/Prometheus source and preserve user scope, null sums and distinct limit rules. B8662 proves it over HTTP.
+    proof: [total-tests, totals-corpus]
+  - text: Team totals sum rounded daily amounts and the configured global max_budget reaches the response. B8662 proves it over HTTP.
+    proof: [total-tests, summary-budget-test, summary-budget-corpus]
+  - text: The handlers answer through tower's oneshot over the module's own Router with fake ports; B8662 merges them through B069's spend routes and proves them over HTTP.
+    proof: [total-tests]
 checks:
   optional: [mutants]
   commands:
@@ -73,12 +74,7 @@ checks:
     - id: totals-corpus
       why: Spend total filters lack a fuzzed raw-query decoder.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/spend_totals_query)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_spend_totals_query_corpus)'
-oracle_cases:
-  - tools/oracle/cases/http/spend-totals/monthly-view-and-internal-user.yaml
-  - tools/oracle/cases/http/spend-totals/prometheus-escaped-key-and-required-db.yaml
-  - tools/oracle/cases/http/spend-totals/null-sum-and-global-budget.yaml
-  - tools/oracle/cases/http/spend-totals/keys-ignore-internal-limit-models-do-not.yaml
-  - tools/oracle/cases/http/spend-totals/team-alias-collision-and-rounded-total.yaml
+oracle_cases: []
 deviations: []
 out_of_scope:
   - B111 implements Prometheus transport and parsing; B1722 owns resets and end-user diagnostics, while B1723 owns the separate /spend/keys and /spend/users APIs.

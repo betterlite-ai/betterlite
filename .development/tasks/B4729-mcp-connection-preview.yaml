@@ -4,7 +4,7 @@ description: >-
   Build the two preview routes an admin uses before saving an MCP server, and the staging step in front of them. Both are POST routes under the router prefix /mcp-rest (LiteLLM mounts this router with that prefix only, so there is no /v1/... or /openai/v1/... alias): POST /mcp-rest/test/connection checks that a not-yet-saved server config can be reached, and POST /mcp-rest/test/tools/list lists its tools. The body of both is a NewMCPServerRequest, the same model the create route takes. Both need a valid key and then the PROXY_ADMIN role. PROXY_ADMIN_VIEW_ONLY and every other role get 403.
 
 
-  Code goes in betterlite-server, two modules. mcp::preview_staging (crates/betterlite-server/src/mcp/preview_staging.rs, preview_staging/** and a tests.rs beside each file) holds the pure steps. api::mcp_preview_routes (crates/betterlite-server/src/api/mcp_preview_routes.rs, mcp_preview_routes/** and a tests.rs beside each file) holds the two handlers and exposes `pub fn router(state) -> axum::Router`. It never mounts itself, so the B139 umbrella adds it to the app. Add betterlite-mcp and the url crate to crates/betterlite-server/Cargo.toml if the file does not list them yet (B4727 and B4728 may have added betterlite-mcp already, so read the file first). Types and functions of other tasks are used by the names they have on main when this task runs, so read the merged files: NewMCPServerRequest, StdioPolicy and RequestError from B4716 (server_payload), inherit_credentials_from_existing_server from B4717 (mcp::management_visibility), ServerRegistry from B4731 (registry), MCPServer from B6590, MCPAuth from B2305, the OAuth2 header reader and the x-litellm-api-key constant from B4654 (client_headers), UPSTREAM_OAUTH_DISCOVERY_AUTH_TYPES from B6760 (server_oauth), the temporary-client runner and the list betterlite_mcp::mcp_preview::STAGED_AUTH_VALUE_AUTH_TYPES from B4730, MCPClient from B4744 and B4745, and the OpenAPI functions from B4683 (openapi_tools). Do not copy any of them. Logging goes through tracing.
+  Code goes in betterlite-server, two modules. mcp::preview_staging (crates/betterlite-server/src/mcp/preview_staging.rs, preview_staging/** and a tests.rs beside each file) holds the pure steps. api::mcp_preview_routes (crates/betterlite-server/src/api/mcp_preview_routes.rs, mcp_preview_routes/** and a tests.rs beside each file) holds the two handlers and exposes `pub fn router(state) -> axum::Router`. It never mounts itself, so B8626 adds it to the app. Add betterlite-mcp and the url crate to crates/betterlite-server/Cargo.toml if the file does not list them yet (B4727 and B4728 may have added betterlite-mcp already, so read the file first). Types and functions of other tasks are used by the names they have on main when this task runs, so read the merged files: NewMCPServerRequest, StdioPolicy and RequestError from B4716 (server_payload), inherit_credentials_from_existing_server from B4717 (mcp::management_visibility), ServerRegistry from B4731 (registry), MCPServer from B6590, MCPAuth from B2305, the OAuth2 header reader and the x-litellm-api-key constant from B4654 (client_headers), UPSTREAM_OAUTH_DISCOVERY_AUTH_TYPES from B6760 (server_oauth), the temporary-client runner and the list betterlite_mcp::mcp_preview::STAGED_AUTH_VALUE_AUTH_TYPES from B4730, MCPClient from B4744 and B4745, and the OpenAPI functions from B4683 (openapi_tools). Do not copy any of them. Logging goes through tracing.
 
 
   Module mcp::preview_staging. Function names are LiteLLM's without the leading underscore.
@@ -38,7 +38,7 @@ description: >-
 
   /test/tools/list: after staging, a truthy spec_path on the staged request returns preview_openapi_tools(spec_path) without creating a client (only the staging ran before it). Otherwise call the runner with an operation that lists tools. The listing deadline is max(client timeout in seconds, 30.0 seconds), where the client timeout is the client's own timeout when it is set and non-zero, else the 60.0 second default of LITELLM_MCP_CLIENT_TIMEOUT, and the 30.0 is the default of LITELLM_MCP_TOOL_LISTING_TIMEOUT. Both defaults and the env overrides are owned by B4730's constants, so read them there. max() keeps a single slow page inside the client timeout working and lets a per-server timeout above 30 seconds extend the deadline. When list_tools_within returns None, log at warning "MCP tools/list preview timed out after {deadline} seconds while paginating upstream tools" and return { "status": "error", "error": true, "message": "Timed out listing tools after {deadline} seconds. The MCP server may be responding slowly or paginating excessively." }. The deadline prints the way Python prints a float, so 30.0 and 60.0 keep their ".0" (use the Debug format of f64, not Display). On success return { "tools": [each tool serialized with its wire (alias) field names, so inputSchema and not input_schema], "error": null, "message": "Successfully retrieved tools" }. All outcomes are HTTP 200.
 
-  Tests use fakes that record calls (a fake registry, a fake runner, a fake client), synthetic servers and names with the prefix test-. Oracle HTTP cases cover the cases a booted proxy can answer without a reachable MCP server.
+  Tests use fakes that record calls (a fake registry, a fake runner, a fake client), synthetic servers and names with the prefix test-. B8626 mounts the routes and runs the HTTP oracle cases a booted proxy can answer without a reachable MCP server.
 
 scope:
   paths:
@@ -48,7 +48,6 @@ scope:
     - crates/betterlite-server/src/api/mcp_preview_routes/**
     - crates/betterlite-server/Cargo.toml
     - Cargo.lock
-    - tools/oracle/cases/http/mcp-rest-preview/**
     - tools/oracle/helpers/b4729.py
     - tools/oracle/helpers/b4729/**
     - tools/oracle/src/helpers/server/b4729.rs
@@ -76,6 +75,8 @@ references:
     why: The 60.0 and 30.0 second defaults and their env names, used by the listing deadline.
 
 dod:
+  - text: The handlers are tested with tower's oneshot over this module's own Router and fake ports; B8626 mounts the routes and proves the items below over HTTP with the cases that moved there.
+    proof: [route-tests]
   - text: >-
       preview_origin gives (scheme, host, port) for http and https urls with a host, None for an absent, empty, unparseable or non-http url, and drops an explicit default port.
     proof: [staging-tests]
@@ -96,13 +97,13 @@ dod:
     proof: [staging-tests]
   - text: >-
       Both routes answer 403 with the exact detail.error text for every role except PROXY_ADMIN, before staging or any client call.
-    proof: [route-tests, oracle]
+    proof: [route-tests]
   - text: >-
       /test/connection returns {"status": "ok"} on a reachable server and the runner's error value otherwise, and /test/tools/list returns the tools, the OpenAPI preview for a spec_path without building a client, and the timeout message with the deadline printed as 30.0 or 60.0.
     proof: [route-tests]
   - text: >-
       A body that fails NewMCPServerRequest validation answers 422 in FastAPI's detail list shape and an unreachable server answers 200 with the "the server is unreachable" message.
-    proof: [route-tests, oracle]
+    proof: [route-tests]
 
 checks:
   optional: []
@@ -114,14 +115,7 @@ checks:
       why: the admin gate, the staging call order, the response shapes or the timeout message of the two routes is missing or wrong.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^api::mcp_preview_routes::/)'
 
-oracle_cases:
-  - tools/oracle/cases/http/mcp-rest-preview/connection-regular-user-403.yaml
-  - tools/oracle/cases/http/mcp-rest-preview/connection-view-only-admin-403.yaml
-  - tools/oracle/cases/http/mcp-rest-preview/tools-list-regular-user-403.yaml
-  - tools/oracle/cases/http/mcp-rest-preview/connection-unreachable-server.yaml
-  - tools/oracle/cases/http/mcp-rest-preview/connection-missing-url-422.yaml
-  - tools/oracle/cases/http/mcp-rest-preview/tools-list-unreachable-server.yaml
-  - tools/oracle/cases/http/mcp-rest-preview/tools-list-openapi-missing-file.yaml
+oracle_cases: []
 
 deviations:
   - what: The message after the text "Failed to load OpenAPI spec" is the Display text of the B4683 error, not Python exception text.
@@ -134,7 +128,7 @@ out_of_scope:
   - "_inherit_credentials_from_existing_server: B4717. NewMCPServerRequest and its validators: B4716. get_mcp_server_by_id: B4731. The OAuth2 header reader and the x-litellm-api-key name: B4654. UPSTREAM_OAUTH_DISCOVERY_AUTH_TYPES: B6760."
   - "load_openapi_spec_async, sanitize_openapi_tool_name, resolve_operation_params and build_input_schema: B4683. MCPClient list_tools and run_with_session: B4745 and B4744."
   - "The routes /mcp-rest/tools/list and /mcp-rest/tools/call and the helpers around them: B4726, B4727 and B4728."
-  - "Mounting the router into the app, and the auth layer that rejects a missing or invalid key before the handler: the B139 umbrella and B742."
+  - "Mounting the router into the app, and the auth layer that rejects a missing or invalid key before the handler: B8626, over B052's key auth."
 
 pitfalls:
   - The admin check is the only role gate. Routes under /mcp-rest/ skip route_checks (it passes them with "authN/authZ handled by api itself"), so a missing check would let any valid key test connections and make the proxy fetch arbitrary URLs.

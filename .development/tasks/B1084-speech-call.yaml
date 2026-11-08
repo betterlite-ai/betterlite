@@ -45,7 +45,7 @@ scope:
   - crates/betterlite-core/src/api/speech_call/**
   - crates/betterlite-config/fuzz/corpus/config_yaml/speech-call-*
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/speech_call.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/speech_call.py
   - tools/oracle/cases/sdk-http/speech-call/**
