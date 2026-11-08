@@ -4,10 +4,10 @@ env: {}
 compare: {ignore: []}
 call:
   b5972:
-    op: apply_template
-    models:
-      - watsonx/meta-llama/llama-3-instruct-8b
-      - meta-llama/llama-3-instruct
+    op: prompts
+    cases:
+      - {model: watsonx/meta-llama/llama-3-instruct-8b}
+      - {model: meta-llama/llama-3-instruct}
     messages:
       - {role: system, content: be brief}
       - {role: user, content: hi}

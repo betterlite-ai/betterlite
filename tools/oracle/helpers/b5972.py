@@ -150,39 +150,30 @@ def status_of(error: Exception) -> Json:
     return 500
 
 
-def apply_template(input_value: Object) -> Json:
-    models = [expect_text(model) for model in expect_list(input_value["models"])]
-    messages = cast("list[dict[str, Json]]", expect_list(input_value["messages"]))
-    templates = expect_object(input_value.get("templates") or {})
-    prompts: list[Json] = []
-    with patched_world(templates, {}):
-        for model in models:
-            try:
-                prompts.append(APPLY(model=model, messages=messages))
-            except Exception as error:  # noqa: BLE001 - the wire contract carries every helper exception
-                prompts.append({"ok": False, "status": status_of(error)})
-    return {"prompts": prompts}
-
-
-def convert(input_value: Object) -> Json:
+def prompts(input_value: Object) -> Json:
     cases = [expect_object(entry) for entry in expect_list(input_value["cases"])]
     messages = cast("list[dict[str, Json]]", expect_list(input_value["messages"]))
     templates = expect_object(input_value.get("templates") or {})
-    prompts: list[Json] = []
+    found: list[Json] = []
     with patched_world(templates, {}):
         for entry in cases:
+            model = expect_text(entry["model"])
+            provider = entry.get("provider")
             try:
-                prompts.append(
-                    CONVERT(
-                        model=expect_text(entry["model"]),
-                        messages=messages,
-                        provider=expect_text(entry["provider"]),
-                        custom_prompt_dict={},
+                if provider is None:
+                    found.append(APPLY(model=model, messages=messages))
+                else:
+                    found.append(
+                        CONVERT(
+                            model=model,
+                            messages=messages,
+                            provider=expect_text(provider),
+                            custom_prompt_dict={},
+                        )
                     )
-                )
             except Exception as error:  # noqa: BLE001 - the wire contract carries every helper exception
-                prompts.append({"ok": False, "status": status_of(error)})
-    return {"prompts": prompts}
+                found.append({"ok": False, "status": status_of(error)})
+    return {"prompts": found}
 
 
 def map_params(input_value: Object) -> Json:
@@ -329,8 +320,7 @@ def stream_line(input_value: Object) -> Json:
 
 
 OPS: dict[str, Callable[[Object], Json]] = {
-    "apply_template": apply_template,
-    "convert": convert,
+    "prompts": prompts,
     "map_params": map_params,
     "payload": payload,
     "url": url,

@@ -17,7 +17,7 @@ use serde_json::{Value, json};
 use crate::helpers::{Helper, HelperResult};
 
 use self::script::{
-    ConvertCase, MapCase, NOW_SECONDS, PayloadRequest, ReplyRequest, UrlRequest, environment,
+    MapCase, NOW_SECONDS, PayloadRequest, PromptCase, ReplyRequest, UrlRequest, environment,
     factory, runtime,
 };
 
@@ -26,14 +26,8 @@ mod script;
 #[derive(Deserialize)]
 #[serde(tag = "op", rename_all = "snake_case")]
 pub(crate) enum Input {
-    ApplyTemplate {
-        models: Vec<String>,
-        messages: Vec<Message>,
-        #[serde(default)]
-        templates: BTreeMap<String, String>,
-    },
-    Convert {
-        cases: Vec<ConvertCase>,
+    Prompts {
+        cases: Vec<PromptCase>,
         messages: Vec<Message>,
         #[serde(default)]
         templates: BTreeMap<String, String>,
@@ -69,16 +63,11 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::ApplyTemplate {
-                models,
-                messages,
-                templates,
-            } => apply(models, messages, templates),
-            Input::Convert {
+            Input::Prompts {
                 cases,
                 messages,
                 templates,
-            } => convert(cases, messages, templates),
+            } => prompts(cases, messages, templates),
             Input::MapParams { cases, probe } => Ok(map_params(cases, probe)),
             Input::Payload {
                 requests,
@@ -96,30 +85,8 @@ impl Helper for Op {
     }
 }
 
-fn apply(
-    models: &[String],
-    messages: &[Message],
-    templates: &BTreeMap<String, String>,
-) -> HelperResult {
-    let factory = factory(templates);
-    let runtime = runtime()?;
-    let now = DateTime::from_timestamp(NOW_SECONDS, 0).unwrap_or_default();
-    let prompts: Vec<Value> = models
-        .iter()
-        .map(|model| {
-            runtime
-                .block_on(apply_prompt_template(&factory, model, messages, now))
-                .map_or_else(
-                    |_error| json!({"ok": false, "status": 500_u16}),
-                    |prompt| prompt.map_or(Value::Null, Value::String),
-                )
-        })
-        .collect();
-    Ok(json!({"prompts": prompts}))
-}
-
-fn convert(
-    cases: &[ConvertCase],
+fn prompts(
+    cases: &[PromptCase],
     messages: &[Message],
     templates: &BTreeMap<String, String>,
 ) -> HelperResult {
@@ -128,19 +95,23 @@ fn convert(
     let now = DateTime::from_timestamp(NOW_SECONDS, 0).unwrap_or_default();
     let prompts: Vec<Value> = cases
         .iter()
-        .map(|entry| {
-            runtime
-                .block_on(messages_to_prompt(
-                    &factory,
-                    &entry.model,
-                    messages,
-                    &entry.provider,
-                    now,
-                ))
-                .map_or_else(
-                    |_error| json!({"ok": false, "status": 500_u16}),
-                    |prompt| prompt.map_or(Value::Null, Value::String),
-                )
+        .map(|case| {
+            let prompt = case.provider.as_deref().map_or_else(
+                || runtime.block_on(apply_prompt_template(&factory, &case.model, messages, now)),
+                |provider| {
+                    runtime.block_on(messages_to_prompt(
+                        &factory,
+                        &case.model,
+                        messages,
+                        provider,
+                        now,
+                    ))
+                },
+            );
+            prompt.map_or_else(
+                |_error| json!({"ok": false, "status": 500_u16}),
+                |text| text.map_or(Value::Null, Value::String),
+            )
         })
         .collect();
     Ok(json!({"prompts": prompts}))

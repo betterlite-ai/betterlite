@@ -17,9 +17,10 @@ pub(super) const NOW_SECONDS: i64 = 1_700_000_000;
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct ConvertCase {
+pub(crate) struct PromptCase {
     pub(crate) model: String,
-    pub(crate) provider: String,
+    #[serde(default)]
+    pub(crate) provider: Option<String>,
 }
 
 #[derive(Deserialize)]

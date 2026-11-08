@@ -4,20 +4,20 @@ env: {}
 compare: {ignore: []}
 call:
   b5972:
-    op: apply_template
-    models:
-      - watsonx/granite-chat-13b
-      - watsonx/ibm-mistral-8x7b
-      - watsonx/ibm-mistralai/mixtral
-      - watsonx/granite-chat-openai/gpt-oss-120b
-      - watsonx/meta-llama/llama-3-instruct-8b
-      - watsonx/openai/gpt-oss-120b
-      - watsonx_text/openai/gpt-oss-120b
-      - openai/gpt-oss-120b
-      - watsonx/openai/gpt-oss-broken
-      - watsonx/openai/gpt-oss-missing
-      - unknown-model
-      - ""
+    op: prompts
+    cases:
+      - {model: watsonx/granite-chat-13b}
+      - {model: watsonx/ibm-mistral-8x7b}
+      - {model: watsonx/ibm-mistralai/mixtral}
+      - {model: watsonx/granite-chat-openai/gpt-oss-120b}
+      - {model: watsonx/meta-llama/llama-3-instruct-8b}
+      - {model: watsonx/openai/gpt-oss-120b}
+      - {model: watsonx_text/openai/gpt-oss-120b}
+      - {model: openai/gpt-oss-120b}
+      - {model: watsonx/openai/gpt-oss-broken}
+      - {model: watsonx/openai/gpt-oss-missing}
+      - {model: unknown-model}
+      - {model: ""}
     messages:
       - {role: user, content: hi}
     templates:
