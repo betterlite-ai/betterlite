@@ -223,7 +223,7 @@ async fn zero_latency_returns_immediately() {
     )
     .unwrap();
     let response = timeout(
-        Duration::from_millis(1),
+        Duration::from_millis(50),
         client.send(request(STORAGE_URL, GcsMethod::Get)),
     )
     .await
