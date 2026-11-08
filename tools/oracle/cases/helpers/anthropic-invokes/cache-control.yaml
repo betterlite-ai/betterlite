@@ -1,0 +1,18 @@
+kind: helper
+name: anthropic-invokes-cache-control
+call:
+  anthropic_invokes:
+    function: add_cache_control_to_content
+    element:
+      type: text
+      text: keep me
+      cache_control:
+        type: ephemeral
+    original:
+      cache_control:
+        type: ephemeral
+        ttl: 1h
+      extra: ignored
+env: {}
+compare:
+  ignore: []
