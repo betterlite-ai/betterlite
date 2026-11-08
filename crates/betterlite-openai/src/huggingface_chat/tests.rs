@@ -409,9 +409,11 @@ struct Call {
     query: Vec<(String, String)>,
 }
 
+#[derive(Clone)]
 enum Reply {
     Response(HubResponse),
     Failure,
+    EchoModel,
 }
 
 struct ScriptedHub {
@@ -453,9 +455,17 @@ impl HubGet for ScriptedHub {
             .pop_front();
         match reply {
             Some(Reply::Response(response)) => Ok(response),
+            Some(Reply::EchoModel) => Ok(response(200, &echoed_mapping(url))),
             Some(Reply::Failure) | None => Err(TransportError::Closed),
         }
     }
+}
+
+fn echoed_mapping(url: &str) -> String {
+    let model = url
+        .trim_start_matches("https://huggingface.co/api/models/")
+        .to_owned();
+    mapping_body("novita", "live", &model)
 }
 
 fn response(status_code: u16, body: &str) -> HubResponse {
@@ -602,32 +612,9 @@ fn mapping_cache_keeps_failures_out() {
     assert_eq!(calls.lock().unwrap().len(), 2);
 }
 
-#[derive(Default)]
-struct ModelHub {
-    calls: Arc<Mutex<Vec<String>>>,
-}
-
-impl HubGet for ModelHub {
-    fn get(
-        &self,
-        url: &str,
-        _headers: &Headers,
-        _query: &[(&str, &str)],
-    ) -> Result<HubResponse, TransportError> {
-        let model = url
-            .trim_start_matches("https://huggingface.co/api/models/")
-            .to_owned();
-        self.calls
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .push(model.clone());
-        Ok(response(200, &mapping_body("novita", "live", &model)))
-    }
-}
-
 #[test]
 fn mapping_cache_evicts_the_least_recently_used_entry() {
-    let hub = ModelHub::default();
+    let hub = ScriptedHub::with((0_u32..200_u32).map(|_| Reply::EchoModel).collect());
     let calls = Arc::clone(&hub.calls);
     let cache = ProviderMappingCache::new(None, hub);
     (0_u32..128_u32).for_each(|index| drop(cache.mapping(&format!("org/m{index}")).unwrap()));
