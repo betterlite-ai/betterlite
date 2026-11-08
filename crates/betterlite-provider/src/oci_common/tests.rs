@@ -109,8 +109,7 @@ fn deepest_value(mut current: &Json) -> &Json {
     while let Some(inner) = current
         .as_object()
         .and_then(|object| object.get("properties"))
-        .and_then(Json::as_object)
-        .and_then(|properties| properties.values().next())
+        .filter(|inner| inner.as_object().is_some())
     {
         current = inner;
     }

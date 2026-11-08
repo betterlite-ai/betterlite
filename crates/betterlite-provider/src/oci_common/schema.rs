@@ -16,12 +16,12 @@ pub const OCI_JSON_TO_PYTHON_TYPES: [(&str, &str); 7] = [
 
 #[must_use]
 pub fn resolve_oci_schema_refs(schema: &Json) -> Json {
-    let definitions = schema
+    let defs = schema
         .as_object()
         .and_then(|object| object.get("$defs"))
         .and_then(Json::as_object);
     let mut resolving = BTreeSet::new();
-    let mut resolved = resolve_refs(schema, definitions, &mut resolving, 0);
+    let mut resolved = resolve_refs(schema, defs, &mut resolving, 0);
     if let Json::Object(fields) = &mut resolved {
         fields.shift_remove("$defs");
     }
@@ -30,7 +30,7 @@ pub fn resolve_oci_schema_refs(schema: &Json) -> Json {
 
 fn resolve_refs(
     value: &Json,
-    definitions: Option<&Object>,
+    defs: Option<&Object>,
     resolving: &mut BTreeSet<String>,
     depth: usize,
 ) -> Json {
@@ -40,13 +40,14 @@ fn resolve_refs(
             Json::Text("object".to_owned()),
         )]));
     }
+    let next = depth.saturating_add(1);
     let fields = match value {
         Json::Object(fields) => fields,
         Json::List(items) => {
             return Json::List(
                 items
                     .iter()
-                    .map(|item| resolve_refs(item, definitions, resolving, depth.saturating_add(1)))
+                    .map(|item| resolve_refs(item, defs, resolving, next))
                     .collect(),
             );
         }
@@ -55,19 +56,21 @@ fn resolve_refs(
     match fields.get("$ref") {
         None | Some(Json::Null) => {}
         Some(Json::Text(reference)) if reference.starts_with("#/$defs/") => {
-            return resolve_reference(value, reference, definitions, resolving, depth);
+            return resolve_reference(value, reference, defs, resolving, depth).unwrap_or_else(
+                || {
+                    Json::Object(Object::from([(
+                        "type".to_owned(),
+                        Json::Text("object".to_owned()),
+                    )]))
+                },
+            );
         }
         Some(_) => return value.clone(),
     }
     Json::Object(
         fields
             .iter()
-            .map(|(key, field)| {
-                (
-                    key.clone(),
-                    resolve_refs(field, definitions, resolving, depth.saturating_add(1)),
-                )
-            })
+            .map(|(key, field)| (key.clone(), resolve_refs(field, defs, resolving, next)))
             .collect(),
     )
 }
@@ -75,23 +78,18 @@ fn resolve_refs(
 fn resolve_reference(
     value: &Json,
     reference: &str,
-    definitions: Option<&Object>,
+    defs: Option<&Object>,
     resolving: &mut BTreeSet<String>,
     depth: usize,
-) -> Json {
+) -> Option<Json> {
     let key = reference.rsplit('/').next().unwrap_or_default().to_owned();
     if !resolving.insert(key.clone()) {
-        return Json::Object(Object::from([(
-            "type".to_owned(),
-            Json::Text("object".to_owned()),
-        )]));
+        return None;
     }
-    let target = definitions
-        .and_then(|table| table.get(&key))
-        .unwrap_or(value);
-    let resolved = resolve_refs(target, definitions, resolving, depth.saturating_add(1));
+    let target = defs.and_then(|table| table.get(&key)).unwrap_or(value);
+    let resolved = resolve_refs(target, defs, resolving, depth.saturating_add(1));
     resolving.remove(&key);
-    resolved
+    Some(resolved)
 }
 
 #[must_use]
