@@ -1,0 +1,11 @@
+kind: helper
+name: gemini-tool-results-corpus-missing-name
+call:
+  gemini_tool_results:
+    message:
+      role: tool
+      tool_call_id: call_x
+      content: oops
+env: {}
+compare:
+  ignore: []

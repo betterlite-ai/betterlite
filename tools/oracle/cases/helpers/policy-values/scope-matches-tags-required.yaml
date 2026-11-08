@@ -1,0 +1,9 @@
+kind: helper
+name: scope-matches-tags-required
+call:
+  b3240:
+    function: scope_matches
+    scope: {tags: ["health-*"]}
+    context: {model: gpt-4}
+env: {}
+compare: {ignore: []}

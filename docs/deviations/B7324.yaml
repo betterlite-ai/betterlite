@@ -1,0 +1,29 @@
+task: B7324
+deviations:
+  - what: The router listing, the SSE data generator, the base request pipeline and the proxy exception mapping are traits (DeploymentLookup, AsyncDataGenerator, LlmRequestProcessor, ExceptionMapper), and the passthrough route state (proxy_logging_obj, general_settings, proxy_config, the user_* values) sits behind them.
+    why: LiteLLM reads these from proxy_server globals and imports them inside the functions; betterlite wires dependencies through constructors. What a client sees is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3074-L3133
+  - what: A late streaming response is relayed by dropping its stream, with no separate close call.
+    why: Python must aclose the upstream generator by hand; in Rust dropping the stream closes the upstream connection.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1170-L1186
+  - what: The keepalive wrapper polls the upstream future inside the response body instead of running it in a task, so a vanished client cancels it by dropping the body.
+    why: rules.yaml async-hygiene forbids detached tasks; the visible behavior (ping, replay, cancel on disconnect) is the same.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1239-L1288
+  - what: The passthrough processor returns the exception mapper's result for a port failure; LiteLLM's callers do that mapping in their own except clause.
+    why: Every caller does the same mapping, so it lives in one place and the route tasks only forward the result.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L1048-L1054
+  - what: An interval that Duration cannot hold counts as no interval.
+    why: Python would raise OverflowError inside asyncio; the response stays unwrapped instead.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/sse_keepalive.py#L22-L31
+  - what: The late-failure hook is an Arc handle instead of a borrowed reference, so the response body can own it after open_sse_before_first_byte returns.
+    why: The body owns the pending upstream future and must outlive the call; a borrowed hook cannot be carried into a 'static response body.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L1189-L1218
+  - what: A boolean keepalive_seconds is treated as no value, where Python's isinstance(value, int) accepts True as 1.
+    why: LiteLLM's declared type is float | str | None, and a JSON true is not a number; the task text names a bool as no value and docs/compatibility.md keeps Python's duck typing out.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/sse_keepalive.py#L204-L209
+  - what: The SSE error object's keys serialize in BTreeMap order instead of LiteLLM's insertion order message, type, param, code.
+    why: docs/compatibility.md says standard JSON is the output and key order is not part of the contract.
+    link: ""
+  - what: A code fallback that does not fit in u16 counts as no code and the status becomes 500, where LiteLLM would carry the larger int as the status.
+    why: betterlite's SseFailure carries the status as u16, the only range any HTTP response can use; a larger value cannot reach a client either way.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/openai_error_payload.py#L29-L36

@@ -79,7 +79,7 @@ out_of_scope:
   - "Every other function in proxy/utils.py: B124 and the tasks split from it."
   - "The ProxyUrls port, the agent card url and the request base URL taken from the Host header: B4785."
   - "normalize_proxy_base_url and get_request_base_url, the stricter PROXY_BASE_URL reader for MCP and forwarded headers: B4654."
-  - "Implementing ProxyUrls for a request and composing it into the app: the wave 17 proxy URL wiring part."
+  - "Implementing ProxyUrls for a request and composing it into the app: B8675 (impl ProxyUrls for CustomUrls; the agents mount part passes the value)."
 
 pitfalls:
   - join_paths only skips the append when the base ends with a slash plus the whole route, so a route "v1" is not appended to a base ending in "/v1" but is appended to one ending in "/xv1".

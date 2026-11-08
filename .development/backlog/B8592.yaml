@@ -2,7 +2,7 @@ id: B8592
 milestone: M8 platform
 title: MCP path routes for /mcp, /mcp/proxy, toolsets and named servers
 status: todo
-depends_on: [B4731, B4669, B733, B743, B6592]
+depends_on: [B4731, B4669, B733, B743, B6592, B8727]
 file: tasks/B8592-mcp-path-routes.yaml
 covers: []
 parent: B124

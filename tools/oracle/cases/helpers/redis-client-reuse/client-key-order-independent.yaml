@@ -1,0 +1,17 @@
+kind: helper
+name: redis-client-reuse-client-key-order-independent
+call:
+  b4325:
+    function: client_key_same
+    left:
+      host: cache.internal
+      port: 6379
+      decode_responses: true
+      retry_on_timeout: true
+    right:
+      host: cache.internal
+      port: 6379
+      retry_on_timeout: true
+      decode_responses: true
+env: {}
+compare: {ignore: []}

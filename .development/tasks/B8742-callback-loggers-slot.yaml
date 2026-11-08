@@ -1,0 +1,95 @@
+id: B8742
+title: Callback loggers ServerState slot and the server name resolver
+description: >-
+  The server needs one place that turns a callback name into a logger, at startup for litellm_settings lists and per
+  request for key and team callbacks. Two builders exist for that: B8655's `CallbackLoggers` holds the arms that need
+  server values (prometheus, datadog, the newrelic team logger, litellm_agent, generic_api), and B8741's
+  `LoggerCatalog` holds every other name. LiteLLM has one function for all of them, `_init_custom_logger_compatible_class`
+  (litellm_logging.py L4502-L5190), and it runs the generic_api check first (callback_utils.py L176-L181). This task
+  joins the two behind B8740's `LoggerResolver` in a B1100 ServerState slot.
+
+
+  Code goes in crates/betterlite-server/src/state/callback_loggers.rs and state/callback_loggers/ (tests.rs). B1100
+  declares the module and the ServerState field; this file replaces the stub Slot.
+
+
+  `Slot::new(config: &Config, shared: &Shared)` builds `server: CallbackLoggers::new(config, shared)` (B8655) and
+  `catalog: Arc<LoggerCatalog>` from B8741's `LoggerCatalog::new(CatalogInputs { .. })`, filled from the config
+  (an Arc of it), `shared.http`, the process environment lookup the config loader uses, `config.sections.callback_settings.callback_settings`, and the
+  same TaskTracker and shutdown signal B8655 uses for its flush timers. Both are built once per process.
+
+
+  The slot implements `LoggerResolver`. resolve(name, params): first ask `self.server.resolve(name, params)`. A
+  `ResolvedLogger` answer becomes `Arc<dyn CallbackLogger>`: Prometheus, Datadog, NewRelicMetrics and GenericApi carry
+  types that implement the trait (B8561, B3933, B3944, B8252). LitellmAgent becomes a `HookLogger` defined here, which
+  holds the name litellm_agent and keeps every trait default, since LiteLLM's LiteLLMAgentModelResolver overrides no
+  logging event; its prompt role stays with B8655's PromptLoggerFactory. When the server gives None for a name it has
+  an arm for (newrelic without a team key, or a generic_api entry with missing endpoint or headers), fall through to
+  `self.catalog.resolve(name)` only for newrelic, whose global trace logger the catalog builds (B8746); for the other
+  server names return Ok(None), as LiteLLM's arm returns None. Every remaining name goes to the catalog. Errors keep
+  naming the callback. Also add `pub fn existing(&self, name: &str) -> Option<Arc<dyn CallbackLogger>>` over the
+  catalog, and `pub fn resolver(&self) -> Arc<dyn LoggerResolver>` that B8399 and B248's callers take. The five proxy
+  hook names (dynamic_rate_limiter, dynamic_rate_limiter_v3, anthropic_cache_control_hook, vector_store_pre_call_hook,
+  compression_interception) resolve to Ok(None) here: their LiteLLM classes override no log event, and hooks.rs below
+  decides whether they start.
+
+
+  Startup. LiteLLM resolves and registers the callbacks before the server takes requests. In
+  crates/betterlite-server/src/app/callbacks.rs add one line to `start(state)` (the file is B8656's; touch nothing
+  else): `state.shared.proxy_logging.init_callbacks(state.callback_loggers.resolver(), hooks::configured(&state)?)`,
+  awaited once before the listener opens. A RegistryError from it stops startup with the message that names the
+  callback. app/callbacks/hooks.rs (the skeleton declares it) holds `pub fn configured(state: &ServerState) ->
+  Result<Vec<(String, Arc<dyn ProxyCallback>)>, RegistryError>`: for each name of litellm_settings.callbacks that is
+  one of the five hook names, in list order, call `hook_for(name, state)`. Here every hook_for arm returns
+  UnavailableAdapter naming the hook, so a configured hook name stops startup until B8747 or B8749 fills its arm; any
+  other name is skipped because the resolver handles it.
+
+  Tests in state/callback_loggers/tests.rs build the slot with Slot::new from a Config parsed from YAML and the
+  Shared test value B8610's tests build (read them first). Cases: prometheus resolves to the same Arc twice;
+  litellm_agent gives a logger named litellm_agent whose events do nothing; pagerduty comes from the catalog; newrelic
+  without a team key reaches the catalog (UnavailableAdapter until B8746 fills it); generic_api with missing headers
+  gives Ok(None); langsmith gives UnavailableAdapter naming langsmith; an unknown name gives UnavailableAdapter. A
+  hooks.rs test: a config with dynamic_rate_limiter in callbacks makes configured() fail naming it, and a config
+  without hook names gives an empty list.
+scope:
+  paths:
+    - crates/betterlite-server/src/state/callback_loggers.rs
+    - crates/betterlite-server/src/state/callback_loggers/**
+    - crates/betterlite-server/src/app/callbacks.rs
+    - crates/betterlite-server/src/app/callbacks/hooks.rs
+    - crates/betterlite-server/src/app/callbacks/hooks/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/callback_utils.py#L176-L181
+    why: The generic_api conversion runs before the known name check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4582-L4600
+    why: The litellm_agent and prometheus arms, both one instance per process.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L5161-L5190
+    why: The newrelic arm goes on to the global logger when no team key is set; every other miss returns None.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L813-L858
+    why: Per request resolution calls the same builder with the trusted team variables.
+dod:
+  - text: The slot builds CallbackLoggers and LoggerCatalog once and resolves server names first, the rest through the catalog, keeping the error that names the callback.
+    proof: [slot-tests]
+  - text: litellm_agent resolves to a do nothing logger, newrelic without a team key reaches the catalog, and other server names that give None stay None.
+    proof: [slot-tests]
+  - text: app::callbacks::start calls init_callbacks once with the slot's resolver and the configured hooks, and a configured hook name with no built arm stops startup naming it.
+    proof: [slot-tests]
+checks:
+  optional: []
+  commands:
+    - id: slot-tests
+      why: the slot does not join the two builders or loses the callback name in an error
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^state::callback_loggers::/) | test(/^app::callbacks::hooks::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The server arms and their caches: B8655. The catalog and its modules: B8741 and the logger tasks."
+  - "Registering resolved loggers inside ProxyLogging: B8399's init_callbacks. Per request selection: B248. The hook arms of hooks.rs: B8747 (anthropic_cache_control_hook) and B8749 (the dynamic rate limiters)."
+pitfalls:
+  - Ask the server arms before the catalog for every name, because a callback_settings entry named after a catalog name with callback_type generic_api is a generic_api logger.
+  - A ResolvedLogger variant is an Arc of a concrete type; coerce it with `as Arc<dyn CallbackLogger>` and keep the same Arc so the server's own caches stay shared.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

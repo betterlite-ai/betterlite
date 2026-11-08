@@ -1,0 +1,14 @@
+id: B8723
+milestone: M9 agents and mcp
+title: MCP gateway session registry, caps and admin termination
+status: todo
+depends_on: [B8721, B8720, B8200, B4725, B2314]
+file: tasks/B8723-mcp-session-registry.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/server.py"
+parent: B136
+split_from: B136
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

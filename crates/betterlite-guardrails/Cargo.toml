@@ -9,6 +9,7 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
+aws-lc-rs = "1.19.0"
 base64 = "0.23.1"
 betterlite-compression = { path = "../betterlite-compression" }
 betterlite-config = { path = "../betterlite-config" }
@@ -22,13 +23,17 @@ futures-util = { version = "0.3.34", default-features = false, features = ["allo
 hex.workspace = true
 hyper = { version = "1.12.0", features = ["client", "http1"] }
 indexmap = { version = "2.14.2", features = ["serde"] }
+jsonwebtoken = { version = "11.1.0", default-features = false, features = ["aws_lc_rs"] }
 lru = "0.18.4"
 mime_guess = { version = "2.0.5", default-features = false }
+pem = "4.0.0"
+pkcs8 = { version = "0.11.0", default-features = false }
 regex.workspace = true
-reqwest = { version = "0.13.5", default-features = false, features = ["json", "multipart", "query"] }
+reqwest = { version = "0.13.5", default-features = false, features = ["form", "json", "multipart", "query"] }
 rust_decimal.workspace = true
 secrecy = { workspace = true, features = ["serde"] }
 serde.workspace = true
+serde-saphyr.workspace = true
 serde_json = { version = "1.0.154", features = ["raw_value"] }
 serde_with = { version = "3.24.0", default-features = false, features = ["macros"] }
 sha2.workspace = true
@@ -39,6 +44,7 @@ tracing.workspace = true
 tree-sitter = "0.27.1"
 tree-sitter-python = "0.25.0"
 ulid = "3.0.0"
+unicode-general-category = "1.1.0"
 unicode-normalization = "0.1.26"
 url = "2.5.8"
 uuid.workspace = true
@@ -48,6 +54,7 @@ axum.workspace = true
 rstest = "=0.27.0"
 rustls = { workspace = true, features = ["std", "tls12"] }
 temp-env = "0.3.6"
+tempfile = "3.27.0"
 tokio = { workspace = true, features = ["rt", "macros"] }
 tokio-rustls = { version = "0.26.6", default-features = false, features = ["aws_lc_rs", "tls12"] }
 tracing-subscriber.workspace = true

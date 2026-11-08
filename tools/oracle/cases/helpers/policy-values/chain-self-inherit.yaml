@@ -1,0 +1,10 @@
+kind: helper
+name: chain-self-inherit
+call:
+  b3240:
+    function: inheritance_chain
+    policy_name: a
+    policies:
+      a: {inherit: a}
+env: {}
+compare: {ignore: []}

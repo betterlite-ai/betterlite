@@ -1,0 +1,16 @@
+kind: helper
+name: select-name-not-found
+call:
+  b4114:
+    operation: select_tool
+    search_tool_name: missing
+    search_tools:
+      - search_tool_name: first
+        litellm_params:
+          search_provider: tavily
+          api_key: key-first
+      - search_tool_name: second
+        litellm_params:
+          search_provider: perplexity
+env: {}
+compare: {ignore: []}

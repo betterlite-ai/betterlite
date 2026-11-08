@@ -20,7 +20,7 @@ scope:
   - crates/betterlite-core/src/api/assistant_messages.rs
   - crates/betterlite-core/src/api/assistant_messages/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/assistant_messages.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/assistant_messages.py
   - tools/oracle/src/helpers/core_ops/assistant_message_options.rs

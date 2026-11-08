@@ -1,0 +1,15 @@
+kind: helper
+name: select-no-name-first
+call:
+  b4114:
+    operation: select_tool
+    search_tool_name: null
+    search_tools:
+      - search_tool_name: first
+        litellm_params:
+          search_provider: tavily
+      - search_tool_name: second
+        litellm_params:
+          search_provider: perplexity
+env: {}
+compare: {ignore: []}

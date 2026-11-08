@@ -37,7 +37,7 @@ scope:
   - Cargo.lock
   - tools/oracle/Cargo.toml
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/compression_interception.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/compression_interception.py
   - tools/oracle/cases/sdk-http/compression-interception/**

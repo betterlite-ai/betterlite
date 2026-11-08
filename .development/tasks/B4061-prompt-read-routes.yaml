@@ -6,7 +6,6 @@ scope:
   paths:
     - crates/betterlite-server/src/routes/prompts/read.rs
     - crates/betterlite-server/src/routes/prompts/read/tests.rs
-    - tools/oracle/cases/prompts/read/**
     - tools/oracle/helpers/b4061.py
     - tools/oracle/helpers/b4061/**
     - tools/oracle/src/helpers/server/b4061.rs
@@ -35,7 +34,7 @@ dod:
     proof: [version-environment-logic, version-suffix-selection, versions-no-database]
   - text: "Raw prompt template resolves from dotprompt_content via B4051 or from DotpromptManager.prompt_manager via B4052."
     proof: [template-dotprompt-resolve, template-manager-resolve]
-  - text: "Every route verifies through the booted proxy, including both /info aliases, status/code/type on error, and no helper adapter should invoke these handlers."
+  - text: "The handlers are tested with tower's oneshot over the module's own Router and fake ports; B8672 runs the HTTP oracle cases through the booted proxy."
     proof: [oracle-cases-prompts-read]
 checks:
   optional: []
@@ -74,31 +73,15 @@ checks:
       why: "templates do not resolve from DotpromptManager.prompt_manager"
       run: grep -q "prompt_manager\|DotpromptManager" crates/betterlite-server/src/routes/prompts/read.rs
     - id: oracle-cases-prompts-read
-      why: "the oracle cases for these routes fail, are missing, or booted-proxy tests fail"
-      run: test -d tools/oracle/cases/prompts/read && test "$(find tools/oracle/cases/prompts/read -name '*.yaml' | wc -l)" -ge 4 && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(/^helpers::server::b4061::(.*::)?oracle::prompts::read::/)'
+      why: the handlers are not tested with tower's oneshot over the module's own Router and fake ports
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^routes::prompts::read::tests::oneshot_/)'
 pitfalls:
   - "List allows both `.v` and `_v` version suffixes in base-ID stripping without validating the suffix itself; the route shows base IDs without suffix to users regardless."
   - "Metadata-scoped prompts have an exact-ID allowlist check before returning 400, but the 400 for missing info happens after admin-view is confirmed, not first; order matters for error priority."
   - "Version history is admin-only and queries the DB directly; there is no fallback to in-memory prompts for non-admins, unlike list which shows both."
   - "The _get_prompt_template helper swallows all exceptions and returns None silently instead of propagating errors, preserving LiteLLM's warn-and-drop behavior."
   - "Template content comes from either dotprompt_content (if present) or the registered manager; these are mutually exclusive lookups, not fallbacks."
-oracle_cases:
-  - tools/oracle/cases/prompts/read/list_prompts_admin.yaml
-  - tools/oracle/cases/prompts/read/list_prompts_metadata_scope.yaml
-  - tools/oracle/cases/prompts/read/list_prompts_no_access.yaml
-  - tools/oracle/cases/prompts/read/versions_admin.yaml
-  - tools/oracle/cases/prompts/read/versions_not_admin.yaml
-  - tools/oracle/cases/prompts/read/versions_not_found.yaml
-  - tools/oracle/cases/prompts/read/versions_no_database.yaml
-  - tools/oracle/cases/prompts/read/info_admin.yaml
-  - tools/oracle/cases/prompts/read/info_with_dotprompt_content.yaml
-  - tools/oracle/cases/prompts/read/info_with_manager_template.yaml
-  - tools/oracle/cases/prompts/read/info_metadata_allowlist_fails.yaml
-  - tools/oracle/cases/prompts/read/info_prompt_not_found.yaml
-  - tools/oracle/cases/prompts/read/info_not_admin.yaml
-  - tools/oracle/cases/prompts/read/info_environment_filter.yaml
-  - tools/oracle/cases/prompts/read/info_version_suffix.yaml
-  - tools/oracle/cases/prompts/read/info_alias_info_endpoint.yaml
+oracle_cases: []
 deviations:
   - what: "List route returns base prompt IDs (stripped of .v and _v suffixes) regardless of internal versioned storage."
     why: "LiteLLM strips version suffixes for display; betterlite does the same."

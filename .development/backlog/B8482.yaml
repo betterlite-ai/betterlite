@@ -2,7 +2,7 @@ id: B8482
 milestone: M4 keys, spend and management
 title: Compose daily activity routes for every entity and the cache activity route
 status: todo
-depends_on: [B3094, B3095, B3096, B3097, B3098, B3099]
+depends_on: [B3094, B3095, B3096, B3097, B3098, B3099, B8610]
 file: tasks/B8482-daily-activity-router.yaml
 covers:
   - "litellm/proxy/management_endpoints/daily_activity_routes.py"

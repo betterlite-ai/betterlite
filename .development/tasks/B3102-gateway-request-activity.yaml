@@ -49,11 +49,6 @@ scope:
     - tools/oracle/src/helpers/db/b3102.rs
     - tools/oracle/src/helpers/db/b3102/**
     - crates/betterlite-db/src/gateway_requests/**
-    - tools/oracle/cases/gateway_activity/admin-default-range.yaml
-    - tools/oracle/cases/gateway_activity/admin-view-only.yaml
-    - tools/oracle/cases/gateway_activity/custom-date-range.yaml
-    - tools/oracle/cases/gateway_activity/missing-database.yaml
-    - tools/oracle/cases/gateway_activity/non-admin-denied.yaml
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/gateway_requests.py#L1-L52
@@ -121,6 +116,8 @@ dod:
     proof: [endpoint-date-range]
   - text: GET /gateway/daily/activity aggregates by (date, category, route) from LiteLLM_DailyGatewayRequests, folds by date and route, and returns the activity response.
     proof: [endpoint-aggregation]
+  - text: The activity handler answers through tower's oneshot over the module's own Router with fake ports; B8661 mounts GET /gateway/daily/activity and proves it over HTTP.
+    proof: [endpoint-auth]
 checks:
   optional: []
   commands:
@@ -160,12 +157,7 @@ checks:
     - id: endpoint-aggregation
       why: GET /gateway/daily/activity does not aggregate by date and route or returns wrong format.
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^management::gateway_request_activity::.*aggreg/)'
-oracle_cases:
-  - tools/oracle/cases/gateway_activity/admin-default-range.yaml
-  - tools/oracle/cases/gateway_activity/admin-view-only.yaml
-  - tools/oracle/cases/gateway_activity/non-admin-denied.yaml
-  - tools/oracle/cases/gateway_activity/custom-date-range.yaml
-  - tools/oracle/cases/gateway_activity/missing-database.yaml
+oracle_cases: []
 deviations:
   - what: >-
       GatewayRequestSnapshot is a type alias for a trait object (Mapping or HashMap)

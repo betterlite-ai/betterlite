@@ -74,3 +74,10 @@ path = "fuzz_targets/upload_security_content.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "response_schema"
+path = "fuzz_targets/response_schema.rs"
+test = false
+doc = false
+bench = false

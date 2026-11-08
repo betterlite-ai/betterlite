@@ -1,0 +1,28 @@
+{
+  "kind": "helper",
+  "name": "otel-span-payloads-tools-function-wrapper",
+  "call": {
+    "b3844": {
+      "function": "tools",
+      "value": {
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "description": "Weather",
+              "parameters": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "env": {},
+  "compare": {
+    "ignore": []
+  }
+}
