@@ -5,7 +5,9 @@ use std::path::Path;
 
 use crate::checks::{Outcome, Selection, history, render, run, selection};
 use crate::development::Development;
+use crate::facts::Facts;
 use crate::git::git;
+use crate::journal::journal_dir;
 use crate::spec::backlog::Backlog;
 use crate::spec::catalog::Catalog;
 use crate::spec::command::{Command, Turn};
@@ -151,7 +153,110 @@ fn the_local_gate_keeps_lint_checks_and_leaves_tests_to_ci() {
         command("deny", "true"),
         command("mutants", "true"),
     ]);
-    task.checks.commands.push(command("route-tests", "true"));
+    task.checks.commands.extend([
+        command("route-tests", "true"),
+        command("helper-python", "true"),
+    ]);
     let selection = selection::builtins_and(&development, &task, selection::lint).unwrap();
-    assert_eq!(selection.only, ["fmt", "clippy", "deny"]);
+    assert_eq!(selection.only, ["fmt", "clippy", "deny", "helper-python"]);
+}
+
+fn count_runs(root: &Path) -> usize {
+    fs::read_to_string(root.join(".git/fmt-runs"))
+        .unwrap()
+        .lines()
+        .count()
+}
+
+fn counted_fmt() -> (tempfile::TempDir, Development, Task) {
+    let (folder, mut development, task) = fixture();
+    development
+        .catalog
+        .base
+        .commands
+        .push(command("fmt", "echo run >> .git/fmt-runs"));
+    assert!(
+        run(&development, &task, &Selection::default())
+            .unwrap()
+            .passed
+    );
+    (folder, development, task)
+}
+
+#[test]
+fn a_check_that_passed_on_the_same_clean_commit_and_base_is_not_run_again() {
+    let (folder, development, task) = counted_fmt();
+    let again = run(&development, &task, &Selection::default()).unwrap();
+    assert!(again.passed);
+    assert_eq!(count_runs(folder.path()), 1);
+    assert!(
+        again
+            .lines
+            .iter()
+            .any(|line| line.starts_with("PASS fmt: passed on this commit and base in run-"))
+    );
+    let log_dir = journal_dir(folder.path(), &task.id).unwrap().join("gate");
+    let mut facts = Facts::collect(folder.path()).unwrap();
+    assert!(
+        history::passed(&log_dir, &facts)
+            .unwrap()
+            .contains_key("fmt")
+    );
+    facts.base = "another-base".to_owned();
+    assert!(history::passed(&log_dir, &facts).unwrap().is_empty());
+}
+
+#[test]
+fn a_dirty_tree_or_a_new_commit_runs_the_check_again() {
+    let (folder, development, task) = counted_fmt();
+    let root = folder.path();
+    fs::write(root.join("notes.txt"), "draft").unwrap();
+    assert!(
+        run(&development, &task, &Selection::default())
+            .unwrap()
+            .passed
+    );
+    assert_eq!(count_runs(root), 2);
+    fs::remove_file(root.join("notes.txt")).unwrap();
+    git(
+        root,
+        &[
+            "-c",
+            "user.name=test",
+            "-c",
+            "user.email=test@example.com",
+            "commit",
+            "--allow-empty",
+            "-qm",
+            "next",
+        ],
+    )
+    .unwrap();
+    assert!(
+        run(&development, &task, &Selection::default())
+            .unwrap()
+            .passed
+    );
+    assert_eq!(count_runs(root), 3);
+}
+
+#[test]
+fn a_failed_check_runs_again_on_the_same_commit() {
+    let (folder, mut development, task) = fixture();
+    development
+        .catalog
+        .base
+        .commands
+        .push(command("fmt", "echo run >> .git/fmt-runs; false"));
+    assert!(
+        !run(&development, &task, &Selection::default())
+            .unwrap()
+            .passed
+    );
+    assert!(
+        !run(&development, &task, &Selection::default())
+            .unwrap()
+            .passed
+    );
+    assert_eq!(count_runs(folder.path()), 2);
 }

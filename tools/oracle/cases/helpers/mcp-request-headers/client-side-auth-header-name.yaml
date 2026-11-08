@@ -1,0 +1,5 @@
+kind: helper
+name: "client-side-auth-header-name"
+call: {"b4654":{"function":"mcp_auth_header","raw":[["X-Custom-Auth","tok"]],"general_settings":"y-mcp-auth","env_header_name":"X-Custom-Auth"}}
+env: {"LITELLM_MCP_CLIENT_SIDE_AUTH_HEADER_NAME":"X-Custom-Auth"}
+compare: {"ignore":[]}

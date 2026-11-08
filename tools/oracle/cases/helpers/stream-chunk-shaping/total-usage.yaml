@@ -1,0 +1,23 @@
+kind: helper
+name: stream-chunk-shaping-total-usage
+call:
+  b5652:
+    state:
+      model: gpt-4
+      provider: openrouter
+      base_hidden_params: {additional_headers: {}}
+      chunks:
+        - {id: c1, created: 1, usage: {prompt_tokens: 10, completion_tokens: 2, total_tokens: 12, cost: 0.01}}
+        - {id: c2, created: 1, usage: {prompt_tokens: 10, completion_tokens: 5, prompt_tokens_details: {cached_tokens: 3, cache_creation_tokens: 4}}}
+    repeated_chunk_limit: 100
+    usage_cost_providers: [openrouter]
+    steps:
+      - {op: total_usage}
+      - {op: backfill_usage, usage: {prompt_tokens: 10, completion_tokens: 5, prompt_tokens_details: {cached_tokens: 3, cache_write_tokens: 4}}}
+      - {op: backfill_usage, usage: {prompt_tokens: 10, completion_tokens: 5, prompt_tokens_details: {cached_tokens: 3, cache_write_tokens: 5, cache_creation_tokens: 3}}}
+      - {op: backfill_usage, usage: {prompt_tokens: 10, completion_tokens: 5, prompt_tokens_details: {cached_tokens: 3, cache_write_tokens: 0, cache_creation_tokens: 3}}}
+      - op: propagate_cost
+        chunk: {id: c, created: 1, model: gpt-4, choices: [{index: 0, delta: {}}], usage: {prompt_tokens: 1, completion_tokens: 1, cost: 0.5}, hidden_params: {additional_headers: {}}}
+env: {}
+compare:
+  ignore: []
