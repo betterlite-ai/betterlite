@@ -140,10 +140,7 @@ impl Inner {
     }
 
     fn instance_limit_reached(&self, id: &str, max_instances: u32) -> bool {
-        let limit = match usize::try_from(max_instances) {
-            Ok(limit) => limit,
-            Err(_source) => usize::MAX,
-        };
+        let limit = usize::try_from(max_instances).unwrap_or(usize::MAX);
         let running = self
             .runs
             .values()

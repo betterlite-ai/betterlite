@@ -50,14 +50,10 @@ pub async fn stop_in_flight_jobs(
 async fn wait_finished(jobs: Vec<InFlightJob>, limit: Duration) -> Vec<InFlightJob> {
     let deadline = Instant::now().checked_add(limit);
     let mut pending = Vec::new();
-    for job in jobs {
+    for mut job in jobs {
         let remaining = deadline.map_or(limit, |end| end.saturating_duration_since(Instant::now()));
-        let InFlightJob {
-            job_id,
-            mut finished,
-        } = job;
-        if timeout(remaining, finished.changed()).await.is_err() {
-            pending.push(InFlightJob { job_id, finished });
+        if timeout(remaining, job.finished.changed()).await.is_err() {
+            pending.push(job);
         }
     }
     pending

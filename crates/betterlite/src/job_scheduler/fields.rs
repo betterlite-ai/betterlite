@@ -113,13 +113,9 @@ fn split_name(lowered: &str) -> (&str, Option<&str>) {
 }
 
 fn normalize_numeric_term(field: CronField, lowered: &str) -> Result<String, SchedulerError> {
-    let (base, step_text) = match lowered.split_once('/') {
-        Some((base, step)) => (base, Some(step)),
+    let (base, step) = match lowered.split_once('/') {
+        Some((base, text)) => (base, Some(parse_count(field, lowered, text)?)),
         None => (lowered, None),
-    };
-    let step = match step_text {
-        Some(text) => Some(parse_count(field, lowered, text)?),
-        None => None,
     };
     if base == "*" {
         if step == Some(0) {
@@ -252,7 +248,7 @@ fn weekday_list(
 ) -> Result<String, SchedulerError> {
     let mut names = Vec::new();
     let mut value = start;
-    // check_star_step and check_numeric have already rejected a zero step.
+    // The star branch and check_numeric reject a zero step before this walk.
     while value <= end {
         names.push(weekday_name(value, expression)?);
         value = value.saturating_add(step);
@@ -270,17 +266,14 @@ fn weekday_name(value: u64, expression: &str) -> Result<&'static str, SchedulerE
 }
 
 fn invalid_name(field: CronField, name: &str) -> SchedulerError {
-    SchedulerError::CronName {
-        field: name_label(field),
-        name: name.to_owned(),
-    }
-}
-
-fn name_label(field: CronField) -> &'static str {
-    if field == CronField::Month {
+    let label = if field == CronField::Month {
         "month"
     } else {
         "weekday"
+    };
+    SchedulerError::CronName {
+        field: label,
+        name: name.to_owned(),
     }
 }
 

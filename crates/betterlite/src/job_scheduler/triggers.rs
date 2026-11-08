@@ -90,22 +90,19 @@ impl Trigger for CronTrigger {
             }
             None => now,
         };
-        let rounded = ceil_to_second(start)?;
+        // APScheduler rounds the search start up to a whole second, which croner's search then includes.
+        let nanos = start.timestamp_subsec_nanos();
+        let rounded = if nanos == 0 {
+            start
+        } else {
+            let rest = 1_000_000_000_u32.checked_sub(nanos)?;
+            start.checked_add_signed(TimeDelta::nanoseconds(i64::from(rest)))?
+        };
         match self.zone {
             CronZone::Utc => search(&self.cron, &rounded),
             CronZone::Local => local_search(&self.cron, rounded),
         }
     }
-}
-
-// APScheduler rounds the search start up to a whole second, which croner's search then includes.
-fn ceil_to_second(time: DateTime<Utc>) -> Option<DateTime<Utc>> {
-    let nanos = time.timestamp_subsec_nanos();
-    if nanos == 0 {
-        return Some(time);
-    }
-    let rest = 1_000_000_000_u32.checked_sub(nanos)?;
-    time.checked_add_signed(TimeDelta::nanoseconds(i64::from(rest)))
 }
 
 fn search<Tz>(cron: &Cron, start: &DateTime<Tz>) -> Option<DateTime<Tz>>

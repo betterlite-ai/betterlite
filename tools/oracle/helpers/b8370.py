@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Protocol, TypeAlias, cast
 
@@ -23,10 +24,6 @@ class CronTriggerFactory(Protocol):
     def from_crontab(cls, expr: str, timezone: str) -> Trigger: ...
 
 
-class IntervalTriggerFactory(Protocol):
-    def __call__(self, *, seconds: int, start_date: datetime, timezone: str) -> Trigger: ...
-
-
 class _IntervalJob:
     id: str
     trigger: Trigger
@@ -34,12 +31,6 @@ class _IntervalJob:
     def __init__(self, trigger: Trigger) -> None:
         self.id = "b8370_interval"
         self.trigger = trigger
-
-
-def object_value(value: Json, name: str) -> dict[str, Json]:
-    if not isinstance(value, dict):
-        raise ValueError(f"{name} must be an object")
-    return value
 
 
 def string_value(value: Json, name: str) -> str:
@@ -54,18 +45,13 @@ def integer_value(value: Json, name: str) -> int:
     return value
 
 
-def _instant(input_value: dict[str, Json]) -> datetime:
-    text = string_value(input_value.get("start"), "start")
-    return datetime.fromisoformat(text).astimezone(UTC)
-
-
 def _cron_trigger(text: str) -> Trigger:
     factory = cast(CronTriggerFactory, CronTrigger)
     return factory.from_crontab(text, "UTC")
 
 
 def _interval_trigger(seconds: int, start: datetime) -> Trigger:
-    factory = cast(IntervalTriggerFactory, IntervalTrigger)
+    factory = cast(Callable[..., Trigger], IntervalTrigger)
     probe = factory(seconds=seconds, start_date=start, timezone="UTC")
     period = _interval_seconds(_IntervalJob(probe))  # pyright: ignore[reportPrivateUsage]
     if period is None:
@@ -86,12 +72,12 @@ def _fires(trigger: Trigger, start: datetime) -> list[Json]:
     return [cast(Json, moment.isoformat()) for moment in times]
 
 
-def run(input_value: Json) -> Json:
-    request = object_value(input_value, "input")
-    start = _instant(request)
-    cron = request.get("cron")
-    interval = request.get("interval")
-    if cron is not None and interval is not None:
+def run(input_value: dict[str, Json]) -> Json:
+    text = string_value(input_value.get("start"), "start")
+    start = datetime.fromisoformat(text).astimezone(UTC)
+    cron = input_value.get("cron")
+    interval = input_value.get("interval")
+    if (cron is None) == (interval is None):
         raise ValueError("give exactly one of cron or interval")
     if cron is not None:
         try:
@@ -99,7 +85,4 @@ def run(input_value: Json) -> Json:
         except ValueError as error:
             return {"error": str(error)}
         return {"fires": _fires(trigger, start)}
-    if interval is not None:
-        seconds = integer_value(interval, "interval")
-        return {"fires": _fires(_interval_trigger(seconds, start), start)}
-    raise ValueError("give exactly one of cron or interval")
+    return {"fires": _fires(_interval_trigger(integer_value(interval, "interval"), start), start)}
