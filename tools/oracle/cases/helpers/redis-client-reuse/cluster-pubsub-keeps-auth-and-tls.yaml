@@ -1,0 +1,13 @@
+kind: helper
+name: redis-client-reuse-cluster-pubsub-keeps-auth-and-tls
+call:
+  b4325:
+    function: cluster_pubsub_node
+    startup_nodes:
+      - {host: secure.internal, port: 7002}
+    username: app
+    password: secret
+    ssl: true
+    socket_timeout: 2.5
+env: {}
+compare: {ignore: []}

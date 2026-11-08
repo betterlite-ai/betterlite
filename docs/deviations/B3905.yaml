@@ -1,0 +1,21 @@
+task: B3905
+deviations:
+  - what: >-
+      str_to_bool, get_logging_id and the preset cache key are resolved inside betterlite instead of by
+      litellm.secret_managers.main.str_to_bool, litellm.utils.get_logging_id and
+      litellm.cache._get_preset_cache_key_from_kwargs. str_to_bool's two-word recognition set lives in
+      steering.rs, get_logging_id's "time-<HH-MM-SS-microseconds>_<id>" format in ids.rs, and the preset
+      cache key arrives as a parameter the caller computes from the cache.
+    why: >-
+      Those leaves belong to tasks that are not built yet (dynamic validation, utils, cache). The behavior
+      is the pinned LiteLLM's, so a working setup sees the same steering flags and generation ids; the
+      cache lookup stays with the cache owner, which is the only place that can answer it.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L162-L163
+  - what: >-
+      The masking callable takes a JSON value and returns Result<Json, E>; LiteLLM's callable takes and
+      returns arbitrary Python objects and signals failure by raising. The callable is supplied by the
+      logger's owner, which decides how a failure is represented.
+    why: >-
+      betterlite has no Python objects at this layer. The logged behavior is kept: a failure at any node
+      is logged with LiteLLM's warning text and the original node is returned, so logging never stops.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/langfuse/langfuse.py#L1032-L1061

@@ -1,0 +1,13 @@
+kind: helper
+name: attachment-non-global-copies-lists
+call:
+  b3240:
+    function: attachment_scope
+    attachment:
+      policy: healthcare
+      teams: [healthcare-team]
+      keys: ["dev-key-*"]
+      models: ["gpt-4*"]
+      tags: ["health-*"]
+env: {}
+compare: {ignore: []}
