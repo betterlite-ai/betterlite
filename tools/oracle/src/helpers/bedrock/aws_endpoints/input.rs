@@ -8,42 +8,16 @@ use serde_json::value::RawValue;
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Input {
-    ModelArnRegion {
-        models: Vec<Option<String>>,
-    },
-    LlmRegionName {
-        cases: Vec<LlmRegionCase>,
-    },
-    NonLlmRegionName {
-        cases: Vec<NonLlmRegionCase>,
-    },
-    InvalidRegion {
-        values: Vec<Option<String>>,
-    },
-    ModelIdEncoding {
-        #[serde(default)]
-        model_ids: Vec<String>,
-        #[serde(default)]
-        models: Vec<String>,
-    },
-    BedrockModelId {
-        cases: Vec<BedrockModelIdCase>,
-    },
-    ProviderSelection {
-        models: Vec<String>,
-    },
-    DefaultEndpoint {
-        cases: Vec<DefaultEndpointCase>,
-    },
-    RuntimeEndpoint {
-        cases: Vec<RuntimeEndpointCase>,
-    },
-    StsEndpointRegion {
-        endpoints: Vec<Option<String>>,
-    },
-    StsKwargs {
-        cases: Vec<StsKwargsCase>,
-    },
+    ModelArnRegion { models: Vec<Option<String>> },
+    LlmRegionName { cases: Vec<LlmRegionCase> },
+    NonLlmRegionName { cases: Vec<NonLlmRegionCase> },
+    InvalidRegion { values: Vec<Option<String>> },
+    BedrockModelId { cases: Vec<BedrockModelIdCase> },
+    ProviderSelection { models: Vec<String> },
+    DefaultEndpoint { cases: Vec<DefaultEndpointCase> },
+    RuntimeEndpoint { cases: Vec<RuntimeEndpointCase> },
+    StsEndpointRegion { endpoints: Vec<Option<String>> },
+    StsKwargs { cases: Vec<StsKwargsCase> },
 }
 
 #[derive(Debug, Deserialize)]

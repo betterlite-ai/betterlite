@@ -18,7 +18,6 @@ use betterlite_bedrock::aws_settings::tls::resolve_tls;
 use betterlite_config::loader::ConfigLoader;
 use betterlite_config::tls::{Verification, VerifySetting};
 use betterlite_config::types::Config;
-use serde_json::value::RawValue;
 use serde_json::{Value, json};
 
 use super::input::{
@@ -173,29 +172,6 @@ fn invalid_region(values: &[Option<String>]) -> Value {
     json!({"valid": valid})
 }
 
-fn encode_override(model_id: &str) -> Option<String> {
-    let raw = serde_json::to_string(model_id)
-        .ok()
-        .and_then(|text| RawValue::from_string(text).ok())?;
-    let mut optional_params = BTreeMap::from([("model_id".to_owned(), raw)]);
-    bedrock_model_id(&mut optional_params, None, "ignored").ok()
-}
-
-fn model_id_encoding(model_ids: &[String], models: &[String]) -> Value {
-    let encoded: Vec<Option<String>> = model_ids
-        .iter()
-        .map(|model_id| encode_override(model_id))
-        .collect();
-    let model_encoded: Vec<Option<String>> = models
-        .iter()
-        .map(|model| {
-            let mut optional_params = BTreeMap::new();
-            bedrock_model_id(&mut optional_params, None, model).ok()
-        })
-        .collect();
-    json!({"encoded": encoded, "model_encoded": model_encoded})
-}
-
 fn bedrock_model_ids(cases: &[BedrockModelIdCase]) -> HelperResult {
     let mut results = Vec::with_capacity(cases.len());
     for case in cases {
@@ -305,7 +281,6 @@ pub(super) fn run(input: &Input) -> HelperResult {
         Input::LlmRegionName { cases } => llm_region_names(cases),
         Input::NonLlmRegionName { cases } => non_llm_region_names(cases),
         Input::InvalidRegion { values } => Ok(invalid_region(values)),
-        Input::ModelIdEncoding { model_ids, models } => Ok(model_id_encoding(model_ids, models)),
         Input::BedrockModelId { cases } => bedrock_model_ids(cases),
         Input::ProviderSelection { models } => Ok(provider_selection(models)),
         Input::DefaultEndpoint { cases } => Ok(default_endpoints(cases)),

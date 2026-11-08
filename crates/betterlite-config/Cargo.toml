@@ -26,6 +26,8 @@ serde-inline-default = "1.0.3"
 serde-saphyr.workspace = true
 serde_ignored.workspace = true
 serde_json = { version = "1.0.154", features = ["raw_value"] }
+shellexpand = { version = "3.1.2", default-features = false, features = ["full"] }
+shlex = "2.0.1"
 strum = { version = "0.28.0", features = ["derive"] }
 tempfile = "3.27.0"
 thiserror.workspace = true

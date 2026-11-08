@@ -127,31 +127,6 @@ def invalid_region(params: Params) -> Json:
     return {"valid": valid}
 
 
-def encode_model_id_case(value: Json, *, as_model: bool) -> Json:
-    model_id = cast(str, value)
-    optional: dict[str, Json] = {} if as_model else {"model_id": model_id}
-    model = model_id if as_model else "ignored"
-    try:
-        return BaseAWSLLM.get_bedrock_model_id(  # pyright: ignore[reportUnknownMemberType]
-            optional, None, model
-        )
-    except (TypeError, ValueError):
-        return None
-
-
-def model_id_encoding(params: Params) -> Json:
-    return {
-        "encoded": [
-            encode_model_id_case(value, as_model=False)
-            for value in list_of(params.get("model_ids", []), "model_ids")
-        ],
-        "model_encoded": [
-            encode_model_id_case(value, as_model=True)
-            for value in list_of(params.get("models", []), "models")
-        ],
-    }
-
-
 def bedrock_model_ids(params: Params) -> Json:
     results: list[Json] = []
     for case in list_of(params["cases"], "cases"):
@@ -252,7 +227,6 @@ HANDLERS: dict[str, Callable[[Params], Json]] = {
     "llm_region_name": llm_region_names,
     "non_llm_region_name": non_llm_region_names,
     "invalid_region": invalid_region,
-    "model_id_encoding": model_id_encoding,
     "bedrock_model_id": bedrock_model_ids,
     "provider_selection": provider_selection,
     "default_endpoint": default_endpoint,

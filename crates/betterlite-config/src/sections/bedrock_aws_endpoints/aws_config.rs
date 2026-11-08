@@ -1,6 +1,5 @@
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::PathBuf;
 
 use crate::loader::EnvironmentLookup;
 
@@ -23,10 +22,13 @@ pub(crate) fn session_region<L>(lookup: &L) -> Option<String>
 where
     L: EnvironmentLookup,
 {
+    let profile = lookup
+        .lookup("AWS_DEFAULT_PROFILE")
+        .or_else(|| lookup.lookup("AWS_PROFILE"));
     region_from_texts(
         read_text(lookup, CONFIG_VARIABLE, CONFIG_DEFAULT).as_deref(),
         read_text(lookup, CREDENTIALS_VARIABLE, CREDENTIALS_DEFAULT).as_deref(),
-        profile_name(lookup).as_deref(),
+        profile.as_deref(),
     )
 }
 
@@ -37,7 +39,11 @@ pub(super) fn region_from_texts(
 ) -> Option<String> {
     let mut profiles = ProfileMap::new();
     if let Some(source) = config {
-        add_config_profiles(&mut profiles, ini::parse(source).ok()?);
+        for section in ini::parse(source).ok()? {
+            if let Some(name) = config_profile_name(&section.name) {
+                profiles.insert(name, scalars(&section.values));
+            }
+        }
     }
     if let Some(source) = credentials {
         overlay_credentials(&mut profiles, ini::parse(source).ok()?);
@@ -54,52 +60,36 @@ where
 {
     let configured = lookup.lookup(variable);
     let text = configured.as_deref().unwrap_or(fallback);
-    let expanded = path::expand_variables(lookup, text);
-    let path = PathBuf::from(path::expand_home(lookup, &expanded));
+    let path = path::expand(lookup, text);
     if path.as_os_str().is_empty() {
         return None;
     }
     fs::read_to_string(path).ok()
 }
 
-fn profile_name<L>(lookup: &L) -> Option<String>
-where
-    L: EnvironmentLookup,
-{
-    lookup
-        .lookup("AWS_DEFAULT_PROFILE")
-        .or_else(|| lookup.lookup("AWS_PROFILE"))
-}
-
-fn add_config_profiles(profiles: &mut ProfileMap, sections: Vec<Section>) {
-    for section in sections {
-        if section.name.starts_with("profile") {
-            let Some(tokens) = ini::shell_split(&section.name) else {
-                continue;
-            };
-            let [_, name] = tokens.as_slice() else {
-                continue;
-            };
-            profiles.insert(name.clone(), scalars(&section.values));
-            continue;
-        }
-        if section.name == DEFAULT_PROFILE {
-            profiles.insert(DEFAULT_PROFILE.to_owned(), scalars(&section.values));
-        }
+fn config_profile_name(name: &str) -> Option<String> {
+    if name.starts_with("profile") {
+        let tokens = shlex::split(name)?;
+        let [_, profile] = tokens.as_slice() else {
+            return None;
+        };
+        return Some(profile.clone());
     }
+    if name == DEFAULT_PROFILE {
+        return Some(DEFAULT_PROFILE.to_owned());
+    }
+    None
 }
 
 fn overlay_credentials(profiles: &mut ProfileMap, sections: Vec<Section>) {
-    for section in sections {
-        if section.name == DEFAULT_SECTION {
-            continue;
-        }
-        let values = scalars(&section.values);
-        if let Some(profile) = profiles.get_mut(&section.name) {
-            profile.extend(values);
-        } else {
-            profiles.insert(section.name, values);
-        }
+    let named = sections
+        .into_iter()
+        .filter(|section| section.name != DEFAULT_SECTION);
+    for section in named {
+        profiles
+            .entry(section.name)
+            .or_default()
+            .extend(scalars(&section.values));
     }
 }
 

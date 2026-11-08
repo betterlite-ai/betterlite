@@ -1,6 +1,4 @@
 use std::collections::BTreeMap;
-use std::mem;
-use std::str::Chars;
 
 #[derive(Debug, Clone)]
 pub(super) enum Value {
@@ -206,50 +204,4 @@ fn apply_defaults(sections: Vec<Section>) -> Vec<Section> {
         merged.push(section);
     }
     merged
-}
-
-pub(super) fn shell_split(text: &str) -> Option<Vec<String>> {
-    let mut tokens = Vec::new();
-    let mut current = String::new();
-    let mut started = false;
-    let mut chars = text.chars();
-    while let Some(ch) = chars.next() {
-        if ch.is_whitespace() {
-            if started {
-                tokens.push(mem::take(&mut current));
-                started = false;
-            }
-            continue;
-        }
-        started = true;
-        match ch {
-            '\'' => read_single_quoted(&mut chars, &mut current)?,
-            '"' => read_double_quoted(&mut chars, &mut current)?,
-            '\\' => current.push(chars.next()?),
-            other => current.push(other),
-        }
-    }
-    if started {
-        tokens.push(current);
-    }
-    Some(tokens)
-}
-
-fn read_single_quoted(chars: &mut Chars<'_>, current: &mut String) -> Option<()> {
-    loop {
-        match chars.next()? {
-            '\'' => return Some(()),
-            inner => current.push(inner),
-        }
-    }
-}
-
-fn read_double_quoted(chars: &mut Chars<'_>, current: &mut String) -> Option<()> {
-    loop {
-        match chars.next()? {
-            '"' => return Some(()),
-            '\\' => current.push(chars.next()?),
-            inner => current.push(inner),
-        }
-    }
 }
