@@ -9,12 +9,11 @@ use thiserror::Error;
 
 use crate::aws::AwsSecretsManager;
 use crate::aws::request_signing::{
-    AwsOptionalParams, AwsRequestError, AwsTransport, CredentialResolver, TransportError,
-    TransportRequest, TransportResponse,
+    ActionRequest, AwsOptionalParams, AwsRequestError, AwsTransport, CredentialResolver, NoBody,
+    TransportError, TransportRequest, TransportResponse,
 };
 use crate::secret_contracts::options::SecretTimeout;
 
-mod async_post;
 mod blocking;
 mod tests;
 
@@ -146,6 +145,29 @@ where
     }
 }
 
+async fn post_and_read<Resolver, Transport>(
+    manager: &AwsSecretsManager<Resolver, Transport>,
+    secret_name: &str,
+    optional_params: Option<&mut AwsOptionalParams>,
+    timeout: Option<SecretTimeout>,
+) -> Result<Option<SecretString>, AwsReadError<Resolver::Error, Transport::Error>>
+where
+    Resolver: CredentialResolver + Sync,
+    Transport: AwsTransport,
+{
+    let request: ActionRequest<'_, NoBody> = ActionRequest {
+        action: GET_SECRET_VALUE,
+        secret_name,
+        request_data: None,
+    };
+    read_reply(
+        secret_name,
+        manager
+            .async_post_action(&request, optional_params, timeout)
+            .await,
+    )
+}
+
 impl<Resolver, Transport> AwsSecretsManager<Resolver, Transport>
 where
     Transport: AwsTransport,
@@ -163,7 +185,7 @@ where
         if let Some(primary) = primary_secret_name.filter(|name| !name.is_empty()) {
             return self.async_read_from_primary(secret_name, primary).await;
         }
-        async_post::post_and_read(self, secret_name, optional_params, timeout).await
+        post_and_read(self, secret_name, optional_params, timeout).await
     }
 
     pub async fn async_read_from_primary(
@@ -174,7 +196,7 @@ where
     where
         Resolver: CredentialResolver + Sync,
     {
-        let primary_text = async_post::post_and_read(self, primary_secret_name, None, None).await?;
+        let primary_text = post_and_read(self, primary_secret_name, None, None).await?;
         let mut secrets =
             parse_primary_secret(primary_text.as_ref()).map_err(AwsReadError::Primary)?;
         Ok(secrets.remove(secret_name))
