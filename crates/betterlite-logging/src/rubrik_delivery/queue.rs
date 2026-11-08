@@ -54,9 +54,10 @@ pub async fn flush_queue(logger: &RubrikLogger) {
     if log_batch_to_rubrik(logger, &snapshot).await.is_err() {
         return;
     }
+    let mut queue = logger.queue.lock().unwrap_or_else(PoisonError::into_inner);
+    // The count is read under the queue lock so no overflow can drop a snapshot event between the read and the drain.
     let dropped =
         usize::try_from(logger.dropped_during_flush.load(Ordering::SeqCst)).unwrap_or(usize::MAX);
-    let mut queue = logger.queue.lock().unwrap_or_else(PoisonError::into_inner);
     let drain_count = snapshot.len().saturating_sub(dropped).min(queue.len());
     queue.drain(..drain_count);
     drop(queue);
