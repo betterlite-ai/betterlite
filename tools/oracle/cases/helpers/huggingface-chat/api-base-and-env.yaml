@@ -13,4 +13,3 @@ call:
       - {kind: complete_url, model: "org/model", env: {HUGGINGFACE_API_BASE: ""}}
 env: {}
 compare: {ignore: []}
-
