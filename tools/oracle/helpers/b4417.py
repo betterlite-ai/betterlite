@@ -36,41 +36,28 @@ VARIABLES = (
 
 class Manager(Protocol):
     async def async_read_secret(
-        self,
-        secret_name: str,
-        optional_params: Object | None = None,
+        self, secret_name: str, optional_params: Object | None = None,
         timeout: float | None = None,  # noqa: ASYNC109 - mirrors LiteLLM's signature
     ) -> str | None: ...
 
     def sync_read_secret(
-        self,
-        secret_name: str,
-        optional_params: Object | None = None,
-        timeout: float | None = None,
+        self, secret_name: str, optional_params: Object | None = None, timeout: float | None = None
     ) -> str | None: ...
 
     async def async_write_secret(
-        self,
-        secret_name: str,
-        secret_value: str,
-        description: str | None = None,
+        self, secret_name: str, secret_value: str, description: str | None = None,
         optional_params: Object | None = None,
         timeout: float | None = None,  # noqa: ASYNC109 - mirrors LiteLLM's signature
     ) -> Object: ...
 
     async def async_delete_secret(
-        self,
-        secret_name: str,
-        recovery_window_in_days: int | None = 7,
+        self, secret_name: str, recovery_window_in_days: int | None = 7,
         optional_params: Object | None = None,
         timeout: float | None = None,  # noqa: ASYNC109 - mirrors LiteLLM's signature
     ) -> Object: ...
 
     async def async_rotate_secret(
-        self,
-        current_secret_name: str,
-        new_secret_name: str,
-        new_secret_value: str,
+        self, current_secret_name: str, new_secret_name: str, new_secret_value: str,
         optional_params: Object | None = None,
         timeout: float | None = None,  # noqa: ASYNC109 - mirrors LiteLLM's signature
     ) -> Object: ...
@@ -82,7 +69,6 @@ class Call:
     url: str
     headers: dict[str, str]
     body: Json
-    cert: tuple[str, str] | None
 
 
 class Transport:
@@ -101,9 +87,7 @@ class Transport:
             "url": call.url,
             "namespace": call.headers.get("X-Vault-Namespace"),
             "body": call.body,
-            "client_certificate": None
-            if call.cert is None
-            else {"certificate": call.cert[0], "key": call.cert[1]},
+            "client_certificate": None,
         }
         self.requests.append(sent)
         replies = self.replies.get(f"{call.method} {call.url}", [])
@@ -123,46 +107,37 @@ class Transport:
             request=request,
         )
 
-    def take(self) -> list[Json]:
-        taken = self.requests
-        self.requests = []
-        return taken
-
 
 class Client:
     def __init__(self, transport: Transport) -> None:
         self.transport = transport
 
     def get(self, url: str, *, headers: dict[str, str] | None = None) -> httpx.Response:
-        return self.transport.answer(Call("GET", url, dict(headers or {}), None, None))
+        return self.transport.answer(Call("GET", url, dict(headers or {}), None))
 
     def post(
         self, url: str, *, headers: dict[str, str] | None = None, json: Json = None
     ) -> httpx.Response:
-        return self.transport.answer(Call("POST", url, dict(headers or {}), json, None))
+        return self.transport.answer(Call("POST", url, dict(headers or {}), json))
 
     def delete(self, url: str, *, headers: dict[str, str] | None = None) -> httpx.Response:
-        return self.transport.answer(Call("DELETE", url, dict(headers or {}), None, None))
+        return self.transport.answer(Call("DELETE", url, dict(headers or {}), None))
 
 
 class AsyncClient:
     def __init__(self, transport: Transport) -> None:
         self.transport = transport
 
-    async def get(
-        self, url: str, *, headers: dict[str, str] | None = None
-    ) -> httpx.Response:
-        return self.transport.answer(Call("GET", url, dict(headers or {}), None, None))
+    async def get(self, url: str, *, headers: dict[str, str] | None = None) -> httpx.Response:
+        return self.transport.answer(Call("GET", url, dict(headers or {}), None))
 
     async def post(
         self, url: str, *, headers: dict[str, str] | None = None, json: Json = None
     ) -> httpx.Response:
-        return self.transport.answer(Call("POST", url, dict(headers or {}), json, None))
+        return self.transport.answer(Call("POST", url, dict(headers or {}), json))
 
-    async def delete(
-        self, url: str, *, headers: dict[str, str] | None = None
-    ) -> httpx.Response:
-        return self.transport.answer(Call("DELETE", url, dict(headers or {}), None, None))
+    async def delete(self, url: str, *, headers: dict[str, str] | None = None) -> httpx.Response:
+        return self.transport.answer(Call("DELETE", url, dict(headers or {}), None))
 
 
 def expect_object(value: Json) -> Object:
@@ -238,14 +213,12 @@ def patched_world(env: Object, transport: Transport) -> Generator[None]:
         litellm._key_management_system = saved_system  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
 
 
-def step_params(step: Object) -> Object | None:
-    raw = step.get("params")
-    return None if raw is None else expect_object(raw)
-
-
-def step_timeout(step: Object) -> float | None:
-    raw = step.get("timeout")
-    return None if raw is None else expect_number(raw)
+def step_options(step: Object) -> tuple[Object | None, float | None]:
+    raw_params = step.get("params")
+    raw_timeout = step.get("timeout")
+    params = None if raw_params is None else expect_object(raw_params)
+    timeout = None if raw_timeout is None else expect_number(raw_timeout)
+    return params, timeout
 
 
 def read_outcome(value: str | None) -> Json:
@@ -262,8 +235,7 @@ def operation_outcome(result: Object) -> Json:
 
 async def run_step(manager: Manager, step: Object) -> Json:
     operation = expect_text(step["op"])
-    params = step_params(step)
-    timeout = step_timeout(step)
+    params, timeout = step_options(step)
     match operation:
         case "read":
             value = await manager.async_read_secret(
@@ -309,7 +281,8 @@ async def execute(input_value: Object, transport: Transport) -> Json:
         return {"init": {"ok": False}, "steps": steps}
     for step in expect_list(input_value["steps"]):
         result = await run_step(manager, expect_object(step))
-        steps.append({"result": result, "requests": transport.take()})
+        steps.append({"result": result, "requests": transport.requests})
+        transport.requests = []
     return {"init": {"ok": True}, "steps": steps}
 
 

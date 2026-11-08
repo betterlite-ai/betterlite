@@ -60,10 +60,6 @@ impl Script {
             .body
             .as_ref()
             .map(|body| serde_json::from_str::<Value>(body.expose_secret()).unwrap_or(Value::Null));
-        let certificate = request
-            .client_certificate
-            .as_ref()
-            .map(|pair| json!({"certificate": pair.certificate_path, "key": pair.key_path}));
         let route = format!("{verb} {}", request.url);
         self.requests
             .lock()
@@ -73,7 +69,7 @@ impl Script {
                 "url": request.url,
                 "namespace": request.namespace,
                 "body": body,
-                "client_certificate": certificate,
+                "client_certificate": null,
             }));
         self.next_reply(&route).unwrap_or_else(|| Reply::Answer {
             status: 500,
