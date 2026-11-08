@@ -1,6 +1,7 @@
 use secrecy::SecretString;
 
 use super::fixtures::{direct_settings, store, transport};
+use crate::cache_primitives::protocol::AsyncRedisCommands as _;
 use crate::redis_client_reuse::transport::RedisCacheFamily;
 use crate::redis_live_client::tests::fake_server::FakeServer;
 
@@ -46,4 +47,20 @@ async fn different_passwords_open_two_connections() {
     assert_eq!(auth.len(), 2);
     assert_eq!(auth[0].args, ["AUTH", "first-password"]);
     assert_eq!(auth[1].args, ["AUTH", "second-password"]);
+}
+
+#[tokio::test]
+async fn the_async_client_serves_redis_commands_and_a_pipeline() {
+    let server = FakeServer::start().await;
+    let store = store();
+    let settings = direct_settings(&server.host(), server.port());
+    let transport = transport(settings, RedisCacheFamily::Standalone, &store, None);
+    let client = transport.async_client().await.expect("the async client");
+    assert!(
+        client
+            .ping()
+            .await
+            .expect("the ping through the command trait")
+    );
+    let _pipeline = client.pipeline(false);
 }
