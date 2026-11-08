@@ -1,5 +1,6 @@
 use betterlite_error::normalize::ErrorFacts;
 use betterlite_error::normalize::Normalizer;
+use betterlite_error::normalize::class::Class;
 use betterlite_error::rate_limit::RateLimitDimension;
 use betterlite_models::decisions::Json;
 use betterlite_redact::secret::Redactor;
@@ -7,11 +8,10 @@ use serde::Deserialize as _;
 use serde::de::value::StrDeserializer;
 use thiserror::Error;
 
-use crate::fields::payload::records::ErrorInformation;
+use crate::fields::payload::records::{DecimalValue, ErrorInformation};
 use crate::logging_metadata::decode::{DecodeError, decode};
 use crate::logging_metadata::exception::{
-    ExceptionFacts, budget_fields, exception_code, provider_request_id, semantic_class,
-    validated_category,
+    ExceptionFacts, exception_code, provider_request_id, semantic_class, validated_category,
 };
 use crate::logging_metadata::params::MetadataMap;
 
@@ -56,7 +56,7 @@ pub fn get_error_information(
         RateLimitDimension::deserialize(StrDeserializer::<serde_json::Error>::new(raw)).ok()
     });
     let logged = traceback_text(context, exception, traceback);
-    let (entity_type, entity_id, limit, spend) = budget_fields(exception);
+    let budget = matches!(semantic_class(exception), Class::BudgetExceededError);
     ErrorInformation {
         error_code: Some(Some(error_code.clone())),
         error_class: Some(Some(exception.class_name.clone())),
@@ -72,8 +72,8 @@ pub fn get_error_information(
         error_provider_request_id: Some(provider_request_id(exception)),
         error_rate_limit_category: Some(validated_category(exception.category.as_deref())),
         error_rate_limit_type: Some(dimension.and_then(|_| exception.rate_limit_type.clone())),
-        error_budget_entity_type: Some(entity_type),
-        error_budget_entity_id: Some(entity_id),
+        error_budget_entity_type: Some(exception.budget_entity_type.clone().filter(|_| budget)),
+        error_budget_entity_id: Some(exception.budget_entity_id.clone().filter(|_| budget)),
         normalized_error: Some(context.exception.and_then(|_| {
             normalized_error(
                 &message,
@@ -83,8 +83,8 @@ pub fn get_error_information(
                 context.normalizer,
             )
         })),
-        error_budget_limit: Some(limit),
-        error_budget_spend: Some(spend),
+        error_budget_limit: Some(exception.budget_limit.filter(|_| budget).map(DecimalValue)),
+        error_budget_spend: Some(exception.budget_spend.filter(|_| budget).map(DecimalValue)),
     }
 }
 

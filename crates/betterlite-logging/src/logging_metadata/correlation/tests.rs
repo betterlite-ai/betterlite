@@ -1,5 +1,7 @@
 #![cfg(test)]
 
+use std::time::{Duration, Instant};
+
 use betterlite_models::decisions::Json;
 use indexmap::IndexMap;
 use rstest::rstest;
@@ -60,28 +62,107 @@ fn session_resolution_reads_the_dynamic_then_metadata_id(
     assert_eq!(session_id, expected);
 }
 
+fn bounded(capacity: usize) -> TraceIdCache {
+    TraceIdCache::new(capacity, Duration::from_secs(600))
+}
+
 #[test]
 fn a_recorded_trace_id_is_found_by_its_call_and_service() {
-    let mut cache = TraceIdCache::default();
-    cache.record("call-1", TraceService::Langfuse, "trace-1".to_owned());
+    let now = Instant::now();
+    let mut cache = bounded(200);
+    cache.record("call-1", TraceService::Langfuse, "trace-1".to_owned(), now);
     assert_eq!(
-        cache.logged_trace_id("call-1", TraceService::Langfuse),
+        cache.logged_trace_id("call-1", TraceService::Langfuse, now),
         Some("trace-1")
     );
     assert_eq!(
-        cache.logged_trace_id("call-2", TraceService::Langfuse),
+        cache.logged_trace_id("call-2", TraceService::Langfuse, now),
         None
     );
 }
 
 #[test]
 fn a_later_record_replaces_the_trace_id_for_its_call() {
-    let mut cache = TraceIdCache::default();
-    cache.record("call-1", TraceService::Langfuse, "trace-1".to_owned());
-    cache.record("call-1", TraceService::Langfuse, "trace-2".to_owned());
+    let now = Instant::now();
+    let mut cache = bounded(200);
+    cache.record("call-1", TraceService::Langfuse, "trace-1".to_owned(), now);
+    cache.record("call-1", TraceService::Langfuse, "trace-2".to_owned(), now);
     assert_eq!(
-        cache.logged_trace_id("call-1", TraceService::Langfuse),
+        cache.logged_trace_id("call-1", TraceService::Langfuse, now),
         Some("trace-2")
+    );
+}
+
+#[test]
+fn the_oldest_entry_is_evicted_at_the_capacity_limit() {
+    let now = Instant::now();
+    let mut cache = bounded(2);
+    cache.record("call-1", TraceService::Langfuse, "trace-1".to_owned(), now);
+    cache.record("call-2", TraceService::Langfuse, "trace-2".to_owned(), now);
+    cache.record("call-3", TraceService::Langfuse, "trace-3".to_owned(), now);
+    assert_eq!(
+        cache.logged_trace_id("call-1", TraceService::Langfuse, now),
+        None
+    );
+    assert_eq!(
+        cache.logged_trace_id("call-2", TraceService::Langfuse, now),
+        Some("trace-2")
+    );
+    assert_eq!(
+        cache.logged_trace_id("call-3", TraceService::Langfuse, now),
+        Some("trace-3")
+    );
+}
+
+#[test]
+fn an_entry_expires_after_the_ttl_and_is_dropped_on_the_next_record() {
+    let start = Instant::now();
+    let mut cache = bounded(2);
+    cache.record(
+        "call-1",
+        TraceService::Langfuse,
+        "trace-1".to_owned(),
+        start,
+    );
+    let edge = start + Duration::from_secs(600);
+    assert_eq!(
+        cache.logged_trace_id("call-1", TraceService::Langfuse, edge),
+        Some("trace-1")
+    );
+    let late = edge + Duration::from_millis(1);
+    assert_eq!(
+        cache.logged_trace_id("call-1", TraceService::Langfuse, late),
+        None
+    );
+    cache.record("call-2", TraceService::Langfuse, "trace-2".to_owned(), late);
+    cache.record("call-3", TraceService::Langfuse, "trace-3".to_owned(), late);
+    assert_eq!(
+        cache.logged_trace_id("call-2", TraceService::Langfuse, late),
+        Some("trace-2")
+    );
+}
+
+#[test]
+fn rewriting_a_live_key_keeps_its_original_expiry() {
+    let start = Instant::now();
+    let mut cache = bounded(2);
+    cache.record(
+        "call-1",
+        TraceService::Langfuse,
+        "trace-1".to_owned(),
+        start,
+    );
+    let middle = start + Duration::from_secs(300);
+    cache.record(
+        "call-1",
+        TraceService::Langfuse,
+        "trace-2".to_owned(),
+        middle,
+    );
+    let late = start + Duration::from_secs(601);
+    assert_eq!(
+        cache.logged_trace_id("call-1", TraceService::Langfuse, late),
+        None
     );
 }
 

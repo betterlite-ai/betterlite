@@ -1,6 +1,7 @@
-use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use betterlite_models::decisions::Json;
+use indexmap::IndexMap;
 
 use crate::logging_metadata::params::LitellmParams;
 
@@ -17,22 +18,50 @@ impl TraceService {
     }
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct TraceIdCache {
-    entries: HashMap<String, String>,
+    capacity: usize,
+    ttl: Duration,
+    entries: IndexMap<String, (String, Instant)>, // value and the instant it was first stored
 }
 
 impl TraceIdCache {
-    pub fn record(&mut self, call_id: &str, service: TraceService, trace_id: String) {
+    #[must_use]
+    pub fn new(capacity: usize, ttl: Duration) -> Self {
+        Self {
+            capacity,
+            ttl,
+            entries: IndexMap::new(),
+        }
+    }
+
+    // Expired entries go first, then the oldest, as InMemoryCache.evict_cache does; a live key keeps its expiry
+    pub fn record(&mut self, call_id: &str, service: TraceService, trace_id: String, now: Instant) {
         self.entries
-            .insert(format!("{}:{call_id}", service.cache_prefix()), trace_id);
+            .retain(|_, (_, stored)| now.saturating_duration_since(*stored) < self.ttl);
+        let excess = self
+            .entries
+            .len()
+            .saturating_sub(self.capacity.saturating_sub(1));
+        for _ in 0..excess {
+            self.entries.shift_remove_index(0);
+        }
+        let key = format!("{}:{call_id}", service.cache_prefix());
+        let slot = self.entries.entry(key).or_insert((String::new(), now));
+        slot.0 = trace_id;
     }
 
     #[must_use]
-    pub fn logged_trace_id(&self, call_id: &str, service: TraceService) -> Option<&str> {
-        self.entries
-            .get(&format!("{}:{call_id}", service.cache_prefix()))
-            .map(String::as_str)
+    pub fn logged_trace_id(
+        &self,
+        call_id: &str,
+        service: TraceService,
+        now: Instant,
+    ) -> Option<&str> {
+        let (value, stored) = self
+            .entries
+            .get(&format!("{}:{call_id}", service.cache_prefix()))?;
+        (now.saturating_duration_since(*stored) <= self.ttl).then_some(value.as_str())
     }
 }
 

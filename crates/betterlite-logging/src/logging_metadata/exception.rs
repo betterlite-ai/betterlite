@@ -4,8 +4,6 @@ use rust_decimal::Decimal;
 use serde::Deserialize;
 use serde::de::value::StrDeserializer;
 
-use crate::fields::payload::records::DecimalValue;
-
 const PROVIDER_REQUEST_ID_HEADERS: [&str; 7] = [
     "x-amzn-requestid",
     "x-request-id",
@@ -52,25 +50,6 @@ pub(crate) fn exception_code(exception: &ExceptionFacts) -> String {
             .or(exception.response_status_code)
             .map_or_else(String::new, |status| status.to_string()),
     }
-}
-
-pub(crate) fn budget_fields(
-    exception: &ExceptionFacts,
-) -> (
-    Option<String>,
-    Option<String>,
-    Option<DecimalValue>,
-    Option<DecimalValue>,
-) {
-    if !matches!(semantic_class(exception), Class::BudgetExceededError) {
-        return (None, None, None, None);
-    }
-    (
-        exception.budget_entity_type.clone(),
-        exception.budget_entity_id.clone(),
-        exception.budget_limit.map(DecimalValue),
-        exception.budget_spend.map(DecimalValue),
-    )
 }
 
 pub(crate) fn provider_request_id(exception: &ExceptionFacts) -> Option<String> {

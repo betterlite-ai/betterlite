@@ -4,7 +4,6 @@ pub mod correlation;
 pub mod decode;
 pub mod error_info;
 pub mod exception;
-pub mod hash;
 pub mod headers;
 pub mod keys;
 pub mod metadata;

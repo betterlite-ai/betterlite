@@ -1,4 +1,5 @@
 use std::fmt::Display;
+use std::time::{Duration, Instant};
 
 use betterlite_error::normalize::Normalizer;
 use betterlite_logging::logging_metadata::base64::Base64Truncator;
@@ -189,15 +190,16 @@ fn request_tags(input: &RequestTagsInput) -> crate::helpers::HelperResult {
 }
 
 fn trace_session(input: &TraceSessionInput) -> serde_json::Value {
-    let mut cache = TraceIdCache::default();
+    let now = Instant::now();
+    let mut cache = TraceIdCache::new(200, Duration::from_secs(600));
     if let Some(cached) = input.cached_trace_id.as_ref() {
-        cache.record(&input.call_id, TraceService::Langfuse, cached.clone());
+        cache.record(&input.call_id, TraceService::Langfuse, cached.clone(), now);
     }
     let params = &input.litellm_params;
     json!({
         "trace_id": logging_payload_trace_id(params, &input.fallback_trace_id, input.correlation),
         "session_id": logging_payload_session_id(params, &input.fallback_session_id, input.correlation),
-        "cached_trace_id": cache.logged_trace_id(&input.call_id, TraceService::Langfuse),
+        "cached_trace_id": cache.logged_trace_id(&input.call_id, TraceService::Langfuse, now),
     })
 }
 

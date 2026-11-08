@@ -65,8 +65,19 @@ pub fn get_standard_logging_metadata(
     let Some(fields) = request.metadata else {
         return Ok(record);
     };
-    merge_guardrails(&mut record, request.applied_guardrails);
-    apply_requester_metadata(&mut record, fields);
+    if let Some(argument) = request
+        .applied_guardrails
+        .filter(|guardrails| !guardrails.is_empty())
+        && let Some(recorded) = record.applied_guardrails.as_ref()
+    {
+        let merged: IndexSet<&String> = argument.iter().chain(recorded).collect();
+        record.applied_guardrails = Some(merged.into_iter().cloned().collect());
+    }
+    if record.requester_metadata.is_none()
+        && let Some(Json::Object(inner)) = fields.get("metadata")
+    {
+        record.requester_metadata = Some(Json::Object(inner.clone()));
+    }
     Ok(record)
 }
 
@@ -98,23 +109,6 @@ fn resolved_oauth_token(
         return None;
     };
     Some(*client_sent && custom_llm_provider == Some("anthropic"))
-}
-
-fn merge_guardrails(record: &mut StandardLoggingMetadata, applied_guardrails: Option<&[String]>) {
-    if let Some(argument) = applied_guardrails.filter(|guardrails| !guardrails.is_empty())
-        && let Some(recorded) = record.applied_guardrails.as_ref()
-    {
-        let merged: IndexSet<&String> = argument.iter().chain(recorded).collect();
-        record.applied_guardrails = Some(merged.into_iter().cloned().collect());
-    }
-}
-
-fn apply_requester_metadata(record: &mut StandardLoggingMetadata, metadata: &MetadataMap) {
-    if record.requester_metadata.is_none()
-        && let Some(Json::Object(inner)) = metadata.get("metadata")
-    {
-        record.requester_metadata = Some(Json::Object(inner.clone()));
-    }
 }
 
 mod tests;

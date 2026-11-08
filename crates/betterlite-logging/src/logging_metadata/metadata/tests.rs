@@ -80,3 +80,22 @@ fn a_mistyped_field_is_reported_by_name() {
     assert_eq!(path, "user_api_key_team_id");
     assert_eq!(record, "standard logging metadata");
 }
+
+#[rstest]
+#[case::lowercase("a".repeat(64), true)]
+#[case::uppercase("B".repeat(64), true)]
+#[case::mixed(format!("{}{}", "aF09".repeat(8), "5e7C".repeat(8)), true)]
+#[case::too_short("a".repeat(63), false)]
+#[case::too_long("a".repeat(65), false)]
+#[case::empty(String::new(), false)]
+#[case::not_hex("g".repeat(64), false)]
+#[case::raw_key(format!("sk-{}", "abcdefghijklmnopqrstuvwxyz0123456789".repeat(2)), false)]
+fn only_a_sha256_shaped_user_api_key_becomes_the_hash(
+    #[case] user_api_key: String,
+    #[case] is_hash: bool,
+) {
+    let encoded = format!(r#"{{"user_api_key": "{user_api_key}"}}"#);
+    let record = get_standard_logging_metadata(Some(&metadata(&encoded))).expect("record");
+    let expected = is_hash.then_some(user_api_key);
+    assert_eq!(record.user_api_key_hash, expected);
+}
