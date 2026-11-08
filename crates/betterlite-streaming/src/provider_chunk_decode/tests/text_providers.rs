@@ -287,6 +287,14 @@ fn text_providers_text_completion_openai_keeps_text_and_usage() {
 }
 
 #[test]
+fn text_providers_text_completion_empty_usage_is_no_usage() {
+    let mut decode_state = state("gpt-4");
+    let chunk = json_chunk(r#"{"choices": [{"text": "hi"}], "usage": {}}"#);
+    let decoded = decode("text-completion-openai", &chunk, &mut decode_state);
+    assert!(decoded.usage.is_none());
+}
+
+#[test]
 fn text_providers_azure_text_reads_choices() {
     let mut decode_state = state("gpt-4");
     let chunk = json_chunk(r#"{"choices": [{"text": "hi", "finish_reason": "length"}]}"#);

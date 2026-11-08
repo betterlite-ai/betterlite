@@ -149,7 +149,10 @@ pub fn string_field(
 
 // The three counters of a chunk usage, and none of the details a rebuilt Usage drops.
 pub fn usage_counts(counts: Option<&JsonValue>) -> Result<Option<Usage>, ProviderChunkError> {
-    let Some(counted) = counts.filter(|value| !matches!(value, JsonValue::Null)) else {
+    let Some(counted) = counts.filter(|value| {
+        !matches!(value, JsonValue::Null)
+            && !matches!(value, JsonValue::Object(fields) if fields.is_empty())
+    }) else {
         return Ok(None);
     };
     let plain = serde_json::to_value(counted).map_err(ProviderChunkError::from)?;
