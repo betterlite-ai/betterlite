@@ -1,5 +1,4 @@
 use std::collections::BTreeMap;
-use std::error::Error;
 
 use betterlite_redact::structured::Payload;
 
@@ -35,8 +34,8 @@ pub struct ProxyExceptionInit {
     pub provider_specific_fields: BTreeMap<String, Payload>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, derive_more::Display)]
-#[display("{}", message)]
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("{message}")]
 pub struct ProxyException {
     pub message: String,
     pub error_type: String,
@@ -107,5 +106,3 @@ fn openai_code_from(code: &ExceptionCode) -> Option<String> {
         ExceptionCode::Text(text) => Some(text.clone()),
     }
 }
-
-impl Error for ProxyException {}

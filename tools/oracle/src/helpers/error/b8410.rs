@@ -83,12 +83,6 @@ fn access_denied_output(
     })
 }
 
-fn credential_headers_output() -> Value {
-    // ast-grep-ignore: no-long-names
-    let names = SpecialHeaders::litellm_credential_header_names();
-    serde_json::json!({ "names": names })
-}
-
 impl crate::helpers::Helper for Op {
     type Input = Input;
 
@@ -124,7 +118,10 @@ impl crate::helpers::Helper for Op {
                 param.as_deref(),
                 code.as_ref(),
             ),
-            Input::CredentialHeaders => credential_headers_output(),
+            Input::CredentialHeaders => {
+                // ast-grep-ignore: no-long-names
+                serde_json::json!({ "names": SpecialHeaders::litellm_credential_header_names() })
+            }
         };
         Ok(output)
     }
