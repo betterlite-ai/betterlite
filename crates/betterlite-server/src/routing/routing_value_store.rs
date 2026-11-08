@@ -1,18 +1,12 @@
-use std::sync::Arc;
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use betterlite_config::sections::local_ttl_cache as config;
 use betterlite_router::routing_value_store::{Clock, RoutingValueStore, StoreError, StoreSettings};
 
 mod tests;
 
-pub fn local_store(section: &config::Settings) -> Result<RoutingValueStore, StoreError> {
-    let clock: Clock = Arc::new(|| {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs_f64()
-    });
+pub fn local_store(
+    section: &config::Settings,
+    clock: Clock,
+) -> Result<RoutingValueStore, StoreError> {
     RoutingValueStore::new(
         StoreSettings {
             max_size_in_memory: None,
