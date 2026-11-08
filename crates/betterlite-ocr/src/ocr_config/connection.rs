@@ -65,6 +65,22 @@ impl Default for OcrTransportConfig {
         }
     }
 }
+impl OcrTransportConfig {
+    #[must_use]
+    pub fn with_overrides(
+        self,
+        extra_headers: Vec<(String, String)>,
+        extra_headers_source: OcrInputSource,
+        timeout: Option<Duration>,
+    ) -> Self {
+        Self {
+            extra_headers,
+            extra_headers_source,
+            timeout: timeout.or(self.timeout),
+            max_response_bytes: self.max_response_bytes,
+        }
+    }
+}
 #[derive(Clone)]
 pub struct OcrConnection {
     pub api_key: Option<SecretString>,

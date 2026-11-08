@@ -111,6 +111,30 @@ fn connection_timeout_falls_back_to_the_request_timeout_setting() {
 }
 
 #[test]
+fn transport_overrides_replace_headers_and_keep_the_transport_timeout() {
+    let transport = OcrTransportConfig {
+        extra_headers: Vec::new(),
+        extra_headers_source: OcrInputSource::Deployment,
+        timeout: Some(Duration::from_secs(9)),
+        max_response_bytes: 1024,
+    };
+    let overridden = transport.clone().with_overrides(
+        vec![("x-a".to_owned(), "1".to_owned())],
+        OcrInputSource::Request,
+        Some(Duration::from_secs(5)),
+    );
+    assert_eq!(overridden.timeout, Some(Duration::from_secs(5)));
+    assert_eq!(overridden.extra_headers_source, OcrInputSource::Request);
+    assert_eq!(overridden.max_response_bytes, 1024);
+    assert_eq!(
+        transport
+            .with_overrides(Vec::new(), OcrInputSource::Deployment, None)
+            .timeout,
+        Some(Duration::from_secs(9))
+    );
+}
+
+#[test]
 fn health_check_document_is_the_pdf_data_uri() {
     let OcrDocument::DocumentUrl {
         document_url,
