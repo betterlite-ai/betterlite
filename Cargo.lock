@@ -2558,7 +2558,6 @@ dependencies = [
  "regex",
  "rstest",
  "rust_decimal",
- "serde",
  "serde_json",
  "thiserror",
  "tracing",
