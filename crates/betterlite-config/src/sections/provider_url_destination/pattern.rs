@@ -1,3 +1,5 @@
+use std::net::Ipv6Addr;
+
 const MAX_ENTRY_CHARS: usize = 2048;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -25,9 +27,26 @@ fn split_scheme(entry: &str) -> Option<(Option<Scheme>, &str)> {
     Some((Some(scheme), rest))
 }
 
+// urllib.parse validates a bracketed host as an IPv6 address or an IPvFuture reference
+fn valid_bracket_host(host: &str) -> bool {
+    if host.starts_with(['v', 'V']) {
+        let digits = host.get(1..).unwrap_or_default();
+        let hex_len = digits.chars().take_while(char::is_ascii_hexdigit).count();
+        return digits
+            .get(hex_len..)
+            .and_then(|tail| tail.strip_prefix('.'))
+            .is_some_and(|label| hex_len > 0 && !label.is_empty());
+    }
+    let (address, zone) = host.split_once('%').unwrap_or((host, "x"));
+    !zone.is_empty() && !zone.contains('%') && address.parse::<Ipv6Addr>().is_ok()
+}
+
 fn split_authority(authority: &str) -> Option<(&str, Option<&str>)> {
     if let Some(rest) = authority.strip_prefix('[') {
         let (host, after) = rest.split_once(']')?;
+        if !valid_bracket_host(host) {
+            return None;
+        }
         let port = match after {
             "" => None,
             tail => Some(tail.strip_prefix(':')?),

@@ -56,7 +56,7 @@ fn load(yaml: &str) -> Option<Vec<String>> {
     &["::1|None|Some(8080)"]
 )]
 #[case::invalid_entries_are_skipped(
-    "litellm_settings: {provider_url_destination_allowed_hosts: ['ftp://api.example.com', 'user@api.example.com', 'api.example.com:8o', '']}",
+    "litellm_settings: {provider_url_destination_allowed_hosts: ['ftp://api.example.com', 'user@api.example.com', 'api.example.com:8o', '[zz]', 'http://[::1', '']}",
     &[]
 )]
 #[case::general_replaces(
