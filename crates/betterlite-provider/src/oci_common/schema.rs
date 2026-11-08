@@ -2,6 +2,8 @@ use std::collections::BTreeSet;
 
 use betterlite_prompts::arguments::json::{Json, Object};
 
+const MAX_REF_DEPTH: usize = 32;
+
 pub const OCI_JSON_TO_PYTHON_TYPES: [(&str, &str); 7] = [
     ("string", "str"),
     ("number", "float"),
@@ -19,7 +21,7 @@ pub fn resolve_oci_schema_refs(schema: &Json) -> Json {
         .and_then(|object| object.get("$defs"))
         .and_then(Json::as_object);
     let mut resolving = BTreeSet::new();
-    let mut resolved = resolve_refs(schema, definitions, &mut resolving);
+    let mut resolved = resolve_refs(schema, definitions, &mut resolving, 0);
     if let Json::Object(fields) = &mut resolved {
         fields.shift_remove("$defs");
     }
@@ -30,6 +32,7 @@ fn resolve_refs(
     value: &Json,
     definitions: Option<&Object>,
     resolving: &mut BTreeSet<String>,
+    depth: usize,
 ) -> Json {
     let fields = match value {
         Json::Object(fields) => fields,
@@ -37,7 +40,7 @@ fn resolve_refs(
             return Json::List(
                 items
                     .iter()
-                    .map(|item| resolve_refs(item, definitions, resolving))
+                    .map(|item| resolve_refs(item, definitions, resolving, depth))
                     .collect(),
             );
         }
@@ -46,28 +49,49 @@ fn resolve_refs(
     match fields.get("$ref") {
         None | Some(Json::Null) => {}
         Some(Json::Text(reference)) if reference.starts_with("#/$defs/") => {
-            let key = reference.rsplit('/').next().unwrap_or_default().to_owned();
-            if !resolving.insert(key.clone()) {
-                return Json::Object(Object::from([(
-                    "type".to_owned(),
-                    Json::Text("object".to_owned()),
-                )]));
-            }
-            let target = definitions
-                .and_then(|table| table.get(&key))
-                .unwrap_or(value);
-            let resolved = resolve_refs(target, definitions, resolving);
-            resolving.remove(&key);
-            return resolved;
+            return resolve_reference(value, reference, definitions, resolving, depth);
         }
         Some(_) => return value.clone(),
     }
     Json::Object(
         fields
             .iter()
-            .map(|(key, field)| (key.clone(), resolve_refs(field, definitions, resolving)))
+            .map(|(key, field)| {
+                (
+                    key.clone(),
+                    resolve_refs(field, definitions, resolving, depth),
+                )
+            })
             .collect(),
     )
+}
+
+fn resolve_reference(
+    value: &Json,
+    reference: &str,
+    definitions: Option<&Object>,
+    resolving: &mut BTreeSet<String>,
+    depth: usize,
+) -> Json {
+    if depth >= MAX_REF_DEPTH {
+        return Json::Object(Object::from([(
+            "type".to_owned(),
+            Json::Text("object".to_owned()),
+        )]));
+    }
+    let key = reference.rsplit('/').next().unwrap_or_default().to_owned();
+    if !resolving.insert(key.clone()) {
+        return Json::Object(Object::from([(
+            "type".to_owned(),
+            Json::Text("object".to_owned()),
+        )]));
+    }
+    let target = definitions
+        .and_then(|table| table.get(&key))
+        .unwrap_or(value);
+    let resolved = resolve_refs(target, definitions, resolving, depth.saturating_add(1));
+    resolving.remove(&key);
+    resolved
 }
 
 #[must_use]
@@ -173,7 +197,7 @@ fn normalize_type(value: &Json) -> Option<Json> {
 }
 
 fn filter_required(sanitized: &mut Object) {
-    let Some(required) = sanitized.get("required").cloned() else {
+    let Some(required) = sanitized.get("required") else {
         return;
     };
     let Json::List(names) = required else {
@@ -196,7 +220,7 @@ fn filter_required(sanitized: &mut Object) {
 
 #[must_use]
 pub fn enrich_cohere_description(description: &str, schema: &Object) -> String {
-    let mut parts: Vec<String> = Vec::new();
+    let mut parts = Vec::new();
     if !description.is_empty() {
         parts.push(description.to_owned());
     }
@@ -207,7 +231,7 @@ pub fn enrich_cohere_description(description: &str, schema: &Object) -> String {
         parts.push(format!("Format: {}", text_value(format_value)));
     }
     if schema.contains_key("minimum") || schema.contains_key("maximum") {
-        let mut bounds: Vec<String> = Vec::new();
+        let mut bounds = Vec::new();
         if let Some(minimum) = schema.get("minimum") {
             bounds.push(format!("min={}", text_value(minimum)));
         }

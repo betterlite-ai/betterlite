@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 
-use betterlite_prompts::arguments::json::{Json, Object};
+use betterlite_prompts::arguments::json::Json;
 use betterlite_provider::oci_common::base_url::get_oci_base_url;
 use betterlite_provider::oci_common::credentials::{
     OciEnvValues, OciExplicitParams, resolve_oci_credentials,
@@ -144,7 +144,7 @@ fn schema_output(schema: &Json) -> serde_json::Value {
 }
 
 fn description_output(description: &str, schema: &Json) -> crate::helpers::HelperResult {
-    let object: &Object = schema
+    let object = schema
         .as_object()
         .ok_or_else(|| input_failure("schema must be an object".to_owned()))?;
     Ok(serde_json::json!(enrich_cohere_description(

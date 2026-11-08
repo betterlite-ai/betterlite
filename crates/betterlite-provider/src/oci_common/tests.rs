@@ -290,6 +290,37 @@ fn sign_oci_request_matches_the_litellm_header_set() {
 }
 
 #[test]
+fn sign_oci_request_keeps_the_raw_host_and_default_port() {
+    let mut headers = HeaderMap::new();
+    let request = Json::Object(Object::new());
+    sign_oci_request(
+        &mut headers,
+        &signing_credentials(TEST_KEY),
+        &request,
+        "https://Inference.Example.com:443/20231130/actions/chat",
+        &fixed_clock(),
+    )
+    .unwrap();
+    assert_eq!(header_text(&headers, "host"), "Inference.Example.com:443");
+    assert_signature_verifies(&headers, "/20231130/actions/chat");
+}
+
+#[test]
+fn sign_oci_request_keeps_the_raw_path() {
+    let mut headers = HeaderMap::new();
+    let request = Json::Object(Object::new());
+    sign_oci_request(
+        &mut headers,
+        &signing_credentials(TEST_KEY),
+        &request,
+        "https://host/20231130/actions/../actions/chat?x=1",
+        &fixed_clock(),
+    )
+    .unwrap();
+    assert_signature_verifies(&headers, "/20231130/actions/../actions/chat");
+}
+
+#[test]
 fn sign_oci_request_signs_a_string_that_verifies() {
     let mut headers = HeaderMap::new();
     let request = Json::Object(Object::new());
@@ -693,6 +724,18 @@ fn resolve_oci_schema_refs_matches_litellm(#[case] input: &str, #[case] expected
         resolve_oci_schema_refs(&parse_json(input)),
         parse_json(expected)
     );
+}
+
+#[test]
+fn resolve_oci_schema_refs_bounds_a_long_ref_chain() {
+    let chain = (0_u32..20_000_u32)
+        .zip(1_u32..=20_000_u32)
+        .map(|(from, to)| format!("\"c{from}\": {{\"$ref\": \"#/$defs/c{to}\"}}"))
+        .collect::<Vec<String>>()
+        .join(", ");
+    let schema = format!("{{\"$defs\": {{{chain}}}, \"a\": {{\"$ref\": \"#/$defs/c0\"}}}}");
+    let resolved = resolve_oci_schema_refs(&parse_json(&schema));
+    assert_eq!(resolved, parse_json(r#"{"a": {"type": "object"}}"#));
 }
 
 #[rstest]

@@ -8,6 +8,7 @@ use aws_lc_rs::signature::RSA_PKCS1_SHA256;
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use http::header::{AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, DATE, HOST, HeaderName};
 use http::{HeaderMap, HeaderValue};
+use secrecy::{ExposeSecret, SecretString};
 use serde::Serialize;
 use url::Url;
 
@@ -41,20 +42,15 @@ where
         status: 500,
         message: format!("the OCI api base is not a URL: {source}"),
     })?;
-    let host = parsed.authority();
-    let path = if parsed.path().is_empty() {
-        "/"
-    } else {
-        parsed.path()
-    };
+    let (host, path) = request_target(api_base, &parsed);
     let date = clock.now().format(RFC_7231_DATE).to_string();
     let content_type = content_type(headers)?;
     let content_length = body.len().to_string();
     let content_sha256 = STANDARD.encode(digest::digest(&SHA256, &body).as_ref());
     let subject = SignatureSubject {
         date: &date,
-        host,
-        path,
+        host: &host,
+        path: &path,
         content_type: &content_type,
         content_length: &content_length,
         content_sha256: &content_sha256,
@@ -63,7 +59,7 @@ where
     let signed = SignedHeaders {
         authorization: authorization(&key.key_id, &signature),
         date,
-        host: host.to_owned(),
+        host,
         content_type,
         content_length,
         content_sha256,
@@ -72,9 +68,45 @@ where
     Ok(body)
 }
 
+fn request_target(api_base: &str, parsed: &Url) -> (String, String) {
+    let fallback = || {
+        let path = if parsed.path().is_empty() {
+            "/"
+        } else {
+            parsed.path()
+        };
+        (parsed.authority().to_owned(), path.to_owned())
+    };
+    let Some((_, after_scheme)) = api_base.split_once("://") else {
+        return fallback();
+    };
+    let netloc_end = after_scheme
+        .find(['/', '?', '#'])
+        .unwrap_or(after_scheme.len());
+    let Some((netloc, rest)) = after_scheme.split_at_checked(netloc_end) else {
+        return fallback();
+    };
+    let path_end = rest.find(['?', '#']).unwrap_or(rest.len());
+    let Some(path_slice) = rest.get(..path_end) else {
+        return fallback();
+    };
+    let path = if path_slice.is_empty() {
+        "/"
+    } else {
+        path_slice
+    };
+    (netloc.to_owned(), path.to_owned())
+}
+
 struct SigningKey {
     key_id: String,
     key_pair: KeyPair,
+}
+
+#[derive(Clone, Copy)]
+enum KeySource<'values> {
+    Inline(&'values str),
+    File(&'values str),
 }
 
 fn signing_key(credentials: &OciCredentials) -> Result<SigningKey, OciError> {
@@ -93,36 +125,40 @@ fn signing_key(credentials: &OciCredentials) -> Result<SigningKey, OciError> {
     let inline_key = credentials
         .oci_key
         .as_ref()
-        .map(secrecy::ExposeSecret::expose_secret)
+        .map(ExposeSecret::expose_secret)
         .filter(|value| !value.is_empty());
     let key_file = credentials
         .oci_key_file
         .as_deref()
         .filter(|value| !value.is_empty());
-    let (Some(user), Some(fingerprint), Some(tenancy)) =
-        (user_value, fingerprint_value, tenancy_value)
+    let key_choice = inline_key
+        .map(KeySource::Inline)
+        .or_else(|| key_file.map(KeySource::File));
+    let (Some(user), Some(fingerprint), Some(tenancy), Some(key_source)) =
+        (user_value, fingerprint_value, tenancy_value, key_choice)
     else {
-        return Err(missing_credentials());
+        return Err(OciError {
+            status: 401,
+            message: MISSING_CREDENTIALS.to_owned(),
+        });
     };
-    let key_text = match (inline_key, key_file) {
-        (Some(key), _) => key.replace("\\n", "\n").replace("\r\n", "\n"),
-        (None, Some(path)) => read_key_file(path)?,
-        (None, None) => return Err(missing_credentials()),
-    };
+    let key_text = load_key_text(key_source)?;
     Ok(SigningKey {
         key_id: format!("{tenancy}/{user}/{fingerprint}"),
         key_pair: parse_pem_key(&key_text)?,
     })
 }
 
-fn missing_credentials() -> OciError {
-    OciError {
-        status: 401,
-        message: MISSING_CREDENTIALS.to_owned(),
+fn load_key_text(key_source: KeySource<'_>) -> Result<SecretString, OciError> {
+    match key_source {
+        KeySource::Inline(key) => Ok(SecretString::from(
+            key.replace("\\n", "\n").replace("\r\n", "\n"),
+        )),
+        KeySource::File(path) => read_key_file(path),
     }
 }
 
-fn read_key_file(path: &str) -> Result<String, OciError> {
+fn read_key_file(path: &str) -> Result<SecretString, OciError> {
     let content = match fs::read_to_string(path) {
         Ok(content) => content,
         Err(source) if source.kind() == ErrorKind::NotFound => {
@@ -145,11 +181,11 @@ fn read_key_file(path: &str) -> Result<String, OciError> {
             message: format!("Private key file is empty: {path}"),
         });
     }
-    Ok(trimmed.to_owned())
+    Ok(SecretString::from(trimmed.to_owned()))
 }
 
-fn parse_pem_key(text: &str) -> Result<KeyPair, OciError> {
-    let block = pem::parse(text).map_err(|source| OciError {
+fn parse_pem_key(key_text: &SecretString) -> Result<KeyPair, OciError> {
+    let block = pem::parse(key_text.expose_secret()).map_err(|source| OciError {
         status: 500,
         message: source.to_string(),
     })?;
