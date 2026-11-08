@@ -487,6 +487,22 @@ async fn anthropic_user_blocks_behavior_tests_behavior_a_document_block_keeps_un
 }
 
 #[tokio::test]
+async fn anthropic_user_blocks_behavior_tests_behavior_a_parts_list_at_the_limit_is_allowed() {
+    let parts = repeat_with(|| Json::Object(object(r#"{"type":"audio"}"#)))
+        .take(MAX_MESSAGE_PARTS)
+        .collect::<Vec<_>>();
+    let input = vec![Json::Object(Object::from_iter([
+        ("role".to_owned(), Json::Text("user".to_owned())),
+        ("content".to_owned(), Json::List(parts)),
+    ]))];
+    let run = convert_messages(&input, false, &BTreeMap::new())
+        .await
+        .unwrap();
+    assert!(run.blocks.is_empty());
+    assert_eq!(run.next, 1);
+}
+
+#[tokio::test]
 async fn anthropic_user_blocks_behavior_tests_behavior_too_many_parts_are_refused_by_the_run() {
     let parts = repeat_with(|| Json::Object(object(r#"{"type":"audio"}"#)))
         .take(MAX_MESSAGE_PARTS + 1)

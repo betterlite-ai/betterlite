@@ -192,6 +192,15 @@ fn anthropic_user_blocks_behavior_tests_behavior_an_image_url_object_is_counted(
 }
 
 #[test]
+fn anthropic_user_blocks_behavior_tests_behavior_a_message_list_at_the_limit_is_allowed() {
+    let input = repeat_with(|| user_message("go"))
+        .take(MAX_HISTORY_MESSAGES)
+        .collect::<Vec<_>>();
+    let prepared = prepare(&input, "claude-sonnet-4-5", "anthropic", false).unwrap();
+    assert_eq!(prepared.messages.len(), MAX_HISTORY_MESSAGES);
+}
+
+#[test]
 fn anthropic_user_blocks_behavior_tests_behavior_too_many_messages_are_refused() {
     let input = repeat_with(|| user_message("go"))
         .take(MAX_HISTORY_MESSAGES + 1)
