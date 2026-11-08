@@ -1,0 +1,14 @@
+kind: helper
+name: rubrik-delivery-initialization-env
+call:
+  b3976:
+    environment:
+      RUBRIK_API_KEY: env-key
+      RUBRIK_WEBHOOK_URL: https://env.test
+      RUBRIK_SAMPLING_RATE: "0.25"
+      RUBRIK_BATCH_SIZE: "7"
+    init: {}
+    replies: []
+    actions: []
+env: {}
+compare: {ignore: []}

@@ -28,6 +28,8 @@ scope:
     - tools/oracle/helpers/b3938/**
     - tools/oracle/src/helpers/logging/b3938.rs
     - tools/oracle/src/helpers/logging/b3938/**
+    - crates/betterlite-logging/src/registry/catalog/datadog_llm_observability.rs
+    - crates/betterlite-logging/src/registry/catalog/datadog_llm_observability/**
   lint_tables: false
 references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/datadog/datadog_llm_obs.py#L441-L486
@@ -49,6 +51,8 @@ references:
   - url: https://docs.datadoghq.com/llm_observability/
     why: LLM Observability span payload structure and intake schema.
 dod:
+  - text: "DataDogLLMObsLogger implements CallbackLogger, and registry/catalog/datadog_llm_observability.rs builds it for that name (tests named callback_logger_* in datadog_llm_observability and its catalog test folder)."
+    proof: [callback-logger]
   - text: Logger initialization with no dd_agent_host falls back to direct API; explicit dd_api_key and dd_site override environment; DD_API_KEY is required for direct API but not agent mode.
     proof: [endpoint-configuration]
   - text: Agent endpoint uses port LITELLM_DD_LLM_OBS_PORT (default 8126) from environment; direct API endpoint uses DD_SITE environment variable.
@@ -80,6 +84,9 @@ dod:
 checks:
   optional: [mutants]
   commands:
+    - id: callback-logger
+      why: datadog_llm_observability stays a stub or the LLM Obs logger lacks the trait
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^registry::catalog::datadog_llm_observability::/)' && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_llm_observability::(.*::)?callback_logger_/)'
     - id: endpoint-configuration
       why: endpoint configuration tests fail or do not exist
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_llm_obs_endpoint_configuration_behavior($|::)/)'

@@ -22,7 +22,7 @@ description: >-
   2. Log debug "Gigachat router passthrough: model='%s', endpoint='%s', streaming=%s" where streaming is the body's `stream` value or false. It is only logged.
   3. Set, in this order after the existing fields: `model`, `method` (the request method), `endpoint`, `json` (the get_request_body result from the route, not the re-read map), `custom_llm_provider` "gigachat".
   4. Remove the keys `gigachat_auth_url`, `gigachat_access_token`, `gigachat_scope`, `api_base` and `api_key` from the record, so a caller cannot choose the token, the OAuth URL or the upstream host. Only these top-level record keys are removed.
-  5. The record carries no `client`. LiteLLM attaches a pooled GigaChat client with a 600 second timeout and a 5 second connect timeout; the architect's processor wiring builds it from B173 when custom_llm_provider is "gigachat" (see notes).
+  5. The record carries no `client`. LiteLLM attaches a pooled GigaChat client with a 600 second timeout and a 5 second connect timeout; B8694's pipeline sets that client when custom_llm_provider is "gigachat".
   6. Call B7324's `PassthroughProcessor` (declared in passthrough_processor; import it and `PassthroughCall`, do not declare another) with the record, the request, the caller's response object, the key, the router and the model. Return its result or its error unchanged; B7324's processor already maps failures through the exception handler. When the result is a streaming response with no Content-Type header, set `Content-Type: text/event-stream; charset=utf-8`.
 
   Watsonx route. Path `/watsonx/{endpoint}`. Steps in order:
@@ -42,7 +42,6 @@ scope:
     - crates/betterlite-server/src/passthrough_vgw_routes/**
     - crates/betterlite-config/src/sections/gigachat_route.rs
     - crates/betterlite-config/src/sections/gigachat_route/**
-    - tools/oracle/cases/server/passthrough-vgw-routes/**
     - tools/oracle/helpers/b3627.py
     - tools/oracle/helpers/b3627/**
     - tools/oracle/src/helpers/server/b3627.rs
@@ -72,18 +71,20 @@ references:
   - url: https://docs.litellm.ai/docs/pass_through/gigachat
     why: User-facing description of the gigachat route.
 dod:
+  - text: The handlers are tested with tower's oneshot over this module's own Router and fake ports. B8609 mounts the routes and proves them over HTTP with the oracle cases that were listed here.
+    proof: [vllm-route-tests]
   - text: The vllm route sends a router model to the router with the body as `json` only for a JSON content type and the key's litellm_metadata, relays a Buffered reply, streams a StatusStream reply with its own status and headers and no keepalive, and answers 500 for a ByteStream reply.
-    proof: [vllm-route-tests, oracle]
+    proof: [vllm-route-tests]
   - text: The vllm route sends a body with no router model to provider_factory_route with provider vllm.
-    proof: [vllm-route-tests, oracle]
+    proof: [vllm-route-tests]
   - text: The gigachat route answers 400 "Model is required in request body" when there is no string model and the endpoint contains completions or embeddings, and forwards other model-less requests.
-    proof: [gigachat-direct-tests, oracle]
+    proof: [gigachat-direct-tests]
   - text: The gigachat direct path builds its target from gigachat_route.api_base, sends `Authorization Bearer` with the token from GigachatTokens, uses the request's own streaming flag, passes no custom_llm_provider, and turns a token failure into HTTP 500.
-    proof: [gigachat-direct-tests, config-tests, oracle]
+    proof: [gigachat-direct-tests, config-tests]
   - text: The gigachat router path builds the record in LiteLLM's key order, merges the four auth metadata keys over the caller's metadata, removes gigachat_auth_url, gigachat_access_token, gigachat_scope, api_base and api_key, and sets the SSE Content-Type on a streaming result that has none.
-    proof: [gigachat-router-tests, oracle]
+    proof: [gigachat-router-tests]
   - text: The watsonx route builds the target and headers through B5842 and B5970, reads the stream flag only on POST, keeps a caller `version` and otherwise sends version 2024-03-13, and passes custom_llm_provider watsonx.
-    proof: [watsonx-route-tests, oracle]
+    proof: [watsonx-route-tests]
   - text: The gigachat_route config section loads GIGACHAT_API_BASE from an injected environment and gives the default for an unset or empty value.
     proof: [config-tests, mutants]
 checks:
@@ -104,23 +105,7 @@ checks:
     - id: config-tests
       why: the gigachat_route section does not load or mis-parses the env var
       run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::gigachat_route::/)'
-oracle_cases:
-  - tools/oracle/cases/server/passthrough-vgw-routes/vllm-direct-forward.yaml
-  - tools/oracle/cases/server/passthrough-vgw-routes/vllm-router-model-json.yaml
-  - tools/oracle/cases/server/passthrough-vgw-routes/vllm-router-model-stream.yaml
-  - tools/oracle/cases/server/passthrough-vgw-routes/vllm-get-models-forward.yaml
-  - tools/oracle/cases/server/passthrough-vgw-routes/gigachat-chat-no-model-400.yaml
-  - tools/oracle/cases/server/passthrough-vgw-routes/gigachat-embeddings-no-model-400.yaml
-  - tools/oracle/cases/server/passthrough-vgw-routes/gigachat-empty-model-400.yaml
-  - tools/oracle/cases/server/passthrough-vgw-routes/gigachat-models-get-forward.yaml
-  - tools/oracle/cases/server/passthrough-vgw-routes/gigachat-direct-bearer.yaml
-  - tools/oracle/cases/server/passthrough-vgw-routes/gigachat-router-model.yaml
-  - tools/oracle/cases/server/passthrough-vgw-routes/gigachat-router-metadata.yaml
-  - tools/oracle/cases/server/passthrough-vgw-routes/gigachat-router-strips-api-base.yaml
-  - tools/oracle/cases/server/passthrough-vgw-routes/watsonx-default-version.yaml
-  - tools/oracle/cases/server/passthrough-vgw-routes/watsonx-version-kept.yaml
-  - tools/oracle/cases/server/passthrough-vgw-routes/watsonx-stream-flag.yaml
-  - tools/oracle/cases/server/passthrough-vgw-routes/watsonx-get-no-body-read.yaml
+oracle_cases: []
 deviations:
   - what: A provider error raised before the relay starts (a GigaChat token failure, Watsonx's missing-URL 401, or an IAM failure) answers HTTP 500 with a JSON detail whose only key is "error" and whose value is the message.
     why: LiteLLM lets the exception escape its route and the framework answers a plain-text 500. betterlite keeps the status and gives the message in the proxy's normal error shape. Open question in the notes.

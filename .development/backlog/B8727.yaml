@@ -1,0 +1,14 @@
+id: B8727
+milestone: M9 agents and mcp
+title: MCP transport handlers behind /mcp and the McpStreamHandler implementation
+status: todo
+depends_on: [B8720, B8721, B8722, B8723, B8724, B8725, B8726, B4673, B6593, B8194, B743, B8190, B8191, B4654]
+file: tasks/B8727-mcp-transport-handler.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/server.py"
+parent: B136
+split_from: B136
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

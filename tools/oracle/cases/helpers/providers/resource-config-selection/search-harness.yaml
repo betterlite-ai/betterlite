@@ -1,0 +1,35 @@
+kind: helper
+name: resource-config-search-harness
+call:
+  b5360:
+    requests:
+      - selector: search
+        calls:
+          - {search_provider: perplexity}
+          - {search_provider: tavily}
+          - {search_provider: parallel_ai}
+          - {search_provider: exa_ai}
+          - {search_provider: brave}
+          - {search_provider: google_pse}
+          - {search_provider: dataforseo}
+          - {search_provider: firecrawl}
+          - {search_provider: fastcrw}
+          - {search_provider: searxng}
+          - {search_provider: linkup}
+          - {search_provider: duckduckgo}
+          - {search_provider: searchapi}
+          - {search_provider: serper}
+          - {search_provider: you_com}
+          - {search_provider: apiserpent}
+          - {search_provider: tinyfish}
+          - {search_provider: agentcore}
+          - {search_provider: nimble}
+          - {search_provider: bing_grounding}
+      - selector: harness
+        calls:
+          - {harness: claude_code}
+          - {harness: codex}
+          - {harness: opencode}
+          - {harness: deepagents}
+env: {}
+compare: {ignore: []}

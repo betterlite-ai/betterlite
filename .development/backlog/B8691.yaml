@@ -1,0 +1,14 @@
+id: B8691
+milestone: M5 api families
+title: Router passthrough executor and router trait
+status: todo
+depends_on: [B8690, B6021, B8354, B247]
+file: tasks/B8691-router-passthrough-hop.yaml
+covers:
+  - "litellm/router.py"
+parent: B101
+split_from: B101
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

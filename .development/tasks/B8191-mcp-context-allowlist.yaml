@@ -5,8 +5,8 @@ description: >-
   no module state and no ContextVars, so the same fields become an explicit McpContext struct
   that the caller builds and passes down. Name every field the Python sets and reads.
 
-  client_allowlist.py decides whether an MCP client may use the gateway, from its name and
-  version. Port the matching rules and the allow and deny messages exactly.
+  client_allowlist.py decides whether an MCP client application may use the gateway. general_settings.mcp_allowed_clients lists
+  alias and value pairs; the caller's value comes from the JWT claim named by litellm_jwtauth.mcp_client_id_jwt_field for a JWT caller, else from the header named by general_settings.mcp_client_id_header, and only the value is compared, exactly and case sensitively. Port the loader, the identity rules and the deny messages exactly.
 
   elicitation_handler.py answers a server's elicitation request by building the form result or
   the decline. legacy_callbacks.py adapts the old callback style so servers that still use it

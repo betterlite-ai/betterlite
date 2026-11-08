@@ -1,0 +1,14 @@
+id: B8804
+milestone: M8 platform
+title: B1100 route modules take the production pre-call step
+status: todo
+depends_on: [B8801, B8802, B8636, B080, B081, B082, B3343, B3344, B3345, B6360, B941, B1125, B1051, B7326, B3372, B938, B939, B940, B8635]
+file: tasks/B8804-routes-take-pre-call.yaml
+covers:
+  - "litellm/proxy/common_request_processing.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

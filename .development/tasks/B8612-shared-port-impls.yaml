@@ -1,0 +1,127 @@
+id: B8612
+title: Production implementations of the shared settings, cache, secret, audit and agent read-through ports
+description: >-
+  Several tasks declared a port for something LiteLLM keeps in proxy_server.py and left the real implementation to the
+  composition root. These are used by more than one area, so they are built once here; B8613 makes the values at
+  startup and B8610 puts them into Shared. Code goes in crates/betterlite-server/src/shared_ports.rs and shared_ports/
+  (settings.rs, cache.rs, secrets.rs, audit.rs, agents.rs, error.rs, tests.rs; the module is declared by the skeleton).
+  No static, no global: every value gets its collaborators through its constructor. Constructors are `pub`, since the
+  binary crate calls them during startup.
+
+
+  General settings store. B8520 declared `GeneralSettingsStore` (endpoints::passthrough_config_writes::settings_port)
+  with `get_field(name)` and `update_field(update)`, and B8374 also claimed its implementation. This task is the one
+  owner. `ProxySettingsStore` implements it over the same services B8595's GET /config/field/info and POST
+  /config/field/update handlers call, which are LiteLLM's get_config_general_settings (L18532) and
+  update_config_general_settings (L18264): the row read, the update with its validation, the invalidation, the settings
+  store apply, the pass-through re-serve, the audit and the plugin re-registration all stay in B8595's code, and this
+  type only forwards and maps B8595's error into GeneralSettingsError with the same status and detail. Without a
+  database it answers 400 with {"error": CommonProxyErrors.db_not_connected_error}, which B8595's service already
+  returns. If B8595 left those services private to its handlers, stop and report a blocker instead of copying them. It
+  holds what B8595's services take (the optional database store, B8380's ProxyConfigState, B8230's PluginRegistry and
+  the rest; read config_fields.rs).
+
+
+  Cache runtime. LiteLLM's litellm.cache is a global that /cache/settings replaces at runtime, so the proxy needs a
+  swappable slot. `ResponseCacheSlot` holds `RwLock<Option<Arc<Cache>>>` (B4299's Cache) with `get()` and
+  `replace(cache)`. `ResponseCacheReinit` implements B8502's `CacheReinit` (cache_settings_update). `init_cache(params)`
+  ports ProxyConfig._init_cache (L5955-L5999): default_in_memory_ttl and default_redis_ttl in the params update the
+  cache defaults B4299 reads; the new cache comes from B8651's `build_response_cache(params, deps)` (never B4299's
+  constructor directly, so the semantic types work) and goes into the slot; then the usage Redis is resolved: the
+  current usage Redis when there is one, else the new cache's backend when it is a plain or cluster Redis, else B8377's
+  build_from_env, which logs "Cache backend %s is not a Redis KV cache; built a standalone Redis from REDIS_*
+  environment variables for usage tracking, rate limiting, and cross-pod coordination." when it builds one. A resolved
+  client goes through B8377's attach_usage_redis with enable_redis_auth_cache; with none, when the config cache has no
+  Redis, it logs "litellm_config_cache: no Redis configured; cluster-wide cache sharing disabled." at info. init_cache
+  returns the resolved usage Redis so the startup caller can publish it, as _set_redis_usage_cache does.
+  `switch_on_response_caching()` ports switch_on_llm_response_caching (L6001-L6012): when the RouterHandle (B8611) holds
+  a router, the slot holds a cache and the router's cache_responses is not true, it calls enable_cache_responses and
+  logs "Set router.cache_responses=True after initializing cache" at debug. `CacheRuntime::new(deps: SemanticDeps,
+  usage_redis, attach targets, env)` builds the three shared values together: `slot: Arc<ResponseCacheSlot>`,
+  `reinit: Arc<ResponseCacheReinit>` and `settings: Arc<CacheSettingsManager>` (B8502's one manager, whose last_params
+  B8384's reload and POST /cache/settings share). SemanticDeps is B8651's (router handle, the one LiveClientFactory, the
+  outbound HTTP client and the env map); the usage Redis cell is the value B8613 publishes; the attach targets are what
+  B8377's attach_usage_redis takes.
+
+
+  Secret lookup. B8500's `SecretLookup` has public fields manager, oidc_http, azure_tokens, clock and oidc_cache.
+  `production_secret_lookup(env)` returns it with manager None (B8590 installs the manager client at boot), oidc_http
+  backed by `OidcHttpClient`, azure_tokens backed by B677's get_azure_ad_token_provider in betterlite-azure, clock by
+  `SystemOidcClock` (std Instant and the system time in unix seconds) and an empty OidcTokenCache. `OidcHttpClient`
+  implements the sync `OidcHttp` trait with a blocking GET that sends the request's query and headers and honours
+  B4411's OidcHttpTimeouts (600 s read, 5 s connect); it uses the HTTP client B4411's helpers already build for
+  _get_oidc_http_handler when there is one, and otherwise the betterlite-http client with tokio::task::block_in_place
+  so the runtime is never blocked.
+
+
+  Config audit. B1656's `ConfigAudit` port (settings_services) takes the setting name, the before and after values and
+  the acting admin. `ConfigAuditLog` implements it with B8594's `config_audit_log(param, action, before, after, auth)`
+  (config_update) and the action "updated", the value LiteLLM's update routes pass to create_config_audit_log
+  (L18432-L18445).
+
+
+  Agents read-through. One B8231 RegistryReadThrough per process, so every area finds a just-created agent the same
+  way. `RegistryAgentSync` implements B8231's `AgentSync`: `cached(key)` is the registry's get_agent_by_id(key), then
+  get_agent_by_name(key); `load_locked(key)` takes B4776's reconcile() guard, checks cached again (true when found now),
+  then reads one row with B4777's AGENT_SELECT_SQL and `WHERE a.agent_id = $1`, then by agent_name, decodes it with
+  B4777's row codec, registers it and returns true, or false when no row. `ProxyDbObjects` implements B8231's
+  `DbObjects`: enabled is true only when a database store exists, general_settings.store_model_in_db is exactly true,
+  and B8380's should_load_db_object allows the object type. `SharedAgents` holds `registry: Arc<AgentRegistry>` and
+  `read_through: Arc<RegistryReadThrough<AgentResync<RegistryAgentSync, ProxyDbObjects>>>` (read B8231 for AgentResync's
+  exact shape), built with `SharedAgents::new(registry, db, proxy_config)` and B8231's default miss TTL and window.
+
+
+  Tests in shared_ports/tests.rs use in-memory stores and recording fakes for B8595's services, B8651's builder and
+  B8377's attach step, and a test Postgres only where AGENT_SELECT_SQL runs (B8231's own tests show the fixture). Names
+  start with `settings_`, `reinit_`, `switch_`, `secrets_`, `audit_` and `agents_`. No HTTP oracle case: the routes
+  that reach these ports are mounted by the pass-through, cache and secrets, agents and admin wiring parts, which add
+  the cases.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/shared_ports.rs
+    - crates/betterlite-server/src/shared_ports/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5955-L6012
+    why: _init_cache with the usage Redis resolution and switch_on_llm_response_caching.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18264-L18372
+    why: update_config_general_settings, the write the settings store forwards to.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L18432-L18445
+    why: create_config_audit_log, the audit B1656's port stands for.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/cache_settings_endpoints.py#L388-L406
+    why: The cache settings reload compares the last params, calls _init_cache and then switch_on_llm_response_caching.
+dod:
+  - text: ProxySettingsStore reads and updates a general setting through B8595's services and keeps their status and detail, including the 400 without a database.
+    proof: [ports-tests]
+  - text: init_cache builds the cache through build_response_cache, replaces it in the slot, resolves the usage Redis in LiteLLM's order with its log lines and attaches it, switch_on_response_caching sets cache_responses only when a router and a cache exist, and CacheRuntime hands out one slot, one reinit and one CacheSettingsManager.
+    proof: [ports-tests]
+  - text: production_secret_lookup has no manager, real OIDC HTTP, the Azure token provider and the system clock, and the OIDC GET sends the query, headers and timeouts it is given.
+    proof: [ports-tests]
+  - text: ConfigAuditLog writes one audit through config_audit_log with the setting name, both values, the admin and the action updated.
+    proof: [ports-tests]
+  - text: SharedAgents finds a registered agent without a query, loads a missing one by id then by name under the reconcile lock, and reads nothing when the database is off or store_model_in_db is not true.
+    proof: [ports-tests]
+checks:
+  optional: []
+  commands:
+    - id: ports-tests
+      why: a shared port forwards to the wrong service, loses a status, resolves the usage Redis in another order, switches caching on without a cache, or the agent read-through loads without the lock or with the database off
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^shared_ports::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The /config/field routes and their services: B8595. The pass-through config routes: B8520, mounted by the pass-through wiring part."
+  - "The /cache/settings routes: B8502, B4307 and B4308, mounted by the cache and secrets wiring part. The semantic backends: B8651."
+  - "Installing the secret manager client at boot (initialize_secret_manager): B8590."
+  - "RegistryReadThrough itself and AgentResync: B8231. The agent services that call attempt: B8645."
+  - "Making these values at startup: B8613. Putting them into Shared: B8610."
+pitfalls:
+  - The usage Redis already selected at startup wins over the new cache backend, so a /cache/settings change never moves rate limits and spend counters to another Redis.
+  - switch_on_response_caching does nothing when the router already has cache_responses true, so it logs nothing the second time.
+  - The OIDC client is sync on purpose (B8500's lookup runs during config load); calling a blocking request straight on a runtime worker thread stalls every connection on it.
+  - load_locked must check the registry again after taking the reconcile guard, or two requests for the same new agent register it twice.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

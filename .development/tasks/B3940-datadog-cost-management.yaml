@@ -39,6 +39,8 @@ scope:
     - tools/oracle/helpers/b3940/**
     - tools/oracle/src/helpers/logging/b3940.rs
     - tools/oracle/src/helpers/logging/b3940/**
+    - crates/betterlite-logging/src/registry/catalog/datadog_cost_management.rs
+    - crates/betterlite-logging/src/registry/catalog/datadog_cost_management/**
   lint_tables: false
 
 references:
@@ -60,6 +62,8 @@ references:
     why: DatadogCostManagementInitParams and DatadogFOCUSCostEntry TypedDict definitions.
 
 dod:
+  - text: "DatadogCostManagementLogger implements CallbackLogger, and registry/catalog/datadog_cost_management.rs builds it with the callback_settings entry of that name as its init params, as initialize_callbacks_on_proxy does (tests named callback_logger_* under datadog::cost_management and its catalog test folder)."
+    proof: [callback-logger]
   - text: DatadogCostManagementLogger loads cost_tag_keys from configuration and accepts cost_tag_keys in constructor, defaulting to an empty list.
     proof: [config-init]
   - text: Only success records with positive response_cost are added to the log queue; zero and negative costs are silently dropped.
@@ -90,6 +94,9 @@ dod:
 checks:
   optional: [mutants]
   commands:
+    - id: callback-logger
+      why: datadog_cost_management is unresolved or ignores its callback_settings entry
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^registry::catalog::datadog_cost_management::/)' && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog::cost_management::(.*::)?callback_logger_/)'
     - id: config-init
       why: cost_tag_keys parameter or loading fails or does not exist
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(datadog_cost_management::tests::init)'

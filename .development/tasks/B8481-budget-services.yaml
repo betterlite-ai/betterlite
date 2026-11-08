@@ -10,16 +10,15 @@ description: >-
   3. proxy_server.py L2470: `app.add_middleware(BudgetReservationReleaseMiddleware, release=release_unbound_budget_reservation)`. Implement B8270's `ReservationReleaser` trait with B3003's `release_unbound_budget_reservation` (budget_reservation.py L468-L478): it does nothing for a reservation whose `callback_bound` is true and otherwise calls `release_or_invalidate_budget_reservation`. The skip decision stays in B3003; the adapter only forwards.
   4. B1719's reservation settlement port (betterlite-server::spend::settlement). Its methods map one to one onto B3003: reconcile with the actual Decimal cost and the `finalize` and `apply_consistent` flags goes to `reconcile_budget_reservation`, release goes to `release_budget_reservation`, invalidation goes to `invalidate_budget_reservation_counters`. Convert the Decimal cost to the type B3003 takes with a checked conversion, as B1719 already does for its own inputs. B1719 requires that construction rejects an enabled reservation feature without its backend: `BudgetServices::new` returns the typed error when reservations are enabled and the settlement backend is missing, and no-op behavior is allowed only when there is no reservation.
 
-  Shape. `BudgetServices::new(...)` takes the spend counter cache and the handles the limiter and the settlement code need (B3006's and B3003's constructors list them) and returns the struct; accessors hand out `Arc<dyn Port>` values for each port above, all backed by the same instances. The architect's skeleton puts `BudgetServices` into the server state at startup and passes the accessors to the auth stages, B8270's layer and B1719's coordinator; this task does not edit app.rs, state.rs or another task's module.
+  Shape. `BudgetServices::new(...)` takes the spend counter cache and the handles the limiter and the settlement code need (B3006's and B3003's constructors list them) and returns the struct; accessors hand out `Arc<dyn Port>` values for each port above, all backed by the same instances. B8610 holds the one `BudgetServices` in Shared as `budget`, B8660 passes the accessors to the auth slots and the reservation call, and the edge part (B8680) installs B8270's layer with the releaser; this task does not edit app.rs, state.rs or another task's module.
 
-  HTTP oracle cases, through the booted proxy with B860's Postgres fixtures and the oracle's mock provider, in tools/oracle/cases/budget-services/: a key whose `model_max_budget` gives the requested model `{"max_budget": 0, "budget_duration": "1d"}` is refused on `/v1/chat/completions` with the status, error type and code LiteLLM answers (zero cap denies, B3006); the same key asking for a model that is not in its map gets 200; a team with the same zero cap on the model refuses its team key. These prove the limiter reaches auth through the ports; the parts only had helper and native tests for it.
+  The limiter reaches auth only after B8660 plugs these ports into the auth slots, so B8660 owns the HTTP cases in tools/oracle/cases/budget-services/ (a zero model cap refused for a key and for a team, and a key served for a model outside its map). Here the tests drive the real adapters over fake engines.
 
   Module layout: `crates/betterlite-server/src/budget_services.rs` for the struct and the constructor, `budget_services/model_budget.rs` for the limiter adapters, `budget_services/reservation.rs` for the releaser and settlement adapters, `budget_services/error.rs` and `budget_services/tests.rs`. Tests use the real adapters over fake engines and assert that each port reaches the one shared instance.
 scope:
   paths:
     - crates/betterlite-server/src/budget_services.rs
     - crates/betterlite-server/src/budget_services/**
-    - tools/oracle/cases/budget-services/**
     - tools/oracle/helpers/b8481.py
     - tools/oracle/helpers/b8481/**
     - tools/oracle/src/helpers/server/b8481.rs
@@ -45,29 +44,23 @@ dod:
     proof: [services-tests]
   - text: Construction with reservations enabled and no settlement backend fails with the typed error.
     proof: [services-tests]
-  - text: A key or team with a zero model cap is refused on /v1/chat/completions for that model and served for another model, the same as LiteLLM.
-    proof: [new-cases, oracle]
+  - text: The key, user and team limiter ports return the limiter's zero cap refusal unchanged and pass a model outside the map; B8660 proves both over HTTP.
+    proof: [services-tests]
 checks:
   optional: []
   commands:
     - id: services-tests
       why: the budget services are not built, an adapter reaches a different instance, or construction accepts a missing backend
       run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^budget_services::tests::/)'
-    - id: new-cases
-      why: the model budget wiring has no booted-proxy case on this branch
-      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/budget-services)"
-oracle_cases:
-  - tools/oracle/cases/budget-services/key-model-zero-cap.yaml
-  - tools/oracle/cases/budget-services/key-model-not-capped.yaml
-  - tools/oracle/cases/budget-services/team-model-zero-cap.yaml
+oracle_cases: []
 deviations: []
 out_of_scope:
   - "The limiter's checks, charging and legacy carry: B3005 and B3006. The limiter protocols and auth callers: B753 and B755. Compaction's own checks: B970."
   - "Reconcile, release, invalidate and release_unbound_budget_reservation: B3003. The release layer and its slot: B8270. The post-call coordinator and its port: B1719."
   - "reserve_budget_for_request and its lease renewal: B8480. Copying the reservation into the request: B1225."
-  - "B732's BudgetAdmission port (admit over AuthContext and RequestScope) has only a test double, and its two inputs do not carry the body, token objects and settings that reserve_budget_for_request needs, so no part here implements it: B1225 calls B8480 directly after auth. The wave 17 spend wiring part implements BudgetAdmission."
+  - "B732's BudgetAdmission port (admit over AuthContext and RequestScope) has only a test double, and its two inputs do not carry the body, token objects and settings that reserve_budget_for_request needs, so no part here implements it: B1225 calls B8480 directly after auth. B8660 removes the unused port instead of implementing it."
   - "The session budget limiter is a PROXY_HOOKS entry that B8399 registers; the reset job schedule is B124's startup work."
-  - "Putting BudgetServices into the server state and the layer order: the architect's skeleton and B122."
+  - "Holding BudgetServices in Shared: B8610. Passing its accessors to the auth slots and B1225's reservation call: B8660. Installing B8270's layer with the releaser: the edge part (B8680)."
 pitfalls:
   - "LiteLLM's limiter is a module global: building a second instance for compaction or for the callback list splits the in-memory counters and the legacy-carry state, so a cap checked in auth would miss spend charged elsewhere."
   - "add_litellm_callback runs at import, before startup; the limiter is in the callback list even when no callbacks are configured, so do not gate its registration on litellm_settings.callbacks."

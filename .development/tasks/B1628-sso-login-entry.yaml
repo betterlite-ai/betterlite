@@ -38,7 +38,6 @@ scope:
     - crates/betterlite-config/src/sso_login_entry.rs
     - crates/betterlite-config/src/sso_login_entry/**
     - crates/betterlite-config/fuzz/corpus/config_yaml/sso-login-entry-*
-    - tools/oracle/cases/sso/login-entry/**
     - tools/oracle/helpers/b1628.py
     - tools/oracle/helpers/b1628/**
     - tools/oracle/src/helpers/server/b1628.rs
@@ -52,10 +51,12 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/ui_sso.py#L3231-L3239
     why: OAuth provider presence predicate, separate from SAML configuration.
 dod:
+  - text: The handlers are tested with tower's oneshot over this task's own Router and fake ports; B8770 mounts them through B063 and proves them over HTTP.
+    proof: [login-entry-tests]
   - text: The real login route chooses the correct provider or local form and emits compatible authorization URLs and cookies.
-    proof: [login-entry-tests, oracle]
+    proof: [login-entry-tests]
   - text: PKCE authorization persists its verifier before returning the redirect and does not overwrite the PKCE cookie for plain OAuth.
-    proof: [login-entry-tests, oracle]
+    proof: [login-entry-tests]
   - text: Login settings and query bytes load through production boundaries, with the user-count gate removed.
     proof: [login-entry-tests, login-entry-config, login-entry-corpora]
 checks:
@@ -70,14 +71,7 @@ checks:
     - id: login-entry-corpora
       why: Login query parsing and combined configuration have no newly added replay inputs.
       run: test -f crates/betterlite-server/fuzz/fuzz_targets/sso_login_query.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/sso_login_query)" && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/sso-login-entry-*')" && cargo nextest run --locked -p betterlite-server -p betterlite-config --no-tests=fail -E 'test(replays_the_sso_login_query_corpus) | test(replays_the_config_yaml_corpus)'
-oracle_cases:
-  - tools/oracle/cases/sso/login-entry/disabled-ui-before-configuration.yaml
-  - tools/oracle/cases/sso/login-entry/local-password-form-return-cookie.yaml
-  - tools/oracle/cases/sso/login-entry/generic-authorization-with-pkce.yaml
-  - tools/oracle/cases/sso/login-entry/plain-oauth-preserves-pkce-cookie.yaml
-  - tools/oracle/cases/sso/login-entry/microsoft-common-tenant-authorization.yaml
-  - tools/oracle/cases/sso/login-entry/invalid-cli-session.yaml
-  - tools/oracle/cases/sso/login-entry/saml-only-provider.yaml
+oracle_cases: []
 deviations:
   - what: OAuth and SAML login entry remains available above five billable users without an Enterprise license.
     why: betterlite has no paid tier or user-count ceiling; native tests cover both sides of the former five-user boundary.

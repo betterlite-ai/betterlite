@@ -69,6 +69,8 @@ references:
       Datadog Logs API endpoint reference: /api/v2/logs, 202 acceptance,
       5MB uncompressed limit.
 dod:
+  - text: "DataDogLogger implements betterlite_logging::callback_logger::CallbackLogger for async success and failure, so the datadog arm of B8655 can hand it to the server resolver (tests named callback_logger_* in datadog_logging)."
+    proof: [callback-logger]
   - text: DD_BATCH_SIZE environment variable resolves to an integer between 1 and DD_MAX_BATCH_SIZE; invalid strings log a warning and use the default; invalid-string warning includes the variable name and default value.
     proof: [batch-size-resolution]
   - text: Logger initialization with no dd_agent_host falls back to environment, then tries direct API; explicit dd_api_key and dd_site override environment; allow_env_credentials false prevents DD_API_KEY lookup.
@@ -98,6 +100,9 @@ dod:
 checks:
   optional: [mutants]
   commands:
+    - id: callback-logger
+      why: DataDogLogger has no CallbackLogger impl for the server resolver
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^datadog_logging::(.*::)?callback_logger_/)'
     - id: batch-size-resolution
       why: DD_BATCH_SIZE resolution tests fail or do not exist
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/datadog_batch_size_resolution_behavior($|::)/)'

@@ -1,0 +1,15 @@
+kind: helper
+name: openai-chat-content-seed-system-messages-first
+call:
+  openai_chat_content:
+    transform_requests:
+      requests:
+        - model: gpt-4.1
+          provider: openai
+          system_messages_first: true
+          messages:
+            - {role: user, content: first turn}
+            - {role: system, content: sys 1}
+            - {role: developer, content: dev}
+env: {}
+compare: {ignore: []}

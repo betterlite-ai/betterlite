@@ -37,6 +37,8 @@ scope:
     - tools/oracle/helpers/b4002/**
     - tools/oracle/src/helpers/logging/b4002.rs
     - tools/oracle/src/helpers/logging/b4002/**
+    - crates/betterlite-logging/src/registry/catalog/azure_sentinel.rs
+    - crates/betterlite-logging/src/registry/catalog/azure_sentinel/**
   lint_tables: false
 
 references:
@@ -92,6 +94,8 @@ references:
     why: "Module exports AzureSentinelLogger."
 
 dod:
+  - text: "AzureSentinelLogger implements CallbackLogger for model events and registry/catalog/azure_sentinel.rs builds it; its audit batches stay on async_log_audit_log_event, which the trait does not carry (tests named callback_logger_* in azure_sentinel_logging and registry/catalog/azure_sentinel/tests.rs)."
+    proof: [callback-logger]
   - text: "AzureSentinelLogger initializes with required environment variables and raises ValueError if any required var is missing."
     proof: [sentinel-init-test, sentinel-init-oracle]
 
@@ -125,6 +129,9 @@ dod:
 checks:
   optional: []
   commands:
+    - id: callback-logger
+      why: azure_sentinel still fails at startup or its model events skip the trait
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^registry::catalog::azure_sentinel::/)' && cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^azure_sentinel_logging::(.*::)?callback_logger_/)'
     - id: sentinel-init-test
       why: Initialization tests missing or failing
       run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^azure_sentinel_logging::.*init($|::)/) - test(replays_the_helper_case_corpus)'
