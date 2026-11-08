@@ -1,0 +1,143 @@
+id: B4789
+title: Relay A2A message and task subscription streams
+description: >-
+  Build module a2a_stream in crate betterlite-proxy (crates/betterlite-proxy/src/agent_endpoints/a2a_stream.rs and a2a_stream/**). It turns the two streaming A2A calls into Server-Sent Events: message/stream and tasks/resubscribe. No HTTP route calls it yet. The B141 route handler does, after it has found the agent, checked access and built the forwarding headers. Dependencies come in through constructors and generics, as in agent_endpoints/databricks_oauth. No statics, no trait objects, native async traits. The skeleton declares the module in agent_endpoints.rs, so do not edit that file.
+
+  Split the code into these files, each under 300 lines. error.rs holds the error enums, ports.rs the traits, framing.rs the SSE framing, lines.rs the line splitter, event_source.rs the upstream reader, keepalive.rs the ping wrapper, and a2a_stream.rs the two public relay functions. All JSON is serde_json::Value, and `JsonStream` is `futures_util::stream::BoxStream<'static, Result<serde_json::Value, StreamError>>`. Add futures-util, betterlite-core, betterlite-a2a (for the B6950 params record) and tokio with the "time" feature to crates/betterlite-proxy/Cargo.toml.
+
+  Ports (ports.rs). Each is wired by B141 over the task named in its comment.
+  - `StreamEventConverter { fn convert(&self, event: serde_json::Map<String, Value>, request_id: Option<&Value>) -> serde_json::Map<String, Value> }`. The real impl wraps normalize_stream_event of B4812 with the version the agent is served at.
+  - `UpstreamAgentStream { fn stream(&self, open: StreamOpen) -> JsonStream }`. The real impl wraps asend_message_streaming of B4814. The method is not async: the stream connects when it is first polled, like LiteLLM's async generator, so every failure arrives as an Err item. StreamOpen { request_id: Value, params: MessageSendParamsV03, api_base: Option<String>, litellm_params: Option<BTreeMap<String, Value>>, agent_id: Option<String>, metadata: Option<Value>, proxy_server_request: Option<Value>, agent_extra_headers: Option<Vec<(String, String)>> }. MessageSendParamsV03 is the record B6950 defines in betterlite-a2a send_params.
+  - `StreamHooks { fn serve(&self, events: JsonStream) -> HookedStream }` with `HookedStream = BoxStream<'static, Result<Value, StreamFailure>>`. The real impl wraps LiteLLM's ProxyBaseLLMRequestProcessing.async_streaming_data_generator: the proxy iterator hook, the per-chunk post-call hook, and on an error the post_call_failure_hook plus the redacted message. StreamFailure is `Rejected { status: u16, detail: String }` (LiteLLM's HTTPException) or `Failed { message: String }` (the final message text, already redacted).
+
+  Framing (framing.rs).
+  1. `sse_event(payload: &Value) -> String` returns "data: " + the JSON text + "\n\n". Mirrors _sse_event (a2a_endpoints.py L81-L83).
+  2. `to_jsonrpc_object(chunk: Value) -> Value` mirrors _to_jsonrpc_object (L86-L99). A Value::String is parsed as JSON and the parsed value is returned; when it does not parse, the string itself comes back. Any other value comes back unchanged. (A guardrail that ends a stream sends the JSON-RPC object as text. Python's bytes and model_dump cases do not exist here, chunks are already Value.)
+  3. `error_event(request_id: &Value, code: i64, message: &str) -> Value` builds {"jsonrpc": "2.0", "id": request_id, "error": {"code": code, "message": message}}.
+
+  Line splitter (lines.rs), the parser of bytes that come from the agent. `LineSplitter` has `push(&mut self, chunk: &[u8]) -> Vec<String>` and `finish(self) -> Option<String>`. It cuts the byte stream into lines at "\n", "\r\n" and a lone "\r", the way httpx aiter_lines does, and keeps a partial line (and a trailing "\r" that a "\n" may follow in the next chunk) until more bytes arrive. Each line is decoded as UTF-8 with invalid bytes replaced. `finish` returns the last line when the stream ended without a line break and it is not empty. `event_from_line(line: &str) -> Option<Value>`: strip the line (Unicode whitespace on both ends); if it does not start with "data:", return None; take the rest, strip it, and return None when it is empty or does not parse as JSON; otherwise return the parsed value of any JSON type. Only data lines count: "event:", "id:", "retry:" and comment lines are ignored, and a JSON value is never joined across two data lines.
+
+  Upstream reader (event_source.rs). `a2a_sse_event_source<C>(client: &ProxiedClient, converter: &C, request: EventSourceRequest) -> JsonStream` with EventSourceRequest { agent_url: String, body: Value, request_id: Option<Value>, extra_headers: Vec<(String, String)> }. Mirrors _a2a_sse_event_source (L270-L329). Send one POST with ProxiedClient::send (not send_buffered) and OutboundRequest as in agent_endpoints/databricks_oauth/fetch.rs. Headers: "Content-Type: application/json", "Accept: text/event-stream", then extra_headers; an extra header with the same name (compared in lowercase) replaces the earlier one. Body is the JSON text of `body`. The deadline is the constant STREAM_DEADLINE of 24 hours, since OutboundRequest cannot be left without one (LiteLLM passes timeout None). Then:
+  - A status outside 200-299: read the whole body with StreamResponse::buffered using the body limit of the client (`client.limits.body_bytes`). Parse it as JSON. When it is an object with an "error" key, the single event is `normalize_a2a_jsonrpc_response(&parsed, request_id)` from betterlite-core agents::provider::a2a (B4771). In every other case the single event is `error_event` with code -32603 and the status's canonical reason text ("Not Found" for 404, empty when it has none) as the message, and id = request_id or null. Yield that one event and end. These error events do NOT go through the converter.
+  - A success status: read `body_stream()`, push each chunk through LineSplitter, call `event_from_line` on every line (and on the `finish` line), skip the None ones. An event that is a JSON object goes through `converter.convert(object, request_id)`; any other JSON value is yielded as it is. Yield events in order as they arrive, one per data line.
+  - A failure to build the URL, to connect or to read the body is an Err(StreamError) item and ends the stream. Dropping the returned stream drops the response and its lease, so the upstream connection closes.
+
+  Keepalive (keepalive.rs). The Python helper sse_keepalive.py is covered by B005, but no Rust function exists below betterlite-server, which betterlite-proxy cannot depend on. So write the small part A2A needs here. `coerce_keepalive_interval(seconds: Option<f64>) -> Option<Duration>` returns None for None, NaN, infinity, zero and negative values. `with_pings(frames: BoxStream<'static, Result<String, StreamAbort>>, interval: Duration) -> BoxStream<...>` yields ": ping\n\n" every time `interval` passes with no frame from the inner stream, including before the first frame, and passes every inner frame through in order. Use tokio::time::timeout around the next-item future of the inner stream (StreamExt::next is cancel safe). When the inner stream ends, end. Dropping the wrapper drops the inner stream.
+
+  Public relay functions (a2a_stream.rs). `pub struct SseResponse { pub headers: Vec<(&'static str, &'static str)>, pub body: BoxStream<'static, Result<String, StreamAbort>> }`; the media type is always "text/event-stream" (constant MEDIA_TYPE). StreamAbort { message: String } means "stop the response body with an error", which the route layer turns into a cut connection, since the status line is already sent.
+  - `sse_response(frames, ping_interval: Option<f64>) -> SseResponse` mirrors _sse_streaming_response (L332-L345). With no valid interval, no headers and the frames as they are. With one, the frames wrapped by `with_pings` and the headers ("Cache-Control", "no-cache") and ("X-Accel-Buffering", "no").
+  - `relay_message_stream<U, C, H>(upstream: &U, converter: &C, hooks: Option<&H>, request: MessageStreamRequest, ping_interval: Option<f64>) -> SseResponse` mirrors _handle_stream_message (L412-L563) without its "a2a package not installed" branch. MessageStreamRequest { request_id: Value, params: Value, api_base, litellm_params, agent_id, metadata, proxy_server_request, agent_extra_headers } (the caller has already replaced a missing request id with the empty string). Steps: (1) call `build_message_send_params(&request.params)` from B6950. On Err(e) return an SseResponse with no headers and no pings whose body is the one frame `sse_event(error_event(request_id, -32602, "Invalid params: " + e Display))`. (2) Otherwise open `upstream.stream(StreamOpen {...})`. Each item is turned into a frame by `sse_chunk`: `to_jsonrpc_object`, then, when the result is a JSON object, `converter.convert(object, Some(&request_id))`, then `sse_event`. (3) With hooks: `hooks.serve(stream)` and each Ok item goes through `sse_chunk`; a `Failed { message }` becomes the frame `sse_event(error_event(request_id, -32603, message))` and the stream ends; a `Rejected` ends the body with Err(StreamAbort { message: detail }) and no frame. (4) Without hooks: each Ok item goes through `sse_chunk`; the first Err(e) logs "Error streaming A2A response: <e>" at error level with tracing::error!, yields the frame `error_event(request_id, -32603, "Streaming error: " + e Display)` and ends. (5) Finish with `sse_response(frames, ping_interval)`, except in the invalid-params case.
+  - `relay_task_subscription<C, H>(client: &ProxiedClient, converter: &C, hooks: Option<&H>, request: EventSourceRequest, ping_interval: Option<f64>) -> SseResponse` mirrors _forward_jsonrpc_sse (L348-L409). It builds the stream with `a2a_sse_event_source`. Each item is framed with `sse_event` only (the source has already converted it). With hooks: `hooks.serve(stream)`; a `Failed { message }` becomes the frame `error_event(request_id or null, -32603, message)` and the stream ends; a `Rejected` ends the body with Err(StreamAbort). Without hooks the Err(StreamError) of the source ends the body with Err(StreamAbort { message: e Display }) and no frame. Finish with `sse_response`.
+
+  Tests live next to the code in tests.rs files whose behavior module is named a2a_stream_tests_behavior. Use hand-written fakes for the three ports and for the agent (a local tokio TcpListener serving canned SSE bytes in chunks is fine, or ProxiedClient's mock in agent_endpoints tests if one exists). Cover each DoD line below.
+
+  Fuzz. The decoder is `LineSplitter::push`/`finish` plus `event_from_line`, and its input is the raw response bytes from the agent. Add a cargo-fuzz target crates/betterlite-proxy/fuzz/fuzz_targets/a2a_sse_lines.rs (a new fuzz crate crates/betterlite-proxy/fuzz/Cargo.toml named betterlite-proxy-fuzz, laid out like crates/betterlite-prompts/fuzz/Cargo.toml). It splits the input bytes in two at an index taken from the first byte, pushes both parts and calls event_from_line on every line. It must not panic. Commit seed files under crates/betterlite-proxy/fuzz/corpus/a2a_sse_lines/ (a complete event, an event split inside a multi-byte character, a CRLF pair split across two pushes, a lone CR, a comment line, invalid UTF-8, a line without a break at the end) and a test replays_the_a2a_sse_lines_corpus in lines/tests.rs that reads every file there with rstest #[files("fuzz/corpus/a2a_sse_lines/*")], like replays_the_gitlab_templates_corpus in crates/betterlite-prompts/src/gitlab_templates/tests.rs.
+scope:
+  paths:
+    - crates/betterlite-proxy/src/agent_endpoints/a2a_stream.rs
+    - crates/betterlite-proxy/src/agent_endpoints/a2a_stream/**
+    - crates/betterlite-proxy/Cargo.toml
+    - Cargo.lock
+    - crates/betterlite-proxy/fuzz/Cargo.toml
+    - crates/betterlite-proxy/fuzz/fuzz_targets/a2a_sse_lines.rs
+    - crates/betterlite-proxy/fuzz/corpus/a2a_sse_lines/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L81-L99
+    why: The SSE frame and the chunk-to-JSON-RPC coercion (strings are parsed as JSON).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L270-L329
+    why: The upstream SSE reader, its headers, the non-2xx error event and the data-line parsing.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L332-L409
+    why: The response wrapper with keepalive pings and the tasks/resubscribe relay with and without hooks.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L412-L563
+    why: The message/stream relay, its invalid-params stream, the converter step per chunk and the two error paths.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/agent_endpoints/a2a_endpoints.py#L977-L1032
+    why: The two call sites in invoke_agent_a2a (message/stream and tasks/resubscribe), which B141 wires to these functions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/sse_keepalive.py#L22-L90
+    why: >-
+      coerce_keepalive_interval, the ": ping" comment and the idle-gap ping loop this task rewrites.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3867-L3990
+    why: async_streaming_data_generator, the behavior behind the StreamHooks port (failure hook, message redaction, HTTP errors re-raised).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/agents.py#L416-L443
+    why: _normalize_a2a_jsonrpc_response, used for the upstream error event (already built in betterlite-core by B4771).
+dod:
+  - text: >-
+      sse_event writes "data: " plus the JSON plus a blank line, and to_jsonrpc_object parses a string chunk as JSON and leaves other values and unparsable strings as they are.
+    proof: [stream-tests]
+  - text: LineSplitter cuts lines at LF, CRLF and lone CR across chunk boundaries, keeps a partial line and a trailing CR until more bytes arrive, and finish returns an unterminated last line.
+    proof: [stream-tests]
+  - text: event_from_line accepts only stripped lines that start with "data:" and hold JSON, and ignores every other line.
+    proof: [stream-tests]
+  - text: a2a_sse_event_source posts with Content-Type, Accept text/event-stream and the extra headers (a same-named extra header wins), and yields one event per data line in order, converting only JSON objects.
+    proof: [stream-tests]
+  - text: A non-2xx upstream answer becomes one error event, the normalized upstream body when it is an object with "error", otherwise code -32603 with the reason text, and ends the stream.
+    proof: [stream-tests]
+  - text: Connection and read failures end the event source with a StreamError item, and dropping the stream closes the upstream response.
+    proof: [stream-tests]
+  - text: >-
+      sse_response adds the Cache-Control and X-Accel-Buffering headers and ": ping" frames only for a finite positive interval, and the pings fill idle gaps including the one before the first frame.
+    proof: [stream-tests]
+  - text: >-
+      relay_message_stream answers invalid params with the single frame code -32602 "Invalid params: ..." and no headers, and otherwise frames every upstream chunk after the converter step.
+    proof: [stream-tests]
+  - text: >-
+      relay_message_stream turns an error into a -32603 "Streaming error: ..." frame without hooks and into the hook's message with hooks, and a Rejected hook failure ends the body with StreamAbort and no frame.
+    proof: [stream-tests]
+  - text: relay_task_subscription frames the source's events as they are, turns a hook Failed into a -32603 frame, and ends the body with StreamAbort on a source error without hooks or a Rejected failure.
+    proof: [stream-tests]
+  - text: The line decoder does not panic on any byte input and the committed corpus replays through it.
+    proof: [lines-corpus]
+checks:
+  optional: []
+  commands:
+    - id: stream-tests
+      why: the a2a_stream behavior tests fail or do not exist
+      run: >-
+        cargo nextest run --locked -p betterlite-proxy --no-tests=fail
+        -E 'test(/^agent_endpoints::a2a_stream::(.*::)?a2a_stream_tests_behavior($|::)/) - test(/replays_the_/)'
+    - id: lines-corpus
+      why: the line decoder fuzz target, its new seeds or their replay test is missing or fails
+      run: >-
+        test -f crates/betterlite-proxy/fuzz/fuzz_targets/a2a_sse_lines.rs &&
+        grep -q 'name = "a2a_sse_lines"' crates/betterlite-proxy/fuzz/Cargo.toml &&
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-proxy/fuzz/corpus/a2a_sse_lines)" &&
+        cargo nextest run --locked -p betterlite-proxy --no-tests=fail -E 'test(replays_the_a2a_sse_lines_corpus)'
+oracle_cases: []
+deviations:
+  - what: >-
+      The A2A SDK check ("Server error: 'a2a' package not installed") in _handle_stream_message is dropped.
+    why: betterlite has no optional SDK, so the state cannot exist.
+  - what: The upstream request has a 24 hour deadline instead of no timeout.
+    why: OutboundRequest needs a deadline and reqwest applies it to the whole body, so an unbounded stream is not expressible. A subscription older than a day is cut.
+  - what: An extra header replaces an earlier header of the same name ignoring case. LiteLLM merges dict keys by exact name, so "accept" and "Accept" would both be sent.
+    why: HTTP header names are case-insensitive, and sending both is a bug nobody relies on.
+  - what: The fallback error message for a non-2xx status is the canonical reason text of the status code. LiteLLM uses the server's reason phrase, which is empty over HTTP/2.
+    why: There is no reason phrase in the response type; the canonical text matches it for common codes.
+  - what: Failures are typed values (StreamError, StreamFailure, StreamAbort) and the route layer decides how a Rejected failure or an abort reaches the client. LiteLLM re-raises HTTPException from inside the generator.
+    why: This task has no HTTP framework, and the status line is already sent once the first byte went out.
+out_of_scope:
+  - "The invoke_agent_a2a route, method dispatch, agent lookup, access check, trace id check, header merge, guardrail merge and the get_agent_card route are B141. _PASCAL_TO_WIRE belongs there too, it only feeds the method switch."
+  - "build_message_send_params is B6950. This task calls it."
+  - "normalize_stream_event and normalize_request_params are B4812, reached through the StreamEventConverter port. B141 wires it."
+  - "asend_message_streaming and the native or bridge choice behind it are B4814, reached through the UpstreamAgentStream port."
+  - "async_streaming_data_generator, the proxy streaming hooks, failure hook and message redaction are B004's common request processing in betterlite-server, reached through the StreamHooks port."
+  - "_forward_jsonrpc, the header helpers, _enforce_inbound_trace_id and the push url check are B4788."
+  - "_served_version is B4811 and B4812."
+  - "wrap_passthrough_sse_bytes_with_keepalive_pings, keepalive_ping_has_fired, resolve_ttft_keepalive_interval and the other functions of sse_keepalive.py: no A2A caller at the pin."
+pitfalls:
+  - The upstream error event of a non-2xx answer is not run through the converter. Only normalize_a2a_jsonrpc_response (B4771) touches it, and only when the body is an object with an "error" key.
+  - A data line that is not valid JSON is skipped without any log or error, and a data line holding a list or a number is yielded unconverted.
+  - The status is checked before any line is read, so a 500 with an SSE body is one error event, never a parsed stream.
+  - The id of the fallback -32603 event is the request id as given, null when the caller sent none. relay_message_stream receives "" from the caller instead of a missing id.
+  - The invalid-params response skips sse_response, so it never has keepalive pings or the X-Accel-Buffering header, even when an interval is set.
+  - >-
+    The ping text is exactly ": ping\n\n", an SSE comment, not an event, and an interval of 0, a negative number, NaN or infinity turns pings off together with both headers.
+  - Without hooks relay_message_stream sends an error frame, while relay_task_subscription ends the body without one. Do not unify them.
+  - >-
+    With hooks the message of Failed is final. Do not add the "Streaming error: " prefix to it.
+  - A trailing CR at the end of a chunk may be the first half of a CRLF. Hold it back until the next chunk shows whether a LF follows, or the lines split twice.
+  - to_jsonrpc_object parses a string chunk before the converter runs, so a guardrail's JSON text reaches the client as an object, not as a quoted string.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

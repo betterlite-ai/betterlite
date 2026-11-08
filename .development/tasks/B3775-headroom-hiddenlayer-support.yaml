@@ -11,6 +11,9 @@ description: >-
   and 404 responses that indicate expired content.
 
 
+  Own async_pre_call_deployment_hook (headroom.py L880-L897). It runs the base hook first and uses its result when it is not None, else the call kwargs. When the call type is not completion, acompletion, responses or aresponses (_STREAM_CONVERTIBLE_CALL_TYPES), or stream is falsy, or background is truthy, or the tools hold no headroom_retrieve tool (has_headroom_retrieve_tool, B3774), it returns the base result unchanged. Otherwise it returns the kwargs with stream set to false and HEADROOM_CONVERTED_STREAM_KEY set to true, so the agentic loop can run on a whole response. The key text is "_headroom_interception_converted_stream" (custom_logger.py L11-L12).
+
+
   Build HiddenLayer guardrail authentication for both v1 (HiddenlayerGuardrail) and v2 (HiddenlayerGuardrailV2)
   endpoints. For SaaS deployments (hiddenlayer.ai hostname), acquire a JWT token via OAuth2 client credentials
   flow before the first request and refresh it when a 401 response indicates expiry. Implement is_saas to detect
@@ -33,6 +36,8 @@ scope:
     - tools/oracle/src/helpers/guardrails/b3775/**
   lint_tables: false
 references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L880-L897
+    why: The stream-to-non-stream conversion hook, its call type set and the converted-stream key.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L366-L401
     why: Extract headroom_retrieve tool calls from response and build follow-up assistant message in OpenAI format.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/headroom/headroom.py#L403-L411
@@ -62,6 +67,8 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/proxy/guardrails/guardrail_hooks/hiddenlayer.py
     why: HiddenlayerGuardrailConfigModel and HiddenlayerMessages enum.
 dod:
+  - text: async_pre_call_deployment_hook turns a streaming call that carries a headroom_retrieve tool into a non-stream call with HEADROOM_CONVERTED_STREAM_KEY true, and returns the base result unchanged for other call types, non-stream calls, background calls and calls without that tool.
+    proof: [headroom-retrieval-tests]
   - text: Agentic loop runs only when the response contains headroom_retrieve tool calls extracted via get_tool_calls_from_response (from B226).
     proof: [headroom-retrieval-tests]
   - text: OpenAI-format follow-up messages echo the retrieve tool calls with role assistant, paired with tool-result messages keyed by tool_call_id.

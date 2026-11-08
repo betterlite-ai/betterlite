@@ -1,0 +1,237 @@
+id: B3646
+title: Transcribe delayed spend logging
+description: >-
+  Log the spend of an Amazon Transcribe StartTranscriptionJob that was relayed through the proxy. Transcribe answers the start call at
+  once but bills by the length of the media, which is only known when the job has finished. So the success path does not log at the
+  moment of the response. It schedules a background task that prices the job through B3645, builds the spend payload and sends it to the
+  shared pass-through log dispatcher later. This task is LiteLLM's TranscribePassthroughLoggingHandler (L579-L733 of the handler file)
+  plus the JobPricer and PassThroughLogDispatch injection points (L105 and L124-L135). Everything above L579 is built by B3644 and B3645
+  and is called here, never copied. Read crates/betterlite-transcribe/src (records.rs, policy/cost.rs, live.rs, media_pricing.rs) and
+  the merged B3605, B3608 and B190 code in betterlite-logging before writing anything.
+
+  Where it lives. The module is `transcribe_logging` in betterlite-server:
+  crates/betterlite-server/src/pass_through_logging/transcribe_logging.rs and its folder. It is not in betterlite-transcribe because
+  it needs betterlite-logging (the logging object, the standard payload builder and the dispatcher), and betterlite-transcribe must stay
+  below logging. betterlite-server's Cargo.toml gains betterlite-transcribe and betterlite-logging if they are missing, and `http` for
+  HeaderMap if it is not already reachable. No module-level state: every collaborator comes in through a constructor.
+
+  Public names that B3606 and B3607 call, fixed here. The full path is
+  betterlite_server::pass_through_logging::transcribe_logging. Constants: `TRANSCRIBE_CUSTOM_LLM_PROVIDER = "transcribe"`,
+  `TRANSCRIBE_PRICED_OPERATION = "StartTranscriptionJob"`, `TRANSCRIBE_PRICED_MODEL = "transcribe/StartTranscriptionJob"`,
+  `TRANSCRIBE_MEDIA_DOWNLOAD_CONCURRENCY: usize = 1` (LiteLLM constants.py L1655) and `MAX_PENDING_PRICING_JOBS: usize = 10_000` (new, see
+  deviations).
+
+  Step 1, operation name. `operation_from_target(target: Option<&str>) -> &str` takes the value of the upstream REQUEST header
+  `x-amz-target` (for example `Transcribe.StartTranscriptionJob`) and returns the text after the last ".". A missing header counts as
+  the empty string, so the result is the empty string. A value with no "." comes back whole. `is_priced_job_start(request_headers:
+  &http::HeaderMap) -> bool` is true when that operation is exactly "StartTranscriptionJob". Both read the header the proxy sent to
+  Amazon, not a response header (LiteLLM reads `httpx_response.request.headers`). Header lookup is case-insensitive, and a value that is
+  not valid text counts as missing.
+
+  Step 2, the sync handler (transcribe_passthrough_handler, L685-L733). `pub fn transcribe_passthrough_handler(input:
+  TranscribeHandlerInput<'_>) -> HandlerOutcome` is a free function, synchronous, and cannot fail. `pub struct
+  TranscribeHandlerInput<'a> { pub logging_obj: &'a <the logging object handle type of B3608's CollectedChunksCall>, pub url_route: &'a
+  str, pub result: &'a str, pub start_time: <the type of CollectedChunksCall.start_time>, pub end_time: <same>, pub cache_hit: bool, pub
+  request_headers: &'a http::HeaderMap, pub request_body: &'a serde_json::Map<String, serde_json::Value>, pub response_cost: Decimal,
+  pub kwargs: <B3605's typed kwargs map> }`. url_route, cache_hit and request_body are not read by the logic (LiteLLM only accepts them),
+  and stay in the struct so the signature keeps LiteLLM's shape. HandlerOutcome is B3608's type (optional result plus kwargs map) and the
+  result is B3605's response-object enum. B3606 passes `Decimal::ZERO` as response_cost, because LiteLLM's default is 0.0 and the
+  early sync call in the success path has no priced cost; the delayed path passes the priced cost.
+  Everything below runs inside one error boundary. model = "transcribe/" + the operation name (so "transcribe/StartTranscriptionJob", or
+  "transcribe/" when the header is missing). The updated kwargs are the input kwargs plus `model`, `custom_llm_provider = "transcribe"`
+  and `response_cost`. Write model, custom_llm_provider and response_cost into the logging object's model_call_details (the same
+  update call B3604 and B3652 use; read the merged code). That write happens BEFORE the payload is built and is not undone when a later
+  step fails. Build the standard logging payload with B190's builder: kwargs = the updated kwargs, response object = the pass-through
+  response object holding `result` as its text, start_time, end_time, the logging object and status "success". The returned result is a
+  new pass-through response object with the same text, and the returned kwargs are the updated kwargs plus `standard_logging_object`.
+  On any internal failure, log at the tracing error level "Error in Amazon Transcribe passthrough logging handler: <error>" and return the
+  result (a pass-through response object with the text) with the kwargs exactly as they came in, without model, provider or cost.
+  response_cost goes into the kwargs map the way B3605 stores it (B3605 converts Decimal with rust_decimal's ToPrimitive into f64).
+
+  Step 3, the pricer injection point. `trait JobPricer: Send + Sync` has one async method `price_job(&self, request: JobPricingRequest<'_>)
+  -> Result<Decimal, PricingError>`; use the same boxed-future style as B3644's JobLookup. `JobPricingRequest<'a> { job_name: &'a str,
+  aws_region_name: &'a str, cost_per_second: Decimal, started_job: &'a StartedJob }` is LiteLLM's four positional arguments.
+  `PricingError` is B3645's. `LiveJobPricer::new(deps: <B3645's live dependency bundle, read live.rs for the exact type>, download_slots:
+  Arc<tokio::sync::Semaphore>)` is the production pricer and calls B3645's `price_transcription_job_live` with those arguments. The
+  semaphore is the download semaphore: one permit, shared by every pricing task of the logger, so two tasks never fetch media at once.
+
+  Step 4, the logger. `TranscribeLogger::new(job_pricer: Arc<dyn JobPricer>, rates: Arc<dyn TranscribeRates>, max_pending: usize)` keeps
+  its collaborators. `trait TranscribeRates: Send + Sync { fn cost_per_second(&self) -> Option<Decimal>; }` is the model cost map entry
+  for "transcribe/StartTranscriptionJob" (its production body calls B3644's `transcribe_cost_per_second` over the catalog; the wiring
+  belongs to B102). `TranscribeLogger::production(deps, rates)` builds a LiveJobPricer with a fresh `Semaphore::new(TRANSCRIBE_MEDIA_DOWNLOAD_CONCURRENCY)`
+  and `max_pending = MAX_PENDING_PRICING_JOBS`. B102 builds the logger once, so the semaphore is shared by the whole process. The logger
+  also holds a `tokio::sync::Semaphore` of `max_pending` permits that counts pricing tasks in flight. The logger needs no set that keeps
+  tasks alive: tokio keeps a spawned task running without a handle (LiteLLM's task set exists only because asyncio holds tasks weakly).
+
+  `schedule_priced_job_logging(&self, input: ScheduleInput<'_>) -> tokio::task::JoinHandle<()>` mirrors L603-L634. `ScheduleInput`
+  holds what the success path has: the upstream request headers and request URL (`url::Url`), `response_body: Option<serde_json::Map>`
+  (the object body, None for a list or no body), logging_obj, url_route, result, start_time, end_time, cache_hit, request_body, `log:
+  Arc<dyn PassThroughLogDispatch>` (B3605's trait; do not define another one) and the kwargs map. B3607 calls it only after
+  `is_transcribe_route` and `is_priced_job_start` are both true, and returns without logging anything itself. The method copies what the
+  task needs out of the borrowed input, parses `started_job` with B3644's `started_transcription_job` (an object body is serialized back to
+  text, None gives no started job) and spawns the task on the current tokio runtime. It returns the JoinHandle so tests can await it.
+
+  Step 5, the task (_price_then_log, L636-L683). In order:
+  1. Take the rate from `rates.cost_per_second()`. None logs at error level "transcribe/StartTranscriptionJob left the model cost map,
+     spend not recorded" and ends the task. Nothing is logged to the dispatcher.
+  2. job_name = request_body["TranscriptionJobName"] when it is a JSON string, else the empty string.
+  3. aws_region_name = the second dot-separated label of the upstream request URL host (host `transcribe.us-east-1.amazonaws.com` gives
+     `us-east-1`; `transcribe.cn-north-1.amazonaws.com.cn` gives `cn-north-1`). A host with fewer than two labels, or a label that is
+     empty or holds anything but ASCII lowercase letters, digits and "-", logs an error and ends the task (see deviations).
+  4. Take one in-flight permit with try_acquire_owned. With no permit left, skip the pricer and use `transcribe_max_job_cost(rate)` as the
+     cost, with a warning "Transcribe pricing queue is full, charging maximum for job <name>". Otherwise call `job_pricer.price_job`
+     and hold the permit until the task ends. An `Err` from the pricer logs at error level and ends the task with nothing dispatched
+     (LiteLLM's task would die with the exception). B3645's live pricer returns an `Err` only when the max-cost multiplication overflows.
+  5. Call `transcribe_passthrough_handler` with the priced cost and the same fields (request_headers from the upstream request).
+  6. Send the outcome to the dispatcher with `log`: the response object, result, start_time, end_time, `cache_hit` as the task received it,
+     and the outcome's kwargs. If the dispatch returns an `Err`, log it at error level and end.
+
+  Limits. Every download goes through B3645's S3MediaProbe, which caps the object at 2 GiB (TRANSCRIBE_MAX_MEDIA_BYTES), uses connect 5 s and
+  read 600 s timeouts with a two hour total deadline, and reads under the one-permit download semaphore built here. The polling loop is
+  bounded at 720 attempts. The in-flight pricing tasks are bounded by `max_pending`. This task adds no download of its own; a test
+  proves that `production` hands the same one-permit semaphore to every pricing call.
+
+  The module has no HTTP route of its own (B3606 wires the sync handler and B3607 the scheduler), so the booted proxy cannot reach it yet.
+  The pure parts, the operation name and the priced-start test, get helper cases; native tests with fake pricer, rates and dispatcher cover
+  the rest. Test module names are `pass_through_logging::transcribe_logging::tests::operation_`, `handler_`, `fallback_`, `schedule_`, `failure_`, `limits_`
+  and `wiring_`. Fakes live in tests.rs.
+
+scope:
+  paths:
+    - Cargo.lock
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/pass_through_logging/transcribe_logging.rs
+    - crates/betterlite-server/src/pass_through_logging/transcribe_logging/**
+    - tools/oracle/cases/helpers/transcribe-logging/**
+    - "tools/oracle/fuzz/corpus/helper_case/transcribe_logging-*"
+    - tools/oracle/helpers/b3646.py
+    - tools/oracle/helpers/b3646/**
+    - tools/oracle/src/helpers/server/b3646.rs
+    - tools/oracle/src/helpers/server/b3646/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L579-L634
+    why: The handler constructor with its default pricer and download semaphore, the operation-name helpers, is_priced_job_start and schedule_priced_job_logging.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L636-L683
+    why: The _price_then_log task, with the rate lookup, the region from the host, the job name and the dispatch call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L685-L733
+    why: transcribe_passthrough_handler, its model_call_details write before the payload build and its fallback payload.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L100-L135
+    why: JobPricer and PassThroughLogDispatch, the two injection points.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/transcribe_passthrough_logging_handler.py#L559-L576
+    why: price_transcription_job_live, the production pricer the logger wraps (built by B3645).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/success_handler.py#L323-L336
+    why: The sync call site for transcribe_passthrough_handler (B3606 adapts it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/success_handler.py#L461-L476
+    why: The call site for is_priced_job_start and schedule_priced_job_logging (B3607 adapts it).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L1651-L1658
+    why: TRANSCRIBE_MEDIA_DOWNLOAD_CONCURRENCY and the other Transcribe constants.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py#L1708-L1710
+    why: The route builds the target URL as transcribe.{region}.{dns suffix}, which is why the second host label is the region.
+
+dod:
+  - text: operation_from_target returns the text after the last "." of x-amz-target, the empty string for a missing header, and the whole value when it has no ".".
+    proof: [operation-tests, helper-oracle, helper-python]
+  - text: is_priced_job_start is true only for the operation StartTranscriptionJob and reads the upstream request header, case-insensitively.
+    proof: [operation-tests, helper-oracle, helper-python]
+  - text: The sync handler writes model "transcribe/<operation>", custom_llm_provider "transcribe" and response_cost into the kwargs and into the logging object's model_call_details, adds standard_logging_object built with status "success", and returns the result text as a pass-through response object.
+    proof: [handler-tests]
+  - text: When building the payload fails, the handler logs the error and returns the result and the original kwargs untouched, while the model_call_details write stays done.
+    proof: [handler-fallback-tests]
+  - text: The scheduled task prices the job with the job name from the request body (empty when it is not a string), the region from the upstream host, the rate and the started job from the response body.
+    proof: [schedule-tests]
+  - text: The scheduled task dispatches exactly once with the priced cost in response_cost, the received cache_hit and the handler's kwargs, and dispatches nothing when the rate is missing, the region is not valid or the pricer fails.
+    proof: [schedule-tests, schedule-failure-tests]
+  - text: With max_pending jobs in flight a new task skips the pricer, charges transcribe_max_job_cost and still dispatches.
+    proof: [limits-tests]
+  - text: TranscribeLogger::production builds one one-permit download semaphore and passes that same semaphore to every pricing call.
+    proof: [wiring-tests]
+  - text: Helper oracle cases for the operation name and the priced-start test agree with LiteLLM.
+    proof: [helper-oracle, helper-python, helper-case-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: operation-tests
+      why: the operation name is cut at the wrong dot, a missing header is not empty, or a non-start operation counts as priced
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::transcribe_logging::tests::operation_/)'
+    - id: handler-tests
+      why: the sync handler misses a kwargs or model_call_details write, the model name, or the standard_logging_object
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::transcribe_logging::tests::handler_/)'
+    - id: handler-fallback-tests
+      why: a payload failure escapes, changes the returned kwargs, or undoes the model_call_details write
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::transcribe_logging::tests::fallback_/)'
+    - id: schedule-tests
+      why: the scheduled task passes the wrong job name, region, rate or cost, or dispatches the wrong fields or a wrong number of times
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::transcribe_logging::tests::schedule_/)'
+    - id: schedule-failure-tests
+      why: a missing rate, a bad region or a failed pricer still dispatches spend, or a failed dispatch panics
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::transcribe_logging::tests::failure_/)'
+    - id: limits-tests
+      why: the in-flight cap is missing, or a full queue drops the spend instead of charging the maximum
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::transcribe_logging::tests::limits_/)'
+    - id: wiring-tests
+      why: the production logger does not share one one-permit download semaphore across pricing calls
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::transcribe_logging::tests::wiring_/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3646)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3646 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3646/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added helper cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/transcribe_logging-*")" &&
+        grep -lE '^[[:space:]]+b3646:' tools/oracle/fuzz/corpus/helper_case/transcribe_logging-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: helper-oracle
+      why: the helper cases are missing or betterlite and LiteLLM disagree on them
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/transcribe-logging)" &&
+        grep -rlE '^[[:space:]]+b3646:' tools/oracle/cases/helpers/transcribe-logging &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/transcribe-logging
+
+oracle_cases:
+  - tools/oracle/cases/helpers/transcribe-logging/operation-prefixed-target.yaml
+  - tools/oracle/cases/helpers/transcribe-logging/operation-missing-target.yaml
+  - tools/oracle/cases/helpers/transcribe-logging/operation-nested-dots.yaml
+  - tools/oracle/cases/helpers/transcribe-logging/operation-no-dot.yaml
+  - tools/oracle/cases/helpers/transcribe-logging/priced-start-job.yaml
+  - tools/oracle/cases/helpers/transcribe-logging/priced-other-operation.yaml
+  - tools/oracle/cases/helpers/transcribe-logging/priced-missing-target.yaml
+
+deviations:
+  - what: Cost is exact Decimal (the rate times the rounded-up seconds from B3645), and it is converted to f64 only when written into the kwargs map and the payload, instead of a Python float product.
+    why: Money is Decimal in betterlite, and the f64 conversion at the boundary can differ from Python's float product in the last digit.
+  - what: At most 10,000 pricing tasks (MAX_PENDING_PRICING_JOBS) run at once. A job that arrives with the limit reached is charged the maximum (28800 seconds at the rate) at once without polling, and a warning is logged.
+    why: rules.yaml bounded-inputs forbids unbounded work per request, and LiteLLM's task set has no limit. Charging the maximum keeps the spend row, in line with the fail-closed rule B3645 uses.
+  - what: A request host with fewer than two labels, or a region label with characters outside a-z, 0-9 and "-", logs an error and ends the task without spend, where LiteLLM raises an IndexError (or passes any text on) inside the task.
+    why: The region is put into the signed Transcribe and S3 URLs. The route builds the host from configuration, so a bad value cannot occur in normal use, and this check keeps a bad value away from the signer.
+  - what: An Err from the pricer or the dispatcher is logged at error level and the task ends, instead of an unretrieved asyncio exception.
+    why: Rust has no unobserved task exceptions; the error line is the equivalent.
+
+out_of_scope:
+  - "Everything in L1-L351 of the handler file (operation list, cost lookup, eligibility, admin gate, bucket policy, owner tag, job access check, cost helpers, started_transcription_job and the record types) belongs to B3644 and is called here."
+  - "Polling, media measurement, the signed job lookup, the S3 media probe and price_transcription_job_live (L354-L576) belong to B3645. This task calls price_transcription_job_live from LiveJobPricer."
+  - "The PassThroughLogDispatch trait itself (the Protocol at L124-L135) is B3605's PassThroughLogDispatch. This task only takes it as Arc<dyn PassThroughLogDispatch>."
+  - "The success path that decides when to call transcribe_passthrough_handler (success_handler.py L323-L336) is B3606 and the early return that calls schedule_priced_job_logging (L461-L476) is B3607."
+  - "The Transcribe route in llm_passthrough_endpoints.py (L1612 on) calls the B3644 policy functions and the B3645 job lookup; it is not changed here, and no HTTP oracle case belongs to this task because no route reaches this code yet."
+  - "Building the TranscribeRates implementation over the model cost catalog and the LiveJobPricer dependency bundle is wiring that B102 does when it builds the logger once."
+
+pitfalls:
+  - "The operation name comes from the upstream REQUEST header x-amz-target, not from a response header, and the model name is 'transcribe/' plus that name, so a missing header gives the model 'transcribe/' with nothing after it."
+  - "transcribe_passthrough_handler writes model, custom_llm_provider and response_cost into the logging object's model_call_details before the payload is built, so a payload failure still leaves those three values set while the returned kwargs stay unchanged."
+  - "The fallback result keeps the original text as a pass-through response object, but the fallback kwargs have no model, custom_llm_provider, response_cost or standard_logging_object."
+  - "TranscriptionJobName that is not a string becomes the empty string, which the pricer then polls; it is not an error."
+  - "A missing cost-map rate ends the task with only an error log, so no spend row exists for that job. This is the one place where the delayed path drops a job instead of charging the maximum."
+  - "The synchronous handler is called by B3606 with response_cost 0 for the non-start operations, and the delayed task calls the same function with the priced cost; both must go through the same code."
+  - "The download semaphore has one permit and is held by B3645 across the download and the length read. Creating a new semaphore per pricing call would let several tasks download at once, so the logger creates it once."
+  - "The cache_hit passed to the dispatcher is the value the task received, but B3605's default dispatcher ignores it (it always sends false); do not fix that here."
+  - "The region is the second label of the host, so 'transcribe.cn-north-1.amazonaws.com.cn' gives cn-north-1, not the suffix."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

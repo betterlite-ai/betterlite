@@ -19,6 +19,7 @@ mod helpers;
 pub mod http;
 pub mod mock;
 pub mod multipart_oracle;
+pub mod oracle_comparison_contracts;
 pub mod paths;
 pub mod process;
 #[expect(

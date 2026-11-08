@@ -1,0 +1,257 @@
+id: B3642
+title: Vertex passthrough response dispatch
+description: >-
+  Build the step that looks at the route of a finished Vertex pass-through response, picks one of nine branches and runs it. It is LiteLLM's
+  VertexPassthroughLoggingHandler.vertex_passthrough_handler. Four branches have their code inline in that function (predictLongRunning video,
+  generateContent, rawPredict and streamRawPredict, search); the other branches call a handler that another task builds. The module goes in
+  betterlite-server, in the new module vertex_passthrough_handler (crates/betterlite-server/src/pass_through_logging/vertex_passthrough_handler.rs
+  and its folder), next to B3639's vertex_predict_logging and B3641's vertex_batch_logging. betterlite-vertex is a leaf that never imports core,
+  provider or logging, so this glue cannot live there. The module reads no network and keeps no state.
+
+
+  Types you use and do not define. From B3605: the response-object enum, the typed kwargs map, and the tracked route tables on
+  PassThroughEndpointLogging (vertex methods and the vertex resource batchPredictionJobs; B3605 owns those consts, so you do not declare them
+  again and this module needs them only through the branch test below). From B3608 (betterlite-logging): HandlerOutcome (an optional result
+  plus a kwargs map) and the logging object handle type and time type of CollectedChunksCall. From B247: CallLog. From B3638 (betterlite-vertex,
+  vertex_relay_metadata): extract_model_from_url, is_interactions_route, interactions_passthrough_handler, the publisher-or-api-spec helper
+  (LiteLLM's _get_vertex_publisher_or_api_spec_from_url), get_custom_llm_provider_from_url, the Vertex logging payload factory
+  (_create_vertex_response_logging_payload_for_generate_content) and the cost trait that B3638 declares there. From B1304:
+  get_vertex_location_from_url. From B1326: decode_generate_content and its envelope assembly. From B1362: the Vertex Veo create-response method
+  (LiteLLM's VertexAIVideoConfig.transform_video_create_response). From B032: the partner response-config selector
+  (get_vertex_ai_partner_model_config; anthropic gives B1333's config, ai21 and openapi and mistralai give B1335's, any other publisher is an
+  error). From B1389: the Discovery Engine search response method (LiteLLM's transform_search_vector_store_response). From B3639:
+  VertexPredictLogger. From B3641: VertexBatchLogging. Read the merged code for the exact Rust names and signatures and call them. Do not copy
+  their logic. If a function you need is not there, or if the cost trait cannot take a call_type ("create_video", "vector_store_search") next to
+  the response, model, provider and vertex_location, or if B3605's response-object enum has no variant for the video object, the batch record
+  or the search wrapper {"response": ...}, report it in notes and stop.
+
+
+  Constructor. `VertexPassthroughHandler::new(predict: VertexPredictLogger, batch: VertexBatchLogging, cost: Arc<dyn <B3638's cost trait>>)
+  -> VertexPassthroughHandler`. B102 builds the VertexPredictLogger with its own cost handle, builds VertexBatchLogging and the cost handle, and
+  passes all three in; this module builds none of them and reads no config. No module-level state.
+
+
+  The fixed names B3606 calls. The path is
+  betterlite_server::pass_through_logging::vertex_passthrough_handler::VertexPassthroughHandler. `pub struct VertexPassthroughInput<'a> {
+  pub logging_obj: &'a <the logging object handle type of CollectedChunksCall>, pub url_route: &'a str, pub result: &'a str, pub start_time:
+  <the type of CollectedChunksCall.start_time>, pub end_time: <same>, pub cache_hit: bool, pub status: http::StatusCode, pub response_headers:
+  &'a http::HeaderMap, pub response_body: &'a [u8], pub request_body: Option<&'a serde_json::Map<String, serde_json::Value>>, pub call_log:
+  &'a mut CallLog, pub kwargs: <B3605 typed kwargs map> }` and `impl VertexPassthroughHandler { pub fn vertex_passthrough_handler(&self, input:
+  VertexPassthroughInput<'_>) -> Result<HandlerOutcome, VertexPassthroughError> }`. The method is synchronous. response_body is the whole buffered
+  upstream body (LiteLLM calls httpx_response.json() or .text on it). LiteLLM's Vertex handler gets no parsed response body, so there is none in
+  the struct. result and cache_hit are not used by any branch below (B3641's handler takes neither), but keep them in the struct so
+  the signature stays LiteLLM's. VertexPassthroughError is this module's own enum (thiserror) with one variant per failing collaborator, each with
+  `#[from]` where the source type is a single error type. A failure is returned as Err, as LiteLLM lets the exception rise.
+
+
+  The branch test, a pure function that the handler itself uses, so the tests and the oracle check the same order: `pub fn
+  select_vertex_branch(url_route: &str) -> Option<VertexBranch>`. VertexBranch has the variants Interactions, Video, GenerateContent,
+  EmbedContent, Predict, RawPredict, Search, BatchPredictionJobs. It returns the first match in this order, and every string test is a
+  case-sensitive substring test over the whole route string, not over the path.
+  1. B3638's is_interactions_route(url_route) gives Interactions.
+  2. "predictLongRunning" gives Video.
+  3. "generateContent" gives GenerateContent. "streamGenerateContent" has a capital G and does not match.
+  4. "embedContent" or "batchEmbedContents" gives EmbedContent.
+  5. "predict" gives Predict.
+  6. "rawPredict" or "streamRawPredict" gives RawPredict.
+  7. "search" gives Search.
+  8. "batchPredictionJobs" gives BatchPredictionJobs.
+  9. Nothing matches: None.
+
+
+  vertex_passthrough_handler, in order. First, vertex_location = get_vertex_location_from_url(url_route); when it is Some, write it to
+  logging_obj.optional_params["vertex_location"]. This runs for every route, the unmatched ones too. Then run select_vertex_branch and:
+
+  Interactions. Return B3638's interactions_passthrough_handler with custom_llm_provider "vertex_ai" and the vertex_location, passing the
+  response body, request body, logging object, kwargs and both times. B3640 calls the same function with "gemini" and no location.
+
+  Video. model = extract_model_from_url(url_route). Build the video object with B1362's create-response method (response bytes, model, logging
+  object, custom_llm_provider "vertex_ai", request_data = request body). Then set logging_obj.model = model, model_call_details["model"] = model,
+  model_call_details["custom_llm_provider"] = "vertex_ai" and logging_obj.custom_llm_provider = "vertex_ai". response_cost = cost(video object,
+  model, "vertex_ai", call_type "create_video", vertex_location). Store response_cost in the video object's hidden params, set kwargs
+  response_cost, model and custom_llm_provider ("vertex_ai"), and set model_call_details["response_cost"]. Return the video object and the kwargs.
+  Unlike B3640's Gemini video path, the cost call here carries vertex_location.
+
+  GenerateContent. model = extract_model_from_url(url_route). Decode the body with B1326 (decode_generate_content, then the envelope assembly)
+  into a chat response for that model with the single dummy message {"role": "user", "content": "no-message-pass-through-endpoint"}, empty
+  optional and provider params and an empty api key. Then call B3638's payload factory with the response, model, kwargs, both times, the logging
+  object, custom_llm_provider = get_custom_llm_provider_from_url(url_route) (so "gemini" for a generativelanguage.googleapis.com host, otherwise
+  "vertex_ai") and vertex_location. Return the response and the kwargs the factory gives back.
+
+  EmbedContent. Return B3639's handle_embed_content_response with VertexEmbedContentInput (logging object, url_route, status, response headers,
+  response body, kwargs and the request body). Predict. Return B3639's handle_predict_response with VertexPredictInput (the same fields without the
+  request body). Both return Result and the error becomes a VertexPassthroughError variant.
+
+  RawPredict. model = extract_model_from_url(url_route). publisher = B3638's publisher-or-api-spec helper on the route ("mistralai" for
+  "/publishers/mistralai/", "anthropic" for "/publishers/anthropic/", "ai21" for "/publishers/ai21/", "openapi" for "/endpoints/openapi/", else
+  None). Parse the body as JSON first and return the error when it does not parse, whatever the publisher (LiteLLM calls httpx_response.json()
+  before it looks at the publisher, and drops the value). The result starts as an empty chat response. When the publisher is Some, get the partner
+  config from B032's selector (an unsupported publisher is an error) and let it transform the body into the chat response with the same dummy
+  message, empty request data, empty params and an empty api key. With publisher None the empty response is used as is. Then call B3638's payload
+  factory with the model "vertex_ai/" + model (the prefix is added here and not by extract_model_from_url), custom_llm_provider "vertex_ai" and
+  vertex_location. Return the response and the kwargs.
+
+  Search. Transform the body with B1389's search response method into the vector store search response. response_cost = cost(that response, model
+  "vertex_ai/search_api", "vertex_ai", call_type "vector_store_search", vertex_location). The result is the wrapper {"response": the search
+  response as an object}. Set kwargs response_cost and model "vertex_ai/search_api" (no custom_llm_provider here). Make sure
+  model_call_details["litellm_params"] exists (an empty map when absent), set model_call_details["litellm_params"]["base_model"] =
+  "vertex_ai/search_api" and set model_call_details["response_cost"]. Return the wrapper and the kwargs.
+
+  BatchPredictionJobs. Build B3641's VertexBatchInput from this input: status_code from status, body, url_route, start_time, and request_metadata =
+  kwargs["litellm_params"]["metadata"] with a missing or null litellm_params or metadata counted as empty. Call batch_prediction_jobs_handler with
+  input.call_log (the handler never fails) and map the VertexBatchLogged into a HandlerOutcome: the result is the batch record in B3605's enum, the kwargs
+  are VertexBatchKwargs merged over the input kwargs.
+
+  None. Return no result and the input kwargs unchanged.
+
+  Tests live under pass_through_logging::vertex_passthrough_handler::tests, in groups by prefix: order_ (every branch, plus the ordering pairs
+  below), location_, interactions_, video_, generate_, embed_ and predict_, raw_predict_, search_, batch_, error_. A fake stands in for the cost
+  trait, the logging object and CallLog, and the leaf handlers are the real merged ones where they are pure, so each test checks the arguments the
+  branch hands over and the kwargs and logging object writes it makes. The module has no HTTP route yet (B3606, B3607 and B102 wire it), so it gets
+  helper cases for the branch order only; the other branches need a logging object and proxy state, and a helper adapter cannot build
+  that for every leaf, so those branches are native tests.
+scope:
+  paths:
+    - crates/betterlite-server/src/pass_through_logging/vertex_passthrough_handler.rs
+    - crates/betterlite-server/src/pass_through_logging/vertex_passthrough_handler/**
+    - tools/oracle/cases/helpers/vertex-passthrough-handler/**
+    - "tools/oracle/fuzz/corpus/helper_case/vertex_passthrough_handler-*"
+    - tools/oracle/helpers/b3642.py
+    - tools/oracle/helpers/b3642/**
+    - tools/oracle/src/helpers/server/b3642.rs
+    - tools/oracle/src/helpers/server/b3642/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L123-L150
+    why: The handler signature, the vertex_location write to optional_params and the Interactions and predictLongRunning branches.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L150-L186
+    why: The video branch, with the cost call that carries vertex_location and the hidden-params and kwargs writes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L188-L237
+    why: The generateContent branch and the embedContent, batchEmbedContents and predict branches with their order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L238-L290
+    why: The rawPredict and streamRawPredict branch, with the unused JSON parse, the partner config and the "vertex_ai/" model prefix.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L291-L330
+    why: The search branch, the batchPredictionJobs branch and the final None return.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/llm_provider_handlers/vertex_passthrough_logging_handler.py#L702-L720
+    why: The publisher-or-api-spec helper and the provider-from-URL helper that the branches call (B3638 owns them).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/pass_through_endpoints/success_handler.py#L186-L199
+    why: How the Vertex handler is called and how its result and kwargs replace the caller's (B3606 owns the call).
+dod:
+  - text: select_vertex_branch returns Interactions, Video, GenerateContent, EmbedContent, Predict, RawPredict, Search or BatchPredictionJobs in LiteLLM's order, and None for a route that matches nothing.
+    proof: [order-tests, order-oracle]
+  - text: The order holds where tests overlap. A route with predictLongRunning is Video, streamGenerateContent is None, embedContent is EmbedContent and not Predict, rawPredict is RawPredict and not Predict, and a route with "search" in a project name but a generateContent method is GenerateContent.
+    proof: [order-tests, order-oracle]
+  - text: >-
+      A route with a vertex location writes it to logging_obj.optional_params["vertex_location"] on every branch including None, and a route without one writes nothing.
+    proof: [location-tests]
+  - text: The Interactions branch returns B3638's interactions_passthrough_handler with provider "vertex_ai" and the route's vertex_location.
+    proof: [interactions-tests]
+  - text: The Video branch builds the video object with B1362, sets the four model and provider writes, prices it with call_type "create_video" and the vertex_location, stores the cost in hidden params, kwargs and model_call_details.
+    proof: [video-tests]
+  - text: The GenerateContent branch decodes the body with the dummy message and runs B3638's payload factory with the provider from the URL host and the vertex_location.
+    proof: [generate-tests]
+  - text: The EmbedContent and Predict branches call B3639's two methods with the fields named above, and the request body only goes to the embed one.
+    proof: [predict-tests]
+  - text: The RawPredict branch parses the JSON first, uses the partner config only for a known publisher, errors on an unsupported one, and prices with the model "vertex_ai/" plus the extracted model.
+    proof: [raw-predict-tests]
+  - text: >-
+      The Search branch prices with model "vertex_ai/search_api" and call_type "vector_store_search", returns the {"response": ...} wrapper, and writes kwargs, litellm_params.base_model and model_call_details["response_cost"] without a custom_llm_provider.
+    proof: [search-tests]
+  - text: >-
+      The BatchPredictionJobs branch hands B3641 the status, body, route, start time and metadata taken from kwargs["litellm_params"]["metadata"] (empty when missing or null) and the call log, and returns its record and kwargs.
+    proof: [batch-tests]
+  - text: A leaf error (a body that does not decode, an unsupported publisher, a cost failure) comes back as Err and no partial result is returned.
+    proof: [error-tests]
+  - text: The helper adapter's Python passes the strict lint and type check.
+    proof: [helper-python]
+checks:
+  optional: []
+  commands:
+    - id: order-tests
+      why: the branch order or the substring rules are wrong, or have no tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::vertex_passthrough_handler::tests::order_/)'
+    - id: location-tests
+      why: the vertex_location write to optional_params is missing, wrong, or has no tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::vertex_passthrough_handler::tests::location_/)'
+    - id: interactions-tests
+      why: the Interactions branch hands the wrong provider or location, or has no tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::vertex_passthrough_handler::tests::interactions_/)'
+    - id: video-tests
+      why: the video branch writes, pricing or hidden params are wrong, or have no tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::vertex_passthrough_handler::tests::video_/)'
+    - id: generate-tests
+      why: the generateContent branch decode or payload factory call is wrong, or has no tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::vertex_passthrough_handler::tests::generate_/)'
+    - id: predict-tests
+      why: the embed or predict branch hand-over is wrong, or has no tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::vertex_passthrough_handler::tests::(embed_|predict_)/)'
+    - id: raw-predict-tests
+      why: the rawPredict branch publisher handling or model prefix is wrong, or has no tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::vertex_passthrough_handler::tests::raw_predict_/)'
+    - id: search-tests
+      why: the search branch pricing or the kwargs and logging object writes are wrong, or have no tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::vertex_passthrough_handler::tests::search_/)'
+    - id: batch-tests
+      why: the batch branch input mapping or output mapping is wrong, or has no tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::vertex_passthrough_handler::tests::batch_/)'
+    - id: error-tests
+      why: a leaf error is swallowed or a partial result is returned, or there are no tests
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^pass_through_logging::vertex_passthrough_handler::tests::error_/)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3642)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3642 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3642/pyrightconfig.json
+    - id: helper-case-corpus
+      why: new helper seeds are absent or do not replay through the shared helper-case parser
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/vertex_passthrough_handler-*')" &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+    - id: order-oracle
+      why: newly added helper cases are absent, do not use the b3642 operation or disagree with LiteLLM
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/vertex-passthrough-handler)" &&
+        grep -rlE '^[[:space:]]+b3642:' tools/oracle/cases/helpers/vertex-passthrough-handler &&
+        cargo run --locked -p betterlite-oracle -- --self-check tools/oracle/cases/helpers/vertex-passthrough-handler
+oracle_cases:
+  - tools/oracle/cases/helpers/vertex-passthrough-handler/branch-interactions.yaml
+  - tools/oracle/cases/helpers/vertex-passthrough-handler/branch-predict-long-running.yaml
+  - tools/oracle/cases/helpers/vertex-passthrough-handler/branch-generate-content.yaml
+  - tools/oracle/cases/helpers/vertex-passthrough-handler/branch-stream-generate-content-none.yaml
+  - tools/oracle/cases/helpers/vertex-passthrough-handler/branch-embed-content-before-predict.yaml
+  - tools/oracle/cases/helpers/vertex-passthrough-handler/branch-batch-embed-contents.yaml
+  - tools/oracle/cases/helpers/vertex-passthrough-handler/branch-predict.yaml
+  - tools/oracle/cases/helpers/vertex-passthrough-handler/branch-raw-predict.yaml
+  - tools/oracle/cases/helpers/vertex-passthrough-handler/branch-stream-raw-predict.yaml
+  - tools/oracle/cases/helpers/vertex-passthrough-handler/branch-search.yaml
+  - tools/oracle/cases/helpers/vertex-passthrough-handler/branch-batch-prediction-jobs.yaml
+  - tools/oracle/cases/helpers/vertex-passthrough-handler/branch-search-in-project-name.yaml
+  - tools/oracle/cases/helpers/vertex-passthrough-handler/branch-no-match.yaml
+deviations:
+  - what: The error text of a failing leaf (a body that does not decode, an unsupported publisher) is the Rust error text, not Python's exception text.
+    why: Exception strings are runtime wording (docs/compatibility.md); the failure still rises to the caller as an error, as in LiteLLM.
+  - what: The helper cases cover the branch order only. The adapter patches the leaf each branch reaches and reports which one was hit.
+    why: A helper adapter cannot build the logging object and proxy state that the full Python handler reads, and the branch bodies are pinned by native tests against the leaf tasks' own oracle cases.
+out_of_scope:
+  - "B3638 owns is_interactions_route, is_vertex_interactions_route, interactions_passthrough_handler, extract_model_from_url, _get_vertex_publisher_or_api_spec_from_url, _get_custom_llm_provider_from_url and the payload factory. This task calls them."
+  - "B3639 owns _handle_predict_response, _handle_audio_predict_response, _is_audio_predict_response, _get_audio_prediction_count, _extract_embed_content_input, _handle_embed_content_response and _is_multimodal_embedding_response. B3641 owns batch_prediction_jobs_handler, _store_batch_managed_object, get_actual_model_id_from_router and extract_model_name_from_vertex_path."
+  - "_handle_logging_vertex_collected_chunks and _build_complete_streaming_response (the stream side) belong to B3640."
+  - "B3605 owns success_handler's TRACKED_VERTEX_METHOD_ROUTES and TRACKED_VERTEX_RESOURCE_ROUTES consts and the is_vertex_route predicate, and B3606 owns the branch choice between Gemini, Vertex and the other providers. This task owns only the choice inside the Vertex handler. B3606 owns the Vertex Live branch."
+  - "The Vertex Live handler (VertexAILivePassthroughLoggingHandler, B3643) is never called from vertex_passthrough_handler in LiteLLM; B3606 reaches it through its own VertexAiLive branch."
+  - "The Veo response parsing (B1362), the Gemini response decoder (B1326), the partner response configs (B032, B1333, B1335) and the Discovery Engine response decoder (B1389) are called here and not rebuilt. The completion_cost service itself (B068) is reached through B3638's cost trait, passed in by B102."
+pitfalls:
+  - "Every branch test is a plain substring test over the whole route string, project and model names included, so a model path or project id that contains 'search' reaches the Search branch unless an earlier test matches first."
+  - "'predict' is lowercase, so 'rawPredict', 'streamRawPredict' and 'batchPredictionJobs' do not match the Predict branch, and 'predictLongRunning' is caught by the Video test that runs before it."
+  - "'generateContent' does not match 'streamGenerateContent' (capital G), so a streaming route falls through to None here; the stream handlers take that traffic."
+  - "The embedContent and batchEmbedContents test runs before 'predict', and the rawPredict test runs after it, so the order of branches 4, 5 and 6 matters for a route that contains two of the words."
+  - "vertex_location is written to optional_params before any branch, and only when the URL has one, so the None branch and the Interactions branch both see it."
+  - "The rawPredict branch parses the body as JSON and drops the value, so a body that is not JSON fails even for a route whose publisher is unknown."
+  - "The rawPredict branch passes the model to the payload factory as 'vertex_ai/' plus the extracted model, while the generateContent branch passes the bare model; extract_model_from_url never adds the prefix."
+  - "The generateContent branch takes custom_llm_provider from the URL host, but the video, rawPredict and search branches always use 'vertex_ai', and the search branch sets no custom_llm_provider in kwargs at all."
+  - "The video cost call here passes vertex_location and call_type 'create_video'; B3640's Gemini video call passes neither a location nor a Vertex provider."
+  - "The batch branch rebuilds request_metadata from kwargs['litellm_params']['metadata'], and a handler result replaces the caller's kwargs, so merge VertexBatchKwargs over the input kwargs instead of dropping the rest."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

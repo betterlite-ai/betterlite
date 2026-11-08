@@ -1,0 +1,178 @@
+id: B4726
+title: MCP REST acting identity, headers and server access
+description: >-
+  Build the helpers that the MCP REST tool routes (B4727 lists tools, B4728 calls them) share before they touch an upstream server. In LiteLLM they are the private functions at the top of litellm/proxy/_experimental/mcp_server/rest_endpoints.py plus lookup_mcp_server_auth_in_headers and sanitize_mcp_alias_for_header from mcp_server/utils.py. They answer four questions: which credential the request acts as, which header carries the caller's token to a given server, which Authorization header the caller's own stored OAuth2 token produces, and whether the caller may reach the server the request names. No route is registered here.
+
+
+  The code goes in betterlite-mcp, module rest_access: crates/betterlite-mcp/src/rest_access.rs with four submodules, headers, user_tokens, allowed and acting, each in rest_access/ with a tests.rs beside it. The production side of the ports goes in betterlite-server, module mcp::rest_reads (crates/betterlite-server/src/mcp/rest_reads.rs with a tests.rs). No Cargo.toml changes: betterlite-mcp already depends on betterlite-auth, betterlite-db (B6590 added it) and betterlite-config, and betterlite-server depends on betterlite-mcp. Use MCPServer from B6590 (module server_record), ServerRegistry from B4731 (module registry), ServerUnion from B6591 (module allowed_union) and the request header readers from B4654 (module request_headers). Do not copy their types.
+
+
+  RestAccessError is the error enum of the whole module (thiserror). Its Http variant carries a status (u16) and a detail that is either an object { error, message } or plain text, so B4727 and B4728 can turn it into the response LiteLLM's HTTPException gives. Its Port variant wraps a String from a port and is never shown to a client as is. A port is a trait with async methods and a struct-literal composition, like the ports of B6591.
+
+
+  Submodule headers.
+
+  1. sanitize_alias_for_header (sanitize_mcp_alias_for_header): lowercase the alias, trim whitespace, replace every character outside a-z, 0-9 and underscore with one underscore (per character, not per run of characters), collapse runs of underscores to one, then trim underscores from both ends. This must match the dashboard's TypeScript helper byte for byte, so non-ASCII characters each become one underscore.
+
+  2. lookup_server_auth (lookup_mcp_server_auth_in_headers) takes the map from B4654's server_auth_headers (alias to header name to value), the server's alias, server_name and access_groups, and returns Option<&BTreeMap<String, String>>. An empty map gives None. Lowercase every key of the map first (when two keys collapse to one, the later one wins). For one identifier the candidate keys are its lowercase form, and also its sanitized form when that is non-empty and differs. Walk alias, then server_name, skipping a missing or empty one; the first identifier with a candidate key present decides, and its value is returned (the lowercase candidate is tried before the sanitized one). If no server key matches, look at the access groups the same way and collect the value of each group that has a key. No match gives None. If the collected values are not all equal, log at debug that group headers are ambiguous for the server alias and return None, so a token is never sent to a server it may not have been meant for. Otherwise return the common value.
+
+  3. server_auth_header (_get_server_auth_header) takes the server, the per-server map (optional) and the shared mcp_auth_header (optional text). It returns ServerAuthHeader, an enum with PerServer(BTreeMap<String, String>) and Shared(String), or None. A non-empty per-server map that lookup_server_auth resolves gives PerServer. Anything else falls back to the shared header.
+
+  4. extract_mcp_headers (_extract_mcp_headers_from_request) takes B4654's RawHeaders and returns McpRequestHeaders { mcp_auth_header, server_auth_headers, raw_headers }: the first from client_headers::mcp_auth_header, the second from client_headers::server_auth_headers, the third the full header list as a name to value map (B4654's collapse rule for repeated names). It reads no global. The OAuth2 header reader client_headers::oauth2_headers stays with B4654, and the callers use it directly.
+
+
+  Submodule user_tokens.
+
+  5. is_v1_oauth2_server (_is_v1_resolved_oauth2_server): true when the server exists, its auth_type is oauth2 and B4667's to_server_spec(server) returns None. A server that to_server_spec turns into a spec belongs to the new resolver, which reads the stored token at connect time and drops an Authorization built here, so reading the token here would waste a database call. v1_oauth2_server_ids (_v1_resolved_oauth2_server_ids) takes the registry and a list of server ids and returns the set of ids whose record (registry.server_by_id with no ip) satisfies it. An id the registry does not know is not in the set.
+
+  6. UserTokenReads is the port to B4713 and B4715, all async and returning Result<_, RestAccessError>: stored_credential(user_id, server_id) -> Option<OAuthCredentialPayload> (B4713's get_user_oauth_credential, an error when no database is connected, message "Database not connected. Connect a database to use OAuth2 MCP tools."), user_credentials(user_id) -> Vec<(String, OAuthCredentialPayload)> (list_user_oauth_credentials, each row already tagged with its server id) and valid_token(user_id, server, credential: Option<OAuthCredentialPayload>) -> Option<OAuthCredentialPayload> (B4715's resolve_valid_user_oauth_token; the production side opens the database client only when it has to refresh).
+
+  7. user_oauth_extra_headers (_get_user_oauth_extra_headers) takes the server, an optional user id and optional prefetched credentials (a map from server id to payload). It returns Option<BTreeMap<String, String>>. Steps: a server that is not is_v1_oauth2_server gives None; a missing or empty user id or server id gives None. With prefetched credentials, the credential is the map entry for the server id (no database call); without, it is stored_credential(user_id, server_id). Then valid_token gives the usable credential. A credential with a non-empty access_token gives { "Authorization": "Bearer <access_token>" }; otherwise None. Every error in these steps (including the missing database) is logged at warning with the text "_get_user_oauth_extra_headers: failed to retrieve credential for user=<id> server=<id>: <error>" and gives None. The user id and the error text may be logged; the token never is.
+
+  8. prefetch_user_oauth_creds (_prefetch_user_oauth_creds) takes an optional user id. No user id gives an empty map. Otherwise it returns the map from user_credentials(user_id). Any error is logged at warning ("_prefetch_user_oauth_creds: failed to prefetch for user=<id>: <error>") and gives an empty map.
+
+
+  Submodule allowed.
+
+  9. resolve_server_id_for_rest (_resolve_mcp_server_id_for_rest) takes the registry, the request's server id, the allowed set and an optional client ip. An id in the set is returned as is. Otherwise registry.server_by_name(server_id, client_ip) is tried, and when that record's server_id is in the set, that id is returned. In every other case the input comes back unchanged.
+
+  10. filter_server_ids_by_ip_with_info (MCPServerManager.filter_server_ids_by_ip_with_info) takes the registry, a list of ids and an optional client ip. No ip returns the list as is with a blocked count of 0. Otherwise each id is looked up with server_by_id and no ip: a record the registry has and is_accessible_from_ip approves stays, a record it has and the ip may not reach adds one to the blocked count, and an id with no record is dropped without counting. filter_server_ids_by_ip returns only the list. B4731 does not build these two, so this task does; B4727 calls the first for its blocked count.
+
+  11. resolve_allowed_servers_with_ip_filter (_resolve_allowed_mcp_servers_with_ip_filter) takes the registry, a port, the caller's auth, the requested server id and the client ip (read by the caller with B743's get_mcp_client_ip; this task reads no request). It returns AllowedForCall { servers: Vec<MCPServer>, canonical_server_id }. The port is AccessContexts with async contexts(auth) -> Vec<UserAPIKeyAuth> (B4672's build_effective_auth_contexts) and async allowed_servers(context) -> Vec<String> (B6591's ServerUnion::allowed_servers with no access override). Steps: collect the ids of every context into one set; filter the set with filter_server_ids_by_ip; canonical = resolve_server_id_for_rest(requested, set, ip). When canonical is in the set, servers are the records of the set (server_by_id, no ip, an unknown id skipped) in registry order, and the result is returned. Otherwise look up the requested id with server_by_id, then server_by_name, both with no ip, and fail with exactly one of these. If the record exists, the ip is known and is_accessible_from_ip says no: status 403, error "ip_filtering", message "MCP server '<requested>' is not accessible from your IP address (<ip>). This server is restricted to internal networks only. To make it externally accessible, set 'available_on_public_internet: true' in the server configuration." If no record exists: status 404, error "server_not_found", message "MCP server '<requested>' was not found". Otherwise: status 403, error "access_denied", message "The key is not allowed to access server <requested>". The messages use the requested text, not the canonical id. Port errors from either method come back as RestAccessError::Port.
+
+
+  Submodule acting.
+
+  12. resolve_acting_auth (_resolve_acting_auth) takes the optional toolset name, the auth and a port. ActingPorts has async acting_user_auth(auth) -> UserAPIKeyAuth (B4672), async toolset_by_name(name) -> Option<ToolsetRef { toolset_id }> (B6592's get_toolset_by_name_cached, which owns the cache and the not-found marker) and async apply_toolset_scope(auth, toolset_id) -> UserAPIKeyAuth (LiteLLM's _apply_toolset_scope in server.py; B6593 implements this toolset part of ActingPorts). An absent or empty toolset name gives acting_user_auth(auth). Otherwise the toolset is looked up: a missing database gives status 500 with detail { "error": "Database not available. Connect a database to your proxy" } (an object, like get_prisma_client_or_throw's); no toolset gives status 404 with the plain text detail "Toolset '<name>' not found"; a toolset gives apply_toolset_scope(auth, toolset_id), whose 403 refusal comes back unchanged. The port methods return Result so a refusal travels as RestAccessError::Http.
+
+
+  Production reads. LiveRestReads in betterlite-server holds B4713's two reads and B4715's resolver as fields (as B6591's LiveUnionReads does) and implements UserTokenReads. It maps a missing database to the message in step 6 and every store error to RestAccessError::Port. Keep the mapping in plain functions so tests need no Postgres.
+
+
+  Tests use fakes that record calls, synthetic servers, users and keys, and names with the prefix test-. Oracle helper cases cover the two pure functions of the headers submodule, steps 1 and 2. The rest has no route at this commit, so B4727 and B4728 add the HTTP cases when they register the routes.
+
+scope:
+  paths:
+    - crates/betterlite-mcp/src/rest_access.rs
+    - crates/betterlite-mcp/src/rest_access/**
+    - crates/betterlite-server/src/mcp/rest_reads.rs
+    - crates/betterlite-server/src/mcp/rest_reads/**
+    - tools/oracle/cases/helpers/mcp-server-auth-lookup/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-server-auth-lookup-*
+    - tools/oracle/helpers/b4726.py
+    - tools/oracle/helpers/b4726/**
+    - tools/oracle/src/helpers/mcp/b4726.rs
+    - tools/oracle/src/helpers/mcp/b4726/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/utils.py#L151-L216
+    why: sanitize_mcp_alias_for_header, the candidate key rule and lookup_mcp_server_auth_in_headers with the access group default and its ambiguity rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L426-L473
+    why: _get_server_auth_header, _is_v1_resolved_oauth2_server and _v1_resolved_oauth2_server_ids.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L476-L555
+    why: _get_user_oauth_extra_headers and _prefetch_user_oauth_creds, including the swallowed errors and the warning texts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L580-L695
+    why: _extract_mcp_headers_from_request, _resolve_mcp_server_id_for_rest and _resolve_allowed_mcp_servers_with_ip_filter with its three refusals.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/rest_endpoints.py#L912-L933
+    why: _resolve_acting_auth and the toolset name branch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/mcp_server_manager.py#L3734-L3761
+    why: filter_server_ids_by_ip and filter_server_ids_by_ip_with_info.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8369-L8377
+    why: "get_prisma_client_or_throw, a 500 whose detail is an object with the key error."
+
+dod:
+  - text: sanitize_alias_for_header lowercases, trims, turns each character outside a-z, 0-9 and underscore into one underscore, collapses underscore runs and trims underscores, and matches LiteLLM on mixed case, spaces, dashes and non-ASCII input.
+    proof: [header-tests, oracle]
+  - text: lookup_server_auth tries the lowercase and sanitized form of the alias, then of the server name, before the access groups, uses a group default only when every matching group carries the same value, and returns None for an ambiguous or empty case.
+    proof: [header-tests, oracle]
+  - text: server_auth_header returns the per-server value when one resolves and the shared header otherwise, and extract_mcp_headers returns the shared header, the per-server map and the full header map from B4654's readers without a global.
+    proof: [header-tests]
+  - text: is_v1_oauth2_server is true only for an oauth2 server that to_server_spec leaves to v1, and v1_oauth2_server_ids skips ids the registry does not know.
+    proof: [user-token-tests]
+  - text: user_oauth_extra_headers returns a Bearer Authorization header for a usable stored token, reads the prefetched map instead of the store when given one, and returns None with a warning for every failure, the missing database included.
+    proof: [user-token-tests]
+  - text: prefetch_user_oauth_creds returns the user's credentials by server id, an empty map without a user id, and an empty map with a warning on a store error.
+    proof: [user-token-tests]
+  - text: resolve_server_id_for_rest maps a server name or alias to its id only when that id is allowed, and otherwise returns the input unchanged.
+    proof: [allowed-tests]
+  - text: filter_server_ids_by_ip_with_info passes the list through without an ip, drops blocked and unknown ids, and counts only blocked records.
+    proof: [allowed-tests]
+  - text: resolve_allowed_servers_with_ip_filter unions every effective context, filters by ip, returns the allowed records with the canonical id, and refuses with the exact ip_filtering 403, server_not_found 404 or access_denied 403 payload in LiteLLM's order.
+    proof: [allowed-tests]
+  - text: resolve_acting_auth returns the acting user for no toolset name, a 404 with plain text for an unknown toolset, a 500 object detail without a database, and the toolset scoped auth otherwise.
+    proof: [acting-tests]
+  - text: LiveRestReads maps store results and errors to the port values, and a missing database to the documented message.
+    proof: [reads-tests]
+  - text: The oracle helper cases for the alias sanitizer and the server auth lookup agree with LiteLLM, and the helper adapter is typed and lint clean.
+    proof: [oracle, helper-python, helper-case-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: header-tests
+      why: the alias sanitizer, the server auth lookup or the header extraction is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^rest_access::headers::tests::/)'
+    - id: user-token-tests
+      why: the stored OAuth2 token header, the prefetch or the v1 resolved test is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^rest_access::user_tokens::tests::/)'
+    - id: allowed-tests
+      why: the server id resolution, the ip filter or the allowed server refusals are missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^rest_access::allowed::tests::/)'
+    - id: acting-tests
+      why: the acting credential or the toolset name branch is missing or wrong
+      run: cargo nextest run --locked -p betterlite-mcp --no-tests=fail -E 'test(/^rest_access::acting::tests::/)'
+    - id: reads-tests
+      why: the production token reads or their error mapping are missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::rest_reads::tests::/)'
+    - id: helper-python
+      why: the helper adapter is missing or fails strict Python checks
+      run: test -f tools/oracle/helpers/b4726.py && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+    - id: helper-case-corpus
+      why: no new b4726 operation reaches the shared helper case parser
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'tools/oracle/fuzz/corpus/helper_case/mcp-server-auth-lookup-*')" && grep -rlq b4726 tools/oracle/fuzz/corpus/helper_case/mcp-server-auth-lookup-* && cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/mcp-server-auth-lookup/sanitize-alias.yaml
+  - tools/oracle/cases/helpers/mcp-server-auth-lookup/sanitize-alias-non-ascii.yaml
+  - tools/oracle/cases/helpers/mcp-server-auth-lookup/lookup-by-alias.yaml
+  - tools/oracle/cases/helpers/mcp-server-auth-lookup/lookup-sanitized-alias.yaml
+  - tools/oracle/cases/helpers/mcp-server-auth-lookup/lookup-server-name-fallback.yaml
+  - tools/oracle/cases/helpers/mcp-server-auth-lookup/lookup-group-default.yaml
+  - tools/oracle/cases/helpers/mcp-server-auth-lookup/lookup-group-ambiguous.yaml
+  - tools/oracle/cases/helpers/mcp-server-auth-lookup/lookup-no-match.yaml
+
+deviations:
+  - what: The helpers take the client ip, the user id and the toolset name as plain arguments, where LiteLLM reads them from the FastAPI request, the auth object and Query defaults.
+    why: Rust handlers extract typed values, so the _as_query_str guard that drops FastAPI's unresolved Query default has no counterpart and is not built.
+  - what: resolve_allowed_servers_with_ip_filter returns the allowed records in registry order.
+    why: LiteLLM iterates a Python set, so its order is unspecified; a fixed order keeps the response stable.
+  - what: "A missing database in resolve_acting_auth is status 500 with an object detail whose error is \"Database not available. Connect a database to your proxy\", the same body LiteLLM builds, returned through RestAccessError::Http."
+    why: the port reports a missing database as a typed error instead of raising from a global lookup.
+
+out_of_scope:
+  - "_resolve_allowed_mcp_servers_for_tool_call (L790-L812): no caller at the pin; B4728's call route uses the ip filter version instead."
+  - "_as_query_str: Rust extractors give Option<String> directly, see deviations."
+  - "_list_server_tools, _get_tools_for_single_server, fetch_pinnable_tool_catalog, _list_tools_for_single_server, _create_tool_response_objects and the /tools/list route: B4727."
+  - "_stamp_mcp_tool_metadata, the post-call logging wrappers, _relay_upstream_auth_http_exception, _handle_virtual_mcp_tool and the /tools/call route: B4728."
+  - "The connection error messages, _extract_credentials, _stage_server_test, _execute_with_mcp_client and the /test routes: B4729 and B4730."
+  - "client_headers readers (_get_mcp_auth_header_from_headers, _get_mcp_server_auth_headers_from_headers, _get_oauth2_headers_from_headers) and RawHeaders: B4654. get_mcp_client_ip: B743."
+  - "acting_user_auth and build_effective_auth_contexts: B4672. get_allowed_mcp_servers: B6591. server_by_id, server_by_name and is_accessible_from_ip: B4731. get_toolset_by_name_cached: B6592. to_server_spec: B4667."
+  - "get_user_oauth_credential and list_user_oauth_credentials: B4713. resolve_valid_user_oauth_token: B4715."
+
+pitfalls:
+  - "lookup_mcp_server_auth_in_headers lowercases the map keys but not the alias it looks up by, then tries the lowercase form first and the sanitized form second; an alias like 'My Server' matches the header key my_server only through the sanitized form."
+  - "A group header is a default only when all matching groups carry equal values; one group with no header and one with a header still returns that header, and two groups with different values return nothing."
+  - "_get_server_auth_header checks the per-server map for truthiness, so an empty map falls through to the shared x-mcp-auth header."
+  - "is_v1_oauth2_server asks to_server_spec, not auth_type alone: an oauth2 server with a client_credentials flow belongs to the new resolver and gets no stored-token header here."
+  - "With prefetched credentials, resolve_valid_user_oauth_token still runs for the entry (it may refresh), and a server id missing from the map passes None to it, not an error."
+  - "The 404 for an unknown server and the 403 for an ip block look the requested id up with server_by_id and server_by_name and no client ip, so a server hidden from the caller's ip is still found and reported as ip_filtering, not as not found."
+  - "A requested server name is only resolved to an id when that id is already in the filtered allowed set; otherwise the raw text is compared and the refusal quotes the raw text."
+  - "The toolset 404 detail is a plain string while every other refusal here is an object with error and message."
+  - "resolve_acting_auth never touches a toolset when the name is empty text, the same as an absent name."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

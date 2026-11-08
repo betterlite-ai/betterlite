@@ -1,0 +1,14 @@
+id: B7323
+milestone: M8 platform
+title: Proxy custom URL builder
+status: todo
+depends_on: []
+file: null
+covers:
+  - "litellm/proxy/utils.py"
+parent: null
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

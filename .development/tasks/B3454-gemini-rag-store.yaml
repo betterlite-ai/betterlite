@@ -1,0 +1,254 @@
+id: B3454
+title: Gemini File Search store and resumable upload
+description: >-
+  Build LiteLLM's GeminiRAGIngestion in betterlite-core as module `rag::gemini_ingestion`
+  (crates/betterlite-core/src/rag/gemini_ingestion.rs). B3451 owns the shared ingestion state and the
+  abstract `store` contract in `rag::ingestion`; read that file first and reuse its state type, its store
+  trait and its result tuple, and do not redefine them. This task is the Gemini provider: a struct
+  `GeminiIngestion` that holds B3451's ingestion state, a `GeminiDefaults` value and one injected port, and
+  implements B3451's store trait. The module does not call HTTP itself and never reads the environment.
+
+  Defaults and port. `GeminiDefaults` is `api_key: Option<SecretString>` and `api_base: String`. The caller
+  builds it once from the Studio identity rules (GOOGLE_API_KEY, then GEMINI_API_KEY; GEMINI_API_BASE, then
+  https://generativelanguage.googleapis.com), which stand in for `GeminiModelInfo.get_api_key()` and
+  `get_api_base()`. The port is a trait `GeminiTransport` with two async methods and an error type
+  `TransportError` that keeps the lower failure as its source. `post_json(url, headers, body: serde_json::Value,
+  timeout)` and `put_bytes(url, headers, body: Vec<u8>, timeout)` both return a `GeminiReply` of `status: u16`,
+  `headers` (case-insensitive lookup by name) and `body: Vec<u8>`. A non-2xx status is a reply, not an error;
+  only a failure to get a reply is a `TransportError`. Header values that carry the key are built by this
+  module, so the port gets `x-goog-api-key` as a plain header and must not log it. B3460 later builds the port
+  on betterlite-http with the RAG client policy. The key is a secrecy value: it never shows in Debug output,
+  logs or error text.
+
+  Class behavior (gemini_ingestion.py L26-L56). `supports_existing_file_id` stays false (B3451's default), so
+  B3460's pipeline rejects an existing file id before `store` runs, and `store` ignores that argument. The embed
+  step does nothing and returns no embeddings, because Gemini embeds on upload. Expose it as a method that
+  always returns None. The unused `chunks` and `embeddings` arguments are still accepted by the store trait.
+
+  Store (L58-L122), in this order. Read vector_store_id, api_key and api_base from the state's vector_store
+  config (B3451 already merged any stored credential). api_key is the config value, else the default; an empty
+  string counts as absent (Python `or`). Same for api_base. 1. No api_key: return
+  `GeminiIngestionError::MissingApiKey` with the message "GEMINI_API_KEY or GOOGLE_API_KEY is required for
+  Gemini File Search", before any port call. 2. base_url is api_base plus "/v1beta", with no slash
+  normalization. 3. A missing or empty vector_store_id calls the create step with display name = the ingest
+  name, else "litellm-rag-ingest" (an empty name also falls back). 4. When file_content is non-empty, filename
+  is non-empty and the store id is non-empty, run the upload step; the result is the file id. 5. Return
+  (vector_store_id, file_id). Otherwise nothing is uploaded and the file id is None. Note the store id from the
+  create step is `response.json().get("name", "")`, so a create reply without a name gives Some("") and
+  skips the upload, not None. Empty file bytes also skip the upload (Python truthiness), unlike the OpenAI
+  task. Any error returns at once and nothing is rolled back: a store made in step 3 stays when the upload fails.
+
+  Create step (L124-L167). POST `{base_url}/fileSearchStores` with JSON `{"displayName": <name>}`, headers
+  `Content-Type: application/json` and `x-goog-api-key`, timeout 60 seconds. Status other than exactly 200
+  returns `CreateStoreFailed` with the message "Failed to create File Search store: " plus the reply body as
+  text, and logs that message at error level. On 200 parse the body as JSON; an unparsable body or a body that
+  is not an object is `BadReply` (Python raises there too). The store id is the "name" string, "" when absent.
+
+  Upload step (L169-L208) is two requests. First initiate (L210-L286). The URL is the base_url with every
+  occurrence of "/v1beta" removed, then `/upload/v1beta/{store_id}:uploadToFileSearchStore`. Python uses
+  `str.replace`, so an api_base that itself contains "/v1beta" loses that part too; copy this with a plain
+  replace-all. Body is `{"displayName": <filename>}`. If the state's chunking strategy is a JSON object with
+  a non-empty (truthy) `white_space_config` object, add `chunkingConfig.whiteSpaceConfig` with
+  `maxTokensPerChunk` = its `max_tokens_per_chunk` (default 800 when the key is absent) and `maxOverlapTokens`
+  = its `max_overlap_tokens` (default 400 when absent); a present 0 or null is passed through unchanged.
+  B3451's default strategy `{"type": "auto"}` has no such key and adds nothing, and keys such as chunk_size are
+  ignored here. If vector_store config `custom_metadata` is a non-empty list, add it as `customMetadata`
+  unchanged. Headers: `X-Goog-Upload-Protocol: resumable`, `X-Goog-Upload-Command: start`,
+  `X-Goog-Upload-Header-Content-Length` = byte length in decimal, `X-Goog-Upload-Header-Content-Type` = the
+  content type, else "application/octet-stream" (an empty one also falls back), `Content-Type:
+  application/json` and `x-goog-api-key`. Timeout 60 seconds. Status other than 200 or 201 returns
+  `InitiateFailed` ("Failed to initiate upload: " plus body text), logged at error level. Then read the
+  `x-goog-upload-url` response header (case-insensitive); missing or empty returns `NoUploadUrl` with the
+  message "No upload URL returned in response headers".
+
+  Second, send the bytes (L288-L332). PUT to that URL with the raw bytes, headers `Content-Length` = byte
+  length, `X-Goog-Upload-Offset: 0` and `X-Goog-Upload-Command: upload, finalize`, no api key header, timeout
+  300 seconds. Status other than 200 or 201 returns `UploadFailed` ("Failed to upload file: " plus body text).
+  On success decode the reply with a pure function `decode_upload_reply(body: &[u8]) -> UploadReply`: the file
+  id is the top-level "name" when it is a non-empty string, else `file.name` when that is a string, else "".
+  Any failure while decoding (bad JSON, a body that is not an object, `file` being null or not an object when
+  "name" is empty) returns the placeholder "uploaded" and logs a warning with the parse error. An absent name
+  with a good body returns "" (a Some("") file id, not None).
+
+  Oracle helper. Helper cases replay `GeminiRAGIngestion.store` against a scripted transport. Python side:
+  construct the class from the case's options, patch `get_async_httpx_client` in the module to return a fake
+  client whose `post` and `put` record their arguments and return the scripted status, headers and body (or
+  raise the scripted error), and set GOOGLE_API_KEY, GEMINI_API_KEY and GEMINI_API_BASE from the case's `env`
+  map (restore them after). Rust side: the same script goes to a scripted `GeminiTransport`, with
+  `GeminiDefaults` built from the same env map. Both sides project the ordered requests (method, URL, header
+  names and values with the api key shown only as present or absent, JSON body or byte length, timeout) plus
+  the returned tuple, or the error kind and message. The skeleton creates the helper operation named after
+  this task id; the worker writes the adapter files and the case files listed in scope. Fuzz target
+  `gemini_upload_reply` (add its `[[bin]]` entry to crates/betterlite-core/fuzz/Cargo.toml) feeds arbitrary bytes to `decode_upload_reply` and must never panic; seed its corpus
+  with a name reply, a nested file.name reply, an empty object, null, a list and invalid UTF-8.
+
+  Native tests live in `rag::gemini_ingestion::tests` and the test names are fixed by the checks below. The
+  Python file has 332 lines and the class holds about 190 nonblank, non-comment lines. Allow 300
+  implementation, 280 tests, 120 adapters and 120 case and corpus lines.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/rag/gemini_ingestion.rs
+    - crates/betterlite-core/src/rag/gemini_ingestion/**
+    - crates/betterlite-core/fuzz/Cargo.toml
+    - crates/betterlite-core/fuzz/fuzz_targets/gemini_upload_reply.rs
+    - crates/betterlite-core/fuzz/corpus/gemini_upload_reply/**
+    - tools/oracle/cases/helpers/gemini-rag-store/**
+    - "tools/oracle/fuzz/corpus/helper_case/gemini_rag_store-*"
+    - tools/oracle/helpers/b3454.py
+    - tools/oracle/helpers/b3454/**
+    - tools/oracle/src/helpers/core_ops/b3454.rs
+    - tools/oracle/src/helpers/core_ops/b3454/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/gemini_ingestion.py#L26-L56
+    why: Class declaration, GeminiModelInfo member and the no-op embed override.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/gemini_ingestion.py#L58-L122
+    why: The store method, credential fallbacks, the two ValueError messages and the upload conditions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/gemini_ingestion.py#L124-L167
+    why: File Search store creation, exact status 200 and the name default.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/gemini_ingestion.py#L169-L286
+    why: Upload URL construction, request body, chunkingConfig, customMetadata, resumable headers and upload URL header.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/gemini_ingestion.py#L288-L332
+    why: The finalize PUT, 300 second timeout and the "uploaded" placeholder fallback.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L47-L67
+    why: Where vector_store_config, ingest_name and the auto chunking default come from.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/rag/ingestion/base_ingestion.py#L322-L350
+    why: The pipeline rejects an existing file id when supports_existing_file_id is false, then calls embed and store.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/gemini/common_utils.py#L374-L380
+    why: GeminiModelInfo.get_api_base and get_api_key, the env fallbacks GeminiDefaults stands in for (owned by B1331).
+  - url: https://ai.google.dev/api/file-search/file-search-stores
+    why: Google's File Search store create and uploadToFileSearchStore endpoints.
+
+dod:
+  - text: GeminiIngestion keeps supports_existing_file_id false and its embed step returns no embeddings.
+    proof: [flags-tests]
+  - text: A missing api_key (config and defaults both empty) fails with the typed missing-key error before any request.
+    proof: [credentials-tests, oracle]
+  - text: api_key and api_base come from the vector store config first and GeminiDefaults second, an empty string counts as absent, and the key never appears in Debug output, logs or error text.
+    proof: [credentials-tests, oracle]
+  - text: A missing vector_store_id posts displayName (ingest name, default litellm-rag-ingest) to {base}/v1beta/fileSearchStores with a 60 second timeout, and any status but 200 is a typed error carrying the body text.
+    proof: [create-store-tests, oracle]
+  - text: A create reply with no name gives an empty store id, no upload, and a (Some(""), None) result; an unparsable create body is a typed error.
+    proof: [create-store-tests, oracle]
+  - text: The initiate request goes to the upload URL built by removing every /v1beta from the base and carries the resumable headers, the content type default and displayName.
+    proof: [initiate-upload-tests, oracle]
+  - text: whiteSpaceConfig and customMetadata are added to the initiate body only under the stated conditions, with 800 and 400 as the token defaults.
+    proof: [initiate-upload-tests, oracle]
+  - text: A missing x-goog-upload-url header or a status outside 200 and 201 on initiate is a typed error.
+    proof: [initiate-upload-tests, oracle]
+  - text: The finalize PUT sends the bytes with Content-Length, X-Goog-Upload-Offset 0 and the finalize command, uses a 300 second timeout and no api key header, and the file id comes from name or file.name.
+    proof: [finalize-upload-tests, oracle]
+  - text: An unreadable finalize reply gives the placeholder uploaded, and a status outside 200 and 201 is a typed error.
+    proof: [finalize-upload-tests, oracle]
+  - text: No upload happens for empty file bytes, an empty filename or an empty store id, and an error at any step returns at once without rolling back a created store.
+    proof: [store-flow-tests, oracle]
+  - text: decode_upload_reply never panics on arbitrary bytes and the fuzz corpus replays.
+    proof: [upload-reply-corpus]
+  - text: The helper adapter passes strict lint and type checks.
+    proof: [helper-python]
+  - text: Newly added helper corpus cases replay through the shared helper-case parser.
+    proof: [helper-case-corpus]
+
+checks:
+  optional: []
+  commands:
+    - id: flags-tests
+      why: the existing-file flag default or the no-op embed override is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-core --no-tests=fail
+        -E 'test(/^rag::gemini_ingestion::tests::flags_/)'
+    - id: credentials-tests
+      why: key or base fallbacks, the missing-key error or key redaction is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-core --no-tests=fail
+        -E 'test(/^rag::gemini_ingestion::tests::credentials_/)'
+    - id: create-store-tests
+      why: store creation, its status check or the empty-name result is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-core --no-tests=fail
+        -E 'test(/^rag::gemini_ingestion::tests::create_store_/)'
+    - id: initiate-upload-tests
+      why: the initiate URL, headers, body options or its errors are missing
+      run: >-
+        cargo nextest run --locked -p betterlite-core --no-tests=fail
+        -E 'test(/^rag::gemini_ingestion::tests::initiate_/)'
+    - id: finalize-upload-tests
+      why: the finalize PUT, the file id decoding or the placeholder fallback is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-core --no-tests=fail
+        -E 'test(/^rag::gemini_ingestion::tests::finalize_/)'
+    - id: store-flow-tests
+      why: the skip conditions, error ordering or no-rollback behavior is missing
+      run: >-
+        cargo nextest run --locked -p betterlite-core --no-tests=fail
+        -E 'test(/^rag::gemini_ingestion::tests::store_flow_/)'
+    - id: upload-reply-corpus
+      why: the upload reply decoder has no fuzz corpus or the corpus does not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-core/fuzz/corpus/gemini_upload_reply/)" &&
+        cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(replays_the_gemini_upload_reply_corpus)'
+    - id: helper-python
+      why: strict oracle adapter lint or type checks fail
+      run: >-
+        test -n "$(git diff --name-only "$GATE_BASE" -- tools/oracle/helpers/b3454)" &&
+        uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers/b3454 &&
+        uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/b3454/pyrightconfig.json
+    - id: helper-case-corpus
+      why: newly added Gemini store cases are absent or do not replay
+      run: >-
+        test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- "tools/oracle/fuzz/corpus/helper_case/gemini_rag_store-*")" &&
+        grep -lE '^[[:space:]]+b3454:' tools/oracle/fuzz/corpus/helper_case/gemini_rag_store-* &&
+        test -f tools/oracle/fuzz/fuzz_targets/helper_case.rs &&
+        cargo nextest run --locked -p betterlite-oracle --no-tests=fail -E 'test(replays_the_helper_case_corpus)'
+
+oracle_cases:
+  - tools/oracle/cases/helpers/gemini-rag-store/missing-api-key.yaml
+  - tools/oracle/cases/helpers/gemini-rag-store/env-defaults.yaml
+  - tools/oracle/cases/helpers/gemini-rag-store/config-key-wins.yaml
+  - tools/oracle/cases/helpers/gemini-rag-store/create-store-ok.yaml
+  - tools/oracle/cases/helpers/gemini-rag-store/create-store-fails.yaml
+  - tools/oracle/cases/helpers/gemini-rag-store/create-without-name.yaml
+  - tools/oracle/cases/helpers/gemini-rag-store/upload-full-flow.yaml
+  - tools/oracle/cases/helpers/gemini-rag-store/upload-chunking-metadata.yaml
+  - tools/oracle/cases/helpers/gemini-rag-store/upload-base-with-version.yaml
+  - tools/oracle/cases/helpers/gemini-rag-store/initiate-no-url.yaml
+  - tools/oracle/cases/helpers/gemini-rag-store/initiate-fails.yaml
+  - tools/oracle/cases/helpers/gemini-rag-store/finalize-nested-name.yaml
+  - tools/oracle/cases/helpers/gemini-rag-store/finalize-placeholder.yaml
+  - tools/oracle/cases/helpers/gemini-rag-store/finalize-fails.yaml
+  - tools/oracle/cases/helpers/gemini-rag-store/upload-skipped.yaml
+
+deviations:
+  - what: The two HTTP calls run through an injected `GeminiTransport` port, not through get_async_httpx_client, and a failure to get any reply is a typed transport error carrying the lower error's message.
+    why: The module stays testable without HTTP and keeps the crate graph acyclic. B3460 builds the port on the shared pool, so timeouts, size caps and TLS policy are the pool's.
+  - what: API key and base defaults come from an injected `GeminiDefaults`, not from os.environ at call time.
+    why: Betterlite reads environment variables once at startup (see betterlite-env), so the store never calls getenv.
+
+out_of_scope:
+  - BaseRAGIngestion state, credential overlay, upload, OCR, chunk and the abstract store contract; B3451 owns them.
+  - The ingest pipeline that checks supports_existing_file_id, calls embed and store and builds the failed-result envelope; B3460 owns it.
+  - Building the `GeminiTransport` port on betterlite-http and building `GeminiDefaults` from the Studio identity settings; B3460 wires both (GeminiModelInfo.get_api_key and get_api_base are B1331's).
+  - INGESTION_REGISTRY and provider selection for "gemini"; B3450 owns them and B3460 constructs the class.
+  - The HTTP route and request validation for ingest; B3462 and B3460 own them. No HTTP oracle case belongs here because no route reaches this module yet.
+  - The "GEMINI_API_BASE is required" ValueError (L96-L97); no caller reaches it at the pin, because get_api_base always returns the default URL.
+  - The Gemini vector store search and File Search tool wiring; B1390 owns them.
+
+pitfalls:
+  - The "GEMINI_API_KEY or GOOGLE_API_KEY is required for Gemini File Search" check runs before the create call, so a missing key never creates a store.
+  - Create succeeds only on exactly 200; initiate and finalize accept 200 and 201.
+  - A create reply without "name" yields "" as the store id, not None, and the empty id then skips the upload (the result is Some("") and None).
+  - "`file_content` is tested by truthiness, so empty bytes skip the upload here, while the OpenAI task uploads empty bytes."
+  - The upload endpoint is built with `base_url.replace("/v1beta", "")`, which removes every occurrence, so a base such as https://host/v1beta/proxy is changed in two places; a trailing slash on api_base is kept and makes a double slash.
+  - chunkingConfig is added only when `white_space_config` is truthy; the defaults 800 and 400 apply per missing key, and chunk_size, chunk_overlap and separators are never sent.
+  - The finalize PUT must not send x-goog-api-key, and its headers are only Content-Length, X-Goog-Upload-Offset and X-Goog-Upload-Command.
+  - X-Goog-Upload-Command is "start" on initiate and "upload, finalize" (with the space) on the PUT.
+  - The finalize reply falls back to "uploaded" on any decode failure, including a null `file` object, but an absent name in a good body is "", not "uploaded".
+  - The upload URL comes from a response header of the Google reply and Python does no URL validation on it; keep that, and do not send credentials to it.
+  - An unreadable create reply raises in Python (no try block), while an unreadable finalize reply is swallowed; keep the asymmetry.
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

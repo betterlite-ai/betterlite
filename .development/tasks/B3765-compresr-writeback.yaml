@@ -150,7 +150,7 @@ out_of_scope:
   - "Recovery store eviction and retrieval: B3764 owns per-key storage, TTL pruning, the _retrieve_original method on retrieval, and has_compresr_retrieve_tool detection."
   - "Query selection and content projection: B3763 owns _query_for_target, _render_tool_intent, and IP/URL validation."
   - "Recovery plan building and agentic loop: B3764 owns async_should_run_agentic_loop, async_build_agentic_loop_plan, and follow-up message formatting."
-  - "Content text utilities: B3663 owns is_all_text_parts, merge_rewritten_text_parts, and content_to_text."
+  - "Content text utilities: B3663 owns is_all_text_parts, merge_rewritten_text_parts, and content_to_text in crates/betterlite-guardrails/src/content_text.rs."
 pitfalls:
   - "CompresrGuardrailOptionalParams and CompresrGuardrailConfigModel are Pydantic models. The optional params are all nullable to let the constructor apply defaults; the config model provides the guardrail_name and event_hook that the constructor inherits from CustomGuardrail."
   - "API key resolution is checked at __init__ time: get_secret_str (the proxy's env-lookup function) must be available; if the key is empty after env lookup, raise ValueError immediately so startup fails loud."
