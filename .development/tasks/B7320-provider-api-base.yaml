@@ -22,7 +22,7 @@ description: >-
   `ApiBaseHooks` is a trait defined here for the two things betterlite-models cannot reach: `fn login_free_api_base(&self,
   provider: LoginFreeProvider) -> Option<String>` where `LoginFreeProvider` is a closed enum `GithubCopilot | Chatgpt`, and
   `fn vertex_claude_url(&self, location: &str, project: &str, model: &str, stream: bool) -> Result<String, ApiBaseError>`.
-  The architect wires real implementations later (copilot and chatgpt config in betterlite-openai, B1304's create_vertex_url
+  B8634 writes the real implementations (ProviderApiBaseHooks) (copilot and chatgpt config in betterlite-openai, B1304's create_vertex_url
   with partner claude in betterlite-vertex). Tests use fakes. Do not add a dependency on betterlite-openai or
   betterlite-vertex: both depend on betterlite-models.
 
@@ -158,8 +158,8 @@ deviations:
 
 out_of_scope:
   - "get_llm_provider and the model and key resolution it does belong to B174; declared_authenticating_provider belongs to B209. This task only calls them."
-  - "The github_copilot api_base_without_login (GITHUB_COPILOT_API_BASE, api-key.json endpoint) belongs to B1513/B1514 and the chatgpt one (CHATGPT_API_BASE) to B1510; they implement the hook, the architect wires it."
-  - "create_vertex_url and get_vertex_base_url belong to B1304 and B1305; the architect wires them to vertex_claude_url."
+  - "The github_copilot api_base_without_login (GITHUB_COPILOT_API_BASE, api-key.json endpoint) belongs to B1513/B1514 and the chatgpt one (CHATGPT_API_BASE) to B1510; they implement the hook, B8634 wires it."
+  - "create_vertex_url and get_vertex_base_url belong to B1304 and B1305; B8634 wires them to vertex_claude_url."
   - "Building ApiBaseParams from LiteLLM_Params, a kwargs dict or a deployment is each caller's job (B4026, B4027, B2413 and the response metadata code in B004)."
   - "Loading litellm.model_alias_map from litellm_settings into the map passed in ApiBaseContext; no task in this entry owns that key."
   - "Calls at exception_mapping_utils.py L2404 and response_metadata.py L126 are wired by the tasks that own those files."

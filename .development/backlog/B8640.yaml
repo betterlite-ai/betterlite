@@ -1,0 +1,15 @@
+id: B8640
+milestone: M5 api families
+title: Pass-through mount base, shared state and config routes
+status: todo
+depends_on: [B8610, B8611, B8612, B8641, B8642, B8643, B052, B1302, B3602, B3612, B3613, B3617, B3628, B6510, B8520, B8694]
+file: tasks/B8640-passthrough-route-mounts.yaml
+covers:
+  - "litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py"
+  - "litellm/proxy/pass_through_endpoints/pass_through_endpoints.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

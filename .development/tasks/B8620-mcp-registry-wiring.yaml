@@ -1,0 +1,129 @@
+id: B8620
+title: Build the MCP area state and its registry-side adapters
+description: >-
+  Every MCP task builds its piece against ports and leaves the one shared instance of each piece to "the composition
+  root". The foundation now builds the server registry itself: B8614's McpRegistry (B4731's SharedRegistry, B6765's
+  RegistryMutator over B6763's ServerBuilder and B6762's DiscoverySlots, and B4680's ToolRegistry) sits in
+  `shared.mcp_registry`, loaded from config before the listener by B8614's BootRegistries and from the database by
+  B8384. This task builds the rest of the MCP area state once per process, as `McpState`, and the three area entry
+  points. It mounts no route.
+
+
+  Entry points. crates/betterlite-server/src/app/mcp.rs exposes the three functions the skeleton stubs:
+  `pub(crate) fn mount(router: Router, state: &Arc<ServerState>) -> Router` (inside the auth layers),
+  `pub(crate) fn mount_public(router: Router, state: &Arc<ServerState>) -> Router` (outside them) and
+  `pub(crate) async fn start(state: &Arc<ServerState>)` (awaited once before the listener). This task makes mount and
+  mount_public fetch the state with `McpState::shared(state)` and return the router unchanged; the mount parts
+  (B8624, B8702, B8625, B8627, B8700, B8701, B8626) each add one line to one of them. start fetches the state and calls
+  B6762's prime on the DiscoverySlots inside `shared.mcp_registry`, which spawns discovery for every server that needs
+  it when LITELLM_MCP_OAUTH_DISCOVERY_ON_STARTUP is on and only records the set otherwise (LiteLLM's
+  _prime_oauth_discovery after the startup load).
+
+
+  One instance. mount, mount_public and start are three calls, but the per-user token cache, the SSO assertion cache
+  epoch, the gateway single-use store and the session table must be one value across all of them, as LiteLLM's module
+  globals are. crates/betterlite-server/src/app/mcp/state.rs holds `pub(crate) struct McpState { pub(crate) core:
+  McpCore }` and `McpState::shared(state: &Arc<ServerState>) -> Arc<McpState>`, which returns
+  `state.shared.mcp_area.get_or_init(|| Arc::new(McpState::build(state)))` cloned. `mcp_area` is a
+  `std::sync::OnceLock<Arc<McpState>>` field of Shared that B8610 declares (the skeleton stubs McpState in state.rs so
+  the field compiles before this task). McpState::build is synchronous; nothing in it waits on the network or the
+  database. B8621, B8622 and B8623 each add one field (identity, tokens, oauth) and one line to McpState::build.
+
+
+  McpCore goes in app/mcp/core.rs and app/mcp/core/ (settings.rs, http.rs, store.rs, a tests.rs beside each): Arc
+  fields, cheap to clone, no global and no lazy static. It reads `shared.mcp_registry`, `shared.db`, `shared.http` and
+  the loaded Config. It holds:
+
+  1. The registry handle: a clone of the Arc in `shared.mcp_registry`, so every MCP part reads the instance the
+  foundation loaded. This task never loads servers.
+
+  2. Settings. A new config section mcp_gateway_env (crates/betterlite-config/src/sections/mcp_gateway_env.rs and its
+  tests.rs) reads the MCP environment values no merged section exposes yet, because rules.yaml forbids reading the
+  environment outside the config crate. Read the merged sections first (mcp_env_values, mcp_discovery, mcp_registry,
+  mcp_client_side_auth, mcp_sso_assertion_cache, mcp_allow_all_scope, mcp_tools) and add a key only when none of them
+  exposes it. The values and LiteLLM's defaults: LITELLM_MCP_SERVER_NAME "litellm-mcp-server" and
+  LITELLM_MCP_SERVER_DESCRIPTION "MCP Server for LiteLLM" (B4720); MCP_TOOL_PREFIX_SEPARATOR "-" and
+  LITELLM_USE_SHORT_MCP_TOOL_PREFIX false (B6594); PROXY_BASE_URL unset, normalized once here with B4654's
+  normalize_proxy_base_url so its invalid-value warning is logged once (B4724, B4678, B4720 and B6594 take the result);
+  JWT_ISSUER unset (B4658 and B7972); GENERIC_TOKEN_ENDPOINT, GENERIC_CLIENT_ID, GENERIC_CLIENT_SECRET (secret) and
+  GENERIC_INCLUDE_CLIENT_ID "false" (B4664's SsoClientSource map); and B6591's toolset_ttl_secs, default 60. An empty
+  value counts as unset, as LiteLLM's `os.getenv(...) or default` does. The skeleton adds the section stub, its
+  `pub mod` line and its name in the sections! list. These values and B6594's server utils values are a plain struct
+  field of McpCore.
+
+  3. Payload rules: B4716's PayloadRules { prefix_separator, stdio } with StdioPolicy from B4716's mcp_env_values
+  section (is_mcp_stdio_enabled and the allowed command set).
+
+  4. Server health: B6592's health service with its ProbeClient implemented in http.rs over `shared.http` (B173's
+  ProxiedClient): a GET with no auth header and no redirects, the accept header and timeout B6592 passes, no body read. Build that HealthService once and call `shared.mcp_registry.instructions.set(...)` with it, so registry reloads clear its instructions, and read `shared.mcp_registry.oauth_metadata` instead of making a second OAuthMetadataCache.
+  A timeout is ProbeError::Timeout; any other failure is ProbeError::Failed with the error kind name.
+
+  5. DCR hydration: B6595's DcrHydration over the OAuthMetadataCache that `shared.mcp_registry` exposes (the instance
+  the mutator's CacheInvalidator clears), with its DcrClientStore implemented in store.rs over B4712's
+  get_mcp_server_oauth_client_credentials (no database reads as Ok(None), a query failure is a StoreReadError) and the
+  Decryptor of B6763 implemented over B1600's StoredCipher (decrypt_value_helper with return_original_value false, so
+  a failure is None).
+
+  6. SSO assertions: one B4663 SsoAssertionCache, and config_declares_id_jag computed once from the config file's
+  mcp_servers as B4663's text says. B8622 builds the assertion store over both.
+
+
+  Tests in app::mcp::core:: and app::mcp::state:: : McpState::shared returns the same Arc on a second call; McpCore
+  builds from a config with no database and reads the servers B8614 loaded into `shared.mcp_registry`; ProbeClient
+  against a local axum test server (a 200, a redirect that is not followed, a timeout on paused time); the Decryptor
+  round-trips a value sealed with B1600's StoredCipher and returns None for garbage; DcrClientStore answers Ok(None)
+  without a database; and the config section loads every key it adds set, unset and empty.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/mcp.rs
+    - crates/betterlite-server/src/app/mcp/state.rs
+    - crates/betterlite-server/src/app/mcp/core.rs
+    - crates/betterlite-server/src/app/mcp/core/**
+    - crates/betterlite-config/src/sections/mcp_gateway_env.rs
+    - crates/betterlite-config/src/sections/mcp_gateway_env/**
+    - crates/betterlite-config/fuzz/corpus/config_yaml/mcp_gateway_env*
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_lazy_features.py#L152-L201
+    why: The MCP feature list; every MCP router listed there shares the module globals McpState replaces.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L8915-L8951
+    why: The startup load the foundation now runs; start only primes discovery after it.
+dod:
+  - text: McpState is built once per process and mount, mount_public and start all read that one value.
+    proof: [core-tests]
+  - text: McpCore reads the registry from shared.mcp_registry and holds the settings, payload rules, health service, DCR hydration and SSO assertion cache with no global.
+    proof: [core-tests]
+  - text: ProbeClient, DcrClientStore and the Decryptor forward to the crates that own each behavior.
+    proof: [core-tests]
+  - text: mcp_gateway_env loads each key it adds with LiteLLM's default, and an empty value counts as unset.
+    proof: [config-tests, config-corpus]
+checks:
+  optional: [mutants]
+  commands:
+    - id: core-tests
+      why: McpState, McpCore, an adapter or the start hook is missing or wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::mcp::(core|state)::/)'
+    - id: config-tests
+      why: the mcp_gateway_env section is missing or a key has no loader test
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::mcp_gateway_env::/)'
+    - id: config-corpus
+      why: no new config seed for the section reaches the production loader
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- 'crates/betterlite-config/fuzz/corpus/config_yaml/mcp_gateway_env*')"
+        && cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(replays_the_config_yaml_corpus)'
+oracle_cases: []
+deviations:
+  - what: The MCP environment values are read once at startup, so changing PROXY_BASE_URL, the GENERIC_* SSO client values or MCP_TOOL_PREFIX_SEPARATOR in a running process has no effect until restart.
+    why: rules.yaml allows reading the environment only in the config crate, which loads once.
+out_of_scope:
+  - "Loading config and database servers into shared.mcp_registry, and the mutator's own ports: B8614 and B8384."
+  - "Mounting any MCP route: B8624, B8702, B8625, B8627, B8700, B8701 and B8626."
+  - "Caller identity and admission state: B8621. Per-user token stores, the SSO assertion store and the OAuth SessionStore: B8622. OAuth flow ports: B8623."
+pitfalls:
+  - Building McpState in mount and again in mount_public splits the per-user token cache and the single-use store between the keyed and public routes; always go through McpState::shared.
+  - normalize_proxy_base_url logs a warning for an invalid value, so call it once here and hand the result on.
+  - The DcrClientStore must read Ok(None) when the proxy has no database, since B6595 treats a missing row and a missing database the same.
+  - The probe must not follow redirects; a 3xx counts as reachable in B6592's rules.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

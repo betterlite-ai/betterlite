@@ -1,0 +1,13 @@
+id: B8645
+milestone: M9 agents and mcp
+title: Build the agent access services the server shares
+status: todo
+depends_on: [B8610, B8612, B736, B737, B747, B4671, B4672, B4673, B4679, B4773, B4776, B4778, B4779, B4780, B8100, B8231]
+file: tasks/B8645-agent-access-services.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

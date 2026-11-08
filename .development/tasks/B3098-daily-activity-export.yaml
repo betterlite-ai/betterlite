@@ -208,7 +208,7 @@ out_of_scope:
   - "B8482 composes the routes of B3096 to B3098 and owns register_daily_activity_routes with its loop over the six resolvers (L560-L579); this task only exposes export_routes."
   - "B729 owns DailyActivityRepository.export_rows and its keyset paging; B2312 owns ExportType and ExportRow; B3094 and B3095 own the resolvers and query shapes."
   - "B3090 owns ScopeDenied, InvalidDateRange and raise_public; B815 owns aggregated_date_range_error."
-  - "Registering these routes in the app router is done by B8482 and the skeleton's mount, not by this task."
+  - "Registering these routes in the app router is done by B8482, which merges them in the spend area's mount, not by this task."
 pitfalls:
   - The query parameter is `format`, not `file_format`; Python renames it with alias="format", and `?file_format=json` must be ignored and give CSV.
   - The first row is read before the response is built, so an empty or failing first page is decided while a normal 500 is still possible; later pages cannot change the status.

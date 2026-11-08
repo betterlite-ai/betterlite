@@ -1,0 +1,13 @@
+id: B8675
+milestone: M8 platform
+title: Mount the config admin, admin settings and plugin routes and back ProxyUrls
+status: todo
+depends_on: [B8610, B8594, B8595, B8596, B8389, B8230, B7323, B4785, B2330]
+file: tasks/B8675-config-admin-mount.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

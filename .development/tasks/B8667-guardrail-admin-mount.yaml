@@ -1,0 +1,104 @@
+id: B8667
+title: Shared guardrail route state and the guardrail admin read and write mounts
+description: >-
+  Eleven tasks build the guardrail and policy management routes in betterlite-server and none mounts them, because no
+  B1100 entry merges them, so /guardrails, /v2/guardrails, /apply_guardrail and /policies answer 404 today. LiteLLM
+  serves them as the lazy features guardrails, policy_engine and policy_resolve, every route behind user_api_key_auth.
+  Four parts mount them. This one builds the route state the other three reuse, writes the guardrails area file, and
+  mounts B3684 (crates/betterlite-server/src/guardrails/admin_reads) and B3685 (guardrails/admin_mutations). B8668 mounts
+  submissions, catalog and custom code, B8669 the policy CRUD and versions, and B8790 the policy test, impact, compliance
+  and catalog routes. Each route task tests its handlers with tower's oneshot only, and its HTTP oracle cases moved to
+  the part that mounts it.
+
+
+  Area file. crates/betterlite-server/src/app/guardrails.rs, where the skeleton stubs `mount(router, state)` (inside the
+  auth layers), `mount_public(router, state)` and `async fn start(state)`, all called by B8610's app.rs. `mount` builds
+  one `GuardrailRouteState` and passes the router through four calls in this order: `routes::mount_admin`, then
+  `submit_mount::mount`, `policy_mount::mount` and `policy_tools::mount`, each `(router, state, &route_state)`. `start`
+  awaits `policy_tools::start(state)` and does nothing else. `mount_public` stays as the stub left it, since LiteLLM
+  serves none of these routes without a key. Write the three files app/guardrails/submit_mount.rs, policy_mount.rs and
+  policy_tools.rs as stubs whose `mount` returns the router unchanged (and, in policy_tools.rs, an `async fn start` that
+  does nothing), so the other three parts each fill one file and run in parallel. Keep the mod lines the skeleton put
+  in app/guardrails.rs.
+
+
+  Route state (app/guardrails/routes.rs and routes/state.rs). `GuardrailRouteState` is built once in mount, never per
+  request, from `state.shared`: `runtime`, the `Arc<GuardrailRuntime<PostgresGuardrailRows>>` in
+  `shared.guardrails.runtime`; `mutation`, B3685's `MutationState` with B3685's review rows over `shared.db` and
+  `database: None` when `shared.db` is None, which is how those routes answer without a database; `read_through`, one
+  guardrail `RegistryReadThrough` from B8665's `guardrail_read_through(runtime, db_objects)` with B8612's
+  `ProxyDbObjects`; and `policies`, B3243's persistence handle as an Option over `shared.db`. Read each route module
+  before writing and take the state type it exports. No statics.
+
+
+  Admin mount (routes/admin.rs). `mount_admin` merges B3684's `routes()` and B3685's `routes(state.mutation)`. axum
+  panics on a repeated method and path: B3685's text names the two paths it leaves to B3684 and B3686, so merge each
+  module once and do not call .fallback.
+
+
+  HTTP oracle cases through the booted proxy. The cases below moved here from B3684 and B3685; write each from that
+  task's text, with the config its name implies (master key set, no database unless the name says db). Tests in
+  routes/tests.rs (names start with `mount_`) assert that the route state is built once, that each field is None or
+  present as the database is, and that a request without a key gets 401 from both route families.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/guardrails.rs
+    - crates/betterlite-server/src/app/guardrails/routes.rs
+    - crates/betterlite-server/src/app/guardrails/routes/**
+    - crates/betterlite-server/src/app/guardrails/submit_mount.rs
+    - crates/betterlite-server/src/app/guardrails/policy_mount.rs
+    - crates/betterlite-server/src/app/guardrails/policy_tools.rs
+    - tools/oracle/cases/guardrails/admin-reads/**
+    - tools/oracle/cases/guardrails/admin-mutations/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_lazy_features.py#L64-L90
+    why: The guardrails, policy_engine and policy_resolve lazy features and their path prefixes.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_endpoints.py#L134-L140
+    why: The first guardrail route decorator; the read and write routes follow at L187, L335, L444, L567, L696, L872, L968, L1004, L1085 and L1129, all behind user_api_key_auth.
+dod:
+  - text: GuardrailRouteState is built once from Shared, with the database-backed parts None when there is no database, and the area file calls the four sub-mounts in order and start calls policy_tools::start.
+    proof: [mount-tests]
+  - text: The guardrail list, info, create, update, patch, delete, approve and reject routes answer through the booted proxy as LiteLLM does, and a request without a key gets 401.
+    proof: [mount-tests, oracle]
+checks:
+  optional: []
+  commands:
+    - id: mount-tests
+      why: the route state is built per request or with the wrong database handle, a sub-mount is not called, or a route skips the auth layers
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::guardrails::routes::/)'
+deviations: []
+out_of_scope:
+  - "The handlers and their unit tests: B3684 and B3685."
+  - "The other guardrail and policy route families: B8668, B8669 and B8790."
+  - "The read-through adapters: B8665. The guardrail class dispatch: B8666."
+  - "The guardrail and policy usage routes (guardrails_usage_overview and the rest): B3689 builds only the projections and B8772 builds and mounts the handlers."
+pitfalls:
+  - "A route merged into `mount_public` would skip user_api_key_auth; every route here goes through `mount`."
+  - "B3685 builds `MutationState` with `database: None` when there is no database, and the routes answer from that; failing the mount instead would break the no-database cases."
+  - "The read-through is one value per process; building one per request resets its miss cache and its budget window."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
+oracle_cases:
+  - tools/oracle/cases/guardrails/admin-reads/list-config-masked.yaml
+  - tools/oracle/cases/guardrails/admin-reads/list-config-empty.yaml
+  - tools/oracle/cases/guardrails/admin-reads/list-v2-config.yaml
+  - tools/oracle/cases/guardrails/admin-reads/list-v2-no-database.yaml
+  - tools/oracle/cases/guardrails/admin-reads/info-config-found.yaml
+  - tools/oracle/cases/guardrails/admin-reads/info-alias-found.yaml
+  - tools/oracle/cases/guardrails/admin-reads/info-not-found.yaml
+  - tools/oracle/cases/guardrails/admin-reads/add-settings-body.yaml
+  - tools/oracle/cases/guardrails/admin-reads/provider-params-body.yaml
+  - tools/oracle/cases/guardrails/admin-reads/auth-required.yaml
+  - tools/oracle/cases/guardrails/admin-mutations/create-no-key.yaml
+  - tools/oracle/cases/guardrails/admin-mutations/create-missing-guardrail-422.yaml
+  - tools/oracle/cases/guardrails/admin-mutations/create-no-database.yaml
+  - tools/oracle/cases/guardrails/admin-mutations/replace-no-database.yaml
+  - tools/oracle/cases/guardrails/admin-mutations/patch-bad-name-422.yaml
+  - tools/oracle/cases/guardrails/admin-mutations/patch-no-database.yaml
+  - tools/oracle/cases/guardrails/admin-mutations/delete-no-database.yaml
+  - tools/oracle/cases/guardrails/admin-mutations/approve-no-key.yaml
+  - tools/oracle/cases/guardrails/admin-mutations/approve-no-database.yaml
+  - tools/oracle/cases/guardrails/admin-mutations/reject-no-database.yaml

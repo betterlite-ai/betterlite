@@ -8,7 +8,7 @@ description: >-
   If the same route name appears in multiple sources, all instances are included in the final list (no deduplication).
   Feed the loaded routes into the `SemanticRouterBuilder` port, a trait in this module that takes
   the routes and the threshold, because betterlite-guardrails may not depend on betterlite-router.
-  The wave 17 guardrails wiring part implements it in betterlite-server over B327's semantic_router.rs
+  B8666 implements it in betterlite-server over B327's semantic_router.rs
   and its LiteLLMRouterEncoder instance, never building a second embedding service.
   Template listing returns alphabetically sorted names.
   The semantic-router library version is locked by B327's oracle deps; reuse its LiteLLMRouterEncoder.__init__

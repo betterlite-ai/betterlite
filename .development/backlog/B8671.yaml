@@ -1,0 +1,13 @@
+id: B8671
+milestone: M8 platform
+title: Mount the onboarding, logo, image and favicon routes with the password breach checker
+status: todo
+depends_on: [B8670, B8610, B8387, B786, B797, B714, B789, B056]
+file: tasks/B8671-onboarding-route-mount.yaml
+covers: []
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

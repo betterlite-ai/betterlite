@@ -1,0 +1,110 @@
+id: B8672
+title: Mount the prompt read and write routes over the shared prompt registry
+description: >-
+  B4061 fills crates/betterlite-server/src/routes/prompts/read.rs (GET /prompts/list, GET /prompts/{prompt_id}/versions,
+  GET /prompts/{prompt_id} and GET /prompts/{prompt_id}/info) and B4062 fills routes/prompts/write.rs (POST /prompts,
+  PUT, PATCH and DELETE /prompts/{prompt_id}). routes.rs declares the prompts module on main, but no B1100 registry
+  entry merges it, so every prompt path answers 404. This task builds their state, mounts both routers and proves the
+  eight routes over HTTP.
+
+
+  Where. crates/betterlite-server/src/app/admin/prompts.rs (the skeleton declares it in app/admin.rs, see B8675) with
+  tests in app/admin/prompts/tests.rs, plus one line in admin.rs `mount`. Do not edit routes.rs or
+  routes/prompts.rs; call the functions read.rs and write.rs export through `crate::routes::prompts::read` and
+  `::write`, after reading their signatures on the branch.
+
+
+  State. Both modules take the database (`shared.db`, None without DATABASE_URL, so the write routes answer LiteLLM's
+  500 and the read routes fall back to the registry) and B4059's InMemoryPromptRegistry. The registry must be the one
+  instance that config load fills from the `prompts:` block and that the chat prompt hooks read, handed over as
+  `shared.prompts`; a route that wrote to a private registry would create prompts the chat path never sees. Build each
+  module's state once in `pub(crate) fn mount_prompts(router: Router, state: &Arc<ServerState>) -> Router` and merge
+  the read router and the write router once each. Both register /prompts/{prompt_id} (GET in read, PUT, PATCH and
+  DELETE in write); axum merges different methods on one path but panics on the same method twice. LiteLLM puts
+  user_api_key_auth on every prompt route, so admin.rs `mount` calls mount_prompts and nothing goes in mount_public.
+
+
+  Tests in app/admin/prompts/tests.rs (module `app::admin::prompts::tests`, names start with `oneshot_`) build a
+  ServerState from the in-memory fakes B8610's tests use and call the router with tower's oneshot. They assert all
+  eight method and path pairs answer something other than 404 or 405, GET /prompts/list reads a prompt placed in the
+  shared registry, and a POST /prompts without a database answers LiteLLM's 500.
+
+
+  HTTP oracle cases. The 39 cases B4061 and B4062 planned (tools/oracle/cases/prompts/read/ and prompts/write/) move
+  here unchanged with their folders; the worker writes them from those tasks' texts and runs them through the booted
+  proxy with master key oracle-master.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/admin.rs
+    - crates/betterlite-server/src/app/admin/prompts.rs
+    - crates/betterlite-server/src/app/admin/prompts/**
+    - tools/oracle/cases/prompts/read/**
+    - tools/oracle/cases/prompts/write/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_endpoints.py
+    why: The eight prompt routes, each with user_api_key_auth, and IN_MEMORY_PROMPT_REGISTRY as the shared registry.
+dod:
+  - text: mount_prompts merges the read and write prompt routers once each inside the auth layers, over the shared database and the one prompt registry.
+    proof: [prompts-mount-tests, oracle]
+  - text: The prompt list, version, info, create, update, patch and delete routes answer like LiteLLM through the booted proxy.
+    proof: [oracle]
+checks:
+  optional: []
+  commands:
+    - id: prompts-mount-tests
+      why: a prompt router is not merged, a method is lost in the merge, or the routes read a second prompt registry
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::admin::prompts::/)'
+oracle_cases:
+  - tools/oracle/cases/prompts/read/list_prompts_admin.yaml
+  - tools/oracle/cases/prompts/read/list_prompts_metadata_scope.yaml
+  - tools/oracle/cases/prompts/read/list_prompts_no_access.yaml
+  - tools/oracle/cases/prompts/read/versions_admin.yaml
+  - tools/oracle/cases/prompts/read/versions_not_admin.yaml
+  - tools/oracle/cases/prompts/read/versions_not_found.yaml
+  - tools/oracle/cases/prompts/read/versions_no_database.yaml
+  - tools/oracle/cases/prompts/read/info_admin.yaml
+  - tools/oracle/cases/prompts/read/info_with_dotprompt_content.yaml
+  - tools/oracle/cases/prompts/read/info_with_manager_template.yaml
+  - tools/oracle/cases/prompts/read/info_metadata_allowlist_fails.yaml
+  - tools/oracle/cases/prompts/read/info_prompt_not_found.yaml
+  - tools/oracle/cases/prompts/read/info_not_admin.yaml
+  - tools/oracle/cases/prompts/read/info_environment_filter.yaml
+  - tools/oracle/cases/prompts/read/info_version_suffix.yaml
+  - tools/oracle/cases/prompts/read/info_alias_info_endpoint.yaml
+
+  - tools/oracle/cases/prompts/write/create_prompt_success.yaml
+  - tools/oracle/cases/prompts/write/create_prompt_not_admin.yaml
+  - tools/oracle/cases/prompts/write/create_prompt_no_database.yaml
+  - tools/oracle/cases/prompts/write/create_prompt_ambiguous_data.yaml
+  - tools/oracle/cases/prompts/write/update_prompt_success.yaml
+  - tools/oracle/cases/prompts/write/update_prompt_not_admin.yaml
+  - tools/oracle/cases/prompts/write/update_prompt_not_found.yaml
+  - tools/oracle/cases/prompts/write/update_prompt_config_protection.yaml
+  - tools/oracle/cases/prompts/write/update_prompt_ambiguous_data.yaml
+  - tools/oracle/cases/prompts/write/update_prompt_version_suffix_stripping.yaml
+  - tools/oracle/cases/prompts/write/patch_prompt_success.yaml
+  - tools/oracle/cases/prompts/write/patch_prompt_not_admin.yaml
+  - tools/oracle/cases/prompts/write/patch_prompt_not_found.yaml
+  - tools/oracle/cases/prompts/write/patch_prompt_config_protection.yaml
+  - tools/oracle/cases/prompts/write/patch_prompt_environment_default.yaml
+  - tools/oracle/cases/prompts/write/patch_prompt_version_suffix_resolution.yaml
+  - tools/oracle/cases/prompts/write/patch_prompt_partial_update.yaml
+  - tools/oracle/cases/prompts/write/delete_prompt_success.yaml
+  - tools/oracle/cases/prompts/write/delete_prompt_not_admin.yaml
+  - tools/oracle/cases/prompts/write/delete_prompt_not_found.yaml
+  - tools/oracle/cases/prompts/write/delete_prompt_config_protection.yaml
+  - tools/oracle/cases/prompts/write/delete_prompt_environment_scoped.yaml
+  - tools/oracle/cases/prompts/write/registry_init_failure_after_db_write.yaml
+
+deviations: []
+out_of_scope:
+  - "The prompt handlers: B4061 and B4062. The registry and the row conversions: B4059."
+  - "Handing the prompt registry to Shared: the foundation parts."
+pitfalls:
+  - GET /prompts/list must stay a static path next to GET /prompts/{prompt_id}; axum prefers the static segment, so do not add a second list route under the parameter.
+  - A missing database answers 500 on writes and is not a reason to skip the mount; the read routes still serve the config prompts from the registry.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

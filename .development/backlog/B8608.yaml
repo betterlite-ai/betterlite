@@ -1,0 +1,14 @@
+id: B8608
+milestone: M5 api families
+title: Mount the Vertex AI and Azure pass-through routes
+status: todo
+depends_on: [B8640, B8641, B3623, B3624, B3629]
+file: tasks/B8608-passthrough-vertex-azure-mount.yaml
+covers:
+  - "litellm/proxy/pass_through_endpoints/llm_passthrough_endpoints.py"
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

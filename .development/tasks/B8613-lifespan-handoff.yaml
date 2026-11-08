@@ -1,0 +1,158 @@
+id: B8613
+title: Lifespan start and stop halves, the shared values made at startup and the collector lifecycle
+description: >-
+  B8374 runs LiteLLM's startup and shutdown in one function, run_proxy, and keeps what startup builds in local
+  variables. The server needs those values (B8610 hands them to Shared), the collector subcommand needs startup and
+  shutdown without the HTTP listener (B1709), and several shared values that live in betterlite-server must exist during
+  startup because LiteLLM's later startup steps use them. This task does those three things in crates/betterlite. It
+  never names a betterlite-router type: the router comes from B8611's betterlite-server types.
+
+
+  Split. In crates/betterlite/src/lifespan.rs, split run_proxy into `start(inputs: LifespanInputs) -> Result<Started,
+  LifespanError>`, which runs every startup step in B8374's order, and `stop(started: Started)`, which runs every
+  shutdown step in B8374's order. `Started` is a struct in lifespan/started.rs with one public field per value startup
+  builds and later code needs: the Config and env overlay, the database store when DATABASE_URL was set, the usage and
+  buffer Redis clients, the auth cache, the guardrail handler and factories, B8230's PluginRegistry, the values listed
+  below, and the private handles stop uses (jobs, subscribers, drains). run_proxy becomes start, then server::run with
+  the same arguments it passes today, then stop. Keep every existing lifespan test green; move none of B8374's steps.
+
+
+  Values made during start, each once, at LiteLLM's position. Every Arc below is the only instance; later code clones the
+  Arc.
+
+  1. Redis client factory. First, before any Redis client exists: B8501's cloud Redis credential source and B5220's
+  `LiveClientFactory::new(Some(source))`. Every Redis client the lifespan builds (B8377's coordination selection and env
+  fallback, the buffer Redis, B5630's clients, the response cache) is built through this one factory, so cloud
+  credentials apply everywhere. Pass it wherever their merged constructors take a factory.
+  2. Secret lookup. B8612's `production_secret_lookup(env)` before B8590's env_overlay, which takes it as `secrets`.
+  3. Proxy config state. One B8380 `ProxyConfigState` before config boot; when B8374's merged code already makes one,
+  keep that one.
+  4. Registries. One B4776 `AgentRegistry`, B8614's `McpRegistry::new(&config, db, http)`, `VectorStores::new()` and `PassThroughState::new()`, and B8614's
+  `BootRegistries` over the first three, passed to B8590's load_non_llm_configs. B8374's agent grant id migration and B8384's
+  _init_mcp_servers_in_db use these same values. The PassThroughState goes to every call B8374 makes into B3616's initialize_pass_through_endpoints and to B8384's database load, and at the default_vertex_config line of load_config (L6964-L6965) B3602's set_default_vertex_config runs on its credential router unless B8374 already calls it.
+  One B4059 `InMemoryPromptRegistry`, in the RwLock wrapper Shared holds it in (B8610), made with the registries. At
+  the prompts position of load_config (L7027-L7034, after the policy engine setup and before credentials), when
+  `config.sections.prompts` is not empty, B8293's `init_prompts` fills it with the config file path; its error stops
+  startup with its text. B8384's load_prompts gets this same registry.
+  5. Router handle. `RouterHandle::new(None)` before the response cache, because B8651's SemanticDeps holds it.
+  6. Response cache. `CacheRuntime::new(...)` (B8612) with SemanticDeps { router: the handle, factory, http: the chat
+  executor's client, env }. When litellm_settings.cache is true, resolve every os.environ/ string in the cache params
+  through the secret lookup and call `reinit.init_cache(params)` (load_config L6355-L6377); the usage Redis it returns
+  becomes the usage Redis, as _set_redis_usage_cache does. This is the only response cache build at startup: if B8374's
+  merged code builds one another way, replace that call. Make B4304's one `CacheWriteTracker` here too.
+  7. Router. When a config file was loaded, in load_config order (L6905-L6928): B8378's check_capability_limits over the
+  model_list with B377's unlicensed limit; for each entry B8378's check_max_agentic_loops, check_complexity_placement,
+  check_access_windows and pin_complexity_model_id; B8587's complexity router plugin resolution with the config file
+  path; then `handle.install(ProxyRouter::build(RouterParts::from_config(&config, slot.get().is_some()))?)`, the
+  Router(...) call at L6992. A check error stops startup with its text. When B8377's selection returns a usage Redis,
+  call the router's `attach_redis` with it (L1400-L1413 and L7006-L7007). Pass the handle wherever B8374 passes "the
+  router" today (B8381's DeploymentSync, B8372's model info refresh).
+  8. MCP JWT signer slot. One B8254 `JwtSignerSlot::new()` before the guardrail factories are built, passed to the
+  B8521 hook ports or B8254 initializer that takes one. Guardrails: where B8374 calls GuardrailFactories::new, pass B8665's StoreToolPolicies over one B1606 ToolPolicyRegistry (the same Arc B8384's tools refresh gets) and AuthToolNames; hand the factories to InMemoryGuardrailHandler::new, wrap the handler in B3683's GuardrailRuntime over PostgresGuardrailRows (a database error when there is no database), call start_legacy_guardrails at the initialize_guardrails position of load_config (L6380-L6388) and start_from_config at the init_guardrails_v2 position (L7008-L7018), and keep the RouterGuardrail list it returns in Started for SharedGuardrails.router_list.
+  9. ProxyLogging. `ProxyLogging::new(auth_cache, false)` (B8399; premium_user is false in open-source LiteLLM) right
+  after the auth cache is created, and `startup_event(router, usage_redis)` at the position of
+  ProxyStartupEvent._initialize_startup_logging (L1415-L1420), after the Redis selection and before the transaction
+  buffer check. The B8590 alerting port that B8374 calls updates this same value. Right after ProxyLogging is built, make the one B8666 `GuardrailClasses::new(runtime, ports)` over the GuardrailRuntime from step 8, pass its `callbacks()` (a live source that reads the handler on every call) to B8399's add_guardrail_callbacks, and keep it in Started for SharedGuardrails.classes. The lifespan never calls init_callbacks: B8742's callback_loggers slot calls `shared.proxy_logging.init_callbacks(resolver)` from app::callbacks::start.
+  10. Periodic reloads. One B8385 `PeriodicReloads` before B8374 registers the background jobs. B8372's
+  BackgroundJobInputs (the periodic_reload_job) and B8384's beta header reload get this one; Started carries it for
+  B8586's routes.
+  11. Deployment sync. B8381's `DeploymentSync` as one Arc: the one B8374 hands to B8372's jobs and stops at shutdown
+  (make it here when B8374's merged code holds it by value). lifespan/deployment_port.rs holds `SyncPortAdapter` with
+  that Arc and the database store and implements B8611's `DeploymentSyncPort`: add_deployment calls DeploymentSync's
+  add_deployment with the store, and does nothing without a database. Started carries it as `deployment_sync: Arc<dyn
+  DeploymentSyncPort>` and the same DeploymentSync as `auto_router_catalog: Arc<dyn AutoRouterCatalog>` (B8381
+  implements B379's trait).
+  12. Gateway requests. One B3102 `GatewayRequestAccumulator` as an Arc, before the background jobs. Every flush B8374
+  and B8372 run takes this one, and Started carries it for B8680's billable sink.
+  13. Prometheus registry. One B3875 `CollectorRegistry` as an Arc, before anything registers a collector; pass it
+  wherever B8374's merged code takes a registry. Started carries it: B8655 registers its collectors into it and B3886's
+  metrics_router renders it.
+  14. Shutdown state. One B4448 `ShutdownState`, with the drain timeout from the health_readiness section and B022's
+  in-flight source made here too. B8374's start_shutdown and wait_for_drain use this one. Started carries both, so the
+  server's in-flight layer and wait_for_drain count the same requests (B8610 hands them to ServerState).
+  15. Spend producer slot. One empty `Arc<std::sync::OnceLock<P>>`, where P is what B069's spend::startup::start
+  returns. Started carries it; B8662 fills it from app::spend::start once the server starts.
+
+  Stop adds these steps, each once:
+  1. At B8374's "drain the spend event producer" position (L1625, before stop_in_flight_jobs), drain what the slot from
+  step 15 holds through B069's drain of B1708's producer, with the producer's configured timeout. An empty slot (no
+  database or no collector) does nothing. When B8374's merged code already drains a producer there, replace that call
+  with this one.
+  2. The last gateway request flush (proxy_shutdown_event L1132, before the database disconnects) drains the one
+  accumulator from step 12. When B8374's merged code flushes another accumulator there, point it at this one; add no
+  second flush.
+  3. Before B8374's response cache disconnect, fire the CacheWriteTracker's token and await its wait_idle, so cache
+  writes already started finish first (B4304).
+
+
+  Collector lifecycle. B1709 defines `CollectorLifecycle` (startup, shutdown) in crates/betterlite/src/collector.rs and
+  a collector subcommand in main.rs that takes it. `LifespanCollector` in lifespan/collector.rs implements it: startup
+  calls `start` with the LifespanInputs the proxy command builds and keeps Started, shutdown calls `stop` with it. Hand
+  it to the collector subcommand in main.rs.
+
+
+  Tests: lifespan tests (names start with `handoff_`) drive start and stop with B8374's recording fakes and assert the
+  factory exists before the first Redis build, the secret lookup before env_overlay, the registries before
+  load_non_llm_configs, the handle before the cache and the router after it with cache_responses following the cache,
+  a failing deployment check stops startup before the router is installed, attach_redis gets the usage Redis,
+  startup_event runs between the Redis selection and the buffer check, a config with prompts fills the registry Started
+  holds, the DeploymentSyncPort in Started reaches DeploymentSync's add_deployment, the guardrail callback source
+  answers a guardrail added after start, the tracker drains before the response cache disconnect, the gateway
+  accumulator and the spend producer drain once each, and run_proxy still calls start, server::run and stop in that
+  order. lifespan collector tests (names
+  start with `collector_`) assert startup and shutdown map to start and stop. No oracle case: the order is not visible
+  to a client.
+scope:
+  paths:
+    - crates/betterlite/Cargo.toml
+    - crates/betterlite/src/lifespan.rs
+    - crates/betterlite/src/lifespan/**
+    - crates/betterlite/src/main.rs
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L1400-L1420
+    why: The coordination Redis selection and _initialize_startup_logging right after it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10184-L10195
+    why: _initialize_startup_logging calls proxy_logging_obj.startup_event with the router and the usage Redis.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6355-L6377
+    why: The cache branch of load_config, the os.environ/ resolution and the usage Redis taken from _init_cache.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L6890-L7007
+    why: The deployment checks, the router built after the cache with cache_responses from litellm.cache, and the usage Redis hand-off.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L5031-L5135
+    why: The deployment checks B8378 ports, run before the router exists.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2584-L2661
+    why: The module globals (llm_router, user_api_key_cache, redis_usage_cache, proxy_logging_obj) this task turns into values made once.
+dod:
+  - text: start and stop run B8374's steps in the same order, Started carries every value the server and stop need, and run_proxy is start, server::run and stop.
+    proof: [handoff-tests, lifespan-regression]
+  - text: The Redis factory, secret lookup, proxy config state, registries, router handle, cache runtime, cache write tracker, JWT signer slot, ProxyLogging, guardrail classes, prompt registry, periodic reloads, deployment sync port, gateway accumulator, Prometheus registry, shutdown state and the empty spend producer slot are made once at LiteLLM's positions; the deployment checks and plugin resolution run before the router is installed; the router gets the usage Redis; startup_event runs after the Redis selection.
+    proof: [handoff-tests]
+  - text: Stop drains the cache write tracker before the response cache disconnects, and drains the spend event producer and the gateway accumulator once each at LiteLLM's positions.
+    proof: [handoff-tests]
+  - text: LifespanCollector backs CollectorLifecycle with start and stop, and the collector subcommand gets it.
+    proof: [handoff-tests]
+checks:
+  optional: []
+  commands:
+    - id: handoff-tests
+      why: a startup value is missing, made twice or made after the step that uses it, a deployment check is skipped, the tracker drains late, or the collector skips startup or shutdown
+      run: cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^lifespan::.*::(handoff_|collector_)/)'
+    - id: lifespan-regression
+      why: the split changed the order or error handling B8374's tests pin
+      run: grep -q 'pub struct Started' crates/betterlite/src/lifespan/started.rs && cargo nextest run --locked -p betterlite --no-tests=fail -E 'test(/^lifespan::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "Each startup and shutdown step: B8374 and the owners it names. The deployment checks: B8378. Plugin resolution: B8587."
+  - "The types made here: B8611, B8612 and B8614. The Shared fields: B8610."
+  - "The collector subcommand and its port: B1709."
+  - "Calling init_callbacks: B8742's callback_loggers slot, from app::callbacks::start. Filling the GuardrailClasses embedder slot: B8790. The Shared fields: B8610."
+pitfalls:
+  - The usage Redis can come from three places (the coordination block, the database block, the response cache backend); attach_redis must get whichever won, after the last of them, or the router keeps a client that rate limits do not use.
+  - A second AgentRegistry, McpRegistry, JwtSignerSlot, CacheSettingsManager, ProxyLogging, GuardrailClasses, prompt registry, PeriodicReloads, GatewayRequestAccumulator, CollectorRegistry or ShutdownState built anywhere later splits state between startup and request handling; Started is the only owner until B8610 moves them into Shared.
+  - Installing the router before init_cache gives it cache_responses false even when litellm_settings.cache is true.
+  - pin_complexity_model_id must run on the raw params before B8587 swaps plugin paths for instances, or B8381's later reconcile hashes different params and evicts the deployment.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
