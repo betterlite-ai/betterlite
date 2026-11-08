@@ -1,11 +1,10 @@
 use super::support;
-use crate::fetch_policy::client::FetchClientError;
 use crate::fetch_policy::retry::fetch_with_retry;
 
 #[tokio::test]
 async fn catalog_fetch_policy_behavior_tests_behavior() {
     let client = support::ScriptedClient::new(vec![
-        Err(FetchClientError::Transport {
+        Err(support::ScriptedError::Transport {
             detail: "connection reset".to_owned(),
         }),
         Ok(support::response(200, "{}")),

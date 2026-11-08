@@ -1,10 +1,9 @@
 use super::support;
-use crate::fetch_policy::client::FetchClientError;
 use crate::fetch_policy::retry::fetch_with_retry;
 
 #[tokio::test]
 async fn catalog_fetch_policy_behavior_tests_behavior() {
-    let client = support::ScriptedClient::new(vec![Err(FetchClientError::InvalidUrl {
+    let client = support::ScriptedClient::new(vec![Err(support::ScriptedError::InvalidUrl {
         detail: "bad scheme".to_owned(),
     })]);
     let sleeper = support::RecordingSleeper::new();

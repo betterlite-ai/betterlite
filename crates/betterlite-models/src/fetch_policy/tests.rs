@@ -19,6 +19,7 @@ mod integrity_defaults;
 mod integrity_reserved;
 mod integrity_validation;
 mod retry_after;
+mod retry_after_duplicates;
 mod retry_step_exhaust;
 mod retry_step_reload;
 mod retry_step_retry;

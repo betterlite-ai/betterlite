@@ -143,11 +143,6 @@ def _response(status: int, headers: Headers, body: str) -> httpx.Response:
     return httpx.Response(status_code=status, headers=headers, content=body.encode())
 
 
-def _retry_after_input(input_value: dict[str, Json]) -> float | None:
-    value = _optional_string(input_value, "retry_after")
-    return None if value is None else float(value)
-
-
 def _jitter(input_value: dict[str, Json]) -> _ScriptedRandom:
     values = input_value.get("jitter", [])
     if not isinstance(values, list):
@@ -156,8 +151,11 @@ def _jitter(input_value: dict[str, Json]) -> _ScriptedRandom:
 
 
 def _retryable(input_value: dict[str, Json]) -> object:
+    header = _optional_string(input_value, "retry_after")
+    header_values: Headers = {} if header is None else {"Retry-After": header}
+    seconds = parse_retry_after(_response(200, header_values, ""))
     factory = cast(Callable[..., object], cost_map._FetchAttemptRetryable)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]
-    return factory(reason="synthetic", retry_after_seconds=_retry_after_input(input_value))
+    return factory(reason="synthetic", retry_after_seconds=seconds)
 
 
 def _validate_map(input_value: dict[str, Json]) -> Json:

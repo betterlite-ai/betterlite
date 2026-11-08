@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::VecDeque;
 use std::future::{Future, ready};
 use std::str::FromStr as _;
 use std::sync::Mutex;
@@ -9,7 +9,9 @@ use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
 use crate::decisions::Json;
-use crate::fetch_policy::client::{CatalogClient, CatalogRequest, FetchClientError};
+use crate::fetch_policy::client::{
+    CatalogClient, CatalogClientError, CatalogRequest, FetchErrorKind,
+};
 use crate::fetch_policy::integrity::IntegrityPolicy;
 use crate::fetch_policy::outcome::{
     AttemptOutcome, FetchResult, FetchedCatalog, Retryable, Unavailable,
@@ -31,7 +33,7 @@ pub(super) fn request() -> CatalogRequest {
 }
 
 pub(super) fn response(status: u16, body: &str) -> FetchResponse {
-    FetchResponse::new(status, BTreeMap::new(), body.as_bytes().to_vec())
+    FetchResponse::new(status, Vec::new(), body.as_bytes().to_vec())
 }
 
 pub(super) fn response_with_headers(
@@ -39,11 +41,11 @@ pub(super) fn response_with_headers(
     headers: &[(&str, &str)],
     body: &str,
 ) -> FetchResponse {
-    let header_map = headers
+    let header_pairs = headers
         .iter()
         .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
         .collect();
-    FetchResponse::new(status, header_map, body.as_bytes().to_vec())
+    FetchResponse::new(status, header_pairs, body.as_bytes().to_vec())
 }
 
 pub(super) fn models(names: &[&str]) -> IndexMap<String, Json> {
@@ -90,13 +92,30 @@ pub(super) fn failed(result: FetchResult) -> Unavailable {
     }
 }
 
+#[derive(Clone, Debug, thiserror::Error)]
+pub(super) enum ScriptedError {
+    #[error("{detail}")]
+    InvalidUrl { detail: String },
+    #[error("{detail}")]
+    Transport { detail: String },
+}
+
+impl CatalogClientError for ScriptedError {
+    fn kind(&self) -> FetchErrorKind {
+        match self {
+            Self::InvalidUrl { .. } => FetchErrorKind::InvalidUrl,
+            Self::Transport { .. } => FetchErrorKind::Transport,
+        }
+    }
+}
+
 pub(super) struct ScriptedClient {
-    replies: Vec<Result<FetchResponse, FetchClientError>>,
+    replies: Vec<Result<FetchResponse, ScriptedError>>,
     calls: AtomicUsize,
 }
 
 impl ScriptedClient {
-    pub(super) fn new(replies: Vec<Result<FetchResponse, FetchClientError>>) -> Self {
+    pub(super) fn new(replies: Vec<Result<FetchResponse, ScriptedError>>) -> Self {
         Self {
             replies,
             calls: AtomicUsize::new(0),
@@ -107,10 +126,10 @@ impl ScriptedClient {
         self.calls.load(Ordering::SeqCst)
     }
 
-    fn next_reply(&self) -> Result<FetchResponse, FetchClientError> {
+    fn next_reply(&self) -> Result<FetchResponse, ScriptedError> {
         let index = self.calls.fetch_add(1, Ordering::SeqCst);
         self.replies.get(index).cloned().unwrap_or_else(|| {
-            Err(FetchClientError::InvalidUrl {
+            Err(ScriptedError::InvalidUrl {
                 detail: "unscripted request".to_owned(),
             })
         })
@@ -118,14 +137,16 @@ impl ScriptedClient {
 }
 
 impl CatalogClient for ScriptedClient {
-    fn get(&self, _request: &CatalogRequest) -> Result<FetchResponse, FetchClientError> {
+    type Error = ScriptedError;
+
+    fn get(&self, _request: &CatalogRequest) -> Result<FetchResponse, Self::Error> {
         self.next_reply()
     }
 
     fn get_async(
         &self,
         _request: &CatalogRequest,
-    ) -> impl Future<Output = Result<FetchResponse, FetchClientError>> + Send {
+    ) -> impl Future<Output = Result<FetchResponse, Self::Error>> + Send {
         ready(self.next_reply())
     }
 }

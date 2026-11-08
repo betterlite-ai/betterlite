@@ -2,7 +2,9 @@ use indexmap::IndexMap;
 use rust_decimal::Decimal;
 
 use crate::decisions::Json;
-use crate::fetch_policy::client::{CatalogClient, CatalogRequest, FetchClientError};
+use crate::fetch_policy::client::{
+    CatalogClient, CatalogClientError, CatalogRequest, FetchErrorKind,
+};
 use crate::fetch_policy::response::FetchResponse;
 use crate::fetch_policy::retry::parse_retry_after_seconds;
 use crate::fetch_policy::revision::git_blob_id;
@@ -57,7 +59,7 @@ pub fn classify_fetch_response(response: FetchResponse, url: &str) -> AttemptOut
     match serde_json::from_slice::<Json>(&response.body) {
         Ok(Json::Object(models)) => AttemptOutcome::Reloaded(FetchedCatalog {
             revision: git_blob_id(&response.body),
-            etag: response.headers.get("etag").cloned(),
+            etag: response.header("etag"),
             body: response.body,
             models,
         }),
@@ -71,13 +73,15 @@ pub fn classify_fetch_response(response: FetchResponse, url: &str) -> AttemptOut
 }
 
 #[must_use]
-pub fn classify_fetch_error(error: FetchClientError, url: &str) -> AttemptOutcome {
-    match error {
-        FetchClientError::InvalidUrl { detail } => AttemptOutcome::Unavailable(Unavailable {
-            reason: format!("{detail} fetching {url}"),
-        }),
-        FetchClientError::Transport { detail } => AttemptOutcome::Retryable(Retryable {
-            reason: format!("{detail} fetching {url}"),
+pub fn classify_fetch_error<E>(error: &E, url: &str) -> AttemptOutcome
+where
+    E: CatalogClientError,
+{
+    let reason = format!("{error} fetching {url}");
+    match error.kind() {
+        FetchErrorKind::InvalidUrl => AttemptOutcome::Unavailable(Unavailable { reason }),
+        FetchErrorKind::Transport => AttemptOutcome::Retryable(Retryable {
+            reason,
             retry_after_seconds: None,
         }),
     }
@@ -88,7 +92,7 @@ where
     C: CatalogClient,
 {
     client.get(request).map_or_else(
-        |error| classify_fetch_error(error, &request.url),
+        |error| classify_fetch_error(&error, &request.url),
         |response| classify_fetch_response(response, &request.url),
     )
 }

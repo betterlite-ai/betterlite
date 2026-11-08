@@ -4,7 +4,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use betterlite_models::decisions::Json;
-use betterlite_models::fetch_policy::client::{CatalogRequest, FetchClientError};
+use betterlite_models::fetch_policy::client::CatalogRequest;
 use betterlite_models::fetch_policy::integrity::{
     IntegrityPolicy, MAX_SHRINK_RATIO, MIN_MODEL_COUNT, check_model_count_not_reduced,
     count_model_entries, validate_model_cost_map,
@@ -22,16 +22,8 @@ use serde_json::{Value, json};
 
 use super::input::{Input, ReplyInput};
 use super::invalid;
-use super::scripting::{RecordingSleeper, ScriptedClient, ScriptedJitter};
+use super::scripting::{RecordingSleeper, ScriptedClient, ScriptedError, ScriptedJitter};
 use crate::helpers::{HelperError, HelperResult};
-
-fn optional_decimal(text: Option<&str>) -> Result<Option<Decimal>, Box<HelperError>> {
-    text.map_or(Ok(None), |value| {
-        Decimal::from_str(value)
-            .map(Some)
-            .map_err(|error| invalid(format!("{value}: {error}")))
-    })
-}
 
 fn integrity_policy(input: &Input) -> Result<IntegrityPolicy, Box<HelperError>> {
     let min_model_count = input.min_model_count.unwrap_or(MIN_MODEL_COUNT);
@@ -92,7 +84,7 @@ fn sorted_models(models: &IndexMap<String, Json>) -> Vec<String> {
 pub(super) fn classify(input: &Input) -> Value {
     let response = FetchResponse::new(
         input.status,
-        input.headers.clone(),
+        input.headers.clone().into_iter().collect(),
         input.body.as_bytes().to_vec(),
     );
     match classify_fetch_response(response, &input.url) {
@@ -113,40 +105,39 @@ pub(super) fn classify(input: &Input) -> Value {
 }
 
 pub(super) fn parse_retry_after(input: &Input) -> Value {
-    let response = FetchResponse::new(200, input.headers.clone(), Vec::new());
+    let response = FetchResponse::new(200, input.headers.clone().into_iter().collect(), Vec::new());
     json!({
         "retry_after_seconds": parse_retry_after_seconds(&response)
             .map(|seconds| seconds.normalize().to_string()),
     })
 }
 
-fn retryable(input: &Input) -> Result<Retryable, Box<HelperError>> {
-    Ok(Retryable {
+fn retryable(input: &Input) -> Retryable {
+    let retry_after_seconds = input.retry_after.as_deref().and_then(|value| {
+        let header_pairs = vec![("retry-after".to_owned(), value.to_owned())];
+        parse_retry_after_seconds(&FetchResponse::new(200, header_pairs, Vec::new()))
+    });
+    Retryable {
         reason: "synthetic".to_owned(),
-        retry_after_seconds: optional_decimal(input.retry_after.as_deref())?,
-    })
+        retry_after_seconds,
+    }
 }
 
 pub(super) fn retry_wait(input: &Input) -> HelperResult {
-    let retryable = retryable(input)?;
     let mut jitter = ScriptedJitter::new(&input.jitter)?;
-    let wait = retry_wait_seconds(&retryable, input.attempt, &mut jitter);
+    let wait = retry_wait_seconds(&retryable(input), input.attempt, &mut jitter);
     Ok(json!({"wait_seconds": wait.normalize().to_string()}))
 }
 
-fn retry_step(input: &Input) -> Result<NextStep, Box<HelperError>> {
+pub(super) fn next_retry_wait(input: &Input) -> HelperResult {
     let mut jitter = ScriptedJitter::new(&input.jitter)?;
-    let outcome = AttemptOutcome::Retryable(retryable(input)?);
-    Ok(next_retry_step(
+    let outcome = AttemptOutcome::Retryable(retryable(input));
+    match next_retry_step(
         outcome,
         input.attempt,
         input.max_attempts.unwrap_or(3),
         &mut jitter,
-    ))
-}
-
-fn step_output(step: &NextStep) -> Result<Value, Box<HelperError>> {
-    match step {
+    ) {
         NextStep::Retry(seconds) => Ok(json!({
             "kind": "retry",
             "wait_seconds": seconds.normalize().to_string(),
@@ -158,19 +149,13 @@ fn step_output(step: &NextStep) -> Result<Value, Box<HelperError>> {
     }
 }
 
-pub(super) fn next_retry_wait(input: &Input) -> HelperResult {
-    let step = retry_step(input)?;
-    let output = step_output(&step)?;
-    Ok(json!(output))
-}
-
-fn scripted_replies(replies: &[ReplyInput]) -> Vec<Result<FetchResponse, FetchClientError>> {
+fn scripted_replies(replies: &[ReplyInput]) -> Vec<Result<FetchResponse, ScriptedError>> {
     replies
         .iter()
         .map(|reply| {
             Ok(FetchResponse::new(
                 reply.status,
-                reply.headers.clone(),
+                reply.headers.clone().into_iter().collect(),
                 reply.body.as_bytes().to_vec(),
             ))
         })

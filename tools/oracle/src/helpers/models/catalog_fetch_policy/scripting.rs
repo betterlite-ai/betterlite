@@ -4,13 +4,27 @@ use std::str::FromStr as _;
 use std::sync::Mutex;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use betterlite_models::fetch_policy::client::{CatalogClient, CatalogRequest, FetchClientError};
+use betterlite_models::fetch_policy::client::{
+    CatalogClient, CatalogClientError, CatalogRequest, FetchErrorKind,
+};
 use betterlite_models::fetch_policy::response::FetchResponse;
 use betterlite_models::fetch_policy::retry::{CatalogSleeper, JitterSource};
 use rust_decimal::Decimal;
 
 use super::invalid;
 use crate::helpers::HelperError;
+
+#[derive(Clone, Debug, thiserror::Error)]
+pub(super) enum ScriptedError {
+    #[error("{detail}")]
+    InvalidUrl { detail: String },
+}
+
+impl CatalogClientError for ScriptedError {
+    fn kind(&self) -> FetchErrorKind {
+        FetchErrorKind::InvalidUrl
+    }
+}
 
 pub(super) struct ScriptedJitter {
     values: VecDeque<Decimal>,
@@ -35,15 +49,15 @@ impl JitterSource for ScriptedJitter {
 }
 
 pub(super) struct ScriptedClient {
-    pub(super) replies: Vec<Result<FetchResponse, FetchClientError>>,
+    pub(super) replies: Vec<Result<FetchResponse, ScriptedError>>,
     pub(super) calls: AtomicUsize,
 }
 
 impl ScriptedClient {
-    fn next_reply(&self) -> Result<FetchResponse, FetchClientError> {
+    fn next_reply(&self) -> Result<FetchResponse, ScriptedError> {
         let index = self.calls.fetch_add(1, Ordering::SeqCst);
         self.replies.get(index).cloned().unwrap_or_else(|| {
-            Err(FetchClientError::InvalidUrl {
+            Err(ScriptedError::InvalidUrl {
                 detail: "unscripted request".to_owned(),
             })
         })
@@ -51,14 +65,16 @@ impl ScriptedClient {
 }
 
 impl CatalogClient for ScriptedClient {
-    fn get(&self, _request: &CatalogRequest) -> Result<FetchResponse, FetchClientError> {
+    type Error = ScriptedError;
+
+    fn get(&self, _request: &CatalogRequest) -> Result<FetchResponse, Self::Error> {
         self.next_reply()
     }
 
     fn get_async(
         &self,
         _request: &CatalogRequest,
-    ) -> impl Future<Output = Result<FetchResponse, FetchClientError>> + Send {
+    ) -> impl Future<Output = Result<FetchResponse, Self::Error>> + Send {
         ready(self.next_reply())
     }
 }

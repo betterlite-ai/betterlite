@@ -29,11 +29,25 @@ pub enum NextStep {
 
 #[must_use]
 pub fn parse_retry_after_seconds(response: &FetchResponse) -> Option<Decimal> {
-    let header = response.headers.get("retry-after")?.trim();
-    let seconds = Decimal::from_str(header)
+    let raw = response.header("retry-after")?;
+    let header = raw.trim();
+    Decimal::from_str(header)
         .or_else(|_| Decimal::from_scientific(header))
-        .ok()?;
-    (seconds >= Decimal::ZERO).then_some(seconds)
+        .map_or_else(
+            |_| oversized_retry_after(header),
+            |seconds| (seconds >= Decimal::ZERO).then_some(seconds),
+        )
+}
+
+fn oversized_retry_after(header: &str) -> Option<Decimal> {
+    let value = header.parse::<f64>().ok()?;
+    if value.is_nan() || value.is_sign_negative() {
+        return None;
+    }
+    if value.is_finite() {
+        return Some(Decimal::try_from(value).unwrap_or(MAX_FETCH_WAIT_SECONDS));
+    }
+    Some(MAX_FETCH_WAIT_SECONDS)
 }
 
 #[must_use]
@@ -92,7 +106,7 @@ where
     for attempt in 1..=max_attempts {
         let outcome = match client.get_async(request).await {
             Ok(response) => classify_fetch_response(response, &request.url),
-            Err(error) => classify_fetch_error(error, &request.url),
+            Err(error) => classify_fetch_error(&error, &request.url),
         };
         match next_retry_step(outcome, attempt, max_attempts, jitter) {
             NextStep::Done(result) => return result,

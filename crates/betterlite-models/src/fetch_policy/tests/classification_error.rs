@@ -1,15 +1,12 @@
 use super::support;
-use crate::fetch_policy::client::FetchClientError;
 use crate::fetch_policy::outcome::{AttemptOutcome, classify_fetch_error};
 
 #[test]
 fn catalog_fetch_policy_behavior_tests_behavior() {
-    match classify_fetch_error(
-        FetchClientError::InvalidUrl {
-            detail: "unsupported scheme".to_owned(),
-        },
-        support::URL,
-    ) {
+    let invalid_url = support::ScriptedError::InvalidUrl {
+        detail: "unsupported scheme".to_owned(),
+    };
+    match classify_fetch_error(&invalid_url, support::URL) {
         AttemptOutcome::Unavailable(unavailable) => assert_eq!(
             unavailable.reason,
             format!("unsupported scheme fetching {}", support::URL)
@@ -19,12 +16,10 @@ fn catalog_fetch_policy_behavior_tests_behavior() {
         }
     }
 
-    match classify_fetch_error(
-        FetchClientError::Transport {
-            detail: "connection refused".to_owned(),
-        },
-        support::URL,
-    ) {
+    let transport = support::ScriptedError::Transport {
+        detail: "connection refused".to_owned(),
+    };
+    match classify_fetch_error(&transport, support::URL) {
         AttemptOutcome::Retryable(retryable) => {
             assert_eq!(
                 retryable.reason,

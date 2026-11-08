@@ -25,6 +25,10 @@ fn catalog_fetch_policy_behavior_tests_behavior() {
     ));
     assert_eq!(created.etag, None);
     assert_eq!(created.revision, git_blob_id(b"{}"));
+
+    let repeated = support::response_with_headers(200, &[("etag", "a"), ("ETag", "b")], "{}");
+    let joined = reloaded(classify_fetch_response(repeated, support::URL));
+    assert_eq!(joined.etag.as_deref(), Some("a, b"));
 }
 
 fn reloaded(outcome: AttemptOutcome) -> FetchedCatalog {
