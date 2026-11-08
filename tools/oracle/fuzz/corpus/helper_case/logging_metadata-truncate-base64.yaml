@@ -1,0 +1,13 @@
+kind: helper
+name: logging-metadata-truncate-base64-seed
+call:
+  logging_metadata:
+    function: truncate_base64
+    messages:
+      messages:
+        - role: user
+          content: "data:image/png;base64,AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    max_base64_length: 16
+env:
+  MAX_BASE64_LENGTH_FOR_LOGGING: "16"
+compare: {ignore: []}
