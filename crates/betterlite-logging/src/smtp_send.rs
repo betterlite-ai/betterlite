@@ -2,13 +2,14 @@ use std::io::Error as IoError;
 use std::time::Duration;
 
 use betterlite_config::sections::smtp_transport::Settings;
+use lettre::Transport as _;
 use lettre::address::Address as EnvelopeAddress;
-use lettre::address::AddressError;
+use lettre::address::{AddressError, Envelope};
+use lettre::error::Error as LettreError;
 use lettre::transport::smtp::Error as SmtpError;
-use lettre::transport::smtp::authentication::{Credentials, DEFAULT_MECHANISMS};
-use lettre::transport::smtp::client::{SmtpConnection, TlsParameters};
-use lettre::transport::smtp::commands::{Data, Mail, Rcpt};
-use lettre::transport::smtp::extension::ClientId;
+use lettre::transport::smtp::SmtpTransport;
+use lettre::transport::smtp::authentication::Credentials;
+use lettre::transport::smtp::client::{Tls, TlsParameters};
 use mail_builder::MessageBuilder;
 use secrecy::ExposeSecret as _;
 use tokio::task::JoinSet;
@@ -34,6 +35,8 @@ enum DeliveryError {
     #[error(transparent)]
     Address(#[from] AddressError),
     #[error(transparent)]
+    Envelope(#[from] LettreError),
+    #[error(transparent)]
     Message(#[from] IoError),
     #[error(transparent)]
     Smtp(#[from] SmtpError),
@@ -53,6 +56,41 @@ pub(crate) const fn connection_security(settings: &Settings) -> ConnectionSecuri
         ConnectionSecurity::StartTls
     } else {
         ConnectionSecurity::PlainText
+    }
+}
+
+struct Mailbox<'text> {
+    name: Option<&'text str>,
+    address: &'text str,
+}
+
+// LiteLLM hands From and To to smtplib, whose quoteaddr sends "Name <addr>" as MAIL FROM:<addr>
+fn split_mailbox(text: &str) -> Mailbox<'_> {
+    let trimmed = text.trim();
+    let (Some(open), Some(close)) = (trimmed.rfind('<'), trimmed.rfind('>')) else {
+        return Mailbox {
+            name: None,
+            address: trimmed,
+        };
+    };
+    if close <= open {
+        return Mailbox {
+            name: None,
+            address: trimmed,
+        };
+    }
+    let name = trimmed
+        .get(..open)
+        .unwrap_or_default()
+        .trim()
+        .trim_matches('"');
+    let address = trimmed
+        .get(open.saturating_add(1)..close)
+        .unwrap_or_default()
+        .trim();
+    Mailbox {
+        name: (!name.is_empty()).then_some(name),
+        address,
     }
 }
 
@@ -104,55 +142,47 @@ impl Delivery {
     }
 
     fn send(self) -> Result<(), DeliveryError> {
-        let sender: EnvelopeAddress = self.sender.parse()?;
-        let receiver: EnvelopeAddress = self.receiver.parse()?;
-        let mut connection = connect(&self)?;
-        if let Some(credentials) = &self.credentials {
-            connection.auth(DEFAULT_MECHANISMS, credentials)?;
+        let sender = split_mailbox(&self.sender);
+        let receiver = split_mailbox(&self.receiver);
+        let sender_address: EnvelopeAddress = sender.address.parse()?;
+        let receiver_address: EnvelopeAddress = receiver.address.parse()?;
+        let envelope = Envelope::new(Some(sender_address), vec![receiver_address])?;
+        let raw = self.message_bytes()?;
+        let mut transport = SmtpTransport::builder_dangerous(self.host.clone())
+            .port(self.port)
+            .timeout(Some(self.timeout));
+        transport = match self.security {
+            ConnectionSecurity::ImplicitTls => {
+                transport.tls(Tls::Wrapper(TlsParameters::new(self.host.clone())?))
+            }
+            ConnectionSecurity::StartTls => {
+                transport.tls(Tls::Required(TlsParameters::new(self.host.clone())?))
+            }
+            ConnectionSecurity::PlainText => transport,
+        };
+        if let Some(credentials) = self.credentials {
+            transport = transport.credentials(credentials);
         }
-        let raw = MessageBuilder::new()
-            .from(self.sender)
-            .to(self.receiver)
-            .subject(self.subject)
-            .html_body(self.html)
-            .write_to_vec()?;
-        connection.command(Mail::new(Some(sender), Vec::new()))?;
-        connection.command(Rcpt::new(receiver, Vec::new()))?;
-        connection.command(Data)?;
-        connection.message(&raw)?;
-        connection.abort();
+        transport.build().send_raw(&envelope, &raw)?;
         Ok(())
     }
-}
 
-fn connect(delivery: &Delivery) -> Result<SmtpConnection, DeliveryError> {
-    let client = ClientId::default();
-    let endpoint = (delivery.host.as_str(), delivery.port);
-    match delivery.security {
-        ConnectionSecurity::ImplicitTls => {
-            let tls = TlsParameters::new(delivery.host.clone())?;
-            Ok(SmtpConnection::connect(
-                endpoint,
-                Some(delivery.timeout),
-                &client,
-                Some(&tls),
-                None,
-            )?)
-        }
-        ConnectionSecurity::StartTls => {
-            let tls = TlsParameters::new(delivery.host.clone())?;
-            let mut connection =
-                SmtpConnection::connect(endpoint, Some(delivery.timeout), &client, None, None)?;
-            connection.starttls(&tls, &client)?;
-            Ok(connection)
-        }
-        ConnectionSecurity::PlainText => Ok(SmtpConnection::connect(
-            endpoint,
-            Some(delivery.timeout),
-            &client,
-            None,
-            None,
-        )?),
+    fn message_bytes(&self) -> Result<Vec<u8>, DeliveryError> {
+        let sender = split_mailbox(&self.sender);
+        let receiver = split_mailbox(&self.receiver);
+        let mut message = MessageBuilder::new();
+        message = match sender.name {
+            Some(name) => message.from((name, sender.address)),
+            None => message.from(sender.address),
+        };
+        message = match receiver.name {
+            Some(name) => message.to((name, receiver.address)),
+            None => message.to(receiver.address),
+        };
+        Ok(message
+            .subject(self.subject.as_str())
+            .html_body(self.html.as_str())
+            .write_to_vec()?)
     }
 }
 

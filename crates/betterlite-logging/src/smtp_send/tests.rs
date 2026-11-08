@@ -224,14 +224,82 @@ async fn sends_the_message_over_plain_smtp() {
     assert!(
         lines
             .iter()
-            .any(|line| line.starts_with("MAIL FROM:<sender@example.com>"))
+            .any(|line| line == "MAIL FROM:<sender@example.com>")
     );
     assert!(
         lines
             .iter()
-            .any(|line| line.starts_with("RCPT TO:<receiver@example.com>"))
+            .any(|line| line == "RCPT TO:<receiver@example.com>")
     );
     assert!(lines.iter().any(|line| line == "DATA"));
+    assert!(
+        lines
+            .iter()
+            .any(|line| line == "From: <sender@example.com>")
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|line| line == "To: <receiver@example.com>")
+    );
+    assert!(lines.iter().any(|line| line == "Subject: Hello"));
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.starts_with("Content-Type: text/html"))
+    );
+    assert!(lines.iter().any(|line| line == "<p>hi</p>"));
+}
+
+#[tokio::test]
+async fn a_named_sender_and_receiver_keep_their_names_in_the_headers() {
+    let server = serve(ServerMode::Plain).await;
+    let mut settings = test_settings(server.port);
+    settings.sender_email = Some("Acme Alerts <alerts@acme.com>".to_owned());
+    let outcome = send_email(
+        &settings,
+        Some("Support <help@example.com>"),
+        Some("Hello"),
+        Some("<p>hi</p>"),
+    )
+    .await;
+    assert_eq!(outcome, Ok(()));
+    let lines = server.lines();
+    assert!(
+        lines
+            .iter()
+            .any(|line| line == "MAIL FROM:<alerts@acme.com>")
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|line| line == "RCPT TO:<help@example.com>")
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|line| line == "From: Acme Alerts <alerts@acme.com>")
+    );
+    assert!(
+        lines
+            .iter()
+            .any(|line| line == "To: Support <help@example.com>")
+    );
+}
+
+#[tokio::test]
+async fn ehlo_sends_the_host_name_instead_of_the_loopback_literal() {
+    let server = serve(ServerMode::Plain).await;
+    let outcome = deliver(&test_settings(server.port)).await;
+    assert_eq!(outcome, Ok(()));
+    let ehlo = server
+        .lines()
+        .into_iter()
+        .find(|line| line.starts_with("EHLO "))
+        .unwrap();
+    let name = ehlo.strip_prefix("EHLO ").unwrap_or_default();
+    assert!(!name.is_empty());
+    assert_ne!(name, "[127.0.0.1]");
 }
 
 #[tokio::test]

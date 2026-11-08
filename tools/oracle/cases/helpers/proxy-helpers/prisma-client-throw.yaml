@@ -10,7 +10,4 @@ call:
         connected: false
         message: Database not available. Connect a database to your proxy
 env: {}
-compare:
-  ignore:
-    - pointer: /value/results/1/detail/error
-      why: betterlite writes its own database-gate message
+compare: {ignore: []}

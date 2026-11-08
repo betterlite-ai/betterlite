@@ -6,8 +6,8 @@ deviations:
   - what: premium_user_check and prisma_client_or_throw take the premium flag and the database handle as arguments instead of reading litellm.proxy.proxy_server module globals.
     why: betterlite injects dependencies through call arguments, and a module global is the Python shape the rules forbid.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8240-L8257
-  - what: The premium-gate and database-gate messages use betterlite's own wording instead of LiteLLM's enterprise marketing text.
-    why: 'Error messages are betterlite''s own under rule errors-match-litellm; the statuses 403 and 500 and the error-key detail shape stay the same.'
+  - what: The premium-gate message uses betterlite's own wording instead of LiteLLM's enterprise marketing text; the database gate passes the caller's message through unchanged.
+    why: 'Error messages are betterlite''s own under rule errors-match-litellm; the 403 status and the error-key detail shape stay the same.'
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8240-L8257
   - what: check_team_models renders the valid models as a comma-separated list instead of Python's list repr.
     why: Python repr text is outside the compatibility contract; the status and the rest of the message stay as LiteLLM writes them.
