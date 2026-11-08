@@ -12,11 +12,6 @@ Params: TypeAlias = dict[str, Json]
 EndpointType: TypeAlias = Literal["runtime", "agent", "agentcore"]
 
 
-class FixtureSession:
-    def __init__(self, region_name: str | None) -> None:
-        self.region_name = region_name
-
-
 def object_of(value: Json, name: str) -> dict[str, Json]:
     if not isinstance(value, dict):
         raise ValueError(f"{name} must be an object")
@@ -38,18 +33,6 @@ def optional_string(params: Params, name: str) -> str | None:
     return value if isinstance(value, str) else None
 
 
-def session_factory(session: Json) -> Callable[[], object]:
-    spec = session if isinstance(session, dict) else {}
-
-    def build() -> object:
-        if spec.get("error") is True:
-            raise RuntimeError("fixture session failure")
-        region = spec.get("region_name")
-        return FixtureSession(region if isinstance(region, str) else None)
-
-    return build
-
-
 def model_arn_region(params: Params) -> Json:
     instance = BaseAWSLLM()
     return {
@@ -65,10 +48,7 @@ def model_arn_region(params: Params) -> Json:
 def llm_region_name_case(params: Params) -> Json:
     optional = cast(dict[str, Json], params.get("optional_params", {}))
     instance = BaseAWSLLM()
-    with (
-        patch("boto3.Session", side_effect=session_factory(params.get("session", {}))),
-        patch.dict(os.environ, environment_of(params), clear=True),
-    ):
+    with patch.dict(os.environ, environment_of(params), clear=True):
         try:
             region = instance._get_aws_region_name(  # noqa: SLF001 # pyright: ignore[reportPrivateUsage, reportUnknownMemberType]
                 optional,
@@ -119,12 +99,28 @@ def invalid_region(params: Params) -> Json:
     return {"valid": valid}
 
 
+def encode_model_id_case(value: Json, *, as_model: bool) -> Json:
+    model_id = cast(str, value)
+    optional: dict[str, Json] = {} if as_model else {"model_id": model_id}
+    model = model_id if as_model else "ignored"
+    try:
+        return BaseAWSLLM.get_bedrock_model_id(  # pyright: ignore[reportUnknownMemberType]
+            optional, None, model
+        )
+    except (TypeError, ValueError):
+        return None
+
+
 def model_id_encoding(params: Params) -> Json:
     return {
         "encoded": [
-            BaseAWSLLM.encode_model_id(cast(str, model_id))
-            for model_id in list_of(params["model_ids"], "model_ids")
-        ]
+            encode_model_id_case(value, as_model=False)
+            for value in list_of(params.get("model_ids", []), "model_ids")
+        ],
+        "model_encoded": [
+            encode_model_id_case(value, as_model=True)
+            for value in list_of(params.get("models", []), "models")
+        ],
     }
 
 

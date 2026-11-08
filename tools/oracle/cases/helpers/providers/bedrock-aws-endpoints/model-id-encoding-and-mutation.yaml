@@ -58,5 +58,23 @@ call:
         - optional_params: {model_id: null, keep: 1}
           provider: null
           model: anthropic.claude-3
+        - optional_params: {}
+          provider: null
+          model: x/nova/y
+        - optional_params: {}
+          provider: null
+          model: x/nova-2/y
+        - optional_params: {}
+          provider: openai
+          model: custom/openai/x
+        - optional_params: {}
+          provider: llama
+          model: a/llama/b/llama/c
+        - optional_params: {}
+          provider: null
+          model: a/invoke/b/invoke/c
+        - optional_params: {}
+          provider: llama
+          model: a/nova/llama/x
 env: {}
 compare: {ignore: []}

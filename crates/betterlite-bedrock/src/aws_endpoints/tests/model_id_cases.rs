@@ -1,10 +1,14 @@
 use std::collections::BTreeMap;
 
-use percent_encoding::utf8_percent_encode;
 use serde_json::value::RawValue;
 
-use crate::aws_endpoints::model_id::{MODEL_ID_SAFE, bedrock_model_id};
+use crate::aws_endpoints::model_id::bedrock_model_id;
 use crate::aws_endpoints::provider::BedrockInvokeProvider as Provider;
+
+const ARN: &str =
+    "arn:aws:bedrock:us-east-1:123456789012:inference-profile/global.anthropic.claude";
+const ENCODED_ARN: &str =
+    "arn%3Aaws%3Abedrock%3Aus-east-1%3A123456789012%3Ainference-profile%2Fglobal.anthropic.claude";
 
 fn params(source: &str) -> BTreeMap<String, Box<RawValue>> {
     serde_json::from_str(source).unwrap()
@@ -15,20 +19,25 @@ fn model_id(model: &str, provider: Option<Provider>) -> String {
     bedrock_model_id(&mut optional_params, provider, model).unwrap()
 }
 
-fn encoded(model_id: &str) -> String {
-    utf8_percent_encode(model_id, &MODEL_ID_SAFE).to_string()
+fn encoded_override(model_id: &str) -> String {
+    let quoted = serde_json::to_string(model_id).unwrap();
+    let mut optional_params = params(&format!(r#"{{"model_id":{quoted}}}"#));
+    bedrock_model_id(&mut optional_params, None, "ignored").unwrap()
+}
+
+fn encoded_model(model: &str) -> String {
+    let mut optional_params = params("{}");
+    bedrock_model_id(&mut optional_params, None, model).unwrap()
 }
 
 pub(super) fn arn_model_path_encoding() {
-    assert_eq!(encoded(""), "");
-    assert_eq!(
-        encoded("arn:aws:bedrock:us-east-1:123456789012:inference-profile/global.anthropic.claude"),
-        "arn%3Aaws%3Abedrock%3Aus-east-1%3A123456789012%3Ainference-profile%2Fglobal.anthropic.claude"
-    );
-    assert_eq!(encoded("ABCxyz019_.-~"), "ABCxyz019_.-~");
-    assert_eq!(encoded("a b+c"), "a%20b%2Bc");
-    assert_eq!(encoded("%3A"), "%253A");
-    assert_eq!(encoded("mod\u{e8}le"), "mod%C3%A8le");
+    assert_eq!(encoded_override(""), "");
+    assert_eq!(encoded_override(ARN), ENCODED_ARN);
+    assert_eq!(encoded_override("ABCxyz019_.-~"), "ABCxyz019_.-~");
+    assert_eq!(encoded_override("a b+c"), "a%20b%2Bc");
+    assert_eq!(encoded_override("%3A"), "%253A");
+    assert_eq!(encoded_override("mod\u{e8}le"), "mod%C3%A8le");
+    assert_eq!(encoded_model(ARN), ENCODED_ARN);
 }
 
 pub(super) fn inference_profile_model_id() {
@@ -54,7 +63,8 @@ pub(super) fn inference_profile_model_id() {
 
 pub(super) fn model_id_encoding_and_mutation() {
     specification_prefixes();
-    model_rewrites();
+    routing_rewrites();
+    precedence_rewrites();
     model_override_mutations();
 }
 
@@ -87,7 +97,7 @@ fn specification_prefixes() {
     assert_eq!(model_id("moonshot/kimi", Some(Provider::Moonshot)), "kimi");
 }
 
-fn model_rewrites() {
+fn routing_rewrites() {
     assert_eq!(model_id("nova-2/custom", None), "custom");
     assert_eq!(model_id("nova/custom", None), "custom");
     assert_eq!(model_id("bedrock/converse/nova-2/custom", None), "custom");
@@ -105,6 +115,24 @@ fn model_rewrites() {
             Some(Provider::Llama)
         ),
         "arn%3Aaws%3Abedrock%3Aus-east-1%3A1%3Amodel%2Fx"
+    );
+}
+
+fn precedence_rewrites() {
+    assert_eq!(model_id("x/nova/y", None), "x%2Fy");
+    assert_eq!(model_id("x/nova-2/y", None), "x%2Fy");
+    assert_eq!(
+        model_id("custom/openai/x", Some(Provider::Openai)),
+        "custom%2Fx"
+    );
+    assert_eq!(
+        model_id("a/llama/b/llama/c", Some(Provider::Llama)),
+        "a%2Fb%2Fc"
+    );
+    assert_eq!(model_id("a/invoke/b/invoke/c", None), "a/b/invoke/c");
+    assert_eq!(
+        model_id("a/nova/llama/x", Some(Provider::Llama)),
+        "a%2Fnova%2Fx"
     );
 }
 

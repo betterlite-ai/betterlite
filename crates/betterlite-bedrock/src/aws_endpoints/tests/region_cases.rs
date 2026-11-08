@@ -1,3 +1,7 @@
+use std::collections::BTreeMap;
+
+use betterlite_config::loader::ConfigLoader;
+
 use crate::aws_endpoints::error::AwsEndpointError;
 use crate::aws_endpoints::region::{
     self, LlmRegion, non_llm_region_name, region_from_model_arn, validate_region,
@@ -70,16 +74,41 @@ pub(super) fn explicit_region_precedence() {
     );
 }
 
+fn config_session_region(environment: &[(&str, &str)]) -> Option<String> {
+    let lookup = environment
+        .iter()
+        .map(|(name, value)| ((*name).to_owned(), (*value).to_owned()))
+        .collect::<BTreeMap<_, _>>();
+    ConfigLoader { lookup }
+        .load("{}")
+        .unwrap()
+        .sections
+        .bedrock_aws_endpoints
+        .session_region
+}
+
 pub(super) fn environment_profile_fallback() {
-    let mut profile = input(None, None, None);
-    profile.session_region = Some("ap-south-1");
-    assert_eq!(region::llm_region_name(profile).unwrap(), "ap-south-1");
-    let mut empty_profile = input(None, None, None);
-    empty_profile.session_region = Some("");
-    assert_eq!(region::llm_region_name(empty_profile).unwrap(), "us-west-2");
+    let profile = config_session_region(&[("AWS_DEFAULT_REGION", "ap-south-1")]);
+    let mut configured = input(None, None, None);
+    configured.session_region = profile.as_deref();
+    assert_eq!(region::llm_region_name(configured).unwrap(), "ap-south-1");
+
+    let missing = config_session_region(&[]);
+    let mut absent = input(None, None, None);
+    absent.session_region = missing.as_deref();
+    assert_eq!(region::llm_region_name(absent).unwrap(), "us-west-2");
+
+    let empty = config_session_region(&[("AWS_DEFAULT_REGION", "")]);
+    let mut empty_session = input(None, None, None);
+    empty_session.session_region = empty.as_deref();
+    assert_eq!(region::llm_region_name(empty_session).unwrap(), "us-west-2");
+
+    let mut name_beats_session = input(None, None, None);
+    name_beats_session.environment_region_name = Some("eu-west-1");
+    name_beats_session.session_region = profile.as_deref();
     assert_eq!(
-        region::llm_region_name(input(None, None, None)).unwrap(),
-        "us-west-2"
+        region::llm_region_name(name_beats_session).unwrap(),
+        "eu-west-1"
     );
 }
 
@@ -134,7 +163,18 @@ pub(super) fn invalid_region() {
 
 pub(super) fn llm_region_precedence() {
     environment_precedence();
+    model_id_override();
     session_and_explicit_region();
+}
+
+fn model_id_override() {
+    let mut arn_override = input(
+        None,
+        Some(ANTHROPIC_ARN),
+        Some("arn:aws:bedrock:eu-west-1:1:model/x"),
+    );
+    arn_override.environment_region_name = Some("ap-south-1");
+    assert_eq!(region::llm_region_name(arn_override).unwrap(), "eu-west-1");
 }
 
 fn environment_precedence() {

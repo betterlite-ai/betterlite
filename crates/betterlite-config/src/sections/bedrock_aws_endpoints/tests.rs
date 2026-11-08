@@ -1,11 +1,17 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fs;
 
 use rstest::rstest;
 
 use crate::loader::{ConfigError, ConfigLoader};
 use crate::sections::bedrock_aws_endpoints::Settings;
+
+use super::aws_config::region_in_section;
+
+const AWS_CONFIG: &str =
+    "# AWS config\n[default]\nregion = eu-west-1\n\n[profile prod]\nregion = ap-south-1\n";
 
 type Read = fn(&Settings) -> Option<String>;
 
@@ -36,10 +42,13 @@ fn load(source: &str, environment: &[(&str, &str)]) -> Result<Settings, ConfigEr
 #[case::loads_aws_bedrock_runtime_endpoint(Field::RuntimeEndpoint)]
 #[case::rejects_unrelated_key(Field::Unrelated)]
 fn bedrock_aws_endpoints_config_cases(#[case] field: Field) {
-    if matches!(field, Field::Unrelated) {
-        rejects_unrelated_key();
-    } else {
-        loads_field(field);
+    match field {
+        Field::Unrelated => rejects_unrelated_key(),
+        Field::DefaultRegion => {
+            loads_field(field);
+            session_region_cases();
+        }
+        Field::RegionName | Field::Region | Field::RuntimeEndpoint => loads_field(field),
     }
 }
 
@@ -75,6 +84,66 @@ fn loads_field(field: Field) {
     .unwrap();
     assert_eq!(both_regions.aws_region_name.as_deref(), Some("eu-west-1"));
     assert_eq!(both_regions.aws_region.as_deref(), Some("ap-south-1"));
+}
+
+fn session_region_cases() {
+    let folder = tempfile::tempdir().unwrap();
+    let path = folder.path().join("config");
+    fs::write(&path, AWS_CONFIG).unwrap();
+    let file = path.to_str().unwrap();
+    let default = load("", &[]).unwrap();
+    assert_eq!(default.session_region, None);
+    let profile = load("", &[("AWS_CONFIG_FILE", file)]).unwrap();
+    assert_eq!(profile.session_region.as_deref(), Some("eu-west-1"));
+    let named = load("", &[("AWS_CONFIG_FILE", file), ("AWS_PROFILE", "prod")]).unwrap();
+    assert_eq!(named.session_region.as_deref(), Some("ap-south-1"));
+    let environment_wins = load(
+        "",
+        &[
+            ("AWS_CONFIG_FILE", file),
+            ("AWS_PROFILE", "prod"),
+            ("AWS_DEFAULT_REGION", "us-east-1"),
+        ],
+    )
+    .unwrap();
+    assert_eq!(
+        environment_wins.session_region.as_deref(),
+        Some("us-east-1")
+    );
+    let empty_environment =
+        load("", &[("AWS_CONFIG_FILE", file), ("AWS_DEFAULT_REGION", "")]).unwrap();
+    assert_eq!(empty_environment.session_region.as_deref(), Some(""));
+    let missing = load(
+        "",
+        &[("AWS_CONFIG_FILE", "/nonexistent/betterlite/aws-config")],
+    )
+    .unwrap();
+    assert_eq!(missing.session_region, None);
+}
+
+#[test]
+fn reads_the_default_and_named_profile_regions() {
+    assert_eq!(
+        region_in_section(AWS_CONFIG, "default").as_deref(),
+        Some("eu-west-1")
+    );
+    assert_eq!(
+        region_in_section(AWS_CONFIG, "prod").as_deref(),
+        Some("ap-south-1")
+    );
+    assert_eq!(region_in_section(AWS_CONFIG, "missing"), None);
+    assert_eq!(
+        region_in_section("[prod]\nregion = us-east-1\n", "prod"),
+        None
+    );
+    assert_eq!(
+        region_in_section("[profile p]\nregion: us-west-2\n", "p").as_deref(),
+        Some("us-west-2")
+    );
+    assert_eq!(
+        region_in_section("[profile p]\nregion = \n", "p").as_deref(),
+        Some("")
+    );
 }
 
 fn rejects_unrelated_key() {

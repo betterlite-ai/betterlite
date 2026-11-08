@@ -8,17 +8,42 @@ use serde_json::value::RawValue;
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum Input {
-    ModelArnRegion { models: Vec<Option<String>> },
-    LlmRegionName { cases: Vec<LlmRegionCase> },
-    NonLlmRegionName { cases: Vec<NonLlmRegionCase> },
-    InvalidRegion { values: Vec<Option<String>> },
-    ModelIdEncoding { model_ids: Vec<String> },
-    BedrockModelId { cases: Vec<BedrockModelIdCase> },
-    ProviderSelection { models: Vec<String> },
-    DefaultEndpoint { cases: Vec<DefaultEndpointCase> },
-    RuntimeEndpoint { cases: Vec<RuntimeEndpointCase> },
-    StsEndpointRegion { endpoints: Vec<Option<String>> },
-    StsKwargs { cases: Vec<StsKwargsCase> },
+    ModelArnRegion {
+        models: Vec<Option<String>>,
+    },
+    LlmRegionName {
+        cases: Vec<LlmRegionCase>,
+    },
+    NonLlmRegionName {
+        cases: Vec<NonLlmRegionCase>,
+    },
+    InvalidRegion {
+        values: Vec<Option<String>>,
+    },
+    ModelIdEncoding {
+        #[serde(default)]
+        model_ids: Vec<String>,
+        #[serde(default)]
+        models: Vec<String>,
+    },
+    BedrockModelId {
+        cases: Vec<BedrockModelIdCase>,
+    },
+    ProviderSelection {
+        models: Vec<String>,
+    },
+    DefaultEndpoint {
+        cases: Vec<DefaultEndpointCase>,
+    },
+    RuntimeEndpoint {
+        cases: Vec<RuntimeEndpointCase>,
+    },
+    StsEndpointRegion {
+        endpoints: Vec<Option<String>>,
+    },
+    StsKwargs {
+        cases: Vec<StsKwargsCase>,
+    },
 }
 
 #[derive(Debug, Deserialize)]
@@ -32,17 +57,6 @@ pub(crate) struct LlmRegionCase {
     pub(super) model_id: Option<String>,
     #[serde(default)]
     pub(super) environment: BTreeMap<String, String>,
-    #[serde(default)]
-    pub(super) session: SessionFixture,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct SessionFixture {
-    #[serde(default)]
-    pub(super) region_name: Option<String>,
-    #[serde(default)]
-    pub(super) error: bool,
 }
 
 #[derive(Debug, Deserialize)]

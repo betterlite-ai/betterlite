@@ -10,5 +10,7 @@ call:
         - 'a b+c'
         - '%3A'
         - 'modèle'
+      models:
+        - 'arn:aws:bedrock:us-east-1:123456789012:inference-profile/global.anthropic.claude'
 env: {}
 compare: {ignore: []}

@@ -5,12 +5,20 @@ call:
     llm_region_name:
       cases:
         - optional_params: {}
-          session: {region_name: ap-south-1}
+          environment:
+            AWS_DEFAULT_REGION: ap-south-1
+            AWS_CONFIG_FILE: /nonexistent/betterlite/aws-config
         - optional_params: {}
-          session: {region_name: null}
+          environment:
+            AWS_CONFIG_FILE: /nonexistent/betterlite/aws-config
         - optional_params: {}
-          session: {error: true}
+          environment:
+            AWS_DEFAULT_REGION: ''
+            AWS_CONFIG_FILE: /nonexistent/betterlite/aws-config
         - optional_params: {}
-          session: {}
+          environment:
+            AWS_REGION_NAME: ap-south-1
+            AWS_DEFAULT_REGION: eu-west-1
+            AWS_CONFIG_FILE: /nonexistent/betterlite/aws-config
 env: {}
 compare: {ignore: []}

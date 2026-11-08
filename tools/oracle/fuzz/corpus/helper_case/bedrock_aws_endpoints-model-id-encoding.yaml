@@ -4,5 +4,6 @@ call:
   bedrock_aws_endpoints:
     model_id_encoding:
       model_ids: ['arn:aws:bedrock:us-east-1:1:model/x', '%3A']
+      models: ['arn:aws:bedrock:us-east-1:1:model/x']
 env: {}
 compare: {ignore: []}

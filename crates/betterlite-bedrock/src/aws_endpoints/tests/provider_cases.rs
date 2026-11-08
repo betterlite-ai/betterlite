@@ -2,7 +2,7 @@ use crate::aws_endpoints::provider::{
     BedrockEmbeddingProvider, BedrockInvokeProvider, embedding_provider, invoke_provider,
 };
 
-const INVOKE_CASES: [(&str, Option<&str>); 22] = [
+const INVOKE_CASES: [(&str, Option<&str>); 23] = [
     (
         "invoke/anthropic.claude-3-5-sonnet-20240620-v1:0",
         Some("anthropic"),
@@ -11,6 +11,7 @@ const INVOKE_CASES: [(&str, Option<&str>); 22] = [
     ("amazon.nova-lite-v1:0", Some("nova")),
     ("amazon.titan-text-express-v1", Some("amazon")),
     ("meta.llama3-70b-instruct-v1:0", Some("meta")),
+    ("us.meta.llama3-1-70b-instruct-v1:0", Some("meta")),
     (
         "llama/arn:aws:bedrock:us-east-1:1:imported-model/x",
         Some("llama"),
@@ -33,7 +34,7 @@ const INVOKE_CASES: [(&str, Option<&str>); 22] = [
     ("unknown-model", None),
 ];
 
-const EMBEDDING_CASES: [(&str, Option<&str>); 12] = [
+const EMBEDDING_CASES: [(&str, Option<&str>); 14] = [
     ("cohere.embed-english-v3:0", Some("cohere")),
     ("amazon.titan-embed-text-v1", Some("amazon")),
     ("amazon.nova-2-multimodal-embeddings-v1:0", Some("nova")),
@@ -46,6 +47,8 @@ const EMBEDDING_CASES: [(&str, Option<&str>); 12] = [
     ("us.amazon.nova-lite-v1:0", Some("nova")),
     ("vendor/unknown", None),
     ("anthropic.claude-3", None),
+    ("cohere.twelvelabs.x", Some("twelvelabs")),
+    ("vendor-amazon-cohere", Some("cohere")),
 ];
 
 pub(super) fn provider_selection_order() {
