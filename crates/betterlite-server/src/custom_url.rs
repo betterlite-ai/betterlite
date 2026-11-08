@@ -46,11 +46,9 @@ pub struct CustomUrls {
 impl CustomUrls {
     #[must_use]
     pub fn custom_url(&self, request_base_url: &str, request_root_path: &str) -> String {
-        get_custom_url(
-            self.proxy_base_url.as_deref(),
-            request_base_url,
+        join_paths(
+            self.proxy_base_url.as_deref().unwrap_or(request_base_url),
             request_root_path,
-            None,
         )
     }
 
