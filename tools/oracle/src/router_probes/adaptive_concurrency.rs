@@ -1,5 +1,7 @@
 pub mod wire;
 
+mod session;
+
 use std::collections::BTreeMap;
 use std::future::Future;
 use std::pin::Pin;
@@ -16,7 +18,8 @@ use crate::router_probes::ProbeOutput;
 use crate::router_probes::error::OperationError;
 use crate::router_probes::random::InjectedRandom;
 
-use self::wire::{AcquireOutcome, PollOutcome, StateSnapshot, Step, StepResult};
+use self::session::{Acquired, Session, Withdraw};
+use self::wire::{AcquireOutcome, PollOutcome, Step, StepResult};
 
 const MAX_FILL: u64 = 4096;
 
@@ -33,72 +36,6 @@ pub struct Input {
 #[serde(deny_unknown_fields)]
 pub struct Output {
     pub results: Vec<StepResult>,
-}
-
-struct Session<'limiter> {
-    limiter: &'limiter AdaptiveConcurrencyLimiter,
-    acquisitions: BTreeMap<usize, Acquired<'limiter>>,
-    next_id: usize,
-}
-
-enum Acquired<'limiter> {
-    Pending(Pin<Box<dyn Future<Output = Result<Permit, AcquireError>> + 'limiter>>),
-    Granted(Permit),
-}
-
-#[derive(Clone, Copy)]
-enum Withdraw {
-    Release { id: usize },
-    Cancel { id: usize },
-}
-
-impl Withdraw {
-    const fn id(self) -> usize {
-        match self {
-            Self::Release { id } | Self::Cancel { id } => id,
-        }
-    }
-
-    const fn rejection(self) -> &'static str {
-        match self {
-            Self::Release { .. } => "release names an acquisition that holds no permit",
-            Self::Cancel { .. } => "cancel names an acquisition that is not waiting",
-        }
-    }
-}
-
-impl<'limiter> Session<'limiter> {
-    fn snapshot(&self) -> StateSnapshot {
-        let snapshot = self.limiter.snapshot();
-        StateSnapshot {
-            limit: snapshot.limit,
-            in_flight: snapshot.in_flight,
-            waiters: snapshot.waiters,
-            clean_streak: snapshot.clean_streak,
-        }
-    }
-
-    fn take(&mut self, id: usize) -> Result<Acquired<'limiter>, OperationError> {
-        let Some(entry) = self.acquisitions.remove(&id) else {
-            return Err(OperationError::InvalidRequest {
-                message: "the step names an acquisition that was never started".to_owned(),
-            });
-        };
-        Ok(entry)
-    }
-
-    fn put(&mut self, id: usize, entry: Acquired<'limiter>) {
-        if let Some(replaced) = self.acquisitions.insert(id, entry) {
-            drop(replaced);
-        }
-    }
-
-    fn reject(&mut self, id: usize, entry: Acquired<'limiter>, message: &str) -> OperationError {
-        self.put(id, entry);
-        OperationError::InvalidRequest {
-            message: message.to_owned(),
-        }
-    }
 }
 
 #[derive(Default)]
