@@ -64,6 +64,40 @@ fn settings(source: &str, variables: &[(&str, &str)]) -> Settings {
     "general_settings:\n  max_in_flight_requests_per_worker: 2\n  admission_queue_timeout_seconds: nan",
     None
 )]
+#[case::list_in_flight("general_settings:\n  max_in_flight_requests_per_worker: [1]", None)]
+#[case::map_in_flight(
+    "general_settings:\n  max_in_flight_requests_per_worker: {limit: 1}",
+    None
+)]
+#[case::list_queue(
+    "general_settings:\n  max_in_flight_requests_per_worker: 2\n  max_queued_requests_per_worker: [1]",
+    None
+)]
+#[case::map_timeout(
+    "general_settings:\n  max_in_flight_requests_per_worker: 2\n  admission_queue_timeout_seconds: {seconds: 1}",
+    None
+)]
+#[case::exponent_text(
+    "general_settings:\n  max_in_flight_requests_per_worker: \"1e3\"",
+    None
+)]
+#[case::trailing_dot_text("general_settings:\n  max_in_flight_requests_per_worker: \"4.\"", None)]
+#[case::underscored_text(
+    "general_settings:\n  max_in_flight_requests_per_worker: \"1_000\"",
+    Some((1000, 1000, 1.0_f64))
+)]
+#[case::underscored_timeout(
+    "general_settings:\n  max_in_flight_requests_per_worker: 1\n  admission_queue_timeout_seconds: \"1_000\"",
+    Some((1, 1, 1000.0_f64))
+)]
+#[case::edge_underscore_text(
+    "general_settings:\n  max_in_flight_requests_per_worker: \"_1\"",
+    None
+)]
+#[case::edge_underscore_timeout(
+    "general_settings:\n  max_in_flight_requests_per_worker: 1\n  admission_queue_timeout_seconds: \"1_\"",
+    None
+)]
 fn converts_admission_settings(
     #[case] source: &str,
     #[case] expected: Option<(usize, usize, f64)>,
@@ -121,12 +155,14 @@ fn resolves_environment_references(
 }
 
 #[test]
-fn missing_environment_reference_fails_the_load() {
+fn unset_environment_reference_disables_admission() {
     let lookup = BTreeMap::<String, String>::new();
-    let error = ConfigLoader { lookup }
+    let settings = ConfigLoader { lookup }
         .load("general_settings:\n  max_in_flight_requests_per_worker: os.environ/IN_FLIGHT")
-        .unwrap_err();
-    assert!(error.to_string().contains("IN_FLIGHT"), "{error}");
+        .unwrap()
+        .sections
+        .admission_control;
+    assert_eq!(settings, Settings::default());
 }
 
 #[test]
@@ -142,6 +178,15 @@ fn one_invalid_setting_disables_every_limit() {
 fn infinite_timeout_never_expires() {
     let settings = settings(
         "general_settings:\n  max_in_flight_requests_per_worker: 1\n  admission_queue_timeout_seconds: inf",
+        &[],
+    );
+    assert_eq!(settings.limits.unwrap().queue_timeout, Duration::MAX);
+}
+
+#[test]
+fn a_timeout_past_the_duration_range_never_expires() {
+    let settings = settings(
+        "general_settings:\n  max_in_flight_requests_per_worker: 1\n  admission_queue_timeout_seconds: 1e30",
         &[],
     );
     assert_eq!(settings.limits.unwrap().queue_timeout, Duration::MAX);

@@ -2,10 +2,9 @@ use std::str::FromStr as _;
 use std::time::Duration;
 
 use serde::Deserialize;
+use serde::de::IgnoredAny;
 
 use crate::loader::{ConfigError, EnvironmentLookup};
-use crate::raw::RawNumber;
-use crate::resolve::resolve_string;
 use crate::sections::Section;
 
 mod tests;
@@ -23,11 +22,21 @@ pub struct Raw {
 #[derive(Debug, Default, Deserialize)]
 struct RawGeneral {
     #[serde(rename = "max_in_flight_requests_per_worker")]
-    max_in_flight: Option<RawNumber>,
+    max_in_flight: Option<RawSetting>,
     #[serde(rename = "max_queued_requests_per_worker")]
-    max_queued: Option<RawNumber>,
+    max_queued: Option<RawSetting>,
     #[serde(rename = "admission_queue_timeout_seconds")]
-    queue_timeout: Option<RawNumber>,
+    queue_timeout: Option<RawSetting>,
+}
+
+// LiteLLM's _hashable turns every other JSON shape into a repr, so a list or map reaches the same failed check.
+#[derive(Debug, Deserialize)]
+#[serde(untagged)]
+enum RawSetting {
+    Integer(i64),
+    Float(f64),
+    Text(String),
+    Other(IgnoredAny),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -45,6 +54,8 @@ pub struct Limits {
 // LiteLLM reads the raw value, so a string, a float and an int all reach the same positive-number check.
 enum Scalar {
     Unset,
+    // an os.environ lookup returned None; LiteLLM stores that None and disables admission for the in-flight key
+    EnvironmentUnset,
     Invalid,
     Integer(i64),
     Float(f64),
@@ -59,19 +70,19 @@ impl Section for Raw {
         L: EnvironmentLookup,
     {
         let general = self.general_settings;
-        let max_in_flight = scalar(general.max_in_flight, MAX_IN_FLIGHT, lookup)?;
-        if matches!(max_in_flight, Scalar::Unset) {
+        let max_in_flight = scalar(general.max_in_flight, lookup);
+        if matches!(max_in_flight, Scalar::Unset | Scalar::EnvironmentUnset) {
             return Ok(Settings::default());
         }
         let Some(max_in_flight_requests) = positive_integer(&max_in_flight) else {
             return Ok(invalid(MAX_IN_FLIGHT));
         };
-        let configured_queue = scalar(general.max_queued, MAX_QUEUED, lookup)?;
+        let configured_queue = scalar(general.max_queued, lookup);
         let Some(max_queued_requests) = max_queued(&configured_queue, max_in_flight_requests)
         else {
             return Ok(invalid(MAX_QUEUED));
         };
-        let configured_timeout = scalar(general.queue_timeout, QUEUE_TIMEOUT, lookup)?;
+        let configured_timeout = scalar(general.queue_timeout, lookup);
         let Some(queue_timeout) = queue_timeout(&configured_timeout) else {
             return Ok(invalid(QUEUE_TIMEOUT));
         };
@@ -95,7 +106,7 @@ fn invalid(setting: &str) -> Settings {
 
 fn max_queued(configured: &Scalar, max_in_flight: usize) -> Option<usize> {
     match configured {
-        Scalar::Unset => Some(max_in_flight),
+        Scalar::Unset | Scalar::EnvironmentUnset => Some(max_in_flight),
         Scalar::Invalid => None,
         Scalar::Integer(_) | Scalar::Float(_) | Scalar::Text(_) => non_negative_integer(configured),
     }
@@ -104,36 +115,34 @@ fn max_queued(configured: &Scalar, max_in_flight: usize) -> Option<usize> {
 fn queue_timeout(configured: &Scalar) -> Option<Duration> {
     match configured {
         Scalar::Unset => Some(Duration::from_secs(1)),
-        Scalar::Invalid => None,
+        Scalar::EnvironmentUnset | Scalar::Invalid => None,
         Scalar::Integer(_) | Scalar::Float(_) | Scalar::Text(_) => positive_seconds(configured),
     }
 }
 
-fn scalar(
-    raw: Option<RawNumber>,
-    name: &str,
-    lookup: &dyn EnvironmentLookup,
-) -> Result<Scalar, ConfigError> {
+fn scalar(raw: Option<RawSetting>, lookup: &dyn EnvironmentLookup) -> Scalar {
     let Some(configured) = raw else {
-        return Ok(Scalar::Unset);
+        return Scalar::Unset;
     };
     match configured {
-        RawNumber::Integer(number) => Ok(Scalar::Integer(number)),
-        RawNumber::Float(number) => Ok(Scalar::Float(number)),
-        RawNumber::Boolean(_) => Ok(Scalar::Invalid),
-        RawNumber::Text(text) => {
+        RawSetting::Integer(number) => Scalar::Integer(number),
+        RawSetting::Float(number) => Scalar::Float(number),
+        RawSetting::Other(_) => Scalar::Invalid,
+        RawSetting::Text(text) => {
             let Some(variable) = text.strip_prefix("os.environ/").map(str::to_owned) else {
-                return Ok(Scalar::Text(text));
+                return Scalar::Text(text);
             };
-            let resolved = resolve_string(text, &format!("general_settings.{name}"), lookup)?;
+            let Some(resolved) = lookup.lookup(&variable) else {
+                return Scalar::EnvironmentUnset;
+            };
             let trimmed = resolved.trim();
             if trimmed.is_empty() {
-                return Ok(Scalar::Unset);
+                return Scalar::Unset;
             }
             match betterlite_env::number::<f64>(&variable, trimmed) {
-                Ok(Some(number)) => Ok(Scalar::Float(number)),
-                Ok(None) => Ok(Scalar::Unset),
-                Err(_) => Ok(Scalar::Invalid),
+                Ok(Some(number)) => Scalar::Float(number),
+                Ok(None) => Scalar::Unset,
+                Err(_) => Scalar::Invalid,
             }
         }
     }
@@ -144,7 +153,7 @@ fn integer(scalar: &Scalar) -> Option<i64> {
         Scalar::Integer(number) => Some(*number),
         Scalar::Float(number) => integer_float(*number),
         Scalar::Text(text) => parse_integer(text),
-        Scalar::Unset | Scalar::Invalid => None,
+        Scalar::Unset | Scalar::EnvironmentUnset | Scalar::Invalid => None,
     }
 }
 
@@ -159,12 +168,28 @@ fn integer_float(number: f64) -> Option<i64> {
     format!("{number:.0}").parse::<i64>().ok()
 }
 
+// pydantic's int from a string takes a sign, digits with single underscores, and a fraction of zeros only
 fn parse_integer(text: &str) -> Option<i64> {
     let trimmed = text.trim();
-    if let Ok(number) = i64::from_str(trimmed) {
-        return Some(number);
+    let (integral, fraction) = match trimmed.split_once('.') {
+        Some((integral, fraction)) => (integral, Some(fraction)),
+        None => (trimmed, None),
+    };
+    if fraction.is_some_and(|rest| rest.is_empty() || !rest.bytes().all(|byte| byte == b'0')) {
+        return None;
     }
-    integer_float(f64::from_str(trimmed).ok()?)
+    let digits = integral.strip_prefix(['+', '-']).unwrap_or(integral);
+    if digits.is_empty()
+        || digits.starts_with('_')
+        || digits.ends_with('_')
+        || digits.contains("__")
+        || !digits
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || byte == b'_')
+    {
+        return None;
+    }
+    i64::from_str(&integral.replace('_', "")).ok()
 }
 
 fn positive_integer(scalar: &Scalar) -> Option<usize> {
@@ -187,15 +212,17 @@ fn positive_seconds(scalar: &Scalar) -> Option<Duration> {
     let seconds = match scalar {
         Scalar::Integer(number) => f64::from_str(&number.to_string()).ok()?,
         Scalar::Float(number) => *number,
-        Scalar::Text(text) => f64::from_str(text.trim()).ok()?,
-        Scalar::Unset | Scalar::Invalid => return None,
+        Scalar::Text(text) => {
+            let literal = text.trim();
+            if literal.starts_with('_') || literal.ends_with('_') || literal.contains("__") {
+                return None;
+            }
+            f64::from_str(&literal.replace('_', "")).ok()?
+        }
+        Scalar::Unset | Scalar::EnvironmentUnset | Scalar::Invalid => return None,
     };
     if seconds.is_nan() || seconds <= 0.0_f64 {
         return None;
     }
-    if seconds.is_finite() {
-        Duration::try_from_secs_f64(seconds).ok()
-    } else {
-        Some(Duration::MAX)
-    }
+    Some(Duration::try_from_secs_f64(seconds).unwrap_or(Duration::MAX))
 }
