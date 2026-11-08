@@ -143,6 +143,25 @@ async fn count_keys_are_namespaced() {
     );
 }
 
+#[test]
+fn two_cluster_nodes_still_give_input_order_for_the_sync_read() {
+    let runtime = runtime();
+    let pair = runtime.block_on(cluster_pair());
+    let low = key_in_slot_range(0, 8191);
+    let high = key_in_slot_range(8192, 16383);
+    pair.first
+        .script("MGET", Reply::Array(vec![Reply::Bulk("3".to_owned())]));
+    pair.second
+        .script("MGET", Reply::Array(vec![Reply::Bulk("7".to_owned())]));
+    let (counters, _hooks, _gate) = counters(pair.transport, None);
+    let counts = counters
+        .batch_get_counts(&[low.to_owned(), high.to_owned()])
+        .expect("the counts");
+    assert_eq!(counts, vec![Some(3), Some(7)]);
+    assert_eq!(pair.first.commands_named("MGET").len(), 1);
+    assert_eq!(pair.second.commands_named("MGET").len(), 1);
+}
+
 #[tokio::test]
 async fn two_cluster_nodes_still_give_input_order() {
     let pair = cluster_pair().await;
