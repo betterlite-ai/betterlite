@@ -5,7 +5,7 @@ description: >-
   logger are only the traits `BreakerGate` and `ServiceHooks`. This task fills those
   traits and reads the two cache settings from config. It adds the config section
   `redis_cache` and the module `redis_cache_wiring` in betterlite-server. Nothing
-  calls the builder yet: B360, B4299 and B126 call it when they bring up their caches.
+  calls the builder yet: B360, B4299 and the proxy usage-cache builders (B8377 to B8389) call it when they bring up their caches.
 
   Why betterlite-server. The gate needs `RedisFailurePolicy` from betterlite-router,
   the hooks need betterlite-logging, and both traits live in betterlite-redis. Only
@@ -324,10 +324,10 @@ out_of_scope:
   - "`RedisCircuitBreaker`, the failure classifiers, `log_redis_failure` and the `REDIS_CIRCUIT_BREAKER_*` settings; B393 owns them."
   - "`ServiceLogging`, its callback list and every exporter; B012 and the M5 exporter tasks own them."
   - "`DEFAULT_REDIS_MAJOR_VERSION`; B4324's section `redis_cache_primitives` already reads it."
-  - "`RedisClusterCache`, `_build_redis_usage_cache`, `GcpTokenFetcher`, `AzureTokenFetcher`, `AwsCredentialsResolver` and the production credential source given to `LiveClientFactory`; B126 owns them."
+  - "`RedisClusterCache`'s methods are B4325's and B4326's, `_build_redis_usage_cache` is planned in B8377 to B8389, and B8501 builds the production `GcpTokenFetcher`, `AzureTokenFetcher`, `AwsCredentialsResolver` and the credential source given to `LiveClientFactory`."
   - "The other `cache_params` keys (`host`, `port`, `password`, `namespace`, `type`) and the `Cache` wrapper; B4299 owns them and passes them in `RedisCacheRequest`."
   - "`default_in_memory_ttl` and `dual_cache.py`'s use of `default_redis_ttl`; B4293 owns them."
-  - "Building caches at server startup; B360, B4299 and B126 call `RedisCacheWiring::build`, and B126 adds the HTTP oracle cases."
+  - "Building caches at server startup; B360, B4299 and the proxy usage-cache builders (B8377 to B8389) call `RedisCacheWiring::build`, and those builders add the HTTP oracle cases."
 
 pitfalls:
   - >-

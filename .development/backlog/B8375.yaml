@@ -1,0 +1,13 @@
+id: B8375
+milestone: M8 platform
+title: Proxy CLI root and run_server order
+status: todo
+depends_on: [B8374, B051, B710, B712, B717, B1401, B4175, B4176, B4177, B8542]
+file: tasks/B8375-proxy-cli-root.yaml
+covers: []
+parent: B121
+split_from: B121
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

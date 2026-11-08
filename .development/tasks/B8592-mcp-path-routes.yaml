@@ -1,0 +1,77 @@
+id: B8592
+title: MCP path routes for /mcp, /mcp/proxy, toolsets and named servers
+description: >-
+  LiteLLM serves its MCP endpoint under several path spellings in proxy_server.py and forwards each to the one
+  streamable HTTP handler with a rewritten path. Build those forwarding handlers in
+  crates/betterlite-server/src/mcp_path_routes.rs (declared by the skeleton) with `pub fn routes()`, error enum
+  McpPathRouteError. Every route accepts GET, POST, PUT, DELETE, PATCH, OPTIONS and HEAD.
+
+
+  The streamable handler is a port `McpStreamHandler` with one async method taking the request, the rewritten path,
+  the original path and a `McpForwardScope` (none, proxy mode, or one toolset id) and returning a streaming response;
+  the wave 17 MCP wiring part supplies the implementation over the MCP server's handle_streamable_http_mcp (B136's transport handlers). `relay_mcp_response` ports _stream_mcp_asgi_response: wait at most 30 seconds
+  for the status and headers, answer 504 {"detail": "MCP handler did not respond in time"} on timeout, then stream the
+  body chunks and stop the handler when the client goes away.
+
+
+  Routes. /mcp/proxy forwards to path /mcp in proxy mode. /mcp (BASE_MCP_ROUTE) forwards to /mcp so the bare spelling
+  never answers 307. /toolset/{toolset_name}/mcp answers 503 "Database not available" without a database, 404 "Toolset
+  '<name>' not found" when B6592's get_toolset_by_name_cached misses, else forwards to /mcp scoped to that toolset id.
+  /{mcp_server_name}/mcp resolves in this order: a registered server name or alias visible from the client ip (B4731's
+  server_by_name with B743's client ip) forwards to /mcp/<name>; a name with a comma goes through
+  `resolve_csv_tokens`, and an empty result is 404 "No MCP server, toolset, or access group in '<segment>' resolved to
+  a known target", else /mcp/<tokens joined by ","> ; with a database, a toolset of that name forwards to /mcp with the
+  toolset scope; an MCP access group tag forwards to /mcp/<name>; anything else is 404 "MCP server, toolset, or access
+  group '<name>' not found". Unexpected failures on the toolset and named routes are 500 "Internal server error".
+
+
+  `resolve_csv_tokens(segment, client_ip)` splits on ",", trims, drops empty and repeated tokens (exact,
+  case-sensitive), stops after DEFAULT_MCP_NAMESPACE_CSV_MAX_TOKENS kept tokens, and keeps those that are a server name
+  or an access group, in input order. `is_access_group_cached(name)` reads the key "mcp_access_group_exists:<name>" from
+  B733's auth cache, else asks B4669's servers_from_access_groups and stores the answer with the management object TTL
+  when true and DEFAULT_MCP_ACCESS_GROUP_NEGATIVE_CACHE_TTL when false.
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp_path_routes.rs
+    - crates/betterlite-server/src/mcp_path_routes/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L20042-L20116
+    why: _stream_mcp_asgi_response, the 30 second header wait and the EOF handling.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L20119-L20166
+    why: /mcp/proxy and the bare /mcp route.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L20169-L20214
+    why: /toolset/{toolset_name}/mcp with its 503 and 404 answers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L20217-L20304
+    why: _mcp_forward_as_path, _resolve_mcp_csv_tokens and _is_mcp_access_group_cached with both TTLs.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L20308-L20379
+    why: /{mcp_server_name}/mcp resolution order.
+dod:
+  - text: Each route forwards with LiteLLM's rewritten path and scope, and refuses with LiteLLM's status and detail.
+    proof: [mcp-path-tests]
+  - text: resolve_csv_tokens trims, dedups, caps and filters in input order; is_access_group_cached uses the positive and negative TTLs.
+    proof: [mcp-path-tests]
+  - text: relay_mcp_response answers 504 when headers do not come within 30 seconds and streams the body otherwise.
+    proof: [mcp-path-tests]
+checks:
+  optional: []
+  commands:
+    - id: mcp-path-tests
+      why: an MCP path route, the token resolution or the relay differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp_path_routes::/)'
+oracle_cases: []
+deviations:
+  - what: A missing MCP feature never answers 404 "Not Found" on /mcp and /mcp/proxy.
+    why: betterlite always compiles MCP in, so LiteLLM's is_mcp_available gate is always true.
+out_of_scope:
+  - "Mounting these routes and their HTTP oracle cases: the wave 17 MCP wiring part, which also plugs the MCP server's streamable handler into McpStreamHandler."
+  - "The toolset scope check inside the handler: B6593. Server lookups: B4731. Access group lookup: B4669. Client ip: B743."
+pitfalls:
+  - The csv branch runs before any toolset lookup, so a comma name never reaches the database.
+  - /toolset/{name}/mcp does not set _original_path, unlike the other three routes.
+  - Token dedup is case-sensitive on purpose; MyGroup and mygroup are two tokens.
+  - The cap counts kept tokens after dedup, not raw tokens.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

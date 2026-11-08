@@ -5,8 +5,8 @@ description: >-
   /customer/delete and /end_user/delete; hide the end_user aliases from OpenAPI. Own update_end_user
   L580-L756 and delete_end_user L759-L834 of customer_endpoints.py. Reuse B830's typed table,
   customer response, permission-update and cache helpers, B725 BudgetRepository, B726 EndUserRepository,
-  B720 customer rows, B2310 budget rows, B732 principals, B052 authentication and B124 request
-  contracts/handle_exception_on_proxy.
+  B720 customer rows, B2310 budget rows, B732 principals, B052 authentication and B2400's
+  handle_exception_on_proxy. No other task declares UpdateCustomerRequest or DeleteCustomerRequest, so this task builds both in betterlite-server's customer_update::records module.
   The routes do not use a management wrapper or a new parser. B830's cache helper already includes
   B734 broadcast; do not call it twice.
 
@@ -67,8 +67,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/customer_update.rs
     - crates/betterlite-server/src/routes/customer_update/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/customer-update/**
     - tools/oracle/helpers/b831.py
     - tools/oracle/helpers/b831/**
@@ -81,12 +79,14 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/customer_endpoints.py#L759-L834
     why: Own deletion aliases, existence precheck and post-delete eviction.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2118-L2141
-    why: B124 request defaults and supported patch fields.
+    why: UpdateCustomerRequest and DeleteCustomerRequest defaults and supported patch fields, built here.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/llms/base.py#L7-L26
     why: json() produces a dict and fields_set() distinguishes explicit false from omission.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8205-L8242
     why: Both route except blocks actually delegate to this mapper.
 dod:
+  - text: This task builds UpdateCustomerRequest (user_id required, blocked default false, other fields default null) and DeleteCustomerRequest (user_ids required) in customer_update::records.
+    proof: [behavior-tests]
   - text: Every named HTTP case drives the real update/delete aliases with source patch and error semantics.
     proof: [oracle, behavior-tests]
   - text: postgres_patch_rows and postgres_patch_failures verify permission/budget/customer ordering and deletion retention.

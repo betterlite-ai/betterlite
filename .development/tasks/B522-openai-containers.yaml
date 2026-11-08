@@ -43,7 +43,7 @@ description: >-
   unchanged; get_error_class raises BaseLLMException with the supplied status/message/headers.
 
 
-  Reuse B500 config loading and B129 secret resolution for the key/base chains; B171 owns encode_url_path_segment
+  Reuse B500 config loading and B8500 secret resolution for the key/base chains; B171 owns encode_url_path_segment
   and B2202 owns BaseLLMException.
 
 

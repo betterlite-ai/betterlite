@@ -291,7 +291,7 @@ out_of_scope:
   - "Message skip-flag helpers effective_skip_system_message_for_guardrail and effective_skip_tool_message_for_guardrail: B3663 covers litellm/llms/base_llm/guardrail_translation/utils.py and owns these functions."
   - "HTTP client primitives get_async_httpx_client and AsyncHTTPHandler: shared transport layer has no owning task; flag for the architect."
   - "Applied guardrails header callback add_guardrail_to_applied_guardrails_header: header composition has no owning task; flag for the architect."
-  - "Service invocation and higher-level apply hook orchestration: B107 owns the dispatching and lifecycle integration."
+  - "Registration in the guardrail registry: B8521. The unified guardrail lifecycle that calls apply_guardrail: B3680."
 pitfalls:
   - "_normalize_content distinguishes between JSON-stringifiable items and dropped items: non-dict list items become _TextContentPart with json.dumps(item) as text, but dict items with an unrecognized or malformed type are silently dropped with no replacement; only type=\"text\" with string text or type=\"image_url\" with url-like structure are kept."
   - "Empty content normalization happens in _build_guard_input_for_request (lines 412-413), not _normalize_content: when content is None or an empty list after normalization, the caller converts it to an empty string for the guard_input."

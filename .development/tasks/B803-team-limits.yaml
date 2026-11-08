@@ -29,11 +29,11 @@ description: >-
 
   _existing_model_cap returns None on BudgetConfig validation errors. For non-proxy-admins changing
   model_max_budget with nonempty previous limits, first reject deletion of each valid capped exact
-  entry (including a null/empty whole map), then resolve each proposed model through B071.resolve_model_budget
+  entry (including a null/empty whole map), then resolve each proposed model through B3005's resolve_model_budget
   so wildcard-governed limits apply. Missing/malformed/uncapped governing limits impose no ceiling.
   Reject a proposed null cap, increased amount OR changed budget_duration with HTTP 403; allow equal
   or reduced amounts with the same duration. Include model and governing entry in the diagnostic.
-  B071 owns wildcard specificity, not a second matcher here. Unchanged model maps and proxy-admin
+  B3005 owns wildcard specificity, not a second matcher here. Unchanged model maps and proxy-admin
   edits skip these checks; B158 owns BudgetConfig at types/utils.py L3992-L4007, including its
   time_period/budget_limit aliases. B2317's reset-clock settings are not called here.
 
@@ -117,7 +117,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/team_endpoints.py#L1318-L1326
     why: general_settings.disable_auto_add_proxy_admin_to_teams default and read site.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/hooks/model_max_budget_limiter.py#L135-L177
-    why: B071 supplies model budget resolution for the authority comparison.
+    why: B3005 supplies model budget resolution for the authority comparison.
 dod:
   - text: 'Implement the owned behavior and ordered failure effects; named tests: team_admin_budget_escalation,
       default_team_params, creator_auto_add_disabled, default_object_projection,

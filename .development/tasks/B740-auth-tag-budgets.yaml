@@ -84,8 +84,6 @@ scope:
     - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state/auth_tag_budgets.rs
     - crates/betterlite-server/src/state/auth_tag_budgets/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/auth-tag-budgets/**
     - crates/betterlite-server/src/auth/auth_tag_budgets.rs
     - crates/betterlite-server/src/auth/auth_tag_budgets/**

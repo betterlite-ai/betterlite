@@ -10,7 +10,7 @@ description: >-
 
   Route split. B4448 registers the readiness, details, backlog, drain, license, OPTIONS, /settings and
   /active/callbacks routes. B4446 registers POST /health/test_connection. This task registers only GET /test and GET
-  /health/services, in one function `health_services_routes(state) -> Router` that the umbrella B130 mounts once. Do not
+  /health/services, in one function `health_services_routes(state) -> Router` that B8540 mounts once. Do not
   register any path B4448 or B4446 owns. Both routes sit behind B052's user_api_key_auth, so a missing or wrong key is
   that pipeline's 401 and this module never sees it.
 
@@ -91,7 +91,7 @@ description: >-
   production implementation maps to B4023's send_key_created_or_user_invited_email. The returned success flag is
   ignored. Answer `{"status": "success", "message": "Mock Email Alert sent, verify Email Alert Received"}`.
 
-  Injected traits (defined in the module `service_probes` and `alert_tests`, faked in tests; the umbrella B130 builds the
+  Injected traits (defined in the module `service_probes` and `alert_tests`, faked in tests; B8540 builds the
   production implementations over the logging, alerting and model-call crates, since no other task does).
   `MockRequests::send_mock_request(&self) -> Result<(), ServiceTestError>`: one chat completion with model
   `openai/litellm-mock-response-model`, messages `[{"role": "user", "content": "Hey, how's it going?"}]`, user
@@ -253,8 +253,8 @@ deviations:
 
 out_of_scope:
   - "The 22 vendor health checks themselves, the Slack alert sender, budget_alerts, the spend reports, the email sender and the mock completion: B3933, B3939, B3862, B3964, B3995, B3942, B3074, B3904, B4024, B4025, B4029, B4023 and B5656 own them. This task defines the traits and fakes only."
-  - "The production implementations of MockRequests, IntegrationChecks, AlertActions and CallbackSource: the umbrella B130 builds them, because no leaf task depends on all of those crates."
-  - "Every route of the file outside lines 176-612: B4448 (readiness, drain, backlog, details, license, OPTIONS, /settings, /active/callbacks, callback_name), B4446 (POST /health/test_connection and the admin helpers), B4444 and B4445 own them, and the umbrella B130 owns /health, /health/history, /health/latest and /health/shared-status."
+  - "The production implementations of MockRequests, IntegrationChecks, AlertActions and CallbackSource: B8540 builds them, because no leaf task depends on all of those crates."
+  - "Every route of the file outside lines 176-612: B4448 (readiness, drain, backlog, details, license, OPTIONS, /settings, /active/callbacks, callback_name), B4446 (POST /health/test_connection and the admin helpers), B4445 owns /health, /health/history and /health/latest, B4444 owns /health/shared-status, and B8540 mounts every one of them."
   - "_is_proxy_admin (L921-L933): B4446 owns it. This task calls it."
   - "The unreachable `service is None` 400 (L284): Service is a required query parameter, so the branch has no caller at the pin."
 

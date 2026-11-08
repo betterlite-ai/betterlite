@@ -3,7 +3,7 @@ title: Transactional v2 organization patch
 description: >-
   Split update_organization_v2 (organization_endpoints.py L844-L997, decorator L838-L843) from B827.
   Register PATCH /v2/organization/{organization_id} once, consuming B826's organization router and
-  access helpers. B124 owns OrganizationUpdateRequestV2 and LiteLLM_OrganizationTableWithMembers;
+  access helpers. B8412 owns OrganizationUpdateRequestV2 and LiteLLM_OrganizationTableWithMembers;
   its optional fields default null, track presence and forbid unknown keys with 422. The path ID is
   authoritative; budget_id, organization_id and updated_by are not body fields. This handler has no
   local exception wrapper, audit decorator or post-commit cache refresh.
@@ -35,7 +35,7 @@ description: >-
   object_permission, call B816.prepare_object_permission_upsert BEFORE opening the transaction, passing
   exclude-none grants and the existing permission ID; it supplies the merge record and stable ID.
   Explicit null instead sets organization.object_permission_id=null without deleting the old row.
-  Omission leaves the link alone. Build organization write data through B124.jsonify_object and always
+  Omission leaves the link alone. Build organization write data through B2362 jsonify_object and always
   set updated_by to caller.user_id, even for {}. Cases v2_omitted_fields_retained, v2_metadata_replaces,
   v2_permission_prepare_before_tx, v2_permission_null_unlinks and v2_empty_patch_updates_actor cover
   these projections, including preserved members/teams and orphaned permission rows.
@@ -64,8 +64,6 @@ scope:
     - crates/betterlite-server/src/organization_patch_v2/**
     - crates/betterlite-server/src/routes/organization_patch_v2.rs
     - crates/betterlite-server/src/routes/organization_patch_v2/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - crates/betterlite-server/Cargo.toml
     - tools/oracle/cases/management/organization-patch-v2/**
     - tools/oracle/helpers/b2342.py

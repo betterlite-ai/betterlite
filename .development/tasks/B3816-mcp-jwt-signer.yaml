@@ -130,7 +130,7 @@ deviations:
 
 out_of_scope:
   - "initialize_guardrail and the guardrail_initializer_registry in __init__.py (option precedence, mode must be pre_mcp_call, callback registration): B109 wires them."
-  - "get_mcp_jwt_signer and the module singleton: B109 holds the signer; no caller needs the global."
+  - "get_mcp_jwt_signer and the module singleton: discoverable_endpoints.py (openid_configuration, jwks_json) and mcp_server_manager.py (_get_tools_from_server) call it at the pin, so B8254 builds the lookup as JwtSignerSlot; this task keeps no global."
   - "The routes for /.well-known/jwks.json and the OIDC document in mcp_server_manager.py and discoverable_endpoints.py: their owners call get_jwks and jwks_max_age."
   - "Claim validation, identity, scope, claim operations, channel claims and the debug header string: B3817 (done)."
   - "The proxy_logging shared cache lookup in inject_mcp_jwt_headers_for_upstream: the hook never reads its cache argument, so betterlite drops it."

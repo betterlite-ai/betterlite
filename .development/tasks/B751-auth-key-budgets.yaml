@@ -134,8 +134,6 @@ scope:
     - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state/auth_key_budgets.rs
     - crates/betterlite-server/src/state/auth_key_budgets/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/auth-key-budgets/**
     - crates/betterlite-config/Cargo.toml
     - crates/betterlite-config/fuzz/corpus/config_yaml/auth-key-budgets-*

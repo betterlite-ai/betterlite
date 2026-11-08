@@ -2,7 +2,7 @@ id: B5365
 title: Model registration, deployment filters and region checks
 description: >-
   `litellm.register_model` lets a user add or change pricing for a model at runtime, and the router uses a few plain
-  filters to pick deployments by order, exclusion and region. Build these in betterlite-models: `model_registration`,
+  filters to pick deployments by order and region. Build these in betterlite-models: `model_registration`,
   `deployment_filters` and `deployment_regions`.
 
 
@@ -28,9 +28,8 @@ description: >-
 
 
   `deployment_filters` holds `_get_deployment_order` (`litellm_params` first, then `model_info`),
-  `get_order_filtered_deployments` (the group with the smallest order; no orders at all gives the input back) and
-  `get_excluded_filtered_deployments` (an empty result is allowed and the caller decides what to do). They're generic over
-  a small trait with the order and id accessors, so the router's deployment type can use them.
+  `get_order_filtered_deployments` (the group with the smallest order; no orders at all gives the input back). They're
+  generic over a small trait with the order accessor, so the router's deployment type can use them.
 
 
   `deployment_regions` holds `_get_model_region` (vertex uses `vertex_location`, then the caller's resolved default;
@@ -64,8 +63,8 @@ references:
   why: Dictionary merge, number conversion, built-in entry lookup and the replay functions.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L3317-L3479
   why: The whole order of steps in register_model.
-- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5188-L5242
-  why: Deployment order and exclusion filters.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5188-L5217
+  why: The deployment order filter.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5245-L5347
   why: Region lookup and the allowed check.
 - url: https://github.com/BerriAI/litellm/issues/30198
@@ -87,7 +86,7 @@ dod:
   proof: [register-model, oracle, helper-python]
 - text: Runtime registrations replay after a reload unless `persist_across_reloads` was false.
   proof: [registration-replay, oracle, helper-python]
-- text: Order and exclusion filters match LiteLLM, including no orders and an empty exclusion result.
+- text: The order filter matches LiteLLM, including deployments with no order at all.
   proof: [deployment-filters, oracle, helper-python]
 - text: Region lookup and `is_region_allowed` match LiteLLM for vertex, bedrock, watsonx and a plain `region_name`.
   proof: [deployment-regions, oracle, helper-python]
@@ -132,7 +131,6 @@ oracle_cases:
 - tools/oracle/cases/helpers/model-registration/synthesized-costs.yaml
 - tools/oracle/cases/helpers/model-registration/replay.yaml
 - tools/oracle/cases/helpers/model-registration/deployment-order.yaml
-- tools/oracle/cases/helpers/model-registration/deployment-exclusion.yaml
 - tools/oracle/cases/helpers/model-registration/regions.yaml
 deviations:
 - what: The registry is a struct, the URL fetch is a trait, and warnings are returned.
@@ -145,6 +143,7 @@ out_of_scope:
   The provider EU and US lists stay with their provider tasks, and `calculate_max_parallel_requests` L5145-L5185 stays with
   B303. B157 exposes `register_model` to Python as a module attribute through the wiring in its task file.
 - The B157 task file holds the full owner list for litellm/utils.py.
+- "`get_excluded_filtered_deployments` L5220-L5242: B8440 ports it as `drop_excluded` in betterlite-router, next to its only callers, so deployment_filters does not build it."
 pitfalls:
 - >-
   Issue 30198 is why the order of the pops matters: a synthesized zero left in the entry reads as free and turns budget
@@ -153,9 +152,6 @@ pitfalls:
   Prices stay as JSON numbers here. The money-is-decimal rule applies where a price is computed, not where a user's
   entry is stored, and a float conversion would change what the Python dict shows.
 - '`_update_dictionary` skips `None` and merges nested dicts rather than replacing them.'
-- >-
-  `get_excluded_filtered_deployments` may return an empty list, and raising here would change the router's error. The
-  caller owns that case.
 budget:
   max_changed_lines: 1500
   max_new_expects: 0

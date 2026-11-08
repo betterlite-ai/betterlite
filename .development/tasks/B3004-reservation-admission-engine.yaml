@@ -73,7 +73,7 @@ oracle_cases:
 - tools/oracle/cases/admission/over-budget-block-fail-closed.yaml
 deviations: []
 out_of_scope:
-- "Reservation lease renewal (B071) and unbound-request cleanup."
+- "Reservation lease renewal (B8480) and unbound-request cleanup (B8270)."
 - "Settlement and release of reservations (B3003)."
 - "Reading current spend from cache and database (B3014, B3015)."
 pitfalls:

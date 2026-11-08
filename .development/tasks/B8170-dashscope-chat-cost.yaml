@@ -1,0 +1,103 @@
+id: B8170
+title: DashScope chat config and tiered cost
+description: >-
+  Build dashscope_chat and dashscope_cost in crates/betterlite-openai. They cover litellm/llms/dashscope/chat/transformation.py
+  and litellm/llms/dashscope/cost_calculator.py. Nothing here reads an environment variable. The caller passes every key,
+  base and secret as a plain argument. The OpenAI chat base (B668 options and error policy, B503 and B504 message and reply
+  conversion) does the rest. This task adds only what DashScopeChatConfig overrides.
+
+  dashscope_chat. DashscopeChatConfig takes a ChatBasePolicy { default_base: String, env_base: Option<String>,
+  env_in_complete_url: bool }. This task builds the policy for plain DashScope: default_base
+  https://dashscope.aliyuncs.com/compatible-mode/v1, env_base the DASHSCOPE_API_BASE value the caller passes in, and
+  env_in_complete_url false. B8172 builds the two other policies (QwenCloud and Qianwen AI Platform) and sets that flag to
+  true, so keep the field. The supported option list is the OpenAI base list (B668) followed by reasoning_effort.
+  cache_control on messages and tools is kept, so the base step that strips it is skipped for this provider. Message
+  conversion is the base one unchanged.
+
+  Two functions resolve the base and they differ, as in LiteLLM. provider_info(api_base, api_key) returns the base as
+  api_base, then env_base, then default_base, and the key as api_key, then the DASHSCOPE_API_KEY value passed in. The URL
+  function complete_url(api_base) takes api_base when set and non-empty, else default_base, and reads env_base only when
+  env_in_complete_url is true. The result is returned as is when it ends in /chat/completions, else /chat/completions is
+  appended with no slash trimming. So for plain DashScope a DASHSCOPE_API_BASE secret changes the provider info but not
+  the URL. Do not fix that.
+
+  dashscope_cost. cost_per_token(model_info, usage, current_time) returns (prompt_cost, completion_cost) as exact Decimal
+  values (B204), never through binary floats. The caller passes the resolved model_info (B2219) for the provider the request
+  resolved to (dashscope or one of its brand aliases) and the instant to bill at. The module never reads the clock.
+  Billing is all or nothing per request. Break the usage down first. cached = prompt_tokens_details cache hit tokens,
+  cache_creation = its cache creation tokens, text = max(prompt_tokens - cached - cache_creation, 0), reasoning =
+  completion_tokens_details reasoning tokens (B1671 parses both: parse_prompt_tokens_details and parse_completion_details in betterlite-models modality_cost), completion = max(completion_tokens - reasoning, 0). A
+  missing completion_tokens counts as 0. total_input = text + cached + cache_creation.
+
+  Flat rates come from model_info: input = input_cost_per_token or 0, output = output_cost_per_token or 0, cache_read =
+  cache_read_input_token_cost, cache_creation = cache_creation_input_token_cost (each of these two falls back to the input
+  rate only when the key is absent, and a present 0 stays 0), reasoning = output_cost_per_reasoning_token or absent. Without
+  a tiered_pricing list the flat rates apply. With a non-empty list, B1666's select_tier_for_input picks the tier for
+  total_input and the rates come from that tier: input = tier_rate(input_cost_per_token), cache_read and cache_creation use
+  tier_rate with the tier's input rate as the fallback, output = the tier's output rate only when the tier declares
+  output_cost_per_token, else the flat output rate. reasoning = the tier's reasoning rate when the tier declares it, else
+  absent when the tier declares output (so reasoning tokens bill at the tier output rate), else the flat reasoning rate. A
+  tiered_pricing value that is not a list is ignored. Then B1669's apply_off_peak_pricing swaps in the model's off-peak
+  rates for current_time when one of its windows is open. The bill is prompt = text*input + cached*cache_read +
+  cache_creation*cache_creation_rate, completion = completion*output + reasoning*billed_reasoning_rate. billed_reasoning_rate
+  is the reasoning rate when present, else the output rate (B1669's TokenRates already holds this rule, reuse it).
+
+  Size. The two LiteLLM files hold about 150 nonblank, non-comment lines. Plan 130 production, 280 tests, 40 adapters, 20
+  wiring lines. No split.
+scope:
+  paths:
+    - crates/betterlite-openai/src/dashscope_chat.rs
+    - crates/betterlite-openai/src/dashscope_chat/**
+    - crates/betterlite-openai/src/dashscope_cost.rs
+    - crates/betterlite-openai/src/dashscope_cost/**
+    - tools/oracle/cases/helpers/dashscope-chat/**
+    - tools/oracle/helpers/b8170.py
+    - tools/oracle/helpers/b8170/**
+    - tools/oracle/src/helpers/openai/b8170.rs
+    - tools/oracle/src/helpers/openai/b8170/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/dashscope/chat/transformation.py#L14-L81
+    why: Supported options, kept cache_control, the two base resolvers and the URL rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/dashscope/cost_calculator.py#L25-L141
+    why: Token breakdown, flat and tier rates, off-peak swap and the all-or-nothing bill.
+dod:
+  - text: The option list, kept cache_control, provider info and URL rule match LiteLLM, including the env base that provider info reads and the URL does not.
+    proof: [dashscope-chat-tests, oracle]
+  - text: A request is billed at one tier, with cached, cache-creation and reasoning tokens at that tier's rates and the output-rate fallback rules.
+    proof: [dashscope-cost-tests, oracle]
+  - text: Off-peak rates replace the standard ones at the supplied instant and flat models bill without a tier.
+    proof: [dashscope-cost-tests, oracle]
+  - text: The new oracle cases exist and call this task's helper.
+    proof: [dashscope-chat-cases]
+checks:
+  optional: [mutants]
+  commands:
+    - id: dashscope-chat-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^dashscope_chat::/)'
+      why: A plain OpenAI config lacks reasoning_effort, strips cache_control and uses the same base for provider info and URL.
+    - id: dashscope-cost-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^dashscope_cost::/)'
+      why: A generic token calculator bills each token class at its own rate and ignores whole-request tiers.
+    - id: dashscope-chat-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/dashscope-chat)" && /usr/bin/grep -rlE '^  b8170:' tools/oracle/cases/helpers/dashscope-chat
+      why: Without cases that call the B8170 helper nothing compares these functions with LiteLLM.
+oracle_cases:
+  - tools/oracle/cases/helpers/dashscope-chat/options-and-urls.yaml
+  - tools/oracle/cases/helpers/dashscope-chat/provider-info.yaml
+  - tools/oracle/cases/helpers/dashscope-chat/cost-flat.yaml
+  - tools/oracle/cases/helpers/dashscope-chat/cost-tiered.yaml
+  - tools/oracle/cases/helpers/dashscope-chat/cost-off-peak.yaml
+deviations: []
+out_of_scope:
+  - B668, B503 and B504 own everything DashscopeChatConfig inherits from the OpenAI base config. B2230 owns choosing the config for the dashscope provider.
+  - B8172 owns the QwenCloud and Qianwen AI Platform chat policies. B1666 owns tier selection, B1669 owns off-peak windows and TokenRates, B1671 owns the usage details parsing, B2219 owns model-info lookup.
+  - B1686 owns calling a provider's cost function from dispatch. This task adds no dispatch wiring.
+pitfalls:
+  - Plain DashScope reads DASHSCOPE_API_BASE in provider info but not in the URL. The brand aliases read their own env base in both.
+  - A present cache_read_input_token_cost of 0 stays 0. Only an absent key falls back to the input rate.
+  - A tier that declares output_cost_per_token but no reasoning rate makes reasoning tokens bill at the tier output rate, not the flat reasoning rate.
+  - The base is not trimmed, so a base ending in a slash gives a double slash before chat/completions.
+  - total_input for tier selection counts text, cached and cache-creation tokens, not completion tokens.
+review_level: standard
+budget: {max_changed_lines: 1500, max_new_expects: 0}

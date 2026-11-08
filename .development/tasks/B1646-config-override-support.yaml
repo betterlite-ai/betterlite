@@ -23,7 +23,7 @@ description: >-
   supplied values and trying its manager when api_base is truthy; on failure log and drop
   only an active CyberArk manager, invalidate Vault's marker and best-effort reinitialize
   Vault when HCP_VAULT_ADDR remains set. CyberArk clearing restores boot values and clears
-  its marker. Its persistence helper encrypts every config value through B124/B1600, upserts
+  its marker. Its persistence helper encrypts every config value through B8382/B1600 (encrypt_env and decrypt_env), upserts
   config_type=cyberark via B726, and returns the serialized encrypted payload.
   Response masking uses B244 only for string-valued vault_token/approle_secret_id/client_key
   or cyberark_api_key/client_key; all audit snapshot values instead become ***REDACTED***.
@@ -94,7 +94,7 @@ deviations:
 out_of_scope:
   - B1647 owns update_hashicorp_vault_config, get_hashicorp_vault_config, delete_hashicorp_vault_config and test_hashicorp_vault_connection at L327-L645.
   - B1648 owns update_cyberark_config, get_cyberark_config, delete_cyberark_config and test_cyberark_connection at L650-L932.
-  - B129 supplies the Vault/CyberArk clients; B124 owns their startup/reload integration and the generic per-value encryption facade.
+  - B4416 and B4418 supply the Vault/CyberArk clients; B8383 owns their startup/reload integration and B8382 the generic per-value encryption facade.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as override_projection in the server group. Replace the stub Op in tools/oracle/src/helpers/server/override_projection.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/override_projection.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A valid non-object JSON config_value is not the same case as malformed JSON falling back to an empty mapping.

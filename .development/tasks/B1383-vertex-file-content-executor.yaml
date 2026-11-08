@@ -81,7 +81,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
   - B1374 through B1377 and B1393 own FilesConfig transformations and byte decoders; this executor adds no competing parser.
-  - B115 owns GCS logging/upload/delete callbacks; only their called native download behavior is composed here.
+  - B3997 owns the GCS storage client calls and B3998 the GCS logging callbacks; only their called native download behavior is composed here.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as vertex_file_read_settings in the vertex group. Replace the stub Op in tools/oracle/src/helpers/vertex/file_read_settings.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vertex_file_read_settings.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
   - A nonstring deployment bucket falls back to environment, unlike the write resolver's truthiness-only selection.

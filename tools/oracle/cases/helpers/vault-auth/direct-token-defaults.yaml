@@ -1,0 +1,13 @@
+kind: helper
+name: vault-auth-direct-token-defaults
+env: {}
+compare: {ignore: []}
+call:
+  b4416:
+    env: {HCP_VAULT_TOKEN: token-1}
+    routes: []
+    steps:
+      - {op: token}
+      - {op: token_blocking}
+      - {op: namespaces}
+      - {op: target, name: OPENAI_API_KEY}

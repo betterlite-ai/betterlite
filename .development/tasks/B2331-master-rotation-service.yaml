@@ -7,13 +7,13 @@ description: >-
   here as well, so this service never calls back into the migration route owner. B2332 supplies
   MCP store rotation below B139; B137 supplies SSO assertion rotation. B785 retains HTTP routes.
 
-  current_master_key is unused: reads use the active configured salt through B124/B2303, and
+  current_master_key is unused: reads use the active configured salt through B8382/B2303, and
   writes use new_master_key. Do not validate the current-key argument or change active master/salt
   settings here. Cases current_argument_unused and same_key_algorithm_migration prove that
   distinction; B895 owns activation and master-key regeneration response behavior.
 
   Read all model rows; any fetch exception is silently treated as no models. For a nonempty
-  result, B124 decrypt_model_list_from_db supplies deployments, B836 _add_model_to_db is called
+  result, B8382 decrypt_model_list_from_db (decrypt_model_rows) supplies deployments, B836 _add_model_to_db is called
   sequentially with should_create_model_in_db=false and the new encryption key, and falsey
   conversions are omitted. Then one transaction, timeout exactly two minutes, update_many's each
   row by model_id with encrypted litellm_params JSON. Commit before B120 publish_config_change
@@ -22,9 +22,9 @@ description: >-
   models_failure_rolls_back_only_models and model_publication_failure_stops_later_stores pin the effects.
 
   Read config rows next; all read exceptions silently skip this stage. Last environment_variables
-  row wins. For truthy values B124 _decrypt_and_set_db_env_variables changes process environment
+  row wins. For truthy values B8382 _decrypt_and_set_db_env_variables (decrypt_and_export_env) changes process environment
   as it decrypts, then _encrypt_env_variables uses new_master_key; only a truthy encrypted result
-  is persisted back to that config row. B124 owns its warn-once forbidden MCP stdio flag and
+  is persisted back to that config row. B8382 owns its warn-once forbidden MCP stdio flag and
   per-variable decrypt/error handling; this service does not replace them with all-or-nothing
   decryption. Cases config_read_failure_skip, config_last_environment_row,
   config_empty_result_no_update and config_write_failure_keeps_models_and_environment prove ordering.
@@ -36,7 +36,7 @@ description: >-
   assert every call and failure independently; each store's own partial writes remain visible.
 
   Finally fetch credential rows; fetch exceptions silently skip. For each row decrypt through
-  B124 decrypt_credentials, merge an encrypted patch, wrap credential_values and credential_info
+  B8382 decrypt_credentials (decrypt_credential), merge an encrypted patch, wrap credential_values and credential_info
   as database JSON when present, and update by ORIGINAL credential_name with updated_by equal
   to caller.user_id (including null). Per-row failures log and continue, and final debug count is
   the number fetched, not the successful writes. Cases credential_original_name_where,
@@ -114,7 +114,7 @@ deviations: []
 out_of_scope:
   - B785 owns migration HTTP wrappers; B061 owns scanning/walking and credential routes, except the
     two credential helpers moved here. B895 owns master-key activation. B2332 owns MCP rotations.
-  - B124 owns ProxyConfig decrypt/encrypt methods, B836 model conversion, B120 configuration publication,
+  - B8382 owns ProxyConfig decrypt/encrypt methods, B836 model conversion, B120 configuration publication,
     B137 SSO assertion rotation, B725 model rows, B730 credential/config rows, B770 table adapters,
     B2303 crypto and B2305 stored MCP contracts. Remaining key endpoint functions keep B770-B898 owners.
 pitfalls:

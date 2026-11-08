@@ -103,8 +103,6 @@ scope:
     - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state/auth_resource_grants.rs
     - crates/betterlite-server/src/state/auth_resource_grants/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/auth-resource-grants/**
     - crates/betterlite-server/src/auth/auth_resource_grants.rs
     - crates/betterlite-server/src/auth/auth_resource_grants/**

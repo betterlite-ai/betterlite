@@ -1,0 +1,96 @@
+id: B8293
+title: Startup prompt initialization
+description: >-
+  Port litellm/proxy/prompts/init_prompts.py (28 lines) and the `prompts:` config key that feeds it. At startup the
+  proxy reads the top-level `prompts` list of the config file. When the list is not empty it calls `init_prompts`. That function
+  loads each entry into the in-memory prompt registry. litellm/proxy/prompts/__init__.py is an empty file and has nothing to port; this
+  task owns it only so the package has an owner.
+
+  Code goes in crates/betterlite-prompts/src/startup_init.rs and startup_init/. Files: init.rs (the function) and
+  error.rs. The config key goes in the section crates/betterlite-config/src/sections/prompts.rs and prompts/**. It
+  parses its own view of the whole config file and reaches other crates as `config.sections.prompts`.
+
+  Section. `PromptsSection` has one field, `prompts: Vec<serde_json::Map<String, serde_json::Value>>`. It is empty when the
+  key is absent, null or an empty list. An entry that is not a mapping, or a `prompts` value that is not a list, is a
+  config error that names the key. Each entry stays a raw map here, because LiteLLM passes the dicts on and the typed parse is B4050's.
+
+  Function. `init_prompts(registry: &mut InMemoryPromptRegistry, all_prompts: &[serde_json::Map<String, serde_json::Value>],
+  config_file_path: Option<&Path>) -> Result<Vec<PromptSpec>, InitPromptsError>`. For each entry, in order:
+  1. Build the `PromptSpec` with B4050's deserializer for it (it injects `prompt_type: "config"` when `prompt_info` is
+     absent or has no `prompt_type`, and defaults the environment to "development"). A parse failure stops the whole call with
+     `InitPromptsError::InvalidPrompt { index, source }`, as the pydantic error does in LiteLLM. Entries before it stay registered.
+  2. Call B4060's `registry.initialize_prompt(spec, config_file_path)`. Its error is `InitPromptsError::Initialize { prompt_id, source }`
+     and stops the call. A returned `Some(spec)` is appended to the result list. `None` is skipped, though LiteLLM's function returns a spec on every success.
+  The function logs "Prompt List:" and the list at debug level, once, after the loop (the loop is skipped when the input is empty, and the caller does not call the function then).
+  `InitPromptsError` is a thiserror enum, and no variant prints a prompt body.
+
+  Wiring (read it, do not build it). proxy_server.py L7027-7034 calls this only when `prompts` is non-empty, right after the policy
+  engine setup and before credentials. The server startup task calls `init_prompts` the same way. This task builds no call site.
+
+scope:
+  paths:
+    - crates/betterlite-prompts/src/startup_init.rs
+    - crates/betterlite-prompts/src/startup_init/**
+    - crates/betterlite-config/src/sections/prompts.rs
+    - crates/betterlite-config/src/sections/prompts/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/init_prompts.py#L10-L28
+    why: init_prompts, the loop, the skipped None and the debug log.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L7027-L7034
+    why: The prompts config key and the call site.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/prompts/prompt_registry.py#L185-L215
+    why: initialize_prompt. The loop calls it and B4060 builds it.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/prompts/init_prompts.py#L45-L61
+    why: PromptSpec construction with the prompt_type default, built by B4050.
+
+dod:
+  - text: The prompts section reads the top-level prompts list, gives an empty list for an absent, null or empty key, and refuses a non-list or a non-mapping entry with an error that names the key.
+    proof: [section-tests]
+  - text: init_prompts registers the entries in input order and returns the specs that initialize_prompt returned, skipping None.
+    proof: [init-tests]
+  - text: A bad entry stops the call with InvalidPrompt and its index, and the entries before it stay registered.
+    proof: [init-tests]
+  - text: An initialize_prompt error stops the call with Initialize and the prompt id.
+    proof: [init-tests]
+  - text: No error text holds a prompt body or a secret.
+    proof: [error-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: section-tests
+      why: the prompts key is read wrongly or a bad value is accepted
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::prompts::/)'
+    - id: init-tests
+      why: the loop order, the None skip or the stop on error is wrong
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^startup_init::init::tests::/)'
+    - id: error-tests
+      why: an error shows a prompt body
+      run: cargo nextest run --locked -p betterlite-prompts --no-tests=fail -E 'test(/^startup_init::error::tests::/)'
+
+oracle_cases: []
+
+deviations:
+  - what: A bad entry stops startup with a typed error. LiteLLM lets the pydantic ValidationError escape from the config load.
+    why: Same outcome, the proxy does not start, and the Rust error names the entry index.
+  - what: config_file_path is passed on and not read here.
+    why: LiteLLM's initialize_prompt does not read it either at the pin.
+
+out_of_scope:
+  - "InMemoryPromptRegistry and initialize_prompt: B4060."
+  - "PromptSpec, PromptInfo and the prompt_type default: B4050."
+  - "The startup call site in proxy_server.py: the server startup task."
+  - "litellm/proxy/custom_prompt_management.py (the X42 example class, no caller at the pin) and litellm/proxy/test_prompts/test_hello_world_prompt.prompt (a sample, no reader): left with B117."
+
+pitfalls:
+  - "The function is called only for a non-empty list. An empty list must not log or touch the registry."
+  - "A prompt already registered under the same key comes back as the stored spec, not as None, and it is still appended to the result list."
+  - "Do not parse the entries in the config section. A typed parse there would hide the prompt_type default that B4050 owns."
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

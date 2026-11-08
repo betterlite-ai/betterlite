@@ -99,8 +99,6 @@ scope:
     - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state/auth_request_models.rs
     - crates/betterlite-server/src/state/auth_request_models/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/auth-request-models/**
     - crates/betterlite-server/src/auth/auth_request_models.rs
     - crates/betterlite-server/src/auth/auth_request_models/**

@@ -1,0 +1,63 @@
+id: B8580
+title: Messages config selection for DeepSeek, Tencent, MiniMax and Eden AI
+description: >-
+  B1430 builds the DeepSeek, Tencent and MiniMax native Messages policies and B6100 builds edenai_messages, both in betterlite-core, but no task picks them for a /v1/messages call. B8311 and B8312 cannot, since betterlite-provider does not depend on betterlite-core. This task adds that one missing step in the module messages_host_binding of betterlite-core and nothing else.
+
+  Source: the Messages config selection in litellm/utils.py (ProviderConfigManager._get_provider_anthropic_messages_config_cached). Own the minimax arm L8973-L8978, the tencent arm L8985-L8990 and the edenai arm L8998-L8999. The deepseek arm L8979-L8984 is selected by B1440's closed policy identifier; map that identifier here. None of the four arms looks at the model name. Build a closed enum MessagesHostConfig with one variant per provider, each holding the policy its task builds (B1430's three, B6100's Eden one), and a function select_messages_host(provider) that returns Some for exactly these four providers and None for every other one, so the existing arms and the JSON provider tail keep deciding the rest.
+
+  Then plug the enum into the Messages dispatch through B982's seam: anthropic_messages_handler (litellm/llms/anthropic/pass_through/messages/handler.py L423-L675) asks an injected `MessagesConfigSelector` (B982) for the provider's config and runs the native Messages path with it. Implement that trait for a unit struct MessagesHostSelector whose select calls select_messages_host(provider) and ignores the model. MessagesHostConfig implements the Messages provider contract that B961 adds to B010's provider contract, the `C` of the selector, by calling its policy for every step (key, base and URL, headers, request, reply, stream and error class). Copy no policy logic here: a step that differs between providers lives in B1430 or B6100.
+
+  HTTP oracle cases through the booted proxy prove the parts end to end, since this is the first place a route reaches them: POST /v1/messages for deepseek, tencent, minimax and edenai models, non-streaming, plus one streaming case for minimax and one missing-key case for edenai.
+
+  Plan about 200 lines of module code, 160 of tests and 60 for the cases. Where the source and this text differ, the source at the pinned commit wins.
+scope:
+  paths:
+    - crates/betterlite-core/src/messages_host_binding.rs
+    - crates/betterlite-core/src/messages_host_binding/**
+    - tools/oracle/cases/providers/messages-hosts/**
+    - tools/oracle/helpers/b8580.py
+    - tools/oracle/helpers/b8580/**
+    - tools/oracle/src/helpers/core_ops/b8580.rs
+    - tools/oracle/src/helpers/core_ops/b8580/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L8937-L9010
+    why: The Messages config selection with the minimax, deepseek, tencent and edenai arms.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/anthropic/pass_through/messages/handler.py#L423-L675
+    why: The dispatcher that runs the selected provider config.
+dod:
+  - text: select_messages_host returns the right variant for deepseek, tencent, minimax and edenai and None for every other provider.
+    proof: [messages-host-tests]
+  - text: A /v1/messages call for each of the four providers sends the same URL, headers and body as LiteLLM and returns the same status and body, streaming included.
+    proof: [messages-host-tests, oracle]
+  - text: New HTTP cases for these providers exist.
+    proof: [messages-host-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: messages-host-tests
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^messages_host_binding::/)'
+      why: No messages_host_binding test exists on the base branch.
+    - id: messages-host-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/providers/messages-hosts)"
+      why: Without added case files the oracle proof has nothing of this task to compare.
+oracle_cases:
+  - tools/oracle/cases/providers/messages-hosts/deepseek-messages.yaml
+  - tools/oracle/cases/providers/messages-hosts/tencent-messages.yaml
+  - tools/oracle/cases/providers/messages-hosts/minimax-messages.yaml
+  - tools/oracle/cases/providers/messages-hosts/minimax-messages-stream.yaml
+  - tools/oracle/cases/providers/messages-hosts/edenai-messages.yaml
+  - tools/oracle/cases/providers/messages-hosts/edenai-missing-key.yaml
+deviations:
+  - what: Reply ids LiteLLM generates are compared as present, not equal.
+    why: The ids are random.
+out_of_scope:
+  - "B1430 owns the DeepSeek, Tencent and MiniMax policies and B6100 owns edenai_messages; only calls to them are here."
+  - "B1440 owns the deepseek selection identifier and the JSON provider Messages tail; B982 owns anthropic_messages_handler and MessagesConfigSelector. The wave 17 wiring part puts MessagesHostSelector into the selector chain, before B1440's JSON tail."
+  - "The anthropic, bedrock, vertex_ai, azure_ai and github_copilot arms stay with their provider tasks."
+pitfalls:
+  - "The minimax, deepseek and tencent arms ignore the model name, unlike the claude checks in the arms above them."
+  - "Point each provider base at the mock with {{upstream}} in the case env (DEEPSEEK_API_BASE, TENCENT_API_BASE, MINIMAX_API_BASE, EDENAI_API_BASE); only env values get the mock address."
+  - "The edenai missing-key case fails before any upstream request, so its upstream list stays empty."
+budget: {max_changed_lines: 600, max_new_expects: 0}
+review_level: standard

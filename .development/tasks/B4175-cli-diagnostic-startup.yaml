@@ -4,7 +4,7 @@ description: >-
   Build the small commands and the input helpers that LiteLLM's `litellm` entry point (proxy_cli.py run_server) runs before it
   starts a server, as plain library code in the crates/betterlite crate. Four new modules, each declared in lib.rs by the
   skeleton: banner, diagnostic_commands, startup_input and verbose_levels. Nothing here parses argv or starts a server. The
-  umbrella B121 owns the clap root and calls these functions in run_server's order. Every side effect goes through a
+  task B8375 owns the clap root and calls these functions in run_server's order. Every side effect goes through a
   parameter (a writer, a trait object, a plain value), so tests run without a network, a child process or an environment.
 
   banner.rs: `pub const LITELLM_BANNER: &str` holds the six-line block-letter banner from banner.py exactly, with the box
@@ -72,7 +72,7 @@ description: >-
   verbose_levels.rs ports `init_verbose_loggers` from debug_utils.py as a pure plan. `pub enum LogLevel { Info, Debug }`,
   `pub struct LevelPlan { package: Option<LogLevel>, router: Option<LogLevel>, proxy: Option<LogLevel> }` (None means leave the
   logger alone) and `pub fn plan_verbose_levels(worker_config: Option<&str>, worker_config_is_file: bool, litellm_log: &str,
-  warn: &mut dyn FnMut(&str)) -> LevelPlan`. The caller (B121, with B012's logging setup) applies the plan to the three
+  warn: &mut dyn FnMut(&str)) -> LevelPlan`. The caller (B8375, with B012's logging setup) applies the plan to the three
   tracing targets; this task does not touch tracing or any global state. Rules, in LiteLLM's order: an absent WORKER_CONFIG, or
   one that names an existing file (`worker_config_is_file`), gives the empty plan. Otherwise decode it with
   decode_worker_config. A decode error calls warn once with "Failed to init verbose loggers: {error}" and returns the plan built
@@ -216,10 +216,10 @@ out_of_scope:
   - "_get_default_unvicorn_init_args, _apply_uvicorn_max_requests_jitter, _get_reload_options, _patch_statreload_extra_paths, _configure_dev_reload, _get_loop_type: B4176 owns them."
   - "_init_hypercorn_server, _init_granian_server, _run_gunicorn_server, _prometheus_callback_configured, _maybe_setup_prometheus_multiproc_dir: B4177 owns them."
   - "The database URL, token auth, KMS decrypt, migration and pgbouncer blocks of run_server, and the module-level DB helper functions: B710, B717, B051 and their siblings own them."
-  - "The click option declarations and the run_server call order: the umbrella B121 owns the clap root and calls the functions from this task in run_server's order."
-  - "save_worker_config in proxy_server.py has no owner yet; this task only decodes what it stores. See the notes."
+  - "The click option declarations and the run_server call order: the task B8375 owns the clap root and calls the functions from this task in run_server's order."
+  - "save_worker_config: B8375 writes WORKER_CONFIG and B8374 reads it; this task only decodes what it stores."
   - "configure_gc_thresholds, the memory and task routes, /debug/report and /otel-spans in debug_utils.py: B4173, B4174 and B4171 own them."
-  - "run_setup_wizard behind --setup: B135 owns litellm/setup_wizard.py."
+  - "run_setup_wizard: B8542 builds it and B8375 calls it behind --setup."
   - "generate_feedback_box and the other callers of show_banner (proxy_server.py, the lite CLI shell, the cli_sso_success page): their own tasks call banner::LITELLM_BANNER or show_banner."
   - "_drop_script_dir_from_sys_path, load_dotenv with LITELLM_MODE, sys.path edits and litellm.json_logs: Python import machinery with no native equivalent."
 pitfalls:

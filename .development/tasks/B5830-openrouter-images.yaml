@@ -153,8 +153,8 @@ out_of_scope:
   - B6080 owns OpenRouterException (as OpenRouterError), chat, embedding, Responses and decisions for OpenRouter, and common_utils.py.
   - B5360 owns choosing the OpenRouter image config for a model; the factories here ignore the model.
   - B997 owns the image provider contracts these configs implement. B1120 owns get_image_content_type and the image input types.
-  - B998 and B999 own the image generation and image edit call paths. B041 owns _complete_openrouter-style key and base resolution (OPENROUTER_API_KEY, OPENROUTER_API_BASE, litellm.api_key), provider registration in dispatch and the HTTP oracle cases.
-  - litellm/types/llms/openrouter.py stays with B041; nothing here needs it.
+  - B998 and B999 own the image generation and image edit call paths. B8311 supplies OPENROUTER_API_KEY, OPENROUTER_API_BASE and litellm.api_key from its gateway_provider_keys section and builds these configs in dispatch; no HTTP case covers them until an image route selects openrouter.
+  - litellm/types/llms/openrouter.py only holds TypedDicts and is not built; nothing here needs it.
 pitfalls:
   - Generation never reads OPENROUTER_API_BASE and never fails without a key. Edit reads the base env var and fails with "OPENROUTER_API_KEY is not set". They look alike and are not.
   - Generation adds no "modalities" field, but it still skips a caller option named modalities. Edit adds modalities ["image", "text"] itself.

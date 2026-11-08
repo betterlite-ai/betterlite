@@ -1,0 +1,14 @@
+id: B8395
+milestone: M8 platform
+title: ProxyLogging failure hook, proxy-only error logging and alert dispatch
+status: todo
+depends_on: [B8390, B207, B7323]
+file: tasks/B8395-failure-hook-alerts.yaml
+covers:
+  - "litellm/proxy/utils.py"
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,94 @@
+id: B8603
+title: Stream keepalive heartbeats
+description: >-
+  Build the keepalive pieces of LiteLLM's proxy streaming generator (litellm/proxy/proxy_server.py L9626-L9827): the per-deployment interval lookup, the interval resolver with its short memo, and the stream wrapper that writes a heartbeat while the upstream is quiet. The SSE data generator (B8604) uses them; this task writes no SSE text itself. Everything goes in crates/betterlite-server, module `stream_keepalive` (stream_keepalive.rs and stream_keepalive/), with tests in stream_keepalive/tests.rs. Every name stays at 30 characters or fewer.
+
+  Constants. `KEEPALIVE_MIN_SECONDS` is 1.0, `KEEPALIVE_MAX_SECONDS` is 300.0 and `KEEPALIVE_CACHE_TTL` is 5 seconds.
+
+  Router port. The trait `KeepaliveRouter` stands for the two llm_router calls the code makes. `deployment_params(&self, model_id: &str) -> Option<Map<String, Value>>` replaces `llm_router.get_deployment(model_id=...)` and gives that deployment's litellm_params as a JSON object, or None when no deployment has that id. `group_deployments(&self, model_name: Option<&str>) -> Vec<Value>` replaces `llm_router.get_model_list(model_name=...)` and gives the deployment objects as JSON. The architect wires the real router behind it; tests use a fake.
+
+  `DeploymentKeepalive { seconds: Option<Value>, allow_client_override: bool }` replaces _DeploymentKeepaliveConfig. `deployment_keepalive(router: Option<&dyn KeepaliveRouter>, request_data: &Map<String, Value>, hidden: &Map<String, Value>) -> Option<DeploymentKeepalive>` replaces _keepalive_from_deployment_config (L9690-L9732). `hidden` is the `_hidden_params` of the response or chunk. No router gives None. When `hidden["model_id"]` is a non-empty string, ask `deployment_params` for it: None gives None (the deployment was removed, so the stream does not borrow a sibling's policy), and a found deployment gives its `keepalive_seconds` (a missing key or JSON null is None) and `allow_client_override` true only when `allow_client_keepalive_override` is the JSON bool true. Without a model_id, list `group_deployments` for `request_data["model"]` (None when that is not a string) and build each deployment's pair of `litellm_params.keepalive_seconds` (missing or null counts as no value) and the override flag, where a missing or non-object `litellm_params` gives (no value, false). When exactly one distinct pair remains, return it; with zero or several, return None. Two numbers are the same value when they are equal as f64 (5 and 5.0 match), and a string never equals a number.
+
+  `is_explicit_keepalive_disable(raw: Option<&Value>) -> bool` replaces _is_explicit_keepalive_disable (L9735-L9741). Only a JSON number or string can disable. A number disables when it is zero or below. A string is parsed like Python's float(): surrounding whitespace is ignored, and a sign, a decimal point, an exponent, single underscores between digits and the words inf, infinity and nan (any case) are accepted; it disables when the parsed value is zero or below, so "-inf" disables and "nan" does not. A string that does not parse does not disable. Put that parse in one function `parse_python_float(text: &str) -> Option<f64>` in this module and use it in both places below.
+
+  `resolve_keepalive_seconds(router, request_data, hidden, global: Option<&PingSetting>) -> f64` replaces _resolve_keepalive_seconds (L9744-L9785). `PingSetting` is B7324's type in crates/betterlite-server/src/keepalive_interval.rs (`Seconds(f64)` or `Text(String)`), and `global` is LiteLLM's `litellm.sse_keepalive_ping_interval_seconds` (default none), which the caller passes in. Steps: look up `deployment_keepalive`; when its seconds value is an explicit disable, return 0.0. The client value is `request_data["keepalive_seconds"]` only when the deployment config exists and allows the override; a JSON null client value counts as absent. The raw value is the client value, else the deployment value, else the global value. A number gives itself, a string goes through parse_python_float (a failed parse returns 0.0), and anything else (absent, a bool, an object) gives 0.0. A value of zero or below returns 0.0. Otherwise clamp it into 1.0..=300.0 the way Python's `max(1.0, min(value, 300.0))` does: infinity gives 300.0 and NaN gives 1.0. When the clamped value differs from the value (NaN always differs), log at info "keepalive_seconds={value} clamped to {clamped} [min=1.0, max=300.0]".
+
+  `KeepaliveResolver` replaces _make_keepalive_resolver (L9791-L9827) and its inner _resolve. It is built with the router (`Option<Arc<dyn KeepaliveRouter>>`), the request data (`Arc<Map<String, Value>>`) and the global setting, and has `resolve(&mut self, hidden: &Map<String, Value>) -> f64`. When `hidden["model_id"]` is a non-empty string equal to the last remembered id and less than KEEPALIVE_CACHE_TTL has passed since that id was resolved, return the remembered value without calling the router. Otherwise call resolve_keepalive_seconds, and when the model_id is a non-empty string remember the id, the value and the time. A chunk without a model_id always resolves fresh and does not touch the memo. Read the time from `tokio::time::Instant` so paused-clock tests control it.
+
+  Wrapper. The trait `KeepaliveSource` has `fn hidden_params(&self) -> Option<&Map<String, Value>>`; the generator implements it for its items. `Beat<T>` is `Item(T)` or `Ping`. `with_keepalive(items, resolver, initial_seconds) -> impl Stream<Item = Beat<T>>` replaces _iter_with_keepalive (L9634-L9682); `items` is any `Stream<Item = T> + Send + 'static` with `T: KeepaliveSource`. While the current interval is 0 or below, forward each item as soon as it arrives with no timer. Otherwise wait for the next item for at most the interval: when the wait times out, yield `Ping` and wait again with the same interval; when an item arrives, yield it. After every real item, set the current interval to `resolver.resolve(hidden)` with the item's hidden params (an empty map when it has none). The stream ends when `items` ends. A timeout on `StreamExt::next()` is cancel safe, so no item is lost and no task is spawned; dropping the wrapper drops the pending wait. The first interval comes from the caller, which resolves it against the response's own hidden params.
+
+  Tests use `tokio::time::pause` so no test sleeps, and a recording fake router that counts calls. Helper oracle cases compare is_explicit_keepalive_disable with LiteLLM through the operation named b8603; the rest reads the router and LiteLLM's module settings, so it is covered by Rust tests, and the wave 17 inference wiring part proves the heartbeat over HTTP.
+scope:
+  paths:
+  - crates/betterlite-server/src/stream_keepalive.rs
+  - crates/betterlite-server/src/stream_keepalive/**
+  - tools/oracle/cases/helpers/stream-keepalive/**
+  - tools/oracle/helpers/b8603.py
+  - tools/oracle/helpers/b8603/**
+  - tools/oracle/src/helpers/server/b8603.rs
+  - tools/oracle/src/helpers/server/b8603/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9626-L9682
+  why: The sentinel, the min and max constants and _iter_with_keepalive with its timeout loop and re-resolve after each chunk.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9685-L9741
+  why: _DeploymentKeepaliveConfig, the model_id lookup that refuses a stale id, the all-deployments-agree group rule and _is_explicit_keepalive_disable.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9744-L9827
+  why: _resolve_keepalive_seconds (hard disable, client override gate, global fallback, clamp and log) and the five-second memo in _make_keepalive_resolver.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9881-L9901
+  why: How the generator starts the wrapper (initial interval from the response, wrap whenever a router exists) and turns a ping into a frame.
+- url: https://docs.litellm.ai/docs/proxy/config_settings
+  why: litellm_settings.sse_keepalive_ping_interval_seconds and the per-deployment keepalive_seconds and allow_client_keepalive_override params.
+dod:
+- text: >-
+    is_explicit_keepalive_disable is true for 0, -1, "0", " -2.5 " and "-inf", and false for 5, "5", "abc", "nan", null and a missing value.
+  proof: [keepalive-tests, oracle, helper-python]
+- text: >-
+    deployment_keepalive returns None without a router and for a model_id the router no longer knows, reads a known deployment's
+    keepalive_seconds and override flag, and without a model_id returns the shared pair only when every deployment of the group agrees.
+  proof: [keepalive-tests]
+- text: >-
+    resolve_keepalive_seconds returns 0 for a deployment's explicit disable even when an allowed client sends a positive value,
+    uses the client value only when the deployment allows it, falls back to the deployment value and then the global setting,
+    returns 0 for zero, negative and unparsable values, and clamps to 1.0..=300.0 with NaN giving 1.0 and infinity giving 300.0.
+  proof: [keepalive-tests]
+- text: >-
+    KeepaliveResolver serves a repeated model_id from its memo for under five seconds, resolves again after five seconds or for a
+    different id, and always resolves fresh for a chunk without a model_id.
+  proof: [keepalive-tests]
+- text: >-
+    with_keepalive forwards items without a timer while the interval is 0, yields Ping after each quiet interval without losing
+    the pending item, re-resolves the interval after every real item (turning heartbeats on or off mid-stream), and ends when the items end.
+  proof: [keepalive-tests]
+checks:
+  optional: []
+  commands:
+  - id: keepalive-tests
+    why: the disable rule, the deployment lookup, the resolve order, the clamp, the memo or the heartbeat wrapper is missing or wrong
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^stream_keepalive::/)'
+  - id: helper-python
+    why: the explicit disable rule has no pinned LiteLLM comparison through the b8603 helper
+    run: grep -qE '^[[:space:]]+b8603:' tools/oracle/fuzz/corpus/helper_case/b8603-* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/stream-keepalive/explicit-disable-values.yaml
+- tools/oracle/cases/helpers/stream-keepalive/not-a-disable.yaml
+deviations:
+- what: The router and the global interval reach this module through the KeepaliveRouter trait and a constructor argument instead of the llm_router and litellm module globals.
+  why: betterlite wires dependencies through constructors; the interval a client sees is the same.
+out_of_scope:
+- "async_data_generator (L9830-L10079), which starts the wrapper and writes `: ping` frames: B8604. The chunk shaping and SSE frame helpers (L9344-L9623): B8602."
+- "coerce_keepalive_interval, ttft_keepalive_interval and the first-byte keepalive in common_request_processing.py and sse_keepalive.py: B7324 and B005. They decide the ping before the first upstream byte, while this module decides it between chunks."
+- "Loading litellm_settings.sse_keepalive_ping_interval_seconds: the config section of B089 (assistant_keepalive) loads it, and the composition root passes its value here."
+- "The rest of litellm/proxy/proxy_server.py: owners by area are listed in the proxy_server.py inventory head of B1216, B1125, B850, B848, B779, B899, B849 and B851."
+pitfalls:
+- 'A model_id the router no longer resolves returns None at once; it must not fall through to the group rule, because a sibling deployment never served this stream.'
+- 'A deployment keepalive_seconds of 0 (or "0", "-1") disables heartbeats even when allow_client_keepalive_override is true and the client sends keepalive_seconds 5.'
+- 'When the group of deployments disagrees, there is no deployment config at all, so the client value is ignored and the global sse_keepalive_ping_interval_seconds applies.'
+- 'A deployment that leaves keepalive_seconds unset counts as its own value in the group rule, so one such deployment next to a configured one makes the group disagree.'
+- 'An unparsable string such as "fast" resolves to 0 (off); it does not fall back to the deployment or global value.'
+- 'f64::clamp keeps NaN; LiteLLM''s max(1.0, min(nan, 300.0)) gives 1.0, so write the comparison by hand.'
+- 'A ping does not re-resolve the interval; only a real item does, and the memo is keyed only on a non-empty string model_id.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

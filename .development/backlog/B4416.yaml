@@ -1,14 +1,14 @@
 id: B4416
 milestone: M8 platform
 title: Authenticate Vault requests and resolve secret targets
-status: todo
+status: done
 depends_on: [B002, B4410, B4418]
 file: tasks/B4416-vault-auth-targets.yaml
 covers:
   - "litellm/secret_managers/hashicorp_secret_manager.py"
 parent: B129
 split_from: B129
-resolution: null
+resolution: merged
 superseded_by: null
 blocked_reason: null
-pr: null
+pr: 884
