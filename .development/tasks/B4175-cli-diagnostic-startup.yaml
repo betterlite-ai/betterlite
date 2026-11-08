@@ -1,6 +1,9 @@
 id: B4175
 title: CLI diagnostic commands and startup input helpers
 description: >-
+  The skeleton already declares this task's fuzz [[bin]] with an empty target file; fill that target and add the crate dependency it needs, without a second [[bin]] entry.
+
+
   Build the small commands and the input helpers that LiteLLM's `litellm` entry point (proxy_cli.py run_server) runs before it
   starts a server, as plain library code in the crates/betterlite crate. Four new modules, each declared in lib.rs by the
   skeleton: banner, diagnostic_commands, startup_input and verbose_levels. Nothing here parses argv or starts a server. The

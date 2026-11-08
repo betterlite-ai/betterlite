@@ -58,7 +58,6 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/spend_estimate.rs
     - crates/betterlite-server/fuzz/corpus/spend_estimate/**
-    - tools/oracle/cases/http/spend-estimates/**
     - tools/oracle/helpers/b1725.py
     - tools/oracle/helpers/b1725/**
     - tools/oracle/src/helpers/server/b1725.rs
@@ -82,10 +81,12 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L5110-L5131
     why: Nullable budget amounts, period and reset timestamp response contract.
 dod:
-  - text: Cost estimates honor model-first precedence, last matching deployment and the limited token override contract.
-    proof: [estimate-tests, estimate-corpus, oracle]
-  - text: Provider budget reads and weekly/monthly query service preserve their source errors and perform no debit.
-    proof: [estimate-tests, provider-view-tests, provider-view-corpus, oracle]
+  - text: Cost estimates honor model-first precedence, last matching deployment and the limited token override contract. B8662 proves it over HTTP.
+    proof: [estimate-tests, estimate-corpus]
+  - text: Provider budget reads and weekly/monthly query service preserve their source errors and perform no debit. B8662 proves it over HTTP.
+    proof: [estimate-tests, provider-view-tests, provider-view-corpus]
+  - text: The handlers answer through tower's oneshot over the module's own Router with fake ports; B8662 merges them through B069's spend routes and proves them over HTTP.
+    proof: [estimate-tests]
 checks:
   optional: [mutants]
   commands:
@@ -101,11 +102,7 @@ checks:
     - id: estimate-corpus
       why: Estimate-body parsing has no newly committed malformed and precedence samples.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/spend_estimate)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_spend_estimate_corpus)'
-oracle_cases:
-  - tools/oracle/cases/http/spend-estimates/model-response-precedence-and-missing-messages.yaml
-  - tools/oracle/cases/http/spend-estimates/alias-last-deployment-token-overrides.yaml
-  - tools/oracle/cases/http/spend-estimates/unmapped-model-and-provider-budget-errors.yaml
-  - tools/oracle/cases/http/spend-estimates/provider-spend-and-reset-projection.yaml
+oracle_cases: []
 deviations: []
 out_of_scope:
   - In types/utils.py this leaf extracts BudgetConfig's provider-limit aliases; B014 retains its unrelated shared type helpers and B020/B383 retain non-provider budget policy.

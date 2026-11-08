@@ -1,0 +1,67 @@
+id: B8745
+title: Catalog adapters for athina, greenscale, promptlayer, lago and openmeter
+description: >-
+  Five small HTTP loggers are merged but unreachable: Athina, Greenscale and PromptLayer
+  (crates/betterlite-logging/src/http_analytics_loggers.rs, B3961) and Lago and OpenMeter (finops/metering.rs and
+  finops/, B3072). Each takes an injected Delivery or MeteringSender and a clock. This task implements B8740's
+  CallbackLogger for each and fills its catalog module.
+
+
+  Wrappers go in crates/betterlite-logging/src/registry/catalog/<name>.rs and <name>/ (athina, greenscale,
+  promptlayer, lago, openmeter). Map the LoggerEvent's payload into each logger's input. LiteLLM reaches athina,
+  greenscale and promptlayer only from the sync success handler body (promptlayer L2872-L2880, greenscale L3038-L3061,
+  athina L3062-L3072), so those wrappers implement log_success_event alone. Lago and OpenMeter are CustomLogger
+  classes with sync and async success events; OpenMeter's legacy string branch also sends a stream event when the
+  stream has no complete response (L3111-L3131, L3453-L3476), so its wrapper implements log_stream_event and
+  async_log_stream_event too.
+
+
+  Production senders over CatalogInputs.http where none exists, posting what each trait method describes. build
+  follows set_callbacks for athina, greenscale and promptlayer (L4465-L4473, L4494-L4495) and the lago and openmeter
+  arms (L4524-L4538). Read keys through inputs.env with the names the merged settings use; a missing required key
+  gives CatalogError::Init with LiteLLM's message.
+
+
+  Tests in each <name>/tests.rs: resolve by name, a missing key gives Init, and the implemented events reach a fake
+  sender with the mapped fields.
+scope:
+  paths:
+    - crates/betterlite-logging/src/registry/catalog/athina.rs
+    - crates/betterlite-logging/src/registry/catalog/athina/**
+    - crates/betterlite-logging/src/registry/catalog/greenscale.rs
+    - crates/betterlite-logging/src/registry/catalog/greenscale/**
+    - crates/betterlite-logging/src/registry/catalog/promptlayer.rs
+    - crates/betterlite-logging/src/registry/catalog/promptlayer/**
+    - crates/betterlite-logging/src/registry/catalog/lago.rs
+    - crates/betterlite-logging/src/registry/catalog/lago/**
+    - crates/betterlite-logging/src/registry/catalog/openmeter.rs
+    - crates/betterlite-logging/src/registry/catalog/openmeter/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4463-L4495
+    why: set_callbacks builds the athina, greenscale and promptlayer loggers.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L4524-L4538
+    why: The lago and openmeter arms.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L3111-L3131
+    why: OpenMeter's sync stream and success events.
+dod:
+  - text: athina, greenscale and promptlayer resolve to sync success only wrappers over the merged loggers.
+    proof: [adapter-tests]
+  - text: lago and openmeter resolve to wrappers with sync and async success, and openmeter also sends stream events.
+    proof: [adapter-tests]
+checks:
+  optional: []
+  commands:
+    - id: adapter-tests
+      why: a wrapper is missing, sends an event LiteLLM never sends or the module still returns Unavailable
+      run: cargo nextest run --locked -p betterlite-logging --no-tests=fail -E 'test(/^registry::catalog::(athina|greenscale|promptlayer|lago|openmeter)::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The merged loggers: B3961 and B3072."
+pitfalls:
+  - The three legacy string loggers run from the sync success handler, which LiteLLM also runs in a thread for async calls; an async event on top would send each call twice.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

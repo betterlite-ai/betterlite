@@ -200,16 +200,16 @@ deviations:
     why: A failing check must never turn into a server error or a skipped check.
   - what: The 403 or audit description for a signature or claim failure carries the Rust library's cause text and not PyJWT's.
     why: The wording comes from different libraries. The code and every description this task spells out stay the same, and the oracle cases ignore /error_description for these.
-  - what: The JWKS cache belongs to the IssuerJwks value the composition root builds, not to a module-level InMemoryCache, and it has no 200 item cap.
+  - what: The JWKS cache belongs to the IssuerJwks value B8621 builds, not to a module-level InMemoryCache, and it has no 200 item cap.
     why: The repo rules forbid module-level state, and one entry per configured issuer never reaches the cap. The 3600 second lifetime and the strict expiry check are kept.
   - what: Outbound JWKS and discovery requests use the B173 pooled client through the JsonGet port, so its timeouts and body size caps apply, and they replace httpx's defaults.
     why: Every outbound request in betterlite goes through the pool.
   - what: Trimming uses Rust's trim, which does not strip the four ASCII separators 0x1c to 0x1f that Python's str.strip removes.
     why: Only matters for an account name that starts or ends with one of those control characters.
 out_of_scope:
-  - "bridge_token_flow.load_active_user_by_id: B4658 owns it. The production ActiveUserEmail is a thin impl on B4658's ActiveSubjects (load_active_user with the cache source, keeping user_email), written in the composition root B137."
-  - "get_user_oauth_credential and the credential decryption: B4713 owns them. The production UserCredentialStore over them is written in the composition root B137."
-  - "The production JsonGet over the B173 pooled client with httpxSpecialProvider.Oauth2Check semantics: written in the composition root B137, since betterlite-mcp does not depend on betterlite-http."
+  - "bridge_token_flow.load_active_user_by_id: B4658 owns it. The production ActiveUserEmail is a thin impl on B4658's ActiveSubjects (load_active_user with the cache source, keeping user_email), written in B8621."
+  - "get_user_oauth_credential and the credential decryption: B4713 owns them. The production UserCredentialStore over them is written in B8621."
+  - "The production JsonGet over the B173 pooled client with httpxSpecialProvider.Oauth2Check semantics: written in B8621, since betterlite-mcp does not depend on betterlite-http."
   - "discoverable_endpoints.py token and authorize routes: B4675 and B4676 call enforce_oauth_identity_binding and pass the nonce. refresh_user_oauth_token in db.py: B4715. per_user_oauth_store.py and authz_code_refresher.py: their owners call credential_binding_matches and BindingValidator."
   - "MCPServer and MCPOAuthIdentityBinding and the rule that a binding needs gateway managed per-user OAuth: B6590."
   - "Disabling the direct oauth-user-credential POST in enforce mode: that check is in the route, not in this file."

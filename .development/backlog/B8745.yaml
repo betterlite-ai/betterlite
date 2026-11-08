@@ -1,0 +1,13 @@
+id: B8745
+milestone: M8 platform
+title: Catalog adapters for athina, greenscale, promptlayer, lago and openmeter
+status: todo
+depends_on: [B8741, B3961, B3072, B173]
+file: tasks/B8745-http-logger-adapters.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

@@ -1,0 +1,140 @@
+id: B8675
+title: Mount the config admin, admin settings and plugin routes and back ProxyUrls
+description: >-
+  Five finished route modules answer 404 today because nothing merges them into the app. B8594 built POST
+  /config/update in config_update.rs, B8595 built POST /config/field/update, GET /config/field/info, GET /config/list
+  and POST /config/field/delete in config_fields.rs, B8596 built POST /config/callback/delete, GET
+  /get/config/callbacks and GET /config/yaml in callback_config.rs, B8389 built GET /model/settings and GET
+  /alerting/settings in admin_settings_views.rs, and B8230 built GET /api/plugins, GET /api/plugins/auth-token and the
+  seven-method /plugin-proxy/{plugin_name}/{path} route in plugin_routes.rs. No B1100 registry entry merges any of
+  them. This task builds their state from the loaded Config and Shared, mounts them inside the auth layers, proves
+  every path over HTTP, and gives B4785's ProxyUrls port its production type.
+
+
+  Where. crates/betterlite-server/src/app/admin.rs is the area file B8610's app.rs calls. The skeleton stubs it with
+  `pub fn mount(router: Router, state: &Arc<ServerState>) -> Router`, `pub fn mount_public(router: Router, state:
+  &Arc<ServerState>) -> Router` and `pub async fn start(state: &Arc<ServerState>)`, and declares the submodules
+  `config`, `models`, `prompts`, `search_usage`, `roi` and `urls`, each as an empty file. Four other admin parts
+  (B8676, B8672, B8673, B8677) add their own call to admin.rs, so add only one line per call and touch no other
+  line. Put this task's code in app/admin/config.rs and app/admin/urls.rs with tests in app/admin/config/tests.rs.
+  Read each route module on the branch before writing and use the names and constructor arguments it exports; build
+  every state value once per mount, never per request. No statics.
+
+
+  1. State (config.rs). `pub(crate) fn mount_config(router: Router, state: &Arc<ServerState>) -> Router` builds what
+  each module's routes function takes from `state.config` and `state.shared`: `shared.db` (None without
+  DATABASE_URL, so the routes answer LiteLLM's db_not_connected_error or "No DB Connected" themselves),
+  `shared.proxy_config` (B8380's ProxyConfigState, the config read, save and the config-owned key checks),
+  `shared.plugins` (B8230's PluginRegistry; the same Arc that B8595's field update re-registers and that
+  plugin_routes reads, so an update shows on the next /api/plugins call), `shared.general_settings`,
+  `shared.proxy_logging` (B8389's span close and denial log), `shared.secrets` where B8596's alert resolution takes
+  it, and `shared.router_views.current()` per request wherever a module reads router settings. B8594 and B8596 end
+  with B8381's add_deployment, and B8381's DeploymentSync lives in crates/betterlite, so pass the handle B8613 hands
+  over as `shared.deployment_sync` (B8611's DeploymentSyncPort) to the routes functions that take it. The audit sink of B8594 is B2330's, over
+  `shared.db`.
+
+  2. Mount (admin.rs and config.rs). admin.rs `mount` calls `config::mount_config` once. mount_config merges
+  config_update::routes, config_fields::routes, callback_config::routes, admin_settings_views::routes and
+  plugin_routes::router, each once and each on its own line. LiteLLM puts user_api_key_auth on every one of these
+  paths, /config/yaml and the plugin proxy included, so nothing goes in mount_public. start stays empty for this part.
+
+  3. ProxyUrls (urls.rs). B4785 declares the port `ProxyUrls` with `custom_url(&self, request_base_url: &str,
+  request_root_path: &str) -> String`, and B7323 built `CustomUrls` whose method of the same name is LiteLLM's
+  get_custom_url with route None. Write `impl ProxyUrls for CustomUrls` that forwards to that method, and
+  `pub(crate) fn proxy_urls(config: &Config) -> CustomUrls`, which is `CustomUrls::new` over B7323's section value
+  `config.sections.proxy_base_url.proxy_base_url` (None unset, Some("") when set but empty, never trimmed). The agents
+  mount part passes this value where B4785's state takes a ProxyUrls.
+
+
+  Tests in app/admin/config/tests.rs (module `app::admin::config::tests`, names start with `oneshot_` or `urls_`) build
+  a ServerState from the in-memory fakes B8610's tests use and call the router mount_config returns with tower's
+  oneshot. They assert that every path above answers something other than 404 for its method, that POST
+  /config/field/update and GET /api/plugins read the same PluginRegistry (replace the registry, then list), and that
+  proxy_urls with None, Some("") and Some("https://proxy.example.com") gives the request base URL, "" and the proxy
+  URL joined with a root path of "/api".
+
+
+  HTTP oracle cases through the booted proxy, with master key oracle-master and no database. New cases in
+  tools/oracle/cases/config-admin/: POST /config/update without a key (401); POST /config/update with the master key
+  and router_settings {"not_a_setting": 1} (400 "Unsupported router settings: not_a_setting are not valid router
+  settings"); POST /config/update with the master key and general_settings {"max_parallel_requests": 5} (LiteLLM's no
+  database answer); POST /config/field/update and POST /config/field/delete with field_name max_parallel_requests
+  (400 db_not_connected_error); GET /config/field/info?field_name=not_a_field (invalid field); GET
+  /config/list?config_type=general_settings (the list with every stored_in_db null); POST /config/callback/delete with
+  {"callback_name": "langfuse"} (400 db_not_connected_error); GET /get/config/callbacks with success_callback
+  ["langfuse"] in litellm_settings and LANGFUSE_PUBLIC_KEY set (the master key is an admin, so values are masked, not
+  REDACTED); GET /config/yaml with the body {} and with no body, and GET /config/yaml without a key (401). The
+  admin settings and plugin cases that B8389 and B8230 planned move here unchanged: their folders
+  tools/oracle/cases/admin-settings/ and tools/oracle/cases/http/plugin-routes/ are in this task's scope, and the
+  worker writes them from those tasks' texts.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/admin.rs
+    - crates/betterlite-server/src/app/admin/config.rs
+    - crates/betterlite-server/src/app/admin/config/**
+    - crates/betterlite-server/src/app/admin/urls.rs
+    - crates/betterlite-server/src/app/admin/urls/**
+    - tools/oracle/cases/config-admin/**
+    - tools/oracle/cases/admin-settings/**
+    - tools/oracle/cases/http/plugin-routes/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19309-L19320
+    why: GET /config/yaml with user_api_key_auth and a ConfigYAML body parameter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/plugin_routes.py#L196-L260
+    why: The three plugin routes, each with user_api_key_auth, and the seven proxy methods.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8310-L8346
+    why: get_custom_url and get_proxy_base_url, the behavior behind ProxyUrls.
+dod:
+  - text: mount_config merges the five config admin route modules once each inside the auth layers, with state built once from Config and Shared.
+    proof: [config-mount-tests, oracle]
+  - text: A plugin registered through /config/field/update is listed by /api/plugins, because both read the one PluginRegistry in Shared.
+    proof: [config-mount-tests]
+  - text: CustomUrls implements ProxyUrls and proxy_urls keeps PROXY_BASE_URL unset, empty or set exactly as LiteLLM reads it.
+    proof: [config-mount-tests]
+  - text: The config admin, admin settings and plugin routes answer like LiteLLM through the booted proxy for the no key, no database, validation and admin cases.
+    proof: [oracle]
+checks:
+  optional: []
+  commands:
+    - id: config-mount-tests
+      why: a config admin or plugin router is not merged, merged outside the auth layers, built with a second registry, or ProxyUrls ignores PROXY_BASE_URL
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::admin::config::/)'
+oracle_cases:
+  - tools/oracle/cases/config-admin/update-no-key.yaml
+  - tools/oracle/cases/config-admin/update-unknown-router-setting.yaml
+  - tools/oracle/cases/config-admin/update-no-database.yaml
+  - tools/oracle/cases/config-admin/field-update-no-database.yaml
+  - tools/oracle/cases/config-admin/field-delete-no-database.yaml
+  - tools/oracle/cases/config-admin/field-info-unknown-field.yaml
+  - tools/oracle/cases/config-admin/list-general-settings.yaml
+  - tools/oracle/cases/config-admin/callback-delete-no-database.yaml
+  - tools/oracle/cases/config-admin/get-callbacks-admin.yaml
+  - tools/oracle/cases/config-admin/config-yaml-empty-body.yaml
+  - tools/oracle/cases/config-admin/config-yaml-no-body.yaml
+  - tools/oracle/cases/config-admin/config-yaml-no-key.yaml
+  - tools/oracle/cases/http/plugin-routes/list-empty.yaml
+  - tools/oracle/cases/http/plugin-routes/list-without-key.yaml
+  - tools/oracle/cases/http/plugin-routes/auth-token-without-salt-503.yaml
+  - tools/oracle/cases/http/plugin-routes/proxy-not-admin-403.yaml
+  - tools/oracle/cases/http/plugin-routes/proxy-unknown-plugin-404.yaml
+
+  - tools/oracle/cases/admin-settings/model-settings.yaml
+  - tools/oracle/cases/admin-settings/model-settings-no-key.yaml
+  - tools/oracle/cases/admin-settings/alerting-settings-no-database.yaml
+  - tools/oracle/cases/admin-settings/alerting-settings-no-key.yaml
+
+deviations: []
+out_of_scope:
+  - "The handlers, their state types and the redaction helpers: B8594, B8595, B8596, B8389 and B8230."
+  - "The DeploymentSync behind add_deployment and its hand-over: B8381 and B8613."
+  - "Building B4785's route state with the ProxyUrls value: the agents mount part."
+pitfalls:
+  - The plugin registry, the general settings store and the proxy config state must be the Arcs in Shared; a second PluginRegistry would leave /api/plugins blind to plugins saved through /config/field/update.
+  - GET /config/yaml declares a ConfigYAML body parameter, so LiteLLM answers a GET without a body differently from one with {}; keep both cases.
+  - An empty PROXY_BASE_URL is Some(""), and LiteLLM then hands out an empty base URL instead of the request one.
+  - The plugin proxy route takes GET, POST, PUT, DELETE, PATCH, OPTIONS and HEAD; merging it twice or under a second path panics at boot.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

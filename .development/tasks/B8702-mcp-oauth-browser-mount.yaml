@@ -1,0 +1,114 @@
+id: B8702
+title: Mount the MCP OAuth browser routes and the /v1/mcp/server/oauth routes
+description: >-
+  B7971's OauthBrowser (GET /authorize and /{mcp_server_name}/authorize, /authorize/mcp-session, /authorize/flow,
+  POST /authorize/complete, /callback, POST /register and /{mcp_server_name}/register, /.well-known/litellm-cli-auth)
+  and B4719's OauthRoutes (the /v1/mcp/server/oauth/... routes for temporary servers) are built and never merged. This
+  task builds their states from McpState and mounts them.
+
+
+  Code goes in crates/betterlite-server/src/app/mcp/oauth_browser.rs and app/mcp/oauth_browser/ (ports.rs, a tests.rs
+  beside each), plus one line in app::mcp::mount_public (crates/betterlite-server/src/app/mcp.rs) that merges
+  `oauth_browser::router(&McpState::shared(state), state)`. Both families go outside the auth layers: LiteLLM serves
+  the browser routes with no key, and B4719's routes authenticate inside the handler through RouteAuth with a session
+  cookie fallback, so the app's key layer would refuse a cookie-only request that LiteLLM accepts.
+
+
+  OauthBrowser (B7971) takes the registry from McpCore, McpState's oauth pieces built by B8623 (SealCipher, the
+  OauthFlows implementation, and the B4675 gateway pieces: cipher, token source, consent renderer, single-use guard),
+  the consent team lookup, a system clock, the trusted-proxy settings for the client ip (B743), and these ports in
+  ports.rs. SessionReader is B4655's session cookie reader (LiteLLM's _session_cookie_user_id). RedirectTrust is
+  B4655's validate_trusted_redirect_uri, its HTTPException mapped to TrustRejection with status and text.
+  CredentialRead is B4713's get_user_oauth_credential, a missing database being ReadFailure::NoDatabase. The
+  reachability lookup (B7532's UserAccess::user_can_reach, LiteLLM's _user_can_reach_mcp_server) and
+  token_exchange_available (B4663's token_exchange_available over the loaded config) come from one value handed to both
+  B7971 and the B7532 flows, as LiteLLM shares the function.
+
+
+  OauthRoutes (B4719) takes McpState's OauthFlows implementation (B7321's), McpState's tokens.sessions (B4718's
+  SessionStore built by B8622) and a RouteAuth over B855's _user_api_key_auth_builder with every provider header
+  argument empty, so only api_key and request_data matter. Its AuthFailure passes through with the status and body
+  the builder defines.
+
+
+  Every first-segment path parameter must be named mcp_server_name, as B8624's routers and B8592 name it, or matchit
+  refuses the merge. Tests in app::mcp::oauth_browser:: : the router merged with B8624's builds, every path answers
+  something other than 404 through tower's oneshot, SessionReader returns None without a cookie, and RedirectTrust
+  maps a rejection to its status and text.
+
+
+  HTTP oracle cases. The cases B7971 and B4719 planned through the booted proxy move here, because their routes only
+  answer once this task mounts them. Write each listed case from its route task's description, DoD and case names
+  (.development/tasks/B7971-mcp-oauth-browser-routes.yaml and B4719-mcp-oauth-browser-routes.yaml), with the config,
+  key and ignore rules each describes.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/mcp.rs
+    - crates/betterlite-server/src/app/mcp/oauth_browser.rs
+    - crates/betterlite-server/src/app/mcp/oauth_browser/**
+    - tools/oracle/cases/http/mcp-oauth-routes/**
+    - tools/oracle/cases/http/mcp-oauth-browser/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/discoverable_endpoints.py#L4656-L4962
+    why: The browser routes mounted here and their path parameter names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L2010-L2354
+    why: The four /v1/mcp/server/oauth routes of B4719.
+dod:
+  - text: The OauthBrowser and OauthRoutes routers are merged once each outside the auth layers.
+    proof: [browser-route-tests, oracle]
+  - text: SessionReader, RedirectTrust, CredentialRead, the shared reachability value and RouteAuth forward to their owning crates.
+    proof: [browser-route-tests]
+  - text: The moved B7971 and B4719 cases match LiteLLM through the booted proxy.
+    proof: [browser-route-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: browser-route-tests
+      why: a router is not merged, a path is missing, or a port is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::mcp::oauth_browser::/)'
+    - id: browser-route-cases
+      why: without the case files the oracle proof compares nothing for these routes
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/mcp-oauth-browser tools/oracle/cases/http/mcp-oauth-routes)"
+oracle_cases:
+  - tools/oracle/cases/http/mcp-oauth-routes/authorize-requires-auth-401.yaml
+  - tools/oracle/cases/http/mcp-oauth-routes/authorize-unknown-server-404.yaml
+  - tools/oracle/cases/http/mcp-oauth-routes/authorize-missing-redirect-422.yaml
+  - tools/oracle/cases/http/mcp-oauth-routes/token-requires-auth-401.yaml
+  - tools/oracle/cases/http/mcp-oauth-routes/token-unknown-server-404.yaml
+  - tools/oracle/cases/http/mcp-oauth-routes/token-missing-grant-type-422.yaml
+  - tools/oracle/cases/http/mcp-oauth-routes/register-requires-auth-401.yaml
+  - tools/oracle/cases/http/mcp-oauth-routes/register-unknown-server-404.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/authorize-unknown-server-404.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/authorize-root-no-oauth-server-404.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/authorize-missing-redirect-422.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/authorize-non-oauth-server-400.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/authorize-no-client-id-400.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/mcp-session-missing-params-422.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/register-unknown-server-dummy.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/register-root-dummy.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/register-unknown-server-keeps-redirect-uris.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/register-aggregate-bad-redirect-400.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/register-non-oauth-server-400.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/callback-no-params-400.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/callback-error-no-state-400.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/callback-error-escapes-html.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/callback-error-bad-state-400.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/callback-code-bad-state-incomplete.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/flow-missing-param-422.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/flow-unknown-400.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/complete-missing-flow-422.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/complete-bad-delivery-400.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/complete-unknown-flow-400.yaml
+  - tools/oracle/cases/http/mcp-oauth-browser/cli-auth-contract.yaml
+deviations: []
+out_of_scope:
+  - "Route behavior: B7971, B4719, B4675 and B7532."
+  - "The discovery documents, token routes and BYOK routes: B8624."
+pitfalls:
+  - B7971 and B7532 must get the same reachability value; two copies can disagree after a user reload and let the connect flow grant what authorize refused.
+  - Mounting B4719's routes inside the auth layers breaks the session cookie path, which LiteLLM accepts without an Authorization header.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

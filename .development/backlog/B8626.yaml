@@ -1,0 +1,13 @@
+id: B8626
+milestone: M9 agents and mcp
+title: Mount the /mcp-rest tool routes and the connection preview
+status: todo
+depends_on: [B8620, B8621, B8622, B8610, B4726, B4727, B4728, B4729, B4730, B6593, B8197, B8198, B8199, B8802]
+file: tasks/B8626-mcp-rest-mount.yaml
+covers: []
+parent: B139
+split_from: B139
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

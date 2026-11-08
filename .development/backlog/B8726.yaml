@@ -1,0 +1,14 @@
+id: B8726
+milestone: M9 agents and mcp
+title: MCP legacy SSE transport
+status: todo
+depends_on: [B8721]
+file: tasks/B8726-mcp-sse-transport.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/sse_transport.py"
+parent: B136
+split_from: B136
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

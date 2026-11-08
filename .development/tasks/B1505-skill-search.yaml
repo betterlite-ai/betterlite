@@ -10,7 +10,7 @@ description: >-
   100, but this helper applies the caller's slice directly rather than adding route validation.
 
   Return distinct NotConfigured outcomes for no embedding_model and no router, checking the model first;
-  otherwise use the router_embedder that the wave 17 skills wiring part mounts, so rate-limit, budget and guardrail hooks see the caller identity.
+  otherwise embed through the injected embedder: in the proxy that is B8631's RouterEmbedder, which B994's skill search builds with app::inference::router_embedder(state) and passes in, so rate-limit, budget and guardrail hooks see the caller identity.
   search_hosted_skills rejects every provider except litellm_proxy before loading rows, then asks B1502
   for all accessible candidates and invokes search_skills. Preserve EmbeddingFailed as a result variant,
   not an empty successful list. Cache sharing lives in the injected index; queries must still be embedded
@@ -38,7 +38,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/litellm_proxy/skills/skill_search.py#L26-L161
     why: Ranking text, outcome variants, provider gate and authorized candidate lookup.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/semantic_text_index.py#L73-L119
-    why: The router_embedder boundary (the wave 17 skills wiring part mounts it) retains caller spend and pre-call policy.
+    why: The router_embedder boundary (B8631's RouterEmbedder, passed in by B994) retains caller spend and pre-call policy.
 dod:
   - text: Hosted search ranks bounded text stably and reports unavailable or failed embedding dependencies distinctly.
     proof: [skill-ranking, oracle, skill-search-bridge]
