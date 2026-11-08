@@ -133,6 +133,18 @@ fn an_invalid_regex_falls_back_to_exact_equality() {
 }
 
 #[test]
+fn a_pattern_that_only_the_anchored_wrapper_accepts_does_not_match() {
+    assert!(!evaluate_condition(
+        Some(&one("x)|(.*")),
+        &context(Some("gpt-4"))
+    ));
+    assert!(!evaluate_condition(
+        Some(&one("a)(b")),
+        &context(Some("ab"))
+    ));
+}
+
+#[test]
 fn an_empty_pattern_list_never_matches() {
     assert!(!evaluate_condition(
         Some(&many(&[])),

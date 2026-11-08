@@ -32,6 +32,10 @@ fn model_matches(pattern: &str, model: &str) -> bool {
     if pattern == model {
         return true;
     }
+    // the bare compile rejects what Python's re rejects; the wrapper alone would turn x)|(.* into a match-all
+    if fancy_regex::Regex::new(pattern).is_err() {
+        return false;
+    }
     let anchored = format!(r"\A(?:{pattern})\z");
     let Ok(regex) = fancy_regex::Regex::new(&anchored) else {
         return false;
