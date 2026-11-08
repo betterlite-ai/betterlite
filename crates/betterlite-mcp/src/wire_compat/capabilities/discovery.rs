@@ -15,55 +15,51 @@ pub enum CacheScope {
     Private,
 }
 
+#[serde_with::skip_serializing_none]
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListChangedCapability {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub list_changed: Option<bool>,
 }
 
+#[serde_with::skip_serializing_none]
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ResourcesCapability {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subscribe: Option<bool>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub list_changed: Option<bool>,
 }
 
+#[serde_with::skip_serializing_none]
 #[derive(Clone, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 pub struct ServerCapabilities {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tools: Option<ListChangedCapability>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub prompts: Option<ListChangedCapability>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resources: Option<ResourcesCapability>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub extensions: Option<BTreeMap<String, Object>>,
 }
 
+#[serde_with::skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DiscoverResult {
     pub supported_versions: Vec<String>,
     pub capabilities: ServerCapabilities,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instructions: Option<String>,
     pub result_type: ResultKind,
     pub cache_scope: CacheScope,
     pub ttl_ms: u64,
-    #[serde(rename = "_meta", default, skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "_meta")]
     pub meta: Option<Object>,
 }
 
+#[serde_with::skip_serializing_none]
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct InitializeResult {
     pub protocol_version: String,
     pub capabilities: ServerCapabilities,
     pub server_info: Implementation,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instructions: Option<String>,
 }
 

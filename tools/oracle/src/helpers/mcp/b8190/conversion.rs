@@ -1,30 +1,18 @@
 use betterlite_mcp::client::tools::result::{CallToolResult, InputRequiredResult, ToolCallResult};
 use betterlite_mcp::tools::schemas::McpTool;
 use betterlite_mcp::wire_compat::result_conversion::{
-    complete_call_tool_result, to_call_tool_result,
+    complete_call_tool_result, to_call_tool_result, to_gateway_tool,
 };
 use betterlite_mcp::wire_compat::tool_outcome::{
-    JsonResult, TextResult, ToolFailure, ToolOutcome, WireCompat, parse_http_body,
+    JsonResult, TextResult, ToolFailure, ToolOutcome, WireCompat, parse_http_body, wire_compat_for,
 };
 use betterlite_prompts::arguments::json::Json;
 use serde::Deserialize;
-use serde_json::{Value, json};
+use serde_json::json;
 
 use crate::helpers::HelperResult;
 
 use super::failure;
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ProtocolFields {
-    pub(super) protocol_version: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct BodyFields {
-    body: String,
-}
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
@@ -44,10 +32,34 @@ pub(crate) struct ConvertFields {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct GatewayToolFields {
-    pub(super) tool: McpTool,
-    pub(super) name: String,
+#[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
+pub(crate) enum ConversionInput {
+    WireCompatFor { protocol_version: String },
+    ParseHttpBody { body: String },
+    ToCallToolResult(ConvertFields),
+    CompleteCallToolResult(ConvertFields),
+    ToGatewayTool { tool: McpTool, name: String },
+}
+
+pub(crate) fn run(input: &ConversionInput) -> HelperResult {
+    match input {
+        ConversionInput::WireCompatFor { protocol_version } => {
+            Ok(json!(wire_compat_for(protocol_version)))
+        }
+        ConversionInput::ParseHttpBody { body } => run_parse_body(body),
+        ConversionInput::ToCallToolResult(fields) => {
+            Ok(match to_call_tool_result(fields.outcome(), fields.compat) {
+                ToolCallResult::Complete(result) => json!({ "complete": result }),
+                ToolCallResult::InputRequired(result) => json!({ "input_required": result }),
+            })
+        }
+        ConversionInput::CompleteCallToolResult(fields) => Ok(json!({
+            "complete": complete_call_tool_result(fields.outcome(), fields.compat)
+        })),
+        ConversionInput::ToGatewayTool { tool, name } => to_gateway_tool(tool, name)
+            .map(|gateway| json!(gateway))
+            .map_err(|error| failure("InvalidTool", error.to_string())),
+    }
 }
 
 impl ConvertFields {
@@ -71,8 +83,8 @@ impl ConvertFields {
     }
 }
 
-pub(crate) fn run_parse_body(fields: &BodyFields) -> HelperResult {
-    match parse_http_body(&fields.body) {
+fn run_parse_body(body: &str) -> HelperResult {
+    match parse_http_body(body) {
         ToolOutcome::Text(parsed) => Ok(json!({ "kind": "text", "text": parsed.text })),
         ToolOutcome::Json(parsed) => Ok(json!({
             "kind": "json",
@@ -84,23 +96,6 @@ pub(crate) fn run_parse_body(fields: &BodyFields) -> HelperResult {
                 "UnexpectedOutcome",
                 "an HTTP body parses to text or JSON".to_owned(),
             ))
-        }
-    }
-}
-
-pub(crate) enum Conversion {
-    Wire,
-    Complete,
-}
-
-pub(crate) fn run_convert(fields: &ConvertFields, conversion: &Conversion) -> Value {
-    match conversion {
-        Conversion::Wire => match to_call_tool_result(fields.outcome(), fields.compat) {
-            ToolCallResult::Complete(result) => json!({ "complete": result }),
-            ToolCallResult::InputRequired(result) => json!({ "input_required": result }),
-        },
-        Conversion::Complete => {
-            json!({ "complete": complete_call_tool_result(fields.outcome(), fields.compat) })
         }
     }
 }

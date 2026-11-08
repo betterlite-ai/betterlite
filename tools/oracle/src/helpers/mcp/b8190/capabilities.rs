@@ -27,7 +27,6 @@ pub(crate) struct DiscoveryFields {
     client_extensions: Vec<String>,
     #[serde(default)]
     upstream_extensions: Vec<String>,
-    #[serde(default)]
     instructions: Option<String>,
 }
 
@@ -36,18 +35,25 @@ pub(crate) struct DiscoveryFields {
 pub(crate) struct PolicyFields {
     versions: Vec<String>,
     method: String,
-    #[serde(default)]
     params: Option<Object>,
-    #[serde(default)]
     protocol_version: Option<String>,
     initialized: Object,
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct AdvertisedFields {
-    #[serde(default)]
-    configured: Option<Vec<String>>,
+#[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
+pub(crate) enum CapabilityInput {
+    Discovery(DiscoveryFields),
+    VersionPolicy(PolicyFields),
+    AdvertisedVersions { configured: Option<Vec<String>> },
+}
+
+pub(crate) fn run(input: &CapabilityInput) -> HelperResult {
+    match input {
+        CapabilityInput::Discovery(fields) => Ok(run_discovery(fields)),
+        CapabilityInput::VersionPolicy(fields) => run_policy(fields),
+        CapabilityInput::AdvertisedVersions { configured } => run_advertised(configured.as_deref()),
+    }
 }
 
 fn known_versions(wire: &[String]) -> Vec<SpecVersion> {
@@ -56,22 +62,13 @@ fn known_versions(wire: &[String]) -> Vec<SpecVersion> {
         .collect()
 }
 
-pub(crate) fn run_discovery(fields: &DiscoveryFields) -> Value {
-    let operations: Vec<&str> = fields
-        .authorized_operations
-        .iter()
-        .map(String::as_str)
-        .collect();
-    let client_extensions: Vec<&str> = fields
-        .client_extensions
-        .iter()
-        .map(String::as_str)
-        .collect();
-    let upstream_extensions: Vec<&str> = fields
-        .upstream_extensions
-        .iter()
-        .map(String::as_str)
-        .collect();
+fn run_discovery(fields: &DiscoveryFields) -> Value {
+    let [operations, client_extensions, upstream_extensions] = [
+        &fields.authorized_operations,
+        &fields.client_extensions,
+        &fields.upstream_extensions,
+    ]
+    .map(|names| names.iter().map(String::as_str).collect::<Vec<_>>());
     let discovery = build_discovery(DiscoveryRequest {
         configured: &known_versions(&fields.configured),
         revision: SpecVersion::from_wire(&fields.revision),
@@ -86,7 +83,7 @@ pub(crate) fn run_discovery(fields: &DiscoveryFields) -> Value {
     json!(discovery)
 }
 
-pub(crate) fn run_policy(fields: &PolicyFields) -> HelperResult {
+fn run_policy(fields: &PolicyFields) -> HelperResult {
     let policy = GatewayVersionPolicy {
         versions: known_versions(&fields.versions),
     };
@@ -123,14 +120,8 @@ pub(crate) fn run_policy(fields: &PolicyFields) -> HelperResult {
     Ok(json!({ "result": policy.apply_initialize(initialized) }))
 }
 
-pub(crate) fn run_advertised(fields: &AdvertisedFields) -> HelperResult {
-    match advertised_versions(fields.configured.as_deref()) {
-        Ok(versions) => Ok(json!(
-            versions
-                .iter()
-                .map(|version| version.as_str())
-                .collect::<Vec<_>>()
-        )),
-        Err(error) => Err(failure("ConfigError", error.to_string())),
-    }
+fn run_advertised(configured: Option<&[String]>) -> HelperResult {
+    advertised_versions(configured)
+        .map(|list| list.into_iter().map(SpecVersion::as_str).collect::<Value>())
+        .map_err(|error| failure("ConfigError", error.to_string()))
 }

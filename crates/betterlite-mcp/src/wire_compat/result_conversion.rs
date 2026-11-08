@@ -1,5 +1,6 @@
 use betterlite_prompts::arguments::json::{Json, Object};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 use crate::client::tools::result::{
     CallToolResult, ContentBlock, TextContent, ToolCallResult, error_text_result,
@@ -13,27 +14,12 @@ pub const INPUT_REQUIRED_UNSUPPORTED: &str = "Error: upstream tool returned an i
 #[must_use]
 pub fn to_call_tool_result(outcome: ToolOutcome, compat: WireCompat) -> ToolCallResult {
     match outcome {
-        ToolOutcome::Text(result) => ToolCallResult::Complete(CallToolResult {
-            content: vec![ContentBlock::Text(TextContent {
-                text: result.text,
-                extra: Object::new(),
-            })],
-            is_error: false,
-            structured_content: None,
-            meta: None,
-        }),
+        ToolOutcome::Text(result) => ToolCallResult::Complete(text_result(result.text, None)),
         ToolOutcome::Json(result) => {
             let keep_structured =
                 compat == WireCompat::Modern || matches!(&result.value, Json::Object(_));
-            ToolCallResult::Complete(CallToolResult {
-                content: vec![ContentBlock::Text(TextContent {
-                    text: result.original_text,
-                    extra: Object::new(),
-                })],
-                is_error: false,
-                structured_content: keep_structured.then_some(result.value),
-                meta: None,
-            })
+            let structured = keep_structured.then_some(result.value);
+            ToolCallResult::Complete(text_result(result.original_text, structured))
         }
         ToolOutcome::Complete(result) => ToolCallResult::Complete(match compat {
             WireCompat::Modern => result,
@@ -55,52 +41,103 @@ pub fn complete_call_tool_result(outcome: ToolOutcome, compat: WireCompat) -> Ca
     }
 }
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
-pub struct GatewayTool {
-    pub name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-    #[serde(rename = "inputSchema", skip_serializing_if = "Option::is_none")]
-    pub input_schema: Option<Object>,
-    #[serde(flatten)]
-    pub extra: Object,
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Theme {
+    Light,
+    Dark,
 }
 
-// LiteLLM dumps the tool with exclude_none, so a null optional never reaches the wire
-#[must_use]
-pub fn to_gateway_tool(tool: &McpTool, name: &str) -> GatewayTool {
-    GatewayTool {
-        name: name.to_owned(),
-        description: tool.description.clone(),
-        input_schema: tool.input_schema.clone(),
-        extra: tool
-            .extra
-            .iter()
-            .filter(|(_, value)| !matches!(value, Json::Null))
-            .map(|(key, value)| (key.clone(), value.clone()))
-            .collect(),
+#[serde_with::skip_serializing_none]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Icon {
+    pub src: String,
+    pub mime_type: Option<String>,
+    pub sizes: Option<Vec<String>>,
+    pub theme: Option<Theme>,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum TaskSupport {
+    Forbidden,
+    Optional,
+    Required,
+}
+
+#[serde_with::skip_serializing_none]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Execution {
+    pub task_support: Option<TaskSupport>,
+}
+
+#[serde_with::skip_serializing_none]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Annotations {
+    pub title: Option<String>,
+    pub read_only_hint: Option<bool>,
+    pub destructive_hint: Option<bool>,
+    pub idempotent_hint: Option<bool>,
+    pub open_world_hint: Option<bool>,
+}
+
+// the Tool keys the SDK declares: an undeclared key or a null member never reaches the wire
+#[serde_with::skip_serializing_none]
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GatewayTool {
+    pub name: String,
+    pub description: Option<String>,
+    pub input_schema: Option<Object>,
+    pub title: Option<String>,
+    pub execution: Option<Execution>,
+    pub output_schema: Option<Object>,
+    pub icons: Option<Vec<Icon>>,
+    pub annotations: Option<Annotations>,
+    #[serde(rename = "_meta")]
+    pub meta: Option<Object>,
+}
+
+#[derive(Debug, Error)]
+#[error("invalid tool: {0}")]
+pub struct InvalidTool(#[from] serde_json::Error);
+
+pub fn to_gateway_tool(tool: &McpTool, name: &str) -> Result<GatewayTool, InvalidTool> {
+    let mut gateway: GatewayTool = serde_json::to_value(tool).and_then(serde_json::from_value)?;
+    name.clone_into(&mut gateway.name);
+    Ok(gateway)
+}
+
+fn text_result(text: String, structured_content: Option<Json>) -> CallToolResult {
+    CallToolResult {
+        content: vec![ContentBlock::Text(TextContent {
+            text,
+            extra: Object::new(),
+        })],
+        is_error: false,
+        structured_content,
+        meta: None,
     }
 }
 
 fn input_required_unsupported() -> CallToolResult {
     CallToolResult {
-        content: vec![ContentBlock::Text(TextContent {
-            text: INPUT_REQUIRED_UNSUPPORTED.to_owned(),
-            extra: Object::new(),
-        })],
         is_error: true,
-        structured_content: None,
-        meta: None,
+        ..text_result(INPUT_REQUIRED_UNSUPPORTED.to_owned(), None)
     }
 }
 
 fn downgrade_structured_content(result: CallToolResult) -> CallToolResult {
-    let Some(structured) = result.structured_content.as_ref() else {
+    let Some(structured) = result
+        .structured_content
+        .as_ref()
+        .filter(|structured| !matches!(structured, Json::Object(_)))
+    else {
         return result;
     };
-    if matches!(structured, Json::Object(_)) {
-        return result;
-    }
     let mut content = result.content;
     content.push(ContentBlock::Text(TextContent {
         text: serde_json::to_string(structured).unwrap_or_default(),
@@ -108,9 +145,8 @@ fn downgrade_structured_content(result: CallToolResult) -> CallToolResult {
     }));
     CallToolResult {
         content,
-        is_error: result.is_error,
         structured_content: None,
-        meta: result.meta,
+        ..result
     }
 }
 

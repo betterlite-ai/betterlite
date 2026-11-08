@@ -1,5 +1,6 @@
 use betterlite_mcp::wire_compat::errors::{
-    ServerListError, UpstreamAuthError, url_credentials_exception,
+    OpenApiUpstreamError, ServerListError, ToolResultError, UpstreamAuthError,
+    url_credentials_exception,
 };
 use serde::Deserialize;
 use serde_json::{Value, json};
@@ -8,26 +9,17 @@ use serde_json::{Value, json};
 #[serde(deny_unknown_fields)]
 pub(crate) struct UpstreamAuthFields {
     status_code: u16,
-    #[serde(default)]
     www_authenticate: Option<String>,
     server_name: String,
-    #[serde(default)]
     base_url: Option<String>,
-    #[serde(default)]
     request_path: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
-pub(crate) struct OpenApiFields {
-    pub(super) status_code: u16,
-    pub(super) server_name: String,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct ToolResultFields {
-    pub(super) message: String,
+pub(crate) struct ServerFields {
+    status_code: u16,
+    server_name: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -37,16 +29,39 @@ pub(crate) struct ServerListFields {
     server_name: String,
 }
 
-pub(crate) fn run_url_credentials() -> Value {
-    let exception = url_credentials_exception();
-    json!({
-        "status_code": exception.status_code,
-        "detail": exception.detail,
-        "headers": exception.headers,
-    })
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
+pub(crate) enum ErrorInput {
+    UrlCredentials,
+    UpstreamAuth(UpstreamAuthFields),
+    OpenapiUpstream(ServerFields),
+    ToolResultError { message: String },
+    ServerListError(ServerListFields),
 }
 
-pub(crate) fn run_upstream_auth(fields: &UpstreamAuthFields) -> Value {
+pub(crate) fn run(input: &ErrorInput) -> Value {
+    match input {
+        ErrorInput::UrlCredentials => {
+            let exception = url_credentials_exception();
+            json!({
+                "status_code": exception.status_code,
+                "detail": exception.detail,
+                "headers": exception.headers,
+            })
+        }
+        ErrorInput::UpstreamAuth(fields) => upstream_auth(fields),
+        ErrorInput::OpenapiUpstream(fields) => openapi_upstream(fields),
+        ErrorInput::ToolResultError { message } => {
+            let error = ToolResultError {
+                message: message.clone(),
+            };
+            json!({ "message": error.to_string() })
+        }
+        ErrorInput::ServerListError(fields) => server_list(fields),
+    }
+}
+
+fn upstream_auth(fields: &UpstreamAuthFields) -> Value {
     let error = UpstreamAuthError {
         status_code: fields.status_code,
         www_authenticate: fields.www_authenticate.clone(),
@@ -62,7 +77,19 @@ pub(crate) fn run_upstream_auth(fields: &UpstreamAuthFields) -> Value {
     })
 }
 
-pub(crate) fn run_server_list(fields: &ServerListFields) -> Value {
+fn openapi_upstream(fields: &ServerFields) -> Value {
+    let error = OpenApiUpstreamError {
+        status_code: fields.status_code,
+        server_name: fields.server_name.clone(),
+    };
+    json!({
+        "message": error.to_string(),
+        "status_code": error.status_code,
+        "server_name": error.server_name,
+    })
+}
+
+fn server_list(fields: &ServerListFields) -> Value {
     let error = ServerListError {
         fault: fields.fault.clone(),
         server_name: fields.server_name.clone(),

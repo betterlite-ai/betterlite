@@ -84,6 +84,24 @@ fn an_initialize_offer_negotiates_the_handshake_revision(
 #[case::numeric_protocol_version(
     r#"{"protocolVersion":20251125,"capabilities":{},"clientInfo":{"name":"c","version":"1"}}"#
 )]
+#[case::roots_not_an_object(
+    r#"{"protocolVersion":"2025-11-25","capabilities":{"roots":true},"clientInfo":{"name":"c","version":"1"}}"#
+)]
+#[case::experimental_not_an_object(
+    r#"{"protocolVersion":"2025-11-25","capabilities":{"experimental":"x"},"clientInfo":{"name":"c","version":"1"}}"#
+)]
+#[case::experimental_member_not_an_object(
+    r#"{"protocolVersion":"2025-11-25","capabilities":{"experimental":{"a":1}},"clientInfo":{"name":"c","version":"1"}}"#
+)]
+#[case::client_info_title_not_a_string(
+    r#"{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"c","version":"1","title":1}}"#
+)]
+#[case::client_info_icon_without_src(
+    r#"{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"c","version":"1","icons":[{}]}}"#
+)]
+#[case::meta_not_an_object(
+    r#"{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"c","version":"1"},"_meta":"x"}"#
+)]
 fn an_initialize_with_invalid_params_is_rejected_with_the_invalid_params_code(#[case] raw: &str) {
     let policy = policy(&HANDSHAKE_VERSIONS);
     let params: Object = serde_json::from_str(raw).unwrap();
@@ -93,6 +111,15 @@ fn an_initialize_with_invalid_params_is_rejected_with_the_invalid_params_code(#[
     assert!(matches!(error, VersionRejection::InvalidParams(_)));
     assert_eq!(error.code(), INVALID_PARAMS);
     assert_eq!(error.code(), -32_602_i32);
+}
+
+#[rstest]
+fn an_initialize_with_declared_optional_members_and_unknown_keys_is_accepted() {
+    let raw = r#"{"protocolVersion":"2025-11-25","capabilities":{"experimental":{"a":{}},"sampling":{"tools":{}},"roots":{"listChanged":true},"extra":1},"clientInfo":{"name":"c","version":"1","title":"C","websiteUrl":"https://c.test","icons":[{"src":"https://c.test/i.png","theme":"dark"}],"other":2},"_meta":{"k":1},"unknown":3}"#;
+    let policy = policy(&HANDSHAKE_VERSIONS);
+    let params: Object = serde_json::from_str(raw).unwrap();
+    let negotiated = policy.negotiate(VersionRequest::Initialize { params: &params });
+    assert_eq!(negotiated, Ok("2025-11-25"));
 }
 
 #[rstest]

@@ -1,13 +1,14 @@
 use betterlite_db::mcp_stored_contracts::MCPTransport;
 use betterlite_prompts::arguments::json::Object;
 use serde::Deserialize;
+use std::collections::HashMap;
 use thiserror::Error;
 
 use super::discovery::{DiscoveryRequest, InitializeResult, build_discovery};
 use super::versions::{
     GATEWAY_OPERATIONS, HANDSHAKE_VERSIONS, LATEST_HANDSHAKE_VERSION, SpecVersion,
 };
-use crate::client::sessions::negotiate::Implementation;
+use crate::wire_compat::result_conversion::Icon;
 
 pub const UNSUPPORTED_PROTOCOL_VERSION: i32 = -32022;
 
@@ -55,15 +56,36 @@ impl VersionRejection {
     }
 }
 
-// the three fields the SDK requires of initialize params; only the version is read
+// the shape the SDK declares for initialize params; unknown keys are ignored as there
 #[derive(Deserialize)]
-struct InitializeParams {
-    #[serde(rename = "protocolVersion")]
-    protocol_version: String,
-    #[serde(rename = "capabilities")]
-    _capabilities: Object,
-    #[serde(rename = "clientInfo")]
-    _client_info: Implementation,
+#[serde(rename_all = "camelCase")]
+pub struct InitializeParams {
+    pub protocol_version: String,
+    pub capabilities: ClientCapabilities,
+    pub client_info: ClientInfo,
+    #[serde(rename = "_meta")]
+    pub meta: Option<Object>,
+}
+
+#[derive(Deserialize)]
+pub struct ClientCapabilities {
+    pub experimental: Option<HashMap<String, Object>>,
+    pub extensions: Option<HashMap<String, Object>>,
+    pub sampling: Option<Object>,
+    pub elicitation: Option<Object>,
+    pub roots: Option<Object>,
+    pub tasks: Option<Object>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClientInfo {
+    pub name: String,
+    pub version: String,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub website_url: Option<String>,
+    pub icons: Option<Vec<Icon>>,
 }
 
 impl GatewayVersionPolicy {

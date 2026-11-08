@@ -190,11 +190,11 @@ fn a_gateway_tool_keeps_every_field_and_takes_the_gateway_name() {
         )])),
         extra: Object::from([("title".to_owned(), Json::Text("Display".to_owned()))]),
     };
-    let renamed = to_gateway_tool(&tool, "gateway");
+    let renamed = to_gateway_tool(&tool, "gateway").unwrap();
     assert_eq!(renamed.name, "gateway");
     assert_eq!(renamed.description, tool.description);
     assert_eq!(renamed.input_schema, tool.input_schema);
-    assert_eq!(renamed.extra, tool.extra);
+    assert_eq!(renamed.title.as_deref(), Some("Display"));
 }
 
 #[rstest]
@@ -205,7 +205,7 @@ fn a_gateway_tool_leaves_out_a_missing_description_and_schema() {
         input_schema: None,
         extra: Object::new(),
     };
-    let wire = serde_json::to_string(&to_gateway_tool(&tool, "gateway")).unwrap();
+    let wire = serde_json::to_string(&to_gateway_tool(&tool, "gateway").unwrap()).unwrap();
     assert_eq!(wire, r#"{"name":"gateway"}"#);
 }
 
@@ -221,9 +221,48 @@ fn a_gateway_tool_drops_null_optionals_and_keeps_the_rest() {
             ("icons".to_owned(), Json::List(Vec::new())),
         ]),
     };
-    let wire = serde_json::to_string(&to_gateway_tool(&tool, "gateway")).unwrap();
+    let wire = serde_json::to_string(&to_gateway_tool(&tool, "gateway").unwrap()).unwrap();
     assert_eq!(
         wire,
         r#"{"name":"gateway","description":"does things","icons":[]}"#
     );
+}
+
+#[rstest]
+#[case::null_annotation_member(
+    r#"{"name":"t","annotations":{"title":null,"readOnlyHint":true}}"#,
+    r#"{"name":"gateway","annotations":{"readOnlyHint":true}}"#
+)]
+#[case::null_icon_member(
+    r#"{"name":"t","icons":[{"src":"https://x.test/i.png","mimeType":null,"sizes":null,"theme":null}]}"#,
+    r#"{"name":"gateway","icons":[{"src":"https://x.test/i.png"}]}"#
+)]
+#[case::null_execution_member(
+    r#"{"name":"t","execution":{"taskSupport":null}}"#,
+    r#"{"name":"gateway","execution":{}}"#
+)]
+#[case::nulls_inside_the_schemas_and_meta_survive(
+    r#"{"name":"t","inputSchema":{"a":null},"outputSchema":{"b":{"c":null}},"_meta":{"d":null}}"#,
+    r#"{"name":"gateway","inputSchema":{"a":null},"outputSchema":{"b":{"c":null}},"_meta":{"d":null}}"#
+)]
+#[case::undeclared_keys_are_dropped_at_every_level(
+    r#"{"name":"t","other":1,"annotations":{"readOnlyHint":false,"other":1},"icons":[{"src":"s","other":1}],"execution":{"taskSupport":"optional","other":1}}"#,
+    r#"{"name":"gateway","execution":{"taskSupport":"optional"},"icons":[{"src":"s"}],"annotations":{"readOnlyHint":false}}"#
+)]
+fn a_gateway_tool_follows_the_declared_tool_shape(#[case] raw: &str, #[case] wire: &str) {
+    let tool: McpTool = serde_json::from_str(raw).unwrap();
+    let gateway = to_gateway_tool(&tool, "gateway").unwrap();
+    assert_eq!(serde_json::to_string(&gateway).unwrap(), wire);
+}
+
+#[rstest]
+#[case::annotations_not_an_object(r#"{"name":"t","annotations":"x"}"#)]
+#[case::icon_without_src(r#"{"name":"t","icons":[{"mimeType":"image/png"}]}"#)]
+#[case::unknown_theme(r#"{"name":"t","icons":[{"src":"s","theme":"blue"}]}"#)]
+#[case::unknown_task_support(r#"{"name":"t","execution":{"taskSupport":"sometimes"}}"#)]
+#[case::title_not_a_string(r#"{"name":"t","title":1}"#)]
+fn a_gateway_tool_the_sdk_would_reject_is_an_error(#[case] raw: &str) {
+    let tool: McpTool = serde_json::from_str(raw).unwrap();
+    let error = to_gateway_tool(&tool, "gateway").unwrap_err();
+    assert!(error.to_string().starts_with("invalid tool: "));
 }

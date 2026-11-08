@@ -1,14 +1,10 @@
-use betterlite_mcp::wire_compat::errors::{OpenApiUpstreamError, ToolResultError};
-use betterlite_mcp::wire_compat::result_conversion::to_gateway_tool;
-use betterlite_mcp::wire_compat::tool_outcome::wire_compat_for;
 use serde::Deserialize;
-use serde_json::json;
 
 use crate::helpers::{Helper, HelperError, HelperResult};
 
-use capabilities::{AdvertisedFields, DiscoveryFields, PolicyFields};
-use conversion::{BodyFields, Conversion, ConvertFields, GatewayToolFields, ProtocolFields};
-use errors::{OpenApiFields, ServerListFields, ToolResultFields, UpstreamAuthFields};
+use capabilities::CapabilityInput;
+use conversion::ConversionInput;
+use errors::ErrorInput;
 
 mod capabilities;
 mod conversion;
@@ -22,38 +18,9 @@ impl Helper for Op {
 
     fn run(input: &Self::Input) -> HelperResult {
         match input {
-            Input::Discovery(fields) => Ok(capabilities::run_discovery(fields)),
-            Input::VersionPolicy(fields) => capabilities::run_policy(fields),
-            Input::AdvertisedVersions(fields) => capabilities::run_advertised(fields),
-            Input::WireCompatFor(fields) => Ok(json!(wire_compat_for(&fields.protocol_version))),
-            Input::ParseHttpBody(fields) => conversion::run_parse_body(fields),
-            Input::ToCallToolResult(fields) => {
-                Ok(conversion::run_convert(fields, &Conversion::Wire))
-            }
-            Input::CompleteCallToolResult(fields) => {
-                Ok(conversion::run_convert(fields, &Conversion::Complete))
-            }
-            Input::ToGatewayTool(fields) => Ok(json!(to_gateway_tool(&fields.tool, &fields.name))),
-            Input::UrlCredentials => Ok(errors::run_url_credentials()),
-            Input::UpstreamAuth(fields) => Ok(errors::run_upstream_auth(fields)),
-            Input::OpenapiUpstream(fields) => {
-                let error = OpenApiUpstreamError {
-                    status_code: fields.status_code,
-                    server_name: fields.server_name.clone(),
-                };
-                Ok(json!({
-                    "message": error.to_string(),
-                    "status_code": error.status_code,
-                    "server_name": error.server_name,
-                }))
-            }
-            Input::ToolResultError(fields) => {
-                let error = ToolResultError {
-                    message: fields.message.clone(),
-                };
-                Ok(json!({ "message": error.to_string() }))
-            }
-            Input::ServerListError(fields) => Ok(errors::run_server_list(fields)),
+            Input::Capabilities(group) => capabilities::run(group),
+            Input::Conversion(group) => conversion::run(group),
+            Input::Errors(group) => Ok(errors::run(group)),
         }
     }
 }
@@ -70,19 +37,9 @@ fn failure(class: &str, message: String) -> Box<HelperError> {
 }
 
 #[derive(Debug, Clone, Deserialize)]
-#[serde(tag = "function", rename_all = "snake_case", deny_unknown_fields)]
+#[serde(untagged)]
 pub(crate) enum Input {
-    Discovery(DiscoveryFields),
-    VersionPolicy(PolicyFields),
-    AdvertisedVersions(AdvertisedFields),
-    WireCompatFor(ProtocolFields),
-    ParseHttpBody(BodyFields),
-    ToCallToolResult(ConvertFields),
-    CompleteCallToolResult(ConvertFields),
-    ToGatewayTool(GatewayToolFields),
-    UrlCredentials,
-    UpstreamAuth(UpstreamAuthFields),
-    OpenapiUpstream(OpenApiFields),
-    ToolResultError(ToolResultFields),
-    ServerListError(ServerListFields),
+    Capabilities(CapabilityInput),
+    Conversion(ConversionInput),
+    Errors(ErrorInput),
 }

@@ -49,11 +49,6 @@ pub enum ToolOutcome {
 
 #[must_use]
 pub fn parse_http_body(body: &str) -> ToolOutcome {
-    if body.trim().is_empty() {
-        return ToolOutcome::Text(TextResult {
-            text: body.to_owned(),
-        });
-    }
     match serde_json::from_str::<Json>(body) {
         Ok(Json::Null) | Err(_) => ToolOutcome::Text(TextResult {
             text: body.to_owned(),

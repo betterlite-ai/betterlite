@@ -129,20 +129,16 @@ class ServerListErrorInput(TypedDict):
     server_name: str
 
 
-Input = (
-    DiscoveryInput
-    | VersionPolicyInput
-    | AdvertisedVersionsInput
-    | WireCompatInput
-    | ParseBodyInput
-    | ConvertInput
-    | GatewayToolInput
-    | UrlCredentialsInput
+CapabilityInput = DiscoveryInput | VersionPolicyInput | AdvertisedVersionsInput
+ConversionInput = WireCompatInput | ParseBodyInput | ConvertInput | GatewayToolInput
+ErrorInput = (
+    UrlCredentialsInput
     | UpstreamAuthInput
     | OpenApiUpstreamInput
     | ToolResultErrorInput
     | ServerListErrorInput
 )
+Input = CapabilityInput | ConversionInput | ErrorInput
 
 
 def _wire(model: CallToolResult | InputRequiredResult | InitializeResult | Tool) -> dict[str, Json]:
@@ -255,9 +251,7 @@ def _upstream_auth(input_value: UpstreamAuthInput) -> Json:
     }
 
 
-def _capabilities(
-    input_value: DiscoveryInput | VersionPolicyInput | AdvertisedVersionsInput,
-) -> Json:
+def _capabilities(input_value: CapabilityInput) -> Json:
     match input_value["function"]:
         case "discovery":
             return _discovery(input_value)
@@ -267,9 +261,7 @@ def _capabilities(
             return _advertised_versions(input_value)
 
 
-def _conversion(
-    input_value: WireCompatInput | ParseBodyInput | ConvertInput | GatewayToolInput,
-) -> Json:
+def _conversion(input_value: ConversionInput) -> Json:
     match input_value["function"]:
         case "wire_compat_for":
             return result_conversion.wire_compat_for(input_value["protocol_version"]).value
@@ -282,13 +274,7 @@ def _conversion(
             return _wire(result_conversion.to_gateway_tool(tool, input_value["name"]))
 
 
-def _errors(
-    input_value: UrlCredentialsInput
-    | UpstreamAuthInput
-    | OpenApiUpstreamInput
-    | ToolResultErrorInput
-    | ServerListErrorInput,
-) -> Json:
+def _errors(input_value: ErrorInput) -> Json:
     match input_value["function"]:
         case "url_credentials":
             url_error = exceptions.MCPServerURLCredentialsError()

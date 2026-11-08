@@ -20,11 +20,6 @@ pub const HANDSHAKE_VERSIONS: [SpecVersion; 4] = [
 
 pub const LATEST_HANDSHAKE_VERSION: &str = "2025-11-25";
 
-const ALL_TRANSPORTS: [MCPTransport; 3] =
-    [MCPTransport::Sse, MCPTransport::Http, MCPTransport::Stdio];
-
-const HTTP_AND_STDIO: [MCPTransport; 2] = [MCPTransport::Http, MCPTransport::Stdio];
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SpecVersion {
     Nov2024,
@@ -56,14 +51,9 @@ impl SpecVersion {
 
     #[must_use]
     pub fn from_wire(version: &str) -> Option<Self> {
-        match version {
-            "2024-11-05" => Some(Self::Nov2024),
-            "2025-03-26" => Some(Self::Mar2025),
-            "2025-06-18" => Some(Self::Jun2025),
-            "2025-11-25" => Some(Self::Nov2025),
-            "2026-07-28" => Some(Self::Jul2026),
-            _ => None,
-        }
+        Self::ALL
+            .into_iter()
+            .find(|known| known.as_str() == version)
     }
 
     #[must_use]
@@ -95,7 +85,7 @@ pub struct RevisionSupport {
 pub const fn revision_support(version: SpecVersion) -> RevisionSupport {
     match version {
         SpecVersion::Jul2026 => RevisionSupport {
-            transports: &HTTP_AND_STDIO,
+            transports: &[MCPTransport::Http, MCPTransport::Stdio],
             operations: &GATEWAY_OPERATIONS,
             results: &[ResultKind::Complete, ResultKind::InputRequired],
             extensions: &[],
@@ -105,7 +95,7 @@ pub const fn revision_support(version: SpecVersion) -> RevisionSupport {
         | SpecVersion::Mar2025
         | SpecVersion::Jun2025
         | SpecVersion::Nov2025 => RevisionSupport {
-            transports: &ALL_TRANSPORTS,
+            transports: &[MCPTransport::Sse, MCPTransport::Http, MCPTransport::Stdio],
             operations: &GATEWAY_OPERATIONS,
             results: &[ResultKind::Complete],
             extensions: &[],
