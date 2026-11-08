@@ -128,6 +128,27 @@ async fn environment_token_wins_over_the_zen_api_key() {
 }
 
 #[tokio::test]
+async fn empty_param_token_falls_back_to_the_environment_token() {
+    let clock = Clock::new();
+    let client = fixture(
+        Script::default(),
+        &clock,
+        &[("WATSONX_TOKEN", "environment-token")],
+    );
+    let mut optional_params = params(&[("token", json!(""))]);
+    let resolved = client
+        .validate_environment(HeaderMap::new(), &mut optional_params, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        resolved
+            .get(AUTHORIZATION)
+            .and_then(|value| value.to_str().ok()),
+        Some("Bearer environment-token")
+    );
+}
+
+#[tokio::test]
 async fn popped_zen_api_key_gives_a_zen_api_key_header() {
     let clock = Clock::new();
     let client = fixture(Script::default(), &clock, &[]);
