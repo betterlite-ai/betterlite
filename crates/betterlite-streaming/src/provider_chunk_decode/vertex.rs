@@ -13,11 +13,11 @@ use crate::stream_chunk_shaping::tokens::mapped_finish_reason;
 pub fn handle_vertex_chunk(
     chunk: &ProviderChunk,
     state: &mut DecodeState,
-    decoded: &mut DecodedChunk,
-) -> Result<(), ProviderChunkError> {
+) -> Result<DecodedChunk, ProviderChunkError> {
+    let mut decoded = DecodedChunk::default();
     if let ProviderChunk::Text(text) = chunk {
         decoded.text.clone_from(text);
-        return Ok(());
+        return Ok(decoded);
     }
     let value = chunk.json()?;
     let Some(fields) = as_object(value) else {
@@ -27,7 +27,7 @@ pub fn handle_vertex_chunk(
     };
     let Some(listed) = fields.get("candidates") else {
         decoded.text = json_text(value);
-        return Ok(());
+        return Ok(decoded);
     };
     let candidate = as_array(listed)
         .and_then(|items| items.first())
@@ -41,11 +41,11 @@ pub fn handle_vertex_chunk(
         .and_then(as_object)
         .and_then(|content| content.get("parts"))
         .and_then(as_array);
-    fill_vertex(text_of(parts), parts, candidate, decoded)?;
+    fill_vertex(text_of(parts), parts, candidate, &mut decoded)?;
     if let Some(name) = finish_name.filter(|name| *name != "FINISH_REASON_UNSPECIFIED") {
         state.received_finish_reason = Some(mapped_finish_reason(name).to_owned());
     }
-    Ok(())
+    Ok(decoded)
 }
 
 fn fill_vertex(

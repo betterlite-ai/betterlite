@@ -3,43 +3,38 @@ use crate::provider_chunk_decode::chunk::{
 };
 use crate::provider_chunk_decode::dispatch::finish_state;
 use crate::provider_chunk_decode::error::ProviderChunkError;
-use crate::provider_chunk_decode::handlers::openai::{
-    handle_openai_chat_chunk, handle_text_completion_chunk, handle_triton_stream,
-};
-use crate::provider_chunk_decode::handlers::{
-    handle_aleph_alpha_chunk, handle_nlp_cloud_chunk, handle_predibase_chunk,
-    handle_replicate_chunk,
-};
-use crate::provider_chunk_decode::vertex::handle_vertex_chunk;
+use crate::provider_chunk_decode::handlers::openai::handle_openai_chat_chunk;
 use crate::stream_chunk_shaping::records::JsonValue;
 
-pub(super) fn decode_replicate(
-    chunk: &ProviderChunk,
+pub(super) fn decoded_from(
     state: &mut DecodeState,
+    chunk: &ProviderChunk,
+    fill: fn(&ProviderChunk, &mut DecodedChunk) -> Result<(), ProviderChunkError>,
 ) -> Result<DecodedChunk, ProviderChunkError> {
     let mut decoded = DecodedChunk::default();
-    handle_replicate_chunk(chunk, &mut decoded)?;
+    fill(chunk, &mut decoded)?;
     finish_state(state, &decoded);
     Ok(decoded)
 }
 
-pub(super) fn decode_predibase(
-    chunk: &ProviderChunk,
+pub(super) fn nlp_cloud_failure(
     state: &mut DecodeState,
+    error: ProviderChunkError,
 ) -> Result<DecodedChunk, ProviderChunkError> {
-    let mut decoded = DecodedChunk::default();
-    handle_predibase_chunk(chunk, &mut decoded)?;
-    finish_state(state, &decoded);
-    Ok(decoded)
+    if state.received_finish_reason.is_some() {
+        return Err(error);
+    }
+    if state.sent_first_chunk {
+        state.received_finish_reason = Some("stop".to_owned());
+        return Ok(DecodedChunk::default());
+    }
+    Err(ProviderChunkError::UnknownStream)
 }
 
-pub(super) fn decode_vllm(chunk: &ProviderChunk) -> Result<DecodedChunk, ProviderChunkError> {
-    let mut decoded = DecodedChunk::default();
-    fill_vllm(chunk, &mut decoded)?;
-    Ok(decoded)
-}
-
-fn fill_vllm(chunk: &ProviderChunk, decoded: &mut DecodedChunk) -> Result<(), ProviderChunkError> {
+pub(super) fn fill_vllm(
+    chunk: &ProviderChunk,
+    decoded: &mut DecodedChunk,
+) -> Result<(), ProviderChunkError> {
     let JsonValue::Array(items) = chunk.json()? else {
         return Err(ProviderChunkError::UnexpectedChunk {
             expected: "a vllm output list",
@@ -61,60 +56,7 @@ fn fill_vllm(chunk: &ProviderChunk, decoded: &mut DecodedChunk) -> Result<(), Pr
     Ok(())
 }
 
-pub(super) fn decode_aleph_alpha(
-    chunk: &ProviderChunk,
-    state: &mut DecodeState,
-) -> Result<DecodedChunk, ProviderChunkError> {
-    let mut decoded = DecodedChunk::default();
-    handle_aleph_alpha_chunk(chunk, &mut decoded)?;
-    finish_state(state, &decoded);
-    Ok(decoded)
-}
-
-pub(super) fn decode_nlp_cloud(
-    chunk: &ProviderChunk,
-    state: &mut DecodeState,
-) -> Result<DecodedChunk, ProviderChunkError> {
-    let mut decoded = DecodedChunk::default();
-    match handle_nlp_cloud_chunk(chunk, state, &mut decoded) {
-        Ok(()) => {
-            finish_state(state, &decoded);
-            Ok(decoded)
-        }
-        Err(error) => nlp_cloud_failure(state, error),
-    }
-}
-
-fn nlp_cloud_failure(
-    state: &mut DecodeState,
-    error: ProviderChunkError,
-) -> Result<DecodedChunk, ProviderChunkError> {
-    if state.received_finish_reason.is_some() {
-        return Err(error);
-    }
-    if state.sent_first_chunk {
-        state.received_finish_reason = Some("stop".to_owned());
-        return Ok(DecodedChunk::default());
-    }
-    Err(ProviderChunkError::UnknownStream)
-}
-
-pub(super) fn decode_vertex(
-    chunk: &ProviderChunk,
-    state: &mut DecodeState,
-) -> Result<DecodedChunk, ProviderChunkError> {
-    let mut decoded = DecodedChunk::default();
-    handle_vertex_chunk(chunk, state, &mut decoded)?;
-    Ok(decoded)
-}
-
-pub(super) fn decode_petals(state: &mut DecodeState) -> Result<DecodedChunk, ProviderChunkError> {
-    let mut decoded = DecodedChunk::default();
-    fill_petals(state, &mut decoded)?;
-    Ok(decoded)
-}
-
-fn fill_petals(
+pub(super) fn fill_petals(
     state: &mut DecodeState,
     decoded: &mut DecodedChunk,
 ) -> Result<(), ProviderChunkError> {
@@ -130,51 +72,7 @@ fn fill_petals(
     Ok(())
 }
 
-pub(super) fn decode_triton(
-    chunk: &ProviderChunk,
-    state: &mut DecodeState,
-) -> Result<DecodedChunk, ProviderChunkError> {
-    let mut decoded = DecodedChunk::default();
-    handle_triton_stream(chunk, &mut decoded)?;
-    finish_state(state, &decoded);
-    Ok(decoded)
-}
-
-pub(super) fn decode_text_openai(
-    chunk: &ProviderChunk,
-    state: &mut DecodeState,
-) -> Result<DecodedChunk, ProviderChunkError> {
-    let mut decoded = DecodedChunk::default();
-    handle_text_completion_chunk(chunk, &mut decoded, true)?;
-    finish_state(state, &decoded);
-    Ok(decoded)
-}
-
-pub(super) fn decode_azure_text(
-    chunk: &ProviderChunk,
-    state: &mut DecodeState,
-) -> Result<DecodedChunk, ProviderChunkError> {
-    let mut decoded = DecodedChunk::default();
-    handle_text_completion_chunk(chunk, &mut decoded, false)?;
-    finish_state(state, &decoded);
-    Ok(decoded)
-}
-
-pub(super) fn decode_cached(
-    chunk: &ProviderChunk,
-    state: &mut DecodeState,
-) -> Result<DecodedChunk, ProviderChunkError> {
-    let mut decoded = DecodedChunk::default();
-    fill_cached(chunk, &mut decoded)?;
-    if decoded.is_finished {
-        state
-            .received_finish_reason
-            .clone_from(&decoded.finish_reason);
-    }
-    Ok(decoded)
-}
-
-fn fill_cached(
+pub(super) fn fill_cached(
     chunk: &ProviderChunk,
     decoded: &mut DecodedChunk,
 ) -> Result<(), ProviderChunkError> {
@@ -192,17 +90,7 @@ fn fill_cached(
     Ok(())
 }
 
-pub(super) fn decode_openai(
-    provider: Option<&str>,
-    chunk: &ProviderChunk,
-    state: &mut DecodeState,
-) -> Result<DecodedChunk, ProviderChunkError> {
-    let mut decoded = DecodedChunk::default();
-    fill_openai(provider, chunk, state, &mut decoded)?;
-    Ok(decoded)
-}
-
-fn fill_openai(
+pub(super) fn fill_openai(
     provider: Option<&str>,
     chunk: &ProviderChunk,
     state: &mut DecodeState,

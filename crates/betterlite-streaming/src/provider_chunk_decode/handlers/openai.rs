@@ -1,6 +1,4 @@
-use crate::provider_chunk_decode::chunk::{
-    DecodedChunk, ProviderChunk, as_array, as_bool, as_object,
-};
+use crate::provider_chunk_decode::chunk::{DecodedChunk, ProviderChunk, as_array, as_object};
 use crate::provider_chunk_decode::error::ProviderChunkError;
 use crate::provider_chunk_decode::handlers::{object_of, string_field, usage_counts};
 use crate::stream_chunk_shaping::extras::strip_sse_data_from_chunk;
@@ -31,25 +29,37 @@ pub fn handle_openai_chat_chunk(chunk: &StreamChunk, decoded: &mut DecodedChunk)
 pub fn handle_text_completion_chunk(
     chunk: &ProviderChunk,
     decoded: &mut DecodedChunk,
-    keep_usage: bool,
 ) -> Result<(), ProviderChunkError> {
-    let Ok(fields) = object_of(chunk) else {
-        return Ok(());
-    };
+    let fields = object_of(chunk).ok();
+    fill_text_choice(fields, decoded)?;
+    decoded.usage = usage_counts(fields.and_then(|object| object.get("usage")))?;
+    Ok(())
+}
+
+pub fn handle_azure_text_chunk(
+    chunk: &ProviderChunk,
+    decoded: &mut DecodedChunk,
+) -> Result<(), ProviderChunkError> {
+    let fields = object_of(chunk).ok();
+    fill_text_choice(fields, decoded)
+}
+
+fn fill_text_choice(
+    fields: Option<&JsonObject>,
+    decoded: &mut DecodedChunk,
+) -> Result<(), ProviderChunkError> {
     let choice = fields
-        .get("choices")
+        .and_then(|object| object.get("choices"))
         .and_then(as_array)
         .and_then(|choices| choices.first())
         .and_then(as_object);
-    if let Some(first) = choice {
-        decoded.text = string_field(first, "text")?.unwrap_or_default();
-        if let Some(reason) = string_field(first, "finish_reason")? {
-            decoded.is_finished = true;
-            decoded.finish_reason = Some(reason);
-        }
-    }
-    if keep_usage {
-        decoded.usage = usage_counts(fields.get("usage"))?;
+    let Some(first) = choice else {
+        return Ok(());
+    };
+    decoded.text = string_field(first, "text")?.unwrap_or_default();
+    if let Some(reason) = string_field(first, "finish_reason")? {
+        decoded.is_finished = true;
+        decoded.finish_reason = Some(reason);
     }
     Ok(())
 }
@@ -87,8 +97,8 @@ fn triton_decoded(
 ) -> Result<(), ProviderChunkError> {
     decoded.text = string_field(fields, "text_output")?.unwrap_or_default();
     decoded.finish_reason = string_field(fields, "stop_reason")?;
-    if let Some(flag) = fields.get("is_finished").and_then(as_bool) {
-        decoded.is_finished = flag;
+    if let Some(JsonValue::Bool(flag)) = fields.get("is_finished") {
+        decoded.is_finished = *flag;
     }
     Ok(())
 }

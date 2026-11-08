@@ -275,53 +275,44 @@ def _decode(wrapper: CustomStreamWrapper, step: Step, state: Step) -> Json:
     }
 
 
-def _function_call(delta: object) -> Json:
-    function = _attr(delta, "function_call")
+def _function_values(function: object) -> list[Json]:
     if function is None:
-        return None
-    return {
-        "name": cast("Json", _attr(function, "name")),
-        "arguments": cast("Json", _attr(function, "arguments")),
-    }
+        return [None, None]
+    return [cast("Json", _attr(function, "name")), cast("Json", _attr(function, "arguments"))]
 
 
-def _tool_calls(delta: object) -> Json:
+def _tool_call_values(delta: object) -> Json:
     calls = _attr(delta, "tool_calls")
     if calls is None:
         return None
-    listed: list[Json] = []
-    for call in cast("list[object]", calls):
-        function = _attr(call, "function")
-        listed.append(
-            {
-                "id": cast("Json", _attr(call, "id")),
-                "type": cast("Json", _attr(call, "type")),
-                "function": {
-                    "name": cast("Json", _attr(function, "name")),
-                    "arguments": cast("Json", _attr(function, "arguments")),
-                },
-            }
-        )
-    return listed
+    return [
+        [
+            cast("Json", _attr(call, "id")),
+            cast("Json", _attr(call, "type")),
+            _function_values(_attr(call, "function")),
+        ]
+        for call in cast("list[object]", calls)
+    ]
 
 
 def _summary(chunk: ModelResponseStream) -> Json:
     choice = chunk.choices[0] if chunk.choices else None
     delta = None if choice is None else choice.delta
-    return {
-        "id": chunk.id,
-        "model": chunk.model,
-        "created": chunk.created,
-        "system_fingerprint": chunk.system_fingerprint,
-        "finish_reason": None if choice is None else choice.finish_reason,
-        "content": cast("Json", _attr(delta, "content")),
-        "role": cast("Json", _attr(delta, "role")),
-        "function_call": None if delta is None else _function_call(delta),
-        "tool_calls": None if delta is None else _tool_calls(delta),
-        "choices": len(chunk.choices),
-        "usage": _usage_view(_attr(chunk, "usage")),
-        "provider_specific_fields": _raw(chunk.provider_specific_fields),
-    }
+    function = None if delta is None else _attr(delta, "function_call")
+    return [
+        chunk.id,
+        chunk.model,
+        chunk.created,
+        chunk.system_fingerprint,
+        None if choice is None else choice.finish_reason,
+        cast("Json", _attr(delta, "content")),
+        cast("Json", _attr(delta, "role")),
+        None if function is None else _function_values(function),
+        None if delta is None else _tool_call_values(delta),
+        len(chunk.choices),
+        _usage_view(_attr(chunk, "usage")),
+        _raw(chunk.provider_specific_fields),
+    ]
 
 
 def _create(wrapper: CustomStreamWrapper, step: Step, state: Step) -> Json:
@@ -333,12 +324,14 @@ def _create(wrapper: CustomStreamWrapper, step: Step, state: Step) -> Json:
     except Exception as error:  # noqa: BLE001 - the wire contract carries every reader exception
         return {"raised": {"message": str(error)}}
     return {
+        "watch": [
+            wrapper.received_finish_reason,
+            wrapper.intermittent_finish_reason,
+            wrapper.sent_first_chunk,
+            wrapper.tool_call,
+            len(cast("list[object]", wrapper.chunks)),
+        ],
         "chunk": None if created is None else _summary(created),
-        "received_finish_reason": wrapper.received_finish_reason,
-        "intermittent_finish_reason": wrapper.intermittent_finish_reason,
-        "sent_first_chunk": wrapper.sent_first_chunk,
-        "tool_call": wrapper.tool_call,
-        "chunks": len(cast("list[object]", wrapper.chunks)),
     }
 
 

@@ -1,10 +1,12 @@
 use crate::provider_chunk_decode::chunk::{
-    DecodeState, DecodedChunk, ProviderChunk, as_array, as_object, is_null, json_text,
+    DecodeState, DecodedChunk, ProviderChunk, as_object, json_text,
 };
 use crate::provider_chunk_decode::error::ProviderChunkError;
 use crate::stream_chunk_shaping::records::{JsonObject, JsonValue, Usage};
 
+pub mod aleph;
 pub mod openai;
+pub mod replicate;
 
 pub fn process_chunk(state: &mut DecodeState, chunk: &str) -> String {
     let trimmed = chunk.trim();
@@ -86,6 +88,13 @@ fn predibase_fallback(
     Ok(())
 }
 
+pub(super) fn parse_line(line: &str) -> Result<JsonValue, ProviderChunkError> {
+    serde_json::from_str(line).map_err(|source| ProviderChunkError::ParseResponse {
+        chunk: line.to_owned(),
+        source,
+    })
+}
+
 pub fn handle_nlp_cloud_chunk(
     chunk: &ProviderChunk,
     state: &mut DecodeState,
@@ -96,11 +105,7 @@ pub fn handle_nlp_cloud_chunk(
         fill_nlp_cloud(decoded, &process_chunk(state, line));
         return Ok(());
     }
-    let parsed =
-        serde_json::from_str(line).map_err(|source| ProviderChunkError::ParseResponse {
-            chunk: line.to_owned(),
-            source,
-        })?;
+    let parsed = parse_line(line)?;
     let generated = as_object(&parsed)
         .and_then(|fields| fields.get("generated_text"))
         .and_then(JsonValue::as_str)
@@ -119,64 +124,6 @@ fn fill_nlp_cloud(decoded: &mut DecodedChunk, text: &str) {
         return;
     }
     text.clone_into(&mut decoded.text);
-}
-
-pub fn handle_aleph_alpha_chunk(
-    chunk: &ProviderChunk,
-    decoded: &mut DecodedChunk,
-) -> Result<(), ProviderChunkError> {
-    let line = chunk.text()?;
-    let parsed =
-        serde_json::from_str(line).map_err(|source| ProviderChunkError::ParseResponse {
-            chunk: line.to_owned(),
-            source,
-        })?;
-    let completion = as_object(&parsed)
-        .and_then(|fields| fields.get("completions"))
-        .and_then(as_array)
-        .and_then(|completions| completions.first())
-        .and_then(as_object)
-        .and_then(|completion| completion.get("completion"))
-        .and_then(JsonValue::as_str)
-        .ok_or_else(|| ProviderChunkError::RejectedResponse {
-            chunk: line.to_owned(),
-        })?;
-    completion.clone_into(&mut decoded.text);
-    decoded.is_finished = true;
-    decoded.finish_reason = Some("stop".to_owned());
-    Ok(())
-}
-
-pub fn handle_replicate_chunk(
-    chunk: &ProviderChunk,
-    decoded: &mut DecodedChunk,
-) -> Result<(), ProviderChunkError> {
-    let fields = object_of(chunk)?;
-    if let Some(output) = fields.get("output") {
-        output
-            .as_str()
-            .ok_or(ProviderChunkError::InvalidField { field: "output" })?
-            .clone_into(&mut decoded.text);
-    }
-    match fields.get("status") {
-        Some(status) => {
-            if status.as_str() == Some("succeeded") {
-                decoded.is_finished = true;
-                decoded.finish_reason = Some("stop".to_owned());
-            }
-        }
-        None => reject_replicate(chunk, fields)?,
-    }
-    Ok(())
-}
-
-fn reject_replicate(chunk: &ProviderChunk, fields: &JsonObject) -> Result<(), ProviderChunkError> {
-    if fields.get("error").is_some_and(|error| !is_null(error)) {
-        return Err(ProviderChunkError::RejectedResponse {
-            chunk: rejected_text(chunk),
-        });
-    }
-    Ok(())
 }
 
 #[must_use]
@@ -210,7 +157,7 @@ pub fn string_field(
 
 // The three counters of a chunk usage, and none of the details a rebuilt Usage drops.
 pub fn usage_counts(counts: Option<&JsonValue>) -> Result<Option<Usage>, ProviderChunkError> {
-    let Some(counted) = counts.filter(|value| !is_null(value)) else {
+    let Some(counted) = counts.filter(|value| !matches!(value, JsonValue::Null)) else {
         return Ok(None);
     };
     let plain = serde_json::to_value(counted).map_err(ProviderChunkError::from)?;

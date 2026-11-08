@@ -5,6 +5,10 @@ use crate::stream_chunk_shaping::records::{
     GenericChunk, JsonObject, JsonValue, StreamChunk, Usage,
 };
 
+const NOT_JSON: ProviderChunkError = ProviderChunkError::UnexpectedChunk {
+    expected: "a JSON value",
+};
+
 // A provider's chunk as the provider crates hand it over, before any reader sees it.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum ProviderChunk {
@@ -26,14 +30,10 @@ impl ProviderChunk {
     }
 
     pub fn json(&self) -> Result<&JsonValue, ProviderChunkError> {
-        match self {
-            Self::Json(value) => Ok(value),
-            Self::Text(_) | Self::Generic(_) | Self::Bytes(_) => {
-                Err(ProviderChunkError::UnexpectedChunk {
-                    expected: "a JSON value",
-                })
-            }
-        }
+        let Self::Json(value) = self else {
+            return Err(NOT_JSON);
+        };
+        Ok(value)
     }
 
     // An OpenAI-shaped chunk is the one a provider sends with a choices list.
@@ -76,15 +76,21 @@ impl ProviderChunk {
             });
         };
         let mut normalized = fields.clone();
-        if normalized.get("choices").is_none_or(is_null) {
+        if normalized
+            .get("choices")
+            .is_none_or(|value| matches!(value, JsonValue::Null))
+        {
             normalized.insert("choices".to_owned(), JsonValue::Array(Vec::new()));
         }
-        if let Some(choices) = normalized.get_mut("choices").and_then(as_array_mut) {
+        if let Some(JsonValue::Array(choices)) = normalized.get_mut("choices") {
             for choice in choices {
                 normalize_choice(choice);
             }
         }
-        if normalized.get("hidden_params").is_none_or(is_null) {
+        if normalized
+            .get("hidden_params")
+            .is_none_or(|value| matches!(value, JsonValue::Null))
+        {
             normalized.insert(
                 "hidden_params".to_owned(),
                 JsonValue::Object(JsonObject::new()),
@@ -100,7 +106,10 @@ fn normalize_choice(choice: &mut JsonValue) {
     let JsonValue::Object(fields) = choice else {
         return;
     };
-    if fields.get("delta").is_none_or(is_null) {
+    if fields
+        .get("delta")
+        .is_none_or(|value| matches!(value, JsonValue::Null))
+    {
         fields.insert("delta".to_owned(), JsonValue::Object(JsonObject::new()));
     }
 }
@@ -149,14 +158,10 @@ pub struct DecodeState {
 
 #[must_use]
 pub const fn as_object(value: &JsonValue) -> Option<&JsonObject> {
-    match value {
-        JsonValue::Object(fields) => Some(fields),
-        JsonValue::Null
-        | JsonValue::Bool(_)
-        | JsonValue::Number(_)
-        | JsonValue::String(_)
-        | JsonValue::Array(_) => None,
+    if let JsonValue::Object(fields) = value {
+        return Some(fields);
     }
+    None
 }
 
 #[must_use]
@@ -168,41 +173,6 @@ pub fn as_array(value: &JsonValue) -> Option<&[JsonValue]> {
         | JsonValue::Number(_)
         | JsonValue::String(_)
         | JsonValue::Object(_) => None,
-    }
-}
-
-const fn as_array_mut(value: &mut JsonValue) -> Option<&mut Vec<JsonValue>> {
-    match value {
-        JsonValue::Array(items) => Some(items),
-        JsonValue::Null
-        | JsonValue::Bool(_)
-        | JsonValue::Number(_)
-        | JsonValue::String(_)
-        | JsonValue::Object(_) => None,
-    }
-}
-
-#[must_use]
-pub const fn as_bool(value: &JsonValue) -> Option<bool> {
-    match value {
-        JsonValue::Bool(flag) => Some(*flag),
-        JsonValue::Null
-        | JsonValue::Number(_)
-        | JsonValue::String(_)
-        | JsonValue::Array(_)
-        | JsonValue::Object(_) => None,
-    }
-}
-
-#[must_use]
-pub const fn is_null(value: &JsonValue) -> bool {
-    match value {
-        JsonValue::Null => true,
-        JsonValue::Bool(_)
-        | JsonValue::Number(_)
-        | JsonValue::String(_)
-        | JsonValue::Array(_)
-        | JsonValue::Object(_) => false,
     }
 }
 

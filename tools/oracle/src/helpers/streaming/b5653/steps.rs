@@ -1,7 +1,6 @@
 use betterlite_streaming::provider_chunk_decode::chunk::{
     DecodeState, ProviderChunk, ProviderKind, RequestOptions,
 };
-use betterlite_streaming::provider_chunk_decode::creator::chunk_creator;
 use betterlite_streaming::provider_chunk_decode::dispatch::decode_provider_chunk;
 use betterlite_streaming::provider_chunk_decode::handlers::process_chunk;
 use betterlite_streaming::stream_chunk_shaping::ChunkShaper;
@@ -13,8 +12,10 @@ use uuid::Uuid;
 
 use crate::helpers::HelperError;
 
-use self::views::{creator_view, decode_view, error_view};
+use self::creator::creator_step;
+use self::views::{decode_view, error_view};
 
+mod creator;
 mod views;
 
 pub(super) fn run(input: &Value) -> Result<Value, Box<HelperError>> {
@@ -148,19 +149,6 @@ fn decode_step(harness: &mut Harness, step: &Value) -> Result<Value, Box<HelperE
     let chunk = chunk_of(step)?;
     match decode_provider_chunk(harness.provider.as_deref(), &chunk, &mut harness.state) {
         Ok(decoded) => Ok(decode_view(&decoded, &harness.state)),
-        Err(error) => Ok(error_view(&error)),
-    }
-}
-
-fn creator_step(harness: &mut Harness, step: &Value) -> Result<Value, Box<HelperError>> {
-    let chunk = chunk_of(step)?;
-    let created = chunk_creator(&mut harness.shaper, &mut harness.state, &chunk);
-    match created {
-        Ok(created_chunk) => Ok(creator_view(
-            created_chunk.as_ref(),
-            &harness.shaper,
-            &harness.state,
-        )),
         Err(error) => Ok(error_view(&error)),
     }
 }

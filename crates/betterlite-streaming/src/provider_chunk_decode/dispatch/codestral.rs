@@ -1,23 +1,10 @@
-use crate::provider_chunk_decode::chunk::{
-    DecodeState, DecodedChunk, ProviderChunk, as_array, as_object, is_null,
-};
-use crate::provider_chunk_decode::dispatch::finish_state;
+use crate::provider_chunk_decode::chunk::{DecodedChunk, ProviderChunk, as_array, as_object};
 use crate::provider_chunk_decode::error::ProviderChunkError;
 use crate::provider_chunk_decode::handlers::rejected_text;
 use crate::stream_chunk_shaping::extras::strip_sse_data_from_chunk;
 use crate::stream_chunk_shaping::records::JsonValue;
 
-pub(super) fn decode_codestral(
-    chunk: &ProviderChunk,
-    state: &mut DecodeState,
-) -> Result<DecodedChunk, ProviderChunkError> {
-    let mut decoded = DecodedChunk::default();
-    fill_codestral(chunk, &mut decoded)?;
-    finish_state(state, &decoded);
-    Ok(decoded)
-}
-
-fn fill_codestral(
+pub(super) fn fill_codestral(
     chunk: &ProviderChunk,
     decoded: &mut DecodedChunk,
 ) -> Result<(), ProviderChunkError> {
@@ -61,7 +48,7 @@ fn fill_codestral_choice(
     text.clone_into(&mut decoded.text);
     if let Some(reason) = choice
         .get("finish_reason")
-        .filter(|reason| !is_null(reason))
+        .filter(|reason| !matches!(reason, JsonValue::Null))
         .and_then(JsonValue::as_str)
     {
         decoded.is_finished = true;
@@ -69,7 +56,7 @@ fn fill_codestral_choice(
     }
     decoded.logprobs = choice
         .get("logprobs")
-        .filter(|logprobs| !is_null(logprobs))
+        .filter(|logprobs| !matches!(logprobs, JsonValue::Null))
         .cloned();
     decoded.original = Some(ProviderChunk::Json(Box::new(parsed.clone())).openai_chunk()?);
     Ok(())
