@@ -1,5 +1,5 @@
 use crate::anthropic_results::images::to_anthropic_image_chunk;
-use crate::arguments::json::{Json, Object};
+use crate::arguments::json::Json;
 use crate::gemini_tool_results::error::GeminiToolResultsError;
 use crate::gemini_tool_results::types::GeminiInlineData;
 use crate::media::inline::RemoteMediaFetcher;
@@ -24,6 +24,7 @@ const IMAGE_PREFIX: &str = "image/";
 const DATA_URL_PREFIX: &str = "data:";
 const BASE64_MARKER: &str = ";base64,";
 const STRING: &str = "a string";
+const STRING_OR_OBJECT: &str = "a string or an object";
 
 pub(crate) struct CollectedContent {
     pub(crate) text: String,
@@ -71,7 +72,10 @@ where
     }
     for (index, part) in parts.iter().enumerate() {
         match part.kind.as_str() {
-            TEXT => collected.text.push_str(&text_field(part, index)?),
+            TEXT => {
+                let text = text_value(part.fields.get(TEXT), TEXT, STRING, index)?;
+                collected.text.push_str(&text.unwrap_or_default());
+            }
             IMAGE => {
                 if let Some(media) = anthropic_image(part, index)? {
                     collected.media.push(media);
@@ -127,11 +131,16 @@ fn promoted_data_url(text: &str) -> Option<GeminiInlineData> {
     })
 }
 
-fn text_field(part: &ContentPart, index: usize) -> Result<String, GeminiToolResultsError> {
-    match part.fields.get(TEXT) {
-        None | Some(Json::Null) => Ok(String::new()),
-        Some(Json::Text(text)) => Ok(text.clone()),
-        Some(_) => Err(field_error(index, TEXT, STRING)),
+fn text_value(
+    value: Option<&Json>,
+    path: &str,
+    expected: &'static str,
+    index: usize,
+) -> Result<Option<String>, GeminiToolResultsError> {
+    match value {
+        None | Some(Json::Null) => Ok(None),
+        Some(Json::Text(text)) => Ok(Some(text.clone())),
+        Some(_) => Err(field_error(index, path, expected)),
     }
 }
 
@@ -145,76 +154,33 @@ fn anthropic_image(
     if source.get(TYPE).and_then(Json::as_str) != Some(BASE64) {
         return Ok(None);
     }
-    let data = source_string(source, DATA, "source.data", "", index)?;
-    let mime_type = source_string(
-        source,
-        MEDIA_TYPE,
-        "source.media_type",
-        DEFAULT_IMAGE_MEDIA_TYPE,
-        index,
-    )?;
+    let data = text_value(source.get(DATA), "source.data", STRING, index)?.unwrap_or_default();
+    let mime_type = text_value(source.get(MEDIA_TYPE), "source.media_type", STRING, index)?
+        .unwrap_or_else(|| DEFAULT_IMAGE_MEDIA_TYPE.to_owned());
     Ok(Some(GeminiInlineData { data, mime_type }))
 }
 
-fn source_string(
-    source: &Object,
-    key: &str,
-    path: &str,
-    default: &str,
-    index: usize,
-) -> Result<String, GeminiToolResultsError> {
-    match source.get(key) {
-        None | Some(Json::Null) => Ok(default.to_owned()),
-        Some(Json::Text(text)) => Ok(text.clone()),
-        Some(_) => Err(field_error(index, path, STRING)),
-    }
-}
-
 fn image_url(part: &ContentPart, index: usize) -> Result<Option<String>, GeminiToolResultsError> {
-    match part.fields.get(IMAGE_URL) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(url)) => Ok(non_empty(url)),
-        Some(Json::Object(fields)) => match fields.get(URL) {
-            None | Some(Json::Null) => Ok(None),
-            Some(Json::Text(url)) => Ok(non_empty(url)),
-            Some(_) => Err(field_error(index, "image_url.url", STRING)),
-        },
-        Some(_) => Err(field_error(index, IMAGE_URL, "a string or an object")),
-    }
+    let value = match part.fields.get(IMAGE_URL) {
+        Some(Json::Object(fields)) => text_value(fields.get(URL), "image_url.url", STRING, index)?,
+        other => text_value(other, IMAGE_URL, STRING_OR_OBJECT, index)?,
+    };
+    Ok(value.filter(|url| !url.is_empty()))
 }
 
 fn file_data(part: &ContentPart, index: usize) -> Result<Option<String>, GeminiToolResultsError> {
-    if let Some(direct) = direct_file_data(part, index)? {
-        return Ok(Some(direct));
+    let direct = text_value(part.fields.get(FILE_DATA), FILE_DATA, STRING, index)?;
+    if let Some(data) = direct.filter(|data| !data.is_empty()) {
+        return Ok(Some(data));
     }
     match part.fields.get(FILE) {
         None | Some(Json::Null) => Ok(None),
         Some(Json::Text(data)) => Ok(non_empty(data)),
-        Some(Json::Object(fields)) => nested_file_data(fields, index),
-        Some(_) => Err(field_error(index, FILE, "a string or an object")),
-    }
-}
-
-fn direct_file_data(
-    part: &ContentPart,
-    index: usize,
-) -> Result<Option<String>, GeminiToolResultsError> {
-    match part.fields.get(FILE_DATA) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(data)) if data.is_empty() => Ok(None),
-        Some(Json::Text(data)) => Ok(Some(data.clone())),
-        Some(_) => Err(field_error(index, FILE_DATA, STRING)),
-    }
-}
-
-fn nested_file_data(
-    fields: &Object,
-    index: usize,
-) -> Result<Option<String>, GeminiToolResultsError> {
-    match fields.get(FILE_DATA) {
-        None | Some(Json::Null) => Ok(None),
-        Some(Json::Text(data)) => Ok(non_empty(data)),
-        Some(_) => Err(field_error(index, "file.file_data", STRING)),
+        Some(Json::Object(fields)) => {
+            let nested = text_value(fields.get(FILE_DATA), "file.file_data", STRING, index)?;
+            Ok(nested.filter(|data| !data.is_empty()))
+        }
+        Some(_) => Err(field_error(index, FILE, STRING_OR_OBJECT)),
     }
 }
 

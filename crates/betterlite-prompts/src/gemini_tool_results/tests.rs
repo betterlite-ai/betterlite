@@ -180,32 +180,35 @@ fn text_parts_message(count: usize) -> String {
     format!(r#"{{"role":"tool","tool_call_id":"call","name":"n","content":[{parts}]}}"#)
 }
 
-async fn assert_too_many_parts() {
-    let text = text_parts_message(MAX_MESSAGE_PARTS.saturating_add(1));
-    let message = parse_message(&text);
+async fn bound_result(
+    message: &Message,
+    last: Option<&LastToolCallMessage>,
+) -> Result<GeminiToolResult, GeminiToolResultsError> {
     let data_urls = BTreeMap::new();
     let source = MapSource {
         data_urls: &data_urls,
     };
-    let error = convert_tool_result_to_gemini(&message, None, false, &source)
-        .await
-        .unwrap_err();
-    assert!(matches!(
-        &error,
-        GeminiToolResultsError::TooManyParts { limit } if *limit == MAX_MESSAGE_PARTS
-    ));
+    convert_tool_result_to_gemini(message, last, false, &source).await
+}
+
+fn tool_calls_history(count: usize) -> String {
+    let tool = r#"{"id":"call","function":{"name":"n","arguments":"{}"}}"#;
+    let calls = repeat_n(tool, count).collect::<Vec<_>>().join(",");
+    format!(r#"{{"tool_calls":[{calls}]}}"#)
+}
+
+async fn assert_too_many_parts() {
+    let message = parse_message(&text_parts_message(MAX_MESSAGE_PARTS.saturating_add(1)));
+    let error = bound_result(&message, None).await.unwrap_err();
+    let GeminiToolResultsError::TooManyParts { limit } = error else {
+        panic!("a long content list is refused");
+    };
+    assert_eq!(limit, MAX_MESSAGE_PARTS);
 }
 
 async fn assert_max_parts() {
-    let text = text_parts_message(MAX_MESSAGE_PARTS);
-    let message = parse_message(&text);
-    let data_urls = BTreeMap::new();
-    let source = MapSource {
-        data_urls: &data_urls,
-    };
-    let result = convert_tool_result_to_gemini(&message, None, false, &source)
-        .await
-        .unwrap();
+    let message = parse_message(&text_parts_message(MAX_MESSAGE_PARTS));
+    let result = bound_result(&message, None).await.unwrap();
     let GeminiToolResult::Single(part) = result else {
         panic!("a text-only result is a single part");
     };
@@ -218,24 +221,13 @@ async fn assert_max_parts() {
     );
 }
 
-fn tool_calls_history(count: usize) -> String {
-    let tool = r#"{"id":"call","function":{"name":"n","arguments":"{}"}}"#;
-    let calls = repeat_n(tool, count).collect::<Vec<_>>().join(",");
-    format!(r#"{{"tool_calls":[{calls}]}}"#)
-}
-
 async fn assert_too_many_tool_calls() {
-    let text = tool_calls_history(MAX_TOOL_CALLS.saturating_add(1));
-    let last = serde_json::from_str::<LastToolCallMessage>(&text).unwrap();
-    let message =
-        parse_message(r#"{"role":"tool","tool_call_id":"call","name":"n","content":"x"}"#);
-    let data_urls = BTreeMap::new();
-    let source = MapSource {
-        data_urls: &data_urls,
-    };
-    let error = convert_tool_result_to_gemini(&message, Some(&last), false, &source)
-        .await
-        .unwrap_err();
+    let last = serde_json::from_str::<LastToolCallMessage>(&tool_calls_history(
+        MAX_TOOL_CALLS.saturating_add(1),
+    ))
+    .unwrap();
+    let message = parse_message(r#"{"role":"tool","tool_call_id":"call","content":"x"}"#);
+    let error = bound_result(&message, Some(&last)).await.unwrap_err();
     assert!(matches!(
         &error,
         GeminiToolResultsError::TooManyToolCalls { limit } if *limit == MAX_TOOL_CALLS
@@ -243,16 +235,10 @@ async fn assert_too_many_tool_calls() {
 }
 
 async fn assert_max_tool_calls() {
-    let text = tool_calls_history(MAX_TOOL_CALLS);
-    let last = serde_json::from_str::<LastToolCallMessage>(&text).unwrap();
+    let last =
+        serde_json::from_str::<LastToolCallMessage>(&tool_calls_history(MAX_TOOL_CALLS)).unwrap();
     let message = parse_message(r#"{"role":"tool","tool_call_id":"call","content":"x"}"#);
-    let data_urls = BTreeMap::new();
-    let source = MapSource {
-        data_urls: &data_urls,
-    };
-    let result = convert_tool_result_to_gemini(&message, Some(&last), false, &source)
-        .await
-        .unwrap();
+    let result = bound_result(&message, Some(&last)).await.unwrap();
     let GeminiToolResult::Single(part) = result else {
         panic!("a text-only result is a single part");
     };
