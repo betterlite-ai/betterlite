@@ -101,7 +101,7 @@ fn session_region_cases() {
     default_region_cases();
     profile_selection_cases();
     config_file_path_cases();
-    profile_section_cases();
+    region_in_section();
     parser_failure_cases();
     credentials_cases();
 }
@@ -186,7 +186,7 @@ fn config_file_path_cases() {
     );
 }
 
-fn profile_section_cases() {
+fn region_in_section() {
     let cases = [
         ("[profile default]\nregion = eu-west-1\n", None, "eu-west-1"),
         (
