@@ -124,12 +124,9 @@ fn emit_once(input: &Input) -> Value {
 }
 
 fn span_time(input: &Input) -> Value {
-    let nanoseconds = input.times.iter().map(|time| {
-        let span = match time {
-            TimeInput::Seconds(seconds) => SpanTime::Seconds(*seconds),
-            TimeInput::DateTime(datetime) => SpanTime::DateTime(*datetime),
-        };
-        to_ns(span, input.now)
+    let nanoseconds = input.times.iter().map(|time| match time {
+        TimeInput::Seconds(seconds) => to_ns(SpanTime::Seconds(*seconds), input.now),
+        TimeInput::DateTime(datetime) => to_ns(SpanTime::DateTime(*datetime), input.now),
     });
     let names = input.names.iter().map(|name| {
         span_name(

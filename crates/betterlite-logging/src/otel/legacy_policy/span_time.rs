@@ -29,12 +29,13 @@ pub fn to_ns(time: SpanTime, now: i64) -> i64 {
             .mul_add(NANOS_PER_SECOND, 0.0)
             .trunc(),
     };
-    // a JSON time is finite and inside the range, so only a hand-built f64 saturates here
     let converted = Decimal::from_f64_retain(nanoseconds).and_then(|decimal| decimal.to_i64());
-    converted.unwrap_or(if nanoseconds < 0.0_f64 {
-        i64::MIN
-    } else {
-        i64::MAX
+    converted.unwrap_or_else(|| {
+        if nanoseconds.is_sign_negative() {
+            i64::MIN
+        } else {
+            i64::MAX
+        }
     })
 }
 

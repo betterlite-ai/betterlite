@@ -34,6 +34,16 @@ fn seconds_truncate_toward_zero_like_int(#[case] seconds: f64, #[case] expected:
     assert_eq!(to_ns(SpanTime::Seconds(seconds), 0), expected);
 }
 
+#[test]
+fn a_positive_time_past_the_range_saturates_at_the_maximum() {
+    assert_eq!(to_ns(SpanTime::Seconds(1e18_f64), 0), i64::MAX);
+}
+
+#[test]
+fn a_negative_time_past_the_range_saturates_at_the_minimum() {
+    assert_eq!(to_ns(SpanTime::Seconds(-1e18_f64), 0), i64::MIN);
+}
+
 #[rstest]
 #[case::epoch(0, 0, 0)]
 #[case::half_second(1, 500_000_000, 1_500_000_000)]

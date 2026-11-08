@@ -65,6 +65,18 @@ fn sampled_modes_map_like_litellm(#[case] text: &str, #[case] expected: CaptureM
 }
 
 #[test]
+fn span_and_event_is_explicit_without_message_logging() {
+    let policy = policy(Some("SPAN_AND_EVENT"), &BTreeMap::new());
+    assert_eq!(
+        policy.resolve(LoggingFlags {
+            turn_off_message_logging: false,
+            message_logging: false
+        }),
+        CaptureMode::SpanAndEvent
+    );
+}
+
+#[test]
 fn a_non_empty_config_value_beats_the_env_var() {
     let environment = env(CAPTURE_MESSAGE_CONTENT_ENV, "SPAN_AND_EVENT");
     let policy = policy(Some("NO_CONTENT"), &environment);
