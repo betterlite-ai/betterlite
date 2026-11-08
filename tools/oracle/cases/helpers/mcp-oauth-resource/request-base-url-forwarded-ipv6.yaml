@@ -1,0 +1,5 @@
+kind: helper
+name: "request-base-url-forwarded-ipv6"
+call: {"b4654":{"function":"request_base_url","proxy_base_url":"","base_url":"https://h/root","x_forwarded_host":"[2001:db8::1]","x_forwarded_port":"8080","from_trusted_proxy":true}}
+env: {}
+compare: {"ignore":[]}
