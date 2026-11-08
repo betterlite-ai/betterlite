@@ -44,8 +44,8 @@ fn expected(pairs: &[(&str, Value)]) -> BTreeMap<String, Value> {
         .collect()
 }
 
-fn message_attributes(messages: &str) -> BTreeMap<String, Value> {
-    let messages = json(messages);
+fn message_attributes(payload: &str) -> BTreeMap<String, Value> {
+    let messages = json(payload);
     recorded(|span| {
         let mut kwargs = MetadataMap::new();
         kwargs.insert("messages".to_owned(), messages.clone());
@@ -53,8 +53,8 @@ fn message_attributes(messages: &str) -> BTreeMap<String, Value> {
     })
 }
 
-fn response_attributes(response: &str) -> BTreeMap<String, Value> {
-    let response = json(response);
+fn response_attributes(payload: &str) -> BTreeMap<String, Value> {
+    let response = json(payload);
     recorded(|span| set_response_attributes(span, &response))
 }
 

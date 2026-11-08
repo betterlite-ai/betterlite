@@ -94,6 +94,7 @@ fn attribute_json(value: &Value) -> Json {
         }
         Value::String(text) => Json::String(text.to_string()),
         Value::Array(array) => Json::String(array.to_string()),
+        _ => Json::String(value.to_string()),
     }
 }
 
