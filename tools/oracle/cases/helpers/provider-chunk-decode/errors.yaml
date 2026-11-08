@@ -23,8 +23,20 @@ call:
       - op: decode
         provider: text-completion-codestral
         chunk: {kind: json, value: {choices: []}}
+      - op: decode
+        provider: azure
+        chunk:
+          kind: json
+          value: {id: chatcmpl-9, choices: [{index: 0, delta: {content: failed}, finish_reason: error}]}
+      - op: decode
+        provider: vertex_ai
+        chunk:
+          kind: json
+          value: {candidates: [{content: {parts: []}, finish_reason: SAFETY}]}
 env: {}
 compare:
   ignore:
-    - {pointer: /value/4/raised/message, why: LiteLLM appends the dict's repr, which betterlite does not port}
-    - {pointer: /value/5/raised/message, why: LiteLLM appends the dict's repr, which betterlite does not port}
+    - {pointer: /value/4/raised/message, why: "LiteLLM appends the dict's repr, which betterlite does not port"}
+    - {pointer: /value/5/raised/message, why: "LiteLLM appends the dict's repr, which betterlite does not port"}
+    - {pointer: /value/6/raised/message, why: "LiteLLM appends the response dict's repr, which betterlite does not port"}
+    - {pointer: /value/7/raised/message, why: "LiteLLM appends the proto object's repr, which betterlite does not port"}

@@ -15,6 +15,7 @@ use crate::provider_chunk_decode::handlers::{handle_nlp_cloud_chunk, handle_pred
 use crate::provider_chunk_decode::vertex::handle_vertex_chunk;
 use crate::stream_chunk_shaping::extras::generic_chunk_has_known_fields;
 use crate::stream_chunk_shaping::records::{GenericChunk, JsonValue, StreamChunk, item_count};
+use crate::stream_chunk_shaping::tokens::mapped_finish_reason;
 
 mod codestral;
 mod readers;
@@ -111,7 +112,7 @@ fn decode_custom(
         .first_mut()
         .and_then(|choice| choice.finish_reason.take_if(|reason| !reason.is_empty()));
     if let Some(reason) = finish {
-        state.received_finish_reason = Some(reason);
+        state.received_finish_reason = Some(mapped_finish_reason(&reason).to_owned());
         if !has_content {
             fill_early(&mut decoded, None);
             return Ok(decoded);

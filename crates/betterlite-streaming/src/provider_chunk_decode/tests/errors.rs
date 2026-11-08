@@ -1,6 +1,7 @@
 #[test]
 fn errors_nlp_cloud_message_matches_litellm() {
     let mut decode_state = state("gpt-4");
+    decode_state.received_finish_reason = Some("stop".to_owned());
     let error = decode_error("nlp_cloud", &text("not json"), &mut decode_state);
     assert_eq!(
         error.to_string(),
@@ -104,7 +105,14 @@ fn errors_vertex_function_call_is_built() {
         r#"{"candidates": [{"content": {"parts": [{"function_call": {"name": "lookup", "args": {"where": "x"}}}]}, "finish_reason": "STOP"}]}"#,
     );
     let decoded = decode("vertex_ai", &chunk, &mut decode_state);
-    let calls = decoded.tool_calls.as_ref().expect("a call is built");
+    assert!(decoded.tool_calls.is_none());
+    let original = decoded.original.as_ref().expect("the call chunk is built");
+    assert_eq!(original.id, "chatcmpl-00000000-0000-0000-0000-000000000000");
+    let choice = original
+        .choices
+        .first()
+        .expect("the call chunk has a choice");
+    let calls = choice.delta.tool_calls.as_ref().expect("a call is built");
     let items = as_array(calls).expect("the calls are a list");
     let call = as_object(items.first().expect("one call")).expect("the call is an object");
     let identifier = call.get("id").and_then(JsonValue::as_str);
@@ -126,12 +134,16 @@ fn errors_vertex_function_call_is_built() {
         function.get("arguments").and_then(JsonValue::as_str),
         Some(r#"{"where":"x"}"#)
     );
-    let original = decoded.original.as_ref().expect("the call chunk is built");
-    assert_eq!(original.id, "chatcmpl-00000000-0000-0000-0000-000000000000");
-    let choice = original
-        .choices
-        .first()
-        .expect("the call chunk has a choice");
-    assert_eq!(choice.delta.tool_calls.as_ref(), Some(calls));
     assert_eq!(decode_state.received_finish_reason.as_deref(), Some("stop"));
+}
+
+#[test]
+fn errors_vertex_chunk_without_text_or_call_sets_no_finish_reason() {
+    let mut decode_state = state("gpt-4");
+    let chunk = json_chunk(
+        r#"{"candidates": [{"content": {"parts": []}, "finish_reason": "MAX_TOKENS"}]}"#,
+    );
+    let decoded = decode("vertex_ai", &chunk, &mut decode_state);
+    assert_eq!(decoded.text, "");
+    assert!(decode_state.received_finish_reason.is_none());
 }

@@ -7,11 +7,16 @@ use crate::stream_chunk_shaping::extras::strip_sse_data_from_chunk;
 use crate::stream_chunk_shaping::records::{JsonObject, JsonValue, StreamChunk};
 use crate::stream_chunk_shaping::tokens::mapped_finish_reason;
 
-pub fn handle_openai_chat_chunk(chunk: &StreamChunk, decoded: &mut DecodedChunk) {
+// The OpenAI SDK hands these providers' chunks over with the raw finish reason, so "error" raises.
+pub fn handle_openai_chat_chunk(
+    provider: Option<&str>,
+    chunk: &StreamChunk,
+    decoded: &mut DecodedChunk,
+) -> Result<(), ProviderChunkError> {
     decoded.original = Some(chunk.clone());
     decoded.usage.clone_from(&chunk.usage);
     let Some(choice) = chunk.choices.first() else {
-        return;
+        return Ok(());
     };
     decoded.text = choice.delta.content.clone().unwrap_or_default();
     decoded.logprobs.clone_from(&choice.logprobs);
@@ -20,13 +25,22 @@ pub fn handle_openai_chat_chunk(chunk: &StreamChunk, decoded: &mut DecodedChunk)
         .clone()
         .filter(|reason| !reason.is_empty())
     else {
-        return;
+        return Ok(());
     };
     decoded.is_finished = true;
     if let Some(JsonValue::Bool(flag)) = chunk.hidden_params.get("is_finished") {
         decoded.is_finished = *flag;
     }
+    if let Some(sdk_provider @ ("openai" | "azure")) = provider
+        && decoded.is_finished
+        && reason == "error"
+    {
+        return Err(ProviderChunkError::FinishReasonError {
+            provider: sdk_provider.to_owned(),
+        });
+    }
     decoded.finish_reason = Some(mapped_finish_reason(&reason).to_owned());
+    Ok(())
 }
 
 pub fn handle_text_completion_chunk(

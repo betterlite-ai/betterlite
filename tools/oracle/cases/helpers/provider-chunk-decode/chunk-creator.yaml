@@ -36,6 +36,15 @@ call:
         chunk:
           kind: generic
           value: {text: provided, is_finished: false, finish_reason: "", usage: null, provider_specific_fields: {provider_specific_fields: {x: 1}}}
+      - op: creator
+        chunk:
+          kind: json
+          value: {id: chatcmpl-2, choices: [{index: 0, delta: {tool_calls: [{id: call_1, type: function, function: {name: f, arguments: null}}, {id: call_2, type: function, function: {name: g, arguments: "{}"}}]}}]}
+      - op: creator
+        send_stream_usage: true
+        chunk:
+          kind: json
+          value: {id: chatcmpl-3, choices: [], usage: {prompt_tokens: 2, completion_tokens: 3, total_tokens: 5, prompt_tokens_details: {cached_tokens: 1}, completion_tokens_details: {reasoning_tokens: 2}}}
 env: {}
 compare:
   ignore: []

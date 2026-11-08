@@ -46,6 +46,22 @@ call:
         chunk:
           kind: json
           value: {id: chatcmpl-8, choices: [{index: 0, delta: {content: failed}, finish_reason: error}]}
+      - op: decode
+        provider: azure_ai
+        chunk:
+          kind: json
+          value: {id: chatcmpl-9, model: ai-deployment, choices: [{index: 0, delta: {content: mapped}, finish_reason: error}]}
+      - op: decode
+        provider: cached_response
+        chunk:
+          kind: json
+          value: {id: chatcmpl-10, choices: [{index: 0, delta: {content: cut}, finish_reason: max_tokens}]}
+      - op: decode
+        provider: azure
+        chunk:
+          kind: json
+          value: {id: chatcmpl-11, model: "", choices: [{index: 0, delta: {content: unnamed}}]}
 env: {}
 compare:
-  ignore: []
+  ignore:
+    - {pointer: /value/7/raised/message, why: "LiteLLM appends the response dict's repr, which betterlite does not port"}

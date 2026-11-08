@@ -31,12 +31,12 @@ fn openai_azure_ai_reads_the_model_too() {
 }
 
 #[test]
-fn openai_azure_empty_model_keeps_the_model() {
+fn openai_azure_empty_model_replaces_the_model() {
     let mut decode_state = state("gpt-4");
     let chunk =
         json_chunk(r#"{"model": "", "choices": [{"index": 0, "delta": {"content": "hi"}}]}"#);
     decode("azure", &chunk, &mut decode_state);
-    assert_eq!(decode_state.model, "gpt-4");
+    assert_eq!(decode_state.model, "");
 }
 
 #[test]
@@ -126,19 +126,43 @@ fn openai_missing_choices_gives_empty_text() {
     assert!(decoded.original.is_some());
 }
 
-#[test]
-fn openai_error_finish_reason_ends_the_stream_as_stop() {
+#[rstest]
+#[case::openai("openai")]
+#[case::azure("azure")]
+fn openai_error_finish_reason_raises_for_the_sdk_providers(#[case] provider: &str) {
     let mut decode_state = state("gpt-4");
     let chunk =
         json_chunk(r#"{"choices": [{"delta": {"content": "hi"}, "finish_reason": "error"}]}"#);
-    let decoded = decode("openai", &chunk, &mut decode_state);
+    let error = decode_error(provider, &chunk, &mut decode_state);
+    assert_eq!(error.class(), "Exception");
+    assert_eq!(
+        error.to_string(),
+        format!(
+            "{provider} raised a streaming error - finish_reason: error, no content string given."
+        )
+    );
+}
+
+#[test]
+fn openai_error_finish_reason_of_a_converted_provider_ends_as_stop() {
+    let mut decode_state = state("gpt-4");
+    let chunk =
+        json_chunk(r#"{"choices": [{"delta": {"content": "hi"}, "finish_reason": "error"}]}"#);
+    let decoded = decode("azure_ai", &chunk, &mut decode_state);
     assert!(decoded.is_finished);
     assert_eq!(decoded.finish_reason.as_deref(), Some("stop"));
     assert_eq!(decode_state.received_finish_reason.as_deref(), Some("stop"));
-    assert_eq!(
-        decode_state.intermittent_finish_reason.as_deref(),
-        Some("stop")
+}
+
+#[test]
+fn openai_error_finish_reason_is_ignored_when_the_chunk_says_it_is_not_finished() {
+    let mut decode_state = state("gpt-4");
+    let chunk = json_chunk(
+        r#"{"choices": [{"delta": {"content": "hi"}, "finish_reason": "error"}], "hidden_params": {"is_finished": false}}"#,
     );
+    let decoded = decode("openai", &chunk, &mut decode_state);
+    assert!(!decoded.is_finished);
+    assert!(decode_state.received_finish_reason.is_none());
 }
 
 #[test]
@@ -197,4 +221,29 @@ fn openai_cached_response_keeps_the_chunk_usage() {
     let created_chunk =
         created("cached_response", &mut decode_state, &chunk).expect("a chunk is emitted");
     assert_eq!(created_chunk.usage, Some(usage(1, 2, 3)));
+}
+
+#[test]
+fn openai_cached_response_maps_the_finish_reason() {
+    let mut decode_state = state("gpt-4");
+    let chunk = json_chunk(
+        r#"{"id": "c1", "choices": [{"index": 0, "delta": {"content": "x"}, "finish_reason": "max_tokens"}]}"#,
+    );
+    let decoded = decode("cached_response", &chunk, &mut decode_state);
+    assert_eq!(decoded.finish_reason.as_deref(), Some("length"));
+    assert_eq!(
+        decode_state.received_finish_reason.as_deref(),
+        Some("length")
+    );
+}
+
+#[test]
+fn openai_cached_response_empty_finish_reason_is_no_finish() {
+    let mut decode_state = state("gpt-4");
+    let chunk = json_chunk(
+        r#"{"id": "c1", "choices": [{"index": 0, "delta": {"content": "x"}, "finish_reason": ""}]}"#,
+    );
+    let decoded = decode("cached_response", &chunk, &mut decode_state);
+    assert!(!decoded.is_finished);
+    assert!(decode_state.received_finish_reason.is_none());
 }

@@ -4,6 +4,7 @@ use crate::provider_chunk_decode::chunk::{
 use crate::provider_chunk_decode::error::ProviderChunkError;
 use crate::provider_chunk_decode::handlers::openai::handle_openai_chat_chunk;
 use crate::stream_chunk_shaping::records::JsonValue;
+use crate::stream_chunk_shaping::tokens::mapped_finish_reason;
 
 pub(super) fn fill_petals(state: &mut DecodeState) -> Result<DecodedChunk, ProviderChunkError> {
     let mut decoded = DecodedChunk::default();
@@ -26,12 +27,12 @@ pub(super) fn fill_openai(
 ) -> Result<DecodedChunk, ProviderChunkError> {
     let mut decoded = DecodedChunk::default();
     if matches!(provider, Some("azure" | "azure_ai"))
-        && let Some(model) = chunk.model_name()
+        && let Some(model) = text_at(chunk.json()?, "model")
     {
         model.clone_into(&mut state.model);
     }
     let stream = chunk.openai_chunk()?;
-    handle_openai_chat_chunk(&stream, &mut decoded);
+    handle_openai_chat_chunk(provider, &stream, &mut decoded)?;
     state
         .intermittent_finish_reason
         .clone_from(&decoded.finish_reason);
@@ -71,7 +72,10 @@ pub(super) fn fill_cached(
 ) -> Result<(), ProviderChunkError> {
     let stream = chunk.openai_chunk()?;
     let choice = stream.choices.first();
-    let finish_reason = choice.and_then(|first| first.finish_reason.clone());
+    let finish_reason = choice
+        .and_then(|first| first.finish_reason.as_deref())
+        .filter(|reason| !reason.is_empty())
+        .map(|reason| mapped_finish_reason(reason).to_owned());
     decoded.text = choice
         .and_then(|first| first.delta.content.clone())
         .unwrap_or_default();

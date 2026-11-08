@@ -1,5 +1,5 @@
 use betterlite_streaming::provider_chunk_decode::chunk::{
-    DecodeState, DecodedChunk, ProviderChunk, ProviderKind, RequestOptions, as_object,
+    DecodeState, DecodedChunk, ProviderChunk, ProviderKind, RequestOptions, as_array, as_object,
 };
 use betterlite_streaming::provider_chunk_decode::creator::chunk_creator;
 use betterlite_streaming::provider_chunk_decode::dispatch::decode_provider_chunk;
@@ -174,21 +174,12 @@ fn chunk_of(step: &Value) -> Result<ProviderChunk, Box<HelperError>> {
 }
 
 fn raised(error: &ProviderChunkError) -> Value {
-    match error {
-        ProviderChunkError::StopIteration => json!({"raised": {"message": ""}}),
-        ProviderChunkError::ParseResponse { .. }
-        | ProviderChunkError::RejectedResponse { .. }
-        | ProviderChunkError::ProviderReported { .. }
-        | ProviderChunkError::UnknownStream
-        | ProviderChunkError::VertexBlocked
-        | ProviderChunkError::NotAString { .. }
-        | ProviderChunkError::UnexpectedChunk { .. }
-        | ProviderChunkError::MissingField { .. }
-        | ProviderChunkError::InvalidField { .. }
-        | ProviderChunkError::InvalidUtf8 { .. }
-        | ProviderChunkError::InvalidChunk { .. }
-        | ProviderChunkError::Shape { .. } => json!({"raised": {"message": error.to_string()}}),
-    }
+    let message = if matches!(error, ProviderChunkError::StopIteration) {
+        String::new()
+    } else {
+        error.to_string()
+    };
+    json!({"raised": {"message": message}})
 }
 
 fn decode_view(decoded: &DecodedChunk, state: &DecodeState) -> Value {
@@ -197,7 +188,11 @@ fn decode_view(decoded: &DecodedChunk, state: &DecodeState) -> Value {
         .clone()
         .filter(|text| !text.is_empty());
     let usage = decoded.usage.as_ref().map(usage_tuple);
-    let early_id = decoded.original.as_ref().map(|chunk| chunk.id.clone());
+    let early_id = decoded
+        .original
+        .as_ref()
+        .filter(|_| decoded.early_return)
+        .map(|chunk| chunk.id.clone());
     to_array((
         &decoded.text,
         decoded.is_finished,
@@ -249,18 +244,13 @@ fn summary(chunk: &StreamChunk) -> Value {
         body.and_then(|part| part.content.clone()),
         body.and_then(|part| part.role.clone()),
         function,
-        calls.and_then(call_list),
+        calls
+            .and_then(as_array)
+            .map(|items| items.iter().map(call_view).collect::<Vec<_>>()),
         chunk.choices.len(),
         chunk.usage.as_ref().map(usage_tuple),
         &chunk.provider_specific_fields,
     ))
-}
-
-fn call_list(value: &JsonValue) -> Option<Value> {
-    let JsonValue::Array(items) = value else {
-        return None;
-    };
-    Some(Value::Array(items.iter().map(call_view).collect()))
 }
 
 fn call_view(value: &JsonValue) -> Value {
@@ -271,15 +261,31 @@ fn call_view(value: &JsonValue) -> Value {
         .get("function")
         .and_then(as_object)
         .map(|found| json!([found.get("name"), found.get("arguments")]));
-    json!([fields.get("id"), fields.get("type"), function])
+    json!([
+        fields.get("id"),
+        fields.get("type"),
+        function,
+        fields.get("index")
+    ])
 }
 
-const fn usage_tuple(usage: &Usage) -> [i64; 3] {
-    [
+// The three counters, then the cached and the reasoning token counts when the details carry them.
+fn usage_tuple(usage: &Usage) -> Value {
+    let cached = usage
+        .prompt_tokens_details
+        .as_ref()
+        .and_then(|details| details.cached_tokens);
+    let reasoning = usage
+        .completion_tokens_details
+        .as_ref()
+        .and_then(|details| details.extra.get("reasoning_tokens"));
+    json!([
         usage.prompt_tokens,
         usage.completion_tokens,
         usage.total_tokens,
-    ]
+        cached,
+        reasoning
+    ])
 }
 
 fn to_array<Plain>(value: Plain) -> Value

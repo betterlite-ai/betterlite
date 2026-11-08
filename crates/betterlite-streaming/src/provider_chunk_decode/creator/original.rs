@@ -19,16 +19,30 @@ pub(super) fn normalize_original(original: &mut StreamChunk) {
         function.insert("arguments".to_owned(), JsonValue::String(String::new()));
     }
     if let Some(JsonValue::Array(tools)) = &mut delta.tool_calls {
+        let mut next_index = 0_i64;
         for tool in tools {
-            normalize_tool(tool);
+            normalize_tool(tool, &mut next_index);
         }
     }
 }
 
-fn normalize_tool(tool: &mut JsonValue) {
+// Delta numbers the calls that come without an index from one running counter.
+fn normalize_tool(tool: &mut JsonValue, next_index: &mut i64) {
     let JsonValue::Object(fields) = tool else {
         return;
     };
+    if matches!(fields.get("index"), None | Some(JsonValue::Null)) {
+        fields.insert(
+            "index".to_owned(),
+            JsonValue::Number(serde_json::Number::from(*next_index)),
+        );
+        *next_index = next_index.saturating_add(1);
+    }
+    if let Some(JsonValue::Object(function)) = fields.get_mut("function")
+        && matches!(function.get("arguments"), None | Some(JsonValue::Null))
+    {
+        function.insert("arguments".to_owned(), JsonValue::String(String::new()));
+    }
     let needs_type = matches!(fields.get("type"), None | Some(JsonValue::Null));
     let has_function = fields
         .get("function")
@@ -48,14 +62,11 @@ pub(super) fn sync_finish(shaper: &mut ChunkShaper, state: &DecodeState) {
 }
 
 pub(super) fn fill_decoded(
-    chunk: &ProviderChunk,
     state: &DecodeState,
     shaper: &mut ChunkShaper,
     decoded: &DecodedChunk,
     model_response: &mut StreamChunk,
 ) {
-    shaper.model.clone_from(&state.model);
-    model_response.model.clone_from(&state.model);
     if let Some(fingerprint) = &decoded.system_fingerprint {
         shaper.system_fingerprint.clone_from(fingerprint);
     }
@@ -63,9 +74,6 @@ pub(super) fn fill_decoded(
         model_response.system_fingerprint.clone_from(fingerprint);
     }
     model_response.usage.clone_from(&decoded.usage);
-    if model_response.usage.is_none() && chunk.is_openai_chunk() {
-        model_response.usage = chunk.openai_chunk().ok().and_then(|stream| stream.usage);
-    }
     if let Some(logprobs) = &decoded.logprobs
         && let Some(choice) = model_response.choices.first_mut()
     {
@@ -73,6 +81,19 @@ pub(super) fn fill_decoded(
     }
     if let Some(fields) = &decoded.provider_specific_fields {
         apply_provider_fields(model_response, fields);
+    }
+    // The wrapper's model comes last, so a provider field named model cannot replace it.
+    shaper.model.clone_from(&state.model);
+    model_response.model.clone_from(&state.model);
+}
+
+// An OpenAI-shaped chunk's own usage replaces whatever the reader put on the response.
+pub(super) fn apply_chunk_usage(chunk: &ProviderChunk, model_response: &mut StreamChunk) {
+    if !chunk.is_openai_chunk() {
+        return;
+    }
+    if let Some(usage) = chunk.openai_chunk().ok().and_then(|stream| stream.usage) {
+        model_response.usage = Some(usage);
     }
 }
 

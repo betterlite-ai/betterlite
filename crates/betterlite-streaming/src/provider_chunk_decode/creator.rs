@@ -1,7 +1,7 @@
 use crate::provider_chunk_decode::chunk::{DecodeState, ProviderChunk};
 use crate::provider_chunk_decode::creator::original::{
-    apply_original_choice, fill_completion, fill_decoded, fill_tool_use, hidden_params_of,
-    normalize_original, sync_finish,
+    apply_chunk_usage, apply_original_choice, fill_completion, fill_decoded, fill_tool_use,
+    hidden_params_of, normalize_original, sync_finish,
 };
 use crate::provider_chunk_decode::dispatch::decode_provider_chunk;
 use crate::provider_chunk_decode::error::ProviderChunkError;
@@ -32,14 +32,14 @@ pub fn chunk_creator(
     if decoded.early_return {
         return Ok(decoded.original);
     }
-    fill_decoded(chunk, state, shaper, &decoded, &mut model_response);
+    fill_decoded(state, shaper, &decoded, &mut model_response);
     let mut response_obj = ChunkResponseObject {
         original_chunk: decoded.original.clone(),
         provider_specific_fields: decoded.provider_specific_fields.clone(),
     };
     let mut completion_obj = StreamDelta::default();
     fill_completion(&mut completion_obj, &decoded);
-    let processed = match prepare_original(shaper, state, &mut response_obj, model_response) {
+    let mut processed = match prepare_original(shaper, state, &mut response_obj, model_response) {
         Prepared::Continue(response) => response,
         Prepared::Emit(ready) => return Ok(Some(ready)),
         Prepared::Skip => return Ok(None),
@@ -51,6 +51,7 @@ pub fn chunk_creator(
     {
         fill_tool_use(shaper, state, &mut completion_obj)?;
     }
+    apply_chunk_usage(chunk, &mut processed);
     sync_finish(shaper, state);
     let result = return_processed_chunk_logic(
         shaper,

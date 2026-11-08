@@ -9,3 +9,6 @@ deviations:
   - what: A tool call whose type is null is emitted with type "function". LiteLLM normalizes the type on a dumped copy of the delta, and return_processed_chunk_logic then replaces the delta with the original chunk's choices, so its callers see the null type.
     why: The chunk a caller receives is the one place the type matters, and a null type is what an OpenAI-shaped client rejects; the branch doing the work exists only for this normalization.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L1471-L1481
+  - what: A finish_reason of "error" raises only for the providers openai and azure. The same reason from azure_ai or any other OpenAI-shaped reader ends the stream as "stop".
+    why: LiteLLM raises when the chunk is the SDK's ChatCompletionChunk and maps the reason to "stop" when it is a ModelResponseStream. A decoded JSON chunk carries no such class, and openai and azure are the providers whose streams arrive as SDK chunks.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L1362-L1366

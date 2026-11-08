@@ -22,6 +22,8 @@ pub enum ProviderChunkError {
     UnknownStream,
     #[error("The response was blocked by VertexAI.")]
     VertexBlocked,
+    #[error("{provider} raised a streaming error - finish_reason: error, no content string given.")]
+    FinishReasonError { provider: String },
     #[error("chunk is not a string: {chunk}")]
     NotAString { chunk: String },
     #[error("the provider stream did not send {expected}")]
@@ -57,9 +59,10 @@ impl ProviderChunkError {
             | Self::RejectedResponse { .. }
             | Self::NotAString { .. }
             | Self::Shape { .. } => "ValueError",
-            Self::ProviderReported { .. } | Self::UnknownStream | Self::VertexBlocked => {
-                "Exception"
-            }
+            Self::ProviderReported { .. }
+            | Self::UnknownStream
+            | Self::VertexBlocked
+            | Self::FinishReasonError { .. } => "Exception",
             Self::UnexpectedChunk { .. }
             | Self::MissingField { .. }
             | Self::InvalidField { .. }

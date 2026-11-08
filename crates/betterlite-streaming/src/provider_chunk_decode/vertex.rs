@@ -38,40 +38,41 @@ pub fn handle_vertex_chunk(
         .get("content")
         .and_then(|content| as_object(content)?.get("parts"))
         .and_then(as_array);
-    fill_vertex(
+    let was_read = fill_vertex(
         text_of(parts),
         parts,
         candidate,
         state.next_id,
         &mut decoded,
     )?;
-    if let Some(name) = finish_name.filter(|name| *name != "FINISH_REASON_UNSPECIFIED") {
+    if was_read && let Some(name) = finish_name.filter(|name| *name != "FINISH_REASON_UNSPECIFIED")
+    {
         state.received_finish_reason = Some(mapped_finish_reason(name).to_owned());
     }
     Ok(decoded)
 }
 
+// True when the chunk held text or a function call; LiteLLM reads the finish reason only then.
 fn fill_vertex(
     chunk_text: Option<String>,
     parts: Option<&[JsonValue]>,
     candidate: &JsonObject,
     next_id: fn() -> Uuid,
     decoded: &mut DecodedChunk,
-) -> Result<(), ProviderChunkError> {
+) -> Result<bool, ProviderChunkError> {
     if let Some(text) = chunk_text {
         decoded.text = text;
-        return Ok(());
+        return Ok(true);
     }
     if let Some(call) = parts.and_then(vertex_tool_call) {
         let calls = JsonValue::Array(vec![vertex_tool_call_value(&call, next_id())?]);
-        decoded.tool_calls = Some(calls.clone());
         decoded.original = Some(vertex_tool_chunk(&calls, next_id()));
-        return Ok(());
+        return Ok(true);
     }
     if candidate.get("finish_reason").and_then(JsonValue::as_str) == Some("SAFETY") {
         return Err(ProviderChunkError::VertexBlocked);
     }
-    Ok(())
+    Ok(false)
 }
 
 fn text_of(parts: Option<&[JsonValue]>) -> Option<String> {

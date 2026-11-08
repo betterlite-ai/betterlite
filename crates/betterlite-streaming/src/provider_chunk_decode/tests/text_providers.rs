@@ -399,6 +399,7 @@ fn text_providers_predibase_empty_error_is_no_error() {
 #[test]
 fn text_providers_nlp_cloud_without_generated_text_is_rejected() {
     let mut decode_state = state("gpt-4");
+    decode_state.received_finish_reason = Some("stop".to_owned());
     let error = decode_error("nlp_cloud", &text(r#"{"other": 1}"#), &mut decode_state);
     assert!(matches!(error, ProviderChunkError::RejectedResponse { .. }));
 }
