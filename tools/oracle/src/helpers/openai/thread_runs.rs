@@ -137,6 +137,7 @@ impl crate::helpers::Helper for Op {
     type Input = Call;
     fn run(input: &Self::Input) -> crate::helpers::HelperResult {
         let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
             .build()
             .map_err(|error| invalid_input(error.to_string()))?;
         let Some(fields) = input.fields() else {
