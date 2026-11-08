@@ -1,0 +1,10 @@
+kind: helper
+name: exporter-options-health-status
+call:
+  b3931:
+    operation: health
+    statuses:
+      - {state: healthy}
+      - {state: unhealthy, message: connection refused}
+env: {}
+compare: {ignore: []}
