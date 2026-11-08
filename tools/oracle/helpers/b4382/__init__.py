@@ -7,6 +7,8 @@ from typing import Protocol, TypeAlias, cast
 
 from litellm.caching.redis_semantic_cache import RedisSemanticCache
 
+_URL = "redis://:pw@localhost:6379"
+
 Json: TypeAlias = None | bool | int | float | str | list["Json"] | dict[str, "Json"]
 
 
@@ -78,7 +80,7 @@ class _FakeLLMCache:
 
 class _ScriptedCache(RedisSemanticCache):
     def __init__(self, embedding: list[float], llm: _FakeLLMCache) -> None:
-        super().__init__(similarity_threshold=0.25, redis_url="redis://:pw@localhost:6379")
+        super().__init__(similarity_threshold=0.25, redis_url=_URL)
         self.llmcache = llm
         self.embedding = embedding
 
@@ -114,29 +116,30 @@ def _attribute(cache: object, name: str) -> Json:
 
 
 def _constructor(input_value: dict[str, Json]) -> Json:
-    kwargs: dict[str, object] = {
-        "host": input_value.get("host"),
-        "port": input_value.get("port"),
-        "password": input_value.get("password"),
-        "redis_url": input_value.get("redis_url"),
-        "similarity_threshold": input_value.get("threshold"),
-        "index_name": input_value.get("index_name"),
-        "embedding_max_input_tokens": input_value.get("embedding_max_input_tokens"),
-        "embedding_timeout": input_value.get("embedding_timeout"),
-    }
+    names = (
+        "host",
+        "port",
+        "password",
+        "redis_url",
+        "index_name",
+        "embedding_max_input_tokens",
+    )
+    kwargs: dict[str, object] = {name: input_value.get(name) for name in names}
+    kwargs["similarity_threshold"] = input_value.get("threshold")
+    kwargs["embedding_timeout"] = input_value.get("embedding_timeout")
     model = input_value.get("embedding_model")
     if model is not None:
         kwargs["embedding_model"] = model
-    constructor = cast(Callable[..., object], RedisSemanticCache)
-    cache = constructor(**kwargs)
-    return {
-        "index_name": _attribute(cache, "_index_name"),
-        "distance_threshold": _attribute(cache, "distance_threshold"),
-        "redis_url": _attribute(cache, "_redis_url"),
-        "embedding_model": _attribute(cache, "embedding_model"),
-        "embedding_max_input_tokens": _attribute(cache, "embedding_max_input_tokens"),
-        "embedding_timeout": _attribute(cache, "embedding_timeout"),
-    }
+    cache = cast(Callable[..., object], RedisSemanticCache)(**kwargs)
+    fields = (
+        ("index_name", "_index_name"),
+        ("distance_threshold", "distance_threshold"),
+        ("redis_url", "_redis_url"),
+        ("embedding_model", "embedding_model"),
+        ("embedding_max_input_tokens", "embedding_max_input_tokens"),
+        ("embedding_timeout", "embedding_timeout"),
+    )
+    return {name: _attribute(cache, source) for name, source in fields}
 
 
 def _key_scope(input_value: dict[str, Json]) -> Json:
@@ -149,12 +152,7 @@ def _key_scope(input_value: dict[str, Json]) -> Json:
 def _index_fallback(input_value: dict[str, Json]) -> Json:
     attempts = cast(list[int], input_value.get("mismatch_attempts", []))
     fake = _ScriptedSemanticCache(set(attempts))
-    cache = cast(
-        object,
-        RedisSemanticCache(
-            similarity_threshold=0.25, redis_url="redis://:pw@localhost:6379"
-        ),
-    )
+    cache = cast(object, RedisSemanticCache(similarity_threshold=0.25, redis_url=_URL))
     method = cast(_InitMethod, attrgetter("_init_semantic_cache")(cache))
     result = method(
         fake,
@@ -191,13 +189,15 @@ def _lookup(input_value: dict[str, Json]) -> Json:
         asyncio.run(ops.async_get_cache(cast(str, input_value.get("key")), **kwargs)),
     )
     check = llm.checks[0] if llm.checks else None
-    search: Json = None
-    if check is not None:
-        search = {
+    search: Json = (
+        None
+        if check is None
+        else {
             "cache_key": check["cache_key"],
             "vector": check["vector"],
             "distance_threshold": cache.distance_threshold,
         }
+    )
     return {
         "value": value,
         "similarity": metadata.get("semantic-similarity") if "metadata" in kwargs else None,
