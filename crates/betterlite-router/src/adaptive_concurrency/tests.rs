@@ -227,18 +227,55 @@ async fn cancelling_a_queued_waiter_releases_nothing() {
 
 #[tokio::test]
 async fn cancelling_a_granted_waiter_returns_the_slot_exactly_once() {
-    let limiter = limiter(1, 1, 1);
-    let held = limiter.acquire(deadline_after(60_000)).await.unwrap();
+    let limiter = limiter(2, 1, 2);
+    let first = limiter.acquire(deadline_after(60_000)).await.unwrap();
+    let second = limiter.acquire(deadline_after(60_000)).await.unwrap();
     let mut granted = Box::pin(limiter.acquire(deadline_after(60_000)));
+    let mut behind = Box::pin(limiter.acquire(deadline_after(60_000)));
     assert!(poll_once(granted.as_mut()).is_pending());
-    drop(held);
-    assert_eq!(limiter.snapshot().in_flight, 1);
-    drop(granted);
+    assert!(poll_once(behind.as_mut()).is_pending());
+    drop(first);
     let snapshot = limiter.snapshot();
-    assert_eq!(snapshot.in_flight, 0);
-    assert_eq!(snapshot.waiters, 0);
-    let again = limiter.acquire(deadline_after(60_000)).await.unwrap();
+    assert_eq!(snapshot.in_flight, 2);
+    assert_eq!(snapshot.waiters, 1);
+    drop(granted);
+    let after_cancel = limiter.snapshot();
+    assert_eq!(after_cancel.in_flight, 2);
+    assert_eq!(after_cancel.waiters, 0);
+    let Poll::Ready(Ok(_behind_permit)) = poll_once(behind.as_mut()) else {
+        panic!("the waiter behind the cancelled one is granted")
+    };
+    drop(second);
     assert_eq!(limiter.snapshot().in_flight, 1);
-    drop(again);
-    assert_eq!(limiter.snapshot().in_flight, 0);
+}
+
+#[tokio::test]
+async fn a_throttled_sample_keeps_the_held_permits_and_grants_nobody() {
+    let limiter = limiter(4, 1, 4);
+    let first = limiter.acquire(deadline_after(60_000)).await.unwrap();
+    let second = limiter.acquire(deadline_after(60_000)).await.unwrap();
+    let third = limiter.acquire(deadline_after(60_000)).await.unwrap();
+    let fourth = limiter.acquire(deadline_after(60_000)).await.unwrap();
+    let mut waiting = Box::pin(limiter.acquire(deadline_after(60_000)));
+    assert!(poll_once(waiting.as_mut()).is_pending());
+    limiter.record(PutSample { throttled: true });
+    let snapshot = limiter.snapshot();
+    assert_eq!(snapshot.limit, 2);
+    assert_eq!(snapshot.in_flight, 4);
+    assert_eq!(snapshot.waiters, 1);
+    drop(first);
+    assert_eq!(limiter.snapshot().in_flight, 3);
+    assert_eq!(limiter.snapshot().waiters, 1);
+    drop(second);
+    assert_eq!(limiter.snapshot().in_flight, 2);
+    assert_eq!(limiter.snapshot().waiters, 1);
+    drop(third);
+    let after_release = limiter.snapshot();
+    assert_eq!(after_release.in_flight, 2);
+    assert_eq!(after_release.waiters, 0);
+    let Poll::Ready(Ok(_waiting_permit)) = poll_once(waiting.as_mut()) else {
+        panic!("the waiter is granted once in-flight drops below the halved limit")
+    };
+    drop(fourth);
+    assert_eq!(limiter.snapshot().in_flight, 1);
 }

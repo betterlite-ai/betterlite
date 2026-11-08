@@ -24,6 +24,11 @@ compare:
       rust: 1
       why: LiteLLM has no overload outcome, so the extra acquisition queues instead of being refused
       link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/adaptive_concurrency.py#L39-L55
+    - pointer: /output/adaptive_concurrency/results/1/state/waiters
+      reference: 1025
+      rust: 1024
+      why: the recorded state reports the bounded queue, while LiteLLM's deque holds every caller
+      link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/integrations/adaptive_concurrency.py#L42-L43
     - pointer: /output/adaptive_concurrency/results/2/state/waiters
       reference: 1025
       rust: 1024

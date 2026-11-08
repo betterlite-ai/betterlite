@@ -5,13 +5,16 @@ probes:
     samples: []
     operation:
       adaptive_concurrency:
-        initial: 1
+        initial: 2
         floor: 1
-        ceiling: 1
+        ceiling: 2
         steps:
           - {action: acquire, deadline_millis: 60000}
           - {action: acquire, deadline_millis: 60000}
-          - {action: release, id: 0}
-          - {action: cancel, id: 1}
           - {action: acquire, deadline_millis: 60000}
-          - {action: release, id: 2}
+          - {action: acquire, deadline_millis: 60000}
+          - {action: release, id: 0}
+          - {action: cancel, id: 2}
+          - {action: poll, id: 3}
+          - {action: release, id: 1}
+          - {action: release, id: 3}

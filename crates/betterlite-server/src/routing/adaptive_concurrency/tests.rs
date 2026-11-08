@@ -1,12 +1,20 @@
 #![cfg(test)]
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll, Waker};
 use std::time::Duration;
 
 use betterlite_router::adaptive_concurrency::error::AcquireError;
 use betterlite_router::adaptive_concurrency::{AdaptiveConcurrencyLimiter, PutSample};
+use tokio::time::advance;
 
 use super::IntegrationConcurrency;
+
+fn poll_once<Output>(future: Pin<&mut dyn Future<Output = Output>>) -> Poll<Output> {
+    future.poll(&mut Context::from_waker(Waker::noop()))
+}
 
 fn integration(
     initial: u64,
@@ -37,8 +45,17 @@ async fn a_free_permit_is_granted_without_waiting() {
 async fn a_wait_past_the_callback_timeout_is_denied() {
     let (integration, limiter) = integration(1, 1, 1, 5);
     let held = integration.permit().await.unwrap();
-    let denied = integration.permit().await;
-    assert!(matches!(denied, Err(AcquireError::DeadlineExceeded)));
+    let mut waiting = Box::pin(integration.permit());
+    assert!(matches!(poll_once(waiting.as_mut()), Poll::Pending));
+    assert_eq!(limiter.snapshot().waiters, 1);
+    advance(Duration::from_millis(4)).await;
+    assert!(matches!(poll_once(waiting.as_mut()), Poll::Pending));
+    assert_eq!(limiter.snapshot().waiters, 1);
+    advance(Duration::from_millis(2)).await;
+    assert!(matches!(
+        poll_once(waiting.as_mut()),
+        Poll::Ready(Err(AcquireError::DeadlineExceeded))
+    ));
     assert_eq!(limiter.snapshot().waiters, 0);
     drop(held);
     assert_eq!(limiter.snapshot().in_flight, 0);
