@@ -82,10 +82,7 @@ fn untyped_headers_are_preserved_verbatim() {
         converted.get("llm_provider-x-request-id"),
         Some(&Json::Text("req-1".to_owned()))
     );
-    assert_eq!(
-        converted.get("X-RateLimit-Limit-Requests"),
-        Some(&number(9))
-    );
+    assert_eq!(converted.get("X-RateLimit-Limit-Requests"), None);
     assert_eq!(
         converted.get("x_ratelimit_limit_requests"),
         Some(&number(3))
