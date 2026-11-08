@@ -1,0 +1,13 @@
+kind: helper
+name: bedrock-aws-endpoints-runtime-endpoint-seed
+call:
+  bedrock_aws_endpoints:
+    runtime_endpoint:
+      cases:
+        - api_base: 'https://api.example'
+          aws_bedrock_runtime_endpoint: 'https://runtime.example'
+          environment: {AWS_BEDROCK_RUNTIME_ENDPOINT: 'https://env.example'}
+          region: us-east-1
+          endpoint_type: runtime
+env: {}
+compare: {ignore: []}
