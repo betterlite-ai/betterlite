@@ -72,6 +72,13 @@ fn specification_prefixes() {
     let unchanged = [
         ("anthropic.claude-3", Provider::Anthropic),
         ("amazon.titan-text-express-v1", Provider::Amazon),
+        ("meta.llama3-8b:0", Provider::Llama),
+        ("deepseek.r1:0", Provider::DeepseekR1),
+        ("openai.gpt-oss:1", Provider::Openai),
+        ("qwen2.instruct:0", Provider::Qwen2),
+        ("qwen3.coder:0", Provider::Qwen3),
+        ("stability.sdxl:0", Provider::Stability),
+        ("moonshot.kimi:0", Provider::Moonshot),
     ];
     for (model, provider) in unchanged {
         assert_eq!(model_id(model, Some(provider)), model, "{model}");

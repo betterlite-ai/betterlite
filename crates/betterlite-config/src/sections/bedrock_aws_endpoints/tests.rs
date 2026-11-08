@@ -120,8 +120,16 @@ fn session_region_cases() {
     credentials_parse_errors();
     nested_region_cases();
     invalid_utf8_cases();
+    comment_lines();
     profile_name_splitting();
     profile_name_edges();
+}
+
+fn comment_lines() {
+    let hash = file_region("[default]\n# a comment\nregion = eu-west-1\n", None);
+    assert_eq!(hash.as_deref(), Some("eu-west-1"));
+    let semicolon = file_region("[default]\n; a comment\nregion = eu-west-1\n", None);
+    assert_eq!(semicolon.as_deref(), Some("eu-west-1"));
 }
 
 fn default_region_cases() {

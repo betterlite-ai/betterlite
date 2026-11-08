@@ -13,7 +13,7 @@ call:
             AWS_DEFAULT_REGION: sa-east-1
         - optional_params: {aws_region_name: us-west-2}
         - optional_params: {aws_region_name: cn-north-1}
-          model: x
-          model_id: y
+          model: 'x'
+          model_id: 'y'
 env: {}
 compare: {ignore: []}

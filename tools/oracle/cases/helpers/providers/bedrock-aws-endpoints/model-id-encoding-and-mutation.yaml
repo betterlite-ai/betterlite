@@ -76,5 +76,26 @@ call:
         - optional_params: {}
           provider: llama
           model: a/nova/llama/x
+        - optional_params: {}
+          provider: llama
+          model: 'meta.llama3-8b:0'
+        - optional_params: {}
+          provider: deepseek_r1
+          model: 'deepseek.r1:0'
+        - optional_params: {}
+          provider: openai
+          model: 'openai.gpt-oss:1'
+        - optional_params: {}
+          provider: qwen2
+          model: 'qwen2.instruct:0'
+        - optional_params: {}
+          provider: qwen3
+          model: 'qwen3.coder:0'
+        - optional_params: {}
+          provider: stability
+          model: 'stability.sdxl:0'
+        - optional_params: {}
+          provider: moonshot
+          model: 'moonshot.kimi:0'
 env: {}
 compare: {ignore: []}
