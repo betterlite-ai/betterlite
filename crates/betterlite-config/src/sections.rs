@@ -198,6 +198,7 @@ pub mod guardrail_translation;
 pub mod headroom_compression;
 pub mod headroom_hiddenlayer_support;
 pub mod health_probe_policy;
+pub mod health_readiness;
 pub mod hiddenlayer_evaluation;
 pub mod host_identity_settings;
 pub mod hosted_chat_settings;
@@ -532,7 +533,7 @@ sections! {
     foundry_credentials, foundry_image_edits, foundry_vector_stores, full_model_metadata,
     gdc_settings, gemini_cache_create, gemini_cache_prefix, generic_guardrail_api, grayswan,
     guardrail_identity, guardrail_judge, guardrail_message_skip, guardrail_modes, guardrail_params, guardrail_scan_cache, guardrail_translation,
-    headroom_compression, headroom_hiddenlayer_support, health_probe_policy,
+    headroom_compression, headroom_hiddenlayer_support, health_probe_policy, health_readiness,
     hiddenlayer_evaluation, host_identity_settings, hosted_chat_settings, huggingface_hub,
     huggingface_oidc, ibm_guardrails, image_edit_call, image_generation_call, image_url_download,
     image_variations, includes, io_token_reservations, jev_classifier, jina_infinity_rerank,

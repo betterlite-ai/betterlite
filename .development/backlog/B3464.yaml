@@ -2,8 +2,8 @@ id: B3464
 milestone: M5 api families
 title: Persist RAG ingestion store and file metadata
 status: todo
-depends_on: [B1069, B726, B192, B198]
-file: null
+depends_on: [B1069, B726, B192, B198, B858, B3450, B5134]
+file: tasks/B3464-rag-ingest-store-persist.yaml
 covers:
   - "litellm/proxy/rag_endpoints/endpoints.py"
 parent: B097
