@@ -1,0 +1,58 @@
+id: B8630
+title: Router completion ports over the gateway router
+description: >-
+  B6020 builds `RouterCompletion` in crates/betterlite-sdk/src/router_completion.rs, the Rust form of LiteLLM's Router.acompletion and Router.completion. betterlite-sdk may not depend on betterlite-router (deny.toml), so B6020 reaches every router service through small traits it declares there and takes them in `RouterCompletionParts`. Nothing implements those traits yet. This task writes one adapter per trait over the router that the server builds at startup, and one function that assembles a ready `RouterCompletion`. Code goes in crates/betterlite-server, module `app::inference::router_completion` (crates/betterlite-server/src/app/inference/router_completion.rs and router_completion/), with tests in router_completion/tests.rs. Add `betterlite-sdk = { path = "../betterlite-sdk" }` to crates/betterlite-server/Cargo.toml. Every name stays at 30 characters or fewer.
+
+
+  The trait names are the ones B6020's worker chose, so read the merged router_completion.rs first and write one adapter per trait it declares. Each adapter is a plain struct that holds `Arc` handles on the router pieces it calls and forwards one call, converting the JSON maps B6020 passes into the router's typed values and back. Map every router error into the error type the trait declares; never drop one. What each port stands for and the router code behind it (all in crates/betterlite-router):
+  async and sync deployment selection are Router.async_get_available_deployment and get_available_deployment, B016's selection in router_core.rs (the sync one is B016's sync facade over the same primitive); the async pre-call check is async_routing_strategy_pre_call_checks, B364's static_eligibility.rs; the response content filter is _should_raise_content_policy_error, B399's fallback_categories.rs; the retry stamps on an error are _set_deployment_num_retries_on_exception and _set_failed_deployment_id_on_exception, B017's routing_retries.rs; the retry loop is async_function_with_retries, B306's retry_policy.rs; update-before-fallbacks is _update_kwargs_before_fallbacks and the fallback executor is async_function_with_fallbacks, both B310's fallback_attempts.rs; the per-request fallbacks-off check is fallbacks_disabled_for_request, B309's fallback_plans.rs; the stream wrapper is B311's FallbackStreamWrapper in chat_stream_fallback.rs; the slot, client and request update are _deployment_slot, _get_client and _update_kwargs_with_deployment, B303's deployment_clients.rs; the reasoning steps are _drop_unsupported_classifier_reasoning_effort and _deployment_params_with_request_reasoning_override, B323's routing_groups.rs; compaction is B336's compact_to_fit and surface_for_call in router_compaction.rs; the scheduler call is schedule_acompletion over B346's request_scheduler.rs; the metrics hook is _track_deployment_metrics and deployment_callback_on_success, B397's router_observations.rs.
+
+
+  Assembly. `router_completion(state: &ServerState) -> Result<RouterCompletion, RouterPortError>` builds `RouterCompletionParts` once from `state.shared.router` (an `Arc<RouterHandle>` over the betterlite-router Router that B8611 builds from config.yaml at startup; each adapter holds the handle and reads the current router on every call, so a reload reaches it) and the loaded config: the adapters above; B5656's `AsyncCompletionTarget` and `CompletionTarget` built with `state.shared.http` (the outbound ProxiedClient); B8440's `SilentExperiments`; B8466's prompt management entry; the system clock; and the router settings B6020 lists, read from config.yaml `router_settings` with LiteLLM's defaults: `cache_responses` false, `default_priority` none, `default_litellm_params` an empty map, `fallbacks`, `context_window_fallbacks` and `content_policy_fallbacks` none, `expose_router_debug_in_errors` false. Read them from the config sections B016, B302 and B310 already load; this task loads no key of its own. `RouterPortError` is this module's error enum, one variant per assembly step that can fail.
+
+
+  Tests in router_completion/tests.rs build a real Router from a small config.yaml with two deployments of one model group against a local mock upstream (a tokio TcpListener that answers one chat completion), assemble RouterCompletion with router_completion, and check that acompletion returns the upstream answer, that a 500 from the first deployment moves the call to the second (the retry and fallback adapters reach the router), that a stream request returns B311's wrapper, and that each selection adapter returns the same deployment id the router's own selection returns. No route calls RouterCompletion in this task, so there are no HTTP oracle cases; the routes that use it prove it.
+scope:
+  paths:
+  - crates/betterlite-server/Cargo.toml
+  - crates/betterlite-server/src/app/inference/router_completion.rs
+  - crates/betterlite-server/src/app/inference/router_completion/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L2779-L2830
+  why: Router.acompletion, which shows which router service each port is called for and in what order.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L3672-L3835
+  why: Router._acompletion, the single attempt that calls selection, the slot, the client, compaction and the content filter.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L2533-L2654
+  why: Router.completion and _completion, the blocking twins that use the sync selection.
+- url: https://docs.litellm.ai/docs/proxy/config_settings
+  why: router_settings keys and their defaults.
+dod:
+- text: Every trait B6020 declares in crates/betterlite-sdk/src/router_completion.rs has one adapter in this module that forwards to the router code named in the description.
+  proof: [completion-port-tests]
+- text: router_completion builds a RouterCompletion from the startup router and config, and its acompletion answers through the mock upstream.
+  proof: [completion-port-tests]
+- text: A failing first deployment is retried on the second through the retry and fallback adapters, and a stream request comes back wrapped by B311.
+  proof: [completion-port-tests]
+checks:
+  optional: []
+  commands:
+  - id: completion-port-tests
+    why: an adapter is missing, forwards to the wrong router call, or RouterCompletion cannot be assembled from the startup router
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::router_completion::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+- "The completion logic itself (acompletion, _acompletion, completion, the batch helpers): B6020. Every router service behind a port: the router task named next to it in the description."
+- "The generic, single-call, batch and call-type ports of B6021, B8352, B8353 and B8354 and the RouterCalls bundle: B8631."
+- "Building the startup router and the router views: B8611. Giving routes a RouterCompletion through Shared: see the B8630 notes for the architect."
+pitfalls:
+- 'B016 owns selection, but the content filter it calls is B399''s _should_raise_content_policy_error and the fallbacks-off check is B309''s fallbacks_disabled_for_request, so those adapters hold different router pieces than the selection adapter.'
+- 'The retry loop is B306''s async_function_with_retries, not B017; B017 only stamps num_retries and the failed deployment id on the error.'
+- 'The sync selection must call B016''s sync facade, not block on the async one, or a blocking caller inside the runtime deadlocks.'
+- 'B6020 copies the request before selection because the stream fallback needs the original; an adapter that edits the map it is given in place breaks that copy, so forward a clone where the trait passes a borrowed map.'
+- 'default_litellm_params is an empty map by default, not none, and B6020 merges it into every call.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

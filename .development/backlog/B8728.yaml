@@ -1,0 +1,14 @@
+id: B8728
+milestone: M9 agents and mcp
+title: Mount the /mcp transport routes and build the production TransportPorts
+status: todo
+depends_on: [B8592, B8727, B8724, B8725, B8620, B8621, B8622, B8626, B8610, B8612, B8591, B743, B8194, B6593, B4673, B8199, B8195, B8196, B6592, B6762, B8461, B4667, B4731, B8190, B173]
+file: tasks/B8728-mcp-transport-mount.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/server.py"
+parent: B136
+split_from: B136
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

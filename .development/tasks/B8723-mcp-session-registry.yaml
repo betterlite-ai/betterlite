@@ -1,0 +1,103 @@
+id: B8723
+title: MCP gateway session registry, caps and admin termination
+description: >-
+  LiteLLM keeps seven module level maps keyed by mcp-session-id next to the SDK's stateful manager: the auth context, the last seen time, the owner fingerprint, a per session lock, the in flight request count, the client info from initialize, and the ids an admin terminated. They bind a session to its creator, cap sessions per caller, expire idle ones, feed GET and DELETE /v1/mcp/sessions and answer stale ids. This task builds them as one SessionRegistry value with no global. Code goes in betterlite-server, module mcp::session_registry (crates/betterlite-server/src/mcp/session_registry.rs) with the submodules tracking, report and stale, each with a tests.rs.
+
+
+  SessionRegistry holds a B8721 StreamTransport (the stateful one) and a Clock port (now() -> Instant; tests use tokio's paused time). Constants: IDLE_TIMEOUT is 30 minutes and MAX_SESSIONS_PER_OWNER is 100, LiteLLM's _STATEFUL_SESSION_IDLE_TIMEOUT_SECONDS and _MAX_STATEFUL_SESSIONS_PER_OWNER. The maps sit behind one std Mutex; never hold it across an await.
+
+
+  tracking.
+
+  1. remove_tracking(id) drops the id from the six per session maps (not the admin set).
+
+  2. register(id, auth: B8720's SessionAuth, owner, client_info: Option<ClientInfo>) is what _wrap_send_with_stateful_session_auth_context does when the response head carries mcp-session-id: count the id as in flight for the current request (the caller passes a RequestGuard, see 5), store auth, last seen now, owner and the client info when present. ClientInfo is the name and version of the initialize clientInfo.
+
+  3. session_auth(id), owner_of(id) and touch(id) read and stamp the maps for B8727.
+
+  4. session_lock(id) returns the id's tokio Mutex, created on first use (setdefault).
+
+  5. begin_request(id) -> RequestGuard counts one in flight request once per id per HTTP request; finish(guard, method_is_delete) runs the finally block of handle_streamable_http_mcp for each counted id: decrement or remove the count, stamp last seen when the method is not DELETE and the id still has an auth context, and drop the id's lock when the count reached zero and the id has no auth context.
+
+  6. purge_expired(now) is _purge_expired_stateful_session_auth_contexts: collect ids with no in flight request whose last seen is at least IDLE_TIMEOUT old or that the transport no longer has; for each, check the in flight count again, then terminate the transport first and remove tracking after; then remove tracking for every id that has a last seen but no auth context; then forget_expired_admin_ids(now).
+
+  7. enforce_owner_cap(owner) -> bool is _enforce_stateful_session_cap_for_owner: owned live ids (owner matches and the transport has the id) under the cap is true; otherwise walk the owned ids oldest last seen first (a missing stamp sorts as oldest), stop once under the cap, skip ids with in flight requests, terminate and remove the rest; return whether the owner is under the cap.
+
+  8. run_cleanup(self) loops forever: sleep IDLE_TIMEOUT, then purge_expired, logging "Error cleaning up expired MCP stateful sessions: {err}" on failure. B8727 spawns and cancels it.
+
+
+  report.
+
+  9. sessions_report(now) -> MCPGatewaySessionsResponse is get_mcp_gateway_sessions_report: for each auth context whose id the transport still has, a MCPGatewaySession with session_id_prefix the first MCP_GATEWAY_SESSION_ID_PREFIX_LENGTH (8) characters, client_name and client_version from the client info, user_id, user_email, key_alias, team_id and team_alias from the auth's key auth, client_ip from the auth, idle_seconds max(0, now minus last seen, with now when unstamped) and in_flight_requests. worker_pid is std::process::id(), total_sessions the count, by_client and by_user grouped counts.
+
+  10. group_counts(sessions, label) is _group_session_counts: one entry per label (None is its own label), sorted by count descending, then labels before None, then label text ascending.
+
+  11. terminate_sessions(prefix: Option<&str>, user_id: Option<&str>) is terminate_mcp_gateway_sessions: forget expired admin ids; targets are auth contexts on live ids that match (a prefix must be a start of the id; with a user_id, the key auth must exist and its user_id must equal it; with neither, everything matches); build their MCPGatewaySession rows first; then for each target record the id as admin terminated at now, terminate the transport, remove tracking and log the warning "MCP session '{id}' terminated by an administrator."; answer MCPGatewaySessionsTerminateResponse with worker_pid, terminated_sessions and the rows.
+
+  12. SessionRegistry implements the session report and terminate ports that B4725 declares, so its routes report live sessions.
+
+
+  stale.
+
+  13. is_admin_terminated(id, now) is _is_admin_terminated_session_id: unknown is false; a stamp IDLE_TIMEOUT old or older is removed and false; otherwise the stamp moves to now and the answer is true. forget_expired_admin_ids(now) drops stamps IDLE_TIMEOUT old or older.
+
+  14. check_stale(id, method) -> StaleOutcome is _handle_stale_mcp_session for a request that carries a session id: a live id is Continue; DELETE on an id the transport does not have removes tracking and is Done(200 {"message": "Session terminated successfully"}); an admin terminated id is Done(404 {"error": "Not Found", "details": "mcp-session-id was terminated by an administrator. Send initialize to start a new session."}); anything else logs the warning "MCP session ID '{id}' not found in this worker's memory. Stripping stale header to force new session creation." and is StripHeader, after which B8727 removes every mcp-session-id header and routes the request as one without a session.
+
+
+  Tests use B8721's transport with a fake rmcp handler, paused tokio time and synthetic auths whose ids start with test-.
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/session_registry.rs
+    - crates/betterlite-server/src/mcp/session_registry/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L101-L108
+    why: The idle timeout and the per owner cap.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L615-L741
+    why: The seven maps, remove tracking, purge, the owner cap and the cleanup loop.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1260-L1375
+    why: Grouped counts, the session rows, the report, the admin selector, the admin id expiry and terminate.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L1427-L1519
+    why: _handle_stale_mcp_session with its 200 and 404 bodies.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L2611-L2636
+    why: Session registration when the response head carries mcp-session-id.
+dod:
+  - text: register, touch, the per session lock and the request guard keep the maps as LiteLLM does, including dropping the lock of an untracked id when its count reaches zero.
+    proof: [tracking-tests]
+  - text: purge_expired skips busy sessions, expires idle or vanished ones with the transport terminated before tracking is removed, and clears orphan stamps and old admin ids.
+    proof: [tracking-tests]
+  - text: enforce_owner_cap evicts only the owner's oldest idle sessions and refuses when every session is busy.
+    proof: [tracking-tests]
+  - text: sessions_report and terminate_sessions list, group, sort, select and terminate live sessions with LiteLLM's fields, and the B4725 ports return them.
+    proof: [report-tests]
+  - text: check_stale answers continue, the idempotent DELETE, the admin 404 and the header strip with LiteLLM's bodies, and an admin id expires after the idle timeout while each replay renews it.
+    proof: [stale-tests]
+checks:
+  optional: []
+  commands:
+    - id: tracking-tests
+      why: registration, the request guard, purge, the owner cap or the lock cleanup differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::session_registry::tracking::/)'
+    - id: report-tests
+      why: a report field, the grouping order, the selector or terminate differ from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::session_registry::report::/)'
+    - id: stale-tests
+      why: a stale id answer, its body or the admin id expiry differs from LiteLLM
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::session_registry::stale::/)'
+oracle_cases: []
+deviations:
+  - what: Sessions live in one SessionRegistry value passed to the transport handler, not in module level dicts.
+    why: The Rust rules forbid module state; each worker process still reports only its own sessions, as LiteLLM does.
+out_of_scope:
+  - "The /v1/mcp/sessions routes and their 422, 400 and 403 checks: B4725, mounted by B8701. The stateful transport's live map and terminate: B8721."
+  - "Owner fingerprints and the session id header reader: B8724. The 403 owner mismatch, the 429 cap answer and when each check runs: B8727."
+pitfalls:
+  - "purge and the cap terminate the transport before removing tracking; the reverse order opens a window where a hijacker sees no owner and passes the binding check."
+  - "terminate_sessions builds its rows before it terminates, so the response shows each session's state at the moment it was closed."
+  - "A user_id selector never matches a session whose key auth is None, even when the prefix matches."
+  - "is_admin_terminated renews the stamp on every replay, so a client that keeps sending the old id keeps getting 404 until it stops for 30 minutes."
+  - "The cap counts only ids the transport still has, so a tracked but already closed session does not use a slot."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

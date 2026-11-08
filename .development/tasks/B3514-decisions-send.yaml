@@ -20,7 +20,7 @@ scope:
     - crates/betterlite-core/src/api/decisions_send.rs
     - crates/betterlite-core/src/api/decisions_send/**
     - tools/oracle/src/sdk_http.rs
-    - tools/oracle/src/sdk_http/decisions_send.rs
+    - tools/oracle/src/sdk_http/**
     - tools/oracle/sdk_http/dispatch.py
     - tools/oracle/sdk_http/decisions_send.py
     - tools/oracle/cases/sdk-http/decisions-send/**

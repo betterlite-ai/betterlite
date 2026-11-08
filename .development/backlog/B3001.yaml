@@ -2,7 +2,7 @@ id: B3001
 milestone: M4 keys, spend and management
 title: Estimate reservation input and maximum request cost
 status: todo
-depends_on: [B3000, B746, B844, B845, B846, B1666, B1695, B2225]
+depends_on: [B3000, B746, B1666, B1695, B2225]
 file: tasks/B3001-reservation-cost-estimates.yaml
 covers:
   - "litellm/proxy/spend_tracking/budget_reservation.py"

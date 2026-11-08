@@ -9,7 +9,7 @@ description: >-
   segments "edits" and "extensions" are static paths, so axum matches them before /videos/{video_id}, and a GET on them answers 405
   (see deviations).
 
-  Both handlers build a data map and hand it to B004's common request processor with a fixed route type and model=None. They also pass
+  Both handlers build a data map and run B8801's PreCall step on it (keep `Arc<dyn PreCall<UserAPIKeyAuth>>` in the route state, built with `PreCallStep::standalone` in routes(state), which B8804 swaps for the production step) and hand it to B004's common request processor with a fixed route type and model=None. They also pass
   the server's user_model, user_temperature, user_request_timeout, user_max_tokens, user_api_base and version. Every error from the
   processor goes through B004's handle-exception step, so the error envelope, status and the x-litellm-* headers are B004's.
 
@@ -168,7 +168,7 @@ out_of_scope:
   - "video_create, video_list, video_status (endpoints.py 33-305): B3343. video_content and video_remix (308-514): B3344. The character routes (516-723): B3345."
   - "video_reference_to_id, get_custom_provider_from_data and extract_model_from_target_model_names in video_endpoints/utils.py: B3330. This task calls the first two."
   - "avideo_edit and avideo_extension, the SDK calls: B3342. The transport behind them: B3336. The OpenAI edit and extension request transforms: B526."
-  - "ProxyBaseLLMRequestProcessing and its exception handler: B004. Body reading: B1100. Form parsing: B1101. Provider getters: B2400. Model-id lookup: B844. Authentication: B052. batch_to_bytesio: B082."
+  - "common_processing_pre_call_logic: B8801. The rest of ProxyBaseLLMRequestProcessing and its exception handler: B004. Body reading: B1100. Form parsing: B1101. Provider getters: B2400. Model-id lookup: B844. Authentication: B052. batch_to_bytesio: B082."
   - "route_llm_request itself and the router factory wiring of avideo_edit, video_edit, avideo_extension and video_extension (router.py 2136-2141): B6460 owns the route choice and the wrappers; B016 owns the router call pipeline."
 pitfalls:
   - "Edit sets video_id to the empty string for any uploaded file, even when batch_to_bytesio returns an empty list, and then sets no video key. Extension has no such branch."

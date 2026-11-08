@@ -1,0 +1,112 @@
+id: B8665
+title: Guardrail ports for tool policies, OCR, read-through and policy suggestions
+description: >-
+  Several guardrail and policy tasks declare a trait and leave its production implementation to the wiring. Without
+  these adapters the guardrail factory cannot build a `tool_policy` guardrail, the unified guardrail registry has no OCR entry, a guardrail created on another replica is never found, and the policy
+  suggestion route has no model. This task writes those adapters. Each one is a plain struct that holds what it needs and
+  forwards one call; none of them reads `Shared`, so the lifespan in crates/betterlite can build the tool policy adapters
+  before the server state exists.
+
+
+  Where. A public module of betterlite-server, crates/betterlite-server/src/guardrail_ports.rs (the skeleton declares
+  `pub mod guardrail_ports;` in lib.rs), with guardrail_ports/ holding tool_policy.rs, read_through.rs,
+  suggest.rs, error.rs and tests.rs. It is public because crates/betterlite builds the guardrail factories at startup
+  and must name the tool policy adapters. Plus two edits to B3680's files for the OCR entries (item 3).
+
+
+  1. Tool policies (tool_policy.rs). B3682's `GuardrailFactories::new(policies, names)` takes B3814's
+  `ToolPolicyLookup` and `RequestToolNames` as `Arc<dyn ... + Send + Sync>`. `StoreToolPolicies { registry:
+  Arc<ToolPolicyRegistry> }` implements `ToolPolicyLookup` over B1606's registry in crates/betterlite-db/src/tool_policy_store:
+  `is_initialized`, `effective_policies` and `output_policy` each forward to the registry method LiteLLM's guardrail calls
+  (tool_policy.py reads `get_tool_policy_registry()`; read B1606's file for the Rust names). An unknown tool answers
+  `untrusted` for output, as B3814 says. `AuthToolNames` implements `RequestToolNames` by calling B888's
+  extract_request_tool_names in crates/betterlite-auth/src/auth_policy_support with the route and the request data.
+  The lifespan (B8374) passes `Arc::new(StoreToolPolicies::new(registry))` and `Arc::new(AuthToolNames)` to
+  `GuardrailFactories::new`, where `registry` is the one ToolPolicyRegistry B8384 refreshes, never a second one.
+
+
+
+  2. Guardrail read-through (read_through.rs). B8231 defines `GuardrailSync` and `GuardrailLookup` and a generic
+  `RegistryReadThrough`. `RuntimeGuardrailSync<R>` holds `Arc<GuardrailRuntime<R>>` (B3683). `find_active(name)` reads the
+  row whose guardrail_name is the name and whose status is `active` through the runtime's `registry()`, as LiteLLM's
+  `_resync_guardrails` does (registry_read_through.py L133-L156). `load_row(row)` turns it into a Guardrail with B3682's
+  `row_to_guardrail`, calls the runtime's `sync_locked`, then answers whether
+  `registry().get_initialized_guardrail_callback(handler, name)` finds a callback under the handler read lock. A sync
+  error is logged at warning with the name and answers false. `RuntimeGuardrailLookup<R>` implements `GuardrailLookup`
+  over the same runtime. `guardrail_read_through(runtime, db_objects)` builds one `RegistryReadThrough` with B8231's
+  default miss TTL, window and budget, where `db_objects` is B8612's `ProxyDbObjects` and the object type is guardrails.
+  B8667 builds it once in the shared guardrail route state.
+
+
+  3. OCR entries. B3680 builds the unified guardrail translation registry without the `ocr` and `aocr` call types,
+  because B036 (which builds the Mistral OCR translation in crates/betterlite-core/src/mistral_ocr_guardrail.rs) comes
+  after it. Add one variant to B3680's `UnifiedTranslation` in
+  crates/betterlite-server/src/guardrails/unified_guardrail/translation.rs that wraps B036's translation and forwards every
+  `BaseTranslation` method to it, and in entries.rs add one entry for `ocr` and one for `aocr` in `build_registry`,
+  the same way the other tables add theirs. LiteLLM registers both call types for the OCR handler
+  (litellm/llms/mistral/ocr/guardrail_translation/__init__.py). Change nothing else in those two files.
+
+
+  4. Policy suggestions (suggest.rs). `SdkSuggestModel` implements B3253's `PolicySuggestModel`. `supported_params(model,
+  provider)` is B175's supported OpenAI parameter query from crates/betterlite-models/src/params, unchanged.
+  `select_templates(request)` makes one chat completion the way `litellm.acompletion` does, not through the router: the
+  model from the request, a system message and a user message from the two prompts, the tool from the request as the
+  only tool, and the temperature. It goes through B5656's `AsyncCompletionTarget` built with the outbound
+  `ProxiedClient`, so the provider key comes from the environment as in LiteLLM. The reply's `tool_arguments` is the
+  first choice's first tool call arguments, None when there is none. A provider error becomes `SuggestModelError` with
+  its text. No retry and no fallback.
+
+
+  error.rs holds `GuardrailPortError` for the adapters that can fail. Tests in guardrail_ports/tests.rs use in-memory
+  values and fakes for the database and the provider: name them with the prefixes `tool_policy_`, `read_through_` and `suggest_`. The OCR entries get tests in unified_guardrail's own tests whose names start with
+  `ocr_`.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/guardrail_ports.rs
+    - crates/betterlite-server/src/guardrail_ports/**
+    - crates/betterlite-server/src/guardrails/unified_guardrail/translation.rs
+    - crates/betterlite-server/src/guardrails/unified_guardrail/entries.rs
+    - crates/betterlite-server/src/guardrails/unified_guardrail/tests.rs
+    - Cargo.lock
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_utils/registry_read_through.py#L133-L156
+    why: The guardrail resync that finds the active row, syncs it under the reconcile lock and looks the guardrail up again.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/guardrails/guardrail_hooks/tool_policy/tool_policy.py
+    why: How the tool policy guardrail reads the tool policy registry and extracts request tool names.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/mistral/ocr/guardrail_translation/__init__.py
+    why: The ocr and aocr call types registered for the OCR translation.
+dod:
+  - text: StoreToolPolicies and AuthToolNames forward to B1606's registry and B888's tool name extraction, and an unknown tool's output policy is untrusted.
+    proof: [ports-tests]
+  - text: The guardrail read-through loads an active row through sync_locked and answers whether the guardrail is initialized, and a sync error answers false.
+    proof: [ports-tests]
+  - text: SdkSuggestModel sends one chat call with the tool and returns the first tool call arguments, and maps a provider error to SuggestModelError.
+    proof: [ports-tests]
+  - text: The unified guardrail registry resolves ocr and aocr to the OCR translation and every other call type as before.
+    proof: [ocr-entries]
+checks:
+  optional: []
+  commands:
+    - id: ports-tests
+      why: an adapter is missing, forwards to the wrong call or builds a second registry
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrail_ports::/)'
+    - id: ocr-entries
+      why: the ocr or aocr entry is missing or another entry changed
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_guardrail::(.*::)?ocr_/)' && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^guardrails::unified_guardrail::/)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The guardrail class dispatch, the semantic router builder, ComplianceGuardrails, ContentFilterRunner and the hook ports: B8666."
+  - "Mounting the guardrail and policy routes: B8667, B8668, B8669 and B8790."
+  - "Building the guardrail factories and calling GuardrailFactories::new at startup: B8374 in crates/betterlite."
+  - "The ToolPolicyRegistry refresh: B8384. The registry itself: B1606."
+pitfalls:
+  - "`load_row` must call `sync_locked`, which takes the reconcile mutex before the handler write lock; taking the write lock first deadlocks against the database poll."
+  - "The guardrail read-through answers false on a sync error and does not remember the miss, so the next request may try again; only a missing row is remembered."
+  - "`select_templates` must not go through the router: LiteLLM calls litellm.acompletion, so a model that is only in the config model_list still needs its provider key in the environment."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

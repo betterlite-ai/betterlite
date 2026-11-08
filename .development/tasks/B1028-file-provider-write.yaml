@@ -21,7 +21,7 @@ scope:
   - crates/betterlite-core/src/api/file_provider_write.rs
   - crates/betterlite-core/src/api/file_provider_write/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/file_provider_write.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/file_provider_write.py
   - tools/oracle/cases/sdk-http/file-provider-write/**

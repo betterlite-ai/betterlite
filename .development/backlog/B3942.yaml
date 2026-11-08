@@ -2,7 +2,7 @@ id: B3942
 milestone: M7 observability
 title: New Relic agent events and supportability metrics
 status: todo
-depends_on: [B3931, B3941, B002, B198]
+depends_on: [B3931, B3941, B002, B198, B8740]
 file: tasks/B3942-newrelic-agent-events.yaml
 covers:
   - "litellm/integrations/newrelic/__init__.py"

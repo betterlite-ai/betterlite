@@ -135,7 +135,6 @@ scope:
     - crates/betterlite-server/fuzz/fuzz_targets/pipeline_test_request.rs
     - crates/betterlite-server/fuzz/corpus/pipeline_test_request/**
     - tools/oracle/cases/helpers/pipeline-executor/**
-    - tools/oracle/cases/policies/test-pipeline/**
     - "tools/oracle/fuzz/corpus/helper_case/pipeline-executor-*"
     - tools/oracle/helpers/b3247.py
     - tools/oracle/helpers/b3247/**
@@ -196,11 +195,13 @@ dod:
   - text: >-
       POST /policies/test-pipeline returns the execution result fields, answers 400 `Invalid pipeline: ...` for a bad pipeline, 422 for a bad
       body, 500 for an executor error, and keeps LiteLLM's auth behavior.
-    proof: [route-tests, oracle, request-corpus]
+    proof: [route-tests, request-corpus]
   - text: >-
       The pipeline test request decoder rejects malformed bytes and wrong shapes without panicking and has committed corpus inputs.
     proof: [request-corpus]
 
+  - text: The handlers are tested with tower's oneshot over the module's own Router and fake ports. B8790 mounts the routes and owns their HTTP oracle cases, so write no HTTP case here.
+    proof: [route-tests]
 checks:
   optional: []
   commands:
@@ -236,14 +237,6 @@ oracle_cases:
   - tools/oracle/cases/helpers/pipeline-executor/restore-guardrails-branches.yaml
   - tools/oracle/cases/helpers/pipeline-executor/extract-message-empty-http-detail.yaml
   - tools/oracle/cases/helpers/pipeline-executor/carry-information-on-block.yaml
-  - tools/oracle/cases/policies/test-pipeline/unknown-guardrail-blocks.yaml
-  - tools/oracle/cases/policies/test-pipeline/unknown-guardrail-on-error-next.yaml
-  - tools/oracle/cases/policies/test-pipeline/post-call-mode-unknown-guardrail.yaml
-  - tools/oracle/cases/policies/test-pipeline/invalid-pipeline-mode.yaml
-  - tools/oracle/cases/policies/test-pipeline/invalid-step-action.yaml
-  - tools/oracle/cases/policies/test-pipeline/empty-steps.yaml
-  - tools/oracle/cases/policies/test-pipeline/missing-test-messages-422.yaml
-  - tools/oracle/cases/policies/test-pipeline/no-auth-401.yaml
 
 deviations:
   - what: "The 400 detail after `Invalid pipeline` plus a colon and space is betterlite's own reason text (built from B3240's validation messages) and not pydantic's multi-line ValidationError text."
@@ -259,7 +252,7 @@ out_of_scope:
   - "B3680 owns UnifiedLLMGuardrails pre_call and post_call_success; B3666 owns mark_pre_call_hook_ran; B5471 owns CustomGuardrail's is_guardrail_intervention (as GuardrailFailure::is_intervention) and scan_raw_request."
   - "B2204 owns independent_snapshot; B206 owns get_metadata_variable_name_from_kwargs and get_or_create_metadata_bucket."
   - "B3244 and B3248 own the other routes of policy_endpoints.py; B8393 owns ProxyLogging._handle_pipeline_result and _maybe_execute_pipelines (the execute_steps caller at L2218 of litellm/proxy/utils.py), B8391 owns _policy_pipelines, and B6370 owns _pipeline_gated_stream (the caller at L4056)."
-  - "No task owns the production implementation of the guardrail handle's own pre-call and post-call hooks for registered non-unified guardrails; this task defines how it calls them (see notes) and tests with fakes."
+  - "B8666 implements the guardrail handle's own pre-call and post-call hooks for registered non-unified guardrails; this task defines how it calls them (see notes) and tests with fakes."
 
 pitfalls:
   - "The `metadata.guardrails` override is written to the working data on every step, so `_restore_request_guardrails` must run on the allow result or later lifecycle stages lose the request's own `guardrails` list."

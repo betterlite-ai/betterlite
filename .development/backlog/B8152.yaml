@@ -2,7 +2,7 @@ id: B8152
 milestone: M3 providers
 title: docker_model_runner, llamafile, lm_studio, oobabooga, xinference and lemonade cost
 status: todo
-depends_on: [B668, B2202, B1440, B997]
+depends_on: [B668, B2202, B997]
 file: tasks/B8152-local-server-configs.yaml
 covers:
   - "litellm/llms/docker_model_runner/chat/transformation.py"

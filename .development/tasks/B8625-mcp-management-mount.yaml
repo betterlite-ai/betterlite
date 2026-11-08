@@ -1,0 +1,114 @@
+id: B8625
+title: Mount the /v1/mcp catalog views and submission review routes
+description: >-
+  LiteLLM's MCP management router (mcp_management_endpoints.py, prefix /v1/mcp) is split over route tasks that each
+  build a router and stop, and no B1100 entry merges them. Four parts mount them by route family: this task (B4720
+  catalog views, B4722 submission review), B8627 (B4721 server writes), B8700 (B4723 and B4724 per-user routes) and
+  B8701 (B4725 toolsets and sessions). This task builds the two states, writes the ports they leave to the composition
+  root and mounts them.
+
+
+  Code goes in crates/betterlite-server/src/app/mcp/catalog.rs and app/mcp/catalog/ (views.rs, review.rs, a tests.rs
+  beside each), plus one line in app::mcp::mount and one in app::mcp::mount_public
+  (crates/betterlite-server/src/app/mcp.rs).
+
+
+  views.rs. B4720's CatalogViews: the registry from McpCore, McpCore's B6592 health service, the database port over
+  B4711, B4717's management mode settings, config.sections.mcp_registry, a system clock, the gateway name and
+  description from B8620's section, and a ToolLister whose list_tools(auth) calls B8197's _list_mcp_tools entry with
+  only the auth (no auth header, no server filter, no per-server headers, no client ip) and returns only the tools.
+  GET /v1/mcp/registry.json is served without a key in LiteLLM while the other eight routes take one, and B4720 returns
+  them as one Router. Merge that Router through mount_public behind a small middleware that runs the same key auth the
+  app's auth layers run (read app.rs and routes.rs for the B052 layer function) for every path except
+  /v1/mcp/registry.json.
+
+
+  review.rs. B4722's SubmissionReview, merged through mount: DbReads over B4711 (get_mcp_server, get_mcp_submissions,
+  approve, reject and set pinned tools, with B4711's Rust names), RegistryView over the registry's server_by_id with no
+  client ip, RegistryReload over the RegistryMutator in `shared.mcp_registry` (update_server and
+  reload_servers_from_database), SubmitterCache over McpState's identity.union invalidate_byom_submitted_servers_cache
+  (B6591, built by B8621), and CatalogFetcher over B4727's fetch_pinnable_tool_catalog. The database port is None when
+  the proxy has no database.
+
+
+  Tests in app::mcp::catalog:: : both routers build merged with the other MCP routers, one path of each answers
+  something other than 404 through tower's oneshot, registry.json needs no key while /v1/mcp/server does, and
+  ToolLister passes no server filter and no client ip.
+
+
+  HTTP oracle cases. The cases B4720 and B4722 planned through the booted proxy move here, because their routes only
+  answer once this task mounts them. Write each listed case from its route task's description, DoD and case names
+  (.development/tasks/B4720-mcp-catalog-health-views.yaml and B4722-mcp-submission-review.yaml), with the config, key
+  and ignore rules each describes.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/mcp.rs
+    - crates/betterlite-server/src/app/mcp/catalog.rs
+    - crates/betterlite-server/src/app/mcp/catalog/**
+    - tools/oracle/cases/http/mcp-catalog/**
+    - tools/oracle/cases/http/mcp-review/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L994-L1372
+    why: The catalog reads, including /registry.json with no key dependency.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/management_endpoints/mcp_management_endpoints.py#L1373-L1712
+    why: Register, submissions, pin and approve or reject routes of B4722.
+dod:
+  - text: CatalogViews and SubmissionReview are merged once each, with registry.json the only catalog path that takes no key.
+    proof: [catalog-route-tests, oracle]
+  - text: ToolLister and the SubmissionReview ports forward to their owning crates.
+    proof: [catalog-route-tests]
+  - text: The moved B4720 and B4722 cases match LiteLLM through the booted proxy.
+    proof: [catalog-route-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: catalog-route-tests
+      why: a router is not merged, the key split is wrong, or a port is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::mcp::catalog::/)'
+    - id: catalog-route-cases
+      why: without the case files the oracle proof compares nothing for these routes
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/http/mcp-catalog tools/oracle/cases/http/mcp-review)"
+oracle_cases:
+  - tools/oracle/cases/http/mcp-catalog/registry-disabled-404.yaml
+  - tools/oracle/cases/http/mcp-catalog/registry-enabled-builtin-entry.yaml
+  - tools/oracle/cases/http/mcp-catalog/registry-enabled-no-key-needed.yaml
+  - tools/oracle/cases/http/mcp-catalog/access-groups-config-only.yaml
+  - tools/oracle/cases/http/mcp-catalog/access-groups-no-key-401.yaml
+  - tools/oracle/cases/http/mcp-catalog/client-ip-shape.yaml
+  - tools/oracle/cases/http/mcp-catalog/tools-empty-list.yaml
+  - tools/oracle/cases/http/mcp-catalog/server-list-admin-config-servers.yaml
+  - tools/oracle/cases/http/mcp-catalog/server-list-blank-team-id-ignored.yaml
+  - tools/oracle/cases/http/mcp-catalog/server-list-team-non-member-403.yaml
+  - tools/oracle/cases/http/mcp-catalog/server-list-sorted-by-name.yaml
+  - tools/oracle/cases/http/mcp-catalog/server-list-regular-user-sanitized.yaml
+  - tools/oracle/cases/http/mcp-catalog/health-all-servers.yaml
+  - tools/oracle/cases/http/mcp-catalog/health-unknown-id-empty.yaml
+  - tools/oracle/cases/http/mcp-catalog/server-by-id-no-database-500.yaml
+  - tools/oracle/cases/http/mcp-catalog/server-by-id-unknown-404.yaml
+  - tools/oracle/cases/http/mcp-catalog/server-health-path-not-id.yaml
+  - tools/oracle/cases/http/mcp-catalog/discover-regular-user-403.yaml
+  - tools/oracle/cases/http/mcp-catalog/discover-admin-full-list.yaml
+  - tools/oracle/cases/http/mcp-catalog/discover-query-filter.yaml
+  - tools/oracle/cases/http/mcp-catalog/discover-category-filter.yaml
+  - tools/oracle/cases/http/mcp-catalog/openapi-registry-regular-user-403.yaml
+  - tools/oracle/cases/http/mcp-catalog/openapi-registry-admin-ok.yaml
+  - tools/oracle/cases/http/mcp-review/submissions-no-key-401.yaml
+  - tools/oracle/cases/http/mcp-review/submissions-no-database-500.yaml
+  - tools/oracle/cases/http/mcp-review/pin-no-database-500.yaml
+  - tools/oracle/cases/http/mcp-review/unpin-no-database-500.yaml
+  - tools/oracle/cases/http/mcp-review/approve-no-database-500.yaml
+  - tools/oracle/cases/http/mcp-review/reject-no-database-500.yaml
+  - tools/oracle/cases/http/mcp-review/reject-null-notes-no-database-500.yaml
+  - tools/oracle/cases/http/mcp-review/reject-notes-wrong-type-422.yaml
+deviations: []
+out_of_scope:
+  - "Route behavior: B4720 and B4722."
+  - "Server writes: B8627. Per-user routes: B8700. Toolsets and sessions: B8701. /v1/mcp/server/oauth: B8702."
+pitfalls:
+  - ToolLister must pass no client ip; LiteLLM's _list_mcp_tools call here has none, and passing one hides servers that are not on the public internet.
+  - RegistryReload must use the mutator in shared.mcp_registry; a second mutator reloads a registry no route reads.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
