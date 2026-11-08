@@ -7,7 +7,7 @@ deviations:
     why: betterlite injects dependencies through call arguments, and a module global is the Python shape the rules forbid.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8240-L8257
   - what: The premium-gate and database-gate messages use betterlite's own wording instead of LiteLLM's enterprise marketing text.
-    why: Error messages are betterlite's own under rule errors-match-litellm; the status 403 and 500 and the {"error": message} detail shape stay the same.
+    why: 'Error messages are betterlite''s own under rule errors-match-litellm; the statuses 403 and 500 and the error-key detail shape stay the same.'
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L8240-L8257
   - what: check_team_models renders the valid models as a comma-separated list instead of Python's list repr.
     why: Python repr text is outside the compatibility contract; the status and the rest of the message stay as LiteLLM writes them.
@@ -16,5 +16,5 @@ deviations:
     why: betterlite reads every environment value once at config load with the shared parser; LiteLLM reads it when a mail is sent.
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L7074-L7116
   - what: The email is one text/html MIME part built by mail-builder, not LiteLLM's MIMEMultipart wrapper.
-    why: lettre's Message builder needs quoted_printable (0BSD), which deny.toml rejects and this task's scope does not cover; the SMTP client, TLS choice and login still come from lettre, and recipients render the same HTML.
+    why: 'lettre''s Message builder needs quoted_printable (0BSD), which deny.toml rejects and this task''s scope does not cover; the SMTP client, TLS choice and login still come from lettre, and recipients render the same HTML.'
     link: https://docs.rs/lettre/0.11.23/lettre/transport/smtp/client/struct.SmtpConnection.html
