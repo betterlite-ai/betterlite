@@ -43,6 +43,11 @@ struct SelectedTool {
 }
 
 #[derive(Serialize)]
+struct SelectionOutput {
+    tool: Option<SelectedTool>,
+}
+
+#[derive(Serialize)]
 struct CorrelationOutput {
     correlation: ParentRequestCorrelation,
     metadata: SearchRequestMetadata,
@@ -63,15 +68,14 @@ impl crate::helpers::Helper for Op {
 
 fn select_tool(input: &Input) -> crate::helpers::HelperResult {
     let selector = SearchToolSelector::new(input.search_tool_name.clone());
-    let Some(selected) = selector.select_from_router(input.search_tools.as_deref()) else {
-        return Ok(serde_json::Value::Null);
-    };
-    let tool = SelectedTool {
-        search_tool_name: selected.search_tool_name.clone(),
-        search_provider: selected.search_provider.clone(),
-        litellm_params: selected.litellm_params.clone(),
-    };
-    serde_json::to_value(tool).map_err(failure)
+    let tool = selector
+        .select_from_router(input.search_tools.as_deref())
+        .map(|selected| SelectedTool {
+            search_tool_name: selected.search_tool_name.clone(),
+            search_provider: selected.search_provider.clone(),
+            litellm_params: selected.litellm_params.clone(),
+        });
+    serde_json::to_value(SelectionOutput { tool }).map_err(failure)
 }
 
 fn caller_value(input: &Input) -> crate::helpers::HelperResult {

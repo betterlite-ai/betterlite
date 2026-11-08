@@ -33,7 +33,7 @@ def select_tool(input_value: dict[str, Json]) -> Json:
     else:
         raise ValueError("search_tools must be a list or null")
     selected = logger._select_search_tool_from_router(router)  # noqa: SLF001  # pyright: ignore[reportPrivateUsage]
-    return tool_value(cast("Mapping[str, object] | None", selected))
+    return {"tool": tool_value(cast("Mapping[str, object] | None", selected))}
 
 
 def tool_value(tool: Mapping[str, object] | None) -> Json:
