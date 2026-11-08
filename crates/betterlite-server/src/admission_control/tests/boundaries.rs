@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use std::sync::Arc;
 
 use axum::http::StatusCode;
 use betterlite_config::loader::ConfigLoader;
@@ -8,7 +9,7 @@ use super::harness::{
     Behavior, Requests, application, await_queued, await_started, gates, harness, in_flight,
     release,
 };
-use crate::admission_control::install;
+use crate::admission_control::{AdmissionControl, AdmissionStack, InFlightRequests};
 use crate::routing::admission_control::hot_routes_first;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -163,11 +164,15 @@ async fn install_wires_the_stack() {
     .load(source)
     .unwrap();
     let settings = config.sections.admission_control;
+    let stack = AdmissionStack {
+        admission: Arc::new(AdmissionControl::from_settings(&settings)),
+        in_flight: Arc::new(InFlightRequests::default()),
+    };
     let (router, gates) = application(
         &config.sections.request_root_paths,
         "",
         gates(&[("/a", Behavior::Hold)]),
-        |inner| install(inner, &settings),
+        |inner| stack.wrap(inner),
     );
     let mut requests = Requests::default();
     requests.start(&router, "/a");

@@ -194,14 +194,6 @@ impl AdmissionStack {
     }
 }
 
-pub fn install(application: Router, settings: &Settings) -> Router {
-    let stack = AdmissionStack {
-        admission: Arc::new(AdmissionControl::from_settings(settings)),
-        in_flight: Arc::new(InFlightRequests::default()),
-    };
-    stack.wrap(application)
-}
-
 async fn admit_request(
     State(control): State<Arc<AdmissionControl>>,
     request: Request<Body>,
