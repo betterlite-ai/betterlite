@@ -41,34 +41,16 @@ enum EnumValue {
 pub(super) fn parse_node(
     scanner: &mut Scanner<'_>,
     depth: usize,
-) -> Result<SchemaNode, ToolFormatError> {
+) -> Result<Box<SchemaNode>, ToolFormatError> {
     if depth > MAX_SCHEMA_DEPTH {
         return Err(ToolFormatError::TooDeep {
             limit: MAX_SCHEMA_DEPTH,
         });
     }
-    let mut node = SchemaNode::default();
-    scanner.take_byte(b'{')?;
-    if scanner.peek() == Some(b'}') {
-        scanner.take_byte(b'}')?;
-        return Ok(node);
-    }
-    loop {
-        if scanner.peek() != Some(b'"') {
-            return Err(json::broken());
-        }
-        let key = scanner.parse_string("properties")?;
-        scanner.take_byte(b':')?;
-        assign(&mut node, scanner, &key, depth)?;
-        match scanner.peek() {
-            Some(b',') => scanner.take_byte(b',')?,
-            Some(b'}') => {
-                scanner.take_byte(b'}')?;
-                return Ok(node);
-            }
-            Some(_) | None => return Err(json::broken()),
-        }
-    }
+    json::object_entries(scanner, SchemaNode::default(), |node, reader, key| {
+        assign(node, reader, &key, depth)
+    })
+    .map(Box::new)
 }
 
 fn assign(
@@ -79,11 +61,13 @@ fn assign(
 ) -> Result<(), ToolFormatError> {
     match key {
         "type" => node.kind = parse_kind(scanner)?,
-        "description" => node.description = parse_leaf(scanner, b'"')?,
-        "properties" => node.properties = parse_properties(scanner, depth)?,
-        "required" => node.required = parse_leaf(scanner, b'[')?,
-        "enum" => node.enum_values = parse_leaf(scanner, b'[')?,
-        "items" => node.items = parse_item(scanner, depth)?,
+        "description" => node.description = json::keyword(scanner, b'"', Scanner::skip_value)?,
+        "properties" => {
+            node.properties = json::keyword(scanner, b'{', |reader| parse_members(reader, depth))?;
+        }
+        "required" => node.required = json::keyword(scanner, b'[', Scanner::skip_value)?,
+        "enum" => node.enum_values = json::keyword(scanner, b'[', Scanner::skip_value)?,
+        "items" => node.items = json::keyword(scanner, b'{', |reader| parse_node(reader, depth))?,
         _ => {
             scanner.skip_value()?;
         }
@@ -92,121 +76,23 @@ fn assign(
 }
 
 fn parse_kind(scanner: &mut Scanner<'_>) -> Result<Option<Kind>, ToolFormatError> {
-    match scanner.peek() {
-        Some(b'"') => Ok(Some(Kind::Named(scanner.parse_string("type")?))),
-        Some(b'n') => {
-            scanner.skip_value()?;
-            Ok(None)
+    let kind = json::keyword(scanner, b'"', Scanner::skip_value)?;
+    match kind {
+        Some(Field::Value(range)) => {
+            let name = json::text(scanner.bytes, &range, "type")?;
+            Ok(Some(Kind::Named(name)))
         }
-        Some(_) => {
-            scanner.skip_value()?;
-            Ok(Some(Kind::Unrecognized))
-        }
-        None => Err(json::broken()),
-    }
-}
-
-fn parse_leaf(
-    scanner: &mut Scanner<'_>,
-    shape: u8,
-) -> Result<Option<Field<Range<usize>>>, ToolFormatError> {
-    match scanner.peek() {
-        Some(byte) if byte == shape => {
-            let range = scanner.skip_value()?;
-            Ok(Some(Field::Value(range)))
-        }
-        Some(b'n') => {
-            scanner.skip_value()?;
-            Ok(None)
-        }
-        Some(byte) => {
-            scanner.skip_value()?;
-            Ok(Some(Field::Wrong(json::kind_name(byte))))
-        }
-        None => Err(json::broken()),
-    }
-}
-
-fn parse_properties(
-    scanner: &mut Scanner<'_>,
-    depth: usize,
-) -> Result<Option<Field<Members>>, ToolFormatError> {
-    match scanner.peek() {
-        Some(b'{') => Ok(Some(Field::Value(parse_members(scanner, depth)?))),
-        Some(b'n') => {
-            scanner.skip_value()?;
-            Ok(None)
-        }
-        Some(byte) => {
-            scanner.skip_value()?;
-            Ok(Some(Field::Wrong(json::kind_name(byte))))
-        }
-        None => Err(json::broken()),
+        Some(Field::Wrong(_)) => Ok(Some(Kind::Unrecognized)),
+        None => Ok(None),
     }
 }
 
 fn parse_members(scanner: &mut Scanner<'_>, depth: usize) -> Result<Members, ToolFormatError> {
-    let mut members = IndexMap::new();
-    scanner.take_byte(b'{')?;
-    if scanner.peek() == Some(b'}') {
-        scanner.take_byte(b'}')?;
-        return Ok(members);
-    }
-    loop {
-        if scanner.peek() != Some(b'"') {
-            return Err(json::broken());
-        }
-        let key = scanner.parse_string("properties")?;
-        scanner.take_byte(b':')?;
-        let child = parse_child(scanner, depth)?;
-        members.insert(key, child);
-        match scanner.peek() {
-            Some(b',') => scanner.take_byte(b',')?,
-            Some(b'}') => {
-                scanner.take_byte(b'}')?;
-                return Ok(members);
-            }
-            Some(_) | None => return Err(json::broken()),
-        }
-    }
-}
-
-fn parse_child(
-    scanner: &mut Scanner<'_>,
-    depth: usize,
-) -> Result<Field<Box<SchemaNode>>, ToolFormatError> {
-    match scanner.peek() {
-        Some(b'{') => {
-            let node = parse_node(scanner, depth.saturating_add(1))?;
-            Ok(Field::Value(Box::new(node)))
-        }
-        Some(byte) => {
-            scanner.skip_value()?;
-            Ok(Field::Wrong(json::kind_name(byte)))
-        }
-        None => Err(json::broken()),
-    }
-}
-
-fn parse_item(
-    scanner: &mut Scanner<'_>,
-    depth: usize,
-) -> Result<Option<Field<Box<SchemaNode>>>, ToolFormatError> {
-    match scanner.peek() {
-        Some(b'{') => {
-            let node = parse_node(scanner, depth.saturating_add(1))?;
-            Ok(Some(Field::Value(Box::new(node))))
-        }
-        Some(b'n') => {
-            scanner.skip_value()?;
-            Ok(None)
-        }
-        Some(byte) => {
-            scanner.skip_value()?;
-            Ok(Some(Field::Wrong(json::kind_name(byte))))
-        }
-        None => Err(json::broken()),
-    }
+    json::object_entries(scanner, IndexMap::new(), |members, reader, key| {
+        let child = json::keyword(reader, b'{', |nested| parse_node(nested, depth))?;
+        members.insert(key, child.unwrap_or(Field::Wrong("null")));
+        Ok(())
+    })
 }
 
 pub(super) fn object_parameters(

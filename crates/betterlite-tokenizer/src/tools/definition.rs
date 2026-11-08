@@ -4,8 +4,35 @@ use crate::tools::error::ToolFormatError;
 use crate::tools::json::{self, Field, Scanner};
 use crate::tools::schema::{self, SchemaNode};
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub(super) struct Tool {
+    function: Option<Function>,
+    declarations: Option<Vec<Option<Function>>>,
+    camel_declarations: Option<Vec<Option<Function>>>,
+    inline: Function,
+}
+
+#[derive(Debug)]
+struct Function {
+    name: Option<Field<Range<usize>>>,
+    description: Option<Field<Range<usize>>>,
+    parameters: Option<Field<Box<SchemaNode>>>,
+    parameter_field: &'static str,
+}
+
+impl Default for Function {
+    fn default() -> Self {
+        Self {
+            name: None,
+            description: None,
+            parameters: None,
+            parameter_field: "parameters",
+        }
+    }
+}
+
+#[derive(Default)]
+struct ToolParts {
     function: Option<Function>,
     declarations: Option<Vec<Option<Function>>>,
     camel_declarations: Option<Vec<Option<Function>>>,
@@ -15,11 +42,26 @@ pub(super) struct Tool {
     description: Option<Field<Range<usize>>>,
 }
 
-#[derive(Debug, Default)]
-struct Function {
-    name: Option<Field<Range<usize>>>,
-    description: Option<Field<Range<usize>>>,
-    parameters: Option<Field<Box<SchemaNode>>>,
+impl ToolParts {
+    fn resolve(self) -> Tool {
+        let from_schema = self.input_schema.is_some();
+        let parameters = self.input_schema.or(self.parameters);
+        Tool {
+            function: self.function,
+            declarations: self.declarations,
+            camel_declarations: self.camel_declarations,
+            inline: Function {
+                name: self.name,
+                description: self.description,
+                parameters,
+                parameter_field: if from_schema {
+                    "input_schema"
+                } else {
+                    "parameters"
+                },
+            },
+        }
+    }
 }
 
 pub(super) struct Formatter<'json> {
@@ -70,7 +112,7 @@ impl<'json> Formatter<'json> {
             return Ok(());
         }
         self.used = charge(self.used, 1, self.limit)?;
-        let formatted = self.inline(index, tool)?;
+        let formatted = self.function(index, &tool.inline)?;
         self.lines.extend(formatted);
         Ok(())
     }
@@ -86,23 +128,9 @@ impl<'json> Formatter<'json> {
         let parameters = function
             .parameters
             .as_ref()
-            .map(|field| field.value("parameters", "a JSON object"))
+            .map(|field| field.value(function.parameter_field, "a JSON object"))
             .transpose()?
             .map(Box::as_ref);
-        format_definition(self.source, name, description, parameters)
-    }
-
-    fn inline(&self, index: usize, tool: &Tool) -> Result<Vec<String>, ToolFormatError> {
-        let (field, selected) = tool.input_schema.as_ref().map_or_else(
-            || ("parameters", tool.parameters.as_ref()),
-            |schema| ("input_schema", Some(schema)),
-        );
-        let parameters = selected
-            .map(|value| value.value(field, "a JSON object"))
-            .transpose()?
-            .map(Box::as_ref);
-        let name = text_field(self.source, index, tool.name.as_ref(), "name")?;
-        let description = text_field(self.source, index, tool.description.as_ref(), "description")?;
         format_definition(self.source, name, description, parameters)
     }
 }
@@ -170,40 +198,51 @@ pub(super) fn parse_tool(scanner: &mut Scanner<'_>) -> Result<Option<Tool>, Tool
         scanner.skip_value()?;
         return Ok(None);
     }
-    let mut tool = Tool::default();
-    scanner.take_byte(b'{')?;
-    if scanner.peek() == Some(b'}') {
-        scanner.take_byte(b'}')?;
-        return Ok(Some(tool));
-    }
-    loop {
-        if scanner.peek() != Some(b'"') {
-            return Err(json::broken());
-        }
-        let key = scanner.parse_string("function")?;
-        scanner.take_byte(b':')?;
-        assign(&mut tool, scanner, &key)?;
-        match scanner.peek() {
-            Some(b',') => scanner.take_byte(b',')?,
-            Some(b'}') => {
-                scanner.take_byte(b'}')?;
-                return Ok(Some(tool));
-            }
-            Some(_) | None => return Err(json::broken()),
-        }
-    }
+    let parts = json::object_entries(scanner, ToolParts::default(), |parts, reader, key| {
+        assign(Member::Tool(parts), reader, &key)
+    })?;
+    Ok(Some(parts.resolve()))
 }
 
-fn assign(tool: &mut Tool, scanner: &mut Scanner<'_>, key: &str) -> Result<(), ToolFormatError> {
-    match key {
-        "function" => tool.function = parse_function_member(scanner)?,
-        "function_declarations" => tool.declarations = parse_declarations(scanner)?,
-        "functionDeclarations" => tool.camel_declarations = parse_declarations(scanner)?,
-        "input_schema" => tool.input_schema = parse_schema_member(scanner)?,
-        "parameters" => tool.parameters = parse_schema_member(scanner)?,
-        "name" => tool.name = parse_text_member(scanner)?,
-        "description" => tool.description = parse_text_member(scanner)?,
-        _ => {
+enum Member<'member> {
+    Tool(&'member mut ToolParts),
+    Function(&'member mut Function),
+}
+
+fn assign(member: Member<'_>, scanner: &mut Scanner<'_>, key: &str) -> Result<(), ToolFormatError> {
+    match (member, key) {
+        (Member::Tool(parts), "function") => parts.function = parse_function_member(scanner)?,
+        (Member::Tool(parts), "function_declarations") => {
+            parts.declarations = parse_declarations(scanner)?;
+        }
+        (Member::Tool(parts), "functionDeclarations") => {
+            parts.camel_declarations = parse_declarations(scanner)?;
+        }
+        (Member::Tool(parts), "input_schema") => {
+            parts.input_schema =
+                json::keyword(scanner, b'{', |reader| schema::parse_node(reader, 0))?;
+        }
+        (Member::Tool(parts), "parameters") => {
+            parts.parameters =
+                json::keyword(scanner, b'{', |reader| schema::parse_node(reader, 0))?;
+        }
+        (Member::Tool(parts), "name") => {
+            parts.name = json::keyword(scanner, b'"', Scanner::skip_value)?;
+        }
+        (Member::Tool(parts), "description") => {
+            parts.description = json::keyword(scanner, b'"', Scanner::skip_value)?;
+        }
+        (Member::Function(function), "parameters") => {
+            function.parameters =
+                json::keyword(scanner, b'{', |reader| schema::parse_node(reader, 0))?;
+        }
+        (Member::Function(function), "name") => {
+            function.name = json::keyword(scanner, b'"', Scanner::skip_value)?;
+        }
+        (Member::Function(function), "description") => {
+            function.description = json::keyword(scanner, b'"', Scanner::skip_value)?;
+        }
+        (Member::Tool(_) | Member::Function(_), _) => {
             scanner.skip_value()?;
         }
     }
@@ -219,35 +258,9 @@ fn parse_function_member(scanner: &mut Scanner<'_>) -> Result<Option<Function>, 
 }
 
 fn parse_function(scanner: &mut Scanner<'_>) -> Result<Function, ToolFormatError> {
-    let mut function = Function::default();
-    scanner.take_byte(b'{')?;
-    if scanner.peek() == Some(b'}') {
-        scanner.take_byte(b'}')?;
-        return Ok(function);
-    }
-    loop {
-        if scanner.peek() != Some(b'"') {
-            return Err(json::broken());
-        }
-        let key = scanner.parse_string("function")?;
-        scanner.take_byte(b':')?;
-        match key.as_str() {
-            "name" => function.name = parse_text_member(scanner)?,
-            "description" => function.description = parse_text_member(scanner)?,
-            "parameters" => function.parameters = parse_schema_member(scanner)?,
-            _ => {
-                scanner.skip_value()?;
-            }
-        }
-        match scanner.peek() {
-            Some(b',') => scanner.take_byte(b',')?,
-            Some(b'}') => {
-                scanner.take_byte(b'}')?;
-                return Ok(function);
-            }
-            Some(_) | None => return Err(json::broken()),
-        }
-    }
+    json::object_entries(scanner, Function::default(), |function, reader, key| {
+        assign(Member::Function(function), reader, &key)
+    })
 }
 
 fn parse_declarations(
@@ -278,42 +291,5 @@ fn parse_declarations(
             }
             Some(_) | None => return Err(json::broken()),
         }
-    }
-}
-
-fn parse_schema_member(
-    scanner: &mut Scanner<'_>,
-) -> Result<Option<Field<Box<SchemaNode>>>, ToolFormatError> {
-    match scanner.peek() {
-        Some(b'{') => {
-            let node = schema::parse_node(scanner, 0)?;
-            Ok(Some(Field::Value(Box::new(node))))
-        }
-        Some(b'n') => {
-            scanner.skip_value()?;
-            Ok(None)
-        }
-        Some(byte) => {
-            scanner.skip_value()?;
-            Ok(Some(Field::Wrong(json::kind_name(byte))))
-        }
-        None => Err(json::broken()),
-    }
-}
-
-fn parse_text_member(
-    scanner: &mut Scanner<'_>,
-) -> Result<Option<Field<Range<usize>>>, ToolFormatError> {
-    match scanner.peek() {
-        Some(b'"') => Ok(Some(Field::Value(scanner.skip_value()?))),
-        Some(b'n') => {
-            scanner.skip_value()?;
-            Ok(None)
-        }
-        Some(byte) => {
-            scanner.skip_value()?;
-            Ok(Some(Field::Wrong(json::kind_name(byte))))
-        }
-        None => Err(json::broken()),
     }
 }

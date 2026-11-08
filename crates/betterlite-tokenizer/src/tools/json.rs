@@ -34,10 +34,11 @@ impl Scanner<'_> {
         let start = self.at;
         match self.bytes.get(start).copied() {
             Some(b'"') => self.string_range(),
-            Some(b'{') => self.skip_object(),
-            Some(b'[') => self.skip_array(),
-            Some(b't' | b'f' | b'n') => self.skip_word(),
-            Some(_) => self.skip_number(),
+            Some(b'{') => self.skip_container(b'{', b'}', true),
+            Some(b'[') => self.skip_container(b'[', b']', false),
+            Some(b't' | b'f' | b'n') => self.skip_while(|byte| byte.is_ascii_alphabetic()),
+            Some(_) => self
+                .skip_while(|byte| matches!(byte, b'-' | b'+' | b'.' | b'e' | b'E' | b'0'..=b'9')),
             None => Err(broken()),
         }
     }
@@ -45,7 +46,10 @@ impl Scanner<'_> {
     pub(super) fn parse_string(&mut self, field: &'static str) -> Result<String, ToolFormatError> {
         let range = self.string_range()?;
         let slice = self.bytes.get(range).ok_or_else(broken)?;
-        serde_json::from_slice(slice).map_err(|source| ToolFormatError::Nested { field, source })
+        serde_json::from_slice(slice).map_err(|failure| ToolFormatError::Nested {
+            field,
+            source: failure,
+        })
     }
 
     fn space(&mut self) {
@@ -74,24 +78,27 @@ impl Scanner<'_> {
         }
     }
 
-    fn skip_object(&mut self) -> Result<Range<usize>, ToolFormatError> {
+    fn skip_container(
+        &mut self,
+        open: u8,
+        close: u8,
+        object: bool,
+    ) -> Result<Range<usize>, ToolFormatError> {
         let start = self.at;
-        self.take_byte(b'{')?;
-        if self.peek() == Some(b'}') {
-            self.take_byte(b'}')?;
+        self.take_byte(open)?;
+        if self.peek() == Some(close) {
+            self.take_byte(close)?;
             return Ok(start..self.at);
         }
         loop {
-            if self.peek() != Some(b'"') {
-                return Err(broken());
+            if object {
+                self.key_and_colon()?;
             }
-            self.string_range()?;
-            self.take_byte(b':')?;
             self.skip_value()?;
             match self.peek() {
                 Some(b',') => self.take_byte(b',')?,
-                Some(b'}') => {
-                    self.take_byte(b'}')?;
+                Some(byte) if byte == close => {
+                    self.take_byte(close)?;
                     return Ok(start..self.at);
                 }
                 Some(_) | None => return Err(broken()),
@@ -99,44 +106,18 @@ impl Scanner<'_> {
         }
     }
 
-    fn skip_array(&mut self) -> Result<Range<usize>, ToolFormatError> {
-        let start = self.at;
-        self.take_byte(b'[')?;
-        if self.peek() == Some(b']') {
-            self.take_byte(b']')?;
-            return Ok(start..self.at);
-        }
-        loop {
-            self.skip_value()?;
-            match self.peek() {
-                Some(b',') => self.take_byte(b',')?,
-                Some(b']') => {
-                    self.take_byte(b']')?;
-                    return Ok(start..self.at);
-                }
-                Some(_) | None => return Err(broken()),
-            }
-        }
-    }
-
-    fn skip_word(&mut self) -> Result<Range<usize>, ToolFormatError> {
-        let start = self.at;
-        while let Some(byte) = self.bytes.get(self.at).copied() {
-            if !byte.is_ascii_alphabetic() {
-                break;
-            }
-            self.at = self.at.saturating_add(1);
-        }
-        if self.at == start {
+    fn key_and_colon(&mut self) -> Result<(), ToolFormatError> {
+        if self.peek() != Some(b'"') {
             return Err(broken());
         }
-        Ok(start..self.at)
+        self.string_range()?;
+        self.take_byte(b':')
     }
 
-    fn skip_number(&mut self) -> Result<Range<usize>, ToolFormatError> {
+    fn skip_while(&mut self, keep: fn(u8) -> bool) -> Result<Range<usize>, ToolFormatError> {
         let start = self.at;
         while let Some(byte) = self.bytes.get(self.at).copied() {
-            if !matches!(byte, b'-' | b'+' | b'.' | b'e' | b'E' | b'0'..=b'9') {
+            if !keep(byte) {
                 break;
             }
             self.at = self.at.saturating_add(1);
@@ -175,6 +156,61 @@ pub(super) fn max_depth(bytes: &[u8]) -> usize {
         }
     }
     deepest
+}
+
+pub(super) fn object_entries<'json, T, F>(
+    scanner: &mut Scanner<'json>,
+    seed: T,
+    mut entry: F,
+) -> Result<T, ToolFormatError>
+where
+    F: FnMut(&mut T, &mut Scanner<'json>, String) -> Result<(), ToolFormatError>,
+{
+    let mut state = seed;
+    scanner.take_byte(b'{')?;
+    if scanner.peek() == Some(b'}') {
+        scanner.take_byte(b'}')?;
+        return Ok(state);
+    }
+    loop {
+        if scanner.peek() != Some(b'"') {
+            return Err(broken());
+        }
+        let key = scanner.parse_string("properties")?;
+        scanner.take_byte(b':')?;
+        entry(&mut state, scanner, key)?;
+        match scanner.peek() {
+            Some(b',') => scanner.take_byte(b',')?,
+            Some(b'}') => {
+                scanner.take_byte(b'}')?;
+                return Ok(state);
+            }
+            Some(_) | None => return Err(broken()),
+        }
+    }
+}
+
+// reads one keyword value when it has the shape LiteLLM reads, and skips it otherwise
+pub(super) fn keyword<'json, T, F>(
+    scanner: &mut Scanner<'json>,
+    shape: u8,
+    parse: F,
+) -> Result<Option<Field<T>>, ToolFormatError>
+where
+    F: FnOnce(&mut Scanner<'json>) -> Result<T, ToolFormatError>,
+{
+    match scanner.peek() {
+        Some(byte) if byte == shape => Ok(Some(Field::Value(parse(scanner)?))),
+        Some(b'n') => {
+            scanner.skip_value()?;
+            Ok(None)
+        }
+        Some(byte) => {
+            scanner.skip_value()?;
+            Ok(Some(Field::Wrong(kind_name(byte))))
+        }
+        None => Err(broken()),
+    }
 }
 
 #[derive(Debug)]
