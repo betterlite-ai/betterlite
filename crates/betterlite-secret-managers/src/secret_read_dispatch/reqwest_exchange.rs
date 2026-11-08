@@ -4,7 +4,6 @@ use std::io::Read as _;
 use std::str::FromStr as _;
 use std::sync::{Mutex, PoisonError};
 
-use futures_util::StreamExt as _;
 use reqwest::blocking::{
     Client as BlockingClient, ClientBuilder as BlockingClientBuilder, Response as BlockingResponse,
 };
@@ -204,13 +203,11 @@ fn request_error(source: reqwest::Error) -> HttpError {
 }
 
 async fn read_streamed_body(
-    response: reqwest::Response,
+    mut response: reqwest::Response,
     limit: usize,
 ) -> Result<Vec<u8>, HttpError> {
-    let mut stream = response.bytes_stream();
     let mut body = Vec::new();
-    while let Some(item) = stream.next().await {
-        let chunk = item.map_err(HttpError::Transport)?;
+    while let Some(chunk) = response.chunk().await.map_err(HttpError::Transport)? {
         if body.len().saturating_add(chunk.len()) > limit {
             return Err(HttpError::ResponseTooLarge { limit });
         }

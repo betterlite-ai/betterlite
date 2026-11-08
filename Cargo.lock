@@ -2393,7 +2393,6 @@ dependencies = [
  "axum",
  "base64 0.23.1",
  "betterlite-env",
- "futures-util",
  "http 1.5.0",
  "num-traits",
  "percent-encoding",
