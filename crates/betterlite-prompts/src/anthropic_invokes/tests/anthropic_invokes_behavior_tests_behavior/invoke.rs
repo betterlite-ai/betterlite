@@ -434,6 +434,15 @@ fn anthropic_invokes_behavior_tests_behavior_repeated_server_calls_over_the_byte
     ));
 }
 
+// 44 bytes of object head and keys plus 8148 text bytes is 8192 per copy, so 1024 copies land exactly on the cap
+#[test]
+fn anthropic_invokes_behavior_tests_behavior_server_results_exactly_at_the_byte_cap_are_copied() {
+    let calls = repeated_calls("srvtoolu_shared", MAX_TOOL_CALLS);
+    let results = server_results("srvtoolu_shared", 0x1FD4, 1);
+    let blocks = to_anthropic_tool_invokes(&calls, &results, &[]).unwrap();
+    assert_eq!(blocks.len(), MAX_TOOL_CALLS.saturating_mul(2));
+}
+
 #[test]
 fn anthropic_invokes_behavior_tests_behavior_repeated_server_calls_under_the_byte_cap_are_copied() {
     let calls = repeated_calls("srvtoolu_shared", MAX_TOOL_CALLS);
