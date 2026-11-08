@@ -202,11 +202,13 @@ async fn fetch_jwks_fails_on_a_non_success_status() {
 async fn a_slow_idp_response_times_out() {
     let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
     let base = format!("http://{}", listener.local_addr().expect("address"));
-    let answer = || async {
-        sleep(Duration::from_millis(200)).await;
-        (StatusCode::OK, "{}".to_owned())
-    };
-    let router = Router::new().route("/jwks", get(answer));
+    let router = Router::new().route(
+        "/jwks",
+        get(|| async {
+            sleep(Duration::from_millis(200)).await;
+            (StatusCode::OK, "{}".to_owned())
+        }),
+    );
     let mut server = JoinSet::new();
     server.spawn(axum::serve(listener, router).into_future());
     let error = client_with_timeout(Duration::from_millis(1))

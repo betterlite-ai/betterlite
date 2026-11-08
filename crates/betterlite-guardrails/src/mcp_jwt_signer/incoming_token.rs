@@ -3,6 +3,7 @@ use betterlite_prompts::arguments::json::Json;
 use jsonwebtoken::errors::Error as JsonWebTokenError;
 use jsonwebtoken::jwk::{AlgorithmParameters, EllipticCurve, Jwk};
 use jsonwebtoken::{Algorithm, DecodingKey, Validation};
+use rust_decimal::Decimal;
 use secrecy::{ExposeSecret as _, SecretString};
 use serde::Deserialize;
 use serde_json::Number;
@@ -156,11 +157,14 @@ fn validate_claim_types(claims: &Claims, now: i64) -> Result<(), IncomingTokenEr
 }
 
 fn whole_seconds(number: &Number) -> Option<i64> {
-    if let Some(seconds) = number.as_i64() {
-        return Some(seconds);
-    }
-    // PyJWT's int() truncates a fractional NumericDate; the integer part of the text avoids float arithmetic
-    number.to_string().split('.').next()?.parse::<i64>().ok()
+    let text = number.to_string();
+    let parsed = if text.contains('e') || text.contains('E') {
+        Decimal::from_scientific(&text).ok()?
+    } else {
+        text.parse::<Decimal>().ok()?
+    };
+    // PyJWT's int() truncates a fractional NumericDate; Decimal truncates without float arithmetic
+    i64::try_from(parsed.trunc()).ok()
 }
 
 fn parse_keys(keys: &[Jwk], uri: &str) -> Result<Vec<SigningJwk>, IncomingTokenError> {

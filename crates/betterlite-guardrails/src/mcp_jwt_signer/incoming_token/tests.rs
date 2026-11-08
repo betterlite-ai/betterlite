@@ -9,6 +9,7 @@ use axum::http::{StatusCode, Uri};
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
 use betterlite_prompts::arguments::json::{Json, Object};
 use jsonwebtoken::{Algorithm, EncodingKey, Header};
+use rstest::rstest;
 use secrecy::SecretString;
 use serde_json::Number;
 use tokio::net::TcpListener;
@@ -257,35 +258,36 @@ async fn rejects_a_token_whose_iat_is_in_the_future() {
     assert!(matches!(error, IncomingTokenError::NotYetValid));
 }
 
+#[rstest]
+#[case::fractional("1700000000.5")]
+#[case::exponent_capital("1E9")]
+#[case::exponent_signed("1e+9")]
 #[tokio::test]
-async fn accepts_a_fractional_issued_at() {
+async fn accepts_fractional_and_exponent_issued_at(#[case] issued_at: &str) {
     let key = idp_key();
     let (base, _server) = idp_server(jwks_body(&key)).await;
-    let mut accepted = claims();
-    accepted.insert(
+    let mut claims = claims();
+    claims.insert(
         "iat".to_owned(),
-        serde_json::from_str::<Json>("1700000000.5").expect("fractional number"),
+        serde_json::from_str::<Json>(issued_at).expect("number"),
     );
-    verify_incoming_jwt(
-        &build_signer(&options(&base)),
-        &token(&key, &accepted),
-        now(),
-    )
-    .await
-    .expect("a fractional iat is a valid NumericDate");
-    let mut rejected = claims();
-    let future = format!("{}.5", now().saturating_add(3600));
-    rejected.insert(
+    verify_incoming_jwt(&build_signer(&options(&base)), &token(&key, &claims), now())
+        .await
+        .expect("a fractional or exponent iat is a valid NumericDate");
+}
+
+#[tokio::test]
+async fn rejects_a_future_exponent_issued_at() {
+    let key = idp_key();
+    let (base, _server) = idp_server(jwks_body(&key)).await;
+    let mut claims = claims();
+    claims.insert(
         "iat".to_owned(),
-        serde_json::from_str::<Json>(&future).expect("fractional number"),
+        serde_json::from_str::<Json>("9.9e10").expect("number"),
     );
-    let error = verify_incoming_jwt(
-        &build_signer(&options(&base)),
-        &token(&key, &rejected),
-        now(),
-    )
-    .await
-    .expect_err("future fractional iat");
+    let error = verify_incoming_jwt(&build_signer(&options(&base)), &token(&key, &claims), now())
+        .await
+        .expect_err("future exponent iat");
     assert!(matches!(error, IncomingTokenError::NotYetValid));
 }
 
