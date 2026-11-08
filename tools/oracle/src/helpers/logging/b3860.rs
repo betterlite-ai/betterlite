@@ -113,7 +113,7 @@ fn drop_array_contents(mut record: Map<String, Json>, messages: &OtelModelValue)
     for (index, message) in entries.iter().enumerate() {
         let has_array_content = message
             .as_object()
-            .and_then(|message| message.get("content"))
+            .and_then(|fields| fields.get("content"))
             .is_some_and(|content| content.as_array().is_some());
         if has_array_content {
             record.remove(&format!("llm.input_messages.{index}.message.content"));
@@ -145,11 +145,9 @@ fn normalize_value(value: Json, path: &str) -> Json {
                 .collect(),
         ),
         Json::String(text) if path == "output.value" || path.ends_with(".function.arguments") => {
-            match serde_json::from_str(&text) {
-                Ok(parsed) => normalize_value(parsed, path),
-                Err(_) => Json::String(text),
-            }
+            serde_json::from_str(&text)
+                .map_or(Json::String(text), |parsed| normalize_value(parsed, path))
         }
-        other => other,
+        other @ (Json::Null | Json::Bool(_) | Json::Number(_) | Json::String(_)) => other,
     }
 }
