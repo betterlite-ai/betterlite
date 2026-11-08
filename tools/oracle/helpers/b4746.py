@@ -72,23 +72,17 @@ class Input(Strict):
     resource: ResourceInput | None = None
 
 
-class Budget:
-    def __init__(self) -> None:
-        self.deadline_ms: float = math.inf
-        self.elapsed_ms: float = 0
-
-
 class BudgetExpiredError(Exception):
     pass
 
 
 class FailAfter:
-    def __init__(self, budget: Budget, seconds: float) -> None:
-        self.budget = budget
+    def __init__(self, session: "ScriptedSession", seconds: float) -> None:
+        self.session = session
         self.seconds = seconds
 
     def __enter__(self) -> Self:
-        self.budget.deadline_ms = self.seconds * 1000.0
+        self.session.deadline_ms = self.seconds * 1000.0
         return self
 
     def __exit__(
@@ -111,9 +105,10 @@ class ScriptedPage:
 
 
 class ScriptedSession:
-    def __init__(self, input_value: Input, budget: Budget) -> None:
+    def __init__(self, input_value: Input) -> None:
         self.input = input_value
-        self.budget = budget
+        self.deadline_ms: float = math.inf
+        self.elapsed_ms: int = 0
         capabilities = input_value.capabilities
         self.server_capabilities: ServerCapabilities | None = (
             None if capabilities is None else ServerCapabilities.model_validate(capabilities)
@@ -129,8 +124,8 @@ class ScriptedSession:
     async def _fetch(self, params: PaginatedRequestParams | None) -> PageInput:
         self.cursors.append(None if params is None else params.cursor)
         page = next(self.pages)
-        self.budget.elapsed_ms += page.delay_ms
-        if self.budget.elapsed_ms > self.budget.deadline_ms:
+        self.elapsed_ms += page.delay_ms
+        if self.elapsed_ms > self.deadline_ms:
             self.stopped_by_deviation = True
             raise BudgetExpiredError
         if page.error is not None:
@@ -190,8 +185,6 @@ class ScriptedSession:
 
 
 class ScriptedClient(mcp_client.MCPClient):
-    session: ScriptedSession
-
     def __init__(self, session: ScriptedSession, timeout: float) -> None:
         super().__init__(  # pyright: ignore[reportUnknownMemberType]
             server_url="https://mcp.example.com/mcp",
@@ -272,11 +265,10 @@ async def dispatch(input_value: Input, client: ScriptedClient, session: Scripted
 
 def run(input_value: dict[str, Json]) -> Json:
     parsed = Input.model_validate(input_value)
-    budget = Budget()
-    session = ScriptedSession(parsed, budget)
+    session = ScriptedSession(parsed)
     client = ScriptedClient(session, parsed.client_timeout_ms / 1000.0)
     with (
-        patch.object(anyio, "fail_after", partial(FailAfter, budget)),
+        patch.object(anyio, "fail_after", partial(FailAfter, session)),
         patch.object(mcp_client, "MCP_TOOL_LISTING_TIMEOUT", parsed.listing_timeout_ms / 1000.0),
     ):
         return asyncio.run(dispatch(parsed, client, session))

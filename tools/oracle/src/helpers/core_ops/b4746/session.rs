@@ -83,23 +83,18 @@ impl FakeSession {
     }
 }
 
-fn items<Value>(values: Vec<serde_json::Value>) -> Result<Vec<Value>, ScriptedFailure>
-where
-    Value: serde::de::DeserializeOwned,
-{
-    values
-        .into_iter()
-        .map(|value| serde_json::from_value::<Value>(value))
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|error| ScriptedFailure::Plain(error.to_string()))
-}
-
 macro_rules! page_method {
     ($method:ident, $page:ident, $field:ident) => {
         async fn $method(&mut self, cursor: Option<String>) -> Result<$page, ScriptedFailure> {
             let page = self.next_page(cursor).await?;
+            let items = page
+                .items
+                .into_iter()
+                .map(serde_json::from_value)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|error| ScriptedFailure::Plain(error.to_string()))?;
             Ok($page {
-                $field: items(page.items)?,
+                $field: items,
                 next_cursor: page.next_cursor,
             })
         }
