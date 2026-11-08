@@ -60,7 +60,7 @@ fn a_payload_at_the_limit_survives() {
 }
 
 #[rstest]
-#[case::kilobytes(2000, "data:image/png;base64,[base64_data truncated: 1.46KB]")]
+#[case::kilobytes(2000, "data:image/png;base64,[base64_data truncated: 1.5KB]")]
 #[case::bytes(65, "data:image/png;base64,[base64_data truncated: 48B]")]
 #[case::megabytes(1_500_000, "data:image/png;base64,[base64_data truncated: 1.07MB]")]
 fn logging_metadata_behavior_tests_behavior(#[case] length: usize, #[case] expected: &str) {
@@ -121,7 +121,7 @@ fn a_payload_below_the_depth_bound_is_truncated() {
         .truncate_messages(&original)
         .expect("truncated");
     let encoded = serde_json::to_string(&truncated).expect("encodes");
-    assert!(encoded.contains("base64_data truncated: 1.46KB"));
+    assert!(encoded.contains("base64_data truncated: 1.5KB"));
 }
 
 #[test]
