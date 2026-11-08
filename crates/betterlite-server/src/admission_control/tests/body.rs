@@ -5,6 +5,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use axum::body::{Body, Bytes};
 use futures_util::StreamExt as _;
 use futures_util::stream;
+use http_body::Body as _;
 
 use crate::admission_control::body::GuardedBody;
 
@@ -14,6 +15,21 @@ impl Drop for Guard {
     fn drop(&mut self) {
         self.0.store(true, Ordering::SeqCst);
     }
+}
+
+#[test]
+fn guarded_body_reports_the_end_of_an_empty_body() {
+    let released = Arc::new(AtomicBool::new(false));
+    let empty = GuardedBody {
+        inner: Body::empty(),
+        guard: Some(Guard(Arc::clone(&released))),
+    };
+    let pending = GuardedBody {
+        inner: Body::from("data"),
+        guard: Some(Guard(released)),
+    };
+    assert!(empty.is_end_stream());
+    assert!(!pending.is_end_stream());
 }
 
 #[tokio::test]

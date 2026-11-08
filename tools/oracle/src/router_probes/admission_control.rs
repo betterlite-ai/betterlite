@@ -120,10 +120,11 @@ fn load_settings(settings: &BTreeMap<String, Value>) -> Result<Settings, Operati
     struct ConfigView<'settings> {
         general_settings: &'settings BTreeMap<String, Value>,
     }
-    let source = serde_saphyr::to_string(&ConfigView {
+    // serde_saphyr writes an arbitrary_precision Number as a map, so the settings go out as JSON, which YAML reads
+    let source = serde_json::to_string(&ConfigView {
         general_settings: settings,
     })
-    .map_err(|error| invalid(&format!("the probe settings are not valid YAML: {error}")))?;
+    .map_err(|error| invalid(&format!("the probe settings are not valid JSON: {error}")))?;
     let config = ConfigLoader {
         lookup: BTreeMap::<String, String>::new(),
     }

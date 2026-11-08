@@ -202,14 +202,11 @@ fn is_websocket_upgrade(request: &Request<Body>) -> bool {
 // LiteLLM strips the scope root_path itself, and a scalar SERVER_ROOT_PATH has no middleware to do it here
 fn scalar_route_path<'path>(request: &'path Request<Body>, scalar_root: &str) -> &'path str {
     let path = request.uri().path();
-    if scalar_root.is_empty() || request.extensions().get::<RequestRootPath>().is_some() {
+    if request.extensions().get::<RequestRootPath>().is_some() {
         return path;
     }
-    match path.strip_prefix(scalar_root) {
-        Some("") => "/",
-        Some(rest) if rest.starts_with('/') => rest,
-        _ => path,
-    }
+    // every exempt path starts with a slash, so a partial segment match such as /proxyhealth stays non-exempt
+    path.strip_prefix(scalar_root).unwrap_or(path)
 }
 
 async fn admit_request(

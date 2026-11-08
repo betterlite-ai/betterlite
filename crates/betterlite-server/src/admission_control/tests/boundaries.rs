@@ -43,6 +43,7 @@ enum Boundary {
     InstallWiresTheStack,
     UpgradeBypassesSaturation,
     ContentLengthSurvivesTheStack,
+    MatchedRootPathSkipsTheScalarRoot,
 }
 
 #[rstest]
@@ -68,6 +69,7 @@ enum Boundary {
 #[case::install_wires_the_stack(Boundary::InstallWiresTheStack)]
 #[case::upgrade_bypasses_saturation(Boundary::UpgradeBypassesSaturation)]
 #[case::content_length_survives_the_stack(Boundary::ContentLengthSurvivesTheStack)]
+#[case::matched_root_path_skips_the_scalar_root(Boundary::MatchedRootPathSkipsTheScalarRoot)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn admission_control_boundaries(#[case] boundary: Boundary) {
     match boundary {
@@ -85,7 +87,39 @@ async fn admission_control_boundaries(#[case] boundary: Boundary) {
         Boundary::InstallWiresTheStack => install_wires_the_stack().await,
         Boundary::UpgradeBypassesSaturation => upgrade_bypasses_saturation().await,
         Boundary::ContentLengthSurvivesTheStack => content_length_survives_the_stack().await,
+        Boundary::MatchedRootPathSkipsTheScalarRoot => {
+            matched_root_path_skips_the_scalar_root().await;
+        }
     }
+}
+
+async fn matched_root_path_skips_the_scalar_root() {
+    let gates = gates(&[("/other/chat", Behavior::Hold)]);
+    let harness = harness(
+        "general_settings:\n  SERVER_ROOT_PATH: /proxy\n  max_in_flight_requests_per_worker: 1\n  max_queued_requests_per_worker: 0",
+        "/other",
+        gates,
+    );
+    let mut requests = Requests::default();
+    requests.start(&harness.router, "/other/chat");
+    await_started(&harness.gates, "/other/chat").await;
+    requests.start(&harness.router, "/other/health/liveliness");
+    assert_eq!(
+        requests.complete("/other/health/liveliness").await.0,
+        StatusCode::OK
+    );
+    requests.start(&harness.router, "/other/proxy/health/liveliness");
+    assert_eq!(
+        requests.complete("/other/proxy/health/liveliness").await.0,
+        StatusCode::SERVICE_UNAVAILABLE
+    );
+    harness
+        .gates
+        .get("/other/chat")
+        .unwrap()
+        .release
+        .notify_one();
+    assert_eq!(requests.complete("/other/chat").await.0, StatusCode::OK);
 }
 
 async fn queue_full_at_capacity() {

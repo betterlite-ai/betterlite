@@ -155,8 +155,8 @@ fn integer_float(number: f64) -> Option<i64> {
     if !number.is_finite() {
         return None;
     }
-    let fraction = number.fract().to_bits();
-    if fraction != 0.0_f64.to_bits() && fraction != (-0.0_f64).to_bits() {
+    // fract of a whole number is +0.0 even when the number is -0.0 or negative
+    if number.fract().to_bits() != 0.0_f64.to_bits() {
         return None;
     }
     format!("{number:.0}").parse::<i64>().ok()

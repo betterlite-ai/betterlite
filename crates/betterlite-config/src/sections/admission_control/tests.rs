@@ -1,9 +1,13 @@
 #![cfg(test)]
 
 use std::collections::BTreeMap;
+use std::fs::read_to_string;
+use std::sync::Arc;
 use std::time::Duration;
 
 use rstest::rstest;
+use tempfile::NamedTempFile;
+use tracing::subscriber::set_default;
 
 use crate::loader::ConfigLoader;
 use crate::sections::admission_control::{Limits, Settings};
@@ -106,6 +110,14 @@ fn settings(source: &str, variables: &[(&str, &str)]) -> Settings {
     "general_settings:\n  max_in_flight_requests_per_worker: \"_1\"",
     None
 )]
+#[case::trailing_underscore_text(
+    "general_settings:\n  max_in_flight_requests_per_worker: \"1_\"",
+    None
+)]
+#[case::double_underscore_text(
+    "general_settings:\n  max_in_flight_requests_per_worker: \"1__0\"",
+    None
+)]
 #[case::edge_underscore_timeout(
     "general_settings:\n  max_in_flight_requests_per_worker: 1\n  admission_queue_timeout_seconds: \"1_\"",
     None
@@ -183,6 +195,47 @@ fn environment_values_use_the_text_grammar(
 ) {
     let variables: Vec<(&str, &str)> = value.map(|text| ("V", text)).into_iter().collect();
     assert_admission(source, &variables, expected);
+}
+
+#[rstest]
+#[case::in_flight(
+    "general_settings:\n  max_in_flight_requests_per_worker: 0",
+    "max_in_flight_requests_per_worker"
+)]
+#[case::queue(
+    "general_settings:\n  max_in_flight_requests_per_worker: 2\n  max_queued_requests_per_worker: -1",
+    "max_queued_requests_per_worker"
+)]
+#[case::timeout(
+    "general_settings:\n  max_in_flight_requests_per_worker: 2\n  admission_queue_timeout_seconds: 0",
+    "admission_queue_timeout_seconds"
+)]
+fn an_invalid_setting_warns_with_its_name(#[case] source: &str, #[case] name: &str) {
+    let log = NamedTempFile::new().unwrap();
+    let subscriber = tracing_subscriber::fmt()
+        .without_time()
+        .with_ansi(false)
+        .with_writer(Arc::new(log.reopen().unwrap()))
+        .finish();
+    let guard = set_default(subscriber);
+    let loaded = settings(source, &[]);
+    drop(guard);
+    assert_eq!(loaded, Settings::default());
+    let written = read_to_string(log.path()).unwrap();
+    assert!(
+        written.contains("invalid admission control setting"),
+        "{written}"
+    );
+    assert!(written.contains(name), "{written}");
+}
+
+#[test]
+fn negative_zero_queue_is_a_zero_queue() {
+    let loaded = settings(
+        "general_settings:\n  max_in_flight_requests_per_worker: 3\n  max_queued_requests_per_worker: -0.0",
+        &[],
+    );
+    assert_eq!(loaded.limits.unwrap().max_queued_requests, 0);
 }
 
 #[test]
