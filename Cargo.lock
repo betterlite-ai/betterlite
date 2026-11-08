@@ -989,22 +989,17 @@ dependencies = [
  "betterlite-server",
  "chrono",
  "clap",
- "fancy-regex 0.19.2",
  "nix",
  "rand 0.10.3",
  "regex",
  "rstest",
  "serde",
- "serde-saphyr",
  "serde_json",
  "sha2 0.11.1",
- "strfmt",
- "tempfile",
  "thiserror",
  "tokio",
  "tracing",
  "tracing-subscriber",
- "unicode-general-category",
  "uuid",
  "whoami",
 ]
@@ -1035,6 +1030,7 @@ dependencies = [
  "strum",
  "thiserror",
  "tokio",
+ "tracing",
  "url",
  "uuid",
 ]
@@ -1359,6 +1355,7 @@ dependencies = [
  "betterlite-config",
  "betterlite-context",
  "betterlite-env",
+ "betterlite-error",
  "betterlite-http",
  "betterlite-logging",
  "betterlite-mcp",
@@ -1370,6 +1367,7 @@ dependencies = [
  "http 1.5.0",
  "indexmap 2.14.2",
  "jiff",
+ "jsonschema",
  "lopdf",
  "rand 0.10.3",
  "rstest",
@@ -1494,6 +1492,7 @@ dependencies = [
  "rust_decimal",
  "serde",
  "serde_json",
+ "strum",
  "thiserror",
 ]
 
@@ -1513,8 +1512,6 @@ version = "0.1.0"
 name = "betterlite-fuzz"
 version = "0.0.0"
 dependencies = [
- "betterlite",
- "betterlite-config",
  "libfuzzer-sys",
 ]
 
@@ -1522,6 +1519,7 @@ dependencies = [
 name = "betterlite-guardrails"
 version = "0.1.0"
 dependencies = [
+ "aws-lc-rs",
  "axum",
  "base64 0.23.1",
  "betterlite-compression",
@@ -1536,8 +1534,11 @@ dependencies = [
  "hex",
  "hyper",
  "indexmap 2.14.2",
+ "jsonwebtoken",
  "lru",
  "mime_guess",
+ "pem",
+ "pkcs8",
  "regex",
  "reqwest",
  "rstest",
@@ -1545,11 +1546,13 @@ dependencies = [
  "rustls",
  "secrecy",
  "serde",
+ "serde-saphyr",
  "serde_json",
  "serde_with",
  "sha2 0.11.1",
  "strfmt",
  "temp-env",
+ "tempfile",
  "thiserror",
  "tokio",
  "tokio-rustls",
@@ -1558,6 +1561,7 @@ dependencies = [
  "tree-sitter",
  "tree-sitter-python",
  "ulid",
+ "unicode-general-category",
  "unicode-normalization",
  "url",
  "uuid",
@@ -1567,6 +1571,7 @@ dependencies = [
 name = "betterlite-guardrails-fuzz"
 version = "0.0.0"
 dependencies = [
+ "betterlite-config",
  "betterlite-guardrails",
  "libfuzzer-sys",
  "serde_json",
@@ -1723,12 +1728,15 @@ dependencies = [
  "chrono",
  "csv",
  "flate2",
+ "futures-util",
  "h2",
  "hex",
  "http 1.5.0",
  "indexmap 2.14.2",
  "insta",
  "jiff",
+ "lettre",
+ "mail-builder",
  "minijinja",
  "minijinja-contrib",
  "nix",
@@ -1935,7 +1943,6 @@ dependencies = [
  "aws-types",
  "axum",
  "base64 0.23.1",
- "betterlite",
  "betterlite-a2a",
  "betterlite-anthropic",
  "betterlite-auth",
@@ -1959,10 +1966,12 @@ dependencies = [
  "betterlite-openai",
  "betterlite-openapi",
  "betterlite-paths",
+ "betterlite-policy",
  "betterlite-postgres-fixture",
  "betterlite-prompts",
  "betterlite-provider",
  "betterlite-proxy",
+ "betterlite-rag",
  "betterlite-rate-limit",
  "betterlite-redact",
  "betterlite-redis",
@@ -1984,6 +1993,7 @@ dependencies = [
  "http 1.5.0",
  "indexmap 2.14.2",
  "jiff",
+ "opentelemetry",
  "percent-encoding",
  "quick-xml",
  "rand 0.10.3",
@@ -2048,6 +2058,16 @@ dependencies = [
 [[package]]
 name = "betterlite-policy"
 version = "0.1.0"
+dependencies = [
+ "betterlite-auth",
+ "fancy-regex 0.19.2",
+ "rstest",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tracing",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "betterlite-postgres-fixture"
@@ -2197,6 +2217,21 @@ version = "0.1.0"
 [[package]]
 name = "betterlite-rag"
 version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "betterlite-models",
+ "betterlite-openai",
+ "betterlite-provider",
+ "betterlite-redis",
+ "percent-encoding",
+ "redis",
+ "rstest",
+ "rust_decimal",
+ "secrecy",
+ "serde_json",
+ "thiserror",
+ "tokio",
+]
 
 [[package]]
 name = "betterlite-rate-limit"
@@ -2234,6 +2269,7 @@ dependencies = [
  "betterlite-redact",
  "crc16",
  "futures-util",
+ "hex",
  "prometheus-client",
  "py_literal",
  "rcgen",
@@ -2244,6 +2280,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
+ "sha2 0.11.1",
  "socket2",
  "tempfile",
  "thiserror",
@@ -2303,6 +2340,7 @@ dependencies = [
 name = "betterlite-router"
 version = "0.1.0"
 dependencies = [
+ "betterlite-context",
  "betterlite-error",
  "betterlite-redis",
  "indexmap 2.14.2",
@@ -2314,6 +2352,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "tokio",
  "unicode-general-category",
 ]
 
@@ -2346,6 +2385,7 @@ dependencies = [
  "serde_json",
  "thiserror",
  "tokio",
+ "tracing",
  "url",
 ]
 
@@ -2384,6 +2424,7 @@ dependencies = [
  "base64 0.23.1",
  "betterlite-secret-managers",
  "libfuzzer-sys",
+ "secrecy",
 ]
 
 [[package]]
@@ -2537,10 +2578,12 @@ dependencies = [
  "hex",
  "hf-hub",
  "http 1.5.0",
+ "indexmap 2.14.2",
  "kitoken",
  "lru",
  "rstest",
  "secrecy",
+ "serde",
  "serde_json",
  "sha1",
  "sha2 0.11.1",
@@ -2630,6 +2673,7 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+ "tokio",
  "tracing",
  "uuid",
 ]
@@ -2825,6 +2869,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "borrow-or-share"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dc0b364ead1874514c8c2855ab558056ebfeb775653e7ae45ff72f28f8f3166c"
+
+[[package]]
 name = "borsh"
 version = "1.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2889,6 +2939,12 @@ name = "bumpalo"
 version = "3.20.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
+
+[[package]]
+name = "bytecount"
+version = "0.6.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "175812e0be2bccb6abe50bb8d566126198344f707e304f45c648fd8f2cc0365e"
 
 [[package]]
 name = "bytemuck"
@@ -3871,6 +3927,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "encodify"
+version = "1.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e95d6e27686e1d6991a3077f4dbec9d33d18903466d234165ad86cd08c3ebc79"
+dependencies = [
+ "memchr",
+ "simdutf8",
+]
+
+[[package]]
 name = "encoding_rs"
 version = "0.8.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4027,6 +4093,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "fluent-uri"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bc74ac4d8359ae70623506d512209619e5cf8f347124910440dbc221714b328e"
+dependencies = [
+ "borrow-or-share",
+ "ref-cast",
+ "serde",
+]
+
+[[package]]
 name = "fnv"
 version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4060,6 +4137,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
 dependencies = [
  "percent-encoding",
+]
+
+[[package]]
+name = "fraction"
+version = "0.17.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e246562084dde8ebbcc943b261c406ce4f68e5032ec28029a251a47d6a295500"
+dependencies = [
+ "num",
+ "num-bigint",
 ]
 
 [[package]]
@@ -4225,9 +4312,11 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "899def5c37c4fd7b2664648c28120ecec138e4d395b459e5ca34f9cce2dd77fd"
 dependencies = [
  "cfg-if",
+ "js-sys",
  "libc",
  "r-efi 5.3.0",
  "wasip2",
+ "wasm-bindgen",
 ]
 
 [[package]]
@@ -4468,6 +4557,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cc627f471c528ff0c4a49e1d5e60450c8f6461dd6d10ba9dcd3a61d3dff7728d"
 dependencies = [
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "hostname"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "617aaa3557aef3810a6369d0a99fac8a080891b68bd9f9812a1eeda0c0730cbd"
+dependencies = [
+ "cfg-if",
+ "libc",
+ "windows-link",
 ]
 
 [[package]]
@@ -5008,6 +5108,108 @@ dependencies = [
 ]
 
 [[package]]
+name = "jsonschema"
+version = "0.60.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a42a11b47492e6a2cc76e9c7bcc8077776cb31dac444e0795d7f61bcc6441c08"
+dependencies = [
+ "ahash",
+ "bytecount",
+ "data-encoding",
+ "email_address",
+ "fancy-regex 0.19.2",
+ "fraction",
+ "getrandom 0.3.4",
+ "itoa",
+ "jsonschema-macros",
+ "jsonschema-regex",
+ "jsonschema-value",
+ "num-bigint",
+ "num-cmp",
+ "num-traits",
+ "percent-encoding",
+ "referencing",
+ "regex",
+ "serde",
+ "serde_json",
+ "strum",
+ "unicode-general-category",
+ "uuid-simd",
+]
+
+[[package]]
+name = "jsonschema-macros"
+version = "0.60.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "2b70c94dc0ea54d4a8f4b42becc5356a33dc203a421f99fdc551f72b6b8b8457"
+dependencies = [
+ "jsonschema-macros-core",
+ "proc-macro2",
+]
+
+[[package]]
+name = "jsonschema-macros-core"
+version = "0.60.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "20fd89a50cb8da14c3a7be6bb6ba6b79e439723381008dece905b72412176b52"
+dependencies = [
+ "fancy-regex 0.19.2",
+ "indexmap 2.14.2",
+ "jsonschema-regex",
+ "percent-encoding",
+ "proc-macro-crate",
+ "proc-macro2",
+ "quote",
+ "referencing",
+ "regex",
+ "serde_json",
+ "syn 2.0.119",
+]
+
+[[package]]
+name = "jsonschema-regex"
+version = "0.60.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "107aeb6ff14b8deb5610096a8ce5c554ec89806b521147eaeb3cae05b07edb7a"
+dependencies = [
+ "regex-syntax",
+]
+
+[[package]]
+name = "jsonschema-value"
+version = "0.60.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e281d6b177bb4834f2ffd6f92aa0443cffe29c996b251c8d94eb6f456186feba"
+dependencies = [
+ "ahash",
+ "bytecount",
+ "fraction",
+ "getrandom 0.3.4",
+ "memchr",
+ "num-bigint",
+ "num-cmp",
+ "num-traits",
+ "serde_json",
+ "zmij",
+]
+
+[[package]]
+name = "jsonwebtoken"
+version = "11.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e75fe14a82d81e5f5af639997db37d8b96045938a7ac6ab18cdbe1c7467e05e1"
+dependencies = [
+ "aws-lc-rs",
+ "base64 0.22.1",
+ "getrandom 0.2.17",
+ "js-sys",
+ "serde",
+ "serde_json",
+ "signature",
+ "zeroize",
+]
+
+[[package]]
 name = "keyring-core"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5060,6 +5262,25 @@ name = "lazy_static"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
+
+[[package]]
+name = "lettre"
+version = "0.11.23"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f2c646bd5cc763b1087b15493e29a64be6147ba8f19342004fa52048ee596eae"
+dependencies = [
+ "base64 0.23.1",
+ "email_address",
+ "hostname",
+ "idna",
+ "nom 8.0.0",
+ "percent-encoding",
+ "rustls",
+ "rustls-native-certs",
+ "socket2",
+ "tokio",
+ "url",
+]
 
 [[package]]
 name = "lexical-parse-float"
@@ -5271,6 +5492,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "fc04a4c58212d57930a24bf47d3fa87485264a3a054e9c10e042eb373573ad3c"
 
 [[package]]
+name = "mail-builder"
+version = "2.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8bca634885db8e836b80700a73661de20ffd93cb5787729afc31575545e2aed"
+dependencies = [
+ "encodify",
+]
+
+[[package]]
 name = "matchers"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5306,6 +5536,12 @@ name = "memchr"
 version = "2.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98"
+
+[[package]]
+name = "micromap"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c2a86d3146ed3995b5913c414f6664344b9617457320782e64f0bb44afd49d74"
 
 [[package]]
 name = "mime"
@@ -5532,6 +5768,12 @@ dependencies = [
  "num-integer",
  "num-traits",
 ]
+
+[[package]]
+name = "num-cmp"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "63335b2e2c34fae2fb0aa2cecfd9f0832a1e24b3b32ecec612c3426d46dc8aaa"
 
 [[package]]
 name = "num-complex"
@@ -6166,6 +6408,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8b870d8c151b6f2fb93e84a13146138f05d02ed11c7e7c54f8826aaaf7c9f184"
 
 [[package]]
+name = "pkcs8"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "451913da69c775a56034ea8d9003d27ee8948e12443eae7c038ba100a4f21cb7"
+dependencies = [
+ "der",
+ "spki",
+]
+
+[[package]]
 name = "pkg-config"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6721,6 +6973,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "referencing"
+version = "0.60.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f42818036d3b37cda6bd4c494543158a36e431cb717015ef7c93acc6ba214d3b"
+dependencies = [
+ "ahash",
+ "fluent-uri",
+ "getrandom 0.3.4",
+ "hashbrown 0.17.1",
+ "itoa",
+ "micromap",
+ "parking_lot",
+ "percent-encoding",
+ "serde_json",
+]
+
+[[package]]
 name = "regex"
 version = "1.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6996,6 +7265,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "48e13bd8c0e9365c43cfa5c9e8f9ad49d3c8444926c9aac819e0e4dc503c8fdf"
 dependencies = [
  "aws-lc-rs",
+ "log",
  "once_cell",
  "rustls-pki-types",
  "rustls-webpki",
@@ -7422,6 +7692,15 @@ checksum = "c4db69cba1110affc0e9f7bcd48bbf87b3f4fc7c61fc9155afd4c469eb3d6c1b"
 dependencies = [
  "errno",
  "libc",
+]
+
+[[package]]
+name = "signature"
+version = "2.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "77549399552de45a898a580c1b41d445bf730df867cc44e6c0233bbc4b8329de"
+dependencies = [
+ "rand_core 0.6.4",
 ]
 
 [[package]]
@@ -8658,6 +8937,16 @@ dependencies = [
  "js-sys",
  "serde_core",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "uuid-simd"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "23b082222b4f6619906941c17eb2297fff4c2fb96cb60164170522942a200bd8"
+dependencies = [
+ "outref",
+ "vsimd",
 ]
 
 [[package]]

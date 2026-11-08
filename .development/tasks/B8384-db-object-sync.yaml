@@ -10,11 +10,11 @@ description: >-
 
   `sync_non_llm_objects(db)` runs these in this order, each only when B8380's should_load_db_object allows its kind:
   guardrails (B3683's poll_database), policies (B3243: sync policies, then attachments), vector_stores and
-  vector_store_indexes (B1062's database loading; no rows leaves the registry alone, otherwise each store is added and
-  each index upserted), mcp (`init_mcp_servers`), agents (B4776's reconcile lock around B4777's get_all_agents_from_db
-  and B4776's load_agents_from_db_and_config), pass_through_endpoints (B8520's initialize_pass_through_endpoints_in_db),
-  prompts (`load_prompts`), search_tools (`load_search_tools`), tools (B1606's tool policy registry refresh),
-  anthropic_beta_headers (B8385's beta header reload), sso_settings (B8383), cache_settings (B8502's
+  vector_store_indexes (B1062's database loading into B8614's VectorStores; no rows leaves the registry alone, otherwise each store is added and
+  each index upserted), mcp (`init_mcp_servers` into B8614's one McpRegistry), agents (B4776's reconcile lock around B4777's get_all_agents_from_db
+  and B4776's load_agents_from_db_and_config), pass_through_endpoints (B8520's initialize_pass_through_endpoints_in_db, into the route table of B8614's PassThroughState),
+  prompts (`load_prompts`, into the one prompt registry B8613 makes and Shared holds), search_tools (`load_search_tools`), tools (B1606's tool policy registry refresh),
+  anthropic_beta_headers (B8385's beta header reload, on the one PeriodicReloads B8613 makes), sso_settings (B8383), cache_settings (B8502's
   init_cache_settings_in_db), semantic_filter_settings, websearch_interception_settings and config_overrides (Vault
   then CyberArk), all three from B8383. Last, without a gate, the safe litellm_settings overrides
   (_apply_safe_litellm_settings_overrides_from_db): read the litellm_settings row with B8397's get_config_param and, when

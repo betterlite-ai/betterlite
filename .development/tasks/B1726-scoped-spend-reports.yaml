@@ -39,7 +39,6 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/scoped_report_query.rs
     - crates/betterlite-server/fuzz/corpus/scoped_report_query/**
-    - tools/oracle/cases/http/scoped-spend-reports/**
     - tools/oracle/helpers/b1726.py
     - tools/oracle/helpers/b1726/**
     - tools/oracle/src/helpers/server/b1726.rs
@@ -51,10 +50,12 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_tracking_utils.py#L928-L999
     why: Shared raw-query adapter and daily team report query.
 dod:
-  - text: Scoped reports reject foreign identities and apply the organization fallback only to unstamped historical rows.
-    proof: [scoped-report-tests, scoped-report-corpus, oracle]
-  - text: Date boundaries, aggregate shapes and missing-database behavior remain pinned while MIT reports work without a license.
-    proof: [scoped-report-tests, oracle]
+  - text: Scoped reports reject foreign identities and apply the organization fallback only to unstamped historical rows. B8662 proves it over HTTP.
+    proof: [scoped-report-tests, scoped-report-corpus]
+  - text: Date boundaries, aggregate shapes and missing-database behavior remain pinned while MIT reports work without a license. B8662 proves it over HTTP.
+    proof: [scoped-report-tests]
+  - text: The handlers answer through tower's oneshot over the module's own Router with fake ports; B8662 merges them through B069's spend routes and proves them over HTTP.
+    proof: [scoped-report-tests]
 checks:
   optional: []
   commands:
@@ -64,12 +65,7 @@ checks:
     - id: scoped-report-corpus
       why: Scope/date query parsing has no new boundary and malformed inputs.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/scoped_report_query)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_scoped_report_query_corpus)'
-oracle_cases:
-  - tools/oracle/cases/http/scoped-spend-reports/key-hash-and-user-team-self-scope.yaml
-  - tools/oracle/cases/http/scoped-spend-reports/admin-viewer-and-org-admin.yaml
-  - tools/oracle/cases/http/scoped-spend-reports/org-stamp-versus-current-team.yaml
-  - tools/oracle/cases/http/scoped-spend-reports/missing-db-before-dates-and-scope.yaml
-  - tools/oracle/cases/http/scoped-spend-reports/date-range-366-boundary.yaml
+oracle_cases: []
 deviations:
   - what: Authenticated authorized users can read these four reports without a license; stock open-source LiteLLM returns 403 when premium_user is false.
     why: The README removes paid-tier restrictions from MIT functionality while retaining its scope authorization.

@@ -1,0 +1,11 @@
+kind: helper
+name: filters_rejected
+call:
+  b7813:
+    calls:
+      - {call: knn, input: {optional_params: {filters: {}}}}
+      - {call: knn, input: {optional_params: {filters: {key: tag, value: x}}}}
+      - {call: knn, input: {optional_params: {filters: {key: tag}, max_num_results: 51}}}
+      - {call: knn, input: {optional_params: {max_num_results: 3}}}
+env: {}
+compare: {ignore: []}

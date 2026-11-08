@@ -1,0 +1,81 @@
+id: B8660
+title: Plug the shared budget services into auth, reservations and shadow spend
+description: >-
+  B8481 builds `BudgetServices`, the one model budget limiter over the one spend counter cache, plus the reservation releaser and the settlement port, and hands each port out through an accessor. Nothing passes those accessors to the code that needs them yet. In LiteLLM they are module globals in proxy_server.py (L2614-L2617: `spend_counter_cache` and `model_max_budget_limiter`), so auth, the reservation call and the shadow spend gate all read the same counters. This task does that wiring in betterlite-server. It decides nothing about budgets: every adapter forwards to the part that owns the logic.
+
+  Where the instance lives. B8610 holds the one `BudgetServices` in Shared as `budget: Arc<BudgetServices>`, built once in application() with B8481's constructor. Read it as `shared.budget` in a Slot constructor and as `state.shared.budget` in a handler. Never call `BudgetServices::new` here: a second instance splits the in-memory counters and B3006's legacy carry state, so a cap checked in auth would miss spend charged by the success callback.
+
+  1. Model budget ports in auth. B753's slot (crates/betterlite-server/src/state/auth_model_budgets.rs) holds the three limiter protocols (`_KeyModelBudgetLimiter` with `is_key_within_model_budget` and `get_fallback_model_within_budget`, `_UserModelBudgetLimiter.is_user_within_model_budget`, `_TeamModelBudgetLimiter.is_team_within_model_budget`). B755's slot (crates/betterlite-server/src/state/auth_key_validation.rs) holds the end-user port (`is_end_user_within_model_budget`). In each `Slot::new(config, shared)`, replace whatever value the slot holds for those ports with the matching accessor of `shared.budget`. Change nothing else in those files.
+
+  2. The reservation call. B1225's slot (crates/betterlite-server/src/state/budget_admission_handoff.rs) calls B8480's `reserve_budget_for_request`, which passes the router to B3001's estimates as an optional `RouterModelInfo` trait object. B8611's `RouterView` implements that trait. Call `shared.router_views.current()` once per request and pass the Option it returns (None when no router is loaded, which B3001 already handles) in place of the router value the slot passes today. LiteLLM reads `llm_router` at call time (user_api_key_auth.py L3159-L3202), so a router loaded after startup must reach the next request; do not cache the view in the slot.
+
+  3. Shadow spend callables. B4083's shadow job loader takes two injected async fields: `read_spend(counter_key: String, fallback_spend: f64, max_budget: f64) -> f64` and `write_spend(counter_key: String, cost: f64)`. Build both in crates/betterlite-server/src/app/spend/budget.rs as `pub fn shadow_spend(shared: &Shared)`, returning the pair: `read_spend` calls B2321's `get_current_spend` and `write_spend` calls B3015's `increment_spend_counter`, both over the spend counter cache inside `shared.budget`, with the arguments passed through and the result returned unchanged. B8662 passes this pair to B069's spend::startup::start, which builds the shadow job loader with it.
+
+  4. Background interaction release. B3499 takes an injected `ReservationRelease` port on its create path (a trait in betterlite-core next to `acreate`, with one async method, `release`, taking the reservation the logging object carries and returning B3496's ReleaseError), and the SettlementHost the background poll gets forwards `release_reservation` to it. Implement it in app/spend/budget.rs as `pub fn interaction_release(shared: &Shared)`, returning the port over the release method of `shared.budget`'s settlement accessor (B8481 maps it to B3003's `release_budget_reservation`). Convert the reservation to the type B3003 takes with a checked conversion and return its error unchanged. The caller of acreate passes this port in.
+
+  5. B732's `BudgetAdmission` port. Its `admit(&AuthContext, &RequestScope)` has only the `AlwaysAdmits` test double, and nothing in production calls it: LiteLLM's admission after auth is `_reserve_budget_after_common_checks`, which B1225 builds as the real stage over B8480 with the request body, token objects and settings that `admit` cannot carry. Remove the trait from crates/betterlite-server/src/auth/auth_identity.rs and the double from auth_identity/tests.rs. Remove `AdmissionLease` and `RequestScope` too when nothing else uses them (grep the crate first); keep `AuthContext`.
+
+  HTTP oracle cases, through the booted proxy with B860's Postgres fixtures and the oracle's mock provider, in tools/oracle/cases/budget-services/ (B8481 handed them here because the limiter reaches auth only after step 1). A key whose `model_max_budget` gives the requested model `{"max_budget": 0, "budget_duration": "1d"}` is refused on `/v1/chat/completions` with the status, error type, param and code LiteLLM answers. The same key asking for a model outside its map gets 200. A team with the same zero cap on the model refuses its team key. Each case compares status, body and the error fields.
+
+  Tests in crates/betterlite-server/src/app/spend/budget/tests.rs (names start with `budget_`): build Shared with a `BudgetServices` over fake engines, build B753's and B755's slots from it, charge a model through the limiter's callback port and assert the key, user, team and end-user ports see that charge (one instance); assert B1225's slot passes None with no router and Some after a router is installed on the same handle; and assert the shadow pair reads and writes through the shared counter cache and the interaction release port calls the settlement release once.
+scope:
+  paths:
+    - crates/betterlite-server/src/app/spend/budget.rs
+    - crates/betterlite-server/src/app/spend/budget/**
+    - crates/betterlite-server/src/state/auth_model_budgets.rs
+    - crates/betterlite-server/src/state/auth_key_validation.rs
+    - crates/betterlite-server/src/state/budget_admission_handoff.rs
+    - crates/betterlite-server/src/auth/auth_identity.rs
+    - crates/betterlite-server/src/auth/auth_identity/tests.rs
+    - tools/oracle/cases/budget-services/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L2614-L2617
+    why: The one spend counter cache and the one model budget limiter every caller imports.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L300-L488
+    why: The key, user and team limiter protocols and the auth helpers that call them (B753).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L2480-L2500
+    why: The end-user model budget call (B755).
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/auth/user_api_key_auth.py#L3159-L3202
+    why: _reserve_budget_after_common_checks reads llm_router at call time and is the real admission step, which is why BudgetAdmission has no production caller.
+dod:
+  - text: The key, fallback, user, team and end-user model budget ports in the auth slots are the accessors of the one shared BudgetServices, so a charge through the callback port is seen by every check.
+    proof: [budget-tests, oracle]
+  - text: The reservation call gets shared.router_views.current() read once per request, None without a router.
+    proof: [budget-tests]
+  - text: The shadow spend pair forwards to get_current_spend and increment_spend_counter over the shared spend counter cache, and the interaction release port forwards to the settlement accessor's release.
+    proof: [budget-tests]
+  - text: BudgetAdmission and its test double are gone and the auth identity tests still pass.
+    proof: [admission-removed]
+  - text: A key or team with a zero model cap is refused on /v1/chat/completions for that model and a key is served for a model outside its map, the same as LiteLLM.
+    proof: [new-cases, oracle]
+checks:
+  optional: []
+  commands:
+    - id: budget-tests
+      why: an auth slot builds its own limiter, the reservation call caches or drops the router view, or the shadow pair or the interaction release port reaches another instance
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::spend::budget::tests::budget_/)'
+    - id: admission-removed
+      why: the unused BudgetAdmission port is still there, or removing it broke the auth identity tests
+      run: "! grep -q 'trait BudgetAdmission' crates/betterlite-server/src/auth/auth_identity.rs && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^auth::auth_identity::/)'"
+    - id: new-cases
+      why: the model budget wiring has no booted-proxy case on this branch
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/budget-services)"
+oracle_cases:
+  - tools/oracle/cases/budget-services/key-model-zero-cap.yaml
+  - tools/oracle/cases/budget-services/key-model-not-capped.yaml
+  - tools/oracle/cases/budget-services/team-model-zero-cap.yaml
+deviations: []
+out_of_scope:
+  - "BudgetServices, its adapters and its constructor: B8481. Holding it in Shared as budget: B8610."
+  - "The limiter's checks and charging: B3005 and B3006. Reserve, settle and release: B8480 and B3003. RouterView: B8611."
+  - "Installing B8270's release layer with the releaser: the edge part (B8680). Passing the settlement accessor and the shadow pair to B069's spend::startup::start: B8662."
+pitfalls:
+  - "Building BudgetServices or the spend counter cache again in a slot splits the counters; every slot reads shared.budget."
+  - "router_views.current() must be read per request; a view taken in Slot::new never sees a router loaded later by B8381 or a config reload."
+  - "The end-user port's boolean is ignored by auth unless it raises, so pass the limiter's result through and let B755 decide."
+  - "RequestScope or AdmissionLease may still be used by another module; grep before deleting either."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

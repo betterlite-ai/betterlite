@@ -1,0 +1,84 @@
+id: B8721
+title: MCP streamable HTTP session transport
+description: >-
+  The skeleton already declares this task's fuzz [[bin]] with an empty target file; fill that target and add the crate dependency it needs, without a second [[bin]] entry.
+
+
+  server.py builds two StreamableHTTPSessionManager objects from the Python MCP SDK over the same Server: session_manager_stateless (stateless=True) and session_manager_stateful (stateless=False), both with event_store None and json_response False. betterlite has no such library on the wire it must match, so this task ports the part of the SDK's streamable HTTP server that those options reach. Code goes in betterlite-server, module mcp::stream_transport (crates/betterlite-server/src/mcp/stream_transport.rs) with the submodules wire, stateless and stateful, each with a tests.rs.
+
+
+  Source to port. LiteLLM's lock installs mcp 2.3.0. Read it in tools/oracle/litellm/.venv/lib/python3.13/site-packages/mcp/server/streamable_http.py and streamable_http_manager.py (the folder exists once the oracle has synced LiteLLM's environment). Port only what event_store None and json_response False reach: no event store, no resumability, no priming events, no Last-Event-ID replay, no retry field. Copy every status code, header and error text from that source; do not invent texts.
+
+
+  The session runtime is rmcp (B8720 adds it). A transport hands JSON-RPC messages to an rmcp service over an in-memory channel pair and reads the service's outgoing messages from the other end. StreamTransport::new(stateless: bool) builds one manager. handle<H>(&self, request: http::Request<axum::body::Body>, handler: H) -> http::Response<axum::body::Body>, where H: rmcp::ServerHandler, serves one HTTP request; the handler is only used when the request starts a new service and is dropped otherwise.
+
+  wire. decode_message(bytes) -> Result<ClientJsonRpcMessage, DecodeError> is the one decoder of request bodies; B8722 and B8726 reuse it. sse_event(message) renders one event the way sse_starlette does for the SDK: "event: message", then "data: " and the JSON, with CRLF line ends and a blank line after. The SSE response keeps the SDK's headers (content type text/event-stream, cache-control no-cache, the session id header when there is a session) and sends sse_starlette's ping comment on its default 15 second interval. Add the cargo-fuzz target mcp_jsonrpc_message in crates/betterlite-server/fuzz that feeds arbitrary bytes to decode_message, with a corpus in crates/betterlite-server/fuzz/corpus/mcp_jsonrpc_message and the replay test replays_the_mcp_jsonrpc_corpus in wire's tests.
+
+  POST, both modes, in the SDK's order: the Accept check (both application/json and text/event-stream), the Content-Type check, the body parse, then the message kind. A notification or a response answers 202 with no body after handing the message to the service. A request answers 200 with an SSE stream that carries every server message related to that request id (progress notifications and server to client requests such as sampling and elicitation) and then the response, and ends after the response.
+
+  stateless. Each POST runs a fresh service with rmcp's serve_directly, so it needs no initialize, and stops it when the response is sent. GET and DELETE answer what the SDK's stateless branches answer.
+
+  stateful. A POST without a session id that carries initialize creates a session: the id is a new UUID4 rendered as 32 lowercase hex digits, the service runs with serve_server (the initialize message does the handshake) and the response carries the mcp-session-id header. A request with a known id goes to that session's service. A POST without an id that is not initialize, and a request with an unknown id, get the SDK's answers (400 "Bad Request: Missing session ID" and the SDK's unknown session answer). GET opens the session's one standalone SSE stream for server messages not tied to a request, and a second GET gets the SDK's conflict answer. DELETE terminates the session and answers as the SDK does; later requests to that id are unknown.
+
+  Live sessions. live_session_ids() -> Vec<String> and has_session(id) -> bool stand for _stateful_server_instances(). terminate(id) -> bool removes the session from the live map, closes its open streams and stops its service, and returns whether it was there (transport.terminate()). B8723 calls these; it never reaches into the map.
+
+
+  Tests drive the transport through tower's oneshot over a tiny axum Router with a fake rmcp handler that answers tools/list, sends a progress notification on request and asks the client one sampling question.
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/stream_transport.rs
+    - crates/betterlite-server/src/mcp/stream_transport/**
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/fuzz/Cargo.toml
+    - crates/betterlite-server/fuzz/fuzz_targets/mcp_jsonrpc_message.rs
+    - crates/betterlite-server/fuzz/corpus/mcp_jsonrpc_message/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L602-L651
+    why: The two managers, their options, and _stateful_server_instances.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/server.py#L2124-L2132
+    why: How LiteLLM picks the stateful or the stateless manager.
+  - url: https://modelcontextprotocol.io/specification/2025-06-18/basic/transports
+    why: The streamable HTTP transport the SDK implements.
+dod:
+  - text: A POST is checked for Accept, Content-Type and body in the SDK's order with its status codes and texts; notifications and responses answer 202; a request answers an SSE stream that ends after its response.
+    proof: [wire-tests]
+  - text: SSE events use the SDK's event name, data line, CRLF framing and ping comment.
+    proof: [wire-tests]
+  - text: The stateless manager serves each request without initialize and keeps nothing after it.
+    proof: [stateless-tests]
+  - text: The stateful manager creates a 32 hex digit session on initialize, routes later requests by id, answers a missing or unknown id and a second GET as the SDK does, and DELETE ends the session.
+    proof: [stateful-tests]
+  - text: live_session_ids, has_session and terminate report and end live sessions, and terminate closes the session's open streams.
+    proof: [stateful-tests]
+  - text: Newly added corpus entries for the JSON-RPC decoder replay without panic.
+    proof: [jsonrpc-corpus]
+checks:
+  optional: []
+  commands:
+    - id: wire-tests
+      why: the POST checks, the message kinds or the SSE framing differ from the SDK
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::stream_transport::wire::/) - test(replays_the_mcp_jsonrpc_corpus)'
+    - id: stateless-tests
+      why: the stateless manager needs initialize, keeps state, or answers GET or DELETE differently from the SDK
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::stream_transport::stateless::/)'
+    - id: stateful-tests
+      why: session creation, routing, the id errors, the standalone stream, DELETE or terminate differ from the SDK
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^mcp::stream_transport::stateful::/)'
+    - id: jsonrpc-corpus
+      why: the JSON-RPC body decoder has no adversarial replay cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/mcp_jsonrpc_message)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_mcp_jsonrpc_corpus)'
+oracle_cases: []
+deviations: []
+out_of_scope:
+  - "The single exchange path for revisions outside HANDSHAKE_PROTOCOL_VERSIONS (_streamable_http_modern.py): B8722."
+  - "Owner binding, stale ids, session caps, the per session lock and the auth maps: B8723 and B8727. HTTP oracle cases for /mcp: B8728."
+pitfalls:
+  - "The SDK only adds the mcp-session-id header on stateful responses; a stateless answer must not carry one."
+  - "A JSON-RPC response from the client (the answer to a sampling or elicitation request) is a 202 message for the running service, not a new request; it must reach the service that asked."
+  - "Messages are routed to a request's SSE stream by the related request id, so a progress notification for request 2 must not appear on request 1's stream."
+  - "terminate must close the standalone GET stream too, or an admin termination leaves a client connected."
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

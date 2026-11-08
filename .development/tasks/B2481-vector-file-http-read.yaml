@@ -18,7 +18,7 @@ scope:
   - crates/betterlite-core/src/api/vector_file_http_read.rs
   - crates/betterlite-core/src/api/vector_file_http_read/**
   - tools/oracle/src/sdk_http.rs
-  - tools/oracle/src/sdk_http/vector_file_read_transport.rs
+  - tools/oracle/src/sdk_http/**
   - tools/oracle/sdk_http/dispatch.py
   - tools/oracle/sdk_http/vector_file_read_transport.py
   - tools/oracle/cases/sdk-http/vector-file-read-transport/**

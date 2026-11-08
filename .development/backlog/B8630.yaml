@@ -1,0 +1,13 @@
+id: B8630
+milestone: M8 platform
+title: Router completion ports over the gateway router
+status: todo
+depends_on: [B8610, B8611, B6020, B016, B017, B303, B306, B309, B310, B311, B323, B336, B346, B364, B397, B399, B5656, B8440, B8466]
+file: tasks/B8630-router-completion-ports.yaml
+covers: []
+parent: null
+split_from: null
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

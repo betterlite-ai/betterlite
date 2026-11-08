@@ -1,0 +1,16 @@
+kind: helper
+name: rubrik-delivery-initialization-options
+call:
+  b3976:
+    environment: {}
+    init:
+      api_base: "https://rubrik.test"
+      api_key: test-key
+      event_hook: pre_call
+      default_on: true
+      guardrail_name: custom-rubrik
+      timeout_seconds: 2.5
+    replies: []
+    actions: []
+env: {}
+compare: {ignore: []}

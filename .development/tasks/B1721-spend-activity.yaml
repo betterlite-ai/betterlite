@@ -37,7 +37,6 @@ scope:
     - crates/betterlite-server/fuzz/Cargo.toml
     - crates/betterlite-server/fuzz/fuzz_targets/activity_query.rs
     - crates/betterlite-server/fuzz/corpus/activity_query/**
-    - tools/oracle/cases/http/spend-activity/**
     - tools/oracle/helpers/b1721.py
     - tools/oracle/helpers/b1721/**
     - tools/oracle/src/helpers/server/b1721.rs
@@ -49,10 +48,12 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/spend_tracking/spend_management_endpoints.py#L1277-L1403
     why: Provider report decorator, query and live-deployment attribution.
 dod:
-  - text: Activity reports preserve role scope, date boundaries, label ordering and each handler's error status.
-    proof: [activity-tests, activity-corpus, oracle]
-  - text: Provider totals include only spend whose current deployment resolves to a provider.
-    proof: [activity-tests, oracle]
+  - text: Activity reports preserve role scope, date boundaries, label ordering and each handler's error status. B8662 proves it over HTTP.
+    proof: [activity-tests, activity-corpus]
+  - text: Provider totals include only spend whose current deployment resolves to a provider. B8662 proves it over HTTP.
+    proof: [activity-tests]
+  - text: The handlers answer through tower's oneshot over the module's own Router with fake ports; B8662 merges them through B069's spend routes and proves them over HTTP.
+    proof: [activity-tests]
 checks:
   optional: []
   commands:
@@ -62,11 +63,7 @@ checks:
     - id: activity-corpus
       why: The activity query parser lacks new malformed and boundary samples.
       run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-server/fuzz/corpus/activity_query)" && cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(replays_the_activity_query_corpus)'
-oracle_cases:
-  - tools/oracle/cases/http/spend-activity/global-and-internal-user.yaml
-  - tools/oracle/cases/http/spend-activity/missing-dates-user-and-database.yaml
-  - tools/oracle/cases/http/spend-activity/month-label-order-and-top-ten.yaml
-  - tools/oracle/cases/http/spend-activity/provider-removed-and-unresolvable-deployments.yaml
+oracle_cases: []
 deviations: []
 out_of_scope:
   - B1722 owns exception activity; B1723 tags and key/user spend; B1724 global totals; B1725 estimation/team/provider budgets; B1726 and B1727 grouped reports.

@@ -1,0 +1,94 @@
+id: B8635
+title: Container, utils and model listing wiring
+description: >-
+  The last inference wiring part mounts the route families no B1100 entry merges and passes the router views to the routes that wait for them. routes.rs on main declares `container_files` and `containers`, but B1100's stub list has neither and router() merges neither; B3372 (api::container_file_routes) and B7326 (api::container_routes) build the handlers and leave the registration. B8598 builds the /utils routes in crates/betterlite-server/src/utility_routes.rs and leaves the mount and the listing filter call from /v1/models. B940 takes `ServedModelLookup` through its constructor and leaves the implementation. Code goes in crates/betterlite-server, module `app::inference::containers` (containers.rs and containers/) and `app::inference::utility` (utility.rs and utility/), plus the edits named below. Every name stays at 30 characters or fewer.
+
+
+  Containers. Fill crates/betterlite-server/src/routes/container_files.rs and routes/containers.rs with `routes(state: &Arc<ServerState>) -> Router` each, building B3372's `ContainerFileRoutes` and B7326's `ContainerRoutes` with their production parts, and merge both in `app::inference::mount` after B8634's routers. The parts: B3371's own `ContainerAccess` adapter over B3362; for B7326, `ContainerOwners` and `ContainerPages` over B3362's ownership store and list_owned_containers, reading `state.shared.db` (an `Option<Arc<PostgresStore>>`; with None, B3362 decides the answer); and one `ContainerRequests` type in containers/ that implements B3371's `RequestProcessing`, with `app::inference::pre_call_step(state)` (B8802) as the pre-call step B3371's state takes. Its process(data, route_type, caller) runs the same steps B085 runs for rerank: B1103's request preparation, B8393's pre-call hook, then B7430's `ContainerCall` dispatch entry with the route type, where the router side is the container executors of `RouterCalls.generic` (B8631) and the direct side is B7430's DirectContainer. Its handle_exception runs B8395's post_call_failure_hook and returns B003's ProxyException serialization. B7430's `ContainerIdDecoder` is implemented in containers/ over B903's managed container id decoding.
+
+
+  Utils. Merge B8598's `utility_routes::routes()` in `mount`, built with `state.shared.router`, `state.shared.proxy_logging` and the B195, B196, B175, B2219, B884 and B5368 pieces its state names. /v1/models listing filter: in crates/betterlite-server/src/model_list.rs, the handler reads the authenticated caller and `Extension<Arc<ServerState>>` from the request (B1100 adds ServerState as the outermost Extension layer), and passes the listed entries through B8598's `kept_listing_entries(entries, auth)` before it answers, as LiteLLM's model_list calls _entries_kept_by_listing_callbacks. B851's /model/info calls deployment_hidden and hidden_listing_names itself, so it needs nothing here.
+
+
+  Router views. In crates/betterlite-server/src/routes/cursor_responses_compat.rs, call `state.shared.router_views.current()` once per request and pass that Option to B940's ServedModelLookup port instead of None. router_views is the `Arc<RouterViews>` adapter B8611 builds over B8351's CatalogQueries and B302; current() gives None while no router is loaded, which B940 treats as a missing router.
+
+
+  Proof. HTTP oracle cases through the booted proxy, with an `openai/` deployment whose api_base is the mock upstream: tools/oracle/cases/utils/wiring/supported-params.yaml (GET /utils/supported_openai_params?model=gpt-4o), token-counter.yaml (POST /utils/token_counter with a model and two messages) and transform-request.yaml (POST /utils/transform_request for an openai chat call). B3372 and B7326 cannot run HTTP cases at their own gates because this task mounts their routes, so their cases and fixtures live here: tools/oracle/cases/api/container-file-routes/ (container-file-json-routes, container-file-content, container-file-forbidden, container-file-upload, container-file-upload-errors, container-file-form-overwrite, container-file-auth) with tools/oracle/fixtures/container-file-routes/, and tools/oracle/cases/api/container-routes/ (container-create, container-create-provider, container-list, container-list-owned, container-list-limit, container-item, container-forbidden, container-auth) with tools/oracle/fixtures/container-routes/. Write each one as the "HTTP oracle cases" paragraph of B3372 and of B7326 describes it (master_key sk-test, a second non-admin virtual key, the OpenAI mock provider's container endpoints). Unit tests in containers/tests.rs and utility/tests.rs check that each route family answers its paths through `mount`, that ContainerRequests runs the failure hook on an error, and that /v1/models drops an entry a fake listing callback hides; model_list tests keep passing.
+scope:
+  paths:
+  - crates/betterlite-server/src/app/inference.rs
+  - crates/betterlite-server/src/app/inference/containers.rs
+  - crates/betterlite-server/src/app/inference/containers/**
+  - crates/betterlite-server/src/app/inference/utility.rs
+  - crates/betterlite-server/src/app/inference/utility/**
+  - crates/betterlite-server/src/routes/container_files.rs
+  - crates/betterlite-server/src/routes/containers.rs
+  - crates/betterlite-server/src/routes/cursor_responses_compat.rs
+  - crates/betterlite-server/src/model_list.rs
+  - crates/betterlite-server/src/model_list/**
+  - tools/oracle/cases/api/container-file-routes/**
+  - tools/oracle/fixtures/container-file-routes/**
+  - tools/oracle/cases/api/container-routes/**
+  - tools/oracle/fixtures/container-routes/**
+  - tools/oracle/cases/utils/wiring/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11510-L11560
+  why: The listing callback helpers and the /v1/models and /models decorators.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L11685-L11760
+  why: Where model_list calls _entries_kept_by_listing_callbacks in the admin and caller branches.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/endpoints.py
+  why: The container and container file routes this task mounts through B3372 and B7326.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/container_endpoints/handler_factory.py
+  why: How the container handlers reach base_process_llm_request, which ContainerRequests stands in for.
+dod:
+- text: The container and container file routes answer through the booted proxy as LiteLLM does, through ContainerRequests and the router's container executors.
+  proof: [mount-tests, mount-cases, oracle]
+- text: The /utils routes are mounted and answer as LiteLLM does.
+  proof: [mount-tests, mount-cases, oracle]
+- text: /v1/models drops the entries the listing callbacks hide.
+  proof: [mount-tests]
+- text: The cursor routes get the startup router views as their ServedModelLookup.
+  proof: [mount-tests]
+checks:
+  optional: []
+  commands:
+  - id: mount-tests
+    why: a mount, ContainerRequests, the id decoder, the listing filter or the router view hand-over is missing or wrong
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^app::inference::containers::/) | test(/^app::inference::utility::/) | test(/^model_list::/) | test(/^api::cursor_responses_compat::/)'
+  - id: mount-cases
+    why: without new case files the oracle compares nothing for these mounts
+    run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/api/container-file-routes tools/oracle/cases/api/container-routes tools/oracle/cases/utils/wiring)"
+oracle_cases:
+- tools/oracle/cases/utils/wiring/supported-params.yaml
+- tools/oracle/cases/utils/wiring/token-counter.yaml
+- tools/oracle/cases/utils/wiring/transform-request.yaml
+- tools/oracle/cases/api/container-file-routes/container-file-json-routes.yaml
+- tools/oracle/cases/api/container-file-routes/container-file-content.yaml
+- tools/oracle/cases/api/container-file-routes/container-file-forbidden.yaml
+- tools/oracle/cases/api/container-file-routes/container-file-upload.yaml
+- tools/oracle/cases/api/container-file-routes/container-file-upload-errors.yaml
+- tools/oracle/cases/api/container-file-routes/container-file-form-overwrite.yaml
+- tools/oracle/cases/api/container-file-routes/container-file-auth.yaml
+- tools/oracle/cases/api/container-routes/container-create.yaml
+- tools/oracle/cases/api/container-routes/container-create-provider.yaml
+- tools/oracle/cases/api/container-routes/container-list.yaml
+- tools/oracle/cases/api/container-routes/container-list-owned.yaml
+- tools/oracle/cases/api/container-routes/container-list-limit.yaml
+- tools/oracle/cases/api/container-routes/container-item.yaml
+- tools/oracle/cases/api/container-routes/container-forbidden.yaml
+- tools/oracle/cases/api/container-routes/container-auth.yaml
+deviations: []
+out_of_scope:
+- "Container route behavior and request shaping: B3371, B3372, B7326 and B7430. The /utils handlers and the listing filters: B8598. The listing hook itself: B8399."
+- "The router views: B8611. The cursor routes: B940."
+- "/model/info's use of the listing filters: B851 calls them itself."
+pitfalls:
+- 'B8634 already fills mount; add the two container routers and the utils router after its merges, and never merge a route a B1100 entry already merges, or axum panics on a duplicate path.'
+- 'The direct container call is required and the router one optional, so a proxy with no deployments still serves /v1/containers through DirectContainer.'
+- 'LiteLLM filters the (response id, lookup id) entries after the hidden and undiscoverable names are removed and before each model info is built, in both the admin branch and the caller branch, and in the caller branch before alias_listing_entries.'
+- 'model_list.rs is mounted by routes.rs, which this task must not edit, so the handler reads its state from the request extensions instead of a new parameter.'
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0
