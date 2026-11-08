@@ -159,14 +159,8 @@ async fn flush_queue_sends_batches_of_the_configured_size() {
 async fn flush_queue_keeps_rows_enqueued_during_the_insert() {
     let (logger, storage, _tasks) = build(settings(10, LONG_INTERVAL, 3));
     queue(&logger, &["a", "b"]);
-    let gate = storage.hold();
-    let flushing = logger.flush_queue();
-    let arriving = async {
-        gate.entered().await;
-        let _enqueued = logger.inner.batch.enqueue(row("c"));
-        gate.release();
-    };
-    tokio::join!(flushing, arriving);
+    storage.arrive_during_insert(logger.inner.batch.clone(), row("c"));
+    logger.flush_queue().await;
     assert_eq!(
         storage.sent_request_ids(),
         vec![vec!["a".to_owned(), "b".to_owned()]]
@@ -174,7 +168,7 @@ async fn flush_queue_keeps_rows_enqueued_during_the_insert() {
     logger.flush_queue().await;
     assert_eq!(
         storage.sent_request_ids(),
-        vec![vec!["a".to_owned(), "b".to_owned()], vec!["c".to_owned()],]
+        vec![vec!["a".to_owned(), "b".to_owned()], vec!["c".to_owned()]]
     );
 }
 

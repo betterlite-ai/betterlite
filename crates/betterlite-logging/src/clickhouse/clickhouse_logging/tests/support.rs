@@ -7,12 +7,12 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use secrecy::SecretString;
-use tokio::sync::Notify;
 use tokio::task::yield_now;
 
 use super::super::payload::CallbackKwargs;
 use super::super::settings::ClickHouseSettings;
 use super::super::storage::ClickHouseStorage;
+use crate::batch::logger::BatchQueue;
 use crate::trace_types::SpendLogRecord;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -34,27 +34,9 @@ pub(crate) struct InsertCall {
 struct FakeState {
     calls: Mutex<Vec<InsertCall>>,
     outcomes: Mutex<VecDeque<InsertOutcome>>,
-    gate: Mutex<Option<Gate>>,
+    arrival: Mutex<Option<(BatchQueue<SpendLogRecord>, SpendLogRecord)>>,
     schema_calls: Mutex<Vec<(u32, u32)>>,
     schema_fails: AtomicBool,
-}
-
-#[derive(Clone)]
-pub(crate) struct Gate {
-    entered: Arc<AtomicBool>,
-    permit: Arc<Notify>,
-}
-
-impl Gate {
-    pub(crate) async fn entered(&self) {
-        while !self.entered.load(Ordering::SeqCst) {
-            yield_now().await;
-        }
-    }
-
-    pub(crate) fn release(&self) {
-        self.permit.notify_one();
-    }
 }
 
 #[derive(Clone, Default)]
@@ -76,17 +58,16 @@ impl FakeStorage {
         self.state.schema_fails.store(true, Ordering::SeqCst);
     }
 
-    pub(crate) fn hold(&self) -> Gate {
-        let gate = Gate {
-            entered: Arc::new(AtomicBool::new(false)),
-            permit: Arc::new(Notify::new()),
-        };
+    pub(crate) fn arrive_during_insert(
+        &self,
+        queue: BatchQueue<SpendLogRecord>,
+        arrival: SpendLogRecord,
+    ) {
         *self
             .state
-            .gate
+            .arrival
             .lock()
-            .unwrap_or_else(PoisonError::into_inner) = Some(gate.clone());
-        gate
+            .unwrap_or_else(PoisonError::into_inner) = Some((queue, arrival));
     }
 
     pub(crate) fn calls(&self) -> Vec<InsertCall> {
@@ -126,7 +107,7 @@ impl Default for FakeState {
         Self {
             calls: Mutex::new(Vec::new()),
             outcomes: Mutex::new(VecDeque::new()),
-            gate: Mutex::new(None),
+            arrival: Mutex::new(None),
             schema_calls: Mutex::new(Vec::new()),
             schema_fails: AtomicBool::new(false),
         }
@@ -156,17 +137,16 @@ impl ClickHouseStorage for FakeStorage {
             .unwrap_or_else(PoisonError::into_inner)
             .pop_front()
             .unwrap_or(InsertOutcome::Succeed);
-        let hold = self
+        let arrival = self
             .state
-            .gate
+            .arrival
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
-            .clone();
+            .take();
+        if let Some((queue, arriving)) = arrival {
+            let _enqueued = queue.enqueue(arriving);
+        }
         async move {
-            if let Some(gate) = hold {
-                gate.entered.store(true, Ordering::SeqCst);
-                gate.permit.notified().await;
-            }
             match outcome {
                 InsertOutcome::Succeed => Ok(()),
                 InsertOutcome::Fail => Err(FakeError),
