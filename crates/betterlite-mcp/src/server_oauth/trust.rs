@@ -1,6 +1,9 @@
 use super::basics::blank_to_none;
-use super::issuer::{authorize_endpoint_for_log, normalized_authorize_endpoint};
+use super::issuer::normalized_authorize_endpoint;
+use crate::oauth_resource::resource_identity::canonicalize_url_identity;
 use crate::server_record::{MCPOAuthMetadata, MCPServer};
+
+const BAD_URL_PLACEHOLDER: &str = "<unparseable url>";
 
 #[must_use]
 pub fn restrict_to_corroborated(
@@ -21,9 +24,12 @@ pub fn restrict_to_corroborated(
     if discovered_token.is_none() && discovered_registration.is_none() {
         return Some(document);
     }
-    let advertised = blank_to_none(document.authorization_url.as_deref())
-        .map_or_else(|| "<absent>".to_owned(), authorize_endpoint_for_log);
-    let pinned = authorize_endpoint_for_log(manual);
+    let advertised = blank_to_none(document.authorization_url.as_deref()).map_or_else(
+        || "<absent>".to_owned(),
+        |url| canonicalize_url_identity(url).unwrap_or_else(|_| BAD_URL_PLACEHOLDER.to_owned()),
+    );
+    let pinned =
+        canonicalize_url_identity(manual).unwrap_or_else(|_| BAD_URL_PLACEHOLDER.to_owned());
     let bridge_note = if is_dcr_bridge && discovered_registration.is_some() {
         " The discovered registration_url is rejected with it, so this dcr_bridge server stays on the short-circuit registration arm."
     } else {

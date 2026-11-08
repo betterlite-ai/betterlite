@@ -161,19 +161,6 @@ fn basics_normalized_authorize_endpoint_elides_insignificant_parts(
 }
 
 #[rstest]
-#[case::normalized("https://IDP.test:443/authorize/", "https://idp.test/authorize")]
-#[case::unparsable_with_credentials(
-    "https://client:s3cret@[idp.test]/authorize?api_key=abc",
-    "<unparsable url>"
-)]
-fn basics_authorize_endpoint_for_log_never_prints_an_unparsable_url(
-    #[case] url: &str,
-    #[case] expected: &str,
-) {
-    assert_eq!(authorize_endpoint_for_log(url), expected);
-}
-
-#[rstest]
 #[case::equal_after_normalization("https://IDP.test:443/", true)]
 #[case::different_host("https://other.test", false)]
 #[case::empty_claim("", false)]

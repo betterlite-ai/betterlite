@@ -144,7 +144,7 @@ fn trust_restrict_keeps_credentials_out_of_the_warning_log(#[case] bad_pinned: b
     let restricted = restrict_to_corroborated(Some(metadata), Some(manual), "test-server", false);
     assert!(restricted.is_some());
     let text = captured.text();
-    assert!(text.contains("<unparsable url>"));
+    assert!(text.contains("<unparseable url>"));
     assert!(!text.contains("s3cret"));
     assert!(!text.contains("api_key"));
 }

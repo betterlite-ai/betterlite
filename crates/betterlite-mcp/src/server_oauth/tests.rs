@@ -19,8 +19,7 @@ use super::flow::{
     resolve_oauth2_flow,
 };
 use super::issuer::{
-    ManualEndpoints, authorize_endpoint_for_log, endpoints_yield_to_issuer, issuer_matches,
-    normalized_authorize_endpoint,
+    ManualEndpoints, endpoints_yield_to_issuer, issuer_matches, normalized_authorize_endpoint,
 };
 use super::merge::{ScopesInput, extract_scopes, merge_discovered};
 use super::trust::{carry_forward_endpoints, endpoints_corroborate, restrict_to_corroborated};
