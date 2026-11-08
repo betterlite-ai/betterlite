@@ -10,7 +10,7 @@ description: >-
   threshold=0.9, lookback_days=7, openai_project_ids=[]. Require nonempty providers,
   0<threshold<=1 and 1<=lookback_days<=180; retain duplicate configured providers.
   loads_capture_rate_settings must load these through B002, not merely instantiate records.
-  Resolve OPENAI_ADMIN_KEY through B129. Missing key returns a typed missing-credential
+  Resolve OPENAI_ADMIN_KEY through B8500. Missing key returns a typed missing-credential
   result before any billing or captured-spend query. Request the fixed organization costs
   URL with Bearer admin key, UTC start midnight, exclusive midnight after end_date,
   bucket_width=1d, limit=180 and optional project_ids[] values. Each request has a 30-second

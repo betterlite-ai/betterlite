@@ -1,0 +1,19 @@
+id: B8290
+milestone: M6 guardrails
+title: Guardrail hook initializer arguments
+status: todo
+depends_on: [B3662]
+file: tasks/B8290-guardrail-hook-initializers.yaml
+covers:
+  - "litellm/proxy/guardrails/guardrail_hooks/agent_365/__init__.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/azure/__init__.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/ibm_guardrails/__init__.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/microsoft_purview/__init__.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/model_armor/__init__.py"
+  - "litellm/proxy/guardrails/guardrail_hooks/openai/__init__.py"
+parent: B106
+split_from: B106
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

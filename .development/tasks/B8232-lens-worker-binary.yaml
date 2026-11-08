@@ -1,0 +1,115 @@
+id: B8232
+title: Lens worker executable and image files
+description: >-
+  Build the Lens worker as its own program, the Rust twin of litellm/proxy/lens/worker.py, plus the image and Compose files from deploy/lens/. A worker is a small process that a customer runs next to their data. It polls the proxy over HTTP for an analysis job, reads trace data through the proxy, calls the model through the proxy, and posts the result. It holds no database and no model key: its only credential is a bearer token.
+
+  New crate `crates/betterlite-lens-worker` (package betterlite-lens-worker, binary betterlite-lens-worker). It depends on betterlite-lens (models and `coordinator::analyze_sample`), tokio, serde_json, thiserror, tracing, tracing-subscriber, betterlite-config and betterlite-http. It sends HTTP through betterlite-http's `ProxiedClient::outbound` (crates/betterlite-http/src/proxy.rs), built from `ProxyPolicy::resolve` over the process environment, and uses its public `client` field; it has no direct reqwest dependency, since deny.toml lets only betterlite-http, betterlite-oracle and betterlite-guardrails depend on reqwest. Modules: `api.rs` (the port), `http_api.rs` (the HTTP adapter), `failure.rs`, `worker.rs`, `settings.rs`, `main.rs`. If cargo deny refuses a dependency, fix the feature set, not deny.toml.
+
+  Port, in api.rs: `trait LensApi: Send + Sync + 'static` with native async methods, each returning `Result<_, WorkerError>`: `claim() -> Option<Claim>`, `sample(prefix) -> Sample`, `content(prefix, execution_id, cursor, offset) -> ExecutionContent`, `model(prefix, ModelRequest) -> ModelResult`, `progress(prefix, Progress)`, `heartbeat(prefix)`, `result(prefix, &JobResult) -> ResultStatus` where ResultStatus carries the HTTP status code (the 409 check needs it). `WorkerError` is a thiserror enum with the variants Timeout, Transport, Status { path: String, status: u16 }, Decode(String) and Storage(String). Types Claim, Sample, ExecutionContent, ModelRequest, ModelResult, Progress, JobResult, Coverage come from betterlite-lens::models; do not redefine them.
+
+  Adapter, in http_api.rs: `HttpApi::new(base_url, token, client: ProxiedClient)` sends every request with the header `Authorization: Bearer <token>` (mark it sensitive so it never prints) and a 180 second total timeout. Paths (base_url has trailing slashes removed): POST /lens/worker/claim?protocol_version=2; with prefix `/lens/worker/{lens_id}/{job_id}`: GET {prefix}/sample, GET {prefix}/content?execution_id=..&cursor=..&offset=.., POST {prefix}/model with the ModelRequest as JSON, POST {prefix}/progress with `{"stage": .., "coverage": ..}`, POST {prefix}/heartbeat with no body, POST {prefix}/result with the JobResult as JSON. A non-2xx answer is `Status { path, status }` (path is the URL path only, without the query). A request timeout is Timeout, a connect or other transport failure is Transport, and a 2xx body that does not decode is Decode. The claim answer is JSON `null` for no job: return None. Decode with `models::decode::decode`, the way the other betterlite-lens types are decoded.
+
+  failure.rs: `failure_message(&WorkerError) -> String`, exact texts:
+  Storage: "Worker temporary storage failed. Increase its capacity or reduce analysis parallelism."
+  Timeout: "The worker timed out waiting for the proxy. Check proxy availability and model response times."
+  Transport: "The worker could not connect to the proxy. Check the proxy URL, network access, and TLS configuration."
+  Status: "<action> failed (HTTP <status>). <guidance>" where action is "Model request" when the path ends with "/model", "Reading trace data" when it ends with "/sample" or "/content", "Saving results" when it ends with "/result", else "Worker request"; guidance by status: 400 "Check the configured model and whether the worker's billing key is enabled." 401 "Check the worker credential and its assigned billing key." 402 "Check the investigation's monthly limit and the worker key's remaining budget." 403 "Check the worker key's model permissions and access restrictions." 404 "Check that the proxy and worker versions match and the requested model is configured." 409 "This worker no longer owns the run. Check whether it was cancelled or claimed again." 429 "The request was rate limited. Retry later or check the worker key's rate limits." any other status "Check proxy and model availability, then retry the investigation."
+  Decode: "The worker could not read an analysis response. Check structured JSON support and matching proxy/worker versions."
+
+  worker.rs: `LensWorker<A: LensApi>` holds `Arc<A>`. Constants: RETRY_STATUSES = 429, 502, 503, 504; MAX_MODEL_RETRIES = 2; HEARTBEAT_EVERY = 30 s; IDLE_PAUSE = 10 s.
+  `model_request(prefix, body)`: call api.model; on Timeout, Transport, or a Status in RETRY_STATUSES, and the attempt number below 2, sleep 2^attempt seconds (1 s, then 2 s) and try again (so at most three calls); every other error, and the error after the last attempt, is returned. Use tokio::time::sleep so tests run with a paused clock.
+  `run_once() -> Result<bool, WorkerError>`: api.claim(); None returns Ok(false). Build the prefix, start the heartbeat task, then: fetch the sample, build the three `Arc<dyn Fn>` ports that analyze_sample takes (ReadContent, ModelCall, ReportProgress; their types are in betterlite-lens analysis.rs) over clones of the Arc<A>, call `coordinator::analyze_sample(claim, sample, read, model, progress)`, post the JobResult with api.result. A port that hits a WorkerError returns `AnalysisError::Callback(failure_message(&error))`, so the final text survives the trip through the coordinator. When anything above fails: map it to a message (an `AnalysisError::Callback(text)` uses its text as it is; `AnalysisError::Store` and a trace-store `Extraction` failure give the Storage text; Decode, Json, Validation and everything else give the Decode text; a WorkerError from the sample fetch or the result post goes through failure_message), log a warning "Analysis <job_id> interrupted (<error kind name>)" (the kind name only, never the error text, since it may hold a URL), then post `JobResult { coverage: Coverage::default(), error: <message>, ..default }` to the same result path; a 409 answer to that post is accepted, any other non-2xx is returned as the error. Whatever happened, abort the heartbeat task and wait for it before returning Ok(true).
+  Heartbeat task: loop { sleep 30 s; api.heartbeat(prefix) }, and it ends silently on the first error (it never retries and never reports; LiteLLM swallows that error when it awaits the cancelled task).
+  `run_forever()`: loop { match run_once { Ok(_) => {}, Err(e) => warn "Worker could not reach Lens (<error kind name>)" }; sleep 10 s }. The 10 second pause comes after every pass, a claimed job included.
+
+  settings.rs: read `LITELLM_URL` (required, trailing "/" removed) and `LENS_WORKER_TOKEN` (required, held as a SecretString). A missing variable stops the program with exit code 1 and a one-line message that names the variable and never prints the token. main.rs initializes tracing at INFO and calls run_forever.
+
+  Image files, in packaging/lens/ (the Rust twins of deploy/lens/): `Dockerfile` has a builder stage `rust:1.98.0-bookworm` that runs `cargo build --release --locked -p betterlite-lens-worker`, and a runtime stage on the same Wolfi base image that B5071 uses (take the exact base name and digest from packaging/docker/Dockerfile) that copies only /usr/local/bin/betterlite-lens-worker, sets `USER 65532:65532` and `ENTRYPOINT ["/usr/local/bin/betterlite-lens-worker"]`. It installs no Python, no shell tools and no Prisma. `Dockerfile.dockerignore` excludes everything with `**` and re-includes `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`, `crates/` and `tools/`, then excludes `**/target`. `compose.yaml` has one service `lens-worker` with `image: ${LENS_WORKER_IMAGE:?Set the worker image, build it with compose.build.yaml}`, environment LITELLM_URL `${LITELLM_URL:?Set the URL reachable from this container}` and LENS_WORKER_TOKEN `${LENS_WORKER_TOKEN:?Create a worker credential in the Lens UI}`, `restart: unless-stopped`, `read_only: true`, tmpfs `/tmp:rw,noexec,nosuid,size=${LENS_WORKER_TMP_SIZE:-1g}`, `cap_drop: [ALL]` and `security_opt: [no-new-privileges:true]`. `compose.build.yaml` has the same service with `build: { context: ../.., dockerfile: packaging/lens/Dockerfile }` and `image: betterlite-lens-worker:local`.
+scope:
+  paths:
+    - Cargo.lock
+    - crates/betterlite-lens-worker/**
+    - packaging/lens/Dockerfile
+    - packaging/lens/Dockerfile.dockerignore
+    - packaging/lens/compose.yaml
+    - packaging/lens/compose.build.yaml
+    - packaging/lens/tests/files.sh
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/worker.py#L15-L52
+    why: failure_message with every text and the status guidance table.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/worker.py#L55-L77
+    why: model_request and its retry rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/worker.py#L79-L135
+    why: run_once, the paths, the heartbeat task and the failure post with the 409 rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/lens/worker.py#L138-L150
+    why: main, the two environment variables, the 180 second timeout and the 10 second pause.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/deploy/lens/Dockerfile#L1-L6
+    why: The Python image being replaced; user 65532 and the single command.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/deploy/lens/compose.yaml#L1-L12
+    why: The Compose service with the two required variables and the hardening options.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/deploy/lens/compose.build.yaml#L1-L6
+    why: The local build override.
+dod:
+  - text: failure_message returns the exact text for each error kind, the right action word per path suffix and the right guidance per status, with the generic guidance for an unlisted status.
+    proof: [failure-tests]
+  - text: model_request retries Timeout, Transport and the statuses 429, 502, 503, 504 with 1 s then 2 s pauses, makes at most three calls, and returns any other error at once.
+    proof: [retry-tests]
+  - text: run_once returns false when no job is claimed, posts the analysis result on success, and posts an error result with default coverage and the mapped message on failure, accepting a 409 answer and returning any other failed status.
+    proof: [run-tests]
+  - text: The heartbeat is sent every 30 seconds while the job runs, stops silently after the first failed heartbeat, and is stopped when run_once returns.
+    proof: [run-tests]
+  - text: The HTTP adapter sends the bearer header, the protocol_version query, the content query and each body to the documented paths, and maps timeout, connect, status and bad-body failures to the right WorkerError.
+    proof: [http-tests]
+  - text: The program refuses to start without LITELLM_URL or LENS_WORKER_TOKEN and never prints the token.
+    proof: [settings-tests]
+  - text: The four image files exist with the contents described, and the Compose files keep the required variables and hardening options.
+    proof: [files-check]
+checks:
+  optional: []
+  commands:
+    - id: failure-tests
+      why: the failure messages are missing or differ
+      run: cargo nextest run --locked -p betterlite-lens-worker --no-tests=fail -E 'test(/^failure::/)'
+    - id: retry-tests
+      why: the model retry rule is missing
+      run: cargo nextest run --locked -p betterlite-lens-worker --no-tests=fail -E 'test(/^worker::retry::/)'
+    - id: run-tests
+      why: run_once, its failure post or the heartbeat is missing
+      run: cargo nextest run --locked -p betterlite-lens-worker --no-tests=fail -E 'test(/^worker::run::/)'
+    - id: http-tests
+      why: the HTTP adapter is missing or uses a wrong path
+      run: cargo nextest run --locked -p betterlite-lens-worker --no-tests=fail -E 'test(/^http_api::/)'
+    - id: settings-tests
+      why: the environment settings are missing
+      run: cargo nextest run --locked -p betterlite-lens-worker --no-tests=fail -E 'test(/^settings::/)'
+    - id: files-check
+      why: an image file is missing or lost a required line
+      run: >-
+        bash -n packaging/lens/tests/files.sh &&
+        bash packaging/lens/tests/files.sh
+oracle_cases: []
+deviations:
+  - what: The image builds a Rust binary on the Wolfi base and has no Python, httpx or pydantic layer.
+    why: The worker is part of the Rust workspace.
+  - what: compose.yaml has no default image digest; LENS_WORKER_IMAGE is required.
+    why: LiteLLM's default points at its own published image, and betterlite has no published worker image yet.
+  - what: The check for the image files is a text check (packaging/lens/tests/files.sh), not a docker build.
+    why: The gate sandbox cannot reach the Docker socket.
+out_of_scope:
+  - "The server side of the /lens/worker routes: B4505."
+  - "The analysis code itself (analyze_sample, the coordinator, the trace store): B4500, B4506, B4509."
+  - "deploy/lens/README.md, the feature guide: the wave 17 Lens wiring part."
+  - "Publishing the image to a registry: the release workflow."
+pitfalls:
+  - The worker needs two different failure texts for one HTTP error depending on the path, so keep the path in Status and test with `/lens/worker/l1/j1/model` and `/lens/worker/l1/j1/sample`.
+  - 'Do not log the error text of a WorkerError: HTTP client errors can carry the full URL. Log the variant name only.'
+  - The 10 second pause comes after every pass, a job included. Do not skip it after a job to claim the next one faster.
+  - The failure post uses the SAME result path as the success post, and the proxy answers 409 when the run was cancelled or taken by another worker. That is not an error.
+  - 'The heartbeat must not keep the process alive or outlive the job: abort it in every exit path, including a failed sample fetch.'
+  - Mark the Authorization header value sensitive on every request so a debug print of a request cannot show the token.
+  - 'Keep each file under the line limit: split the tests into worker/retry_tests.rs and worker/run_tests.rs if needed.'
+review_level: security
+budget:
+  max_changed_lines: 1700
+  max_new_expects: 0

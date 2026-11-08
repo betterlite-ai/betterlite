@@ -4,7 +4,7 @@ description: >-
   Implement all thirteen complete functions at proxy/vector_store_endpoints/utils.py:25-257 in
   core::api::vector_store_access. This layer normalizes stored parameters, checks admin/index lifecycle,
   builds effective auth contexts and applies key/team grants. B732 supplies auth records, B735 object
-  permission lookup, B737 team lookup, and B137 UI-session identification/team membership through injected
+  permission lookup, B737 team lookup, and B4672 UI-session identification/team membership through injected
   runtime seams; never import proxy_server globals into native policy code. Route owners apply the resulting
   errors to HTTP and retain their own error envelopes.
 
@@ -101,7 +101,7 @@ oracle_cases:
 deviations: []
 out_of_scope:
 - B1061 owns utils.py:260-559 managed-id resolution and endpoint allowlist checks; route tasks own their final HTTP responses.
-- B735/B737 own permission/team cache and database lookups. B137 owns UI-session identification and team membership; native policy receives those results through an injected seam.
+- B735/B737 own permission/team cache and database lookups. B4672 owns UI-session identification (is_ui_session_credential) and team membership (resolve_ui_session_team_ids); native policy receives those results through an injected seam.
 pitfalls:
 - 'The oracle helper for this task is pre-registered as vector_store_access in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/vector_store_access.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/vector_store_access.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'
 - A teamless store is directly accessible but hidden from ordinary listing without an explicit grant.

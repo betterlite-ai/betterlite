@@ -1,0 +1,13 @@
+id: B8373
+milestone: M8 platform
+title: Proxy startup checks, budget seeding and tuning baselines
+status: todo
+depends_on: [B053, B343, B733, B1659, B3703]
+file: tasks/B8373-startup-checks.yaml
+covers: []
+parent: B124
+split_from: B124
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

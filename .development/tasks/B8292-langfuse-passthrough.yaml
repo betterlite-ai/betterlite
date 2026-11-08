@@ -1,0 +1,151 @@
+id: B8292
+title: Langfuse pass-through route
+description: >-
+  Port litellm/proxy/vertex_ai_endpoints/langfuse_endpoints.py (227 lines). It serves `/langfuse/{endpoint:path}` for
+  GET, POST, PUT, DELETE and PATCH. A Langfuse SDK points its host at the gateway and signs in with the gateway key as
+  the Langfuse secret key. The route checks that key, picks the real Langfuse host and credentials, and hands the call to
+  the pass-through factory (B3615's `create_pass_through_route`, a Rust function that returns a handler; call it, do not
+  copy it). It registers its own route, so it also has HTTP oracle cases.
+
+  Code goes in crates/betterlite-server/src/langfuse_passthrough.rs and langfuse_passthrough/. Files: route.rs (the
+  router and the handler `langfuse_proxy_route`), basic_auth.rs, credentials.rs, target.rs and error.rs. The function
+  `langfuse_router(deps: LangfuseDeps) -> axum::Router` returns the router; the architect adds it to the app once.
+  `LangfuseDeps` holds the factory's handler (`Arc<PassThroughHandler>` as B3615 and B3613 define it), the bool
+  `user_url_validation` (from B5082's `user_url_policy` section, default true) and these ports, each a small trait in
+  this module so tests use fakes and no global is read:
+  - `KeyAuthPort`: `authenticate(bearer_key: &str, request) -> Result<UserApiKeyAuth, ProxyException>`, the proxy key check of B052.
+  - `LoggingSettingsPort`: `callback_vars(key: &UserApiKeyAuth) -> Option<HashMap<String, String>>`, LiteLLM's `_get_dynamic_logging_metadata` (B1102 to B1105 own it) reduced to its `callback_vars`.
+  - `SecretPort`: `get_secret(name: &str) -> Option<String>`, LiteLLM's `litellm.utils.get_secret` (B8500).
+  - `UrlGuardPort`: `validate_url(url: &str) -> Result<(String, String), String>`, B5082's SSRF check. It returns the URL to call and the Host header, or the error text.
+
+  `langfuse_proxy_route(endpoint, request, response)` does this in order.
+  1. Read the `Authorization` header ("" when absent). Remove every "Basic " in it. Base64-decode the rest (standard
+     alphabet), decode the bytes as UTF-8, split on ":" and take the second piece as the gateway key. A bad base64 text, bad
+     UTF-8 or a text without ":" is HTTP 500 with the gateway's generic internal error, as in LiteLLM, where the unhandled
+     exception becomes a 500. Then call `KeyAuthPort.authenticate("Bearer <key>")`. A failure is that call's own error.
+  2. Ask `LoggingSettingsPort.callback_vars`. The keys `langfuse_public_key`, `langfuse_secret_key` and `langfuse_host` are
+     the dynamic public key, secret key and host. Other keys are ignored. `dynamic_host_supplied` is true when the host key exists.
+  3. The base URL is the dynamic host, else the env var `LANGFUSE_HOST`, else "https://cloud.langfuse.com" (an empty env
+     value also gives the default).
+  4. `get_credentials` in credentials.rs. With a dynamic host, both dynamic keys must be non-empty, else HTTP 400 with
+     JSON detail `{"error": "Dynamic Langfuse hosts must include dynamic Langfuse credentials"}` and the dynamic pair is used.
+     Without a dynamic host each key is the dynamic one when non-empty, else `SecretPort.get_secret("LANGFUSE_PUBLIC_KEY")`
+     or `"LANGFUSE_SECRET_KEY"`. A secret that is missing stays None and is written as the text "None" in step 6.
+  5. `build_target` in target.rs, three steps.
+     a. `validate_path(endpoint)`: percent-decode until the text stops changing (Python's `unquote`, invalid UTF-8 becomes
+        U+FFFD). Refuse with HTTP 400 `{"error": "Invalid Langfuse endpoint path"}` when any character has a code below 32,
+        when it holds a backslash, when it starts with "//", or when any segment of the result is "." or "..". The result is
+        "/" plus the decoded text with its leading "/" characters removed.
+     b. `normalize_base(base)`: when the text does not start with "http://" or "https://", put "http://" in front. Parse it
+        (the `url` crate; a parse error is HTTP 400 `{"error": "Invalid Langfuse host: <error>"}`). A scheme other than
+        http or https, or no host, is 400 `{"error": "Invalid Langfuse host"}`. A username or password is 400
+        `{"error": "Langfuse host must not include credentials"}`.
+     c. Replace the base URL's path with the step a path. If a dynamic host was supplied and `user_url_validation` is true,
+        call `UrlGuardPort.validate_url`: an error is 400 `{"error": "Invalid Langfuse host: <text>"}`, and the result is the
+        returned URL with the header `Host` set to the returned Host value. Otherwise the target is the URL as text with no custom headers.
+  6. Set the custom header `Authorization` to "Basic " plus base64 of "<public>:<secret>" (standard alphabet, padded).
+  7. Call B3615's factory with `endpoint` (the raw, undecoded text), the target URL, the custom headers and the request's
+     query parameters as a map, and run the handler it returns with the request, the response and the authenticated key.
+     Return what it returns.
+
+  The gateway serves the route from the start. LiteLLM loads the module on the first request under "/langfuse"
+  (litellm/proxy/_lazy_features.py), and a client sees no difference.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/langfuse_passthrough.rs
+    - crates/betterlite-server/src/langfuse_passthrough/**
+    - tools/oracle/cases/server/langfuse-passthrough/**
+    - tools/oracle/helpers/b8292.py
+    - tools/oracle/helpers/b8292/**
+    - tools/oracle/src/helpers/server/b8292.rs
+    - tools/oracle/src/helpers/server/b8292/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vertex_ai_endpoints/langfuse_endpoints.py#L45-L51
+    why: _decode_to_convergence.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vertex_ai_endpoints/langfuse_endpoints.py#L54-L79
+    why: _normalize_langfuse_base_url and its three 400 texts.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vertex_ai_endpoints/langfuse_endpoints.py#L82-L101
+    why: _validate_langfuse_proxy_path.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vertex_ai_endpoints/langfuse_endpoints.py#L104-L146
+    why: Credential choice and the target build with the SSRF check.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/vertex_ai_endpoints/langfuse_endpoints.py#L149-L227
+    why: The route, its methods, the Basic header parse and the factory call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_lazy_features.py#L261-L265
+    why: The lazy load under the /langfuse prefix.
+  - url: https://langfuse.com/docs/api-and-data-platform/features/public-api
+    why: The Langfuse public API that the route forwards to, signed with a Basic public:secret header.
+
+dod:
+  - text: The route serves /langfuse/{endpoint} for GET, POST, PUT, DELETE and PATCH and no other method.
+    proof: [route-tests]
+  - text: The Authorization header parse takes the part after the first colon as the key, and a bad base64 text, bad UTF-8 or a missing colon is HTTP 500.
+    proof: [basic-auth-tests]
+  - text: The base URL comes from the dynamic host, then LANGFUSE_HOST, then https://cloud.langfuse.com, and the credentials follow the dynamic or secret rule with the missing-credential 400 for a dynamic host.
+    proof: [credentials-tests]
+  - text: validate_path decodes until stable and refuses control characters, a backslash, a leading double slash and dot segments with the exact 400 text.
+    proof: [path-tests, oracle]
+  - text: normalize_base adds http:// to a bare host and refuses a bad scheme, no host and embedded credentials with the three exact texts.
+    proof: [base-url-tests]
+  - text: With a dynamic host and user_url_validation on, the SSRF check runs and the returned URL and Host header are used, with its error as a 400.
+    proof: [target-tests]
+  - text: The factory call gets the raw endpoint, the target, the custom headers with Authorization (and Host when set) and the query map.
+    proof: [route-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: route-tests
+      why: a method is missing or extra, or the factory call has other arguments
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^langfuse_passthrough::route::tests::/)'
+    - id: basic-auth-tests
+      why: the key part of the Authorization header or an error status is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^langfuse_passthrough::basic_auth::tests::/)'
+    - id: credentials-tests
+      why: the host, key choice or the dynamic credential error is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^langfuse_passthrough::credentials::tests::/)'
+    - id: path-tests
+      why: an unsafe endpoint path is accepted or a safe one is refused
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^langfuse_passthrough::target::tests::path/)'
+    - id: base-url-tests
+      why: the host normalizing or one of its 400 texts is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^langfuse_passthrough::target::tests::base_url/)'
+    - id: target-tests
+      why: the SSRF branch, the Host header or the Authorization header is wrong
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^langfuse_passthrough::target::tests::target/)'
+
+oracle_cases:
+  - tools/oracle/cases/server/langfuse-passthrough/path-dot-segments-400.yaml
+  - tools/oracle/cases/server/langfuse-passthrough/path-double-encoded-400.yaml
+  - tools/oracle/cases/server/langfuse-passthrough/path-backslash-400.yaml
+  - tools/oracle/cases/server/langfuse-passthrough/path-leading-double-slash-400.yaml
+  - tools/oracle/cases/server/langfuse-passthrough/authorization-without-colon-500.yaml
+
+deviations:
+  - what: The route is registered at start. LiteLLM imports the module on the first request under /langfuse.
+    why: The lazy load is a startup optimisation of Python and shows no difference to a client.
+  - what: The base URL is parsed with the url crate. LiteLLM uses httpx.URL.
+    why: Both normalise a host the same way for http and https hosts. An odd host that httpx accepts and url refuses becomes a 400 here, with the parse error text of url.
+
+out_of_scope:
+  - "create_pass_through_route and the handler it returns: B3615 and B3613."
+  - "The proxy key check (user_api_key_auth): B052."
+  - "_get_dynamic_logging_metadata: B1102 to B1105."
+  - "validate_url and the SSRF rules: B5082."
+  - "create_request_copy and default_vertex_config in this file: no caller at the pin (proxy_server.py reads its own default_vertex_config key)."
+  - "Registering the router in the app: the architect."
+
+pitfalls:
+  - "The key is the piece after the first colon, so the Langfuse public key before the colon is never checked."
+  - "A missing LANGFUSE_PUBLIC_KEY or LANGFUSE_SECRET_KEY secret is sent as the text None inside the Basic header. Do not turn it into an error."
+  - "The factory gets the raw endpoint, but the target URL uses the decoded path. Do not pass the decoded path to the factory."
+  - "Decode the path in a loop. A single decode lets %252e%252e through as %2e%2e and then as dot segments upstream."
+  - "The Host header is set only for a dynamic host with validation on. A host from LANGFUSE_HOST is never SSRF-checked."
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

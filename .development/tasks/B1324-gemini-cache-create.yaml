@@ -9,7 +9,7 @@ description: >-
   counting errors log and skip caching. Resolve MINIMUM_PROMPT_CACHE_TOKEN_COUNT when set,
   otherwise the model's prompt_cache_min_tokens, otherwise 1024 from B193. Test the override
   through cache_create_settings in betterlite-config, including the pinned malformed-env fallback.
-  Once eligible, remove tools and tool_choice before lookup. Call B125's Cache.get_cache_key
+  Once eligible, remove tools and tool_choice before lookup. Call B4296's Cache.get_cache_key
   boundary with precisely messages, tools, tool_choice, model in that order; do not use a JSON
   hash or introduce a second cache-key format. A hit returns uncached messages and stripped
   options. A miss POSTs B1317's cache body, including tools:null when absent and toolConfig only
@@ -41,7 +41,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L10108-L10165
     why: Eligibility threshold and counting behavior at the called utility boundary.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/caching/caching.py#L358-L407
-    why: Cache-key implementation is consumed from B125, not reimplemented in Vertex.
+    why: Cache-key implementation is consumed from B4296, not reimplemented in Vertex.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/constants.py#L420-L427
     why: Environment override is distinct from the 1024 fallback.
 dod:
@@ -67,7 +67,7 @@ oracle_cases: []
 deviations: []
 out_of_scope:
   - B1318 owns the class constructor, target method and list methods before L277; get_cache and async_get_cache after L591 have no caller at the pin.
-  - B125 supplies the cache-key algorithm; this task neither installs a response-cache backend nor changes namespace policy.
+  - B4296 supplies the cache-key algorithm; this task neither installs a response-cache backend nor changes namespace policy.
 pitfalls:
   - Replacing a provider cache name with its displayName produces an invalid cachedContent reference.
   - Skipped caching must not consume tools or tool_choice from the generation request.

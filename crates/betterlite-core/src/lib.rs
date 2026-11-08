@@ -23,6 +23,7 @@ pub mod guardrails;
 pub mod helpers;
 pub mod json_messages_policy;
 pub mod message_utilities;
+pub mod messages_host_binding;
 pub mod meta_muse_realtime;
 pub mod mistral_ocr_guardrail;
 pub mod mock;

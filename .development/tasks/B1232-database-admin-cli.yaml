@@ -16,7 +16,7 @@ description: >-
   completion returns success 0, exhausted retries/index-job failure 1, or unrecoverable migration error
   2 as already chosen by B051. That last value matches proxy_cli's RuntimeError handling, not migrations/run.py,
   whose uncaught exception exits 1; record the difference below. Help exits 0; unknown operations and malformed
-  argv use clap's usage error exit 2 without loading config or contacting a DB. B121 alone owns the proxy
+  argv use clap's usage error exit 2 without loading config or contacting a DB. B8375 alone owns the proxy
   --skip_server_startup compatibility flag and forwards to migrate; this executable does not redefine
   the proxy CLI.
 
@@ -100,7 +100,7 @@ deviations:
 out_of_scope:
   - B051 owns native migration startup/index-job assembly; B716/B873 own deploy/recovery SQL.
   - B852, B853 and B874 own their SQL/CSV operations and real database tests.
-  - B121 owns proxy CLI compatibility flags; B002/B710 own config and environment resolution.
+  - B8375 owns proxy CLI compatibility flags; B002/B710 own config and environment resolution.
   - B2307 owns extras str_to_bool; B051 owns migration retries, index-job waiting and registered service execution.
 pitfalls:
   - The admin package cannot depend on betterlite-server under the server crate boundary rule.

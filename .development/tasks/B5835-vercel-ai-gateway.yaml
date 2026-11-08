@@ -21,7 +21,7 @@ description: >-
   calls B668's base mapping first, then reads and removes "providerOptions" from the incoming params, and always sets
   "extra_body" on the result: a map holding providerOptions when the value is present and not null, otherwise an empty map.
   That assignment replaces whatever "extra_body" the base mapping copied from the caller, so a caller extra_body is lost.
-  transform_request is the inherited OpenAI one and is not repeated here; B503 owns it and B041 wires it.
+  transform_request is the inherited OpenAI one and is not repeated here; B503 owns it and B8311 wires it.
 
 
   Embedding. VercelAiGatewayEmbeddingConfig.validate_environment starts from Content-Type "application/json", adds
@@ -41,7 +41,7 @@ description: >-
   (the api_key it resolves is not used and no Authorization header is sent). Split it into two pure functions: one returns the
   URL, and one takes the HTTP status and body bytes. A status other than 200 returns a typed error whose text is "Failed to
   get models: {body text}". On 200 the body must be a JSON object with a "data" list, and the result is the "id" of each entry
-  in order. A body of the wrong shape returns a typed error. The GET itself is made by the caller (B041 wires it), so the fuzz
+  in order. A body of the wrong shape returns a typed error. The GET itself is made by the caller (B8311 sends it), so the fuzz
   target also feeds arbitrary bytes to the second function.
 
 
@@ -121,7 +121,7 @@ deviations:
   - what: A model list reply with a non-200 status or a body of the wrong shape returns a typed VercelAiGatewayError, not a bare Python Exception or a KeyError.
     why: Rust has no untyped exception. The message text for a non-200 status is the same as LiteLLM's, so a user sees the same failure.
 out_of_scope:
-  - B041 owns _complete_vercel_ai_gateway-style dispatch in litellm/main.py, registering these configs, picking the config for a vercel_ai_gateway model, the HTTP GET behind get_models and the HTTP oracle cases. B2230 owns the VERCEL_AI_GATEWAY selection tag.
+  - B8311 owns _complete_vercel_ai_gateway in litellm/main.py, building these configs where the selection picks them, the HTTP GET behind get_models and the HTTP oracle cases. B2230 owns the VERCEL_AI_GATEWAY selection tag.
   - B668, B503 and B504 own the inherited OpenAIGPTConfig methods, including transform_request (VercelAIGatewayConfig.transform_request only calls super) and transform_response.
   - B006 owns EmbeddingResponse and its construction. This task only calls the decoder.
   - B010 owns the provider framework that calls get_error_class and the param mapping entry points.

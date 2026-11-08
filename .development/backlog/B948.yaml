@@ -2,7 +2,7 @@ id: B948
 milestone: M5 api families
 title: Responses mcp selection
 status: todo
-depends_on: [B136, B4668, B4669, B4671, B4672, B171, B902, B1087]
+depends_on: [B4668, B4669, B4671, B4672, B171, B902, B1087, B4731, B6591, B6592]
 file: tasks/B948-responses-mcp-selection.yaml
 covers:
   - "litellm/responses/mcp/litellm_proxy_mcp_handler.py"

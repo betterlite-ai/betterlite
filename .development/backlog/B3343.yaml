@@ -6,6 +6,7 @@ depends_on: [B3338, B3339, B3340, B6460, B672, B004, B756, B1100, B2400, B844, B
 file: tasks/B3343-video-create-list-status-routes.yaml
 covers:
   - "litellm/proxy/video_endpoints/endpoints.py"
+  - "litellm/proxy/video_endpoints/__init__.py"
 parent: B093
 split_from: B093
 resolution: null

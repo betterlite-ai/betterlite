@@ -1,0 +1,115 @@
+id: B8605
+title: Streaming cleanup after a client disconnect
+description: >-
+  Build what LiteLLM runs when a streamed proxy response ends: ProxyBaseLLMRequestProcessing._finalize_streaming_generator_cleanup (litellm/proxy/common_request_processing.py L3808-L3864) with the helpers it calls in the same file, _apply_client_disconnect_metadata and its constant (L262-L266, L286-L290), _record_streaming_client_disconnect_if_needed (L293-L343), _deferred_stream_logging_is_armed (L346-L353), _assembled_model_came_from_a_later_chunk (L356-L375), _assembled_model_is_the_name_the_client_asked_for (L378-L393) and _bill_partial_streamed_spend_on_disconnect (L396-L462). When the client leaves mid-stream, LiteLLM marks the request as a 499 in its logging metadata, bills the chunks it already streamed, and frees the key's max_parallel_requests slot exactly once; when the stream did not finish it also drops the auto-router baseline cache estimate. B8604's SSE data generator hands the outcome to the sync port `StreamCleanup<Key>` declared in crates/betterlite-server/src/sse_data_generator.rs, and this task implements that port. It also builds the pre-call drop of `include_fallback_errors` (L2042-L2043). Everything goes in crates/betterlite-server, module `stream_cleanup` (stream_cleanup.rs and stream_cleanup/), with tests in stream_cleanup/tests.rs. Every name stays at 30 characters or fewer.
+
+  What it uses. From B8604: `StreamCleanup`, `CleanupOutcome` (request, request_data, key, response, stream_completed, client_disconnected), `StreamSnapshot` and `CollectedStream` (chunks, messages, model). From B8602: the config section type `FallbackErrors { expose_to_caller: bool }` (config.sections.fallback_errors). From B5652: its port of backfill_missing_cache_usage_fields (streaming_handler.py L2372-L2390) in crates/betterlite-streaming/src/stream_chunk_shaping.rs; find it there by that LiteLLM name, convert the usage JSON object to and from the type it takes, and add betterlite-streaming as a path dependency in crates/betterlite-server/Cargo.toml. Add `tokio-util = { version = "0.7.20", default-features = false, features = ["rt"] }` there too, the same entry betterlite-http has.
+
+  Pure helpers. `disconnect_error_info() -> Map<String, Value>` gives a new object {"error_code": "499", "error_message": "Client disconnected the request", "error_class": "ClientDisconnected"}; the code is the text of LITELLM_HTTP_STATUS_CLIENT_DISCONNECTED (constants.py L654). `apply_disconnect_marks(target: &mut Map<String, Value>)` replaces _apply_client_disconnect_metadata: it sets `client_disconnected` to true and `error_information` to a fresh disconnect_error_info, and keeps every other key. `mark_request_disconnected(request_data: &mut Map<String, Value>)` is the request-data half of _record_streaming_client_disconnect_if_needed: put a new empty object at `metadata` when that key is missing or null and mark it; then do the same for `litellm_params`, and for `metadata` inside it, and mark that inner object. `mark_details_disconnected(details: &mut Map<String, Value>)` is the logging half on model_call_details: `litellm_params` (a new object when missing or null), its `metadata` (the same) and the top-level `metadata` (the same) are each marked, inner one first. A value at any of these keys that is not an object and not null is left alone and gets no marks; LiteLLM's declared types never hold one (docs/compatibility.md).
+  `later_chunk_model(chunks: &[Map<String, Value>], assembled: Option<&Value>) -> bool` replaces _assembled_model_came_from_a_later_chunk: true when the first chunk's `model` is a JSON string, `assembled` is a non-empty JSON string and the two differ. An empty chunk list gives false (LiteLLM never calls it with one). `client_named_model(request_data, assembled: Option<&Value>) -> bool` replaces _assembled_model_is_the_name_the_client_asked_for: the stamped name is `_litellm_client_requested_model` when it is a JSON string, else whatever `model` holds; true when that is a JSON string equal to `assembled`. `restore_partial_model(partial: &mut Map<String, Value>, chunks, wrapper_model: Option<&str>, request_data)` applies L446-L451: the builder recovered a routed model when later_chunk_model is true and client_named_model is false for `partial["model"]`; unless it did, a non-empty `wrapper_model` replaces `partial["model"]`.
+  `drop_fallback_errors_flag(section: &FallbackErrors, data: &mut Map<String, Value>)` is the two lines inside common_processing_pre_call_logic (L2042-L2043): when `section.expose_to_caller` is false, remove `include_fallback_errors` from the request data; when it is true, leave the data alone. The wave 17 inference wiring part calls it right after the request data is built, before routing.
+
+  Ports, declared in this module; the wave 17 inference wiring part implements them over the real code and the tests use recording fakes. Async methods return `Pin<Box<dyn Future<Output = T> + Send + '_>>` so the traits stay object safe, the way crates/betterlite-server/src/list_api/memory.rs boxes its futures. `CleanupError` is this module's error enum with one variant `Port(String)`.
+  `RequestLogging` stands for the request's LiteLLM logging object (request_data["litellm_logging_obj"]), and every method takes `request_data: &Map<String, Value>` to find it: `call_details(&self, request_data) -> Option<Map<String, Value>>` is a copy of its model_call_details, None when the request has no logging object; `edit_call_details(&self, request_data, edit: fn(&mut Map<String, Value>))` runs `edit` on the live model_call_details and does nothing without a logging object; `deferred_logging_armed(&self, request_data) -> bool` is _deferred_stream_logging_is_armed, true only when both deferred stream-complete fields that B6370 sets are present; `fire_deferred_logging(&self, request_data)` is B6370's ProxyLogging._fire_deferred_stream_logging; `baseline_cache_active(&self, request_data) -> bool` is `baseline_cache_context is not None` (B342 sets that context); async `invalidate_baseline(&self, request_data, reason: &str, completed: bool) -> Result<(), CleanupError>` is Logging.invalidate_baseline_cache_estimate, which calls B342's invalidate_baseline_cache; async `assemble_partial(&self, request_data, chunks: &[Map<String, Value>], messages: Option<&[Value]>) -> Result<Option<Map<String, Value>>, CleanupError>` is litellm.stream_chunk_builder with the logging object (B2227); async `dispatch_success(&self, request_data, response: Map<String, Value>) -> Result<(), CleanupError>` is Logging.dispatch_success_handlers with cache_hit false, no start or end time and prefer_async_handlers true (B250).
+  `SlotRelease<Key>` has one async method `release_on_disconnect(&self, key: &Key) -> Result<(), CleanupError>`, B2400's ProxyLogging._arelease_max_parallel_requests_on_disconnect.
+
+  `DisconnectCleanup<Key>` is built with `logging: Arc<dyn RequestLogging>`, `slots: Arc<dyn SlotRelease<Key>>`, `tracker: TaskTracker` (tokio_util's, a clone of the tracker the server drains on shutdown) and `disable_streaming_logging: bool` (LiteLLM's litellm.disable_streaming_logging, default false). Its async `run_cleanup(&self, outcome: CleanupOutcome<Key>) -> Result<(), CleanupError>` does the work, and its `StreamCleanup<Key>` impl (Key: Send + Sync + 'static) has `finalize` spawn run_cleanup on the tracker and log an Err at error "stream cleanup failed: {error}". Tests call run_cleanup directly and test finalize with a real tracker they close and wait on.
+
+  run_cleanup, in this order. (1) Record the disconnect: only when `client_disconnected` is true. Then call edit_call_details with mark_details_disconnected, call mark_request_disconnected on the outcome's own request data, and log at debug "Recorded streaming client disconnect with error_code=499 for litellm_call_id={id}" (the request's `litellm_call_id`, or None). (2) After a recorded disconnect: read deferred_logging_armed, then call fire_deferred_logging with the marked request data whatever the answer. When it was armed, the success event owns the slot release. Otherwise run the partial billing below, whose answer says the same. When nothing owns the release, await release_on_disconnect with the outcome's key; an Err returns at once, so step 3 does not run. (3) When `stream_completed` is false, the request has a logging object, baseline_cache_active is true and model_call_details' `prompt_cache_response_complete` is not the JSON bool true, await invalidate_baseline with reason "incomplete_response" and completed true, and return its result.
+
+  Partial billing (_bill_partial_streamed_spend_on_disconnect), returning whether a success event owns the release. False when disable_streaming_logging is true or call_details gives None. True when model_call_details' `has_dispatched_final_stream_success` is the JSON bool true, since the end-of-stream event already billed and released. False when the outcome has no response handle or its collected chunks are empty. Otherwise log at debug "Billing partial streamed spend for {n} chunks after client disconnect, litellm_call_id={id}", then call assemble_partial with the chunks and the messages. An Err logs at debug "Failed to assemble partial streamed response for disconnect billing: {error}" and gives false; Ok(None) gives false. On the assembled response call restore_partial_model with the collected model, pass `usage` through B5652's backfill when it is an object, and call dispatch_success. An Err logs at debug "Failed to dispatch disconnect billing event: {error}" and gives false; Ok gives true.
+
+  No route on main streams through B8604's generator, so this task has no HTTP oracle cases. Helper oracle cases compare mark_request_disconnected, later_chunk_model and client_named_model with LiteLLM through the operation named b8605; the Python side awaits _record_streaming_client_disconnect_if_needed with request None, client_disconnected True and no `litellm_logging_obj` in the data, and calls the two model helpers with plain dict chunks.
+scope:
+  paths:
+  - crates/betterlite-server/Cargo.toml
+  - crates/betterlite-server/src/stream_cleanup.rs
+  - crates/betterlite-server/src/stream_cleanup/**
+  - tools/oracle/cases/helpers/stream-cleanup/**
+  - tools/oracle/helpers/b8605.py
+  - tools/oracle/helpers/b8605/**
+  - tools/oracle/src/helpers/server/b8605.rs
+  - tools/oracle/src/helpers/server/b8605/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3808-L3864
+  why: _finalize_streaming_generator_cleanup, the order of record, deferred fire, billing, slot release, close and baseline invalidation.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L262-L353
+  why: The 499 error information, the metadata marks on the logging details and the request data, and the deferred logging check.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L356-L462
+  why: The two model checks and _bill_partial_streamed_spend_on_disconnect with its early returns and the model restore.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L2025-L2045
+  why: The include_fallback_errors drop after add_litellm_data_to_request in common_processing_pre_call_logic.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10070-L10079
+  why: async_data_generator's finally block, the caller B8604 replaces with the StreamCleanup port.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4134-L4156
+  why: _arelease_max_parallel_requests_on_disconnect (B2400), what SlotRelease stands for.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/litellm_logging.py#L2447-L2451
+  why: invalidate_baseline_cache_estimate, a thin call into B342's invalidate_baseline_cache.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/streaming_handler.py#L2372-L2390
+  why: backfill_missing_cache_usage_fields (B5652), applied to the partial usage before billing.
+dod:
+- text: >-
+    With client_disconnected, the request data's metadata and litellm_params.metadata, created when missing or null, get client_disconnected
+    true and the 499 error_information while their other keys stay, and the logging details get the same marks; without it nothing is marked.
+  proof: [cleanup-tests, oracle, helper-python]
+- text: >-
+    After a recorded disconnect fire_deferred_logging is called once; with deferred logging armed there is no billing and no slot release.
+  proof: [cleanup-tests]
+- text: >-
+    Billing that is disabled, has no logging object, has no collected chunks, gets None or an Err from assemble_partial or an Err from
+    dispatch_success leads to exactly one release_on_disconnect; a successful dispatch or has_dispatched_final_stream_success true leads to
+    none, and the dispatched response carries the backfilled usage.
+  proof: [cleanup-tests]
+- text: >-
+    later_chunk_model and client_named_model match LiteLLM, and restore_partial_model puts the wrapper model back unless the builder took a
+    routed model from a later chunk that the client did not ask for.
+  proof: [cleanup-tests, oracle, helper-python]
+- text: >-
+    An unfinished stream with an active baseline cache and prompt_cache_response_complete not true invalidates it once with
+    "incomplete_response" and completed true, with or without a disconnect; a finished stream or a true flag does not, and an Err from the
+    slot release returns before this step.
+  proof: [cleanup-tests]
+- text: finalize runs run_cleanup exactly once on the tracker it was built with, and an Err from it is logged instead of lost.
+  proof: [cleanup-tests]
+- text: >-
+    drop_fallback_errors_flag removes include_fallback_errors when config.sections.fallback_errors.expose_to_caller is false, the default,
+    and keeps it when the section says true.
+  proof: [cleanup-tests]
+checks:
+  optional: []
+  commands:
+  - id: cleanup-tests
+    why: a disconnect mark, the deferred check, a billing branch, the single slot release, the model restore, the baseline step, the tracker run or the fallback flag drop is missing or wrong
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^stream_cleanup::/)'
+  - id: helper-python
+    why: the disconnect marks and model checks have no pinned LiteLLM comparison through the b8605 helper
+    run: grep -qE '^[[:space:]]+b8605:' tools/oracle/fuzz/corpus/helper_case/b8605-* && uv run --locked --project tools/oracle/litellm ruff check tools/oracle/helpers && uv run --locked --project tools/oracle/litellm basedpyright --project tools/oracle/helpers/pyrightconfig.json
+oracle_cases:
+- tools/oracle/cases/helpers/stream-cleanup/disconnect-marks.yaml
+- tools/oracle/cases/helpers/stream-cleanup/partial-model-checks.yaml
+deviations:
+- what: A cleanup that runs with client_disconnected false never records a disconnect, where LiteLLM still asks Starlette's request.is_disconnected() whenever the stream did not complete.
+  why: hyper gives a handler no way to ask whether the client left while its body is still being polled; B8604 reports a dropped body as client_disconnected, which is the case LiteLLM's probe exists for.
+- what: The logging object, the stream builder, success dispatch, the baseline cache and the limiter release are reached through the RequestLogging and SlotRelease ports, and litellm.disable_streaming_logging is a constructor value.
+  why: betterlite wires dependencies through constructors instead of proxy_server globals; the order of the calls and their arguments are LiteLLM's.
+- what: 'An Err from a port that LiteLLM would let escape its finally block is logged at error "stream cleanup failed: {error}" by the task the tracker runs.'
+  why: The cleanup runs on the server's task tracker (rules.yaml async-hygiene), so there is no generator left to raise into; the steps after the failure are skipped as in LiteLLM.
+out_of_scope:
+- "The response.aclose() call in the cleanup: B8604 drops the upstream item stream when its state drops, which closes it."
+- "_withheld_provider_output and the budget reservation release on cancel (L269-L270 and the async_streaming_data_generator except branch): B7324 lists async_streaming_data_generator as built by no task, and this cleanup does not call them."
+- "The rest of common_processing_pre_call_logic (L1913-L2100): B004 owns it and is done, and B7324 records that no task builds the shared class; only the include_fallback_errors drop is built here."
+- "The rest of litellm/proxy/common_request_processing.py: B7324 builds the shared helpers and lists the owners of the remaining functions in its out_of_scope."
+- "_fire_deferred_stream_logging (B6370), stream_chunk_builder (B2227), dispatch_success_handlers (B250), invalidate_baseline_cache (B342) and _arelease_max_parallel_requests_on_disconnect (B2400): this task calls them through its ports."
+pitfalls:
+- 'fire_deferred_logging is called after every recorded disconnect, armed or not; only the billing and the release depend on the armed answer.'
+- 'has_dispatched_final_stream_success true makes billing answer true, which skips the slot release, because the end-of-stream event already released it.'
+- 'Every failed billing branch must answer false so the slot is released once; releasing it as well after a successful dispatch double-decrements the limiter.'
+- 'The baseline step looks at stream_completed only, so an HTTP failure with the client still there invalidates the estimate too, and a disconnect after a completed stream does not.'
+- 'client_named_model falls back to `model` only when `_litellm_client_requested_model` is not a string, and has no "" fallback, unlike B8602''s client_requested_model.'
+- 'error_code in the 499 marks is the string "499", and every marked object gets its own copy of error_information.'
+- 'The request data is marked before fire_deferred_logging and the billing see it, so the deferred event and the partial bill carry client_disconnected.'
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

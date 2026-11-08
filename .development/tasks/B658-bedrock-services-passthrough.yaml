@@ -3,7 +3,7 @@ title: Bedrock passthrough and typed logging collectors
 description: >-
   Add BedrockPassthroughPlan with endpoint-aware model-id encoding, configured native path and signing policy. Provide
   bounded stream collectors that project decoded events into safe normalized logging metadata, preserving text-run
-  order. B101/B103 own HTTP route permissions and raw forwarding.
+  order. B103 owns HTTP route permissions and raw forwarding; B3570 to B3574 own the SDK passthrough layer.
 
 
   Own exactly these source functions or explicitly delimited dispatch branches: litellm/llms/bedrock/passthrough/transformation.py:
@@ -47,7 +47,7 @@ description: >-
   ignored. JSON/decoder errors propagate here. Empty accumulated chunks yieldsNone; otherwise B2227 stream_chunk_builder
   gets list copy and logging_obj. passthrough_url: Copy litellm_params, resolve B591 region with model and model_id,
   then B591 runtime endpoint from explicit api_base and aws_bedrock_runtime_endpoint. Use endpoint_url, ignoring
-  proxy_endpoint_url. Call B101 format_url with rewritten endpoint,endpoint_url,request_query_params or{}; return
+  proxy_endpoint_url. Call B3570 format_url with rewritten endpoint,endpoint_url,request_query_params or{}; return
   formatted URL and endpoint_url. is_streaming_request is case-sensitive substring stream anywhere in endpoint,
   ignoring body stream flag. plain_text_delta_rules: Text-only requires usage isNone, falsey provider_specific_fields,exactly
   one choice, falsey finish_reason,logprobs isNone, and non-None delta fields subset of content/role. content must
@@ -71,7 +71,7 @@ description: >-
 
   Shared factory and stream-builder functions must remain single lower implementations with explicit owners; this
   task calls their typed interfaces rather than copying dispatch or aggregation. Passthrough transport/routing stays
-  B101/B103.
+  B3570 to B3574 and B103.
 
 
   ProviderConfigManager.get_provider_chat_config selection is B2230. Consume its closed tag and call the selected
@@ -195,7 +195,7 @@ dod:
   - helper-python
 - text: 'passthrough_url: Copy litellm_params, resolve B591 region with model and model_id, then B591 runtime endpoint
     from explicit api_base and aws_bedrock_runtime_endpoint. Use endpoint_url, ignoring proxy_endpoint_url. Call
-    B101 format_url with rewritten endpoint,endpoint_url,request_query_params or{}; return formatted URL and endpoint_url.
+    B3570 format_url with rewritten endpoint,endpoint_url,request_query_params or{}; return formatted URL and endpoint_url.
     is_streaming_request is case-sensitive substring stream anywhere in endpoint, ignoring body stream flag.'
   proof:
   - case-passthrough-url
@@ -278,7 +278,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_event_stream_collector$/)'
   - id: case-passthrough-url
     why: Copy litellm_params, resolve B591 region with model and model_id, then B591 runtime endpoint from explicit
-      api_base and aws_bedrock_runtime_endpoint. Use endpoint_url, ignoring proxy_endpoint_url. Call B101 format_url
+      api_base and aws_bedrock_runtime_endpoint. Use endpoint_url, ignoring proxy_endpoint_url. Call B3570 format_url
       with rewritten endpoint,endpoint_url,request_query_params or{}; return formatted URL and endpoint_url. is_streaming_request
       is case-sensitive substring stream anywhere in endpoint, ignoring body stream flag.
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_passthrough_url$/)'

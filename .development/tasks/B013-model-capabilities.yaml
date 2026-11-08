@@ -14,6 +14,10 @@ description: >-
   functions model_capabilities_model_capability_tests_behavior in adjacent tests.rs files, with a named case for each behavior
   and failure in the DoD; corpus replay tests have separate names. The helper operation model_capabilities is already registered; each operation has its own Rust and Python
   adapter file and corpus seed. Budget 290 capability projections, 110 adapters, 250 tests and 60 wiring (710 total).
+
+  `ModelInfo.__init__` and `ModelInfo._validate_ptu_bounds` in litellm/types/router.py (L279-L301) are this task's too, in the model info this facade returns: a missing id becomes a new UUID string and an integer id its decimal string; `ptu_count` must be above 0 and at most `MAX_PTU_COUNT`, `cost_per_ptu_per_hour` between 0 and `MAX_COST_PER_PTU_PER_HOUR`, and `ptu_effective_to` after `ptu_effective_from` (both read as UTC), each failure with LiteLLM's message. The dict-style accessors (L305-L319) are plain field reads in Rust.
+
+  Cost map keys from router.py go here too, because betterlite-models may not depend on betterlite-router. Put them in `crates/betterlite-models/src/lookup/cost_map_keys.rs`, declared from `lookup.rs`, as plain functions over a deployment's `litellm_params` and `model_info` JSON maps. `cost_map_backend_model(litellm_params, model_info)` (L8829-L8836) gives `model_info.base_model` when it is a non-empty string, else `litellm_params.base_model` when it is a non-empty string, else `litellm_params.model`. `backend_cost_map_keys(model, provider)` (L10024-L10029) gives one key, `model` or `{provider}/{model}` when a provider is given, and when that key contains `responses/` it adds a second key with `responses/` removed. `Router._deployment_model_cost_payload` and `Router._register_deployment_in_model_cost` (B016 lists them under B013) use the two for the pricing model name and the cost map keys. Tests are in `lookup/cost_map_keys/tests.rs` with names that start with `cost_key_`.
 scope:
   paths:
   - Cargo.toml
@@ -46,6 +50,10 @@ references:
   why: Maximum token lookup.
 - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/utils.py#L5685-L6415
   why: Model information lookup and provider/model identity.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L8829-L8836
+  why: Which model name prices a deployment.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L10024-L10029
+  why: The cost map keys, including the responses/ twin.
 dod:
 - text: Both provider capability assets match their pinned checksums and all provider/endpoint entries parse.
   proof:
@@ -68,10 +76,16 @@ dod:
     Every added helper operation has a committed shared-parser corpus seed and the complete corpus replays successfully.
   proof:
   - helper-case-corpus
+- text: The cost model name prefers `model_info.base_model`, then `litellm_params.base_model`, then `litellm_params.model`, and a `responses/` key gets its twin.
+  proof:
+  - cost-map-keys
 checks:
   optional:
   - mutants
   commands:
+  - id: cost-map-keys
+    why: A deployment is priced under the wrong model or the responses/ twin is missing.
+    run: cargo nextest run --locked -p betterlite-models --no-tests=fail -E 'test(/^lookup::cost_map_keys::tests::cost_key_/)'
   - id: model-capability-tests
     why: the required tests fail or the filter selects no tests
     run: >-

@@ -196,6 +196,7 @@ out_of_scope:
   (L3386-L3421).'
 - 'litellm/router_strategy/complexity_router/complexity_router.py: B400 owns: ComplexityRouter.__init__
   (L1324-L1479).'
+- "B8350 builds `as_output_cap` in `betterlite_router::router_predicates`. Router._restore_client_ceiling_no_tier_pins calls it to read the client output cap and does not rebuild it."
 pitfalls:
 - Tier overrides cannot smuggle provider destinations or credentials through a passthrough map.
 - A context limit must account for both input and effective output budget.

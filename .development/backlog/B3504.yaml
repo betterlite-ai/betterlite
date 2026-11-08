@@ -6,6 +6,7 @@ depends_on: [B3501, B3502, B185, B186, B198]
 file: tasks/B3504-agent-collection-calls.yaml
 covers:
   - "litellm/interactions/agents/main.py"
+  - "litellm/interactions/agents/__init__.py"
 parent: B098
 split_from: B098
 resolution: null

@@ -143,8 +143,8 @@ out_of_scope:
   - B711 owns translate_libpq_ssl_params; its native TLS implementation replaces the Prisma-only
     _VerifiedChainSource, _verified_chain_der, _server_trust_anchor, pin_bundle_root and _replace_file.
     B051 composes DatabaseURLSettings.apply_to_env without mutating the process environment.
-  - B121 owns the remaining proxy_cli.py functions except B717's resolve_v2_migration_resolver;
-    B051 consumes this task's lowered helpers for database startup. No lower URL helper calls B121.
+  - B8375 owns the proxy_cli.py flags and run_server order and B4170-B4177 its helpers, except B717 resolve_v2_migration_resolver;
+    B051 consumes this task's lowered helpers for database startup. No lower URL helper calls B8375.
   - B716, B717, B857 and B051 own extras/utils.py's ledger, recovery, drift and startup functions;
     B711 owns its _strip_prisma_query_params and _libpq_tls_params. Its v1-only functions remain
     excluded by B717's native-v2 deviation, and _mark_migration_applied and

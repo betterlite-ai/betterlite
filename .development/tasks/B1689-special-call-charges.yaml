@@ -30,7 +30,7 @@ description: >-
   Together policy's legacy category only when its registry predicate fails, and otherwise
   apply unmapped Replicate pricing when the name/list membership matches and no raw catalog
   entry exists. Add Together category/predicate operations to B1686's provider interface;
-  their implementation remains B041. Exact vertex_ai computes prompt/response characters
+  their implementation is B5831's together_ai_cost. Exact vertex_ai computes prompt/response characters
   through B1688, and capture logging.model for the later Foundry additional-fee lookup.
   Extract the complete A2ACostCalculator and MCPCostCalculator into the low-level
   betterlite-models::protocol_cost so future B142/B136 callers can share them without core
@@ -124,7 +124,7 @@ deviations:
     link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/cost_calculator.py#L63-L69
 out_of_scope:
   - B142 retains A2A protocol transport and streaming; B136 retains MCP server behavior. Their cost_calculator.py methods are extracted here for those callers to consume directly.
-  - B041 owns has_together_registry_pricing/get_model_params_and_category and its embedding category helper; the price-policy interface invokes them without importing a provider umbrella into core.
+  - B5831 builds has_together_registry_pricing/get_model_params_and_category and its embedding category helper (together_ai_cost, model_has_registry_pricing and pricing_category); the price-policy interface invokes them without importing a provider crate into core.
   - B068 assembles ordinary token/tool fees and public cost entry points; B1688 owns preparation, and the remaining cost_calculator.py helper ranges retain their B1666-B1687 owners.
 pitfalls:
   - 'The oracle helper for this task is pre-registered as protocol_charge in the core_ops group. Replace the stub Op in tools/oracle/src/helpers/core_ops/protocol_charge.rs with an impl Helper whose Input is the typed input, and write run in tools/oracle/helpers/protocol_charge.py. The registry files (helpers/mod.rs, the group files, dispatch.py) are not this task''s to edit.'

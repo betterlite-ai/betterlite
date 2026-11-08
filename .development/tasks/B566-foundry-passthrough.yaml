@@ -46,7 +46,7 @@ description: >-
   not found: set `api_base` on the deployment or AZURE_AI_API_BASE. B549 auth overwrites matching caller headers,
   selecting api-key header by base. Streaming detection is truthiness of request_data.stream for every endpoint.
   foundry_relay_shape_literals: After Azure and OCR projections miss, /rerank maps to arerank plus RerankResponse;
-  /providers/blackforestlabs/v1/flux-2-pro maps to aimage_generation plus ImageResponse. B101 owns the shape matching
+  /providers/blackforestlabs/v1/flux-2-pro maps to aimage_generation plus ImageResponse. B3570 owns the shape matching
   and validation, with no extra Foundry endpoints.
 
 
@@ -182,7 +182,7 @@ dod:
   proof:
   - secret-safe-failure
 - text: 'foundry_relay_shape_literals: After Azure and OCR projections miss, /rerank maps to arerank plus RerankResponse;
-    /providers/blackforestlabs/v1/flux-2-pro maps to aimage_generation plus ImageResponse. B101 owns the shape matching
+    /providers/blackforestlabs/v1/flux-2-pro maps to aimage_generation plus ImageResponse. B3570 owns the shape matching
     and validation, with no extra Foundry endpoints.'
   proof:
   - case-foundry-relay-shape-literals
@@ -247,7 +247,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::passthrough_secret_safe_failure$/)'
   - id: case-foundry-relay-shape-literals
     why: After Azure and OCR projections miss, /rerank maps to arerank plus RerankResponse; /providers/blackforestlabs/v1/flux-2-pro
-      maps to aimage_generation plus ImageResponse. B101 owns the shape matching and validation, with no extra Foundry
+      maps to aimage_generation plus ImageResponse. B3570 owns the shape matching and validation, with no extra Foundry
       endpoints.
     run: cargo nextest run --locked -p betterlite-foundry --no-tests=fail -E 'test(/::passthrough_cases::case_[0-9]+_foundry_relay_shape_literals$/)'
 oracle_cases:

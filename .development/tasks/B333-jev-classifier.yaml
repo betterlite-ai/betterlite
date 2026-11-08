@@ -1,6 +1,6 @@
 id: B333
 title: JEV classifier transport and attribution
-description: 'Add the JEV classifier adapter through B099 Decisions dispatch or a configured B009 HTTP
+description: 'Add the JEV classifier adapter through B3515 Decisions dispatch or a configured B009 HTTP
   endpoint, using typed request/response models and B012 attribution. Reuse B331 classifier outcomes and
   timeout recovery. Preserve config-only URL/key sourcing and SecretString boundaries; B358 owns offline
   heuristic_v2 prediction. Configuration boundary keys introduced or consumed here: jev_classifier_config,
@@ -144,7 +144,7 @@ out_of_scope:
 - Offline artifact prediction, which belongs to B358.
 - Retraining the classifier or running an online judge service.
 pitfalls:
-- This task waits for B099 so it does not invent the Decisions wire API.
+- This task waits for B3515 so it does not invent the Decisions wire API.
 - An upstream classifier URL and secret come only from validated operator configuration.
 - JEV output must remain untrusted bytes until the typed parser validates it.
 - Warnings preserve the pinned fallback path; an unavailable optional observation must not silently become

@@ -1,0 +1,103 @@
+id: B8230
+title: Plugin registry, iframe claims and plugin reverse proxy
+description: >-
+  Build litellm/proxy/plugin_routes.py as the module `plugin_routes` of betterlite-server (crates/betterlite-server/src/plugin_routes.rs and the folder beside it). It lets an admin register external web services (UI plugins) in general_settings.plugins, shows them to the dashboard, hands the dashboard a short-lived identity claim for the plugin iframe, and reverse-proxies admin calls to the plugin backend. It registers three routes and nothing else; the umbrella B124 mounts `plugin_routes::router(state)` once.
+
+  Types. `PluginConfig { name: String, display_name: Option<String>, url: String, plugin_key: Option<SecretString> }` (LiteLLM's PluginConfig in proxy/_types.py L2611-L2620; every field but name and url defaults to None; name and url are required strings; a missing field is a validation error). `PluginRegistry` holds an `RwLock<IndexMap<String, PluginConfig>>` and is built once and shared by the server in state; there is no static. `PluginRegistry::replace_from_settings(&self, settings: &serde_json::Map<String, Value>) -> Result<(), PluginError>` is `register_plugins_from_config`: read the `plugins` key; when it is not a JSON array use an empty list; validate every entry as a PluginConfig FIRST and build the new map keyed by name (a later entry with the same name replaces the value and keeps the first position, as a Python dict comprehension does); only when all entries validated, swap it in. A bad entry returns the error and leaves the old registry untouched. The swap replaces, it never merges, so a plugin removed from config is unreachable at once. The three callers (config load L6689, database load L7894 and config/field/update L18367 in proxy_server.py) belong to the proxy_server parts of B124; this task only exposes the method.
+
+  Claims. `issue_plugin_session_claim(plugin_name, user_id: Option<&str>, user_role: Option<&str>) -> String` and `verify_plugin_session_claim(plugin_name, ciphertext) -> Result<Claim, PluginError>`. The key for a plugin is `base64url(HMAC-SHA256(key = bytes of env LITELLM_SALT_KEY, message = plugin_name bytes))`, which is a valid 32-byte Fernet key. Read the env var directly with an empty default, exactly like LiteLLM (this is NOT the salt resolver of B1600, and a master key never stands in). Use the `fernet` crate on crates.io with its RustCrypto backend (no openssl), plus hmac and sha2; add them to betterlite-server's Cargo.toml and run `cargo deny --locked check`. The plaintext is the JSON object `{"plugin": name, "user_id": user_id or "", "user_role": user_role or "", "exp": now_unix + 30}`, and the token is the Fernet token text. Verify decrypts with a 30 second ttl and parses the JSON; any failure (bad token, tampered, expired by ttl, bad JSON) becomes the one error "Invalid, tampered, or expired plugin session claim"; then a claim whose plugin differs from plugin_name is "Plugin claim audience mismatch", and exp before now is "Plugin session claim expired". The claim never holds a litellm key.
+
+  Routes, all behind the key auth layer from B003/B052 (LiteLLM's `Depends(user_api_key_auth)`; any valid key, no role check except in the third).
+  GET /api/plugins: a JSON array with one `{name, display_name (the name when None), url}` per registered plugin in registry order. plugin_key is never returned.
+  GET /api/plugins/auth-token?plugin_name=litellm-platform-plugin (that default): when env LITELLM_SALT_KEY is unset or empty, 503 `{"detail": "LITELLM_SALT_KEY is not configured; plugin iframe auth unavailable."}`; when the plugin is not registered, 404 `{"detail": "Plugin '<name>' is not registered."}` (the salt check comes first); else `{"session_claim": <claim for the caller's user_id and user_role>}`.
+  GET, POST, PUT, DELETE, PATCH, OPTIONS and HEAD /plugin-proxy/{plugin_name}/{path:path} (hidden from the OpenAPI document; {path} may be empty, so /plugin-proxy/x/ matches and /plugin-proxy/x does not). A caller whose user_role is not exactly proxy_admin gets 403 with the plain-text body "Plugin proxy access requires proxy_admin role." (not JSON, note the order: role first). An unregistered plugin gets 404 plain text "Plugin '<name>' not registered". Otherwise the target is `<url with trailing slashes removed>/<path>` plus `?<raw query>` when the query is not empty; the body is read whole. Forward request headers except the strip set: host, connection, transfer-encoding, te, trailers, upgrade, cookie, the six litellm credential headers (authorization, api-key, x-api-key, x-goog-api-key, ocp-apim-subscription-key, x-litellm-api-key; SpecialHeaders.litellm_credential_header_names at _types.py L4956-L4976, which does not include the x-mcp-* names) and the lowercased general_settings.litellm_key_header_name when it is a non-empty string, read live at each request and not cached. Then, when the plugin has a plugin_key, set `authorization: Bearer <plugin_key>`; when the caller has a user_id set `x-litellm-user-id`, and when it has a user_role set `x-litellm-user-role` (both informational). Send with the PassThroughEndpoint client policy from B173 (the same outbound client the pass-through routes use) and do not follow redirects. Any send error is 502 plain text "Cannot connect to plugin '<name>' at <url>" (the url as configured). Answer with the plugin's status and body. Response headers: drop content-encoding, transfer-encoding, content-length and set-cookie (case-insensitive), then set content-security-policy: sandbox and x-content-type-options: nosniff last so a plugin cannot override them.
+
+  Files in plugin_routes/: error.rs (PluginError, a thiserror enum), config.rs (PluginConfig, PluginRegistry), claim.rs, headers.rs (strip set and the two header functions), proxy.rs, router.rs, tests.rs. Tests use a fake outbound sender trait (`PluginUpstream`, native async fn, injected through state) and the in-memory registry.
+scope:
+  paths:
+    - crates/betterlite-server/Cargo.toml
+    - crates/betterlite-server/src/plugin_routes.rs
+    - crates/betterlite-server/src/plugin_routes/**
+    - tools/oracle/cases/http/plugin-routes/**
+    - tools/oracle/helpers/b8230.py
+    - tools/oracle/helpers/b8230/**
+    - tools/oracle/src/helpers/server/b8230.rs
+    - tools/oracle/src/helpers/server/b8230/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/plugin_routes.py#L40-L124
+    why: The strip sets, the live custom key header read and the response header rewrite.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/plugin_routes.py#L127-L192
+    why: Per-plugin Fernet key, claim issue and verify, and the registry replace.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/plugin_routes.py#L195-L327
+    why: The three routes with their status codes and bodies.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L2611-L2620
+    why: PluginConfig fields and defaults.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4944-L4976
+    why: The credential header names that must never reach a plugin.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L19997
+    why: The router is included once, so no alias or /v1 path exists.
+  - url: https://github.com/fernet/spec/blob/master/Spec.md
+    why: The token format the plugin side decrypts.
+dod:
+  - text: replace_from_settings validates every entry before it swaps, treats a non-list as empty, keeps the first position of a duplicate name, and leaves the old registry on a bad entry.
+    proof: [config-tests]
+  - text: A claim round-trips with the per-plugin HMAC key, expires after 30 seconds, fails for another plugin name and for a tampered token, and carries no litellm key.
+    proof: [claim-tests]
+  - text: The strip set removes hop-by-hop headers, cookie, the six credential headers and the live custom key header, and the response rewrite drops the four wire headers and forces the sandbox CSP and nosniff.
+    proof: [header-tests]
+  - text: The proxy route answers 403 for a non-admin before the registry lookup, 404 for an unknown plugin, 502 when the send fails, builds the target url with the query, injects the plugin key and the two identity headers, and does not follow redirects.
+    proof: [proxy-tests, oracle]
+  - text: GET /api/plugins lists name, display_name and url without plugin_key, and auth-token answers 503 without LITELLM_SALT_KEY, then 404 for an unknown plugin, else a claim.
+    proof: [route-tests, oracle]
+  - text: The router mounts exactly the three paths and all seven methods on the proxy path.
+    proof: [router-tests]
+checks:
+  optional: []
+  commands:
+    - id: config-tests
+      why: the plugin registry replace is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^plugin_routes::config::/)'
+    - id: claim-tests
+      why: the plugin session claim is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^plugin_routes::claim::/)'
+    - id: header-tests
+      why: the header strip set or the response rewrite is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^plugin_routes::headers::/)'
+    - id: proxy-tests
+      why: the plugin reverse proxy is missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^plugin_routes::proxy::/)'
+    - id: route-tests
+      why: the list and auth-token routes are missing
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^plugin_routes::routes::/)'
+    - id: router-tests
+      why: the route table is missing or mounts a wrong route
+      run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^plugin_routes::router::/)'
+oracle_cases:
+  - tools/oracle/cases/http/plugin-routes/list-empty.yaml
+  - tools/oracle/cases/http/plugin-routes/list-without-key.yaml
+  - tools/oracle/cases/http/plugin-routes/auth-token-without-salt-503.yaml
+  - tools/oracle/cases/http/plugin-routes/proxy-not-admin-403.yaml
+  - tools/oracle/cases/http/plugin-routes/proxy-unknown-plugin-404.yaml
+deviations:
+  - what: The claim JSON is written by serde_json, so a non-ASCII user_id is raw UTF-8 and not the \uXXXX escapes of Python's json.dumps.
+    why: The plugin decrypts the Fernet token and parses the JSON, so both texts are the same value; only the encrypted bytes differ, and Fernet already adds a random IV and a timestamp.
+  - what: A malformed entry in general_settings.plugins returns a typed PluginError that names the entry's field, where LiteLLM raises a pydantic ValidationError.
+    why: The error text of a Python library is not part of the wire contract; the old registry is kept in both.
+out_of_scope:
+  - "The startup callers of register_plugins_from_config: B8379 (config load and the database general settings sync) and B8374 (its lifespan calls PluginRegistry::replace_from_settings). The config/field/update caller: B8595. _preserve_redacted_plugin_keys: B8595 (its only caller is update_config_general_settings). Mounting the plugin routes: the wave 17 plugins wiring part."
+  - "The auth layer itself and who may reach /api/plugins and /plugin-proxy/ without a key: B003, B052 and the route tables in B866 to B868. B4470 already lists /api/plugins and /plugin-proxy/ as gateway-or-backend prefixes."
+  - "The pooled outbound client: B173."
+  - "Redacting plugin_key in /config/field/info: the config routes."
+pitfalls:
+  - The 403 check runs before the registry lookup, so a non-admin asking for an unknown plugin gets 403, not 404.
+  - /api/plugins/auth-token checks LITELLM_SALT_KEY before the plugin name, so an unset salt is 503 even for an unknown plugin.
+  - 'The proxy route answers errors as plain text, not the usual {"detail": ...} JSON, and the auth-token route answers them as JSON.'
+  - verify_plugin_session_claim has no caller inside LiteLLM at the pin; it is the contract the plugin side follows, so test it and keep it public.
+  - LITELLM_SALT_KEY is read with os.getenv and an empty default, so an empty salt derives a valid but guessable key; the route refuses before that happens, the functions do not.
+  - HEAD and OPTIONS are forwarded to the plugin like any other method, and a missing plugin_key means no authorization header is sent at all, not an empty one.
+  - The custom key header comes from general_settings at request time, so a reload that changes litellm_key_header_name applies to the next request without a restart.
+review_level: security
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

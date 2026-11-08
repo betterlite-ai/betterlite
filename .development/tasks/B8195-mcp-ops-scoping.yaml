@@ -1,0 +1,86 @@
+id: B8195
+title: "MCP operations: server scoping and tool filters"
+description: >-
+  First of five parts of operations.py. This part owns the code that decides which servers and
+  tools a caller may see, and nothing that talks to a server.
+
+  It owns _get_allowed_mcp_servers_from_mcp_server_names, _server_answers_to,
+  raise_denied_scoped_mcp_access, _get_allowed_mcp_servers, _http_detail_message,
+  _tool_name_matches, filter_tools_by_allowed_tools, apply_display_name_overrides,
+  _resolve_display_name_to_original, _mcp_session_id_from_headers, _invalidate_byok_cred_cache and
+  the response type ListMCPToolsRestAPIResponseObject. Scoping fails closed: a request that names
+  a server the caller may not use is denied, never widened to all servers.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/ops_scoping.rs
+    - crates/betterlite-server/src/mcp/ops_scoping/**
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/mcp-ops-scoping/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-ops-scoping-*
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L197-L225
+    why: Cache invalidation, session id header and the REST response type.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L433-L680
+    why: Allowed server resolution, scoped denial and the allowed tools filter.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L605-L627
+    why: Display name overrides.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L1605-L1623
+    why: Display name back to the original name.
+
+dod:
+  - text: >-
+      A server named by id, alias or name resolves to the same set as the Python. An unknown name
+      or a server outside the caller's access is denied with the Python's status and detail.
+    proof: [scoping-tests, scoping-oracle]
+  - text: >-
+      The allowed tools filter keeps a tool when its bare name or its server-prefixed name is
+      listed, as _tool_name_matches does, and an empty list means no filter.
+    proof: [scoping-tests, scoping-oracle]
+  - text: >-
+      Display name overrides rename tools on the way out and map back to the original name on the
+      way in. Two tools with one display name keep the Python's winner.
+    proof: [scoping-tests]
+  - text: Every mutant in the scoping logic is caught by a test.
+    proof: [mutants]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: scoping-tests
+      why: A branch, message or ordering rule in this task differs from the Python.
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^mcp::ops_scoping::/)'
+    - id: scoping-oracle
+      why: Results or errors differ from LiteLLM on the same input.
+      run: >-
+        cargo run --locked -p betterlite-oracle -- --self-check
+        tools/oracle/cases/helpers/mcp-ops-scoping
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - Header preparation, BYOK checks and token exchange (B8196).
+  - Listing and execution (B8197, B8198).
+  - The server registry methods on mcp_server_manager.py are B4731 (lookups), B6591 (get_allowed_mcp_servers)
+    and B4726 (filter_server_ids_by_ip_with_info); this task calls them.
+
+pitfalls:
+  - >-
+    Fail closed. A lookup error while resolving allowed servers denies the request. It never
+    falls back to the full server list.
+  - >-
+    raise_denied_scoped_mcp_access picks its message from why the access failed. Copy each branch
+    and name a case for each.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

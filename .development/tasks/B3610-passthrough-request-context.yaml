@@ -30,6 +30,7 @@ description: >-
   to call _get_dynamic_logging_metadata, validate callback_vars for env references, build
   logging_kwargs with callback_vars and TRUSTED_CALLBACK_VARS_FIELD, and return early on
   any exception without breaking the passthrough request.
+  No other task declares TRUSTED_CALLBACK_VARS_FIELD, so this task builds it as the pub const "litellm_trusted_callback_vars" in betterlite-server's passthrough module.
 
   Implement _truncate_upstream_error_body to limit error messages to PASSTHROUGH_UPSTREAM_ERROR_BODY_MAX_LOG_CHARS
   with a (truncated at X chars) suffix. Implement _sanitize_upstream_error_body to replace
@@ -120,6 +121,11 @@ references:
     on import failure.
 
 dod:
+- text: >-
+    This task builds TRUSTED_CALLBACK_VARS_FIELD in betterlite-server's passthrough module, and a
+    passthrough_resolve_team_callback test proves logging_kwargs carries callback_vars under "litellm_trusted_callback_vars".
+  proof:
+  - resolve-team-callback-cases
 - text: >-
     _init_kwargs_for_pass_through_endpoint extracts litellm_params, merges client
     and authenticated metadata, stamps internal keys, skips per-model budgets on
@@ -347,9 +353,8 @@ out_of_scope:
   the upstream_error_body with REDACTED_BY_LITELLM, affecting both the logged warning and
   the HTTPException detail returned to the caller.
 - >-
-  The TRUSTED_CALLBACK_VARS_FIELD constant is imported from litellm/types/litellm_params.py
-  (owned by B120); validate_no_callback_env_reference is imported from logging callback modules;
-  this task uses them but does not implement them.
+  validate_no_callback_env_reference is imported from logging callback modules;
+  this task uses it but does not implement it.
 - >-
   The PASSTHROUGH_UPSTREAM_ERROR_BODY_MAX_LOG_CHARS constant is defined in a shared module;
   this task reads it but does not define it.

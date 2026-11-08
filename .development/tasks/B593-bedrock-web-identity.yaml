@@ -17,7 +17,7 @@ description: >-
   Unknown claims ignored. Return None if both absent/None, else exact aud=<Python repr>, iss=<Python repr>; empty
   aud/iss still reported. No signature/header validation and no role/region routing follows these claims. web_identity_assume_role:
   Reject input beginning os.environ/ or exactly matching any environment variable name before get_secret with AwsAuthError400
-  Invalid web identity token reference. Resolved B129 get_secret None ->401 OIDC token could not be retrieved from
+  Invalid web identity token reference. Resolved B8500 get_secret None ->401 OIDC token could not be retrieved from
   secret manager.; empty token is forwarded. STS kwargs from B591; call AssumeRoleWithWebIdentity with RoleArn,RoleSessionName,WebIdentityToken,DurationSeconds3600,
   compact JSON B590 Policy, optional ExternalId whenever non-None including empty. No session tags forwarded in
   this flow. secure_transport_session_policy: Replay B590 web_identity_policy exact four Sid/action lists, Version2012-10-17,
@@ -137,7 +137,7 @@ dod:
   - oracle
   - helper-python
 - text: 'web_identity_assume_role: Reject input beginning os.environ/ or exactly matching any environment variable
-    name before get_secret with AwsAuthError400 Invalid web identity token reference. Resolved B129 get_secret None
+    name before get_secret with AwsAuthError400 Invalid web identity token reference. Resolved B8500 get_secret None
     ->401 OIDC token could not be retrieved from secret manager.; empty token is forwarded. STS kwargs from B591;
     call AssumeRoleWithWebIdentity with RoleArn,RoleSessionName,WebIdentityToken,DurationSeconds3600, compact JSON
     B590 Policy, optional ExternalId whenever non-None including empty. No session tags forwarded in this flow.'
@@ -229,7 +229,7 @@ checks:
     run: cargo nextest run --locked -p betterlite-bedrock --no-tests=fail -E 'test(/::web_identity_cases::case_[0-9]+_jwt_audience_hint$/)'
   - id: case-web-identity-assume-role
     why: Reject input beginning os.environ/ or exactly matching any environment variable name before get_secret
-      with AwsAuthError400 Invalid web identity token reference. Resolved B129 get_secret None ->401 OIDC token
+      with AwsAuthError400 Invalid web identity token reference. Resolved B8500 get_secret None ->401 OIDC token
       could not be retrieved from secret manager.; empty token is forwarded. STS kwargs from B591; call AssumeRoleWithWebIdentity
       with RoleArn,RoleSessionName,WebIdentityToken,DurationSeconds3600, compact JSON B590 Policy, optional ExternalId
       whenever non-None including empty. No session tags forwarded in this flow.

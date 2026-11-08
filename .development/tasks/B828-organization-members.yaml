@@ -4,8 +4,8 @@ description: >-
   Implement organization_members in betterlite-server for POST /organization/member_add,
   PATCH /organization/member_update and DELETE /organization/member_delete. B826 supplies
   _verify_org_access and the typed table accessors; B723 supplies user/organization reads, B726
-  OrganizationMembershipRepository, B124 PrismaClient.insert_data, B1227 internal-user defaults,
-  B829 budget creation/update, B732 the request/principal contracts and B052 authentication.
+  OrganizationMembershipRepository, B2362 PrismaClient.insert_data (user branch), B1227 internal-user defaults,
+  B829 budget creation/update, B8412 the member request contracts, B732 the principal contracts and B052 authentication.
   Decorate add and update with B865 ManagementEffects; delete has no such decorator.
 
 
@@ -79,8 +79,6 @@ scope:
     - crates/betterlite-server/Cargo.toml
     - crates/betterlite-server/src/routes/organization_members.rs
     - crates/betterlite-server/src/routes/organization_members/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/management/organization-members/**
     - crates/betterlite-server/src/organization_members/fixtures.rs
     - crates/betterlite-server/src/organization_members/fixtures/**

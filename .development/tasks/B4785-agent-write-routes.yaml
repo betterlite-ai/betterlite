@@ -112,7 +112,7 @@ out_of_scope:
   - "GET /v1/agents and GET /v1/agents/{agent_id} belong to B4784, and /v1/agents/identity/providers and /v1/agents/{agent_id}/identity to B4781. The kill switch and make_public routes belong to B4786."
   - "AgentStore and its SQL belong to B4777, the redaction and restore functions to B4775, AgentRegistry to B4776, reject_legacy_identity and managed_write_fields to B4772, check_feature_access_for_user to B864 and merge_agent_card to B4811."
   - "get_custom_url (proxy/utils.py) is owned by B7323; this task defines the ProxyUrls port only."
-  - "Building IdentitySettings, JwtAgentSettings and the stores from config, and composing agent_write_routes into the app, is server wiring (B074) and is not built here."
+  - "Building IdentitySettings, JwtAgentSettings and the stores from config, and composing agent_write_routes into the app, is the wave 17 agents wiring part's and is not built here."
 pitfalls:
   - PUT and PATCH read the existing agent and answer 404 before they check the identity request, and both 404 texts say `not found` while DELETE says `not found in DB.`.
   - The identity request keeps a missing `identity` key and a null identity apart; null means no binding and skips the check, while a missing key falls back to the stored binding.

@@ -3,8 +3,8 @@ title: Shared user and membership row writes
 description: >-
   Implement add_new_member and its user, budget and membership table accessors with the caller's transaction
   when provided; otherwise use B723/B724/B725 repositories. _find_users_by_email uses an exact email predicate
-  on that transaction, or B124 get_data(table_name=user, query_type=find_all), normalizing None to an empty
-  sequence. _create_user_row uses jsonify_object plus _upsert_user_row in a transaction, or B124 insert_data
+  on that transaction, or B8397 get_data(table_name=user, query_type=find_all), normalizing None to an empty
+  sequence. _create_user_row uses jsonify_object plus _upsert_user_row in a transaction, or B2362 insert_data
   without one. Upsert by user_id with create defaults and update={user_id}; the nonempty update must compile
   to PostgreSQL ON CONFLICT, preserving all other existing fields under concurrent provisioning.
 
@@ -226,7 +226,7 @@ oracle_cases:
   - tools/oracle/cases/helpers/member-row-write/email-and-fixed-role.yaml
 deviations: []
 out_of_scope:
-  - B124 owns nontransactional get_data/insert_data and jsonify_object; B862 owns member budget selection.
+  - B8397 owns nontransactional get_data, and B2362 the user insert_data branch and jsonify_object; B862 owns member budget selection.
   - 'litellm/proxy/management_helpers/utils.py: B862 owns handle_budget_for_entity (L180-L264), _clone_team_default_budget_for_member
     (L283-L333), _resolve_member_budget_id (L336-L390).'
   - 'litellm/proxy/management_helpers/utils.py: B865 owns _delete_user_id_from_cache (L503-L514), _delete_api_key_from_cache

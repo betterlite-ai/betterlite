@@ -4,7 +4,7 @@ description: >-
   Implement only the whole aresponses function in api/responses_create_call. The entire synchronous
   responses function now belongs to B1078, including its execution tail. The async entry preserves
   call context, converts text_format through B905 and performs eligible asynchronous prompt
-  management through B117. B931 supplies provisional bridge context, credential-safe provider
+  management through B8560's async_get_chat_completion_prompt. B931 supplies provisional bridge context, credential-safe provider
   swaps and the one-shot _AsyncPromptManagementOutcome. B174 resolves the initial provider for
   exception attribution; B904 updates returned IDs and B185/B186 classify errors.
 
@@ -116,7 +116,7 @@ deviations:
 out_of_scope:
 - B1078 owns the entire synchronous responses function, predicate and mock builder; no execution tail remains in this task.
 - B931 owns selection/prompt helper functions; B955 owns MCP/file-search dispatch; B1116/B933/B934 lifecycle calls and B943 websocket calls retain their whole functions.
-- B117 owns prompt backend I/O and hook eligibility; this task consumes its typed asynchronous port.
+- B8560 owns hook eligibility and manager selection and B4058 the prompt backend calls; this task consumes its typed asynchronous port.
 pitfalls:
 - Async prompt management removes prompt_id and carries merged options through a private one-shot outcome.
 - The initial resolver gets no api_base from kwargs because it reads a nonexistent local base_url.

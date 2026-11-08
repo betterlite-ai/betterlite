@@ -1,0 +1,89 @@
+id: B8198
+title: "MCP operations: tool execution, guardrails and logging"
+description: >-
+  Fourth part of operations.py. This part owns running one tool call and the logging around it.
+
+  It owns _build_virtual_call_logging_obj, _dispatch_virtual_mcp_tool, execute_mcp_tool,
+  _execute_mcp_tool (the long one: lookup, pre-call guardrails, upstream call, post-call
+  guardrails, error mapping), _run_post_mcp_call_guardrails, suppress_completed_success_logging,
+  _fire_mcp_tool_call_logging, fire_mcp_tool_call_failure_logging, call_mcp_tool,
+  _get_standard_logging_mcp_tool_call, _handle_managed_mcp_tool, _handle_local_mcp_tool and the
+  _McpDeniedDetail type. Success logging fires once, and a failure logs a failure row. A
+  guardrail rejection and a cancellation propagate. Other logging errors are warnings.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/ops_execution.rs
+    - crates/betterlite-server/src/mcp/ops_execution/**
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/mcp-ops-execution/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-ops-execution-*
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L226-L432
+    why: Virtual tool logging object and dispatch.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L1806-L2200
+    why: execute_mcp_tool and _execute_mcp_tool.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L2201-L2431
+    why: Post-call guardrails, success and failure logging, call_mcp_tool.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L2541-L2663
+    why: Standard logging payload, managed and local tool handling, denied detail type.
+
+dod:
+  - text: >-
+      A call to a managed, a local and a virtual tool each reaches the right handler and returns
+      the Python's result shape.
+    proof: [execution-tests, execution-oracle]
+  - text: >-
+      Pre-call guardrails run before the upstream call and post-call guardrails after it. A
+      rejection stops the call and reaches the caller unchanged.
+    proof: [execution-tests, execution-oracle]
+  - text: >-
+      Success logging fires once per call, failure logging fires on error, and a logging error
+      becomes a warning and does not change the result.
+    proof: [execution-tests]
+  - text: >-
+      Upstream auth errors, denied access and missing credentials map to the Python's error
+      type, status and detail.
+    proof: [execution-tests, execution-oracle]
+  - text: Every mutant in the execution and logging logic is caught by a test.
+    proof: [mutants]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: execution-tests
+      why: A branch, message or ordering rule in this task differs from the Python.
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^mcp::ops_execution::/)'
+    - id: execution-oracle
+      why: Results or errors differ from LiteLLM on the same input.
+      run: >-
+        cargo run --locked -p betterlite-oracle -- --self-check
+        tools/oracle/cases/helpers/mcp-ops-execution
+
+oracle_cases: []
+
+deviations: []
+
+out_of_scope:
+  - The REST endpoint around this code (B4728).
+  - Virtual tool handlers (catalog tasks).
+  - The manager's upstream call (call_tool, resolve_openapi_upstream_auth) is B8465, pre_call_tool_check is B8464 and the registry lookups are B4731; this task calls them.
+
+pitfalls:
+  - >-
+    B4728 calls execute_mcp_tool and the logging functions here. Keep their names and argument
+    order so that task can depend on this one.
+  - >-
+    Success logging can already have fired inside the manager. suppress_completed_success_logging
+    exists to avoid a double row. Port it with a case that counts rows.
+
+review_level: security
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

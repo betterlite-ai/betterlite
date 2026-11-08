@@ -1,0 +1,20 @@
+# get_chat_messages raises Exception("No chat messages found in payload.") for an absent or null messages field
+kind: helper
+name: argilla-missing-chat-messages
+call:
+  b3960:
+    scenarios:
+      - environment: {ARGILLA_API_KEY: key}
+        transformation_object: {input: messages}
+        replies: [{status: 200, body: '{"items": [{"id": "ds-1"}]}'}]
+        actions:
+          - do: chat_messages
+            payload: {messages: null, response: "done"}
+      - environment: {ARGILLA_API_KEY: key}
+        transformation_object: {input: messages}
+        replies: [{status: 200, body: '{"items": [{"id": "ds-1"}]}'}]
+        actions:
+          - do: chat_messages
+            payload: {response: "done"}
+env: {}
+compare: {ignore: []}

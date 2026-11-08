@@ -212,8 +212,8 @@ out_of_scope:
     `litellm/proxy/management_endpoints/roi_calculator_endpoints.py:391-416` (`get_roi_calculator_repositories`) — owned by B3161,
     lists repositories via the GitHub client.
   - >-
-    `litellm/proxy/management_endpoints/roi_calculator_endpoints.py:419-596` and L620-652 (`reset_roi_calculator_setup`) — owned by B076,
-    the sync/report/identity-map/reset routes and setup-reset handler.
+    `litellm/proxy/management_endpoints/roi_calculator_endpoints.py:419-596` and L620-652 (`reset_roi_calculator_setup`): owned by B8588,
+    which builds the sync, report, identity map and reset routes and the setup reset handler.
   - >-
     `litellm/proxy/management_endpoints/roi_calculator_endpoints.py:599-617` (`test_roi_calculator_connections`) — owned by B3161,
     tests GitHub and estimator connections.

@@ -1,0 +1,14 @@
+id: B8194
+milestone: M9 agents and mcp
+title: MCP debug headers and upstream error previews
+status: todo
+depends_on: [B8191]
+file: tasks/B8194-mcp-debug.yaml
+covers:
+  - "litellm/proxy/_experimental/mcp_server/mcp_debug.py"
+parent: B136
+split_from: B136
+resolution: null
+superseded_by: null
+blocked_reason: null
+pr: null

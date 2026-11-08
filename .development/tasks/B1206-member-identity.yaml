@@ -2,7 +2,7 @@ id: B1206
 title: Team member identity and provisioning checks
 description: >-
   Resolve member identities and execute the per-member writes requested by B807/B808. Missing both
-  user_id and user_email is HTTPException 400 with detail.error. With both supplied, B124 get_data(user,
+  user_id and user_email is HTTPException 400 with detail.error. With both supplied, B8397 get_data(user,
   find_all) queries the email, accepts no match, rejects multiple matches or a mismatched ID with 400,
   and preserves matching inputs. Email-only first uses B801's case-insensitive find_first; only a match
   triggers the duplicate-email query and fills user_id. ID-only uses find_unique and fills email if found;

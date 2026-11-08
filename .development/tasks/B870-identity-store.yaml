@@ -89,8 +89,6 @@ scope:
     - crates/betterlite-server/src/auth/**
     - crates/betterlite-server/src/state/identity_store.rs
     - crates/betterlite-server/src/state/identity_store/**
-    - crates/betterlite-server/src/app.rs
-    - crates/betterlite-server/src/app/**
     - tools/oracle/cases/auth/identity-store/**
     - crates/betterlite-server/src/auth/identity_store.rs
     - crates/betterlite-server/src/auth/identity_store/**

@@ -1,0 +1,107 @@
+id: B8604
+title: Proxy SSE data generator
+description: >-
+  Build LiteLLM's async_data_generator (litellm/proxy/proxy_server.py L9830-L10079) with _apply_streaming_chunk_hooks (L9582-L9600): the generator that turns a streamed model response into the SSE body of a proxy route. It runs the streaming hooks, latches fallback metadata, restamps the model, drops injected usage chunks, relays raw SSE, writes keepalive pings, the final [DONE] and the error frame, and runs the stream cleanup exactly once. It implements B7324's `AsyncDataGenerator` port, so B7324's `SelectDataGenerator` selects it. Everything goes in crates/betterlite-server, module `sse_data_generator` (sse_data_generator.rs and sse_data_generator/), with tests in sse_data_generator/tests.rs. Every name stays at 30 characters or fewer.
+
+  Pieces it uses. From B8602 (crates/betterlite-server/src/stream_chunks.rs): StreamItem, StreamChunk, ChunkKind, client_requested_model, include_fallback_errors, fallback_metadata, fallback_event_frame, RouterCheck, RestampInput, restamp_chunk_model, serialize_chunk, is_usage_artifact, chunk_response_text, sse_data_frame, pop_sse_frame, ends_with_frame_delimiter, DONE_FRAME and MAX_RAW_SSE_BUFFER_CHARS. From B8603 (stream_keepalive.rs): KeepaliveRouter, KeepaliveResolver, KeepaliveSource, Beat and with_keepalive. From B7324: AsyncDataGenerator, GeneratorInput and PingSetting.
+
+  Types. `StreamFailure { message: String, error_type: Option<String>, param: FailureParam, status_code: Option<u16>, kind: FailureKind }` stands for the Python exception. `FailureParam` is `Missing` (no param attribute), `Null` or `Text(String)`. `FailureKind` is `Http` (FastAPI's HTTPException) or `Other`; StreamingCallbackError is `Other`, since LiteLLM uses str(e) for both. `ItemStream` is `BoxStream<'static, Result<StreamItem, StreamFailure>>`. `StreamSource { items: ItemStream, hidden: Map<String, Value>, snapshot: Option<Arc<dyn StreamSnapshot>> }` is the response: its items, its own `_hidden_params` and a handle on what the stream wrapper collected so far (None for a source with no wrapper). The trait `StreamSnapshot: Send + Sync` has one method `collected(&self) -> CollectedStream`, and `CollectedStream { chunks: Vec<Map<String, Value>>, messages: Option<Vec<Value>>, model: Option<String> }` holds CustomStreamWrapper's `chunks` (each chunk's model_dump), its `messages` when they are a list and its `model`; B8605's partial-spend billing reads it after the items are gone, so the handle must not borrow the item stream. Implement B8603's KeepaliveSource for `Result<StreamItem, StreamFailure>` (an Err has no hidden params).
+
+  Ports, declared in this module; the architect wires the real code and tests use recording fakes. `StreamHooks<Key>`: `needs_iterator_wrap(&self) -> bool` and `needs_per_chunk_hook(&self) -> bool` (B8390's capability flags), `wrap_iterator(&self, items: ItemStream, key: &Key, request_data: &Map<String, Value>) -> ItemStream` (B6370's async_post_call_streaming_iterator_hook), async `chunk_hook(&self, item: StreamItem, key: &Key, request_data: &Map<String, Value>, str_so_far: Option<&str>) -> Result<StreamItem, StreamFailure>` (B8394's async_post_call_streaming_hook), async `failure_hook(&self, key: &Key, failure: &StreamFailure, request_data: &Map<String, Value>) -> Result<(), StreamFailure>` (B8395's post_call_failure_hook) and `fire_deferred_stream_logging(&self, request_data: &Map<String, Value>)` (B6370). `ErrorStateSource` has `new_state(&self) -> Box<dyn StreamErrorState + Send>`, and `StreamErrorState` has `observe_chunk(&mut self, item: &StreamItem)`, `mark_emitted(&mut self, frame: String) -> String` and `format_failure(&mut self, failure: &StreamFailure) -> Option<String>` (B937's ResponsesStreamErrorState). `StreamCleanup<Key>` has one sync method `finalize(&self, outcome: CleanupOutcome<Key>)`, where `CleanupOutcome` holds `request: Option<Parts>`, `request_data`, `key`, `response: Option<Arc<dyn StreamSnapshot>>` (the source's snapshot, cloned at setup), `stream_completed: bool` and `client_disconnected: bool`; it stands for ProxyBaseLLMRequestProcessing._finalize_streaming_generator_cleanup, and B8605's `DisconnectCleanup` implements it by running that async work on the task tracker the server owns.
+
+  `SseDataGenerator<Key>` is built with the hooks, the error state source, the cleanup, `Option<Arc<dyn KeepaliveRouter>>`, the global keepalive setting (`Option<PingSetting>`, LiteLLM's litellm.sse_keepalive_ping_interval_seconds), `expose_fallback_errors: bool` (config.sections.fallback_errors from B8602) and `is_model_router: RouterCheck` (B8602's `fn(&str) -> bool`; the wave 17 inference wiring part passes B562's is_model_router_call and tests pass a fake). It implements AsyncDataGenerator with `Response = StreamSource` and `Stream = BoxStream<'static, Result<Bytes, io::Error>>`; `generate` returns the body stream and does no work until it is polled.
+
+  Setup. Create an error state from the source only when `responses_stream_errors` is true. Read the client model, the fallback metadata of `source.hidden` (attempted, model, errors) and include_fallback_errors. Read three request flags, each true only when the JSON bool true: `_litellm_raw_sse_stream` (raw), `_litellm_strip_stream_usage` (strip) and `_litellm_skip_openai_stream_done` (skip DONE). When needs_iterator_wrap is true, the items go through wrap_iterator. Build a KeepaliveResolver and resolve the first interval against `source.hidden`; wrap the items in with_keepalive when a router exists or that interval is above 0, otherwise use them as they are.
+
+  Loop, for each beat. A Ping writes ": ping\n\n" and nothing else. An Err item goes to the failure path. For an Ok item: (1) when needs_per_chunk_hook is true, pass it through chunk_hook with `str_so_far` (None while it is empty), and when the returned item is a ModelStream or ModelFull chunk append its chunk_response_text. (2) While no fallback model is latched, read fallback_metadata of the item's hidden params; when it reports an attempt, set attempted, latch its model, and take its errors only if the list so far is empty. (3) A fallback event is pending when include, attempted, a non-empty error list and not sent yet all hold. (4) Restamp the item with a RestampInput that carries the router check the generator was built with, carrying the mismatch flag. (5) When strip is on and the item is a usage artifact, write the pending fallback event if there is one, mark it sent and skip the item. (6) Show the item to the error state. (7) Write it: a Chunk becomes `sse_data_frame(serialize_chunk)`. Bytes are decoded on their own with `String::from_utf8_lossy`; in a raw stream they are added to the raw buffer, every complete frame is popped and written as it is, and a buffer still longer than MAX_RAW_SSE_BUFFER_CHARS characters fails with "Raw SSE stream exceeded maximum buffered size without a frame delimiter" (`Other`, no type, param or status). Decoded bytes outside a raw stream that start with "data:", "event:" or ":" are written as they are, with "\n\n" added when they do not end with a frame delimiter; other decoded bytes become `sse_data_frame(text)`. Text in a raw stream goes into the raw buffer the same way; text that starts with "data: " (with the space) is kept as the error message and stops the loop; other text becomes `sse_data_frame(text)`. Only the sse_data_frame frames pass through the error state's mark_emitted before they are written. (8) Write the pending fallback event after the item and mark it sent.
+
+  End of stream. Set stream_completed. When the iterator was not wrapped, call fire_deferred_stream_logging. Write what is left in the raw buffer, adding "\n\n" when it does not end with a frame delimiter, then the kept error message, then DONE_FRAME unless skip DONE is on. Then run the cleanup.
+
+  Failure path. Log at error "litellm.proxy.proxy_server.async_data_generator(): Exception occured - {failure}" and await failure_hook; an Err from the hook ends the body with an io::Error after the cleanup. With an error state: set stream_completed, write format_failure's frame when it gives one, write DONE_FRAME unless skip DONE is on, run the cleanup and end. Without one, an `Http` failure runs the cleanup and ends the body with an io::Error, so the client sees the connection close. Any other failure writes `data: {"error": {...}}\n\n` with message, type (error_type, else the text "None"), param (Missing gives the text "None", Null gives JSON null, Text gives the text) and code (status_code or 500 as a string; the code is "429" when the message contains "No healthy deployment available" or "No deployments available", else "401" when it contains "Not allowed to access model due to tags configuration"), which is ProxyException.to_dict without provider_specific_fields. Set stream_completed, write the frame, run the cleanup and end, with no DONE frame.
+
+  Cleanup. It runs exactly once with the request parts, the request data, the key and the two flags. A body dropped before it finished (the client left) runs it from Drop with client_disconnected equal to not stream_completed. Hold it in a guard that the state owns; do not spawn a task here. Dropping the state also drops the upstream items, which is how the response is closed.
+
+  Tests use recording fakes for every port, scripted item streams and `tokio::time::pause` for the pings. No route on main streams through this generator (the chat route uses its own relay in crates/betterlite-server/src/routes/chat/streaming.rs), so this task has no HTTP oracle cases; the wave 17 inference wiring part proves it over HTTP.
+scope:
+  paths:
+  - crates/betterlite-server/src/sse_data_generator.rs
+  - crates/betterlite-server/src/sse_data_generator/**
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9582-L9600
+  why: _apply_streaming_chunk_hooks, the None-when-empty str_so_far and which chunks grow it.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L9830-L10018
+  why: async_data_generator setup and loop, the order of hook, fallback latch, restamp, usage skip, error state and the four item branches, and the end of stream.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10019-L10079
+  why: The disconnect flag, the failure path with and without the Responses error state, the error frame and the cleanup in finally.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/proxy_server.py#L10082-L10096
+  why: select_data_generator, which B7324 builds and which passes responses_stream_errors through.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_types.py#L4325-L4371
+  why: ProxyException, the code rules for the no-deployment and tag messages and to_dict.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/common_request_processing.py#L3808-L3863
+  why: _finalize_streaming_generator_cleanup, what the cleanup port stands for.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/google_endpoints/endpoints.py#L105-L115
+  why: The Google route that sets _litellm_raw_sse_stream and _litellm_skip_openai_stream_done.
+dod:
+- text: >-
+    A stream of chat chunks is written as data frames followed by data: [DONE], with the client model restamped, and DONE is left out when
+    _litellm_skip_openai_stream_done is true.
+  proof: [generator-tests]
+- text: >-
+    With the iterator wrap flag the items pass through wrap_iterator and fire_deferred_stream_logging is not called; without it they do
+    not, and it is called once at the end. With the per-chunk flag every item passes chunk_hook with str_so_far None first and then the
+    text so far.
+  proof: [generator-tests]
+- text: >-
+    Fallback metadata from the response or from a later chunk is latched once, and with include_fallback_errors the fallback event is
+    written once, after the first chunk that makes it pending or in place of a skipped usage artifact.
+  proof: [generator-tests]
+- text: >-
+    With strip on, usage artifact chunks are not written; raw streams are re-framed at the delimiters, flushed at the end with a closing
+    blank line, and fail past the buffer limit; non-raw bytes starting with data:, event: or : are relayed; a text item starting with
+    "data: " is written after the flush and before DONE and ends the loop.
+  proof: [generator-tests]
+- text: >-
+    A quiet upstream gets ": ping" frames at the resolved interval when a router exists or the interval is above 0, and none otherwise.
+  proof: [generator-tests]
+- text: >-
+    A failure calls the failure hook, then writes the error frame with "None" for a missing type and param, the status as a string code,
+    429 and 401 for the router messages and no DONE; an Http failure aborts the body; with responses_stream_errors the error state's frame
+    and DONE are written instead, and only sse_data_frame frames pass through mark_emitted.
+  proof: [generator-tests]
+- text: >-
+    The cleanup runs exactly once, with the source's snapshot handle, with stream_completed true after a normal end or an error frame, and
+    with client_disconnected true when the body is dropped mid-stream.
+  proof: [generator-tests]
+checks:
+  optional: []
+  commands:
+  - id: generator-tests
+    why: the frame order, a hook gate, the fallback event, the raw relay, the pings, the failure frames or the cleanup is missing or wrong
+    run: cargo nextest run --locked -p betterlite-server --no-tests=fail -E 'test(/^sse_data_generator::/)'
+oracle_cases: []
+deviations:
+- what: proxy_logging_obj, llm_router, general_settings, the Responses error state and the stream cleanup reach the generator through the StreamHooks, KeepaliveRouter, ErrorStateSource and StreamCleanup ports and constructor values instead of module globals.
+  why: betterlite wires dependencies through constructors; the frames a client sees are the same.
+- what: The cleanup is handed to a sync port that the server runs on its own task tracker, where LiteLLM awaits it inside the generator under a cancel shield.
+  why: Rust cannot await in Drop, and rules.yaml async-hygiene forbids detached tasks; the cleanup still runs once, with the same flags, after the last frame.
+out_of_scope:
+- "The except branch around each yield that writes `data: {e}` when sending a frame raises (L9992-L9995): a Rust stream cannot receive an exception at a yield point, so it is not built."
+- "The chunk shaping and frame helpers (L9344-L9623): B8602. The keepalive helpers (L9626-L9827): B8603. select_data_generator and the AsyncDataGenerator port: B7324."
+- "data_generator (L9280-L9287): no caller at the pin. async_assistants_data_generator (L9290-L9341): B089."
+- "The body of _finalize_streaming_generator_cleanup and its disconnect, partial-spend billing and parallel-slot helpers in common_request_processing.py: B8605, which implements StreamCleanup; this task only calls the port. The real StreamSnapshot over the stream wrapper's collected chunks: the wave 17 inference wiring part."
+- "The rest of litellm/proxy/proxy_server.py: owners by area are listed in the proxy_server.py inventory head of B1216, B1125, B850, B848, B779, B899, B849 and B851."
+pitfalls:
+- 'The plain failure frame ends the body with no data: [DONE], but the Responses error-state path writes DONE after its frame unless _litellm_skip_openai_stream_done is true.'
+- 'Without an error state an Http failure is never turned into a frame; the body aborts. With responses_stream_errors it becomes the error state''s frame.'
+- 'A missing type or param becomes the four-letter text "None", not null; a param that exists but is null stays JSON null.'
+- 'Text that starts with "data: " is held back as an error message and stops the loop, but bytes that start with "data:" are relayed as a frame and the loop goes on.'
+- 'The raw buffer limit counts characters, not bytes (8388608), and is checked after the complete frames have been popped.'
+- 'Each bytes item is decoded on its own with replacement, so a UTF-8 character split across two items becomes replacement characters, as in LiteLLM.'
+- 'str_so_far is passed to the chunk hook as None while it is empty, never as "".'
+- 'The keepalive wrapper is used whenever a router exists, even when the first interval is 0, because a mid-stream fallback can turn heartbeats on.'
+- 'stream_completed is set before the raw flush, the kept error message and DONE, so a client that leaves during those writes is not counted as disconnected.'
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -131,7 +131,7 @@ out_of_scope:
   - B2221 owns supports_reasoning and the web search capability lookup the supported option list reads. Neither lookup is called here.
   - B1686 installs cost_per_token in the provider cost dispatch, and B2219 resolves the model_info it is called with.
   - B1669 owns the off-peak replacement; this task only calls it.
-  - B041 wires Perplexity into dispatch.rs and adds the HTTP cases. This task touches neither dispatch file.
+  - B8310 wires Perplexity into dispatch. This task touches neither dispatch file.
   - Perplexity embeddings, Responses, search and decisions are B5834.
   - citations entries that are not strings are not cases, since LiteLLM stringifies them with Python repr (docs/compatibility.md).
 pitfalls:

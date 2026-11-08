@@ -1,0 +1,83 @@
+id: B8199
+title: "MCP operations: gateway dispatch and prepare_context"
+description: >-
+  Last part of operations.py. It owns the entry points that the MCP server layer calls and the
+  GatewayOperations class that dispatches typed requests.
+
+  It owns mcp_get_prompt, mcp_read_resource, _execute_handle_list_tools,
+  _execute_mcp_server_tool_call, _execute_list_prompts, _execute_get_prompt,
+  _execute_list_resources, _execute_list_resource_templates, _execute_read_resource,
+  _reject_mcp_proxy_operation, prepare_context and GatewayOperations.execute. The Python uses
+  overloads; Rust uses one enum of operations and one enum of results, and execute matches on the
+  operation. An operation kind that proxy mode does not allow is rejected with the Python's text.
+
+scope:
+  paths:
+    - crates/betterlite-server/src/mcp/ops_gateway.rs
+    - crates/betterlite-server/src/mcp/ops_gateway/**
+    - crates/betterlite-server/Cargo.toml
+    - tools/oracle/Cargo.toml
+    - tools/oracle/cases/helpers/mcp-ops-gateway/**
+    - tools/oracle/fuzz/corpus/helper_case/mcp-ops-gateway-*
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L2432-L2540
+    why: Prompt get and resource read entry points.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L2664-L3066
+    why: The per-operation execute helpers and the proxy rejection.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L3067-L3242
+    why: prepare_context and GatewayOperations.
+
+dod:
+  - text: >-
+      Each operation (discover, list tools, call tool, list and get prompts, list and read
+      resources, list resource templates) returns the Python's result for the same context.
+    proof: [gateway-tests, gateway-oracle]
+  - text: >-
+      prepare_context builds the same context for each header combination, including the session
+      id and the host progress callback.
+    proof: [gateway-tests, gateway-oracle]
+  - text: A proxy-mode request for a rejected operation fails with the Python's message.
+    proof: [gateway-tests]
+  - text: Every mutant in the dispatch logic is caught by a test.
+    proof: [mutants]
+
+checks:
+  optional: [mutants]
+  commands:
+    - id: gateway-tests
+      why: A branch, message or ordering rule in this task differs from the Python.
+      run: >-
+        cargo nextest run --locked -p betterlite-server --no-tests=fail
+        -E 'test(/^mcp::ops_gateway::/)'
+    - id: gateway-oracle
+      why: Results or errors differ from LiteLLM on the same input.
+      run: >-
+        cargo run --locked -p betterlite-oracle -- --self-check
+        tools/oracle/cases/helpers/mcp-ops-gateway
+
+oracle_cases: []
+
+deviations:
+  - what: Overloaded execute methods become one enum of operations and one enum of results.
+    why: Rust has no overloads, and a match on the enum is the plain form.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/_experimental/mcp_server/operations.py#L3117-L3242
+
+out_of_scope:
+  - "The parts it calls: scoping (B8195), auth (B8196), listing (B8197), execution (B8198)."
+  - The transport layer that calls GatewayOperations.
+
+pitfalls:
+  - >-
+    prepare_context is the one place that builds the request context. Do not rebuild fields in
+    the execute helpers.
+  - >-
+    A result enum variant must match its operation. Do not return a generic JSON value and let the
+    caller guess.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -5,7 +5,7 @@ description: >-
   text endpoint families, chat, embedding, responses and messages. Audio, video, speech and image are B5838. Eden AI is an
   OpenAI-shaped gateway at https://api.edenai.run/v3. Every config here calls the matching OpenAI config and then lifts
   the real per-request cost Eden puts in the answer. All of it is pure transforms: nothing here sends a request, reads the
-  environment or registers a route. B041 wires the configs into dispatch.
+  environment or registers a route. B8311 wires the configs into dispatch.
 
   Modules. In betterlite-openai: edenai_common, edenai_chat, edenai_embedding, edenai_responses (each a file plus a folder
   with tests.rs). In betterlite-core: edenai_messages, because the Messages policy it composes (B1426) lives in
@@ -110,7 +110,7 @@ references:
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/core_helpers.py#L762-L772
     why: How the cost lands in hidden params, owned by B1717.
   - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L3626-L3650
-    why: The chat call site that passes the resolved key and base, owned by B041.
+    why: The chat call site that passes the resolved key and base, owned by B8311.
   - url: https://www.edenai.co/docs/v3/llms/embeddings
     why: Embedding endpoint and the top-level cost field.
   - url: https://www.edenai.co/docs/v3/llms/responses
@@ -186,9 +186,10 @@ deviations:
     why: LiteLLM lets a pydantic ValidationError escape from the TypeAdapter, so the client sees an unhandled 500 and not a clear message.
 out_of_scope:
   - B5838 owns audio_transcription, videos, text_to_speech and image_generation, and uses edenai_common from here.
-  - B041 owns _complete_edenai and the embedding branch in litellm/main.py (key order api_key, litellm.api_key, EDENAI_API_KEY), the ProviderConfigManager branches in litellm/utils.py, the get_llm_provider_logic branches, reading EDENAI_API_KEY and EDENAI_API_BASE into EdenAiEnv, sending the /models GET, registering the configs in dispatch and the HTTP oracle cases through the booted proxy.
+  - B8311 owns _complete_edenai and the embedding branch in litellm/main.py (key order api_key, litellm.api_key, EDENAI_API_KEY), reading EDENAI_API_KEY and EDENAI_API_BASE into EdenAiEnv, sending the /models GET, building the configs in dispatch and the HTTP oracle cases through the booted proxy. The ProviderConfigManager branches in litellm/utils.py are B2230 and B5360, and the get_llm_provider_logic branches are B209 and B211.
   - B2230 owns choosing EdenAIChatConfig for provider edenai.
   - B668, B503 and B504 own the OpenAI chat parent methods, B006 and B004 the embedding contract and response builder, B506 to B508 the Responses parent methods, and B1426 the JSON Messages policy.
+  - B8580 binds edenai_messages into the Messages config selection and owns its booted HTTP cases; this task adds no route.
   - B1717 owns set_response_cost_in_hidden_params and the cost recorder that reads the call log.
   - The pre_call and post_call logging calls inside the Python embedding transform belong to the caller (B249 hooks), which logs the parsed body before this transform runs.
   - Usage cost on a streamed Responses event comes from the shared usage-cost lift, not from edenai_responses.

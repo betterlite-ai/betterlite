@@ -1,0 +1,68 @@
+id: B8584
+title: Python types for litellm/types/router.py
+description: >-
+  `litellm/types/router.py` (1245 lines, about 900 of them code) holds the router's config and deployment models: `RouterConfig`, `UpdateRouterConfig`, `RetryPolicy`, `AllowedFailsPolicy`, `AlertingConfig`, `ModelInfo`, `GenericLiteLLMParams`, `LiteLLM_Params`, `Deployment`, `ModelGroupInfo`, `RouterGeneralSettings`, `RoutingStrategy` and the rest. No part of B167 ports it, and B8356's `Router` constructor takes several of these classes as arguments. Port the file into the wheel as `crates/betterlite-python/python/betterlite/_router_types.py`. It is Python only.
+
+
+  B8356 owns `python/betterlite/types/router.py` and re-exports every name of `betterlite._router_types` there with one star import, next to B165's `CustomRoutingStrategyBase`. So this module defines everything else in the file and sets an explicit `__all__` with every public name of the LiteLLM file except `CustomRoutingStrategyBase`.
+
+
+  Shapes. The pydantic `BaseModel` classes build on B5657's `ResponseObject` base, the way the other B167 parts do, with the same field names, types, defaults and `extra="allow"` where LiteLLM sets it. TypedDicts keep their total flag and their `Required` and `ReadOnly` keys. Enums keep their member names and values (`RoutingStrategy`, `RouterCacheEnum`, `RouterErrors`, `RouterErrorTypes`, `RequestType`). Protocols (`FallbackAccessCheck`, `FallbackBudgetCheck`, `AutoRouterCapabilityLimit`, `PreRoutingStrategy`, `RoutingPlugin`, `ClassifierPlugin`) keep their method signatures with no body. The dataclasses (`DiscoveredDeploymentModelInfo`, `DeploymentModelListingInfo`, `BaselineRouteStamp`, `ConsumedRequestTagsStamp`) stay frozen where LiteLLM freezes them. Names the file imports from sibling type modules (`RouterWeights`, `RoutingStrategyName`, `AwsSessionTag`, `OpenAIFileObject`, `SearchProvider`, `CompletionRequest`, `EmbeddingRequest`, `CustomPricingLiteLLMParams`, `MirroredPricingParams`, `ModelResponse`, `StandardLoggingRoutingDecision`) come from the wheel modules that port those files.
+
+
+  Behavior that runs in Python. `ModelInfo.__init__` (L279-L284) gives a missing id a new UUID string and turns an integer id into its decimal string; `ModelInfo._validate_ptu_bounds` (L287-L301) raises LiteLLM's three `ValueError` messages for a `ptu_count` outside 1 to `MAX_PTU_COUNT`, a `cost_per_ptu_per_hour` outside 0 to `MAX_COST_PER_PTU_PER_HOUR`, and a `ptu_effective_to` not after `ptu_effective_from` (both read as UTC by `_as_utc`, L175-L180). `GenericLiteLLMParams.preprocess_input_data` (L479-L491) drops the keys `self`, `params` and `__class__` and turns a string `max_retries` into an int; `coerce_drop_params` (L495-L503) keeps a flag value, keeps any other string, and makes anything else None; `validate_provider_affinity_header` (L472-L475) checks a set header name. `__contains__`, `get`, `__getitem__` and `__setitem__` on `ModelInfo`, `GenericLiteLLMParams` and `LiteLLM_Params` are attribute access. `Deployment.__init__`, `Deployment.to_json` and the dict-style accessors (L654-L700) follow LiteLLM. `RouterRateLimitErrorBasic` and `RouterRateLimitError` (L945-L990) build LiteLLM's message and `type` exactly, including the all-deployments-in-cooldown reason. `RoutingGroup._validate_model_priorities` (L71-L82), `ModelAccessWindow`'s validators (L183-L218) and `AdaptiveRouterWeights._weights_sum_to_one` (L1227-L1231) raise the same errors as LiteLLM. `MockRouterTestingParams.from_kwargs` (L1084-L1101) pops the three mock keys and reads strings with the `str_to_bool` rule. `ModelGroupInfo.__init__` (L813-L817) and `_resolved_annotations` (L780-L782) follow LiteLLM.
+
+
+  Tests go in `crates/betterlite-python/tests/test_types_router.py`. Tests whose names contain `names` compare every public name, field, default, required key, Literal value and Enum member with LiteLLM's module; tests whose names contain `behavior` run the validators, constructors and error messages above against LiteLLM's on the same inputs.
+scope:
+  paths:
+  - crates/betterlite-python/python/betterlite/_router_types.py
+  - crates/betterlite-python/tests/test_types_router.py
+  lint_tables: false
+references:
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L1-L1245
+  why: The whole file this task ports.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L221-L320
+  why: ModelInfo, its id default and the PTU bounds.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L381-L545
+  why: GenericLiteLLMParams and LiteLLM_Params with their validators.
+- url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/types/router.py#L945-L990
+  why: The router rate limit error messages.
+dod:
+- text: Every public name of litellm/types/router.py except `CustomRoutingStrategyBase` exists in `betterlite._router_types` with the same fields, defaults, required keys, Literal values and Enum members.
+  proof: [names]
+- text: The model id default, the PTU bounds, the params preprocessing, the drop_params coercion and the router rate limit messages match LiteLLM for the same inputs.
+  proof: [behavior]
+- text: Python files pass ruff and strict basedpyright.
+  proof: [python-lint]
+checks:
+  optional: []
+  commands:
+  - id: names
+    why: A name, field, default or value differs from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_router.py -k names
+  - id: behavior
+    why: A validator, constructor or error message behaves differently from LiteLLM.
+    run: uv build --wheel --out-dir target/python-wheel crates/betterlite-python && LITELLM_LOCAL_MODEL_COST_MAP=True uv run --locked --project tools/oracle/litellm --with "$(ls target/python-wheel/betterlite-*.whl)" pytest crates/betterlite-python/tests/test_types_router.py -k behavior
+  - id: python-lint
+    why: Strict typing has to hold for every ported module.
+    run: uv run --locked --project tools/oracle/litellm ruff check crates/betterlite-python/python crates/betterlite-python/tests && uv run --locked --project tools/oracle/litellm basedpyright --project crates/betterlite-python/pyrightconfig.json
+oracle_cases: []
+deviations:
+- what: The models are plain classes on B5657's `ResponseObject`, so pydantic's `model_validate`, `model_json_schema` and `model_fields` are not there.
+  why: The wheel depends only on python-dotenv.
+- what: "`SPECIAL_MODEL_INFO_PARAMS` is spelled out as a tuple of field names instead of read from `MirroredPricingParams.model_fields`."
+  why: The base has no pydantic `model_fields`.
+out_of_scope:
+- "B8356 owns `betterlite/types/router.py` and its star import of this module, and B165 owns `CustomRoutingStrategyBase`."
+- "The Rust side of these validators belongs to B010 (params), B013 (model info), B322 (access windows), B323 (routing groups), B388 (adaptive weights), B401 (deployments) and B8350 (mock params); this task ports only the Python models."
+- "Never edit `betterlite/__init__.py`, `src/lib.rs` or `_native.pyi`."
+pitfalls:
+- "`ModelInfo` turns an integer id into a string before the base sees it, so `ModelInfo(id=5).id` is `\"5\"`."
+- "`preprocess_input_data` runs before field checks, so a string `max_retries` that is not an integer fails with `int()`'s `ValueError`."
+- "`RouterRateLimitError` adds the cooldown reason only when the model id list is not empty and every id is in the cooldown list."
+- "`LiteLLM_Params` and `GenericLiteLLMParams` are different classes; `LiteLLM_Params` makes `model` required."
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

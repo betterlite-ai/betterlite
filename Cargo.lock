@@ -1739,6 +1739,7 @@ dependencies = [
  "pep440_rs",
  "percent-encoding",
  "prost",
+ "rand 0.10.3",
  "regex",
  "rstest",
  "rust_decimal",

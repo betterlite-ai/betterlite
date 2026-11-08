@@ -1,0 +1,123 @@
+id: B8312
+title: GigaChat, NLP Cloud, MiniMax, DashScope and Volcengine dispatch
+description: >-
+  The regional host parts build pure configs and leave the call sites to the umbrella: B8170 to B8172 (DashScope and its Qwen brands), B8173 (AI21, MiniMax, ModelScope and Tencent chat), B8174 (MiniMax speech and ModelScope images), B8175 and B8176 (Volcengine), B8177 and B8178 (GigaChat, with B7325's token service) and B8179 (NLP Cloud). This task owns those call sites. Put them in the module regional_host_dispatch of betterlite-provider and plug each arm into the dispatch table through B2230's chat selection and B5360's media and resource selection, the same way B8157 does for the self-hosted providers. Unknown providers still fail as before.
+
+
+  Settings. Add the config section regional_host_keys. It reads the litellm_settings globals api_key, api_base, headers, gigachat_key and nlp_cloud_key, and the env vars GIGACHAT_API_KEY, GIGACHAT_CREDENTIALS, NLP_CLOUD_API_KEY, NLP_CLOUD_API_BASE, MINIMAX_API_KEY, MINIMAX_API_BASE, ARK_API_KEY, VOLCENGINE_API_KEY, DASHSCOPE_API_KEY, QWENCLOUD_API_KEY, QWENCLOUD_API_BASE, QWEN_AI_PLATFORM_API_KEY and QWEN_AI_PLATFORM_API_BASE. Every value defaults to None and an empty string counts as unset. The GigaChat auth and pass-through settings stay in B7325's gigachat_auth and B3627's gigachat_route sections; do not read those keys again.
+
+
+  GigaChat token. B8177 defines the trait GigachatBearer in betterlite-openai and B7325 builds the GigachatTokens service in betterlite-http. Add GigachatTokenBearer here, a struct that holds a GigachatTokens and implements GigachatBearer by asking it for the token of the given credentials. The GigaChat configs get this adapter.
+
+
+  _complete_gigachat (main.py L2282-L2341). api_key is api_key, else the global api_key, else gigachat_key, else GIGACHAT_API_KEY, else GIGACHAT_CREDENTIALS. headers are headers, else the global headers, else an empty map. api_base passes as it came (B8177's get_api_base fills it). Call the shared HTTP completion handler with provider_config; when it fails, log post_call with the error text and additional_args {"headers": headers}, then return the same error.
+
+
+  _complete_nlp_cloud (L2948-L2995). The key is api_key, else nlp_cloud_key, else NLP_CLOUD_API_KEY, else the global api_key. api_base is api_base, else the global api_base, else NLP_CLOUD_API_BASE, else "https://api.nlpcloud.io/v1/gpu/". Call B8179's completion step with that key and base. When optional_params has stream set to true, wrap the reply in the shared stream wrapper with custom_llm_provider "nlp_cloud" and B8179's chunk cleaner. Log post_call only when the call streams or is async, and pass the request's own api_key there, not the resolved one.
+
+
+  _complete_minimax (L2500-L2543). api_key is api_key, else MINIMAX_API_KEY, else the global api_key: here the env var comes before the global. api_base is api_base, else the global api_base, else MINIMAX_API_BASE, else "https://api.minimax.io/v1". Headers pass as they came. Call the handler with provider_config, then log post_call with the response.
+
+
+  Arms in the completion dispatch: gigachat (L5911-L5913), minimax (L5922-L5923) and nlp_cloud (L5969-L5970). Chat for dashscope, volcengine, ai21_chat, tencent and modelscope reaches B024's OpenAI-compatible arm (L5930-L5956), which takes the config this task builds from the chat selection.
+
+
+  Embedding arms in main.py embedding(). volcengine (L7175-L7201): the key is api_key, else the global api_key, else ARK_API_KEY, else VOLCENGINE_API_KEY; with none, fail with "Missing API key for Volcengine. Set ARK_API_KEY or VOLCENGINE_API_KEY environment variable or pass api_key parameter."; headers are extra_headers when it is a map, else an empty map; litellm_params is empty. dashscope, qwencloud and qwen_ai_platform (L7202-L7232): call B8172's resolve_family_api_key with api_key (else the global api_key), the brand key and DASHSCOPE_API_KEY; with no key, fail with B8172's missing_family_key_message for that provider; headers and litellm_params as for volcengine. gigachat (L7313-L7334): the key is api_key, else the global api_key, else gigachat_key, else GIGACHAT_CREDENTIALS, else GIGACHAT_API_KEY, which is the reverse env order of chat; litellm_params holds only ssl_verify from the request.
+
+
+  Speech. The minimax arm of speech() (main.py L8621-L8662) uses the selected speech config or else B8174's MiniMax speech config, puts api_base and api_key into litellm_params only when each is set, and turns a voice map into its voice_id, else id, else name. Then it calls B1084's text to speech handler.
+
+
+  Config wiring. Where B2230 or B5360 returns a tag for these providers, build the config from its part: DashScope chat, embedding, rerank and image for all three brands (B8170, B8171, B8172), AI21, MiniMax, ModelScope and Tencent chat (B8173), MiniMax speech and ModelScope image (B8174), Volcengine chat, embedding and Responses (B8175, B8176), GigaChat chat, embedding and files (B8177, B8178) and NLP Cloud chat (B8179).
+
+
+  HTTP oracle cases through the booted proxy prove the parts end to end: POST /v1/chat/completions for minimax (once with api_key in the config, once with only MINIMAX_API_KEY set) and nlp_cloud models with api_base set to the mock upstream, and POST /v1/embeddings for volcengine and dashscope models, each with a key and once with no key at all to compare the error status and message. Use model names LiteLLM's model map lists at the pin. Helper cases cover the GigaChat key order for chat and embedding, the NLP Cloud chains and the MiniMax speech voice step.
+scope:
+  paths:
+    - crates/betterlite-provider/src/regional_host_dispatch.rs
+    - crates/betterlite-provider/src/regional_host_dispatch/**
+    - crates/betterlite-config/src/sections/regional_host_keys.rs
+    - crates/betterlite-config/src/sections/regional_host_keys/**
+    - Cargo.lock
+    - tools/oracle/cases/regional-hosts/**
+    - tools/oracle/cases/helpers/regional-host-dispatch/**
+    - tools/oracle/helpers/b8312.py
+    - tools/oracle/helpers/b8312/**
+    - tools/oracle/src/helpers/provider/b8312.rs
+    - tools/oracle/src/helpers/provider/b8312/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2282-L2341
+    why: _complete_gigachat and its five step key chain.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2500-L2543
+    why: _complete_minimax, where MINIMAX_API_KEY comes before the global key.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L2948-L2995
+    why: _complete_nlp_cloud, the stream wrap and the conditional post_call.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L5911-L5970
+    why: The gigachat, minimax and nlp_cloud arms, and the OpenAI-compatible arm in between.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7175-L7232
+    why: The volcengine and DashScope family embedding arms with their missing-key errors.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L7313-L7334
+    why: The gigachat embedding arm and its reversed env order.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/main.py#L8621-L8662
+    why: The minimax speech arm and the voice map step.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/dashscope/common_utils.py#L42-L109
+    why: resolve_dashscope_family_api_key and missing_dashscope_family_key_message, built by B8172 and called here.
+dod:
+  - text: The GigaChat, NLP Cloud and MiniMax dispatch functions resolve key, base and headers in LiteLLM's order and pass or omit provider_config the same way.
+    proof: [regional-dispatch-tests, oracle]
+  - text: NLP Cloud wraps a stream with the nlp_cloud chunk cleaner and logs post_call only for stream or async calls.
+    proof: [regional-dispatch-tests]
+  - text: The volcengine, DashScope family and gigachat embedding arms match LiteLLM, including both missing-key errors.
+    proof: [regional-dispatch-tests, oracle]
+  - text: The minimax speech arm builds the same voice and litellm_params as LiteLLM.
+    proof: [regional-dispatch-tests, oracle]
+  - text: GigachatTokenBearer returns the token B7325's service gives for the credentials.
+    proof: [regional-dispatch-tests]
+  - text: The regional_host_keys section loads every listed global and env var, with None defaults.
+    proof: [regional-keys-tests]
+  - text: Chat and embedding calls for these providers through the proxy return the same status, body and error as LiteLLM.
+    proof: [regional-cases, oracle]
+checks:
+  optional: [mutants]
+  commands:
+    - id: regional-dispatch-tests
+      run: cargo nextest run --locked -p betterlite-provider --no-tests=fail -E 'test(/^regional_host_dispatch::/)'
+      why: Without the dispatch functions there are no such tests, so the check fails on the base branch.
+    - id: regional-keys-tests
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::regional_host_keys::/)'
+      why: Without the section its loader tests are missing.
+    - id: regional-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/regional-hosts tools/oracle/cases/helpers/regional-host-dispatch)"
+      why: Without new case files the oracle proof passes with nothing compared.
+oracle_cases:
+  - tools/oracle/cases/regional-hosts/minimax-chat.yaml
+  - tools/oracle/cases/regional-hosts/minimax-env-key.yaml
+  - tools/oracle/cases/regional-hosts/nlp-cloud-chat.yaml
+  - tools/oracle/cases/regional-hosts/volcengine-embedding.yaml
+  - tools/oracle/cases/regional-hosts/volcengine-embedding-no-key.yaml
+  - tools/oracle/cases/regional-hosts/dashscope-embedding.yaml
+  - tools/oracle/cases/regional-hosts/dashscope-embedding-no-key.yaml
+  - tools/oracle/cases/helpers/regional-host-dispatch/gigachat-key-order.yaml
+  - tools/oracle/cases/helpers/regional-host-dispatch/nlp-cloud-chains.yaml
+  - tools/oracle/cases/helpers/regional-host-dispatch/minimax-speech-voice.yaml
+deviations:
+  - what: Reply ids LiteLLM generates and token usage estimates are compared as present, not equal, in the HTTP cases.
+    why: The ids are random and usage comes from each side's tokenizer.
+  - what: No HTTP case calls a gigachat model.
+    why: A GigaChat call first fetches an OAuth token from GIGACHAT_AUTH_URL, which the single mock upstream cannot answer in order; helper cases cover the key chains instead.
+out_of_scope:
+  - "The provider configs and transforms belong to B7325 and B8170 to B8179; picking a config from the provider name is B2230 and B5360."
+  - "The OpenAI-compatible chat arm that dashscope, volcengine, ai21_chat, tencent and modelscope reach is B024's."
+  - "The GigaChat pass-through route is B3627's."
+  - "Tencent and MiniMax native Messages (B1430) are not wired here, because betterlite-provider does not depend on betterlite-core where those policies live."
+  - "The get_llm_provider defaults for these providers (get_llm_provider_logic.py) are B209 and B211."
+pitfalls:
+  - "Chat GigaChat reads GIGACHAT_API_KEY before GIGACHAT_CREDENTIALS and embedding reads them the other way round; test both orders."
+  - "MiniMax puts MINIMAX_API_KEY before the global api_key, unlike every other chain here."
+  - "NLP Cloud's post_call gets the request's own api_key, which may be None, not the resolved key."
+  - "The volcengine and DashScope embedding arms ignore the request headers and use extra_headers, or an empty map."
+  - "The DashScope missing-key text names the provider that was called (DashScope, QwenCloud or Qianwen AI Platform)."
+  - "The minimax speech arm leaves api_base and api_key out of litellm_params when they are None instead of writing null."
+budget: {max_changed_lines: 1500, max_new_expects: 0}
+review_level: standard

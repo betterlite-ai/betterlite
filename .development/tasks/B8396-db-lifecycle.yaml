@@ -1,0 +1,69 @@
+id: B8396
+title: Database health watchdog, read-only writer recreation and view bootstrap
+description: >-
+  Port the parts of LiteLLM's PrismaClient that keep the database connection healthy and set up the spend views at startup: the construction-time read replica fallback (utils.py L4416-L4562), `check_view_exists` (L4642-L4729), the view setup task (L6581-L6644), the health watchdog (L6543-L6579, L6646-L6680), `recreate_read_only_writer` (L6682-L6706), `health_check` with its probe target and failure report (L6715-L6843) and the spend log row count (L6845-L6891). betterlite talks to Postgres natively, so everything about the Prisma query engine process (pid, waitpid, pidfd, zombie reaping, `_handle_writer_engine_replaced`) is not built. Code goes in crates/betterlite-db/src/db_lifecycle.rs and db_lifecycle/ (replica_fallback.rs, watchdog.rs, read_only.rs, health.rs, views.rs, tests.rs), with the settings in a config section crates/betterlite-config/src/sections/db_watchdog.rs.
+
+  Config section `db_watchdog`: PRISMA_HEALTH_WATCHDOG_ENABLED (default "true", str_to_bool), PRISMA_HEALTH_WATCHDOG_INTERVAL_SECONDS (30, at least 5), PRISMA_HEALTH_WATCHDOG_PROBE_TIMEOUT_SECONDS (5.0, at least 0.5), PRISMA_WATCHDOG_RECONNECT_TIMEOUT_SECONDS (30.0, at least 1.0) and DATABASE_SCHEMA (public). PRISMA_RECONNECT_COOLDOWN_SECONDS stays with B2323's settings; this task reads the value from there.
+
+  replica_fallback.rs. When DATABASE_URL_READ_REPLICA is set and building the reader through B714's `RoutingDatabase` fails, log the warning "Failed to initialize read replica Prisma client: {e}. Falling back to writer-only mode (no read routing) until proxy restart." and run writer-only. Success logs the info line with the token auth label when IAM refresh is on.
+
+  watchdog.rs. `start` does nothing when disabled or already running; otherwise it spawns the loop on the tracked task set and logs the interval, cooldown, probe timeout and reconnect timeout. Each turn: sleep the interval, run `SELECT 1` with the probe timeout; when the writer is unavailable behind a reader, call B2323's reconnect with reason db_health_watchdog_writer_unavailable; when the writer answers `transaction_read_only = on` (`SELECT current_setting('transaction_read_only')`, B2323's probe), call read_only.rs with reason db_health_watchdog_writer_read_only; otherwise reset the read-only streak. A timeout or a database infrastructure error reconnects with db_health_watchdog_connection_error; any other error is logged at debug. `stop` cancels and waits.
+
+  read_only.rs. `recreate_read_only_writer(reason, timeout)`: the wait is the cooldown times 2 to the power min(streak, 10), capped at `_READ_ONLY_RECREATE_BACKOFF_CAP_SECONDS`; inside it return false with a debug line, else warn, store the time, add one to the streak and force a reconnect through B2323. B2400's `_recreate_writer_on_read_only_transaction` calls this.
+
+  health.rs. `health_check` probes the reader unless it is unavailable, retries up to 3 tries in 10 seconds with exponential backoff, and on failure warns "LiteLLM Prisma Client Exception health_check(): {e}" and reports through a `HealthFailureReporter` trait defined in db_lifecycle (B8399 implements it with B8395.s failure_handler, call_type health_check) unless B713's pool generation moved and a fresh probe answers (a planned replacement). The spend log row count reads `reltuples` of "LiteLLM_SpendLogs" with the same retry, returns 0 on error, and is handed to a `ProxyStateSink` trait as `spend_logs_row_count` (B8399 implements it over the proxy state).
+
+  views.rs. The view setup task polls: gate table missing, wait; else set the row count and run check_view_exists; give up after the deadline with LiteLLM's two error messages. `check_view_exists` counts the eight expected views in the DATABASE_SCHEMA schema; all present logs "All necessary views exist!"; a missing LiteLLM_VerificationTokenView, when other views exist, runs the health check then B719's `create_view_tolerating_race` with the team-joined view; otherwise B719's `should_create_missing_views` decides between `create_missing_views` and the warning naming the missing views for the UI Usage tab.
+scope:
+  paths:
+    - crates/betterlite-db/src/db_lifecycle.rs
+    - crates/betterlite-db/src/db_lifecycle/**
+    - crates/betterlite-config/src/sections/db_watchdog.rs
+    - crates/betterlite-config/src/sections/db_watchdog/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4416-L4562
+    why: PrismaClient construction, the replica fallback and every watchdog setting.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L4642-L4729
+    why: check_view_exists and its required-view repair.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L6543-L6891
+    why: Watchdog, view setup, read-only recreation, health check and spend log row count.
+dod:
+  - text: The db_watchdog section reads each env var with LiteLLM's default and floor.
+    proof: [config-tests]
+  - text: The watchdog reconnects or recreates the writer by LiteLLM's rules and resets the streak on a healthy turn.
+    proof: [lifecycle-tests]
+  - text: recreate_read_only_writer backs off by the doubling wait and forces a reconnect otherwise.
+    proof: [lifecycle-tests]
+  - text: health_check retries, reports failures, and stays quiet for a planned replacement.
+    proof: [lifecycle-tests]
+  - text: View bootstrap repairs the token view, creates or warns about the others, and the setup task gives up after its deadline.
+    proof: [lifecycle-tests]
+checks:
+  optional: []
+  commands:
+    - id: lifecycle-tests
+      why: the watchdog, read-only recreation, health check, replica fallback or view bootstrap is missing or wrong
+      run: cargo nextest run --locked -p betterlite-db --no-tests=fail -E 'test(/^db_lifecycle::/)'
+    - id: config-tests
+      why: a watchdog setting is not read or has the wrong default
+      run: cargo nextest run --locked -p betterlite-config --no-tests=fail -E 'test(/^sections::db_watchdog::/)'
+oracle_cases: []
+deviations:
+  - what: The Prisma engine process watcher (waitpid, pidfd, polling, zombie reaping and its re-arm after a replacement) is not built.
+    why: betterlite has no query engine process; a dead connection shows up in the probe and B713 replaces the pool.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/proxy/utils.py#L5793-L6151
+out_of_scope:
+  - "attempt_db_reconnect, the reconnect cycle and cooldown: B2323. Pool generation replacement: B713. Read routing: B714. View SQL: B719."
+  - "Table reads and writes (get_data, insert_data, update_data, delete_data): B2320, B2362 and B8397."
+  - "Saving health check results: B7640."
+pitfalls:
+  - The watchdog probe goes through the routed handle, but the read-only probe always targets the writer.
+  - A watchdog turn that called reconnect or recreate does not reset the read-only streak.
+  - check_view_exists repairs only the token view when it is missing while other views exist; when no view exists it goes the create-missing-views way.
+  - health_check reports in a spawned task and still raises the probe error to its caller.
+  - The spend log row count swallows its error and stores 0.
+review_level: standard
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

@@ -1,0 +1,97 @@
+id: B8175
+title: Volcengine chat, embedding and shared helpers
+description: >-
+  Build volcengine_common, volcengine_chat and volcengine_embedding in crates/betterlite-openai. They cover
+  litellm/llms/volcengine/common_utils.py, chat/transformation.py and embedding/transformation.py. The two __init__.py
+  files (volcengine, volcengine/embedding) only re-export. The alias VolcEngineConfig for the chat config is just a second
+  name, so the Rust side keeps one type. Nothing reads an environment variable. The caller passes each key and base as a plain
+  argument. B668 and B1425 supply the OpenAI and OpenAI-like chat base, and B2202 supplies BaseLLMException.
+
+  volcengine_common. VolcEngineError carries a status, a message and headers. base_url(api_base) returns the given base
+  or https://ark.cn-beijing.volces.com. headers(api_key, extra) returns Content-Type application/json and Authorization Bearer
+  {key}, then the extra headers on top.
+
+  volcengine_chat. VolcEngineChatConfig supports exactly this list: frequency_penalty, logit_bias, logprobs, top_logprobs,
+  max_completion_tokens, max_tokens, n, presence_penalty, seed, stop, stream, stream_options, temperature, top_p, tools,
+  tool_choice, function_call, functions, max_retries, extra_headers, thinking. map_openai_params calls the OpenAI-like base
+  mapping with replace_max_completion_tokens_with_max_tokens set to true. Then it removes thinking from the options. It puts
+  thinking into extra_body["thinking"] only when it is an object whose type is one of enabled, disabled or auto. Any other
+  thinking value is dropped without an error.
+
+  volcengine_embedding. Supported options are encoding_format, user and extra_headers. encoding_format must be float, base64
+  or absent. Any other value is a ValueError "Unsupported encoding_format" style error unless drop_params is true, in which
+  case it is dropped. user and extra_headers are kept. Any other option raises ValueError unless drop_params is true, in which
+  case it is dropped. The URL is {base}/api/v3/embeddings, or {base}/embeddings when the base already ends in /api/v3. The
+  body is {model, input as a list} plus the kept options. A single string input becomes a one item list. The reply is
+  {object: "list", data, model, usage, id} built from the reply JSON. A body that is not JSON gives a ValueError. The
+  environment check needs an api_key and raises ValueError without one, then builds headers with volcengine_common.headers.
+  The reply decoder gets a fuzz target.
+
+  Size. About 230 nonblank, non-comment LiteLLM lines. Plan 230 production, 300 tests, 60 adapters, 60 fuzz and 20 wiring
+  lines. No split.
+scope:
+  paths:
+    - crates/betterlite-openai/src/volcengine_common.rs
+    - crates/betterlite-openai/src/volcengine_common/**
+    - crates/betterlite-openai/src/volcengine_chat.rs
+    - crates/betterlite-openai/src/volcengine_chat/**
+    - crates/betterlite-openai/src/volcengine_embedding.rs
+    - crates/betterlite-openai/src/volcengine_embedding/**
+    - crates/betterlite-openai/fuzz/Cargo.toml
+    - crates/betterlite-openai/fuzz/fuzz_targets/volcengine_embedding_reply.rs
+    - crates/betterlite-openai/fuzz/corpus/volcengine_embedding_reply/**
+    - tools/oracle/cases/helpers/volcengine/**
+    - tools/oracle/helpers/b8175.py
+    - tools/oracle/helpers/b8175/**
+    - tools/oracle/src/helpers/openai/b8175.rs
+    - tools/oracle/src/helpers/openai/b8175/**
+  lint_tables: false
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/volcengine/chat/transformation.py
+    why: The fixed option list and the thinking rule.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/volcengine/embedding/transformation.py
+    why: Option checks, URL rule, body and reply.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/volcengine/common_utils.py
+    why: Error class, default base and headers.
+dod:
+  - text: The chat option list and the thinking move into extra_body match LiteLLM.
+    proof: [volcengine-tests, oracle]
+  - text: Embedding option checks, URL rule, body and reply match LiteLLM, including drop_params.
+    proof: [volcengine-tests, oracle]
+  - text: A malformed embedding reply fails with a typed error and does not panic, and the corpus replays.
+    proof: [volcengine-corpus]
+  - text: The new oracle cases exist and call this task's helper.
+    proof: [volcengine-cases]
+checks:
+  optional: [mutants]
+  commands:
+    - id: volcengine-tests
+      run: cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(/^(volcengine_common|volcengine_chat|volcengine_embedding)::/) - test(/replays_the_/)'
+      why: A plain OpenAI config would keep top-level thinking, send max_completion_tokens and post embeddings to the wrong path.
+    - id: volcengine-corpus
+      run: test -f crates/betterlite-openai/fuzz/fuzz_targets/volcengine_embedding_reply.rs && test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- crates/betterlite-openai/fuzz/corpus/volcengine_embedding_reply)" && cargo nextest run --locked -p betterlite-openai --no-tests=fail -E 'test(replays_the_volcengine_embedding_reply_corpus)'
+      why: The reply body comes from the network and needs a fuzz target with a replayed corpus.
+    - id: volcengine-cases
+      run: test -n "$(git diff --name-only --diff-filter=A "$GATE_BASE" -- tools/oracle/cases/helpers/volcengine)" && /usr/bin/grep -rlE '^  b8175:' tools/oracle/cases/helpers/volcengine
+      why: Without cases that call the B8175 helper nothing compares these functions with LiteLLM.
+oracle_cases:
+  - tools/oracle/cases/helpers/volcengine/chat-params-and-thinking.yaml
+  - tools/oracle/cases/helpers/volcengine/embedding-params.yaml
+  - tools/oracle/cases/helpers/volcengine/embedding-url-and-body.yaml
+  - tools/oracle/cases/helpers/volcengine/common-headers.yaml
+deviations:
+  - what: An embedding reply that is not JSON, or has a field of the wrong type, fails with a typed VolcEngineError, status 500.
+    why: LiteLLM raises a raw ValueError there. 500 is its generic status for an unclassified exception (to be confirmed by the architect, see notes).
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/llms/volcengine/embedding/transformation.py
+out_of_scope:
+  - B668 and B1425 own the shared OpenAI chat behavior. B2202 owns BaseLLMException.
+  - B8176 owns the Responses API. It uses VolcEngineError and the base URL helper from this task.
+  - B2230 and B5360 own picking a config from the provider name. B8312 owns wiring.
+pitfalls:
+  - max_completion_tokens is replaced by max_tokens in the mapped options. It is in the supported list but never sent as is.
+  - A thinking value with another type, or one that is not an object, is dropped silently. Do not raise.
+  - The embedding URL has /api/v3 added unless the base already ends in it. The default base has no /api/v3.
+  - With drop_params true both an unsupported option and a bad encoding_format are dropped, with false both raise.
+  - extra_headers is supported for embeddings but belongs in headers, it is not part of the body.
+review_level: standard
+budget: {max_changed_lines: 1500, max_new_expects: 0}
