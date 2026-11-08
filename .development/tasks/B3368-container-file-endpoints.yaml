@@ -1,0 +1,176 @@
+id: B3368
+title: Generated container file operations and exports
+description: >-
+  Build the five catalog-driven container file operations of litellm/containers/endpoint_factory.py in betterlite-core, as module
+  api::container_file_endpoints (crates/betterlite-core/src/api/container_file_endpoints.rs, with tests in
+  container_file_endpoints/tests.rs). LiteLLM reads endpoints.json at import and builds one sync and one async function per entry:
+  list_container_files, upload_container_file, retrieve_container_file, delete_container_file and retrieve_container_file_content
+  (plus the five a-prefixed forms). These generated functions are the live path: the router registers all ten of them
+  (router.py _initialize_container_endpoints) and the proxy file routes call them. The explicit list and upload functions in
+  containers/main.py are other tasks (B3366, B3367) and nothing here calls them. The module does no HTTP. It prepares the call and
+  hands it to B3363's generic container handler.
+
+  Shape. ContainerFileEndpoints is built with its collaborators (B3363's `GenericContainerHandler`, B3361 provider config lookup and managed id
+  decoder, B3360 catalog) and holds no module state. ContainerFileCall has container_id and file_id (both Option<String>), after,
+  limit and order (Option<String> / Option<i64> as B3360's list params declare), file (B3363's `ContainerFileUpload`),
+  timeout, api_key, api_base, api_version, custom_llm_provider, extra_headers, extra_query, extra_body, mock_response,
+  litellm_call_id and an extra map for every other keyword. custom_llm_provider defaults to "openai" and timeout to 600 seconds.
+  The per-call logging state (B247) and the default request timeout in seconds are arguments of each call: no config constant is
+  read here, the route passes betterlite_config::env_integer::timeout::RequestTimeout (field seconds, REQUEST_TIMEOUT, 6000 by
+  default, owned by B198). ContainerFileReply is B3363's enum (List, File, Deleted, Bytes and Raw), imported and not redefined here. ContainerFileOpError is this module's error
+  enum (mock body that is not valid JSON or does not decode, unknown endpoint name, unknown provider name, no provider config,
+  wrapped handler error) and every failure goes to B185's exception mapping with model "" and the provider name.
+
+  Public functions: container_file_call (blocking, calls `GenericContainerHandler::handle`) and acontainer_file_call (async fn, calls
+  `ahandle`), both taking the endpoint name (either name or async_name from the catalog, looked up with B3360), the call, the
+  logging state and the default timeout. They share one private preparation step, so the logic is written once. The Python
+  _is_async flag, the async_call kwarg, run_in_executor and the contextvars copy have no Rust form.
+
+  Steps, in LiteLLM's order (endpoint_factory.py L56-L136). (1) Mock: if mock_response is set, a string is parsed as JSON, then
+  the value is decoded into the catalog entry's response model (list into ContainerFileListResponse, upload and retrieve into
+  ContainerFileObject, delete into DeleteContainerFileResponse) and returned at once with no provider lookup, logging or HTTP.
+  retrieve_container_file_content has response_type "raw", which has no model, so its mock comes back as the parsed JSON value
+  (Raw), never as bytes. (2) Build GenericLiteLLMParams (B010) from api_key, api_base, api_version and the extra map. (3) If
+  container_id is set, call B3361's decode_managed_container_id_for_request with it, the provider and the params; it returns the
+  original id, the resolved provider and updated params, and the original id replaces container_id for every later step. (4)
+  Parse the resolved provider into a provider id (an unknown name is an error) and call B3361's provider config lookup; None
+  gives the text "Container provider config not found for: <provider>". (5) Build the logging optional params: for each path
+  param name of the catalog entry (container_id, file_id), if the call has that key at all, include it with its value. Query
+  params (after, limit, order) are never logged. (6) Call B247 update_from_kwargs with model "", those optional params,
+  litellm_params holding only litellm_call_id, and the resolved provider. It does not set a call type. (7) Call B3363's `handle` with a
+  `ContainerFileHttpCall` holding the endpoint name, config, params, logging state, extra_headers, extra_query, the timeout (0 or none becomes the default
+  request timeout) and every remaining field (container_id, file_id, after, limit, order, file, mock_response, litellm_call_id
+  and the extra map) as the handler's kwargs. extra_body is accepted and never forwarded. Return the handler's reply as the
+  matching ContainerFileReply variant.
+
+  Async. acontainer_file_call runs the same steps and awaits `ahandle`. When an error happens, the sync body maps it with
+  the resolved (decoded) provider name, and LiteLLM's async wrapper maps it again with the provider name the caller gave. The
+  second pass returns an already mapped exception unchanged (exception_type returns any LiteLLM exception type as is), so
+  Rust maps once, with the resolved name for errors raised after step 3 and the caller's name for errors before it.
+
+  Name lists (L211-L224). all_endpoint_names returns, for each catalog entry in file order, its name then its async_name (ten
+  strings). async_endpoint_names returns the five async_names in file order. Both read B3360's catalog. The router task uses
+  them to register routes, so they are public.
+
+  Exports. containers/__init__.py is only a re-export list and endpoint_factory ends with ten module-level aliases
+  (list_container_files and so on). Rust has no package namespace, so no code is written for either; the public functions and
+  name lists above are the whole export surface. Record the quirk in the module docs: __init__.py re-exports eight of the ten
+  generated names and leaves out upload_container_file and aupload_container_file, but the router registers all ten.
+
+  Tests (tests.rs) use a stub handler, a stub config lookup, a stub decoder and a recording logging state, all injected through
+  the constructor. Name the tests names_*, mock_*, prepare_*, handler_*, async_* and error_* so each check below can filter on
+  its prefix. Budget from the owned LiteLLM lines (about 150 non-blank lines of endpoint_factory.py, 26 of __init__.py): about
+  280 production lines and 400 test lines.
+
+scope:
+  paths:
+    - crates/betterlite-core/src/api/container_file_endpoints.rs
+    - crates/betterlite-core/src/api/container_file_endpoints/**
+  lint_tables: false
+
+references:
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/endpoint_factory.py#L30-L43
+    why: Response model table (three names only, so "raw" has no model) and the endpoints.json loader.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/endpoint_factory.py#L45-L136
+    why: The sync function body from the mock short circuit to the handler call and the exception mapping.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/endpoint_factory.py#L138-L188
+    why: The async wrapper that sets async_call, runs the sync function on an executor, awaits a returned coroutine and maps errors with the caller's provider.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/endpoint_factory.py#L190-L224
+    why: generate_container_endpoints and the two name list functions.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/endpoint_factory.py#L227-L240
+    why: The ten module-level aliases taken from the generated table.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/__init__.py#L1-L42
+    why: The re-export list and __all__, which leaves out upload_container_file.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/router.py#L2143-L2166
+    why: The router registers every generated function by name, the caller of the name lists and the generated table.
+  - url: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/containers/endpoints.json
+    why: The five catalog entries (owned by B3360) that drive path params and response types.
+
+dod:
+  - text: all_endpoint_names returns the ten names in catalog order (each name followed by its async_name) and async_endpoint_names returns the five async names.
+    proof: [names-tests]
+  - text: An endpoint name that is in neither the name nor the async_name column of the catalog fails with a mapped error.
+    proof: [names-tests]
+  - text: A mock_response (JSON string or object) is decoded into the catalog entry's model for list, upload, retrieve and delete, and returned before provider lookup, logging and HTTP.
+    proof: [mock-tests]
+  - text: The mock for retrieve_container_file_content comes back as a Raw JSON value, not bytes, and a mock body that does not decode is an error.
+    proof: [mock-tests]
+  - text: A managed container id is decoded through B3361 before the config lookup, the decoded id replaces container_id, and the decoded provider is used for the rest of the call.
+    proof: [prepare-tests]
+  - text: >-
+      An unknown provider name and a provider without a container config both fail, the second with "Container provider config not found for: <provider>".
+    proof: [prepare-tests]
+  - text: Logging is updated with model "", optional params holding only the path params present in the call, litellm_params holding only litellm_call_id and the resolved provider, and no call type is set.
+    proof: [prepare-tests]
+  - text: The handler receives the endpoint name, config, params, logging state, headers, query, the decoded container_id, file_id, after, limit, order and file; extra_body is never forwarded.
+    proof: [handler-tests]
+  - text: A timeout of zero or none falls back to the default request timeout, and the default call timeout is 600 seconds.
+    proof: [handler-tests]
+  - text: The handler reply is returned as the ContainerFileReply variant B3363 produced for list, file, delete and bytes.
+    proof: [handler-tests]
+  - text: acontainer_file_call gives the same results as container_file_call through the async handler form, for mock and handler paths.
+    proof: [async-tests]
+  - text: Every failure reaches B185's exception mapping once, with model "" and the resolved provider after decoding and the caller's provider before it.
+    proof: [error-tests]
+
+checks:
+  optional: []
+  commands:
+    - id: names-tests
+      why: Name list or endpoint lookup tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::container_file_endpoints::(.*::)?names_/)'
+    - id: mock-tests
+      why: Mock short-circuit tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::container_file_endpoints::(.*::)?mock_/)'
+    - id: prepare-tests
+      why: Id decoding, provider lookup or logging tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::container_file_endpoints::(.*::)?prepare_/)'
+    - id: handler-tests
+      why: Handler call, timeout or reply tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::container_file_endpoints::(.*::)?handler_/)'
+    - id: async-tests
+      why: Async operation tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::container_file_endpoints::(.*::)?async_/)'
+    - id: error-tests
+      why: Exception mapping tests are missing or fail
+      run: cargo nextest run --locked -p betterlite-core --no-tests=fail -E 'test(/^api::container_file_endpoints::(.*::)?error_/)'
+
+oracle_cases: []
+
+deviations:
+  - what: There is no _is_async flag, async_call kwarg, run_in_executor wrapper or coroutine-or-value return. The blocking and async operations are two Rust functions, and the ten generated functions become one pair keyed by endpoint name.
+    why: Rust has no Union return type, and a worker thread plus a context copy adds nothing to an async fn.
+  - what: Errors are mapped once, not once in the sync body and again in the async wrapper.
+    why: exception_type returns an exception that is already a LiteLLM type unchanged, so the second pass changes nothing a caller can see.
+    link: https://github.com/BerriAI/litellm/blob/d665dc1a6315847fcad6cc2c1264ceb47c06abce/litellm/litellm_core_utils/exception_mapping_utils.py#L2358-L2367
+  - what: The import-time table, the ten module aliases and containers/__init__.py have no Rust code. The name lists are the export surface, and upload_container_file is exported like the other four.
+    why: Rust modules have no import side effects or package re-exports, and the router registers all ten names anyway.
+
+out_of_scope:
+  - "list_container_files, alist_container_files, upload_container_file and aupload_container_file in containers/main.py: B3366 and B3367 own those explicit versions. The generated versions of the same names are built here."
+  - "create_container, list_containers, retrieve_container and delete_container and their async forms: B3369 and B3370 own them, and __init__.py only re-exports them."
+  - "The generic executor (URL building, auth headers, multipart, byte responses, error checks): B3363 owns it; this task calls its handler."
+  - "decode_managed_container_id_for_request and the provider config lookup: B3361 owns them."
+  - "endpoints.json, the response models and BaseContainerConfig: B3360 owns them."
+  - "GenericLiteLLMParams: B010 owns it. The @client decorator that creates the logging state: B012 owns it."
+  - "Logging update_from_kwargs: B247 owns it. exception_type: B185 owns it."
+  - "Router registration of the ten names and the proxy file routes under /v1/containers/{container_id}/files: B094 and its proxy parts own them. No route reaches this code yet, so there are no HTTP oracle cases."
+
+pitfalls:
+  - The mock check reads mock_response with kwargs.get and comes before any provider lookup, so a mock call with an unknown provider still succeeds.
+  - retrieve_container_file_content has response_type "raw", which is not in RESPONSE_TYPES, so response_type is None and the mock is returned as the parsed JSON, not as bytes or a model.
+  - container_id is decoded only when the key is present and is a string; file_id is never decoded.
+  - The logging optional params are built from the path_params names with the test k in kwargs, so a key present with value None is logged as None and an absent key is left out.
+  - update_from_kwargs is called with the kwargs after decoding, so the logged container_id is the original provider id, not the managed one.
+  - The generated functions never set a logging call type. The @client decorator derives it from the Python function name, which is endpoint_func for every sync function and async_endpoint_func for every async one, so do not invent a per-endpoint call type here.
+  - extra_body is a named argument of the generated functions, so it never reaches the handler's kwargs; extra_query and extra_headers do.
+  - The async wrapper's error mapping uses the provider name the caller gave, because it never sees the decoded one.
+  - >-
+    The error text "Container provider config not found for: <provider>" has no word "provider" before the name, unlike the text in B3370 and B3369's list operation; keep it exact.
+  - The name list order is name then async_name per entry, not all sync names then all async names.
+
+review_level: standard
+
+budget:
+  max_changed_lines: 1500
+  max_new_expects: 0

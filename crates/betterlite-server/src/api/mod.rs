@@ -30,6 +30,7 @@ pub mod genai_routes;
 pub mod image_routes;
 pub mod interaction_routes;
 pub mod managed_file_routes;
+pub mod mcp_preview_routes;
 pub mod mcp_rest_tool_execution;
 pub mod mcp_rest_tools;
 pub mod messages_token_route;
