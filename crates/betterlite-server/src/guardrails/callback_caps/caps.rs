@@ -56,6 +56,21 @@ impl CallbackCapabilities {
     }
 
     #[must_use]
+    pub const fn has_streaming_callbacks(&self) -> bool {
+        self.streaming.has_iterator_override
+            || self.streaming.has_streaming_chunk_override
+            || self.guardrails.has_guardrail
+    }
+
+    #[must_use]
+    pub const fn needs_per_chunk_streaming_hook(&self) -> bool {
+        if self.streaming.has_streaming_chunk_override {
+            return true;
+        }
+        self.guardrails.has_guardrail
+    }
+
+    #[must_use]
     pub fn partition_post_call(&self) -> (CallbackList, CallbackList) {
         let mut guardrails = Vec::new();
         let mut others = Vec::new();
@@ -67,45 +82,6 @@ impl CallbackCapabilities {
             }
         }
         (guardrails, others)
-    }
-}
-
-// LiteLLM's has_post_call_response_headers_callbacks and has_streaming_chunk_hook_overrides run past the 30-character name cap
-pub trait CallbackCapabilityQueries {
-    fn has_response_headers_callbacks(&self) -> bool;
-    fn has_streaming_callbacks(&self) -> bool;
-    fn has_chunk_hook_overrides(&self) -> bool;
-    fn needs_per_chunk_streaming_hook(&self) -> bool;
-    fn needs_iterator_wrap(&self) -> bool;
-    fn has_during_call_guardrails(&self) -> bool;
-}
-
-impl CallbackCapabilityQueries for CallbackCapabilities {
-    fn has_response_headers_callbacks(&self) -> bool {
-        self.has_post_call_response_headers
-    }
-
-    fn has_streaming_callbacks(&self) -> bool {
-        self.streaming.has_iterator_override
-            || self.streaming.has_streaming_chunk_override
-            || self.guardrails.has_guardrail
-    }
-
-    fn has_chunk_hook_overrides(&self) -> bool {
-        self.streaming.has_streaming_chunk_override || self.guardrails.has_guardrail
-    }
-
-    // LiteLLM gives this rule its own name because two call sites ask it separately
-    fn needs_per_chunk_streaming_hook(&self) -> bool {
-        self.has_chunk_hook_overrides()
-    }
-
-    fn needs_iterator_wrap(&self) -> bool {
-        self.streaming.has_iterator_override
-    }
-
-    fn has_during_call_guardrails(&self) -> bool {
-        self.guardrails.has_guardrail
     }
 }
 

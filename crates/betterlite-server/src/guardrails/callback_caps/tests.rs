@@ -11,8 +11,8 @@ use betterlite_openai::openai_base_config::Object as JsonMap;
 use rstest::rstest;
 
 use super::caps::{
-    CallbackCache, CallbackCapabilities, CallbackCapabilityQueries as _, GuardrailCapabilities,
-    IteratorKind, RequestCapabilities, StreamingCapabilities, combined_callback_list,
+    CallbackCache, CallbackCapabilities, GuardrailCapabilities, IteratorKind, RequestCapabilities,
+    StreamingCapabilities, combined_callback_list,
 };
 use super::errors::{
     GuardrailGateError, ModifiedResponseError, ProxyException, ProxyHookError, SensitiveRouteError,
@@ -474,19 +474,9 @@ fn predicates_combine_the_flags_like_litellm(
 ) {
     let capabilities = build_capabilities(flags);
     assert_eq!(capabilities.has_streaming_callbacks(), expected.0);
-    assert_eq!(capabilities.has_chunk_hook_overrides(), expected.1);
     assert_eq!(capabilities.needs_per_chunk_streaming_hook(), expected.1);
-    assert_eq!(capabilities.needs_iterator_wrap(), flags.0);
-    assert_eq!(capabilities.has_during_call_guardrails(), flags.2);
-}
-
-#[test]
-fn response_headers_callbacks_follow_the_headers_flag() {
-    let declaring =
-        CallbackCapabilities::from_callbacks(&[callback("headers", &[Hook::ResponseHeaders])]);
-    let plain = CallbackCapabilities::from_callbacks(&[]);
-    assert!(declaring.has_response_headers_callbacks());
-    assert!(!plain.has_response_headers_callbacks());
+    assert_eq!(capabilities.streaming.has_iterator_override, flags.0);
+    assert_eq!(capabilities.guardrails.has_guardrail, flags.2);
 }
 
 #[test]
