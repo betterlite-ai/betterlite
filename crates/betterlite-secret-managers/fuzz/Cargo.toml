@@ -30,3 +30,10 @@ path = "fuzz_targets/oidc_jwt_payload.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "vault_response"
+path = "fuzz_targets/vault_response.rs"
+test = false
+doc = false
+bench = false
