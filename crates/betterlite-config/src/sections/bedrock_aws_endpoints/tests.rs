@@ -444,29 +444,19 @@ fn profile_name_splitting() {
 }
 
 fn profile_name_edges() {
-    check_splits(&[
-        (
-            "[profile \"a\\\"b\"]\nregion = eu-west-1\n",
-            Some("a\"b"),
-            Some("eu-west-1"),
-        ),
-        (
-            "[profile \"a\\\\b\"]\nregion = eu-west-1\n",
-            Some("a\\b"),
-            Some("eu-west-1"),
-        ),
-        (
-            "[profile \"\"]\nregion = eu-west-1\n",
-            Some(""),
-            Some("eu-west-1"),
-        ),
-        ("[profile \"open]\nregion = eu-west-1\n", Some("open"), None),
-        (
-            "[profile trailing\\]\nregion = eu-west-1\n",
-            Some("trailing"),
-            None,
-        ),
-    ]);
+    let doubled = file_region("[profile \"a\\\\b\"]\nregion = eu-west-1\n", Some("a\\b"));
+    assert_eq!(doubled.as_deref(), Some("eu-west-1"));
+    let quoted = file_region("[profile \"a\\\"b\"]\nregion = eu-west-1\n", Some("a\"b"));
+    assert_eq!(quoted.as_deref(), Some("eu-west-1"));
+    let empty = file_region("[profile \"\"]\nregion = eu-west-1\n", Some(""));
+    assert_eq!(empty.as_deref(), Some("eu-west-1"));
+    let unclosed = file_region("[profile \"open]\nregion = eu-west-1\n", Some("open"));
+    assert_eq!(unclosed, None);
+    let trailing = file_region(
+        "[profile trailing\\]\nregion = eu-west-1\n",
+        Some("trailing"),
+    );
+    assert_eq!(trailing, None);
 }
 
 fn credentials_cases() {
