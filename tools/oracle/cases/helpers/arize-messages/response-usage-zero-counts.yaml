@@ -1,0 +1,17 @@
+kind: helper
+name: response-usage-zero-counts
+call:
+  b3860:
+    function: set_response
+    response:
+      usage:
+        total_tokens: 0
+        completion_tokens: 0
+        output_tokens: 0
+        prompt_tokens: 0
+        input_tokens: 0
+        completion_tokens_details: {reasoning_tokens: 0}
+        prompt_tokens_details: {cached_tokens: 0, audio_tokens: 0}
+        cache_creation_input_tokens: 0
+env: {}
+compare: {ignore: []}

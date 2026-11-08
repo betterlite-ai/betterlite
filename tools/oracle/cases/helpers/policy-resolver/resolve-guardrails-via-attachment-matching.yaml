@@ -1,0 +1,25 @@
+kind: helper
+name: resolve-guardrails-via-attachment-matching
+call:
+  b3241:
+    policy_memory_matching_resolver:
+      action: resolve_guardrails
+      policies:
+        global-baseline:
+          guardrails:
+            add: [pii-blocker]
+        healthcare:
+          inherit: global-baseline
+          guardrails:
+            add: [hipaa-audit]
+      attachments:
+        - policy: global-baseline
+          scope: "*"
+        - policy: healthcare
+          teams: [healthcare-team]
+      context:
+        team_alias: healthcare-team
+        key_alias: k
+        model: gpt-4
+env: {}
+compare: {ignore: []}

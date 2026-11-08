@@ -1,0 +1,26 @@
+kind: helper
+name: load-policies-from-config
+call:
+  b3241:
+    policy_memory_matching_registry:
+      action: load_policies
+      policies:
+        baseline:
+          description: Base guardrails for every request
+          guardrails:
+            add: [pii-blocker]
+        healthcare:
+          inherit: baseline
+          guardrails:
+            add: [hipaa-audit]
+            remove: [pii-blocker]
+          condition:
+            model: gpt-4.*
+          pipeline:
+            mode: post_call
+            steps:
+              - guardrail: hipaa-audit
+                on_fail: block
+                on_pass: allow
+env: {}
+compare: {ignore: []}

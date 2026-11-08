@@ -1,0 +1,11 @@
+kind: helper
+name: parse-policy-legacy-list
+call:
+  b3241:
+    policy_memory_matching_registry:
+      action: parse_policy
+      policy_name: legacy
+      policy:
+        guardrails: [pii-blocker, phi-blocker]
+env: {}
+compare: {ignore: []}
