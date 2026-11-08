@@ -48,6 +48,12 @@ fn target_names_from_path_matches_litellm(#[case] path: &str, #[case] expected: 
     assert_eq!(target_names_from_path(path), names(&expected));
 }
 
+// LiteLLM's regex $ also matches before a final newline; a request target never carries one.
+#[test]
+fn a_trailing_newline_after_a_query_names_no_target() {
+    assert_eq!(target_names_from_path("/mcp/a?x\n"), Vec::<String>::new());
+}
+
 #[test]
 fn path_targets_win_over_the_header() {
     let header = names(&["other"]);

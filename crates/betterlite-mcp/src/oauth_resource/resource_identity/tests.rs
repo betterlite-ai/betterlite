@@ -49,6 +49,22 @@ fn canonicalize_identity_reports_unparsable_urls(
     );
 }
 
+#[test]
+fn control_characters_stay_in_the_identity() {
+    assert_eq!(
+        canonicalize_url_identity("https://h/a\tb").unwrap(),
+        "https://h/a\tb"
+    );
+}
+
+#[test]
+fn an_ipvfuture_literal_is_rejected() {
+    assert_eq!(
+        canonicalize_url_identity("https://[v1.foo]/x").unwrap_err(),
+        UrlIdentityError::Parse(UrlParseError::InvalidIpv6)
+    );
+}
+
 #[rstest]
 #[case::absolute("https://h:443/a/b/", "https://h/a/b")]
 #[case::relative("/relative/path", "")]
@@ -171,4 +187,12 @@ fn redact_resource_url_matches_litellm(#[case] url: &str, #[case] expected: &str
     let wanted = (!expected.is_empty()).then_some(expected);
     let value = (!url.is_empty()).then_some(url);
     assert_eq!(redact_mcp_resource_url(value).as_deref(), wanted);
+}
+
+#[test]
+fn a_signed_port_is_accepted_when_redacting() {
+    assert_eq!(
+        redact_mcp_resource_url(Some("https://h:+443/x")).as_deref(),
+        Some("https://h:443")
+    );
 }
